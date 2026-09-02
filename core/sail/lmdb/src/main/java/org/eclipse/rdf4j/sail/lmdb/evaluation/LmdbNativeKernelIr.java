@@ -150,6 +150,8 @@ final class LmdbNativeKernelIr {
 		int nodePredicateViews;
 		int dynamicViews;
 		int wildcardViews;
+		int nodeDomainIntersections;
+		int typeMatrices;
 		boolean hooks;
 
 		void nodePredicateView(int index) {
@@ -162,6 +164,14 @@ final class LmdbNativeKernelIr {
 
 		void wildcardView(int index) {
 			wildcardViews = Math.max(wildcardViews, index + 1);
+		}
+
+		void nodeDomainIntersection(int index) {
+			nodeDomainIntersections = Math.max(nodeDomainIntersections, index + 1);
+		}
+
+		void typeMatrix(int index) {
+			typeMatrices = Math.max(typeMatrices, index + 1);
 		}
 
 		void adjacency(int index) {
@@ -509,6 +519,37 @@ final class LmdbNativeKernelIr {
 		@Override
 		void requirements(Requirements requirements) {
 			requirements.domain(domain);
+		}
+	}
+
+	/** Enumerates the unique IDs in an exact all-predicate subject/object node-domain intersection. */
+	static final class EnumerateNodeDomainIntersection extends Node {
+		final int view;
+		final int col;
+
+		EnumerateNodeDomainIntersection(int view, int col) {
+			this.view = view;
+			this.col = col;
+		}
+
+		@Override
+		Grain grain() {
+			return Grain.ROOT;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("ENDI(n").append(view).append(",k").append(col).append(");");
+		}
+
+		@Override
+		void produced(BitSet columns) {
+			columns.set(col);
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.nodeDomainIntersection(view);
 		}
 	}
 
@@ -2467,6 +2508,50 @@ final class LmdbNativeKernelIr {
 		}
 	}
 
+	/**
+	 * Structural ROOT-grain type-matrix aggregate. The terminal owns the edge/type traversal and primitive pair
+	 * accumulation; its snapshot-specific predicate catalog and adjacency views are supplied at bind time.
+	 */
+	static final class TypeMatrixAggregate extends Terminal {
+		final int view;
+		final boolean linkage;
+		final int subjectTypeKeyPosition;
+		final int outputCount;
+
+		TypeMatrixAggregate(int view, boolean linkage, int subjectTypeKeyPosition, int outputCount) {
+			super(OutputMods.none());
+			if (view < 0 || subjectTypeKeyPosition < 0 || subjectTypeKeyPosition > 1 || outputCount < 1) {
+				throw new IllegalArgumentException("invalid type-matrix terminal");
+			}
+			this.view = view;
+			this.linkage = linkage;
+			this.subjectTypeKeyPosition = subjectTypeKeyPosition;
+			this.outputCount = outputCount;
+		}
+
+		@Override
+		int stride() {
+			return 2 + outputCount;
+		}
+
+		@Override
+		void key(StringBuilder key) {
+			key.append("typeMatrix(v=")
+					.append(view)
+					.append(linkage ? ",link" : ",usage")
+					.append(",s=")
+					.append(subjectTypeKeyPosition)
+					.append(",o=")
+					.append(outputCount)
+					.append(");");
+		}
+
+		@Override
+		void requirements(Requirements requirements) {
+			requirements.typeMatrix(view);
+		}
+	}
+
 	// ------------------------------------------------------------------
 	// Kernel root
 	// ------------------------------------------------------------------
@@ -2522,15 +2607,14 @@ final class LmdbNativeKernelIr {
 
 	/**
 	 * Enables compiled predicate enumeration and dynamic predicate probing — the lowering of patterns whose predicate
-	 * is a variable. Off by default, as its own decision separate from whether the underlying projection is built at
-	 * all: this switch costs compiler surface and risk, the construction switch costs build time and memory, and
-	 * bundling them would let one benchmark number silently decide two questions. Read at lowering time, so a pattern
-	 * either compiles or records a stable decline.
+	 * is a variable. Default-on with the outgoing projection so a built index is actually reachable by compiled plans;
+	 * the independent kill switch still permits differential testing and an immediate return to projection-free IR.
+	 * Read at lowering time, so a pattern either compiles or records a stable decline.
 	 */
 	static final String NODE_PREDICATES_PROPERTY = "rdf4j.lmdb.janinoCodegen.nodePredicates";
 
 	static boolean nodePredicatesEnabled() {
-		return Boolean.parseBoolean(System.getProperty(NODE_PREDICATES_PROPERTY, "false"));
+		return Boolean.parseBoolean(System.getProperty(NODE_PREDICATES_PROPERTY, "true"));
 	}
 
 	/**
@@ -3344,7 +3428,7 @@ final class LmdbNativeKernelIr {
 				for (int col : ((Emit) terminal).cols) {
 					checkColumn(col);
 				}
-			} else {
+			} else if (terminal instanceof Aggregate) {
 				Aggregate aggregate = (Aggregate) terminal;
 				for (int col : aggregate.groupCols) {
 					checkColumn(col);
@@ -3354,6 +3438,8 @@ final class LmdbNativeKernelIr {
 						checkColumn(output.col);
 					}
 				}
+			} else if (!(terminal instanceof TypeMatrixAggregate)) {
+				throw new IllegalArgumentException("unknown terminal " + terminal.getClass().getName());
 			}
 			if (terminal.mods.orderKeys != null) {
 				for (int key : terminal.mods.orderKeys) {

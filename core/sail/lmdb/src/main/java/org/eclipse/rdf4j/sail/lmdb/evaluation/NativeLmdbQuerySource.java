@@ -357,6 +357,26 @@ public interface NativeLmdbQuerySource {
 		}
 
 		/**
+		 * Returns an exact, partitionable intersection of two all-predicate root domains, or {@code null} when either
+		 * direction is unavailable for the complete visible snapshot. The view and all cursors borrowed from it are
+		 * confined to this probe and must not escape its lifetime.
+		 */
+		default NodeDomainIntersection nodeDomainIntersection(boolean leftBySubject, boolean rightBySubject)
+				throws IOException {
+			NodeDomainSynopsis left = nodeDomainSynopsis(leftBySubject);
+			if (leftBySubject == rightBySubject) {
+				return left == null ? null : left.intersection(left);
+			}
+			NodeDomainPresence right = nodeDomainPresence(rightBySubject);
+			if (left != null && right != null) {
+				return left.intersection(right);
+			}
+			NodeDomainSynopsis reversedLeft = nodeDomainSynopsis(rightBySubject);
+			NodeDomainPresence reversedRight = nodeDomainPresence(leftBySubject);
+			return reversedLeft == null || reversedRight == null ? null : reversedLeft.intersection(reversedRight);
+		}
+
+		/**
 		 * Returns exact datatype-group multiplicities for the complete immutable root domain in this direction, or
 		 * {@code null} when no bounded retained summary represents the visible snapshot. The observer is notified only
 		 * for literal-header batches actually read while constructing a previously absent summary; consuming an already
@@ -455,6 +475,11 @@ public interface NativeLmdbQuerySource {
 
 		RootCursor cursor();
 
+		/** Builds a primitive, partitionable set intersection when both representations are compatible. */
+		default NodeDomainIntersection intersection(NodeDomainPresence other) {
+			return null;
+		}
+
 		/** Allocation-free cursor over every root retained by the synopsis. Ordering is intentionally unspecified. */
 		interface RootCursor {
 
@@ -463,6 +488,32 @@ public interface NativeLmdbQuerySource {
 			long rootId();
 
 			long quadMultiplicity();
+		}
+	}
+
+	/** Snapshot-bound, allocation-free intersection of two unique node domains. */
+	interface NodeDomainIntersection {
+
+		/** Physical work units (bitmap words or sparse entries), never statement cardinality. */
+		long estimatedWork();
+
+		/** Exact membership in this intersection, without enumerating a partition. */
+		boolean contains(long nodeId);
+
+		/** Number of non-overlapping morsels exposed by this view. */
+		int partitionCount();
+
+		/** Exact number of unique IDs in one morsel. */
+		long countPartition(int partition);
+
+		/** Allocation-free unique-ID cursor for one morsel. */
+		Cursor cursor(int partition);
+
+		interface Cursor {
+
+			boolean next();
+
+			long nodeId();
 		}
 	}
 

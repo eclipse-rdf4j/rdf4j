@@ -67,7 +67,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 500)
+@Warmup(iterations = 5, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 500)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true" })
 @Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
@@ -118,13 +118,13 @@ public class ThemeQueryBenchmark {
 	public String z_z_janinoEnabled;
 
 	@Param({
-			"0",
-			"1",
-			"2",
-			"3",
-			"4",
-			"5",
-			"6",
+//			"0",
+//			"1",
+//			"2",
+//			"3",
+//			"4",
+//			"5",
+//			"6",
 			"7",
 			"8",
 			"9",
@@ -135,15 +135,15 @@ public class ThemeQueryBenchmark {
 	public int z_queryIndex;
 
 	@Param({
-			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA",
-			"ADAPTIVE_FILTER_PLACEMENT",
+//			"MEDICAL_RECORDS",
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
+//			"ENGINEERING",
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA",
+//			"ADAPTIVE_FILTER_PLACEMENT",
 			"ANALYTICS"
 	})
 	public String themeName;
@@ -160,15 +160,41 @@ public class ThemeQueryBenchmark {
 	private boolean janinoPropertiesConfigured;
 
 	public static void main(String[] args) throws RunnerException {
-		var opt = new OptionsBuilder()
+		String selectedTheme = null;
+		String selectedQueryIndex = null;
+		for (int i = 0; i < args.length; i++) {
+			String argument = args[i];
+			if (argument.startsWith("--theme=")) {
+				selectedTheme = argument.substring("--theme=".length());
+			} else if ("--theme".equals(argument) && i + 1 < args.length) {
+				selectedTheme = args[++i];
+			} else if (argument.startsWith("--query-index=")) {
+				selectedQueryIndex = argument.substring("--query-index=".length());
+			} else if ("--query-index".equals(argument) && i + 1 < args.length) {
+				selectedQueryIndex = args[++i];
+			} else {
+				throw new IllegalArgumentException("Unsupported benchmark argument: " + argument);
+			}
+		}
+		var builder = new OptionsBuilder()
 				.include(ThemeQueryBenchmark.class.getName() + ".executeQuery")
 				.forks(0)
 				.measurementIterations(1)
 				.measurementBatchSize(1)
 				.measurementTime(TimeValue.milliseconds(1))
-				.warmupIterations(0)
-				.build();
-		new Runner(opt).run();
+				.warmupIterations(0);
+		if (selectedTheme != null) {
+			Theme.valueOf(selectedTheme);
+			builder.param("themeName", selectedTheme);
+		}
+		if (selectedQueryIndex != null) {
+			int index = Integer.parseInt(selectedQueryIndex);
+			if (index < 0 || index > 12) {
+				throw new IllegalArgumentException("Query index must be between 0 and 12: " + index);
+			}
+			builder.param("z_queryIndex", Integer.toString(index));
+		}
+		new Runner(builder.build()).run();
 	}
 
 	@Setup(Level.Trial)

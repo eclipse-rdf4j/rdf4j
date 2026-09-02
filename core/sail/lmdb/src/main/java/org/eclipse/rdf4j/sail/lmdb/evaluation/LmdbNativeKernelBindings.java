@@ -20,10 +20,12 @@ import java.util.function.BooleanSupplier;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.TypeMatrixContext;
 
 /**
  * Binding descriptor produced by {@code LmdbNativeKernelLowering} alongside a kernel IR tree (plan:
@@ -252,6 +254,15 @@ final class LmdbNativeKernelBindings {
 	record WildcardRequest(boolean bySubject) {
 	}
 
+	/** One exact all-predicate node-domain intersection, indexed by the IR producer's view id. */
+	record NodeDomainIntersectionRequest(boolean leftBySubject, boolean rightBySubject) {
+	}
+
+	/** Runtime views and predicate-domain filter for one structural type-matrix terminal. */
+	record TypeMatrixRequest(long subjectTypePredicate, long objectTypePredicate, MaskedFilter[] predicateFilters,
+			int edgePredicateSlot) {
+	}
+
 	/**
 	 * One generated scan site's physical contract. The order and range are mutually exclusive because an ordered source
 	 * chooses an index from {@link StatementOrder}, while a range is already encoded in one exact index's key space. A
@@ -276,11 +287,15 @@ final class LmdbNativeKernelBindings {
 	private static final NodePredicateRequest[] NO_NODE_PREDICATE_REQUESTS = {};
 	private static final DynamicRequest[] NO_DYNAMIC_REQUESTS = {};
 	private static final WildcardRequest[] NO_WILDCARD_REQUESTS = {};
+	private static final NodeDomainIntersectionRequest[] NO_NODE_DOMAIN_INTERSECTION_REQUESTS = {};
+	private static final TypeMatrixRequest[] NO_TYPE_MATRIX_REQUESTS = {};
 
 	final AdjacencyRequest[] adjacencies;
 	final NodePredicateRequest[] nodePredicateRequests;
 	final DynamicRequest[] dynamicRequests;
 	final WildcardRequest[] wildcardRequests;
+	NodeDomainIntersectionRequest[] nodeDomainIntersectionRequests = NO_NODE_DOMAIN_INTERSECTION_REQUESTS;
+	TypeMatrixRequest[] typeMatrixRequests = NO_TYPE_MATRIX_REQUESTS;
 	final long[] constants;
 	final int[] entrySlotIds;
 	final DomainRequest[] keyDomains;
@@ -444,18 +459,157 @@ final class LmdbNativeKernelBindings {
 		if (nodePredicates.length == 0 && dynamics.length == 0 && wildcards.length == 0) {
 			return this;
 		}
-		return new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds, keyDomains, filterHooks, bindHooks,
+		LmdbNativeKernelBindings copy = new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds, keyDomains,
+				filterHooks, bindHooks,
 				columnEngineSlots, residualFilters, scanSites, planRequests, groupLayout, hooksRequired,
 				distinctExpected, kernelResiduals, nodePredicates, dynamics, wildcards);
+		copy.nodeDomainIntersectionRequests = nodeDomainIntersectionRequests;
+		copy.typeMatrixRequests = typeMatrixRequests;
+		return copy;
+	}
+
+	LmdbNativeKernelBindings withNodeDomainIntersectionRequests(NodeDomainIntersectionRequest[] requests) {
+		if (requests.length == 0) {
+			return this;
+		}
+		LmdbNativeKernelBindings copy = new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds, keyDomains,
+				filterHooks, bindHooks, columnEngineSlots, residualFilters, scanSites, planRequests, groupLayout,
+				hooksRequired, distinctExpected, kernelResiduals, nodePredicateRequests, dynamicRequests,
+				wildcardRequests);
+		copy.nodeDomainIntersectionRequests = requests.clone();
+		copy.typeMatrixRequests = typeMatrixRequests;
+		return copy;
+	}
+
+	LmdbNativeKernelBindings withTypeMatrixRequests(TypeMatrixRequest[] requests) {
+		if (requests.length == 0) {
+			return this;
+		}
+		LmdbNativeKernelBindings copy = new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds, keyDomains,
+				filterHooks, bindHooks, columnEngineSlots, residualFilters, scanSites, planRequests, groupLayout,
+				hooksRequired, distinctExpected, kernelResiduals, nodePredicateRequests, dynamicRequests,
+				wildcardRequests);
+		copy.nodeDomainIntersectionRequests = nodeDomainIntersectionRequests;
+		copy.typeMatrixRequests = requests.clone();
+		return copy;
 	}
 
 	/** Rebuilds a sink-specific binding descriptor without dropping any variable-predicate view requests. */
 	LmdbNativeKernelBindings withAdjacenciesAndColumns(AdjacencyRequest[] sinkAdjacencies, int[] sinkColumns,
 			boolean sinkHooksRequired) {
-		return new LmdbNativeKernelBindings(sinkAdjacencies, constants, entrySlotIds, keyDomains, filterHooks,
+		LmdbNativeKernelBindings copy = new LmdbNativeKernelBindings(sinkAdjacencies, constants, entrySlotIds,
+				keyDomains,
+				filterHooks,
 				bindHooks,
 				sinkColumns, residualFilters, scanSites, planRequests, groupLayout, sinkHooksRequired, distinctExpected,
 				kernelResiduals, nodePredicateRequests, dynamicRequests, wildcardRequests);
+		copy.nodeDomainIntersectionRequests = nodeDomainIntersectionRequests;
+		copy.typeMatrixRequests = typeMatrixRequests;
+		return copy;
+	}
+
+	static TypeMatrixContext[] requestTypeMatrices(LmdbNativeKernelBindings bindings,
+			NativeLmdbQuerySource.NativeProbe probe, RowState row) throws java.io.IOException {
+		TypeMatrixContext[] matrices = new TypeMatrixContext[bindings.typeMatrixRequests.length];
+		for (int requestIndex = 0; requestIndex < matrices.length; requestIndex++) {
+			TypeMatrixRequest request = bindings.typeMatrixRequests[requestIndex];
+			NativeLmdbQuerySource.NativeAdjacency sourceTypes = probe.adjacency(request.subjectTypePredicate(), true);
+			NativeLmdbQuerySource.NativeAdjacency targetTypes = request
+					.objectTypePredicate() == LmdbNativeAggregateCompiler.UNKNOWN
+							? null
+							: probe.adjacency(request.objectTypePredicate(), true);
+			NativeLmdbQuerySource.LabelSynopsis targetTypeLabels = request
+					.objectTypePredicate() == LmdbNativeAggregateCompiler.UNKNOWN
+							? null
+							: probe.labelSynopsis(request.objectTypePredicate(), true);
+			NativeLmdbQuerySource.WildcardAdjacency candidates = probe.wildcardAdjacency(true);
+			if (sourceTypes == null || candidates == null || !sourceTypes.runsNeighborOrdered()
+					|| !sourceTypes.supportsKeyEnumeration()
+					|| targetTypes != null && !targetTypes.runsNeighborOrdered()) {
+				return null;
+			}
+			NativeLmdbQuerySource.NativeAdjacency[] edges = new NativeLmdbQuerySource.NativeAdjacency[candidates
+					.predicateCount()];
+			long[] predicateIds = new long[edges.length];
+			int accepted = 0;
+			for (int ordinal = 0; ordinal < candidates.predicateCount(); ordinal++) {
+				long predicate = candidates.predicateAt(ordinal);
+				int mark = row.mark();
+				boolean pass = false;
+				try {
+					if (row.bind(request.edgePredicateSlot(), predicate)) {
+						pass = true;
+						for (MaskedFilter filter : request.predicateFilters()) {
+							if (!filter.filter.accept(row)) {
+								pass = false;
+								break;
+							}
+						}
+					}
+				} finally {
+					row.rollback(mark);
+				}
+				if (pass) {
+					NativeLmdbQuerySource.NativeAdjacency edge = probe.adjacency(predicate, true);
+					if (edge == null || !edge.runsNeighborOrdered() || !edge.supportsKeyEnumeration()) {
+						return null;
+					}
+					if (targetTypes != null && !mayContainResourceNeighbors(edge)) {
+						edge.close();
+						continue;
+					}
+					edges[accepted] = edge;
+					predicateIds[accepted] = predicate;
+					accepted++;
+				}
+			}
+			candidates.close();
+			matrices[requestIndex] = new TypeMatrixContext(sourceTypes, targetTypes, targetTypeLabels,
+					Arrays.copyOf(edges, accepted), Arrays.copyOf(predicateIds, accepted));
+		}
+		return matrices;
+	}
+
+	/** Prunes only exact immutable planes whose page traits prove every neighbor is a non-resource. */
+	private static boolean mayContainResourceNeighbors(NativeLmdbQuerySource.NativeAdjacency edge) {
+		try (NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor pages = edge.openPageCursor()) {
+			if (pages == null) {
+				return true;
+			}
+			while (pages.advance()) {
+				if (pages.fiberCount() == 0) {
+					continue;
+				}
+				if (!pages.uniformNeighborTermKind()) {
+					return true;
+				}
+				for (int row = 0; row < pages.rowCount(); row++) {
+					if (pages.rowFiberCount(row) == 0) {
+						continue;
+					}
+					int kind = ValueIds.termKind(pages.neighborAt(row, 0));
+					if (kind == ValueIds.TERM_KIND_IRI || kind == ValueIds.TERM_KIND_BNODE
+							|| kind == ValueIds.TERM_KIND_TRIPLE) {
+						return true;
+					}
+					break;
+				}
+			}
+			return false;
+		}
+	}
+
+	static NativeLmdbQuerySource.NodeDomainIntersection[] requestNodeDomainIntersections(
+			LmdbNativeKernelBindings bindings, NativeLmdbQuerySource.NativeProbe probe) throws java.io.IOException {
+		NativeLmdbQuerySource.NodeDomainIntersection[] intersections = new NativeLmdbQuerySource.NodeDomainIntersection[bindings.nodeDomainIntersectionRequests.length];
+		for (int i = 0; i < intersections.length; i++) {
+			NodeDomainIntersectionRequest request = bindings.nodeDomainIntersectionRequests[i];
+			intersections[i] = probe.nodeDomainIntersection(request.leftBySubject(), request.rightBySubject());
+			if (intersections[i] == null) {
+				return null;
+			}
+		}
+		return intersections;
 	}
 
 	/**

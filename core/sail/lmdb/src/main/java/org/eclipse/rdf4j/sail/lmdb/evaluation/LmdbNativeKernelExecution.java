@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.TypeMatrixContext;
 
 /**
  * Execution front door for IR-lowered kernels (plan: plans/lmdb-native-engine/20-kernel-lowering-row.md). Owns the
@@ -174,6 +175,17 @@ final class LmdbNativeKernelExecution {
 				: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE;
 	}
 
+	private static String aggregateRoute(boolean interpreted, LmdbNativeKernelIr.Requirements requirements) {
+		if (requirements.typeMatrices > 0) {
+			return interpreted ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED
+					: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX;
+		}
+		if (requirements.nodeDomainIntersections > 0) {
+			return LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION;
+		}
+		return aggregateRoute(interpreted, requirements.wildcardViews > 0);
+	}
+
 	private static String rowRoute(boolean interpreted, boolean distinct, boolean wildcard) {
 		if (distinct) {
 			return interpreted ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED
@@ -271,6 +283,8 @@ final class LmdbNativeKernelExecution {
 		JaninoKernel kernel = null;
 		LmdbNativeKernelHooks hooks = null;
 		NativeLmdbQuerySource.NativeAdjacency[] views = null;
+		NativeLmdbQuerySource.NodeDomainIntersection[] nodeDomainIntersections = null;
+		TypeMatrixContext[] typeMatrices = null;
 		try {
 			LmdbNativeKernelLowering.Lowered semantic = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
 					aggregates, LmdbNativeKernelLowering.recognizeHaving(havingCondition, aggregates), explainTarget,
@@ -356,12 +370,29 @@ final class LmdbNativeKernelExecution {
 					return null;
 				}
 			}
-			final String route = aggregateRoute(interpretedExecution, lowered.kernel.requirements.wildcardViews > 0);
+			final String route = aggregateRoute(interpretedExecution, lowered.kernel.requirements);
 			// The path tag equals the route for this rung; declines/activations below report under the tier that
 			// actually executed, keeping each tier's cost evidence separate (kernel-interpreter plan, D1/M3).
 			final String pathTag = route;
 			final long observedRowsForVariants = observedRows;
 			probe = row.source.newProbe();
+			typeMatrices = LmdbNativeKernelBindings.requestTypeMatrices(lowered.bindings, probe, row);
+			if (typeMatrices == null) {
+				LmdbNativeAttemptMetrics.recordDecline(explainTarget, route, "type-matrix-view-unavailable");
+				AGG_DECLINED.incrementAndGet();
+				return null;
+			}
+			nodeDomainIntersections = LmdbNativeKernelBindings.requestNodeDomainIntersections(lowered.bindings, probe);
+			if (nodeDomainIntersections == null) {
+				LmdbNativeAttemptMetrics.recordDecline(explainTarget, route,
+						"node-domain-intersection-unavailable");
+				if (row.runtimePlan != null) {
+					row.runtimePlan.janinoDeclined(
+							"BIND_INPUT_UNAVAILABLE[route=" + route + ",resource=nodeDomainIntersection]");
+				}
+				AGG_DECLINED.incrementAndGet();
+				return null;
+			}
 			views = lowered.bindings.requestAdjacencies(probe);
 			recordAdjacencyBindings(row, lowered.bindings, views, "irAggregate");
 			LmdbNativeKernelBindings.VariablePredicateViews variableViews = LmdbNativeKernelBindings
@@ -423,14 +454,19 @@ final class LmdbNativeKernelExecution {
 			// The parallel rung may request a worker kernel VARIANT (HAVING and output mods stripped); every requested
 			// shape compiles through the same cache under its own shape key, so the sequential shape stays untouched.
 			List<BindingSet> parallel = parallelExecution == ParallelExecution.DISABLE ? null
-					: LmdbNativeParallelKernelAggregate.tryEvaluate(lowered, views, variableViews, domains, arg, row,
+					: LmdbNativeParallelKernelAggregate.tryEvaluate(lowered, views, variableViews,
+							nodeDomainIntersections, typeMatrices, domains, arg, row,
 							emitter, explainTarget,
 							workerKernelFactory(requestedTier, interpretedExecution, observedRowsForVariants,
 									LmdbNativeKernelInterpreter::forAggregate));
 			if (parallel != null) {
-				String parallelRoute = interpretedExecution
-						? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED
-						: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL;
+				String parallelRoute = lowered.kernel.requirements.typeMatrices > 0
+						? interpretedExecution
+								? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED
+								: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL
+						: interpretedExecution
+								? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED
+								: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL;
 				AGG_OPENED.incrementAndGet();
 				AGG_ROWS.addAndGet(parallel.size());
 				LmdbNativeExplain.recordExecutionPath(explainTarget, parallelRoute);
@@ -456,8 +492,10 @@ final class LmdbNativeKernelExecution {
 			scanner = lowered.kernel.requirements.scans > 0
 					? new LmdbNativeKernelScanner(row, lowered.bindings.scanSites)
 					: null;
-			LmdbNativeJaninoCodegen.bind(kernel,
-					lowered.bindings.context(views, domains, row, hooks, scanner, variableViews), route);
+			KernelContext kernelContext = lowered.bindings.context(views, domains, row, hooks, scanner, variableViews)
+					.withNodeDomainIntersections(nodeDomainIntersections)
+					.withTypeMatrices(typeMatrices);
+			LmdbNativeJaninoCodegen.bind(kernel, kernelContext, route);
 			int stride = lowered.kernel.stride();
 			long[] buffer = new long[stride * FILL_ROWS];
 			List<BindingSet> results = new ArrayList<>();
@@ -469,6 +507,7 @@ final class LmdbNativeKernelExecution {
 			}
 			AGG_OPENED.incrementAndGet();
 			AGG_ROWS.addAndGet(results.size());
+			publishStructuralOperator(explainTarget, lowered.kernel.requirements);
 			if (row.runtimePlan != null) {
 				SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 						? ((MultiJoinPlan) arg).derivedPlan(row).order
@@ -520,6 +559,15 @@ final class LmdbNativeKernelExecution {
 				failure = addFailure(failure, problem);
 			}
 			rethrowFailure(failure);
+		}
+	}
+
+	private static void publishStructuralOperator(TupleExpr target, LmdbNativeKernelIr.Requirements requirements) {
+		if (requirements.typeMatrices > 0) {
+			LmdbNativeExplain.setRuntimeMetric(target, "nativeIrSelectedOperatorActual", "TypeMatrixAggregate");
+		} else if (requirements.nodeDomainIntersections > 0) {
+			LmdbNativeExplain.setRuntimeMetric(target, "nativeIrSelectedOperatorActual",
+					"EnumerateNodeDomainIntersection");
 		}
 	}
 

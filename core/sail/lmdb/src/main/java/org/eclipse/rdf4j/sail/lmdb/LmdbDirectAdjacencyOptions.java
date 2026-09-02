@@ -142,7 +142,7 @@ final class LmdbDirectAdjacencyOptions {
 		long buildTargetMillis = positiveLongProperty(properties, BUILD_TARGET_MILLIS_PROPERTY, 43_200_000L);
 		long buildRetryMillis = positiveLongProperty(properties, BUILD_RETRY_MILLIS_PROPERTY, 60_000L);
 		long shadowSampleEvery = positiveLongProperty(properties, SHADOW_SAMPLE_EVERY_PROPERTY, 10_000L);
-		boolean nodePredicateProjection = booleanProperty(properties, NODE_PREDICATE_PROJECTION_PROPERTY, false);
+		boolean nodePredicateProjection = booleanProperty(properties, NODE_PREDICATE_PROJECTION_PROPERTY, true);
 		boolean nodePredicateProjectionIncoming = nodePredicateProjection
 				&& booleanProperty(properties, NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY, false);
 		boolean synchronousMaintenance = booleanProperty(properties, SYNCHRONOUS_MAINTENANCE_PROPERTY, true);

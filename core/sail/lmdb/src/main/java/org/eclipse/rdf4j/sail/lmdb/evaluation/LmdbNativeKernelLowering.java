@@ -916,6 +916,15 @@ final class LmdbNativeKernelLowering {
 			AggregateSpec[] aggregates,
 			LmdbNativeKernelIr.Having having, TupleExpr declineTarget, boolean preferScans,
 			boolean scanVariablePredicates) {
+		Lowered typeMatrix = lowerTypeMatrixAggregate(arg, groupSlots, aggregates, having);
+		if (typeMatrix != null) {
+			return typeMatrix;
+		}
+		Lowered nodeDomainIntersection = lowerNodeDomainIntersectionAggregate(arg, row, groupSlots, aggregates,
+				having);
+		if (nodeDomainIntersection != null) {
+			return nodeDomainIntersection;
+		}
 		// Sticky (EXISTS-bearing) filters never flatten into a MultiJoinPlan — they arrive as FilterPlan wrappers
 		// around the producer. Peel the wrapper chain, collecting the conditions, then lower the core.
 		List<MaskedFilter> filters = new ArrayList<>();
@@ -972,6 +981,137 @@ final class LmdbNativeKernelLowering {
 			return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, having, declineTarget, builder.reason);
 		}
 		return lowered;
+	}
+
+	private static Lowered lowerTypeMatrixAggregate(SlotPlan arg, int[] groupSlots, AggregateSpec[] aggregates,
+			LmdbNativeKernelIr.Having having) {
+		if (having != null) {
+			return null;
+		}
+		LmdbTypeMatrixPlan plan = LmdbTypeMatrixPlan.tryCreate(arg, groupSlots, aggregates);
+		if (plan == null) {
+			return null;
+		}
+		LmdbNativeKernelIr.TypeMatrixAggregate terminal = new LmdbNativeKernelIr.TypeMatrixAggregate(0,
+				plan.linkage(), plan.subjectTypeKeyPosition, aggregates.length);
+		Kernel kernel = new Kernel(0, List.of(), terminal);
+		LmdbNativeKernelBindings.AggOut[] outputs = new LmdbNativeKernelBindings.AggOut[aggregates.length];
+		for (int i = 0; i < aggregates.length; i++) {
+			outputs[i] = new LmdbNativeKernelBindings.AggOut(aggregates[i],
+					LmdbNativeKernelBindings.ENC_LONG_COUNT);
+		}
+		LmdbNativeKernelBindings.KernelGroupLayout layout = new LmdbNativeKernelBindings.KernelGroupLayout(
+				groupSlots.clone(), outputs);
+		LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
+				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
+				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0], new int[0],
+				List.of(), layout, false)
+						.withTypeMatrixRequests(new LmdbNativeKernelBindings.TypeMatrixRequest[] {
+								new LmdbNativeKernelBindings.TypeMatrixRequest(plan.subjectTypePredicate,
+										plan.objectTypePredicate, plan.predicateFilters, plan.edgePredicateSlot) });
+		return new Lowered(kernel, bindings);
+	}
+
+	static boolean typeMatrixAggregate(SlotPlan arg, int[] groupSlots, AggregateSpec[] aggregates,
+			LmdbNativeKernelIr.Having having) {
+		return having == null && LmdbTypeMatrixPlan.tryCreate(arg, groupSlots, aggregates) != null;
+	}
+
+	/**
+	 * Lowers COUNT(DISTINCT ?node) over two unrestricted all-predicate subject/object domains to a ROOT-grain set
+	 * intersection. The producer is unique by construction, so COUNT(*) is the exact aggregate representation and
+	 * unlocks the compressed view's bitmap/sparse cardinality fold.
+	 */
+	private static Lowered lowerNodeDomainIntersectionAggregate(SlotPlan arg, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates, LmdbNativeKernelIr.Having having) {
+		if (groupSlots.length != 0 || aggregates.length != 1 || having != null) {
+			return null;
+		}
+		AggregateSpec aggregate = aggregates[0];
+		if (aggregate.kind != AggKind.COUNT || !aggregate.distinct || aggregate.slot < 0
+				|| row.slots[aggregate.slot] != LmdbNativeAggregateCompiler.UNKNOWN
+				|| !(arg instanceof FilterPlan filterPlan)
+				|| !(filterPlan.arg instanceof PatternPlan outer)) {
+			return null;
+		}
+		NativeBooleanFilter condition = NativeFilterLease.inspect(filterPlan.filter);
+		if (condition instanceof RecordingNativeBooleanFilter recording) {
+			condition = NativeFilterLease.inspect(recording.delegate);
+		}
+		if (!(condition instanceof StatementPatternExistsFilter exists) || exists.varyingSlots.length != 1
+				|| exists.varyingSlots[0] != aggregate.slot || !unrestrictedNodeDomain(outer)
+				|| !unrestrictedNodeDomain(exists)) {
+			return null;
+		}
+		int outerField = outer.quadPositionOfSlot(aggregate.slot);
+		int existsField = nodeDomainField(exists, aggregate.slot);
+		if (!subjectOrObject(outerField) || !subjectOrObject(existsField)) {
+			return null;
+		}
+		LmdbNativeKernelIr.EnumerateNodeDomainIntersection producer = new LmdbNativeKernelIr.EnumerateNodeDomainIntersection(
+				0, 0);
+		LmdbNativeKernelIr.Aggregate terminal = new LmdbNativeKernelIr.Aggregate(new int[0],
+				new LmdbNativeKernelIr.AggregateOutput[] { LmdbNativeKernelIr.AggregateOutput.countStar() }, null,
+				LmdbNativeKernelIr.OutputMods.none());
+		Kernel kernel = new Kernel(1, List.of(producer), terminal);
+		LmdbNativeKernelBindings.KernelGroupLayout layout = new LmdbNativeKernelBindings.KernelGroupLayout(new int[0],
+				new LmdbNativeKernelBindings.AggOut[] {
+						new LmdbNativeKernelBindings.AggOut(aggregate, LmdbNativeKernelBindings.ENC_LONG_COUNT) });
+		LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
+				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
+				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0],
+				new int[] { aggregate.slot }, List.of(), layout, false)
+						.withNodeDomainIntersectionRequests(
+								new LmdbNativeKernelBindings.NodeDomainIntersectionRequest[] {
+										new LmdbNativeKernelBindings.NodeDomainIntersectionRequest(
+												outerField == TripleIndex.SUBJ_IDX,
+												existsField == TripleIndex.SUBJ_IDX) });
+		return new Lowered(kernel, bindings);
+	}
+
+	static boolean nodeDomainIntersectionAggregate(SlotPlan arg, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates, LmdbNativeKernelIr.Having having) {
+		return lowerNodeDomainIntersectionAggregate(arg, row, groupSlots, aggregates, having) != null;
+	}
+
+	private static boolean unrestrictedNodeDomain(PatternPlan pattern) {
+		return pattern.range == null && !pattern.contexts.isFixed() && !pattern.namedContextScope
+				&& !pattern.hasRepeatedSlot() && unboundContext(pattern.c)
+				&& allVariable(pattern.s, pattern.p, pattern.o);
+	}
+
+	private static boolean unrestrictedNodeDomain(StatementPatternExistsFilter pattern) {
+		return !pattern.contexts.isFixed() && !pattern.namedContextScope && unboundContext(pattern.c)
+				&& allVariable(pattern.s, pattern.p, pattern.o);
+	}
+
+	private static boolean unboundContext(Term term) {
+		return !term.isConstant() && !term.hasSlot();
+	}
+
+	private static boolean allVariable(Term... terms) {
+		for (Term term : terms) {
+			// EXISTS-local variables intentionally have no outer slot; Term.unbound still means an unrestricted
+			// variable here, whereas a constant would narrow the all-predicate node domain.
+			if (term.isConstant()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static int nodeDomainField(StatementPatternExistsFilter pattern, int slot) {
+		if (!pattern.s.isConstant() && pattern.s.slot == slot) {
+			return TripleIndex.SUBJ_IDX;
+		}
+		if (!pattern.o.isConstant() && pattern.o.slot == slot) {
+			return TripleIndex.OBJ_IDX;
+		}
+		return -1;
+	}
+
+	private static boolean subjectOrObject(int field) {
+		return field == TripleIndex.SUBJ_IDX || field == TripleIndex.OBJ_IDX;
 	}
 
 	/**

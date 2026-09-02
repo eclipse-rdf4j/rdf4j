@@ -31,8 +31,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Gate A milestone A2: the node-predicate projection ships behind switches that all default to off, and a store that
- * cannot fit the projection comes up healthy without it.
+ * Gate A milestone A2: the node-predicate projection ships enabled for outgoing nodes, and a store that cannot fit the
+ * projection comes up healthy without it.
  * <p>
  * The two directions are deliberately separate tests rather than one parameterised one, because they fail for different
  * reasons and a reviewer reading a failure needs to know which of the two switches is broken. The build-time switch is
@@ -65,15 +65,21 @@ class LmdbNodePredicateSwitchTest {
 		}
 	}
 
-	private void open(File dataDir, boolean construction, boolean serving) throws Exception {
+	private void open(File dataDir, Boolean construction, Boolean serving) throws Exception {
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
-		UnaryOperator<String> properties = name -> LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY
-				.equals(name) ? String.valueOf(construction) : null;
+		UnaryOperator<String> properties = name -> construction != null
+				&& LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY.equals(name)
+						? String.valueOf(construction)
+						: null;
 		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30, properties, 4);
-		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, String.valueOf(serving));
+		if (serving == null) {
+			System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
+		} else {
+			System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, String.valueOf(serving));
+		}
 		store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
 		tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(), store.newCommitDelta());
 
@@ -107,29 +113,29 @@ class LmdbNodePredicateSwitchTest {
 	}
 
 	/**
-	 * The shipped default. Nothing is built, nothing is charged, the base is a paged base that reports it cannot
-	 * enumerate predicates. The general predicate-domain sweep still answers the query without charging the optional
-	 * projection.
+	 * The shipped default builds and serves the outgoing projection. Incoming remains a separate opt-in because its
+	 * object domain includes referenced literals and costs materially more memory.
 	 */
 	@Test
-	void constructionDefaultsOffAndGeneralTraversalCostsNothingExtra(@TempDir File dataDir) throws Exception {
+	void constructionAndServingDefaultOn(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
 		LmdbDirectAdjacencyOptions defaults = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30, name -> null, 4);
-		assertThat(defaults.nodePredicateProjectionEnabled()).isFalse();
+		assertThat(defaults.nodePredicateProjectionEnabled()).isTrue();
 		assertThat(defaults.nodePredicateProjectionIncomingEnabled()).isFalse();
 
-		open(dataDir, false, true);
+		open(dataDir, null, null);
 
 		LmdbAdjacencyMemoryAccount account = store.memoryAccount();
-		assertThat(account.chargedBytes(MemoryKind.NODE_PREDICATE_NATIVE)).isZero();
-		assertThat(account.chargedBytes(MemoryKind.NODE_PREDICATE_JAVA)).isZero();
+		assertThat(account.chargedBytes(MemoryKind.NODE_PREDICATE_NATIVE)).isPositive();
+		assertThat(account.chargedBytes(MemoryKind.NODE_PREDICATE_JAVA)).isPositive();
 
 		LmdbInMemoryAdjacencyIndex base = store.publishedStateForTest().base();
-		assertThat(base.nodePredicateIndexOrNull()).isNull();
-		assertThat(base.supportsPredicateEnumeration(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT)).isFalse();
+		assertThat(base.nodePredicateIndexOrNull()).isNotNull();
+		assertThat(base.supportsPredicateEnumeration(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT)).isTrue();
+		assertThat(store.nodePredicateServingEnabled()).isTrue();
 
 		long before = store.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE);
-		assertThat(rowsFor(S1)).as("the general adjacency traversal remains available").hasSize(2);
+		assertThat(rowsFor(S1)).as("the default projection serves bound-node predicate enumeration").hasSize(2);
 		assertThat(store.snapshotMetrics().fallbacks(FallbackReason.PREDICATE_ENUMERATION_INCOMPLETE))
 				.isEqualTo(before);
 	}
@@ -193,8 +199,9 @@ class LmdbNodePredicateSwitchTest {
 		// Incoming alone is not a configuration the structure can hold, so it resolves to "no projection at all"
 		// rather than to a half-built one.
 		LmdbDirectAdjacencyOptions incomingWithoutOutgoing = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30,
-				name -> LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY.equals(name) ? "true"
-						: null,
+				name -> LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY.equals(name) ? "false"
+						: LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY.equals(name) ? "true"
+								: null,
 				4);
 		assertThat(incomingWithoutOutgoing.nodePredicateProjectionEnabled()).isFalse();
 		assertThat(incomingWithoutOutgoing.nodePredicateProjectionIncomingEnabled()).isFalse();

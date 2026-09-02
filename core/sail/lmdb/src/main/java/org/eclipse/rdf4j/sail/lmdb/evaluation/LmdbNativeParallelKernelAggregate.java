@@ -23,8 +23,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -41,6 +43,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Having;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.TypeMatrixContext;
 
 /**
  * Morsel parallelism for IR-lowered aggregate kernels (three-tier parity ExecPlan, Milestone 10B): partitions the
@@ -73,6 +76,15 @@ final class LmdbNativeParallelKernelAggregate {
 
 	private static final int FILL_ROWS = 256;
 	private static final int RANGES_PER_WORKER = 4;
+	private static final String SELECTED_OPERATOR_METRIC = "nativeIrSelectedOperatorActual";
+	private static final String PARTITION_COUNT_METRIC = "nativeIrParallelPartitionCountActual";
+	private static final String WORKERS_STARTED_METRIC = "nativeIrParallelWorkersStartedActual";
+	private static final String PEAK_ACTIVE_WORKERS_METRIC = "nativeIrParallelPeakActiveWorkersActual";
+	private static final String NON_ZERO_WORKERS_METRIC = "nativeIrParallelWorkersWithNonZeroWorkActual";
+	private static final String MORSELS_PER_WORKER_METRIC = "nativeIrParallelMorselsPerWorkerActual";
+	private static final String ROWS_PER_WORKER_METRIC = "nativeIrParallelRowsPerWorkerActual";
+	private static final String STEALS_METRIC = "nativeIrParallelStealsActual";
+	private static final String DECLINE_REASON_METRIC = "nativeIrParallelDeclineReasonActual";
 
 	private LmdbNativeParallelKernelAggregate() {
 	}
@@ -90,11 +102,17 @@ final class LmdbNativeParallelKernelAggregate {
 	static List<BindingSet> tryEvaluate(LmdbNativeKernelLowering.Lowered lowered,
 			NativeLmdbQuerySource.NativeAdjacency[] queryViews,
 			LmdbNativeKernelBindings.VariablePredicateViews queryVariableViews,
+			NativeLmdbQuerySource.NodeDomainIntersection[] queryNodeDomainIntersections,
+			TypeMatrixContext[] queryTypeMatrices,
 			LmdbNativeKernelBindings.BoundDomains domains, SlotPlan arg, RowState row,
 			NativeGroupIteration emitter, TupleExpr explainTarget,
 			Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory) {
 		if (!enabled() || !LmdbNativeParallelPipelines.enabled()) {
 			return null;
+		}
+		if (lowered.kernel.terminal instanceof LmdbNativeKernelIr.TypeMatrixAggregate typeMatrix) {
+			return tryEvaluateTypeMatrix(lowered, typeMatrix, queryTypeMatrices, domains, row, emitter, explainTarget,
+					kernelFactory);
 		}
 		LmdbNativeKernelBindings bindings = lowered.bindings;
 		KernelGroupLayout layout = bindings.groupLayout;
@@ -149,12 +167,17 @@ final class LmdbNativeParallelKernelAggregate {
 		int rootWildcard = rootAdjacency < 0 && rootDomain < 0
 				? LmdbNativeKernelPartitions.partitionableRootWildcard(lowered.kernel.pipeline)
 				: -1;
+		int rootNodeDomainIntersection = rootAdjacency < 0 && rootDomain < 0 && rootWildcard < 0
+				? LmdbNativeKernelPartitions.partitionableRootNodeDomainIntersection(lowered.kernel.pipeline)
+				: -1;
 		// A raw scan root range-partitions instead, the way the interpreted parallel engine partitions any root
 		// pattern scan (plan 32 M3) — a kernel must not lose its parallelism merely for being lowered onto a scan.
 		int rootScan = rootAdjacency < 0 && rootDomain < 0 && rootWildcard < 0
-				? LmdbNativeKernelPartitions.partitionableRootScan(lowered.kernel.pipeline)
-				: -1;
-		if (rootAdjacency < 0 && rootDomain < 0 && rootWildcard < 0 && rootScan < 0) {
+				&& rootNodeDomainIntersection < 0
+						? LmdbNativeKernelPartitions.partitionableRootScan(lowered.kernel.pipeline)
+						: -1;
+		if (rootAdjacency < 0 && rootDomain < 0 && rootWildcard < 0 && rootNodeDomainIntersection < 0
+				&& rootScan < 0) {
 			return debugDecline(explainTarget, "root-not-partitionable");
 		}
 		if (rootScan >= 0 && bindings.scanOrders[rootScan] != null) {
@@ -174,7 +197,9 @@ final class LmdbNativeParallelKernelAggregate {
 		if (desiredWorkers < 2) {
 			return debugDecline(explainTarget, "single-thread");
 		}
-		double totalWork = arg.estimate(row);
+		double totalWork = rootNodeDomainIntersection >= 0
+				? queryNodeDomainIntersections[rootNodeDomainIntersection].estimatedWork()
+				: arg.estimate(row);
 		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
 			return debugDecline(explainTarget, "below-threshold");
 		}
@@ -196,8 +221,14 @@ final class LmdbNativeParallelKernelAggregate {
 		} else {
 			rootKeys = rootAdjacency >= 0 ? queryViews[rootAdjacency].keyCount()
 					: rootDomain >= 0 ? domains.length(rootDomain)
-							: queryVariableViews.wildcards()[rootWildcard].predicateCount();
+							: rootWildcard >= 0 ? queryVariableViews.wildcards()[rootWildcard].predicateCount()
+									: queryNodeDomainIntersections[rootNodeDomainIntersection].partitionCount();
 			if (rootWildcard >= 0) {
+				if (rootKeys < 2L) {
+					return debugDecline(explainTarget, "root-too-small");
+				}
+				desiredWorkers = (int) Math.min(desiredWorkers, rootKeys);
+			} else if (rootNodeDomainIntersection >= 0) {
 				if (rootKeys < 2L) {
 					return debugDecline(explainTarget, "root-too-small");
 				}
@@ -268,7 +299,7 @@ final class LmdbNativeParallelKernelAggregate {
 				return debugDecline(explainTarget, "snapshot-unavailable");
 			}
 			return execute(lowered, (Aggregate) workerKernelFinal.terminal, rootAdjacency, rootDomain, rootWildcard,
-					rootScan,
+					rootNodeDomainIntersection, rootScan,
 					domains, rootKeys, scanPartitions, sources, threads, row, emitter, workerFactory);
 		} finally {
 			cleanupFailure = LmdbNativeParallelPipelines.closeSources(sources, cleanupFailure);
@@ -282,8 +313,245 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 	}
 
+	private static List<BindingSet> tryEvaluateTypeMatrix(LmdbNativeKernelLowering.Lowered lowered,
+			LmdbNativeKernelIr.TypeMatrixAggregate terminal, TypeMatrixContext[] queryTypeMatrices,
+			LmdbNativeKernelBindings.BoundDomains domains, RowState row, NativeGroupIteration emitter,
+			TupleExpr explainTarget, Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory) {
+		if (queryTypeMatrices == null || terminal.view >= queryTypeMatrices.length) {
+			return debugDecline(explainTarget, "type-matrix-view-unavailable");
+		}
+		if (!LmdbNativeKernelPartitions.entryReseedable(emitter.source, emitter.layout, emitter.base, row)) {
+			return debugDecline(explainTarget, "correlated-entry");
+		}
+		int desiredWorkers = LmdbNativeParallelPipelines.configuredThreads();
+		if (desiredWorkers < 2) {
+			return debugDecline(explainTarget, "single-thread");
+		}
+		TypeMatrixContext queryMatrix = queryTypeMatrices[terminal.view];
+		long typeRoots = queryMatrix.sourceTypes.keyCount();
+		long estimatedWork = typeRoots;
+		for (NativeLmdbQuerySource.NativeAdjacency edge : queryMatrix.edges) {
+			estimatedWork = Math.addExact(estimatedWork, edge.keyCount());
+		}
+		long threshold = Long.getLong(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
+				LmdbNativeParallelPrefixRuns.DEFAULT_PARALLEL_MIN_ESTIMATE);
+		if (threshold > 0L && estimatedWork < threshold || typeRoots < 2L) {
+			return debugDecline(explainTarget, "below-threshold");
+		}
+		long targetTasks = Math.max(2L, (long) desiredWorkers * RANGES_PER_WORKER);
+		long window = Math.max(1L, Math.min(8_192L, (typeRoots + targetTasks - 1L) / targetTasks));
+		ArrayList<TypeMatrixTask> tasks = new ArrayList<>();
+		for (long from = 0L; from < typeRoots; from += window) {
+			tasks.add(new TypeMatrixTask(from, Math.min(typeRoots, from + window)));
+		}
+		if (tasks.size() < 2) {
+			return debugDecline(explainTarget, "root-too-small");
+		}
+		desiredWorkers = Math.min(desiredWorkers, tasks.size());
+		LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines.tryReserveTasks(false,
+				desiredWorkers);
+		if (reservation == null || reservation.grantedWorkers() < 2) {
+			if (reservation != null) {
+				reservation.close();
+			}
+			return debugDecline(explainTarget, "task-budget");
+		}
+		int workers = reservation.grantedWorkers();
+		NativeLmdbQuerySource.ParallelSource[] sources = null;
+		Throwable cleanupFailure = null;
+		try {
+			try {
+				sources = emitter.source.openParallelSources(workers);
+			} catch (IOException problem) {
+				return debugDecline(explainTarget, "snapshot-unavailable-" + problem);
+			}
+			if (sources == null || sources.length != workers) {
+				return debugDecline(explainTarget, "snapshot-unavailable");
+			}
+			@SuppressWarnings("unchecked")
+			ConcurrentLinkedQueue<TypeMatrixTask>[] queues = new ConcurrentLinkedQueue[workers];
+			for (int worker = 0; worker < workers; worker++) {
+				queues[worker] = new ConcurrentLinkedQueue<>();
+			}
+			for (int task = 0; task < tasks.size(); task++) {
+				queues[task % workers].add(tasks.get(task));
+			}
+			ParallelTelemetry telemetry = new ParallelTelemetry(workers, tasks.size(), "TypeMatrixAggregate");
+			AtomicReference<Throwable> failure = new AtomicReference<>();
+			ArrayList<Future<HashMap<LongsKey, long[]>>> futures = new ArrayList<>(workers);
+			LmdbFusedSipFactorizedRuntime.Session fusedParent = LmdbFusedSipFactorizedRuntime.currentOrNull();
+			for (int worker = 0; worker < workers; worker++) {
+				int workerIndex = worker;
+				NativeLmdbQuerySource workerSource = sources[worker];
+				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
+					try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
+							.inherit(fusedParent)) {
+						telemetry.workerReady(workerIndex);
+						return telemetry.runActive(() -> runTypeMatrixWorker(lowered, terminal, domains, emitter,
+								workerSource, workerIndex, queues, queryMatrix.predicateIds, kernelFactory, failure,
+								telemetry));
+					} catch (Throwable problem) {
+						failure.compareAndSet(null, problem);
+						throw problem;
+					}
+				}));
+			}
+			boolean interrupted = telemetry.releaseWorkers(futures.size(), failure);
+			HashMap<LongsKey, long[]> merged = new HashMap<>();
+			Throwable firstProblem = null;
+			for (Future<HashMap<LongsKey, long[]>> future : futures) {
+				try {
+					HashMap<LongsKey, long[]> partial = future.get();
+					for (Map.Entry<LongsKey, long[]> entry : partial.entrySet()) {
+						long[] target = merged.computeIfAbsent(entry.getKey(),
+								ignored -> new long[terminal.outputCount]);
+						for (int output = 0; output < target.length; output++) {
+							target[output] = FactorizedTail.addCounts(target[output], entry.getValue()[output]);
+						}
+					}
+				} catch (InterruptedException problem) {
+					interrupted = true;
+					if (firstProblem == null) {
+						firstProblem = problem;
+					}
+				} catch (ExecutionException problem) {
+					if (firstProblem == null) {
+						firstProblem = problem.getCause() == null ? problem : problem.getCause();
+					}
+				}
+			}
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+			if (firstProblem == null) {
+				firstProblem = failure.get();
+			}
+			if (firstProblem != null) {
+				LmdbNativeJaninoCodegen.rethrowValidationFailure(firstProblem);
+				return null;
+			}
+			KernelGroupLayout layout = lowered.bindings.groupLayout;
+			int stride = terminal.stride();
+			long[] packed = new long[Math.max(1, merged.size() * stride)];
+			int rowIndex = 0;
+			for (Map.Entry<LongsKey, long[]> entry : merged.entrySet()) {
+				int base = rowIndex++ * stride;
+				packed[base] = entry.getKey().ids[0];
+				packed[base + 1] = entry.getKey().ids[1];
+				System.arraycopy(entry.getValue(), 0, packed, base + 2, terminal.outputCount);
+			}
+			List<BindingSet> results = new ArrayList<>(merged.size());
+			for (int result = 0; result < rowIndex; result++) {
+				results.add(emitter.kernelGroupRow(packed, result * stride, layout, null));
+			}
+			PARALLEL_RUNS.incrementAndGet();
+			LmdbNativeTypeMatrix.PARALLEL_ADJACENCY_MORSELS.addAndGet(tasks.size());
+			telemetry.publish(explainTarget);
+			return results;
+		} finally {
+			cleanupFailure = LmdbNativeParallelPipelines.closeSources(sources, cleanupFailure);
+			reservation.close();
+			if (cleanupFailure instanceof RuntimeException runtimeException) {
+				throw runtimeException;
+			}
+			if (cleanupFailure instanceof Error error) {
+				throw error;
+			}
+		}
+	}
+
+	private static HashMap<LongsKey, long[]> runTypeMatrixWorker(LmdbNativeKernelLowering.Lowered lowered,
+			LmdbNativeKernelIr.TypeMatrixAggregate terminal, LmdbNativeKernelBindings.BoundDomains domains,
+			NativeGroupIteration emitter, NativeLmdbQuerySource source, int worker,
+			ConcurrentLinkedQueue<TypeMatrixTask>[] queues, long[] predicateIds,
+			Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory, AtomicReference<Throwable> failure,
+			ParallelTelemetry telemetry) throws IOException {
+		RowState workerRow = new RowState(source, emitter.layout, emitter.base, emitter.explainTarget,
+				emitter.cancellation);
+		if (!NativeRowSeeder.seed(workerRow.slots, emitter.layout, emitter.base, source)) {
+			throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-seed-unavailable");
+		}
+		workerRow.recomputeBoundMask();
+		LmdbNativeKernelBindings.TypeMatrixRequest request = lowered.bindings.typeMatrixRequests[terminal.view];
+		HashMap<LongsKey, long[]> merged = new HashMap<>();
+		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+			NativeLmdbQuerySource.NativeAdjacency sourceTypes = probe.adjacency(request.subjectTypePredicate(), true);
+			NativeLmdbQuerySource.NativeAdjacency targetTypes = terminal.linkage
+					? probe.adjacency(request.objectTypePredicate(), true)
+					: null;
+			NativeLmdbQuerySource.LabelSynopsis targetTypeLabels = terminal.linkage
+					? probe.labelSynopsis(request.objectTypePredicate(), true)
+					: null;
+			NativeLmdbQuerySource.NativeAdjacency[] edges = new NativeLmdbQuerySource.NativeAdjacency[predicateIds.length];
+			if (sourceTypes == null || !sourceTypes.runsNeighborOrdered() || !sourceTypes.supportsKeyEnumeration()
+					|| targetTypes != null && !targetTypes.runsNeighborOrdered()) {
+				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-type-matrix-view-unavailable");
+			}
+			for (int predicate = 0; predicate < predicateIds.length; predicate++) {
+				edges[predicate] = probe.adjacency(predicateIds[predicate], true);
+				if (edges[predicate] == null || !edges[predicate].runsNeighborOrdered()
+						|| !edges[predicate].supportsKeyEnumeration()) {
+					throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-edge-order-unavailable");
+				}
+			}
+			JaninoKernel kernel = kernelFactory.apply(lowered.kernel);
+			if (kernel == null) {
+				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("kernel-instance-unavailable");
+			}
+			long[] buffer = new long[terminal.stride() * FILL_ROWS];
+			try {
+				boolean ranMorsel = false;
+				while (failure.get() == null) {
+					TypeMatrixTask task = queues[worker].poll();
+					boolean stolen = false;
+					if (task == null) {
+						for (int victim = 1; victim < queues.length && task == null; victim++) {
+							task = queues[(worker + victim) % queues.length].poll();
+						}
+						stolen = task != null;
+					}
+					if (task == null) {
+						break;
+					}
+					telemetry.morsel(worker, task.to - task.from, stolen);
+					TypeMatrixContext matrix = new TypeMatrixContext(sourceTypes, targetTypes, targetTypeLabels, edges,
+							predicateIds, task.from, task.to);
+					LmdbNativeJaninoCodegen.bind(kernel,
+							lowered.bindings.context(new NativeLmdbQuerySource.NativeAdjacency[0], domains,
+									workerRow, null)
+									.withTypeMatrices(new TypeMatrixContext[] { matrix })
+									.withTypeMatrixAccumulation(),
+							"irAggregateTypeMatrixParallel");
+					kernel.runBound();
+					ranMorsel = true;
+				}
+				if (ranMorsel) {
+					int filled;
+					while ((filled = LmdbNativeJaninoCodegen.fill(kernel, buffer, FILL_ROWS,
+							"irAggregateTypeMatrixParallel")) > 0) {
+						telemetry.rows(worker, filled);
+						for (int rowIndex = 0; rowIndex < filled; rowIndex++) {
+							int base = rowIndex * terminal.stride();
+							LongsKey key = new LongsKey(new long[] { buffer[base], buffer[base + 1] });
+							long[] counts = merged.computeIfAbsent(key, ignored -> new long[terminal.outputCount]);
+							for (int output = 0; output < counts.length; output++) {
+								counts[output] = FactorizedTail.addCounts(counts[output], buffer[base + 2 + output]);
+							}
+						}
+					}
+				}
+			} finally {
+				kernel.close();
+			}
+		}
+		return merged;
+	}
+
+	private record TypeMatrixTask(long from, long to) {
+	}
+
 	private static List<BindingSet> execute(LmdbNativeKernelLowering.Lowered lowered, Aggregate workerAggregate,
-			int rootAdjacency, int rootDomain, int rootWildcard, int rootScan,
+			int rootAdjacency, int rootDomain, int rootWildcard, int rootNodeDomainIntersection, int rootScan,
 			LmdbNativeKernelBindings.BoundDomains domains, long rootKeys, LmdbRootScanPartition[] scanPartitions,
 			NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
 			NativeGroupIteration emitter, Supplier<JaninoKernel> kernelFactory) {
@@ -293,6 +561,23 @@ final class LmdbNativeParallelKernelAggregate {
 		ConcurrentLinkedQueue<LmdbRootScanPartition> scanQueue = rootScan >= 0
 				? new ConcurrentLinkedQueue<>(Arrays.asList(scanPartitions))
 				: null;
+		long[][] initialRanges = new long[threads][];
+		LmdbRootScanPartition[] initialScanPartitions = new LmdbRootScanPartition[threads];
+		for (int worker = 0; worker < threads; worker++) {
+			if (rootScan >= 0) {
+				initialScanPartitions[worker] = scanQueue.poll();
+			} else {
+				initialRanges[worker] = ranges.poll();
+			}
+		}
+		int partitionCount = rootScan >= 0 ? scanPartitions.length : ranges.size();
+		for (long[] initialRange : initialRanges) {
+			if (initialRange != null) {
+				partitionCount++;
+			}
+		}
+		ParallelTelemetry telemetry = new ParallelTelemetry(threads, partitionCount,
+				rootOperator(rootAdjacency, rootDomain, rootWildcard, rootNodeDomainIntersection, rootScan));
 		AtomicReference<Throwable> failure = new AtomicReference<>();
 		LmdbFusedSipFactorizedRuntime.Session fusedParent = LmdbFusedSipFactorizedRuntime.currentOrNull();
 		// NOTE (hedge plan M8): workers deliberately do NOT inherit the dispatch thread's probe deadline yet. The row
@@ -302,14 +587,17 @@ final class LmdbNativeParallelKernelAggregate {
 		// twin's cancellation/unwind pattern.
 		ArrayList<Future<HashMap<LongsKey, Partial>>> futures = new ArrayList<>(threads);
 		for (int w = 0; w < threads; w++) {
+			int worker = w;
 			NativeLmdbQuerySource source = sources[w];
 			try {
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
 					try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
 							.inherit(fusedParent)) {
-						return runWorker(lowered, workerAggregate, rootAdjacency, rootDomain, rootWildcard, rootScan,
-								domains,
-								source, emitter, ranges, scanQueue, kernelFactory, failure);
+						telemetry.workerReady(worker);
+						return telemetry.runActive(() -> runWorker(lowered, workerAggregate, rootAdjacency,
+								rootDomain, rootWildcard, rootNodeDomainIntersection, rootScan, domains, source,
+								emitter, initialRanges[worker], initialScanPartitions[worker], ranges, scanQueue,
+								kernelFactory, failure, worker, telemetry));
 					} catch (Throwable t) {
 						failure.compareAndSet(null, t);
 						throw t;
@@ -320,10 +608,10 @@ final class LmdbNativeParallelKernelAggregate {
 				break;
 			}
 		}
+		boolean interrupted = telemetry.releaseWorkers(futures.size(), failure);
 		// every future must be terminal before the caller closes the worker transactions
 		ArrayList<HashMap<LongsKey, Partial>> workerResults = new ArrayList<>(futures.size());
 		Throwable firstProblem = null;
-		boolean interrupted = false;
 		for (Future<HashMap<LongsKey, Partial>> future : futures) {
 			while (true) {
 				try {
@@ -481,6 +769,7 @@ final class LmdbNativeParallelKernelAggregate {
 			results.add(emitter.kernelGroupRow(rows, r * stride, layout, mergeHooks));
 		}
 		PARALLEL_RUNS.incrementAndGet();
+		telemetry.publish(emitter.explainTarget);
 		return results;
 	}
 
@@ -516,10 +805,12 @@ final class LmdbNativeParallelKernelAggregate {
 
 	private static HashMap<LongsKey, Partial> runWorker(LmdbNativeKernelLowering.Lowered lowered,
 			Aggregate aggregate, int rootAdjacency,
-			int rootDomain, int rootWildcard, int rootScan, LmdbNativeKernelBindings.BoundDomains domains,
+			int rootDomain, int rootWildcard, int rootNodeDomainIntersection, int rootScan,
+			LmdbNativeKernelBindings.BoundDomains domains,
 			NativeLmdbQuerySource source, NativeGroupIteration emitter,
+			long[] initialRange, LmdbRootScanPartition initialScanPartition,
 			Queue<long[]> ranges, Queue<LmdbRootScanPartition> scanQueue, Supplier<JaninoKernel> kernelFactory,
-			AtomicReference<Throwable> failure)
+			AtomicReference<Throwable> failure, int worker, ParallelTelemetry telemetry)
 			throws IOException {
 		LmdbNativeKernelBindings bindings = lowered.bindings;
 		KernelGroupLayout layout = bindings.groupLayout;
@@ -557,26 +848,35 @@ final class LmdbNativeParallelKernelAggregate {
 			if (variableViews == null) {
 				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-node-predicates-unavailable");
 			}
+			NativeLmdbQuerySource.NodeDomainIntersection[] nodeDomainIntersections = LmdbNativeKernelBindings
+					.requestNodeDomainIntersections(bindings, probe);
+			if (nodeDomainIntersections == null) {
+				throw new LmdbNativeKernelPartitions.ParallelKernelDecline(
+						"worker-node-domain-intersection-unavailable");
+			}
 			if (lowered.kernel.requirements.scans > 0) {
 				scanner = new LmdbNativeKernelScanner(workerRow, bindings.scanSites);
 			}
 			int stride = lowered.kernel.stride();
 			long[] buffer = new long[stride * FILL_ROWS];
+			boolean initial = true;
 			while (failure.get() == null) {
 				// One unit of work per kernel instance: a key-ordinal window, or one planned scan range.
 				long[] range = null;
 				LmdbRootScanPartition scanPartition = null;
 				if (rootScan >= 0) {
-					scanPartition = scanQueue.poll();
+					scanPartition = initial ? initialScanPartition : scanQueue.poll();
 					if (scanPartition == null) {
 						break;
 					}
 				} else {
-					range = ranges.poll();
+					range = initial ? initialRange : ranges.poll();
 					if (range == null) {
 						break;
 					}
 				}
+				telemetry.morsel(worker, rootScan >= 0 ? 1L : range[1] - range[0], !initial);
+				initial = false;
 				JaninoKernel kernel = kernelFactory.get();
 				if (kernel == null) {
 					throw new LmdbNativeKernelPartitions.ParallelKernelDecline("kernel-instance-unavailable");
@@ -598,6 +898,7 @@ final class LmdbNativeParallelKernelAggregate {
 					NativeLmdbQuerySource.NativeAdjacency[] windowViews = views;
 					LmdbNativeKernelBindings.BoundDomains windowDomains = domains;
 					LmdbNativeKernelBindings.VariablePredicateViews windowVariableViews = variableViews;
+					NativeLmdbQuerySource.NodeDomainIntersection[] windowNodeDomainIntersections = nodeDomainIntersections;
 					if (rootScan >= 0) {
 						// the scanner is per worker and re-aimed per unit; the generated code is untouched, exactly as
 						// a key window leaves it untouched for an adjacency root
@@ -608,20 +909,25 @@ final class LmdbNativeParallelKernelAggregate {
 								range[0], range[1]);
 					} else if (rootDomain >= 0) {
 						windowDomains = domains.window(rootDomain, range[0], range[1]);
-					} else {
+					} else if (rootWildcard >= 0) {
 						NativeLmdbQuerySource.WildcardAdjacency[] wildcards = variableViews.wildcards().clone();
 						wildcards[rootWildcard] = new LmdbNativeKernelPartitions.WildcardPredicateWindow(
 								wildcards[rootWildcard], range[0], range[1]);
 						windowVariableViews = new LmdbNativeKernelBindings.VariablePredicateViews(
 								variableViews.nodePredicates(), variableViews.dynamics(), wildcards);
+					} else {
+						windowNodeDomainIntersections = nodeDomainIntersections.clone();
+						windowNodeDomainIntersections[rootNodeDomainIntersection] = new LmdbNativeKernelPartitions.NodeDomainIntersectionWindow(
+								nodeDomainIntersections[rootNodeDomainIntersection], range[0], range[1]);
 					}
 					LmdbNativeJaninoCodegen.bind(kernel,
 							bindings.context(windowViews, windowDomains, workerRow, hooks, scanner,
-									windowVariableViews),
+									windowVariableViews).withNodeDomainIntersections(windowNodeDomainIntersections),
 							"irAggregateParallel");
 					int filled;
 					while ((filled = LmdbNativeJaninoCodegen.fill(kernel, buffer, FILL_ROWS,
 							"irAggregateParallel")) > 0) {
+						telemetry.rows(worker, filled);
 						for (int r = 0; r < filled; r++) {
 							mergeRow(merged, buffer, r * stride, layout, aggregate, hooks);
 						}
@@ -814,10 +1120,142 @@ final class LmdbNativeParallelKernelAggregate {
 	private static List<BindingSet> debugDecline(TupleExpr explainTarget, String reason) {
 		LmdbNativeAttemptMetrics.recordDecline(explainTarget,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL, reason);
+		LmdbNativeExplain.setRuntimeMetric(explainTarget, DECLINE_REASON_METRIC, reason);
 		if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 			System.err.println("[ir-aggregate-parallel] decline: " + reason);
 		}
 		return null;
+	}
+
+	private static String rootOperator(int rootAdjacency, int rootDomain, int rootWildcard,
+			int rootNodeDomainIntersection, int rootScan) {
+		if (rootNodeDomainIntersection >= 0) {
+			return "EnumerateNodeDomainIntersection";
+		}
+		if (rootAdjacency >= 0) {
+			return "EnumerateAdjKeys";
+		}
+		if (rootDomain >= 0) {
+			return "EnumerateDomain";
+		}
+		if (rootWildcard >= 0) {
+			return "EnumerateWildcardPredicates";
+		}
+		if (rootScan >= 0) {
+			return "ScanQuad";
+		}
+		throw new IllegalArgumentException("no partitionable root operator");
+	}
+
+	@FunctionalInterface
+	private interface WorkerTask<T> {
+		T run() throws IOException;
+	}
+
+	/** Query-local worker-overlap and ownership evidence, published only after an exact successful merge. */
+	private static final class ParallelTelemetry {
+		private final int workers;
+		private final int partitions;
+		private final String operator;
+		private final CountDownLatch ready;
+		private final CountDownLatch start = new CountDownLatch(1);
+		private final CountDownLatch activeBarrier;
+		private final AtomicInteger workersStarted = new AtomicInteger();
+		private final AtomicInteger active = new AtomicInteger();
+		private final AtomicInteger peakActive = new AtomicInteger();
+		private final AtomicLong steals = new AtomicLong();
+		private final long[] morsels;
+		private final long[] rows;
+		private final long[] physicalWork;
+
+		private ParallelTelemetry(int workers, int partitions, String operator) {
+			this.workers = workers;
+			this.partitions = partitions;
+			this.operator = operator;
+			ready = new CountDownLatch(workers);
+			activeBarrier = new CountDownLatch(workers);
+			morsels = new long[workers];
+			rows = new long[workers];
+			physicalWork = new long[workers];
+		}
+
+		private void workerReady(int worker) throws InterruptedException {
+			if (worker < 0 || worker >= workers) {
+				throw new IllegalArgumentException("invalid worker ordinal " + worker);
+			}
+			workersStarted.incrementAndGet();
+			ready.countDown();
+			start.await();
+		}
+
+		private <T> T runActive(WorkerTask<T> task) throws IOException, InterruptedException {
+			int now = active.incrementAndGet();
+			peakActive.accumulateAndGet(now, Math::max);
+			activeBarrier.countDown();
+			try {
+				activeBarrier.await();
+				return task.run();
+			} finally {
+				active.decrementAndGet();
+			}
+		}
+
+		private boolean releaseWorkers(int submitted, AtomicReference<Throwable> failure) {
+			for (int missing = submitted; missing < workers; missing++) {
+				ready.countDown();
+				activeBarrier.countDown();
+			}
+			boolean interrupted = false;
+			try {
+				ready.await();
+			} catch (InterruptedException problem) {
+				interrupted = true;
+				failure.compareAndSet(null, problem);
+			} finally {
+				start.countDown();
+			}
+			return interrupted;
+		}
+
+		private void morsel(int worker, long work, boolean stolen) {
+			morsels[worker] = Math.addExact(morsels[worker], 1L);
+			physicalWork[worker] = Math.addExact(physicalWork[worker], Math.max(0L, work));
+			if (stolen) {
+				steals.incrementAndGet();
+			}
+		}
+
+		private void rows(int worker, int count) {
+			rows[worker] = Math.addExact(rows[worker], count);
+		}
+
+		private void publish(TupleExpr target) {
+			LmdbNativeExplain.setRuntimeMetric(target, SELECTED_OPERATOR_METRIC, operator);
+			LmdbNativeExplain.setRuntimeMetric(target, PARTITION_COUNT_METRIC, partitions);
+			LmdbNativeExplain.setRuntimeMetric(target, WORKERS_STARTED_METRIC, workersStarted.get());
+			LmdbNativeExplain.setRuntimeMetric(target, PEAK_ACTIVE_WORKERS_METRIC, peakActive.get());
+			long nonZeroWorkers = 0L;
+			for (long work : physicalWork) {
+				if (work > 0L) {
+					nonZeroWorkers++;
+				}
+			}
+			LmdbNativeExplain.setRuntimeMetric(target, NON_ZERO_WORKERS_METRIC, nonZeroWorkers);
+			LmdbNativeExplain.setRuntimeMetric(target, MORSELS_PER_WORKER_METRIC, render(morsels));
+			LmdbNativeExplain.setRuntimeMetric(target, ROWS_PER_WORKER_METRIC, render(rows));
+			LmdbNativeExplain.setRuntimeMetric(target, STEALS_METRIC, steals.get());
+		}
+
+		private static String render(long[] values) {
+			StringBuilder rendered = new StringBuilder();
+			for (int worker = 0; worker < values.length; worker++) {
+				if (worker > 0) {
+					rendered.append(',');
+				}
+				rendered.append(worker).append(':').append(values[worker]);
+			}
+			return rendered.toString();
+		}
 	}
 
 	/** One merged group's partial aggregate states, index-aligned with the layout's outputs. */

@@ -314,13 +314,10 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				: LmdbAdjacencyAggregatePlan.tryCreate(arg, groupSlots, aggregates);
 		PrefixRunGroupCandidate prefixRun = (serialOnlyAggregates || existsIntersection != null) ? null
 				: tryPrefixRunGroupPlan(stepSource, arg, groupSlots, aggregates, havingCondition);
-		if (!serialOnlyAggregates && prefixRun == null && existsIntersection == null && adjacencyAggregate == null
-				&& havingCondition == null) {
-			QueryEvaluationStep typeMatrix = tryTypeMatrixStep(stepSource, arg, groupSlots, aggregates, originalExpr);
-			if (typeMatrix != null) {
-				return typeMatrix;
-			}
-		}
+		LmdbNativeTypeMatrix typeMatrix = !serialOnlyAggregates && prefixRun == null && existsIntersection == null
+				&& adjacencyAggregate == null && havingCondition == null
+						? tryTypeMatrixStep(stepSource, arg, groupSlots, aggregates, originalExpr)
+						: null;
 		layout.freeze(slotNames);
 		NativeGroupStep groupStep = new NativeGroupStep(stepSource, arg, layout, groupSlots, aggregates, strictCompare,
 				strategy, originalExpr, context, optionalOnlyNames, prefixRun == null ? null : prefixRun.pattern,
@@ -329,6 +326,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				prefixRun == null ? null : prefixRun.rootKindFilter,
 				prefixRun == null ? 0L : prefixRun.minRunCount, existsIntersection, havingCondition);
 		groupStep.adjacencyAggregate = adjacencyAggregate;
+		groupStep.typeMatrix = typeMatrix;
 		groupStep.rootEvaluationScoped = rootEvaluationScoped;
 		return groupStep;
 	}
@@ -1078,112 +1076,23 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * keys = subject type + object type). Join filters must read only the edge predicate slot; every aggregate must be
 	 * a whole-row COUNT. See {@link LmdbNativeTypeMatrix}.
 	 */
-	private QueryEvaluationStep tryTypeMatrixStep(NativeLmdbQuerySource stepSource, SlotPlan arg, int[] groupSlots,
+	private LmdbNativeTypeMatrix tryTypeMatrixStep(NativeLmdbQuerySource stepSource, SlotPlan arg, int[] groupSlots,
 			AggregateSpec[] aggregates, TupleExpr originalExpr) {
-		if (groupSlots.length != 2 || aggregates.length == 0 || !(arg instanceof MultiJoinPlan)) {
+		LmdbTypeMatrixPlan plan = LmdbTypeMatrixPlan.tryCreate(arg, groupSlots, aggregates);
+		if (plan == null) {
 			return null;
-		}
-		MultiJoinPlan join = (MultiJoinPlan) arg;
-		if (join.children.length < 2 || join.children.length > 3) {
-			return null;
-		}
-		PatternPlan[] patterns = new PatternPlan[join.children.length];
-		java.util.HashSet<Integer> seenSlots = new java.util.HashSet<>();
-		for (int i = 0; i < join.children.length; i++) {
-			if (!(join.children[i] instanceof PatternPlan)) {
-				return null;
-			}
-			PatternPlan pattern = (PatternPlan) join.children[i];
-			if (!prefixSafePattern(pattern) || pattern.range != null || pattern.c.hasSlot()
-					|| pattern.c.isConstant()) {
-				return null;
-			}
-			patterns[i] = pattern;
-		}
-		// classify: type patterns have a constant predicate and slotted subject+object; the edge pattern has
-		// slots in all three positions
-		PatternPlan edge = null;
-		java.util.ArrayList<PatternPlan> typePatterns = new java.util.ArrayList<>();
-		for (PatternPlan pattern : patterns) {
-			if (pattern.p.isConstant() && pattern.s.hasSlot() && pattern.o.hasSlot()) {
-				typePatterns.add(pattern);
-			} else if (pattern.s.hasSlot() && pattern.p.hasSlot() && pattern.o.hasSlot()) {
-				if (edge != null) {
-					return null;
-				}
-				edge = pattern;
-			} else {
-				return null;
-			}
-		}
-		if (edge == null || typePatterns.size() != join.children.length - 1) {
-			return null;
-		}
-		PatternPlan subjectType = null;
-		PatternPlan objectType = null;
-		for (PatternPlan typePattern : typePatterns) {
-			if (typePattern.s.slot == edge.s.slot) {
-				if (subjectType != null) {
-					return null;
-				}
-				subjectType = typePattern;
-			} else if (typePattern.s.slot == edge.o.slot) {
-				if (objectType != null) {
-					return null;
-				}
-				objectType = typePattern;
-			} else {
-				return null;
-			}
-		}
-		if (subjectType == null || (join.children.length == 3 && objectType == null)) {
-			return null;
-		}
-		int subjectTypeKeySlot = subjectType.o.slot;
-		int secondKeySlot = objectType != null ? objectType.o.slot : edge.p.slot;
-		if (!slotContained(groupSlots, subjectTypeKeySlot) || !slotContained(groupSlots, secondKeySlot)
-				|| subjectTypeKeySlot == secondKeySlot) {
-			return null;
-		}
-		// all participating slots must be distinct variables — shared slots beyond the join keys would add
-		// equality constraints the co-scan does not model
-		int[] roleSlots = objectType != null
-				? new int[] { edge.s.slot, edge.p.slot, edge.o.slot, subjectTypeKeySlot, objectType.o.slot }
-				: new int[] { edge.s.slot, edge.p.slot, edge.o.slot, subjectTypeKeySlot };
-		for (int slot : roleSlots) {
-			if (!seenSlots.add(slot)) {
-				return null;
-			}
-		}
-		for (MaskedFilter filter : join.filters) {
-			if (filter.mask < 0L || (filter.mask & ~(1L << edge.p.slot)) != 0L) {
-				return null;
-			}
-		}
-		for (AggregateSpec spec : aggregates) {
-			if (spec.kind != AggKind.COUNT || spec.distinct) {
-				return null;
-			}
-			if (spec.slot >= 0 && !seenSlots.contains(spec.slot)) {
-				return null;
-			}
 		}
 		String[] groupNames = new String[groupSlots.length];
-		int subjectTypeKeyPosition = -1;
 		for (int i = 0; i < groupSlots.length; i++) {
 			groupNames[i] = slotNames.get(groupSlots[i]);
-			if (groupSlots[i] == subjectTypeKeySlot) {
-				subjectTypeKeyPosition = i;
-			}
 		}
 		String[] aggregateNames = new String[aggregates.length];
 		for (int i = 0; i < aggregates.length; i++) {
 			aggregateNames[i] = aggregates[i].name;
 		}
-		layout.freeze(slotNames);
-		return new LmdbNativeTypeMatrix(stepSource, subjectType.p.constant,
-				objectType != null ? objectType.p.constant : UNKNOWN, subjectTypeKeyPosition, groupNames,
-				aggregateNames, join.filters, edge.p.slot, layout, strategy, originalExpr, context);
+		return new LmdbNativeTypeMatrix(stepSource, plan.subjectTypePredicate, plan.objectTypePredicate,
+				plan.subjectTypeKeyPosition, groupNames, aggregateNames, plan.predicateFilters, plan.edgePredicateSlot,
+				layout, strategy, originalExpr, context);
 	}
 
 	private boolean allCountEveryPatternRow(AggregateSpec[] aggregates, PatternPlan pattern) {

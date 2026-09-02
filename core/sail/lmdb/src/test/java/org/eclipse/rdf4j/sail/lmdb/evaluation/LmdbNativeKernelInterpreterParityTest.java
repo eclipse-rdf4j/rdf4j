@@ -351,7 +351,7 @@ class LmdbNativeKernelInterpreterParityTest {
 	void enumeratePredicatesAndProbeVariable() {
 		// Lowers EnumeratePredicates ("EP(n0,...)") and ProbeVariable ("PV(d0,...)") in both arms (confirmed via
 		// the debug shape census): a variable-predicate pattern plus a second pattern reusing the bound predicate,
-		// with the default-off rdf4j.lmdb.janinoCodegen.nodePredicates gate enabled for this method only. BIND-time
+		// with the node-predicate lowering gate enabled explicitly for this differential method. BIND-time
 		// engagement cannot be asserted here: this fixture's store does not build the node-predicate projections,
 		// so requestVariablePredicateViews declines (all-or-nothing per direction) and both arms fall back to the
 		// ladder identically. Differential parity of the lowering gate is still exercised; engagement is recorded

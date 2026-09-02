@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.BindHook;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateAdjKeys;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateEntry;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateNodeDomainIntersection;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumeratePredicates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateTerms;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateWildcard;
@@ -109,7 +110,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	 * rung's factory contract requires null-means-decline.
 	 */
 	static JaninoKernel forAggregate(Kernel kernel) {
-		if (kernel == null || !(kernel.terminal instanceof Aggregate)) {
+		if (kernel == null) {
+			return null;
+		}
+		if (kernel.terminal instanceof LmdbNativeKernelIr.TypeMatrixAggregate typeMatrix) {
+			return new LmdbNativeTypeMatrixKernel(typeMatrix);
+		}
+		if (!(kernel.terminal instanceof Aggregate)) {
 			return null;
 		}
 		if (kernel.aggregateStateMode == Kernel.AggregateStateMode.PARTITIONED_GROUPS) {
@@ -164,6 +171,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					return false;
 				}
 			} else if (!(node instanceof EnumerateAdjKeys || node instanceof EnumerateDomain
+					|| node instanceof EnumerateNodeDomainIntersection
 					|| node instanceof EnumerateEntry || node instanceof EnumerateTerms
 					|| node instanceof EnumeratePredicates || node instanceof EnumerateWildcard
 					|| node instanceof Probe || node instanceof ProbeVariable
@@ -560,6 +568,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (node instanceof EnumerateDomain) {
 			return buildEnumerateDomain((EnumerateDomain) node, next);
 		}
+		if (node instanceof EnumerateNodeDomainIntersection) {
+			return buildEnumerateNodeDomainIntersection((EnumerateNodeDomainIntersection) node, next);
+		}
 		if (node instanceof EnumerateEntry) {
 			return next;
 		}
@@ -803,6 +814,47 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}
 			return false;
 		};
+	}
+
+	private Op buildEnumerateNodeDomainIntersection(EnumerateNodeDomainIntersection enumerate, Op next) {
+		NativeLmdbQuerySource.NodeDomainIntersection intersection = context.nodeDomainIntersections[enumerate.view];
+		if (nodeDomainIntersectionBulkCount()) {
+			return () -> {
+				long count = 0L;
+				for (int partition = 0; partition < intersection.partitionCount(); partition++) {
+					poll();
+					count = Math.addExact(count, intersection.countPartition(partition));
+				}
+				updateTerminalBy(count);
+				return false;
+			};
+		}
+		return () -> {
+			for (int partition = 0; partition < intersection.partitionCount(); partition++) {
+				NativeLmdbQuerySource.NodeDomainIntersection.Cursor cursor = intersection.cursor(partition);
+				while (cursor.next()) {
+					poll();
+					v[enumerate.col] = cursor.nodeId();
+					if (next.run()) {
+						return true;
+					}
+				}
+			}
+			return false;
+		};
+	}
+
+	private boolean nodeDomainIntersectionBulkCount() {
+		if (kernel.pipeline.size() != 1 || aggregate == null || aggregate.groupCols.length != 0
+				|| aggregate.outputs.length == 0) {
+			return false;
+		}
+		for (AggregateOutput output : aggregate.outputs) {
+			if (output.kind != LmdbNativeKernelIr.AGG_COUNT_STAR) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private Op buildEnumerateTerms(EnumerateTerms terms, Op next) {

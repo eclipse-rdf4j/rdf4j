@@ -41,6 +41,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Query-level tests for the type-matrix specializations: class predicate usage (GROUP BY type, predicate) and class
@@ -80,11 +82,25 @@ public class LmdbTypeMatrixTest {
 	@BeforeEach
 	public void captureProperties() {
 		captureProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
+		captureProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		captureProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+		captureProperty("rdf4j.lmdb.janinoCodegen.synchronous");
+		captureProperty("rdf4j.lmdb.kernelInterpreter.enabled");
+		captureProperty("rdf4j.lmdb.parallel.enabled");
 		captureProperty("rdf4j.lmdb.parallel.threads");
 		captureProperty("rdf4j.lmdb.parallel.maxTasks");
+		captureProperty("rdf4j.lmdb.parallel.minWorkEstimate");
+		captureProperty("rdf4j.lmdb.parallel.startupWork");
+		captureProperty("rdf4j.lmdb.irAggregateParallel.enabled");
+		captureProperty("rdf4j.lmdb.costCalibration.enabled");
+		captureProperty("rdf4j.lmdb.adaptiveProbe.enabled");
 		captureProperty("rdf4j.lmdb.directAdjacency.nodePredicateProjection.enabled");
 		captureProperty(AdjacencyEngagementTestAccess.NODE_PREDICATE_SERVE_PROPERTY);
 		captureProperty(SYNOPSIS_PROPERTY);
+		// Most tests in this class characterize the retained specialist's adjacency algorithms and counters. Keep that
+		// fallback pinned for those tests; the parameterized IR test below explicitly enables each first-class tier.
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
 	}
 
 	@AfterEach
@@ -343,8 +359,10 @@ public class LmdbTypeMatrixTest {
 				.isEqualTo(slicesBefore);
 	}
 
-	@Test
-	public void projectionFreeLinkageUsesRootOrdinalMorselsInParallel() throws Exception {
+	@ParameterizedTest(name = "janinoEnabled={0}")
+	@ValueSource(booleans = { false, true })
+	public void projectionFreeLinkageUsesRootOrdinalMorselsInParallel(boolean janinoEnabled) throws Exception {
+		enableTypeMatrixIr(janinoEnabled);
 		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
 		System.setProperty("rdf4j.lmdb.parallel.maxTasks", "2");
@@ -356,6 +374,62 @@ public class LmdbTypeMatrixTest {
 		assertThat(parallelMorsels.get())
 				.as("projection-free linkage should schedule disjoint predicate/root windows")
 				.isGreaterThan(before);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			String telemetry = connection.prepareTupleQuery(LINKAGE_MATRIX)
+					.explain(Explanation.Level.Telemetry)
+					.toString();
+			assertThat(telemetry)
+					.as("the type-matrix algorithm must be represented and executed by the native IR")
+					.contains("nativeExecutionPath=" + (janinoEnabled ? "irAggregateTypeMatrixParallel"
+							: "irAggregateTypeMatrixParallelInterpreted"))
+					.contains("nativeIrSelectedOperatorActual=TypeMatrixAggregate")
+					.matches("(?s).*nativeIrParallelPartitionCountActual=(?:[2-9]|[1-9][0-9]+).*")
+					.matches("(?s).*nativeIrParallelWorkersStartedActual=(?:[2-9]|[1-9][0-9]+).*")
+					.matches("(?s).*nativeIrParallelPeakActiveWorkersActual=(?:[2-9]|[1-9][0-9]+).*")
+					.matches("(?s).*nativeIrParallelWorkersWithNonZeroWorkActual=(?:[2-9]|[1-9][0-9]+).*")
+					.contains("nativeIrParallelMorselsPerWorkerActual=")
+					.contains("nativeIrParallelRowsPerWorkerActual=");
+		}
+	}
+
+	private static void enableTypeMatrixIr(boolean janinoEnabled) {
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(janinoEnabled));
+		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
+		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", Boolean.toString(!janinoEnabled));
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
+		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
+		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
+		System.setProperty("rdf4j.lmdb.irAggregateParallel.enabled", "true");
+		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
+		System.setProperty("rdf4j.lmdb.adaptiveProbe.enabled", "false");
+	}
+
+	@ParameterizedTest(name = "serialJaninoEnabled={0}")
+	@ValueSource(booleans = { false, true })
+	public void usageAndLinkageMatricesUseSerialIrWithOneWorker(boolean janinoEnabled) throws Exception {
+		enableTypeMatrixIr(janinoEnabled);
+		System.setProperty("rdf4j.lmdb.parallel.threads", "1");
+		System.setProperty("rdf4j.lmdb.parallel.maxTasks", "1");
+		Expected expected = openRepository(0, true);
+
+		assertThat(matrix(USAGE_MATRIX, "type", "p", "statements")).isEqualTo(expected.usage);
+		assertThat(matrix(LINKAGE_MATRIX, "sourceType", "targetType", "links")).isEqualTo(expected.linkage);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			String usageTelemetry = connection.prepareTupleQuery(USAGE_MATRIX)
+					.explain(Explanation.Level.Telemetry)
+					.toString();
+			String linkageTelemetry = connection.prepareTupleQuery(LINKAGE_MATRIX)
+					.explain(Explanation.Level.Telemetry)
+					.toString();
+			String expectedPath = janinoEnabled ? "irAggregateTypeMatrix" : "irAggregateTypeMatrixInterpreted";
+			assertThat(usageTelemetry)
+					.contains("nativeExecutionPath=" + expectedPath)
+					.contains("nativeIrSelectedOperatorActual=TypeMatrixAggregate");
+			assertThat(linkageTelemetry)
+					.contains("nativeExecutionPath=" + expectedPath)
+					.contains("nativeIrSelectedOperatorActual=TypeMatrixAggregate");
+		}
 	}
 
 	@Test
