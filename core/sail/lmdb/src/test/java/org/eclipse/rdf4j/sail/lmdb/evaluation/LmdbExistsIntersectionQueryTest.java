@@ -71,6 +71,12 @@ public class LmdbExistsIntersectionQueryTest {
 	public void resetCostCalibration() {
 		captureProperty(SYNOPSIS_PROPERTY);
 		captureProperty(LmdbNativeExistsIntersection.PARALLEL_MIN_ESTIMATE_PROPERTY);
+		captureProperty("rdf4j.lmdb.janinoCodegen.enabled");
+		captureProperty("rdf4j.lmdb.kernelInterpreter.enabled");
+		// This class characterizes the retained exact fallback and its SOC/OSC/synopsis counters. First-class IR
+		// activation and compiled/interpreted parity are covered by LmdbKernelExistsIntersectTest.
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
 		LmdbNativeCostCalibration.reset();
 	}
 

@@ -24,6 +24,8 @@ public final class TypeMatrixTargetBatch {
 	private static final int CAPACITY = 65_536;
 	private static final int RADIX_BITS = 11;
 	private static final int RADIX_BUCKETS = 1 << RADIX_BITS;
+	private static final int DENSE_SPAN_LIMIT = 256 << 10;
+	private static final int DENSE_SPAN_FACTOR = 16;
 
 	private final long[] sourceTypes = new long[CAPACITY];
 	private final long[] sourceMultiplicities = new long[CAPACITY];
@@ -34,7 +36,10 @@ public final class TypeMatrixTargetBatch {
 	private final long[] uniqueTargets = new long[CAPACITY];
 	private final long[] targetHandles = new long[CAPACITY];
 	private final int[] groupStarts = new int[CAPACITY + 1];
+	private final char[] denseTargetOrdinals = new char[DENSE_SPAN_LIMIT / Character.BYTES];
 	private int uniformIdType = -1;
+	private long minimumTargetValue = Long.MAX_VALUE;
+	private long maximumTargetValue = Long.MIN_VALUE;
 	private int size;
 	private int groups;
 
@@ -54,6 +59,9 @@ public final class TypeMatrixTargetBatch {
 		sourceTypes[size] = sourceType;
 		sourceMultiplicities[size] = sourceMultiplicity;
 		targets[size] = target;
+		long targetValue = ValueIds.getValue(target);
+		minimumTargetValue = Math.min(minimumTargetValue, targetValue);
+		maximumTargetValue = Math.max(maximumTargetValue, targetValue);
 		size++;
 		return true;
 	}
@@ -64,18 +72,20 @@ public final class TypeMatrixTargetBatch {
 			groups = 0;
 			return 0;
 		}
-		radixSort();
-		groups = 0;
-		long previous = 0L;
-		for (int sorted = 0; sorted < size; sorted++) {
-			long target = targets[sortedOrdinals[sorted]];
-			if (sorted == 0 || target != previous) {
-				uniqueTargets[groups] = target;
-				groupStarts[groups++] = sorted;
-				previous = target;
+		if (!prepareDense()) {
+			radixSort();
+			groups = 0;
+			long previous = 0L;
+			for (int sorted = 0; sorted < size; sorted++) {
+				long target = targets[sortedOrdinals[sorted]];
+				if (sorted == 0 || target != previous) {
+					uniqueTargets[groups] = target;
+					groupStarts[groups++] = sorted;
+					previous = target;
+				}
 			}
+			groupStarts[groups] = size;
 		}
-		groupStarts[groups] = size;
 		targetTypes.findBatch(uniqueTargets, 0, groups, targetHandles, 0);
 		return groups;
 	}
@@ -108,6 +118,55 @@ public final class TypeMatrixTargetBatch {
 		size = 0;
 		groups = 0;
 		uniformIdType = -1;
+		minimumTargetValue = Long.MAX_VALUE;
+		maximumTargetValue = Long.MIN_VALUE;
+	}
+
+	private boolean prepareDense() {
+		if (uniformIdType < 0 || minimumTargetValue < 0L || maximumTargetValue < minimumTargetValue) {
+			return false;
+		}
+		long spanLong = maximumTargetValue - minimumTargetValue + 1L;
+		if (spanLong <= 0L || spanLong > denseTargetOrdinals.length
+				|| spanLong > (long) size * DENSE_SPAN_FACTOR) {
+			return false;
+		}
+		int span = (int) spanLong;
+		Arrays.fill(denseTargetOrdinals, 0, span, (char) 0);
+		for (int edge = 0; edge < size; edge++) {
+			int bit = (int) (ValueIds.getValue(targets[edge]) - minimumTargetValue);
+			denseTargetOrdinals[bit] = 1;
+		}
+		groups = 0;
+		for (int bit = 0; bit < span; bit++) {
+			if (denseTargetOrdinals[bit] == 0) {
+				continue;
+			}
+			if (groups == Character.MAX_VALUE) {
+				return false;
+			}
+			denseTargetOrdinals[bit] = (char) (groups + 1);
+			uniqueTargets[groups++] = ValueIds.createId(uniformIdType, minimumTargetValue + bit);
+		}
+		if (spanLong > (long) groups * DENSE_SPAN_FACTOR) {
+			return false;
+		}
+		Arrays.fill(groupStarts, 0, groups + 1, 0);
+		for (int edge = 0; edge < size; edge++) {
+			int bit = (int) (ValueIds.getValue(targets[edge]) - minimumTargetValue);
+			int group = denseTargetOrdinals[bit] - 1;
+			groupStarts[group + 1]++;
+		}
+		for (int group = 0; group < groups; group++) {
+			groupStarts[group + 1] += groupStarts[group];
+			targetHandles[group] = groupStarts[group];
+		}
+		for (int edge = 0; edge < size; edge++) {
+			int bit = (int) (ValueIds.getValue(targets[edge]) - minimumTargetValue);
+			int group = denseTargetOrdinals[bit] - 1;
+			sortedOrdinals[(int) targetHandles[group]++] = edge;
+		}
+		return true;
 	}
 
 	private void radixSort() {

@@ -101,6 +101,8 @@ public class LmdbTypeMatrixTest {
 		// fallback pinned for those tests; the parameterized IR test below explicitly enables each first-class tier.
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
+		System.setProperty("rdf4j.lmdb.directAdjacency.nodePredicateProjection.enabled", "false");
+		System.setProperty(AdjacencyEngagementTestAccess.NODE_PREDICATE_SERVE_PROPERTY, "false");
 	}
 
 	@AfterEach

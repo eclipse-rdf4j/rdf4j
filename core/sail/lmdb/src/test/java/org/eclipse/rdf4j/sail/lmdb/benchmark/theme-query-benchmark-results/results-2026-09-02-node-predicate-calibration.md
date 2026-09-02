@@ -63,4 +63,37 @@ partitions, 15 workers started, peak simultaneous activity of 15, and non-zero w
 zero per-statement EXISTS filter tests and zero adjacency-root scans. This proves that the repaired IR path both
 activates and executes concurrently.
 
-This is calibration evidence and a focused one-fork performance check, not the final five-fork acceptance run.
+## Final five-fork acceptance
+
+The first matched five-fork run exposed a narrow remaining q8 miss: its five fork means were 48.984, 49.819, 48.217,
+47.796, and 51.344 ms/op, so only three forks met the 49.01 ms/op primary bound. JFR attributed 5.50% of CPU samples
+to radix grouping and another 2.75% to target-batch preparation. The retained type-matrix evaluator already avoided
+that work for compact target domains, but the structural IR target batch always radix-sorted.
+
+`TypeMatrixTargetBatch` now uses a bounded dense-ID grouping path when all target IDs have one value type and occupy a
+compact range. It preserves ascending target order and multiplicities, and retains radix grouping for mixed, sparse,
+wide, or very high-cardinality batches. The final q8 result is in
+`core/sail/lmdb/target/analytics-q8-dense-breaker-five-fork-20260902.json`:
+
+| Fork | Mean (ms/op) | Primary bound |
+| ---: | ---: | :---: |
+| 1 | 47.546 | pass |
+| 2 | 47.402 | pass |
+| 3 | 49.944 | permitted fifth fork |
+| 4 | 46.647 | pass |
+| 5 | 48.629 | pass |
+
+The aggregate q8 score is `48.034 +/- 1.460 ms/op`. Four fork means meet 49.01 ms/op, and the remaining fork is below
+the allowed 53.466 ms/op ceiling. The earlier matched q10 run produced fork means 0.133, 0.288, 0.289, 0.288, and
+0.289 ms/op, so all five are below 33.01 ms/op.
+
+The post-fix recording is `profiles/lmdb/analytics-q8-dense-ir-20260902.jfr`. Radix grouping fell from 5.50% of CPU
+samples in the pre-fix recording to 3.71%; the guarded dense path itself accounted for 2.12%. Execution samples were
+present on many distinct `lmdb-native-parallel-*` threads (the most active recorded 72, 70, 68, and 68 samples),
+independently confirming simultaneous multi-worker execution. Focused compiler evidence is in
+`profiles/lmdb/analytics-q8-dense-jit-20260902.xml`: HotSpot compiled the 433-byte `prepareDense` method at C2 and
+inlined `Arrays.fill`, `ValueIds.getValue`, and `ValueIds.createId` in its hot loops.
+
+A final one-fork all-13 guard after the dense-grouping change measured 0.037, 0.066, 0.102, 0.150, 0.110, 0.128,
+6.210, 10.935, 47.824, 30.233, 0.386, 0.117, and 0.036 ms/op for q0 through q12. No monitoring-only query meets the
+promotion rule of at least 10% and 1 ms slower in matched runs.
