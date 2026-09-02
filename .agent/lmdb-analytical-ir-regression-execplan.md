@@ -37,9 +37,16 @@ may choose serial IR when serial execution is faster.
 - [x] (2026-09-02 10:10Z) Bisected q8 to `2d54a3e3d2`, removed repeated stable-source lookup from the adjacency hot
   path, specialized the type-matrix pair counts and predicate-plane pruning, and reran calibration. Normal dispatch
   now selects parallel type-matrix IR; the focused JFR run measured 47.709 ms/op with 15 overlapping workers.
-- [ ] (in progress) Enable the outgoing node-predicate projection end to end, log its build progress, and audit runtime
-  defaults for latency/throughput before returning to q10 binding.
-- [ ] Finish q10 full-data binding, focused/parity verification, full LMDB, ANALYTICS benchmark, JFR, and JIT gates.
+- [x] (2026-09-02 11:30Z) Enabled the outgoing node-predicate projection end to end, added bounded build lifecycle
+  logging, corrected the runtime registry to match six opt-in defaults, and audited the remaining defaults for
+  latency/throughput.
+- [x] (2026-09-02 12:50Z) Repaired q10 full-data synopsis admission, selected compiled parallel
+  `EnumerateNodeDomainIntersection`, and proved 15 simultaneously active workers with disjoint non-zero work and zero
+  per-statement EXISTS filter tests.
+- [x] (2026-09-02 13:15Z) Rebuilt the machine/JVM/data-specific calibration from a cold sidecar with the outgoing
+  node-predicate index enabled by default. All 13 ANALYTICS queries completed; focused calibrated q8/q10 measured
+  45.948 and 0.294 ms/op respectively.
+- [ ] (in progress) Run five-fork acceptance, focused/parity verification, full LMDB, and final JFR/JIT gates.
 
 ## Surprises & Discoveries
 
@@ -93,6 +100,12 @@ may choose serial IR when serial execution is faster.
 - Observation: six other runtime-registry entries advertised default-on even though their actual execution gates and
   source comments deliberately keep them opt-in pending matched performance evidence: distinct numeric aggregate
   codegen, plan bridge, wildcard-predicate codegen, accumulate join, hash byte admission, and streaming WCOJ.
+- Observation: q10's lazy subject and object domain synopses were refused by a shared 10% retained-synopsis budget even
+  though the store used about 75 MiB under a 64 GiB hard adjacency cap. Allowing label/domain synopses together to use
+  up to one retained base footprint admits the exact set kernel without weakening the absolute memory limit.
+- Observation: a cold calibration after enabling the outgoing node-predicate index produced q8 at 48.258 ms/op and
+  q10 at 0.157 ms/op. A subsequent three-iteration focused run measured q8 at 45.948 ms/op and q10 at 0.294 ms/op;
+  all raw q8 iterations were below 49.01 ms/op.
 
 ## Decision Log
 
@@ -144,14 +157,15 @@ may choose serial IR when serial execution is faster.
 
 ## Outcomes & Retrospective
 
-The q10 algorithmic regression is structurally repaired but full-data activation still needs its composite membership
-binding: its exact subject/object set intersection is now structural IR, has both
+The q10 algorithmic regression is structurally repaired and activates on the full dataset: its exact subject/object
+set intersection is now structural IR, has both
 interpreter and Janino emitter support, uses physical bitmap/sparse work for arbitration, retains the specialist as a
 capability fallback, and can execute over disjoint worker-local partitions with measured overlap. q8 now likewise has
 a structural terminal whose generated class owns the edge/type traversal and primitive accumulation loops, plus an
 exact retained evaluator when a required view is unavailable. Focused compiled/interpreted serial and parallel q8
-tests are green. q8 meets the target in the short JFR run and has proven parallel overlap; five-fork unprofiled
-acceptance, q10 activation/timing, and broad verification remain pending.
+tests are green. The cold recalibration and focused calibrated check put q8 at 48.258 and 45.948 ms/op and q10 at
+0.157 and 0.294 ms/op. Both have proven parallel overlap; five-fork unprofiled acceptance and broad verification
+remain pending.
 
 ## Context and Orientation
 
@@ -319,3 +333,8 @@ Revision note (2026-09-02 09:00Z): Completed the q8 structural IR milestone. Par
 retained in `logs/mvnf/20260902-105930-type-matrix-parallel-verify.log`; serial usage/linkage evidence is in
 `logs/mvnf/20260902-110005-type-matrix-serial-verify.log`. The next active milestone is matched q8 profiling and the
 first-bad-commit repair.
+
+Revision note (2026-09-02 13:15Z): Enabled the outgoing node-predicate index by default, repaired q10's full-data
+synopsis admission, and rebuilt the runtime calibration from a cold sidecar. The durable calibration report is
+`core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/results-2026-09-02-node-predicate-calibration.md`;
+the binary sidecar remains local because it is specific to the machine, JVM, dataset, and runtime configuration.
