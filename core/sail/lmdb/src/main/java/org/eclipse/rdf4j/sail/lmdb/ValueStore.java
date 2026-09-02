@@ -3596,6 +3596,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 		var lockManager = txnManager.lockManager();
 		boolean readLocked = readContext.get().hasReadLock;
+		long resizeRequiredSize = requiredSize;
 		if (readLocked) {
 			lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
 		}
@@ -6260,51 +6261,57 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					if (readLocked) {
 						lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
 					}
-					long stamp;
 					try {
-						stamp = lockManager.writeLock();
-					} catch (InterruptedException e) {
-						throw new IOException(e);
-					}
+						withMapResizeLock(() -> {
+							long stamp;
+							try {
+								stamp = lockManager.writeLock();
+							} catch (InterruptedException e) {
+								throw new IOException(e);
+							}
 
-					try {
-						if (activeWriteTxn) {
-							endTransaction(true, true);
-						}
-						detachStableReadSnapshots(growthAttempt);
-						txnManager.deactivate();
+							try {
+								if (activeWriteTxn) {
+									endTransaction(true, true);
+								}
+								detachStableReadSnapshots(growthAttempt);
+								txnManager.deactivate();
 
-						long oldMapSize = mapSize;
-						long grownSize = growthPolicy.grownMapSize(mapSize, pageSize, requiredSize);
+								long oldMapSize = mapSize;
+								long grownSize = growthPolicy.grownMapSize(mapSize, pageSize, resizeRequiredSize);
 
-						logger.info("Resizing map from {} to {}", oldMapSize, grownSize);
+								logger.info("Resizing map from {} to {}", oldMapSize, grownSize);
 
-						if (growthAttempt != null) {
-							growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.VALUE_STORE);
-						}
-						E(mdb_env_set_mapsize(env, grownSize));
-						mapSize = grownSize;
-						if (grownSize > oldMapSize) {
-							bulkMapGrowthCount++;
-						}
-						nativeMapGeneration++;
-						if (activeWriteTxn) {
-							startTransaction(false);
-						}
+								if (growthAttempt != null) {
+									growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.VALUE_STORE);
+								}
+								E(mdb_env_set_mapsize(env, grownSize));
+								mapSize = grownSize;
+								if (grownSize > oldMapSize) {
+									bulkMapGrowthCount++;
+								}
+								nativeMapGeneration++;
+								if (activeWriteTxn) {
+									startTransaction(false);
+								}
 
-					} finally {
-						try {
-							txnManager.activate();
-						} finally {
-							lockManager.unlockWrite(stamp);
-							if (readLocked) {
+							} finally {
 								try {
-									lockManager.readLock();
-								} catch (InterruptedException e) {
-									throw new IOException(e);
+									txnManager.activate();
+								} finally {
+									lockManager.unlockWrite(stamp);
 								}
 							}
+						});
+					} finally {
+						if (readLocked) {
+							try {
+								lockManager.readLock();
+							} catch (InterruptedException e) {
+								throw new IOException(e);
+							}
 						}
+					}
 					}
 				}
 			}
@@ -12902,12 +12909,32 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	void copyEnvironment(Path targetDir, boolean compact) throws IOException {
 		Files.createDirectories(targetDir);
+		withEnvironmentCopyLock(() -> {
+			E(mdb_env_copy2(env, targetDir.toAbsolutePath().toString(), compact ? MDB_CP_COMPACT : 0));
+		});
+	}
+
+	void withEnvironmentCopyLock(IoRunnable operation) throws IOException {
 		txnLock.readLock().lock();
 		try {
-			E(mdb_env_copy2(env, targetDir.toAbsolutePath().toString(), compact ? MDB_CP_COMPACT : 0));
+			operation.run();
 		} finally {
 			txnLock.readLock().unlock();
 		}
+	}
+
+	void withMapResizeLock(IoRunnable operation) throws IOException {
+		txnLock.writeLock().lock();
+		try {
+			operation.run();
+		} finally {
+			txnLock.writeLock().unlock();
+		}
+	}
+
+	@FunctionalInterface
+	interface IoRunnable {
+		void run() throws IOException;
 	}
 
 	/**
