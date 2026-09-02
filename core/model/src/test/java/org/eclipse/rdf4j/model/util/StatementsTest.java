@@ -15,7 +15,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -182,7 +181,7 @@ public class StatementsTest {
 		TripleTerm t1 = vf.createTripleTerm(subject, predicate, object);
 		Statement st1 = vf.createStatement(reifier1, RDF.REIFIES, t1, context);
 
-		// Repeat triple term t1 to ensure same blank node is used
+		// Repeat t1 inside another triple term; each top-level conversion must be self-contained.
 
 		TripleTerm outer = vf.createTripleTerm(subjectOuter, predicateOuter, t1);
 		Statement st2 = vf.createStatement(subject2, predicate2, outer, context);
@@ -197,30 +196,54 @@ public class StatementsTest {
 		expectedModel.add(bnode1, RDF.PROPOSITION_FORM_OBJECT, object, context);
 
 		// st2:
-		BNode bnode2 = vf.createBNode();
-		expectedModel.add(subject2, predicate2, bnode2, context);
-		expectedModel.add(bnode2, RDF.TYPE, RDF.PROPOSITION_FORM, context);
-		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_SUBJECT, subjectOuter, context);
-		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_PREDICATE, predicateOuter, context);
-		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_OBJECT, bnode1, context);
+		BNode nestedBnode2 = vf.createBNode();
+		expectedModel.add(nestedBnode2, RDF.TYPE, RDF.PROPOSITION_FORM, context);
+		expectedModel.add(nestedBnode2, RDF.PROPOSITION_FORM_SUBJECT, subject, context);
+		expectedModel.add(nestedBnode2, RDF.PROPOSITION_FORM_PREDICATE, predicate, context);
+		expectedModel.add(nestedBnode2, RDF.PROPOSITION_FORM_OBJECT, object, context);
+		BNode outerBnode2 = vf.createBNode();
+		expectedModel.add(subject2, predicate2, outerBnode2, context);
+		expectedModel.add(outerBnode2, RDF.TYPE, RDF.PROPOSITION_FORM, context);
+		expectedModel.add(outerBnode2, RDF.PROPOSITION_FORM_SUBJECT, subjectOuter, context);
+		expectedModel.add(outerBnode2, RDF.PROPOSITION_FORM_PREDICATE, predicateOuter, context);
+		expectedModel.add(outerBnode2, RDF.PROPOSITION_FORM_OBJECT, nestedBnode2, context);
 
 		// Verify expected and converted models are isomorphic
 		Model convertedModel = new LinkedHashModel();
-		RDFVersionsConversionContext rdf12ConversionContext = new RDFVersionsConversionContext();
-		Statements.convertRDFTo12Basic(vf, st1, convertedModel::add, rdf12ConversionContext);
-		Statements.convertRDFTo12Basic(vf, st2, convertedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo12Basic(vf, st1, convertedModel::add);
+		Statements.convertRDFTo12Basic(vf, st2, convertedModel::add);
 
 		assertTrue("RDF 1.2 conversion to 1.2 Basic",
 				Models.isomorphic(expectedModel, convertedModel));
 
-		// Verify no duplicate statements were created:
+		// Verify that each top-level statement generated its complete proposition form.
 		List<Statement> emitted = new ArrayList<>();
-		rdf12ConversionContext = new RDFVersionsConversionContext();
-		Statements.convertRDFTo12Basic(vf, st1, emitted::add, rdf12ConversionContext);
-		Statements.convertRDFTo12Basic(vf, st2, emitted::add, rdf12ConversionContext);
+		Statements.convertRDFTo12Basic(vf, st1, emitted::add);
+		Statements.convertRDFTo12Basic(vf, st2, emitted::add);
 
-		assertEquals("No duplicate statements were generated in RDF 1.2 to RDF 1.2 Basic conversion",
+		assertEquals("Each conversion generated a complete RDF 1.2 Basic representation",
 				expectedModel.size(), emitted.size());
+	}
+
+	@Test
+	public void testStatementRDF12FullToBasicDoesNotCacheAcrossConversions() {
+		Resource context = vf.createIRI("http://example.org/context");
+		TripleTerm tripleTerm = vf.createTripleTerm(
+				vf.createIRI("http://example.org/subject"),
+				vf.createIRI("http://example.org/predicate"),
+				vf.createIRI("http://example.org/object"));
+		Statement input = vf.createStatement(vf.createIRI("http://example.org/reifier"), RDF.REIFIES, tripleTerm,
+				context);
+		List<Statement> firstConversion = new ArrayList<>();
+		List<Statement> secondConversion = new ArrayList<>();
+
+		Statements.convertRDFTo12Basic(vf, input, firstConversion::add);
+		Statements.convertRDFTo12Basic(vf, input, secondConversion::add);
+
+		assertEquals("Each conversion must emit a complete proposition form", 5, firstConversion.size());
+		assertEquals("Each conversion must emit a complete proposition form", 5, secondConversion.size());
+		assertNotEquals("Conversions must not reuse retained blank-node mappings",
+				firstConversion.get(4).getObject(), secondConversion.get(4).getObject());
 	}
 
 	@Test
@@ -244,7 +267,6 @@ public class StatementsTest {
 		Statement st1 = vf.createStatement(reifier1, RDF.REIFIES, t0, context1);
 
 		Statement st2 = vf.createStatement(reifier1, RDF.REIFIES, t0, context2);
-		// Repeat triple term t1 to ensure same blank node is used
 
 		TripleTerm outer1 = vf.createTripleTerm(subjectOuter, predicateOuter, t0);
 		Statement st3 = vf.createStatement(subject2, predicate2, outer1, context1);
@@ -271,52 +293,48 @@ public class StatementsTest {
 
 		// st2:
 		BNode bnode2 = vf.createBNode();
-		expectedModel.add(subject2, predicate2, bnode2, context1);
-		expectedModel.add(bnode2, RDF.TYPE, RDF.PROPOSITION_FORM, context1);
-		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_SUBJECT, subjectOuter, context1);
-		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_PREDICATE, predicateOuter, context1);
-		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_OBJECT, bnode1, context1);
+		expectedModel.add(reifier1, RDF.REIFIES, bnode2, context2);
+		expectedModel.add(bnode2, RDF.TYPE, RDF.PROPOSITION_FORM, context2);
+		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_SUBJECT, subject, context2);
+		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_PREDICATE, predicate, context2);
+		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_OBJECT, object, context2);
 
 		// st3:
+		BNode nestedBnode3 = vf.createBNode();
+		expectedModel.add(nestedBnode3, RDF.TYPE, RDF.PROPOSITION_FORM, context1);
+		expectedModel.add(nestedBnode3, RDF.PROPOSITION_FORM_SUBJECT, subject, context1);
+		expectedModel.add(nestedBnode3, RDF.PROPOSITION_FORM_PREDICATE, predicate, context1);
+		expectedModel.add(nestedBnode3, RDF.PROPOSITION_FORM_OBJECT, object, context1);
 		BNode bnode3 = vf.createBNode();
-		expectedModel.add(reifier1, RDF.REIFIES, bnode3, context2);
-		expectedModel.add(bnode3, RDF.TYPE, RDF.PROPOSITION_FORM, context2);
-		expectedModel.add(bnode3, RDF.PROPOSITION_FORM_SUBJECT, subject, context2);
-		expectedModel.add(bnode3, RDF.PROPOSITION_FORM_PREDICATE, predicate, context2);
-		expectedModel.add(bnode3, RDF.PROPOSITION_FORM_OBJECT, object, context2);
+		expectedModel.add(subject2, predicate2, bnode3, context1);
+		expectedModel.add(bnode3, RDF.TYPE, RDF.PROPOSITION_FORM, context1);
+		expectedModel.add(bnode3, RDF.PROPOSITION_FORM_SUBJECT, subjectOuter, context1);
+		expectedModel.add(bnode3, RDF.PROPOSITION_FORM_PREDICATE, predicateOuter, context1);
+		expectedModel.add(bnode3, RDF.PROPOSITION_FORM_OBJECT, nestedBnode3, context1);
 
 		// st4:
+		BNode nestedBnode4 = vf.createBNode();
+		expectedModel.add(nestedBnode4, RDF.TYPE, RDF.PROPOSITION_FORM, context2);
+		expectedModel.add(nestedBnode4, RDF.PROPOSITION_FORM_SUBJECT, subject, context2);
+		expectedModel.add(nestedBnode4, RDF.PROPOSITION_FORM_PREDICATE, predicate, context2);
+		expectedModel.add(nestedBnode4, RDF.PROPOSITION_FORM_OBJECT, object, context2);
 		BNode bnode4 = vf.createBNode();
 		expectedModel.add(subject2, predicate2, bnode4, context2);
 		expectedModel.add(bnode4, RDF.TYPE, RDF.PROPOSITION_FORM, context2);
 		expectedModel.add(bnode4, RDF.PROPOSITION_FORM_SUBJECT, subjectOuter, context2);
 		expectedModel.add(bnode4, RDF.PROPOSITION_FORM_PREDICATE, predicateOuter, context2);
-		expectedModel.add(bnode4, RDF.PROPOSITION_FORM_OBJECT, bnode3, context2);
+		expectedModel.add(bnode4, RDF.PROPOSITION_FORM_OBJECT, nestedBnode4, context2);
 
 		// Verify expected and converted models are isomorphic
 		Model convertedModel = new LinkedHashModel();
-		RDFVersionsConversionContext rdf12ConversionContext = new RDFVersionsConversionContext();
-		Statements.convertRDFTo12Basic(vf, st0, convertedModel::add, rdf12ConversionContext);
-		Statements.convertRDFTo12Basic(vf, st1, convertedModel::add, rdf12ConversionContext);
-		Statements.convertRDFTo12Basic(vf, st2, convertedModel::add, rdf12ConversionContext);
-		Statements.convertRDFTo12Basic(vf, st3, convertedModel::add, rdf12ConversionContext);
-		Statements.convertRDFTo12Basic(vf, st4, convertedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo12Basic(vf, st0, convertedModel::add);
+		Statements.convertRDFTo12Basic(vf, st1, convertedModel::add);
+		Statements.convertRDFTo12Basic(vf, st2, convertedModel::add);
+		Statements.convertRDFTo12Basic(vf, st3, convertedModel::add);
+		Statements.convertRDFTo12Basic(vf, st4, convertedModel::add);
 
 		assertTrue("RDF 1.2 conversion to 1.2 Basic",
 				Models.isomorphic(expectedModel, convertedModel));
-
-		// different bnodes for same triple in different graphs
-		BNode node1 = rdf12ConversionContext.getBNodeForTripleTerm(defaultContext, t0);
-		BNode node2 = rdf12ConversionContext.getBNodeForTripleTerm(context1, t0);
-		BNode node3 = rdf12ConversionContext.getBNodeForTripleTerm(context2, t0);
-
-		assertNotNull(node1);
-		assertNotNull(node2);
-		assertNotNull(node3);
-
-		assertNotEquals(node1, node2);
-		assertNotEquals(node2, node3);
-		assertNotEquals(node1, node3);
 	}
 
 	/**
@@ -346,12 +364,11 @@ public class StatementsTest {
 		expectedModel.add(bnode, RDF.PROPOSITION_FORM_OBJECT, innerTripleBnode, context);
 
 		Model preservedModel = new LinkedHashModel();
-		RDFVersionsConversionContext rdf12ConversionContext = new RDFVersionsConversionContext();
-		Statements.convertRDFTo12Basic(vf, st1, preservedModel::add, rdf12ConversionContext);
-		Statements.convertRDFTo12Basic(vf, st2, preservedModel::add, rdf12ConversionContext);
-		Statements.convertRDFTo12Basic(vf, st3, preservedModel::add, rdf12ConversionContext);
-		Statements.convertRDFTo12Basic(vf, st4, preservedModel::add, rdf12ConversionContext);
-		Statements.convertRDFTo12Basic(vf, st5, preservedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo12Basic(vf, st1, preservedModel::add);
+		Statements.convertRDFTo12Basic(vf, st2, preservedModel::add);
+		Statements.convertRDFTo12Basic(vf, st3, preservedModel::add);
+		Statements.convertRDFTo12Basic(vf, st4, preservedModel::add);
+		Statements.convertRDFTo12Basic(vf, st5, preservedModel::add);
 
 		assertTrue("RDF 1.2 Basic statements preserved under 1.2 Basic conversion",
 				Models.isomorphic(expectedModel, preservedModel));
@@ -372,7 +389,7 @@ public class StatementsTest {
 		TripleTerm t1 = vf.createTripleTerm(subject, predicate, object);
 		Statement st1 = vf.createStatement(reifier1, RDF.REIFIES, t1, context);
 
-		// Repeat triple term t1 to ensure same blank node is used
+		// Repeat t1 inside another triple term; each top-level conversion must be self-contained.
 
 		TripleTerm outer = vf.createTripleTerm(subjectOuter, predicateOuter, t1);
 		Statement st2 = vf.createStatement(subject2, predicate2, outer, context);
@@ -387,18 +404,22 @@ public class StatementsTest {
 		expectedModel.add(bnode1, RDF.PROPOSITION_FORM_OBJECT, object, context);
 
 		// st2:
-		BNode bnode2 = vf.createBNode();
-		expectedModel.add(subject2, predicate2, bnode2, context);
-		expectedModel.add(bnode2, RDF.TYPE, RDF.PROPOSITION_FORM, context);
-		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_SUBJECT, subjectOuter, context);
-		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_PREDICATE, predicateOuter, context);
-		expectedModel.add(bnode2, RDF.PROPOSITION_FORM_OBJECT, bnode1, context);
+		BNode nestedBnode2 = vf.createBNode();
+		expectedModel.add(nestedBnode2, RDF.TYPE, RDF.PROPOSITION_FORM, context);
+		expectedModel.add(nestedBnode2, RDF.PROPOSITION_FORM_SUBJECT, subject, context);
+		expectedModel.add(nestedBnode2, RDF.PROPOSITION_FORM_PREDICATE, predicate, context);
+		expectedModel.add(nestedBnode2, RDF.PROPOSITION_FORM_OBJECT, object, context);
+		BNode outerBnode2 = vf.createBNode();
+		expectedModel.add(subject2, predicate2, outerBnode2, context);
+		expectedModel.add(outerBnode2, RDF.TYPE, RDF.PROPOSITION_FORM, context);
+		expectedModel.add(outerBnode2, RDF.PROPOSITION_FORM_SUBJECT, subjectOuter, context);
+		expectedModel.add(outerBnode2, RDF.PROPOSITION_FORM_PREDICATE, predicateOuter, context);
+		expectedModel.add(outerBnode2, RDF.PROPOSITION_FORM_OBJECT, nestedBnode2, context);
 
 		// Verify expected and converted models are isomorphic
 		Model convertedModel = new LinkedHashModel();
-		RDFVersionsConversionContext rdf12ConversionContext = new RDFVersionsConversionContext();
-		Statements.convertRDFTo11(vf, st1, convertedModel::add, rdf12ConversionContext);
-		Statements.convertRDFTo11(vf, st2, convertedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo11(vf, st1, convertedModel::add);
+		Statements.convertRDFTo11(vf, st2, convertedModel::add);
 
 		assertTrue("RDF 1.2 conversion to 1.1",
 				Models.isomorphic(expectedModel, convertedModel));
@@ -423,7 +444,7 @@ public class StatementsTest {
 
 		List<Statement> emitted = new ArrayList<>();
 
-		Statements.convertRDFTo11(vf, st, emitted::add, new RDFVersionsConversionContext());
+		Statements.convertRDFTo11(vf, st, emitted::add);
 
 		assertEquals(1, emitted.size());
 		assertEquals(expected, emitted.get(0));
@@ -459,12 +480,11 @@ public class StatementsTest {
 		expectedModel.add(bnode, RDF.PROPOSITION_FORM_OBJECT, object, context);
 
 		Model preservedModel = new LinkedHashModel();
-		RDFVersionsConversionContext rdf12ConversionContext = new RDFVersionsConversionContext();
-		Statements.convertRDFTo11(vf, st1, preservedModel::add, rdf12ConversionContext);
-		Statements.convertRDFTo11(vf, st2, preservedModel::add, rdf12ConversionContext);
-		Statements.convertRDFTo11(vf, st3, preservedModel::add, rdf12ConversionContext);
-		Statements.convertRDFTo11(vf, st4, preservedModel::add, rdf12ConversionContext);
-		Statements.convertRDFTo11(vf, st5, preservedModel::add, rdf12ConversionContext);
+		Statements.convertRDFTo11(vf, st1, preservedModel::add);
+		Statements.convertRDFTo11(vf, st2, preservedModel::add);
+		Statements.convertRDFTo11(vf, st3, preservedModel::add);
+		Statements.convertRDFTo11(vf, st4, preservedModel::add);
+		Statements.convertRDFTo11(vf, st5, preservedModel::add);
 
 		assertTrue("RDF 1.1 statements preserved under 1.1 conversion",
 				Models.isomorphic(expectedModel, preservedModel));
