@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Phaser;
@@ -35,6 +36,28 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelSour
 import org.junit.jupiter.api.Test;
 
 class CompositeNativeLmdbQuerySourceOrderTest {
+
+	@Test
+	void compositeNodeDomainIntersectionUsesDedicatedViewsForMembership() throws IOException {
+		Object idSpace = new Object();
+		NativeLmdbQuerySource source = CompositeNativeLmdbQuerySource.combine(List.of(
+				new IntersectionSource(idSpace, new long[] { 1, 2, 5 }, new long[] { 2, 5, 8 }),
+				new IntersectionSource(idSpace, new long[] { 2, 3 }, new long[] { 3, 5 })));
+
+		List<Long> nodes = new ArrayList<>();
+		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+			NativeLmdbQuerySource.NodeDomainIntersection intersection = probe.nodeDomainIntersection(true, false);
+			assertThat(intersection).isNotNull();
+			for (int partition = 0; partition < intersection.partitionCount(); partition++) {
+				NativeLmdbQuerySource.NodeDomainIntersection.Cursor cursor = intersection.cursor(partition);
+				while (cursor.next()) {
+					nodes.add(cursor.nodeId());
+				}
+			}
+		}
+		nodes.sort(Long::compareUnsigned);
+		assertThat(nodes).containsExactly(2L, 3L, 5L);
+	}
 
 	@Test
 	void matchingSourcesMergeByCompleteIndexSignature() throws IOException {
@@ -1052,6 +1075,103 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 		@Override
 		public boolean hasStatementsInSource() {
 			return true;
+		}
+	}
+
+	private static final class IntersectionSource extends StubSource {
+
+		private final long[] subjects;
+		private final long[] objects;
+
+		private IntersectionSource(Object idSpace, long[] subjects, long[] objects) {
+			super(idSpace);
+			this.subjects = subjects;
+			this.objects = objects;
+		}
+
+		@Override
+		public NativeProbe newProbe() {
+			return new NativeProbe() {
+				@Override
+				public NodeDomainIntersection nodeDomainIntersection(boolean leftBySubject,
+						boolean rightBySubject) {
+					return new ArrayIntersection(leftBySubject ? subjects : objects,
+							rightBySubject ? subjects : objects);
+				}
+
+				@Override
+				public RecordIterator open(long subj, long pred, long obj, long context) {
+					throw new UnsupportedOperationException();
+				}
+
+				@Override
+				public void close() {
+				}
+			};
+		}
+	}
+
+	private static final class ArrayIntersection implements NativeLmdbQuerySource.NodeDomainIntersection {
+
+		private final long[] values;
+
+		private ArrayIntersection(long[] left, long[] right) {
+			long[] intersection = new long[Math.min(left.length, right.length)];
+			int size = 0;
+			for (long candidate : left) {
+				if (contains(right, candidate)) {
+					intersection[size++] = candidate;
+				}
+			}
+			values = Arrays.copyOf(intersection, size);
+		}
+
+		@Override
+		public long estimatedWork() {
+			return values.length;
+		}
+
+		@Override
+		public int partitionCount() {
+			return values.length;
+		}
+
+		@Override
+		public long countPartition(int partition) {
+			return 1L;
+		}
+
+		@Override
+		public Cursor cursor(int partition) {
+			return new Cursor() {
+				private boolean available = true;
+
+				@Override
+				public boolean next() {
+					boolean next = available;
+					available = false;
+					return next;
+				}
+
+				@Override
+				public long nodeId() {
+					return values[partition];
+				}
+			};
+		}
+
+		@Override
+		public boolean contains(long candidate) {
+			return contains(values, candidate);
+		}
+
+		private static boolean contains(long[] candidates, long target) {
+			for (long candidate : candidates) {
+				if (candidate == target) {
+					return true;
+				}
+			}
+			return false;
 		}
 	}
 

@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelBindings.FilterHook;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateAdjKeys;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateNodeDomainIntersection;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumeratePredicates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Exists;
@@ -119,6 +120,62 @@ final class LmdbNativeKernelPartitions {
 			}
 		}
 		return rootDomain;
+	}
+
+	/** The root node-domain-intersection view when it is the pipeline's only read of that view, or {@code -1}. */
+	static int partitionableRootNodeDomainIntersection(List<Node> pipeline) {
+		int start = 0;
+		while (start < pipeline.size() && pipeline.get(start) instanceof HashBuild) {
+			start++;
+		}
+		if (start >= pipeline.size() || !(pipeline.get(start)instanceof EnumerateNodeDomainIntersection root)) {
+			return -1;
+		}
+		for (int i = 0; i < pipeline.size(); i++) {
+			if (i != start && pipeline.get(i)instanceof EnumerateNodeDomainIntersection other
+					&& other.view == root.view) {
+				return -1;
+			}
+		}
+		return root.view;
+	}
+
+	/** A disjoint partition-ordinal window over a snapshot-bound intersection view. */
+	static final class NodeDomainIntersectionWindow implements NativeLmdbQuerySource.NodeDomainIntersection {
+		private final NativeLmdbQuerySource.NodeDomainIntersection delegate;
+		private final int from;
+		private final int to;
+
+		NodeDomainIntersectionWindow(NativeLmdbQuerySource.NodeDomainIntersection delegate, long from, long to) {
+			this.delegate = delegate;
+			this.from = Math.toIntExact(from);
+			this.to = Math.toIntExact(to);
+		}
+
+		@Override
+		public long estimatedWork() {
+			return delegate.estimatedWork();
+		}
+
+		@Override
+		public boolean contains(long nodeId) {
+			return delegate.contains(nodeId);
+		}
+
+		@Override
+		public int partitionCount() {
+			return to - from;
+		}
+
+		@Override
+		public long countPartition(int partition) {
+			return delegate.countPartition(from + partition);
+		}
+
+		@Override
+		public Cursor cursor(int partition) {
+			return delegate.cursor(from + partition);
+		}
 	}
 
 	private static boolean readsDomain(Node node, int domain) {

@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIrTestAccess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
@@ -31,6 +32,7 @@ class LmdbRuntimePropertiesTest {
 	private static final String COST_CALIBRATION = "rdf4j.lmdb.costCalibration.enabled";
 	private static final String ADAPTIVE_PROBE = "rdf4j.lmdb.adaptiveProbe.enabled";
 	private static final String ADJACENCY_SYNOPSIS = "rdf4j.lmdb.directAdjacency.synopsis.enabled";
+	private static final String NODE_PREDICATE_KERNELS = "rdf4j.lmdb.janinoCodegen.nodePredicates";
 
 	@Test
 	void catalogListsStableAllowlistedStateAndAppliesCanonicalBooleans() throws Exception {
@@ -186,6 +188,18 @@ class LmdbRuntimePropertiesTest {
 				.isTrue();
 	}
 
+	/** Experimental tiers without matched throughput and latency evidence remain opt-in in both UI and runtime. */
+	@Test
+	void experimentalPerformanceTiersAreReportedDefaultOff() throws Exception {
+		List<?> states = invokeList(LmdbRuntimeProperties.class.getMethod("list"));
+		for (String name : List.of("rdf4j.lmdb.janinoCodegen.distinctNumericAggregates",
+				"rdf4j.lmdb.janinoCodegen.planBridge", "rdf4j.lmdb.janinoCodegen.wildcardPredicates",
+				"rdf4j.lmdb.nativeAccumulateJoin.enabled", "rdf4j.lmdb.nativeHashJoin.byteAdmission.enabled",
+				"rdf4j.lmdb.wcoj.streamingFrontiers.enabled")) {
+			assertThat(booleanValue(stateByName(states, name), "defaultEnabled")).as(name).isFalse();
+		}
+	}
+
 	/** The runtime gate must agree with the registry default: warm-up serves with the property absent. */
 	@Test
 	void interpreterWarmupTierIsOnByDefaultAtRuntime() throws Exception {
@@ -205,6 +219,21 @@ class LmdbRuntimePropertiesTest {
 		} finally {
 			restore(warmupProperty, previousWarmup);
 			restore(interpreterProperty, previousInterpreter);
+		}
+	}
+
+	/** The IR lowering gate must agree with the registry and use the built projection when no override is present. */
+	@Test
+	void nodePredicateKernelTierIsOnByDefaultAtRuntime() throws Exception {
+		String previous = System.getProperty(NODE_PREDICATE_KERNELS);
+		try {
+			System.clearProperty(NODE_PREDICATE_KERNELS);
+			Object state = stateByName(invokeList(LmdbRuntimeProperties.class.getMethod("list")),
+					NODE_PREDICATE_KERNELS);
+			assertThat(booleanValue(state, "defaultEnabled")).isTrue();
+			assertThat(LmdbNativeKernelIrTestAccess.nodePredicatesEnabled()).isTrue();
+		} finally {
+			restore(NODE_PREDICATE_KERNELS, previous);
 		}
 	}
 

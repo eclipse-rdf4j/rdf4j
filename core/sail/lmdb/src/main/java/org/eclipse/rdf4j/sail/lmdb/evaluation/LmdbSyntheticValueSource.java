@@ -463,6 +463,12 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			}
 
 			@Override
+			public NodeDomainIntersection nodeDomainIntersection(boolean leftBySubject, boolean rightBySubject)
+					throws IOException {
+				return inner.nodeDomainIntersection(leftBySubject, rightBySubject);
+			}
+
+			@Override
 			public DatatypeSummary nodeDomainDatatypeSummary(boolean bySubject,
 					DatatypeSummaryBuildObserver observer) throws IOException {
 				return inner.nodeDomainDatatypeSummary(bySubject, observer);

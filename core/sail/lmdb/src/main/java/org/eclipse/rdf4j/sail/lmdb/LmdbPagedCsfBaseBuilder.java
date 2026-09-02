@@ -64,9 +64,9 @@ final class LmdbPagedCsfBaseBuilder {
 	}
 
 	/**
-	 * Builds with the optional node-predicate projection enabled. Direct callers of the builder are exercising the
+	 * Builds with the outgoing node-predicate projection enabled. Direct callers of the builder are exercising the
 	 * structure itself; the store passes {@link LmdbDirectAdjacencyOptions#nodePredicateProjectionEnabled()} through
-	 * the explicit overload instead, so the shipped default stays off until the flip decision is taken on evidence.
+	 * the explicit overload so an explicit opt-out remains authoritative.
 	 */
 	static LmdbInMemoryAdjacencyIndex build(AdjacencySourceFamily sourceFamily, LmdbAdjacencyCoverage coverage,
 			LmdbAdjacencyMemoryAccount account, long baseArenaRegionBytes, long ignoredWorkspaceRegionBytes,

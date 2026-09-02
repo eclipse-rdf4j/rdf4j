@@ -47,6 +47,10 @@ final class LmdbBtreeRangeCounter {
 	private static final int PHYSICAL_SAMPLE_BUDGET = property("physicalProbeBudget", 32, 1, 1 << 16);
 	private static final int DUPSORT_PHYSICAL_SAMPLE_BUDGET = property("dupSortPhysicalProbeBudget", 64, 1,
 			1 << 16);
+	private static final int PHYSICAL_CONFIRMATION_BUDGET = property("physicalConfirmationBudget", 64, 1,
+			1 << 16);
+	private static final int DUPSORT_PHYSICAL_CONFIRMATION_BUDGET = property(
+			"dupSortPhysicalConfirmationBudget", 128, 1, 1 << 16);
 	private static final int RESIDUAL_PILOT_BUDGET = property("residualPilotBudget", 16, 1, 1 << 16);
 	private static final int RESIDUAL_COMMON_BUDGET = property("residualCommonBudget", 32, 1, 1 << 16);
 	private static final int RESIDUAL_MODERATE_BUDGET = property("residualModerateBudget", 64, 1, 1 << 16);
@@ -54,12 +58,30 @@ final class LmdbBtreeRangeCounter {
 	private static final int RESIDUAL_RARE_BUDGET = property("residualRareBudget", 256, 1, 1 << 16);
 	private static final int MAX_LOCAL_PAGE_CACHE = property("localPageCacheEntries", 4_096, 64, 1 << 20);
 	private static final double COMPLEMENT_RATIO = doubleProperty("complementRatio", 0.70d, 0.05d, 0.95d);
-	private static final long SAMPLER_VERSION = 0x4c4d444245535433L; // "LMDBEST3"
+	private static final double MIN_EFFECTIVE_SAMPLE_SIZE = doubleProperty("minEffectiveSampleSize", 8.0d,
+			1.0d, 1 << 16);
+	private static final double MIN_EFFECTIVE_SAMPLE_FRACTION = doubleProperty("minEffectiveSampleFraction",
+			0.25d, 0.01d, 1.0d);
+	private static final double MIN_UNIQUE_SAMPLE_FRACTION = doubleProperty("minUniqueSampleFraction", 0.50d,
+			0.01d, 1.0d);
+	private static final double MIN_UNCERTAIN_MASS_FRACTION = doubleProperty("minUncertainMassFraction", 0.05d,
+			0.0d, 1.0d);
+	private static final double MAX_PHYSICAL_RELATIVE_STANDARD_ERROR = doubleProperty("maxPhysicalRelativeError",
+			0.40d, 0.01d, 4.0d);
+	private static final double MAX_RESIDUAL_RELATIVE_STANDARD_ERROR = doubleProperty("maxResidualRelativeError",
+			0.60d, 0.01d, 8.0d);
+	private static final double MAX_STREAM_DISAGREEMENT = doubleProperty("maxStreamDisagreement", 2.50d, 1.01d,
+			100.0d);
+	private static final double MAX_DIRECT_RATIO_DISAGREEMENT = doubleProperty("maxDirectRatioDisagreement", 3.0d,
+			1.01d, 100.0d);
+	private static final long SAMPLER_VERSION = 0x4c4d444245535434L; // "LMDBEST4"
 	private static final int STREAM_PHYSICAL = 0x11;
+	private static final int STREAM_PHYSICAL_CONFIRM = 0x12;
 	private static final int STREAM_COMPLEMENT_LEFT = 0x21;
 	private static final int STREAM_COMPLEMENT_RIGHT = 0x22;
 	private static final int STREAM_RESIDUAL_PILOT = 0x31;
 	private static final int STREAM_RESIDUAL_FINAL = 0x32;
+	private static final int STREAM_RESIDUAL_CONFIRM = 0x33;
 	private static final long EMPTY_PAGE = Long.MIN_VALUE;
 
 	private final LmdbDataFile dataFile;
@@ -162,12 +184,14 @@ final class LmdbBtreeRangeCounter {
 		sampleMultiplier = Math.clamp(sampleMultiplier, 1, 64);
 		RangeCountResult result = new RangeCountResult();
 		if (db.isEmpty()) {
+			result.entries = 0L;
 			markExact(result, RangeCountResult.Mode.EXACT_EMPTY);
 			return result;
 		}
 		validateDatabase(db);
 		validateKey(minKey, minKeyLength, "minimum");
 		validateKey(maxKey, maxKeyLength, "maximum");
+		result.hardUpperBound = db.entries();
 
 		boolean dupSort = db.isDupSort();
 		LocalPageCache localPages = new LocalPageCache(localCacheCapacity(db.depth(), sampleMultiplier));
@@ -175,6 +199,7 @@ final class LmdbBtreeRangeCounter {
 		SeekCursor upper = seekRaw(db, maxKey, maxKeyLength, true, localPages, result);
 		RangePlan direct = rangePlan(lower, upper);
 		if (direct.empty) {
+			result.entries = 0L;
 			markExact(result, RangeCountResult.Mode.EXACT_EMPTY);
 			return result;
 		}
@@ -187,6 +212,7 @@ final class LmdbBtreeRangeCounter {
 
 		LeafMeasurementCache directMeasurements = new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier));
 		PreparedPlan prepared = preparePlan(direct, matcher, dupSort, directMeasurements, localPages, result);
+		result.hardLowerBound = prepared.boundary.matchedEntries;
 		if (prepared.exact) {
 			result.entries = Math.min(db.entries(), prepared.exactMeasurement.matchedEntries);
 			markExact(result, direct.sameLeaf ? RangeCountResult.Mode.EXACT_SAME_LEAF
@@ -194,17 +220,16 @@ final class LmdbBtreeRangeCounter {
 			return result;
 		}
 
+		long estimate;
 		if (matcher == null) {
-			long estimate = estimateMatcherFree(db, direct, prepared, dupSort, minKey, minKeyLength, maxKey,
+			estimate = estimateMatcherFree(db, direct, prepared, dupSort, minKey, minKeyLength, maxKey,
 					maxKeyLength, sampleMultiplier, localPages, result);
-			result.entries = Math.min(db.entries(), Math.max(prepared.boundary.matchedEntries, estimate));
-			return result;
+		} else {
+			estimate = estimateResidual(db, direct, prepared, dupSort, minKey, minKeyLength, maxKey,
+					maxKeyLength, matcher, Math.max(1, residualFieldCount), sampleMultiplier, directMeasurements,
+					localPages, result);
 		}
-
-		long estimate = estimateResidual(db, direct, prepared, dupSort, minKey, minKeyLength, maxKey,
-				maxKeyLength, matcher, Math.max(1, residualFieldCount), sampleMultiplier, directMeasurements,
-				localPages, result);
-		result.entries = Math.min(db.entries(), Math.max(prepared.boundary.matchedEntries, estimate));
+		result.entries = clampToHardBounds(estimate, result);
 		return result;
 	}
 
@@ -260,26 +285,45 @@ final class LmdbBtreeRangeCounter {
 			int leftBudget = splitBudget(budget, leftMass, rightMass, true);
 			int rightBudget = splitBudget(budget, rightMass, leftMass, false);
 
-			EstimateValue leftEstimate = estimatePhysicalPlan(db, left, dupSort, leftBudget,
+			EstimateValue leftEstimate = estimatePhysicalPlan(db, left, dupSort, leftBudget, sampleMultiplier,
 					mix64(baseSeed ^ STREAM_COMPLEMENT_LEFT), localPages, result);
-			EstimateValue rightEstimate = estimatePhysicalPlan(db, right, dupSort, rightBudget,
+			EstimateValue rightEstimate = estimatePhysicalPlan(db, right, dupSort, rightBudget, sampleMultiplier,
 					mix64(baseSeed ^ STREAM_COMPLEMENT_RIGHT), localPages, result);
 			long excluded = saturatedAdd(leftEstimate.entries, rightEstimate.entries);
+			long excludedLower = saturatedAdd(leftEstimate.hardLowerBound, rightEstimate.hardLowerBound);
+			long excludedUpper = Math.min(db.entries(),
+					saturatedAdd(leftEstimate.hardUpperBound, rightEstimate.hardUpperBound));
+			result.hardLowerBound = Math.max(result.hardLowerBound, Math.max(0L, db.entries() - excludedUpper));
+			result.hardUpperBound = Math.min(result.hardUpperBound,
+					Math.max(0L, db.entries() - Math.min(db.entries(), excludedLower)));
 			result.complementUsed = true;
 			result.mode = RangeCountResult.Mode.SAMPLED_COMPLEMENT;
 			result.exact = leftEstimate.exact && rightEstimate.exact;
 			result.exhaustive = leftEstimate.exhaustive && rightEstimate.exhaustive;
-			return excluded >= db.entries() ? 0L : db.entries() - excluded;
+			long selected = excluded >= db.entries() ? 0L : db.entries() - excluded;
+			if (result.exact) {
+				result.hardLowerBound = selected;
+				result.hardUpperBound = selected;
+			}
+			return selected;
 		}
 
-		SampleAggregate aggregate = sampleSpans(db, direct.spans, null, dupSort, budget,
-				mix64(baseSeed ^ STREAM_PHYSICAL), new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier)),
+		SampleAggregate aggregate = samplePhysicalWithConditionalEvidence(db, direct.spans, dupSort, budget,
+				sampleMultiplier, mix64(baseSeed ^ STREAM_PHYSICAL),
+				new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier)),
 				localPages, result);
 		double value = prepared.boundary.logicalEntries + aggregate.estimatedLogicalEntries;
 		result.mode = RangeCountResult.Mode.SAMPLED_DIRECT_RANGE;
 		result.exact = aggregate.exhaustive;
 		result.exhaustive = aggregate.exhaustive;
-		return finiteClampedRound(value, db.entries());
+		result.hardLowerBound = Math.max(result.hardLowerBound,
+				saturatedAdd(prepared.boundary.logicalEntries, aggregate.exactLogicalEntries));
+		long rounded = finiteClampedRound(value, db.entries());
+		if (aggregate.exhaustive) {
+			result.hardLowerBound = rounded;
+			result.hardUpperBound = rounded;
+		}
+		return rounded;
 	}
 
 	private long estimateResidual(LmdbDb db, RangePlan direct, PreparedPlan prepared, boolean dupSort,
@@ -294,40 +338,68 @@ final class LmdbBtreeRangeCounter {
 			physicalTotal = db.entries();
 			physicalExact = true;
 		} else {
-			SampleAggregate physical = sampleSpans(db, direct.spans, null, dupSort,
-					physicalBudget(dupSort, sampleMultiplier), mix64(baseSeed ^ STREAM_PHYSICAL),
+			SampleAggregate physical = samplePhysicalWithConditionalEvidence(db, direct.spans, dupSort,
+					physicalBudget(dupSort, sampleMultiplier), sampleMultiplier,
+					mix64(baseSeed ^ STREAM_PHYSICAL),
 					new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier)), localPages, result);
 			physicalTotal = finiteClampedRound(prepared.boundary.logicalEntries
 					+ physical.estimatedLogicalEntries, db.entries());
 			physicalExact = physical.exhaustive;
 		}
+		if (physicalExact) {
+			result.hardUpperBound = Math.min(result.hardUpperBound, physicalTotal);
+		}
 
 		double middlePhysical = Math.max(0.0d, physicalTotal - prepared.boundary.logicalEntries);
-		SampleAggregate pilot = sampleSpans(db, direct.spans, matcher, dupSort,
-				residualPilotBudget(dupSort, sampleMultiplier),
+		int pilotBudget = residualPilotBudget(dupSort, sampleMultiplier);
+		result.residualPilotProbeBudgetUsed += pilotBudget;
+		SampleAggregate pilot = sampleSpans(db, direct.spans, matcher, dupSort, pilotBudget,
 				mix64(baseSeed ^ STREAM_RESIDUAL_PILOT), matcherMeasurements, localPages, result);
-		int finalBudget = scaledBudget(chooseResidualBudget(pilot, residualFieldCount, dupSort), sampleMultiplier);
+		double physicalPilotDisagreement = multiplicativeDisagreement(middlePhysical,
+				pilot.estimatedLogicalEntries);
+		result.physicalPilotDisagreement = Math.max(result.physicalPilotDisagreement, physicalPilotDisagreement);
+		recordDisagreement(result, physicalPilotDisagreement);
+
+		int finalBaseBudget = chooseResidualBudget(pilot, residualFieldCount, dupSort, physicalPilotDisagreement);
+		int finalBudget = scaledBudget(finalBaseBudget, sampleMultiplier);
+		result.residualFinalProbeBudgetUsed += finalBudget;
 		SampleAggregate sampled = sampleSpans(db, direct.spans, matcher, dupSort, finalBudget,
 				mix64(baseSeed ^ STREAM_RESIDUAL_FINAL), matcherMeasurements, localPages, result);
+		ResidualAssessment assessment = assessResidualEvidence(middlePhysical, pilot, sampled);
+
+		if (!sampled.exhaustive && assessment.difficult && finalBaseBudget < RESIDUAL_RARE_BUDGET) {
+			int confirmationBudget = scaledBudget(nextResidualBudget(finalBaseBudget), sampleMultiplier);
+			result.additionalEvidenceUsed = true;
+			result.conditionalProbeBudgetUsed += confirmationBudget;
+			SampleAggregate confirmation = sampleSpans(db, direct.spans, matcher, dupSort, confirmationBudget,
+					mix64(baseSeed ^ STREAM_RESIDUAL_CONFIRM), matcherMeasurements, localPages, result);
+			double initialEstimate = middlePhysical * sampled.ratio();
+			double confirmationEstimate = middlePhysical * confirmation.ratio();
+			recordDisagreement(result, multiplicativeDisagreement(initialEstimate, confirmationEstimate));
+			sampled = confirmation;
+			assessment = assessResidualEvidence(middlePhysical, pilot, sampled);
+		}
+		recordResidualAssessment(result, assessment);
 
 		double middleMatches;
 		if (sampled.exhaustive) {
 			middleMatches = sampled.estimatedMatchedEntries;
 		} else if (sampled.estimatedLogicalEntries > 0.0d) {
-			double ratio = clampDouble(sampled.estimatedMatchedEntries / sampled.estimatedLogicalEntries, 0.0d,
-					1.0d);
-			middleMatches = middlePhysical * ratio;
+			double ratioEstimate = middlePhysical * sampled.ratio();
+			double directEstimate = sampled.estimatedMatchedEntries;
+			double directRatioDisagreement = multiplicativeDisagreement(ratioEstimate, directEstimate);
+			result.directRatioDisagreement = Math.max(result.directRatioDisagreement, directRatioDisagreement);
+			recordDisagreement(result, directRatioDisagreement);
+			middleMatches = robustResidualBlend(ratioEstimate, directEstimate, assessment.physicalFinalDisagreement,
+					directRatioDisagreement);
 		} else {
 			middleMatches = 0.0d;
 		}
 
 		if (!sampled.exhaustive && sampled.rawMatchedEntries == 0L && middlePhysical > 0.0d) {
-			// Use sampled logical items rather than outer-key count. This is identical for ordinary statement
-			// indexes but avoids an excessively large zero-hit prior when one sampled DUPSORT key owns many values.
 			double effectiveUnits = Math.max(1.0d, sampled.rawLogicalEntries);
 			double oneHitEquivalent = Math.max(1.0d, middlePhysical / effectiveUnits);
 			double sparsePrior = Math.pow(oneHitEquivalent, 1.0d / (residualFieldCount + 1.0d));
-			// Never let the sparse prior claim more than one percent of the physical range.
 			sparsePrior = Math.min(sparsePrior, Math.max(1.0d, middlePhysical * 0.01d));
 			if (middleMatches < sparsePrior) {
 				middleMatches = sparsePrior;
@@ -338,26 +410,46 @@ final class LmdbBtreeRangeCounter {
 		double total = prepared.boundary.matchedEntries + middleMatches;
 		result.mode = RangeCountResult.Mode.SAMPLED_RESIDUAL;
 		result.exact = sampled.exhaustive;
-		result.exhaustive = sampled.exhaustive && physicalExact;
-		return finiteClampedRound(total, physicalTotal);
+		result.exhaustive = sampled.exhaustive;
+		result.hardLowerBound = Math.max(result.hardLowerBound,
+				saturatedAdd(prepared.boundary.matchedEntries, sampled.exactMatchedEntries));
+		long rounded = finiteClampedRound(total, result.hardUpperBound);
+		if (sampled.exhaustive) {
+			result.hardLowerBound = rounded;
+			result.hardUpperBound = rounded;
+			result.secondaryEvidenceRecommended = false;
+		} else {
+			result.secondaryEvidenceRecommended |= assessment.difficult || result.sparsePriorUsed
+					|| result.lowEffectiveSample
+					|| result.disagreement > MAX_STREAM_DISAGREEMENT * MAX_STREAM_DISAGREEMENT;
+		}
+		return rounded;
 	}
 
-	private EstimateValue estimatePhysicalPlan(LmdbDb db, RangePlan plan, boolean dupSort, int budget, long seed,
-			LocalPageCache localPages, RangeCountResult result) throws IOException {
+	private EstimateValue estimatePhysicalPlan(LmdbDb db, RangePlan plan, boolean dupSort, int budget,
+			int sampleMultiplier, long seed, LocalPageCache localPages, RangeCountResult result) throws IOException {
 		if (plan.empty) {
-			return new EstimateValue(0L, true, true);
+			return new EstimateValue(0L, true, true, 0L, 0L);
 		}
 		PreparedPlan prepared = preparePlan(plan, null, dupSort,
 				new LeafMeasurementCache(measurementCapacityForBudget(budget)),
 				localPages, result);
 		if (prepared.exact) {
-			return new EstimateValue(prepared.exactMeasurement.logicalEntries, true, true);
+			long exact = prepared.exactMeasurement.logicalEntries;
+			return new EstimateValue(exact, true, true, exact, exact);
 		}
-		SampleAggregate sampled = sampleSpans(db, plan.spans, null, dupSort, Math.max(1, budget), seed,
-				new LeafMeasurementCache(measurementCapacityForBudget(budget)), localPages, result);
+		SampleAggregate sampled = samplePhysicalWithConditionalEvidence(db, plan.spans, dupSort,
+				Math.max(1, budget), sampleMultiplier, seed,
+				new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier)), localPages, result);
 		long value = finiteClampedRound(prepared.boundary.logicalEntries + sampled.estimatedLogicalEntries,
 				db.entries());
-		return new EstimateValue(value, sampled.exhaustive, sampled.exhaustive);
+		long hardLower = saturatedAdd(prepared.boundary.logicalEntries, sampled.exactLogicalEntries);
+		long hardUpper = db.entries();
+		if (sampled.exhaustive) {
+			hardLower = value;
+			hardUpper = value;
+		}
+		return new EstimateValue(value, sampled.exhaustive, sampled.exhaustive, hardLower, hardUpper);
 	}
 
 	private PreparedPlan preparePlan(RangePlan plan, GroupMatcher matcher, boolean dupSort,
@@ -544,7 +636,6 @@ final class LmdbBtreeRangeCounter {
 					LeafMeasurement measurement = measureLeafPage(pageNumber, matcher, dupSort, measurements,
 							localPages, stats);
 					aggregate.addExact(measurement);
-					aggregate.addRawIfNew(pageNumber, measurement, seen);
 				}
 				continue;
 			}
@@ -560,21 +651,29 @@ final class LmdbBtreeRangeCounter {
 				double logical = 0.0d;
 				double matched = 0.0d;
 				double outerKeys = 0.0d;
+				double logicalSquares = 0.0d;
+				double matchedSquares = 0.0d;
+				double logicalMatchedProducts = 0.0d;
 				long bandSeed = mix64(seed ^ ((long) spanIndex << 40) ^ ((long) bandStart << 20)
 						^ bandEnd ^ band);
 				for (int probe = 0; probe < bandProbes; probe++) {
 					double coordinate = lowDiscrepancyCoordinate(bandSeed, probe);
 					WeightedLeaf sampled = sampleLeaf(span, bandStart, bandEnd, coordinate, matcher, dupSort,
 							measurements, localPages, stats);
-					logical += sampled.weight * sampled.measurement.logicalEntries;
-					matched += sampled.weight * sampled.measurement.matchedEntries;
-					outerKeys += sampled.weight * sampled.measurement.outerKeys;
-					aggregate.addRawIfNew(sampled.pageNumber, sampled.measurement, seen);
+					double logicalContribution = sampled.weight * sampled.measurement.logicalEntries;
+					double matchedContribution = sampled.weight * sampled.measurement.matchedEntries;
+					double outerContribution = sampled.weight * sampled.measurement.outerKeys;
+					logical += logicalContribution;
+					matched += matchedContribution;
+					outerKeys += outerContribution;
+					logicalSquares += logicalContribution * logicalContribution;
+					matchedSquares += matchedContribution * matchedContribution;
+					logicalMatchedProducts += logicalContribution * matchedContribution;
+					aggregate.addSampleObservation(sampled.pageNumber, sampled.measurement, seen);
 					stats.leafSampleProbes++;
 				}
-				aggregate.estimatedLogicalEntries += logical / bandProbes;
-				aggregate.estimatedMatchedEntries += matched / bandProbes;
-				aggregate.estimatedOuterKeys += outerKeys / bandProbes;
+				aggregate.addBand(logical, matched, outerKeys, logicalSquares, matchedSquares,
+						logicalMatchedProducts, bandProbes);
 			}
 		}
 		return aggregate;
@@ -832,10 +931,143 @@ final class LmdbBtreeRangeCounter {
 		return mass;
 	}
 
-	private int chooseResidualBudget(SampleAggregate pilot, int residualFieldCount, boolean dupSort) {
-		double ratio = pilot.estimatedLogicalEntries > 0.0d
-				? pilot.estimatedMatchedEntries / pilot.estimatedLogicalEntries
-				: 0.0d;
+	private SampleAggregate samplePhysicalWithConditionalEvidence(LmdbDb db, List<SiblingSpan> spans,
+			boolean dupSort, int budget, int sampleMultiplier, long seed, LeafMeasurementCache measurements,
+			LocalPageCache localPages, RangeCountResult result) throws IOException {
+		result.physicalProbeBudgetUsed += budget;
+		SampleAggregate primary = sampleSpans(db, spans, null, dupSort, budget, seed, measurements, localPages,
+				result);
+		Reliability primaryReliability = assessReliability(primary, false);
+		if (primary.exhaustive || !primaryReliability.difficult) {
+			recordReliability(result, primaryReliability);
+			return primary;
+		}
+
+		int confirmationBudget = Math.max(budget,
+				scaledBudget(physicalConfirmationBudget(dupSort), sampleMultiplier));
+		result.additionalEvidenceUsed = true;
+		result.conditionalProbeBudgetUsed += confirmationBudget;
+		SampleAggregate confirmation = sampleSpans(db, spans, null, dupSort, confirmationBudget,
+				mix64(seed ^ STREAM_PHYSICAL_CONFIRM), measurements, localPages, result);
+		double disagreement = multiplicativeDisagreement(primary.estimatedLogicalEntries,
+				confirmation.estimatedLogicalEntries);
+		recordDisagreement(result, disagreement);
+		Reliability confirmationReliability = assessReliability(confirmation, false);
+		recordReliability(result, confirmationReliability);
+		return confirmation;
+	}
+
+	private Reliability assessReliability(SampleAggregate aggregate, boolean residualRatio) {
+		if (aggregate.exhaustive) {
+			return Reliability.EXACT;
+		}
+		double effective = aggregate.logicalEffectiveSampleSize();
+		double effectiveFraction = aggregate.effectiveSampleFraction();
+		double uniqueFraction = aggregate.uniqueSampleFraction();
+		double sampledMassFraction = aggregate.sampledMassFraction();
+		double relativeError = residualRatio ? aggregate.ratioRelativeStandardError()
+				: aggregate.logicalRelativeStandardError();
+		double requiredEffective = Math.min(Math.max(1, aggregate.sampleProbes),
+				Math.max(MIN_EFFECTIVE_SAMPLE_SIZE,
+						aggregate.sampleProbes * MIN_EFFECTIVE_SAMPLE_FRACTION));
+		boolean materialUncertainty = sampledMassFraction >= MIN_UNCERTAIN_MASS_FRACTION;
+		boolean lowEffective = materialUncertainty
+				&& (effective < requiredEffective || effectiveFraction < MIN_EFFECTIVE_SAMPLE_FRACTION
+						|| uniqueFraction < MIN_UNIQUE_SAMPLE_FRACTION);
+		double maxError = residualRatio ? MAX_RESIDUAL_RELATIVE_STANDARD_ERROR
+				: MAX_PHYSICAL_RELATIVE_STANDARD_ERROR;
+		boolean highError = materialUncertainty
+				&& (!Double.isFinite(relativeError) || relativeError > maxError);
+		return new Reliability(effective, effectiveFraction, uniqueFraction, sampledMassFraction, relativeError,
+				lowEffective, highError, lowEffective || highError);
+	}
+
+	private ResidualAssessment assessResidualEvidence(double middlePhysical, SampleAggregate pilot,
+			SampleAggregate sampled) {
+		Reliability reliability = assessReliability(sampled, true);
+		double pilotEstimate = middlePhysical * pilot.ratio();
+		double finalEstimate = middlePhysical * sampled.ratio();
+		double pilotFinal = multiplicativeDisagreement(pilotEstimate, finalEstimate);
+		double physicalFinal = multiplicativeDisagreement(middlePhysical, sampled.estimatedLogicalEntries);
+		double directRatio = multiplicativeDisagreement(finalEstimate, sampled.estimatedMatchedEntries);
+		boolean difficult = reliability.difficult || pilotFinal > MAX_STREAM_DISAGREEMENT
+				|| physicalFinal > MAX_STREAM_DISAGREEMENT
+				|| directRatio > MAX_DIRECT_RATIO_DISAGREEMENT;
+		return new ResidualAssessment(reliability, pilotFinal, physicalFinal, directRatio, difficult);
+	}
+
+	private void recordReliability(RangeCountResult result, Reliability reliability) {
+		result.effectiveSampleSize = Math.min(result.effectiveSampleSize, reliability.effectiveSampleSize);
+		result.effectiveSampleFraction = Math.min(result.effectiveSampleFraction,
+				reliability.effectiveSampleFraction);
+		result.sampledMassFraction = Math.max(result.sampledMassFraction, reliability.sampledMassFraction);
+		result.relativeStandardError = Math.max(result.relativeStandardError, reliability.relativeStandardError);
+		result.lowEffectiveSample |= reliability.lowEffectiveSample;
+	}
+
+	private void recordResidualAssessment(RangeCountResult result, ResidualAssessment assessment) {
+		recordReliability(result, assessment.reliability);
+		result.pilotFinalDisagreement = Math.max(result.pilotFinalDisagreement, assessment.pilotFinalDisagreement);
+		result.directRatioDisagreement = Math.max(result.directRatioDisagreement,
+				assessment.directRatioDisagreement);
+		recordDisagreement(result, assessment.pilotFinalDisagreement);
+		recordDisagreement(result, assessment.physicalFinalDisagreement);
+		recordDisagreement(result, assessment.directRatioDisagreement);
+	}
+
+	private void recordDisagreement(RangeCountResult result, double disagreement) {
+		if (!Double.isFinite(disagreement)) {
+			disagreement = Double.POSITIVE_INFINITY;
+		}
+		result.disagreement = Math.max(result.disagreement, disagreement);
+		if (disagreement > MAX_STREAM_DISAGREEMENT) {
+			result.disagreementDetected = true;
+		}
+	}
+
+	private double robustResidualBlend(double ratioEstimate, double directEstimate,
+			double physicalFinalDisagreement, double directRatioDisagreement) {
+		if (ratioEstimate <= 0.0d || directEstimate <= 0.0d
+				|| directRatioDisagreement <= MAX_DIRECT_RATIO_DISAGREEMENT) {
+			return ratioEstimate;
+		}
+		double ratioWeight = physicalFinalDisagreement > MAX_STREAM_DISAGREEMENT ? 0.50d : 0.70d;
+		return Math.expm1(Math.log1p(ratioEstimate) * ratioWeight
+				+ Math.log1p(directEstimate) * (1.0d - ratioWeight));
+	}
+
+	private double multiplicativeDisagreement(double first, double second) {
+		if (first <= 0.0d && second <= 0.0d) {
+			return 1.0d;
+		}
+		double left = Math.max(0.0d, first) + 1.0d;
+		double right = Math.max(0.0d, second) + 1.0d;
+		return Math.max(left / right, right / left);
+	}
+
+	private int nextResidualBudget(int budget) {
+		if (budget < RESIDUAL_MODERATE_BUDGET) {
+			return RESIDUAL_MODERATE_BUDGET;
+		}
+		if (budget < RESIDUAL_SELECTIVE_BUDGET) {
+			return RESIDUAL_SELECTIVE_BUDGET;
+		}
+		return RESIDUAL_RARE_BUDGET;
+	}
+
+	private int physicalConfirmationBudget(boolean dupSort) {
+		return dupSort ? DUPSORT_PHYSICAL_CONFIRMATION_BUDGET : PHYSICAL_CONFIRMATION_BUDGET;
+	}
+
+	private long clampToHardBounds(long value, RangeCountResult result) {
+		long lower = Math.max(0L, result.hardLowerBound);
+		long upper = Math.max(lower, result.hardUpperBound);
+		return value <= lower ? lower : Math.min(value, upper);
+	}
+
+	private int chooseResidualBudget(SampleAggregate pilot, int residualFieldCount, boolean dupSort,
+			double physicalPilotDisagreement) {
+		double ratio = pilot.ratio();
 		int budget;
 		if (pilot.rawMatchedEntries == 0L || ratio < 0.001d) {
 			budget = RESIDUAL_RARE_BUDGET;
@@ -847,10 +1079,18 @@ final class LmdbBtreeRangeCounter {
 			budget = RESIDUAL_COMMON_BUDGET;
 		}
 		if (residualFieldCount >= 2 && budget < RESIDUAL_RARE_BUDGET) {
-			budget = Math.min(RESIDUAL_RARE_BUDGET, budget << 1);
+			budget = nextResidualBudget(budget);
 		}
-		if (dupSort) {
-			budget = Math.min(RESIDUAL_RARE_BUDGET, budget << 1);
+		if (dupSort && budget < RESIDUAL_RARE_BUDGET) {
+			budget = nextResidualBudget(budget);
+		}
+		Reliability pilotReliability = assessReliability(pilot, true);
+		if ((pilotReliability.difficult || physicalPilotDisagreement > MAX_STREAM_DISAGREEMENT)
+				&& budget < RESIDUAL_RARE_BUDGET) {
+			budget = nextResidualBudget(budget);
+		}
+		if (physicalPilotDisagreement > MAX_STREAM_DISAGREEMENT * MAX_STREAM_DISAGREEMENT) {
+			budget = RESIDUAL_RARE_BUDGET;
 		}
 		return budget;
 	}
@@ -1078,13 +1318,24 @@ final class LmdbBtreeRangeCounter {
 	private void markExact(RangeCountResult result, RangeCountResult.Mode mode) {
 		result.exact = true;
 		result.exhaustive = true;
+		result.hardLowerBound = result.entries;
+		result.hardUpperBound = result.entries;
+		result.effectiveSampleSize = Double.POSITIVE_INFINITY;
+		result.effectiveSampleFraction = 1.0d;
+		result.sampledMassFraction = 0.0d;
+		result.relativeStandardError = 0.0d;
+		result.secondaryEvidenceRecommended = false;
 		result.mode = mode;
 	}
 
 	private int localCacheCapacity(int depth, int sampleMultiplier) {
+		int maximumPhysical = Math.max(Math.max(PHYSICAL_SAMPLE_BUDGET, DUPSORT_PHYSICAL_SAMPLE_BUDGET),
+				Math.max(PHYSICAL_CONFIRMATION_BUDGET, DUPSORT_PHYSICAL_CONFIRMATION_BUDGET));
+		int maximumPilot = Math.min(RESIDUAL_RARE_BUDGET, RESIDUAL_PILOT_BUDGET << 1);
 		long expected = Math.max(64L,
 				(long) (scaledBudget(RESIDUAL_RARE_BUDGET, sampleMultiplier)
-						+ scaledBudget(PHYSICAL_SAMPLE_BUDGET, sampleMultiplier) + 64)
+						+ scaledBudget(maximumPilot, sampleMultiplier)
+						+ scaledBudget(maximumPhysical, sampleMultiplier) + 32)
 						* Math.max(2, depth));
 		return (int) Math.min(MAX_LOCAL_PAGE_CACHE, expected);
 	}
@@ -1094,9 +1345,12 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	private int maxMeasurementCapacity(int sampleMultiplier) {
+		int maximumPhysical = Math.max(Math.max(PHYSICAL_SAMPLE_BUDGET, DUPSORT_PHYSICAL_SAMPLE_BUDGET),
+				Math.max(PHYSICAL_CONFIRMATION_BUDGET, DUPSORT_PHYSICAL_CONFIRMATION_BUDGET));
+		int maximumPilot = Math.min(RESIDUAL_RARE_BUDGET, RESIDUAL_PILOT_BUDGET << 1);
 		long expected = 2L * (scaledBudget(RESIDUAL_RARE_BUDGET, sampleMultiplier)
-				+ scaledBudget(RESIDUAL_PILOT_BUDGET, sampleMultiplier)
-				+ scaledBudget(PHYSICAL_SAMPLE_BUDGET, sampleMultiplier));
+				+ scaledBudget(maximumPilot, sampleMultiplier)
+				+ scaledBudget(maximumPhysical, sampleMultiplier));
 		return (int) Math.min(Integer.MAX_VALUE, Math.max(64L, expected));
 	}
 
@@ -1161,10 +1415,22 @@ final class LmdbBtreeRangeCounter {
 	private record PreparedPlan(LeafMeasurement boundary, boolean exact, LeafMeasurement exactMeasurement) {
 	}
 
-	private record EstimateValue(long entries, boolean exact, boolean exhaustive) {
+	private record EstimateValue(long entries, boolean exact, boolean exhaustive, long hardLowerBound,
+			long hardUpperBound) {
 	}
 
 	private record WeightedLeaf(long pageNumber, double weight, LeafMeasurement measurement) {
+	}
+
+	private record Reliability(double effectiveSampleSize, double effectiveSampleFraction,
+			double uniqueSampleFraction, double sampledMassFraction, double relativeStandardError,
+			boolean lowEffectiveSample, boolean highRelativeError, boolean difficult) {
+		private static final Reliability EXACT = new Reliability(Double.POSITIVE_INFINITY, 1.0d, 1.0d,
+				0.0d, 0.0d, false, false, false);
+	}
+
+	private record ResidualAssessment(Reliability reliability, double pilotFinalDisagreement,
+			double physicalFinalDisagreement, double directRatioDisagreement, boolean difficult) {
 	}
 
 	private record LeafMeasurement(long logicalEntries, long matchedEntries, long outerKeys) {
@@ -1187,23 +1453,134 @@ final class LmdbBtreeRangeCounter {
 		double estimatedLogicalEntries;
 		double estimatedMatchedEntries;
 		double estimatedOuterKeys;
+		long exactLogicalEntries;
+		long exactMatchedEntries;
+		double sampledLogicalEntries;
+		double sampledMatchedEntries;
+		double logicalInfluenceSquared;
+		double matchedInfluenceSquared;
+		double logicalVariance;
+		double matchedVariance;
+		double logicalMatchedCovariance;
 		long rawLogicalEntries;
 		long rawMatchedEntries;
 		long rawOuterKeys;
+		int sampleProbes;
+		int uniqueSampledLeaves;
+		int sampledBands;
+		int singletonBands;
 		boolean exhaustive;
 
 		void addExact(LeafMeasurement measurement) {
+			exactLogicalEntries = LeafMeasurement.saturating(exactLogicalEntries, measurement.logicalEntries);
+			exactMatchedEntries = LeafMeasurement.saturating(exactMatchedEntries, measurement.matchedEntries);
 			estimatedLogicalEntries += measurement.logicalEntries;
 			estimatedMatchedEntries += measurement.matchedEntries;
 			estimatedOuterKeys += measurement.outerKeys;
 		}
 
-		void addRawIfNew(long pageNumber, LeafMeasurement measurement, SeenLeafSet seen) {
+		void addSampleObservation(long pageNumber, LeafMeasurement measurement, SeenLeafSet seen) {
+			sampleProbes++;
 			if (seen.add(pageNumber)) {
+				uniqueSampledLeaves++;
 				rawLogicalEntries = LeafMeasurement.saturating(rawLogicalEntries, measurement.logicalEntries);
 				rawMatchedEntries = LeafMeasurement.saturating(rawMatchedEntries, measurement.matchedEntries);
 				rawOuterKeys = LeafMeasurement.saturating(rawOuterKeys, measurement.outerKeys);
 			}
+		}
+
+		void addBand(double logicalSum, double matchedSum, double outerKeysSum, double logicalSquares,
+				double matchedSquares, double logicalMatchedProducts, int samples) {
+			if (samples <= 0) {
+				return;
+			}
+			double inverse = 1.0d / samples;
+			double logicalMean = logicalSum * inverse;
+			double matchedMean = matchedSum * inverse;
+			double outerMean = outerKeysSum * inverse;
+			sampledLogicalEntries += logicalMean;
+			sampledMatchedEntries += matchedMean;
+			estimatedLogicalEntries += logicalMean;
+			estimatedMatchedEntries += matchedMean;
+			estimatedOuterKeys += outerMean;
+			logicalInfluenceSquared += logicalSquares * inverse * inverse;
+			matchedInfluenceSquared += matchedSquares * inverse * inverse;
+			sampledBands++;
+			if (samples == 1) {
+				singletonBands++;
+				return;
+			}
+			double denominator = samples * (double) (samples - 1);
+			logicalVariance += nonNegative(logicalSquares - logicalSum * logicalSum * inverse) / denominator;
+			matchedVariance += nonNegative(matchedSquares - matchedSum * matchedSum * inverse) / denominator;
+			logicalMatchedCovariance += (logicalMatchedProducts - logicalSum * matchedSum * inverse)
+					/ denominator;
+		}
+
+		double ratio() {
+			return estimatedLogicalEntries > 0.0d
+					? clampUnit(estimatedMatchedEntries / estimatedLogicalEntries)
+					: 0.0d;
+		}
+
+		double logicalEffectiveSampleSize() {
+			if (sampleProbes == 0 || sampledLogicalEntries <= 0.0d || logicalInfluenceSquared <= 0.0d) {
+				return sampleProbes == 0 ? Double.POSITIVE_INFINITY : 0.0d;
+			}
+			double effective = sampledLogicalEntries * sampledLogicalEntries / logicalInfluenceSquared;
+			return Math.min(sampleProbes, Math.max(0.0d, effective));
+		}
+
+		double effectiveSampleFraction() {
+			return sampleProbes == 0 ? 1.0d : logicalEffectiveSampleSize() / sampleProbes;
+		}
+
+		double uniqueSampleFraction() {
+			return sampleProbes == 0 ? 1.0d : uniqueSampledLeaves / (double) sampleProbes;
+		}
+
+		double sampledMassFraction() {
+			return estimatedLogicalEntries <= 0.0d ? 0.0d
+					: clampUnit(sampledLogicalEntries / estimatedLogicalEntries);
+		}
+
+		double logicalRelativeStandardError() {
+			if (sampleProbes == 0 || estimatedLogicalEntries <= 0.0d) {
+				return 0.0d;
+			}
+			double effective = logicalEffectiveSampleSize();
+			double concentrationFloor = effective > 0.0d && Double.isFinite(effective)
+					? sampledMassFraction() / Math.sqrt(effective)
+					: Double.POSITIVE_INFINITY;
+			double observed = Math.sqrt(Math.max(0.0d, logicalVariance)) / estimatedLogicalEntries;
+			return Math.max(concentrationFloor, observed);
+		}
+
+		double ratioRelativeStandardError() {
+			if (sampleProbes == 0 || sampledMassFraction() == 0.0d) {
+				return 0.0d;
+			}
+			double ratio = ratio();
+			if (ratio <= 0.0d || estimatedLogicalEntries <= 0.0d) {
+				return Double.POSITIVE_INFINITY;
+			}
+			double effective = logicalEffectiveSampleSize();
+			double bernoulliFloor = effective > 0.0d && Double.isFinite(effective)
+					? sampledMassFraction() * Math.sqrt(Math.max(0.0d, 1.0d - ratio) / (ratio * effective))
+					: Double.POSITIVE_INFINITY;
+			double deltaVariance = matchedVariance + ratio * ratio * logicalVariance
+					- 2.0d * ratio * logicalMatchedCovariance;
+			double observed = Math.sqrt(Math.max(0.0d, deltaVariance))
+					/ Math.max(1.0d, estimatedLogicalEntries * ratio);
+			return Math.max(bernoulliFloor, observed);
+		}
+
+		private static double nonNegative(double value) {
+			return value > 0.0d && Double.isFinite(value) ? value : 0.0d;
+		}
+
+		private static double clampUnit(double value) {
+			return value <= 0.0d ? 0.0d : Math.min(1.0d, value);
 		}
 
 		private static SampleAggregate exactEmpty() {

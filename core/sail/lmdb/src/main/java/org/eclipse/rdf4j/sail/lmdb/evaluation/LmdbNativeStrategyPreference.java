@@ -79,12 +79,16 @@ final class LmdbNativeStrategyPreference {
 	private static final String[] ORDER = {
 			// Parallel IR is the first-class execution family: compiled workers first, then the same kernels served
 			// by the interpreter. Serial IR follows, compiled before interpreted. Cost may still displace any rung.
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
@@ -95,7 +99,9 @@ final class LmdbNativeStrategyPreference {
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION,
+			LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX,
 			LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
@@ -214,6 +220,11 @@ final class LmdbNativeStrategyPreference {
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED:
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL:
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED:
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION:
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX:
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED:
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL:
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED:
 		case LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD:
@@ -243,6 +254,8 @@ final class LmdbNativeStrategyPreference {
 
 	static boolean parallelIrFamily(String family) {
 		return LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL.equals(family)
+				|| LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL.equals(family)
+				|| LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED.equals(family)
 				|| LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED.equals(family)
 				|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL.equals(family)
 				|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED.equals(family)
@@ -255,7 +268,7 @@ final class LmdbNativeStrategyPreference {
 			return false;
 		}
 		return switch (family) {
-		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_KERNEL, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED -> true;
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_KERNEL, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED -> true;
 		default -> false;
 		};
 	}

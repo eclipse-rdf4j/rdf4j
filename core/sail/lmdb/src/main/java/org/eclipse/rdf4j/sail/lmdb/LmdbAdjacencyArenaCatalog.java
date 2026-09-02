@@ -39,6 +39,10 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 	private final ImmutablePagedQuadCsfIndex csfBase;
 	private final LmdbAdjacencySourceRegistry sourceRegistry;
 	private final int[] ownedSourceIds;
+	/** Stable source IDs resolved once while constructing this immutable catalog, never in query hot loops. */
+	private final int[] arenaSourceIds;
+	private final int[] csfDependencySourceIds;
+	private final int csfBaseSourceId;
 	private final AtomicBoolean closed = new AtomicBoolean();
 
 	private LmdbAdjacencyArenaCatalog(LmdbAdjacencyArena[] arenas, ImmutablePagedQuadCsfIndex csfBase,
@@ -56,6 +60,19 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 		this.csfBase = csfBase;
 		this.sourceRegistry = sourceRegistry;
 		this.ownedSourceIds = ownedSourceIds;
+		arenaSourceIds = new int[arenas.length];
+		for (int slot = 0; slot < arenas.length; slot++) {
+			if (arenas[slot] != null) {
+				arenaSourceIds[slot] = sourceRegistry.sourceIdForArena(arenas[slot]);
+			}
+		}
+		csfDependencySourceIds = new int[csfDependencies.length];
+		for (int slot = 0; slot < csfDependencies.length; slot++) {
+			if (csfDependencies[slot] != null) {
+				csfDependencySourceIds[slot] = sourceRegistry.sourceIdForCsf(csfDependencies[slot]);
+			}
+		}
+		csfBaseSourceId = csfBase == null ? 0 : sourceRegistry.sourceIdForCsf(csfBase);
 	}
 
 	/** Creates a legacy-only catalog with the base arena in slot zero. */
@@ -407,9 +424,23 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 	int sourceIdFor(long sourceHandle, int leafKind) {
 		checkOpen();
 		int sourceSlot = unpackSlot(sourceHandle);
-		return leafKind == LmdbAdjacencyRunCodec.LEAF_CSF_SLICE
-				? sourceRegistry.sourceIdForCsf(csfSource(sourceSlot))
-				: sourceRegistry.sourceIdForArena(arena(sourceSlot));
+		if (leafKind == LmdbAdjacencyRunCodec.LEAF_CSF_SLICE) {
+			if (sourceSlot == CSF_SLOT) {
+				if (csfBaseSourceId == 0) {
+					throw new IllegalArgumentException("catalog has no primary CSF source");
+				}
+				return csfBaseSourceId;
+			}
+			if (sourceSlot < 0 || sourceSlot >= csfDependencySourceIds.length
+					|| csfDependencySourceIds[sourceSlot] == 0) {
+				throw new IllegalArgumentException("CSF dependency slot out of range: " + sourceSlot);
+			}
+			return csfDependencySourceIds[sourceSlot];
+		}
+		if (sourceSlot < 0 || sourceSlot >= arenaSourceIds.length || arenaSourceIds[sourceSlot] == 0) {
+			throw new IllegalArgumentException("ordinary arena slot out of range: " + sourceSlot);
+		}
+		return arenaSourceIds[sourceSlot];
 	}
 
 	int slotFor(LmdbAdjacencyArenaCatalog sourceCatalog, long sourceHandle, int leafKind) {

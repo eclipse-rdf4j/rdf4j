@@ -187,6 +187,25 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		return objectTypePredicate != UNKNOWN;
 	}
 
+	/**
+	 * Physical work of the retained evaluator and its structural IR replacement. The matrix walks the edge statement
+	 * population once and probes the one or two type planes; pricing it as the product of the three input cardinalities
+	 * would make the row-enumerating join appear to describe this algorithm and can suppress the IR.
+	 */
+	LmdbNativeWork estimateWork() {
+		double edges = source.estimate(UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN);
+		double sourceTypes = source.estimate(UNKNOWN, subjectTypePredicate, UNKNOWN, UNKNOWN);
+		double targetTypes = linkageMode()
+				? source.estimate(UNKNOWN, objectTypePredicate, UNKNOWN, UNKNOWN)
+				: 0D;
+		if (!Double.isFinite(edges) || !Double.isFinite(sourceTypes) || !Double.isFinite(targetTypes)
+				|| edges < 0D || sourceTypes < 0D || targetTypes < 0D) {
+			return LmdbNativeWork.UNKNOWN;
+		}
+		double center = Math.max(64D, edges + sourceTypes + targetTypes);
+		return LmdbNativeWork.between(center * 0.5D, center * 2D);
+	}
+
 	private static boolean resourceTermKind(int termKind) {
 		return termKind == ValueIds.TERM_KIND_IRI || termKind == ValueIds.TERM_KIND_BNODE
 				|| termKind == ValueIds.TERM_KIND_TRIPLE;

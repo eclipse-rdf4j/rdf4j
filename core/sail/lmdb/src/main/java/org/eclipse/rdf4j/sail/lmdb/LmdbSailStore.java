@@ -4256,6 +4256,18 @@ class LmdbSailStore implements SailStore {
 				}
 
 				@Override
+				public NativeLmdbQuerySource.NodeDomainIntersection nodeDomainIntersection(boolean leftBySubject,
+						boolean rightBySubject) throws IOException {
+					checkOpen();
+					if (!hasStatementsInSource()) {
+						return null;
+					}
+					LmdbAdjacencyReadView view = variablePredicateView();
+					return view == null ? null
+							: directAdjacency.nodeDomainIntersection(view, leftBySubject, rightBySubject, explicit);
+				}
+
+				@Override
 				public NativeLmdbQuerySource.DatatypeSummary nodeDomainDatatypeSummary(boolean bySubject,
 						NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer) throws IOException {
 					checkOpen();
@@ -5542,6 +5554,14 @@ class LmdbSailStore implements SailStore {
 			public NativeLmdbQuerySource.NodeDomainPresence nodeDomainPresence(boolean bySubject) throws IOException {
 				return variablePredicateEligible()
 						? directAdjacency.nodeDomainPresence(adjacencyView, bySubject, explicit)
+						: null;
+			}
+
+			@Override
+			public NativeLmdbQuerySource.NodeDomainIntersection nodeDomainIntersection(boolean leftBySubject,
+					boolean rightBySubject) throws IOException {
+				return variablePredicateEligible()
+						? directAdjacency.nodeDomainIntersection(adjacencyView, leftBySubject, rightBySubject, explicit)
 						: null;
 			}
 

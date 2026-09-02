@@ -16,6 +16,8 @@ import java.util.Objects;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.Charge;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Compact node-to-predicate projection for the paged adjacency base.
@@ -33,6 +35,7 @@ import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 final class LmdbNodePredicateIndex implements AutoCloseable {
 
 	private static final long SYNTHETIC_PREDICATE_ORDINAL = 0;
+	private static final Logger logger = LoggerFactory.getLogger(LmdbNodePredicateIndex.class);
 
 	/**
 	 * Test seam: {@code {plane, node, rawPredicate}} appended to one node's row during emit, or null.
@@ -93,12 +96,18 @@ final class LmdbNodePredicateIndex implements AutoCloseable {
 					+ " versus " + adjacency.predicateCount());
 		}
 
+		long startedNanos = System.nanoTime();
 		int planeMask = options.planeMask();
+		logger.info("Building LMDB node-predicate projection: predicates={}, planeMask=0x{}", predicates.size(),
+				Integer.toHexString(planeMask));
 		ImmutablePagedQuadCsfIndex.BuildPlan plan;
 		try (ImmutablePagedQuadCsfIndex.Builder builder = ImmutablePagedQuadCsfIndex.sizingBuilder(1)) {
 			emit(adjacency, predicates, builder, planeMask);
 			plan = builder.finishPlan();
 		}
+		logger.info(
+				"Sized LMDB node-predicate projection: nativeBytes={}, modeledJavaBytes={}, elapsedMillis={}",
+				plan.nativeBytes(), plan.modeledJavaBytes(), elapsedMillis(startedNanos));
 
 		Charge nativeCharge = account.tryCharge(MemoryKind.NODE_PREDICATE_NATIVE, plan.nativeBytes());
 		if (nativeCharge == null) {
@@ -124,6 +133,15 @@ final class LmdbNodePredicateIndex implements AutoCloseable {
 			try {
 				budget.assertExhausted();
 				LmdbNodePredicateIndex result = new LmdbNodePredicateIndex(index, planeMask);
+				long rows = 0;
+				long incidences = 0;
+				for (int plane = 0; plane < ImmutablePagedQuadCsfIndex.PLANE_COUNT; plane++) {
+					rows = Math.addExact(rows, result.rowCount(plane));
+					incidences = Math.addExact(incidences, result.incidenceCount(plane));
+				}
+				logger.info(
+						"Built LMDB node-predicate projection: rows={}, incidences={}, nativeBytes={}, modeledJavaBytes={}, elapsedMillis={}",
+						rows, incidences, result.nativeBytes(), result.modeledJavaBytes(), elapsedMillis(startedNanos));
 				transferred = true;
 				return result;
 			} finally {
@@ -132,6 +150,10 @@ final class LmdbNodePredicateIndex implements AutoCloseable {
 				}
 			}
 		}
+	}
+
+	private static long elapsedMillis(long startedNanos) {
+		return Math.max(0L, System.nanoTime() - startedNanos) / 1_000_000L;
 	}
 
 	/**

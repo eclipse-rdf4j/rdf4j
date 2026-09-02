@@ -142,6 +142,41 @@ final class LmdbNodeDomainSynopsis implements NativeLmdbQuerySource.NodeDomainSy
 	}
 
 	@Override
+	public NativeLmdbQuerySource.NodeDomainIntersection intersection(
+			NativeLmdbQuerySource.NodeDomainPresence other) {
+		if (other == this) {
+			return LmdbNodeDomainIntersection.create(this, this);
+		}
+		if (other instanceof LmdbNodeDomainSynopsis synopsis) {
+			return LmdbNodeDomainIntersection.create(this, synopsis);
+		}
+		if (other instanceof LmdbNodeDomainPresence presence) {
+			return LmdbNodeDomainIntersection.create(this, presence);
+		}
+		return null;
+	}
+
+	long[] intersectionFirstOrdinals() {
+		return firstOrdinals;
+	}
+
+	int[] intersectionSpans() {
+		return spans;
+	}
+
+	long[][] intersectionDensePresence() {
+		return densePresence;
+	}
+
+	long[][] intersectionSparseIds() {
+		return sparseIds;
+	}
+
+	long[] intersectionDoubleIds() {
+		return doubleIds;
+	}
+
+	@Override
 	public void close() {
 		if (datatypeSummary != null) {
 			datatypeSummary.close();

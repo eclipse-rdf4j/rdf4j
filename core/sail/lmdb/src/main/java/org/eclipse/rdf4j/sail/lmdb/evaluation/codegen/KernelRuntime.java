@@ -661,6 +661,126 @@ public final class KernelRuntime {
 		}
 	}
 
+	/** Primitive insertion-ordered pair-to-count map used by structural type-matrix terminals. */
+	public static final class LongPairCounts {
+		private long[] firstKeys;
+		private long[] secondKeys;
+		private int[] ordinals;
+		private boolean[] used;
+		private long[] orderedFirst;
+		private long[] orderedSecond;
+		private long[] orderedCounts;
+		private int mask;
+		private int threshold;
+		private int size;
+		private int lastSlot = -1;
+
+		public LongPairCounts(int expected) {
+			int orderedCapacity = Math.max(4, expected);
+			int tableCapacity = tableSizeFor(Math.max(2, expected));
+			firstKeys = new long[tableCapacity];
+			secondKeys = new long[tableCapacity];
+			ordinals = new int[tableCapacity];
+			used = new boolean[tableCapacity];
+			orderedFirst = new long[orderedCapacity];
+			orderedSecond = new long[orderedCapacity];
+			orderedCounts = new long[orderedCapacity];
+			mask = tableCapacity - 1;
+			threshold = tableCapacity - (tableCapacity >>> 2);
+		}
+
+		public void add(long left, long right, long count) {
+			if (count == 0L) {
+				return;
+			}
+			if (lastSlot >= 0 && firstKeys[lastSlot] == left && secondKeys[lastSlot] == right) {
+				int ordinal = ordinals[lastSlot];
+				orderedCounts[ordinal] = Math.addExact(orderedCounts[ordinal], count);
+				return;
+			}
+			int slot = findSlot(left, right);
+			if (!used[slot]) {
+				if (size == orderedFirst.length) {
+					int capacity = orderedFirst.length << 1;
+					orderedFirst = java.util.Arrays.copyOf(orderedFirst, capacity);
+					orderedSecond = java.util.Arrays.copyOf(orderedSecond, capacity);
+					orderedCounts = java.util.Arrays.copyOf(orderedCounts, capacity);
+				}
+				used[slot] = true;
+				firstKeys[slot] = left;
+				secondKeys[slot] = right;
+				ordinals[slot] = size;
+				orderedFirst[size] = left;
+				orderedSecond[size] = right;
+				size++;
+				if (size >= threshold) {
+					grow();
+					slot = findSlot(left, right);
+				}
+			}
+			int ordinal = ordinals[slot];
+			orderedCounts[ordinal] = Math.addExact(orderedCounts[ordinal], count);
+			lastSlot = slot;
+		}
+
+		public int size() {
+			return size;
+		}
+
+		public long leftAt(int ordinal) {
+			return orderedFirst[ordinal];
+		}
+
+		public long rightAt(int ordinal) {
+			return orderedSecond[ordinal];
+		}
+
+		public long countAt(int ordinal) {
+			return orderedCounts[ordinal];
+		}
+
+		private int findSlot(long first, long second) {
+			int slot = (int) (mix(first) * 31L + mix(second)) & mask;
+			while (used[slot] && (firstKeys[slot] != first || secondKeys[slot] != second)) {
+				slot = slot + 1 & mask;
+			}
+			return slot;
+		}
+
+		private void grow() {
+			long[] oldFirst = firstKeys;
+			long[] oldSecond = secondKeys;
+			int[] oldOrdinals = ordinals;
+			boolean[] oldUsed = used;
+			int capacity = oldFirst.length << 1;
+			firstKeys = new long[capacity];
+			secondKeys = new long[capacity];
+			ordinals = new int[capacity];
+			used = new boolean[capacity];
+			mask = capacity - 1;
+			threshold = capacity - (capacity >>> 2);
+			lastSlot = -1;
+			for (int old = 0; old < oldFirst.length; old++) {
+				if (!oldUsed[old]) {
+					continue;
+				}
+				int slot = findSlot(oldFirst[old], oldSecond[old]);
+				used[slot] = true;
+				firstKeys[slot] = oldFirst[old];
+				secondKeys[slot] = oldSecond[old];
+				ordinals[slot] = oldOrdinals[old];
+			}
+		}
+
+		private static long mix(long value) {
+			value ^= value >>> 33;
+			value *= 0xff51afd7ed558ccdL;
+			value ^= value >>> 33;
+			value *= 0xc4ceb9fe1a85ec53L;
+			return value ^ value >>> 33;
+		}
+	}
+
 	/**
 	 * Interns fixed-stride packed rows (used for DISTINCT and for multi-column group keys). Rows are stored
 	 * contiguously in insertion order; an open-addressing index maps row content to its ordinal.

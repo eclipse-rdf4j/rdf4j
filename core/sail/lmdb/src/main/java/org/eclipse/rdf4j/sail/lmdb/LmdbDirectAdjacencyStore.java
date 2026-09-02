@@ -3898,6 +3898,35 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return state.base().nodeDomainPresence(plane(bySubject, explicit), account);
 	}
 
+	/**
+	 * Binds the exact set intersection required by structural IR independently of the optional general-purpose synopsis
+	 * feature. The view still obeys the synopsis memory budget and declines for overlays or incomplete bases; unlike
+	 * {@link #nodeDomainSynopsis(LmdbAdjacencyReadView, boolean, boolean)}, merely disabling unrelated synopsis
+	 * consumers must not disable a first-class IR operator whose alternative is statement enumeration.
+	 */
+	NativeLmdbQuerySource.NodeDomainIntersection nodeDomainIntersection(LmdbAdjacencyReadView view,
+			boolean leftBySubject, boolean rightBySubject, boolean explicit) {
+		LmdbAdjacencyPublishedState state = view.state();
+		if (!state.base().coverage().isFull()
+				|| hasApplicableOverlay(state.overlays(), view.snapshotRevision())) {
+			return null;
+		}
+		LmdbNodeDomainSynopsis left = state.base().nodeDomainSynopsis(plane(leftBySubject, explicit), account);
+		if (leftBySubject == rightBySubject) {
+			return left == null ? null : left.intersection(left);
+		}
+		NativeLmdbQuerySource.NodeDomainPresence right = state.base()
+				.nodeDomainPresence(plane(rightBySubject, explicit), account);
+		if (left != null && right != null) {
+			return left.intersection(right);
+		}
+		LmdbNodeDomainSynopsis reversedLeft = state.base()
+				.nodeDomainSynopsis(plane(rightBySubject, explicit), account);
+		NativeLmdbQuerySource.NodeDomainPresence reversedRight = state.base()
+				.nodeDomainPresence(plane(leftBySubject, explicit), account);
+		return reversedLeft == null || reversedRight == null ? null : reversedLeft.intersection(reversedRight);
+	}
+
 	NativeLmdbQuerySource.DatatypeSummary nodeDomainDatatypeSummary(LmdbAdjacencyReadView view, boolean bySubject,
 			boolean explicit, LmdbNodeDomainSynopsis.LiteralDatatypeLookup lookup,
 			NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer) throws IOException {

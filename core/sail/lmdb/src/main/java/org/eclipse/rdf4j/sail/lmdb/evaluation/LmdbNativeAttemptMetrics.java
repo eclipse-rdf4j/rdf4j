@@ -63,6 +63,11 @@ public final class LmdbNativeAttemptMetrics {
 	static final String PATH_IR_KERNEL_WILDCARD_INTERPRETED = "irKernelWildcardInterpreted";
 	static final String PATH_IR_AGGREGATE_WILDCARD = "irAggregateWildcard";
 	static final String PATH_IR_AGGREGATE_WILDCARD_INTERPRETED = "irAggregateWildcardInterpreted";
+	static final String PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION = "irAggregateNodeDomainIntersection";
+	static final String PATH_IR_AGGREGATE_TYPE_MATRIX = "irAggregateTypeMatrix";
+	static final String PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED = "irAggregateTypeMatrixInterpreted";
+	static final String PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL = "irAggregateTypeMatrixParallel";
+	static final String PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED = "irAggregateTypeMatrixParallelInterpreted";
 	/**
 	 * The interpreted execution tier of the IR aggregate kernel (kernel-interpreter plan, D1): the same lowered IR
 	 * served by {@code LmdbNativeKernelInterpreter} when janino codegen is off. A distinct bare path name, because
@@ -99,7 +104,8 @@ public final class LmdbNativeAttemptMetrics {
 	 * Whole-stage codegen strategies; declines against these are logged at INFO to explain why Janino was not picked.
 	 */
 	private static final Set<String> JANINO_STRATEGIES = Set.of(PATH_JANINO_AGGREGATE,
-			PATH_IR_KERNEL, PATH_IR_AGGREGATE, PATH_IR_KERNEL_WILDCARD, PATH_IR_AGGREGATE_WILDCARD);
+			PATH_IR_KERNEL, PATH_IR_AGGREGATE, PATH_IR_AGGREGATE_TYPE_MATRIX, PATH_IR_KERNEL_WILDCARD,
+			PATH_IR_AGGREGATE_WILDCARD);
 	static final String PATH_ORDERED_FACTORIZED_TOP_K = "orderedFactorizedTopK";
 	static final String PATH_ORDERED_FACTORIZED_SORT = "orderedFactorizedSort";
 	static final String PATH_PREFIX_RUN_GROUPS = "prefixRunGroups";
@@ -145,7 +151,10 @@ public final class LmdbNativeAttemptMetrics {
 			PATH_IR_KERNEL,
 			PATH_IR_AGGREGATE, PATH_IR_AGGREGATE_INTERPRETED, PATH_IR_KERNEL_INTERPRETED,
 			PATH_IR_KERNEL_WILDCARD, PATH_IR_KERNEL_WILDCARD_INTERPRETED, PATH_IR_AGGREGATE_WILDCARD,
-			PATH_IR_AGGREGATE_WILDCARD_INTERPRETED, PATH_IR_KERNEL_PARALLEL,
+			PATH_IR_AGGREGATE_WILDCARD_INTERPRETED, PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION,
+			PATH_IR_AGGREGATE_TYPE_MATRIX, PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED,
+			PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL, PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED,
+			PATH_IR_KERNEL_PARALLEL,
 			PATH_IR_AGGREGATE_PARALLEL, PATH_IR_KERNEL_PARALLEL_INTERPRETED,
 			PATH_IR_AGGREGATE_PARALLEL_INTERPRETED, PATH_IR_KERNEL_DISTINCT_PARALLEL,
 			PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED, PATH_IR_KERNEL_DISTINCT,

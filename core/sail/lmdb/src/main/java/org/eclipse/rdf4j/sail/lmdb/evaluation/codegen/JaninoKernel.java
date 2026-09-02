@@ -35,6 +35,11 @@ public interface JaninoKernel {
 	 */
 	int fill(long[] rowBuffer, int maxRows);
 
+	/** Executes the currently bound structural morsel without draining its accumulated output. */
+	default void runBound() {
+		throw new UnsupportedOperationException("kernel does not support morsel accumulation");
+	}
+
 	/** Releases kernel-local scratch state. The default does nothing. */
 	default void close() {
 	}

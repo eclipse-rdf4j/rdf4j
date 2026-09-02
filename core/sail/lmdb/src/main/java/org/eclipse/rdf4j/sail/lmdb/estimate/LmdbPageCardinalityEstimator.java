@@ -25,6 +25,31 @@ import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 /** Bounded, snapshot-consistent LMDB range-cardinality estimator. */
 public final class LmdbPageCardinalityEstimator implements Closeable {
 
+	/** Quality-bearing estimate used to decide whether a second physical layout is worth its I/O. */
+	public record Estimate(
+			long entries,
+			boolean exact,
+			boolean exhaustive,
+			long hardLowerBound,
+			long hardUpperBound,
+			double effectiveSampleSize,
+			double effectiveSampleFraction,
+			double sampledMassFraction,
+			double relativeStandardError,
+			double disagreement,
+			double physicalPilotDisagreement,
+			double pilotFinalDisagreement,
+			double directRatioDisagreement,
+			boolean lowEffectiveSample,
+			boolean disagreementDetected,
+			boolean additionalEvidenceUsed,
+			boolean secondaryEvidenceRecommended,
+			int physicalProbeBudgetUsed,
+			int residualPilotProbeBudgetUsed,
+			int residualFinalProbeBudgetUsed,
+			int conditionalProbeBudgetUsed) {
+	}
+
 	private final LmdbDataFile dataFile;
 	private volatile SnapshotCache lastSnapshot;
 
@@ -59,6 +84,27 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 				residualFieldCount, sampleMultiplier).entries;
 	}
 
+	public Estimate estimateEntriesWithQuality(long txnId, String dbName, byte[] minKey, int minKeyLength,
+			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
+		return estimateEntriesWithQuality(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
+				residualFieldCount, 1);
+	}
+
+	public Estimate estimateEntriesWithQuality(long txnId, String dbName, byte[] minKey, int minKeyLength,
+			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount, int sampleMultiplier)
+			throws IOException {
+		RangeCountResult result = estimateEntriesDetailed(txnId, dbName, minKey, minKeyLength, maxKey,
+				maxKeyLength, matcher, residualFieldCount, sampleMultiplier);
+		return new Estimate(result.entries, result.exact, result.exhaustive, result.hardLowerBound,
+				result.hardUpperBound, result.effectiveSampleSize, result.effectiveSampleFraction,
+				result.sampledMassFraction, result.relativeStandardError, result.disagreement,
+				result.physicalPilotDisagreement, result.pilotFinalDisagreement,
+				result.directRatioDisagreement, result.lowEffectiveSample, result.disagreementDetected,
+				result.additionalEvidenceUsed, result.secondaryEvidenceRecommended,
+				result.physicalProbeBudgetUsed, result.residualPilotProbeBudgetUsed,
+				result.residualFinalProbeBudgetUsed, result.conditionalProbeBudgetUsed);
+	}
+
 	RangeCountResult estimateEntriesDetailed(long txnId, String dbName, byte[] minKey, int minKeyLength,
 			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
 		return estimateEntriesDetailed(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
@@ -74,6 +120,8 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 			RangeCountResult empty = new RangeCountResult();
 			empty.exact = true;
 			empty.exhaustive = true;
+			empty.hardLowerBound = 0L;
+			empty.hardUpperBound = 0L;
 			empty.mode = RangeCountResult.Mode.EXACT_EMPTY;
 			return empty;
 		}

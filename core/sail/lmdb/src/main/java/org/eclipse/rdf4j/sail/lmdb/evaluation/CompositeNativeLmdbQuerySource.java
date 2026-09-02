@@ -1214,6 +1214,34 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			}
 		}
 
+		@Override
+		public NodeDomainIntersection nodeDomainIntersection(boolean leftBySubject, boolean rightBySubject)
+				throws IOException {
+			if (closed) {
+				throw new IOException("composite probe already closed");
+			}
+			NodeDomainIntersection intersection = compositeIntersection(leftBySubject, rightBySubject);
+			return intersection != null || leftBySubject == rightBySubject ? intersection
+					: compositeIntersection(rightBySubject, leftBySubject);
+		}
+
+		private NodeDomainIntersection compositeIntersection(boolean enumerateBySubject, boolean membershipBySubject)
+				throws IOException {
+			NodeDomainIntersection[] enumerated = new NodeDomainIntersection[probes.length];
+			NodeDomainIntersection[] enumerationMembership = new NodeDomainIntersection[probes.length];
+			NodeDomainIntersection[] resultMembership = new NodeDomainIntersection[probes.length];
+			for (int i = 0; i < probes.length; i++) {
+				enumerated[i] = probes[i].nodeDomainIntersection(enumerateBySubject, enumerateBySubject);
+				enumerationMembership[i] = enumerated[i];
+				resultMembership[i] = enumerateBySubject == membershipBySubject ? enumerationMembership[i]
+						: probes[i].nodeDomainIntersection(membershipBySubject, membershipBySubject);
+				if (enumerated[i] == null || enumerationMembership[i] == null || resultMembership[i] == null) {
+					return null;
+				}
+			}
+			return new CompositeNodeDomainIntersection(enumerated, enumerationMembership, resultMembership);
+		}
+
 		private static void closeDomains(LmdbNativeIdDomain[] domains, int last, Throwable primary) {
 			Throwable failure = primary;
 			for (int i = 0; i <= last && i < domains.length; i++) {
@@ -1341,6 +1369,137 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 		if (failure != null) {
 			throw (Error) failure;
+		}
+	}
+
+	/**
+	 * Exact intersection of node-domain unions. Partitions remain owned by one member domain; a node already present in
+	 * an earlier member is skipped, so every ID belongs to exactly one composite partition without allocating a set.
+	 */
+	private static final class CompositeNodeDomainIntersection implements NodeDomainIntersection {
+
+		private final NodeDomainIntersection[] enumerated;
+		private final NodeDomainIntersection[] enumerationMembership;
+		private final NodeDomainIntersection[] resultMembership;
+		private final int[] partitionMembers;
+		private final int[] memberPartitions;
+		private final long estimatedWork;
+
+		private CompositeNodeDomainIntersection(NodeDomainIntersection[] enumerated,
+				NodeDomainIntersection[] enumerationMembership, NodeDomainIntersection[] resultMembership) {
+			this.enumerated = enumerated;
+			this.enumerationMembership = enumerationMembership;
+			this.resultMembership = resultMembership;
+			int partitionCount = 0;
+			long work = 0L;
+			for (NodeDomainIntersection domain : enumerated) {
+				partitionCount = Math.addExact(partitionCount, domain.partitionCount());
+				work = saturatedAdd(work, domain.estimatedWork());
+			}
+			partitionMembers = new int[partitionCount];
+			memberPartitions = new int[partitionCount];
+			int partition = 0;
+			for (int member = 0; member < enumerated.length; member++) {
+				for (int memberPartition = 0; memberPartition < enumerated[member]
+						.partitionCount(); memberPartition++) {
+					partitionMembers[partition] = member;
+					memberPartitions[partition] = memberPartition;
+					partition++;
+				}
+			}
+			estimatedWork = work;
+		}
+
+		private static long saturatedAdd(long left, long right) {
+			return right > Long.MAX_VALUE - left ? Long.MAX_VALUE : left + right;
+		}
+
+		@Override
+		public long estimatedWork() {
+			return estimatedWork;
+		}
+
+		@Override
+		public boolean contains(long nodeId) {
+			return presentIn(enumerationMembership, nodeId) && presentIn(resultMembership, nodeId);
+		}
+
+		private static boolean presentIn(NodeDomainIntersection[] memberships, long nodeId) {
+			for (NodeDomainIntersection membership : memberships) {
+				if (membership.contains(nodeId)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		@Override
+		public int partitionCount() {
+			return partitionMembers.length;
+		}
+
+		@Override
+		public long countPartition(int partition) {
+			long count = 0L;
+			Cursor cursor = cursor(partition);
+			while (cursor.next()) {
+				count++;
+			}
+			return count;
+		}
+
+		@Override
+		public Cursor cursor(int partition) {
+			int member = partitionMembers[partition];
+			return new CompositeNodeDomainCursor(member,
+					enumerated[member].cursor(memberPartitions[partition]));
+		}
+
+		private final class CompositeNodeDomainCursor implements Cursor {
+
+			private final int member;
+			private final Cursor delegate;
+			private long nodeId;
+
+			private CompositeNodeDomainCursor(int member, Cursor delegate) {
+				this.member = member;
+				this.delegate = delegate;
+			}
+
+			@Override
+			public boolean next() {
+				while (delegate.next()) {
+					long candidate = delegate.nodeId();
+					if (!seenInEarlierMember(candidate) && presentInResult(candidate)) {
+						nodeId = candidate;
+						return true;
+					}
+				}
+				return false;
+			}
+
+			private boolean seenInEarlierMember(long candidate) {
+				for (int earlier = 0; earlier < member; earlier++) {
+					if (enumerationMembership[earlier].contains(candidate)) {
+						return true;
+					}
+				}
+				return false;
+			}
+
+			private boolean presentInResult(long candidate) {
+				for (NodeDomainIntersection membership : resultMembership) {
+					if (membership.contains(candidate)) {
+						return true;
+					}
+				}
+				return false;
+			}
+
+			@Override
+			public long nodeId() {
+				return nodeId;
+			}
 		}
 	}
 

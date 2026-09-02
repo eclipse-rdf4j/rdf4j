@@ -113,6 +113,44 @@ class LmdbBtreeRangeCounterDupSortTest {
 	}
 
 	@Test
+	void conditionallyCollectsIndependentEvidenceForDominatedSamples(@TempDir Path tempDir) throws Exception {
+		int leafCount = 192;
+		long[] multiplicities = new long[leafCount];
+		for (int leaf = 0; leaf < leafCount; leaf++) {
+			multiplicities[leaf] = leaf >= 72 && leaf < 80 ? 1_000_000L : 1L;
+		}
+		TreeFile tree = writeSingleBranchDupSortTree(tempDir.resolve("dominated.mdb"), multiplicities);
+
+		RangeCountResult result = count(tree, statementKey(40), statementKey(140), null);
+
+		assertTrue(result.additionalEvidenceUsed, "Dominated samples should trigger an independent confirmation");
+		assertTrue(result.conditionalProbeBudgetUsed > 0);
+		assertTrue(result.exact, "The larger confirmation budget should exhaust this 101-leaf range");
+		assertEquals(result.entries, result.hardLowerBound);
+		assertEquals(result.entries, result.hardUpperBound);
+	}
+
+	@Test
+	void samplingSeedIsStableAcrossCopyOnWritePageRenumbering(@TempDir Path tempDir) throws Exception {
+		int leafCount = 240;
+		long[] multiplicities = new long[leafCount];
+		for (int leaf = 0; leaf < leafCount; leaf++) {
+			multiplicities[leaf] = 1L + leaf % 13;
+			if (leaf >= 96 && leaf < 112) {
+				multiplicities[leaf] += 1_000L;
+			}
+		}
+		TreeFile original = writeSingleBranchDupSortTree(tempDir.resolve("original.mdb"), multiplicities, 0);
+		TreeFile copied = writeSingleBranchDupSortTree(tempDir.resolve("copied.mdb"), multiplicities, 257);
+
+		RangeCountResult first = count(original, statementKey(20), statementKey(220), null);
+		RangeCountResult second = count(copied, statementKey(20), statementKey(220), null);
+
+		assertEquals(first.entries, second.entries);
+		assertTrue(Double.doubleToLongBits(first.disagreement) == Double.doubleToLongBits(second.disagreement));
+	}
+
+	@Test
 	void acceptsDuplicateOrderingFlagsThatDoNotAffectOuterKeyRanges(@TempDir Path tempDir) throws Exception {
 		OuterEntry[] entries = {
 				new OuterEntry(statementKey(10), LmdbFormat.F_DUPDATA, embeddedRegularDuplicates(4))
@@ -190,28 +228,32 @@ class LmdbBtreeRangeCounterDupSortTest {
 	}
 
 	private static TreeFile writeSingleBranchDupSortTree(Path path, long[] multiplicities) throws IOException {
+		return writeSingleBranchDupSortTree(path, multiplicities, 0);
+	}
+
+	private static TreeFile writeSingleBranchDupSortTree(Path path, long[] multiplicities, int rootPage)
+			throws IOException {
 		int leafCount = multiplicities.length;
-		ByteBuffer file = ByteBuffer.allocate((leafCount + 1) * PAGE_SIZE).order(BYTE_ORDER);
+		ByteBuffer file = ByteBuffer.allocate((rootPage + leafCount + 1) * PAGE_SIZE).order(BYTE_ORDER);
 		long[] children = new long[leafCount];
 		byte[][] separators = new byte[leafCount][];
 		long entries = 0;
 		for (int leaf = 0; leaf < leafCount; leaf++) {
-			children[leaf] = leaf + 1L;
+			long leafPage = rootPage + leaf + 1L;
+			children[leaf] = leafPage;
 			separators[leaf] = leaf == 0 ? new byte[0] : statementKey(leaf);
 			long multiplicity = multiplicities[leaf];
 			OuterEntry value = multiplicity == 1
 					? new OuterEntry(statementKey(leaf), 0, new byte[] { 1 })
 					: new OuterEntry(statementKey(leaf), LmdbFormat.F_DUPDATA | LmdbFormat.F_SUBDATA,
 							duplicateDatabase(multiplicity, 10_000L + leaf));
-			writeOuterLeaf(page(file, leaf + 1), leaf + 1L, new OuterEntry[] { value });
+			writeOuterLeaf(page(file, (int) leafPage), leafPage, new OuterEntry[] { value });
 			entries += multiplicity;
 		}
-		writeBranchPage(page(file, 0), 0, children, separators);
+		writeBranchPage(page(file, rootPage), rootPage, children, separators);
 		Files.write(path, file.array());
-		// LMDB includes duplicate-subtree pages in these statistics. Their exact values are irrelevant to structural
-		// correctness here, but making them non-trivial catches accidental reliance on leafPages as outer-leaf count.
-		LmdbDb db = new LmdbDb(0, LmdbFormat.MDB_DUPSORT, 2, 1, leafCount * 2L, 0, entries, 0);
-		return treeFile(path, db, leafCount);
+		LmdbDb db = new LmdbDb(0, LmdbFormat.MDB_DUPSORT, 2, 1, leafCount * 2L, 0, entries, rootPage);
+		return treeFile(path, db, rootPage + leafCount);
 	}
 
 	private static TreeFile treeFile(Path path, LmdbDb db, long lastPage) throws IOException {

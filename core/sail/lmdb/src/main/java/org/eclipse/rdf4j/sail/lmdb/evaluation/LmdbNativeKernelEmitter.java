@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Emit;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateAdjKeys;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateEntry;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateNodeDomainIntersection;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumeratePredicates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Exists;
@@ -72,7 +73,263 @@ final class LmdbNativeKernelEmitter {
 	}
 
 	static String emit(Kernel kernel) {
+		if (kernel.terminal instanceof LmdbNativeKernelIr.TypeMatrixAggregate typeMatrix) {
+			return emitTypeMatrix(kernel, typeMatrix);
+		}
 		return new Emission(kernel).render();
+	}
+
+	/** Emits the type-matrix hot traversal as first-class generated source rather than an opaque callback plan. */
+	private static String emitTypeMatrix(Kernel kernel, LmdbNativeKernelIr.TypeMatrixAggregate terminal) {
+		String simpleName = kernel.className().substring(kernel.className().lastIndexOf('.') + 1);
+		return """
+				package org.eclipse.rdf4j.sail.lmdb.gen;
+
+				import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+				import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+				import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
+				import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
+				import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
+				import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
+				import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.TypeMatrixContext;
+				import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.TypeMatrixTargetBatch;
+
+				public final class %s implements JaninoKernel {
+				    private static final int TYPE_ROOT_MORSEL = 8192;
+				    private static final int EDGE_BATCH = 256;
+				    private static final boolean LINKAGE = %s;
+				    private TypeMatrixContext matrix;
+				    private KernelCancellation cancellation;
+				    private KernelRuntime.LongPairCounts counts;
+				    private final long[] subjects = new long[TYPE_ROOT_MORSEL];
+				    private final int[] typeOffsets = new int[TYPE_ROOT_MORSEL];
+				    private final int[] typeLengths = new int[TYPE_ROOT_MORSEL];
+				    private long[] sourceTypeIds = new long[TYPE_ROOT_MORSEL];
+				    private long[] sourceTypeCounts = new long[TYPE_ROOT_MORSEL];
+				    private final long[] edgeRoots = new long[EDGE_BATCH];
+				    private final long[] edgeMultiplicities = new long[EDGE_BATCH];
+				    private final NativeLmdbQuerySource.NativeAdjacency.FiberBatch fibers = new NativeLmdbQuerySource.NativeAdjacency.FiberBatch(EDGE_BATCH);
+				    private final NativeLmdbQuerySource.NativeAdjacency.NeighborSlice targetTypeSlice = new NativeLmdbQuerySource.NativeAdjacency.NeighborSlice();
+				    private final TypeMatrixTargetBatch targetBatch = new TypeMatrixTargetBatch();
+				    private int subjectCount;
+				    private int typeCount;
+				    private int pollTick;
+				    private int emitted;
+				    private boolean ran;
+
+				    public void bind(KernelContext context) {
+				        matrix = context.typeMatrices[%d];
+				        cancellation = context.cancellation;
+				        if (!context.typeMatrixAccumulation || counts == null) {
+				            counts = new KernelRuntime.LongPairCounts(Math.max(16, matrix.predicateIds.length * 8));
+				            emitted = 0;
+				        }
+				        ran = false; pollTick = 0; targetBatch.clear();
+				    }
+
+				    public int fill(long[] rowBuffer, int maxRows) {
+				        if (!ran) runBound();
+				        int rows = 0;
+				        while (rows < maxRows && emitted < counts.size()) {
+				            int offset = rows * %d;
+				            rowBuffer[offset] = counts.leftAt(emitted);
+				            rowBuffer[offset + 1] = counts.rightAt(emitted);
+				            long count = counts.countAt(emitted++);
+				            for (int output = 0; output < %d; output++) rowBuffer[offset + 2 + output] = count;
+				            rows++;
+				        }
+				        return rows;
+				    }
+
+				    public void runBound() {
+				        if (ran) throw new IllegalStateException("bound type-matrix morsel already ran");
+				        runMatrix();
+				        ran = true;
+				    }
+
+				    private void runMatrix() {
+				        long sourceCount = matrix.sourceTypes.keyCount();
+				        long to = matrix.sourceToOrdinal < 0L ? sourceCount : matrix.sourceToOrdinal;
+				        for (long from = matrix.sourceFromOrdinal; from < to; from += TYPE_ROOT_MORSEL) {
+				            long windowTo = Math.min(to, from + TYPE_ROOT_MORSEL);
+				            NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor typeRoots = matrix.sourceTypes.openKeyRunCursor(from, windowTo);
+				            try { readTypeWindow(typeRoots); } finally { if (typeRoots != null) typeRoots.close(); }
+				            if (subjectCount == 0) continue;
+				            long firstSubject = subjects[0];
+				            boolean hasUpperBound = windowTo < sourceCount;
+				            long upperSubject = hasUpperBound ? matrix.sourceTypes.keyAt(windowTo) : 0L;
+				            for (int predicateIndex = 0; predicateIndex < matrix.edges.length; predicateIndex++) {
+				                KernelRuntime.checkCancelled(cancellation);
+				                NativeLmdbQuerySource.NativeAdjacency edge = matrix.edges[predicateIndex];
+				                long edgeFrom = edge.lowerBoundKeyOrdinal(firstSubject);
+				                long edgeTo = hasUpperBound ? edge.lowerBoundKeyOrdinal(upperSubject) : edge.keyCount();
+				                NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor roots = edge.openKeyRunCursor(edgeFrom, edgeTo);
+				                try {
+				                    if (LINKAGE) scanLinkage(roots); else scanUsage(roots, matrix.predicateIds[predicateIndex]);
+				                } finally { if (roots != null) roots.close(); }
+				            }
+				        }
+				        if (LINKAGE && matrix.targetTypeLabels == null) flushTargetBatch();
+				    }
+
+				    private void readTypeWindow(NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor roots) {
+				        subjectCount = 0; typeCount = 0;
+				        while (roots.advance()) {
+				            subjects[subjectCount] = roots.key();
+				            typeOffsets[subjectCount] = typeCount;
+				            long runSize = roots.runSize();
+				            for (long offset = 0L; offset < runSize;) {
+				                long type = roots.neighborAt(offset);
+				                long end = offset + 1L;
+				                while (end < runSize && roots.neighborAt(end) == type) end++;
+				                ensureSourceCapacity(typeCount + 1);
+				                sourceTypeIds[typeCount] = type;
+				                sourceTypeCounts[typeCount++] = end - offset;
+				                offset = end;
+				            }
+				            typeLengths[subjectCount] = typeCount - typeOffsets[subjectCount];
+				            subjectCount++;
+				        }
+				    }
+
+				    private void scanUsage(NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor roots, long predicate) {
+				        int subjectIndex = 0;
+				        int copied;
+				        while ((copied = roots.fillRootCounts(edgeRoots, 0, edgeMultiplicities, 0, EDGE_BATCH)) > 0) {
+				            checkCancelled();
+				            for (int edgeIndex = 0; edgeIndex < copied && subjectIndex < subjectCount; edgeIndex++) {
+				                long edgeRoot = edgeRoots[edgeIndex];
+				                while (subjectIndex < subjectCount && Long.compareUnsigned(subjects[subjectIndex], edgeRoot) < 0) subjectIndex++;
+				                if (subjectIndex == subjectCount) return;
+				                if (subjects[subjectIndex] != edgeRoot) continue;
+				                int typeEnd = typeOffsets[subjectIndex] + typeLengths[subjectIndex];
+				                for (int type = typeOffsets[subjectIndex]; type < typeEnd; type++) {
+				                    add(sourceTypeIds[type], predicate, Math.multiplyExact(sourceTypeCounts[type], edgeMultiplicities[edgeIndex]));
+				                }
+				                subjectIndex++;
+				            }
+				        }
+				    }
+
+				    private void scanLinkage(NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor roots) {
+				        int subjectIndex = 0;
+				        while (roots.advance()) {
+				            checkCancelled();
+				            long edgeRoot = roots.key();
+				            while (subjectIndex < subjectCount && Long.compareUnsigned(subjects[subjectIndex], edgeRoot) < 0) subjectIndex++;
+				            if (subjectIndex == subjectCount) return;
+				            if (subjects[subjectIndex] != edgeRoot) continue;
+				            int typeOffset = typeOffsets[subjectIndex];
+				            int sourceTypes = typeLengths[subjectIndex++];
+				            do {
+				                int fiberCount = roots.fillFibers(fibers, false);
+				                if (fiberCount == 0) break;
+				                if (matrix.targetTypeLabels != null) {
+				                    for (int fiber = 0; fiber < fiberCount; fiber++) {
+				                        long target = fibers.neighborIds()[fiber];
+				                        if (!resourceId(target)) continue;
+				                        if (!matrix.targetTypeLabels.borrowLabels(target, targetTypeSlice)) throw new IllegalStateException("target type synopsis declined a visible root");
+				                        accumulateTargetTypes(typeOffset, sourceTypes, fibers.contextMultiplicities()[fiber], targetTypeSlice.values(), targetTypeSlice.offset(), targetTypeSlice.length());
+				                    }
+				                    continue;
+				                }
+				                for (int fiber = 0; fiber < fiberCount; fiber++) {
+				                    long target = fibers.neighborIds()[fiber];
+				                    if (!resourceId(target)) continue;
+				                    long edgeMultiplicity = fibers.contextMultiplicities()[fiber];
+				                    int sourceTypeEnd = typeOffset + sourceTypes;
+				                    for (int sourceType = typeOffset; sourceType < sourceTypeEnd; sourceType++) {
+				                        long sourceMultiplicity = Math.multiplyExact(sourceTypeCounts[sourceType], edgeMultiplicity);
+				                        if (!targetBatch.append(sourceTypeIds[sourceType], sourceMultiplicity, target)) {
+				                            flushTargetBatch();
+				                            if (!targetBatch.append(sourceTypeIds[sourceType], sourceMultiplicity, target)) throw new IllegalStateException("empty target batch declined one edge");
+				                        }
+				                    }
+				                }
+				            } while (fibers.nextRunOffset() < roots.runSize());
+				        }
+				    }
+
+				    private void flushTargetBatch() {
+				        int groups = targetBatch.prepare(matrix.targetTypes);
+				        for (int group = 0; group < groups; group++) {
+				            checkCancelled();
+				            long handle = targetBatch.targetHandle(group);
+				            if (handle <= 0L) continue;
+				            long targetSize = matrix.targetTypes.size(handle);
+				            for (long offset = 0L; offset < targetSize;) {
+				                long targetType = matrix.targetTypes.neighborAt(handle, offset);
+				                long end = offset + 1L;
+				                while (end < targetSize && matrix.targetTypes.neighborAt(handle, end) == targetType) end++;
+				                long targetMultiplicity = end - offset;
+				                for (int sorted = targetBatch.groupStart(group); sorted < targetBatch.groupEnd(group); sorted++) {
+				                    int edge = targetBatch.edgeOrdinal(sorted);
+				                    add(targetBatch.sourceType(edge), targetType, Math.multiplyExact(targetBatch.sourceMultiplicity(edge), targetMultiplicity));
+				                }
+				                offset = end;
+				            }
+				        }
+				        targetBatch.clear();
+				    }
+
+				    private static boolean resourceId(long id) {
+				        int kind = ValueIds.termKind(id);
+				        return kind == ValueIds.TERM_KIND_IRI || kind == ValueIds.TERM_KIND_BNODE || kind == ValueIds.TERM_KIND_TRIPLE;
+				    }
+
+				    private void accumulateTargetTypes(int sourceTypeOffset, int sourceTypes, long edgeMultiplicity, long[] targetValues, int targetOffset, int targetLength) {
+				        int targetEnd = targetOffset + targetLength;
+				        for (int offset = targetOffset; offset < targetEnd;) {
+				            long targetType = targetValues[offset];
+				            int end = offset + 1;
+				            while (end < targetEnd && targetValues[end] == targetType) end++;
+				            long targetMultiplicity = end - offset;
+				            int sourceTypeEnd = sourceTypeOffset + sourceTypes;
+				            for (int sourceType = sourceTypeOffset; sourceType < sourceTypeEnd; sourceType++) {
+				                long multiplicity = Math.multiplyExact(sourceTypeCounts[sourceType], edgeMultiplicity);
+				                multiplicity = Math.multiplyExact(multiplicity, targetMultiplicity);
+				                add(sourceTypeIds[sourceType], targetType, multiplicity);
+				            }
+				            offset = end;
+				        }
+				    }
+
+				    private void accumulateTargetTypes(int sourceTypeOffset, int sourceTypes, long edgeMultiplicity, long targetHandle) {
+				        long targetSize = matrix.targetTypes.size(targetHandle);
+				        for (long offset = 0L; offset < targetSize;) {
+				            long targetType = matrix.targetTypes.neighborAt(targetHandle, offset);
+				            long end = offset + 1L;
+				            while (end < targetSize && matrix.targetTypes.neighborAt(targetHandle, end) == targetType) end++;
+				            long targetMultiplicity = end - offset;
+				            int sourceTypeEnd = sourceTypeOffset + sourceTypes;
+				            for (int sourceType = sourceTypeOffset; sourceType < sourceTypeEnd; sourceType++) {
+				                long multiplicity = Math.multiplyExact(sourceTypeCounts[sourceType], edgeMultiplicity);
+				                multiplicity = Math.multiplyExact(multiplicity, targetMultiplicity);
+				                add(sourceTypeIds[sourceType], targetType, multiplicity);
+				            }
+				            offset = end;
+				        }
+				    }
+
+				    private void add(long subjectType, long second, long count) {
+				        if (%s) counts.add(subjectType, second, count); else counts.add(second, subjectType, count);
+				    }
+
+				    private void checkCancelled() {
+				        if ((++pollTick & 1023) == 0) KernelRuntime.checkCancelled(cancellation);
+				    }
+
+				    private void ensureSourceCapacity(int capacity) {
+				        if (capacity <= sourceTypeIds.length) return;
+				        int next = sourceTypeIds.length;
+				        while (next < capacity) next = Math.multiplyExact(next, 2);
+				        sourceTypeIds = java.util.Arrays.copyOf(sourceTypeIds, next);
+				        sourceTypeCounts = java.util.Arrays.copyOf(sourceTypeCounts, next);
+				    }
+				}
+				"""
+				.formatted(simpleName, terminal.linkage, terminal.view, terminal.stride(), terminal.outputCount,
+						terminal.subjectTypeKeyPosition == 0);
 	}
 
 	private static final class Emission {
@@ -665,6 +922,11 @@ final class LmdbNativeKernelEmitter {
 						.append(KEY_CHUNK)
 						.append("];\n");
 			}
+			for (int i = 0; i < kernel.requirements.nodeDomainIntersections; i++) {
+				source.append("    private NativeLmdbQuerySource.NodeDomainIntersection ndi")
+						.append(i)
+						.append(";\n");
+			}
 			// Scratch is per enumerating node, never per view: two nested enumerations share a view, and a shared
 			// buffer would let the inner one overwrite predicates the outer has not processed yet.
 			for (int i = 0; i < nextPredicateEnumId; i++) {
@@ -1003,6 +1265,13 @@ final class LmdbNativeKernelEmitter {
 				source.append("        wa")
 						.append(i)
 						.append(" = context.wildcardAdjacencies[")
+						.append(i)
+						.append("];\n");
+			}
+			for (int i = 0; i < kernel.requirements.nodeDomainIntersections; i++) {
+				source.append("        ndi")
+						.append(i)
+						.append(" = context.nodeDomainIntersections[")
 						.append(i)
 						.append("];\n");
 			}
@@ -5041,6 +5310,9 @@ final class LmdbNativeKernelEmitter {
 			if (!(kernel.terminal instanceof Aggregate)) {
 				return false;
 			}
+			if (nodeDomainIntersectionBulkCount()) {
+				return true;
+			}
 			if (wildcardMultiplicityTail()) {
 				return true;
 			}
@@ -5073,6 +5345,23 @@ final class LmdbNativeKernelEmitter {
 					return false;
 				}
 				if (output.kind != LmdbNativeKernelIr.AGG_COUNT_STAR && output.col == valueCol) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private boolean nodeDomainIntersectionBulkCount() {
+			if (kernel.pipeline.size() != 1
+					|| !(kernel.pipeline.get(0) instanceof EnumerateNodeDomainIntersection)) {
+				return false;
+			}
+			Aggregate aggregate = (Aggregate) kernel.terminal;
+			if (aggregate.groupCols.length != 0 || aggregate.outputs.length == 0) {
+				return false;
+			}
+			for (AggregateOutput output : aggregate.outputs) {
+				if (output.kind != LmdbNativeKernelIr.AGG_COUNT_STAR) {
 					return false;
 				}
 			}
@@ -6080,6 +6369,49 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("}\n");
 				body.append(indent).append(cursor).append(".close();\n");
 				body.append(indent).append(cursor).append(" = null;\n");
+				return;
+			}
+			if (node instanceof EnumerateNodeDomainIntersection) {
+				EnumerateNodeDomainIntersection enumerate = (EnumerateNodeDomainIntersection) node;
+				String view = "ndi" + enumerate.view;
+				if (nodeDomainIntersectionBulkCount()) {
+					body.append(indent)
+							.append("long intersectionCount = 0L;\n")
+							.append(indent)
+							.append("for (int partition = 0; partition < ")
+							.append(view)
+							.append(".partitionCount(); partition++) {\n")
+							.append(indent)
+							.append("    KernelRuntime.checkCancelled(cancel);\n")
+							.append(indent)
+							.append("    intersectionCount = Math.addExact(intersectionCount, ")
+							.append(view)
+							.append(".countPartition(partition));\n")
+							.append(indent)
+							.append("}\n")
+							.append(indent)
+							.append("updateBy(intersectionCount);\n");
+					return;
+				}
+				body.append(indent)
+						.append("for (int partition = 0; partition < ")
+						.append(view)
+						.append(".partitionCount(); partition++) {\n")
+						.append(indent)
+						.append("    NativeLmdbQuerySource.NodeDomainIntersection.Cursor ndiCursor = ")
+						.append(view)
+						.append(".cursor(partition);\n")
+						.append(indent)
+						.append("    while (ndiCursor.next()) {\n")
+						.append(indent)
+						.append("        v")
+						.append(enumerate.col)
+						.append(" = ndiCursor.nodeId();\n")
+						.append(next(nextTemplate, indent + "        "))
+						.append(indent)
+						.append("    }\n")
+						.append(indent)
+						.append("}\n");
 				return;
 			}
 			if (node instanceof SipDomainProbe) {

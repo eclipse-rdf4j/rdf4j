@@ -54,6 +54,21 @@ class LmdbNodeDomainSynopsisTest {
 		assertThat(account.totalChargedBytes()).isZero();
 	}
 
+	@Test
+	void lazyDomainSynopsisMayUseUpToRetainedBaseFootprint() throws IOException {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		try (LmdbInMemoryAdjacencyIndex base = LmdbPagedCsfBaseBuilder.build(new SparseIncomingScanner(),
+				LmdbAdjacencyCoverage.full(), account, 1L << 20, 1L << 17)) {
+			LmdbNodeDomainSynopsis synopsis = base.nodeDomainSynopsis(
+					LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT, account);
+			assertThat(synopsis)
+					.as("an exact query accelerator smaller than its retained base must not be rejected by a fixed 10%% cap")
+					.isNotNull();
+			assertThat(synopsis.cardinality()).isEqualTo(SparseIncomingScanner.ROOTS);
+		}
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
 	private static long uri(long ordinal) {
 		return ValueIds.createId(ValueIds.T_URI, ordinal);
 	}
@@ -92,6 +107,63 @@ class LmdbNodeDomainSynopsisTest {
 				for (int row = 0; row < multiplicity; row++) {
 					consumer.pair(uri(2L * ROOT_COUNT + row), 0L);
 				}
+				consumer.end();
+			}
+		}
+
+		@Override
+		public long snapshotRevision() {
+			return 42L;
+		}
+
+		@Override
+		public long snapshotId() {
+			return 84L;
+		}
+
+		@Override
+		public void ensureSnapshotValid() {
+		}
+
+		@Override
+		public void close() {
+		}
+	}
+
+	private static final class SparseIncomingScanner implements AdjacencySourceScanner {
+
+		private static final int ROOTS = 10_000;
+		private static final long STRIDE = 1_000_000L;
+
+		@Override
+		public void scanPredicates(PredicateConsumer consumer) {
+			consumer.predicate(PREDICATE);
+		}
+
+		@Override
+		public void scanContexts(ContextConsumer consumer) {
+		}
+
+		@Override
+		public void scanOutgoing(boolean explicit, GroupConsumer consumer) {
+			if (!explicit) {
+				return;
+			}
+			for (int root = 0; root < ROOTS; root++) {
+				consumer.begin(uri(root), PREDICATE, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT);
+				consumer.pair(uri(root * STRIDE), 0L);
+				consumer.end();
+			}
+		}
+
+		@Override
+		public void scanIncoming(boolean explicit, GroupConsumer consumer) {
+			if (!explicit) {
+				return;
+			}
+			for (int root = 0; root < ROOTS; root++) {
+				consumer.begin(uri(root * STRIDE), PREDICATE, LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT);
+				consumer.pair(uri(root), 0L);
 				consumer.end();
 			}
 		}

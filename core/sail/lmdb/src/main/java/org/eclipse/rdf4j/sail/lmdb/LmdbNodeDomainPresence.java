@@ -140,6 +140,26 @@ final class LmdbNodeDomainPresence implements NativeLmdbQuerySource.NodeDomainPr
 		charge.close();
 	}
 
+	long[] intersectionFirstOrdinals() {
+		return firstOrdinals;
+	}
+
+	int[] intersectionSpans() {
+		return spans;
+	}
+
+	long[][] intersectionDensePresence() {
+		return densePresence;
+	}
+
+	long[][] intersectionSparseIds() {
+		return sparseIds;
+	}
+
+	long[] intersectionDoubleIds() {
+		return doubleIds;
+	}
+
 	private void fill(LmdbInMemoryAdjacencyIndex base, int plane) {
 		int[] positions = new int[TYPE_SLOTS];
 		int doublePosition = 0;

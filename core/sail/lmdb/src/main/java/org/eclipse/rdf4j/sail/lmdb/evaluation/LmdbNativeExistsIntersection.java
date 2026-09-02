@@ -137,6 +137,30 @@ final class LmdbNativeExistsIntersection {
 		}
 	}
 
+	/** Physical set work for the structural IR proposal, independent of statement cardinality. */
+	LmdbNativeWork nodeDomainIrWork(NativeLmdbQuerySource source, RowState row) {
+		if (outerPattern.hasRuntimeBoundSlot(row)) {
+			return LmdbNativeWork.UNKNOWN;
+		}
+		long outerSubj = outerPattern.s.lookup(row.slots);
+		long outerPred = outerPattern.p.lookup(row.slots);
+		long outerObj = outerPattern.o.lookup(row.slots);
+		long outerContext = outerPattern.c.lookup(row.slots);
+		if (!rootDomainsEligible(outerSubj, outerPred, outerObj, outerContext)) {
+			return LmdbNativeWork.UNKNOWN;
+		}
+		boolean outerBySubject = outerField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX;
+		boolean existsBySubject = existsField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX;
+		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+			NativeLmdbQuerySource.NodeDomainIntersection intersection = probe
+					.nodeDomainIntersection(outerBySubject, existsBySubject);
+			return intersection == null ? LmdbNativeWork.UNKNOWN
+					: LmdbNativeWork.exact(intersection.estimatedWork());
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+	}
+
 	/**
 	 * Runs the merge, or returns null when the plan does not apply under the current row (a base binding bound an outer
 	 * slot) or the source cannot open prefix-run cursors — callers then fall through to the ordinary strategies.
@@ -149,6 +173,11 @@ final class LmdbNativeExistsIntersection {
 		long outerPred = outerPattern.p.lookup(row.slots);
 		long outerObj = outerPattern.o.lookup(row.slots);
 		long outerContext = outerPattern.c.lookup(row.slots);
+		if (nodeDomainIrCanServe(source, outerSubj, outerPred, outerObj, outerContext)) {
+			// The structural IR proposal owns complete immutable node-domain views. This specialist is the exact
+			// fallback for overlays, incomplete/disabled adjacency, refused synopsis memory, or disabled IR tiers.
+			return null;
+		}
 		long synopsisStarted = System.nanoTime();
 		RootIntersectionResult synopsis = tryDomainSynopsisCount(source, outerSubj, outerPred, outerObj, outerContext);
 		DOMAIN_SYNOPSIS_EVALUATION_NANOS.addAndGet(System.nanoTime() - synopsisStarted);
@@ -190,6 +219,21 @@ final class LmdbNativeExistsIntersection {
 		QueryBindingSet result = new QueryBindingSet(1);
 		result.addBinding(aggregateName, SimpleValueFactory.getInstance().createLiteral(BigInteger.valueOf(count)));
 		return List.of(result);
+	}
+
+	private boolean nodeDomainIrCanServe(NativeLmdbQuerySource source, long outerSubj, long outerPred, long outerObj,
+			long outerContext) {
+		if ((!LmdbNativeJaninoCodegen.enabled() && !LmdbNativeKernelInterpreter.enabled())
+				|| !rootDomainsEligible(outerSubj, outerPred, outerObj, outerContext)) {
+			return false;
+		}
+		boolean outerBySubject = outerField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX;
+		boolean existsBySubject = existsField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX;
+		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+			return probe.nodeDomainIntersection(outerBySubject, existsBySubject) != null;
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
 	}
 
 	private RootIntersectionResult tryDomainSynopsisCount(NativeLmdbQuerySource source, long outerSubj,

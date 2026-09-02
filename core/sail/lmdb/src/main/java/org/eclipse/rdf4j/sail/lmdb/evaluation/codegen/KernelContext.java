@@ -55,6 +55,12 @@ public final class KernelContext {
 	public final NativeLmdbQuerySource.DynamicAdjacency[] dynamicAdjacencies;
 	/** Mutable projection-free predicate-plane views; each array element is owned by one generated operator. */
 	public final NativeLmdbQuerySource.WildcardAdjacency[] wildcardAdjacencies;
+	/** Snapshot-bound node-domain intersections; each entry is owned by this kernel open. */
+	public NativeLmdbQuerySource.NodeDomainIntersection[] nodeDomainIntersections = NO_NODE_DOMAIN_INTERSECTIONS;
+	/** Snapshot-bound primitive views for structural type-matrix terminals. */
+	public TypeMatrixContext[] typeMatrices = NO_TYPE_MATRICES;
+	/** Retains one worker-local type-matrix accumulator across successive disjoint morsel binds. */
+	public boolean typeMatrixAccumulation;
 	/** Optional packed f-tree chunk for topology-specialized factorized kernels. */
 	public PackedFtreeContext packedFtree;
 	/**
@@ -75,6 +81,8 @@ public final class KernelContext {
 	private static final NativeLmdbQuerySource.NodePredicates[] NO_NODE_PREDICATES = {};
 	private static final NativeLmdbQuerySource.DynamicAdjacency[] NO_DYNAMIC_ADJACENCIES = {};
 	private static final NativeLmdbQuerySource.WildcardAdjacency[] NO_WILDCARD_ADJACENCIES = {};
+	private static final NativeLmdbQuerySource.NodeDomainIntersection[] NO_NODE_DOMAIN_INTERSECTIONS = {};
+	private static final TypeMatrixContext[] NO_TYPE_MATRICES = {};
 	private static final long[][] NO_KEY_DOMAINS = {};
 
 	public KernelContext(NativeLmdbQuerySource.NativeAdjacency[] adjacencies, long[] constants, long[] entrySlots,
@@ -191,6 +199,26 @@ public final class KernelContext {
 	/** Binds probe-deadline cancellation without widening the constructor surface; null clears it (normal run). */
 	public KernelContext withCancellation(KernelCancellation cancellation) {
 		this.cancellation = cancellation;
+		return this;
+	}
+
+	/** Binds snapshot-owned node-domain intersections without widening the stable constructor surface. */
+	public KernelContext withNodeDomainIntersections(
+			NativeLmdbQuerySource.NodeDomainIntersection[] nodeDomainIntersections) {
+		this.nodeDomainIntersections = nodeDomainIntersections == null ? NO_NODE_DOMAIN_INTERSECTIONS
+				: nodeDomainIntersections;
+		return this;
+	}
+
+	/** Binds snapshot-owned type-matrix views without widening the stable constructor surface. */
+	public KernelContext withTypeMatrices(TypeMatrixContext[] typeMatrices) {
+		this.typeMatrices = typeMatrices == null ? NO_TYPE_MATRICES : typeMatrices;
+		return this;
+	}
+
+	/** Enables worker-local accumulation across successive type-matrix morsels. */
+	public KernelContext withTypeMatrixAccumulation() {
+		typeMatrixAccumulation = true;
 		return this;
 	}
 
