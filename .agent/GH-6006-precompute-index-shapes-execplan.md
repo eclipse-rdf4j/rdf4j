@@ -14,8 +14,9 @@ The server-boot timeout stress test will also stop deciding whether a timeout oc
 - [x] (2026-09-02 21:25Z) Capture pre-change focused test and benchmark evidence.
 - [x] (2026-09-02 21:48Z) Add initialization-time index shape tables and direct matcher masks.
 - [x] (2026-09-02 21:55Z) Replace timeout-text classification with server-side timeout evidence.
-- [ ] Format, inspect, commit, and push before post-change tests.
-- [ ] Run focused and module verification, then compare the benchmark.
+- [x] (2026-09-02 22:50Z) Format, inspect, commit, and push before post-change tests.
+- [x] (2026-09-02 23:49Z) Run focused and full LMDB/server-boot module verification.
+- [x] (2026-09-03 00:08Z) Compare the benchmark against both the original baseline and a same-condition old-code control.
 
 ## Surprises & Discoveries
 
@@ -24,6 +25,9 @@ The server-boot timeout stress test will also stop deciding whether a timeout oc
 
 - Observation: `TripleStore` selects estimator indexes using only which of the four fields are bound, never the actual IDs.
   Evidence: `getBestPageEstimatorIndex`, `getSecondaryNoPrefixEstimatorIndex`, and `residualLayoutScore` inspect only boundness and configured field order, so sixteen initialization-time selections preserve the existing decisions.
+
+- Observation: The original pre-change benchmark and post-change benchmark ran under materially different machine conditions.
+  Evidence: The original pre-change result was `76.193 +/- 10.785 ms/op`; the post-change result was `176.897 +/- 9.105 ms/op` and an immediate repeat was `172.557 +/- 4.414 ms/op`. A detached build of the old code at `2ef8c5484c`, run immediately afterward with the same JDK and JMH parameters, measured `188.150 +/- 6.149 ms/op`. The optimized plan, estimates, chosen indexes, and row counts were unchanged. The same-condition control therefore rules out the lookup-table change as the cause of the earlier cross-time shift and places the new code about 8.3 percent below the old-code control mean.
 
 ## Decision Log
 
@@ -45,7 +49,11 @@ The server-boot timeout stress test will also stop deciding whether a timeout oc
 
 ## Outcomes & Retrospective
 
-The implementation now uses per-index primitive tables for all sixteen binding shapes, plus store-level primary and secondary selection arrays. The invocation path computes one logical binding mask, performs table lookups, and constructs residual matchers from an integer mask. The timeout test uses deterministic one-second requests and server-side interruption evidence. Record commits, post-push test totals, benchmark comparison, and any remaining uncertainty here.
+The implementation uses per-index primitive tables for all sixteen binding shapes, plus store-level primary and secondary selection arrays. The invocation path computes one logical binding mask, performs table lookups, and constructs residual matchers from an integer mask. The shared snapshot page cache, invocation-local page reuse, and leaf-measurement memoization remain intact.
+
+The implementation and tests were pushed before post-change verification in commits `40e07e4de2` (`GH-6006 Precompute LMDB index pattern layouts`) and `41a54f0b61` (`GH-6006 Stabilize LMDB timeout verification`). Focused matcher/cardinality/layout verification passed 8 tests. Full LMDB verification passed 1,190 unit tests with 3 skipped and 103 integration tests with 99 skipped. Full server-boot verification passed 25 unit tests and 2 integration tests. The timeout stress test observed 117 server-side interruptions, zero reader-handle failures, and a successful health query while retaining five representative client-side premature-EOF samples.
+
+The original baseline-to-candidate comparison was invalidated by a large environmental shift. A controlled old-code run under the current conditions measured `188.150 +/- 6.149 ms/op`, while the immediately repeated new code measured `172.557 +/- 4.414 ms/op`; their 99.9 percent intervals do not overlap. This supports the intended execution improvement, but the narrow conclusion is that the precomputed design did not cause the cross-time slowdown and was faster in the same-condition control. A randomized interleaved benchmark would be needed for a stronger percentage claim.
 
 ## Context and Orientation
 
