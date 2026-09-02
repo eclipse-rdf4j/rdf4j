@@ -164,7 +164,7 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 	}
 
 	/**
-	 * Lazily builds one exact fixed-predicate label-pattern synopsis under a cumulative ten-percent base-memory cap.
+	 * Lazily builds one exact fixed-predicate label-pattern synopsis under a cumulative retained-base-sized memory cap.
 	 * Both a refused build and an ineligible sparse domain are memoized, so a hot query never repeats construction.
 	 */
 	synchronized LmdbPredicateLabelSynopsis labelSynopsis(long predicateOrdinal, int plane,
@@ -317,13 +317,18 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 		}
 	}
 
-	/** The label and domain synopses share one cumulative ten-percent budget relative to the retained base. */
+	/**
+	 * The label and domain synopses may together occupy at most one retained base footprint. The hard adjacency account
+	 * remains authoritative, so this derived tier cannot exceed the configured store limit. Tying admission to the full
+	 * compressed base instead of a fixed fraction keeps the overhead proportional while admitting exact sparse-domain
+	 * accelerators whose ID arrays naturally approach the size of the source key columns they replace.
+	 */
 	private static long remainingSynopsisBytes(LmdbAdjacencyMemoryAccount account) {
 		long charged = Math.addExact(
 				account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.LABEL_SYNOPSIS),
 				account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.DOMAIN_SYNOPSIS));
 		long baseBytes = Math.subtractExact(account.totalChargedBytes(), charged);
-		return Math.max(0L, Math.subtractExact(baseBytes / 10L, charged));
+		return Math.max(0L, Math.subtractExact(baseBytes, charged));
 	}
 
 	long statementCount() {
