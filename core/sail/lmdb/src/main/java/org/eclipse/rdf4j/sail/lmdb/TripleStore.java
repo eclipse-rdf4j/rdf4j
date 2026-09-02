@@ -147,6 +147,8 @@ class TripleStore implements Closeable {
 	private final int[] leadingFieldRadixCounts = new int[256];
 	private final int[] leadingFieldRadixOffsets = new int[256];
 	private final LmdbPageCardinalityEstimator pageEstimator;
+	private final TripleIndex[] primaryPageEstimatorIndexes = new TripleIndex[TripleIndex.BINDING_SHAPE_COUNT];
+	private final TripleIndex[] secondaryPageEstimatorIndexes = new TripleIndex[TripleIndex.BINDING_SHAPE_COUNT];
 	private final AtomicLong dataRevision = new AtomicLong();
 
 	private TxnRecordCache recordCache = null;
@@ -243,6 +245,7 @@ class TripleStore implements Closeable {
 		}
 
 		resetAlignedWriteCursorState();
+		initializePageEstimatorIndexSelections();
 	}
 
 	private Set<String> getIndexSpecs() throws SailException {
@@ -647,20 +650,22 @@ class TripleStore implements Closeable {
 			return exactCardinality(subj, pred, obj, context);
 		}
 
-		TripleIndex primaryIndex = getBestPageEstimatorIndex(subj, pred, obj, context);
+		int bindingMask = TripleIndex.bindingMask(subj, pred, obj, context);
+		TripleIndex primaryIndex = getBestPageEstimatorIndex(bindingMask);
 		try {
-			PageEstimatorResult primary = cardinalityUsingPageEstimator(primaryIndex, subj, pred, obj, context);
+			PageEstimatorResult primary = cardinalityUsingPageEstimator(primaryIndex, subj, pred, obj, context,
+					bindingMask);
 			if (!primary.secondaryEvidenceRecommended) {
 				return primary.entries;
 			}
 
-			TripleIndex secondaryIndex = getSecondaryNoPrefixEstimatorIndex(primaryIndex, subj, pred, obj, context);
+			TripleIndex secondaryIndex = getSecondaryNoPrefixEstimatorIndex(bindingMask);
 			if (secondaryIndex == null) {
 				return primary.entries;
 			}
 			try {
 				PageEstimatorResult secondary = cardinalityUsingPageEstimator(secondaryIndex, subj, pred, obj,
-						context);
+						context, bindingMask);
 				return combineIndependentLayoutEstimates(primary, secondary).entries;
 			} catch (IOException | RuntimeException secondaryFailure) {
 				logger.debug("Secondary page cardinality estimate failed for index {}; using primary index {}",
@@ -676,13 +681,13 @@ class TripleStore implements Closeable {
 	}
 
 	private PageEstimatorResult cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj,
-			long context) throws IOException {
+			long context, int bindingMask) throws IOException {
 		LmdbPageCardinalityEstimator estimator = pageEstimator;
 		if (estimator == null) {
 			return PageEstimatorResult.unqualified(cardinalityUsingSamplingEstimator(index, subj, pred, obj, context));
 		}
-		int prefixLength = index.getPatternScore(subj, pred, obj, context);
-		int boundFields = countBoundFields(subj, pred, obj, context);
+		int prefixLength = index.getPatternScore(bindingMask);
+		int boundFields = Integer.bitCount(bindingMask);
 		int residualFieldCount = boundFields - prefixLength;
 		final String explicitDbName = index.getName(true);
 		final String inferredDbName = index.getName(false);
@@ -696,17 +701,17 @@ class TripleStore implements Closeable {
 			}
 
 			ByteBuffer minKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			index.getMinKeyForPrefix(minKeyBuffer, subj, pred, obj, context, prefixLength);
+			index.getMinKeyForPattern(minKeyBuffer, subj, pred, obj, context, bindingMask);
 			minKeyBuffer.flip();
 			byte[] minKey = toArray(minKeyBuffer);
 
 			ByteBuffer maxKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			index.getMaxKeyForPrefix(maxKeyBuffer, subj, pred, obj, context, prefixLength);
+			index.getMaxKeyForPattern(maxKeyBuffer, subj, pred, obj, context, bindingMask);
 			maxKeyBuffer.flip();
 			byte[] maxKey = toArray(maxKeyBuffer);
 
 			GroupMatcher matcher = residualFieldCount == 0 ? null
-					: index.createResidualMatcher(subj, pred, obj, context, prefixLength);
+					: index.createResidualMatcher(subj, pred, obj, context, bindingMask);
 			LmdbPageCardinalityEstimator.Estimate explicit = estimator.estimateEntriesWithQuality(txnId,
 					explicitDbName, minKey, minKey.length, maxKey, maxKey.length, matcher, residualFieldCount);
 			LmdbPageCardinalityEstimator.Estimate inferred = estimator.estimateEntriesWithQuality(txnId,
@@ -844,13 +849,21 @@ class TripleStore implements Closeable {
 		return Math.max(left / right, right / left);
 	}
 
-	private TripleIndex getBestPageEstimatorIndex(long subj, long pred, long obj, long context) {
+	private void initializePageEstimatorIndexSelections() {
+		for (int bindingMask = 0; bindingMask < TripleIndex.BINDING_SHAPE_COUNT; bindingMask++) {
+			TripleIndex primary = selectBestPageEstimatorIndex(bindingMask);
+			primaryPageEstimatorIndexes[bindingMask] = primary;
+			secondaryPageEstimatorIndexes[bindingMask] = selectSecondaryNoPrefixEstimatorIndex(primary, bindingMask);
+		}
+	}
+
+	private TripleIndex selectBestPageEstimatorIndex(int bindingMask) {
 		TripleIndex best = null;
 		int bestPrefix = -1;
 		int bestResidualLayoutScore = Integer.MIN_VALUE;
 		for (TripleIndex candidate : indexes) {
-			int prefix = candidate.getPatternScore(subj, pred, obj, context);
-			int residualLayoutScore = residualLayoutScore(candidate, subj, pred, obj, context);
+			int prefix = candidate.getPatternScore(bindingMask);
+			int residualLayoutScore = candidate.getResidualLayoutScore(bindingMask);
 			if (prefix > bestPrefix || prefix == bestPrefix && residualLayoutScore > bestResidualLayoutScore) {
 				best = candidate;
 				bestPrefix = prefix;
@@ -860,10 +873,8 @@ class TripleStore implements Closeable {
 		return Objects.requireNonNull(best, "No LMDB statement index is available");
 	}
 
-	private TripleIndex getSecondaryNoPrefixEstimatorIndex(TripleIndex primary, long subj, long pred, long obj,
-			long context) {
-		if (countBoundFields(subj, pred, obj, context) == 0
-				|| primary.getPatternScore(subj, pred, obj, context) != 0) {
+	private TripleIndex selectSecondaryNoPrefixEstimatorIndex(TripleIndex primary, int bindingMask) {
+		if (bindingMask == 0 || primary.getPatternScore(bindingMask) != 0) {
 			return null;
 		}
 
@@ -872,11 +883,11 @@ class TripleStore implements Closeable {
 		boolean bestHasDifferentLeadingField = false;
 		int bestScore = Integer.MIN_VALUE;
 		for (TripleIndex candidate : indexes) {
-			if (candidate == primary || candidate.getPatternScore(subj, pred, obj, context) != 0) {
+			if (candidate == primary || candidate.getPatternScore(bindingMask) != 0) {
 				continue;
 			}
 			boolean differentLeadingField = candidate.getFieldSeq()[0] != primaryLeadingField;
-			int score = residualLayoutScore(candidate, subj, pred, obj, context);
+			int score = candidate.getResidualLayoutScore(bindingMask);
 			if (best == null || differentLeadingField && !bestHasDifferentLeadingField
 					|| differentLeadingField == bestHasDifferentLeadingField && score > bestScore) {
 				best = candidate;
@@ -887,30 +898,12 @@ class TripleStore implements Closeable {
 		return best;
 	}
 
-	private int residualLayoutScore(TripleIndex index, long subj, long pred, long obj, long context) {
-		int score = 0;
-		char[] fields = index.getFieldSeq();
-		for (int position = 0; position < fields.length; position++) {
-			if (isBoundField(fields[position], subj, pred, obj, context)) {
-				score += 1 << ((fields.length - position - 1) * 4);
-			}
-		}
-		return score;
+	TripleIndex getBestPageEstimatorIndex(int bindingMask) {
+		return primaryPageEstimatorIndexes[bindingMask];
 	}
 
-	private boolean isBoundField(char field, long subj, long pred, long obj, long context) {
-		return switch (field) {
-		case 's' -> subj >= 0;
-		case 'p' -> pred >= 0;
-		case 'o' -> obj >= 0;
-		case 'c' -> context >= 0;
-		default -> throw new IllegalArgumentException("Invalid index field: " + field);
-		};
-	}
-
-	private int countBoundFields(long subj, long pred, long obj, long context) {
-		return (subj >= 0 ? 1 : 0) + (pred >= 0 ? 1 : 0) + (obj >= 0 ? 1 : 0)
-				+ (context >= 0 ? 1 : 0);
+	TripleIndex getSecondaryNoPrefixEstimatorIndex(int bindingMask) {
+		return secondaryPageEstimatorIndexes[bindingMask];
 	}
 
 	private record PageEstimatorResult(double entries, boolean exact, double hardLowerBound,
