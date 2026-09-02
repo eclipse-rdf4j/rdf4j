@@ -32,10 +32,28 @@ final class RangeCountResult {
 	long leafSampleProbes;
 	long matcherLeafScans;
 	long matcherOuterKeysScanned;
+	long hardLowerBound;
+	long hardUpperBound = Long.MAX_VALUE;
+	int physicalProbeBudgetUsed;
+	int residualPilotProbeBudgetUsed;
+	int residualFinalProbeBudgetUsed;
+	int conditionalProbeBudgetUsed;
+	double effectiveSampleSize = Double.POSITIVE_INFINITY;
+	double effectiveSampleFraction = 1.0d;
+	double sampledMassFraction;
+	double relativeStandardError;
+	double disagreement = 1.0d;
+	double physicalPilotDisagreement = 1.0d;
+	double pilotFinalDisagreement = 1.0d;
+	double directRatioDisagreement = 1.0d;
 	boolean exact;
 	boolean exhaustive;
 	boolean complementUsed;
 	boolean sparsePriorUsed;
+	boolean lowEffectiveSample;
+	boolean disagreementDetected;
+	boolean additionalEvidenceUsed;
+	boolean secondaryEvidenceRecommended;
 	Mode mode = Mode.EXACT_EMPTY;
 
 	long estimatedBytes(int pageSize) {
