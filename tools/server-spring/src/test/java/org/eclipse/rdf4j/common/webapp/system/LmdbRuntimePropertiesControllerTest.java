@@ -75,16 +75,16 @@ class LmdbRuntimePropertiesControllerTest {
 	}
 
 	@Test
-	void postRequiresAdministratorRoleAndDoesNotMutate() throws Exception {
+	void postSucceedsWithoutAdministratorRole() throws Exception {
 		String previous = System.getProperty(NATIVE_ENGINE);
 		try {
 			String requested = Boolean.toString(!Boolean.parseBoolean(previous));
 			MockHttpServletResponse response = request("POST", NATIVE_ENGINE, requested);
 
-			assertThat(response.getStatus()).isEqualTo(403);
+			assertThat(response.getStatus()).isEqualTo(200);
 			assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
-			assertThat(response.getContentAsString()).contains("\"error\"").contains("rdf4j-admin");
-			assertThat(System.getProperty(NATIVE_ENGINE)).isEqualTo(previous);
+			assertThat(response.getContentAsString()).contains("\"enabled\":" + requested);
+			assertThat(System.getProperty(NATIVE_ENGINE)).isEqualTo(requested);
 		} finally {
 			restore(NATIVE_ENGINE, previous);
 		}
