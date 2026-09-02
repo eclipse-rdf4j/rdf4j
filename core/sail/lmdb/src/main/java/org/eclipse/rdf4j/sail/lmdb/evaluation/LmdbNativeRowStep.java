@@ -1132,7 +1132,10 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			LmdbNativeStrategyProposal<NativeUnorderedInput> wildcardExists = proposeBatch(row, null, false);
 			if (wildcardExists != null) {
 				try {
-					return wildcardExists.open();
+					NativeUnorderedInput opened = wildcardExists.open();
+					if (opened != null) {
+						return opened;
+					}
 				} finally {
 					wildcardExists.close();
 				}
@@ -1147,7 +1150,10 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			LmdbNativeStrategyProposal<NativeUnorderedInput> wildcard = proposeBatch(row, wildcardJoin, false);
 			if (wildcard != null) {
 				try {
-					return wildcard.open();
+					NativeUnorderedInput opened = wildcard.open();
+					if (opened != null) {
+						return opened;
+					}
 				} finally {
 					wildcard.close();
 				}
@@ -1181,18 +1187,30 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			arbiter.offer(() -> wrapCursorProposal(row, LmdbNativeParallelPipelines.propose(this, row),
 					this::acceptParallel));
 			arbiter.offer(() -> wrapCursorProposal(row,
-					LmdbNativeKernelExecution.proposeParallelRows(arg, row, originalExpr), this::acceptKernel));
+					LmdbNativeKernelExecution.proposeParallelRows(arg, row, originalExpr, false), this::acceptKernel));
 			arbiter.offer(() -> wrapCursorProposal(row,
-					LmdbNativeKernelExecution.proposeRows(arg, row, originalExpr), this::acceptKernel));
+					LmdbNativeKernelExecution.proposeParallelRows(arg, row, originalExpr, true), this::acceptKernel));
+			arbiter.offer(() -> wrapCursorProposal(row,
+					LmdbNativeKernelExecution.proposeRows(arg, row, originalExpr, false), this::acceptKernel));
+			arbiter.offer(() -> wrapCursorProposal(row,
+					LmdbNativeKernelExecution.proposeRows(arg, row, originalExpr, true), this::acceptKernel));
 			if (distinct && orderSlots.length == 0) {
 				// The DISTINCT-sinking kernel replaces input AND dedup in one cursor; it competes here instead of
 				// capturing by ladder position (which starved factorized/batch and generated no cost evidence). The
 				// ORDER BY materializer callers need non-distinct sort slots, hence the orderSlots gate.
 				arbiter.offer(() -> wrapCursorProposal(row,
-						LmdbNativeKernelExecution.proposeParallelDistinctRows(arg, row, originalExpr, sourceSlots),
+						LmdbNativeKernelExecution.proposeParallelDistinctRows(arg, row, originalExpr, sourceSlots,
+								false),
 						this::acceptDistinctKernel));
 				arbiter.offer(() -> wrapCursorProposal(row,
-						LmdbNativeKernelExecution.proposeDistinctRows(arg, row, originalExpr, sourceSlots),
+						LmdbNativeKernelExecution.proposeParallelDistinctRows(arg, row, originalExpr, sourceSlots,
+								true),
+						this::acceptDistinctKernel));
+				arbiter.offer(() -> wrapCursorProposal(row,
+						LmdbNativeKernelExecution.proposeDistinctRows(arg, row, originalExpr, sourceSlots, false),
+						this::acceptDistinctKernel));
+				arbiter.offer(() -> wrapCursorProposal(row,
+						LmdbNativeKernelExecution.proposeDistinctRows(arg, row, originalExpr, sourceSlots, true),
 						this::acceptDistinctKernel));
 			}
 			arbiter.offer(() -> inputProposal(

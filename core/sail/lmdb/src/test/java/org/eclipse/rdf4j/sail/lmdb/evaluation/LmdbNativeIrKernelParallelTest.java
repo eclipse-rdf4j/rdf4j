@@ -222,7 +222,7 @@ class LmdbNativeIrKernelParallelTest {
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
-		System.setProperty("rdf4j.lmdb.parallel.startupWork", "1.0E12");
+		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
 		System.setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
 	}
 

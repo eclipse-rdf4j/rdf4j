@@ -748,18 +748,19 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			// the arbiter immediately re-ranks the serial kernel and exact fallbacks without replaying partial output.
 			boolean wildcardIr = LmdbNativeKernelExecution.wildcardIrCandidate(arg);
 			boolean compiledIr = LmdbNativeKernelExecution.janinoAdmitted(arg);
-			String irAggregateTag = compiledIr
-					? (wildcardIr ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD
-							: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE)
-					: LmdbNativeKernelInterpreter.enabled()
-							? (wildcardIr ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED
-									: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED)
-							: null;
-			String irParallelTag = compiledIr ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL
-					: LmdbNativeKernelInterpreter.enabled()
+			boolean interpretedIr = LmdbNativeKernelInterpreter.enabled();
+			boolean parallelIr = LmdbNativeKernelExecution.aggregateParallelProposalEnabled();
+			String compiledSerialTag = wildcardIr ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD
+					: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE;
+			String interpretedSerialTag = wildcardIr
+					? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED
+					: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED;
+			String highestIrTag = compiledIr && parallelIr
+					? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL
+					: interpretedIr && parallelIr
 							? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED
-							: null;
-			if (irAggregateTag != null && !moreSpecializedStrategyHandlesRow(irAggregateTag, row)) {
+							: compiledIr ? compiledSerialTag : interpretedIr ? interpretedSerialTag : null;
+			if (highestIrTag != null && !algorithmicSpecialistHandlesRow(row)) {
 				LmdbNativeWork candidateWork = arg.estimateWork(row, row.boundMask());
 				if (wildcardIr) {
 					LmdbNativeWork physicalWildcardWork = LmdbWildcardPredicateBatch
@@ -771,21 +772,44 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					}
 				}
 				final LmdbNativeWork irAggregateWork = candidateWork;
-				if (irParallelTag != null && LmdbNativeKernelExecution.aggregateParallelProposalEnabled()) {
-					arbiter.offer(() -> estimatedProposal(
-							() -> LmdbNativeKernelExecution.tryEvaluateAggregateParallel(arg, row, groupSlots,
-									aggregates, this, explainTarget, havingCondition),
-							irParallelTag, LmdbNativeKernelExecution.parallelProposalWork(irAggregateWork),
-							LmdbNativeKernelExecution.parallelStartupWork()));
-				}
-				arbiter.offer(() -> estimatedProposal(() -> {
-					List<BindingSet> result = LmdbNativeKernelExecution.tryEvaluateAggregateSerial(arg, row, groupSlots,
-							aggregates, this, explainTarget, havingCondition);
-					if (result != null) {
-						LmdbNativeExplain.recordExecutionPath(explainTarget, irAggregateTag);
+				if (parallelIr) {
+					if (compiledIr) {
+						arbiter.offer(() -> estimatedProposal(
+								() -> LmdbNativeKernelExecution.tryEvaluateAggregateParallel(arg, row, groupSlots,
+										aggregates, this, explainTarget, havingCondition, false),
+								LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+								LmdbNativeKernelExecution.parallelProposalWork(irAggregateWork),
+								LmdbNativeKernelExecution.parallelStartupWork()));
 					}
-					return result;
-				}, irAggregateTag, irAggregateWork));
+					if (interpretedIr) {
+						arbiter.offer(() -> estimatedProposal(
+								() -> LmdbNativeKernelExecution.tryEvaluateAggregateParallel(arg, row, groupSlots,
+										aggregates, this, explainTarget, havingCondition, true),
+								LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
+								LmdbNativeKernelExecution.parallelProposalWork(irAggregateWork),
+								LmdbNativeKernelExecution.parallelStartupWork()));
+					}
+				}
+				if (compiledIr) {
+					arbiter.offer(() -> estimatedProposal(() -> {
+						List<BindingSet> result = LmdbNativeKernelExecution.tryEvaluateAggregateSerial(arg, row,
+								groupSlots, aggregates, this, explainTarget, havingCondition, false);
+						if (result != null) {
+							LmdbNativeExplain.recordExecutionPath(explainTarget, compiledSerialTag);
+						}
+						return result;
+					}, compiledSerialTag, irAggregateWork));
+				}
+				if (interpretedIr) {
+					arbiter.offer(() -> estimatedProposal(() -> {
+						List<BindingSet> result = LmdbNativeKernelExecution.tryEvaluateAggregateSerial(arg, row,
+								groupSlots, aggregates, this, explainTarget, havingCondition, true);
+						if (result != null) {
+							LmdbNativeExplain.recordExecutionPath(explainTarget, interpretedSerialTag);
+						}
+						return result;
+					}, interpretedSerialTag, irAggregateWork));
+				}
 			}
 			if (replaySafe && orderedSinglePatternHandlesRow()) {
 				arbiter.offer(() -> estimatedProposal(() -> {
@@ -1186,8 +1210,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	}
 
 	/**
-	 * True when some strategy ranked above {@code candidate} in {@link LmdbNativeStrategyPreference} can serve this
-	 * row, and so {@code candidate} must not intercept it.
+	 * True when an algorithmically stronger specialist can serve this row, and so a row-enumerating IR aggregate must
+	 * not intercept it.
 	 * <p>
 	 * The distinction being enforced is between strategies that reduce the <em>number of rows</em> enumerated and those
 	 * that reduce the <em>cost per row</em>. A prefix run walks roughly one index position per distinct value; a
@@ -1197,21 +1221,14 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	 * regressed from ~0.16ms to ~10ms, and how HIGHLY_CONNECTED q8 regressed from ~110ms to ~241ms once the kernel
 	 * learned to compile a JoinPlan.
 	 * <p>
-	 * This replaces a hand-written guard that encoded exactly one edge of this relation (prefix-run versus the IR
-	 * kernel). Consulting the declared order instead means the next rung to widen its capability surface is covered
-	 * without anyone remembering to add another guard.
+	 * This is deliberately independent of {@link LmdbNativeStrategyPreference}. That table orders comparable admitted
+	 * candidates and now puts the parallel IR tiers first, but changing a tie-break order must not erase an asymptotic
+	 * capability boundary. These recognizers are kept in lock-step with the corresponding proposal guards above.
 	 */
-	private boolean moreSpecializedStrategyHandlesRow(String candidate, RowState row) {
-		if (adjacencyAggregate != null && adjacencyAggregate.handles(row) && LmdbNativeStrategyPreference
-				.prefers(LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, candidate)) {
-			return true;
-		}
-		if (prefixRunHandlesRow(row) && LmdbNativeStrategyPreference
-				.prefers(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS, candidate)) {
-			return true;
-		}
-		return wcojHandlesRow(row)
-				&& LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_WCOJ, candidate);
+	private boolean algorithmicSpecialistHandlesRow(RowState row) {
+		return adjacencyAggregate != null && adjacencyAggregate.handles(row)
+				|| prefixRunHandlesRow(row)
+				|| wcojHandlesRow(row);
 	}
 
 	List<BindingSet> evaluatePrefixRuns(RowState row) {

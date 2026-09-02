@@ -156,15 +156,15 @@ class LmdbNativeIrAggregateParallelTest {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
-		// These tests name the IR aggregate rung. Keep the common arbiter enabled, but remove competing
-		// factorized/interpreted-parallel winners so the named proposal is the one under test.
+		// These tests name the parallel IR aggregate rung. Keep the common arbiter enabled, remove competing
+		// factorized winners, and charge no synthetic startup work so the named proposal reaches its bind gates.
 		System.setProperty("rdf4j.lmdb.factorizedTail.enabled", "false");
 		System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
 		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
-		System.setProperty("rdf4j.lmdb.parallel.startupWork", "1.0E12");
+		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
 		KernelExecutionTestAccess.resetCostCalibration();
 	}
 

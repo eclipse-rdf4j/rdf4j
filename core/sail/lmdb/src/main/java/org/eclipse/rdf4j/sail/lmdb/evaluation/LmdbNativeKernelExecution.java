@@ -59,6 +59,12 @@ final class LmdbNativeKernelExecution {
 		DISABLE
 	}
 
+	private enum KernelTier {
+		AUTO,
+		COMPILED,
+		INTERPRETED
+	}
+
 	private LmdbNativeKernelExecution() {
 	}
 
@@ -105,30 +111,30 @@ final class LmdbNativeKernelExecution {
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
 			ValueExpr havingCondition) {
 		return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, havingCondition,
-				ParallelExecution.PREFER);
+				ParallelExecution.PREFER, KernelTier.AUTO);
 	}
 
 	static List<BindingSet> tryEvaluateAggregateParallel(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
-			ValueExpr havingCondition) {
+			ValueExpr havingCondition, boolean interpreted) {
 		return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, havingCondition,
-				ParallelExecution.REQUIRE);
+				ParallelExecution.REQUIRE, interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED);
 	}
 
 	static List<BindingSet> tryEvaluateAggregateSerial(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
-			ValueExpr havingCondition) {
+			ValueExpr havingCondition, boolean interpreted) {
 		return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, havingCondition,
-				ParallelExecution.DISABLE);
+				ParallelExecution.DISABLE, interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED);
 	}
 
 	private static List<BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
-			ValueExpr havingCondition, ParallelExecution parallelExecution) {
+			ValueExpr havingCondition, ParallelExecution parallelExecution, KernelTier tier) {
 		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
 		if (inherited != null) {
 			return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, havingCondition,
-					false, false, parallelExecution);
+					false, false, parallelExecution, tier);
 		}
 		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(
 				System.identityHashCode(arg), Long.getLong("rdf4j.lmdb.native.fused.maxBytes", 8L << 20),
@@ -136,7 +142,7 @@ final class LmdbNativeKernelExecution {
 		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
 			List<BindingSet> result = tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
 					havingCondition,
-					false, false, parallelExecution);
+					false, false, parallelExecution, tier);
 			if (result != null) {
 				session.recordMaterializationBoundary(result.size());
 			}
@@ -155,7 +161,8 @@ final class LmdbNativeKernelExecution {
 	/** Whether a structurally wildcard plan may enter Janino rather than the equivalent IR interpreter. */
 	static boolean janinoAdmitted(SlotPlan plan) {
 		return LmdbNativeJaninoCodegen.enabled()
-				&& (!wildcardIrCandidate(plan) || LmdbNativeKernelIr.wildcardPredicatesEnabled());
+				&& (!wildcardIrCandidate(plan) || LmdbNativeKernelIr.wildcardPredicatesEnabled()
+						|| LmdbNativeKernelLowering.scanSourcesEnabled());
 	}
 
 	private static String aggregateRoute(boolean interpreted, boolean wildcard) {
@@ -229,16 +236,14 @@ final class LmdbNativeKernelExecution {
 	}
 
 	/**
-	 * Worker-kernel factory for the parallel rungs. The serving tier follows the SEQUENTIAL execution that was just
-	 * admitted — not the codegen switch: while the warm-up tier serves a pending or failed compile, the workers
-	 * interpret the same IR variants (2026-08-22: keying this off the codegen switch declined every parallel open with
-	 * {@code worker-kernel-pending} whenever janino was enabled but the compile had not landed, pinning COUNT(DISTINCT)
-	 * aggregates to the serial interpreter). A compiled sequential open still prefers compiled workers, but a variant
-	 * whose own shape is below threshold, pending, or failed falls back to interpretation (warm-up tier discipline,
-	 * D16) instead of declining the whole rung.
+	 * Worker-kernel factory for the parallel rungs. Arbitrated proposals pin their serving tier: a compiled proposal
+	 * must decline while its worker variant is pending, leaving the independently priced interpreted-parallel proposal
+	 * as the exact fallback. This prevents interpreter time from being credited to the compiled arm and guarantees the
+	 * compiled proposal is offered again on the next dispatch. Positional {@link KernelTier#AUTO} callers retain the
+	 * original warm-up behavior because they do not publish arm-specific cost evidence.
 	 */
 	private static java.util.function.Function<LmdbNativeKernelIr.Kernel, JaninoKernel> workerKernelFactory(
-			boolean interpretedExecution, long observedRows,
+			KernelTier requestedTier, boolean interpretedExecution, long observedRows,
 			java.util.function.Function<LmdbNativeKernelIr.Kernel, JaninoKernel> interpreterTier) {
 		if (interpretedExecution) {
 			return interpreterTier;
@@ -249,14 +254,16 @@ final class LmdbNativeKernelExecution {
 			if (compiled != null) {
 				return compiled;
 			}
-			return LmdbNativeKernelInterpreter.warmupEnabled() ? interpreterTier.apply(variant) : null;
+			return requestedTier == KernelTier.AUTO && LmdbNativeKernelInterpreter.warmupEnabled()
+					? interpreterTier.apply(variant)
+					: null;
 		};
 	}
 
 	private static List<BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
 			ValueExpr havingCondition, boolean preferScans, boolean scanVariablePredicates,
-			ParallelExecution parallelExecution) {
+			ParallelExecution parallelExecution, KernelTier requestedTier) {
 		// With janino codegen disabled, the interpreted tier (M1 of the kernel-interpreter plan) executes the same
 		// lowered IR through LmdbNativeKernelInterpreter. Only when BOTH tiers are off does the route decline.
 		NativeLmdbQuerySource.NativeProbe probe = null;
@@ -280,8 +287,23 @@ final class LmdbNativeKernelExecution {
 					? LmdbNativeKernelIr.Kernel.TelemetryMode.NONE
 					: LmdbNativeKernelIr.Kernel.TelemetryMode.FULL);
 			final boolean wildcardKernel = lowered.kernel.requirements.wildcardViews > 0;
-			final boolean interpretedTier = !LmdbNativeJaninoCodegen.enabled()
-					|| wildcardKernel && !LmdbNativeKernelIr.wildcardPredicatesEnabled();
+			final boolean compiledAvailable = LmdbNativeJaninoCodegen.enabled()
+					&& (!wildcardKernel || LmdbNativeKernelIr.wildcardPredicatesEnabled());
+			final boolean interpretedTier = requestedTier == KernelTier.INTERPRETED
+					|| requestedTier == KernelTier.AUTO && !compiledAvailable;
+			if (requestedTier == KernelTier.COMPILED && !compiledAvailable) {
+				// The wildcard emitter is independently gated, but a selected-coverage store can still compile the
+				// same mixed plan by retaining covered fixed-predicate adjacencies and lowering only its variable-
+				// predicate sites to ScanQuad. Do this before touching a store view so the compiled proposal remains
+				// an honest, retryable arm rather than disappearing behind the interpreted wildcard arm.
+				if (wildcardKernel && !scanVariablePredicates && LmdbNativeKernelLowering.scanSourcesEnabled()) {
+					return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
+							havingCondition, false, true, parallelExecution, requestedTier);
+				}
+				LmdbNativeAttemptMetrics.recordDecline(explainTarget,
+						aggregateRoute(false, wildcardKernel), "disabled");
+				return null;
+			}
 			if (interpretedTier && !LmdbNativeKernelInterpreter.enabled()) {
 				if (row.runtimePlan != null) {
 					row.runtimePlan.janinoDeclined("FEATURE_DISABLED[route="
@@ -317,7 +339,8 @@ final class LmdbNativeKernelExecution {
 				observedRows = opens * ROWS_PER_OPEN_ESTIMATE;
 				kernel = LmdbNativeJaninoCodegen.kernel(shapeKey, lowered.kernel.className(),
 						() -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows);
-				if (kernel == null && LmdbNativeKernelInterpreter.warmupEnabled()) {
+				if (kernel == null && requestedTier == KernelTier.AUTO
+						&& LmdbNativeKernelInterpreter.warmupEnabled()) {
 					// M5 warm-up tier: serve the interpreter while the compile is below threshold, pending, or
 					// failed — interpretation of the validated IR is sound in all three cases (D16).
 					kernel = LmdbNativeKernelInterpreter.forAggregate(lowered.kernel);
@@ -354,7 +377,7 @@ final class LmdbNativeKernelExecution {
 					kernel.close();
 					kernel = null;
 					return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
-							havingCondition, false, true, parallelExecution);
+							havingCondition, false, true, parallelExecution, requestedTier);
 				}
 				LmdbNativeAttemptMetrics.recordDecline(explainTarget, pathTag,
 						"variable-predicate-view-unavailable");
@@ -375,7 +398,7 @@ final class LmdbNativeKernelExecution {
 					kernel.close();
 					kernel = null;
 					return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
-							havingCondition, true, scanVariablePredicates, parallelExecution);
+							havingCondition, true, scanVariablePredicates, parallelExecution, requestedTier);
 				}
 				if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 					System.err.println("[ir-aggregate] decline: adjacency-unavailable");
@@ -402,7 +425,7 @@ final class LmdbNativeKernelExecution {
 			List<BindingSet> parallel = parallelExecution == ParallelExecution.DISABLE ? null
 					: LmdbNativeParallelKernelAggregate.tryEvaluate(lowered, views, variableViews, domains, arg, row,
 							emitter, explainTarget,
-							workerKernelFactory(interpretedExecution, observedRowsForVariants,
+							workerKernelFactory(requestedTier, interpretedExecution, observedRowsForVariants,
 									LmdbNativeKernelInterpreter::forAggregate));
 			if (parallel != null) {
 				String parallelRoute = interpretedExecution
@@ -508,7 +531,8 @@ final class LmdbNativeKernelExecution {
 			return null;
 		}
 		return openWithFusedRuntime(arg, row,
-				() -> tryOpenRows(arg, row, originalExpr, false, null, null, ParallelExecution.PREFER));
+				() -> tryOpenRows(arg, row, originalExpr, false, null, null, ParallelExecution.PREFER,
+						KernelTier.AUTO));
 	}
 
 	/**
@@ -516,46 +540,46 @@ final class LmdbNativeKernelExecution {
 	 * generated kernel that loses to WCOJ, factorization, batch or another specialist adds no cold compilation work to
 	 * the current query.
 	 */
-	static LmdbNativeStrategyProposal<RowCursor> proposeRows(SlotPlan arg, RowState row, TupleExpr originalExpr) {
-		return proposeRows(arg, row, originalExpr, ParallelExecution.DISABLE);
+	static LmdbNativeStrategyProposal<RowCursor> proposeRows(SlotPlan arg, RowState row, TupleExpr originalExpr,
+			boolean interpreted) {
+		return proposeRows(arg, row, originalExpr, ParallelExecution.DISABLE,
+				interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED);
 	}
 
 	static LmdbNativeStrategyProposal<RowCursor> proposeParallelRows(SlotPlan arg, RowState row,
-			TupleExpr originalExpr) {
+			TupleExpr originalExpr, boolean interpreted) {
 		if (!rowParallelProposalEnabled()) {
 			return null;
 		}
-		return proposeRows(arg, row, originalExpr, ParallelExecution.REQUIRE);
+		return proposeRows(arg, row, originalExpr, ParallelExecution.REQUIRE,
+				interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED);
 	}
 
 	private static LmdbNativeStrategyProposal<RowCursor> proposeRows(SlotPlan arg, RowState row,
-			TupleExpr originalExpr, ParallelExecution parallelExecution) {
+			TupleExpr originalExpr, ParallelExecution parallelExecution, KernelTier requestedTier) {
 		if (!hasFusionOpportunity(arg)) {
 			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
 					"no-fusion-opportunity");
 			return null;
 		}
 		boolean wildcard = wildcardIrCandidate(arg);
-		boolean compiledTier = janinoAdmitted(arg);
-		boolean interpretedTier = !compiledTier && LmdbNativeKernelInterpreter.enabled();
-		String tag = parallelExecution == ParallelExecution.REQUIRE
-				? compiledTier ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL
-						: interpretedTier ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED : null
-				: compiledTier
-						? wildcard ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD
-								: LmdbNativeAttemptMetrics.PATH_IR_KERNEL
-						: interpretedTier
-								? wildcard ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED
-										: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED
-								: null;
-		if (tag == null) {
-			if (row.runtimePlan != null) {
-				row.runtimePlan.janinoDeclined("FEATURE_DISABLED[" + LmdbNativeJaninoCodegen.ENABLED_PROPERTY
-						+ "=false]");
+		boolean interpretedTier = requestedTier == KernelTier.INTERPRETED;
+		boolean tierAvailable = interpretedTier ? LmdbNativeKernelInterpreter.enabled() : janinoAdmitted(arg);
+		if (!tierAvailable) {
+			if (requestedTier == KernelTier.COMPILED && !LmdbNativeKernelInterpreter.enabled()) {
+				if (row.runtimePlan != null) {
+					row.runtimePlan.janinoDeclined("FEATURE_DISABLED[" + LmdbNativeJaninoCodegen.ENABLED_PROPERTY
+							+ "=false]");
+				}
+				LmdbNativeAttemptMetrics.recordDecline(originalExpr,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL, "disabled");
 			}
-			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL, "disabled");
 			return null;
 		}
+		String tag = parallelExecution == ParallelExecution.REQUIRE
+				? interpretedTier ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED
+						: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL
+				: rowRoute(interpretedTier, false, wildcard);
 		long boundMask = row.boundMask();
 		LmdbNativeWork serialWork = arg.estimateWork(row, boundMask);
 		LmdbNativeWork work = parallelExecution == ParallelExecution.REQUIRE
@@ -567,7 +591,8 @@ final class LmdbNativeKernelExecution {
 		double rows = LmdbNativeWork.rowsOut(arg, row, boundMask);
 		return new LmdbNativeStrategyProposal<>(
 				() -> openWithFusedRuntime(arg, row,
-						() -> tryOpenRows(arg, row, originalExpr, false, null, null, parallelExecution)),
+						() -> tryOpenRows(arg, row, originalExpr, false, null, null, parallelExecution,
+								requestedTier)),
 				work, startup, rows, tag, () -> {
 				});
 	}
@@ -592,20 +617,23 @@ final class LmdbNativeKernelExecution {
 	 * the arbitration this rung previously escaped by ladder position.
 	 */
 	static LmdbNativeStrategyProposal<RowCursor> proposeDistinctRows(SlotPlan arg, RowState row,
-			TupleExpr originalExpr, int[] distinctSlots) {
-		return proposeDistinctRows(arg, row, originalExpr, distinctSlots, ParallelExecution.DISABLE);
+			TupleExpr originalExpr, int[] distinctSlots, boolean interpreted) {
+		return proposeDistinctRows(arg, row, originalExpr, distinctSlots, ParallelExecution.DISABLE,
+				interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED);
 	}
 
 	static LmdbNativeStrategyProposal<RowCursor> proposeParallelDistinctRows(SlotPlan arg, RowState row,
-			TupleExpr originalExpr, int[] distinctSlots) {
+			TupleExpr originalExpr, int[] distinctSlots, boolean interpreted) {
 		if (!rowParallelProposalEnabled()) {
 			return null;
 		}
-		return proposeDistinctRows(arg, row, originalExpr, distinctSlots, ParallelExecution.REQUIRE);
+		return proposeDistinctRows(arg, row, originalExpr, distinctSlots, ParallelExecution.REQUIRE,
+				interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED);
 	}
 
 	private static LmdbNativeStrategyProposal<RowCursor> proposeDistinctRows(SlotPlan arg, RowState row,
-			TupleExpr originalExpr, int[] distinctSlots, ParallelExecution parallelExecution) {
+			TupleExpr originalExpr, int[] distinctSlots, ParallelExecution parallelExecution,
+			KernelTier requestedTier) {
 		if (!distinctKernelEnabled()) {
 			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
 					"disabled");
@@ -616,17 +644,19 @@ final class LmdbNativeKernelExecution {
 			// would double-count in the decline census.
 			return null;
 		}
-		boolean compiledTier = janinoAdmitted(arg);
-		if (!compiledTier && !LmdbNativeKernelInterpreter.enabled()) {
-			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
-					"disabled");
+		boolean interpretedTier = requestedTier == KernelTier.INTERPRETED;
+		if (interpretedTier ? !LmdbNativeKernelInterpreter.enabled() : !janinoAdmitted(arg)) {
+			if (requestedTier == KernelTier.COMPILED && !LmdbNativeKernelInterpreter.enabled()) {
+				LmdbNativeAttemptMetrics.recordDecline(originalExpr,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT, "disabled");
+			}
 			return null;
 		}
 		String tag = parallelExecution == ParallelExecution.REQUIRE
-				? compiledTier ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL
-						: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED
-				: compiledTier ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT
-						: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED;
+				? interpretedTier ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED
+						: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL
+				: interpretedTier ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED
+						: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT;
 		long boundMask = row.boundMask();
 		LmdbNativeWork serialWork = estimateDistinctWork(arg, row, boundMask, distinctSlots);
 		LmdbNativeWork work = parallelExecution == ParallelExecution.REQUIRE
@@ -638,7 +668,8 @@ final class LmdbNativeKernelExecution {
 		double rows = LmdbNativeWork.rowsOut(arg, row, boundMask);
 		return new LmdbNativeStrategyProposal<>(
 				() -> openWithFusedRuntime(arg, row,
-						() -> tryOpenRows(arg, row, originalExpr, false, distinctSlots, null, parallelExecution)),
+						() -> tryOpenRows(arg, row, originalExpr, false, distinctSlots, null, parallelExecution,
+								requestedTier)),
 				work, startup, rows, tag, () -> {
 				});
 	}
@@ -729,7 +760,8 @@ final class LmdbNativeKernelExecution {
 			return null;
 		}
 		return openWithFusedRuntime(arg, row, () -> tryOpenRows(arg, row, originalExpr, false, null,
-				new OrderedMods(orderSlots, orderAscending, limit, offset, strictCompare), ParallelExecution.PREFER));
+				new OrderedMods(orderSlots, orderAscending, limit, offset, strictCompare), ParallelExecution.PREFER,
+				KernelTier.AUTO));
 	}
 
 	@FunctionalInterface
@@ -841,14 +873,16 @@ final class LmdbNativeKernelExecution {
 	}
 
 	private static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans,
-			int[] distinctSlots, OrderedMods ordered, ParallelExecution parallelExecution) throws IOException {
+			int[] distinctSlots, OrderedMods ordered, ParallelExecution parallelExecution, KernelTier requestedTier)
+			throws IOException {
 		return tryOpenRows(arg, row, originalExpr, preferScans, distinctSlots, ordered, null, false,
-				parallelExecution);
+				parallelExecution, requestedTier);
 	}
 
 	private static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans,
 			int[] distinctSlots, OrderedMods ordered, java.util.Set<Long> scanPredicates,
-			boolean scanVariablePredicates, ParallelExecution parallelExecution) throws IOException {
+			boolean scanVariablePredicates, ParallelExecution parallelExecution, KernelTier requestedTier)
+			throws IOException {
 		// With janino codegen disabled, the interpreted tier (M4) executes the same lowered IR through
 		// LmdbNativeKernelInterpreter.forRows. Only when BOTH tiers are off does the route decline.
 		NativeLmdbQuerySource.NativeProbe probe = null;
@@ -883,8 +917,19 @@ final class LmdbNativeKernelExecution {
 					? LmdbNativeKernelIr.Kernel.TelemetryMode.NONE
 					: LmdbNativeKernelIr.Kernel.TelemetryMode.FULL);
 			final boolean wildcardKernel = lowered.kernel.requirements.wildcardViews > 0;
-			final boolean interpretedTier = !LmdbNativeJaninoCodegen.enabled()
-					|| wildcardKernel && !LmdbNativeKernelIr.wildcardPredicatesEnabled();
+			final boolean compiledAvailable = LmdbNativeJaninoCodegen.enabled()
+					&& (!wildcardKernel || LmdbNativeKernelIr.wildcardPredicatesEnabled());
+			final boolean interpretedTier = requestedTier == KernelTier.INTERPRETED
+					|| requestedTier == KernelTier.AUTO && !compiledAvailable;
+			if (requestedTier == KernelTier.COMPILED && !compiledAvailable) {
+				if (wildcardKernel && !scanVariablePredicates && LmdbNativeKernelLowering.scanSourcesEnabled()) {
+					return tryOpenRows(arg, row, originalExpr, false, distinctSlots, ordered, scanPredicates, true,
+							parallelExecution, requestedTier);
+				}
+				LmdbNativeAttemptMetrics.recordDecline(originalExpr,
+						rowRoute(false, distinctSlots != null, wildcardKernel), "disabled");
+				return null;
+			}
 			if (interpretedTier && !LmdbNativeKernelInterpreter.enabled()) {
 				if (ordered != null) {
 					return null;
@@ -942,7 +987,8 @@ final class LmdbNativeKernelExecution {
 				observedRows = opens * ROWS_PER_OPEN_ESTIMATE;
 				kernel = LmdbNativeJaninoCodegen.kernel(shapeKey, lowered.kernel.className(),
 						() -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows);
-				if (kernel == null && LmdbNativeKernelInterpreter.warmupEnabled()) {
+				if (kernel == null && requestedTier == KernelTier.AUTO
+						&& LmdbNativeKernelInterpreter.warmupEnabled()) {
 					// M5 warm-up tier: serve the interpreter while the compile is below threshold, pending, or
 					// failed — interpretation of the validated IR is sound in all three cases (D16).
 					kernel = LmdbNativeKernelInterpreter.forRows(lowered.kernel);
@@ -979,7 +1025,7 @@ final class LmdbNativeKernelExecution {
 					kernel.close();
 					kernel = null;
 					return tryOpenRows(arg, row, originalExpr, false, distinctSlots, ordered, scanPredicates, true,
-							parallelExecution);
+							parallelExecution, requestedTier);
 				}
 				if (ordered == null) {
 					LmdbNativeAttemptMetrics.recordDecline(originalExpr, pathTag,
@@ -1016,12 +1062,12 @@ final class LmdbNativeKernelExecution {
 						}
 					}
 					return tryOpenRows(arg, row, originalExpr, false, distinctSlots, ordered, failed,
-							scanVariablePredicates, parallelExecution);
+							scanVariablePredicates, parallelExecution, requestedTier);
 				}
 				// Retry once without views before giving the plan back to the ordinary ladder.
 				if (!preferScans && LmdbNativeKernelLowering.scanSourcesEnabled()) {
 					return tryOpenRows(arg, row, originalExpr, true, distinctSlots, ordered, null,
-							scanVariablePredicates, parallelExecution);
+							scanVariablePredicates, parallelExecution, requestedTier);
 				}
 				if (ordered != null) {
 					return null;
@@ -1051,7 +1097,7 @@ final class LmdbNativeKernelExecution {
 			RowCursor parallel = parallelExecution == ParallelExecution.DISABLE ? null
 					: LmdbNativeParallelKernelRows.tryOpen(lowered, views, variableViews, domains, arg, row,
 							originalExpr,
-							workerKernelFactory(interpretedVariants, observedRowsForVariants,
+							workerKernelFactory(requestedTier, interpretedVariants, observedRowsForVariants,
 									LmdbNativeKernelInterpreter::forRows));
 			if (parallel != null) {
 				String parallelRoute = parallelRowRoute(interpretedVariants, distinctSlots != null);

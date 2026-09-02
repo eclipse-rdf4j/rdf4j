@@ -363,6 +363,15 @@ class LmdbNativeWildcardPredicateKernelTest {
 	}
 
 	@Test
+	void keyWildcardSipCanPartitionByPredicatePlane() {
+		SipKeyWildcard keys = new SipKeyWildcard(0, 0, true, LmdbWildcardPhysicalDemand.Demand.PAYLOAD,
+				0, 1, 2, -1, null, false);
+
+		assertEquals(0, LmdbNativeKernelPartitions.partitionableRootWildcard(List.of(keys)),
+				"the fixed-predicate key domain stays whole while workers split the independent wildcard planes");
+	}
+
+	@Test
 	void runtimeCoverageRefusalPropagatesInsteadOfReturningAShortAnswer() {
 		Kernel ir = new Kernel(1,
 				List.of(new ProbeVariable(0, true, Operand.constant(0), Operand.constant(1), 0, -1, null, false)),

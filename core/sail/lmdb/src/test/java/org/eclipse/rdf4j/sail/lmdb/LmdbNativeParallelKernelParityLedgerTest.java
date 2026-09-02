@@ -47,10 +47,13 @@ import org.junit.jupiter.api.io.TempDir;
  * been faster".
  *
  * <p>
- * That contract rots the moment someone adds a decline reason without checking it against the interpreted engine, which
- * is exactly what happened between plans 31 and 32. So it is asserted here rather than described in a document: every
- * reason observed across the corpus below must appear in {@link #PARITY_LEDGER}, each entry carrying the reason the
- * interpreted engine stays sequential too. A new reason fails this test until someone writes that justification down.
+ * That contract rots the moment someone adds a bind/capability decline reason without checking it against the
+ * interpreted engine, which is exactly what happened between plans 31 and 32. So it is asserted here rather than
+ * described in a document: every such reason observed across the corpus below must appear in {@link #PARITY_LEDGER},
+ * each entry carrying the reason the interpreted engine stays sequential too. Arbiter loss outcomes are deliberately
+ * excluded: compiled and interpreted parallel kernels are independent competitors, so either may be outranked or lose a
+ * probe without implying an operator-support difference. A new capability reason fails this test until someone writes
+ * that justification down.
  *
  * <p>
  * Reading the reasons out of explain output (rather than a debug-flagged stderr stream) is what plan 32's M5 made
@@ -61,6 +64,8 @@ public class LmdbNativeParallelKernelParityLedgerTest {
 	private static final String EX = "http://example.com/ledger/";
 
 	private static final String STRATEGY_DECLINES_METRIC = "nativeStrategyDeclines";
+	private static final Set<String> ARBITRATION_OUTCOMES = Set.of(
+			"higher-cost", "outranked", "adaptive-higher-cost", "probe-trial-lost");
 
 	/**
 	 * Every decline reason the parallel kernel rungs are allowed to emit, with the reason the interpreted parallel
@@ -230,7 +235,7 @@ public class LmdbNativeParallelKernelParityLedgerTest {
 
 		List<String> unjustified = new ArrayList<>();
 		for (String reason : observed) {
-			if (!PARITY_LEDGER.containsKey(ledgerKey(reason))) {
+			if (!ARBITRATION_OUTCOMES.contains(reason) && !PARITY_LEDGER.containsKey(ledgerKey(reason))) {
 				unjustified.add(reason);
 			}
 		}

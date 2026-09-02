@@ -252,8 +252,8 @@ class LmdbNativeVariablePredicateKernelTest {
 		}
 		assertThat(executed)
 				.as("the grouped wildcard join must activate its IR invocation%n%s", executed)
-				.contains("nativeExecutionPath=irAggregateWildcard")
-				.contains("strategy: irAggregateWildcard")
+				.contains("nativeExecutionPath=irAggregateParallel")
+				.contains("strategy: irAggregateParallel")
 				.doesNotContain("strategy: NOT_ACTIVATED");
 	}
 
@@ -281,33 +281,44 @@ class LmdbNativeVariablePredicateKernelTest {
 		}
 		assertThat(executed)
 				.as("the default-off Janino switch must still leave wildcard IR active%n%s", executed)
-				.contains("nativeExecutionPath=irAggregateWildcardInterpreted")
-				.contains("strategy: irAggregateWildcardInterpreted")
+				.contains("nativeExecutionPath=irAggregateParallelInterpreted")
+				.contains("strategy: irAggregateParallelInterpreted")
 				.doesNotContain("strategy: NOT_ACTIVATED");
 	}
 
 	@Test
-	void parallelEligibleGroupedWildcardJoinStillArbitratesTheIrKernel(@TempDir File ordinaryDir,
+	void parallelEligibleGroupedWildcardJoinRunsTheFusedSipKernelInParallel(@TempDir File ordinaryDir,
 			@TempDir File compiledDir) throws Exception {
 		String query = "PREFIX ex: <" + NS + "> "
 				+ "SELECT ?p (COUNT(*) AS ?count) WHERE { "
 				+ "?s a ex:CommonType . ?s ?p ?o } GROUP BY ?p";
+		String rowQuery = "PREFIX ex: <" + NS + "> SELECT ?s ?p ?o WHERE { "
+				+ "?s a ex:CommonType . ?s ?p ?o }";
 
 		open(ordinaryDir, false);
 		List<String> expected;
+		List<String> expectedRows;
 		try {
 			expected = run(query);
+			expectedRows = run(rowQuery);
 		} finally {
 			repo.shutDown();
 			repo = null;
 		}
 
 		System.setProperty(LmdbNativeKernelIrTestAccess.WILDCARD_PREDICATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelIrTestAccess.WILDCARD_BATCH_PROPERTY, "false");
+		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "0");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		System.setProperty("rdf4j.lmdb.irKernelParallel.enabled", "true");
+		long parallelBefore = LmdbNativeKernelIrTestAccess.aggregateParallelRuns();
 		open(compiledDir, true, false);
 		assertThat(run(query)).containsExactlyElementsOf(expected);
+		assertThat(LmdbNativeKernelIrTestAccess.aggregateParallelRuns())
+				.as("the fused class-domain wildcard sweep must enter the parallel IR worker group")
+				.isGreaterThan(parallelBefore);
 		assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
 		String executed;
 		try (RepositoryConnection conn = repo.getConnection()) {
@@ -315,10 +326,25 @@ class LmdbNativeVariablePredicateKernelTest {
 		}
 		assertThat(executed)
 				.as("parallel eligibility must not bypass wildcard IR arbitration%n%s", executed)
-				.contains("nativeExecutionPath=irAggregateWildcard")
-				.contains("strategy: irAggregateWildcard")
+				.contains("nativeExecutionPath=irAggregateParallel")
+				.contains("strategy: irAggregateParallel")
 				.doesNotContain("strategy: NOT_ACTIVATED")
 				.doesNotContain("NOT_ATTEMPTED[no Janino activation point reached]");
+
+		long rowParallelBefore = LmdbNativeKernelIrTestAccess.rowParallelRuns();
+		assertThat(run(rowQuery)).containsExactlyElementsOf(expectedRows);
+		try (RepositoryConnection conn = repo.getConnection()) {
+			executed = conn.prepareTupleQuery(rowQuery).explain(Explanation.Level.Telemetry).toString();
+		}
+		assertThat(LmdbNativeKernelIrTestAccess.rowParallelRuns())
+				.as("the row-producing fused class-domain wildcard sweep must enter the parallel IR worker group%n%s",
+						executed)
+				.isGreaterThan(rowParallelBefore);
+		assertThat(executed)
+				.as("the row-producing fused wildcard SIP shape must retain its parallel route%n%s", executed)
+				.contains("irKernelParallel")
+				.contains("strategy: irKernelParallel")
+				.doesNotContain("strategy: NOT_ACTIVATED");
 	}
 
 	@Test

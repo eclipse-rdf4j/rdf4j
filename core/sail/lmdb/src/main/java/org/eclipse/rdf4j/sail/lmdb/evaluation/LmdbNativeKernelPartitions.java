@@ -161,9 +161,10 @@ final class LmdbNativeKernelPartitions {
 
 	/**
 	 * The root producer's projection-free wildcard view when the pipeline is predicate-major and no other operator
-	 * reads that mutable view. Predicate ordinals are an exact partition surface: every plane belongs to one window,
-	 * while the plane's key and payload runs remain intact. {@code NODE_ANY} is deliberately excluded because its
-	 * contract emits at most one witness across the whole predicate domain, not one witness per partition.
+	 * reads that mutable view. This includes the fused domain/key SIP producers: their input roots remain whole while
+	 * each predicate plane belongs to exactly one worker window, matching the predicate-tile execution of the weighted
+	 * wildcard fallback. {@code NODE_ANY} is deliberately excluded because its contract emits at most one witness
+	 * across the whole predicate domain, not one witness per partition.
 	 */
 	static int partitionableRootWildcard(List<Node> pipeline) {
 		int start = 0;
@@ -188,6 +189,18 @@ final class LmdbNativeKernelPartitions {
 			if (enumerate.key.kind == LmdbNativeKernelIr.Operand.COL
 					|| enumerate.target != null && enumerate.target.kind == LmdbNativeKernelIr.Operand.COL
 					|| enumerate.ctxMatch != null && enumerate.ctxMatch.kind == LmdbNativeKernelIr.Operand.COL) {
+				return -1;
+			}
+		} else if (root instanceof SipDomainWildcard probe) {
+			wildcardView = probe.wildcardView;
+			demand = probe.demand;
+			if (probe.ctxMatch != null && probe.ctxMatch.kind == LmdbNativeKernelIr.Operand.COL) {
+				return -1;
+			}
+		} else if (root instanceof SipKeyWildcard probe) {
+			wildcardView = probe.wildcardView;
+			demand = probe.demand;
+			if (probe.ctxMatch != null && probe.ctxMatch.kind == LmdbNativeKernelIr.Operand.COL) {
 				return -1;
 			}
 		} else {
