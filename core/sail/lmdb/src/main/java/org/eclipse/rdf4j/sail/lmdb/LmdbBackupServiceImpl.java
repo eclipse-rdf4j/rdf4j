@@ -88,6 +88,8 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	private volatile Long lastFailureTransactionId;
 	private volatile String lastFailureMessage;
 	private volatile Path txLogRoot;
+	private volatile Runnable afterFullBackupTransactionIdCaptured = () -> {
+	};
 
 	LmdbBackupServiceImpl(LmdbStore store, LmdbSailStore backingStore, LmdbStoreConfig config) {
 		this.backingStore = backingStore;
@@ -105,6 +107,10 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 				LmdbBackupServiceImpl.this.onCommitFailure(transactionId, additions, removals, error);
 			}
 		});
+	}
+
+	void setAfterFullBackupTransactionIdCaptured(Runnable callback) {
+		afterFullBackupTransactionIdCaptured = callback;
 	}
 
 	@Override
@@ -241,16 +247,15 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	}
 
 	private BackupResult createFullBackup(BackupRequest request) throws IOException {
-		long txnId = backingStore.getCurrentCommittedTxnId();
-		String backupId = "full-" + txnId + "-" + System.currentTimeMillis();
 		Path parent = request.getBackupDirectory().resolve(FULL_DIR);
-		Path tempContainer = parent.resolve(".tmp-" + backupId + "-" + UUID.randomUUID());
-		Path container = parent.resolve(backupId);
+		Path tempContainer = parent.resolve(".tmp-" + UUID.randomUUID());
 		Path snapshotDir = tempContainer.resolve("snapshot");
 		Files.createDirectories(snapshotDir);
 		boolean promoted = false;
 		try {
-			backingStore.createOnlineSnapshot(snapshotDir, true);
+			long txnId = backingStore.createOnlineSnapshot(snapshotDir, true, afterFullBackupTransactionIdCaptured);
+			String backupId = "full-" + txnId + "-" + System.currentTimeMillis();
+			Path container = parent.resolve(backupId);
 			Path artifactPath = snapshotDir;
 			if (request.getCompression() == BackupCompression.ZIP) {
 				artifactPath = tempContainer.resolve("snapshot.zip");

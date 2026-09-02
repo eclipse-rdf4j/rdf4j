@@ -387,13 +387,16 @@ class LmdbSailStore implements SailStore {
 		return tripleStore.getCurrentCommittedTransactionId();
 	}
 
-	void createOnlineSnapshot(Path targetDir, boolean compact) throws IOException {
+	long createOnlineSnapshot(Path targetDir, boolean compact, Runnable afterTransactionIdCaptured) throws IOException {
 		sinkStoreAccessLock.lock();
 		try {
+			long transactionId = getCurrentCommittedTxnId();
+			afterTransactionIdCaptured.run();
 			Files.createDirectories(targetDir);
 			tripleStore.copyEnvironment(targetDir.resolve(TRIPLES_DIR_NAME), compact);
 			valueStore.copyEnvironment(targetDir.resolve(VALUES_DIR_NAME), compact);
 			copySupplementaryStoreFiles(targetDir);
+			return transactionId;
 		} finally {
 			sinkStoreAccessLock.unlock();
 		}
