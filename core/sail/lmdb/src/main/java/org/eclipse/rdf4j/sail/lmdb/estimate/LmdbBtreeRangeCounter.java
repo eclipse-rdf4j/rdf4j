@@ -92,18 +92,11 @@ final class LmdbBtreeRangeCounter {
 
 	RangeCountResult estimateRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
 			GroupMatcher matcher) throws IOException {
-		return estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher, matcher == null ? 0 : 1, 1);
+		return estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher, matcher == null ? 0 : 1);
 	}
 
 	RangeCountResult estimateRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
-			GroupMatcher matcher, int sampleMultiplier) throws IOException {
-		return estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher, matcher == null ? 0 : 1,
-				sampleMultiplier);
-	}
-
-	RangeCountResult estimateRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
-			GroupMatcher matcher, int residualFieldCount, int sampleMultiplier) throws IOException {
-		sampleMultiplier = Math.clamp(sampleMultiplier, 1, 64);
+			GroupMatcher matcher, int residualFieldCount) throws IOException {
 		RangeCountResult result = new RangeCountResult();
 		if (db.isEmpty()) {
 			result.entries = 0L;
@@ -116,7 +109,7 @@ final class LmdbBtreeRangeCounter {
 		result.hardUpperBound = db.entries();
 
 		boolean dupSort = db.isDupSort();
-		LocalPageCache localPages = new LocalPageCache(localCacheCapacity(db.depth(), sampleMultiplier));
+		LocalPageCache localPages = new LocalPageCache(localCacheCapacity(db.depth()));
 		SeekCursor lower = seekRaw(db, minKey, minKeyLength, false, localPages, result);
 		SeekCursor upper = seekRaw(db, maxKey, maxKeyLength, true, localPages, result);
 		RangePlan direct = rangePlan(lower, upper);
@@ -132,7 +125,7 @@ final class LmdbBtreeRangeCounter {
 			return result;
 		}
 
-		LeafMeasurementCache directMeasurements = new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier));
+		LeafMeasurementCache directMeasurements = new LeafMeasurementCache(maxMeasurementCapacity());
 		PreparedPlan prepared = preparePlan(direct, matcher, dupSort, directMeasurements, localPages, result);
 		result.hardLowerBound = prepared.boundary.matchedEntries;
 		if (prepared.exact) {
@@ -145,10 +138,10 @@ final class LmdbBtreeRangeCounter {
 		long estimate;
 		if (matcher == null) {
 			estimate = estimateMatcherFree(db, direct, prepared, dupSort, minKey, minKeyLength, maxKey,
-					maxKeyLength, sampleMultiplier, localPages, result);
+					maxKeyLength, localPages, result);
 		} else {
 			estimate = estimateResidual(db, direct, prepared, dupSort, minKey, minKeyLength, maxKey,
-					maxKeyLength, matcher, Math.max(1, residualFieldCount), sampleMultiplier, directMeasurements,
+					maxKeyLength, matcher, Math.max(1, residualFieldCount), directMeasurements,
 					localPages, result);
 		}
 		result.entries = clampToHardBounds(estimate, result);
@@ -191,10 +184,10 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	private long estimateMatcherFree(LmdbDb db, RangePlan direct, PreparedPlan prepared, boolean dupSort,
-			byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength, int sampleMultiplier,
+			byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
 			LocalPageCache localPages,
 			RangeCountResult result) throws IOException {
-		int budget = physicalBudget(dupSort, sampleMultiplier);
+		int budget = physicalBudget(dupSort);
 		long baseSeed = samplingSeed(db, minKey, minKeyLength, maxKey, maxKeyLength);
 
 		if (shouldUseComplement(db, direct, prepared, dupSort, localPages, result)) {
@@ -207,9 +200,9 @@ final class LmdbBtreeRangeCounter {
 			int leftBudget = splitBudget(budget, leftMass, rightMass, true);
 			int rightBudget = splitBudget(budget, rightMass, leftMass, false);
 
-			EstimateValue leftEstimate = estimatePhysicalPlan(db, left, dupSort, leftBudget, sampleMultiplier,
+			EstimateValue leftEstimate = estimatePhysicalPlan(db, left, dupSort, leftBudget,
 					mix64(baseSeed ^ STREAM_COMPLEMENT_LEFT), localPages, result);
-			EstimateValue rightEstimate = estimatePhysicalPlan(db, right, dupSort, rightBudget, sampleMultiplier,
+			EstimateValue rightEstimate = estimatePhysicalPlan(db, right, dupSort, rightBudget,
 					mix64(baseSeed ^ STREAM_COMPLEMENT_RIGHT), localPages, result);
 			long excluded = saturatedAdd(leftEstimate.entries, rightEstimate.entries);
 			long excludedLower = saturatedAdd(leftEstimate.hardLowerBound, rightEstimate.hardLowerBound);
@@ -231,8 +224,7 @@ final class LmdbBtreeRangeCounter {
 		}
 
 		SampleAggregate aggregate = samplePhysicalWithConditionalEvidence(db, direct.spans, dupSort, budget,
-				sampleMultiplier, mix64(baseSeed ^ STREAM_PHYSICAL),
-				new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier)),
+				mix64(baseSeed ^ STREAM_PHYSICAL), new LeafMeasurementCache(maxMeasurementCapacity()),
 				localPages, result);
 		double value = prepared.boundary.logicalEntries + aggregate.estimatedLogicalEntries;
 		result.mode = RangeCountResult.Mode.SAMPLED_DIRECT_RANGE;
@@ -250,7 +242,7 @@ final class LmdbBtreeRangeCounter {
 
 	private long estimateResidual(LmdbDb db, RangePlan direct, PreparedPlan prepared, boolean dupSort,
 			byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength, GroupMatcher matcher,
-			int residualFieldCount, int sampleMultiplier, LeafMeasurementCache matcherMeasurements,
+			int residualFieldCount, LeafMeasurementCache matcherMeasurements,
 			LocalPageCache localPages,
 			RangeCountResult result) throws IOException {
 		long baseSeed = samplingSeed(db, minKey, minKeyLength, maxKey, maxKeyLength);
@@ -261,9 +253,8 @@ final class LmdbBtreeRangeCounter {
 			physicalExact = true;
 		} else {
 			SampleAggregate physical = samplePhysicalWithConditionalEvidence(db, direct.spans, dupSort,
-					physicalBudget(dupSort, sampleMultiplier), sampleMultiplier,
-					mix64(baseSeed ^ STREAM_PHYSICAL),
-					new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier)), localPages, result);
+					physicalBudget(dupSort), mix64(baseSeed ^ STREAM_PHYSICAL),
+					new LeafMeasurementCache(maxMeasurementCapacity()), localPages, result);
 			physicalTotal = finiteClampedRound(prepared.boundary.logicalEntries
 					+ physical.estimatedLogicalEntries, db.entries());
 			physicalExact = physical.exhaustive;
@@ -273,7 +264,7 @@ final class LmdbBtreeRangeCounter {
 		}
 
 		double middlePhysical = Math.max(0.0d, physicalTotal - prepared.boundary.logicalEntries);
-		int pilotBudget = residualPilotBudget(dupSort, sampleMultiplier);
+		int pilotBudget = residualPilotBudget(dupSort);
 		result.residualPilotProbeBudgetUsed += pilotBudget;
 		SampleAggregate pilot = sampleSpans(db, direct.spans, matcher, dupSort, pilotBudget,
 				mix64(baseSeed ^ STREAM_RESIDUAL_PILOT), matcherMeasurements, localPages, result);
@@ -283,14 +274,14 @@ final class LmdbBtreeRangeCounter {
 		recordDisagreement(result, physicalPilotDisagreement);
 
 		int finalBaseBudget = chooseResidualBudget(pilot, residualFieldCount, dupSort, physicalPilotDisagreement);
-		int finalBudget = scaledBudget(finalBaseBudget, sampleMultiplier);
+		int finalBudget = finalBaseBudget;
 		result.residualFinalProbeBudgetUsed += finalBudget;
 		SampleAggregate sampled = sampleSpans(db, direct.spans, matcher, dupSort, finalBudget,
 				mix64(baseSeed ^ STREAM_RESIDUAL_FINAL), matcherMeasurements, localPages, result);
 		ResidualAssessment assessment = assessResidualEvidence(middlePhysical, pilot, sampled);
 
 		if (!sampled.exhaustive && assessment.difficult && finalBaseBudget < RESIDUAL_RARE_BUDGET) {
-			int confirmationBudget = scaledBudget(nextResidualBudget(finalBaseBudget), sampleMultiplier);
+			int confirmationBudget = nextResidualBudget(finalBaseBudget);
 			result.additionalEvidenceUsed = true;
 			result.conditionalProbeBudgetUsed += confirmationBudget;
 			SampleAggregate confirmation = sampleSpans(db, direct.spans, matcher, dupSort, confirmationBudget,
@@ -349,7 +340,7 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	private EstimateValue estimatePhysicalPlan(LmdbDb db, RangePlan plan, boolean dupSort, int budget,
-			int sampleMultiplier, long seed, LocalPageCache localPages, RangeCountResult result) throws IOException {
+			long seed, LocalPageCache localPages, RangeCountResult result) throws IOException {
 		if (plan.empty) {
 			return new EstimateValue(0L, true, true, 0L, 0L);
 		}
@@ -361,8 +352,7 @@ final class LmdbBtreeRangeCounter {
 			return new EstimateValue(exact, true, true, exact, exact);
 		}
 		SampleAggregate sampled = samplePhysicalWithConditionalEvidence(db, plan.spans, dupSort,
-				Math.max(1, budget), sampleMultiplier, seed,
-				new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier)), localPages, result);
+				Math.max(1, budget), seed, new LeafMeasurementCache(maxMeasurementCapacity()), localPages, result);
 		long value = finiteClampedRound(prepared.boundary.logicalEntries + sampled.estimatedLogicalEntries,
 				db.entries());
 		long hardLower = saturatedAdd(prepared.boundary.logicalEntries, sampled.exactLogicalEntries);
@@ -854,7 +844,7 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	private SampleAggregate samplePhysicalWithConditionalEvidence(LmdbDb db, List<SiblingSpan> spans,
-			boolean dupSort, int budget, int sampleMultiplier, long seed, LeafMeasurementCache measurements,
+			boolean dupSort, int budget, long seed, LeafMeasurementCache measurements,
 			LocalPageCache localPages, RangeCountResult result) throws IOException {
 		result.physicalProbeBudgetUsed += budget;
 		SampleAggregate primary = sampleSpans(db, spans, null, dupSort, budget, seed, measurements, localPages,
@@ -865,8 +855,7 @@ final class LmdbBtreeRangeCounter {
 			return primary;
 		}
 
-		int confirmationBudget = Math.max(budget,
-				scaledBudget(physicalConfirmationBudget(dupSort), sampleMultiplier));
+		int confirmationBudget = Math.max(budget, physicalConfirmationBudget(dupSort));
 		result.additionalEvidenceUsed = true;
 		result.conditionalProbeBudgetUsed += confirmationBudget;
 		SampleAggregate confirmation = sampleSpans(db, spans, null, dupSort, confirmationBudget,
@@ -1017,18 +1006,13 @@ final class LmdbBtreeRangeCounter {
 		return budget;
 	}
 
-	private int physicalBudget(boolean dupSort, int sampleMultiplier) {
-		return scaledBudget(dupSort ? DUPSORT_PHYSICAL_SAMPLE_BUDGET : PHYSICAL_SAMPLE_BUDGET, sampleMultiplier);
+	private int physicalBudget(boolean dupSort) {
+		return dupSort ? DUPSORT_PHYSICAL_SAMPLE_BUDGET : PHYSICAL_SAMPLE_BUDGET;
 	}
 
-	private int residualPilotBudget(boolean dupSort, int sampleMultiplier) {
-		int base = dupSort ? Math.min(RESIDUAL_RARE_BUDGET, RESIDUAL_PILOT_BUDGET << 1)
+	private int residualPilotBudget(boolean dupSort) {
+		return dupSort ? Math.min(RESIDUAL_RARE_BUDGET, RESIDUAL_PILOT_BUDGET << 1)
 				: RESIDUAL_PILOT_BUDGET;
-		return scaledBudget(base, sampleMultiplier);
-	}
-
-	private int scaledBudget(int budget, int sampleMultiplier) {
-		return (int) Math.min(Integer.MAX_VALUE, (long) budget * Math.clamp(sampleMultiplier, 1, 64));
 	}
 
 	private int splitBudget(int total, double ownMass, double otherMass, boolean first) {
@@ -1250,29 +1234,21 @@ final class LmdbBtreeRangeCounter {
 		result.mode = mode;
 	}
 
-	private int localCacheCapacity(int depth, int sampleMultiplier) {
+	private int localCacheCapacity(int depth) {
 		int maximumPhysical = Math.max(Math.max(PHYSICAL_SAMPLE_BUDGET, DUPSORT_PHYSICAL_SAMPLE_BUDGET),
 				Math.max(PHYSICAL_CONFIRMATION_BUDGET, DUPSORT_PHYSICAL_CONFIRMATION_BUDGET));
 		int maximumPilot = Math.min(RESIDUAL_RARE_BUDGET, RESIDUAL_PILOT_BUDGET << 1);
 		long expected = Math.max(64L,
-				(long) (scaledBudget(RESIDUAL_RARE_BUDGET, sampleMultiplier)
-						+ scaledBudget(maximumPilot, sampleMultiplier)
-						+ scaledBudget(maximumPhysical, sampleMultiplier) + 32)
+				(long) (RESIDUAL_RARE_BUDGET + maximumPilot + maximumPhysical + 32)
 						* Math.max(2, depth));
 		return (int) Math.min(MAX_LOCAL_PAGE_CACHE, expected);
 	}
 
-	private int localCacheCapacity(int depth) {
-		return localCacheCapacity(depth, 1);
-	}
-
-	private int maxMeasurementCapacity(int sampleMultiplier) {
+	private int maxMeasurementCapacity() {
 		int maximumPhysical = Math.max(Math.max(PHYSICAL_SAMPLE_BUDGET, DUPSORT_PHYSICAL_SAMPLE_BUDGET),
 				Math.max(PHYSICAL_CONFIRMATION_BUDGET, DUPSORT_PHYSICAL_CONFIRMATION_BUDGET));
 		int maximumPilot = Math.min(RESIDUAL_RARE_BUDGET, RESIDUAL_PILOT_BUDGET << 1);
-		long expected = 2L * (scaledBudget(RESIDUAL_RARE_BUDGET, sampleMultiplier)
-				+ scaledBudget(maximumPilot, sampleMultiplier)
-				+ scaledBudget(maximumPhysical, sampleMultiplier));
+		long expected = 2L * (RESIDUAL_RARE_BUDGET + maximumPilot + maximumPhysical);
 		return (int) Math.min(Integer.MAX_VALUE, Math.max(64L, expected));
 	}
 

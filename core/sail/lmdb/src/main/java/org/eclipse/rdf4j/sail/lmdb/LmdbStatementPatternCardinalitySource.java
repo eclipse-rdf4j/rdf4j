@@ -12,53 +12,29 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
-import java.nio.file.Path;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 final class LmdbStatementPatternCardinalitySource {
 
-	static final String CACHE_FILE_NAME = "statement-pattern-cardinality-cache.bin";
+	private static final int SHARED_CACHE_MAX_ENTRIES = 262_144;
+	private static final Map<SharedCardinalityKey, Double> SHARED_CARDINALITY_CACHE = new ConcurrentHashMap<>();
 
 	private final ValueStore valueStore;
 	private final TripleStore tripleStore;
-	private final LmdbStatementPatternCardinalityCache cache;
+	private final int tripleStoreIdentity;
 
 	LmdbStatementPatternCardinalitySource(ValueStore valueStore, TripleStore tripleStore) {
-		this(valueStore, tripleStore, new LmdbStoreConfig(), null, null);
-	}
-
-	LmdbStatementPatternCardinalitySource(ValueStore valueStore, TripleStore tripleStore, LmdbStoreConfig config,
-			Path dataDir, ScheduledExecutorService maintenanceExecutor) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
-		Path sidecarPath = dataDir == null ? null : dataDir.resolve(CACHE_FILE_NAME);
-		this.cache = new LmdbStatementPatternCardinalityCache(
-				LmdbStatementPatternCardinalityCache.Config.from(config),
-				this::estimateUncached,
-				tripleStore::getStatementCount,
-				tripleStore::getTransactionId,
-				new LmdbStatementPatternCardinalityCache.PersistenceCodec() {
-					@Override
-					public long idOf(Value value) throws IOException {
-						return valueStore.getId(value);
-					}
-
-					@Override
-					public Value valueOf(long id) throws IOException {
-						return valueStore.getValue(id);
-					}
-				},
-				sidecarPath,
-				maintenanceExecutor,
-				System::currentTimeMillis);
+		this.tripleStoreIdentity = System.identityHashCode(tripleStore);
 	}
 
 	double estimate(StatementPattern pattern) {
@@ -83,47 +59,42 @@ final class LmdbStatementPatternCardinalitySource {
 
 	double estimate(Resource subj, IRI pred, Value obj, Resource ctx) {
 		try {
-			return cache.estimate(new LmdbStatementPatternCardinalityCache.Key(subj, pred, obj, ctx));
+			long subjId = resolveId(subj);
+			if (subjId == Long.MIN_VALUE) {
+				return 0.0d;
+			}
+			long predId = resolveId(pred);
+			if (predId == Long.MIN_VALUE) {
+				return 0.0d;
+			}
+			long objId = resolveId(obj);
+			if (objId == Long.MIN_VALUE) {
+				return 0.0d;
+			}
+			long ctxId = resolveId(ctx);
+			if (ctxId == Long.MIN_VALUE) {
+				return 0.0d;
+			}
+			return estimateIds(subjId, predId, objId, ctxId);
 		} catch (IOException | RuntimeException e) {
 			return -1.0d;
 		}
 	}
 
-	private double estimateUncached(LmdbStatementPatternCardinalityCache.Key key, int sampleMultiplier)
-			throws IOException {
-		long subjId = resolveId(key.subject());
-		if (subjId == Long.MIN_VALUE) {
-			return 0.0d;
+	double estimateIds(long subjId, long predId, long objId, long ctxId) {
+		try {
+			SharedCardinalityKey key = new SharedCardinalityKey(tripleStoreIdentity, tripleStore.getDataRevision(),
+					subjId, predId, objId, ctxId);
+			Double cached = SHARED_CARDINALITY_CACHE.get(key);
+			if (cached != null) {
+				return cached;
+			}
+			double cardinality = tripleStore.cardinality(subjId, predId, objId, ctxId);
+			cacheSharedCardinality(key, cardinality);
+			return cardinality;
+		} catch (IOException | RuntimeException e) {
+			return -1.0d;
 		}
-		long predId = resolveId(key.predicate());
-		if (predId == Long.MIN_VALUE) {
-			return 0.0d;
-		}
-		long objId = resolveId(key.object());
-		if (objId == Long.MIN_VALUE) {
-			return 0.0d;
-		}
-		long ctxId = resolveId(key.context());
-		if (ctxId == Long.MIN_VALUE) {
-			return 0.0d;
-		}
-		return tripleStore.cardinality(subjId, predId, objId, ctxId, sampleMultiplier);
-	}
-
-	void recordCommittedMutations(long additions, long removals) {
-		cache.recordCommittedMutations(additions, removals);
-	}
-
-	void stopRefreshAndDrain() {
-		cache.stopRefreshAndDrain();
-	}
-
-	void persist() throws IOException {
-		cache.persist();
-	}
-
-	LmdbStatementPatternCardinalityCache cache() {
-		return cache;
 	}
 
 	private static Value constantValue(Var var) {
@@ -136,5 +107,60 @@ final class LmdbStatementPatternCardinalitySource {
 		}
 		long id = valueStore.getId(value);
 		return id == LmdbValue.UNKNOWN_ID ? Long.MIN_VALUE : id;
+	}
+
+	private static void cacheSharedCardinality(SharedCardinalityKey key, double cardinality) {
+		if (SHARED_CARDINALITY_CACHE.size() >= SHARED_CACHE_MAX_ENTRIES) {
+			SHARED_CARDINALITY_CACHE.clear();
+		}
+		SHARED_CARDINALITY_CACHE.put(key, cardinality);
+	}
+
+	private static final class SharedCardinalityKey {
+		private final int tripleStoreIdentity;
+		private final long dataRevision;
+		private final long subjId;
+		private final long predId;
+		private final long objId;
+		private final long ctxId;
+		private final int hashCode;
+
+		private SharedCardinalityKey(int tripleStoreIdentity, long dataRevision, long subjId, long predId,
+				long objId, long ctxId) {
+			this.tripleStoreIdentity = tripleStoreIdentity;
+			this.dataRevision = dataRevision;
+			this.subjId = subjId;
+			this.predId = predId;
+			this.objId = objId;
+			this.ctxId = ctxId;
+			int hash = Integer.hashCode(tripleStoreIdentity);
+			hash = 31 * hash + Long.hashCode(dataRevision);
+			hash = 31 * hash + Long.hashCode(subjId);
+			hash = 31 * hash + Long.hashCode(predId);
+			hash = 31 * hash + Long.hashCode(objId);
+			hash = 31 * hash + Long.hashCode(ctxId);
+			this.hashCode = hash;
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj) {
+				return true;
+			}
+			if (!(obj instanceof SharedCardinalityKey other)) {
+				return false;
+			}
+			return tripleStoreIdentity == other.tripleStoreIdentity
+					&& dataRevision == other.dataRevision
+					&& subjId == other.subjId
+					&& predId == other.predId
+					&& objId == other.objId
+					&& ctxId == other.ctxId;
+		}
+
+		@Override
+		public int hashCode() {
+			return hashCode;
+		}
 	}
 }

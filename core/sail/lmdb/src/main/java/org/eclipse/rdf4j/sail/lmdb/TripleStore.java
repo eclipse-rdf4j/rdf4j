@@ -490,21 +490,6 @@ class TripleStore implements Closeable {
 		});
 	}
 
-	long getStatementCount() throws IOException {
-		TripleIndex mainIndex = indexes.getFirst();
-		return txnManager.doWith((stack, txn) -> {
-			MDBStat explicitStat = MDBStat.malloc(stack);
-			MDBStat inferredStat = MDBStat.malloc(stack);
-			mdb_stat(txn, mainIndex.getDB(true), explicitStat);
-			mdb_stat(txn, mainIndex.getDB(false), inferredStat);
-			return Math.addExact(explicitStat.ms_entries(), inferredStat.ms_entries());
-		});
-	}
-
-	long getTransactionId() throws IOException {
-		return txnManager.doWith((stack, txn) -> mdb_txn_id(txn));
-	}
-
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
 		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn);
@@ -658,20 +643,13 @@ class TripleStore implements Closeable {
 	}
 
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
-		return cardinality(subj, pred, obj, context, 1);
-	}
-
-	protected double cardinality(long subj, long pred, long obj, long context, int sampleMultiplier)
-			throws IOException {
 		if (!pageCardinalityEstimator) {
 			return exactCardinality(subj, pred, obj, context);
 		}
 
-		sampleMultiplier = Math.clamp(sampleMultiplier, 1, 64);
 		TripleIndex primaryIndex = getBestPageEstimatorIndex(subj, pred, obj, context);
 		try {
-			PageEstimatorResult primary = cardinalityUsingPageEstimator(primaryIndex, subj, pred, obj, context,
-					sampleMultiplier);
+			PageEstimatorResult primary = cardinalityUsingPageEstimator(primaryIndex, subj, pred, obj, context);
 			if (!primary.secondaryEvidenceRecommended) {
 				return primary.entries;
 			}
@@ -682,7 +660,7 @@ class TripleStore implements Closeable {
 			}
 			try {
 				PageEstimatorResult secondary = cardinalityUsingPageEstimator(secondaryIndex, subj, pred, obj,
-						context, sampleMultiplier);
+						context);
 				return combineIndependentLayoutEstimates(primary, secondary).entries;
 			} catch (IOException | RuntimeException secondaryFailure) {
 				logger.debug("Secondary page cardinality estimate failed for index {}; using primary index {}",
@@ -698,7 +676,7 @@ class TripleStore implements Closeable {
 	}
 
 	private PageEstimatorResult cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj,
-			long context, int sampleMultiplier) throws IOException {
+			long context) throws IOException {
 		LmdbPageCardinalityEstimator estimator = pageEstimator;
 		if (estimator == null) {
 			return PageEstimatorResult.unqualified(cardinalityUsingSamplingEstimator(index, subj, pred, obj, context));
@@ -730,11 +708,9 @@ class TripleStore implements Closeable {
 			GroupMatcher matcher = residualFieldCount == 0 ? null
 					: index.createResidualMatcher(subj, pred, obj, context, prefixLength);
 			LmdbPageCardinalityEstimator.Estimate explicit = estimator.estimateEntriesWithQuality(txnId,
-					explicitDbName, minKey, minKey.length, maxKey, maxKey.length, matcher, residualFieldCount,
-					sampleMultiplier);
+					explicitDbName, minKey, minKey.length, maxKey, maxKey.length, matcher, residualFieldCount);
 			LmdbPageCardinalityEstimator.Estimate inferred = estimator.estimateEntriesWithQuality(txnId,
-					inferredDbName, minKey, minKey.length, maxKey, maxKey.length, matcher, residualFieldCount,
-					sampleMultiplier);
+					inferredDbName, minKey, minKey.length, maxKey, maxKey.length, matcher, residualFieldCount);
 			return combineDatabaseEstimates(explicit, inferred);
 		});
 	}

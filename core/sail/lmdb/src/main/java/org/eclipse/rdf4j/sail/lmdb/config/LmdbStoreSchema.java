@@ -129,18 +129,6 @@ public class LmdbStoreSchema {
 
 	public final static IRI BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE;
 
-	public final static IRI STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE;
-	public final static IRI STATEMENT_PATTERN_CARDINALITY_CACHE_EXPIRY_MILLIS;
-	public final static IRI STATEMENT_PATTERN_CARDINALITY_CACHE_MUTATION_RATIO;
-	public final static IRI POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE;
-	public final static IRI POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_THRESHOLD;
-	public final static IRI POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_CHECK_INTERVAL;
-	public final static IRI POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_ACCESSES;
-	public final static IRI POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_WINDOW_MILLIS;
-	public final static IRI POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_MILLIS;
-	public final static IRI POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_DECAY_HALF_LIFE_MILLIS;
-	public final static IRI POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_SAMPLE_MULTIPLIER;
-
 	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#inlineLiterals</tt>
 	 */
@@ -178,28 +166,6 @@ public class LmdbStoreSchema {
 		BACKGROUND_RAW_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "backgroundRawSamplingEnabled");
 		BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = factory.createIRI(NAMESPACE,
 				"backgroundRawSamplingMaxMillisPerCycle");
-		STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE = factory.createIRI(NAMESPACE,
-				"statementPatternCardinalityCacheSize");
-		STATEMENT_PATTERN_CARDINALITY_CACHE_EXPIRY_MILLIS = factory.createIRI(NAMESPACE,
-				"statementPatternCardinalityCacheExpiryMillis");
-		STATEMENT_PATTERN_CARDINALITY_CACHE_MUTATION_RATIO = factory.createIRI(NAMESPACE,
-				"statementPatternCardinalityCacheMutationRatio");
-		POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_SIZE = factory.createIRI(NAMESPACE,
-				"popularStatementPatternCardinalityCacheSize");
-		POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_THRESHOLD = factory.createIRI(NAMESPACE,
-				"popularStatementPatternCardinalityCacheActivationThreshold");
-		POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_ACTIVATION_CHECK_INTERVAL = factory.createIRI(NAMESPACE,
-				"popularStatementPatternCardinalityCacheActivationCheckInterval");
-		POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_ACCESSES = factory.createIRI(NAMESPACE,
-				"popularStatementPatternCardinalityCachePromotionAccesses");
-		POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_PROMOTION_WINDOW_MILLIS = factory.createIRI(NAMESPACE,
-				"popularStatementPatternCardinalityCachePromotionWindowMillis");
-		POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_MILLIS = factory.createIRI(NAMESPACE,
-				"popularStatementPatternCardinalityCacheRefreshMillis");
-		POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_DECAY_HALF_LIFE_MILLIS = factory.createIRI(NAMESPACE,
-				"popularStatementPatternCardinalityCacheDecayHalfLifeMillis");
-		POPULAR_STATEMENT_PATTERN_CARDINALITY_CACHE_REFRESH_SAMPLE_MULTIPLIER = factory.createIRI(NAMESPACE,
-				"popularStatementPatternCardinalityCacheRefreshSampleMultiplier");
 		INLINE_LITERALS = factory.createIRI(NAMESPACE, "inlineLiterals");
 	}
 }

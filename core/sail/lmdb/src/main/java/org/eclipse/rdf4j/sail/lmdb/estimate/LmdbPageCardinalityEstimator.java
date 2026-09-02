@@ -68,32 +68,19 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	public long estimateEntries(long txnId, String dbName, byte[] minKey, int minKeyLength, byte[] maxKey,
 			int maxKeyLength, GroupMatcher matcher) throws IOException {
 		return estimateEntries(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
-				matcher == null ? 0 : 1, 1);
+				matcher == null ? 0 : 1);
 	}
 
 	public long estimateEntries(long txnId, String dbName, byte[] minKey, int minKeyLength, byte[] maxKey,
-			int maxKeyLength, GroupMatcher matcher, int sampleMultiplier) throws IOException {
-		return estimateEntries(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
-				matcher == null ? 0 : 1, sampleMultiplier);
-	}
-
-	public long estimateEntries(long txnId, String dbName, byte[] minKey, int minKeyLength, byte[] maxKey,
-			int maxKeyLength, GroupMatcher matcher, int residualFieldCount, int sampleMultiplier) throws IOException {
+			int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
 		return estimateEntriesDetailed(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
-				residualFieldCount, sampleMultiplier).entries;
+				residualFieldCount).entries;
 	}
 
 	public Estimate estimateEntriesWithQuality(long txnId, String dbName, byte[] minKey, int minKeyLength,
 			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
-		return estimateEntriesWithQuality(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
-				residualFieldCount, 1);
-	}
-
-	public Estimate estimateEntriesWithQuality(long txnId, String dbName, byte[] minKey, int minKeyLength,
-			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount, int sampleMultiplier)
-			throws IOException {
 		RangeCountResult result = estimateEntriesDetailed(txnId, dbName, minKey, minKeyLength, maxKey,
-				maxKeyLength, matcher, residualFieldCount, sampleMultiplier);
+				maxKeyLength, matcher, residualFieldCount);
 		return new Estimate(result.entries, result.exact, result.exhaustive, result.hardLowerBound,
 				result.hardUpperBound, result.effectiveSampleSize, result.effectiveSampleFraction,
 				result.sampledMassFraction, result.relativeStandardError, result.disagreement,
@@ -106,13 +93,6 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 
 	RangeCountResult estimateEntriesDetailed(long txnId, String dbName, byte[] minKey, int minKeyLength,
 			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
-		return estimateEntriesDetailed(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
-				residualFieldCount, 1);
-	}
-
-	RangeCountResult estimateEntriesDetailed(long txnId, String dbName, byte[] minKey, int minKeyLength,
-			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount, int sampleMultiplier)
-			throws IOException {
 		SnapshotCache snapshot = snapshot(txnId);
 		LmdbDb db = namedDb(snapshot, dbName);
 		if (db == null || db.isEmpty()) {
@@ -128,7 +108,7 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta, snapshot.pageCache,
 				stableDatabaseIdentity(dbName));
 		return counter.estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
-				Math.max(0, residualFieldCount), sampleMultiplier);
+				Math.max(0, residualFieldCount));
 	}
 
 	public long totalEntries(long txnId, String dbName) throws IOException {
