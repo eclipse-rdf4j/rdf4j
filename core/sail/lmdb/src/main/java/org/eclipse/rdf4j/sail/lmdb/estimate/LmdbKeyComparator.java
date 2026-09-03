@@ -15,7 +15,20 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
-/** Matches LMDB's built-in outer-key comparators used by MDB_REVERSEKEY and MDB_INTEGERKEY. */
+/**
+ * Java implementation of the LMDB comparator used for outer database keys.
+ *
+ * <p>
+ * Range boundaries are encoded by RDF4J, while branch and leaf keys come from the mapped LMDB file. These methods are
+ * therefore the ordering bridge between the two representations. Their result must agree with LMDB exactly or a binary
+ * search may walk the wrong child and silently produce a plausible but incorrect estimate.
+ *
+ * <p>
+ * The flag precedence mirrors {@code mdb_default_cmp}: {@link LmdbFormat#MDB_REVERSEKEY} takes precedence over
+ * {@link LmdbFormat#MDB_INTEGERKEY}; otherwise bytes are compared unsigned and lexicographically. Duplicate-value flags
+ * are deliberately absent because this comparator is for the outer B-tree. DUPSORT sub-databases use their own
+ * duplicate ordering when {@link LmdbBtreeRangeCounter} counts logical entries.
+ */
 final class LmdbKeyComparator {
 
 	private LmdbKeyComparator() {

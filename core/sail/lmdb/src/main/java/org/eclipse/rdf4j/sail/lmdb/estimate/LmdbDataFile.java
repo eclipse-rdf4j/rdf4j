@@ -78,6 +78,14 @@ final class LmdbDataFile implements Closeable {
 		this.pageSize = pageSize;
 	}
 
+	/**
+	 * Selects the newest valid meta page that is not newer than the read transaction pinned by LMDB.
+	 *
+	 * <p>
+	 * LMDB alternates between two meta pages. Reading whichever page has the greatest transaction id would race a
+	 * writer and could combine a newer tree root with the caller's older read view. The exact transaction is preferred;
+	 * the newest older meta is accepted because read-only transactions can legitimately outlive later commits.
+	 */
 	LmdbMeta readMetaForTxn(long pinnedTxnId) throws IOException {
 		LmdbMeta meta0 = readMetaPage(0);
 		LmdbMeta meta1 = readMetaPage(1);
@@ -105,6 +113,10 @@ final class LmdbDataFile implements Closeable {
 				nativeMap.size);
 	}
 
+	/**
+	 * Reads and validates a page belonging to {@code meta}. The native mapping is the zero-copy fast path; positional
+	 * file IO is retained for tests and as a safe fallback when the mapping captured with the snapshot is unavailable.
+	 */
 	LmdbPage readPage(long pageNumber, LmdbMeta meta) throws IOException {
 		long offset = checkedPageOffset(pageNumber, meta);
 		ByteBuffer page;

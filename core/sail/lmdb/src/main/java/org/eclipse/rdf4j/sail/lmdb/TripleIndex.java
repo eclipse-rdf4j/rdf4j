@@ -32,6 +32,23 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 
+/**
+ * One physical ordering of the four statement fields in the LMDB statement database.
+ *
+ * <p>
+ * Cardinality estimation uses two coordinate systems here. A {@code bindingMask} always uses logical RDF field
+ * positions ({@code s=0, p=1, o=2, c=3}), while matcher masks use physical key positions in {@link #fieldSeq}. The
+ * per-binding-shape tables below translate between them once when the index opens so estimate-time code does not have
+ * to rediscover prefixes or allocate mappings.
+ * </p>
+ *
+ * <p>
+ * Only the longest contiguous bound prefix narrows a B-tree range. Bound fields after the first gap are residual
+ * predicates: the page estimator must sample and test them with a {@link GroupMatcher}. Keep that distinction intact
+ * when adding an index layout or changing key encoding; treating a residual field as part of the range can exclude
+ * valid statements and turn an estimate into a correctness bug.
+ * </p>
+ */
 class TripleIndex {
 	static final int MAX_KEY_LENGTH = 4 * 9;
 
@@ -54,6 +71,7 @@ class TripleIndex {
 	final StatementFieldValueAccessor leadingFieldValueAccessor;
 	private final int dbiExplicit, dbiInferred;
 	private final int[] indexMap;
+	// Indexed by the 16 logical s/p/o/c binding shapes. See initializeBindingShapes() for each table's coordinates.
 	private final byte[] prefixLengths = new byte[BINDING_SHAPE_COUNT];
 	private final byte[] rangePrefixFieldMasks = new byte[BINDING_SHAPE_COUNT];
 	private final byte[] matcherMasks = new byte[BINDING_SHAPE_COUNT];
@@ -80,6 +98,17 @@ class TripleIndex {
 		}
 	}
 
+	/**
+	 * Precomputes how every logical binding shape maps onto this physical index ordering.
+	 *
+	 * <p>
+	 * {@code prefixLengths} and {@code rangePrefixFieldMasks} describe the contiguous range restriction; the latter is
+	 * expressed in logical field positions for {@link #writePatternRangeKey}. {@code matcherMasks} and
+	 * {@code residualMatcherMasks} are expressed in physical key positions for {@link GroupMatcher}. The residual
+	 * layout score favors bound fields appearing earlier in the key and is used only to choose among indexes with the
+	 * same prefix length; it must never change the range itself.
+	 * </p>
+	 */
 	private void initializeBindingShapes() {
 		for (int bindingMask = 0; bindingMask < BINDING_SHAPE_COUNT; bindingMask++) {
 			int prefixLength = 0;
@@ -203,6 +232,10 @@ class TripleIndex {
 		return Byte.toUnsignedInt(prefixLengths[validateBindingMask(bindingMask)]);
 	}
 
+	/**
+	 * Returns a deterministic tie-break score for where bound fields occur in this physical key. It is meaningful only
+	 * after comparing {@link #getPatternScore(int)}; a longer contiguous prefix always wins.
+	 */
 	int getResidualLayoutScore(int bindingMask) {
 		return residualLayoutScores[validateBindingMask(bindingMask)];
 	}
@@ -383,6 +416,16 @@ class TripleIndex {
 		}
 	}
 
+	/**
+	 * Selects the first configured index having the longest contiguous bound prefix.
+	 *
+	 * <p>
+	 * The strict {@code score > bestScore} comparison deliberately preserves configuration order for ties. This is the
+	 * selector used by statement iteration and by the RDF4J 5.3.2 compatibility estimator. Do not add page-estimator
+	 * tie-breaking here: {@link TripleStore} has a separate selector for that purpose, and changing this tie behavior
+	 * would change compatibility-mode estimates.
+	 * </p>
+	 */
 	static TripleIndex getBestIndex(List<TripleIndex> indexes, long subj, long pred, long obj, long context) {
 		int bestScore = -1;
 		TripleIndex bestIndex = null;

@@ -21,10 +21,50 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 
-/** Bounded, snapshot-consistent LMDB range-cardinality estimator. */
+/**
+ * Transaction-aware facade around the bounded LMDB B+tree range counter.
+ *
+ * <p>
+ * Callers supply the ID of the already-pinned LMDB read transaction. This class selects the newest valid meta page no
+ * newer than that transaction, resolves the requested named database from that same snapshot, and shares decoded pages
+ * only among estimates for that snapshot. When the transaction ID or native mapping changes, {@link #snapshot(long)}
+ * installs a fresh cache. This is the boundary that keeps low-level page reads consistent with the logical query view.
+ * </p>
+ *
+ * <p>
+ * The production constructor receives the open LMDB environment so reads can be zero-copy views of LMDB's native map.
+ * The file-only constructor intentionally follows the same decoder through positional channel reads and exists for
+ * standalone callers and tests. Both paths must produce identical estimates.
+ * </p>
+ */
 public final class LmdbPageCardinalityEstimator implements Closeable {
 
-	/** Quality-bearing estimate used to decide whether a second physical layout is worth its I/O. */
+	/**
+	 * Estimate and reliability evidence used by {@code TripleStore} to decide whether another physical index is worth
+	 * reading.
+	 *
+	 * @param entries                      rounded point estimate, clamped to the hard bounds
+	 * @param exact                        whether the point estimate is known exactly
+	 * @param exhaustive                   whether the selected structural plan was completely measured
+	 * @param hardLowerBound               records proven to match
+	 * @param hardUpperBound               greatest count still permitted by exact metadata and measurements
+	 * @param effectiveSampleSize          concentration-adjusted number of independent leaf observations
+	 * @param effectiveSampleFraction      effective sample size divided by the number of probes
+	 * @param sampledMassFraction          fraction of the estimate contributed by sampled rather than exact mass
+	 * @param relativeStandardError        conservative relative sampling error estimate
+	 * @param disagreement                 largest multiplicative disagreement among independent evidence streams
+	 * @param physicalPilotDisagreement    physical-range estimate versus the residual pilot's range estimate
+	 * @param pilotFinalDisagreement       residual pilot estimate versus the final residual estimate
+	 * @param directRatioDisagreement      directly weighted matches versus physical mass times sampled match ratio
+	 * @param lowEffectiveSample           whether repeated or concentrated probes weakened effective coverage
+	 * @param disagreementDetected         whether any evidence streams exceeded the disagreement threshold
+	 * @param additionalEvidenceUsed       whether a conditional confirmation stream was read
+	 * @param secondaryEvidenceRecommended whether a separate index layout should corroborate this result
+	 * @param physicalProbeBudgetUsed      requested probes for physical range mass
+	 * @param residualPilotProbeBudgetUsed requested probes for the residual pilot
+	 * @param residualFinalProbeBudgetUsed requested probes for the selected residual budget
+	 * @param conditionalProbeBudgetUsed   requested probes for conditional confirmations
+	 */
 	public record Estimate(
 			long entries,
 			boolean exact,
@@ -50,6 +90,7 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	}
 
 	private final LmdbDataFile dataFile;
+	/** Most recently used snapshot; safe publication lets concurrent readers reuse its thread-safe caches. */
 	private volatile SnapshotCache lastSnapshot;
 
 	/** File-channel fallback constructor, retained for compatibility and standalone tests. */
@@ -91,6 +132,12 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 				result.residualFinalProbeBudgetUsed, result.conditionalProbeBudgetUsed);
 	}
 
+	/**
+	 * Resolves {@code dbName} and estimates the inclusive range {@code [minKey, maxKey]}. A null matcher means that the
+	 * key range expresses the complete predicate. Otherwise, {@code residualFieldCount} describes how many bound RDF
+	 * statement fields the matcher must check after the contiguous index prefix; it guides bounded evidence allocation
+	 * but never changes matching semantics.
+	 */
 	RangeCountResult estimateEntriesDetailed(long txnId, String dbName, byte[] minKey, int minKeyLength,
 			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
 		SnapshotCache snapshot = snapshot(txnId);
@@ -122,6 +169,10 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		dataFile.close();
 	}
 
+	/**
+	 * Returns a cache tied to {@code txnId} and the current native mapping. Races may construct equivalent caches; the
+	 * last volatile publication wins, and no cache can leak across a transaction or remap boundary.
+	 */
 	private SnapshotCache snapshot(long txnId) throws IOException {
 		SnapshotCache cached = lastSnapshot;
 		if (cached != null && cached.txnId == txnId && dataFile.isNativeMapCurrent(cached.meta)) {
@@ -133,6 +184,7 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		return refreshed;
 	}
 
+	/** Reads a named database descriptor from LMDB's main database, then caches it only inside this snapshot. */
 	private LmdbDb namedDb(SnapshotCache snapshot, String dbName) throws IOException {
 		LmdbDb cached = snapshot.namedDbs.get(dbName);
 		if (cached != null) {
@@ -161,6 +213,10 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		return existing == null ? parsed : existing;
 	}
 
+	/**
+	 * Stable logical identity mixed into sampling seeds. Page numbers are deliberately excluded because LMDB
+	 * copy-on-write commits can renumber physical pages without changing the requested logical range.
+	 */
 	private long stableDatabaseIdentity(String dbName) {
 		long hash = 0xcbf29ce484222325L;
 		for (int index = 0; index < dbName.length(); index++) {
@@ -170,6 +226,7 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		return hash;
 	}
 
+	/** All mutable caches below are valid only for one LMDB transaction ID and mapping identity. */
 	private static final class SnapshotCache {
 		final long txnId;
 		final LmdbMeta meta;

@@ -109,6 +109,11 @@ class TripleStore implements Closeable {
 	 * The default triple indexes.
 	 */
 	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,posc";
+	/**
+	 * Emergency JVM switch for replacing the page-walking estimator with the RDF4J 5.3.2 cursor sampler. The value is
+	 * read when a {@link TripleStore} is constructed; only {@code true} disables page walking.
+	 */
+	static final String DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.disablePageWalkingEstimator";
 	private static final boolean REUSE_SECONDARY_WRITE_CURSOR = true;
 	/*-----------*
 	 * Variables *
@@ -135,7 +140,7 @@ class TripleStore implements Closeable {
 	private final int contextsDbi;
 	private int pageSize;
 	private final boolean autoGrow;
-	private final boolean pageCardinalityEstimator;
+	private final boolean pageWalkingEstimatorEnabled;
 	private long mapSize;
 	private final TxnManager txnManager;
 	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.LSD_RADIX;
@@ -165,7 +170,8 @@ class TripleStore implements Closeable {
 		boolean forceSync = config.getForceSync();
 		boolean noReadahead = config.getNoReadahead();
 		this.autoGrow = config.getAutoGrow();
-		this.pageCardinalityEstimator = config.getPageCardinalityEstimator();
+		this.pageWalkingEstimatorEnabled = config.getPageCardinalityEstimator()
+				&& !Boolean.getBoolean(DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY);
 		this.valueStore = valueStore;
 		// create directory if it not exists
 		this.dir.mkdirs();
@@ -200,7 +206,7 @@ class TripleStore implements Closeable {
 		});
 
 		txnManager = new TxnManager(env, Mode.RESET);
-		pageEstimator = pageCardinalityEstimator ? new LmdbPageCardinalityEstimator(dataMdbFile, env) : null;
+		pageEstimator = pageWalkingEstimatorEnabled ? new LmdbPageCardinalityEstimator(dataMdbFile, env) : null;
 
 		try {
 			String indexSpecStr = config.getTripleIndexes();
@@ -645,9 +651,19 @@ class TripleStore implements Closeable {
 		});
 	}
 
+	/**
+	 * Estimates the number of explicit and inferred statements matching the supplied value IDs.
+	 *
+	 * <p>
+	 * With {@code pageCardinalityEstimator} enabled, the normal path uses the bounded page-walking estimator. Disabling
+	 * it selects the RDF4J 5.3.2 cursor sampler, as does setting {@value #DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY} to
+	 * {@code true} or encountering an unexpected failure in the page-walking path. The system property provides an
+	 * operational override for stores whose repository configuration still enables page walking.
+	 * </p>
+	 */
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
-		if (!pageCardinalityEstimator) {
-			return exactCardinality(subj, pred, obj, context);
+		if (!pageWalkingEstimatorEnabled) {
+			return cardinalityUsingRdf4j532Estimator(subj, pred, obj, context);
 		}
 
 		int bindingMask = TripleIndex.bindingMask(subj, pred, obj, context);
@@ -674,9 +690,9 @@ class TripleStore implements Closeable {
 				return primary.entries;
 			}
 		} catch (IOException | RuntimeException e) {
-			logger.warn("Page cardinality estimator failed for index {}, falling back to sampling",
+			logger.warn("Page cardinality estimator failed for index {}, falling back to the RDF4J 5.3.2 sampler",
 					new String(primaryIndex.getFieldSeq()), e);
-			return cardinalityUsingSamplingEstimator(primaryIndex, subj, pred, obj, context);
+			return cardinalityUsingRdf4j532Estimator(subj, pred, obj, context);
 		}
 	}
 
@@ -684,7 +700,8 @@ class TripleStore implements Closeable {
 			long context, int bindingMask) throws IOException {
 		LmdbPageCardinalityEstimator estimator = pageEstimator;
 		if (estimator == null) {
-			return PageEstimatorResult.unqualified(cardinalityUsingSamplingEstimator(index, subj, pred, obj, context));
+			return PageEstimatorResult
+					.unqualified(cardinalityUsingRdf4j532Estimator(subj, pred, obj, context));
 		}
 		int prefixLength = index.getPatternScore(bindingMask);
 		int boundFields = Integer.bitCount(bindingMask);
@@ -720,6 +737,12 @@ class TripleStore implements Closeable {
 		});
 	}
 
+	/**
+	 * Adds estimates for the disjoint explicit and inferred databases. Counts and hard bounds are additive; uncertainty
+	 * is combined as independent absolute variance. A weak result from either database is retained in the
+	 * recommendation for a second index layout because a strong estimate for one database cannot repair weak evidence
+	 * for the other.
+	 */
 	private PageEstimatorResult combineDatabaseEstimates(LmdbPageCardinalityEstimator.Estimate first,
 			LmdbPageCardinalityEstimator.Estimate second) {
 		double entries = (double) first.entries() + second.entries();
@@ -752,6 +775,16 @@ class TripleStore implements Closeable {
 				first.additionalEvidenceUsed() || second.additionalEvidenceUsed(), secondaryRecommended);
 	}
 
+	/**
+	 * Reconciles two estimates of the same logical result obtained from different physical index layouts.
+	 *
+	 * <p>
+	 * Unlike explicit/inferred results, these estimates must not be added. Exact evidence wins; otherwise the geometric
+	 * blend prevents a large estimate from dominating solely because of scale and is clamped to the intersection of the
+	 * two hard-bound intervals. If those intervals do not overlap, returning the better-supported input is safer than
+	 * manufacturing a value that violates both estimators' accounting.
+	 * </p>
+	 */
 	private PageEstimatorResult combineIndependentLayoutEstimates(PageEstimatorResult first,
 			PageEstimatorResult second) {
 		if (!Double.isFinite(first.entries) || first.entries < 0.0d) {
@@ -849,6 +882,11 @@ class TripleStore implements Closeable {
 		return Math.max(left / right, right / left);
 	}
 
+	/**
+	 * Precomputes primary and optional secondary layouts for all 16 s/p/o/c binding shapes. Index configuration and key
+	 * order are immutable after store construction, so cardinality calls can use array lookups on the optimizer hot
+	 * path.
+	 */
 	private void initializePageEstimatorIndexSelections() {
 		for (int bindingMask = 0; bindingMask < TripleIndex.BINDING_SHAPE_COUNT; bindingMask++) {
 			TripleIndex primary = selectBestPageEstimatorIndex(bindingMask);
@@ -857,6 +895,12 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	/**
+	 * Chooses the longest usable range prefix, then favors the layout that places residual bound fields earliest. The
+	 * latter reduces residual-sampling variance without changing which keys belong to the range. This intentionally
+	 * differs from the stable first-on-tie rule in {@link TripleIndex#getBestIndex}; compatibility mode must use that
+	 * old selector instead.
+	 */
 	private TripleIndex selectBestPageEstimatorIndex(int bindingMask) {
 		TripleIndex best = null;
 		int bestPrefix = -1;
@@ -873,6 +917,11 @@ class TripleStore implements Closeable {
 		return Objects.requireNonNull(best, "No LMDB statement index is available");
 	}
 
+	/**
+	 * Selects independent evidence only for a no-prefix estimate, where residual sampling is least reliable. A
+	 * different leading field is preferred so the second walk observes a materially different physical clustering;
+	 * querying two similar layouts would add I/O without enough independent information to justify it.
+	 */
 	private TripleIndex selectSecondaryNoPrefixEstimatorIndex(TripleIndex primary, int bindingMask) {
 		if (bindingMask == 0 || primary.getPatternScore(bindingMask) != 0) {
 			return null;
@@ -928,6 +977,30 @@ class TripleStore implements Closeable {
 		return data;
 	}
 
+	/**
+	 * Runs the complete estimator selection used by RDF4J 5.3.2. Compatibility includes the old index tie-break: the
+	 * first configured index with the longest bound prefix wins. The page walker has a different, intentional
+	 * residual-layout tie-break, so passing its selected index to the old sampler would not fully restore 5.3.2
+	 * behavior.
+	 */
+	private double cardinalityUsingRdf4j532Estimator(long subj, long pred, long obj, long context)
+			throws IOException {
+		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
+		return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+	}
+
+	/**
+	 * Cursor sampler from RDF4J 5.3.2 ({@code e0bbd99d3b5d1ed1ee9e48e4394006768581e2c0}). Its executable algorithm is
+	 * intentionally unchanged: it uses three interpolated key-space buckets, reads at most one hundred rows per bucket,
+	 * derives per-field densities from adjacent sampled keys, and estimates the unsampled gaps.
+	 *
+	 * <p>
+	 * This method was extracted from the old {@code cardinality} method, and {@code MAX_KEY_LENGTH} moved from
+	 * {@code TripleStore} to {@link TripleIndex}; those are the only mechanical differences from the tagged source. Do
+	 * not improve or retune this compatibility path in place. Fixes belong in the page-walking estimator unless a
+	 * deliberate change to the 5.3.2 fallback contract is accompanied by updated golden compatibility tests.
+	 * </p>
+	 */
 	private double cardinalityUsingSamplingEstimator(TripleIndex index, long subj, long pred, long obj, long context)
 			throws IOException {
 
@@ -1092,21 +1165,6 @@ class TripleStore implements Closeable {
 			} finally {
 				pool.free(s);
 			}
-		});
-	}
-
-	private double exactCardinality(long subj, long pred, long obj, long context) throws IOException {
-		return txnManager.doWith((stack, txn) -> {
-			double cardinality = 0.0;
-			TxnManager.Txn txnRef = txnManager.createTxn(txn);
-			for (boolean explicit : new boolean[] { true, false }) {
-				try (RecordIterator triples = getTriples(txnRef, subj, pred, obj, context, explicit)) {
-					while (triples.next() != null) {
-						cardinality++;
-					}
-				}
-			}
-			return cardinality;
 		});
 	}
 
