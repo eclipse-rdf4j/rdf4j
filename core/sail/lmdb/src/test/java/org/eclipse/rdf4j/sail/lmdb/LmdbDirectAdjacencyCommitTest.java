@@ -572,15 +572,29 @@ class LmdbDirectAdjacencyCommitTest {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		assertThat(store.buildNowForTest()).isTrue();
 
+		// the gap the overflow records schedules its own recovery, so hold that rebuild at the gate while the
+		// degraded window is asserted; releaseRecovery() below lets it run
+		CountDownLatch recoveryStarted = new CountDownLatch(1);
+		CountDownLatch releaseRecovery = new CountDownLatch(1);
+		setRunnableField("beforeQuiescentRebuildStepForTest", () -> {
+			recoveryStarted.countDown();
+			await(releaseRecovery);
+		});
+
 		// a tiny injected collector cap: the first growth overflows and the commit publishes a gap
 		tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(),
 				new LmdbDirectAdjacencyCommitDelta(store.memoryAccount(), 1024));
 		commitQuads(new long[][] { add(S1, P1, O2, 0, true) });
+		assertThat(recoveryStarted.await(30, TimeUnit.SECONDS))
+				.as("an overflowing commit must schedule the rebuild that retires its gap")
+				.isTrue();
 		long r1 = tripleStore.getDataRevision();
 		try (LmdbAdjacencyReadView view = store.acquire(r1)) {
 			assertThat(view.isExact()).isFalse();
 			assertThat(view.fallbackReason()).isEqualTo(FallbackReason.REVISION_GAP);
 		}
+		releaseRecovery.countDown();
+		setRunnableField("beforeQuiescentRebuildStepForTest", null);
 		// a fresh continuous rebuild clears the emergency gap
 		assertThat(store.buildNowForTest()).isTrue();
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
@@ -590,10 +604,61 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
+	void collectorOverflowRecoversWithoutAnExplicitRebuild() throws Exception {
+		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
+		assertThat(store.buildNowForTest()).isTrue();
+
+		// a tiny injected collector cap: the first growth overflows and the commit publishes a gap
+		tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(),
+				new LmdbDirectAdjacencyCommitDelta(store.memoryAccount(), 1024));
+		commitQuads(new long[][] { add(S1, P1, O2, 0, true) });
+
+		// an overflowing bulk commit must not disable acceleration for the rest of the process: the gap the commit
+		// records has to schedule the rebuild that retires it, with no externally driven buildNowForTest()
+		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).isTrue();
+		assertThat(store.snapshotMetrics().emergencyGapFromRevision).isEqualTo(Long.MAX_VALUE);
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S1, P1, -1, -1, true)).hasSize(2);
+		}
+	}
+
+	@Test
+	void revisionGapRecoveryRetriesReachExactServing() throws Exception {
+		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
+		assertThat(store.buildNowForTest()).isTrue();
+		long revision = tripleStore.getDataRevision();
+
+		// a gap recorded without any commit-path scheduling: the read path is the only remaining chance to notice
+		// that every acquisition is degraded, so it owns the backstop that keeps the degradation from being permanent
+		store.markGap(revision);
+		try (LmdbAdjacencyReadView gapped = store.acquire(revision)) {
+			assertThat(gapped.isExact()).isFalse();
+			assertThat(gapped.fallbackReason()).isEqualTo(FallbackReason.REVISION_GAP);
+		}
+
+		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).isTrue();
+		assertThat(store.snapshotMetrics().emergencyGapFromRevision).isEqualTo(Long.MAX_VALUE);
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S1, P1, -1, -1, true)).hasSize(1);
+		}
+	}
+
+	@Test
 	void listenerFailureAfterPhysicalCommitAdvancesRevisionAndPublishesGap() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		long beforeFailure = tripleStore.getDataRevision();
 		assertThat(store.buildNowForTest()).isTrue();
+
+		// the gap this failure records schedules its own recovery: hold that rebuild while the degraded window is
+		// asserted, otherwise the maintenance thread can retire the gap first
+		CountDownLatch recoveryStarted = new CountDownLatch(1);
+		CountDownLatch releaseRecovery = new CountDownLatch(1);
+		setRunnableField("beforeQuiescentRebuildStepForTest", () -> {
+			recoveryStarted.countDown();
+			await(releaseRecovery);
+		});
 
 		TripleStore.DirectAdjacencyCommitListener delegate = store.commitListener();
 		AtomicBoolean failOnce = new AtomicBoolean(true);
@@ -610,12 +675,17 @@ class LmdbDirectAdjacencyCommitTest {
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessage("injected listener failure after physical commit");
 
+		assertThat(recoveryStarted.await(30, TimeUnit.SECONDS))
+				.as("a physical commit that advanced past its delta must schedule the rebuild that retires its gap")
+				.isTrue();
 		long failedCommitRevision = beforeFailure + 1;
 		assertThat(tripleStore.getDataRevision()).isEqualTo(failedCommitRevision);
 		try (LmdbAdjacencyReadView view = store.acquire(failedCommitRevision)) {
 			assertThat(view.isExact()).isFalse();
 			assertThat(view.fallbackReason()).isEqualTo(FallbackReason.REVISION_GAP);
 		}
+		releaseRecovery.countDown();
+		setRunnableField("beforeQuiescentRebuildStepForTest", null);
 
 		try (TxnManager.Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			try (RecordIterator statements = tripleStore.getTriples(txn, S2, P1, O2, 0, true)) {

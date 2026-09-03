@@ -79,6 +79,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private static final String ARBITRATED_INDEX_PREFIX = "arbitrated-";
 	private static final String DIRECT_INDEX_PREFIX = "direct-";
 	private static final int MAX_PENDING_TABLES = 64;
+	/** Sentinel for {@link #lastGapRecoveryNanos}: {@link System#nanoTime()} may legitimately return any value. */
+	private static final long GAP_RECOVERY_NEVER_ATTEMPTED = Long.MIN_VALUE;
 	/** Kernel adjacency views served; one increment per successful operator bind, never per row lookup. */
 	static final AtomicLong KERNEL_VIEWS_SERVED = new AtomicLong();
 	/** Subset of {@link #KERNEL_VIEWS_SERVED} bound directly to a base-owned decoded neighbor CSR. */
@@ -155,6 +157,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final AtomicBoolean quiescentRebuildPending = new AtomicBoolean();
 	private final AtomicBoolean quiescentRebuildTaskScheduled = new AtomicBoolean();
 	private volatile boolean quiescentRebuildRetryAllowed;
+	/** {@link #GAP_RECOVERY_NEVER_ATTEMPTED} until the read path has requested one gap recovery. */
+	private final AtomicLong lastGapRecoveryNanos = new AtomicLong(GAP_RECOVERY_NEVER_ATTEMPTED);
 	private volatile Thread maintenanceThread;
 	private volatile Thread compactionThread;
 	/**
@@ -192,6 +196,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	volatile Runnable beforeExactViewReturnForTest;
 	/** Test-only observation hook: runs after view quiescence and before replacement construction starts. */
 	volatile Runnable beforeQuiescentBuildForTest;
+	/**
+	 * Test-only interleaving hook: runs at the head of one quiescent-rebuild step, before the retiring publication is
+	 * replaced. A commit that records a gap now schedules its own recovery, so a test asserting the degraded window has
+	 * to pin that window open rather than out-run the maintenance thread.
+	 */
+	volatile Runnable beforeQuiescentRebuildStepForTest;
 	private volatile MaintenanceState maintenanceState = MaintenanceState.EMPTY;
 	private volatile String lastBuildFailureDescription = "<none>";
 	private volatile boolean closed;
@@ -327,7 +337,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 			@Override
 			public void physicalCommitFailedBeforeRevisionBump(long nextRevision) {
-				markGap(nextRevision);
+				// the physical database advanced while this delta did not: only a rebuild can re-derive the rows
+				markGapAndScheduleRecovery(nextRevision);
 			}
 		};
 	}
@@ -573,7 +584,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		if (sealed.revision() != nextRevision) {
 			sealed.close();
-			markGap(nextRevision);
+			markGapAndScheduleRecovery(nextRevision);
 			return;
 		}
 		if (closed) {
@@ -581,8 +592,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return;
 		}
 		if (sealed.isOverflowed()) {
-			// the commit still succeeds authoritatively; only acceleration is disabled from this revision on
-			markGap(nextRevision);
+			// the commit still succeeds authoritatively; acceleration is disabled from this revision until the
+			// rebuild retires the gap. A bulk load overflows the commit collector routinely, so leaving the gap
+			// unscheduled would disable adjacency for the rest of the process.
+			markGapAndScheduleRecovery(nextRevision);
 			return;
 		}
 		if (sealed.isEmpty()) {
@@ -600,9 +613,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				if (pending.length >= MAX_PENDING_TABLES) {
 					// the maintenance executor has fallen too far behind: degrade instead of unbounded pending scans,
 					// then recover through the no-overlap rebuild once the applier drains
-					markGap(nextRevision);
-					maintenanceState = MaintenanceState.DEGRADED_GAP;
-					scheduleQuiescentRebuild();
+					markGapAndScheduleRecovery(nextRevision);
 					return;
 				}
 				PendingTable[] appended = Arrays.copyOf(pending, pending.length + 1);
@@ -614,7 +625,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 		} catch (RuntimeException e) {
 			// allocation-free correctness backstop: every row at this revision and later falls back
-			markGap(nextRevision);
+			markGapAndScheduleRecovery(nextRevision);
 			logger.warn("Direct adjacency pending publication failed; revision gap recorded", e);
 			if (options.failOnMaintenanceError()) {
 				RuntimeException failure = unexpectedMaintenanceFailure("pending publication", e);
@@ -1887,6 +1898,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (closed) {
 			return false;
 		}
+		Runnable stepHook = beforeQuiescentRebuildStepForTest;
+		if (stepHook != null) {
+			stepHook.run();
+		}
 		maintenanceState = MaintenanceState.QUIESCING_FOR_REBUILD;
 		publicationLock.lock();
 		try {
@@ -2334,6 +2349,44 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			current = emergencyGap.get();
 			updated = new GapMarker(Math.min(current.fromRevision(), fromRevision), current.sequence() + 1);
 		} while (!emergencyGap.compareAndSet(current, updated));
+	}
+
+	/**
+	 * Records a gap and schedules the rebuild that retires it. The cutover in {@code catchUpAndPublish} is the only
+	 * place the emergency gap is ever cleared, so a gap marked without this scheduling degrades every later snapshot
+	 * for the remaining lifetime of the store.
+	 */
+	private void markGapAndScheduleRecovery(long fromRevision) {
+		markGap(fromRevision);
+		maintenanceState = MaintenanceState.DEGRADED_GAP;
+		scheduleQuiescentRebuild();
+	}
+
+	/**
+	 * The read-path backstop for a gap whose scheduled recovery never landed: a rebuild aborts whenever a concurrent
+	 * {@link #markGap} advances the marker sequence mid-build, and its single retry can be consumed by the same race,
+	 * so scheduling at the write path alone narrows the window rather than closing it. Throttled to
+	 * {@link LmdbDirectAdjacencyOptions#buildRetryMillis()} and never blocking, since acquisition is on the query path.
+	 */
+	private void requestGapRecovery() {
+		if (closed || options.memoryRefused() || rebuildPending.get() || quiescentRebuildPending.get()
+				|| unexpectedMaintenanceFailure.get() != null
+				|| maintenanceState == MaintenanceState.CLOSED
+				|| maintenanceState == MaintenanceState.MEMORY_REFUSED
+				|| maintenanceState == MaintenanceState.FAILED_CORRUPT) {
+			return;
+		}
+		long now = System.nanoTime();
+		long previous = lastGapRecoveryNanos.get();
+		if (previous != GAP_RECOVERY_NEVER_ATTEMPTED
+				&& now - previous < TimeUnit.MILLISECONDS.toNanos(options.buildRetryMillis())) {
+			return;
+		}
+		if (!lastGapRecoveryNanos.compareAndSet(previous, now)) {
+			// another degraded acquisition already claimed this interval
+			return;
+		}
+		scheduleQuiescentRebuild();
 	}
 
 	private void buildOnce() {
@@ -2833,6 +2886,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				}
 				if (emergencyGapFromRevision <= snapshotRevision) {
 					state.release();
+					requestGapRecovery();
 					return fallback(snapshotRevision, FallbackReason.REVISION_GAP, lifetimeId);
 				}
 				if (snapshotRevision < state.minSnapshotRevision()) {
@@ -2841,6 +2895,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				}
 				if (snapshotRevision > state.horizonRevision() || state.gapFromRevision() <= snapshotRevision) {
 					state.release();
+					requestGapRecovery();
 					return fallback(snapshotRevision, FallbackReason.REVISION_GAP, lifetimeId);
 				}
 				Runnable viewHook = beforeExactViewReturnForTest;
