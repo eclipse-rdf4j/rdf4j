@@ -56,19 +56,19 @@ public class EntryMatcher {
 		this.valueMatcher = new VarintMatcher(valueArray, valueShouldMatch);
 	}
 
-	public boolean matches(VarintTupleInput key, VarintTupleInput value) {
+	public boolean matches(VarintTupleIO key, VarintTupleIO value) {
 		return keyMatcher.matches(key) && valueMatcher.matches(value);
 	}
 
 	public boolean matches(ByteBuffer key, ByteBuffer value) {
-		return matches(new VarintTupleInput(keyElements, key), new VarintTupleInput(valueElements, value));
+		return matches(new VarintTupleIO(keyElements, key), new VarintTupleIO(valueElements, value));
 	}
 
-	public boolean matchesKey(VarintTupleInput key) {
+	public boolean matchesKey(VarintTupleIO key) {
 		return keyMatcher.matches(key);
 	}
 
-	public boolean matchesValue(VarintTupleInput value) {
+	public boolean matchesValue(VarintTupleIO value) {
 		return valueMatcher.matches(value);
 	}
 }

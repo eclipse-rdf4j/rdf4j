@@ -112,13 +112,13 @@ public class VarintMatcher {
 
 	}
 
-	public boolean matches(VarintTupleInput other) {
+	public boolean matches(VarintTupleIO other) {
 		return matcher.matches(other);
 	}
 
 	@FunctionalInterface
 	private interface MatchFn {
-		boolean matches(VarintTupleInput other);
+		boolean matches(VarintTupleIO other);
 	}
 
 	private MatchFn selectMatcher(boolean[] shouldMatch) {
@@ -174,11 +174,11 @@ public class VarintMatcher {
 		}
 	}
 
-	private boolean match0000(VarintTupleInput other) {
+	private boolean match0000(VarintTupleIO other) {
 		return true;
 	}
 
-	private boolean match0001(VarintTupleInput other) {
+	private boolean match0001(VarintTupleIO other) {
 		if (!other.next()) {
 			return false;
 		}
@@ -190,7 +190,7 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match0010(VarintTupleInput other) {
+	private boolean match0010(VarintTupleIO other) {
 		if (!other.skip() || !other.next()) {
 			return false;
 		}
@@ -202,7 +202,7 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match0011(VarintTupleInput other) {
+	private boolean match0011(VarintTupleIO other) {
 		if (!other.next()) {
 			return false;
 		}
@@ -223,7 +223,7 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match0100(VarintTupleInput other) {
+	private boolean match0100(VarintTupleIO other) {
 		if (!other.skip() || !other.skip() || !other.next()) {
 			return false;
 		}
@@ -235,7 +235,7 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match0101(VarintTupleInput other) {
+	private boolean match0101(VarintTupleIO other) {
 		if (!other.next()) {
 			return false;
 		}
@@ -255,7 +255,7 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match0110(VarintTupleInput other) {
+	private boolean match0110(VarintTupleIO other) {
 		if (!other.skip() || !other.next()) {
 			return false;
 		}
@@ -275,7 +275,7 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match0111(VarintTupleInput other) {
+	private boolean match0111(VarintTupleIO other) {
 		if (!other.next()) {
 			return false;
 		}
@@ -303,7 +303,7 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match1000(VarintTupleInput other) {
+	private boolean match1000(VarintTupleIO other) {
 		if (!other.skip() || !other.skip() || !other.skip() || !other.next()) {
 			return false;
 		}
@@ -315,7 +315,7 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match1001(VarintTupleInput other) {
+	private boolean match1001(VarintTupleIO other) {
 		if (!other.next()) {
 			return false;
 		}
@@ -335,7 +335,7 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match1010(VarintTupleInput other) {
+	private boolean match1010(VarintTupleIO other) {
 		if (!other.skip() || !other.next()) {
 			return false;
 		}
@@ -355,7 +355,7 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match1011(VarintTupleInput other) {
+	private boolean match1011(VarintTupleIO other) {
 		if (!other.next()) {
 			return false;
 		}
@@ -383,7 +383,7 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match1100(VarintTupleInput other) {
+	private boolean match1100(VarintTupleIO other) {
 		if (!other.skip() || !other.skip() || !other.next()) {
 			return false;
 		}
@@ -403,7 +403,7 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match1101(VarintTupleInput other) {
+	private boolean match1101(VarintTupleIO other) {
 		if (!other.next()) {
 			return false;
 		}
@@ -431,7 +431,7 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match1110(VarintTupleInput other) {
+	private boolean match1110(VarintTupleIO other) {
 		if (!other.skip() || !other.next()) {
 			return false;
 		}
@@ -459,7 +459,7 @@ public class VarintMatcher {
 		return false;
 	}
 
-	private boolean match1111(VarintTupleInput other) {
+	private boolean match1111(VarintTupleIO other) {
 		if (!other.next()) {
 			return false;
 		}

@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
@@ -26,16 +27,21 @@ import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.IntConsumer;
 import java.util.stream.Collectors;
 
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.Assert;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -53,7 +59,7 @@ public class TripleStoreTest {
 	@BeforeEach
 	public void before(@TempDir File dataDir) throws Exception {
 		this.dataDir = dataDir;
-		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc,psoc"), null);
 	}
 
 	int count(RecordIterator it) {
@@ -557,6 +563,66 @@ public class TripleStoreTest {
 		tripleStore.commit();
 		tripleStore.filterUsedIds(removed);
 		assertEquals(Arrays.asList(6L, 7L, 8L), removed.stream().sorted().collect(Collectors.toList()));
+	}
+
+	@Test
+	public void testHighCardinalityPredicates() throws Exception {
+		tripleStore.startTransaction();
+
+		int[] preds = { 42, 41, 40, 42, 43, 42, 40 };
+
+		Random random = new Random(378245L);
+		int maxObj = 1 << 24;
+		int size = 256;
+		int subj = 1;
+
+		Map<String, Set<String>> expectedByPredicate = new HashMap<>();
+		for (int pred : preds) {
+			for (int i = 1; i <= size; i++) {
+				int obj = random.nextInt(maxObj) + 1; // many object values, randomized insertion order
+				int context = 1;
+				expectedByPredicate.computeIfAbsent(String.valueOf(pred), k -> new HashSet<>())
+						.add(subj + "," + pred + "," + obj + "," + context);
+				tripleStore.storeTriple(subj, pred, obj, context, true);
+				subj++;
+			}
+		}
+
+		tripleStore.commit();
+
+		random = new Random(378245L);
+		subj = 1;
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			for (int pred : preds) {
+				for (int i = 1; i <= size; i++) {
+					int obj = random.nextInt(maxObj) + 1;
+					try (var it = tripleStore.getTriples(txn, subj, pred, obj, 1, true)) {
+						assertNotNull(it.next());
+					}
+					subj++;
+				}
+			}
+		}
+
+		for (int pred : new LinkedHashSet<>(Arrays.stream(preds).boxed().toList())) {
+			try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+				for (TripleIndex index : tripleStore.getIndexes()) {
+					String indexName = new String(index.getFieldSeq());
+					Set<String> expectedInIndex = new HashSet<>(expectedByPredicate.get(String.valueOf(pred)));
+					try (RecordIterator it = tripleStore.getTriplesUsingIndex(txn, -1, pred, -1, -1, true, index,
+							index.getPatternScore(-1, pred, -1, -1))) {
+						long[] quad;
+						while ((quad = it.next()) != null) {
+							String quadStr = quad[0] + "," + quad[1] + "," + quad[2] + "," + quad[3];
+							assertTrue("Expected quad in index '" + indexName + "': " + quadStr,
+									expectedInIndex.remove(quadStr));
+						}
+					}
+					assertEquals("All expected quads should have been found in index '" + indexName + "'", 0,
+							expectedInIndex.size());
+				}
+			}
+		}
 	}
 
 	@AfterEach

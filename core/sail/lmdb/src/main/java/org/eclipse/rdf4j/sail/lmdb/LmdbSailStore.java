@@ -1701,4 +1701,8 @@ class LmdbSailStore implements SailStore {
 			return null;
 		}
 	}
+
+	TripleStore getTripleStore() {
+		return tripleStore;
+	}
 }
