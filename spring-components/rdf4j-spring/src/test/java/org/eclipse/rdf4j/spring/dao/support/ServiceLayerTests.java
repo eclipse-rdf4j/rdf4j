@@ -34,8 +34,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.DefaultTransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import shaded_package.org.bouncycastle.asn1.tsp.ArchiveTimeStamp;
-
 /**
  * @author Florian Kleedorfer
  * @since 4.0.0
