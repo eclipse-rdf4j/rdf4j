@@ -504,12 +504,18 @@ test('presentation mode stays a live instrument, not a slideshow of screenshots'
         expect(untruncated, `statement ${index + 1} is clipped in the rail`).toBe(true);
     }
 
-    // Direction, terms and numbers all still drive the slide that is on screen.
+    // Only the two controls that change what a slide shows are offered; number base and the
+    // lesson picker belong to the reading layout, where there is room to inspect and to browse.
+    await expect(page.locator('#present-controls [data-control="direction"]').first()).toBeVisible();
+    await expect(page.locator('#present-controls [data-control="terms"]').first()).toBeVisible();
+    await expect(page.locator('#present-controls [data-control="numbers"]').first()).toBeHidden();
+    await expect(page.locator('#present-controls [data-control="view"]').first()).toBeHidden();
+
+    // Direction and terms still drive the slide that is on screen.
     await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.setPresentSlide(2));
     await expect(page.locator('[data-testid="csr-arrays"]')).toBeVisible();
     await page.locator('#present-controls [data-control="terms"][data-value="raw"]').click();
-    await page.locator('#present-controls [data-control="numbers"][data-value="hex"]').click();
-    await expect(page.locator('[data-array="rowIds"]')).toContainText('0x82');
+    await expect(page.locator('[data-array="rowIds"]')).toContainText('130');
     await expect(page.locator('.lesson-frame')).toHaveAttribute('data-present-slide', '3');
 
     await page.locator('#present-controls [data-control="direction"][data-value="incoming"]').click();
@@ -518,8 +524,9 @@ test('presentation mode stays a live instrument, not a slideshow of screenshots'
     await page.locator('#present-controls [data-control="direction"][data-value="outgoing"]').click();
     await expect(page.locator('#present-context')).toContainText('plane 0');
 
-    // The view group becomes a chapter jump rather than desyncing the deck from the lesson.
-    await page.locator('#present-controls [data-control="view"][data-value="deltas"]').click();
+    // The view group is not offered on a slide, but it shares the reading layout's click handler,
+    // so that handler must still move the deck rather than only the lesson underneath it.
+    await page.locator('#present-controls [data-control="view"][data-value="deltas"]').dispatchEvent('click');
     expect(await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.getState().step)).toBe(8);
     await expect(page.locator('.lesson-frame')).toHaveAttribute('data-tutorial-step', '9');
     await expect(page.locator('#present-counter')).toContainText('/ 18');

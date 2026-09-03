@@ -22,7 +22,6 @@
             --purple: #6a4c93;
             --green: #28724f;
             --danger: #a53326;
-            --stage: #1a1a15;
             --shadow: 0 12px 34px rgba(46, 40, 31, .08);
             --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
             --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -829,8 +828,27 @@
 
         .present-chrome { display: none; }
 
-        html[data-present="true"] { scroll-behavior: auto; --present-rail: 300px; }
-        html[data-present="true"] body { overflow: hidden; background: var(--stage); }
+        /*
+         * Presenting re-points the palette tokens rather than restyling each component: the accent
+         * softens from the signage orange to a muted terracotta, and the blue and green that mark
+         * structure get a little more saturation. Everything downstream already reads these
+         * variables, so the slide interior moves with the chrome and the reading layout does not
+         * move at all.
+         */
+        html[data-present="true"] {
+            scroll-behavior: auto;
+            --present-rail: 300px;
+            --orange: #c0563a;
+            --orange-dark: #97402a;
+            --orange-soft: #fbf0ec;
+            --blue: #1f4e8c;
+            --green: #2f8a6d;
+            --navy: #1b3a6b;
+            --near-black: #12151a;
+        }
+        /* Slides sit on the same faint plotting grid the reading layout uses, not on a dark stage:
+           projected, a light ground keeps the packed-byte diagrams legible from the back of a room. */
+        html[data-present="true"] body { overflow: hidden; }
         html[data-present="true"] .masthead,
         html[data-present="true"] .statement-panel,
         html[data-present="true"] .control-deck,
@@ -869,7 +887,7 @@
             padding: calc(var(--present-top, 104px) + 26px) 30px calc(var(--present-bottom, 62px) + 26px)
                 calc(var(--present-rail) + 30px);
             display: flex;
-            align-items: safe center;
+            align-items: safe start;
             justify-content: safe center;
             overflow: auto;
         }
@@ -881,9 +899,10 @@
             left: 0;
             width: 1120px;
             padding: 34px 38px 30px;
-            border-radius: 16px;
-            background: var(--paper);
-            box-shadow: 0 30px 80px rgba(0, 0, 0, .5);
+            border: 1px solid #eceae3;
+            border-radius: 18px;
+            background: white;
+            box-shadow: 0 1px 2px rgba(28, 25, 20, .04), 0 14px 40px rgba(28, 25, 20, .07);
             transform-origin: top left;
         }
         html[data-present="true"] .lesson-frame.entering { animation: none; }
@@ -907,6 +926,8 @@
             to { opacity: 1; }
         }
 
+        /* Both bars are chrome painted straight onto the ground, held apart from the slide by a
+           hairline rather than by a slab of colour. */
         .present-bar {
             position: absolute;
             left: 0;
@@ -914,13 +935,38 @@
             pointer-events: auto;
             display: flex;
             gap: clamp(14px, 2.4vw, 34px);
-            padding: 14px clamp(16px, 3vw, 46px);
-            color: #f3f1ea;
-            background: var(--stage);
+            padding: 18px clamp(16px, 3vw, 46px);
+            color: var(--ink);
+            background: linear-gradient(#fbfaf6 78%, rgba(251, 250, 246, 0));
         }
-        .present-bar-top { top: 0; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid #34332c; }
-        .present-bar-bottom { bottom: 0; align-items: center; border-top: 1px solid #34332c; }
-        .present-aside { flex: 0 0 auto; display: grid; justify-items: end; gap: 9px; }
+        .present-bar-top { top: 4px; align-items: flex-start; justify-content: space-between; }
+        .present-bar-bottom {
+            bottom: 0;
+            align-items: center;
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            border-top: 1px solid var(--line);
+            background: #fbfaf6;
+        }
+        .present-aside { flex: 0 0 auto; display: grid; justify-items: end; gap: 10px; }
+
+        /* One continuous strip along the very top edge: filled behind you, plain ahead, and each
+           segment is still the click target that jumps to its slide. */
+        .present-progress {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            gap: 1px;
+            height: 4px;
+            pointer-events: auto;
+            background: #e4e1d9;
+        }
+        .present-dot { flex: 1 1 0; min-width: 0; padding: 0; border: 0; background: transparent; cursor: pointer; }
+        .present-dot:hover { background: #b8c4d6; }
+        .present-dot.seen { background: var(--navy); }
+        .present-dot[aria-current="true"] { background: var(--orange); }
 
         /* The statement list keeps the shape it has when reading — a full-height column on the
            left — because that is what makes it scannable while someone in the room is choosing. */
@@ -930,70 +976,58 @@
             top: var(--present-top, 104px);
             bottom: var(--present-bottom, 62px);
             width: var(--present-rail, 300px);
-            padding: 15px clamp(12px, 1.3vw, 18px) 15px clamp(16px, 3vw, 46px);
+            padding: 4px clamp(12px, 1.3vw, 18px) 12px clamp(16px, 3vw, 46px);
             display: flex;
             flex-direction: column;
-            gap: 11px;
+            gap: 10px;
             pointer-events: auto;
-            border-right: 1px solid #34332c;
-            background: var(--stage);
         }
-        .present-rail-title { margin: 0; color: #86847c; font: 700 9px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .1em; }
+        .present-rail-title { margin: 0; color: var(--muted); font: 700 9px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .11em; }
         .present-heading { min-width: 0; }
-        .present-slugline { display: flex; gap: 9px; margin: 0; color: #ffae76; font: 800 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .12em; }
+        .present-slugline { display: flex; gap: 9px; margin: 0; color: var(--orange-dark); font: 800 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .12em; }
+        .present-slugline span:first-child { color: var(--navy); }
         .present-slugline span:not(:last-child)::after { content: " ·"; }
-        #present-title { margin: 9px 0 0; color: white; font-size: clamp(21px, 2vw, 30px); line-height: 1.06; letter-spacing: -.035em; }
-        #present-lead { max-width: 78ch; margin: 7px 0 0; color: #c8c5bb; font-size: 13px; }
-        .present-context { flex: 0 0 auto; max-width: 30ch; margin: 0; color: #a9a79e; font: 10px/1.55 var(--mono); text-align: right; }
-        .present-context strong { display: block; color: #f3f1ea; overflow-wrap: anywhere; }
+        #present-title { margin: 10px 0 0; font-size: clamp(21px, 2vw, 31px); line-height: 1.05; letter-spacing: -.035em; }
+        #present-lead { max-width: 78ch; margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+        .present-context { flex: 0 0 auto; max-width: 30ch; margin: 0; color: var(--muted); font: 10px/1.55 var(--mono); text-align: right; }
+        .present-context strong { display: block; color: var(--ink); overflow-wrap: anywhere; }
+
+        .present-actions { display: flex; align-items: center; gap: 9px; }
         .present-nav {
             flex: 0 0 auto;
-            padding: 8px 12px;
-            border: 1px solid #4b4a43;
-            border-radius: 7px;
-            background: #26261f;
-            color: #e6e3da;
-            font: 700 10px/1 var(--mono);
-            text-transform: uppercase;
-            letter-spacing: .07em;
+            padding: 10px 15px;
+            border: 1px solid var(--line-strong);
+            border-radius: 9px;
+            background: white;
+            color: var(--ink);
+            font: 700 11px/1 var(--sans);
             cursor: pointer;
         }
-        .present-nav:hover:not(:disabled) { border-color: var(--orange); color: #ffae76; }
-        .present-nav:disabled { opacity: .3; cursor: default; }
-        .present-progress { flex: 1 1 auto; display: flex; gap: 4px; align-items: center; min-width: 0; }
-        .present-dot { flex: 1 1 0; min-width: 0; height: 12px; padding: 0; border: 0; border-radius: 3px; background: #3b3a33; cursor: pointer; }
-        .present-dot:hover { background: #5d5b50; }
-        .present-dot[aria-current="true"] { background: var(--orange); }
-        .present-dot.seen { background: #6d5136; }
-        .present-hint { flex: 0 0 auto; margin: 0; color: #86847c; font: 9px/1 var(--mono); letter-spacing: .05em; }
+        .present-nav:hover:not(:disabled) { border-color: var(--orange); color: var(--orange-dark); }
+        .present-nav:disabled { opacity: .34; cursor: default; }
+        .present-nav-primary { border-color: var(--near-black); background: var(--near-black); color: white; }
+        .present-nav-primary:hover:not(:disabled) { border-color: var(--near-black); background: #262b33; color: white; }
+        .present-nav-ghost { border-style: dashed; border-color: var(--line-strong); color: var(--muted); background: transparent; }
+        .present-hint { margin: 0; color: var(--muted); font: 9px/1.5 var(--mono); letter-spacing: .05em; }
+        .present-wordmark { margin: 0; color: var(--muted); font: 700 9px/1 var(--mono); text-transform: uppercase; letter-spacing: .11em; text-align: right; }
+        .present-wordmark strong { color: var(--orange-dark); }
 
-        /* The relocated instruments. Same elements, same state, same handlers — only repainted for
-           a dark bar and compressed into one horizontal row each. */
+        /* The relocated instruments keep the reading layout's own light styling; only their
+           density changes, because a slide bar has less room than a control deck. */
         .present-controls .control-groups { justify-content: flex-end; gap: 9px; }
-        .present-controls .control-label { color: #86847c; }
-        .present-controls .segmented { border-color: #4b4a43; background: #26261f; }
-        .present-controls .segmented button { min-height: 27px; border-right-color: #4b4a43; color: #b3b0a7; }
-        .present-controls .segmented button:hover { color: #f3f1ea; }
-        .present-controls .segmented button[aria-pressed="true"] { background: var(--orange); color: white; }
+        .present-controls .segmented button { min-height: 28px; }
+        /* Direction and terms change what a slide shows. Number base is a detail you inspect up
+           close, and the deck already navigates lessons, so neither earns space on a slide. */
+        .present-controls .control-group:has([data-control="numbers"]),
+        .present-controls .control-group:has([data-control="view"]) { display: none; }
 
         .present-statements { min-height: 0; overflow: auto; }
-        .present-statements .statement-list { display: grid; gap: 3px; margin: 0; padding: 0; }
-        .present-statements .statement-button { margin: 0; padding: 9px 10px 9px 38px; color: #b3b0a7; }
-        .present-statements .statement-button:hover { border-color: #6f6d62; background: #2b2a23; color: #f3f1ea; }
-        .present-statements .statement-button[aria-selected="true"] { border-color: var(--orange); background: #3d2413; color: #fff5ed; }
-        .present-statements .statement-number {
-            top: 9px;
-            left: 10px;
-            width: 19px;
-            height: 19px;
-            border-color: #6f6d62;
-            background: transparent;
-            color: inherit;
-            font-size: 9px;
-        }
-        .present-statements .statement-button[aria-selected="true"] .statement-number { border-color: var(--orange); color: #ffae76; }
+        .present-statements .statement-list { display: grid; gap: 2px; margin: 0; padding: 0; }
+        .present-statements .statement-button { margin: 0; padding: 9px 10px 9px 38px; }
+        .present-statements .statement-button[aria-selected="true"] { background: white; box-shadow: 0 1px 2px rgba(28, 25, 20, .05); }
+        .present-statements .statement-number { top: 9px; left: 10px; width: 19px; height: 19px; font-size: 9px; }
         .present-statements .statement-rdf { font-size: 10px; line-height: 1.42; }
-        .present-statements .statement-meta { margin-top: 5px; color: #86847c; font-size: 9px; }
+        .present-statements .statement-meta { margin-top: 5px; font-size: 9px; }
 
         @media (max-width: 820px) {
             .present-hint, .present-context { display: none; }
@@ -1188,6 +1222,7 @@
          presenting: the tutorial stays a live instrument, so a slide answers questions from the
          room instead of showing a picture of an answer. -->
     <div class="present-chrome" id="present-chrome" tabindex="-1">
+        <div class="present-progress" id="present-progress" aria-label="Slide progress"></div>
         <header class="present-bar present-bar-top">
             <div class="present-heading">
                 <p class="present-slugline"><span id="present-counter">01 / 01</span><span id="present-eyebrow"></span></p>
@@ -1204,11 +1239,13 @@
             <div class="present-statements" id="present-statements"></div>
         </aside>
         <footer class="present-bar present-bar-bottom">
-            <button class="present-nav" id="present-previous" type="button">← previous</button>
-            <div class="present-progress" id="present-progress" aria-label="Slide progress"></div>
-            <button class="present-nav" id="present-next" type="button">next →</button>
             <p class="present-hint">← → slide · 1–8 statement · D direction · Esc exit</p>
-            <button class="present-nav" id="present-exit" type="button">exit</button>
+            <div class="present-actions">
+                <button class="present-nav" id="present-previous" type="button">← Previous</button>
+                <button class="present-nav present-nav-ghost" id="present-exit" type="button">Exit presentation</button>
+                <button class="present-nav present-nav-primary" id="present-next" type="button">Next idea →</button>
+            </div>
+            <p class="present-wordmark">RDF4J <strong>adjacency laboratory</strong></p>
         </footer>
     </div>
 
@@ -3560,9 +3597,13 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             presentPrevious.disabled = state.presentSlide === 0;
             presentNext.disabled = state.presentSlide === PRESENT_SLIDES.length - 1;
             renderPresentProgress();
+            /* Measured as viewport edges rather than heights: the progress strip sits above the top
+               bar, so the space a slide may use is where the bars actually end. */
             const bars = presentChrome.querySelectorAll(".present-bar");
-            document.documentElement.style.setProperty("--present-top", `${bars[0].offsetHeight}px`);
-            document.documentElement.style.setProperty("--present-bottom", `${bars[1].offsetHeight}px`);
+            document.documentElement.style.setProperty("--present-top",
+                `${Math.round(bars[0].getBoundingClientRect().bottom)}px`);
+            document.documentElement.style.setProperty("--present-bottom",
+                `${Math.round(window.innerHeight - bars[1].getBoundingClientRect().top)}px`);
         }
 
         let renderedStep = null;
@@ -3783,8 +3824,9 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             } else if (control === "view") {
                 const step = ({ logical: 4, vectors: 6, physical: 7, deltas: 8, read: 9 })[value];
                 if (presenting) {
-                    /* On a slide the view group is a chapter jump: it has to move the deck, not
-                       just the lesson, or the bar would announce a slide that is not on screen. */
+                    /* The view group is hidden on a slide, but it shares this handler with the
+                       reading layout, so it still has to move the deck rather than only the lesson
+                       underneath it — otherwise the bar would announce a slide that is not shown. */
                     setPresentSlide(firstSlideForStep(step));
                     return;
                 }
