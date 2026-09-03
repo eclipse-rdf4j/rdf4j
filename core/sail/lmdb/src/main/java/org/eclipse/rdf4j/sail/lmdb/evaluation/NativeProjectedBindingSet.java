@@ -218,17 +218,24 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		if (currentSource == null) {
 			return;
 		}
-		for (int i = 0; i < ids.length; i++) {
-			if (!isBound(ids[i])) {
-				continue;
+		int materializedValues = 0;
+		try {
+			for (int i = 0; i < ids.length; i++) {
+				if (!isBound(ids[i])) {
+					continue;
+				}
+				Value value = values[i];
+				if (value == null) {
+					value = currentSource.lazyValue(ids[i]);
+					values[i] = value;
+					materializedValues++;
+				}
+				consumer.accept(value);
 			}
-			Value value = values[i];
-			if (value == null) {
-				value = currentSource.lazyValue(ids[i]);
-				values[i] = value;
-				MATERIALIZED_VALUES.incrementAndGet();
+		} finally {
+			if (materializedValues > 0) {
+				MATERIALIZED_VALUES.addAndGet(materializedValues);
 			}
-			consumer.accept(value);
 		}
 	}
 

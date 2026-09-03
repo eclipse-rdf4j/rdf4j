@@ -58,6 +58,7 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	private static final int COMPLETED_STATE = 1;
 
 	private final LmdbNativeCostEstimate estimate;
+	private final LmdbNativeCostVector.Feature dominantRowFeature;
 	private final LmdbNativeAdaptiveCostModel model;
 	private final NanoClock clock;
 	private final Role role;
@@ -95,6 +96,7 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	LmdbNativeCostObservation(LmdbNativeCostEstimate estimate, LmdbNativeAdaptiveCostModel model, NanoClock clock,
 			Role role) {
 		this.estimate = Objects.requireNonNull(estimate, "estimate");
+		this.dominantRowFeature = estimate.dominantRowFeature();
 		this.model = Objects.requireNonNull(model, "model");
 		this.clock = Objects.requireNonNull(clock, "clock");
 		this.role = Objects.requireNonNull(role, "role");
@@ -118,9 +120,8 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	 * the moment real production diverges from the prediction.
 	 */
 	void addProducedRow() {
-		LmdbNativeCostVector.Feature feature = estimate.dominantRowFeature();
-		if (feature != null) {
-			counters[feature.ordinal()] += 1.0;
+		if (dominantRowFeature != null) {
+			counters[dominantRowFeature.ordinal()] += 1.0;
 			counterPublish++;
 		}
 	}

@@ -14,14 +14,21 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import java.io.File;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -46,6 +53,35 @@ class LmdbStoreConnectionValueMaterializationTest {
 			} else {
 				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
 			}
+		}
+	}
+
+	@Test
+	void closeDoesNotClearABatchWhileAnotherThreadMaterializesIt() throws Exception {
+		List<String> materialized = new ArrayList<>();
+		ValueStoreRevision revision = new InitializingRevision();
+		CountDownLatch collectionStarted = new CountDownLatch(1);
+		CountDownLatch releaseCollection = new CountDownLatch(1);
+		CountDownLatch sourceClosed = new CountDownLatch(1);
+		BindingSet firstRow = row(value("first", 40, revision, materialized));
+		BindingSet secondRow = row(new BlockingLmdbValue("second", 30, revision, materialized,
+				collectionStarted, releaseCollection));
+		BindingSet thirdRow = row(value("third", 20, revision, materialized));
+
+		try (LmdbValueMaterializingIteration iteration = new LmdbValueMaterializingIteration(
+				new ListIteration(List.of(firstRow, secondRow, thirdRow), sourceClosed), 8)) {
+			assertSame(firstRow, iteration.next());
+			CompletableFuture<BindingSet> consuming = CompletableFuture.supplyAsync(iteration::next);
+			assertTrue(collectionStarted.await(30, TimeUnit.SECONDS));
+			CompletableFuture<Void> closing = CompletableFuture.runAsync(iteration::close);
+			assertTrue(sourceClosed.await(30, TimeUnit.SECONDS));
+
+			releaseCollection.countDown();
+			assertSame(secondRow, consuming.get(30, TimeUnit.SECONDS));
+			closing.get(30, TimeUnit.SECONDS);
+			assertFalse(iteration.hasNext());
+		} finally {
+			releaseCollection.countDown();
 		}
 	}
 
@@ -116,7 +152,7 @@ class LmdbStoreConnectionValueMaterializationTest {
 		}
 	}
 
-	private static final class RecordingLmdbValue implements LmdbValue {
+	private static class RecordingLmdbValue implements LmdbValue {
 
 		private static final long serialVersionUID = 1L;
 
@@ -185,6 +221,64 @@ class LmdbStoreConnectionValueMaterializationTest {
 		@Override
 		public int hashCode() {
 			return Objects.hash(name, id);
+		}
+	}
+
+	private static final class BlockingLmdbValue extends RecordingLmdbValue {
+
+		private static final long serialVersionUID = 1L;
+
+		private final CountDownLatch collectionStarted;
+		private final CountDownLatch releaseCollection;
+
+		private BlockingLmdbValue(String name, long id, ValueStoreRevision revision, List<String> materialized,
+				CountDownLatch collectionStarted, CountDownLatch releaseCollection) {
+			super(name, id, revision, materialized);
+			this.collectionStarted = collectionStarted;
+			this.releaseCollection = releaseCollection;
+		}
+
+		@Override
+		public long getInternalID() {
+			collectionStarted.countDown();
+			try {
+				if (!releaseCollection.await(30, TimeUnit.SECONDS)) {
+					throw new AssertionError("timed out waiting to resume value collection");
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(e);
+			}
+			return super.getInternalID();
+		}
+	}
+
+	private static final class ListIteration extends AbstractCloseableIteration<BindingSet> {
+
+		private final Iterator<BindingSet> rows;
+		private final CountDownLatch closed;
+
+		private ListIteration(List<BindingSet> rows, CountDownLatch closed) {
+			this.rows = rows.iterator();
+			this.closed = closed;
+		}
+
+		@Override
+		public boolean hasNext() {
+			return !isClosed() && rows.hasNext();
+		}
+
+		@Override
+		public BindingSet next() {
+			if (!hasNext()) {
+				throw new NoSuchElementException();
+			}
+			return rows.next();
+		}
+
+		@Override
+		protected void handleClose() {
+			closed.countDown();
 		}
 	}
 }

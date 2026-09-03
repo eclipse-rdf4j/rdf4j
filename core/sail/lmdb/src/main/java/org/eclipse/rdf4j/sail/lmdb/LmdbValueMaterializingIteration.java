@@ -37,6 +37,7 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 
 	private final CloseableIteration<? extends BindingSet> source;
 	private final int maxBatchSize;
+	private final Object bufferLock = new Object();
 	private final LongIntHashMap valueIndexesById = new LongIntHashMap(INITIAL_COLLECTION_SIZE);
 	private final IdentityHashMap<LmdbValue, Boolean> unknownValuesByIdentity = new IdentityHashMap<>();
 	private final IdentityHashMap<LmdbValue, Boolean> deferredValuesByIdentity = new IdentityHashMap<>();
@@ -75,45 +76,54 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 
 	@Override
 	public boolean hasNext() {
-		if (isClosed()) {
-			return false;
+		synchronized (bufferLock) {
+			if (isClosed()) {
+				return false;
+			}
+			if (bufferIndex < bufferSize) {
+				return true;
+			}
+			boolean hasNext = source.hasNext();
+			if (!hasNext) {
+				close();
+			}
+			return hasNext;
 		}
-		if (bufferIndex < bufferSize) {
-			return true;
-		}
-		boolean hasNext = source.hasNext();
-		if (!hasNext) {
-			close();
-		}
-		return hasNext;
 	}
 
 	@Override
 	public BindingSet next() {
-		if (isClosed()) {
-			throw new NoSuchElementException("The iteration has been closed.");
+		synchronized (bufferLock) {
+			if (isClosed()) {
+				throw new NoSuchElementException("The iteration has been closed.");
+			}
+			if (!firstReturned) {
+				BindingSet first = source.next();
+				firstReturned = true;
+				materialize(first);
+				return first;
+			}
+			if (bufferIndex >= bufferSize) {
+				fillBuffer();
+			}
+			if (bufferIndex >= bufferSize) {
+				throw new NoSuchElementException();
+			}
+			BindingSet result = buffer[bufferIndex];
+			buffer[bufferIndex++] = null;
+			return result;
 		}
-		if (!firstReturned) {
-			BindingSet first = source.next();
-			firstReturned = true;
-			materialize(first);
-			return first;
-		}
-		if (bufferIndex >= bufferSize) {
-			fillBuffer();
-		}
-		if (bufferIndex >= bufferSize) {
-			throw new NoSuchElementException();
-		}
-		BindingSet result = buffer[bufferIndex];
-		buffer[bufferIndex++] = null;
-		return result;
 	}
 
 	@Override
 	protected void handleClose() {
-		clearBuffer();
-		source.close();
+		try {
+			source.close();
+		} finally {
+			synchronized (bufferLock) {
+				clearBuffer();
+			}
+		}
 	}
 
 	private void fillBuffer() {
