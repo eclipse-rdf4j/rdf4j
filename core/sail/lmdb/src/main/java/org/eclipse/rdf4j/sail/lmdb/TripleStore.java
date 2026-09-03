@@ -87,6 +87,8 @@ import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.IndexShape;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -152,8 +154,6 @@ class TripleStore implements Closeable {
 	private final int[] leadingFieldRadixCounts = new int[256];
 	private final int[] leadingFieldRadixOffsets = new int[256];
 	private final LmdbPageCardinalityEstimator pageEstimator;
-	private final TripleIndex[] primaryPageEstimatorIndexes = new TripleIndex[TripleIndex.BINDING_SHAPE_COUNT];
-	private final TripleIndex[] secondaryPageEstimatorIndexes = new TripleIndex[TripleIndex.BINDING_SHAPE_COUNT];
 	private final AtomicLong dataRevision = new AtomicLong();
 
 	private TxnRecordCache recordCache = null;
@@ -251,7 +251,13 @@ class TripleStore implements Closeable {
 		}
 
 		resetAlignedWriteCursorState();
-		initializePageEstimatorIndexSelections();
+		if (pageEstimator != null) {
+			List<String> fieldSequences = new ArrayList<>(indexes.size());
+			for (TripleIndex index : indexes) {
+				fieldSequences.add(new String(index.getFieldSeq()));
+			}
+			pageEstimator.configureIndexes(fieldSequences);
+		}
 	}
 
 	private Set<String> getIndexSpecs() throws SailException {
@@ -666,28 +672,35 @@ class TripleStore implements Closeable {
 			return cardinalityUsingRdf4j532Estimator(subj, pred, obj, context);
 		}
 
-		int bindingMask = TripleIndex.bindingMask(subj, pred, obj, context);
-		TripleIndex primaryIndex = getBestPageEstimatorIndex(bindingMask);
+		LmdbPageCardinalityEstimator estimator = pageEstimator;
+		if (estimator == null) {
+			return cardinalityUsingRdf4j532Estimator(subj, pred, obj, context);
+		}
+
+		int bindingMask = LmdbPageCardinalityEstimator.bindingMask(subj, pred, obj, context);
+		int primaryIndexPosition = estimator.primaryIndex(bindingMask);
+		TripleIndex primaryIndex = indexes.get(primaryIndexPosition);
 		try {
-			PageEstimatorResult primary = cardinalityUsingPageEstimator(primaryIndex, subj, pred, obj, context,
+			CardinalityEstimate primary = cardinalityUsingPageEstimator(primaryIndexPosition, subj, pred, obj, context,
 					bindingMask);
-			if (!primary.secondaryEvidenceRecommended) {
-				return primary.entries;
+			if (!primary.secondaryEvidenceRecommended()) {
+				return primary.entries();
 			}
 
-			TripleIndex secondaryIndex = getSecondaryNoPrefixEstimatorIndex(bindingMask);
-			if (secondaryIndex == null) {
-				return primary.entries;
+			int secondaryIndexPosition = estimator.secondaryIndex(bindingMask);
+			if (secondaryIndexPosition < 0) {
+				return primary.entries();
 			}
+			TripleIndex secondaryIndex = indexes.get(secondaryIndexPosition);
 			try {
-				PageEstimatorResult secondary = cardinalityUsingPageEstimator(secondaryIndex, subj, pred, obj,
+				CardinalityEstimate secondary = cardinalityUsingPageEstimator(secondaryIndexPosition, subj, pred, obj,
 						context, bindingMask);
-				return combineIndependentLayoutEstimates(primary, secondary).entries;
+				return LmdbPageCardinalityEstimator.combineIndexEstimates(primary, secondary).entries();
 			} catch (IOException | RuntimeException secondaryFailure) {
 				logger.debug("Secondary page cardinality estimate failed for index {}; using primary index {}",
 						new String(secondaryIndex.getFieldSeq()), new String(primaryIndex.getFieldSeq()),
 						secondaryFailure);
-				return primary.entries;
+				return primary.entries();
 			}
 		} catch (IOException | RuntimeException e) {
 			logger.warn("Page cardinality estimator failed for index {}, falling back to the RDF4J 5.3.2 sampler",
@@ -696,279 +709,48 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private PageEstimatorResult cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj,
+	private CardinalityEstimate cardinalityUsingPageEstimator(int indexPosition, long subj, long pred, long obj,
 			long context, int bindingMask) throws IOException {
 		LmdbPageCardinalityEstimator estimator = pageEstimator;
 		if (estimator == null) {
-			return PageEstimatorResult
+			return CardinalityEstimate
 					.unqualified(cardinalityUsingRdf4j532Estimator(subj, pred, obj, context));
 		}
-		int prefixLength = index.getPatternScore(bindingMask);
-		int boundFields = Integer.bitCount(bindingMask);
-		int residualFieldCount = boundFields - prefixLength;
+		TripleIndex index = indexes.get(indexPosition);
+		IndexShape indexShape = estimator.indexShape(indexPosition, bindingMask);
 		final String explicitDbName = index.getName(true);
 		final String inferredDbName = index.getName(false);
 
 		return txnManager.doWith((stack, txn) -> {
 			long txnId = mdb_txn_id(txn);
-			if (boundFields == 0) {
+			if (bindingMask == 0) {
 				double exact = (double) estimator.totalEntries(txnId, explicitDbName)
 						+ estimator.totalEntries(txnId, inferredDbName);
-				return PageEstimatorResult.exact(exact);
+				return CardinalityEstimate.exact(exact);
 			}
 
 			ByteBuffer minKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			index.getMinKeyForPattern(minKeyBuffer, subj, pred, obj, context, bindingMask);
+			index.getMinKey(minKeyBuffer, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
+					indexShape.rangeObject(obj), indexShape.rangeContext(context));
 			minKeyBuffer.flip();
 			byte[] minKey = toArray(minKeyBuffer);
 
 			ByteBuffer maxKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			index.getMaxKeyForPattern(maxKeyBuffer, subj, pred, obj, context, bindingMask);
+			index.getMaxKey(maxKeyBuffer, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
+					indexShape.rangeObject(obj), indexShape.rangeContext(context));
 			maxKeyBuffer.flip();
 			byte[] maxKey = toArray(maxKeyBuffer);
 
-			GroupMatcher matcher = residualFieldCount == 0 ? null
-					: index.createResidualMatcher(subj, pred, obj, context, bindingMask);
+			GroupMatcher matcher = indexShape.residualFieldCount() == 0 ? null
+					: index.createMatcher(subj, pred, obj, context);
 			LmdbPageCardinalityEstimator.Estimate explicit = estimator.estimateEntriesWithQuality(txnId,
-					explicitDbName, minKey, minKey.length, maxKey, maxKey.length, matcher, residualFieldCount);
+					explicitDbName, minKey, minKey.length, maxKey, maxKey.length, matcher,
+					indexShape.residualFieldCount());
 			LmdbPageCardinalityEstimator.Estimate inferred = estimator.estimateEntriesWithQuality(txnId,
-					inferredDbName, minKey, minKey.length, maxKey, maxKey.length, matcher, residualFieldCount);
-			return combineDatabaseEstimates(explicit, inferred);
+					inferredDbName, minKey, minKey.length, maxKey, maxKey.length, matcher,
+					indexShape.residualFieldCount());
+			return LmdbPageCardinalityEstimator.combineDatabaseEstimates(explicit, inferred);
 		});
-	}
-
-	/**
-	 * Adds estimates for the disjoint explicit and inferred databases. Counts and hard bounds are additive; uncertainty
-	 * is combined as independent absolute variance. A weak result from either database is retained in the
-	 * recommendation for a second index layout because a strong estimate for one database cannot repair weak evidence
-	 * for the other.
-	 */
-	private PageEstimatorResult combineDatabaseEstimates(LmdbPageCardinalityEstimator.Estimate first,
-			LmdbPageCardinalityEstimator.Estimate second) {
-		double entries = (double) first.entries() + second.entries();
-		if (first.exact() && second.exact()) {
-			return PageEstimatorResult.exact(entries);
-		}
-
-		double hardLower = (double) first.hardLowerBound() + second.hardLowerBound();
-		double hardUpper = (double) first.hardUpperBound() + second.hardUpperBound();
-		double firstSigma = first.exact() ? 0.0d
-				: first.entries() * finiteQuality(first.relativeStandardError(), 1.0d);
-		double secondSigma = second.exact() ? 0.0d
-				: second.entries() * finiteQuality(second.relativeStandardError(), 1.0d);
-		double relativeStandardError = entries > 0.0d
-				? Math.hypot(firstSigma, secondSigma) / entries
-				: Math.max(finiteQuality(first.relativeStandardError(), 0.0d),
-						finiteQuality(second.relativeStandardError(), 0.0d));
-		double effectiveSampleSize = combinedEffectiveSampleSize(entries, first, second);
-		double effectiveSampleFraction = weightedQualityAverage(first.entries(), first.effectiveSampleFraction(),
-				second.entries(), second.effectiveSampleFraction(), 1.0d);
-		double sampledMassFraction = weightedQualityAverage(first.entries(), first.sampledMassFraction(),
-				second.entries(), second.sampledMassFraction(), 0.0d);
-		double disagreement = Math.max(first.disagreement(), second.disagreement());
-		boolean secondaryRecommended = first.secondaryEvidenceRecommended()
-				|| second.secondaryEvidenceRecommended() || first.lowEffectiveSample()
-				|| second.lowEffectiveSample() || first.disagreement() > 6.25d
-				|| second.disagreement() > 6.25d;
-		return new PageEstimatorResult(entries, false, hardLower, hardUpper, effectiveSampleSize,
-				effectiveSampleFraction, sampledMassFraction, relativeStandardError, disagreement,
-				first.additionalEvidenceUsed() || second.additionalEvidenceUsed(), secondaryRecommended);
-	}
-
-	/**
-	 * Reconciles two estimates of the same logical result obtained from different physical index layouts.
-	 *
-	 * <p>
-	 * Unlike explicit/inferred results, these estimates must not be added. Exact evidence wins; otherwise the geometric
-	 * blend prevents a large estimate from dominating solely because of scale and is clamped to the intersection of the
-	 * two hard-bound intervals. If those intervals do not overlap, returning the better-supported input is safer than
-	 * manufacturing a value that violates both estimators' accounting.
-	 * </p>
-	 */
-	private PageEstimatorResult combineIndependentLayoutEstimates(PageEstimatorResult first,
-			PageEstimatorResult second) {
-		if (!Double.isFinite(first.entries) || first.entries < 0.0d) {
-			return second;
-		}
-		if (!Double.isFinite(second.entries) || second.entries < 0.0d) {
-			return first;
-		}
-		if (first.exact) {
-			return first;
-		}
-		if (second.exact) {
-			return second;
-		}
-
-		double firstWeight = layoutQualityWeight(first);
-		double secondWeight = layoutQualityWeight(second);
-		double firstFraction = firstWeight + secondWeight > 0.0d
-				? firstWeight / (firstWeight + secondWeight)
-				: 0.5d;
-		double layoutDisagreement = multiplicativeLayoutDisagreement(first.entries, second.entries);
-		if (layoutDisagreement > 2.5d) {
-			// When layouts strongly disagree, do not let one uncertain layout completely erase the other.
-			firstFraction = Math.max(0.35d, Math.min(0.65d, firstFraction));
-		}
-		double combined = Math.expm1(Math.log1p(first.entries) * firstFraction
-				+ Math.log1p(second.entries) * (1.0d - firstFraction));
-
-		double hardLower = Math.max(first.hardLowerBound, second.hardLowerBound);
-		double hardUpper = Math.min(first.hardUpperBound, second.hardUpperBound);
-		if (hardLower <= hardUpper) {
-			combined = Math.max(hardLower, Math.min(hardUpper, combined));
-		} else {
-			logger.debug("Page-estimator layout hard bounds disagree: first=[{},{}], second=[{},{}]",
-					first.hardLowerBound, first.hardUpperBound, second.hardLowerBound, second.hardUpperBound);
-			return firstWeight >= secondWeight ? first : second;
-		}
-
-		double combinedEffective = firstWeight + secondWeight;
-		double combinedRse = Math.min(first.relativeStandardError, second.relativeStandardError);
-		return new PageEstimatorResult(combined, false, hardLower, hardUpper, combinedEffective,
-				Math.max(first.effectiveSampleFraction, second.effectiveSampleFraction),
-				Math.min(first.sampledMassFraction, second.sampledMassFraction), combinedRse,
-				Math.max(Math.max(first.disagreement, second.disagreement), layoutDisagreement), true, false);
-	}
-
-	private double layoutQualityWeight(PageEstimatorResult estimate) {
-		double effective = Double.isFinite(estimate.effectiveSampleSize)
-				? Math.max(1.0d, estimate.effectiveSampleSize)
-				: 1_000_000.0d;
-		double fraction = Math.max(0.05d, Math.min(1.0d, estimate.effectiveSampleFraction));
-		double rse = finiteQuality(estimate.relativeStandardError, 1.0d);
-		double disagreement = Math.max(1.0d, finiteQuality(estimate.disagreement, 100.0d));
-		double weight = effective * fraction / ((1.0d + effective * rse * rse) * Math.sqrt(disagreement));
-		if (estimate.secondaryEvidenceRecommended) {
-			weight *= 0.5d;
-		}
-		return Math.max(0.01d, weight);
-	}
-
-	private double combinedEffectiveSampleSize(double total,
-			LmdbPageCardinalityEstimator.Estimate first, LmdbPageCardinalityEstimator.Estimate second) {
-		if (total <= 0.0d) {
-			return Math.min(first.effectiveSampleSize(), second.effectiveSampleSize());
-		}
-		double denominator = effectiveVarianceDenominator(first) + effectiveVarianceDenominator(second);
-		return denominator <= 0.0d ? Double.POSITIVE_INFINITY : total * total / denominator;
-	}
-
-	private double effectiveVarianceDenominator(LmdbPageCardinalityEstimator.Estimate estimate) {
-		if (estimate.exact() || estimate.entries() <= 0L) {
-			return 0.0d;
-		}
-		double effective = Math.max(1.0d, finiteQuality(estimate.effectiveSampleSize(), 1.0d));
-		return (double) estimate.entries() * estimate.entries() / effective;
-	}
-
-	private double weightedQualityAverage(long firstEntries, double firstValue, long secondEntries,
-			double secondValue, double emptyValue) {
-		double total = (double) firstEntries + secondEntries;
-		if (total <= 0.0d) {
-			return emptyValue;
-		}
-		return (firstEntries * finiteQuality(firstValue, emptyValue)
-				+ secondEntries * finiteQuality(secondValue, emptyValue)) / total;
-	}
-
-	private double finiteQuality(double value, double fallback) {
-		return Double.isFinite(value) && value >= 0.0d ? value : fallback;
-	}
-
-	private double multiplicativeLayoutDisagreement(double first, double second) {
-		double left = Math.max(0.0d, first) + 1.0d;
-		double right = Math.max(0.0d, second) + 1.0d;
-		return Math.max(left / right, right / left);
-	}
-
-	/**
-	 * Precomputes primary and optional secondary layouts for all 16 s/p/o/c binding shapes. Index configuration and key
-	 * order are immutable after store construction, so cardinality calls can use array lookups on the optimizer hot
-	 * path.
-	 */
-	private void initializePageEstimatorIndexSelections() {
-		for (int bindingMask = 0; bindingMask < TripleIndex.BINDING_SHAPE_COUNT; bindingMask++) {
-			TripleIndex primary = selectBestPageEstimatorIndex(bindingMask);
-			primaryPageEstimatorIndexes[bindingMask] = primary;
-			secondaryPageEstimatorIndexes[bindingMask] = selectSecondaryNoPrefixEstimatorIndex(primary, bindingMask);
-		}
-	}
-
-	/**
-	 * Chooses the longest usable range prefix, then favors the layout that places residual bound fields earliest. The
-	 * latter reduces residual-sampling variance without changing which keys belong to the range. This intentionally
-	 * differs from the stable first-on-tie rule in {@link TripleIndex#getBestIndex}; compatibility mode must use that
-	 * old selector instead.
-	 */
-	private TripleIndex selectBestPageEstimatorIndex(int bindingMask) {
-		TripleIndex best = null;
-		int bestPrefix = -1;
-		int bestResidualLayoutScore = Integer.MIN_VALUE;
-		for (TripleIndex candidate : indexes) {
-			int prefix = candidate.getPatternScore(bindingMask);
-			int residualLayoutScore = candidate.getResidualLayoutScore(bindingMask);
-			if (prefix > bestPrefix || prefix == bestPrefix && residualLayoutScore > bestResidualLayoutScore) {
-				best = candidate;
-				bestPrefix = prefix;
-				bestResidualLayoutScore = residualLayoutScore;
-			}
-		}
-		return Objects.requireNonNull(best, "No LMDB statement index is available");
-	}
-
-	/**
-	 * Selects independent evidence only for a no-prefix estimate, where residual sampling is least reliable. A
-	 * different leading field is preferred so the second walk observes a materially different physical clustering;
-	 * querying two similar layouts would add I/O without enough independent information to justify it.
-	 */
-	private TripleIndex selectSecondaryNoPrefixEstimatorIndex(TripleIndex primary, int bindingMask) {
-		if (bindingMask == 0 || primary.getPatternScore(bindingMask) != 0) {
-			return null;
-		}
-
-		char primaryLeadingField = primary.getFieldSeq()[0];
-		TripleIndex best = null;
-		boolean bestHasDifferentLeadingField = false;
-		int bestScore = Integer.MIN_VALUE;
-		for (TripleIndex candidate : indexes) {
-			if (candidate == primary || candidate.getPatternScore(bindingMask) != 0) {
-				continue;
-			}
-			boolean differentLeadingField = candidate.getFieldSeq()[0] != primaryLeadingField;
-			int score = candidate.getResidualLayoutScore(bindingMask);
-			if (best == null || differentLeadingField && !bestHasDifferentLeadingField
-					|| differentLeadingField == bestHasDifferentLeadingField && score > bestScore) {
-				best = candidate;
-				bestHasDifferentLeadingField = differentLeadingField;
-				bestScore = score;
-			}
-		}
-		return best;
-	}
-
-	TripleIndex getBestPageEstimatorIndex(int bindingMask) {
-		return primaryPageEstimatorIndexes[bindingMask];
-	}
-
-	TripleIndex getSecondaryNoPrefixEstimatorIndex(int bindingMask) {
-		return secondaryPageEstimatorIndexes[bindingMask];
-	}
-
-	private record PageEstimatorResult(double entries, boolean exact, double hardLowerBound,
-			double hardUpperBound, double effectiveSampleSize, double effectiveSampleFraction,
-			double sampledMassFraction, double relativeStandardError, double disagreement,
-			boolean additionalEvidenceUsed, boolean secondaryEvidenceRecommended) {
-
-		private static PageEstimatorResult exact(double entries) {
-			return new PageEstimatorResult(entries, true, entries, entries, Double.POSITIVE_INFINITY, 1.0d,
-					0.0d, 0.0d, 1.0d, false, false);
-		}
-
-		private static PageEstimatorResult unqualified(double entries) {
-			return new PageEstimatorResult(entries, false, 0.0d, Double.POSITIVE_INFINITY, 0.0d, 0.0d,
-					1.0d, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, false, false);
-		}
 	}
 
 	private static byte[] toArray(ByteBuffer buffer) {
