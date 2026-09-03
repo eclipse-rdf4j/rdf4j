@@ -368,3 +368,167 @@ test('packed vector and delta deep dives expose exact structure and lifecycle', 
     await page.locator('[data-delta-stage="4"]').click();
     await expect(page.getByTestId('delta-consolidation')).toContainText('share untouched pages');
 });
+
+test('presentation mode fills the screen and keeps one focused artefact per slide', async ({ page }) => {
+    await page.setViewportSize({ width: 1800, height: 1100 });
+    await loadTutorial(page);
+    await expect(page.locator('#present-chrome')).toBeHidden();
+
+    await page.locator('#present-toggle').click();
+    await expect(page.locator('html')).toHaveAttribute('data-present', 'true');
+    await expect(page.locator('#present-toggle')).toHaveAttribute('aria-pressed', 'true');
+
+    // Every affordance that belongs to the reading layout is gone; only the slide and its own bars remain.
+    for (const furniture of ['.masthead', '.statement-panel', '.control-deck', '.step-deck']) {
+        await expect(page.locator(furniture)).toBeHidden();
+    }
+    await expect(page.locator('#present-chrome')).toBeVisible();
+    await expect(page.locator('.lesson-frame > h2')).toBeHidden();
+    await expect(page.locator('.lesson-frame > .lesson-lead')).toBeHidden();
+    await expect(page.locator('.lesson-footer')).toBeHidden();
+
+    // The fibre-tree lesson is deliberately left out of the deck, and entering from it lands on
+    // the next lesson that is in the deck rather than jumping backwards.
+    const decked = await page.evaluate(() =>
+        window.Rdf4jAdjacencyTutorialTesting.presentSlides.map((slide) => slide.step));
+    expect(decked).not.toContain(2);
+    expect(decked).not.toContain(3);
+    expect(decked).toHaveLength(18);
+    for (const skipped of ['2', '3']) {
+        await page.keyboard.press('Escape');
+        await page.locator(`[data-step="${skipped}"]`).click();
+        await page.locator('#present-toggle').click();
+        await expect(page.locator('.lesson-frame')).toHaveAttribute('data-tutorial-step', '5');
+    }
+    await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.setPresentSlide(0));
+
+    // Slide 1 keeps the concrete statement and the position rules.
+    await expect(page.locator('.lesson-frame')).toHaveAttribute('data-present-slide', '1');
+    await expect(page.locator('#present-counter')).toHaveText('01 / 18');
+    await expect(page.locator('#present-title')).not.toBeEmpty();
+    await expect(page.locator('.term-strip')).toBeVisible();
+    await expect(page.locator('.card-grid')).toBeVisible();
+
+    // The slide is scaled to the screen instead of sitting in a reading column.
+    const stage = await page.locator('#present-stage').boundingBox();
+    expect(stage.width).toBeGreaterThan(1120);
+    expect(stage.width).toBeLessThanOrEqual(1800);
+    expect(stage.height).toBeLessThanOrEqual(1100);
+
+    // Arrow keys move between slides in both directions.
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('.lesson-frame')).toHaveAttribute('data-present-slide', '2');
+    await expect(page.locator('#present-counter')).toHaveText('02 / 18');
+    await expect(page.locator('.formula')).toBeVisible();
+    await page.keyboard.press('ArrowLeft');
+    await expect(page.locator('.lesson-frame')).toHaveAttribute('data-present-slide', '1');
+
+    // The packed-vector lesson becomes two slides so the byte line never shares a screen with the ledger.
+    await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.setPresentSlide(4));
+    await expect(page.locator('.vector-byte-line')).toBeVisible();
+    await expect(page.locator('.decode-route')).toBeVisible();
+    await expect(page.locator('.mode-ledger')).toBeHidden();
+    await expect(page.locator('.efficiency-equation')).toBeHidden();
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('.mode-ledger')).toBeVisible();
+    await expect(page.locator('.efficiency-equation')).toBeVisible();
+    await expect(page.locator('.vector-byte-line')).toBeHidden();
+
+    // The physical lesson splits so the hex dump never shares a screen with the scale map.
+    await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.setPresentSlide(6));
+    await expect(page.locator('.lookup-spine')).toBeVisible();
+    await expect(page.getByTestId('physical-bytes')).toBeHidden();
+    await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.setPresentSlide(11));
+    await expect(page.getByTestId('physical-bytes')).toBeVisible();
+    await expect(page.locator('.lookup-spine')).toBeHidden();
+
+    // Each delta lifecycle stage is its own slide and drives the underlying stage state.
+    await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.setPresentSlide(14));
+    expect(await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.getState().deltaStage)).toBe(2);
+    await expect(page.getByTestId('delta-generation-directory')).toBeVisible();
+
+    // The pipeline doubles as slide navigation, so clicking a stage must move the slide with it.
+    await page.locator('[data-delta-stage="4"]').click();
+    await expect(page.locator('.lesson-frame')).toHaveAttribute('data-present-slide', '17');
+    await expect(page.locator('#present-counter')).toHaveText('17 / 18');
+    await expect(page.getByTestId('delta-consolidation')).toBeVisible();
+    await page.locator('[data-delta-stage="2"]').click();
+    await expect(page.locator('.lesson-frame')).toHaveAttribute('data-present-slide', '15');
+
+    // Number keys still switch statements without leaving the presentation.
+    await page.keyboard.press('3');
+    expect(await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.getState().statementIndex)).toBe(2);
+    await expect(page.locator('html')).toHaveAttribute('data-present', 'true');
+
+    // Entering the presentation lands on the lesson — and the delta stage — the reader was on.
+    await page.keyboard.press('Escape');
+    await page.locator('[data-control="view"][data-value="deltas"]').click();
+    await page.locator('[data-delta-stage="3"]').click();
+    await page.locator('#present-toggle').click();
+    await expect(page.locator('.lesson-frame')).toHaveAttribute('data-present-slide', '16');
+    await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.setPresentSlide(14));
+
+    // Escape returns to the reading layout on the lesson the slide was showing.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('html')).not.toHaveAttribute('data-present', 'true');
+    await expect(page.locator('.masthead')).toBeVisible();
+    await expect(page.locator('[data-tutorial-step="9"]')).toBeVisible();
+    await expect(page.locator('.lesson-footer')).toBeVisible();
+    await expect(page.locator('.lesson-frame > h2')).toBeVisible();
+});
+
+test('presentation mode stays a live instrument, not a slideshow of screenshots', async ({ page }) => {
+    await page.setViewportSize({ width: 1800, height: 1100 });
+    await loadTutorial(page);
+    await page.locator('#present-toggle').click();
+    await expect(page.locator('html')).toHaveAttribute('data-present', 'true');
+
+    // All eight fixture statements stay one click away, and the current one stays marked.
+    const chips = page.locator('#present-statements [data-statement]');
+    await expect(chips).toHaveCount(8);
+    await expect(chips.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await chips.nth(5).click();
+    await expect(chips.nth(5)).toHaveAttribute('aria-selected', 'true');
+    expect(await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.getState().statementIndex)).toBe(5);
+    await expect(page.locator('#present-context')).toContainText('_:team');
+
+    // They are a full-height list beside the slide, not a strip squeezed under it, and every
+    // statement renders its whole RDF text rather than being cut off mid-term.
+    const rail = await page.locator('.present-rail').boundingBox();
+    const stage = await page.locator('#present-stage').boundingBox();
+    expect(rail.x + rail.width).toBeLessThanOrEqual(stage.x + 1);
+    expect(rail.height).toBeGreaterThan(400);
+    for (let index = 0; index < 8; index++) {
+        const text = chips.nth(index).locator('.statement-rdf');
+        const untruncated = await text.evaluate((node) => node.scrollWidth <= node.clientWidth + 1);
+        expect(untruncated, `statement ${index + 1} is clipped in the rail`).toBe(true);
+    }
+
+    // Direction, terms and numbers all still drive the slide that is on screen.
+    await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.setPresentSlide(2));
+    await expect(page.locator('[data-testid="csr-arrays"]')).toBeVisible();
+    await page.locator('#present-controls [data-control="terms"][data-value="raw"]').click();
+    await page.locator('#present-controls [data-control="numbers"][data-value="hex"]').click();
+    await expect(page.locator('[data-array="rowIds"]')).toContainText('0x82');
+    await expect(page.locator('.lesson-frame')).toHaveAttribute('data-present-slide', '3');
+
+    await page.locator('#present-controls [data-control="direction"][data-value="incoming"]').click();
+    expect(await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.getState().direction)).toBe('incoming');
+    await expect(page.locator('#present-context')).toContainText('plane 1');
+    await page.locator('#present-controls [data-control="direction"][data-value="outgoing"]').click();
+    await expect(page.locator('#present-context')).toContainText('plane 0');
+
+    // The view group becomes a chapter jump rather than desyncing the deck from the lesson.
+    await page.locator('#present-controls [data-control="view"][data-value="deltas"]').click();
+    expect(await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.getState().step)).toBe(8);
+    await expect(page.locator('.lesson-frame')).toHaveAttribute('data-tutorial-step', '9');
+    await expect(page.locator('#present-counter')).toContainText('/ 18');
+
+    // Leaving puts both instruments back where the reading layout expects them.
+    await page.locator('#present-exit').click();
+    await expect(page.locator('html')).not.toHaveAttribute('data-present', 'true');
+    await expect(page.locator('.statement-panel [data-statement]')).toHaveCount(8);
+    await expect(page.locator('.control-deck [data-control="direction"]')).toHaveCount(2);
+    await page.locator('[data-control="terms"][data-value="labels"]').click();
+    await expect(page.locator('[data-statement="5"]')).toHaveAttribute('aria-selected', 'true');
+});

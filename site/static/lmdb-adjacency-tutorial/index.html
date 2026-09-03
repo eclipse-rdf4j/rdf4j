@@ -22,6 +22,7 @@
             --purple: #6a4c93;
             --green: #28724f;
             --danger: #a53326;
+            --stage: #1a1a15;
             --shadow: 0 12px 34px rgba(46, 40, 31, .08);
             --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
             --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -804,6 +805,223 @@
 
         .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
+        /* ------------------------------------------------------------------ presentation mode
+           The reading layout is a laboratory bench: statements on the left, four control groups
+           and a ten-tab deck on top, and a lesson that deliberately answers every follow-up
+           question in place. None of that survives projection. Presentation mode keeps exactly
+           one artefact per slide, draws it on a card scaled to the actual screen, and moves all
+           navigation into two thin bars. Nothing is re-authored: each slide is the same lesson
+           render with everything outside its focus set marked `data-present-hidden`. */
+        .masthead-actions { display: flex; align-items: center; gap: 12px; }
+        .masthead-present {
+            flex: 0 0 auto;
+            padding: 9px 12px;
+            border: 1px solid var(--line-strong);
+            border-radius: 8px;
+            background: white;
+            font: 700 10px/1 var(--mono);
+            letter-spacing: .07em;
+            text-transform: uppercase;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .masthead-present:hover { border-color: var(--orange); color: var(--orange-dark); background: var(--orange-soft); }
+
+        .present-chrome { display: none; }
+
+        html[data-present="true"] { scroll-behavior: auto; --present-rail: 300px; }
+        html[data-present="true"] body { overflow: hidden; background: var(--stage); }
+        html[data-present="true"] .masthead,
+        html[data-present="true"] .statement-panel,
+        html[data-present="true"] .control-deck,
+        html[data-present="true"] .step-deck { display: none; }
+        /* One fixed layer holding both bars: it must not swallow clicks aimed at the slide, so the
+           layer itself is transparent to the pointer and only the bars take events back. */
+        html[data-present="true"] .present-chrome {
+            display: block;
+            position: fixed;
+            inset: 0;
+            z-index: 40;
+            pointer-events: none;
+        }
+        #present-chrome:focus { outline: none; }
+        html[data-present="true"] [data-present-hidden] { display: none !important; }
+
+        html[data-present="true"] .lab-shell {
+            display: block;
+            width: 100%;
+            height: 100dvh;
+            margin: 0;
+            padding: 0;
+        }
+        html[data-present="true"] .workspace {
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+            box-shadow: none;
+        }
+        html[data-present="true"] .lesson {
+            flex: 1;
+            min-height: 0;
+            padding: calc(var(--present-top, 104px) + 26px) 30px calc(var(--present-bottom, 62px) + 26px)
+                calc(var(--present-rail) + 30px);
+            display: flex;
+            align-items: safe center;
+            justify-content: safe center;
+            overflow: auto;
+        }
+        /* The lesson card is authored at one fixed width and then scaled, exactly like a slide
+           master: line breaks stay identical at every projector size. */
+        html[data-present="true"] .lesson-frame {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 1120px;
+            padding: 34px 38px 30px;
+            border-radius: 16px;
+            background: var(--paper);
+            box-shadow: 0 30px 80px rgba(0, 0, 0, .5);
+            transform-origin: top left;
+        }
+        html[data-present="true"] .lesson-frame.entering { animation: none; }
+        /* A two-column panel grid with one column focused away would otherwise leave the kept
+           panel stranded in a 45% gutter. */
+        html[data-present="true"] .physical-grid:has(> [data-present-hidden]) { grid-template-columns: minmax(0, 1fr); }
+        /* Only a long field grid — in practice the 20-field page header — trades the reading
+           layout's two tall columns for four short ones. Widening a three-field grid the same way
+           would just leave two empty cells. */
+        html[data-present="true"] .field-grid:has(> :nth-child(9)) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        /* Opt-in per slide: place a column's stacked panels beside each other instead. */
+        html[data-present="true"] [data-present-layout="pair"] .physical-column {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            align-items: start;
+        }
+        #present-stage { position: relative; flex: 0 0 auto; }
+        #present-stage.present-enter { animation: present-in .22s ease both; }
+
+        @keyframes present-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .present-bar {
+            position: absolute;
+            left: 0;
+            right: 0;
+            pointer-events: auto;
+            display: flex;
+            gap: clamp(14px, 2.4vw, 34px);
+            padding: 14px clamp(16px, 3vw, 46px);
+            color: #f3f1ea;
+            background: var(--stage);
+        }
+        .present-bar-top { top: 0; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid #34332c; }
+        .present-bar-bottom { bottom: 0; align-items: center; border-top: 1px solid #34332c; }
+        .present-aside { flex: 0 0 auto; display: grid; justify-items: end; gap: 9px; }
+
+        /* The statement list keeps the shape it has when reading — a full-height column on the
+           left — because that is what makes it scannable while someone in the room is choosing. */
+        .present-rail {
+            position: absolute;
+            left: 0;
+            top: var(--present-top, 104px);
+            bottom: var(--present-bottom, 62px);
+            width: var(--present-rail, 300px);
+            padding: 15px clamp(12px, 1.3vw, 18px) 15px clamp(16px, 3vw, 46px);
+            display: flex;
+            flex-direction: column;
+            gap: 11px;
+            pointer-events: auto;
+            border-right: 1px solid #34332c;
+            background: var(--stage);
+        }
+        .present-rail-title { margin: 0; color: #86847c; font: 700 9px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .1em; }
+        .present-heading { min-width: 0; }
+        .present-slugline { display: flex; gap: 9px; margin: 0; color: #ffae76; font: 800 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .12em; }
+        .present-slugline span:not(:last-child)::after { content: " ·"; }
+        #present-title { margin: 9px 0 0; color: white; font-size: clamp(21px, 2vw, 30px); line-height: 1.06; letter-spacing: -.035em; }
+        #present-lead { max-width: 78ch; margin: 7px 0 0; color: #c8c5bb; font-size: 13px; }
+        .present-context { flex: 0 0 auto; max-width: 30ch; margin: 0; color: #a9a79e; font: 10px/1.55 var(--mono); text-align: right; }
+        .present-context strong { display: block; color: #f3f1ea; overflow-wrap: anywhere; }
+        .present-nav {
+            flex: 0 0 auto;
+            padding: 8px 12px;
+            border: 1px solid #4b4a43;
+            border-radius: 7px;
+            background: #26261f;
+            color: #e6e3da;
+            font: 700 10px/1 var(--mono);
+            text-transform: uppercase;
+            letter-spacing: .07em;
+            cursor: pointer;
+        }
+        .present-nav:hover:not(:disabled) { border-color: var(--orange); color: #ffae76; }
+        .present-nav:disabled { opacity: .3; cursor: default; }
+        .present-progress { flex: 1 1 auto; display: flex; gap: 4px; align-items: center; min-width: 0; }
+        .present-dot { flex: 1 1 0; min-width: 0; height: 12px; padding: 0; border: 0; border-radius: 3px; background: #3b3a33; cursor: pointer; }
+        .present-dot:hover { background: #5d5b50; }
+        .present-dot[aria-current="true"] { background: var(--orange); }
+        .present-dot.seen { background: #6d5136; }
+        .present-hint { flex: 0 0 auto; margin: 0; color: #86847c; font: 9px/1 var(--mono); letter-spacing: .05em; }
+
+        /* The relocated instruments. Same elements, same state, same handlers — only repainted for
+           a dark bar and compressed into one horizontal row each. */
+        .present-controls .control-groups { justify-content: flex-end; gap: 9px; }
+        .present-controls .control-label { color: #86847c; }
+        .present-controls .segmented { border-color: #4b4a43; background: #26261f; }
+        .present-controls .segmented button { min-height: 27px; border-right-color: #4b4a43; color: #b3b0a7; }
+        .present-controls .segmented button:hover { color: #f3f1ea; }
+        .present-controls .segmented button[aria-pressed="true"] { background: var(--orange); color: white; }
+
+        .present-statements { min-height: 0; overflow: auto; }
+        .present-statements .statement-list { display: grid; gap: 3px; margin: 0; padding: 0; }
+        .present-statements .statement-button { margin: 0; padding: 9px 10px 9px 38px; color: #b3b0a7; }
+        .present-statements .statement-button:hover { border-color: #6f6d62; background: #2b2a23; color: #f3f1ea; }
+        .present-statements .statement-button[aria-selected="true"] { border-color: var(--orange); background: #3d2413; color: #fff5ed; }
+        .present-statements .statement-number {
+            top: 9px;
+            left: 10px;
+            width: 19px;
+            height: 19px;
+            border-color: #6f6d62;
+            background: transparent;
+            color: inherit;
+            font-size: 9px;
+        }
+        .present-statements .statement-button[aria-selected="true"] .statement-number { border-color: var(--orange); color: #ffae76; }
+        .present-statements .statement-rdf { font-size: 10px; line-height: 1.42; }
+        .present-statements .statement-meta { margin-top: 5px; color: #86847c; font-size: 9px; }
+
+        @media (max-width: 820px) {
+            .present-hint, .present-context { display: none; }
+        }
+
+        /* On a short screen the chrome is competing with the slide for the only scarce axis. The
+           lead is the cheapest thing to give up: the presenter is saying it out loud anyway. */
+        @media (max-height: 820px) {
+            html[data-present="true"] #present-lead { display: none; }
+            html[data-present="true"] #present-title { font-size: 19px; }
+            html[data-present="true"] .present-bar { padding-top: 9px; padding-bottom: 9px; }
+            html[data-present="true"] .lesson {
+                padding: calc(var(--present-top, 104px) + 12px) 18px calc(var(--present-bottom, 62px) + 12px)
+                    calc(var(--present-rail) + 18px);
+            }
+            html[data-present="true"] .present-statements .statement-button { padding: 7px 9px 7px 34px; }
+            html[data-present="true"] .present-statements .statement-number { top: 7px; }
+            /* Eight triples have to fit without scrolling; the graph kind is the one part of a row
+               that the coloured explicit/inferred dot already says on its own. */
+            html[data-present="true"] .present-statements .statement-kind { display: none; }
+            html[data-present="true"] .present-statements .statement-meta { margin-top: 4px; }
+        }
+
+        /* A narrow screen cannot spare 300px of slide for the rail. */
+        @media (max-width: 1400px) {
+            html[data-present="true"] { --present-rail: 232px; }
+        }
+
         @media (max-width: 1120px) {
             .lab-shell { grid-template-columns: minmax(270px, 315px) minmax(0, 1fr); }
             .step-name { display: none; }
@@ -893,10 +1111,13 @@
                 <div class="brand-subtitle">quad → nested CSR → packed vectors → delta generations → bytes</div>
             </div>
         </div>
-        <div class="status-badges" aria-label="Tutorial properties">
-            <span class="status-badge"><strong id="format-badge">v4</strong> format</span>
-            <span class="status-badge"><strong>6</strong> real pages</span>
-            <span class="status-badge"><strong>0</strong> network calls</span>
+        <div class="masthead-actions">
+            <div class="status-badges" aria-label="Tutorial properties">
+                <span class="status-badge"><strong id="format-badge">v4</strong> format</span>
+                <span class="status-badge"><strong>6</strong> real pages</span>
+                <span class="status-badge"><strong>0</strong> network calls</span>
+            </div>
+            <button class="masthead-present" id="present-toggle" type="button" aria-pressed="false">▶ Present</button>
         </div>
     </header>
 
@@ -960,6 +1181,36 @@
             <p class="sr-only" id="live-status" aria-live="polite"></p>
         </section>
     </main>
+
+    <!-- Presentation chrome. Always in the document so the slide title, the counter and the
+         navigation keep stable ids; `html[data-present]` is the only thing that reveals it.
+         The two empty slots receive the real statement list and the real control groups while
+         presenting: the tutorial stays a live instrument, so a slide answers questions from the
+         room instead of showing a picture of an answer. -->
+    <div class="present-chrome" id="present-chrome" tabindex="-1">
+        <header class="present-bar present-bar-top">
+            <div class="present-heading">
+                <p class="present-slugline"><span id="present-counter">01 / 01</span><span id="present-eyebrow"></span></p>
+                <h2 id="present-title"></h2>
+                <p id="present-lead"></p>
+            </div>
+            <div class="present-aside">
+                <div class="present-controls" id="present-controls"></div>
+                <p class="present-context" id="present-context"></p>
+            </div>
+        </header>
+        <aside class="present-rail" aria-label="Fixture statements">
+            <p class="present-rail-title">Eight statements in the fixture</p>
+            <div class="present-statements" id="present-statements"></div>
+        </aside>
+        <footer class="present-bar present-bar-bottom">
+            <button class="present-nav" id="present-previous" type="button">← previous</button>
+            <div class="present-progress" id="present-progress" aria-label="Slide progress"></div>
+            <button class="present-nav" id="present-next" type="button">next →</button>
+            <p class="present-hint">← → slide · 1–8 statement · D direction · Esc exit</p>
+            <button class="present-nav" id="present-exit" type="button">exit</button>
+        </footer>
+    </div>
 
     <!-- FIXTURE:COMPACT_CSF_PAGE_ENCODER_V4 -->
     <script id="csf-page-fixtures" type="text/plain">
@@ -1835,6 +2086,140 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             { short: "Deltas", title: "Commit delta generations" },
             { short: "Read", title: "Decode a row back to quads" }
         ]);
+        /*
+         * Presentation slides.
+         *
+         * A lesson answers every follow-up in place, which is right for reading and wrong for
+         * projection. Each slide therefore names the lesson it renders and the `keep` selectors
+         * that survive on screen; everything else in that render is hidden, not re-authored, so
+         * a slide can never drift away from the lesson it came from. Three lessons carry more
+         * than one idea and become several slides: the packed vector splits into anatomy and
+         * mode ledger, the physical page into scale route, snapshot rail, page anatomy and raw
+         * bytes, and the delta lifecycle into its five pipeline stages.
+         *
+         * `:scope >` restricts a keep to the lesson's own top level, which is how a page-level
+         * callout is separated from a same-classed callout nested inside a kept panel.
+         */
+        const PRESENT_SLIDES = Object.freeze([
+            Object.freeze({
+                step: 0, eyebrow: "start with RDF",
+                title: "Position rules come before storage orientation",
+                lead: "An adjacency index may reverse a statement to answer an incoming lookup. It never changes which RDF terms are legal in which position.",
+                keep: [".term-strip", ".card-grid", "[data-testid=\"literal-row-note\"]", ":scope > .callout.info"]
+            }),
+            Object.freeze({
+                step: 1, eyebrow: "dictionary tags",
+                title: "One raw ID carries a payload and a type tag",
+                lead: "Terms never travel as text. Each position becomes a single value whose seven low bits say what kind of term it is; the predicate's dense ordinal is kept outside the page entirely.",
+                keep: [".formula", ".table-wrap"]
+            }),
+            /* Steps 2 and 3 — plane routing and the fibre tree — are intentionally absent. The
+               partition a statement routes to is on every slide already, in the bar's context
+               readout, and the nested CSR slide that follows shows the same row → neighbour →
+               context structure as arrays, which is the form the rest of the deck builds on. Both
+               lessons remain available in the reading layout. */
+            Object.freeze({
+                step: 4, eyebrow: "your familiar model",
+                title: "CSR twice: rows point at neighbours, neighbours point at contexts",
+                lead: "The first rowPtr/colIdx pair is ordinary CSR. A second pointer array hands every distinct neighbour its own graph-membership slice.",
+                keep: ["[data-testid=\"csr-arrays\"]", ".formula"]
+            }),
+            Object.freeze({
+                step: 5, eyebrow: "remove derivable columns",
+                title: "CSF keeps the hierarchy and stops storing what the page can derive",
+                lead: "Starts replace terminal pointers, first values split from within-fibre gaps — the dashed columns — and page-wide invariants in the header omit whole vectors. The quad set is unchanged.",
+                keep: [".flag-list", "[data-testid=\"compact-columns\"]", ":scope > .callout.success"]
+            }),
+            Object.freeze({
+                step: 6, eyebrow: "bound random access",
+                title: "A tiny directory in front of independently decodable blocks",
+                lead: "Every CSF column is its own vector. Four steps take an ordinal to a value: split it, load one offset, read a 12-byte block header, reconstruct the lane from its packed residual.",
+                keep: [".vector-source", ".vector-selector", "[data-testid=\"vector-span-note\"]",
+                    ".vector-byte-line", ".decode-route", ".diagram-takeaway"]
+            }),
+            Object.freeze({
+                step: 6, eyebrow: "cost-based, per block",
+                title: "Four block modes exist; a page column only ever writes two",
+                lead: "Each block independently measures raw framing against typed-payload framing and writes the smaller. The two delta modes would need lane n−1 to read lane n, so no page section can use them.",
+                keep: [".mode-ledger", "[data-testid=\"mode-reachability\"]", ".efficiency-equation"]
+            }),
+            Object.freeze({
+                step: 7, eyebrow: "route at scale",
+                title: "Millions of quads per predicate still end at one lane",
+                lead: "Four directory hops, none of them a scan: partition slot, key-range shard and page, row coordinate inside the page, then block and lane inside the packed vector.",
+                keep: [".scale-scenario", ".lookup-route-grid", ".lookup-merge", ".lookup-spine", ".diagram-takeaway"]
+            }),
+            Object.freeze({
+                step: 7, eyebrow: "the safety rail",
+                title: "The guarantee the whole route rests on",
+                lead: "Reads never observe a half-published base. Everything below that guarantee is optional machinery — catalogues and accelerators that can only ever confirm what the packed vectors already say.",
+                keep: [".snapshot-layer"]
+            }),
+            Object.freeze({
+                step: 7, eyebrow: "one real page",
+                title: "A page is a header, packed vectors, and slab slack",
+                lead: "Every region below is measured from the embedded fixture. Vectors start after byte 160 and align to eight-byte boundaries; the hatched tail is reserved slab the encoder never wrote.",
+                keep: [".page-summary", ".page-map-shell"]
+            }),
+            Object.freeze({
+                step: 7, width: 1420, layout: "pair", eyebrow: "one real page",
+                title: "A 160-byte header and eight offset/length descriptors",
+                lead: "Fixed offsets, little-endian, no parsing: row and neighbour fences let a shard directory reject a page without decoding it, and a descriptor of length zero is a column this page omitted.",
+                keep: [".byte-inspector:has([data-header-field])", ".byte-inspector:has(.section-table)"]
+            }),
+            Object.freeze({
+                step: 7, eyebrow: "one real page",
+                title: "The packed vector holding the selected statement",
+                lead: "One column of the page, opened all the way down: vector header, offset directory, block header, and the exact residual bits of this statement's lane.",
+                keep: ["[data-testid=\"vector-inspector\"]", ".physical-grid .callout.info"]
+            }),
+            Object.freeze({
+                step: 7, width: 1240, eyebrow: "the bytes themselves",
+                title: "Everything above is this block of memory",
+                lead: "Highlighted bytes are the selected lane. Bytes rendered as -- are slab slack: reserved by the allocator, outside the encoded image, and undefined rather than zero.",
+                keep: ["[data-testid=\"physical-bytes\"]", ":scope > .callout"]
+            }),
+            Object.freeze({
+                step: 8, deltaStage: 0, eyebrow: "delta 01 · capture",
+                title: "A commit records primitive events, not patched pages",
+                lead: "Subject, predicate, object, context and flags live in short-lived primitive arrays. Each event contributes an outgoing and an incoming touched-row key.",
+                keep: [".delta-pipeline", ".delta-stage-body"]
+            }),
+            Object.freeze({
+                step: 8, deltaStage: 1, eyebrow: "delta 02 · reconcile",
+                title: "Each touched row is republished whole",
+                lead: "The applier streams the previous sorted pair set against this commit's sorted mutations. The generation stores the resulting complete row — never an operation log.",
+                keep: [".delta-pipeline", ".delta-stage-body"]
+            }),
+            Object.freeze({
+                step: 8, deltaStage: 2, eyebrow: "delta 03 · encode",
+                title: "A generation is a searchable directory plus exact run bytes",
+                lead: "Four parallel arrays sorted by (rawKey, plane, rawPredicateId), and one contiguous 8-byte-aligned arena allocation per row version.",
+                keep: [".delta-pipeline", ".delta-stage-body"]
+            }),
+            Object.freeze({
+                step: 8, deltaStage: 3, eyebrow: "delta 04 · read",
+                title: "Newest visible version wins, and the walk stops there",
+                lead: "Generations are probed newest-first. A run is the whole row, so a hit is terminal; so is a tombstone. Only NO_VERSION continues towards an older generation or the base.",
+                keep: [".delta-pipeline", ".delta-stage-body"]
+            }),
+            Object.freeze({
+                step: 8, deltaStage: 4, eyebrow: "delta 05 · fold",
+                title: "Consolidation is copy-on-write over affected pages only",
+                lead: "Replacement pages are emitted from complete-row prefixes and published atomically. Untouched pages and shards stay structurally shared with the previous base.",
+                keep: [".delta-pipeline", ".delta-stage-body"]
+            }),
+            Object.freeze({
+                step: 9, eyebrow: "bytes back to answers",
+                title: "Rebuild the row using only packed lanes and header bits",
+                lead: "Everything so far went one way. Now go back: no logical model, no Java object graph — each step below either reads a column or proves the value from a single flag.",
+                keep: [":scope > .callout.info", "[data-testid=\"read-path\"]", ".table-wrap",
+                    "[data-testid=\"read-summary\"]", "[data-testid=\"read-omission-note\"]"]
+            })
+        ]);
+        const PRESENT_DESIGN_WIDTH = 1120;
+        const PRESENT_MIN_SCALE = 0.42;
+        const PRESENT_MAX_SCALE = 2.1;
         /* FIXTURE:PAGE_FLAG_HELP_V1 */
         const PAGE_FLAG_HELP = Object.freeze({
             CONTINUATION: Object.freeze({
@@ -1933,8 +2318,10 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             step: 0,
             selectedSection: null,
             deltaStage: 0,
-            vectorSource: "partition"
+            vectorSource: "partition",
+            presentSlide: 0
         };
+        let presenting = false;
         /* Synthetic 600-row page embedded alongside the eight-statement pages purely to show a vector that really
            spans several 256-value blocks. It has no selected statement, so it is only offered in the vector lesson. */
         const SCALE_PAGE = pages.get("scale");
@@ -1946,6 +2333,46 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
         const previousStep = document.getElementById("previous-step");
         const nextStep = document.getElementById("next-step");
         const liveStatus = document.getElementById("live-status");
+        const presentToggle = document.getElementById("present-toggle");
+        const presentChrome = document.getElementById("present-chrome");
+        const presentCounter = document.getElementById("present-counter");
+        const presentEyebrow = document.getElementById("present-eyebrow");
+        const presentTitle = document.getElementById("present-title");
+        const presentLead = document.getElementById("present-lead");
+        const presentContext = document.getElementById("present-context");
+        const presentProgress = document.getElementById("present-progress");
+        const presentControls = document.getElementById("present-controls");
+        const presentStatements = document.getElementById("present-statements");
+        const presentPrevious = document.getElementById("present-previous");
+        const presentNext = document.getElementById("present-next");
+        const presentExit = document.getElementById("present-exit");
+        const controlGroups = document.querySelector(".control-groups");
+
+        /*
+         * Presenting relocates the two live instruments — the statement list and the control
+         * groups — into the slide chrome rather than duplicating them. One list, one set of
+         * buttons, one piece of state, so a statement picked on a slide is the same selection the
+         * reading layout comes back to. Their original position is captured up front and restored
+         * verbatim on exit.
+         */
+        function homeOf(node) {
+            return Object.freeze({ parent: node.parentElement, next: node.nextElementSibling });
+        }
+
+        const relocatable = Object.freeze([
+            Object.freeze({ node: statementList, slot: presentStatements, home: homeOf(statementList) }),
+            Object.freeze({ node: controlGroups, slot: presentControls, home: homeOf(controlGroups) })
+        ]);
+
+        function relocateForPresentation(intoSlides) {
+            relocatable.forEach(({ node, slot, home }) => {
+                if (intoSlides) {
+                    slot.append(node);
+                } else {
+                    home.parent.insertBefore(node, home.next);
+                }
+            });
+        }
 
         /* Keep the masthead badge honest: it reports the format revision the decoder actually accepts. */
         document.getElementById("format-badge").textContent = `v${core.FORMAT.VERSION}`;
@@ -2713,10 +3140,14 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
         }
 
         function hexGrid(page, selectedSection, primary) {
+            /* Thirty-two rows of sixteen is the right shape for a scrolling page and the wrong one
+               for a slide: it forces the card into a portrait strip that has to be scaled down to
+               fit. Doubling the row width halves the height and reads better projected. */
+            const perRow = presenting ? 32 : 16;
             const rows = [];
-            for (let start = 0; start < page.header.capacity; start += 16) {
+            for (let start = 0; start < page.header.capacity; start += perRow) {
                 const cells = [];
-                for (let offset = 0; offset < 16; offset++) {
+                for (let offset = 0; offset < perRow; offset++) {
                     const at = start + offset;
                     const slack = at >= page.header.usedBytes;
                     cells.push(`<span class="byte ${byteClass(page, at, selectedSection, primary)}" data-byte-offset="${at}" data-testid="${slack ? "slack-byte" : "used-byte"}" title="byte ${at}${slack ? ": undefined / unread slack" : ""}">${slack ? "--" : page.bytes[at].toString(16).padStart(2, "0")}</span>`);
@@ -2724,8 +3155,8 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
                 rows.push(`<span class="hex-offset">${start.toString(16).padStart(4, "0")}</span>${cells.join("")}`);
             }
             return `<div class="hex-shell" data-testid="physical-bytes">
-                <div class="hex-heading"><h3>Allocated off-heap page</h3><span>${page.header.usedBytes} defined bytes · ${page.header.capacity - page.header.usedBytes} unread bytes<br>16 bytes per row</span></div>
-                <div class="hex-scroll"><div class="hex-grid">${rows.join("")}</div></div>
+                <div class="hex-heading"><h3>Allocated off-heap page</h3><span>${page.header.usedBytes} defined bytes · ${page.header.capacity - page.header.usedBytes} unread bytes<br>${perRow} bytes per row</span></div>
+                <div class="hex-scroll"><div class="hex-grid" style="grid-template-columns: 43px repeat(${perRow}, minmax(22px, 1fr))">${rows.join("")}</div></div>
             </div>`;
         }
 
@@ -3044,7 +3475,98 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             );
         }
 
+        /**
+         * Hide everything in a rendered lesson that the slide did not ask for.
+         *
+         * A keep selector shows its match with the whole subtree below it. Ancestors of a match
+         * stay visible but are walked, so a slide can pull one panel out of a grid without
+         * dragging its siblings along. A slide whose selectors match nothing hides nothing:
+         * showing a whole lesson beats showing a blank card.
+         */
+        function focusSlide(root, selectors) {
+            const keep = new Set();
+            const ancestors = new Set();
+            selectors.forEach((selector) => {
+                root.querySelectorAll(selector).forEach((node) => {
+                    keep.add(node);
+                    for (let parent = node.parentElement; parent && parent !== root; parent = parent.parentElement) {
+                        ancestors.add(parent);
+                    }
+                });
+            });
+            if (keep.size === 0) {
+                return;
+            }
+            const walk = (element) => {
+                Array.from(element.children).forEach((child) => {
+                    if (keep.has(child)) {
+                        return;
+                    }
+                    if (ancestors.has(child)) {
+                        walk(child);
+                        return;
+                    }
+                    child.setAttribute("data-present-hidden", "true");
+                });
+            };
+            walk(root);
+        }
+
+        /**
+         * Scale the fixed-width slide card to the screen. The card is laid out once at
+         * PRESENT_DESIGN_WIDTH so line breaks never move, then transformed; the stage takes the
+         * transformed size so overflow and scrolling still behave when a dense slide is clamped.
+         */
+        function fitStage() {
+            const stage = document.getElementById("present-stage");
+            const frame = stage && stage.firstElementChild;
+            if (!frame) {
+                return;
+            }
+            const styles = getComputedStyle(lesson);
+            const availableWidth = lesson.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
+            const availableHeight = lesson.clientHeight - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom);
+            frame.style.width = `${PRESENT_SLIDES[state.presentSlide].width || PRESENT_DESIGN_WIDTH}px`;
+            const naturalWidth = frame.offsetWidth || PRESENT_DESIGN_WIDTH;
+            const naturalHeight = frame.offsetHeight || 1;
+            const scale = Math.min(PRESENT_MAX_SCALE, Math.max(PRESENT_MIN_SCALE,
+                Math.min(availableWidth / naturalWidth, availableHeight / naturalHeight)));
+            frame.style.transform = `scale(${scale})`;
+            stage.style.width = `${Math.ceil(naturalWidth * scale)}px`;
+            stage.style.height = `${Math.ceil(naturalHeight * scale)}px`;
+        }
+
+        function renderPresentProgress() {
+            if (presentProgress.children.length !== PRESENT_SLIDES.length) {
+                presentProgress.innerHTML = PRESENT_SLIDES.map((slide, index) => `
+                    <button class="present-dot" type="button" data-present-slide="${index}"
+                            title="Slide ${index + 1}: ${escapeHtml(slide.title)}"
+                            aria-label="Slide ${index + 1}: ${escapeHtml(slide.title)}"></button>`).join("");
+            }
+            Array.from(presentProgress.children).forEach((dot, index) => {
+                dot.setAttribute("aria-current", String(index === state.presentSlide));
+                dot.classList.toggle("seen", index < state.presentSlide);
+            });
+        }
+
+        function renderPresentChrome(model, slide) {
+            const total = String(PRESENT_SLIDES.length).padStart(2, "0");
+            presentCounter.textContent = `${String(state.presentSlide + 1).padStart(2, "0")} / ${total}`;
+            presentEyebrow.textContent = slide.eyebrow;
+            presentTitle.textContent = slide.title;
+            presentLead.textContent = slide.lead;
+            presentContext.innerHTML = `<strong>${escapeHtml(model.quad.rdf)}</strong>
+                statement ${model.quad.index + 1} · ${state.direction} · P${model.trace.predicateOrdinal} / plane ${model.trace.plane}`;
+            presentPrevious.disabled = state.presentSlide === 0;
+            presentNext.disabled = state.presentSlide === PRESENT_SLIDES.length - 1;
+            renderPresentProgress();
+            const bars = presentChrome.querySelectorAll(".present-bar");
+            document.documentElement.style.setProperty("--present-top", `${bars[0].offsetHeight}px`);
+            document.documentElement.style.setProperty("--present-bottom", `${bars[1].offsetHeight}px`);
+        }
+
         let renderedStep = null;
+        let renderedSlide = null;
 
         function renderLesson(model) {
             const renderers = [renderRoleStep, renderIdStep, renderPlaneStep, renderTreeStep, renderCsrStep,
@@ -3052,9 +3574,30 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             const stepChanged = renderedStep !== state.step;
             renderedStep = state.step;
             lesson.innerHTML = renderers[state.step](model);
-            if (stepChanged) {
-                lesson.querySelector(".lesson-frame")?.classList.add("entering");
+            if (!presenting) {
+                renderedSlide = null;
+                if (stepChanged) {
+                    lesson.querySelector(".lesson-frame")?.classList.add("entering");
+                }
+                return;
             }
+            const slide = PRESENT_SLIDES[state.presentSlide];
+            const frame = lesson.querySelector(".lesson-frame");
+            frame.dataset.presentSlide = String(state.presentSlide + 1);
+            if (slide.layout) {
+                frame.dataset.presentLayout = slide.layout;
+            }
+            focusSlide(frame, slide.keep);
+            const stage = document.createElement("div");
+            stage.id = "present-stage";
+            if (renderedSlide !== state.presentSlide) {
+                stage.classList.add("present-enter");
+            }
+            renderedSlide = state.presentSlide;
+            lesson.append(stage);
+            stage.append(frame);
+            renderPresentChrome(model, slide);
+            fitStage();
         }
 
         function render(announce = false) {
@@ -3064,7 +3607,9 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             updateControls(model.trace);
             renderLesson(model);
             if (announce) {
-                liveStatus.textContent = `Statement ${state.statementIndex + 1}, ${state.direction}, partition ${model.trace.key}, step ${state.step + 1}: ${steps[state.step].title}.`;
+                liveStatus.textContent = presenting
+                    ? `Slide ${state.presentSlide + 1} of ${PRESENT_SLIDES.length}: ${PRESENT_SLIDES[state.presentSlide].title}. Statement ${state.statementIndex + 1}, ${state.direction}, partition ${model.trace.key}.`
+                    : `Statement ${state.statementIndex + 1}, ${state.direction}, partition ${model.trace.key}, step ${state.step + 1}: ${steps[state.step].title}.`;
             }
         }
 
@@ -3077,6 +3622,91 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             if (focusTab) {
                 document.getElementById(`step-tab-${state.step}`).focus();
             }
+        }
+
+        /* Entering the presentation should land where the reader already was, including which
+           delta stage they had open, rather than restarting that lesson from its first slide. */
+        function firstSlideForStep(step) {
+            const candidates = [
+                PRESENT_SLIDES.findIndex((slide) => slide.step === step
+                    && (!Number.isInteger(slide.deltaStage) || slide.deltaStage === state.deltaStage)),
+                PRESENT_SLIDES.findIndex((slide) => slide.step === step),
+                /* A lesson can be left out of the deck entirely; land on the next one that is in
+                   it rather than falling back to the very first slide. */
+                PRESENT_SLIDES.findIndex((slide) => slide.step >= step)
+            ];
+            const index = candidates.find((candidate) => candidate !== -1);
+            return index === undefined ? 0 : index;
+        }
+
+        function setPresentSlide(index) {
+            state.presentSlide = Math.max(0, Math.min(PRESENT_SLIDES.length - 1, index));
+            const slide = PRESENT_SLIDES[state.presentSlide];
+            state.step = slide.step;
+            if (Number.isInteger(slide.deltaStage)) {
+                state.deltaStage = slide.deltaStage;
+            }
+            /* Mirrors setStep: a column selection only means anything on the two lessons that show one. */
+            if (state.step !== 6 && state.step !== 7) {
+                state.selectedSection = null;
+            }
+            render(true);
+        }
+
+        /* Fullscreen is an enhancement, not the mode. A browser that refuses the request — or has no
+           Fullscreen API at all — still gets the full-viewport slide layout. */
+        function requestPresentFullscreen() {
+            const element = document.documentElement;
+            const request = element.requestFullscreen || element.webkitRequestFullscreen;
+            if (typeof request !== "function") {
+                return;
+            }
+            try {
+                const pending = request.call(element, { navigationUI: "hide" });
+                if (pending && typeof pending.catch === "function") {
+                    pending.catch(() => {});
+                }
+            } catch (error) {
+                /* Presentation mode does not depend on the request succeeding. */
+            }
+        }
+
+        function releasePresentFullscreen() {
+            if (!document.fullscreenElement || typeof document.exitFullscreen !== "function") {
+                return;
+            }
+            const pending = document.exitFullscreen();
+            if (pending && typeof pending.catch === "function") {
+                pending.catch(() => {});
+            }
+        }
+
+        function enterPresentation() {
+            if (presenting) {
+                return;
+            }
+            presenting = true;
+            renderedSlide = null;
+            document.documentElement.dataset.present = "true";
+            presentToggle.setAttribute("aria-pressed", "true");
+            relocateForPresentation(true);
+            requestPresentFullscreen();
+            setPresentSlide(firstSlideForStep(state.step));
+            presentChrome.focus({ preventScroll: true });
+        }
+
+        function exitPresentation() {
+            if (!presenting) {
+                return;
+            }
+            presenting = false;
+            renderedSlide = null;
+            delete document.documentElement.dataset.present;
+            presentToggle.setAttribute("aria-pressed", "false");
+            relocateForPresentation(false);
+            releasePresentFullscreen();
+            render(true);
+            presentToggle.focus({ preventScroll: true });
         }
 
         function selectStatement(index, focus = false) {
@@ -3135,7 +3765,9 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
         previousStep.addEventListener("click", () => setStep(state.step - 1));
         nextStep.addEventListener("click", () => setStep(state.step + 1));
 
-        document.querySelector(".control-deck").addEventListener("click", (event) => {
+        /* Bound to the group rather than the deck around it: presenting moves the group into the
+           slide chrome, and a listener on the deck would stop hearing it there. */
+        controlGroups.addEventListener("click", (event) => {
             const button = event.target.closest("[data-control]");
             if (!button) {
                 return;
@@ -3149,7 +3781,14 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             } else if (control === "numbers") {
                 state.numberMode = value;
             } else if (control === "view") {
-                state.step = ({ logical: 4, vectors: 6, physical: 7, deltas: 8, read: 9 })[value];
+                const step = ({ logical: 4, vectors: 6, physical: 7, deltas: 8, read: 9 })[value];
+                if (presenting) {
+                    /* On a slide the view group is a chapter jump: it has to move the deck, not
+                       just the lesson, or the bar would announce a slide that is not on screen. */
+                    setPresentSlide(firstSlideForStep(step));
+                    return;
+                }
+                state.step = step;
                 state.selectedSection = null;
             }
             render(true);
@@ -3172,9 +3811,87 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
                 state.selectedSection = null;
                 render(false);
             } else if (action.dataset.action === "delta-stage") {
-                state.deltaStage = Math.max(0, Math.min(DELTA_STAGES.length - 1,
-                    Number(action.dataset.deltaStage)));
+                const stage = Math.max(0, Math.min(DELTA_STAGES.length - 1, Number(action.dataset.deltaStage)));
+                if (presenting) {
+                    /* The pipeline doubles as slide navigation here, so jumping a stage has to move
+                       the slide too — otherwise the bar would still announce the previous one. */
+                    setPresentSlide(PRESENT_SLIDES.findIndex((slide) => slide.deltaStage === stage));
+                    return;
+                }
+                state.deltaStage = stage;
                 render(false);
+            }
+        });
+
+        presentToggle.addEventListener("click", () => (presenting ? exitPresentation() : enterPresentation()));
+        presentExit.addEventListener("click", exitPresentation);
+        presentPrevious.addEventListener("click", () => setPresentSlide(state.presentSlide - 1));
+        presentNext.addEventListener("click", () => setPresentSlide(state.presentSlide + 1));
+
+        presentProgress.addEventListener("click", (event) => {
+            const dot = event.target.closest("[data-present-slide]");
+            if (dot) {
+                setPresentSlide(Number(dot.dataset.presentSlide));
+            }
+        });
+
+        /* Presenter keys. Only bound while presenting, so the reading layout keeps its own
+           roving-tabindex behaviour on the statement list and the step deck. */
+        document.addEventListener("keydown", (event) => {
+            if (!presenting || event.metaKey || event.ctrlKey || event.altKey) {
+                return;
+            }
+            const { key } = event;
+            if (key === "Escape") {
+                event.preventDefault();
+                exitPresentation();
+            } else if (key === "ArrowRight" || key === "PageDown" || key === " ") {
+                event.preventDefault();
+                setPresentSlide(state.presentSlide + 1);
+            } else if (key === "ArrowLeft" || key === "PageUp") {
+                event.preventDefault();
+                setPresentSlide(state.presentSlide - 1);
+            } else if (key === "Home") {
+                event.preventDefault();
+                setPresentSlide(0);
+            } else if (key === "End") {
+                event.preventDefault();
+                setPresentSlide(PRESENT_SLIDES.length - 1);
+            } else if (key === "d" || key === "D") {
+                event.preventDefault();
+                state.direction = state.direction === "outgoing" ? "incoming" : "outgoing";
+                state.selectedSection = null;
+                render(true);
+            } else if (key >= "1" && key <= "8") {
+                event.preventDefault();
+                selectStatement(Number(key) - 1);
+            }
+        });
+
+        /* Leaving browser fullscreen — usually Escape handled by the browser itself — leaves the
+           presentation too, so the two never disagree about which mode the page is in. */
+        let fullscreenEngaged = false;
+        document.addEventListener("fullscreenchange", () => {
+            if (document.fullscreenElement) {
+                fullscreenEngaged = true;
+                return;
+            }
+            if (fullscreenEngaged) {
+                fullscreenEngaged = false;
+                exitPresentation();
+            }
+        });
+
+        window.addEventListener("resize", () => {
+            if (presenting) {
+                fitStage();
+            }
+        });
+
+        /* A late webfont changes the measured height of the card, so the fit is recomputed once. */
+        document.fonts?.ready.then(() => {
+            if (presenting) {
+                fitStage();
             }
         });
 
@@ -3193,6 +3910,10 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
                 state.selectedSection = null;
                 render(true);
             },
+            enterPresentation,
+            exitPresentation,
+            setPresentSlide: (index) => setPresentSlide(Number(index)),
+            presentSlides: PRESENT_SLIDES,
             pages
         });
 
