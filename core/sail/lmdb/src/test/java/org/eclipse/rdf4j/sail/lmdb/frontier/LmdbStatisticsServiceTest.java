@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.frontier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -761,5 +762,36 @@ class LmdbStatisticsServiceTest {
 		checksum.update(legacy, 0, legacy.length - Integer.BYTES);
 		legacyBuffer.putInt(legacy.length - Integer.BYTES, (int) checksum.getValue());
 		Files.write(path, legacy);
+	}
+
+	// REINFORCE: a metadata-only snapshot advance needs a previously recorded store commit at the same journal
+	// sequence, never lowers the physical epoch, and rejects negative coordinates.
+	@Test
+	void metadataOnlySnapshotAdvanceGuardsItsCoordinates() throws Exception {
+		service = openService();
+		service.publish(writeGeneration(1L, -1L, 7L, FIRST_PROBE_SHARD, 41L, true));
+		assertFalse(service.recordMetadataOnlySnapshotAdvance(8L, 0L),
+				"No store commit has been recorded yet, so no journal sequence can be unchanged");
+		assertThrows(IllegalArgumentException.class, () -> service.recordMetadataOnlySnapshotAdvance(-1L, 0L));
+		assertThrows(IllegalArgumentException.class, () -> service.recordMetadataOnlySnapshotAdvance(0L, -1L));
+
+		List<FrontierMutation> mutations = List.of(
+				new FrontierMutation(8L, 8L, true, true, 108L, 22L, 208L, 0L));
+		service.recordStoreCommit(10L, 8L, System.currentTimeMillis());
+		service.installMutationTail(mutations);
+		assertEquals(FrontierFallbackReason.NONE, service.estimateLeaf(10L, predicateProbe(22L)).fallbackReason());
+
+		assertTrue(service.recordMetadataOnlySnapshotAdvance(9L, 8L),
+				"An older physical epoch is acknowledged for the unchanged sequence");
+		assertEquals(FrontierFallbackReason.NONE, service.estimateLeaf(10L, predicateProbe(22L)).fallbackReason(),
+				"but it must never lower the current physical coordinate");
+		assertNotEquals(FrontierFallbackReason.NONE,
+				service.estimateLeaf(9L, predicateProbe(22L)).fallbackReason());
+
+		assertTrue(service.recordMetadataOnlySnapshotAdvance(12L, 8L));
+		assertEquals(FrontierFallbackReason.NONE, service.estimateLeaf(12L, predicateProbe(22L)).fallbackReason());
+		assertNotEquals(FrontierFallbackReason.NONE,
+				service.estimateLeaf(10L, predicateProbe(22L)).fallbackReason(),
+				"The retired physical epoch no longer pairs with the in-memory mutation tail");
 	}
 }

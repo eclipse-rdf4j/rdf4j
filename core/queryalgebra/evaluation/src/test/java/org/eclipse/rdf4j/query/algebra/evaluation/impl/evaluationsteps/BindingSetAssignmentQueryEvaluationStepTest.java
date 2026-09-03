@@ -117,6 +117,45 @@ class BindingSetAssignmentQueryEvaluationStepTest {
 		assertThat(results(step.evaluate(parent))).isEmpty();
 	}
 
+	// REINFORCE: with an overlapping parent, every all-UNDEF VALUES row yields the parent once, interleaved with
+	// conflicting rows (dropped) and compatible rows (kept), and the telemetry counter sees every emitted row.
+	@Test
+	void allUndefRowsPreserveParentMultiplicityAmongConflictingAndCompatibleRows() {
+		Value outer = SimpleValueFactory.getInstance().createLiteral("outer");
+		MapBindingSet parent = new MapBindingSet();
+		parent.addBinding("x", outer);
+		BindingSetAssignment assignment = assignmentWithDeclaredNames(Set.of("x"),
+				EmptyBindingSet.getInstance(), binding("x", "other"), binding("x", "outer"),
+				EmptyBindingSet.getInstance());
+		assignment.setRuntimeTelemetryEnabled(true);
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		List<BindingSet> results = results(step.evaluate(parent));
+
+		assertThat(results).containsExactly(parent, parent, parent);
+		assertThat(assignment.getLongMetricActual(TelemetryMetricNames.BINDINGS_PROVIDED_ACTUAL)).isEqualTo(3L);
+	}
+
+	// REINFORCE: without parent overlap an all-UNDEF row still yields the parent unchanged while bound rows extend it.
+	@Test
+	void allUndefRowWithoutParentOverlapYieldsParentUnchanged() {
+		Value outer = SimpleValueFactory.getInstance().createLiteral("outer");
+		MapBindingSet parent = new MapBindingSet();
+		parent.addBinding("a", outer);
+		BindingSetAssignment assignment = assignmentWithDeclaredNames(Set.of("b"),
+				EmptyBindingSet.getInstance(), binding("b", "1"));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		List<BindingSet> results = results(step.evaluate(parent));
+
+		assertThat(results).hasSize(2);
+		assertThat(results.getFirst()).isSameAs(parent);
+		assertThat(results.get(1).getValue("a")).isEqualTo(outer);
+		assertThat(results.get(1).getValue("b")).isEqualTo(SimpleValueFactory.getInstance().createLiteral("1"));
+	}
+
 	private static List<BindingSet> results(CloseableIteration<BindingSet> iteration) {
 		try (iteration) {
 			return iteration.stream().toList();

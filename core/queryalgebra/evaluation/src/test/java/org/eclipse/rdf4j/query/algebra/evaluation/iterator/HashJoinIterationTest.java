@@ -478,6 +478,26 @@ public class HashJoinIterationTest {
 		assertEquals(List.of("s=S,v=V,x=left"), actual);
 	}
 
+	// REINFORCE: the legacy single-array attribute API for an inner Join also reports every shared binding either side
+	// may emit (compatibility bindings), not only the assured lookup bindings, so legacy callers keep checking
+	// SPARQL compatibility on unassured shared variables.
+	@Test
+	public void testLegacyJoinAttributesIncludeUnassuredSharedBindings() throws QueryEvaluationException {
+		BindingSetAssignment leftBase = assignment(row("s", "S", "v", "V"));
+		BindingSetAssignment leftOptional = assignment(row("s", "S", "x", "left"));
+		BindingSetAssignment right = assignment(row("s", "S", "x", "right", "y", "Y"));
+		Join join = new Join(new LeftJoin(leftBase, leftOptional), right);
+
+		assertEquals(Set.of("s", "x"), Set.of(HashJoinIteration.hashJoinAttributeNames(join)));
+
+		BindingSetAssignment leftRows = assignment(row("s", "S", "v", "V", "x", "left"));
+		List<String> actual = join(leftRows, right,
+				HashJoinBindingContract.legacy(HashJoinIteration.hashJoinAttributeNames(join)),
+				HashJoinIteration.BuildSide.RIGHT, null, false);
+
+		assertEquals(List.of(), actual);
+	}
+
 	@Test
 	public void testNestedHashJoinsMatchNestedJoinIterators() throws QueryEvaluationException {
 		BindingSetAssignment first = assignment(row("a", "1", "i", "x"), row("a", "2", "i", "y"));

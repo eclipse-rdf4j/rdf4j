@@ -138,4 +138,42 @@ class ColdFilterSynopsisTest {
 		assertEquals(0L, synopsis.footprint().builderPrimitiveBytes());
 		assertEquals(synopsis.serialize(IDENTITY).length, synopsis.footprint().serializedBytes());
 	}
+
+	// REINFORCE: a persisted cold synopsis is bound to the statement-mutation stamp it was scanned at; the stampless
+	// overloads mean stamp zero and the coordinate must never be negative.
+	@Test
+	void statementMutationStampMustMatchOnDeserialization() throws IOException {
+		ColdFilterSynopsis.Builder builder = ColdFilterSynopsis.builder(2);
+		builder.offer(1L, 2L, 3L, 4L);
+		builder.offer(5L, 6L, 7L, 8L);
+		ColdFilterSynopsis synopsis = builder.build();
+
+		assertArrayEquals(synopsis.serialize(IDENTITY), synopsis.serialize(IDENTITY, 0L),
+				"The stampless overload must persist stamp zero");
+		byte[] stamped = synopsis.serialize(IDENTITY, 5L);
+
+		ColdFilterSynopsis restored = ColdFilterSynopsis.deserialize(stamped, IDENTITY, 5L, 2);
+		assertEquals(synopsis.retainedRows(), restored.retainedRows());
+		assertEquals(synopsis.totalRows(), restored.totalRows());
+		assertArrayEquals(stamped, restored.serialize(IDENTITY, 5L));
+
+		assertThrows(IOException.class, () -> ColdFilterSynopsis.deserialize(stamped, IDENTITY, 6L, 2),
+				"A later statement mutation must reject the persisted synopsis");
+		assertThrows(IOException.class, () -> ColdFilterSynopsis.deserialize(stamped, IDENTITY, 2),
+				"The stampless overload expects stamp zero");
+		assertThrows(IllegalArgumentException.class, () -> synopsis.serialize(IDENTITY, -1L));
+		assertThrows(IllegalArgumentException.class,
+				() -> ColdFilterSynopsis.deserialize(stamped, IDENTITY, -1L, 2));
+	}
+
+	// REINFORCE: the stampless version-one format cannot be reinterpreted under statement-stamp semantics.
+	@Test
+	void legacyStamplessFormatIsRejected() throws IOException {
+		ColdFilterSynopsis.Builder builder = ColdFilterSynopsis.builder(2);
+		builder.offer(1L, 2L, 3L, 4L);
+		byte[] serialized = builder.build().serialize(IDENTITY, 5L);
+		ByteBuffer.wrap(serialized).putInt(Integer.BYTES, 1);
+
+		assertThrows(IOException.class, () -> ColdFilterSynopsis.deserialize(serialized, IDENTITY, 5L, 2));
+	}
 }

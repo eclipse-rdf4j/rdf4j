@@ -703,9 +703,10 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private StoreSnapshotCoordinates currentStoreSnapshotCoordinates() throws IOException {
-		Txn txn = tripleStore.getTxnManager().getReadTxn();
-		return new StoreSnapshotCoordinates(
-				LmdbFrontierSnapshotSource.snapshotEpoch(txn), tripleStore.latestFrontierMutationSequence(txn));
+		// Both coordinates are read under the TxnManager read lock, so a concurrent commit cannot reset or
+		// deactivate the read transaction underneath them (see TripleStore#snapshotCoordinates).
+		long[] coordinates = tripleStore.snapshotCoordinates();
+		return new StoreSnapshotCoordinates(coordinates[0], coordinates[1]);
 	}
 
 	private long statementMutationStamp() {

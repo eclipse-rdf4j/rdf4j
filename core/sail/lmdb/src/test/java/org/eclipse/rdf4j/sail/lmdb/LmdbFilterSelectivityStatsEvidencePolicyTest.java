@@ -12,14 +12,17 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -196,5 +199,141 @@ class LmdbFilterSelectivityStatsEvidencePolicyTest {
 		return new LmdbFilterSelectivityStats(dataDir.resolve("join-estimator.rjes"), tripleStore,
 				mock(ValueStore.class), false, 1_000L, 4_096, true, () -> null, 0,
 				adaptiveEvidenceAllowed::get);
+	}
+
+	// REINFORCE: evidence persisted at the applied statement-mutation stamp reloads when the store reopens at that
+	// same coordinate (a metadata-only commit leaves it untouched).
+	@Test
+	void persistedEvidenceReloadsAtTheSameStatementMutationStamp(@TempDir Path dataDir) {
+		Path estimatorPath = dataDir.resolve("join-estimator.rjes");
+		SketchSnapshotIdentity identity = new SketchSnapshotIdentity(11L, 22L, 33L);
+		AtomicLong committedStatementMutationStamp = new AtomicLong(3L);
+		TripleStore tripleStore = mock(TripleStore.class);
+		ValueStore valueStore = mock(ValueStore.class);
+		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore,
+				false, 0L, 0, false, () -> identity, 0, () -> true, committedStatementMutationStamp::get);
+		PatternKey key = new PatternKey(SimpleValueFactory.getInstance().createIRI("urn:test:predicate"), 0);
+		stats.recordFilterOutcome(key, "BOUND(?value)", 1L, 1L);
+		stats.persistIfDirty();
+
+		LmdbFilterSelectivityStats reloaded = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore,
+				false, 0L, 0, false, () -> identity, 0, () -> true, committedStatementMutationStamp::get);
+		assertEquals(0.5d, reloaded.getFilterPassRatio(key, "BOUND(?value)"), 1e-9d,
+				"Evidence stamped at the reopened statement coordinate must be served again");
+	}
+
+	// REINFORCE: the applied statement-mutation stamp is monotonic and non-negative; a same-stamp commit is accepted.
+	@Test
+	void statementMutationStampCannotMoveBackwardsOrBeNegative(@TempDir Path dataDir) {
+		Path estimatorPath = dataDir.resolve("join-estimator.rjes");
+		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(estimatorPath, mock(TripleStore.class),
+				mock(ValueStore.class), false, 0L, 0, false, () -> null, 0, () -> true, () -> 5L);
+
+		assertThrows(IllegalArgumentException.class, () -> stats.recordStoreMutation(4L));
+		assertThrows(IllegalArgumentException.class, () -> stats.recordStoreMutation(-1L));
+		stats.recordStoreMutation(5L);
+		stats.recordStoreMutation(6L);
+		assertThrows(IllegalArgumentException.class, () -> stats.recordStoreMutation(5L));
+
+		assertThrows(IllegalArgumentException.class,
+				() -> new LmdbFilterSelectivityStats(estimatorPath, mock(TripleStore.class), mock(ValueStore.class),
+						false, 0L, 0, false, () -> null, 0, () -> true, () -> -1L));
+	}
+
+	// REINFORCE: a commit that leaves the statement-mutation stamp unchanged (metadata-only) must not discard a cold
+	// synopsis rebuild that scanned the same committed statements.
+	@Test
+	void coldSynopsisRebuildPublishesAcrossAMetadataOnlyCommit(@TempDir Path dataDir) throws Exception {
+		Path estimatorPath = dataDir.resolve("join-estimator.rjes");
+		SketchSnapshotIdentity identity = new SketchSnapshotIdentity(11L, 22L, 33L);
+		ValueStore valueStore = mock(ValueStore.class);
+		when(valueStore.getId(any())).thenReturn(1L, 2L, 3L);
+		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(estimatorPath, mock(TripleStore.class),
+				valueStore, false, 0L, 0, false, () -> identity, 4, () -> true, () -> 1L);
+		var valueFactory = SimpleValueFactory.getInstance();
+		SketchRebuildObserver.RebuildObservation first = stats.coldSynopsisRebuildObserver()
+				.start(identity.mutationVersion());
+		first.statementScanned(valueFactory.createStatement(
+				valueFactory.createIRI("urn:test:subject"),
+				valueFactory.createIRI("urn:test:predicate"),
+				valueFactory.createLiteral("object")));
+		first.complete(identity.mutationVersion());
+		assertTrue(stats.coldSynopsisFootprint().isPresent());
+
+		SketchRebuildObserver.RebuildObservation second = stats.coldSynopsisRebuildObserver()
+				.start(identity.mutationVersion());
+		second.statementScanned(valueFactory.createStatement(
+				valueFactory.createIRI("urn:test:subject"),
+				valueFactory.createIRI("urn:test:predicate"),
+				valueFactory.createLiteral("object")));
+		stats.recordStoreMutation(1L);
+		assertTrue(stats.coldSynopsisFootprint().isEmpty(), "A commit retires the published synopsis");
+		second.complete(identity.mutationVersion());
+
+		assertTrue(stats.coldSynopsisFootprint().isPresent(),
+				"An unchanged statement coordinate proves the scanned rows are still the committed rows");
+	}
+
+	// REINFORCE: a persisted cold synopsis reloads at its own statement coordinate and is retired in memory and on
+	// disk as soon as a statement commit advances the applied stamp.
+	@Test
+	void coldSynopsisReloadsAtTheSameStatementMutationStampUntilTheNextStatementCommit(@TempDir Path dataDir)
+			throws Exception {
+		Path estimatorPath = dataDir.resolve("join-estimator.rjes");
+		Path coldSynopsisPath = dataDir.resolve("join-estimator.rjes.cold");
+		SketchSnapshotIdentity identity = new SketchSnapshotIdentity(11L, 22L, 33L);
+		AtomicLong committedStatementMutationStamp = new AtomicLong(1L);
+		TripleStore tripleStore = mock(TripleStore.class);
+		ValueStore valueStore = mock(ValueStore.class);
+		when(valueStore.getId(any())).thenReturn(1L, 2L, 3L);
+		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore,
+				false, 0L, 0, false, () -> identity, 4, () -> true, committedStatementMutationStamp::get);
+		SketchRebuildObserver.RebuildObservation rebuild = stats.coldSynopsisRebuildObserver()
+				.start(identity.mutationVersion());
+		var valueFactory = SimpleValueFactory.getInstance();
+		rebuild.statementScanned(valueFactory.createStatement(
+				valueFactory.createIRI("urn:test:subject"),
+				valueFactory.createIRI("urn:test:predicate"),
+				valueFactory.createLiteral("object")));
+		rebuild.complete(identity.mutationVersion());
+		stats.persistIfDirty();
+		assertTrue(Files.isRegularFile(coldSynopsisPath));
+
+		LmdbFilterSelectivityStats reloaded = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore,
+				false, 0L, 0, false, () -> identity, 4, () -> true, committedStatementMutationStamp::get);
+		assertTrue(reloaded.coldSynopsisFootprint().isPresent(),
+				"A cold synopsis persisted at the reopened statement coordinate must be served again");
+
+		reloaded.recordStoreMutation(2L);
+		assertTrue(reloaded.coldSynopsisFootprint().isEmpty(),
+				"A statement commit must retire the cold synopsis immediately");
+		reloaded.persistIfDirty();
+		assertFalse(Files.exists(coldSynopsisPath), "The retired synopsis must not remain on disk for a later reopen");
+	}
+
+	// REINFORCE: filter sidecars written before the statement-stamp format (version 7) carry a raw LMDB transaction
+	// id and must be ignored instead of reinterpreted as a statement-mutation coordinate.
+	@Test
+	void legacyVersionSevenFilterSidecarIsIgnored(@TempDir Path dataDir) throws Exception {
+		Path estimatorPath = dataDir.resolve("join-estimator.rjes");
+		Path sidecarPath = dataDir.resolve("join-estimator.rjes.filters");
+		SketchSnapshotIdentity identity = new SketchSnapshotIdentity(11L, 22L, 33L);
+		TripleStore tripleStore = mock(TripleStore.class);
+		ValueStore valueStore = mock(ValueStore.class);
+		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore,
+				false, 0L, 0, false, () -> identity, 0, () -> true, () -> 3L);
+		PatternKey key = new PatternKey(SimpleValueFactory.getInstance().createIRI("urn:test:predicate"), 0);
+		stats.recordFilterOutcome(key, "BOUND(?value)", 1L, 1L);
+		stats.persistIfDirty();
+		byte[] sidecar = Files.readAllBytes(sidecarPath);
+		assertEquals(8, ByteBuffer.wrap(sidecar).getInt(),
+				"New filter sidecars must declare the statement-stamped format");
+		ByteBuffer.wrap(sidecar).putInt(0, 7);
+		Files.write(sidecarPath, sidecar);
+
+		LmdbFilterSelectivityStats reloaded = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore,
+				false, 0L, 0, false, () -> identity, 0, () -> true, () -> 3L);
+		assertEquals(-1.0d, reloaded.getFilterPassRatio(key, "BOUND(?value)"),
+				"A version-7 sidecar's raw transaction stamp cannot establish freshness");
 	}
 }

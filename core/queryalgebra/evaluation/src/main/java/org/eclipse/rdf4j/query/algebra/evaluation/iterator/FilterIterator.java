@@ -300,9 +300,8 @@ public class FilterIterator extends FilterIteration<BindingSet>
 								: MATERIALIZED_HASH.equals(algorithmHint)
 										? MaterializedExistsFilterIteration.MATERIALIZED
 										: MaterializedExistsFilterIteration.ADAPTIVE;
-		Function<BindingSet, CloseableIteration<BindingSet>> existsProbeFunction = requiresPerProbeSubstitution
-				? bindings -> evaluateSubstitutedExists(subQuery, strategy, context, bindings)
-				: existsArg::evaluate;
+		Function<BindingSet, CloseableIteration<BindingSet>> existsProbeFunction = existsProbeFunction(subQuery,
+				existsArg, strategy, context);
 		// One probe budget for the whole step: joins re-instantiate this filter once per outer row, and a
 		// per-instance budget would keep every instance probing forever instead of amortizing into
 		// materialization (see MaterializedExistsFilterIteration.PROBE_LIMIT).
@@ -336,11 +335,37 @@ public class FilterIterator extends FilterIteration<BindingSet>
 				feedbackContract == null ? 0 : feedbackContract.physicalImplementationId(), strategyMode, negated);
 	}
 
+	/**
+	 * Builds the per-probe evaluation of an EXISTS body for one outer row. A body whose correlation can only select
+	 * compatible rows (statement patterns, joins, unions, ...) is evaluated bottom-up from the precompiled step with
+	 * the outer row as input. Every other shape (OPTIONAL, MINUS, sub-selects, FILTER, ...) is substituted with the
+	 * outer row first, as SPARQL's {@code substitute()} requires: bottom-up evaluation would, for example, strip an
+	 * outer binding of a variable that only occurs on the right-hand side of an OPTIONAL and drop rows the
+	 * substituted pattern keeps. Every physical EXISTS path routes its probes through here so the result never
+	 * depends on the chosen physical algorithm.
+	 *
+	 * @param subQuery the EXISTS body
+	 * @param compiled the precompiled EXISTS body, used directly when no substitution is required
+	 * @param strategy the strategy that compiles substituted bodies
+	 * @param context  the evaluation context of the enclosing query
+	 * @return the probe function
+	 */
+	public static Function<BindingSet, CloseableIteration<BindingSet>> existsProbeFunction(TupleExpr subQuery,
+			QueryEvaluationStep compiled, EvaluationStrategy strategy, QueryEvaluationContext context) {
+		if (!requiresPerProbeExistsSubstitution(subQuery)) {
+			return compiled::evaluate;
+		}
+		return bindings -> evaluateSubstitutedExists(subQuery, strategy, context, bindings);
+	}
+
 	private static CloseableIteration<BindingSet> evaluateSubstitutedExists(TupleExpr subQuery,
 			EvaluationStrategy strategy, QueryEvaluationContext context, BindingSet bindings) {
 		TupleExpr substitutedSubQuery = subQuery.clone();
 		new BindingAssignerOptimizer().optimize(substitutedSubQuery, null, bindings);
-		return strategy.precompile(substitutedSubQuery, context).evaluate(bindings);
+		// The substituted body is a runtime subtree: compiling it through the public precompile entry point would
+		// open a fresh runtime-feedback compilation root per outer row, resolving and publishing a feedback target
+		// for every probe instead of once per compiled query.
+		return strategy.precompileRuntimeSubtree(substitutedSubQuery, context).evaluate(bindings);
 	}
 
 	private static int plannedSemiAntiCacheCapacity(Filter filter) {

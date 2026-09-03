@@ -76,6 +76,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
@@ -192,6 +193,15 @@ class TripleStore implements Closeable {
 	private long frontierJournalRetainedMutationCount;
 	private boolean frontierJournalMetadataDirty;
 	private boolean frontierJournalDisabledMutationRecorded;
+	/**
+	 * Serialises independent journal writers (the Frontier acknowledgement) against a two-phase commit. A two-phase
+	 * (record-cache / auto-grow) commit releases the LMDB writer mutex between its durable batches; without this gate
+	 * an acknowledgement could still be active when {@code mdb_env_set_mapsize} runs (EINVAL) or commit inside the
+	 * window, where the replay's final metadata write would revert it from stale in-memory counters. The committer
+	 * takes the gate only after its first durable batch, when it no longer holds the LMDB writer mutex, so an
+	 * acknowledgement that already holds the gate while queued on that mutex always finishes first (no lock cycle).
+	 */
+	private final Semaphore independentWriterGate = new Semaphore(1);
 	private int pageSize;
 	private final boolean autoGrow;
 	private final boolean pageCardinalityEstimator;
@@ -2437,27 +2447,44 @@ class TripleStore implements Closeable {
 		 * TxnManager write lock is intentional: a main store writer owns its LMDB transaction for the whole Sail
 		 * transaction and takes that lock only while committing, so reversing the order could deadlock. LMDB orders the
 		 * two writers; after this commit, the write lock plus reset invalidates every reusable tracked read snapshot.
+		 * The independent-writer gate keeps this transaction out of the window a two-phase commit opens between its
+		 * durable batches; it is released before the write lock is taken so the committer, which holds that lock
+		 * while waiting for the gate, can never be blocked by an acknowledgement that waits for the lock.
 		 */
-		transaction(env, (stack, txn) -> {
-			FrontierMutationJournalState state = readFrontierMutationJournalState(stack, txn);
-			if (coveredSequence > state.latestSequence()) {
-				throw new IllegalArgumentException("Frontier publication cannot cover future mutations");
-			}
-			state = compactLegacyFrontierMutationJournalToCapacity(txn, state);
-			long firstRetainedSequence = state.latestSequence() - state.retainedMutationCount() + 1L;
-			long lastPrunedSequence = Math.min(coveredSequence, state.latestSequence());
-			long pruned = lastPrunedSequence >= firstRetainedSequence
-					? lastPrunedSequence - firstRetainedSequence + 1L
-					: 0L;
-			deleteFrontierMutationRows(txn, firstRetainedSequence, lastPrunedSequence);
-			long gapThrough = state.gapThroughSequence() <= coveredSequence ? 0L : state.gapThroughSequence();
-			writeFrontierJournalMetadata(stack, txn, new FrontierMutationJournalState(
-					state.latestSequence(), gapThrough,
-					Math.max(state.acknowledgedThroughSequence(), coveredSequence),
-					state.retainedMutationCount() - pruned, false));
-			return null;
-		});
+		acquireIndependentWriterGate();
+		try {
+			transaction(env, (stack, txn) -> {
+				FrontierMutationJournalState state = readFrontierMutationJournalState(stack, txn);
+				if (coveredSequence > state.latestSequence()) {
+					throw new IllegalArgumentException("Frontier publication cannot cover future mutations");
+				}
+				state = compactLegacyFrontierMutationJournalToCapacity(txn, state);
+				long firstRetainedSequence = state.latestSequence() - state.retainedMutationCount() + 1L;
+				long lastPrunedSequence = Math.min(coveredSequence, state.latestSequence());
+				long pruned = lastPrunedSequence >= firstRetainedSequence
+						? lastPrunedSequence - firstRetainedSequence + 1L
+						: 0L;
+				deleteFrontierMutationRows(txn, firstRetainedSequence, lastPrunedSequence);
+				long gapThrough = state.gapThroughSequence() <= coveredSequence ? 0L : state.gapThroughSequence();
+				writeFrontierJournalMetadata(stack, txn, new FrontierMutationJournalState(
+						state.latestSequence(), gapThrough,
+						Math.max(state.acknowledgedThroughSequence(), coveredSequence),
+						state.retainedMutationCount() - pruned, false));
+				return null;
+			});
+		} finally {
+			independentWriterGate.release();
+		}
 		resetReadersAfterIndependentWrite();
+	}
+
+	private void acquireIndependentWriterGate() throws IOException {
+		try {
+			independentWriterGate.acquire();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for an in-flight two-phase LMDB commit", e);
+		}
 	}
 
 	private void resetReadersAfterIndependentWrite() throws IOException {
@@ -3062,7 +3089,6 @@ class TripleStore implements Closeable {
 		for (boolean explicit : new boolean[] { true, false }) {
 			RecordCacheIterator it = recordCache.getRecords(explicit);
 			try (MemoryStack stack = MemoryStack.stackPush()) {
-				PointerBuffer pp = stack.mallocPointer(1);
 				MDBVal keyVal = MDBVal.malloc(stack);
 				// use calloc to get an empty data value
 				MDBVal dataVal = MDBVal.calloc(stack);
@@ -3076,8 +3102,7 @@ class TripleStore implements Closeable {
 						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
 						E(mdb_env_set_mapsize(env, mapSize));
 						logger.debug("resized map to {}", mapSize);
-						E(mdb_txn_begin(env, NULL, 0, pp));
-						writeTxn = pp.get(0);
+						beginWriteTransactionAfterDurableBatch();
 					}
 
 					for (TripleIndex index : indexes) {
@@ -3116,8 +3141,59 @@ class TripleStore implements Closeable {
 	private void commitDurableStatementBatch() throws IOException {
 		flushPendingRdfTermDomains();
 		flushFrontierJournalMetadata();
-		E(mdb_txn_commit(writeTxn));
+		long txn = writeTxn;
+		// mdb_txn_commit frees the handle whether it succeeds or fails, so it must never be aborted afterwards
+		writeTxn = 0L;
+		E(mdb_txn_commit(txn));
 		applyPendingRdfTermDomainCacheUpdates();
+	}
+
+	/**
+	 * Begins the next write transaction of a two-phase commit and re-reads the persisted Frontier journal
+	 * coordinates. The previous durable batch released the LMDB writer mutex, so an independent journal
+	 * acknowledgement may have committed in between: it prunes retained rows and moves the acknowledged / gap
+	 * coordinates but never the latest sequence, which only this writer advances. Continuing the replay from the
+	 * stale in-memory coordinates would revert that acknowledgement and describe rows that no longer exist.
+	 */
+	private void beginWriteTransactionAfterDurableBatch() throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_txn_begin(env, NULL, 0, pp));
+			writeTxn = pp.get(0);
+			FrontierMutationJournalState persisted = readFrontierMutationJournalState(stack, writeTxn);
+			if (persisted.legacyMetadata()) {
+				return;
+			}
+			if (persisted.latestSequence() != frontierJournalSequence) {
+				throw new IOException("Frontier mutation journal sequence changed underneath an in-flight commit");
+			}
+			frontierJournalGapThroughSequence = persisted.gapThroughSequence();
+			frontierJournalAcknowledgedThroughSequence = persisted.acknowledgedThroughSequence();
+			frontierJournalRetainedMutationCount = persisted.retainedMutationCount();
+		}
+	}
+
+	/**
+	 * Reads the physical snapshot epoch and the latest Frontier mutation sequence of one fresh read snapshot as a
+	 * consistent pair. Both reads hold the TxnManager read lock, so a concurrent commit cannot deactivate (two-phase
+	 * auto-grow) or reset (every commit, every journal acknowledgement) the transaction underneath them.
+	 *
+	 * @return {@code {physicalSnapshotEpoch, latestFrontierMutationSequence}}
+	 */
+	long[] snapshotCoordinates() throws IOException {
+		var lockManager = txnManager.lockManager();
+		long readStamp;
+		try {
+			readStamp = lockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while reading the LMDB snapshot coordinates", e);
+		}
+		try (Txn txn = txnManager.createReadTxn()) {
+			return new long[] { mdb_txn_id(txn.get()), latestFrontierMutationSequence(txn) };
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
 	}
 
 	public void startTransaction() throws IOException {
@@ -3160,23 +3236,28 @@ class TripleStore implements Closeable {
 					try {
 						commitDurableStatementBatch();
 						if (recordCache != null) {
+							// The first durable batch released the LMDB writer mutex. Close the two-phase window to
+							// independent journal writers before resizing: an acknowledgement already queued on the
+							// mutex holds the gate and finishes first, a later one waits until this commit is done, so
+							// none is active during mdb_env_set_mapsize or interleaves with the replay's metadata.
+							independentWriterGate.acquireUninterruptibly();
 							try {
 								txnManager.deactivate();
 								mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
 								E(mdb_env_set_mapsize(env, mapSize));
 								logger.debug("resized map to {}", mapSize);
 								// restart write transaction
-								try (MemoryStack stack = stackPush()) {
-									PointerBuffer pp = stack.mallocPointer(1);
-									mdb_txn_begin(env, NULL, 0, pp);
-									writeTxn = pp.get(0);
-								}
+								beginWriteTransactionAfterDurableBatch();
 								updateFromCache();
 								// finally, commit write transaction
 								commitDurableStatementBatch();
 							} finally {
 								recordCache = null;
-								txnManager.activate();
+								try {
+									txnManager.activate();
+								} finally {
+									independentWriterGate.release();
+								}
 							}
 						} else {
 							applyPendingRdfTermDomainCacheUpdates();
@@ -3186,8 +3267,11 @@ class TripleStore implements Closeable {
 						}
 						dataRevision.incrementAndGet();
 					} catch (IOException e) {
-						// abort transaction if exception occurred while committing
-						mdb_txn_abort(writeTxn);
+						// abort the write transaction if it is still open; a committed handle (or one whose commit
+						// failed) has already been freed by LMDB and must not be aborted again
+						if (writeTxn != 0) {
+							mdb_txn_abort(writeTxn);
+						}
 						throw e;
 					} finally {
 						lockManager.unlockWrite(stamp);

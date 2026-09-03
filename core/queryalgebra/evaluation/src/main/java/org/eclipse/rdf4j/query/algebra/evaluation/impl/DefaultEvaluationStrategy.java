@@ -507,7 +507,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				new QueryEvaluationContext.Minimal(sharedValueOfNow, dataset, tripleSource.getComparator()));
 	}
 
-	private QueryEvaluationStep precompileRuntimeSubtree(TupleExpr expr, QueryEvaluationContext context) {
+	@Override
+	public QueryEvaluationStep precompileRuntimeSubtree(TupleExpr expr, QueryEvaluationContext context) {
 		RuntimeFeedbackCompilation previousCompilation = runtimeFeedbackCompilation.get();
 		runtimeFeedbackCompilation.set(new RuntimeFeedbackCompilation(evaluationStatistics, false));
 		try {
@@ -2121,7 +2122,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 
 		QueryEvaluationStep subquery = precompile(subQuery, context);
-		return new ExistsQueryValueEvaluationStep(subquery);
+		// Same probe semantics as the specialised semi/anti-join filter path: a non-monotone body (OPTIONAL, MINUS,
+		// ...) is substituted with the outer row per probe, so the result does not depend on the physical path.
+		return new ExistsQueryValueEvaluationStep(
+				FilterIterator.existsProbeFunction(subQuery, subquery, this, context));
 	}
 
 	@Override

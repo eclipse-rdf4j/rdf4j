@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -299,7 +300,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(outerPlan.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE)).isNull();
 		assertThat(findFirstPlan(outerPlan.getPlans().get(1),
 				node -> node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE) != null))
-						.isNull();
+				.isNull();
 	}
 
 	@Test
@@ -416,6 +417,79 @@ public class QueryModelTreeToGenericPlanNodeTest {
 
 	private static GenericPlanNode rightSubjectVar(GenericPlanNode join) {
 		return statementPattern(join, 1).getPlans().get(0);
+	}
+
+	// REINFORCE: planner-estimate usage recorded on a nested node (not the root) keeps estimate-stability metrics
+	// enabled for the whole plan at telemetry level, and estimates are copied for every node regardless of usage
+	@Test
+	public void plannerUsageOnNestedNodeKeepsEstimateStabilityMetricsAtTelemetryLevel() {
+		Join join = joinWithTelemetry();
+		join.getRightArg()
+				.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, "join_order_candidate");
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join, null,
+				Explanation.Level.Telemetry);
+		join.visit(converter);
+		GenericPlanNode root = converter.getGenericPlanNode();
+
+		// both children carry a positive estimate and a positive actual, so two q-error samples are expected
+		assertThat(root.getPlans()).hasSize(2);
+		assertThat(root.getPlans().get(0).getResultSizeEstimate()).isEqualTo(2.0d);
+		assertThat(root.getPlans().get(1).getResultSizeEstimate()).isEqualTo(8.0d);
+		assertThat(root.toString()).contains("sampleCountActual=2", "varianceActual=", "stddevActual=",
+				"confidenceScoreActual=");
+	}
+
+	// REINFORCE: planner-estimate usage recorded only on the QueryRoot wrapper is honoured as well
+	@Test
+	public void plannerUsageOnQueryRootWrapperKeepsEstimateStabilityMetrics() {
+		Join join = joinWithTelemetry();
+		QueryRoot wrapper = new QueryRoot(join);
+		wrapper.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, "join_order_candidate");
+
+		GenericPlanNode root = new QueryModelTreeToGenericPlanNode(wrapper, null, Explanation.Level.Telemetry)
+				.getGenericPlanNode();
+
+		assertThat(root.toString()).contains("sampleCountActual=2");
+
+		Join untouched = joinWithTelemetry();
+		GenericPlanNode untouchedRoot = new QueryModelTreeToGenericPlanNode(new QueryRoot(untouched), null,
+				Explanation.Level.Telemetry).getGenericPlanNode();
+		assertThat(untouchedRoot.toString()).doesNotContain("sampleCountActual=");
+	}
+
+	// REINFORCE: the explain-recomputed usage marker does not count as planner usage
+	@Test
+	public void explainRecomputedUsageDoesNotEnableEstimateStabilityMetrics() {
+		Join join = joinWithTelemetry();
+		join.getRightArg()
+				.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE,
+						TelemetryMetricNames.PLANNED_ESTIMATE_USAGE_EXPLAIN_RECOMPUTED);
+		join.setStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_USAGE, "");
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join, null,
+				Explanation.Level.Telemetry);
+		join.visit(converter);
+		GenericPlanNode root = converter.getGenericPlanNode();
+
+		assertThat(root.toString()).doesNotContain("sampleCountActual=", "varianceActual=");
+	}
+
+	// REINFORCE: a model node whose estimates were never set (-1) is reported as unknown, not as -1
+	@Test
+	public void unsetModelEstimatesRemainUnknownInPlanNode() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Join join = new Join(pattern, new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join, null,
+				Explanation.Level.Optimized);
+		join.visit(converter);
+		GenericPlanNode root = converter.getGenericPlanNode();
+
+		assertThat(root.getCostEstimate()).isNull();
+		assertThat(root.getResultSizeEstimate()).isNull();
+		assertThat(root.getPlans().get(0).getCostEstimate()).isNull();
+		assertThat(root.toString()).doesNotContain("costEstimate=", "resultSizeEstimate=");
 	}
 
 	private static GenericPlanNode convertWithLevel(Explanation.Level level) {

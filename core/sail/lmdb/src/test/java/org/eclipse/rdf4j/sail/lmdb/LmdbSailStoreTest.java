@@ -68,9 +68,12 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.junit.jupiter.api.AfterEach;
@@ -1140,6 +1143,209 @@ public class LmdbSailStoreTest {
 		} finally {
 			sail.shutDown();
 		}
+	}
+
+	// REPRO: LmdbSailStore#currentStoreSnapshotCoordinates reads the journal mutation stamp through the caller's
+	// thread-local read txn without holding the TxnManager read lock. A concurrent commit (TxnManager#deactivate during
+	// the two-phase auto-grow commit, or #reset after every commit and after each independent journal acknowledgement)
+	// resets that txn underneath the read; LMDB answers EINVAL and the coordinate read fails although the data is
+	// already durable.
+	@Test
+	void snapshotCoordinateReadMustNotRaceWithConcurrentCommitResettingItsTxn(@TempDir File storeDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
+				.setSketchEstimatorEnabled(false);
+		LmdbStore store = new LmdbStore(storeDir, config);
+		store.init();
+		try {
+			LmdbSailStore backingStore = store.getBackingStore();
+			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+			tripleStoreField.setAccessible(true);
+			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
+			TripleStore tripleStoreSpy = spy(originalTripleStore);
+			tripleStoreField.set(backingStore, tripleStoreSpy);
+			try {
+				CountDownLatch stampEntered = new CountDownLatch(1);
+				CountDownLatch stampRelease = new CountDownLatch(1);
+				CountDownLatch replayEntered = new CountDownLatch(1);
+				CountDownLatch replayRelease = new CountDownLatch(1);
+				AtomicReference<Thread> coordinateReader = new AtomicReference<>();
+				doAnswer(invocation -> {
+					if (Thread.currentThread() == coordinateReader.get()) {
+						stampEntered.countDown();
+						awaitLatch(stampRelease, "the mutation-stamp read to be released");
+					}
+					return invocation.callRealMethod();
+				}).when(tripleStoreSpy).latestFrontierMutationSequence(any(Txn.class));
+				doAnswer(invocation -> {
+					if (Thread.currentThread() == coordinateReader.get()) {
+						stampEntered.countDown();
+						awaitLatch(stampRelease, "the mutation-stamp read to be released");
+					}
+					return invocation.callRealMethod();
+				}).when(tripleStoreSpy).latestFrontierMutationSequence();
+				doAnswer(invocation -> {
+					replayEntered.countDown();
+					awaitLatch(replayRelease, "the record-cache replay to be released");
+					return invocation.callRealMethod();
+				}).when(tripleStoreSpy).updateFromCache();
+
+				Method coordinates = LmdbSailStore.class.getDeclaredMethod("currentStoreSnapshotCoordinates");
+				coordinates.setAccessible(true);
+				AtomicReference<Throwable> readerFailure = new AtomicReference<>();
+				Thread reader = new Thread(() -> {
+					try {
+						coordinates.invoke(backingStore);
+					} catch (InvocationTargetException e) {
+						readerFailure.set(e.getCause());
+					} catch (Throwable failure) {
+						readerFailure.set(failure);
+					}
+				}, "lmdb-snapshot-coordinate-reader");
+				coordinateReader.set(reader);
+				reader.start();
+				assertTrue("reader must pause inside the mutation-stamp read",
+						stampEntered.await(10L, TimeUnit.SECONDS));
+				boolean readLockHeld = readLockHeldWhileParked(originalTripleStore.getTxnManager());
+
+				// The next commit takes the two-phase auto-grow path, which deactivates every tracked read txn between
+				// its first durable batch and the record-cache replay.
+				forceRecordCache(tripleStoreSpy);
+				AtomicReference<Throwable> writerFailure = new AtomicReference<>();
+				Thread writer = new Thread(() -> {
+					try (SailConnection connection = store.getConnection()) {
+						connection.begin();
+						connection.addStatement(F.createIRI("urn:snapshot-race:subject"), RDFS.LABEL,
+								F.createLiteral("race"));
+						connection.commit();
+					} catch (Throwable failure) {
+						writerFailure.set(failure);
+					}
+				}, "lmdb-auto-grow-writer");
+				writer.start();
+				try {
+					if (readLockHeld) {
+						// a read that holds the read lock legitimately has to finish before the commit can proceed
+						stampRelease.countDown();
+					}
+					assertTrue("writer must reach the record-cache replay", replayEntered.await(10L, TimeUnit.SECONDS));
+					stampRelease.countDown();
+					// the read either completes now or legitimately waits for the parked commit to finish
+					reader.join(TimeUnit.SECONDS.toMillis(5L));
+				} finally {
+					replayRelease.countDown();
+					stampRelease.countDown();
+					writer.join(TimeUnit.SECONDS.toMillis(30L));
+					reader.join(TimeUnit.SECONDS.toMillis(30L));
+				}
+				assertFalse("writer must finish", writer.isAlive());
+				assertFalse("reader must finish", reader.isAlive());
+				if (writerFailure.get() != null) {
+					throw new AssertionError("the concurrent commit failed", writerFailure.get());
+				}
+				if (readerFailure.get() != null) {
+					throw new AssertionError("reading the store snapshot coordinates must not fail because a "
+							+ "concurrent commit reset the thread-local read txn underneath the unlocked stamp read",
+							readerFailure.get());
+				}
+			} finally {
+				tripleStoreField.set(backingStore, originalTripleStore);
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	// REINFORCE: with Frontier OFF the learned-sidecar mutation stamp still advances on every commit that changed a
+	// statement, and only then: duplicate inserts, namespace-only commits and rollbacks leave it untouched.
+	@Test
+	void statementMutationStampAdvancesOnlyWithDurableStatementChangesInOffMode(@TempDir File storeDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)
+				.setSketchEstimatorEnabled(false);
+		LmdbStore store = new LmdbStore(storeDir, config);
+		store.init();
+		try {
+			LmdbSailStore backingStore = store.getBackingStore();
+			Method stamp = LmdbSailStore.class.getDeclaredMethod("statementMutationStamp");
+			stamp.setAccessible(true);
+			IRI subject = F.createIRI("urn:off-stamp:subject");
+			long initial = (long) stamp.invoke(backingStore);
+
+			try (SailConnection connection = store.getConnection()) {
+				connection.begin();
+				connection.addStatement(subject, RDFS.LABEL, F.createLiteral("one"));
+				connection.commit();
+			}
+			long afterInsert = (long) stamp.invoke(backingStore);
+			assertTrue("an inserted statement must advance the stamp", afterInsert > initial);
+
+			try (SailConnection connection = store.getConnection()) {
+				connection.begin();
+				connection.addStatement(subject, RDFS.LABEL, F.createLiteral("one"));
+				connection.commit();
+			}
+			assertEquals("a duplicate insert must not advance the stamp", afterInsert,
+					(long) stamp.invoke(backingStore));
+
+			try (SailConnection connection = store.getConnection()) {
+				connection.begin();
+				connection.setNamespace("off", "urn:off-stamp:namespace#");
+				connection.commit();
+			}
+			assertEquals("a namespace-only commit must not advance the stamp", afterInsert,
+					(long) stamp.invoke(backingStore));
+
+			try (SailConnection connection = store.getConnection()) {
+				connection.begin();
+				connection.addStatement(subject, RDFS.LABEL, F.createLiteral("two"));
+				connection.rollback();
+			}
+			assertEquals("a rolled-back insert must not advance the stamp", afterInsert,
+					(long) stamp.invoke(backingStore));
+
+			try (SailConnection connection = store.getConnection()) {
+				connection.begin();
+				connection.removeStatements(subject, RDFS.LABEL, F.createLiteral("one"));
+				connection.commit();
+			}
+			assertTrue("a removed statement must advance the stamp", (long) stamp.invoke(backingStore) > afterInsert);
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	private static boolean readLockHeldWhileParked(TxnManager txnManager) throws InterruptedException {
+		for (int sample = 0; sample < 10; sample++) {
+			if (!txnManager.lockManager().isReaderActive()) {
+				return false;
+			}
+			Thread.sleep(10L);
+		}
+		return true;
+	}
+
+	private static void awaitLatch(CountDownLatch latch, String what) {
+		try {
+			if (!latch.await(20L, TimeUnit.SECONDS)) {
+				throw new AssertionError("Timed out waiting for " + what);
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("Interrupted while waiting for " + what, e);
+		}
+	}
+
+	private static void forceRecordCache(TripleStore store) throws Exception {
+		Field dirField = TripleStore.class.getDeclaredField("dir");
+		dirField.setAccessible(true);
+		File cacheDir = new File((File) dirField.get(store), "forced-record-cache");
+		assertTrue(cacheDir.mkdirs() || cacheDir.isDirectory());
+		Field recordCacheField = TripleStore.class.getDeclaredField("recordCache");
+		recordCacheField.setAccessible(true);
+		recordCacheField.set(store, new TxnRecordCache(cacheDir));
 	}
 
 	private static void setBulkOperationSize(LmdbStoreConfig config, int bulkOperationSize) {

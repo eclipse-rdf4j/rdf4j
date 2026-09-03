@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -223,6 +224,85 @@ class LmdbStoreConfigFrontierTest {
 		invalidMode.add(node, Values.iri(LmdbStoreSchema.NAMESPACE, "frontierEstimatorMode"),
 				Values.literal("unsafe"));
 		assertThrows(SailConfigException.class, () -> config.parse(invalidMode, node));
+	}
+
+	// REINFORCE: the RDF parser validates the three cache-confidence bounds jointly, so a model that only lowers the
+	// minimum together with an initial value below the default minimum parses regardless of statement order, exports
+	// only the non-default bounds, and round-trips back to the same values.
+	@Test
+	void parseAcceptsPartialConfidenceBoundsThatAreOnlyJointlyValid() {
+		Model model = new LinkedHashModel();
+		Resource node = Values.bnode();
+		model.add(node, confidenceProperty("frontierCacheInitialConfidence"), Values.literal(0.5d));
+		model.add(node, confidenceProperty("frontierCacheMinimumConfidence"), Values.literal(0.4d));
+
+		LmdbStoreConfig restored = new LmdbStoreConfig();
+		restored.parse(model, node);
+		assertEquals(0.5d, restored.getFrontierCacheInitialConfidence(), 0.0d);
+		assertEquals(0.4d, restored.getFrontierCacheMinimumConfidence(), 0.0d);
+		assertEquals(LmdbStoreConfig.FRONTIER_CACHE_MAXIMUM_CONFIDENCE, restored.getFrontierCacheMaximumConfidence(),
+				0.0d);
+
+		Model exported = new LinkedHashModel();
+		Resource exportedNode = restored.export(exported);
+		assertTrue(exported.contains(exportedNode, confidenceProperty("frontierCacheInitialConfidence"), null));
+		assertTrue(exported.contains(exportedNode, confidenceProperty("frontierCacheMinimumConfidence"), null));
+		assertFalse(exported.contains(exportedNode, confidenceProperty("frontierCacheMaximumConfidence"), null),
+				"an untouched default bound is not exported");
+
+		LmdbStoreConfig again = new LmdbStoreConfig();
+		again.parse(exported, exportedNode);
+		assertEquals(0.5d, again.getFrontierCacheInitialConfidence(), 0.0d);
+		assertEquals(0.4d, again.getFrontierCacheMinimumConfidence(), 0.0d);
+		assertEquals(LmdbStoreConfig.FRONTIER_CACHE_MAXIMUM_CONFIDENCE, again.getFrontierCacheMaximumConfidence(),
+				0.0d);
+	}
+
+	// REINFORCE: inconsistent or out-of-range confidence bounds in the RDF model fail with a SailConfigException that
+	// names the offending property, and a failed parse leaves the configured defaults untouched.
+	@Test
+	void parseRejectsInconsistentConfidenceBoundsNamingTheOffendingProperty() {
+		assertConfidenceParseFails("frontierCacheInitialConfidence",
+				"frontierCacheInitialConfidence", 0.3d, "frontierCacheMinimumConfidence", 0.4d);
+		assertConfidenceParseFails("frontierCacheMaximumConfidence",
+				"frontierCacheMaximumConfidence", 0.5d);
+		assertConfidenceParseFails("frontierCacheMinimumConfidence",
+				"frontierCacheMinimumConfidence", 0.995d);
+		assertConfidenceParseFails("frontierCacheInitialConfidence",
+				"frontierCacheInitialConfidence", 1.0d);
+		assertConfidenceParseFails("frontierCacheMaximumConfidence",
+				"frontierCacheMaximumConfidence", 0.0d);
+
+		Model nonNumeric = new LinkedHashModel();
+		Resource node = Values.bnode();
+		nonNumeric.add(node, confidenceProperty("frontierCacheMinimumConfidence"), Values.literal("not-a-number"));
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		assertThrows(SailConfigException.class, () -> config.parse(nonNumeric, node));
+		assertEquals(LmdbStoreConfig.FRONTIER_CACHE_MINIMUM_CONFIDENCE, config.getFrontierCacheMinimumConfidence(),
+				0.0d);
+	}
+
+	private static IRI confidenceProperty(String localName) {
+		return Values.iri(LmdbStoreSchema.NAMESPACE, localName);
+	}
+
+	private static void assertConfidenceParseFails(String offendingLocalName, Object... localNamesAndValues) {
+		Model model = new LinkedHashModel();
+		Resource node = Values.bnode();
+		for (int index = 0; index < localNamesAndValues.length; index += 2) {
+			model.add(node, confidenceProperty((String) localNamesAndValues[index]),
+					Values.literal((double) localNamesAndValues[index + 1]));
+		}
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		SailConfigException failure = assertThrows(SailConfigException.class, () -> config.parse(model, node));
+		assertTrue(failure.getMessage().contains(offendingLocalName),
+				() -> "expected " + offendingLocalName + " to be blamed, got: " + failure.getMessage());
+		assertEquals(LmdbStoreConfig.FRONTIER_CACHE_INITIAL_CONFIDENCE, config.getFrontierCacheInitialConfidence(),
+				0.0d);
+		assertEquals(LmdbStoreConfig.FRONTIER_CACHE_MINIMUM_CONFIDENCE, config.getFrontierCacheMinimumConfidence(),
+				0.0d);
+		assertEquals(LmdbStoreConfig.FRONTIER_CACHE_MAXIMUM_CONFIDENCE, config.getFrontierCacheMaximumConfidence(),
+				0.0d);
 	}
 
 	private static void assertContains(Model model, Resource node, String localName) {

@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -238,6 +239,64 @@ public class FederationEvaluationStrategyTest extends SPARQLBaseTest {
 
 		Assertions.assertTrue(results.isEmpty(),
 				"an incompatible bottom-up RHS row must suppress the bare left row: " + results);
+	}
+
+	// REINFORCE: the badly-designed path compiles the OPTIONAL condition lazily and still applies it; a rejected
+	// right row leaves the bare left row, which is then extended with the incoming problem-variable binding
+	@Test
+	void badlyDesignedRegularOptionalAppliesJoinCondition() throws Exception {
+		Value inputValue = Values.iri("urn:outside:input");
+
+		List<BindingSet> conditionFalse = evaluateBadlyDesignedOptionalWithCondition(
+				new ValueConstant(Values.literal(false)), inputValue);
+		QueryBindingSet expected = new QueryBindingSet();
+		expected.addBinding("member", Values.iri("urn:member"));
+		expected.addBinding("memberName", Values.literal("Member"));
+		expected.addBinding("outside", inputValue);
+		Assertions.assertEquals(List.of(expected), conditionFalse);
+
+		List<BindingSet> conditionTrue = evaluateBadlyDesignedOptionalWithCondition(
+				new ValueConstant(Values.literal(true)), inputValue);
+		Assertions.assertTrue(conditionTrue.isEmpty(),
+				"a joined bottom-up RHS row that conflicts with the input must be suppressed: " + conditionTrue);
+	}
+
+	private List<BindingSet> evaluateBadlyDesignedOptionalWithCondition(ValueExpr condition, Value inputValue)
+			throws Exception {
+		prepareTest(List.of("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
+		StubFederationEvaluationStrategy strategy = new StubFederationEvaluationStrategy(federationContext());
+		QueryInfo queryInfo = new QueryInfo("SELECT * WHERE {}", null, QueryType.SELECT, 0, false,
+				federationContext(), strategy, null);
+		StatementPattern leftArg = statementPattern("member", "memberName");
+		StatementPattern rightArg = statementPattern("outside", "rightValue");
+		FedXLeftJoin leftJoin = new FedXLeftJoin(new LeftJoin(leftArg, rightArg, condition), queryInfo);
+		QueryBindingSet input = new QueryBindingSet();
+		input.addBinding("outside", inputValue);
+
+		strategy.register(leftArg, bindings -> {
+			QueryBindingSet row = new QueryBindingSet(bindings);
+			row.addBinding("member", Values.iri("urn:member"));
+			row.addBinding("memberName", Values.literal("Member"));
+			return new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator());
+		});
+		strategy.register(rightArg, bindings -> {
+			if (bindings.hasBinding("outside")) {
+				return QueryEvaluationStep.EMPTY_ITERATION;
+			}
+			QueryBindingSet row = new QueryBindingSet(bindings);
+			row.addBinding("outside", Values.iri("urn:outside:foreign"));
+			row.addBinding("rightValue", Values.literal("foreign"));
+			return new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator());
+		});
+
+		List<BindingSet> results = new java.util.ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = strategy.prepareLeftJoin(leftJoin,
+				new QueryEvaluationContext.Minimal(null)).evaluate(input)) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+		return results;
 	}
 
 	private static StatementPattern statementPattern(String subjectName, String objectName) {

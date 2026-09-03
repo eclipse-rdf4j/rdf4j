@@ -31,21 +31,30 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -53,6 +62,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -952,6 +962,9 @@ class FilterIteratorTelemetryTest {
 		};
 		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		// runtime subtrees (per-probe substituted EXISTS bodies) compile through the interface default, which
+		// delegates to the stubbed precompile
+		when(strategy.precompileRuntimeSubtree(any(TupleExpr.class), eq(context))).thenCallRealMethod();
 		when(strategy.precompile(any(TupleExpr.class), eq(context))).thenAnswer(invocation -> {
 			TupleExpr expression = invocation.getArgument(0);
 			if (expression == left) {
@@ -990,6 +1003,192 @@ class FilterIteratorTelemetryTest {
 				bindingSet("x", first, "threshold", high));
 		assertThat(substitutedCompilations).hasValue(4);
 		assertThat(rightEvaluations).hasValue(4);
+	}
+
+	// REINFORCE: an EXISTS subquery outside the compatibility-safe allowlist (here a nested FILTER) is evaluated by
+	// per-probe substitution in streaming mode even when the planner asked for memoization: duplicate outer rows are
+	// re-probed through their own substituted plan, the shared precompiled subquery step is never probed, and the
+	// actual algorithm is reported as streaming-correlated.
+	@Test
+	void perProbeSubstitutionOverridesMemoizedHintAndReprobesDuplicateRows() throws Exception {
+		Value first = SimpleValueFactory.getInstance().createIRI("urn:first");
+		Value second = SimpleValueFactory.getInstance().createIRI("urn:second");
+		Value low = SimpleValueFactory.getInstance().createLiteral(1);
+		Value high = SimpleValueFactory.getInstance().createLiteral(2);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("x", "threshold"));
+		left.setBindingSets(List.of(
+				bindingSet("x", first, "threshold", low),
+				bindingSet("x", first, "threshold", low),
+				bindingSet("x", second, "threshold", high),
+				bindingSet("x", second, "threshold", high)));
+		BindingSetAssignment right = assignment("x", first);
+		Filter subquery = new Filter(right, new Compare(Var.of("threshold"), new ValueConstant(low), CompareOp.EQ));
+		Exists exists = new Exists(subquery);
+		Filter filter = new Filter(left, exists);
+		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "memoized-correlated");
+		filter.setRuntimeTelemetryEnabled(true);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		AtomicInteger substitutedCompilations = new AtomicInteger();
+		AtomicInteger probes = new AtomicInteger();
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
+		QueryEvaluationStep sharedRightStep = ignored -> {
+			throw new AssertionError("the shared subquery step must not be probed when substitution is required");
+		};
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		// runtime subtrees (per-probe substituted EXISTS bodies) compile through the interface default, which
+		// delegates to the stubbed precompile
+		when(strategy.precompileRuntimeSubtree(any(TupleExpr.class), eq(context))).thenCallRealMethod();
+		when(strategy.precompile(any(TupleExpr.class), eq(context))).thenAnswer(invocation -> {
+			TupleExpr expression = invocation.getArgument(0);
+			if (expression == left) {
+				return leftStep;
+			}
+			if (expression == subquery) {
+				return sharedRightStep;
+			}
+			assertThat(expression).isInstanceOf(Filter.class).isNotSameAs(subquery);
+			Var substituted = (Var) ((Compare) ((Filter) expression).getCondition()).getLeftArg();
+			assertThat(substituted.getValue()).isIn(low, high);
+			substitutedCompilations.incrementAndGet();
+			return (QueryEvaluationStep) bindings -> {
+				probes.incrementAndGet();
+				if (low.equals(substituted.getValue()) && first.equals(bindings.getValue("x"))) {
+					return new CloseableIteratorIteration<>(List.of(singleBindingSet("x", first)).iterator());
+				}
+				return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
+			};
+		});
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) exists), eq(context));
+
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context);
+
+		List<BindingSet> results;
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration).isInstanceOf(MaterializedExistsFilterIteration.class);
+			results = drain(iteration);
+		}
+		assertThat(results).containsExactly(
+				bindingSet("x", first, "threshold", low),
+				bindingSet("x", first, "threshold", low));
+		assertThat(substitutedCompilations).hasValue(4);
+		assertThat(probes).hasValue(4);
+		assertThat(filter.getStringMetricActual("actualSemiAntiAlgorithm")).isEqualTo("streaming-correlated");
+		assertThat(filter.getStringMetricActual("actualSemiAntiRuntimeDisposition"))
+				.isEqualTo("compiled-specialized");
+	}
+
+	// REINFORCE: a compatibility-safe EXISTS subquery (a UNION of positive patterns) is materialized once through the
+	// shared precompiled step and is never re-compiled per probe.
+	@Test
+	void compatibilitySafeExistsSubqueryIsMaterializedOnceWithoutPerProbeSubstitution() throws Exception {
+		Value first = SimpleValueFactory.getInstance().createIRI("urn:first");
+		Value second = SimpleValueFactory.getInstance().createIRI("urn:second");
+		Value third = SimpleValueFactory.getInstance().createIRI("urn:third");
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("x"));
+		left.setBindingSets(List.of(singleBindingSet("x", first), singleBindingSet("x", second),
+				singleBindingSet("x", third), singleBindingSet("x", first)));
+		Union subquery = new Union(assignment("x", first), assignment("x", second));
+		Exists exists = new Exists(subquery);
+		Filter filter = new Filter(left, exists);
+		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "materialized-hash");
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
+		QueryEvaluationStep rightStep = ignored -> {
+			rightEvaluations.incrementAndGet();
+			return new CloseableIteratorIteration<>(
+					List.of(singleBindingSet("x", first), singleBindingSet("x", second)).iterator());
+		};
+		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		// runtime subtrees (per-probe substituted EXISTS bodies) compile through the interface default, which
+		// delegates to the stubbed precompile
+		when(strategy.precompileRuntimeSubtree(any(TupleExpr.class), eq(context))).thenCallRealMethod();
+		when(strategy.precompile(any(TupleExpr.class), eq(context))).thenAnswer(invocation -> {
+			TupleExpr expression = invocation.getArgument(0);
+			if (expression == left) {
+				return leftStep;
+			}
+			if (expression == subquery) {
+				return rightStep;
+			}
+			throw new AssertionError("unexpected per-probe compilation of " + expression);
+		});
+		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) exists), eq(context));
+
+		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context);
+
+		List<BindingSet> results;
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration).isInstanceOf(MaterializedExistsFilterIteration.class);
+			results = drain(iteration);
+		}
+		assertThat(results).containsExactly(singleBindingSet("x", first), singleBindingSet("x", second),
+				singleBindingSet("x", first));
+		assertThat(rightEvaluations).hasValue(1);
+	}
+
+	// REPRO: FILTER EXISTS over a nested OPTIONAL that references an outer-bound variable returns different rows
+	// depending on the physical filter algorithm: the default specialised path substitutes the outer binding into
+	// the OPTIONAL per probe (row kept), while the plain streaming-exists path (also taken for filters nested inside
+	// subqueries) evaluates the OPTIONAL bottom-up via ExistsQueryValueEvaluationStep (row dropped).
+	@Test
+	void existsOverNestedOptionalYieldsSameRowsForEveryPhysicalAlgorithm() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI x = vf.createIRI("urn:x");
+		IRI a1 = vf.createIRI("urn:a1");
+		IRI b1 = vf.createIRI("urn:b1");
+		IRI b2 = vf.createIRI("urn:b2");
+		IRI p = vf.createIRI("urn:p");
+		IRI q = vf.createIRI("urn:q");
+		Model model = new LinkedHashModel();
+		model.add(x, p, a1);
+		model.add(a1, q, b1);
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource(model), null);
+
+		List<BindingSet> substituted = evaluateNestedOptionalExists(strategy, null, x, b2, p, q);
+		List<BindingSet> streaming = evaluateNestedOptionalExists(strategy, "streaming-exists", x, b2, p, q);
+
+		assertThat(substituted)
+				.as("EXISTS result must not depend on the physical filter algorithm")
+				.isEqualTo(streaming);
+	}
+
+	private static List<BindingSet> evaluateNestedOptionalExists(EvaluationStrategy strategy, String algorithmHint,
+			IRI x, IRI b, IRI p, IRI q) {
+		BindingSetAssignment outer = new BindingSetAssignment();
+		outer.setBindingNames(Set.of("x", "b"));
+		outer.setBindingSets(List.of(bindingSet("x", x, "b", b)));
+		StatementPattern leftPattern = new StatementPattern(Var.of("x"), Var.of("_const_p", p, true, true),
+				Var.of("a"));
+		StatementPattern rightPattern = new StatementPattern(Var.of("a"), Var.of("_const_q", q, true, true),
+				Var.of("b"));
+		Filter filter = new Filter(outer, new Exists(new LeftJoin(leftPattern, rightPattern)));
+		if (algorithmHint != null) {
+			filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", algorithmHint);
+		}
+		try (CloseableIteration<BindingSet> iteration = strategy.precompile(filter)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			return drain(iteration);
+		}
+	}
+
+	private static TripleSource tripleSource(Model model) {
+		return new TripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+					Resource... contexts) throws QueryEvaluationException {
+				return new CloseableIteratorIteration<>(model.getStatements(subj, pred, obj, contexts).iterator());
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return SimpleValueFactory.getInstance();
+			}
+		};
 	}
 
 	@Test

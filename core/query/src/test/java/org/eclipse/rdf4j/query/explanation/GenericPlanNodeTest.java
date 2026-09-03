@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Locale;
+import java.util.Map;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -544,6 +545,79 @@ class GenericPlanNodeTest {
 		assertEquals(8.0, parent.getSelfTimeActual());
 		String actual = parent.toString();
 		assertTrue(actual.contains("Join (totalTimeActual=72.0ms, selfTimeActual=8.0ms)"), actual);
+	}
+
+	// REINFORCE: lifecycle coherence markers are optimizer-prefixed but stay hidden until runtime telemetry is on
+	@Test
+	void lifecycleMarkersAreHiddenWithoutRuntimeTelemetryButVisibleWithIt() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		node.setRuntimeTelemetryEnabled(false);
+		node.setLongMetricActual(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL, 1L);
+		node.setLongMetricActual(TelemetryMetricNames.ABORTED_COUNT_ACTUAL, 2L);
+		node.setLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL, 3L);
+		node.setLongMetricActual("optimizer.candidateCount", 4L);
+
+		assertNull(node.getLongMetricActual(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL));
+		assertNull(node.getLongMetricActual(TelemetryMetricNames.ABORTED_COUNT_ACTUAL));
+		assertNull(node.getLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL));
+		assertEquals(Long.valueOf(4L), node.getLongMetricActual("optimizer.candidateCount"));
+
+		Map<String, Long> visible = node.getLongMetricsActual();
+		assertNotNull(visible);
+		assertFalse(visible.containsKey(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL));
+		assertFalse(visible.containsKey(TelemetryMetricNames.ABORTED_COUNT_ACTUAL));
+		assertFalse(visible.containsKey(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL));
+		assertTrue(visible.containsKey("optimizer.candidateCount"));
+
+		String text = node.toString();
+		assertFalse(text.contains("queryCancelled"), text);
+		assertFalse(text.contains("queryAborted"), text);
+		assertFalse(text.contains("exhaustedCloseCountActual"), text);
+		assertTrue(text.contains("optimizer.candidateCount=4"), text);
+
+		node.setRuntimeTelemetryEnabled(true);
+		assertEquals(Long.valueOf(1L), node.getLongMetricActual(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL));
+		assertEquals(Long.valueOf(2L), node.getLongMetricActual(TelemetryMetricNames.ABORTED_COUNT_ACTUAL));
+		assertEquals(Long.valueOf(3L), node.getLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL));
+		assertTrue(node.getLongMetricsActual().containsKey(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL));
+	}
+
+	// REINFORCE: the DOT rendering carries the legacy cost and cardinality estimates and omits them when unset
+	@Test
+	void toDotIncludesCostAndResultSizeEstimateRows() {
+		GenericPlanNode join = new GenericPlanNode("Join");
+		join.setCostEstimate(12.0);
+		join.setResultSizeEstimate(34.0);
+		GenericPlanNode child = new GenericPlanNode("StatementPattern");
+		join.addPlans(child);
+
+		String dot = join.toDot();
+
+		assertTrue(dot.contains("<tr><td>Cost estimate</td><td>12</td></tr>"), dot);
+		assertTrue(dot.contains("<tr><td>Result size estimate</td><td>34</td></tr>"), dot);
+		// rows whose value is UNKNOWN are filtered out of the DOT table, so the child renders neither row
+		assertFalse(dot.contains("<td>UNKNOWN</td>"), dot);
+		assertEquals(1, dot.split("<tr><td>Cost estimate</td>", -1).length - 1, dot);
+		assertEquals(1, dot.split("<tr><td>Result size estimate</td>", -1).length - 1, dot);
+	}
+
+	// REINFORCE: negative legacy estimates stay unknown and are omitted from text and JSON output
+	@Test
+	void negativeEstimatesRemainUnknownAndAreOmittedFromTextAndJson() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		node.setCostEstimate(-1.0);
+		node.setResultSizeEstimate(-1.0);
+
+		assertNull(node.getCostEstimate());
+		assertNull(node.getResultSizeEstimate());
+
+		String text = node.toString();
+		assertFalse(text.contains("costEstimate="), text);
+		assertFalse(text.contains("resultSizeEstimate="), text);
+
+		String json = new ExplanationImpl(node, false, null).toJson();
+		assertFalse(json.contains("\"costEstimate\""), json);
+		assertFalse(json.contains("\"resultSizeEstimate\""), json);
 	}
 
 	@Test

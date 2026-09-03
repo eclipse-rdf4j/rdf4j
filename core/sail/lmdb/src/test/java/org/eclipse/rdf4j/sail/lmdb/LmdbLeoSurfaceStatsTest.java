@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.ByteBuffer;
@@ -185,5 +186,28 @@ class LmdbLeoSurfaceStatsTest {
 
 	private static int versionOffset(byte[] bytes) {
 		return Integer.BYTES + ByteBuffer.wrap(bytes).getInt();
+	}
+
+	// REINFORCE: the LEO surface store binds persisted surfaces to the statement-mutation stamp; the stampless
+	// overloads mean stamp zero and the coordinate must be non-negative.
+	@Test
+	void storeBindsSurfacesToTheStatementMutationStamp(@TempDir Path tempDir) throws Exception {
+		Path path = tempDir.resolve("leo-surfaces.bin");
+		LmdbLeoFeedbackStore store = new LmdbLeoFeedbackStore(path, LmdbLeoFeedbackConfig.defaultConfig());
+		LmdbLeoSurfaceStats stats = new LmdbLeoSurfaceStats(LmdbLeoFeedbackConfig.defaultConfig());
+		stats.recordFanout(3L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 70L, 12L, 1L);
+		store.persist("revision-a", 3L, stats);
+
+		assertTrue(store.load("revision-a", 3L)
+				.estimateFanout(3L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 70L)
+				.isPresent());
+		assertFalse(store.load("revision-a", 4L)
+				.estimateFanout(3L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 70L)
+				.isPresent(), "A later statement mutation must reset the persisted surfaces");
+		assertFalse(store.load("revision-a")
+				.estimateFanout(3L, LmdbLeoSurfaceStats.BoundPosition.SUBJECT, 70L)
+				.isPresent(), "The stampless overload expects stamp zero");
+		assertThrows(IllegalArgumentException.class, () -> store.persist("revision-a", -1L, stats));
+		assertThrows(IllegalArgumentException.class, () -> store.load("revision-a", -1L));
 	}
 }

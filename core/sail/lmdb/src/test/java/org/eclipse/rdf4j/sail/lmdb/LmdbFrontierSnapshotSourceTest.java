@@ -620,4 +620,33 @@ class LmdbFrontierSnapshotSourceTest {
 			executor.shutdownNow();
 		}
 	}
+
+	// REINFORCE: the epoch/version pair is read as one consistent unit: the epoch equals the plain snapshot epoch, the
+	// version is the transaction's renewal version, and both move once the transaction is renewed onto a newer
+	// committed snapshot.
+	@Test
+	void snapshotEpochAndVersionAreReadAsOneConsistentPair(@TempDir File dataDir) throws Exception {
+		try (TripleStore tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null)) {
+			tripleStore.startTransaction();
+			assertTrue(tripleStore.storeTriple(11L, 22L, 33L, 44L, true));
+			tripleStore.commit();
+
+			try (TxnManager.Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+				long[] before = LmdbFrontierSnapshotSource.snapshotEpochAndVersion(txn);
+				assertEquals(LmdbFrontierSnapshotSource.snapshotEpoch(txn), before[0]);
+				assertEquals(txn.version(), before[1]);
+
+				tripleStore.startTransaction();
+				assertTrue(tripleStore.storeTriple(55L, 66L, 77L, 88L, true));
+				tripleStore.commit();
+				txn.reset();
+
+				long[] after = LmdbFrontierSnapshotSource.snapshotEpochAndVersion(txn);
+				assertEquals(LmdbFrontierSnapshotSource.snapshotEpoch(txn), after[0]);
+				assertEquals(txn.version(), after[1]);
+				assertNotEquals(before[0], after[0], "A renewed transaction reads the newer committed snapshot");
+				assertNotEquals(before[1], after[1], "Renewal must bump the version that pairs with the epoch");
+			}
+		}
+	}
 }

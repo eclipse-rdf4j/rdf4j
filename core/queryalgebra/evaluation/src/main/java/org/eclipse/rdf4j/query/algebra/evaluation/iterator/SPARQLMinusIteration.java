@@ -16,7 +16,6 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
@@ -81,17 +80,20 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 			// Build set of elements-to-exclude from right argument
 			excludeSet = makeSet(getRightArg());
 			excludeSetList = excludeSet.toArray(new BindingSet[0]);
-			excludeSetBindingNames = excludeSet.stream()
-					.map(BindingSet::getBindingNames)
-					.flatMap(Set::stream)
-					.collect(Collectors.toSet());
-			excludeSetBindingNamesAreAllTheSame = excludeSet.stream().allMatch(b -> {
-				Set<String> bindingNames = b.getBindingNames();
-				if (bindingNames.size() == excludeSetBindingNames.size()) {
-					return bindingNames.containsAll(excludeSetBindingNames);
+			// SPARQL MINUS compares solution domains, and a declared-but-unbound variable (VALUES ?a { UNDEF }, an
+			// OPTIONAL that did not match) is not part of a solution's domain: only bound variables can be shared.
+			excludeSetBindingNames = new HashSet<>();
+			excludeSetBindingNamesAreAllTheSame = true;
+			Set<String> firstBoundNames = null;
+			for (BindingSet excluded : excludeSetList) {
+				Set<String> boundNames = boundBindingNames(excluded);
+				if (firstBoundNames == null) {
+					firstBoundNames = boundNames;
+				} else if (excludeSetBindingNamesAreAllTheSame && !firstBoundNames.equals(boundNames)) {
+					excludeSetBindingNamesAreAllTheSame = false;
 				}
-				return false;
-			});
+				excludeSetBindingNames.addAll(boundNames);
+			}
 
 			// Build right-side index by (name,value) -> list of rows
 			HashMap<String, HashMap<Value, ArrayList<BindingSet>>> tmpIndex = new HashMap<>();
@@ -122,20 +124,21 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 		Set<String> bindingNames = bindingSet.getBindingNames();
 		boolean hasSharedBindings = false;
 
-		// Fast union check: if no variable is shared with the union of right variables, accept immediately
+		// Fast union check: if no bound variable is shared with the union of bound right variables, accept
+		// immediately
 		if (!excludeSetBindingNames.isEmpty()) {
 			final Set<String> left = bindingNames;
 			final Set<String> rightUnion = excludeSetBindingNames;
 			if (left.size() <= rightUnion.size()) {
 				for (String name : left) {
-					if (rightUnion.contains(name)) {
+					if (rightUnion.contains(name) && bindingSet.getValue(name) != null) {
 						hasSharedBindings = true;
 						break;
 					}
 				}
 			} else {
 				for (String name : rightUnion) {
-					if (left.contains(name)) {
+					if (left.contains(name) && bindingSet.getValue(name) != null) {
 						hasSharedBindings = true;
 						break;
 					}
@@ -176,20 +179,10 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 		for (BindingSet excluded : excludeSetList) {
 			if (!excludeSetBindingNamesAreAllTheSame) {
 				hasSharedBindings = false;
-				final Set<String> excludedNames = excluded.getBindingNames();
-				if (bindingNames.size() <= excludedNames.size()) {
-					for (String name : bindingNames) {
-						if (excludedNames.contains(name)) {
-							hasSharedBindings = true;
-							break;
-						}
-					}
-				} else {
-					for (String name : excludedNames) {
-						if (bindingNames.contains(name)) {
-							hasSharedBindings = true;
-							break;
-						}
+				for (String name : bindingNames) {
+					if (bindingSet.getValue(name) != null && excluded.getValue(name) != null) {
+						hasSharedBindings = true;
+						break;
 					}
 				}
 			}
@@ -199,6 +192,17 @@ public class SPARQLMinusIteration extends FilterIteration<BindingSet> {
 		}
 
 		return true;
+	}
+
+	private static Set<String> boundBindingNames(BindingSet bindingSet) {
+		Set<String> names = bindingSet.getBindingNames();
+		Set<String> bound = new HashSet<>(names.size() * 2);
+		for (String name : names) {
+			if (bindingSet.getValue(name) != null) {
+				bound.add(name);
+			}
+		}
+		return bound;
 	}
 
 	protected Set<BindingSet> makeSet() {

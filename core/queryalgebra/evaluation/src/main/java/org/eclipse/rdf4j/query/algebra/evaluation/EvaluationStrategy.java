@@ -94,6 +94,21 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context);
 
 	/**
+	 * Compiles a subtree that is generated while a query is already running, such as a per-probe substituted EXISTS
+	 * body or a property-path step. Unlike {@link #precompile(TupleExpr, QueryEvaluationContext)} this must not open
+	 * a fresh runtime-feedback compilation root: no feedback targets are resolved or published for the subtree, so
+	 * compiling it once per outer row does not multiply feedback observations. Strategies without runtime feedback
+	 * simply delegate to {@link #precompile(TupleExpr, QueryEvaluationContext)}.
+	 *
+	 * @param expr    the runtime-generated subtree
+	 * @param context the evaluation context of the enclosing query
+	 * @return the compiled step
+	 */
+	default QueryEvaluationStep precompileRuntimeSubtree(TupleExpr expr, QueryEvaluationContext context) {
+		return precompile(expr, context);
+	}
+
+	/**
 	 * Prepare a value-expression step for repeated evaluation within one query. Implementations that can own a
 	 * query-lifetime {@link QueryEvaluationContext} should override this method; the compatibility implementation
 	 * preserves the legacy {@link #evaluate(ValueExpr, BindingSet)} semantics.

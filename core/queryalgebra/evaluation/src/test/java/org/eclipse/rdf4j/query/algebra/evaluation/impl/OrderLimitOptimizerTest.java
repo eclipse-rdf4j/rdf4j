@@ -14,20 +14,36 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 public class OrderLimitOptimizerTest extends QueryOptimizerTest {
+
+	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
 	@Override
 	public QueryOptimizer getOptimizer() {
@@ -52,6 +68,83 @@ public class OrderLimitOptimizerTest extends QueryOptimizerTest {
 		assertInstanceOf(Order.class, ineligibleProjection.getArg());
 		Order optimizedOrder = assertInstanceOf(Order.class, union.getRightArg());
 		assertInstanceOf(Projection.class, optimizedOrder.getArg());
+	}
+
+	// REPRO: OrderVariableProjectionChecker is built with super(false), so it never visits the variables of
+	// statement patterns nested in an ORDER BY EXISTS { ... }; an unprojected variable referenced only there is
+	// treated as projected and the Order is hoisted above the Projection, evaluating EXISTS without that binding.
+	@Test
+	void orderByExistsReferencingUnprojectedVariableStaysBelowProjection() {
+		StatementPattern where = new StatementPattern(Var.of("visible"), Var.of("predicate"), Var.of("hidden"));
+		Exists exists = new Exists(
+				new StatementPattern(Var.of("hidden"), Var.of("innerPredicate"), Var.of("innerObject")));
+		Order order = new Order(where, new OrderElem(exists));
+		Projection projection = new Projection(order, new ProjectionElemList(new ProjectionElem("visible")));
+		QueryRoot root = new QueryRoot(projection);
+
+		getOptimizer().optimize(root, null, null);
+
+		assertSame(projection, root.getArg());
+		assertSame(order, projection.getArg());
+	}
+
+	// REINFORCE: an ORDER BY expression (not a bare variable) that references an unprojected variable keeps the
+	// Order below the Projection
+	@Test
+	void orderExpressionReferencingUnprojectedVariableStaysBelowProjection() {
+		StatementPattern where = new StatementPattern(Var.of("visible"), Var.of("predicate"), Var.of("hidden"));
+		Order order = new Order(where,
+				new OrderElem(new MathExpr(Var.of("visible"), Var.of("hidden"), MathExpr.MathOp.PLUS)));
+		Projection projection = new Projection(order, new ProjectionElemList(new ProjectionElem("visible")));
+		QueryRoot root = new QueryRoot(projection);
+
+		getOptimizer().optimize(root, null, null);
+
+		assertSame(projection, root.getArg());
+		assertSame(order, projection.getArg());
+	}
+
+	// REINFORCE: only the ORDER BY elements decide eligibility; an unprojected variable met earlier in the tree
+	// (here a filter condition in a sibling projection) must not poison a later eligible Order
+	@Test
+	void unprojectedFilterVariableInEarlierProjectionDoesNotPoisonLaterEligibleOrder() {
+		Projection filteredProjection = new Projection(
+				new Filter(new StatementPattern(Var.of("visible1"), Var.of("predicate1"), Var.of("hidden1")),
+						new Compare(Var.of("hidden1"), new ValueConstant(VF.createLiteral(1)),
+								Compare.CompareOp.GT)),
+				new ProjectionElemList(new ProjectionElem("visible1")));
+		Projection eligibleProjection = new Projection(
+				new Order(new StatementPattern(Var.of("visible2"), Var.of("predicate2"), Var.of("hidden2")),
+						new OrderElem(Var.of("visible2"))),
+				new ProjectionElemList(new ProjectionElem("visible2")));
+		Union union = new Union(filteredProjection, eligibleProjection);
+
+		getOptimizer().optimize(union, null, null);
+
+		assertSame(filteredProjection, union.getLeftArg());
+		assertInstanceOf(Filter.class, filteredProjection.getArg());
+		Order optimizedOrder = assertInstanceOf(Order.class, union.getRightArg());
+		assertInstanceOf(Projection.class, optimizedOrder.getArg());
+	}
+
+	// REINFORCE: DISTINCT + ORDER BY on a projected variable hoists the Order above the Projection and relaxes
+	// Distinct to Reduced, leaving consistent parent references
+	@Test
+	void distinctOrderByProjectedVariableBecomesReducedOverOrderOverProjection() {
+		ParsedTupleQuery query = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT DISTINCT ?x WHERE { ?x <urn:p> ?o } ORDER BY ?x", null);
+		TupleExpr expr = query.getTupleExpr();
+
+		getOptimizer().optimize(expr, null, EmptyBindingSet.getInstance());
+
+		QueryRoot root = assertInstanceOf(QueryRoot.class, expr);
+		Reduced reduced = assertInstanceOf(Reduced.class, root.getArg());
+		Order order = assertInstanceOf(Order.class, reduced.getArg());
+		Projection projection = assertInstanceOf(Projection.class, order.getArg());
+		assertInstanceOf(StatementPattern.class, projection.getArg());
+		assertSame(root, reduced.getParentNode());
+		assertSame(reduced, order.getParentNode());
+		assertSame(order, projection.getParentNode());
 	}
 
 }

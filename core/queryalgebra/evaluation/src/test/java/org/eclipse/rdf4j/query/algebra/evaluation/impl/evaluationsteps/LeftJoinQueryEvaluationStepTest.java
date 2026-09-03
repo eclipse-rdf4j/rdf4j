@@ -34,6 +34,8 @@ import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -45,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -449,6 +452,117 @@ class LeftJoinQueryEvaluationStepTest {
 				System.setProperty(property, previousValue);
 			}
 		}
+	}
+
+	// REINFORCE: a subquery OPTIONAL keeps the independent hash-join path when the input only binds variables the
+	// left side also produces (the join is still well designed): the right side is built once from the input
+	// bindings (never per left row) and the shared binding constrains both sides.
+	@Test
+	void subqueryOptionalUsesHashJoinWhenInputBindsOnlySharedVariables() {
+		Value firstRoot = VALUE_FACTORY.createIRI("urn:root:first");
+		Value secondRoot = VALUE_FACTORY.createIRI("urn:root:second");
+		Value detail = VALUE_FACTORY.createLiteral("detail");
+		StatementPattern leftArg = statementPattern("root", "leftValue");
+		Projection rightArg = new Projection(statementPattern("root", "detail"),
+				new ProjectionElemList(new ProjectionElem("root"), new ProjectionElem("detail")), true);
+		LeftJoin leftJoin = new LeftJoin(leftArg, rightArg);
+		QueryBindingSet firstLeft = new QueryBindingSet(row("root", firstRoot));
+		firstLeft.addBinding("leftValue", VALUE_FACTORY.createLiteral("one"));
+		QueryBindingSet secondLeft = new QueryBindingSet(row("root", firstRoot));
+		secondLeft.addBinding("leftValue", VALUE_FACTORY.createLiteral("two"));
+		QueryBindingSet thirdLeft = new QueryBindingSet(row("root", secondRoot));
+		thirdLeft.addBinding("leftValue", VALUE_FACTORY.createLiteral("three"));
+		List<BindingSet> leftRows = List.of(firstLeft, secondLeft, thirdLeft);
+		QueryBindingSet rightRow = new QueryBindingSet(row("root", firstRoot));
+		rightRow.addBinding("detail", detail);
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		AtomicReference<BindingSet> rightInput = new AtomicReference<>();
+		QueryEvaluationStep left = bindings -> new CloseableIteratorIteration<>(
+				compatibleRows(leftRows, bindings).iterator());
+		QueryEvaluationStep right = bindings -> {
+			rightEvaluations.incrementAndGet();
+			rightInput.set(new QueryBindingSet(bindings));
+			return new CloseableIteratorIteration<>(compatibleRows(List.of(rightRow), bindings).iterator());
+		};
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		doReturn(left).when(strategy).precompile(eq((TupleExpr) leftArg), eq(context));
+		doReturn(right).when(strategy).precompile(eq((TupleExpr) rightArg), eq(context));
+		QueryEvaluationStep step = LeftJoinQueryEvaluationStep.supply(strategy, leftJoin, context);
+
+		List<BindingSet> results = new ArrayList<>();
+		try (var iteration = step.evaluate(row("root", firstRoot))) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+
+		assertEquals(List.of("one", "two"),
+				results.stream().map(result -> result.getValue("leftValue").stringValue()).toList());
+		assertTrue(results.stream().allMatch(result -> firstRoot.equals(result.getValue("root"))));
+		assertTrue(results.stream().allMatch(result -> detail.equals(result.getValue("detail"))));
+		assertEquals(1, rightEvaluations.get());
+		assertEquals(firstRoot, rightInput.get().getValue("root"));
+		assertFalse(rightInput.get().hasBinding("leftValue"));
+	}
+
+	// REINFORCE: a positive UNION on the right side declines the independent hash build for a badly designed input
+	// (a right-only variable is pre-bound) even when the build would fit in memory, keeping bottom-up semantics.
+	@Test
+	void unionOptionalDeclinesIndependentEvaluationForBadlyDesignedInput() {
+		Union union = new Union(statementPattern("outside", "firstUnionValue"),
+				statementPattern("outside", "secondUnionValue"));
+		assertBottomUpSemantics(union, ignored -> {
+		});
+	}
+
+	// REINFORCE: BadlyDesignedLeftJoinIterator probes the right side without the problem binding and drops a left
+	// row whose right matches are all incompatible with the input instead of preserving it bare (bottom-up).
+	@Test
+	void badlyDesignedOptionalDropsLeftRowWhenUnconstrainedRightRowsAreIncompatible() {
+		Value book = VALUE_FACTORY.createIRI("urn:book");
+		Value otherBook = VALUE_FACTORY.createIRI("urn:book:other");
+		QueryBindingSet input = new QueryBindingSet(1);
+		input.addBinding("book", book);
+		StatementPattern leftArg = statementPattern("member", "memberName");
+		StatementPattern rightArg = statementPattern("book", "bookTitle");
+		LeftJoin leftJoin = new LeftJoin(leftArg, rightArg);
+		QueryEvaluationStep left = bindings -> {
+			QueryBindingSet row = new QueryBindingSet(bindings);
+			row.addBinding("member", VALUE_FACTORY.createIRI("urn:member"));
+			return new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator());
+		};
+		QueryEvaluationStep right = bindings -> {
+			assertFalse(bindings.hasBinding("book"));
+			QueryBindingSet row = new QueryBindingSet(bindings);
+			row.addBinding("book", otherBook);
+			row.addBinding("bookTitle", VALUE_FACTORY.createLiteral("Other"));
+			return new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator());
+		};
+		LeftJoinQueryEvaluationStep step = new LeftJoinQueryEvaluationStep(
+				right, null, left, leftJoin, VarNameCollector.process(rightArg));
+
+		List<BindingSet> results = new ArrayList<>();
+		try (var iteration = step.evaluate(input)) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+
+		assertEquals(List.of(), results);
+		assertEquals(BadlyDesignedLeftJoinIterator.class.getSimpleName(), leftJoin.getAlgorithmName());
+	}
+
+	private static List<BindingSet> compatibleRows(List<BindingSet> rows, BindingSet bindings) {
+		List<BindingSet> compatible = new ArrayList<>();
+		for (BindingSet row : rows) {
+			if (bindings.isCompatible(row)) {
+				QueryBindingSet merged = new QueryBindingSet(bindings);
+				merged.addAll(row);
+				compatible.add(merged);
+			}
+		}
+		return compatible;
 	}
 
 	private static StatementPattern statementPattern(String subjectName, String objectName) {

@@ -13,12 +13,14 @@ package org.eclipse.rdf4j.query.algebra;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
@@ -76,6 +78,122 @@ class BindingSetAssignmentTest {
 		declared.setBindingSets(List.of(row("a")));
 		assertThat(declared.getBindingNames()).containsExactlyInAnyOrder("a", "b");
 		assertThat(declared.getAssuredBindingNames()).containsExactly("a");
+	}
+
+	// REINFORCE: a null row revokes every assurance but leaves the possible schema intact, in both schema modes
+	@Test
+	void nullRowRevokesAssuranceInBothSchemaModes() {
+		BindingSetAssignment derived = new BindingSetAssignment();
+		derived.setBindingSets(Arrays.asList(row("a", "b"), null, row("a")));
+		assertThat(derived.getBindingNames()).containsExactly("a", "b");
+		assertThat(derived.getAssuredBindingNames()).isEmpty();
+
+		BindingSetAssignment declared = new BindingSetAssignment();
+		declared.setBindingNames(new LinkedHashSet<>(List.of("a", "b")));
+		declared.setBindingSets(Arrays.asList(row("a", "b"), null));
+		assertThat(declared.getBindingNames()).containsExactly("a", "b");
+		assertThat(declared.getAssuredBindingNames()).isEmpty();
+	}
+
+	// REINFORCE: clearing the declared names falls back to the row-derived schema and re-derives assurance
+	@Test
+	void clearingDeclaredNamesFallsBackToDerivedSchema() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(new LinkedHashSet<>(List.of("a", "b", "c")));
+		assignment.setBindingSets(List.of(row("a", "b"), row("a")));
+		assertThat(assignment.getBindingNames()).containsExactly("a", "b", "c");
+		assertThat(assignment.getAssuredBindingNames()).containsExactly("a");
+
+		assignment.setBindingNames(null);
+		assertThat(assignment.getBindingNames()).containsExactly("a", "b");
+		assertThat(assignment.getAssuredBindingNames()).containsExactly("a");
+	}
+
+	// REINFORCE: clone carries the schema mode and caches; replacing rows on the clone leaves the original intact
+	@Test
+	void cloneKeepsSchemaModeAndIsolatesRowReplacement() {
+		BindingSetAssignment declared = new BindingSetAssignment();
+		declared.setBindingNames(new LinkedHashSet<>(List.of("a", "b")));
+		declared.setBindingSets(List.of(row("a")));
+		assertThat(declared.getAssuredBindingNames()).containsExactly("a");
+
+		BindingSetAssignment clone = declared.clone();
+		assertThat(clone.getBindingNames()).containsExactly("a", "b");
+		assertThat(clone.getAssuredBindingNames()).containsExactly("a");
+		assertThat(clone).isEqualTo(declared);
+		assertThat(clone.hashCode()).isEqualTo(declared.hashCode());
+
+		clone.setBindingSets(List.of(row("a", "b")));
+		assertThat(clone.getBindingNames()).containsExactly("a", "b");
+		assertThat(clone.getAssuredBindingNames()).containsExactly("a", "b");
+		assertThat(declared.getAssuredBindingNames()).containsExactly("a");
+
+		BindingSetAssignment derived = new BindingSetAssignment();
+		derived.setBindingSets(List.of(row("a", "b")));
+		assertThat(derived.getAssuredBindingNames()).containsExactly("a", "b");
+		BindingSetAssignment derivedClone = derived.clone();
+		derivedClone.setBindingSets(List.of(row("c")));
+		assertThat(derivedClone.getBindingNames()).containsExactly("c");
+		assertThat(derivedClone.getAssuredBindingNames()).containsExactly("c");
+		assertThat(derived.getBindingNames()).containsExactly("a", "b");
+		assertThat(derived.getAssuredBindingNames()).containsExactly("a", "b");
+	}
+
+	// REINFORCE: declared names bound the schema even when rows carry undeclared bindings
+	@Test
+	void declaredNamesBoundSchemaWhenRowsCarryUndeclaredBindings() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(new LinkedHashSet<>(List.of("a")));
+		assignment.setBindingSets(List.of(row("a", "b")));
+		assertThat(assignment.getBindingNames()).containsExactly("a");
+		assertThat(assignment.getAssuredBindingNames()).containsExactly("a");
+	}
+
+	// REINFORCE: without any rows the derived schema is empty and declared names are never assured
+	@Test
+	void missingRowsYieldEmptyAssurance() {
+		BindingSetAssignment derived = new BindingSetAssignment();
+		assertThat(derived.getBindingNames()).isEmpty();
+		assertThat(derived.getAssuredBindingNames()).isEmpty();
+
+		BindingSetAssignment declared = new BindingSetAssignment();
+		declared.setBindingNames(new LinkedHashSet<>(List.of("a")));
+		assertThat(declared.getBindingNames()).containsExactly("a");
+		assertThat(declared.getAssuredBindingNames()).isEmpty();
+	}
+
+	// REINFORCE: schema caches are reused between calls and only rebuilt when the rows are replaced
+	@Test
+	void schemaCachesAreReusedUntilRowsChange() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(row("a")));
+		Set<String> names = assignment.getBindingNames();
+		Set<String> assured = assignment.getAssuredBindingNames();
+		assertThat(assignment.getBindingNames()).isSameAs(names);
+		assertThat(assignment.getAssuredBindingNames()).isSameAs(assured);
+
+		assignment.setBindingSets(List.of(row("b")));
+		assertThat(assignment.getBindingNames()).isNotSameAs(names).containsExactly("b");
+		assertThat(assignment.getAssuredBindingNames()).isNotSameAs(assured).containsExactly("b");
+	}
+
+	// REINFORCE: equality and hash codes of declared assignments do not change when assurance is derived lazily
+	@Test
+	void lazyAssuranceDerivationDoesNotAffectEqualityOfDeclaredAssignments() {
+		List<BindingSet> rows = List.of(row("a"));
+		BindingSetAssignment first = new BindingSetAssignment();
+		first.setBindingNames(new LinkedHashSet<>(List.of("a", "b")));
+		first.setBindingSets(rows);
+		BindingSetAssignment second = new BindingSetAssignment();
+		second.setBindingNames(new LinkedHashSet<>(List.of("a", "b")));
+		second.setBindingSets(rows);
+
+		assertThat(first).isEqualTo(second);
+		int hash = first.hashCode();
+		assertThat(first.getAssuredBindingNames()).containsExactly("a");
+		assertThat(first).isEqualTo(second);
+		assertThat(second).isEqualTo(first);
+		assertThat(first.hashCode()).isEqualTo(hash).isEqualTo(second.hashCode());
 	}
 
 	private static MapBindingSet row(String... names) {

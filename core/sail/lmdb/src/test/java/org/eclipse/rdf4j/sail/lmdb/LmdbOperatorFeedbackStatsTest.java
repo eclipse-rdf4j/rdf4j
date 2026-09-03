@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -2659,6 +2660,101 @@ class LmdbOperatorFeedbackStatsTest {
 		public Iterable<BindingSet> getBindingSets() {
 			bindingSetsReads++;
 			return super.getBindingSets();
+		}
+	}
+
+	// REINFORCE: theorem-strength exact facts are served only at the live statement coordinate: a commit that became
+	// authoritative before its post-commit callback hides the fact, applying the commit never relabels it, and the
+	// applied stamp itself is monotonic.
+	@Test
+	void exactCardinalityFactFollowsTheLiveStatementMutationStamp(@TempDir Path tempDir) throws Exception {
+		String previous = System.getProperty(
+				LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
+		System.setProperty(LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true");
+		try {
+			exactCardinalityFactFollowsLiveStamp(tempDir);
+		} finally {
+			restoreProperty(LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previous);
+		}
+	}
+
+	private static void exactCardinalityFactFollowsLiveStamp(Path tempDir) throws Exception {
+		Path estimatorPath = estimatorPath(tempDir);
+		AtomicLong liveStatementMutationStamp = new AtomicLong(41L);
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath,
+				() -> TEST_SNAPSHOT_IDENTITY, () -> true, liveStatementMutationStamp::get);
+		FrontierLearningKey key = FrontierLearningKey.of(
+				"difference", "DIFFERENCE@3fad0aa1", 29L, 0L, "difference", "none", "none");
+		stats.recordOperatorOutcome(exactFactObservation(key, "difference@3fad0aa1", 65_346L));
+		assertEquals(65_346.0d, stats.exactCardinalityFact("difference@3fad0aa1"), 0.0d);
+
+		liveStatementMutationStamp.set(42L);
+		assertTrue(Double.isNaN(stats.exactCardinalityFact("difference@3fad0aa1")),
+				"A statement commit that is already authoritative hides the fact before its post-commit callback");
+
+		stats.recordStoreMutation(42L);
+		assertTrue(Double.isNaN(stats.exactCardinalityFact("difference@3fad0aa1")),
+				"Applying the commit must not relabel a fact observed at the older coordinate");
+
+		stats.recordOperatorOutcome(exactFactObservation(key, "difference@3fad0aa1", 65_347L));
+		assertEquals(65_347.0d, stats.exactCardinalityFact("difference@3fad0aa1"), 0.0d,
+				"A fresh single-invocation observation at the applied coordinate mints a fact at the live stamp");
+
+		assertThrows(IllegalArgumentException.class, () -> stats.recordStoreMutation(41L),
+				"The applied statement-mutation stamp is monotonic");
+		assertThrows(IllegalArgumentException.class, () -> stats.recordStoreMutation(-1L));
+		stats.recordStoreMutation(42L);
+		assertEquals(65_347.0d, stats.exactCardinalityFact("difference@3fad0aa1"), 0.0d,
+				"A same-stamp (metadata-only) commit keeps the fact at its coordinate");
+	}
+
+	private static Join exactFactObservation(FrontierLearningKey key, String logicalGroupKey, long actualRows) {
+		Join observed = join("s", "x", "o");
+		completeCostFeedback(observed, actualRows, 100, 1_100, 650);
+		observed.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
+		observed.setStringMetricPlanned("optimizer.costEventDigest", "event-fact");
+		observed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-fact");
+		observed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+		observed.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", logicalGroupKey);
+		return observed;
+	}
+
+	// REINFORCE: operator evidence persisted at a non-zero applied stamp reloads at that same coordinate, and the
+	// sidecar stamp check can be bypassed only through its kill switch.
+	@Test
+	void persistedOperatorEvidenceReloadsAtTheSameStatementMutationStamp(@TempDir Path tempDir) throws Exception {
+		Path estimatorPath = estimatorPath(tempDir);
+		AtomicLong committedStatementMutationStamp = new AtomicLong(3L);
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath,
+				() -> TEST_SNAPSHOT_IDENTITY, () -> true, committedStatementMutationStamp::get);
+		Join observed = join("s", "x", "o");
+		complete(observed, 1_000, 10, 20);
+		observed.setJoinLeftBindingsConsumedActual(100);
+		observed.setJoinRightBindingsConsumedActual(1_000);
+		stats.recordOperatorOutcome(observed);
+		assertNotNull(stats.estimate(join("s", "x", "o"), 200, 1_000, 10, 20));
+		stats.persistIfDirty();
+
+		LmdbOperatorFeedbackStats sameStamp = new LmdbOperatorFeedbackStats(estimatorPath,
+				() -> TEST_SNAPSHOT_IDENTITY, () -> true, committedStatementMutationStamp::get);
+		assertNotNull(sameStamp.estimate(join("s", "x", "o"), 200, 1_000, 10, 20),
+				"Evidence stamped at the reopened statement coordinate must be served again");
+
+		committedStatementMutationStamp.set(4L);
+		LmdbOperatorFeedbackStats laterStamp = new LmdbOperatorFeedbackStats(estimatorPath,
+				() -> TEST_SNAPSHOT_IDENTITY, () -> true, committedStatementMutationStamp::get);
+		assertNull(laterStamp.estimate(join("s", "x", "o"), 200, 1_000, 10, 20),
+				"A statement commit since persistence retires the sidecar");
+
+		String previous = System.getProperty(LmdbOperatorFeedbackStats.SIDECAR_DATA_STAMP_CHECK_PROPERTY);
+		System.setProperty(LmdbOperatorFeedbackStats.SIDECAR_DATA_STAMP_CHECK_PROPERTY, "false");
+		try {
+			LmdbOperatorFeedbackStats unchecked = new LmdbOperatorFeedbackStats(estimatorPath,
+					() -> TEST_SNAPSHOT_IDENTITY, () -> true, committedStatementMutationStamp::get);
+			assertNotNull(unchecked.estimate(join("s", "x", "o"), 200, 1_000, 10, 20),
+					"The kill switch bypasses only the statement-stamp freshness check");
+		} finally {
+			restoreProperty(LmdbOperatorFeedbackStats.SIDECAR_DATA_STAMP_CHECK_PROPERTY, previous);
 		}
 	}
 }

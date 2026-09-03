@@ -249,6 +249,64 @@ class PackedQueryCodecTest {
 		assertPackedAssuredBindingsMatch(source);
 	}
 
+	// REINFORCE: a VALUES relation keeps the declared (possible) names as its output schema and the
+	// bound-in-every-row subset as assured, and materializes back to an equal BindingSetAssignment
+	@Test
+	void roundTripsBindingSetAssignmentWithNullableDeclaredNames() {
+		MapBindingSet complete = new MapBindingSet(2);
+		complete.setBinding("person", VF.createIRI("urn:person:1"));
+		complete.setBinding("score", VF.createLiteral(10));
+		MapBindingSet undef = new MapBindingSet(1);
+		undef.setBinding("person", VF.createIRI("urn:person:2"));
+		BindingSetAssignment source = new BindingSetAssignment();
+		source.setBindingNames(new LinkedHashSet<>(List.of("person", "score")));
+		source.setBindingSets(List.of(complete, undef));
+
+		PackedQuery packed = PackedQueryCodec.encode(source).withoutOriginalBindingSets();
+		BindingSetAssignment materialized = (BindingSetAssignment) PackedPlanMaterializer.materialize(packed,
+				packed.rootRelId());
+
+		assertEquals(Set.of("person", "score"), materialized.getBindingNames());
+		assertEquals(Set.of("person"), materialized.getAssuredBindingNames());
+		assertEquals(source, materialized);
+		assertPackedAssuredBindingsMatch(source);
+	}
+
+	// REINFORCE: the declared VALUES schema is part of the original-rows rebind match, not only the row contents
+	@Test
+	void rebindRejectsAssignmentWhoseDeclaredNamesDiffer() {
+		MapBindingSet row = new MapBindingSet(1);
+		row.setBinding("person", VF.createIRI("urn:person:1"));
+		BindingSetAssignment cold = new BindingSetAssignment();
+		cold.setBindingNames(new LinkedHashSet<>(List.of("person", "score")));
+		cold.setBindingSets(List.of(row));
+		PackedQuery template = PackedQueryCodec.encode(cold).withoutOriginalBindingSets();
+
+		BindingSetAssignment narrower = new BindingSetAssignment();
+		narrower.setBindingNames(new LinkedHashSet<>(List.of("person")));
+		narrower.setBindingSets(List.of(row));
+
+		assertThrows(PackedMemoInvariantException.class,
+				() -> PackedQueryCodec.rebindOriginalBindingSets(template, narrower));
+	}
+
+	// REINFORCE: a VALUES relation with declared names but no rows exposes the names as possible outputs and
+	// assures none of them, matching BindingSetAssignment.getAssuredBindingNames()
+	@Test
+	void bindingAssignmentWithoutRowsAssuresNoDeclaredNames() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(new LinkedHashSet<>(List.of("node", "threshold")));
+		assignment.setBindingSets(List.of());
+
+		assertEquals(Set.of(), assignment.getAssuredBindingNames());
+
+		PackedQuery query = PackedQueryCodec.encode(assignment);
+
+		assertEquals(2, query.maskCardinality(query.relOutputMaskId(query.rootRelId())));
+		assertEquals(0, query.maskCardinality(query.relAssuredMaskId(query.rootRelId())));
+		assertPackedAssuredBindingsMatch(assignment);
+	}
+
 	@Test
 	void roundTripsRemainingScalarOperatorFamilies() {
 		Extension source = new Extension(new SingletonSet());

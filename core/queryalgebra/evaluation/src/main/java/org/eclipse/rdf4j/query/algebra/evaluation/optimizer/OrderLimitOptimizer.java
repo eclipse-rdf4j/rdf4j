@@ -86,12 +86,19 @@ public class OrderLimitOptimizer implements QueryOptimizer {
 		private boolean variablesProjected = true;
 
 		private OrderVariableProjectionChecker(Projection projection) {
-			super(false);
+			// Visit statement-pattern variables too: an ORDER BY EXISTS { ... } references variables only through
+			// the patterns nested in its subquery, and an unprojected variable there must keep the Order below the
+			// Projection exactly like an unprojected variable in an ORDER BY expression does.
+			super(true);
 			this.projection = projection;
 		}
 
 		@Override
 		public void meet(Var node) {
+			if (node.hasValue()) {
+				// a constant does not depend on the projected bindings
+				return;
+			}
 			if (projection != null && variablesProjected) {
 				boolean projected = false;
 				for (ProjectionElem e : projection.getProjectionElemList().getElements()) {

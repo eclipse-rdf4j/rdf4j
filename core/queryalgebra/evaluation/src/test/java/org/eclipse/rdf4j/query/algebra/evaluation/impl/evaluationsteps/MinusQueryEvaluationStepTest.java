@@ -15,27 +15,41 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.io.NotSerializableException;
 import java.io.ObjectInputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class MinusQueryEvaluationStepTest {
 	@Test
@@ -298,6 +312,438 @@ class MinusQueryEvaluationStepTest {
 		}
 	}
 
+	// REPRO: SPARQL MINUS keeps a left row when dom(right) is empty. A right row produced by `VALUES ?a { UNDEF }`
+	// (name declared, value unbound) must therefore never exclude anything, but the materialized (non-overflow) path
+	// delegates to SPARQLMinusIteration, which counts the declared-but-unbound name as shared and treats the row as
+	// compatible with every left row binding ?a, dropping them.
+	@Test
+	void materializedRightRowWithOnlyUnboundDeclaredVariableKeepsLeftRows() {
+		List<BindingSet> leftRows = List.of(row("id", iri("urn:L1"), "a", literal(1)), row("id", iri("urn:L2")));
+		List<BindingSet> rightRows = List.of(new ListBindingSet(List.of("a"), (Value) null));
+
+		assertThat(evaluate(step(leftRows, rightRows, 10, 4_096))).containsExactlyElementsOf(leftRows);
+	}
+
+	// REINFORCE: the overflow path derives shared variables from bound bindings only, so an UNDEF-only right row
+	// (empty domain) never excludes left rows, whether it sits in the materialized prefix or in the spill.
+	@ParameterizedTest
+	@ValueSource(longs = { 0L, 1L })
+	void overflowRightRowWithOnlyUnboundDeclaredVariableKeepsLeftRows(long maxMaterializedRightRows) {
+		List<BindingSet> leftRows = List.of(row("id", iri("urn:L1"), "a", literal(1)), row("id", iri("urn:L2")));
+		List<BindingSet> rightRows = List.of(new ListBindingSet(List.of("a"), (Value) null),
+				row("x", iri("urn:overflow")));
+
+		assertThat(evaluate(step(leftRows, rightRows, maxMaterializedRightRows, 1)))
+				.containsExactlyElementsOf(leftRows);
+	}
+
+	// REINFORCE: spilled right rows that share no bound variable with a left row never exclude it, including an
+	// empty right row and a right row whose only shared variable carries a different value.
+	@Test
+	void spilledRightRowsWithoutSharedBoundVariablesKeepLeftRows() {
+		List<BindingSet> leftRows = List.of(row("id", iri("urn:L1"), "x", literal(1)), row("id", iri("urn:L2")),
+				new QueryBindingSet());
+		List<BindingSet> rightRows = List.of(row("y", literal(1)), new QueryBindingSet(), row("x", literal(2)));
+
+		assertThat(evaluate(step(leftRows, rightRows, 0, 1))).containsExactlyElementsOf(leftRows);
+	}
+
+	// REINFORCE: with several shared variables a right row only excludes a left row when every shared bound
+	// variable agrees; a variable bound on the right but unbound on the left does not block exclusion.
+	@ParameterizedTest
+	@ValueSource(longs = { 0L, 1L })
+	void overflowRequiresAllSharedVariablesToMatch(long maxMaterializedRightRows) {
+		List<BindingSet> leftRows = List.of(
+				row("id", iri("urn:L1"), "a", literal(1), "b", literal(2)),
+				row("id", iri("urn:L2"), "a", literal(1), "b", literal(3)),
+				row("id", iri("urn:L3"), "a", literal(1)));
+		List<BindingSet> rightRows = List.of(row("a", literal(1), "b", literal(2)),
+				row("a", literal(1), "b", literal(9)));
+
+		assertThat(evaluate(step(leftRows, rightRows, maxMaterializedRightRows, 2)))
+				.containsExactly(leftRows.get(1));
+	}
+
+	// REINFORCE: unbound (null-valued) bindings on either side take no part in compatibility: exclusion needs a
+	// shared bound variable with equal values and no conflicting bound variable, in both the prefix and the spill.
+	@ParameterizedTest
+	@ValueSource(longs = { 0L, 1L })
+	void overflowIgnoresUnboundBindingsOnBothSides(long maxMaterializedRightRows) {
+		QueryBindingSet rightUnboundA = row("b", literal(1));
+		rightUnboundA.setBinding("a", null);
+		QueryBindingSet leftUnboundA = row("id", iri("urn:L3"), "b", literal(1));
+		leftUnboundA.setBinding("a", null);
+		QueryBindingSet leftUnboundAOnly = row("id", iri("urn:L4"), "c", literal(3));
+		leftUnboundAOnly.setBinding("a", null);
+		List<BindingSet> leftRows = List.of(
+				row("id", iri("urn:L1"), "a", literal(5), "b", literal(1)), // excluded through ?b
+				row("id", iri("urn:L2"), "a", literal(5)), // kept: no shared bound variable
+				leftUnboundA, // excluded through ?b
+				leftUnboundAOnly, // kept: ?a is unbound on the left
+				row("id", iri("urn:L5"), "a", literal(7), "b", literal(2))); // excluded through ?a
+		List<BindingSet> rightRows = List.of(rightUnboundA, row("a", literal(7)));
+
+		assertThat(evaluate(step(leftRows, rightRows, maxMaterializedRightRows, 2)))
+				.containsExactly(leftRows.get(1), leftRows.get(3));
+	}
+
+	// REINFORCE: ArrayBindingSet rows on both sides are matched by value; a right row overlapping only on a
+	// conflicting value does not exclude, and the spilled QueryBindingSet copy behaves like the original.
+	@ParameterizedTest
+	@ValueSource(longs = { 0L, 1L })
+	void overflowHandlesArrayBindingSetRows(long maxMaterializedRightRows) {
+		String[] names = { "id", "a", "b" };
+		List<BindingSet> leftRows = List.of(
+				arrayRow(names, "id", iri("urn:L1"), "a", literal(1), "b", literal(2)),
+				arrayRow(names, "id", iri("urn:L2"), "a", literal(5)));
+		List<BindingSet> rightRows = List.of(arrayRow(names, "a", literal(1)), arrayRow(names, "b", literal(9)));
+
+		assertThat(evaluate(step(leftRows, rightRows, maxMaterializedRightRows, 1)))
+				.containsExactly(leftRows.get(1));
+	}
+
+	// REINFORCE: values are compared by RDF term equality: equal blank node ids and literals with equal label and
+	// datatype match across instances and across spill deserialization, while "1"/"01" and xsd:integer/xsd:int are
+	// distinct terms.
+	@Test
+	void spilledValuesCompareByTermEquality() {
+		List<BindingSet> leftRows = List.of(
+				row("x", VF.createBNode("b1")),
+				row("x", VF.createLiteral("1", XSD.INTEGER)),
+				row("x", VF.createLiteral("01", XSD.INTEGER)),
+				row("x", VF.createLiteral("1", XSD.INT)));
+		List<BindingSet> rightRows = List.of(row("x", VF.createBNode("b1")),
+				row("x", VF.createLiteral("1", XSD.INTEGER)));
+
+		assertThat(evaluate(step(leftRows, rightRows, 0, 4))).containsExactly(leftRows.get(2), leftRows.get(3));
+	}
+
+	// REINFORCE: rows written after ObjectOutputStream reset boundaries (every 256 spilled rows) are read back and
+	// still exclude, the spill is rescanned for every left block, and the right side is evaluated only once.
+	@Test
+	void spilledRowsBeyondStreamResetIntervalStillExclude() {
+		List<BindingSet> rightRows = new ArrayList<>();
+		for (int i = 0; i < 600; i++) {
+			rightRows.add(row("x", iri("urn:r" + i)));
+		}
+		List<BindingSet> leftRows = List.of(
+				row("x", iri("urn:r0")),
+				row("x", iri("urn:missing")),
+				row("x", iri("urn:r255")),
+				row("x", iri("urn:r256")),
+				row("x", iri("urn:r511")),
+				row("x", iri("urn:r599")));
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(leftRows.iterator());
+		QueryEvaluationStep right = ignored -> {
+			rightEvaluations.incrementAndGet();
+			return new CloseableIteratorIteration<>(rightRows.iterator());
+		};
+
+		assertThat(evaluate(new MinusQueryEvaluationStep(left, right, 0, 2))).containsExactly(leftRows.get(1));
+		assertThat(rightEvaluations).hasValue(1);
+	}
+
+	// REINFORCE: matching left duplicates are all excluded, including when they straddle a left block boundary.
+	@Test
+	void matchingLeftDuplicatesAcrossBlockBoundaryAreAllExcluded() {
+		BindingSet matched = row("x", iri("urn:matched"));
+		BindingSet kept = row("x", iri("urn:kept"));
+		List<BindingSet> leftRows = List.of(matched, matched, matched, kept, matched);
+
+		assertThat(evaluate(step(leftRows, List.of(row("x", iri("urn:matched"))), 0, 2))).containsExactly(kept);
+	}
+
+	// REINFORCE: duplicate right rows fold into the materialized prefix without consuming the materialization
+	// budget, so they never trigger a spill.
+	@Test
+	void duplicateRightRowsDoNotConsumeMaterializationBudget() throws IOException {
+		BindingSet matched = row("x", iri("urn:matched"));
+		List<BindingSet> leftRows = List.of(row("x", iri("urn:matched")), row("x", iri("urn:kept")));
+		List<BindingSet> rightRows = List.of(matched, row("x", iri("urn:matched")), matched);
+		Set<Path> before = spillFiles();
+
+		try (CloseableIteration<BindingSet> iteration = step(leftRows, rightRows, 1, 4)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration.hasNext()).isTrue();
+			assertThat(newSpillFiles(before)).isEmpty();
+			assertThat(drain(iteration)).containsExactly(leftRows.get(1));
+		}
+	}
+
+	// REINFORCE: overflow creates exactly one spill file, which is deleted once the iteration is exhausted.
+	@Test
+	void spillFileIsRemovedWhenIterationIsExhausted() throws IOException {
+		Set<Path> before = spillFiles();
+		List<BindingSet> leftRows = List.of(row("x", iri("urn:kept")));
+		List<BindingSet> rightRows = List.of(row("x", iri("urn:r1")), row("x", iri("urn:r2")));
+
+		try (CloseableIteration<BindingSet> iteration = step(leftRows, rightRows, 1, 1)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration.hasNext()).isTrue();
+			assertThat(newSpillFiles(before)).hasSize(1);
+			assertThat(drain(iteration)).containsExactlyElementsOf(leftRows);
+		}
+		assertThat(newSpillFiles(before)).isEmpty();
+	}
+
+	// REINFORCE: closing an overflowed iteration before exhaustion deletes the spill file, closes the left side
+	// exactly once and leaves the iteration exhausted; a second close is a no-op.
+	@Test
+	void spillFileIsRemovedWhenIterationIsClosedEarly() throws IOException {
+		Set<Path> before = spillFiles();
+		AtomicInteger leftCloses = new AtomicInteger();
+		List<BindingSet> leftRows = List.of(row("x", iri("urn:k1")), row("x", iri("urn:k2")),
+				row("x", iri("urn:k3")));
+		QueryEvaluationStep left = ignored -> new TrackedIteration(leftRows, null, leftCloses);
+		QueryEvaluationStep right = ignored -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(row("x", iri("urn:r1"))).iterator());
+		CloseableIteration<BindingSet> iteration = new MinusQueryEvaluationStep(left, right, 0, 1)
+				.evaluate(EmptyBindingSet.getInstance());
+
+		assertThat(iteration.hasNext()).isTrue();
+		assertThat(newSpillFiles(before)).hasSize(1);
+		assertThat(iteration.next()).isEqualTo(leftRows.get(0));
+		iteration.close();
+		assertThat(newSpillFiles(before)).isEmpty();
+		assertThat(leftCloses).hasValue(1);
+		assertThat(iteration.hasNext()).isFalse();
+		iteration.close();
+		assertThat(leftCloses).hasValue(1);
+	}
+
+	// REINFORCE: closing before the first hasNext() closes the left side, never evaluates the right side and leaves
+	// the iteration exhausted.
+	@Test
+	void closeBeforeIterationClosesLeftWithoutEvaluatingRight() {
+		AtomicInteger leftCloses = new AtomicInteger();
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		QueryEvaluationStep left = ignored -> new TrackedIteration(List.of(row("x", iri("urn:l"))), null,
+				leftCloses);
+		QueryEvaluationStep right = ignored -> {
+			rightEvaluations.incrementAndGet();
+			return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
+		};
+		CloseableIteration<BindingSet> iteration = new MinusQueryEvaluationStep(left, right, 10)
+				.evaluate(EmptyBindingSet.getInstance());
+
+		iteration.close();
+
+		assertThat(leftCloses).hasValue(1);
+		assertThat(rightEvaluations).hasValue(0);
+		assertThat(iteration.hasNext()).isFalse();
+	}
+
+	// REINFORCE: a left-side failure while buffering a block propagates unchanged, and closing afterwards still
+	// closes the left side and deletes the spill file.
+	@Test
+	void leftFailureDuringBlockLoadPropagatesAndCloseReleasesResources() throws IOException {
+		QueryEvaluationException expected = new QueryEvaluationException("left failure");
+		AtomicInteger leftCloses = new AtomicInteger();
+		Set<Path> before = spillFiles();
+		QueryEvaluationStep left = ignored -> new TrackedIteration(List.of(row("x", iri("urn:l1"))), expected,
+				leftCloses);
+		QueryEvaluationStep right = ignored -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(row("x", iri("urn:r1"))).iterator());
+		MinusQueryEvaluationStep step = new MinusQueryEvaluationStep(left, right, 0, 4);
+
+		assertThatThrownBy(() -> {
+			try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+				drain(iteration);
+			}
+		}).isSameAs(expected);
+		assertThat(leftCloses).hasValue(1);
+		assertThat(newSpillFiles(before)).isEmpty();
+	}
+
+	// REINFORCE: a right-side failure before the materialization limit is reached propagates unchanged and closes
+	// the right iteration immediately and the left iteration on close.
+	@Test
+	void rightFailureBeforeOverflowClosesRightAndLeft() {
+		QueryEvaluationException expected = new QueryEvaluationException("right failure");
+		AtomicInteger leftCloses = new AtomicInteger();
+		AtomicInteger rightCloses = new AtomicInteger();
+		QueryEvaluationStep left = ignored -> new TrackedIteration(List.of(row("x", iri("urn:l1"))), null,
+				leftCloses);
+		QueryEvaluationStep right = ignored -> new TrackedIteration(List.of(row("x", iri("urn:r1"))), expected,
+				rightCloses);
+		MinusQueryEvaluationStep step = new MinusQueryEvaluationStep(left, right, 10);
+
+		assertThatThrownBy(() -> {
+			try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+				drain(iteration);
+			}
+		}).isSameAs(expected);
+		assertThat(rightCloses).hasValue(1);
+		assertThat(leftCloses).hasValue(1);
+	}
+
+	// REINFORCE: exhausting the iteration closes the left side exactly once in both the materialized and the
+	// overflow path; repeated close() calls are no-ops.
+	@ParameterizedTest
+	@ValueSource(longs = { 0L, 10L })
+	void closeAfterExhaustionIsIdempotent(long maxMaterializedRightRows) {
+		AtomicInteger leftCloses = new AtomicInteger();
+		List<BindingSet> leftRows = List.of(row("x", iri("urn:matched")), row("x", iri("urn:kept")));
+		QueryEvaluationStep left = ignored -> new TrackedIteration(leftRows, null, leftCloses);
+		QueryEvaluationStep right = ignored -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(row("x", iri("urn:matched"))).iterator());
+		CloseableIteration<BindingSet> iteration = new MinusQueryEvaluationStep(left, right,
+				maxMaterializedRightRows, 1).evaluate(EmptyBindingSet.getInstance());
+
+		assertThat(drain(iteration)).containsExactly(leftRows.get(1));
+		assertThat(leftCloses).hasValue(1);
+		iteration.close();
+		iteration.close();
+		assertThat(leftCloses).hasValue(1);
+		assertThat(iteration.hasNext()).isFalse();
+	}
+
+	// REINFORCE: a negative limit selects the unlimited streaming path (SPARQLMinusIteration over a delayed right
+	// evaluation), which evaluates the right side once and applies the same MINUS semantics.
+	@Test
+	void unlimitedMaterializationStreamsWithSingleRightEvaluation() {
+		String previousLimit = System.setProperty(MinusQueryEvaluationStep.MAX_MATERIALIZED_RIGHT_ROWS_PROPERTY, "-1");
+		try {
+			assertThat(MinusQueryEvaluationStep.maxMaterializedRightRows()).isEqualTo(Long.MAX_VALUE);
+			List<BindingSet> leftRows = List.of(row("id", iri("urn:L1"), "a", literal(1)),
+					row("id", iri("urn:L2"), "a", literal(2)), row("id", iri("urn:L3")));
+			List<BindingSet> rightRows = List.of(row("a", literal(2)), row("b", literal(9)));
+			AtomicInteger rightEvaluations = new AtomicInteger();
+			QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(leftRows.iterator());
+			QueryEvaluationStep right = ignored -> {
+				rightEvaluations.incrementAndGet();
+				return new CloseableIteratorIteration<>(rightRows.iterator());
+			};
+
+			assertThat(evaluate(new MinusQueryEvaluationStep(left, right)))
+					.containsExactly(leftRows.get(0), leftRows.get(2));
+			assertThat(rightEvaluations).hasValue(1);
+		} finally {
+			if (previousLimit == null) {
+				System.clearProperty(MinusQueryEvaluationStep.MAX_MATERIALIZED_RIGHT_ROWS_PROPERTY);
+			} else {
+				System.setProperty(MinusQueryEvaluationStep.MAX_MATERIALIZED_RIGHT_ROWS_PROPERTY, previousLimit);
+			}
+		}
+	}
+
+	// REINFORCE: an empty right side keeps every left row (including an empty left row) and never spills, even
+	// with a zero materialization limit.
+	@Test
+	void emptyRightSideKeepsAllLeftRowsWithoutSpilling() throws IOException {
+		Set<Path> before = spillFiles();
+		List<BindingSet> leftRows = List.of(row("x", literal(1)), new QueryBindingSet());
+
+		assertThat(evaluate(step(leftRows, List.of(), 0, 1))).containsExactlyElementsOf(leftRows);
+		assertThat(newSpillFiles(before)).isEmpty();
+	}
+
+	// REINFORCE: a non-positive left buffer size is clamped to one row and still yields correct results.
+	@ParameterizedTest
+	@ValueSource(ints = { 0, -5 })
+	void nonPositiveLeftBufferIsClampedToOneRow(int maxBufferedLeftRows) {
+		List<BindingSet> leftRows = List.of(row("x", iri("urn:matched")), row("x", iri("urn:kept")),
+				row("x", iri("urn:matched")));
+
+		assertThat(evaluate(step(leftRows, List.of(row("x", iri("urn:matched"))), 0, maxBufferedLeftRows)))
+				.containsExactly(leftRows.get(1));
+	}
+
+	// REINFORCE: a right-side Value that cannot be serialized leaves the materialized path untouched but fails the
+	// overflow path with a QueryEvaluationException caused by NotSerializableException; close still releases the
+	// left side and the spill file.
+	@Test
+	void nonSerializableRightValueFailsOverflowButReleasesResources() throws IOException {
+		Set<Path> before = spillFiles();
+		AtomicInteger leftCloses = new AtomicInteger();
+		BindingSet leftRow = row("x", iri("urn:l"));
+		List<BindingSet> rightRows = List.of(row("x", new NonSerializableValue()));
+		QueryEvaluationStep left = ignored -> new TrackedIteration(List.of(leftRow), null, leftCloses);
+		QueryEvaluationStep right = ignored -> new CloseableIteratorIteration<>(rightRows.iterator());
+
+		assertThat(evaluate(new MinusQueryEvaluationStep(left, right, 10))).containsExactly(leftRow);
+		assertThat(leftCloses).hasValue(1);
+
+		MinusQueryEvaluationStep overflowing = new MinusQueryEvaluationStep(left, right, 0, 1);
+		assertThatThrownBy(() -> {
+			try (CloseableIteration<BindingSet> iteration = overflowing.evaluate(EmptyBindingSet.getInstance())) {
+				drain(iteration);
+			}
+		}).isInstanceOf(QueryEvaluationException.class).hasCauseInstanceOf(NotSerializableException.class);
+		assertThat(leftCloses).hasValue(2);
+		assertThat(newSpillFiles(before)).isEmpty();
+	}
+
+	// REINFORCE: the spill is rescanned once per left block and every scan stops as soon as the whole block is
+	// excluded, so later spilled rows are not deserialized needlessly.
+	@Test
+	void spillScanStopsOnceLeftBlockIsFullyExcluded() {
+		CountingReadValue.READS.set(0);
+		List<BindingSet> rightRows = List.of(row("x", new CountingReadValue("r1")),
+				row("x", new CountingReadValue("r2")));
+		List<BindingSet> leftRows = List.of(row("x", new CountingReadValue("r1")),
+				row("x", new CountingReadValue("r1")), row("x", new CountingReadValue("miss")));
+
+		assertThat(evaluate(step(leftRows, rightRows, 0, 2))).containsExactly(leftRows.get(2));
+		// block [r1, r1]: r1 read, block fully excluded, r2 skipped; block [miss]: r1 and r2 read
+		assertThat(CountingReadValue.READS).hasValue(3);
+	}
+
+	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	private static Value iri(String iri) {
+		return VF.createIRI(iri);
+	}
+
+	private static Value literal(int value) {
+		return VF.createLiteral(value);
+	}
+
+	private static MinusQueryEvaluationStep step(List<BindingSet> leftRows, List<BindingSet> rightRows,
+			long maxMaterializedRightRows, int maxBufferedLeftRows) {
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(leftRows.iterator());
+		QueryEvaluationStep right = ignored -> new CloseableIteratorIteration<>(rightRows.iterator());
+		return new MinusQueryEvaluationStep(left, right, maxMaterializedRightRows, maxBufferedLeftRows);
+	}
+
+	private static List<BindingSet> evaluate(MinusQueryEvaluationStep step) {
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			return drain(iteration);
+		}
+	}
+
+	private static Set<Path> spillFiles() throws IOException {
+		Path tmp = Paths.get(System.getProperty("java.io.tmpdir"));
+		try (Stream<Path> files = Files.list(tmp)) {
+			return files.filter(path -> {
+				String name = path.getFileName().toString();
+				return name.startsWith("rdf4j-minus-") && name.endsWith(".spill");
+			}).collect(Collectors.toSet());
+		}
+	}
+
+	private static Set<Path> newSpillFiles(Set<Path> before) throws IOException {
+		Set<Path> now = new HashSet<>(spillFiles());
+		now.removeAll(before);
+		return now;
+	}
+
+	private static ArrayBindingSet arrayRow(String[] names, Object... nameValuePairs) {
+		ArrayBindingSet bindings = new ArrayBindingSet(names);
+		for (int i = 0; i + 1 < nameValuePairs.length; i += 2) {
+			bindings.setBinding((String) nameValuePairs[i], (Value) nameValuePairs[i + 1]);
+		}
+		return bindings;
+	}
+
+	private static QueryBindingSet row(String name1, Value value1, String name2, Value value2, String name3,
+			Value value3) {
+		QueryBindingSet bindings = row(name1, value1, name2, value2);
+		bindings.addBinding(name3, value3);
+		return bindings;
+	}
+
 	private static QueryBindingSet row(String name1, Value value1, String name2, Value value2) {
 		QueryBindingSet bindings = new QueryBindingSet();
 		bindings.addBinding(name1, value1);
@@ -317,6 +763,83 @@ class MinusQueryEvaluationStepTest {
 			result.add(iteration.next());
 		}
 		return result;
+	}
+
+	/**
+	 * Replays {@code rows}, optionally throwing {@code failureAfterRows} once they are exhausted, and counts closes.
+	 */
+	private static final class TrackedIteration extends LookAheadIteration<BindingSet> {
+		private final Iterator<BindingSet> rows;
+		private final RuntimeException failureAfterRows;
+		private final AtomicInteger closeCount;
+
+		private TrackedIteration(List<BindingSet> rows, RuntimeException failureAfterRows,
+				AtomicInteger closeCount) {
+			this.rows = rows.iterator();
+			this.failureAfterRows = failureAfterRows;
+			this.closeCount = closeCount;
+		}
+
+		@Override
+		protected BindingSet getNextElement() {
+			if (rows.hasNext()) {
+				return rows.next();
+			}
+			if (failureAfterRows != null) {
+				throw failureAfterRows;
+			}
+			return null;
+		}
+
+		@Override
+		protected void handleClose() {
+			closeCount.incrementAndGet();
+		}
+	}
+
+	/** A Value whose state cannot be written by ObjectOutputStream (java.lang.Object field). */
+	private static final class NonSerializableValue implements Value {
+		private static final long serialVersionUID = 1L;
+
+		@SuppressWarnings("unused")
+		private final Object handle = new Object();
+
+		@Override
+		public String stringValue() {
+			return "urn:non-serializable";
+		}
+	}
+
+	/** A Value compared by id that counts how often it is deserialized from a spill. */
+	private static final class CountingReadValue implements Value {
+		private static final long serialVersionUID = 1L;
+		private static final AtomicInteger READS = new AtomicInteger();
+
+		private final String id;
+
+		private CountingReadValue(String id) {
+			this.id = id;
+		}
+
+		private void readObject(ObjectInputStream input) throws IOException, ClassNotFoundException {
+			input.defaultReadObject();
+			READS.incrementAndGet();
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return other instanceof CountingReadValue && id.equals(((CountingReadValue) other).id);
+		}
+
+		@Override
+		public int hashCode() {
+			return id.hashCode();
+		}
+
+		@Override
+		public String stringValue() {
+			return id;
+		}
 	}
 
 	private static final class BlockingCompatibilityBindingSet extends QueryBindingSet {

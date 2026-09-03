@@ -15,9 +15,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
@@ -32,6 +35,7 @@ import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -114,6 +118,8 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -447,9 +453,9 @@ class LmdbOptimizerPipelineTest {
 			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 			List<String> optimizers = optimizers(
 					new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers())
-							.stream()
-							.map(optimizer -> optimizer.getClass().getSimpleName())
-							.collect(Collectors.toList());
+					.stream()
+					.map(optimizer -> optimizer.getClass().getSimpleName())
+					.collect(Collectors.toList());
 
 			int cascadesIndex = optimizers.indexOf("LmdbCascadesOptimizer");
 			int filterSimplifierIndex = optimizers.indexOf("LmdbFilterSimplifierOptimizer");
@@ -469,9 +475,9 @@ class LmdbOptimizerPipelineTest {
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		List<String> optimizers = optimizers(new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics()).getOptimizers())
-						.stream()
-						.map(optimizer -> optimizer.getClass().getSimpleName())
-						.collect(Collectors.toList());
+				.stream()
+				.map(optimizer -> optimizer.getClass().getSimpleName())
+				.collect(Collectors.toList());
 
 		int guaranteeIndex = optimizers.indexOf("Lmdb" + "GuaranteeFilterOptimizer");
 
@@ -575,7 +581,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-						.getOptimizers()) {
+				.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
@@ -598,7 +604,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-						.getOptimizers()) {
+				.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
@@ -828,7 +834,7 @@ class LmdbOptimizerPipelineTest {
 
 			@Override
 			public void meet(ValueConstant node) {
-				if (node.getValue()instanceof Literal literal && "1.5".equals(literal.getLabel())) {
+				if (node.getValue() instanceof Literal literal && "1.5".equals(literal.getLabel())) {
 					node.setValue(SimpleValueFactory.getInstance().createLiteral(new BigDecimal("1.5")));
 				}
 			}
@@ -866,7 +872,7 @@ class LmdbOptimizerPipelineTest {
 		try {
 			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 					new EvaluationStatistics())
-							.getOptimizers()) {
+					.getOptimizers()) {
 				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 			}
 			String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -899,7 +905,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-						.getOptimizers()) {
+				.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -935,7 +941,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-						.getOptimizers()) {
+				.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -972,7 +978,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-						.getOptimizers()) {
+				.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1008,7 +1014,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-						.getOptimizers()) {
+				.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1044,7 +1050,7 @@ class LmdbOptimizerPipelineTest {
 
 			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 					new LmdbEvaluationStatistics(valueStore, null, null))
-							.getOptimizers()) {
+					.getOptimizers()) {
 				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 			}
 			String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1094,7 +1100,7 @@ class LmdbOptimizerPipelineTest {
 
 			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 					new LmdbEvaluationStatistics(valueStore, null, null))
-							.getOptimizers()) {
+					.getOptimizers()) {
 				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 			}
 			String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1131,7 +1137,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new FallbackJoinFactorStatistics())
-						.getOptimizers()) {
+				.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1163,7 +1169,7 @@ class LmdbOptimizerPipelineTest {
 		try {
 			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 					new FallbackJoinFactorStatistics())
-							.getOptimizers()) {
+					.getOptimizers()) {
 				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 			}
 			String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1213,7 +1219,7 @@ class LmdbOptimizerPipelineTest {
 
 			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 					new LmdbEvaluationStatistics(valueStore, null, estimator, null, null))
-							.getOptimizers()) {
+					.getOptimizers()) {
 				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 			}
 			String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1253,7 +1259,7 @@ class LmdbOptimizerPipelineTest {
 		try {
 			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 					new EvaluationStatistics())
-							.getOptimizers()) {
+					.getOptimizers()) {
 				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 			}
 			String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1283,7 +1289,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new FixedFilterPassStatistics(0.50d))
-						.getOptimizers()) {
+				.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
@@ -1310,7 +1316,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-						.getOptimizers()) {
+				.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
@@ -1459,7 +1465,7 @@ class LmdbOptimizerPipelineTest {
 
 			@Override
 			public void meet(Filter node) {
-				if (node.getArg()instanceof BindingSetAssignment assignment) {
+				if (node.getArg() instanceof BindingSetAssignment assignment) {
 					Set<String> conditionVars = VarNameCollector.process(node.getCondition());
 					if (!assignment.getBindingNames().containsAll(conditionVars)
 							&& !isJoinRightBindingPrefixFilter(node, assignment, conditionVars)) {
@@ -2064,11 +2070,11 @@ class LmdbOptimizerPipelineTest {
 			return;
 		}
 		if (valueExpr instanceof ListMemberOperator list) {
-			if (!list.getArguments().isEmpty() && list.getArguments().getFirst()instanceof Var var
+			if (!list.getArguments().isEmpty() && list.getArguments().getFirst() instanceof Var var
 					&& bindingName.equals(var.getName())) {
 				for (int i = 1; i < list.getArguments().size(); i++) {
 					ValueExpr argument = list.getArguments().get(i);
-					if (argument instanceof ValueConstant constant && constant.getValue()instanceof Literal literal) {
+					if (argument instanceof ValueConstant constant && constant.getValue() instanceof Literal literal) {
 						values.add(literal.getLabel());
 					}
 				}
@@ -2190,5 +2196,61 @@ class LmdbOptimizerPipelineTest {
 		public ValueFactory getValueFactory() {
 			return SimpleValueFactory.getInstance();
 		}
+	}
+
+	// REINFORCE: the post-cascades ORDER/LIMIT finalizer is null-safe and idempotent, so the detached refresh path and
+	// fresh planning can both apply it without re-cloning an already finalized plan.
+	@Test
+	void finalizeOrderAndLimitIsNullSafeAndIdempotent() {
+		assertNull(LmdbQueryOptimizerPipeline.finalizeOrderAndLimit(null, null, EmptyBindingSet.getInstance()));
+
+		QueryRoot root = new QueryRoot(new Slice(
+				new Projection(new Order(wideOrderValues(4), new OrderElem(new Var("o"))), allOrderValueNames(),
+						false),
+				0L, 2L));
+		assertSame(root,
+				LmdbQueryOptimizerPipeline.finalizeOrderAndLimit(root, null, EmptyBindingSet.getInstance()));
+		Slice slice = assertInstanceOf(Slice.class, root.getArg());
+		Order order = assertInstanceOf(Order.class, slice.getArg());
+		Projection projection = assertInstanceOf(Projection.class, order.getArg());
+		assertInstanceOf(BindingSetAssignment.class, projection.getArg());
+
+		LmdbQueryOptimizerPipeline.finalizeOrderAndLimit(root, null, EmptyBindingSet.getInstance());
+		assertSame(slice, root.getArg());
+		assertSame(order, slice.getArg());
+		assertSame(projection, order.getArg());
+	}
+
+	// REINFORCE: committed-store evidence may drive constraining rewrites only when the triple source exposes a
+	// committed snapshot epoch; an uncommitted overlay or an unknown wrapper plans without it.
+	@Test
+	void committedEvidenceRewritesFollowTheTripleSourceSnapshotEpoch() throws Exception {
+		assertFalse(committedEvidenceUsable(new EmptyTripleSource()),
+				"An unknown triple source wrapper cannot prove it reads committed data only");
+
+		SailDataset committedDataset = mock(SailDataset.class);
+		when(committedDataset.getSnapshotEpoch()).thenReturn(OptionalLong.of(7L));
+		assertTrue(committedEvidenceUsable(
+				new SailDatasetTripleTermSource(SimpleValueFactory.getInstance(), committedDataset)));
+
+		SailDataset uncommittedDataset = mock(SailDataset.class);
+		when(uncommittedDataset.getSnapshotEpoch()).thenReturn(OptionalLong.empty());
+		assertFalse(committedEvidenceUsable(
+				new SailDatasetTripleTermSource(SimpleValueFactory.getInstance(), uncommittedDataset)),
+				"A dataset reading through an uncommitted overlay must suspend committed-evidence rewrites");
+	}
+
+	private static boolean committedEvidenceUsable(TripleSource tripleSource) throws Exception {
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		LmdbQueryOptimizerPipeline pipeline = new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics());
+		LmdbFilterSimplifierOptimizer simplifier = optimizers(pipeline.getOptimizers()).stream()
+				.filter(LmdbFilterSimplifierOptimizer.class::isInstance)
+				.map(LmdbFilterSimplifierOptimizer.class::cast)
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("The LMDB pipeline must contain its filter simplifier"));
+		Field field = LmdbFilterSimplifierOptimizer.class.getDeclaredField("committedEvidenceUsable");
+		field.setAccessible(true);
+		return field.getBoolean(simplifier);
 	}
 }

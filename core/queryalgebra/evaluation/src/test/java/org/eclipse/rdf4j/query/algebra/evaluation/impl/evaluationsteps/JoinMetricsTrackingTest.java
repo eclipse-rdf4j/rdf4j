@@ -24,6 +24,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -40,6 +41,8 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
 class JoinMetricsTrackingTest {
+
+	private static final String DEFERRED_COUNTERS_METADATA = "org.eclipse.rdf4j.query.algebra.evaluation.impl.deferredJoinCounters";
 
 	@Test
 	void doesNotCollectTelemetryWhenRuntimeTrackingIsDisabled() {
@@ -405,6 +408,180 @@ class JoinMetricsTrackingTest {
 				.isEqualTo(probeCount);
 		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL)).isZero();
 		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.MAX_RIGHT_ROWS_PER_LEFT_ACTUAL)).isEqualTo(1L);
+	}
+
+	// REINFORCE: publishing a deferred accumulator that never saw a probe initializes every join counter to zero
+	// (not the -1 "unknown" default) and releases the deferred-counter metadata from the join node.
+	@Test
+	void deferredPublishWithoutProbesInitializesCountersToZero() {
+		Join joinNode = sidedJoin();
+		AtomicReference<Runnable> publisher = new AtomicReference<>();
+		deferredAccumulator(joinNode, publisher);
+		assertThat(joinNode.getQueryModelMetadata(DEFERRED_COUNTERS_METADATA)).isInstanceOf(AtomicLongArray.class);
+
+		publisher.get().run();
+
+		assertThat(joinNode.getJoinRightIteratorsCreatedActual()).isZero();
+		assertThat(joinNode.getJoinLeftBindingsConsumedActual()).isZero();
+		assertThat(joinNode.getJoinRightBindingsConsumedActual()).isZero();
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL)).isZero();
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL)).isZero();
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.MAX_RIGHT_ROWS_PER_LEFT_ACTUAL)).isZero();
+		assertThat(joinNode.getQueryModelMetadata(DEFERRED_COUNTERS_METADATA)).isNull();
+	}
+
+	// REINFORCE: a deferred right probe counts only the rows consumed before its first close, a second close neither
+	// re-counts nor re-closes, and each side node receives its side-specific counters.
+	@Test
+	void deferredRightProbeCountsOnlyRowsConsumedBeforeClose() {
+		Join joinNode = sidedJoin();
+		AtomicReference<Runnable> publisher = new AtomicReference<>();
+		JoinMetricsTracking.Accumulator accumulator = deferredAccumulator(joinNode, publisher);
+		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapRightInput(delegateProducing(3), accumulator);
+
+		CloseableIteration<BindingSet> probe = wrapped.evaluate(EmptyBindingSet.getInstance());
+		probe.next();
+		probe.next();
+		probe.close();
+		probe.close();
+		publisher.get().run();
+
+		assertThat(joinNode.getJoinRightIteratorsCreatedActual()).isEqualTo(1);
+		assertThat(joinNode.getJoinLeftBindingsConsumedActual()).isZero();
+		assertThat(joinNode.getJoinRightBindingsConsumedActual()).isEqualTo(2);
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL)).isEqualTo(1);
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL)).isZero();
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.MAX_RIGHT_ROWS_PER_LEFT_ACTUAL)).isEqualTo(2);
+		StatementPattern rightNode = (StatementPattern) joinNode.getRightArg();
+		assertThat(rightNode.getJoinRightIteratorsCreatedActual()).isEqualTo(1);
+		assertThat(rightNode.getJoinLeftBindingsConsumedActual()).isEqualTo(1);
+		assertThat(rightNode.getJoinRightBindingsConsumedActual()).isEqualTo(2);
+		StatementPattern leftNode = (StatementPattern) joinNode.getLeftArg();
+		assertThat(leftNode.getJoinRightIteratorsCreatedActual()).isZero();
+		assertThat(leftNode.getJoinLeftBindingsConsumedActual()).isZero();
+		assertThat(leftNode.getJoinRightBindingsConsumedActual()).isZero();
+	}
+
+	// REINFORCE: a deferred left input attributes consumed rows to the join and left nodes only and never touches
+	// the right-probe counters (right iterators, empty probes, rows-with-match, max rows per left).
+	@Test
+	void deferredLeftInputCountsRowsWithoutTouchingRightProbeCounters() {
+		Join joinNode = sidedJoin();
+		AtomicReference<Runnable> publisher = new AtomicReference<>();
+		JoinMetricsTracking.Accumulator accumulator = deferredAccumulator(joinNode, publisher);
+		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapLeftInput(delegateProducing(4), accumulator);
+
+		try (CloseableIteration<BindingSet> iteration = wrapped.evaluate(EmptyBindingSet.getInstance())) {
+			consume(iteration);
+		}
+		publisher.get().run();
+
+		assertThat(joinNode.getJoinLeftBindingsConsumedActual()).isEqualTo(4);
+		assertThat(joinNode.getJoinRightBindingsConsumedActual()).isZero();
+		assertThat(joinNode.getJoinRightIteratorsCreatedActual()).isZero();
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL)).isZero();
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL)).isZero();
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.MAX_RIGHT_ROWS_PER_LEFT_ACTUAL)).isZero();
+		StatementPattern leftNode = (StatementPattern) joinNode.getLeftArg();
+		assertThat(leftNode.getJoinLeftBindingsConsumedActual()).isEqualTo(4);
+		assertThat(leftNode.getJoinRightBindingsConsumedActual()).isZero();
+		assertThat(leftNode.getJoinRightIteratorsCreatedActual()).isZero();
+		StatementPattern rightNode = (StatementPattern) joinNode.getRightArg();
+		assertThat(rightNode.getJoinLeftBindingsConsumedActual()).isZero();
+		assertThat(rightNode.getJoinRightBindingsConsumedActual()).isZero();
+		assertThat(rightNode.getJoinRightIteratorsCreatedActual()).isZero();
+	}
+
+	// REINFORCE: a right probe that returns the shared EMPTY_ITERATION sentinel is counted as an empty probe without
+	// being wrapped, so callers can keep comparing it by identity.
+	@Test
+	void deferredEmptyIterationProbeIsCountedWithoutWrapping() {
+		Join joinNode = sidedJoin();
+		AtomicReference<Runnable> publisher = new AtomicReference<>();
+		JoinMetricsTracking.Accumulator accumulator = deferredAccumulator(joinNode, publisher);
+		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapRightInput(
+				bindings -> QueryEvaluationStep.EMPTY_ITERATION, accumulator);
+
+		CloseableIteration<BindingSet> probe = wrapped.evaluate(EmptyBindingSet.getInstance());
+		assertThat(probe).isSameAs(QueryEvaluationStep.EMPTY_ITERATION);
+		publisher.get().run();
+
+		assertThat(joinNode.getJoinRightIteratorsCreatedActual()).isEqualTo(1);
+		assertThat(joinNode.getJoinRightBindingsConsumedActual()).isZero();
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL)).isEqualTo(1);
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL)).isZero();
+		StatementPattern rightNode = (StatementPattern) joinNode.getRightArg();
+		assertThat(rightNode.getJoinRightIteratorsCreatedActual()).isEqualTo(1);
+		assertThat(rightNode.getJoinLeftBindingsConsumedActual()).isEqualTo(1);
+	}
+
+	// REINFORCE: live deferred counters stay visible through the join node's metadata as an AtomicLongArray (index 1
+	// = left rows, index 2 = right rows, the layout DefaultEvaluationStrategy.joinCount reads) until publish moves
+	// them onto the node and removes the metadata.
+	@Test
+	void deferredCountersAreVisibleThroughJoinMetadataUntilPublished() {
+		Join joinNode = sidedJoin();
+		AtomicReference<Runnable> publisher = new AtomicReference<>();
+		JoinMetricsTracking.Accumulator accumulator = deferredAccumulator(joinNode, publisher);
+		QueryEvaluationStep right = JoinMetricsTracking.wrapRightInput(delegateProducing(2), accumulator);
+		QueryEvaluationStep left = JoinMetricsTracking.wrapLeftInput(delegateProducing(3), accumulator);
+
+		try (CloseableIteration<BindingSet> iteration = left.evaluate(EmptyBindingSet.getInstance())) {
+			consume(iteration);
+		}
+		try (CloseableIteration<BindingSet> iteration = right.evaluate(EmptyBindingSet.getInstance())) {
+			consume(iteration);
+		}
+
+		Object metadata = joinNode.getQueryModelMetadata(DEFERRED_COUNTERS_METADATA);
+		assertThat(metadata).isInstanceOf(AtomicLongArray.class);
+		AtomicLongArray counters = (AtomicLongArray) metadata;
+		assertThat(counters.get(1)).isEqualTo(3L);
+		assertThat(counters.get(2)).isEqualTo(2L);
+		assertThat(joinNode.getJoinLeftBindingsConsumedActual()).isEqualTo(-1);
+		assertThat(joinNode.getJoinRightBindingsConsumedActual()).isEqualTo(-1);
+
+		publisher.get().run();
+
+		assertThat(joinNode.getQueryModelMetadata(DEFERRED_COUNTERS_METADATA)).isNull();
+		assertThat(joinNode.getJoinLeftBindingsConsumedActual()).isEqualTo(3);
+		assertThat(joinNode.getJoinRightBindingsConsumedActual()).isEqualTo(2);
+	}
+
+	// REINFORCE: running the deferred publisher twice must not double count.
+	@Test
+	void deferredPublishIsIdempotent() {
+		Join joinNode = sidedJoin();
+		AtomicReference<Runnable> publisher = new AtomicReference<>();
+		JoinMetricsTracking.Accumulator accumulator = deferredAccumulator(joinNode, publisher);
+		QueryEvaluationStep wrapped = JoinMetricsTracking.wrapRightInput(delegateProducing(1), accumulator);
+
+		try (CloseableIteration<BindingSet> iteration = wrapped.evaluate(EmptyBindingSet.getInstance())) {
+			consume(iteration);
+		}
+		publisher.get().run();
+		publisher.get().run();
+
+		assertThat(joinNode.getJoinRightIteratorsCreatedActual()).isEqualTo(1);
+		assertThat(joinNode.getJoinRightBindingsConsumedActual()).isEqualTo(1);
+		assertThat(joinNode.getLongMetricActual(TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL)).isEqualTo(1);
+	}
+
+	private static Join sidedJoin() {
+		return new Join(new StatementPattern(Var.of("a"), Var.of("b"), Var.of("c")),
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+	}
+
+	private static JoinMetricsTracking.Accumulator deferredAccumulator(Join joinNode,
+			AtomicReference<Runnable> publisher) {
+		joinNode.setRuntimeTelemetryEnabled(true);
+		joinNode.setQueryModelMetadata(RootCloseTelemetryRegistrar.METADATA_KEY,
+				(Consumer<Runnable>) publisher::set);
+		JoinMetricsTracking.Accumulator accumulator = JoinMetricsTracking.deferredAccumulator(joinNode,
+				joinNode.getLeftArg(), joinNode.getRightArg(), true);
+		assertThat(accumulator).isNotNull();
+		assertThat(publisher.get()).isNotNull();
+		return accumulator;
 	}
 
 	private static QueryEvaluationStep delegateProducing(int rowCount) {

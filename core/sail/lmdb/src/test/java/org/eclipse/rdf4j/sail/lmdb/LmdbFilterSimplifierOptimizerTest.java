@@ -259,7 +259,7 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(
 				new FixedGuaranteeFilterPassStatistics(0.50d, RdfTermDomain.classify(VF.createLiteral("A"))))
-						.optimize(root, null, null);
+				.optimize(root, null, null);
 
 		assertFalse(containsFilter(root.getArg()));
 		assertEquals(Set.of(VF.createLiteral("A"), VF.createLiteral("B")), anchoredValues(root.getArg(), "o"));
@@ -274,7 +274,7 @@ class LmdbFilterSimplifierOptimizerTest {
 		new LmdbFilterSimplifierOptimizer(
 				new FixedGuaranteeFilterPassStatistics(0.50d,
 						RdfTermDomain.classify(VF.createLiteral("Book 1"))))
-								.optimize(root, null, null);
+				.optimize(root, null, null);
 
 		assertFalse(containsFilter(root.getArg()));
 		assertEquals(Set.of(VF.createLiteral("Book 1"), VF.createLiteral("Book 2")),
@@ -289,7 +289,7 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(
 				new FixedGuaranteeFilterPassStatistics(0.50d, RdfTermDomain.classify(VF.createLiteral("A"))))
-						.optimize(root, null, null);
+				.optimize(root, null, null);
 
 		assertFalse(containsFilter(root.getArg()));
 		assertEquals(Set.of(VF.createLiteral("A"), VF.createLiteral("B"), VF.createLiteral("C")),
@@ -308,7 +308,7 @@ class LmdbFilterSimplifierOptimizerTest {
 		new LmdbFilterSimplifierOptimizer(
 				new FixedGuaranteeFilterPassStatistics(0.50d,
 						RdfTermDomain.classify(VF.createLiteral("Author 1"))))
-								.optimize(root, null, null);
+				.optimize(root, null, null);
 
 		BindingSetAssignment precomputedFilter = findBindingSetAssignmentFor(root.getArg(), "authorName", "target")
 				.orElseThrow(() -> new AssertionError("Expected precomputed authorName/target filter relation: "
@@ -333,7 +333,7 @@ class LmdbFilterSimplifierOptimizerTest {
 		new LmdbFilterSimplifierOptimizer(
 				new FixedGuaranteeFilterPassStatistics(0.50d,
 						RdfTermDomain.classify(VF.createLiteral("Author 1"))))
-								.optimize(root, null, null);
+				.optimize(root, null, null);
 
 		BindingSetAssignment precomputedFilter = findBindingSetAssignmentFor(root.getArg(), "authorName", "target")
 				.orElseThrow(() -> new AssertionError("Expected precomputed authorName/target IN relation: "
@@ -558,7 +558,7 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.50d,
 				RdfTermDomain.classify(VF.createLiteral("2024-05-01T05:00:00Z", XSD.DATETIME))))
-						.optimize(root, null, null);
+				.optimize(root, null, null);
 
 		assertFalse(containsFilter(root.getArg()));
 		assertEquals(Set.of(VF.createLiteral("2024-01-01T05:00:00Z", XSD.DATETIME)),
@@ -591,7 +591,7 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(
 				new FixedGuaranteeFilterPassStatistics(0.50d, RdfTermDomain.CANONICAL_INTEGER))
-						.optimize(root, null, null);
+				.optimize(root, null, null);
 
 		assertFalse(containsFilter(root.getArg()));
 		Set<Value> values = anchoredValues(root.getArg(), "value");
@@ -611,7 +611,7 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(
 				new FixedGuaranteeFilterPassStatistics(0.50d, RdfTermDomain.CANONICAL_INTEGER))
-						.optimize(root, null, null);
+				.optimize(root, null, null);
 
 		assertFalse(containsFilter(root.getArg()));
 		Set<Value> values = anchoredValues(root.getArg(), "value");
@@ -630,7 +630,7 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(
 				new FixedGuaranteeFilterPassStatistics(0.50d, RdfTermDomain.CANONICAL_INTEGER))
-						.optimize(root, null, null);
+				.optimize(root, null, null);
 
 		assertFalse(containsFilter(root.getArg()));
 		Set<Value> values = anchoredValues(root.getArg(), "value");
@@ -694,7 +694,7 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(
 				new FixedGuaranteeFilterPassStatistics(0.50d, RdfTermDomain.NUMBER))
-						.optimize(root, null, null);
+				.optimize(root, null, null);
 
 		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
 		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
@@ -710,7 +710,7 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(
 				new FixedGuaranteeFilterPassStatistics(0.50d, RdfTermDomain.CANONICAL_INTEGER))
-						.optimize(root, null, null);
+				.optimize(root, null, null);
 
 		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
 		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
@@ -726,7 +726,7 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(
 				new FixedGuaranteeFilterPassStatistics(0.50d, RdfTermDomain.CANONICAL_INTEGER))
-						.optimize(root, null, null);
+				.optimize(root, null, null);
 
 		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
 		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
@@ -980,7 +980,7 @@ class LmdbFilterSimplifierOptimizerTest {
 
 		new LmdbFilterSimplifierOptimizer(
 				new FixedObjectDomainStatistics(RdfTermDomain.classify(VF.createLiteral(1))))
-						.optimize(root, null, null);
+				.optimize(root, null, null);
 
 		assertTrue(containsFilterOnBinding(root.getArg(), "w"),
 				"Packed Cascades must receive the original object-membership filter as a costed alternative");
@@ -1370,5 +1370,31 @@ class LmdbFilterSimplifierOptimizerTest {
 			return containsUnion(leftJoin.getLeftArg()) || containsUnion(leftJoin.getRightArg());
 		}
 		return false;
+	}
+
+	// REINFORCE: planning for a transaction with uncommitted changes must not let committed predicate-object domain
+	// guarantees drive constraining rewrites, while the committed policy (and the single-argument constructor) keeps
+	// them.
+	@Test
+	void uncommittedTransactionEvidencePolicySuspendsGuaranteeDrivenAnchors() {
+		FixedGuaranteeFilterPassStatistics statistics = new FixedGuaranteeFilterPassStatistics(0.50d,
+				RdfTermDomain.classify(VF.createLiteral("A")));
+
+		QueryRoot committed = new QueryRoot(new Filter(
+				statementPatternWithPredicate("s", "http://example.com/theme/library/name", "o"),
+				listMember("o", "A", "B")));
+		new LmdbFilterSimplifierOptimizer(statistics, true).optimize(committed, null, null);
+		assertFalse(containsFilter(committed.getArg()));
+		assertEquals(Set.of(VF.createLiteral("A"), VF.createLiteral("B")), anchoredValues(committed.getArg(), "o"));
+
+		QueryRoot uncommitted = new QueryRoot(new Filter(
+				statementPatternWithPredicate("s", "http://example.com/theme/library/name", "o"),
+				listMember("o", "A", "B")));
+		new LmdbFilterSimplifierOptimizer(statistics, false).optimize(uncommitted, null, null);
+		Filter retainedFilter = assertInstanceOf(Filter.class, uncommitted.getArg(),
+				"The committed guarantee does not describe the transaction's uncommitted rows: the filter must stay");
+		assertInstanceOf(StatementPattern.class, retainedFilter.getArg());
+		assertFalse(containsBindingSetAssignment(uncommitted.getArg()),
+				"No guarantee-narrowed VALUES anchor may enumerate stored terms for an uncommitted overlay");
 	}
 }

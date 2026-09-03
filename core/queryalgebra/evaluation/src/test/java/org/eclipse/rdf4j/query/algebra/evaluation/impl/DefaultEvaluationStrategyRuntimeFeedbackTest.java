@@ -18,17 +18,24 @@ import java.lang.management.ManagementFactory;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
@@ -160,6 +167,48 @@ class DefaultEvaluationStrategyRuntimeFeedbackTest {
 		assertThat(statistics.recordCalls).isEqualTo(1L);
 		assertThat(statistics.lastObservation.opens()).isEqualTo(2L);
 		assertThat(statistics.lastObservation.exhaustedOpens()).isEqualTo(2L);
+	}
+
+	// REPRO: a specialised EXISTS filter whose subquery needs per-probe substitution re-precompiles the cloned
+	// subquery through the public precompile entry point for every outer row
+	// (FilterIterator.evaluateSubstitutedExists), so every probe resolves a fresh runtime-feedback target for the
+	// cloned tracked node and records a separate operator outcome, breaking the one-resolve/one-record-per-compilation
+	// contract the other tests in this class establish.
+	@Test
+	void substitutedExistsProbesDoNotResolveOrRecordFeedbackPerOuterRow() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		BindingSetAssignment outer = new BindingSetAssignment();
+		outer.setBindingNames(Set.of("x"));
+		outer.setBindingSets(List.of(binding("x", vf.createLiteral(1)), binding("x", vf.createLiteral(2)),
+				binding("x", vf.createLiteral(3))));
+		GuardedBindingSetAssignment inner = trackedAssignment();
+		Filter subquery = new Filter(inner,
+				new Compare(Var.of("x"), new ValueConstant(vf.createLiteral(2)), Compare.CompareOp.EQ));
+		Filter filter = new Filter(outer, new Exists(subquery));
+		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "materialized-hash");
+		RecordingEvaluationStatistics statistics = new RecordingEvaluationStatistics();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, null, 0,
+				statistics);
+
+		QueryEvaluationStep compiled = strategy.precompile(new QueryRoot(filter));
+		long resolvedAtCompile = statistics.resolveCalls;
+		assertThat(resolvedAtCompile).isPositive();
+
+		long rows = 0L;
+		try (CloseableIteration<BindingSet> results = compiled.evaluate(EmptyBindingSet.getInstance())) {
+			while (results.hasNext()) {
+				results.next();
+				rows++;
+			}
+		}
+
+		assertThat(rows).isEqualTo(1L);
+		assertThat(statistics.resolveCalls)
+				.as("no runtime feedback target may be resolved while probing outer rows")
+				.isEqualTo(resolvedAtCompile);
+		assertThat(statistics.recordCalls)
+				.as("each compiled target publishes exactly once at root close")
+				.isEqualTo(resolvedAtCompile);
 	}
 
 	@Test
@@ -430,6 +479,12 @@ class DefaultEvaluationStrategyRuntimeFeedbackTest {
 				};
 			}
 		};
+	}
+
+	private static BindingSet binding(String name, Value value) {
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding(name, value);
+		return row;
 	}
 
 	private static GuardedBindingSetAssignment trackedAssignment() {
