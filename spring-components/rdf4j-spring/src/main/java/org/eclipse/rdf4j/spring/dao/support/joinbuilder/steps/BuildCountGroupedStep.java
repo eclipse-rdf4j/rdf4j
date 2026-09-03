@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.spring.dao.support.joinbuilder.JoinQuery;
 import org.eclipse.rdf4j.spring.dao.support.joinbuilder.evaluationbuilder.JoinQueryCountGroupedEvaluationBuilder;
 import org.eclipse.rdf4j.spring.dao.support.joinbuilder.queryfactory.JoinCountGroupedQueryFactory;
 
+/** Builds a grouped-count join query or reusable factory. */
 public interface BuildCountGroupedStep extends DoNotCacheSparqlStep<BuildCountGroupedStep> {
 
 	JoinQuery<JoinQueryCountGroupedEvaluationBuilder> build();

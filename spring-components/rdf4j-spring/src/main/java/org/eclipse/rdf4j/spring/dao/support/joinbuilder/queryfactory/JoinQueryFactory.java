@@ -38,6 +38,7 @@ public abstract class JoinQueryFactory<T extends JoinQueryEvaluationBuilder> {
 		this.joinQuerySupplier = joinQuerySupplier;
 	}
 
+	/** Returns an evaluation builder for the supplied template. The query is initialized lazily and then reused. */
 	public T get(RDF4JTemplate rdf4JTemplate) {
 		if (joinQuery != null) {
 			return joinQuery.evaluationBuilder(rdf4JTemplate);

@@ -16,7 +16,9 @@ import java.util.function.BiFunction;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
 
+/** Configures constraints on the relation connecting source and target. */
 public interface RelationConstraintsStep extends AdditionalGroupVariableStep {
+	/** Adds a graph pattern evaluated when the relation exists. */
 	AdditionalGroupVariableStep relationConstraints(
 			BiFunction<Variable, Variable, GraphPattern> constraintBuilder);
 }

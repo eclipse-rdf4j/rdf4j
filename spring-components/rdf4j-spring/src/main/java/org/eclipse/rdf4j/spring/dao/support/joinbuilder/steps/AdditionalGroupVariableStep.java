@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.spring.dao.support.joinbuilder.steps;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 
+/** Selects an optional context or grouping variable. */
 public interface AdditionalGroupVariableStep extends ValuesStep {
 
 	/**

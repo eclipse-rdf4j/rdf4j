@@ -33,7 +33,9 @@ import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
  */
 public class JoinQuery<T extends JoinQueryEvaluationBuilder> {
 
+	/** Variable containing the source entity identifier. */
 	public static final Variable _sourceEntity = SparqlBuilder.var("sourceEntity");
+	/** Variable containing the target entity identifier. */
 	public static final Variable _targetEntity = SparqlBuilder.var("targetEntity");
 	public static final Variable _count = SparqlBuilder.var("count");
 	public static final Variable _groupKey = SparqlBuilder.var("groupKey");
@@ -43,6 +45,7 @@ public class JoinQuery<T extends JoinQueryEvaluationBuilder> {
 		this.evaluationBuilderFactory = evaluationBuilderFactory;
 	}
 
+	/** Creates a per-execution builder backed by the supplied template. */
 	public T evaluationBuilder(RDF4JTemplate rdf4JTemplate) {
 		return evaluationBuilderFactory.apply(rdf4JTemplate);
 	}

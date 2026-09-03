@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.spring.dao.support.BindingSetMapper;
 
+/** Convenience base class that creates and populates a new target instance per binding set. */
 public abstract class RowMapperFactoryBase<T> implements RowMapperFactory<T> {
 	private final Supplier<T> instanceFactory;
 

@@ -16,6 +16,7 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
 
+/** Configures the graph pattern that binds target entity data. */
 public interface TargetEntityPatternStep<T> extends BuildEntitiesStep<T> {
 	BuildEntitiesStep<T> targetEntityPattern(Function<Variable, GraphPattern> entityPattern);
 }

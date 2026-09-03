@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.spring.dao.support.joinbuilder.steps;
 
 import org.eclipse.rdf4j.spring.dao.support.joinbuilder.RowMapperFactory;
 
+/** Configures the target row mapper or proceeds to build an identifier query. */
 public interface RowMapperStep extends BuildDefaultStep {
 	<T> TargetEntityProjectionStep<T> rowMapper(RowMapperFactory<T> rowMapperFactory);
 }

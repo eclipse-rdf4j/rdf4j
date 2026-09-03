@@ -16,6 +16,7 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.sparqlbuilder.core.Projectable;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 
+/** Selects target variables to project for entity results. */
 public interface TargetEntityProjectionStep<T> extends TargetEntityPatternStep<T> {
 	TargetEntityPatternStep<T> targetEntityProjection(Function<Variable, Projectable[]> projection);
 }

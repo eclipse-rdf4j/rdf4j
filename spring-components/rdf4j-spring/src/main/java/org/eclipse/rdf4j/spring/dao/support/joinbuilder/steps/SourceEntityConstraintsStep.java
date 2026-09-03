@@ -16,7 +16,9 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
 
+/** Configures constraints applied to source entities before joining. */
 public interface SourceEntityConstraintsStep extends TargetEntityConstraintsStep {
+	/** Adds a graph pattern evaluated against the source entity variable. */
 	TargetEntityConstraintsStep sourceEntityConstraints(
 			Function<Variable, GraphPattern> constraintBuilder);
 }

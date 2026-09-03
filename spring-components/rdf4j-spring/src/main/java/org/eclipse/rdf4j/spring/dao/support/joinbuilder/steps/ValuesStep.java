@@ -15,6 +15,7 @@ import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.sparqlbuilder.constraint.Values;
 
+/** Adds optional inline VALUES bindings to a join query. */
 public interface ValuesStep extends JoinTypeStep {
 	/**
 	 * Provides inline data via a VALUES clause.

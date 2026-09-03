@@ -235,6 +235,118 @@ public class JoinQueryBuilderTests extends RDF4JSpringTestBase {
 						() -> query.evaluationBuilder(rdf4JTemplate)
 								.getGroupedCountsBySourceEntityIdByContextId()));
 	}
+
+	@Test
+	public void builtQueryRetainsItsContextVariableAfterBuilderReuse() {
+		var configurable = JoinQueryBuilder.of(TRAINED_BY)
+				.sourceEntityConstraints(character -> character.isA(FORCE_USER).andHas(HOMEWORLD, CHARACTER_HOMEWORLD))
+				.targetEntityConstraints(
+						master -> master.isA(MASTER).andHas(AFFILIATION, MASTER_AFFILIATION));
+		var query = configurable.withContextIdVariable(CHARACTER_HOMEWORLD).leftOuterJoin().build();
+
+		configurable.withContextIdVariable(MASTER_AFFILIATION);
+
+		Map<IRI, Map<IRI, Set<IRI>>> result = query.evaluationBuilder(rdf4JTemplate).asOneToManyByContextId();
+
+		assertEquals(Set.of(LUKE, ANAKIN), result.get(TATOOINE).keySet());
+		assertEquals(Set.of(REY), result.get(JAKKU).keySet());
+	}
+
+	@Test
+	public void builtGroupedCountQueryRetainsItsGroupVariableAfterBuilderReuse() {
+		var configurable = JoinQueryBuilder.of(TRAINED_BY)
+				.sourceEntityConstraints(character -> character.isA(FORCE_USER))
+				.targetEntityConstraints(
+						master -> master.isA(MASTER).andHas(AFFILIATION, MASTER_AFFILIATION));
+		var countStep = configurable.innerJoin().count();
+		var query = countStep.groupBy(MASTER_AFFILIATION).build();
+
+		countStep.groupBy(MASTER_NAME);
+
+		Map<IRI, Map<Value, Integer>> result =
+				query.evaluationBuilder(rdf4JTemplate).getGroupedCountsBySourceEntityId();
+
+		assertEquals(Map.of(LIGHT_SIDE, 2), result.get(LUKE));
+	}
+
+	@Test
+	public void builtEntityQueryRetainsItsRowMapperAfterBuilderReuse() {
+		var configurable = JoinQueryBuilder.of(TRAINED_BY)
+				.sourceEntityConstraints(character -> character.isA(FORCE_USER))
+				.targetEntityConstraints(master -> master.isA(MASTER))
+				.innerJoin();
+		var query = configurable
+				.rowMapper(master -> bindings -> "original")
+				.targetEntityProjection(master -> new Projectable[] { master })
+				.targetEntityPattern(master -> master.has(RDFS.LABEL, MASTER_NAME))
+				.build();
+
+		configurable.rowMapper(master -> bindings -> "replacement");
+
+		Map<IRI, Set<String>> result = query.evaluationBuilder(rdf4JTemplate).asOneToMany();
+
+		assertEquals(Set.of("original"), result.get(LUKE));
+	}
+
+	@Test
+	public void builtFactoryRetainsConfigurationAfterBuilderReuse() {
+		var configurable = JoinQueryBuilder.of(TRAINED_BY)
+				.sourceEntityConstraints(character -> character.isA(FORCE_USER).andHas(HOMEWORLD, CHARACTER_HOMEWORLD))
+				.targetEntityConstraints(
+						master -> master.isA(MASTER).andHas(AFFILIATION, MASTER_AFFILIATION));
+		var factory = configurable.withContextIdVariable(CHARACTER_HOMEWORLD).leftOuterJoin().buildFactory();
+
+		configurable.withContextIdVariable(MASTER_AFFILIATION);
+
+		Map<IRI, Map<IRI, Set<IRI>>> result =
+				factory.get(rdf4JTemplate).asOneToManyByContextId();
+
+		assertEquals(Set.of(LUKE, ANAKIN), result.get(TATOOINE).keySet());
+		assertEquals(Set.of(REY), result.get(JAKKU).keySet());
+	}
+
+	@Test
+	public void queriesBuiltFromSameBuilderUseDistinctCachedSparql() {
+		var configurable = JoinQueryBuilder.of(TRAINED_BY)
+				.sourceEntityConstraints(character -> character.isA(FORCE_USER))
+				.targetEntityConstraints(master -> master.isA(MASTER));
+		var innerQuery = configurable.innerJoin().build();
+		var leftQuery = configurable.leftOuterJoin().build();
+
+		innerQuery.evaluationBuilder(rdf4JTemplate).asOneToMany();
+		Map<IRI, Set<IRI>> leftResult = leftQuery.evaluationBuilder(rdf4JTemplate).asOneToMany();
+
+		assertEquals(Set.of(), leftResult.get(REY));
+	}
+
+	@Test
+	public void entityQueryAutomaticallyProjectsTargetIdentifier() {
+		Map<IRI, Set<String>> result = JoinQueryBuilder.of(TRAINED_BY)
+				.sourceEntityConstraints(character -> character.isA(FORCE_USER))
+				.targetEntityConstraints(master -> master.isA(MASTER))
+				.innerJoin()
+				.rowMapper(master -> bindings -> getString(bindings, MASTER_NAME))
+				.targetEntityProjection(master -> new Projectable[] { MASTER_NAME })
+				.targetEntityPattern(master -> master.has(RDFS.LABEL, MASTER_NAME))
+				.build()
+				.evaluationBuilder(rdf4JTemplate)
+				.asOneToMany();
+
+		assertEquals(Set.of("Obi-Wan Kenobi", "Yoda"), result.get(LUKE));
+	}
+
+	@Test
+	public void requiredTargetProjectionIsNotDuplicated() {
+		Projectable[] withoutTarget = JoinQueryBuilder.addRequiredTargetProjection(new Projectable[] { MASTER_NAME });
+		assertEquals(2, withoutTarget.length);
+		assertEquals(JoinQuery._targetEntity.getQueryString(), withoutTarget[0].getQueryString());
+		assertEquals(MASTER_NAME.getQueryString(), withoutTarget[1].getQueryString());
+		Projectable[] withTarget = JoinQueryBuilder.addRequiredTargetProjection(new Projectable[] { JoinQuery._targetEntity, MASTER_NAME });
+		assertEquals(2, withTarget.length);
+		assertEquals(JoinQuery._targetEntity.getQueryString(), withTarget[0].getQueryString());
+		assertEquals(MASTER_NAME.getQueryString(), withTarget[1].getQueryString());
+	}
+
 	@Test
 	public void entityJoinDoesNotMapAnUnboundOuterJoinTarget() {
 		Map<IRI, Set<MasterRecord>> result = JoinQueryBuilder.of(TRAINED_BY)

@@ -15,5 +15,6 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.query.TupleQueryResult;
 
+/** Converts an entire tuple-query result into an application value. */
 public interface WholeResultMapper<T> extends Function<TupleQueryResult, T> {
 }
