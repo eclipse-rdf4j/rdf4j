@@ -503,8 +503,17 @@ test('presentation mode stays a live instrument, not a slideshow of screenshots'
     expect(rail.x + rail.width).toBeLessThanOrEqual(stage.x + 1);
     expect(rail.height).toBeGreaterThan(400);
     await expect(page.locator('.present-rail-card [data-statement]')).toHaveCount(8);
+    expect(rail.width).toBeGreaterThanOrEqual(350);
     for (let index = 0; index < 8; index++) {
         const text = chips.nth(index).locator('.statement-rdf');
+        // A range over the text node reports one client rect per line box, so this is a direct
+        // reading of "does this triple wrap", not a proxy for it.
+        const lines = await text.evaluate((node) => {
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            return range.getClientRects().length;
+        });
+        expect(lines, `statement ${index + 1} wraps onto ${lines} lines in the rail`).toBe(1);
         const untruncated = await text.evaluate((node) => node.scrollWidth <= node.clientWidth + 1);
         expect(untruncated, `statement ${index + 1} is clipped in the rail`).toBe(true);
     }
@@ -561,7 +570,9 @@ test('every slide is drawn at least life size on a presentation screen', async (
         const measured = await page.evaluate(() => {
             const frame = document.querySelector('#present-stage > .lesson-frame');
             return {
-                scale: Number(/scale\(([\d.]+)\)/.exec(frame.style.transform)[1]),
+                // The card is magnified with `zoom` rather than `transform: scale()` so its text is
+                // rasterized at projected size; the factor is read straight off that property.
+                scale: Number(frame.style.zoom),
                 title: document.getElementById('present-title').textContent
             };
         });

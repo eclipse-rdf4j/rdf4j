@@ -792,10 +792,12 @@
         .byte.selected-byte { outline: 2px solid #ffae76; outline-offset: -1px; background: #84441c; color: white; animation: byte-pulse .7s ease both; }
         .byte.slack-byte { color: #77746d; background: repeating-linear-gradient(135deg, #302f2b 0 3px, #282824 3px 6px); }
 
+        /* The pulse is a ring closing in on the cell, not a scale of the cell: magnifying it would
+           resample its hex digits for the length of the animation, which reads as a blur. */
         @keyframes byte-pulse {
-            0% { transform: scale(.82); }
-            55% { transform: scale(1.12); }
-            100% { transform: scale(1); }
+            0% { outline-color: rgba(255, 174, 118, 0); outline-offset: 5px; background: #b3652c; }
+            55% { outline-color: #ffae76; outline-offset: -3px; background: #9c5220; }
+            100% { outline-color: #ffae76; outline-offset: -1px; background: #84441c; }
         }
 
         .lesson-footer { margin-top: 28px; padding-top: 18px; display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); }
@@ -837,7 +839,7 @@
          */
         html[data-present="true"] {
             scroll-behavior: auto;
-            --present-rail: 300px;
+            --present-rail: 400px;
             --orange: #c0563a;
             --orange-dark: #97402a;
             --orange-soft: #fbf0ec;
@@ -891,8 +893,10 @@
             justify-content: safe center;
             overflow: auto;
         }
-        /* The lesson card is authored at one fixed width and then scaled, exactly like a slide
-           master: line breaks stay identical at every projector size. */
+        /* The lesson card is authored at one fixed width and then magnified with `zoom`, exactly
+           like a slide master: line breaks stay identical at every projector size, and because
+           `zoom` multiplies into layout rather than resampling a finished paint, the text is drawn
+           at the projected size instead of being blown up after the fact. */
         html[data-present="true"] .lesson-frame {
             position: absolute;
             top: 0;
@@ -903,7 +907,6 @@
             border-radius: 18px;
             background: white;
             box-shadow: 0 1px 2px rgba(28, 25, 20, .04), 0 14px 40px rgba(28, 25, 20, .07);
-            transform-origin: top left;
         }
         html[data-present="true"] .lesson-frame.entering { animation: none; }
         /* A two-column panel grid with one column focused away would otherwise leave the kept
@@ -976,7 +979,7 @@
             top: var(--present-top, 104px);
             bottom: var(--present-bottom, 62px);
             width: var(--present-rail, 300px);
-            padding: 4px clamp(12px, 1.3vw, 18px) 12px clamp(16px, 3vw, 46px);
+            padding: 4px 14px 12px clamp(16px, 3vw, 46px);
             display: flex;
             flex-direction: column;
             pointer-events: auto;
@@ -987,7 +990,7 @@
             display: flex;
             flex-direction: column;
             gap: 11px;
-            padding: 15px 13px;
+            padding: 15px 12px;
             border: 1px solid #eceae3;
             border-radius: 16px;
             background: white;
@@ -1031,8 +1034,8 @@
 
         .present-statements { min-height: 0; overflow: auto; }
         .present-statements .statement-list { display: grid; gap: 2px; margin: 0; padding: 0; }
-        .present-statements .statement-button { margin: 0; padding: 9px 10px 9px 38px; }
-        .present-statements .statement-number { top: 9px; left: 10px; width: 19px; height: 19px; font-size: 9px; }
+        .present-statements .statement-button { margin: 0; padding: 9px 10px 9px 34px; }
+        .present-statements .statement-number { top: 9px; left: 9px; width: 19px; height: 19px; font-size: 9px; }
         .present-statements .statement-rdf { font-size: 10px; line-height: 1.42; }
         .present-statements .statement-meta { margin-top: 5px; font-size: 9px; }
 
@@ -1049,17 +1052,12 @@
                 padding: calc(var(--present-top, 104px) + 12px) 18px calc(var(--present-bottom, 62px) + 12px)
                     calc(var(--present-rail) + 18px);
             }
-            html[data-present="true"] .present-statements .statement-button { padding: 7px 9px 7px 34px; }
+            html[data-present="true"] .present-statements .statement-button { padding: 7px 10px 7px 34px; }
             html[data-present="true"] .present-statements .statement-number { top: 7px; }
             /* Eight triples have to fit without scrolling; the graph kind is the one part of a row
                that the coloured explicit/inferred dot already says on its own. */
             html[data-present="true"] .present-statements .statement-kind { display: none; }
             html[data-present="true"] .present-statements .statement-meta { margin-top: 4px; }
-        }
-
-        /* A narrow screen cannot spare 300px of slide for the rail. */
-        @media (max-width: 1400px) {
-            html[data-present="true"] { --present-rail: 232px; }
         }
 
         @media (max-width: 1120px) {
@@ -1147,7 +1145,7 @@
         <div class="brand">
             <div class="brand-mark" aria-hidden="true">R4</div>
             <div>
-                <div class="brand-name">RDF4J adjacency laboratory</div>
+                <div class="brand-name">Adjacency index</div>
                 <div class="brand-subtitle">quad → nested CSR → packed vectors → delta generations → bytes</div>
             </div>
         </div>
@@ -1251,7 +1249,7 @@
                 <button class="present-nav present-nav-ghost" id="present-exit" type="button">Exit presentation</button>
                 <button class="present-nav present-nav-primary" id="present-next" type="button">Next idea →</button>
             </div>
-            <p class="present-wordmark">RDF4J <strong>adjacency laboratory</strong></p>
+            <p class="present-wordmark"><strong>Adjacency index</strong></p>
         </footer>
     </div>
 
@@ -2205,7 +2203,7 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
                 keep: [".page-summary", ".page-map-shell"]
             }),
             Object.freeze({
-                step: 7, width: 1420, layout: "pair", eyebrow: "one real page",
+                step: 7, layout: "pair", eyebrow: "one real page",
                 title: "A 160-byte header and eight offset/length descriptors",
                 lead: "Fixed offsets, little-endian, no parsing: row and neighbour fences let a shard directory reject a page without decoding it, and a descriptor of length zero is a column this page omitted.",
                 keep: [".byte-inspector:has([data-header-field])", ".byte-inspector:has(.section-table)"]
@@ -3554,7 +3552,7 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
         }
 
         /**
-         * Lay the slide card out at a fixed width, then scale it to the screen.
+         * Lay the slide card out at a fixed width, then magnify it to the screen.
          *
          * Which fixed width is not obvious, and it is the whole game for legibility. A card laid
          * out narrow runs tall and has to be shrunk; laid out wide it runs short but there is less
@@ -3562,6 +3560,11 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
          * tried and the one that can be drawn largest wins — that is the one whose text ends up
          * biggest on the wall. A slide that pins its own width (because its content assumes one,
          * like the 32-byte hex rows) opts out and is measured only at that width.
+         *
+         * The magnification is `zoom`, not `transform: scale()`. A transform resamples a card that
+         * has already been painted at its authored size, so every glyph and every hairline arrives
+         * on the projector soft. `zoom` multiplies into layout instead, so the text is rasterized
+         * once at the size it is actually shown and the packed-byte diagrams stay sharp.
          */
         function fitStage() {
             const stage = document.getElementById("present-stage");
@@ -3573,6 +3576,9 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             const availableWidth = lesson.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
             const availableHeight = lesson.clientHeight - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom);
             const pinned = PRESENT_SLIDES[state.presentSlide].width;
+            /* Measure at 1:1. Because `zoom` feeds back into layout, trialling widths while the
+               previous slide's magnification is still applied would compound the two. */
+            frame.style.zoom = "1";
             let best = null;
             (pinned ? [pinned] : PRESENT_WIDTH_CHOICES).forEach((width) => {
                 frame.style.width = `${width}px`;
@@ -3584,9 +3590,13 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
                 }
             });
             frame.style.width = `${best.width}px`;
-            frame.style.transform = `scale(${best.scale})`;
-            stage.style.width = `${Math.ceil(best.width * best.scale)}px`;
-            stage.style.height = `${Math.ceil(best.height * best.scale)}px`;
+            frame.style.zoom = String(best.scale);
+            /* The card is out of flow, so the stage has to be told how big it now draws. Read the
+               painted box rather than multiplying the trial height: laying out at the zoomed size
+               re-rounds, so the result is not exactly the measured height times the factor. */
+            const painted = frame.getBoundingClientRect();
+            stage.style.width = `${Math.ceil(painted.width)}px`;
+            stage.style.height = `${Math.ceil(painted.height)}px`;
         }
 
         function renderPresentProgress() {
