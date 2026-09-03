@@ -2087,13 +2087,22 @@ class ValueStore extends AbstractValueFactory {
 
 		// Combine parts in a single byte array
 		int datatypeIDLength = Varint.calcLengthUnsigned(datatypeID);
-		byte[] literalData = new byte[2 + datatypeIDLength + langDataLength + labelData.length];
+		boolean usesExtendedLangLength = langDataLength > 0x3F;
+		int extendedLangLengthBytes = usesExtendedLangLength ? Varint.calcLengthUnsigned(langDataLength) : 0;
+		byte[] literalData = new byte[2 + datatypeIDLength + extendedLangLengthBytes + langDataLength
+				+ labelData.length];
 		ByteBuffer bb = ByteBuffer.wrap(literalData);
 		bb.put(LITERAL_VALUE);
 		Varint.writeUnsigned(bb, datatypeID);
 
-		int directionAndLangLength = directionValue << 6 | langDataLength;
-		bb.put((byte) directionAndLangLength);
+		if (usesExtendedLangLength) {
+			int directionAndLangLength = 0xC0 | directionValue;
+			bb.put((byte) directionAndLangLength);
+			Varint.writeUnsigned(bb, langDataLength);
+		} else {
+			int directionAndLangLength = directionValue << 6 | langDataLength;
+			bb.put((byte) directionAndLangLength);
+		}
 		if (langData != null) {
 			bb.put(langData);
 		}
@@ -2151,7 +2160,14 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		int directionAndLangLength = bb.get() & 0xFF;
-		int langLength = directionAndLangLength & 0x3F;
+		int directionValue = directionAndLangLength >> 6;
+		int langLength;
+		if (directionValue == 3) {
+			directionValue = directionAndLangLength & 0x3F;
+			langLength = (int) Varint.readUnsignedHeap(bb);
+		} else {
+			langLength = directionAndLangLength & 0x3F;
+		}
 
 		// Get language tag
 		String lang = null;
@@ -2159,7 +2175,6 @@ class ValueStore extends AbstractValueFactory {
 			lang = new String(data, bb.position(), langLength, StandardCharsets.UTF_8);
 		}
 
-		int directionValue = directionAndLangLength >> 6;
 		Literal.BaseDirection baseDirection = switch (directionValue) {
 		case 1 -> Literal.BaseDirection.LTR;
 		case 2 -> Literal.BaseDirection.RTL;
