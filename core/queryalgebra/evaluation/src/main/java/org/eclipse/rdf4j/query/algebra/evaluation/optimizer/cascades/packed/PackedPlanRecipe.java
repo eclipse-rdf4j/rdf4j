@@ -145,10 +145,6 @@ final class PackedPlanRecipe {
 		return new Extractor(memo, null, null).extract(rootWinnerId);
 	}
 
-	static PackedPlanRecipe extract(PackedMemo memo, int rootWinnerId, PackedDependentPlans dependentPlans) {
-		return new Extractor(memo, dependentPlans, null).extract(rootWinnerId);
-	}
-
 	static PackedPlanRecipe extract(PackedMemo memo, int rootWinnerId, PackedDependentPlans dependentPlans,
 			PackedCostSession costSession) {
 		return new Extractor(memo, dependentPlans, costSession, true).extract(rootWinnerId);
@@ -362,11 +358,6 @@ final class PackedPlanRecipe {
 			throw new IndexOutOfBoundsException("child recipe ordinal outside recipe");
 		}
 		return childRecipeIds[childStarts[recipeId] + childOrdinal];
-	}
-
-	int sourcePhysicalExpressionId(int recipeId) {
-		checkRecipeId(recipeId);
-		return sourcePhysicalExpressionIds[recipeId];
 	}
 
 	int sourceLogicalExpressionId(int recipeId) {
@@ -936,18 +927,6 @@ final class PackedPlanRecipe {
 	int evidenceStateOrdinal(int recipeId) {
 		checkRecipeId(recipeId);
 		return frontierBundleOrdinals[recipeId];
-	}
-
-	EvidenceGuarantee evidenceGuarantee(int recipeId) {
-		checkRecipeId(recipeId);
-		int encoded = Byte.toUnsignedInt(evidenceGuarantees[recipeId]);
-		return encoded == 0 ? null : EvidenceGuarantee.values()[encoded - 1];
-	}
-
-	FrontierStateDisposition evidenceDisposition(int recipeId) {
-		checkRecipeId(recipeId);
-		int encoded = Byte.toUnsignedInt(evidenceDispositions[recipeId]);
-		return encoded == 0 ? null : FrontierStateDisposition.values()[encoded - 1];
 	}
 
 	int costEventId(int recipeId) {

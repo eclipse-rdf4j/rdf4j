@@ -40,10 +40,6 @@ public final class QuadValueHash {
 		return result == 0L ? 1L : result;
 	}
 
-	public static long defaultContext() {
-		return DEFAULT_CONTEXT;
-	}
-
 	private static int kind(Value value) {
 		if (value.isIRI()) {
 			return 1;

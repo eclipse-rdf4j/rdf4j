@@ -43,12 +43,6 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 		metrics = metrics == null || metrics.isEmpty() ? Map.of() : Map.copyOf(metrics);
 	}
 
-	public EvidenceProfile(double rows, double workRows, double memoryRows, double confidence, String source,
-			Map<String, VariableEstimate> variables, Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
-			Map<VariableSetKey, SketchEvidence> sketches, Map<String, Double> metrics) {
-		this(rows, workRows, memoryRows, confidence, source, variables, finiteRelations, sketches, Map.of(), metrics);
-	}
-
 	public static EvidenceProfile empty() {
 		return new EvidenceProfile(0.0d, 0.0d, 0.0d, 0.0d, "empty", Map.of(), Map.of(), Map.of(), Map.of(),
 				Map.of());
@@ -86,10 +80,6 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 	public boolean isEmpty() {
 		return rows == 0.0d && variables.isEmpty() && finiteRelations.isEmpty() && sketches.isEmpty()
 				&& supportingSketches.isEmpty() && metrics.isEmpty();
-	}
-
-	public Optional<FiniteRelationEstimate> finiteRelation(Set<String> names) {
-		return Optional.ofNullable(finiteRelations.get(VariableSetKey.of(names)));
 	}
 
 	public Optional<SketchEvidence> sketchEvidence(Set<String> names) {
@@ -143,11 +133,6 @@ public record EvidenceProfile(double rows, double workRows, double memoryRows, d
 	}
 
 	public EvidenceProfile withWorkRows(double workRows, double memoryRows, String source) {
-		return new EvidenceProfile(rows, workRows, memoryRows, confidence, source, variables, finiteRelations, sketches,
-				supportingSketches, metrics);
-	}
-
-	public EvidenceProfile withVariables(Map<String, VariableEstimate> variables, String source) {
 		return new EvidenceProfile(rows, workRows, memoryRows, confidence, source, variables, finiteRelations, sketches,
 				supportingSketches, metrics);
 	}

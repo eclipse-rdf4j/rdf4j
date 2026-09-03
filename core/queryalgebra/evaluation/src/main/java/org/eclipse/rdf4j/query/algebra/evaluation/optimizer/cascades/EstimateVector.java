@@ -15,7 +15,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 
 /**
  * Robust estimate vector used before conversion to a physical cost vector.
@@ -33,9 +32,6 @@ public record EstimateVector(double rows, double lowerRows, double upperRows, do
 	private static final String VECTOR_UNCERTAINTY_ROWS = "optimizer.vectorUncertaintyRows";
 	private static final String VECTOR_CONFIDENCE = "optimizer.vectorConfidence";
 	private static final String VECTOR_EVIDENCE_COUNT = "optimizer.vectorEvidenceCount";
-
-	public static final EstimateVector ZERO = exact(0.0d, "zero");
-	public static final EstimateVector ONE = exact(1.0d, "one");
 
 	public EstimateVector {
 		rows = finiteNonNegative(rows, 0.0d);
@@ -64,12 +60,6 @@ public record EstimateVector(double rows, double lowerRows, double upperRows, do
 		evidenceCount = finiteNonNegative(evidenceCount, 0.0d);
 		source = source == null || source.isBlank() ? "unknown" : source;
 		metrics = metrics == null || metrics.isEmpty() ? Map.of() : Map.copyOf(metrics);
-	}
-
-	public static EstimateVector exact(double rows, String source) {
-		double safeRows = finiteNonNegative(rows, 0.0d);
-		return new EstimateVector(safeRows, safeRows, safeRows, safeRows, 0.0d, 0.0d, 0.0d, 1.0d, 1.0d,
-				1.0d, 1.0d, 0.0d, 1.0d, 0.0d, source == null ? "exact" : source, Map.of());
 	}
 
 	public static EstimateVector heuristic(double rows, double qError, String source) {
@@ -116,18 +106,6 @@ public record EstimateVector(double rows, double lowerRows, double upperRows, do
 				estimate.method(), metrics);
 	}
 
-	public static EstimateVector fromFactorVector(JoinFactorCostModel.EstimateVector estimate) {
-		if (estimate == null) {
-			return heuristic(1.0d, 16.0d, "missing-factor-vector");
-		}
-		double qError = Math.max(estimate.rowQErrorMax(), estimate.workQErrorMax());
-		return new EstimateVector(estimate.rows(), estimate.rows() / qError, estimate.rows() * qError,
-				estimate.workRows(), estimate.memoryRows(), estimate.seeks(), estimate.pageWalkRows(),
-				estimate.rowQErrorMean(), estimate.rowQErrorMax(), estimate.workQErrorMean(),
-				estimate.workQErrorMax(), estimate.uncertaintyRows(), estimate.confidence(),
-				estimate.evidenceCount(), "join-factor-estimate", Map.of());
-	}
-
 	public StatisticsEstimate toStatistics(String method) {
 		String effectiveMethod = method == null || method.isBlank() ? source : method;
 		return new StatisticsEstimate(rows, interval(effectiveMethod), workRows, effectiveMethod,
@@ -137,53 +115,6 @@ public record EstimateVector(double rows, double lowerRows, double upperRows, do
 	public QErrorInterval interval(String sourceOverride) {
 		return new QErrorInterval(lowerRows, rows, upperRows, rowQErrorMax, confidence,
 				sourceOverride == null || sourceOverride.isBlank() ? source : sourceOverride);
-	}
-
-	public CostVector toCostVector() {
-		return new CostVector(rows, workRows, memoryRows, seeks, pageWalkRows, rowQErrorMean, rowQErrorMax,
-				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount);
-	}
-
-	public EstimateVector plus(EstimateVector other, String sourceSuffix) {
-		if (other == null) {
-			return this;
-		}
-		return new EstimateVector(rows + other.rows, lowerRows + other.lowerRows, upperRows + other.upperRows,
-				workRows + other.workRows, memoryRows + other.memoryRows, seeks + other.seeks,
-				pageWalkRows + other.pageWalkRows,
-				weightedMean(rowQErrorMean, rows, other.rowQErrorMean, other.rows),
-				Math.max(rowQErrorMax, other.rowQErrorMax),
-				weightedMean(workQErrorMean, workRows, other.workQErrorMean, other.workRows),
-				Math.max(workQErrorMax, other.workQErrorMax), uncertaintyRows + other.uncertaintyRows,
-				Math.min(confidence, other.confidence), evidenceCount + other.evidenceCount,
-				mergeSource(other, sourceSuffix), mergeMetrics(other));
-	}
-
-	public EstimateVector union(EstimateVector other, String sourceSuffix) {
-		return plus(other, sourceSuffix == null ? "union" : sourceSuffix);
-	}
-
-	public EstimateVector join(EstimateVector other, double outputRows, String sourceSuffix) {
-		if (other == null) {
-			return withRows(outputRows, sourceSuffix);
-		}
-		double safeRows = finiteNonNegative(outputRows, Math.max(rows, other.rows));
-		double rowMean = finiteQError(rowQErrorMean * other.rowQErrorMean,
-				Math.max(rowQErrorMean, other.rowQErrorMean));
-		double rowMax = finiteQError(rowQErrorMax * other.rowQErrorMax, Math.max(rowQErrorMax, other.rowQErrorMax));
-		double workMean = finiteQError(workQErrorMean * other.workQErrorMean,
-				Math.max(workQErrorMean, other.workQErrorMean));
-		double workMax = finiteQError(workQErrorMax * other.workQErrorMax,
-				Math.max(workQErrorMax, other.workQErrorMax));
-		double lower = safeRows / rowMax;
-		double upper = safeRows * rowMax;
-		double probeWork = rows + Math.max(1.0d, rows) * Math.max(1.0d, other.workRows);
-		double work = Math.max(safeRows, safeSum(workRows, other.workRows, probeWork));
-		return new EstimateVector(safeRows, lower, upper, work, Math.max(memoryRows, other.memoryRows),
-				seeks + other.seeks + Math.max(1.0d, rows), pageWalkRows + other.pageWalkRows,
-				rowMean, rowMax, workMean, workMax, upper - lower, Math.min(confidence, other.confidence),
-				evidenceCount + other.evidenceCount, mergeSource(other, sourceSuffix == null ? "join" : sourceSuffix),
-				mergeMetrics(other));
 	}
 
 	public EstimateVector filter(double passRatio, QErrorInterval passInterval, String sourceSuffix) {
@@ -202,28 +133,6 @@ public record EstimateVector(double rows, double lowerRows, double upperRows, do
 				Math.max(workQErrorMean, interval.qError()), Math.max(workQErrorMax, interval.qError()),
 				Math.max(0.0d, upper - lower), interval.confidence(), evidenceCount,
 				appendSource(sourceSuffix), mergedMetrics);
-	}
-
-	public EstimateVector withRows(double newRows, String sourceSuffix) {
-		double safeRows = finiteNonNegative(newRows, rows);
-		double lower = Math.min(lowerRows, safeRows);
-		double upper = Math.max(upperRows, safeRows);
-		return new EstimateVector(safeRows, lower, upper, workRows, memoryRows, seeks, pageWalkRows,
-				rowQErrorMean, Math.max(rowQErrorMax, inferredQError(lower, safeRows, upper)),
-				workQErrorMean, workQErrorMax, Math.max(uncertaintyRows, upper - lower), confidence, evidenceCount,
-				appendSource(sourceSuffix), metrics);
-	}
-
-	public EstimateVector withWorkRows(double newWorkRows, String sourceSuffix) {
-		return new EstimateVector(rows, lowerRows, upperRows, newWorkRows, memoryRows, seeks, pageWalkRows,
-				rowQErrorMean, rowQErrorMax, workQErrorMean, workQErrorMax, uncertaintyRows, confidence,
-				evidenceCount, appendSource(sourceSuffix), metrics);
-	}
-
-	public EstimateVector withMetric(String name, double value) {
-		return new EstimateVector(rows, lowerRows, upperRows, workRows, memoryRows, seeks, pageWalkRows,
-				rowQErrorMean, rowQErrorMax, workQErrorMean, workQErrorMax, uncertaintyRows, confidence,
-				evidenceCount, source, withMetricValue(name, value));
 	}
 
 	public EstimateVector applyFeedback(FeedbackCorrection feedback, double confidenceThreshold) {
@@ -265,11 +174,6 @@ public record EstimateVector(double rows, double lowerRows, double upperRows, do
 		return suffix == null || suffix.isBlank() ? source : source + "+" + suffix;
 	}
 
-	private String mergeSource(EstimateVector other, String suffix) {
-		String merged = source + "+" + other.source;
-		return suffix == null || suffix.isBlank() ? merged : merged + "+" + suffix;
-	}
-
 	private Map<String, Double> withMetricValue(String name, double value) {
 		return withMetricValue(metrics, name, value);
 	}
@@ -281,20 +185,6 @@ public record EstimateVector(double rows, double lowerRows, double upperRows, do
 		Map<String, Double> copy = new LinkedHashMap<>(base);
 		copy.put(name, value);
 		return copy;
-	}
-
-	private Map<String, Double> mergeMetrics(EstimateVector other) {
-		if (other == null || other.metrics.isEmpty()) {
-			return metrics;
-		}
-		if (metrics.isEmpty()) {
-			return other.metrics;
-		}
-		Map<String, Double> merged = new LinkedHashMap<>(metrics);
-		for (Map.Entry<String, Double> entry : other.metrics.entrySet()) {
-			merged.putIfAbsent(entry.getKey(), entry.getValue());
-		}
-		return Map.copyOf(merged);
 	}
 
 	private static double firstMetric(Map<String, Double> metrics, double fallback, String... names) {
@@ -333,27 +223,4 @@ public record EstimateVector(double rows, double lowerRows, double upperRows, do
 		return Double.isFinite(value) && value >= 0.0d ? value : fallback;
 	}
 
-	private static double safeSum(double first, double second, double third) {
-		if (!Double.isFinite(first) || !Double.isFinite(second) || !Double.isFinite(third)) {
-			return Double.MAX_VALUE;
-		}
-		double sum = first + second;
-		if (!Double.isFinite(sum) || sum < first || sum < second) {
-			return Double.MAX_VALUE;
-		}
-		sum += third;
-		return Double.isFinite(sum) && sum >= first && sum >= second && sum >= third ? sum : Double.MAX_VALUE;
-	}
-
-	private static double weightedMean(double left, double leftWeight, double right, double rightWeight) {
-		double totalWeight = finiteWeight(leftWeight) + finiteWeight(rightWeight);
-		if (totalWeight <= 0.0d) {
-			return Math.max(left, right);
-		}
-		return (left * finiteWeight(leftWeight) + right * finiteWeight(rightWeight)) / totalWeight;
-	}
-
-	private static double finiteWeight(double value) {
-		return Double.isFinite(value) && value > 0.0d ? value : 0.0d;
-	}
 }

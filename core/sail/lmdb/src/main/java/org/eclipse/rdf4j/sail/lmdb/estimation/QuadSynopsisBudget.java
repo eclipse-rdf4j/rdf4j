@@ -15,7 +15,6 @@ package org.eclipse.rdf4j.sail.lmdb.estimation;
 public record QuadSynopsisBudget(long totalBytes, int coldSampleCapacity, int depth, int baseWidth, int deltaWidth,
 		int directoryCapacity, int witnessesPerDirectoryKey, int deltaSampleCapacity) {
 
-	public static final long DEFAULT_BYTES = 256L * 1024L * 1024L;
 	private static final long MINIMUM_BYTES = 1024L * 1024L;
 	private static final int TABLES = 16;
 

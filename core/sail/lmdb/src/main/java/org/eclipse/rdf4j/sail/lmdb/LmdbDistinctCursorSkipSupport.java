@@ -65,11 +65,6 @@ final class LmdbDistinctCursorSkipSupport {
 	}
 
 	static boolean writeSuccessorKey(ByteBuffer keyBuffer, TripleIndex index, long[] quad,
-			int prefixLength) {
-		return writeSuccessorKey(keyBuffer, index, quad, null, prefixLength);
-	}
-
-	static boolean writeSuccessorKey(ByteBuffer keyBuffer, TripleIndex index, long[] quad,
 			long[] lowerBoundTemplate, int prefixLength) {
 		if (keyBuffer == null || index == null || quad == null || prefixLength <= 0) {
 			return false;

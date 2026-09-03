@@ -20,7 +20,6 @@ public final class FrontierMemoryReservation implements AutoCloseable {
 	private FrontierStateArena arena;
 	private final long bytes;
 	private final long chargedBytes;
-	private final FrontierMemoryPurpose purpose;
 
 	FrontierMemoryReservation(
 			FrontierStateArena arena,
@@ -30,15 +29,10 @@ public final class FrontierMemoryReservation implements AutoCloseable {
 		this.arena = arena;
 		this.bytes = bytes;
 		this.chargedBytes = chargedBytes;
-		this.purpose = purpose;
 	}
 
 	public long bytes() {
 		return bytes;
-	}
-
-	public FrontierMemoryPurpose purpose() {
-		return purpose;
 	}
 
 	void transferToResident(long residentBytes) {

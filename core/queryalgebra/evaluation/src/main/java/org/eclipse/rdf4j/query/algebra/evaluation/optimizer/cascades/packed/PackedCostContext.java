@@ -71,12 +71,6 @@ public final class PackedCostContext {
 		rightInputEvidenceStateId = 0;
 	}
 
-	void reset(PackedEvidenceContext context) {
-		reset(context.prefixRelationIds(), context.prefixOffset(), context.prefixCount(), context.prefixRows(),
-				context.evidenceStateId());
-		setEvidenceIdentity(context.bindingLayoutId(), context.correlationMaskId(), context.semanticScopeMaskId());
-	}
-
 	void copyFrom(PackedCostContext context) {
 		prefixRelationIds = context.prefixRelationIds;
 		prefixOffset = context.prefixOffset;

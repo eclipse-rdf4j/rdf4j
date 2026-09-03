@@ -399,8 +399,4 @@ class LmdbRecordIterator implements RecordIterator {
 		return true;
 	}
 
-	@Override
-	public long getSkipAheadSeekCountActual() {
-		return skipAheadSeekCountActual;
-	}
 }

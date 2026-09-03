@@ -483,11 +483,6 @@ final class LmdbFrontierSnapshotSource implements FrontierSnapshotSource {
 			}
 		}
 
-		boolean containsMatch(long subjectId, long predicateId, long objectId, long contextId,
-				RawQuadPredicate predicate) throws IOException {
-			return containsMatch(0, subjectId, predicateId, objectId, contextId, predicate);
-		}
-
 		boolean containsMatch(int cursorLane, long subjectId, long predicateId, long objectId, long contextId,
 				RawQuadPredicate predicate) throws IOException {
 			synchronized (LmdbFrontierSnapshotSource.this) {

@@ -73,10 +73,6 @@ final class LearningApplicability {
 		return digest;
 	}
 
-	long bindingShapeFingerprint() {
-		return bindingShapeFingerprint;
-	}
-
 	long correlationContractFingerprint() {
 		return correlationContractFingerprint;
 	}

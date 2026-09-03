@@ -19,7 +19,6 @@ final class PackedPhysicalPropertyInterner {
 
 	private final PackedMaskInterner masks;
 	private final PackedIntSequenceInterner sequences;
-	private final int anyId;
 
 	private int[] orderingIds;
 	private int[] distinctMaskIds;
@@ -65,7 +64,7 @@ final class PackedPhysicalPropertyInterner {
 		int tableCapacity = PackedPrimitiveHash.tableCapacity(expectedProperties + 1);
 		tableSlots = new int[tableCapacity];
 		resizeThreshold = PackedPrimitiveHash.maximumFill(tableCapacity);
-		anyId = intern(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+		intern(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 	}
 
 	int anyId() {

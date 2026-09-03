@@ -38,7 +38,6 @@ final class LmdbEstimatorOptimizationScope {
 	final Map<Map<String, Set<Value>>, Optional<FiniteRelationEstimate>> finiteBindingContexts = new HashMap<>();
 	final LmdbFiniteSurfaceCache finiteSurfaces;
 	private final Map<TupleExpr, Object> factorFingerprints = new IdentityHashMap<>();
-	private final Map<TupleExpr, Object> estimatorFingerprints = new IdentityHashMap<>();
 	private final Map<PackedQueryView, Object[]> packedFactorFingerprints = new IdentityHashMap<>();
 	private final Map<PrefixMaterialization, Boolean> registeredPackedPrefixes = new IdentityHashMap<>();
 	private final BindingUniverse bindingUniverse = BindingUniverse.create();
@@ -111,16 +110,6 @@ final class LmdbEstimatorOptimizationScope {
 		if (factorOrdinal != factors.size()) {
 			throw new IllegalStateException("packed prefix contains an unregistered factor");
 		}
-	}
-
-	Object estimatorFingerprint(TupleExpr factor) {
-		Object cached = estimatorFingerprints.get(factor);
-		if (cached != null) {
-			return cached;
-		}
-		Object fingerprint = FactorCostCacheKey.estimatorFingerprint(factor);
-		estimatorFingerprints.put(factor, fingerprint);
-		return fingerprint;
 	}
 
 	BindingUniverse bindingUniverse(TupleExpr expression) {

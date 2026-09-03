@@ -1269,14 +1269,6 @@ final class FrontierOmniIndex {
 		return LOG_TWO_PI_OVER_TWO + (shifted + 0.5d) * Math.log(scale) - scale + Math.log(series);
 	}
 
-	private static boolean matchesProbe(Domain domain, long ordinal, FrontierLeafProbe probe) throws IOException {
-		long subject = domain.term(ordinal, 2);
-		long predicate = domain.term(ordinal, 3);
-		long object = domain.term(ordinal, 4);
-		long context = domain.term(ordinal, 5);
-		return matchesProbe(subject, predicate, object, context, probe);
-	}
-
 	private static boolean matchesProbe(long subject, long predicate, long object, long context,
 			FrontierLeafProbe probe) {
 		return (!probe.namedContextsOnly() || context != 0L)
@@ -1935,16 +1927,6 @@ final class FrontierOmniIndex {
 			size++;
 		}
 
-		private long component(int tuple, int component) {
-			return switch (component) {
-			case 0 -> subjects[tuple];
-			case 1 -> predicates[tuple];
-			case 2 -> objects[tuple];
-			case 3 -> contexts[tuple];
-			default -> throw new IllegalArgumentException("Frontier component must be in [0, 3]");
-			};
-		}
-
 		private int size() {
 			return size;
 		}
@@ -2075,12 +2057,6 @@ final class FrontierOmniIndex {
 				total = saturatedAdd(total, weights[row]);
 			}
 			return total;
-		}
-
-		void scaleWeights(double scale) {
-			for (int row = 0; row < size; row++) {
-				weights[row] = saturatedMultiply(weights[row], scale);
-			}
 		}
 
 		void clear() {

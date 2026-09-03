@@ -25,7 +25,4 @@ public enum CostScope {
 	/** The cost already includes every invocation in its associated input context. */
 	TOTAL_FOR_CONTEXT;
 
-	public static CostScope forInputContext(InputBindingContext context) {
-		return context != null && context.isPresent() ? TOTAL_FOR_CONTEXT : PER_INVOCATION;
-	}
 }

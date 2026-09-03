@@ -20,7 +20,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -51,7 +50,6 @@ public final class InputBindingContext {
 	private final List<ExactRelation> exactRelations;
 	private final Map<String, FiniteDomain> finiteDomains;
 	private final int hash;
-	private final InputBindingContext withoutInvocationCardinality;
 
 	private InputBindingContext(boolean present, double invocationRows, Set<String> assuredBindingNames,
 			List<ExactRelation> exactRelations, Map<String, FiniteDomain> finiteDomains) {
@@ -68,17 +66,6 @@ public final class InputBindingContext {
 		this.finiteDomains = trustedCanonicalFacts ? finiteDomains : canonicalDomains(finiteDomains);
 		this.hash = Objects.hash(this.present, this.invocationRows, this.assuredBindingNames, this.exactRelations,
 				this.finiteDomains);
-		if (!present) {
-			this.withoutInvocationCardinality = this;
-		} else if (this.assuredBindingNames.isEmpty() && this.exactRelations.isEmpty()
-				&& this.finiteDomains.isEmpty()) {
-			this.withoutInvocationCardinality = NONE;
-		} else if (this.invocationRows == 1.0d) {
-			this.withoutInvocationCardinality = this;
-		} else {
-			this.withoutInvocationCardinality = new InputBindingContext(true, 1.0d, this.assuredBindingNames,
-					this.exactRelations, this.finiteDomains, true);
-		}
 	}
 
 	public static InputBindingContext fromBindingSet(BindingSet bindings) {
@@ -98,137 +85,6 @@ public final class InputBindingContext {
 		}
 		ExactRelation relation = ExactRelation.of(variables, Map.of(ExactRelation.immutableTuple(tuple), 1.0d));
 		return new InputBindingContext(true, 1.0d, Set.copyOf(variables), List.of(relation), domains);
-	}
-
-	static InputBindingContext fromProfile(double invocationRows, Collection<String> assuredBindingNames,
-			BindingProfile profile) {
-		List<ExactRelation> relations = new ArrayList<>();
-		Map<String, FiniteDomain> domains = new LinkedHashMap<>();
-		Set<String> assured = new LinkedHashSet<>(assuredBindingNames == null ? Set.of() : assuredBindingNames);
-		if (profile != null) {
-			profile.finiteRelations()
-					.values()
-					.stream()
-					.map(ExactRelation::canonical)
-					.flatMap(java.util.Optional::stream)
-					.forEach(relations::add);
-			profile.finiteDomains().forEach((name, fact) -> {
-				if (fact != null && fact.assuredBound()) {
-					assured.add(name);
-					domains.put(name, FiniteDomain.of(fact));
-				}
-			});
-		}
-		return new InputBindingContext(true, invocationRows, assured, relations, domains);
-	}
-
-	public boolean isPresent() {
-		return present;
-	}
-
-	public boolean isNone() {
-		return !present;
-	}
-
-	public double invocationRows() {
-		return invocationRows;
-	}
-
-	InputBindingContext withoutInvocationCardinality() {
-		return withoutInvocationCardinality;
-	}
-
-	public Set<String> assuredBindingNames() {
-		return assuredBindingNames;
-	}
-
-	public Map<String, Set<Value>> finiteBindingValues(Collection<String> relevantNames) {
-		Set<String> relevant = relevantNames == null || relevantNames.isEmpty()
-				? assuredBindingNames
-				: Set.copyOf(relevantNames);
-		if (relevant.isEmpty()) {
-			return Map.of();
-		}
-		Map<String, List<Value>> values = new LinkedHashMap<>();
-		for (ExactRelation relation : exactRelations) {
-			for (String name : relation.variables()) {
-				if (relevant.contains(name)) {
-					values.merge(name, canonicalValues(relation.values(name)), InputBindingContext::intersection);
-				}
-			}
-		}
-		for (Map.Entry<String, FiniteDomain> entry : finiteDomains.entrySet()) {
-			if (relevant.contains(entry.getKey())) {
-				values.merge(entry.getKey(), entry.getValue().values(), InputBindingContext::intersection);
-			}
-		}
-		Map<String, Set<Value>> result = new LinkedHashMap<>();
-		for (Map.Entry<String, List<Value>> entry : values.entrySet()) {
-			List<Value> canonical = canonicalValues(entry.getValue());
-			if (!canonical.isEmpty()) {
-				result.put(entry.getKey(), Collections.unmodifiableSet(new LinkedHashSet<>(canonical)));
-			}
-		}
-		return result.isEmpty() ? Map.of() : Collections.unmodifiableMap(result);
-	}
-
-	public OptionalDouble distinctBindings(Collection<String> bindingNames) {
-		if (bindingNames == null || bindingNames.isEmpty()) {
-			return OptionalDouble.empty();
-		}
-		Set<String> requested = Set.copyOf(bindingNames);
-		double distinct = Double.POSITIVE_INFINITY;
-		for (ExactRelation relation : exactRelations) {
-			if (relation.variables().containsAll(requested)) {
-				distinct = Math.min(distinct, relation.distinctRows(requested));
-			}
-		}
-		return Double.isFinite(distinct) ? OptionalDouble.of(distinct) : OptionalDouble.empty();
-	}
-
-	InputBindingContext restrictTo(Collection<String> visibleNames) {
-		if (!present || visibleNames == null) {
-			return this;
-		}
-		Set<String> visible = Set.copyOf(visibleNames);
-		boolean retainsAllRelations = exactRelations.stream()
-				.allMatch(relation -> visible.containsAll(relation.variables()));
-		if (visible.containsAll(assuredBindingNames)
-				&& retainsAllRelations
-				&& visible.containsAll(finiteDomains.keySet())) {
-			return this;
-		}
-		Set<String> assured = new LinkedHashSet<>(assuredBindingNames);
-		assured.retainAll(visible);
-		List<ExactRelation> relations = exactRelations.stream()
-				.map(relation -> relation.projectTo(visible))
-				.flatMap(java.util.Optional::stream)
-				.toList();
-		Map<String, FiniteDomain> domains = new LinkedHashMap<>();
-		finiteDomains.forEach((name, domain) -> {
-			if (visible.contains(name)) {
-				domains.put(name, domain);
-			}
-		});
-		return new InputBindingContext(true, invocationRows, assured, relations, domains);
-	}
-
-	InputBindingContext restrictToConnected(Collection<String> visibleNames) {
-		if (!present || visibleNames == null) {
-			return this;
-		}
-		Set<String> connected = new LinkedHashSet<>(visibleNames);
-		boolean expanded;
-		do {
-			expanded = false;
-			for (ExactRelation relation : exactRelations) {
-				if (!Collections.disjoint(connected, relation.variables())
-						&& connected.addAll(relation.variables())) {
-					expanded = true;
-				}
-			}
-		} while (expanded);
-		return restrictTo(connected);
 	}
 
 	@Override
@@ -306,36 +162,6 @@ public final class InputBindingContext {
 		return canonical.isEmpty() ? Map.of() : Collections.unmodifiableMap(canonical);
 	}
 
-	private static List<Value> canonicalValues(Collection<? extends Value> values) {
-		if (values == null || values.isEmpty()) {
-			return List.of();
-		}
-		Map<String, Value> canonical = new LinkedHashMap<>();
-		for (Value value : values) {
-			if (value != null) {
-				canonical.putIfAbsent(stableValueIdentity(value), value);
-			}
-		}
-		return canonical.entrySet()
-				.stream()
-				.sorted(Map.Entry.comparingByKey())
-				.map(Map.Entry::getValue)
-				.toList();
-	}
-
-	private static List<Value> intersection(List<Value> left, List<Value> right) {
-		if (left == null || right == null || left.isEmpty() || right.isEmpty()) {
-			return List.of();
-		}
-		List<Value> intersected = new ArrayList<>();
-		for (Value value : left) {
-			if (right.stream().anyMatch(candidate -> FiniteRelationEstimate.sameValue(value, candidate))) {
-				intersected.add(value);
-			}
-		}
-		return canonicalValues(intersected);
-	}
-
 	private static String stableValueIdentity(Value value) {
 		if (value == null) {
 			return "N";
@@ -376,35 +202,6 @@ public final class InputBindingContext {
 					: FiniteDomainFact.upperBound(values, true, "input-binding-context");
 		}
 
-		private FiniteDomain(FiniteDomainFact fact) {
-			this.fact = Objects.requireNonNull(fact, "fact");
-		}
-
-		static FiniteDomain of(FiniteDomainFact fact) {
-			return fact == null
-					? new FiniteDomain(List.of(), FiniteDomainFact.Precision.UPPER_BOUND)
-					: new FiniteDomain(fact);
-		}
-
-		List<Value> values() {
-			return fact.values();
-		}
-
-		FiniteDomainFact.Precision precision() {
-			return fact.precision();
-		}
-
-		FiniteDomain stronger(FiniteDomain other) {
-			if (other == null || equals(other)) {
-				return this;
-			}
-			FiniteDomainFact.Precision combinedPrecision = precision() == FiniteDomainFact.Precision.EXACT
-					&& other.precision() == FiniteDomainFact.Precision.EXACT
-							? FiniteDomainFact.Precision.EXACT
-							: FiniteDomainFact.Precision.UPPER_BOUND;
-			return new FiniteDomain(intersection(values(), other.values()), combinedPrecision);
-		}
-
 		@Override
 		public boolean equals(Object object) {
 			return this == object || object instanceof FiniteDomain other && fact.equals(other.fact);
@@ -438,14 +235,6 @@ public final class InputBindingContext {
 					.toString();
 		}
 
-		List<String> variables() {
-			return variables;
-		}
-
-		String identity() {
-			return identity;
-		}
-
 		@Override
 		public boolean equals(Object object) {
 			return this == object
@@ -468,50 +257,6 @@ public final class InputBindingContext {
 			return left.fullIdentity().compareTo(right.fullIdentity());
 		}
 
-		static java.util.Optional<ExactRelation> canonical(FiniteRelationEstimate source) {
-			if (source == null || source.variables().isEmpty()) {
-				return java.util.Optional.empty();
-			}
-			List<String> variables = source.variables().stream().sorted().toList();
-			if (variables.equals(source.variables())) {
-				return java.util.Optional.of(new ExactRelation(variables, source.frequencies()));
-			}
-			Map<List<Value>, Double> frequencies = project(source.variables(), source.frequencies(), variables);
-			return java.util.Optional.of(of(variables, frequencies));
-		}
-
-		java.util.Optional<ExactRelation> projectTo(Set<String> visible) {
-			if (visible.containsAll(variables)) {
-				return java.util.Optional.of(this);
-			}
-			List<String> projectedVariables = variables.stream().filter(visible::contains).toList();
-			if (projectedVariables.isEmpty()) {
-				return java.util.Optional.empty();
-			}
-			return java.util.Optional.of(of(projectedVariables,
-					project(variables, frequencies, projectedVariables)));
-		}
-
-		Set<Value> values(String name) {
-			int index = variables.indexOf(name);
-			if (index < 0) {
-				return Set.of();
-			}
-			List<Value> values = new ArrayList<>();
-			for (List<Value> tuple : frequencies.keySet()) {
-				Value value = tuple.get(index);
-				if (value != null) {
-					values.add(value);
-				}
-			}
-			return Collections.unmodifiableSet(new LinkedHashSet<>(canonicalValues(values)));
-		}
-
-		double distinctRows(Collection<String> names) {
-			List<String> projected = names.stream().sorted().toList();
-			return project(variables, frequencies, projected).size();
-		}
-
 		private static ExactRelation of(List<String> variables, Map<List<Value>, Double> frequencies) {
 			FiniteRelationEstimate canonical = FiniteRelationEstimate.fromFrequencies(variables, frequencies,
 					"input-binding-context");
@@ -528,20 +273,6 @@ public final class InputBindingContext {
 						.append(';');
 			}
 			return builder.toString();
-		}
-
-		private static Map<List<Value>, Double> project(List<String> sourceVariables,
-				Map<List<Value>, Double> sourceFrequencies, List<String> projectedVariables) {
-			List<Integer> indexes = projectedVariables.stream().map(sourceVariables::indexOf).toList();
-			Map<List<Value>, Double> projected = new LinkedHashMap<>();
-			for (Map.Entry<List<Value>, Double> entry : sourceFrequencies.entrySet()) {
-				List<Value> tuple = new ArrayList<>(indexes.size());
-				for (Integer index : indexes) {
-					tuple.add(entry.getKey().get(index));
-				}
-				projected.merge(immutableTuple(tuple), entry.getValue(), Double::sum);
-			}
-			return projected;
 		}
 
 		private static List<Value> immutableTuple(List<Value> tuple) {

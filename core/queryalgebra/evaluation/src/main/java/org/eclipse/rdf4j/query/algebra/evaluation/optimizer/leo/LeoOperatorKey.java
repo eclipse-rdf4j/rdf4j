@@ -445,10 +445,6 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 			return valueExpr.getClass().getSimpleName() + "(" + normalize(valueExpr.getSignature()) + ")";
 		}
 
-		private String varKey(Var var) {
-			return varKey(var, VarRole.OTHER);
-		}
-
 		private String varKey(Var var, VarRole role) {
 			if (var == null) {
 				return "<null>";

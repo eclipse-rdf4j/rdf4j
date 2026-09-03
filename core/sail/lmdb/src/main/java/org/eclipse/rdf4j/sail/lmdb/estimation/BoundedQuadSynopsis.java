@@ -18,7 +18,7 @@ import java.util.concurrent.locks.StampedLock;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 
 /** Immutable base plus bounded primitive additions; deletions invalidate evidence until a rebuild publishes. */
-public final class BoundedQuadSynopsis implements QuadSynopsis {
+public final class BoundedQuadSynopsis {
 
 	private static final long MAX_DELTA_ROWS_WITHOUT_REBUILD = 1_000_000L;
 
@@ -38,7 +38,6 @@ public final class BoundedQuadSynopsis implements QuadSynopsis {
 		budget.requireWithinBudget(allocatedBytes());
 	}
 
-	@Override
 	public QuadEvidence probe(QuadProbe probe) {
 		Objects.requireNonNull(probe, "probe");
 		long stamp = lock.tryOptimisticRead();
@@ -105,12 +104,6 @@ public final class BoundedQuadSynopsis implements QuadSynopsis {
 		}
 	}
 
-	@Override
-	public long snapshotVersion() {
-		return base.snapshotVersion();
-	}
-
-	@Override
 	public long allocatedBytes() {
 		long stamp = lock.tryOptimisticRead();
 		long allocated = base.allocatedBytes() + delta.allocatedBytes();
@@ -125,7 +118,6 @@ public final class BoundedQuadSynopsis implements QuadSynopsis {
 		}
 	}
 
-	@Override
 	public boolean isCurrent(QuadSnapshotIdentity identity) {
 		long stamp = lock.tryOptimisticRead();
 		boolean current = !invalidated && base.isCurrent(identity);

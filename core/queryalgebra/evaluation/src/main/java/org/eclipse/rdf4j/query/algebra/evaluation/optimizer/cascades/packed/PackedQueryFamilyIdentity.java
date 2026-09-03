@@ -111,10 +111,6 @@ final class PackedQueryFamilyIdentity {
 		return parameterSchema;
 	}
 
-	PackedQuery parameterizedQueryTemplate() {
-		return parameterizedQueryTemplate;
-	}
-
 	PackedParameterVector parameterVector() {
 		if (parameterVector == null) {
 			throw new IllegalStateException("detached query family has no invocation parameter vector");

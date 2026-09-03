@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.RebaseMode;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 
@@ -87,34 +86,6 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 				jointDistinctRows, sketchVars, overlapEvidence, endpointMode, evidenceProfile);
 	}
 
-	public BindingProfile(Map<String, VariableEstimate> variables,
-			Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
-			Map<VariableSetKey, DistributionSketch> sketchRelations,
-			Map<VariableSetKey, Double> jointDistinctRows,
-			Set<String> sketchVars,
-			Map<String, Double> overlapEvidence,
-			String endpointMode) {
-		this(variables, finiteRelations, sketchRelations, jointDistinctRows, sketchVars, overlapEvidence, endpointMode,
-				EvidenceProfile.of(0.0d, 0.0d, 0.0d, 0.0d, "binding-profile", variables, finiteRelations,
-						sketchRelations, Map.of()));
-	}
-
-	public BindingProfile(Map<String, VariableEstimate> variables,
-			Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
-			Map<VariableSetKey, Double> jointDistinctRows,
-			Set<String> sketchVars,
-			Map<String, Double> overlapEvidence,
-			String endpointMode) {
-		this(variables, finiteRelations, Map.of(), jointDistinctRows, sketchVars, overlapEvidence, endpointMode);
-	}
-
-	public static BindingProfile fromEstimate(TupleExpr tupleExpr, StatisticsEstimate estimate) {
-		if (estimate == null) {
-			return endpointOnly(tupleExpr);
-		}
-		return estimate.bindingProfile().mergedWith(endpointOnly(tupleExpr));
-	}
-
 	public static BindingProfile fromBag(TupleExpr tupleExpr, BagEstimate bag, Map<String, Double> extraMetrics) {
 		if (bag == null) {
 			return endpointOnly(tupleExpr);
@@ -155,52 +126,8 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 						EvidenceProfile.empty()));
 	}
 
-	/** Returns statistical evidence with executable endpoint orientation removed. */
-	BindingProfile statisticalFacts() {
-		if (isAny()
-				|| variables.isEmpty()
-						&& finiteRelations.isEmpty()
-						&& finiteDomains.isEmpty()
-						&& sketchRelations.isEmpty()
-						&& jointDistinctRows.isEmpty()
-						&& sketchVars.isEmpty()
-						&& overlapEvidence.isEmpty()
-						&& evidenceProfile.isEmpty()) {
-			return ANY;
-		}
-		if (ANY_ENDPOINT_MODE.equals(endpointMode)) {
-			return this;
-		}
-		return new BindingProfile(variables, finiteRelations, finiteDomains, sketchRelations, jointDistinctRows,
-				sketchVars,
-				overlapEvidence, ANY_ENDPOINT_MODE, evidenceProfile);
-	}
-
 	boolean satisfiesExecutionContract(BindingProfile required) {
 		return required == null || satisfiesEndpointMode(required.endpointMode);
-	}
-
-	public boolean satisfies(BindingProfile required) {
-		if (required == null || required.isAny()) {
-			return true;
-		}
-		return satisfiesEndpointMode(required.endpointMode)
-				&& variables.keySet().containsAll(required.variables.keySet())
-				&& finiteRelations.keySet().containsAll(required.finiteRelations.keySet())
-				&& finiteDomains.keySet().containsAll(required.finiteDomains.keySet())
-				&& sketchRelations.keySet().containsAll(required.sketchRelations.keySet())
-				&& satisfiesEvidenceProfile(required.evidenceProfile)
-				&& jointDistinctRows.keySet().containsAll(required.jointDistinctRows.keySet())
-				&& sketchVars.containsAll(required.sketchVars)
-				&& overlapEvidence.keySet().containsAll(required.overlapEvidence.keySet());
-	}
-
-	private boolean satisfiesEvidenceProfile(EvidenceProfile required) {
-		return required == null
-				|| (evidenceProfile.sketches().keySet().containsAll(required.sketches().keySet())
-						&& evidenceProfile.supportingSketches()
-								.keySet()
-								.containsAll(required.supportingSketches().keySet()));
 	}
 
 	public BindingProfile mergedWith(BindingProfile other) {
@@ -230,124 +157,6 @@ public record BindingProfile(Map<String, VariableEstimate> variables,
 		EvidenceProfile mergedEvidence = evidenceProfile.mergeWith(other.evidenceProfile, "binding-profile-merge");
 		return new BindingProfile(mergedVariables, mergedFinite, mergedDomains, mergedSketchRelations, mergedJoint,
 				mergedSketchVars, mergedOverlap, mergedEndpoint, mergedEvidence);
-	}
-
-	BindingProfile withAdditionalFiniteDomains(Map<String, FiniteDomainFact> additionalDomains) {
-		Map<String, FiniteDomainFact> mergedDomains = mergeFiniteDomains(finiteDomains, additionalDomains);
-		if (mergedDomains.equals(finiteDomains)) {
-			return this;
-		}
-		return new BindingProfile(variables, finiteRelations, mergedDomains, sketchRelations, jointDistinctRows,
-				sketchVars, overlapEvidence, endpointMode, evidenceProfile);
-	}
-
-	/** Restricts every variable-scoped fact to bindings that the owning tuple stream can actually emit. */
-	BindingProfile restrictTo(Set<String> outputNames) {
-		Set<String> requested = outputNames == null || outputNames.isEmpty() ? Set.of() : outputNames;
-		if (factsWithin(requested)) {
-			return this;
-		}
-		Set<String> allowed = Set.copyOf(requested);
-		Map<String, VariableEstimate> restrictedVariables = new LinkedHashMap<>();
-		variables.forEach((name, estimate) -> {
-			if (allowed.contains(name)) {
-				restrictedVariables.put(name, estimate);
-			}
-		});
-		Map<VariableSetKey, FiniteRelationEstimate> restrictedFinite = new LinkedHashMap<>();
-		finiteRelations.forEach((key, estimate) -> {
-			if (allowed.containsAll(key.names())) {
-				restrictedFinite.put(key, estimate);
-			}
-		});
-		Map<String, FiniteDomainFact> restrictedDomains = new LinkedHashMap<>();
-		finiteDomains.forEach((name, domain) -> {
-			if (allowed.contains(name)) {
-				restrictedDomains.put(name, domain);
-			}
-		});
-		Map<VariableSetKey, DistributionSketch> restrictedSketches = new LinkedHashMap<>();
-		sketchRelations.forEach((key, sketch) -> {
-			if (allowed.containsAll(key.names())) {
-				restrictedSketches.put(key, sketch);
-			}
-		});
-		Map<VariableSetKey, Double> restrictedJoint = new LinkedHashMap<>();
-		jointDistinctRows.forEach((key, rows) -> {
-			if (allowed.containsAll(key.names())) {
-				restrictedJoint.put(key, rows);
-			}
-		});
-		Set<String> restrictedSketchVars = new LinkedHashSet<>(sketchVars);
-		restrictedSketchVars.retainAll(allowed);
-		return new BindingProfile(restrictedVariables, restrictedFinite, restrictedDomains, restrictedSketches,
-				restrictedJoint, restrictedSketchVars, overlapEvidence, endpointMode, evidenceProfile.project(allowed));
-	}
-
-	/** Bitmap-native restriction for planner hot paths; names are materialized only when facts must be removed. */
-	BindingProfile restrictTo(BindingMask outputMask, BindingUniverse universe) {
-		Objects.requireNonNull(universe, "universe");
-		return universe.restrictBindingProfile(this, outputMask);
-	}
-
-	private boolean factsWithin(Set<String> allowed) {
-		return allowed.containsAll(variables.keySet())
-				&& relationKeysWithin(allowed, finiteRelations.keySet())
-				&& allowed.containsAll(finiteDomains.keySet())
-				&& relationKeysWithin(allowed, sketchRelations.keySet())
-				&& relationKeysWithin(allowed, jointDistinctRows.keySet())
-				&& allowed.containsAll(sketchVars)
-				&& allowed.containsAll(evidenceProfile.variables().keySet())
-				&& relationKeysWithin(allowed, evidenceProfile.finiteRelations().keySet())
-				&& relationKeysWithin(allowed, evidenceProfile.sketches().keySet())
-				&& relationKeysWithin(allowed, evidenceProfile.supportingSketches().keySet());
-	}
-
-	private static boolean relationKeysWithin(Set<String> allowed, Set<VariableSetKey> keys) {
-		for (VariableSetKey key : keys) {
-			if (!allowed.containsAll(key.names())) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	BindingMask factMask(BindingUniverse universe) {
-		LinkedHashSet<String> names = new LinkedHashSet<>();
-		names.addAll(variables.keySet());
-		addRelationNames(names, finiteRelations.keySet());
-		names.addAll(finiteDomains.keySet());
-		addRelationNames(names, sketchRelations.keySet());
-		addRelationNames(names, jointDistinctRows.keySet());
-		names.addAll(sketchVars);
-		names.addAll(evidenceProfile.variables().keySet());
-		addRelationNames(names, evidenceProfile.finiteRelations().keySet());
-		addRelationNames(names, evidenceProfile.sketches().keySet());
-		addRelationNames(names, evidenceProfile.supportingSketches().keySet());
-		return universe.maskOf(names);
-	}
-
-	private static void addRelationNames(Set<String> target, Set<VariableSetKey> keys) {
-		for (VariableSetKey key : keys) {
-			target.addAll(key.names());
-		}
-	}
-
-	public BagEstimate toBagEstimate(double rows, double workRows, double memoryRows, double confidence, String source,
-			Map<String, Double> metrics) {
-		Map<String, Double> mergedMetrics = new LinkedHashMap<>();
-		if (metrics != null) {
-			mergedMetrics.putAll(metrics);
-		}
-		mergedMetrics.putAll(overlapEvidence);
-		if (!evidenceProfile.isEmpty()) {
-			return evidenceProfile.rebaseRows(rows, workRows, confidence, source, mergedMetrics,
-					RebaseMode.PRESERVE_EXACT_RELATIONS)
-					.toBagEstimate();
-		}
-		return new BagEstimate(rows, workRows, memoryRows, confidence, source, variables, finiteRelations,
-				sketchRelations,
-				mergedMetrics);
 	}
 
 	private boolean satisfiesEndpointMode(String requiredEndpointMode) {

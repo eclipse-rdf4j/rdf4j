@@ -417,15 +417,6 @@ final class PackedWinnerTable {
 
 	private int appendWinner(long hash, int groupId, int requiredPropertyId, int semanticRowGoalId,
 			int inputContextId, int costPolicyId, int comparisonTier, int physicalExpressionId, int physicalMetadataId,
-			double startupCost, double totalCost, double comparisonCost, int[] candidateChildren, int childOffset,
-			int childCount) {
-		return appendWinner(hash, groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId,
-				comparisonTier, physicalExpressionId, physicalMetadataId, 0, startupCost, totalCost, comparisonCost,
-				0.0d, false, candidateChildren, childOffset, childCount);
-	}
-
-	private int appendWinner(long hash, int groupId, int requiredPropertyId, int semanticRowGoalId,
-			int inputContextId, int costPolicyId, int comparisonTier, int physicalExpressionId, int physicalMetadataId,
 			int tieBreakRank, double startupCost, double totalCost, double comparisonCost, double peakMemoryRows,
 			boolean robustComparisonPrimary, int[] candidateChildren, int childOffset, int childCount) {
 		int winnerId = ++size;

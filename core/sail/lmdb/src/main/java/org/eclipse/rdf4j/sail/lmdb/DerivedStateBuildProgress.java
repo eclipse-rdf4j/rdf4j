@@ -29,10 +29,6 @@ public final class DerivedStateBuildProgress {
 	private long lastReportNanos;
 	private long lastReportVisits;
 
-	public DerivedStateBuildProgress(long expectedVisits) {
-		this(expectedVisits, System::nanoTime);
-	}
-
 	public DerivedStateBuildProgress(long expectedVisits, LongSupplier nanoTime) {
 		if (expectedVisits < 0L) {
 			throw new IllegalArgumentException("expectedVisits must be non-negative: " + expectedVisits);

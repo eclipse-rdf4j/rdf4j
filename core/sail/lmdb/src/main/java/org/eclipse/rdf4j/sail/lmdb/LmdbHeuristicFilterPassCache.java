@@ -144,18 +144,6 @@ final class LmdbHeuristicFilterPassCache {
 		return hits.get();
 	}
 
-	long misses() {
-		return misses.get();
-	}
-
-	long waits() {
-		return waits.get();
-	}
-
-	long evictions() {
-		return evictions.get();
-	}
-
 	private void publish(Segment segment, Flight flight, FilterPassEstimate estimate, boolean retain) {
 		long entryBytes = saturatedAdd(ENTRY_OBJECT_BYTES, flight.filterRetainedBytes);
 		synchronized (segment) {

@@ -21,33 +21,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 @PackedHotPath
 final class PackedQuery {
 
-	private static final class BindingFlowState {
-
-		private volatile PackedBindingFlowArena arena;
-		private PackedPathFactIndex pathFacts;
-
-		private PackedBindingFlowArena arena(PackedQuery query) {
-			PackedBindingFlowArena current = arena;
-			if (current != null) {
-				return current;
-			}
-			synchronized (this) {
-				current = arena;
-				if (current == null) {
-					current = PackedBindingFlowArena.build(query);
-					pathFacts = new PackedPathFactIndex(current);
-					arena = current;
-				}
-				return current;
-			}
-		}
-
-		private PackedPathFactIndex pathFacts(PackedQuery query) {
-			arena(query);
-			return pathFacts;
-		}
-	}
-
 	static final int TERM_ANONYMOUS = 1;
 	static final int TERM_CONSTANT = 1 << 1;
 	static final int TERM_BNODE = 1 << 2;
@@ -61,7 +34,6 @@ final class PackedQuery {
 	private final PackedObjectPool objects;
 	private final PackedSymbolTable symbols;
 	private final PackedBindingFacts bindingFacts;
-	private final BindingFlowState bindingFlow;
 	private final byte[] originalBindingSetRelations;
 	private final Object[] originalBindingSets;
 	private final boolean originalBindingSetsAttached;
@@ -94,7 +66,6 @@ final class PackedQuery {
 		this.parameterVector = parameterVector;
 		originalBindingSetsAttached = true;
 		bindingFacts = new PackedBindingFacts(this);
-		bindingFlow = new BindingFlowState();
 		relations.freeze();
 		scalars.freeze();
 		payloads.freeze();
@@ -114,7 +85,6 @@ final class PackedQuery {
 		objects = template.objects;
 		symbols = template.symbols;
 		bindingFacts = template.bindingFacts;
-		bindingFlow = template.bindingFlow;
 		originalBindingSetRelations = template.originalBindingSetRelations;
 		this.originalBindingSets = originalBindingSets;
 		this.originalBindingSetsAttached = originalBindingSetsAttached;
@@ -132,7 +102,6 @@ final class PackedQuery {
 		objects = template.objects.withParameterVector(parameterVector);
 		symbols = template.symbols;
 		bindingFacts = template.bindingFacts;
-		bindingFlow = template.bindingFlow;
 		originalBindingSetRelations = template.originalBindingSetRelations;
 		originalBindingSets = new Object[originalBindingSetRelations.length];
 		originalBindingSetsAttached = false;
@@ -158,13 +127,6 @@ final class PackedQuery {
 		return parameterVector.size() == 0 && !originalBindingSetsAttached
 				? this
 				: new PackedQuery(this, PackedParameterVector.empty());
-	}
-
-	PackedQuery withParameterVector(PackedParameterVector current) {
-		if (!parameterSchema.accepts(current)) {
-			throw new IllegalArgumentException("packed parameter vector does not match the query template schema");
-		}
-		return new PackedQuery(this, current);
 	}
 
 	boolean isOriginalBindingSetRelation(int relationId) {
@@ -257,10 +219,6 @@ final class PackedQuery {
 		return bindingFacts.relationOutputMaskId(relId);
 	}
 
-	int bindingValueCount() {
-		return bindingFacts.bindingValueCount();
-	}
-
 	int relAssuredMaskId(int relId) {
 		return bindingFacts.relationAssuredMaskId(relId);
 	}
@@ -323,62 +281,6 @@ final class PackedQuery {
 
 	boolean relationAssuresSymbol(int relationId, int symbolId) {
 		return bindingFacts.containsSymbol(relAssuredMaskId(relationId), symbolId);
-	}
-
-	int relValueId(int relationId, int symbolId) {
-		return bindingFlow.arena(this).valueFor(relationId, symbolId);
-	}
-
-	int valueCount() {
-		return bindingFlow.arena(this).size();
-	}
-
-	int valueProducer(int valueId) {
-		return bindingFlow.arena(this).producerExpressionId(valueId);
-	}
-
-	int valueVariableId(int valueId) {
-		return bindingFlow.arena(this).variableId(valueId);
-	}
-
-	byte valueMergeKind(int valueId) {
-		return bindingFlow.arena(this).mergeKind(valueId);
-	}
-
-	int valueMergeInputCount(int valueId) {
-		return bindingFlow.arena(this).mergeInputCount(valueId);
-	}
-
-	int valueMergeInput(int valueId, int ordinal) {
-		return bindingFlow.arena(this).mergeInput(valueId, ordinal);
-	}
-
-	boolean valueIsPossible(int valueId) {
-		return (bindingFlow.arena(this).flags(valueId) & PackedBindingFlowArena.POSSIBLE) != 0;
-	}
-
-	boolean valueIsAssured(int valueId) {
-		return (bindingFlow.arena(this).flags(valueId) & PackedBindingFlowArena.ASSURED) != 0;
-	}
-
-	boolean valueIsConditional(int valueId) {
-		return (bindingFlow.arena(this).flags(valueId) & PackedBindingFlowArena.CONDITIONAL) != 0;
-	}
-
-	boolean valueMayBeUnbound(int valueId) {
-		return (bindingFlow.arena(this).flags(valueId) & PackedBindingFlowArena.MAY_BE_UNBOUND) != 0;
-	}
-
-	boolean valueMayError(int valueId) {
-		return (bindingFlow.arena(this).flags(valueId) & PackedBindingFlowArena.MAY_ERROR) != 0;
-	}
-
-	boolean valueCrossesOptionalBarrier(int valueId) {
-		return bindingFlow.pathFacts(this).crossesOptionalBarrier(valueId);
-	}
-
-	boolean mayPropagateAssuredValueFact(int sourceValueId, int targetValueId) {
-		return bindingFlow.pathFacts(this).mayPropagateAssuredFact(sourceValueId, targetValueId);
 	}
 
 	boolean scalarSafeToRelocate(int scalarId) {

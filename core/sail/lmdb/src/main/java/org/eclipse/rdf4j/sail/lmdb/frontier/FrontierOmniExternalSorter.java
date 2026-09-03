@@ -49,95 +49,6 @@ final class FrontierOmniExternalSorter {
 		return new Collector(directory, sortMemoryBytes, temporaryBudgetBytes, reservation);
 	}
 
-	static EventOutput openSpool(Path path) throws IOException {
-		return new EventOutput(path);
-	}
-
-	static void sort(Path spool, long recordCount, long sortMemoryBytes, long temporaryBudgetBytes,
-			EventSink sink) throws IOException {
-		if (recordCount < 0L || sortMemoryBytes < RECORD_BYTES || temporaryBudgetBytes < 0L) {
-			throw new IllegalArgumentException("Frontier Omni external-sort dimensions are invalid");
-		}
-		long expectedBytes = Math.multiplyExact(recordCount, RECORD_BYTES);
-		if (Files.size(spool) != expectedBytes) {
-			throw new IOException("Frontier Omni event spool length disagrees with its record count");
-		}
-		if (expectedBytes > temporaryBudgetBytes) {
-			throw new FrontierStatisticsException(FrontierFallbackReason.MEMORY_PRESSURE,
-					"Frontier Omni event spool exceeds the temporary-disk envelope");
-		}
-		if (recordCount == 0L) {
-			return;
-		}
-
-		int capacity = Math.toIntExact(Math.max(1L,
-				Math.min(Integer.MAX_VALUE - 8L, sortMemoryBytes / RECORD_BYTES)));
-		Path directory = spool.toAbsolutePath().normalize().getParent();
-		ArrayList<Path> runs = new ArrayList<>();
-		try {
-			createRuns(spool, recordCount, capacity, directory, runs, temporaryBudgetBytes);
-			int mergePass = 0;
-			while (runs.size() > MAXIMUM_MERGE_FAN_IN) {
-				ArrayList<Path> next = new ArrayList<>((runs.size() + MAXIMUM_MERGE_FAN_IN - 1)
-						/ MAXIMUM_MERGE_FAN_IN);
-				for (int start = 0; start < runs.size(); start += MAXIMUM_MERGE_FAN_IN) {
-					int end = Math.min(runs.size(), start + MAXIMUM_MERGE_FAN_IN);
-					Path merged = directory.resolve("omni-merge-%03d-%06d.tmp".formatted(mergePass, next.size()));
-					try (EventOutput output = new EventOutput(merged)) {
-						merge(runs.subList(start, end), output::write);
-					}
-					next.add(merged);
-					for (int index = start; index < end; index++) {
-						Files.deleteIfExists(runs.get(index));
-					}
-				}
-				runs = next;
-				mergePass++;
-			}
-			merge(runs, sink);
-		} finally {
-			for (Path run : runs) {
-				Files.deleteIfExists(run);
-			}
-		}
-	}
-
-	private static void createRuns(Path spool, long recordCount, int capacity, Path directory, List<Path> runs,
-			long temporaryBudgetBytes) throws IOException {
-		EventBuffer buffer = new EventBuffer(capacity);
-		long read = 0L;
-		long runBytes = 0L;
-		try (EventInput input = new EventInput(spool)) {
-			while (read < recordCount) {
-				buffer.clear();
-				while (buffer.size < capacity && read < recordCount) {
-					if (!input.read(buffer, buffer.size)) {
-						throw new IOException("Frontier Omni event spool ended before its declared record count");
-					}
-					buffer.size++;
-					read++;
-				}
-				buffer.sort();
-				Path run = directory.resolve("omni-run-%06d.tmp".formatted(runs.size()));
-				try (EventOutput output = new EventOutput(run)) {
-					for (int index = 0; index < buffer.size; index++) {
-						output.write(buffer.cell[index], buffer.priority[index], buffer.subject[index],
-								buffer.predicate[index], buffer.object[index], buffer.context[index]);
-					}
-				}
-				runBytes = Math.addExact(runBytes, Files.size(run));
-				if (Math.addExact(Files.size(spool), runBytes) > temporaryBudgetBytes) {
-					throw new FrontierStatisticsException(FrontierFallbackReason.MEMORY_PRESSURE,
-							"Frontier Omni sort runs exceed the temporary-disk envelope");
-				}
-				runs.add(run);
-			}
-			if (input.read(buffer, 0)) {
-				throw new IOException("Frontier Omni event spool has trailing records");
-			}
-		}
-	}
-
 	private static void merge(List<Path> runs, EventSink sink) throws IOException {
 		PriorityQueue<RunCursor> heap = new PriorityQueue<>(Comparator.comparing(
 				RunCursor::event, FrontierOmniExternalSorter::compare));
@@ -241,10 +152,6 @@ final class FrontierOmniExternalSorter {
 			}
 			buffer.add(cell, priority, subject, predicate, object, context);
 			records = Math.incrementExact(records);
-		}
-
-		long records() {
-			return records;
 		}
 
 		void finish(EventSink sink) throws IOException {
@@ -429,10 +336,6 @@ final class FrontierOmniExternalSorter {
 			records = Math.incrementExact(records);
 		}
 
-		long records() {
-			return records;
-		}
-
 		@Override
 		public void close() throws IOException {
 			output.close();
@@ -443,26 +346,8 @@ final class FrontierOmniExternalSorter {
 
 		private final DataInputStream input;
 
-		private EventInput(Path path) throws IOException {
-			this(path, IO_BUFFER_BYTES);
-		}
-
 		private EventInput(Path path, int bufferBytes) throws IOException {
 			input = new DataInputStream(new BufferedInputStream(Files.newInputStream(path), bufferBytes));
-		}
-
-		private boolean read(EventBuffer target, int index) throws IOException {
-			try {
-				target.cell[index] = input.readLong();
-			} catch (EOFException exhausted) {
-				return false;
-			}
-			target.priority[index] = input.readLong();
-			target.subject[index] = input.readLong();
-			target.predicate[index] = input.readLong();
-			target.object[index] = input.readLong();
-			target.context[index] = input.readLong();
-			return true;
 		}
 
 		private Event read() throws IOException {
@@ -483,12 +368,10 @@ final class FrontierOmniExternalSorter {
 
 	private static final class RunCursor implements AutoCloseable {
 
-		private final int run;
 		private final EventInput input;
 		private Event event;
 
 		private RunCursor(int run, Path path) throws IOException {
-			this.run = run;
 			input = new EventInput(path, MERGE_INPUT_BUFFER_BYTES);
 		}
 

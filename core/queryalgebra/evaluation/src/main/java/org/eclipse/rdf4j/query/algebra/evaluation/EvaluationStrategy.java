@@ -95,8 +95,8 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 
 	/**
 	 * Compiles a subtree that is generated while a query is already running, such as a per-probe substituted EXISTS
-	 * body or a property-path step. Unlike {@link #precompile(TupleExpr, QueryEvaluationContext)} this must not open
-	 * a fresh runtime-feedback compilation root: no feedback targets are resolved or published for the subtree, so
+	 * body or a property-path step. Unlike {@link #precompile(TupleExpr, QueryEvaluationContext)} this must not open a
+	 * fresh runtime-feedback compilation root: no feedback targets are resolved or published for the subtree, so
 	 * compiling it once per outer row does not multiply feedback observations. Strategies without runtime feedback
 	 * simply delegate to {@link #precompile(TupleExpr, QueryEvaluationContext)}.
 	 *

@@ -65,10 +65,6 @@ final class PackedPredicateRangeArena {
 		return rangeId;
 	}
 
-	int size() {
-		return size;
-	}
-
 	int state(int rangeId) {
 		return stateAndBits(rangeId) & 0x3;
 	}
@@ -119,11 +115,6 @@ final class PackedPredicateRangeArena {
 			throw new IndexOutOfBoundsException("finite value " + ordinal + " of " + finiteCount[rangeId]);
 		}
 		return finiteValueObjectIds[finiteStart[rangeId] + ordinal];
-	}
-
-	int descriptionObjectId(int rangeId) {
-		checkRange(rangeId);
-		return descriptionObjectIds[rangeId];
 	}
 
 	private int stateAndBits(int rangeId) {

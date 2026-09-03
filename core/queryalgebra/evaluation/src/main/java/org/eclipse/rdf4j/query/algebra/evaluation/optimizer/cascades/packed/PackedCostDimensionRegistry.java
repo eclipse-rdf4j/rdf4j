@@ -19,8 +19,6 @@ import java.util.Set;
 @PackedHotPath
 final class PackedCostDimensionRegistry {
 
-	static final int SCHEMA_EPOCH = 1;
-
 	static final int STARTUP_WORK = 1;
 	static final int STEADY_STATE_CPU_WORK = 2;
 	static final int SOURCE_ROW_EVENTS = 3;
@@ -113,10 +111,6 @@ final class PackedCostDimensionRegistry {
 
 	static int dimensionCount() {
 		return DIMENSIONS.size();
-	}
-
-	static List<Dimension> dimensions() {
-		return DIMENSIONS;
 	}
 
 	static Dimension dimension(int dimensionId) {

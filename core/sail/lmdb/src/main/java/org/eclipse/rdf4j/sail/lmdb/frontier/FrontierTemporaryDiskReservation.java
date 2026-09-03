@@ -43,7 +43,4 @@ final class FrontierTemporaryDiskReservation {
 		return reservedBytes;
 	}
 
-	long limitBytes() {
-		return limitBytes;
-	}
 }

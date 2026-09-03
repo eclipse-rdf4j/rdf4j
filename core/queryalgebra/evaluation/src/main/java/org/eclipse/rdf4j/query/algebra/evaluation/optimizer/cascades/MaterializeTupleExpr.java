@@ -23,9 +23,6 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 @Experimental
 public final class MaterializeTupleExpr extends UnaryTupleOperator {
 
-	public MaterializeTupleExpr() {
-	}
-
 	public MaterializeTupleExpr(TupleExpr arg) {
 		super(arg);
 	}

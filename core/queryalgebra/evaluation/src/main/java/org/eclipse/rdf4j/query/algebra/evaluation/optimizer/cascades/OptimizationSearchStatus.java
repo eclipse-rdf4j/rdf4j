@@ -20,9 +20,6 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 public record OptimizationSearchStatus(OptimizationCompleteness completeness,
 		Set<OptimizationLimitCause> limitCauses, SearchCounterSnapshot counters, SearchRetentionSnapshot retention) {
 
-	public static final OptimizationSearchStatus COMPLETE = new OptimizationSearchStatus(
-			OptimizationCompleteness.COMPLETE, Set.of(), SearchCounterSnapshot.ZERO, SearchRetentionSnapshot.ZERO);
-
 	public OptimizationSearchStatus {
 		completeness = completeness == null ? OptimizationCompleteness.COMPLETE : completeness;
 		limitCauses = limitCauses == null || limitCauses.isEmpty() ? Set.of() : Set.copyOf(limitCauses);
@@ -30,19 +27,8 @@ public record OptimizationSearchStatus(OptimizationCompleteness completeness,
 		retention = retention == null ? SearchRetentionSnapshot.ZERO : retention;
 	}
 
-	public static OptimizationSearchStatus of(OptimizationCompleteness completeness) {
-		OptimizationCompleteness value = completeness == null ? OptimizationCompleteness.COMPLETE : completeness;
-		return value == OptimizationCompleteness.COMPLETE
-				? COMPLETE
-				: new OptimizationSearchStatus(value, Set.of(), SearchCounterSnapshot.ZERO,
-						SearchRetentionSnapshot.ZERO);
-	}
-
 	public boolean approximate() {
 		return completeness != OptimizationCompleteness.COMPLETE;
 	}
 
-	OptimizationSearchStatus withCompleteness(OptimizationCompleteness updatedCompleteness) {
-		return new OptimizationSearchStatus(updatedCompleteness, limitCauses, counters, retention);
-	}
 }

@@ -169,11 +169,6 @@ final class PackedContinuationKeyArena {
 		return orderIdentityIds[keyId];
 	}
 
-	int evidenceStateId(int keyId) {
-		checkKeyId(keyId);
-		return evidenceStateIds[keyId];
-	}
-
 	int evidenceLineageId(int keyId) {
 		checkKeyId(keyId);
 		return evidenceLineageIds[keyId];
@@ -202,10 +197,6 @@ final class PackedContinuationKeyArena {
 	int compositionModeCode(int keyId) {
 		checkKeyId(keyId);
 		return compositionModeCodes[keyId];
-	}
-
-	long retainedBytes() {
-		return requiredBytes(logicalCellIds.length - 1, table.length);
 	}
 
 	private int find(long hash, int logicalCellId, int deliveredPropertyId, int requiredInputId,

@@ -72,7 +72,6 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSampleEstimate;
-import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSamplingEstimator;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchRebuildObserver;
@@ -81,7 +80,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 class LmdbFilterSelectivityStats
-		implements JoinStatsProvider, PatternFilterSamplingEstimator {
+		implements JoinStatsProvider {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbFilterSelectivityStats.class);
 
@@ -555,12 +554,10 @@ class LmdbFilterSelectivityStats
 		return 0L;
 	}
 
-	@Override
 	public double estimateFilterPassRatio(Filter filter, StatementPattern pattern) {
 		return estimateFilterPass(filter, pattern).passRatio();
 	}
 
-	@Override
 	public PatternFilterSampleEstimate estimateFilterPass(Filter filter,
 			StatementPattern pattern) {
 		if (!adaptiveEvidenceAllowed()) {
@@ -570,7 +567,6 @@ class LmdbFilterSelectivityStats
 		return isValidPassRatio(cached.passRatio()) ? cached : estimateLiveFilterPass(filter, pattern);
 	}
 
-	@Override
 	public PatternFilterSampleEstimate estimateCachedFilterPass(Filter filter, StatementPattern pattern) {
 		if (!adaptiveEvidenceAllowed()) {
 			return new PatternFilterSampleEstimate(-1.0d, -1L);
@@ -593,7 +589,6 @@ class LmdbFilterSelectivityStats
 		return new PatternFilterSampleEstimate(-1.0d, -1L);
 	}
 
-	@Override
 	public PatternFilterSampleEstimate estimateLiveFilterPass(Filter filter, StatementPattern pattern) {
 		if (!adaptiveEvidenceAllowed()) {
 			return new PatternFilterSampleEstimate(-1.0d, -1L);
@@ -625,7 +620,6 @@ class LmdbFilterSelectivityStats
 		return new PatternFilterSampleEstimate(sampled.passRatio, sampled.reportedSampleSize());
 	}
 
-	@Override
 	public EvaluationStatistics.FilterPassEstimate estimateSnapshotFilterPass(Filter filter,
 			StatementPattern pattern) {
 		if (coldSynopsisCapacity <= 0 || !supportsColdSynopsis(filter, pattern)) {

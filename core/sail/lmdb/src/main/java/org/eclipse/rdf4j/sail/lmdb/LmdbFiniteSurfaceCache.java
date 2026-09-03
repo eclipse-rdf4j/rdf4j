@@ -46,10 +46,6 @@ final class LmdbFiniteSurfaceCache {
 		this(estimator, null, null, 0L, null);
 	}
 
-	LmdbFiniteSurfaceCache(LmdbFiniteJoinSurfaceEstimator estimator, LmdbEstimatorOptimizationScope scope) {
-		this(estimator, scope, null, 0L, null);
-	}
-
 	LmdbFiniteSurfaceCache(LmdbFiniteJoinSurfaceEstimator estimator, LmdbEstimatorOptimizationScope scope,
 			LmdbExactFiniteSurfaceCache exactFiniteSurfaceCache, long dataRevision, LongSupplier currentRevision) {
 		this.estimator = scope == null ? estimator : estimator.queryScoped();

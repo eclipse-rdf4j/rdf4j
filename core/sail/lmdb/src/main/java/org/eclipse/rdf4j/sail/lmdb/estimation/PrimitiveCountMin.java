@@ -84,10 +84,6 @@ final class PrimitiveCountMin {
 		return width;
 	}
 
-	long seed() {
-		return seed;
-	}
-
 	long allocatedBytes() {
 		return (long) counters.length * Long.BYTES;
 	}

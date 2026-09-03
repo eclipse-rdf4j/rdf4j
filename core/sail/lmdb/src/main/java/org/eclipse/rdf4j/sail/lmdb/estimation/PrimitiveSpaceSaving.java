@@ -91,23 +91,8 @@ final class PrimitiveSpaceSaving {
 		return slot < 0 ? 0L : counts[slot];
 	}
 
-	long error(long key) {
-		int slot = findSlot(key);
-		return slot < 0 ? 0L : errors[slot];
-	}
-
 	int slot(long key) {
 		return findSlot(key);
-	}
-
-	long keyAt(int slot) {
-		checkSlot(slot);
-		return keys[slot];
-	}
-
-	long countAt(int slot) {
-		checkSlot(slot);
-		return counts[slot];
 	}
 
 	int size() {
@@ -248,12 +233,6 @@ final class PrimitiveSpaceSaving {
 
 	private int hashPosition(long key) {
 		return (int) QuadHash.mix64(key) & indexMask;
-	}
-
-	private void checkSlot(int slot) {
-		if (slot < 0 || slot >= size || occupied[slot] == 0) {
-			throw new IndexOutOfBoundsException("slot: " + slot);
-		}
 	}
 
 	private static int ceilingPowerOfTwo(int value) {

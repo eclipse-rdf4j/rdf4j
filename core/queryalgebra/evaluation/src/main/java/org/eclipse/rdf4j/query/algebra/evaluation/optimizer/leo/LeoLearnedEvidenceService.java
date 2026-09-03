@@ -21,65 +21,10 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * Stateful learned-evidence service used by store-specific optimizers.
  */
 @Experimental
-public interface LeoLearnedEvidenceService extends LeoSurfaceProvider {
-
-	LeoLearnedEvidenceService EMPTY = new LeoLearnedEvidenceService() {
-	};
-
-	static LeoLearnedEvidenceService empty() {
-		return EMPTY;
-	}
-
-	default LeoOperatorLearningPolicy learningPolicy(TupleExpr tupleExpr) {
-		return LeoOperatorLearningPolicy.DO_NOT_LEARN;
-	}
-
-	default boolean shouldTrackRuntimeFeedback(TupleExpr tupleExpr) {
-		return learningPolicy(tupleExpr).runtimeObservable();
-	}
-
-	default boolean shouldRecordDirectEvidence(TupleExpr tupleExpr) {
-		return learningPolicy(tupleExpr).recordsDirectEvidence();
-	}
-
-	default boolean shouldExposePlanningEvidence(TupleExpr tupleExpr) {
-		return learningPolicy(tupleExpr).appliesToPlanning();
-	}
-
-	default void observe(TupleExpr tupleExpr, boolean completedRoot) {
-		// no-op
-	}
-
-	default void observePlanCandidate(TupleExpr tupleExpr, String ruleId, double estimatedRows,
-			double estimatedWorkRows, int candidateRank, boolean accepted) {
-		// no-op
-	}
-
-	default void observePlanCandidate(LeoPlanCandidate candidate, boolean accepted, String reason) {
-		// no-op
-	}
-
-	default Optional<LeoPlanRankingAdvice> planRankingAdvice(TupleExpr tupleExpr) {
-		return Optional.empty();
-	}
-
-	default String debugEvidence(TupleExpr tupleExpr) {
-		return "";
-	}
-
-	default String explainEstimateDiff(TupleExpr tupleExpr) {
-		return "";
-	}
+public interface LeoLearnedEvidenceService {
 
 	default LeoPlanRanking rankPlanCandidates(List<LeoPlanCandidate> candidates) {
 		return LeoPlanRanking.byCost(candidates, "default-cost-order");
 	}
 
-	default boolean shouldApplyPlanRanking(LeoPlanRanking ranking, String candidateId) {
-		return false;
-	}
-
-	default String rolloutProfile() {
-		return "";
-	}
 }

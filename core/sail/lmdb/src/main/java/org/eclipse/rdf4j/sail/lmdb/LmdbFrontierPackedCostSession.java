@@ -271,7 +271,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 	private EmissionScratchPool emissionScratchPool;
 
 	private FrontierStateArena arena;
-	private FrontierMemoryReservation sessionReservation;
 	private LeafState[] leafStates;
 	private FiniteLeafState[] finiteLeafStates;
 	private EvidenceStateRef[] stateReferences;
@@ -3658,12 +3657,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 				: Double.NaN;
 	}
 
-	private static double multiplyKnown(double first, double second, double third) {
-		return finiteNonNegative(first) && finiteNonNegative(second) && finiteNonNegative(third)
-				? saturatedMultiply(saturatedMultiply(first, second), third)
-				: Double.NaN;
-	}
-
 	private static double predictionDimension(PackedCostEstimate output, FrontierCostDimension dimension,
 			double applied, boolean raw) {
 		if (!raw) {
@@ -4473,7 +4466,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			}
 
 			arena = candidateArena;
-			sessionReservation = candidateReservation;
 			leafStates = candidates;
 			finiteLeafStates = finiteCandidates;
 			stateReferences = candidateReferences;
@@ -4764,7 +4756,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			}
 
 			arena = candidateArena;
-			sessionReservation = candidateReservation;
 			stateReferences = candidateReferences;
 			candidateArena = null;
 			candidateReservation = null;
@@ -12830,10 +12821,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		return count;
 	}
 
-	private static LeafState leafState(LeafState[] candidates, int relationId) {
-		return relationId <= 0 || relationId >= candidates.length ? null : candidates[relationId];
-	}
-
 	private static int[] leafScanOrder(LeafState[] candidates, long[] candidateRangeRows) {
 		int[] order = new int[supportedLeafCount(candidates)];
 		int size = 0;
@@ -15145,10 +15132,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 		private int allocatedCapacity;
 		private int size;
 
-		EmissionBuffer(FrontierStateArena arena, EmissionScratchPool scratchPool, int width) {
-			this(arena, scratchPool, width, Integer.MAX_VALUE);
-		}
-
 		EmissionBuffer(FrontierStateArena arena, EmissionScratchPool scratchPool, int width, int maximumSize) {
 			this(arena, scratchPool, width, Math.min(64, maximumSize), maximumSize);
 		}
@@ -15169,10 +15152,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			if (initialCapacity > 0) {
 				appendSegment(initialCapacity);
 			}
-		}
-
-		void add(long[] source, int offset, double weight) {
-			add(0, source, offset, weight);
 		}
 
 		void addRow(long first, long second, long third, long fourth, double weight) {
@@ -15426,10 +15405,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 			borrowedSegments--;
 			available.add(segment);
 			storageBytes = Math.addExact(storageBytes, segment.storageBytes());
-		}
-
-		private long storageBytes() {
-			return storageBytes;
 		}
 
 		private void trimToBytes(long maximumRetainedBytes) {
@@ -16577,10 +16552,6 @@ final class LmdbFrontierPackedCostSession implements PackedCostSession {
 
 		private int size() {
 			return size;
-		}
-
-		private int width() {
-			return width;
 		}
 
 		private long storageBytes() {

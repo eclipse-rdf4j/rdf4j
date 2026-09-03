@@ -411,33 +411,6 @@ final class FrontierLearningModel {
 		mergeCensored(logicalCensored, censorKey, bounds);
 	}
 
-	synchronized void observePhysicalCensored(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
-			LearningApplicability applicability, FrontierCostDimension dimension,
-			CensoredObservationBounds bounds) {
-		if (logicalKey == null || physicalKey == null || applicability == null || dimension == null || bounds == null) {
-			return;
-		}
-		PhysicalCensorKey censorKey = new PhysicalCensorKey(logicalKey, physicalKey, applicability, dimension);
-		mergeCensored(physicalCensored, censorKey, bounds);
-	}
-
-	private <K> void observeAbsolute(LinkedHashMap<K, DimensionCounts> store, K key,
-			FrontierCostDimension dimension, double actual, long epoch) {
-		if (!finiteNonNegative(actual)) {
-			return;
-		}
-		double logValue = Math.log1p(actual);
-		if (!Double.isFinite(logValue)) {
-			return;
-		}
-		DimensionCounts counts = cell(store, key);
-		if (counts == null) {
-			return;
-		}
-		counts.observe(dimension, Math.min(logValue, MAX_ABS_LOG_ERROR), epoch);
-		revision = Math.max(revision + 1L, Math.max(0L, epoch));
-	}
-
 	private static boolean observeResidual(DimensionCounts counts, FrontierCostDimension dimension,
 			double predicted, double actual, long epoch) {
 		if (counts == null || !finiteNonNegative(predicted) || !finiteNonNegative(actual)) {
@@ -559,15 +532,6 @@ final class FrontierLearningModel {
 			return null;
 		}
 		return exactPosterior(logicalExact.get(new LogicalPosteriorKey(key, applicability)), dimension);
-	}
-
-	synchronized DimensionEstimate physicalEstimate(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
-			LearningApplicability applicability, FrontierCostDimension dimension, double predicted) {
-		if (!finiteNonNegative(predicted)) {
-			return null;
-		}
-		return physicalDecision(logicalKey, physicalKey, applicability, dimension,
-				LearningFeatureEnvelope.conventionalRows(predicted), predicted).estimate();
 	}
 
 	synchronized DimensionDecision physicalDecision(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
@@ -826,10 +790,6 @@ final class FrontierLearningModel {
 		legacyFamilyPriors.computeIfAbsent(familyKey, ignored -> new DimensionCounts())
 				.observeWeighted(dimension, Math.clamp(logError, -MAX_ABS_LOG_ERROR, MAX_ABS_LOG_ERROR),
 						Math.min(1.0d, observations * 0.05d), 0L);
-	}
-
-	synchronized long revision() {
-		return revision;
 	}
 
 	synchronized int keyCount() {
@@ -1381,21 +1341,6 @@ final class FrontierLearningModel {
 			}
 		}
 
-		void merge(FrontierCostDimension dimension, DimensionCounts other) {
-			MutableStatistics otherStatistics = other.statistics(dimension, false);
-			if (otherStatistics != null) {
-				statistics(dimension, true).merge(otherStatistics);
-			}
-		}
-
-		void subtract(FrontierCostDimension dimension, DimensionCounts other) {
-			MutableStatistics current = statistics(dimension, false);
-			MutableStatistics otherStatistics = other.statistics(dimension, false);
-			if (current != null && otherStatistics != null) {
-				current.subtract(otherStatistics);
-			}
-		}
-
 		void decay(double factor) {
 			for (MutableStatistics statistics : dimensions) {
 				if (statistics != null) {
@@ -1457,25 +1402,6 @@ final class FrontierLearningModel {
 			sum += observationWeight * value;
 			sumSquares += observationWeight * value * value;
 			lastEpoch = Math.max(lastEpoch, epoch);
-		}
-
-		void merge(MutableStatistics other) {
-			weight += other.weight;
-			count += other.count;
-			sum += other.sum;
-			sumSquares += other.sumSquares;
-			lastEpoch = Math.max(lastEpoch, other.lastEpoch);
-		}
-
-		void subtract(MutableStatistics other) {
-			weight = Math.max(0.0d, weight - other.weight);
-			count = Math.max(0L, count - other.count);
-			sum -= other.sum;
-			sumSquares = Math.max(0.0d, sumSquares - other.sumSquares);
-			if (weight == 0.0d) {
-				sum = 0.0d;
-				sumSquares = 0.0d;
-			}
 		}
 
 		void decay(double factor) {

@@ -89,10 +89,6 @@ final class RdfTermDomain {
 		this(mask, null, null);
 	}
 
-	private RdfTermDomain(long mask, Set<Value> finiteValues) {
-		this(mask, finiteValues, null);
-	}
-
 	private RdfTermDomain(long mask, Set<Value> finiteValues, IntegerRange integerRange) {
 		this.mask = mask;
 		this.finiteValues = finiteValues;
@@ -376,28 +372,6 @@ final class RdfTermDomain {
 			}
 		}
 		return mask;
-	}
-
-	static long joinObservedMasks(long currentMask, long observedMask) {
-		if ((currentMask & UNKNOWN_MASK) != 0L) {
-			return observedMask;
-		}
-		if ((observedMask & UNKNOWN_MASK) != 0L) {
-			return currentMask;
-		}
-		if ((currentMask & EMPTY_MASK) != 0L) {
-			return observedMask;
-		}
-		if ((observedMask & EMPTY_MASK) != 0L) {
-			return currentMask;
-		}
-		if (currentMask == UNRESTRICTED.mask || observedMask == UNRESTRICTED.mask) {
-			return UNRESTRICTED.mask;
-		}
-
-		long possibleFacts = (currentMask | observedMask) & POSSIBLE_FACT_MASK;
-		long universalFacts = (currentMask & observedMask) & UNIVERSAL_FACT_MASK;
-		return possibleFacts | universalFacts;
 	}
 
 	static boolean isXsdNumericLiteral(Value value) {

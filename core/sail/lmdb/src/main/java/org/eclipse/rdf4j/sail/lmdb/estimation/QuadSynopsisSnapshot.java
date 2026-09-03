@@ -17,7 +17,7 @@ import java.util.Optional;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 
 /** Published base synopsis. Ownership of its primitive arrays transfers from the builder at publication. */
-public final class QuadSynopsisSnapshot implements QuadSynopsis {
+public final class QuadSynopsisSnapshot {
 
 	private final QuadSnapshotIdentity identity;
 	private final long snapshotVersion;
@@ -49,7 +49,6 @@ public final class QuadSynopsisSnapshot implements QuadSynopsis {
 		this.allocatedBytes = allocated;
 	}
 
-	@Override
 	public QuadEvidence probe(QuadProbe probe) {
 		Objects.requireNonNull(probe, "probe");
 		if (!isCurrent(probe.snapshotIdentity())) {
@@ -81,7 +80,6 @@ public final class QuadSynopsisSnapshot implements QuadSynopsis {
 		return new QuadEvidence(rows, distribution(probe, rows.estimate()), true);
 	}
 
-	@Override
 	public long snapshotVersion() {
 		return snapshotVersion;
 	}
@@ -94,12 +92,10 @@ public final class QuadSynopsisSnapshot implements QuadSynopsis {
 		return identity;
 	}
 
-	@Override
 	public long allocatedBytes() {
 		return allocatedBytes;
 	}
 
-	@Override
 	public boolean isCurrent(QuadSnapshotIdentity other) {
 		return identity.equals(other);
 	}

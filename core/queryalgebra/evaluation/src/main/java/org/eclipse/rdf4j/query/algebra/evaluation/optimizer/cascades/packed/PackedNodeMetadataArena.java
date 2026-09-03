@@ -28,10 +28,6 @@ final class PackedNodeMetadataArena {
 	private final Columns terms;
 	private boolean frozen;
 
-	PackedNodeMetadataArena() {
-		this(32, 48, 48);
-	}
-
 	PackedNodeMetadataArena(int expectedRelations, int expectedScalars, int expectedTerms) {
 		relations = new Columns(expectedRelations);
 		scalars = new Columns(expectedScalars);
@@ -62,18 +58,6 @@ final class PackedNodeMetadataArena {
 			throw new IllegalStateException("packed node metadata is frozen");
 		}
 		relations.addSemanticFlags(relationId, semanticFlags);
-	}
-
-	/**
-	 * Records one proof-backed relation whose exact physical search covers every candidate rooted at the supplied
-	 * relation. This is deliberately stronger than logical equivalence: callers may use the edge to omit the covered
-	 * search only when the covering candidate is never more expensive under the packed operator-cost contract.
-	 */
-	void offerRelationExactCover(int relationId, int coveringRelationId) {
-		if (frozen) {
-			throw new IllegalStateException("packed node metadata is frozen");
-		}
-		relations.offerExactCover(relationId, coveringRelationId);
 	}
 
 	void attachScalar(int scalarId, int metricSetId, int flags, double resultSizeEstimate, double costEstimate) {
@@ -278,17 +262,6 @@ final class PackedNodeMetadataArena {
 		private void addSemanticFlags(int id, int flags) {
 			checkId(id);
 			semanticFlags[id] |= flags;
-		}
-
-		private void offerExactCover(int id, int coveringId) {
-			checkId(id);
-			checkId(coveringId);
-			if (id == coveringId) {
-				throw new PackedMemoInvariantException("a relation cannot exactly cover itself");
-			}
-			if (exactCoverIds[id] == 0) {
-				exactCoverIds[id] = coveringId;
-			}
 		}
 
 		private int metricSetId(int id) {

@@ -49,10 +49,6 @@ final class PackedRuleState {
 		return true;
 	}
 
-	int generation(int expressionId) {
-		return expressionId > 0 && expressionId < generations.length ? generations[expressionId] : 0;
-	}
-
 	private void ensureExpressionCapacity(int expressionId) {
 		if (expressionId < generations.length) {
 			return;

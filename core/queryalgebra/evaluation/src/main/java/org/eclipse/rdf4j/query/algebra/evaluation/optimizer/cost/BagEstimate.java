@@ -165,26 +165,6 @@ public final class BagEstimate {
 				copy, evidenceProfile.supportingSketches(), metrics(), true);
 	}
 
-	public BagEstimate withSketchRelations(Map<VariableSetKey, DistributionSketch> sketches) {
-		if (sketches == null || sketches.isEmpty()) {
-			return this;
-		}
-		Map<String, VariableEstimate> variableCopy = new LinkedHashMap<>(variables());
-		Map<VariableSetKey, SketchEvidence> copy = new LinkedHashMap<>(evidenceProfile.sketches());
-		for (Map.Entry<VariableSetKey, DistributionSketch> entry : sketches.entrySet()) {
-			if (entry.getKey() != null && entry.getValue() != null) {
-				mergeVariableSketch(variableCopy, entry.getKey(), entry.getValue());
-				copy.put(entry.getKey(), new SketchEvidence(entry.getKey(), entry.getValue(), rows(),
-						entry.getValue().distinctRows(),
-						entry.getKey().names().size() > 1 ? EvidenceQuality.TUPLE_SKETCH
-								: EvidenceQuality.VARIABLE_SKETCH,
-						source()));
-			}
-		}
-		return withProfile(rows(), workRows(), memoryRows(), confidence(), source(), variableCopy, finiteRelations(),
-				copy, evidenceProfile.supportingSketches(), metrics(), true);
-	}
-
 	private void mergeVariableSketch(Map<String, VariableEstimate> variableCopy, VariableSetKey key,
 			DistributionSketch sketch) {
 		if (key.names().size() != 1) {
@@ -238,20 +218,6 @@ public final class BagEstimate {
 				.stream()
 				.filter(relation -> relation.containsAll(names))
 				.max(Comparator.comparingInt(relation -> relation.variables().size()));
-	}
-
-	public boolean hasBindingEvidence() {
-		if (!finiteRelations().isEmpty() || !sketchRelations().isEmpty()
-				|| !evidenceProfile.supportingSketches().isEmpty()) {
-			return true;
-		}
-		for (VariableEstimate variable : variables().values()) {
-			if (variable != null && (variable.boundRows() > 0.0d || variable.distinctRows() > 0.0d
-					|| variable.sketch() != null)) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	@Override

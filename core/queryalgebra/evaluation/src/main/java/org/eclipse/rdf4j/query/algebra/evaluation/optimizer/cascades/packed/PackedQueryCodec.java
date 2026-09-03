@@ -285,7 +285,6 @@ final class PackedQueryCodec {
 		private final PackedNodeMetadataArena metadata;
 		private final PackedObjectPool objects = new PackedObjectPool(32);
 		private final PackedSymbolTable symbols = new PackedSymbolTable();
-		private final boolean normalizeFiniteFilters;
 		private final PackedLogicalRuleProgram logicalRules;
 		private final PackedPredicateRangeProvider rangeProvider;
 		private final PackedPredicateRange rangeSlot;
@@ -312,7 +311,6 @@ final class PackedQueryCodec {
 			relations = new PackedExpressionInterner(shape.relationNodes, shape.relationNodes);
 			scalars = new PackedExpressionInterner(shape.valueNodes, shape.valueNodes);
 			metadata = new PackedNodeMetadataArena(shape.relationNodes, shape.valueNodes, shape.termNodes);
-			this.normalizeFiniteFilters = normalizeFiniteFilters;
 			this.anonymousNames = anonymousNames;
 			this.retainAnnotations = retainAnnotations;
 			parameters = parameterizeValues ? new PackedParameterSchema.Builder() : null;
@@ -940,21 +938,6 @@ final class PackedQueryCodec {
 			int rowId = bindingSets.internRow(scratch, start, count);
 			releaseScratch(start);
 			return rowId;
-		}
-
-		private void sortBindingPairs(int start, int count) {
-			for (int ordinal = 1; ordinal < count; ordinal++) {
-				int nameId = scratch[start + ordinal * 2];
-				int valueId = scratch[start + ordinal * 2 + 1];
-				int insertion = ordinal;
-				while (insertion > 0 && scratch[start + (insertion - 1) * 2] > nameId) {
-					scratch[start + insertion * 2] = scratch[start + (insertion - 1) * 2];
-					scratch[start + insertion * 2 + 1] = scratch[start + (insertion - 1) * 2 + 1];
-					insertion--;
-				}
-				scratch[start + insertion * 2] = nameId;
-				scratch[start + insertion * 2 + 1] = valueId;
-			}
 		}
 
 		private int servicePayload(Service service) {

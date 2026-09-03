@@ -232,10 +232,6 @@ final class FrontierOmniBuilder implements AutoCloseable {
 		}
 	}
 
-	static long estimatedHeapBytes(FrontierStatisticsBuildConfig config) {
-		return estimatedHeapBytes(config, config.sortMemoryBytes());
-	}
-
 	static long estimatedHeapBytes(FrontierStatisticsBuildConfig config, long sortMemoryBytes) {
 		FrontierOmniLayout layout = new FrontierOmniLayout(config.designLaneCount(), config.auditLaneCount(),
 				config.omniDepth(), config.cellCount());

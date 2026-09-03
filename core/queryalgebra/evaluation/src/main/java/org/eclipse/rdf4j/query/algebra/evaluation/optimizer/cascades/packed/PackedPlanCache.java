@@ -57,10 +57,6 @@ public final class PackedPlanCache {
 	private final FingerprintStrategy fingerprintStrategy;
 	private final boolean canonicalFingerprintStrategy;
 
-	public PackedPlanCache(int capacity) {
-		this(capacity, DEFAULT_SEGMENTS, DEFAULT_EVIDENCE_BUDGET_BYTES);
-	}
-
 	public PackedPlanCache(int capacity, int segmentCount) {
 		this(capacity, segmentCount, DEFAULT_EVIDENCE_BUDGET_BYTES);
 	}
@@ -71,11 +67,6 @@ public final class PackedPlanCache {
 
 	PackedPlanCache(int capacity, int segmentCount, FingerprintStrategy fingerprintStrategy) {
 		this(capacity, segmentCount, DEFAULT_EVIDENCE_BUDGET_BYTES, fingerprintStrategy, false);
-	}
-
-	PackedPlanCache(int capacity, int segmentCount, long evidenceBudgetBytes,
-			FingerprintStrategy fingerprintStrategy) {
-		this(capacity, segmentCount, evidenceBudgetBytes, fingerprintStrategy, false);
 	}
 
 	private PackedPlanCache(int capacity, int segmentCount, long evidenceBudgetBytes,
@@ -128,11 +119,6 @@ public final class PackedPlanCache {
 	}
 
 	PlanEntry findPlan(Fingerprint fingerprint, Context context, TupleExpr source,
-			PackedQueryCacheIdentity sourceIdentity) {
-		return findPlan(fingerprint, context, source, sourceIdentity, PackedPlannerLimits.unbounded());
-	}
-
-	PlanEntry findPlan(Fingerprint fingerprint, Context context, TupleExpr source,
 			PackedQueryCacheIdentity sourceIdentity, PackedPlannerLimits limits) {
 		return segment(fingerprint, context)
 				.findPlan(fingerprint, context, source, sourceIdentity, Objects.requireNonNull(limits, "limits"));
@@ -154,10 +140,6 @@ public final class PackedPlanCache {
 				: segment(fingerprint, context).findFamilyPlan(fingerprint, context, familyIdentity, limits);
 	}
 
-	QueryEntry findQuery(Fingerprint fingerprint, Context context, TupleExpr source) {
-		return findQuery(fingerprint, context, source, PackedQueryCacheIdentity.create(source));
-	}
-
 	QueryEntry findQuery(Fingerprint fingerprint, Context context, TupleExpr source,
 			PackedQueryCacheIdentity sourceIdentity) {
 		return segment(fingerprint, context).findQuery(fingerprint, context, source, sourceIdentity);
@@ -166,11 +148,6 @@ public final class PackedPlanCache {
 	FlightClaim beginFlight(Fingerprint fingerprint, Context context, TupleExpr source) {
 		return beginFlight(fingerprint, context, source, PackedQueryCacheIdentity.create(source),
 				PackedPlannerLimits.unbounded());
-	}
-
-	FlightClaim beginFlight(Fingerprint fingerprint, Context context, TupleExpr source,
-			PackedQueryCacheIdentity sourceIdentity) {
-		return beginFlight(fingerprint, context, source, sourceIdentity, PackedPlannerLimits.unbounded());
 	}
 
 	FlightClaim beginFlight(Fingerprint fingerprint, Context context, TupleExpr source,
@@ -268,12 +245,6 @@ public final class PackedPlanCache {
 			hash = mix64(hash ^ predicateRangeVersion);
 			hash = mix64(hash ^ leoRevision);
 			return mix64(hash ^ frontierRevision);
-		}
-
-		long structuralPlanHash() {
-			long hash = structuralQueryHash();
-			hash = mix64(hash ^ goalFingerprint);
-			return mix64(hash ^ providerVersion);
 		}
 
 		long structuralQueryHash() {

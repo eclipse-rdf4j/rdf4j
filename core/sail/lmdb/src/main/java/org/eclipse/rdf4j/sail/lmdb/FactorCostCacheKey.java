@@ -103,14 +103,6 @@ final class FactorCostCacheKey {
 				factor == null ? "" : factor.toString());
 	}
 
-	static Object estimatorFingerprint(TupleExpr expression) {
-		if (expression == null) {
-			return "null";
-		}
-		return new EstimatorFingerprint(expression.getClass().getName(), expression.toString(),
-				Set.copyOf(expression.getBindingNames()));
-	}
-
 	private static Object queryModelFingerprint(QueryModelNode node, LmdbEstimatorOptimizationScope scope) {
 		if (node == null) {
 			return null;
@@ -165,9 +157,6 @@ final class FactorCostCacheKey {
 	}
 
 	record DetachedFactorFingerprint(Object identity, long retainedBytes) {
-	}
-
-	private record EstimatorFingerprint(String nodeType, String rendering, Set<String> bindingNames) {
 	}
 
 	private record StatementPatternFactorFingerprint(int hash, StatementPattern.Scope scope, VarFingerprint subject,

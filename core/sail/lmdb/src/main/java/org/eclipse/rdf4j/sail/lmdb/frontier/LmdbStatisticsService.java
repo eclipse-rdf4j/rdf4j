@@ -16,7 +16,6 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.util.EnumMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -77,12 +76,6 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			long diskBudgetBytes, long maximumLagMillis) throws IOException {
 		return new LmdbStatisticsService(directory, NioFrontierFileOps.INSTANCE, heapGovernor, diskBudgetBytes,
 				maximumLagMillis, Clock.systemUTC());
-	}
-
-	static LmdbStatisticsService open(Path directory, FrontierFileOps fileOps,
-			FrontierStatisticsHeapGovernor heapGovernor, long diskBudgetBytes, long maximumLagMillis, Clock clock)
-			throws IOException {
-		return new LmdbStatisticsService(directory, fileOps, heapGovernor, diskBudgetBytes, maximumLagMillis, clock);
 	}
 
 	/**
@@ -525,12 +518,6 @@ public final class LmdbStatisticsService implements AutoCloseable {
 				return Double.NaN;
 			}
 		}
-	}
-
-	public void recordStoreCommit(long epoch, long committedAtMillis) {
-		FrontierStatisticsGeneration observed = current;
-		long inferredSequence = observed == null ? 0L : observed.manifest().coveredSequence() + 1L;
-		recordStoreCommit(epoch, inferredSequence, committedAtMillis);
 	}
 
 	public synchronized void recordStoreCommit(long epoch, long sequence, long committedAtMillis) {

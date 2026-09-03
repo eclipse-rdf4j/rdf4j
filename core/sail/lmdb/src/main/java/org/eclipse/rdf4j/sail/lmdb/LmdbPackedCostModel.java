@@ -118,11 +118,6 @@ final class LmdbPackedCostModel
 	}
 
 	LmdbPackedCostModel(LmdbEstimatorRuntime runtime, OptionalLong executionSnapshotEpoch,
-			boolean datasetUsesStoreDefaults, SailDatasetTripleTermSource frontierStatementSource) {
-		this(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults, frontierStatementSource, null, true);
-	}
-
-	LmdbPackedCostModel(LmdbEstimatorRuntime runtime, OptionalLong executionSnapshotEpoch,
 			boolean datasetUsesStoreDefaults, SailDatasetTripleTermSource frontierStatementSource,
 			EvaluationStrategy evaluationStrategy) {
 		this(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy,

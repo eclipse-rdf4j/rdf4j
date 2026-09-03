@@ -178,36 +178,11 @@ final class FrontierStatisticsHash {
 				allComponentsConditioningKeyFromHashes(subjectHash, predicateHash, objectHash, contextHash));
 	}
 
-	/** Computes the four reusable component hashes and the row priority in one pass. */
-	static long rowPriorityAndComponentHashes(int plane, long subject, long predicate, long object, long context,
-			long[] componentHashes, int offset) {
-		long subjectHash = mix64(subject ^ SUBJECT_SEED);
-		long predicateHash = mix64(predicate ^ PREDICATE_SEED);
-		long objectHash = mix64(object ^ OBJECT_SEED);
-		long contextHash = mix64(context ^ CONTEXT_SEED);
-		componentHashes[offset] = subjectHash;
-		componentHashes[offset + 1] = predicateHash;
-		componentHashes[offset + 2] = objectHash;
-		componentHashes[offset + 3] = contextHash;
-		long conditioningKey = allComponentsConditioningKeyFromHashes(
-				subjectHash, predicateHash, objectHash, contextHash);
-		long seed = (plane & ~1) == 0
-				? ROW_PRIORITY_PLANE_SEEDS[plane]
-				: ROW_PRIORITY_PLANE_STEP * (plane + 1L);
-		return mix64(conditioningKey ^ seed);
-	}
-
 	static long rowPriorityFromConditioningKey(int plane, long conditioningKey) {
 		long seed = (plane & ~1) == 0
 				? ROW_PRIORITY_PLANE_SEEDS[plane]
 				: ROW_PRIORITY_PLANE_STEP * (plane + 1L);
 		return mix64(conditioningKey ^ seed);
-	}
-
-	/** Computes explicit and inferred row priorities without rebuilding the conditioning key. */
-	static void bothRowPrioritiesFromConditioningKey(long conditioningKey, long[] destination, int offset) {
-		destination[offset] = mix64(conditioningKey ^ ROW_PRIORITY_PLANE_STEP);
-		destination[offset + 1] = mix64(conditioningKey ^ (2L * ROW_PRIORITY_PLANE_STEP));
 	}
 
 	static long omniPriority(int plane, int lane, long subject, long predicate, long object, long context) {
@@ -240,65 +215,12 @@ final class FrontierStatisticsHash {
 		}
 	}
 
-	static void omniPriorities4FromRowPriority(long rowPriority, long[] destination, int offset) {
-		destination[offset] = mix64(rowPriority ^ OMNI_PRIORITY_LANE_STEP);
-		destination[offset + 1] = mix64(rowPriority ^ (2L * OMNI_PRIORITY_LANE_STEP));
-		destination[offset + 2] = mix64(rowPriority ^ (3L * OMNI_PRIORITY_LANE_STEP));
-		destination[offset + 3] = mix64(rowPriority ^ (4L * OMNI_PRIORITY_LANE_STEP));
-	}
-
-	static void omniPriorities8FromRowPriority(long rowPriority, long[] destination, int offset) {
-		omniPriorities4FromRowPriority(rowPriority, destination, offset);
-		destination[offset + 4] = mix64(rowPriority ^ (5L * OMNI_PRIORITY_LANE_STEP));
-		destination[offset + 5] = mix64(rowPriority ^ (6L * OMNI_PRIORITY_LANE_STEP));
-		destination[offset + 6] = mix64(rowPriority ^ (7L * OMNI_PRIORITY_LANE_STEP));
-		destination[offset + 7] = mix64(rowPriority ^ (8L * OMNI_PRIORITY_LANE_STEP));
-	}
-
-	static void omniPriorities16FromRowPriority(long rowPriority, long[] destination, int offset) {
-		omniPriorities8FromRowPriority(rowPriority, destination, offset);
-		destination[offset + 8] = mix64(rowPriority ^ (9L * OMNI_PRIORITY_LANE_STEP));
-		destination[offset + 9] = mix64(rowPriority ^ (10L * OMNI_PRIORITY_LANE_STEP));
-		destination[offset + 10] = mix64(rowPriority ^ (11L * OMNI_PRIORITY_LANE_STEP));
-		destination[offset + 11] = mix64(rowPriority ^ (12L * OMNI_PRIORITY_LANE_STEP));
-		destination[offset + 12] = mix64(rowPriority ^ (13L * OMNI_PRIORITY_LANE_STEP));
-		destination[offset + 13] = mix64(rowPriority ^ (14L * OMNI_PRIORITY_LANE_STEP));
-		destination[offset + 14] = mix64(rowPriority ^ (15L * OMNI_PRIORITY_LANE_STEP));
-		destination[offset + 15] = mix64(rowPriority ^ (16L * OMNI_PRIORITY_LANE_STEP));
-	}
-
 	/** Coordinated nonnegative cluster priority shared by every plane and RDF role for the same center term. */
 	static long centerPriority(int lane, long center) {
 		long seed = (lane & ~PRECOMPUTED_LANE_MASK) == 0
 				? CENTER_PRIORITY_LANE_SEEDS[lane]
 				: CENTER_PRIORITY_LANE_STEP * (lane + 1L);
 		return mix64ShiftedRightOne(center ^ seed);
-	}
-
-	static void centerPriorities(long center, int firstLane, int laneCount, long[] destination, int offset) {
-		long seed = CENTER_PRIORITY_LANE_STEP * (firstLane + 1L);
-		int end = offset + laneCount;
-		while (offset + 4 <= end) {
-			destination[offset] = mix64ShiftedRightOne(center ^ seed);
-			destination[offset + 1] = mix64ShiftedRightOne(center ^ (seed + CENTER_PRIORITY_LANE_STEP));
-			destination[offset + 2] = mix64ShiftedRightOne(center ^ (seed + 2L * CENTER_PRIORITY_LANE_STEP));
-			destination[offset + 3] = mix64ShiftedRightOne(center ^ (seed + 3L * CENTER_PRIORITY_LANE_STEP));
-			seed += 4L * CENTER_PRIORITY_LANE_STEP;
-			offset += 4;
-		}
-		while (offset < end) {
-			destination[offset++] = mix64ShiftedRightOne(center ^ seed);
-			seed += CENTER_PRIORITY_LANE_STEP;
-		}
-	}
-
-	/** Independent nonnegative row priority for the second stage of one center-sample domain. */
-	static long centerEdgePriority(int plane, int lane, int component,
-			long subject, long predicate, long object, long context) {
-		long rowPriority = rowPriority(plane, subject, predicate, object, context);
-		long domain = CENTER_EDGE_LANE_STEP * (lane + 1L)
-				^ CENTER_EDGE_COMPONENT_STEP * (component + 1L);
-		return mix64ShiftedRightOne(rowPriority ^ domain);
 	}
 
 	static long centerEdgePriorityFromRowPriority(int lane, int component, long rowPriority) {
@@ -310,28 +232,6 @@ final class FrontierStatisticsHash {
 					^ CENTER_EDGE_COMPONENT_STEP * (component + 1L);
 		}
 		return mix64ShiftedRightOne(rowPriority ^ domain);
-	}
-
-	static void centerEdgePrioritiesFromRowPriority(long rowPriority, int component, int firstLane,
-			int laneCount, long[] destination, int offset) {
-		long laneSeed = CENTER_EDGE_LANE_STEP * (firstLane + 1L);
-		long componentSeed = CENTER_EDGE_COMPONENT_STEP * (component + 1L);
-		int end = offset + laneCount;
-		while (offset + 4 <= end) {
-			destination[offset] = mix64ShiftedRightOne(rowPriority ^ (laneSeed ^ componentSeed));
-			destination[offset + 1] = mix64ShiftedRightOne(rowPriority
-					^ ((laneSeed + CENTER_EDGE_LANE_STEP) ^ componentSeed));
-			destination[offset + 2] = mix64ShiftedRightOne(rowPriority
-					^ ((laneSeed + 2L * CENTER_EDGE_LANE_STEP) ^ componentSeed));
-			destination[offset + 3] = mix64ShiftedRightOne(rowPriority
-					^ ((laneSeed + 3L * CENTER_EDGE_LANE_STEP) ^ componentSeed));
-			laneSeed += 4L * CENTER_EDGE_LANE_STEP;
-			offset += 4;
-		}
-		while (offset < end) {
-			destination[offset++] = mix64ShiftedRightOne(rowPriority ^ (laneSeed ^ componentSeed));
-			laneSeed += CENTER_EDGE_LANE_STEP;
-		}
 	}
 
 	static int omniBucket(int lane, int component, int row, long value, int widthMask) {
@@ -364,87 +264,6 @@ final class FrontierStatisticsHash {
 		return ((int) sequence + row * (int) (sequence >>> 32)) & widthMask;
 	}
 
-	static void omniBucketsFromSequence(long sequence, int firstRow, int rowCount, int widthMask,
-			int[] destination, int offset) {
-		int delta = (int) (sequence >>> 32);
-		int position = (int) sequence + firstRow * delta;
-		int end = offset + rowCount;
-		while (offset + 4 <= end) {
-			destination[offset] = position & widthMask;
-			destination[offset + 1] = (position + delta) & widthMask;
-			destination[offset + 2] = (position + 2 * delta) & widthMask;
-			destination[offset + 3] = (position + 3 * delta) & widthMask;
-			position += 4 * delta;
-			offset += 4;
-		}
-		while (offset < end) {
-			destination[offset++] = position & widthMask;
-			position += delta;
-		}
-	}
-
-	static void omniBuckets(int lane, int component, long value, int firstRow, int rowCount, int widthMask,
-			int[] destination, int offset) {
-		omniBucketsFromSequence(omniBucketSequence(lane, component, value), firstRow, rowCount,
-				widthMask, destination, offset);
-	}
-
-	/** Computes rows 0..3 from one double-hash preparation. */
-	static void omniBuckets4(int lane, int component, long value, int widthMask,
-			int[] destination, int offset) {
-		long valueHash = omniValueHash(lane, component, value);
-		int delta = (int) mix64(valueHash ^ OMNI_DELTA_SEED) | 1;
-		int position = (int) valueHash;
-		destination[offset] = position & widthMask;
-		destination[offset + 1] = (position + delta) & widthMask;
-		destination[offset + 2] = (position + 2 * delta) & widthMask;
-		destination[offset + 3] = (position + 3 * delta) & widthMask;
-	}
-
-	/** Computes rows 0..7 from one double-hash preparation. */
-	static void omniBuckets8(int lane, int component, long value, int widthMask,
-			int[] destination, int offset) {
-		long valueHash = omniValueHash(lane, component, value);
-		int delta = (int) mix64(valueHash ^ OMNI_DELTA_SEED) | 1;
-		int position = (int) valueHash;
-		destination[offset] = position & widthMask;
-		destination[offset + 1] = (position + delta) & widthMask;
-		destination[offset + 2] = (position + 2 * delta) & widthMask;
-		destination[offset + 3] = (position + 3 * delta) & widthMask;
-		position += 4 * delta;
-		destination[offset + 4] = position & widthMask;
-		destination[offset + 5] = (position + delta) & widthMask;
-		destination[offset + 6] = (position + 2 * delta) & widthMask;
-		destination[offset + 7] = (position + 3 * delta) & widthMask;
-	}
-
-	/** Computes rows 0..15 from one double-hash preparation. */
-	static void omniBuckets16(int lane, int component, long value, int widthMask,
-			int[] destination, int offset) {
-		long valueHash = omniValueHash(lane, component, value);
-		int delta = (int) mix64(valueHash ^ OMNI_DELTA_SEED) | 1;
-		int position = (int) valueHash;
-		destination[offset] = position & widthMask;
-		destination[offset + 1] = (position + delta) & widthMask;
-		destination[offset + 2] = (position + 2 * delta) & widthMask;
-		destination[offset + 3] = (position + 3 * delta) & widthMask;
-		position += 4 * delta;
-		destination[offset + 4] = position & widthMask;
-		destination[offset + 5] = (position + delta) & widthMask;
-		destination[offset + 6] = (position + 2 * delta) & widthMask;
-		destination[offset + 7] = (position + 3 * delta) & widthMask;
-		position += 4 * delta;
-		destination[offset + 8] = position & widthMask;
-		destination[offset + 9] = (position + delta) & widthMask;
-		destination[offset + 10] = (position + 2 * delta) & widthMask;
-		destination[offset + 11] = (position + 3 * delta) & widthMask;
-		position += 4 * delta;
-		destination[offset + 12] = position & widthMask;
-		destination[offset + 13] = (position + delta) & widthMask;
-		destination[offset + 14] = (position + 2 * delta) & widthMask;
-		destination[offset + 15] = (position + 3 * delta) & widthMask;
-	}
-
 	/** Plane-independent so separately stored HLLs can be unioned without double-counting shared terms. */
 	static long componentHash(int component, long value) {
 		return mix64(value ^ COMPONENT_SEEDS[component]);
@@ -462,43 +281,8 @@ final class FrontierStatisticsHash {
 		return (int) mix64(value ^ JOIN_BUCKET_LANE_STEP * (lane + 1L)) & widthMask;
 	}
 
-	static void joinBuckets(long value, int firstLane, int laneCount, int widthMask,
-			int[] destination, int offset) {
-		long seed = JOIN_BUCKET_LANE_STEP * (firstLane + 1L);
-		int end = offset + laneCount;
-		while (offset + 4 <= end) {
-			destination[offset] = (int) mix64(value ^ seed) & widthMask;
-			destination[offset + 1] = (int) mix64(value ^ (seed + JOIN_BUCKET_LANE_STEP)) & widthMask;
-			destination[offset + 2] = (int) mix64(value ^ (seed + 2L * JOIN_BUCKET_LANE_STEP)) & widthMask;
-			destination[offset + 3] = (int) mix64(value ^ (seed + 3L * JOIN_BUCKET_LANE_STEP)) & widthMask;
-			seed += 4L * JOIN_BUCKET_LANE_STEP;
-			offset += 4;
-		}
-		while (offset < end) {
-			destination[offset++] = (int) mix64(value ^ seed) & widthMask;
-			seed += JOIN_BUCKET_LANE_STEP;
-		}
-	}
-
 	static long joinSign(int lane, long value) {
 		return mix64Sign(value ^ JOIN_SIGN_LANE_STEP * (lane + 1L));
-	}
-
-	static void joinSigns(long value, int firstLane, int laneCount, long[] destination, int offset) {
-		long seed = JOIN_SIGN_LANE_STEP * (firstLane + 1L);
-		int end = offset + laneCount;
-		while (offset + 4 <= end) {
-			destination[offset] = mix64Sign(value ^ seed);
-			destination[offset + 1] = mix64Sign(value ^ (seed + JOIN_SIGN_LANE_STEP));
-			destination[offset + 2] = mix64Sign(value ^ (seed + 2L * JOIN_SIGN_LANE_STEP));
-			destination[offset + 3] = mix64Sign(value ^ (seed + 3L * JOIN_SIGN_LANE_STEP));
-			seed += 4L * JOIN_SIGN_LANE_STEP;
-			offset += 4;
-		}
-		while (offset < end) {
-			destination[offset++] = mix64Sign(value ^ seed);
-			seed += JOIN_SIGN_LANE_STEP;
-		}
 	}
 
 	static long deltaSign(long key, int lane, int plane, int mask) {

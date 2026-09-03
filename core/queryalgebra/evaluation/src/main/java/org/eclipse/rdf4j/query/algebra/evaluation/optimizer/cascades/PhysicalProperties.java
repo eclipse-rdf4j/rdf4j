@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 public record PhysicalProperties(List<String> ordering, Set<String> distinctVars, String accessPath,
 		Set<String> boundVars, Set<String> inputBoundVars, Materialization materialization, String graphContext,
 		DuplicateBehavior duplicateBehavior, ObservationOrder observationOrder, InputConsumption inputConsumption,
-		Set<FiniteRelationContract> appliedFiniteRelations, BindingProfile bindingProfile) {
+		BindingProfile bindingProfile) {
 
 	public static final String ANY_ACCESS_PATH = "*";
 	public static final String ANY_GRAPH_CONTEXT = "*";
@@ -43,27 +43,7 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		duplicateBehavior = duplicateBehavior == null ? DuplicateBehavior.ANY : duplicateBehavior;
 		observationOrder = observationOrder == null ? ObservationOrder.ANY : observationOrder;
 		inputConsumption = inputConsumption == null ? InputConsumption.ANY : inputConsumption;
-		appliedFiniteRelations = appliedFiniteRelations == null || appliedFiniteRelations.isEmpty()
-				? Set.of()
-				: Set.copyOf(appliedFiniteRelations);
 		bindingProfile = bindingProfile == null ? BindingProfile.ANY : bindingProfile;
-	}
-
-	/** Compatibility constructor for callers created before finite-relation execution became a physical property. */
-	public PhysicalProperties(List<String> ordering, Set<String> distinctVars, String accessPath,
-			Set<String> boundVars, Set<String> inputBoundVars, Materialization materialization, String graphContext,
-			DuplicateBehavior duplicateBehavior, ObservationOrder observationOrder, InputConsumption inputConsumption,
-			BindingProfile bindingProfile) {
-		this(ordering, distinctVars, accessPath, boundVars, inputBoundVars, materialization, graphContext,
-				duplicateBehavior, observationOrder, inputConsumption, Set.of(), bindingProfile);
-	}
-
-	/** Compatibility constructor for callers created before input consumption became an executable property. */
-	public PhysicalProperties(List<String> ordering, Set<String> distinctVars, String accessPath,
-			Set<String> boundVars, Set<String> inputBoundVars, Materialization materialization, String graphContext,
-			DuplicateBehavior duplicateBehavior, ObservationOrder observationOrder, BindingProfile bindingProfile) {
-		this(ordering, distinctVars, accessPath, boundVars, inputBoundVars, materialization, graphContext,
-				duplicateBehavior, observationOrder, InputConsumption.ANY, Set.of(), bindingProfile);
 	}
 
 	public static Builder builder() {
@@ -81,7 +61,6 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 				&& duplicateBehavior == DuplicateBehavior.ANY
 				&& observationOrder == ObservationOrder.ANY
 				&& inputConsumption == InputConsumption.ANY
-				&& appliedFiniteRelations.isEmpty()
 				&& bindingProfile.isAny();
 	}
 
@@ -106,7 +85,6 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		hash = combineHash(hash, duplicateBehavior);
 		hash = combineHash(hash, observationOrder);
 		hash = combineHash(hash, inputConsumption);
-		hash = combineHash(hash, appliedFiniteRelations);
 		return combineHash(hash, bindingProfile.endpointMode());
 	}
 
@@ -129,29 +107,6 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 				&& satisfiesDuplicateBehavior(required.duplicateBehavior)
 				&& satisfiesObservationOrder(required.observationOrder)
 				&& satisfiesInputConsumption(required.inputConsumption)
-				&& appliedFiniteRelations.containsAll(required.appliedFiniteRelations)
-				&& bindingProfile.satisfiesExecutionContract(required.bindingProfile);
-	}
-
-	public boolean satisfies(PhysicalProperties required, BindingUniverse universe) {
-		if (universe == null) {
-			return satisfies(required);
-		}
-		if (required == null) {
-			required = ANY;
-		}
-		return satisfiesOrdering(required.ordering)
-				&& containsAll(universe, distinctVars, required.distinctVars)
-				&& satisfiesAccessPath(required.accessPath)
-				&& containsAll(universe, boundVars, required.boundVars)
-				&& containsAll(universe, inputBoundVars, required.inputBoundVars)
-				&& containsAll(universe, required.boundVars, inputBoundVars)
-				&& satisfiesMaterialization(required.materialization)
-				&& satisfiesGraphContext(required.graphContext)
-				&& satisfiesDuplicateBehavior(required.duplicateBehavior)
-				&& satisfiesObservationOrder(required.observationOrder)
-				&& satisfiesInputConsumption(required.inputConsumption)
-				&& appliedFiniteRelations.containsAll(required.appliedFiniteRelations)
 				&& bindingProfile.satisfiesExecutionContract(required.bindingProfile);
 	}
 
@@ -193,59 +148,6 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		if (!satisfiesInputConsumption(required.inputConsumption)) {
 			missing.add("inputConsumption");
 		}
-		if (!appliedFiniteRelations.containsAll(required.appliedFiniteRelations)) {
-			missing.add("appliedFiniteRelations");
-		}
-		if (!bindingProfile.satisfiesExecutionContract(required.bindingProfile)) {
-			missing.add("bindingProfile");
-		}
-		return missing.isEmpty() ? List.of() : List.copyOf(missing);
-	}
-
-	public List<String> missingRequirements(PhysicalProperties required, BindingUniverse universe) {
-		if (universe == null) {
-			return missingRequirements(required);
-		}
-		if (required == null) {
-			required = ANY;
-		}
-		List<String> missing = new ArrayList<>(10);
-		if (!satisfiesOrdering(required.ordering)) {
-			missing.add("ordering");
-		}
-		if (!containsAll(universe, distinctVars, required.distinctVars)) {
-			missing.add("distinctVars");
-		}
-		if (!satisfiesAccessPath(required.accessPath)) {
-			missing.add("accessPath");
-		}
-		if (!containsAll(universe, boundVars, required.boundVars)) {
-			missing.add("boundVars");
-		}
-		if (!containsAll(universe, inputBoundVars, required.inputBoundVars)) {
-			missing.add("requiredInputBoundVars");
-		}
-		if (!containsAll(universe, required.boundVars, inputBoundVars)) {
-			missing.add("inputBoundVars");
-		}
-		if (!satisfiesMaterialization(required.materialization)) {
-			missing.add("materialization");
-		}
-		if (!satisfiesGraphContext(required.graphContext)) {
-			missing.add("graphContext");
-		}
-		if (!satisfiesDuplicateBehavior(required.duplicateBehavior)) {
-			missing.add("duplicateBehavior");
-		}
-		if (!satisfiesObservationOrder(required.observationOrder)) {
-			missing.add("observationOrder");
-		}
-		if (!satisfiesInputConsumption(required.inputConsumption)) {
-			missing.add("inputConsumption");
-		}
-		if (!appliedFiniteRelations.containsAll(required.appliedFiniteRelations)) {
-			missing.add("appliedFiniteRelations");
-		}
 		if (!bindingProfile.satisfiesExecutionContract(required.bindingProfile)) {
 			missing.add("bindingProfile");
 		}
@@ -273,7 +175,6 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 				observationOrder == ObservationOrder.ANY ? other.observationOrder : observationOrder);
 		builder.inputConsumption(
 				inputConsumption == InputConsumption.ANY ? other.inputConsumption : inputConsumption);
-		builder.appliedFiniteRelations(union(appliedFiniteRelations, other.appliedFiniteRelations));
 		builder.bindingProfile(bindingProfile.mergedWith(other.bindingProfile));
 		return builder.build();
 	}
@@ -283,125 +184,6 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 			return this;
 		}
 		return builderFrom(this).ordering(ordering).build();
-	}
-
-	public PhysicalProperties withAccessPath(String accessPath) {
-		if (Objects.equals(this.accessPath, accessPath)) {
-			return this;
-		}
-		return builderFrom(this).accessPath(accessPath).build();
-	}
-
-	public PhysicalProperties withDistinctVars(Set<String> distinctVars) {
-		if (this.distinctVars == distinctVars || this.distinctVars.equals(distinctVars)) {
-			return this;
-		}
-		return builderFrom(this).distinctVars(distinctVars).build();
-	}
-
-	public PhysicalProperties withBoundVars(Set<String> boundVars) {
-		if (this.boundVars == boundVars || this.boundVars.equals(boundVars)) {
-			return this;
-		}
-		return builderFrom(this).boundVars(boundVars).build();
-	}
-
-	public PhysicalProperties withInputBoundVars(Set<String> inputBoundVars) {
-		if (this.inputBoundVars == inputBoundVars || this.inputBoundVars.equals(inputBoundVars)) {
-			return this;
-		}
-		return builderFrom(this).inputBoundVars(inputBoundVars).build();
-	}
-
-	public PhysicalProperties materialized() {
-		return builderFrom(this).materialization(Materialization.MATERIALIZED).build();
-	}
-
-	public PhysicalProperties withDuplicateBehavior(DuplicateBehavior duplicateBehavior) {
-		return builderFrom(this).duplicateBehavior(duplicateBehavior).build();
-	}
-
-	public PhysicalProperties withObservationOrder(ObservationOrder observationOrder) {
-		return builderFrom(this).observationOrder(observationOrder).build();
-	}
-
-	public PhysicalProperties withInputConsumption(InputConsumption inputConsumption) {
-		if (this.inputConsumption == inputConsumption) {
-			return this;
-		}
-		return builderFrom(this).inputConsumption(inputConsumption).build();
-	}
-
-	public PhysicalProperties withAppliedFiniteRelations(Set<FiniteRelationContract> appliedFiniteRelations) {
-		return builderFrom(this).appliedFiniteRelations(appliedFiniteRelations).build();
-	}
-
-	public PhysicalProperties withBindingProfile(BindingProfile bindingProfile) {
-		if (this.bindingProfile == bindingProfile || this.bindingProfile.equals(bindingProfile)) {
-			return this;
-		}
-		return builderFrom(this).bindingProfile(bindingProfile).build();
-	}
-
-	/**
-	 * Clamps output-scoped properties to the canonical schema of the owning memo group. Input requirements and
-	 * operator-local properties are deliberately preserved.
-	 */
-	PhysicalProperties restrictOutputTo(Set<String> outputNames) {
-		Set<String> requested = outputNames == null || outputNames.isEmpty() ? Set.of() : outputNames;
-		BindingProfile restrictedProfile = bindingProfile.restrictTo(requested);
-		if (requested.containsAll(boundVars)
-				&& requested.containsAll(distinctVars)
-				&& ordering.stream().allMatch(ordered -> requested.contains(orderingName(ordered)))
-				&& restrictedProfile == bindingProfile) {
-			return this;
-		}
-		Set<String> allowed = Set.copyOf(requested);
-		Set<String> restrictedBound = new LinkedHashSet<>(boundVars);
-		restrictedBound.retainAll(allowed);
-		Set<String> restrictedDistinct = new LinkedHashSet<>(distinctVars);
-		restrictedDistinct.retainAll(allowed);
-		List<String> restrictedOrdering = ordering.stream()
-				.filter(ordered -> allowed.contains(orderingName(ordered)))
-				.toList();
-		return builderFrom(this)
-				.ordering(restrictedOrdering)
-				.distinctVars(restrictedDistinct)
-				.boundVars(restrictedBound)
-				.bindingProfile(restrictedProfile)
-				.build();
-	}
-
-	/** Bitmap-native output restriction for repeated candidate costing. */
-	PhysicalProperties restrictOutputTo(BindingMask outputMask, BindingUniverse universe) {
-		Objects.requireNonNull(universe, "universe");
-		BindingMask requested = outputMask == null ? BindingMask.EMPTY : outputMask;
-		BindingProfile restrictedProfile = bindingProfile.restrictTo(requested, universe);
-		boolean orderingWithinOutput = true;
-		for (int index = 0; index < ordering.size(); index++) {
-			String ordered = ordering.get(index);
-			if (!universe.contains(requested, orderingName(ordered))) {
-				orderingWithinOutput = false;
-				break;
-			}
-		}
-		if (requested.containsAll(universe.maskOfStableSet(boundVars))
-				&& requested.containsAll(universe.maskOfStableSet(distinctVars))
-				&& orderingWithinOutput
-				&& restrictedProfile == bindingProfile) {
-			return this;
-		}
-		Set<String> restrictedBound = restrictNames(boundVars, requested, universe);
-		Set<String> restrictedDistinct = restrictNames(distinctVars, requested, universe);
-		List<String> restrictedOrdering = ordering.stream()
-				.filter(ordered -> universe.contains(requested, orderingName(ordered)))
-				.toList();
-		return builderFrom(this)
-				.ordering(restrictedOrdering)
-				.distinctVars(restrictedDistinct)
-				.boundVars(restrictedBound)
-				.bindingProfile(restrictedProfile)
-				.build();
 	}
 
 	public PhysicalProperties normalized(BindingUniverse universe) {
@@ -463,25 +245,6 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		return required == null || required == InputConsumption.ANY || inputConsumption == required;
 	}
 
-	private static boolean containsAll(BindingUniverse universe, Set<String> names, Set<String> required) {
-		if (required == null || required.isEmpty()) {
-			return true;
-		}
-		if (names == null || names.size() < required.size()) {
-			return false;
-		}
-		return universe.maskOf(names).containsAll(universe.maskOf(required));
-	}
-
-	private static String orderingName(String ordered) {
-		int separator = ordered.indexOf(':');
-		return separator < 0 ? ordered : ordered.substring(0, separator);
-	}
-
-	private static Set<String> restrictNames(Set<String> names, BindingMask requested, BindingUniverse universe) {
-		return universe.restrictStableSet(names, requested);
-	}
-
 	private static <T> Set<T> union(Set<T> left, Set<T> right) {
 		if (right.isEmpty() || left.containsAll(right)) {
 			return left;
@@ -506,7 +269,6 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 				.duplicateBehavior(properties.duplicateBehavior)
 				.observationOrder(properties.observationOrder)
 				.inputConsumption(properties.inputConsumption)
-				.appliedFiniteRelations(properties.appliedFiniteRelations)
 				.bindingProfile(properties.bindingProfile);
 	}
 
@@ -581,7 +343,6 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		private DuplicateBehavior duplicateBehavior = DuplicateBehavior.ANY;
 		private ObservationOrder observationOrder = ObservationOrder.ANY;
 		private InputConsumption inputConsumption = InputConsumption.ANY;
-		private Set<FiniteRelationContract> appliedFiniteRelations = Set.of();
 		private BindingProfile bindingProfile = BindingProfile.ANY;
 
 		private Builder() {
@@ -637,11 +398,6 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 			return this;
 		}
 
-		public Builder appliedFiniteRelations(Set<FiniteRelationContract> appliedFiniteRelations) {
-			this.appliedFiniteRelations = appliedFiniteRelations == null ? Set.of() : appliedFiniteRelations;
-			return this;
-		}
-
 		public Builder bindingProfile(BindingProfile bindingProfile) {
 			this.bindingProfile = bindingProfile == null ? BindingProfile.ANY : bindingProfile;
 			return this;
@@ -650,7 +406,7 @@ public record PhysicalProperties(List<String> ordering, Set<String> distinctVars
 		public PhysicalProperties build() {
 			return new PhysicalProperties(ordering, distinctVars, accessPath, boundVars, inputBoundVars,
 					materialization, graphContext, duplicateBehavior, observationOrder, inputConsumption,
-					appliedFiniteRelations, bindingProfile);
+					bindingProfile);
 		}
 	}
 }

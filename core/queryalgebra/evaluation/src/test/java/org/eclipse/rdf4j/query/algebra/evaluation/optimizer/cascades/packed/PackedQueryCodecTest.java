@@ -546,7 +546,7 @@ class PackedQueryCodecTest {
 		Class<? extends Annotation> marker = (Class<? extends Annotation>) Class.forName(
 				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedHotPath");
 		for (Class<?> type : new Class<?>[] { PackedBindingFacts.class, PackedBindingSetArena.class,
-				PackedBindingFlowArena.class, PackedPathFactIndex.class, PackedProofSetArena.class,
+				PackedProofSetArena.class,
 				PackedCostContext.class,
 				PackedCostEstimate.class, PackedExpressionInterner.class,
 				PackedFilterRules.class, PackedIncumbentSearch.class, PackedIntSequenceInterner.class,

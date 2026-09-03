@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 
 /**
  * Multi-objective physical-plan cost used by Cascades winners. {@code workRows} is the raw memo work-row field and must
@@ -68,24 +67,6 @@ public record CostVector(double rows, double workRows, double memoryRows, double
 				q.uncertaintyRows(), q.confidence(), 0.0d);
 	}
 
-	public static CostVector from(JoinFactorCostModel.EstimateVector estimateVector) {
-		if (estimateVector == null) {
-			return INFINITE;
-		}
-		return new CostVector(estimateVector.rows(), estimateVector.workRows(), estimateVector.memoryRows(),
-				estimateVector.seeks(), estimateVector.pageWalkRows(), estimateVector.rowQErrorMean(),
-				estimateVector.rowQErrorMax(), estimateVector.workQErrorMean(), estimateVector.workQErrorMax(),
-				estimateVector.uncertaintyRows(), estimateVector.confidence(), estimateVector.evidenceCount());
-	}
-
-	public static CostVector from(EstimateVector estimateVector) {
-		return estimateVector == null ? INFINITE : estimateVector.toCostVector();
-	}
-
-	public CardinalityEstimate cardinalityEstimate(String source) {
-		return CardinalityEstimate.estimated(rows, source);
-	}
-
 	public CostVector plus(CostVector other) {
 		Objects.requireNonNull(other, "other");
 		return new CostVector(rows + other.rows, workRows + other.workRows, memoryRows + other.memoryRows,
@@ -98,116 +79,10 @@ public record CostVector(double rows, double workRows, double memoryRows, double
 				pricedWorkRows + other.pricedWorkRows);
 	}
 
-	public CostVector withRows(double newRows) {
-		return new CostVector(newRows, workRows, memoryRows, seeks, pageWalkRows, rowQErrorMean, rowQErrorMax,
-				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount, pricedWorkRows);
-	}
-
-	public CostVector withWorkRows(double newWorkRows) {
-		return new CostVector(rows, newWorkRows, memoryRows, seeks, pageWalkRows, rowQErrorMean, rowQErrorMax,
-				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount);
-	}
-
-	public CostVector withPageWalkRows(double newPageWalkRows) {
-		return new CostVector(rows, workRows, memoryRows, seeks, newPageWalkRows, rowQErrorMean, rowQErrorMax,
-				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount, pricedWorkRows);
-	}
-
-	public CostVector withMemoryRows(double newMemoryRows) {
-		return new CostVector(rows, workRows, newMemoryRows, seeks, pageWalkRows, rowQErrorMean, rowQErrorMax,
-				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount, pricedWorkRows);
-	}
-
-	/**
-	 * Replaces output-cardinality evidence while retaining already composed resource totals and their work evidence.
-	 * Child output estimates are inputs to an operator estimate; they are not additional evidence about the parent's
-	 * output cardinality.
-	 */
-	public CostVector withOutputEstimate(CostVector outputEstimate) {
-		Objects.requireNonNull(outputEstimate, "outputEstimate");
-		return new CostVector(outputEstimate.rows, workRows, memoryRows, seeks, pageWalkRows,
-				outputEstimate.rowQErrorMean, outputEstimate.rowQErrorMax, workQErrorMean, workQErrorMax,
-				outputEstimate.uncertaintyRows, confidence, evidenceCount, pricedWorkRows);
-	}
-
-	public CostVector forEarlyStop(long rowsBeforeStop) {
-		if (rowsBeforeStop <= 0L || rowsBeforeStop == Long.MAX_VALUE || rows <= rowsBeforeStop) {
-			return this;
-		}
-		double demandedRows = Math.max(1.0d, rowsBeforeStop);
-		double scale = rows > 0.0d ? Math.max(0.000001d, demandedRows / rows) : 1.0d;
-		double stoppedWorkRows = Math.min(workRows, Math.max(demandedRows, workRows * scale));
-		double stoppedUncertainty = Math.min(uncertaintyRows, uncertaintyRows * scale);
-		return new CostVector(demandedRows, stoppedWorkRows, memoryRows, seeks, pageWalkRows, rowQErrorMean,
-				rowQErrorMax, workQErrorMean, workQErrorMax, stoppedUncertainty, confidence, evidenceCount);
-	}
-
-	public double optimisticObjectiveScore() {
-		double optimisticWork = workRows / Math.max(1.0d, workQErrorMax);
-		double optimisticIo = seeks * 0.10d + pageWalkRows * 0.01d + memoryRows * 0.002d;
-		double score = optimisticWork + optimisticIo;
-		return Double.isFinite(score) && score >= 0.0d ? score : Double.MAX_VALUE;
-	}
-
-	public double qError() {
-		return Math.max(rowQErrorMax, workQErrorMax);
-	}
-
-	public double feedbackConfidence() {
-		return confidence;
-	}
-
-	public CostVector robust() {
-		return new CostVector(rows, pricedWorkRows, memoryRows, seeks, pageWalkRows, rowQErrorMean, rowQErrorMax,
-				workQErrorMean, workQErrorMax, uncertaintyRows, confidence, evidenceCount, pricedWorkRows);
-	}
-
 	public double objectiveScore() {
 		double ioPenalty = seeks * 0.25d + pageWalkRows * 0.05d + memoryRows * 0.01d;
 		double score = pricedWorkRows + ioPenalty;
 		return Double.isFinite(score) && score >= 0.0d ? score : Double.MAX_VALUE;
-	}
-
-	public boolean dominates(CostVector other) {
-		Objects.requireNonNull(other, "other");
-		return rows <= other.rows
-				&& workRows <= other.workRows
-				&& memoryRows <= other.memoryRows
-				&& seeks <= other.seeks
-				&& pageWalkRows <= other.pageWalkRows
-				&& rowQErrorMean <= other.rowQErrorMean
-				&& rowQErrorMax <= other.rowQErrorMax
-				&& workQErrorMean <= other.workQErrorMean
-				&& workQErrorMax <= other.workQErrorMax
-				&& uncertaintyRows <= other.uncertaintyRows
-				&& confidence >= other.confidence
-				&& evidenceCount >= other.evidenceCount
-				&& (rows < other.rows
-						|| workRows < other.workRows
-						|| memoryRows < other.memoryRows
-						|| seeks < other.seeks
-						|| pageWalkRows < other.pageWalkRows
-						|| rowQErrorMean < other.rowQErrorMean
-						|| rowQErrorMax < other.rowQErrorMax
-						|| workQErrorMean < other.workQErrorMean
-						|| workQErrorMax < other.workQErrorMax
-						|| uncertaintyRows < other.uncertaintyRows
-						|| confidence > other.confidence
-						|| evidenceCount > other.evidenceCount);
-	}
-
-	public boolean exceeds(CostVector bound) {
-		if (bound == null) {
-			return false;
-		}
-		return rows > bound.rows
-				|| workRows > bound.workRows
-				|| memoryRows > bound.memoryRows
-				|| seeks > bound.seeks
-				|| pageWalkRows > bound.pageWalkRows
-				|| rowQErrorMax > bound.rowQErrorMax
-				|| workQErrorMax > bound.workQErrorMax
-				|| uncertaintyRows > bound.uncertaintyRows;
 	}
 
 	@Override

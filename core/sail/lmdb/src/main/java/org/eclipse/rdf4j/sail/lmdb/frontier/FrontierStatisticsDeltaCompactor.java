@@ -31,13 +31,6 @@ final class FrontierStatisticsDeltaCompactor {
 	}
 
 	static Result compact(Path directory, List<FrontierStatisticsShardDescriptor> input, long generationId,
-			long coveredEpoch, long maximumTermId, int firstShardId, FrontierStatisticsHeapGovernor governor)
-			throws IOException {
-		return compact(directory, input, generationId, coveredEpoch, maximumTermId, firstShardId, governor, () -> {
-		});
-	}
-
-	static Result compact(Path directory, List<FrontierStatisticsShardDescriptor> input, long generationId,
 			long coveredEpoch, long maximumTermId, int firstShardId, FrontierStatisticsHeapGovernor governor,
 			Runnable compactionStarted) throws IOException {
 		Objects.requireNonNull(directory, "directory");

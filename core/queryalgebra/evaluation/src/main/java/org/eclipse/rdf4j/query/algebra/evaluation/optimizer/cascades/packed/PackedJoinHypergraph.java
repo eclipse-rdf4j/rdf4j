@@ -185,14 +185,6 @@ final class PackedJoinHypergraph {
 		return edgeRightNodeSets[edge];
 	}
 
-	int edgeLeftNodeSet(int edge, PackedNodeSetArena targetArena) {
-		return nodeSets == null ? targetArena.intern(edgeLeft[edge]) : edgeLeftNodeSet(edge);
-	}
-
-	int edgeRightNodeSet(int edge, PackedNodeSetArena targetArena) {
-		return nodeSets == null ? targetArena.intern(edgeRight[edge]) : edgeRightNodeSet(edge);
-	}
-
 	long arcNear(int arc) {
 		int edge = arc >>> 1;
 		return (arc & 1) == 0 ? edgeLeft[edge] : edgeRight[edge];

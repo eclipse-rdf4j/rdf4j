@@ -1385,17 +1385,6 @@ final class PackedIncumbentSearch {
 		return query.relGroup(logicalExpressionId) == logicalExpressionId;
 	}
 
-	/**
-	 * Re-costs exactly those logical expressions whose immutable child-winner inputs changed after they were last
-	 * measured. Rule alternatives are appended after the canonical algebra, so relation-ID order is not a dependency
-	 * order: an appended child alternative can improve a group after every canonical ancestor has already copied the
-	 * old winner. The consumer worklist reaches the algebra DAG's fixed point without an iteration limit and without
-	 * invoking the provider for candidates whose inputs are unchanged.
-	 */
-	private int propagateChangedInputs(int rootWinnerId, int anyPropertyId) {
-		return propagateChangedInputs(rootWinnerId, anyPropertyId, true, null);
-	}
-
 	private int propagateChangedInputs(int rootWinnerId, int anyPropertyId, boolean enumerateSearchAlternatives) {
 		return propagateChangedInputs(rootWinnerId, anyPropertyId, enumerateSearchAlternatives, null);
 	}

@@ -48,13 +48,6 @@ record LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey,
 
 	LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey, FrontierLearningKey legacyPhysicalKey,
 			LogicalLearningKey logicalKey, LearningApplicability applicability, PhysicalResidualKey physicalKey,
-			LogicalGroupOrigin logicalGroupOrigin) {
-		this(legacyLogicalKey, legacyPhysicalKey, logicalKey, applicability, physicalKey, logicalGroupOrigin,
-				LearningFeatureEnvelope.conventionalRows(0.0d), null, null);
-	}
-
-	LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey, FrontierLearningKey legacyPhysicalKey,
-			LogicalLearningKey logicalKey, LearningApplicability applicability, PhysicalResidualKey physicalKey,
 			LogicalGroupOrigin logicalGroupOrigin, LearningFeatureEnvelope featureEnvelope) {
 		this(legacyLogicalKey, legacyPhysicalKey, logicalKey, applicability, physicalKey, logicalGroupOrigin,
 				featureEnvelope, null, null);

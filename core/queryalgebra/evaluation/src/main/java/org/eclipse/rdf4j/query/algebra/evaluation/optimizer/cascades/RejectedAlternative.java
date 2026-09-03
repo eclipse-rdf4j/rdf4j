@@ -22,10 +22,6 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 public record RejectedAlternative(int memoGroupId, String ruleId, String reason, CostVector cost,
 		PhysicalProperties requiredProperties, PhysicalProperties deliveredProperties, List<String> missingProperties) {
 
-	public RejectedAlternative(int memoGroupId, String ruleId, String reason, CostVector cost) {
-		this(memoGroupId, ruleId, reason, cost, PhysicalProperties.ANY, PhysicalProperties.ANY, List.of());
-	}
-
 	public RejectedAlternative {
 		ruleId = ruleId == null || ruleId.isBlank() ? "unknown" : ruleId;
 		reason = reason == null || reason.isBlank() ? "rejected" : reason;

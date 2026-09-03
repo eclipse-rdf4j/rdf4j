@@ -35,13 +35,6 @@ public final class BindingMask {
 		this.hash = Arrays.hashCode(this.words);
 	}
 
-	static BindingMask of(long[] words) {
-		if (words == null || words.length == 0) {
-			return EMPTY;
-		}
-		return new BindingMask(words);
-	}
-
 	static BindingMask fromOwned(long[] words) {
 		if (words == null || words.length == 0) {
 			return EMPTY;

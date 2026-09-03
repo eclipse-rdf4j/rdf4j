@@ -56,11 +56,6 @@ final class LmdbPipelinePlanCache {
 	private final AtomicLong misses = new AtomicLong();
 	private final AtomicLong waits = new AtomicLong();
 
-	LmdbPipelinePlanCache(long evidenceBudgetBytes) {
-		this(DEFAULT_CAPACITY, DEFAULT_SEGMENTS, evidenceBudgetBytes, 4, 1, 0.01d,
-				(context, query) -> mix64(query.hashCode() ^ context.routingHash()));
-	}
-
 	LmdbPipelinePlanCache(long evidenceBudgetBytes, int maximumVariants, int refreshThreads,
 			double maximumCanaryFraction) {
 		this(DEFAULT_CAPACITY, DEFAULT_SEGMENTS, evidenceBudgetBytes, maximumVariants, refreshThreads,
@@ -205,16 +200,8 @@ final class LmdbPipelinePlanCache {
 		return hits.get();
 	}
 
-	long misses() {
-		return misses.get();
-	}
-
 	long waits() {
 		return waits.get();
-	}
-
-	long evictions() {
-		return decisionCache.statistics().evictions();
 	}
 
 	void observeExecution(LmdbPlanDecisionCache.ExecutionObservation observation) {

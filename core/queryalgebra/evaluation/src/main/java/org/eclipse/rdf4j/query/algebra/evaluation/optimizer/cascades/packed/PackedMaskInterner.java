@@ -179,10 +179,6 @@ final class PackedMaskInterner {
 		}
 	}
 
-	int size() {
-		return size;
-	}
-
 	PackedMaskLayout layout() {
 		return layout;
 	}

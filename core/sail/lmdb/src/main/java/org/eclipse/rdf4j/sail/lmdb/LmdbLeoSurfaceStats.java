@@ -105,13 +105,6 @@ final class LmdbLeoSurfaceStats {
 		fanoutSurfaces.clear();
 	}
 
-	void copyFrom(LmdbLeoSurfaceStats other) {
-		fanoutSurfaces.clear();
-		if (other != null) {
-			fanoutSurfaces.putAll(other.fanoutSurfaces);
-		}
-	}
-
 	Optional<FanoutEstimate> estimateFanout(long predicateId, BoundPosition position, long valueId) {
 		return estimateFanout(predicateId, position, valueId, ANY_CONTEXT_ID);
 	}
@@ -210,10 +203,6 @@ final class LmdbLeoSurfaceStats {
 			out.writeLong(predicateId);
 			out.writeInt(position.ordinal());
 			out.writeLong(contextId);
-		}
-
-		static FanoutKey readFrom(DataInputStream in) throws IOException {
-			return readFrom(in, 4);
 		}
 
 		static FanoutKey readFrom(DataInputStream in, int version) throws IOException {

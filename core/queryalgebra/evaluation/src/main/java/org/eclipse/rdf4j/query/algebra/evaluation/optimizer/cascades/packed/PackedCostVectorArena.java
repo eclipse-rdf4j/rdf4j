@@ -123,16 +123,6 @@ final class PackedCostVectorArena {
 		setBuilderInterval(dimensionId, value, value, value, 0);
 	}
 
-	void setBuilderUnknown(int dimensionId) {
-		checkDimensionId(dimensionId);
-		long dimensionBit = bit(dimensionId);
-		builderKnownMask &= ~dimensionBit;
-		builderNonZeroMask &= ~dimensionBit;
-		if (builderLineageIds != null) {
-			builderLineageIds[dimensionId] = 0;
-		}
-	}
-
 	int internBuilder() {
 		if (table.length == 0) {
 			return 0;
@@ -349,21 +339,6 @@ final class PackedCostVectorArena {
 			hash = mix(hash, lineageIds == null ? 0 : lineageIds[base + dimensionId]);
 		}
 		return hash;
-	}
-
-	int size() {
-		return size;
-	}
-
-	long retainedBytes() {
-		return knownMasks.length == 0 ? 0L : requiredBytes(knownMasks.length - 1, table.length);
-	}
-
-	static long requiredBytesForCapacity(int capacity) {
-		if (capacity < 0) {
-			throw new IllegalArgumentException("cost-vector capacity must be nonnegative");
-		}
-		return requiredBytes(capacity, PackedPrimitiveHash.tableCapacity(capacity));
 	}
 
 	private static long requiredBytes(int rowCapacity, int tableCapacity) {

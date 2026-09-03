@@ -61,8 +61,6 @@ final class FrontierQueryIndex implements AutoCloseable {
 	private static final int METADATA_DATABASE_EXACT = 3;
 	private static final int LANE_ZERO_SCOPE_COUNT = 4;
 	private final Path path;
-	private final FrontierManifestIdentity identity;
-	private final FrontierPayloadDescriptor descriptor;
 	private final long rowCount;
 	private final double inclusionProbability;
 	private final boolean databaseExact;
@@ -81,8 +79,6 @@ final class FrontierQueryIndex implements AutoCloseable {
 			long rowCount, double inclusionProbability, boolean databaseExact, long byteLength, FileChannel channel,
 			Arena arena, List<MemorySegment> segments) {
 		this.path = path;
-		this.identity = identity;
-		this.descriptor = descriptor;
 		this.rowCount = rowCount;
 		this.inclusionProbability = inclusionProbability;
 		this.databaseExact = databaseExact;
@@ -222,14 +218,6 @@ final class FrontierQueryIndex implements AutoCloseable {
 
 	long candidateRows(FrontierLeafSelector selector) {
 		return candidateRows(
-				selector,
-				FrontierManifestIdentity.SUBJECT_TO_OBJECT_DIRECTION,
-				FrontierManifestIdentity.DESIGN_LANE_ROLE,
-				0);
-	}
-
-	long candidateRangeRows(FrontierLeafSelector selector) {
-		return candidateRangeRows(
 				selector,
 				FrontierManifestIdentity.SUBJECT_TO_OBJECT_DIRECTION,
 				FrontierManifestIdentity.DESIGN_LANE_ROLE,
@@ -461,14 +449,6 @@ final class FrontierQueryIndex implements AutoCloseable {
 			}
 		}
 		return false;
-	}
-
-	FrontierManifestIdentity identity() {
-		return identity;
-	}
-
-	FrontierPayloadDescriptor descriptor() {
-		return descriptor;
 	}
 
 	long rowCount() {

@@ -340,9 +340,9 @@ public class FilterIterator extends FilterIteration<BindingSet>
 	 * compatible rows (statement patterns, joins, unions, ...) is evaluated bottom-up from the precompiled step with
 	 * the outer row as input. Every other shape (OPTIONAL, MINUS, sub-selects, FILTER, ...) is substituted with the
 	 * outer row first, as SPARQL's {@code substitute()} requires: bottom-up evaluation would, for example, strip an
-	 * outer binding of a variable that only occurs on the right-hand side of an OPTIONAL and drop rows the
-	 * substituted pattern keeps. Every physical EXISTS path routes its probes through here so the result never
-	 * depends on the chosen physical algorithm.
+	 * outer binding of a variable that only occurs on the right-hand side of an OPTIONAL and drop rows the substituted
+	 * pattern keeps. Every physical EXISTS path routes its probes through here so the result never depends on the
+	 * chosen physical algorithm.
 	 *
 	 * @param subQuery the EXISTS body
 	 * @param compiled the precompiled EXISTS body, used directly when no substitution is required

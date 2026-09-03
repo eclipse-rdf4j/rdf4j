@@ -20,34 +20,10 @@ public class FrontierSnapshotInvalidatedException extends IOException {
 
 	private static final long serialVersionUID = 9214940856803687832L;
 
-	private final long expectedEpoch;
-	private final long actualEpoch;
-	private final long expectedVersion;
-	private final long actualVersion;
-
 	public FrontierSnapshotInvalidatedException(long expectedEpoch, long actualEpoch, long expectedVersion,
 			long actualVersion) {
 		super("Frontier LMDB snapshot changed from epoch " + expectedEpoch + " / transaction version "
 				+ expectedVersion + " to epoch " + actualEpoch + " / transaction version " + actualVersion);
-		this.expectedEpoch = expectedEpoch;
-		this.actualEpoch = actualEpoch;
-		this.expectedVersion = expectedVersion;
-		this.actualVersion = actualVersion;
 	}
 
-	public long expectedEpoch() {
-		return expectedEpoch;
-	}
-
-	public long actualEpoch() {
-		return actualEpoch;
-	}
-
-	public long expectedVersion() {
-		return expectedVersion;
-	}
-
-	public long actualVersion() {
-		return actualVersion;
-	}
 }

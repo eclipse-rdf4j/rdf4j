@@ -23,7 +23,6 @@ final class FrontierHeavyPredicateAccumulator {
 	private static final int DEFAULT_CONTEXT_HLL_COMPONENTS = 2;
 	private static final int AGMS_COMPONENTS = 3;
 
-	private final int plane;
 	private final long[] predicates;
 	private final long[] counts;
 	private final long[] defaultContextCounts;
@@ -42,7 +41,6 @@ final class FrontierHeavyPredicateAccumulator {
 		if (agmsLanes < 1 || agmsWidth < 2 || Integer.bitCount(agmsWidth) != 1) {
 			throw new IllegalArgumentException("Frontier Fast-AGMS dimensions are invalid");
 		}
-		this.plane = plane;
 		this.predicates = sortedPredicates;
 		this.precision = precision;
 		registerCount = 1 << precision;
@@ -189,46 +187,8 @@ final class FrontierHeavyPredicateAccumulator {
 		return agmsCounters[(ordinal * AGMS_COMPONENTS + componentIndex) * countersPerPredicate + withinComponent];
 	}
 
-	int precision() {
-		return precision;
-	}
-
-	int registerCount() {
-		return registerCount;
-	}
-
-	long allocatedBytes() {
-		return (long) (predicates.length + counts.length + defaultContextCounts.length) * Long.BYTES + registers.length
-				+ defaultContextRegisters.length
-				+ (long) agmsCounters.length * Long.BYTES + 32L * predicates.length
-				+ objectCounts.allocatedBytes();
-	}
-
 	FrontierHeavyObjectAccumulator.Snapshot objectCounts() {
 		return objectCounts.snapshot();
-	}
-
-	static double estimate(FrontierStatisticsShard.ColumnReader registers, long offset, int precision)
-			throws java.io.IOException {
-		int registerCount = 1 << precision;
-		double inverseSum = 0.0d;
-		int zeros = 0;
-		for (int register = 0; register < registerCount; register++) {
-			int rank = Math.toIntExact(registers.value(offset + register));
-			inverseSum += Math.scalb(1.0d, -rank);
-			zeros += rank == 0 ? 1 : 0;
-		}
-		double alpha = switch (registerCount) {
-		case 16 -> 0.673d;
-		case 32 -> 0.697d;
-		case 64 -> 0.709d;
-		default -> 0.7213d / (1.0d + 1.079d / registerCount);
-		};
-		double estimate = alpha * registerCount * registerCount / inverseSum;
-		if (estimate <= 2.5d * registerCount && zeros > 0) {
-			estimate = registerCount * Math.log((double) registerCount / zeros);
-		}
-		return Math.max(1.0d, estimate);
 	}
 
 	private void requireOrdinalAndComponent(int ordinal, int component) {

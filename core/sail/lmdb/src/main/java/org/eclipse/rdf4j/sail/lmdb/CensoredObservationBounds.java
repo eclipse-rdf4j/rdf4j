@@ -30,10 +30,6 @@ record CensoredObservationBounds(double lowerValue, double upperValue) {
 		return new CensoredObservationBounds(lowerValue, Double.POSITIVE_INFINITY);
 	}
 
-	static CensoredObservationBounds upper(double upperValue) {
-		return new CensoredObservationBounds(0.0d, upperValue);
-	}
-
 	CensoredObservationBounds intersect(CensoredObservationBounds other) {
 		if (other == null) {
 			return this;

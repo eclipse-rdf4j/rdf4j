@@ -46,14 +46,6 @@ public record StatisticsEstimate(double rows, QErrorInterval qErrorInterval, dou
 		bindingProfile = BindingProfile.fromBag(null, profileBag, metrics);
 	}
 
-	public static StatisticsEstimate exact(double rows, String method) {
-		return new StatisticsEstimate(rows, QErrorInterval.exact(rows, method), rows, method, Map.of());
-	}
-
-	public static StatisticsEstimate heuristic(double rows, String method) {
-		return new StatisticsEstimate(rows, QErrorInterval.heuristic(rows, 4.0d, method), rows, method, Map.of());
-	}
-
 	public static StatisticsEstimate fromVector(EstimateVector vector, String method) {
 		EstimateVector safe = vector == null ? EstimateVector.heuristic(1.0d, 16.0d, method) : vector;
 		String effectiveMethod = method == null || method.isBlank() ? safe.source() : method;
@@ -87,16 +79,6 @@ public record StatisticsEstimate(double rows, QErrorInterval qErrorInterval, dou
 
 	public StatisticsEstimate withBag(BagEstimate bag) {
 		return new StatisticsEstimate(rows, qErrorInterval, workRows, method, metrics, bag);
-	}
-
-	public StatisticsEstimate withMetric(String name, double value) {
-		if (name == null || name.isBlank() || !Double.isFinite(value)) {
-			return this;
-		}
-		Map<String, Double> copy = new LinkedHashMap<>(metrics);
-		copy.put(name, value);
-		BagEstimate bag = bagEstimate == null ? null : bagEstimate.withMetrics(copy);
-		return new StatisticsEstimate(rows, qErrorInterval, workRows, method, copy, bag);
 	}
 
 	public StatisticsEstimate withMetrics(Map<String, Double> extraMetrics) {

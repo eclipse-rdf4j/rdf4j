@@ -56,7 +56,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.Optimizatio
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PlanningMetrics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCascadesPlanner;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanQualityAuditResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlannerLimits;
@@ -107,11 +106,6 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize) {
 		this(statistics, trackResultSize, false, null, null);
-	}
-
-	LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize,
-			boolean preserveSerializableObservationOrder) {
-		this(statistics, trackResultSize, preserveSerializableObservationOrder, null, null);
 	}
 
 	LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize,

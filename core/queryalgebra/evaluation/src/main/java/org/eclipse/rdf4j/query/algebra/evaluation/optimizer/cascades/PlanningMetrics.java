@@ -30,7 +30,4 @@ public record PlanningMetrics(long encodeNanos, long searchNanos, long extractio
 		}
 	}
 
-	public long totalNanos() {
-		return encodeNanos + searchNanos + extractionNanos + materializationNanos + cacheNanos;
-	}
 }

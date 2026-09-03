@@ -238,24 +238,6 @@ final class PackedJoinEnumerator {
 		private int append(int subset, int parentStateId, int appendedFactorBit, int factorWinnerId,
 				double outputRows, double cost, double contributionRows, int evidenceStateId,
 				int transitionMetadataId, int operatorMetadataId, int costEventId, int physicalImplementation,
-				int rightChildStateId) {
-			return append(subset, parentStateId, appendedFactorBit, factorWinnerId, outputRows, cost,
-					contributionRows, evidenceStateId, transitionMetadataId, operatorMetadataId, costEventId,
-					physicalImplementation, rightChildStateId, 0, 0, 0, 0);
-		}
-
-		private int append(int subset, int parentStateId, int appendedFactorBit, int factorWinnerId,
-				double outputRows, double cost, double contributionRows, int evidenceStateId,
-				int transitionMetadataId, int operatorMetadataId, int costEventId, int physicalImplementation,
-				int rightChildStateId, int contextualRightWinnerId, int prefixSnapshotId) {
-			return append(subset, parentStateId, appendedFactorBit, factorWinnerId, outputRows, cost,
-					contributionRows, evidenceStateId, transitionMetadataId, operatorMetadataId, costEventId,
-					physicalImplementation, rightChildStateId, contextualRightWinnerId, prefixSnapshotId, 0, 0);
-		}
-
-		private int append(int subset, int parentStateId, int appendedFactorBit, int factorWinnerId,
-				double outputRows, double cost, double contributionRows, int evidenceStateId,
-				int transitionMetadataId, int operatorMetadataId, int costEventId, int physicalImplementation,
 				int rightChildStateId, int contextualRightWinnerId, int prefixSnapshotId,
 				int exactContinuationIdentityId, int costVectorId) {
 			if (exactContinuationIdentityId < 0 || costVectorId < 0) {
@@ -567,21 +549,9 @@ final class PackedJoinEnumerator {
 		}
 
 		private int addSingleton(int nodeSetId, int factorOrdinal, int winnerId, double outputRows, double cost,
-				int evidenceStateId) {
-			return addSingleton(nodeSetId, factorOrdinal, winnerId, outputRows, cost, evidenceStateId, 0);
-		}
-
-		private int addSingleton(int nodeSetId, int factorOrdinal, int winnerId, double outputRows, double cost,
 				int evidenceStateId, int costVectorId) {
 			return append(nodeSetId, 0, 0, factorOrdinal, winnerId, outputRows, cost, outputRows, evidenceStateId,
 					0, 0, costVectorId);
-		}
-
-		private int addContextualSingleton(int nodeSetId, int factorOrdinal, int winnerId, double outputRows,
-				double cost, double contributionRows, int evidenceStateId, int costEventId,
-				int continuationContextId, int exactContinuationIdentityId) {
-			return addContextualSingleton(nodeSetId, factorOrdinal, winnerId, outputRows, cost, contributionRows,
-					evidenceStateId, costEventId, continuationContextId, exactContinuationIdentityId, 0);
 		}
 
 		private int addContextualSingleton(int nodeSetId, int factorOrdinal, int winnerId, double outputRows,
@@ -606,15 +576,6 @@ final class PackedJoinEnumerator {
 			return append(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal, leafWinnerId,
 					outputRows, cost, appendedContributionRows, evidenceStateId, 0, operatorMetadataId,
 					0, physicalImplementation, costVectorId);
-		}
-
-		private int appendWithExactContinuationIdentity(int nodeSetId, int leftChildStateId, int rightChildStateId,
-				int leafFactorOrdinal, int leafWinnerId, double outputRows, double cost,
-				double appendedContributionRows, int evidenceStateId, int operatorMetadataId,
-				int physicalImplementation, int exactContinuationIdentityId) {
-			return appendWithExactContinuationIdentity(nodeSetId, leftChildStateId, rightChildStateId,
-					leafFactorOrdinal, leafWinnerId, outputRows, cost, appendedContributionRows, evidenceStateId,
-					operatorMetadataId, physicalImplementation, exactContinuationIdentityId, 0);
 		}
 
 		private int appendWithExactContinuationIdentity(int nodeSetId, int leftChildStateId, int rightChildStateId,
@@ -650,30 +611,10 @@ final class PackedJoinEnumerator {
 		private int append(int nodeSetId, int leftChildStateId, int rightChildStateId, int leafFactorOrdinal,
 				int leafWinnerId, double outputRows, double cost, double appendedContributionRows,
 				int evidenceStateId, int transitionMetadataId, int operatorMetadataId, int costEventId,
-				int physicalImplementation) {
-			return append(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal, leafWinnerId,
-					outputRows, cost, appendedContributionRows, evidenceStateId, transitionMetadataId,
-					operatorMetadataId, costEventId, physicalImplementation, 0);
-		}
-
-		private int append(int nodeSetId, int leftChildStateId, int rightChildStateId, int leafFactorOrdinal,
-				int leafWinnerId, double outputRows, double cost, double appendedContributionRows,
-				int evidenceStateId, int transitionMetadataId, int operatorMetadataId, int costEventId,
 				int physicalImplementation, int costVectorId) {
 			return appendState(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal, leafWinnerId,
 					outputRows, cost, appendedContributionRows, evidenceStateId, transitionMetadataId,
 					operatorMetadataId, costEventId, physicalImplementation, 0, 0, costVectorId);
-		}
-
-		private int appendContextual(int nodeSetId, int leftChildStateId, int rightChildStateId,
-				int leafFactorOrdinal, int leafWinnerId, double outputRows, double cost,
-				double appendedContributionRows, int evidenceStateId, int transitionMetadataId,
-				int operatorMetadataId, int costEventId, int physicalImplementation, int continuationContextId,
-				int exactContinuationIdentityId) {
-			return appendContextual(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal, leafWinnerId,
-					outputRows, cost, appendedContributionRows, evidenceStateId, transitionMetadataId,
-					operatorMetadataId, costEventId, physicalImplementation, continuationContextId,
-					exactContinuationIdentityId, 0);
 		}
 
 		private int appendContextual(int nodeSetId, int leftChildStateId, int rightChildStateId,
@@ -793,23 +734,6 @@ final class PackedJoinEnumerator {
 			return nodeSetId < bestStateIds.length ? bestStateIds[nodeSetId] : 0;
 		}
 
-		private int findEquivalent(int nodeSetId, int leftChildStateId, int rightChildStateId,
-				int leafFactorOrdinal, int leafWinnerId, int evidenceStateId, double outputRows, double cost,
-				double appendedContributionRows, int physicalImplementation) {
-			return findEquivalent(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal, leafWinnerId,
-					0, 0, evidenceStateId, outputRows, cost, appendedContributionRows, physicalImplementation,
-					0, 0, 0);
-		}
-
-		private int findEquivalentWithExactContinuationIdentity(int nodeSetId, int leftChildStateId,
-				int rightChildStateId, int leafFactorOrdinal, int leafWinnerId, int evidenceStateId,
-				double outputRows, double cost, double appendedContributionRows, int physicalImplementation,
-				int exactContinuationIdentityId) {
-			return findEquivalentWithExactContinuationIdentity(nodeSetId, leftChildStateId, rightChildStateId,
-					leafFactorOrdinal, leafWinnerId, evidenceStateId, outputRows, cost, appendedContributionRows,
-					physicalImplementation, exactContinuationIdentityId, 0);
-		}
-
 		private int findEquivalentWithExactContinuationIdentity(int nodeSetId, int leftChildStateId,
 				int rightChildStateId, int leafFactorOrdinal, int leafWinnerId, int evidenceStateId,
 				double outputRows, double cost, double appendedContributionRows, int physicalImplementation,
@@ -817,13 +741,6 @@ final class PackedJoinEnumerator {
 			return findEquivalent(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal, leafWinnerId,
 					0, exactContinuationIdentityId, evidenceStateId, outputRows, cost, appendedContributionRows,
 					physicalImplementation, costVectorId, 0, 0);
-		}
-
-		private int findEquivalentContextual(int nodeSetId, int continuationContextId,
-				int exactContinuationIdentityId, int evidenceStateId, double outputRows, double cost,
-				double appendedContributionRows, int physicalImplementation) {
-			return findEquivalentContextual(nodeSetId, continuationContextId, exactContinuationIdentityId,
-					evidenceStateId, outputRows, cost, appendedContributionRows, physicalImplementation, 0);
 		}
 
 		private int findEquivalentContextual(int nodeSetId, int continuationContextId,
@@ -3419,14 +3336,6 @@ final class PackedJoinEnumerator {
 		ensureCorrelatedScratch();
 		return leftDeepOrderCache.resolve(graph, singletonExtensions, executableSingletonCount,
 				requiredPrefixMask);
-	}
-
-	/**
-	 * Costs the canonical correlated-predicate implementation in the binding context delivered by its selected child.
-	 * This is mandatory implementation costing, not a post-selection contextualization pass.
-	 */
-	int offerCanonicalCorrelatedPredicate(int filterRelationId, int inputWinnerId) {
-		return offerCanonicalCorrelatedPredicate(filterRelationId, inputWinnerId, false);
 	}
 
 	int offerCanonicalCorrelatedPredicate(int filterRelationId, int inputWinnerId,
@@ -7549,18 +7458,6 @@ final class PackedJoinEnumerator {
 	}
 
 	private int emitScheduledFilterOrder(int filterRelationId, int inputJoinRelationId, int[] factors,
-			int applyAfterFactorCount) {
-		return emitScheduledFilterOrder(filterRelationId, inputJoinRelationId, factors, applyAfterFactorCount,
-				Double.NaN, true);
-	}
-
-	private int emitScheduledFilterOrder(int filterRelationId, int inputJoinRelationId, int[] factors,
-			int applyAfterFactorCount, double selectedOutputRows) {
-		return emitScheduledFilterOrder(filterRelationId, inputJoinRelationId, factors, applyAfterFactorCount,
-				selectedOutputRows, true);
-	}
-
-	private int emitScheduledFilterOrder(int filterRelationId, int inputJoinRelationId, int[] factors,
 			int applyAfterFactorCount, boolean reserveWork) {
 		return emitScheduledFilterOrder(filterRelationId, inputJoinRelationId, factors, applyAfterFactorCount,
 				Double.NaN, reserveWork);
@@ -7763,21 +7660,9 @@ final class PackedJoinEnumerator {
 	}
 
 	private int offerScheduledFilter(int filterRelationId, int inputWinnerId, int[] prefixRelations,
-			double[] prefixContributionRows, int prefixCount) {
-		return offerScheduledFilter(filterRelationId, inputWinnerId, prefixRelations, prefixContributionRows,
-				prefixCount, 0, 0L, 0, Double.NaN, false);
-	}
-
-	private int offerScheduledFilter(int filterRelationId, int inputWinnerId, int[] prefixRelations,
 			double[] prefixContributionRows, int prefixCount, boolean retainExactContinuation) {
 		return offerScheduledFilter(filterRelationId, inputWinnerId, prefixRelations, prefixContributionRows,
 				prefixCount, 0, 0L, 0, Double.NaN, retainExactContinuation);
-	}
-
-	private int offerScheduledFilter(int filterRelationId, int inputWinnerId, int[] prefixRelations,
-			double[] prefixContributionRows, int prefixCount, int rootGroupId, long rootRuleMask) {
-		return offerScheduledFilter(filterRelationId, inputWinnerId, prefixRelations, prefixContributionRows,
-				prefixCount, rootGroupId, rootRuleMask, 0, Double.NaN, false);
 	}
 
 	private int offerScheduledFilter(int filterRelationId, int inputWinnerId, int[] prefixRelations,
@@ -9492,11 +9377,6 @@ final class PackedJoinEnumerator {
 	}
 
 	private int emitSelectedOrder(int rootRelationId, int[] factors, boolean contextualGreedy,
-			long reservedWorkUnits) {
-		return emitSelectedOrder(rootRelationId, factors, contextualGreedy, reservedWorkUnits, true);
-	}
-
-	private int emitSelectedOrder(int rootRelationId, int[] factors, boolean contextualGreedy,
 			long reservedWorkUnits, boolean expandEquivalentAccessPaths) {
 		ensureCostingScratch();
 		emittedCompleteOrder = false;
@@ -9843,15 +9723,6 @@ final class PackedJoinEnumerator {
 			joinEstimate.putPlannedDoubleMetric(factorEstimate.plannedDoubleMetricName(index),
 					factorEstimate.plannedDoubleMetricValue(index));
 		}
-	}
-
-	private double refinePhysicalJoinCandidate(int implementation, int[] prefixRelations, int prefixCount,
-			double leftRows, double leftWork, double rightRows, double rightWork, double outputRows,
-			int leftEvidenceStateId, int rightEvidenceStateId, double dependentProbeWork,
-			PackedCostEstimate logicalEstimate) {
-		return refinePhysicalJoinCandidate(implementation, prefixRelations, prefixCount, leftRows, leftWork,
-				rightRows, rightWork, outputRows, leftEvidenceStateId, rightEvidenceStateId, dependentProbeWork,
-				logicalEstimate, 1.0d);
 	}
 
 	double refineWrittenJoinCandidate(int[] leftRelations, int leftCount, int rightRelationId,
@@ -11169,13 +11040,6 @@ final class PackedJoinEnumerator {
 		return prefixCount >= Long.SIZE ? -1L : (1L << prefixCount) - 1L;
 	}
 
-	private static int populateDenseCandidatePrefix(int[] factors, int stateId, int[] parentStateIds,
-			int[] rightChildStateIds, int[] appendedFactorBits, double[] appendedContributionRows, int[] destination,
-			double[] contributionDestination) {
-		return populateDenseCandidatePrefix(factors, stateId, parentStateIds, rightChildStateIds, null,
-				appendedFactorBits, appendedContributionRows, destination, contributionDestination, 0, null);
-	}
-
 	private int populateDenseCandidatePrefix(int[] factors, int stateId, DenseJoinStates states,
 			int[] destination, double[] contributionDestination) {
 		return populateDenseCandidatePrefix(factors, stateId, states.parentStateIds, states.rightChildStateIds,
@@ -11188,13 +11052,6 @@ final class PackedJoinEnumerator {
 		return populateDenseCandidatePrefix(factors, stateId, states.parentStateIds, states.rightChildStateIds,
 				states.prefixSnapshotIds, states.appendedFactorBits, states.appendedContributionRows, destination,
 				contributionDestination, offset, memo);
-	}
-
-	private static int populateDenseCandidatePrefix(int[] factors, int stateId, int[] parentStateIds,
-			int[] rightChildStateIds, int[] appendedFactorBits, double[] appendedContributionRows, int[] destination,
-			double[] contributionDestination, int offset) {
-		return populateDenseCandidatePrefix(factors, stateId, parentStateIds, rightChildStateIds, null,
-				appendedFactorBits, appendedContributionRows, destination, contributionDestination, offset, null);
 	}
 
 	private static int populateDenseCandidatePrefix(int[] factors, int stateId, int[] parentStateIds,
@@ -11236,11 +11093,6 @@ final class PackedJoinEnumerator {
 	}
 
 	private static int populateSparsePrefix(int[] factors, PackedLongSubsetTable states, int stateId,
-			int[] destination) {
-		return populateSparsePrefix(factors, states, stateId, destination, null);
-	}
-
-	private static int populateSparsePrefix(int[] factors, PackedLongSubsetTable states, int stateId,
 			int[] destination, double[] contributionDestination) {
 		int count = Long.bitCount(states.mask(stateId));
 		int destinationIndex = count;
@@ -11276,10 +11128,6 @@ final class PackedJoinEnumerator {
 
 	private static int saturatedInt(long value) {
 		return value >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) value;
-	}
-
-	private int optimizeGreedy(int rootRelationId, int[] factors) {
-		return optimizeGreedy(rootRelationId, factors, -1);
 	}
 
 	private int optimizeGreedy(int rootRelationId, int[] factors, int fixedFirstOrdinal) {
@@ -11830,19 +11678,6 @@ final class PackedJoinEnumerator {
 	private void resetFactorEstimate(double isolatedRows, double isolatedWork) {
 		costEstimate.clear();
 		costEstimate.setRows(isolatedRows, isolatedWork);
-	}
-
-	private double factorWork(double inputWork, PackedCostEstimate estimate) {
-		double estimateWork = objectiveWork(estimate);
-		return factorCostIsInclusive(estimate)
-				? estimateWork
-				: saturatedAdd(inputWork, estimateWork, 0.0d);
-	}
-
-	private static boolean factorCostIsInclusive(PackedCostEstimate estimate) {
-		return estimate.replacesChildWork()
-				|| estimate.hasExplicitPhysicalCost()
-						&& estimate.costScope() == PackedCostEstimate.CostScope.INCLUSIVE;
 	}
 
 	private double refinedOperatorWork(double inputWork, PackedCostEstimate estimate) {

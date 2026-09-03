@@ -210,12 +210,6 @@ final class PackedParetoFrontierArena {
 		return false;
 	}
 
-	long retainedBytes() {
-		int frontierCapacity = cellIds.length == 0 ? 0 : cellIds.length - 1;
-		int entryCapacity = entryCandidateIds.length == 0 ? 0 : entryCandidateIds.length - 1;
-		return requiredFrontierBytes(frontierCapacity, table.length) + requiredEntryBytes(entryCapacity);
-	}
-
 	private int candidateId(int frontierId, int ordinal) {
 		int frontierSize = frontierSizes[frontierId];
 		if (ordinal < 0 || ordinal >= frontierSize) {

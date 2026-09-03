@@ -30,8 +30,4 @@ public record CascadesPlan(TupleExpr tupleExpr, CostVector cost, OptimizationSea
 		metrics = Objects.requireNonNull(metrics, "planning metrics");
 	}
 
-	public CascadesPlan(TupleExpr tupleExpr, CostVector cost, OptimizationSearchStatus searchStatus,
-			PlanProvenance provenance, PlanningMetrics metrics) {
-		this(tupleExpr, cost, searchStatus, provenance, metrics, null);
-	}
 }

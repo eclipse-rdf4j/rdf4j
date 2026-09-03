@@ -33,11 +33,6 @@ public record RewriteSafety(boolean preservedVisibleVars, boolean preservedMulti
 		private boolean preservedErrors = true;
 		private boolean preservedGraphScope = true;
 
-		public Builder preservedVisibleVars(boolean preservedVisibleVars) {
-			this.preservedVisibleVars = preservedVisibleVars;
-			return this;
-		}
-
 		public Builder preservedMultiplicity(boolean preservedMultiplicity) {
 			this.preservedMultiplicity = preservedMultiplicity;
 			return this;
@@ -45,16 +40,6 @@ public record RewriteSafety(boolean preservedVisibleVars, boolean preservedMulti
 
 		public Builder preservedOrder(boolean preservedOrder) {
 			this.preservedOrder = preservedOrder;
-			return this;
-		}
-
-		public Builder preservedErrors(boolean preservedErrors) {
-			this.preservedErrors = preservedErrors;
-			return this;
-		}
-
-		public Builder preservedGraphScope(boolean preservedGraphScope) {
-			this.preservedGraphScope = preservedGraphScope;
 			return this;
 		}
 

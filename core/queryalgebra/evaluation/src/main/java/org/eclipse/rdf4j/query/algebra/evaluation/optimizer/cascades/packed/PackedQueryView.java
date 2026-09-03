@@ -373,10 +373,6 @@ public final class PackedQueryView {
 		return query.relResultSizeEstimate(relationId);
 	}
 
-	public double annotatedWork(int relationId) {
-		return query.relCostEstimate(relationId);
-	}
-
 	public boolean isStatementPattern(int relationId) {
 		return query.relOperator(relationId) == PackedRelOp.STATEMENT_PATTERN;
 	}
@@ -521,10 +517,6 @@ public final class PackedQueryView {
 		return (statementPatternTermFlags(relationId, component) & PackedQuery.TERM_ANONYMOUS) != 0;
 	}
 
-	public int outputBindingCount(int relationId) {
-		return query.maskCardinality(query.relOutputMaskId(relationId));
-	}
-
 	/** Returns the deterministic binding names represented by one query-local planner mask. */
 	public List<String> bindingNames(int maskId) {
 		if (maskId >= 0 && maskId < materializedBindingNamesByMask.length) {
@@ -639,10 +631,6 @@ public final class PackedQueryView {
 			}
 		}
 		return null;
-	}
-
-	public int symbolCount() {
-		return query.symbolCount();
 	}
 
 	/** Returns the relation's planned string metric with the supplied name, or {@code null} when absent. */

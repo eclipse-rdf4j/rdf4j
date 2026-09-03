@@ -37,7 +37,6 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
-import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -57,7 +56,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKey
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StreamBindingSchema;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
-import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 final class LmdbJoinPlanSupport {
@@ -272,21 +270,6 @@ final class LmdbJoinPlanSupport {
 		return Double.isFinite(value) && value >= 0.0d;
 	}
 
-	static boolean isBoundLookupPattern(StatementPattern pattern, Set<String> boundNames) {
-		Set<String> patternNames = plannerBindingNames(pattern.getBindingNames());
-		if (Collections.disjoint(boundNames, patternNames)) {
-			return false;
-		}
-		if ("directLookup".equals(pattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))) {
-			return true;
-		}
-		return isBoundVar(pattern.getSubjectVar(), boundNames)
-				&& (hasConstantValue(pattern.getPredicateVar()) || hasConstantValue(pattern.getObjectVar()))
-				|| isBoundVar(pattern.getObjectVar(), boundNames) && hasConstantValue(pattern.getPredicateVar())
-				|| isBoundVar(pattern.getSubjectVar(), boundNames) && isBoundVar(pattern.getPredicateVar(), boundNames)
-				|| isBoundVar(pattern.getPredicateVar(), boundNames) && isBoundVar(pattern.getObjectVar(), boundNames);
-	}
-
 	static Set<String> plannerBindingNames(Set<String> bindingNames) {
 		if (bindingNames == null || bindingNames.isEmpty()) {
 			return Set.of();
@@ -302,14 +285,6 @@ final class LmdbJoinPlanSupport {
 
 	static Set<String> runtimeBindingNames(TupleExpr tupleExpr) {
 		return tupleExpr == null ? Set.of() : plannerBindingNames(StreamBindingSchema.from(tupleExpr).possible());
-	}
-
-	private static boolean isBoundVar(Var var, Set<String> boundNames) {
-		return var != null && !var.hasValue() && boundNames.contains(var.getName());
-	}
-
-	private static boolean hasConstantValue(Var var) {
-		return var != null && var.hasValue();
 	}
 
 	static String describeBindingNames(Set<String> bindingNames) {

@@ -1036,16 +1036,6 @@ final class PackedCostingTrace {
 				detachedRightSource, detachedOutput, detachedProviderInput, detachedProviderInputSource);
 	}
 
-	PackedCostingTrace withoutDetachedEvidence() {
-		if (eventCount() == 0) {
-			return this;
-		}
-		return copyWithStates(new int[inputStateIds.length], new int[inputSourceStateIds.length],
-				new int[leftStateIds.length], new int[leftSourceStateIds.length], new int[rightStateIds.length],
-				new int[rightSourceStateIds.length], new int[outputStateIds.length],
-				new int[providerInputStateIds.length], new int[providerInputSourceStateIds.length]);
-	}
-
 	private PackedCostingTrace copyWithStates(int[] inputStates, int[] inputSourceStates, int[] leftStates,
 			int[] leftSourceStates, int[] rightStates, int[] rightSourceStates, int[] outputStates,
 			int[] providerInputStates, int[] providerInputSourceStates) {

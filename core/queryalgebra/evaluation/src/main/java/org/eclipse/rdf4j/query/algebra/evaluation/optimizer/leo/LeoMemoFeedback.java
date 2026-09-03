@@ -46,34 +46,6 @@ public record LeoMemoFeedback(List<LeoEvidence> evidence, List<LeoRuleHint> rule
 		return evidence.isEmpty() && ruleHints.isEmpty();
 	}
 
-	public String explainSummary() {
-		if (isEmpty()) {
-			return "";
-		}
-		StringBuilder builder = new StringBuilder(160);
-		for (LeoEvidence candidate : evidence) {
-			if (!builder.isEmpty()) {
-				builder.append(" | ");
-			}
-			builder.append("evidence{").append(candidate.explainSummary()).append('}');
-		}
-		for (LeoRuleHint hint : ruleHints) {
-			if (!builder.isEmpty()) {
-				builder.append(" | ");
-			}
-			builder.append("hint{rule=")
-					.append(hint.ruleId())
-					.append(", delta=")
-					.append(hint.priorityDelta())
-					.append(", confidence=")
-					.append(hint.confidence())
-					.append(", reason=")
-					.append(hint.reason())
-					.append('}');
-		}
-		return builder.toString();
-	}
-
 	public Optional<LeoEvidence> bestEvidence() {
 		return LeoEvidence.bestOf(evidence);
 	}
@@ -86,20 +58,6 @@ public record LeoMemoFeedback(List<LeoEvidence> evidence, List<LeoRuleHint> rule
 			}
 		}
 		return delta;
-	}
-
-	public LeoMemoFeedback merge(LeoMemoFeedback other) {
-		if (other == null || other.isEmpty()) {
-			return this;
-		}
-		if (isEmpty()) {
-			return other;
-		}
-		ArrayList<LeoEvidence> mergedEvidence = new ArrayList<>(evidence);
-		mergedEvidence.addAll(other.evidence);
-		ArrayList<LeoRuleHint> mergedHints = new ArrayList<>(ruleHints);
-		mergedHints.addAll(other.ruleHints);
-		return new LeoMemoFeedback(mergedEvidence, mergedHints);
 	}
 
 	private static <T> List<T> copyNonNull(Collection<T> values) {

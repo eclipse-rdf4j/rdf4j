@@ -56,10 +56,6 @@ final class LmdbLeoFeedbackStore {
 		}
 	}
 
-	Path path() {
-		return path;
-	}
-
 	void persist(String revision, LmdbLeoSurfaceStats stats) throws IOException {
 		persist(revision, 0L, stats);
 	}

@@ -30,7 +30,6 @@ final class FrontierCenterBuilder implements AutoCloseable {
 	private final Path directory;
 	private final long generationId;
 	private final long epoch;
-	private final FrontierStatisticsBuildConfig config;
 	private final FrontierFileOps fileOps;
 	private final int lanes;
 	private final int domains;
@@ -48,14 +47,6 @@ final class FrontierCenterBuilder implements AutoCloseable {
 
 	FrontierCenterBuilder(Path directory, long generationId, long epoch, long[] planeRows,
 			FrontierProjectedDistinctAccumulator projectedDistinct, FrontierStatisticsBuildConfig config,
-			FrontierFileOps fileOps)
-			throws IOException {
-		this(directory, generationId, epoch, planeRows, projectedDistinct, config, fileOps, 1,
-				config.sortMemoryBytes(), new FrontierTemporaryDiskReservation(config.joinSampleBudgetBytes()));
-	}
-
-	FrontierCenterBuilder(Path directory, long generationId, long epoch, long[] planeRows,
-			FrontierProjectedDistinctAccumulator projectedDistinct, FrontierStatisticsBuildConfig config,
 			FrontierFileOps fileOps, int partitions, long sortMemoryPerCollector,
 			FrontierTemporaryDiskReservation temporaryDisk)
 			throws IOException {
@@ -65,7 +56,6 @@ final class FrontierCenterBuilder implements AutoCloseable {
 		this.directory = directory.toAbsolutePath().normalize();
 		this.generationId = generationId;
 		this.epoch = epoch;
-		this.config = config;
 		this.fileOps = fileOps;
 		lanes = config.designLaneCount();
 		domains = Math.multiplyExact(
@@ -187,10 +177,6 @@ final class FrontierCenterBuilder implements AutoCloseable {
 		} finally {
 			closeEvents();
 		}
-	}
-
-	static long estimatedHeapBytes(FrontierStatisticsBuildConfig config) {
-		return estimatedHeapBytes(config, config.sortMemoryBytes());
 	}
 
 	static long estimatedHeapBytes(FrontierStatisticsBuildConfig config, long sortMemoryBytes) {

@@ -34,18 +34,14 @@ public enum LeoRolloutProfile {
 	public static final String LEGACY_PROFILE_PROPERTY = "rdf4j.optimizer.lmdb.leo.profile";
 
 	private final boolean observationEnabled;
-	private final boolean explainEnabled;
 	private final boolean cardinalityCorrectionEnabled;
-	private final boolean ruleSteeringEnabled;
 	private final boolean planRerankingEnabled;
 	private final boolean planLifecycleEnforced;
 
 	LeoRolloutProfile(boolean observationEnabled, boolean explainEnabled, boolean cardinalityCorrectionEnabled,
 			boolean ruleSteeringEnabled, boolean planRerankingEnabled, boolean planLifecycleEnforced) {
 		this.observationEnabled = observationEnabled;
-		this.explainEnabled = explainEnabled;
 		this.cardinalityCorrectionEnabled = cardinalityCorrectionEnabled;
-		this.ruleSteeringEnabled = ruleSteeringEnabled;
 		this.planRerankingEnabled = planRerankingEnabled;
 		this.planLifecycleEnforced = planLifecycleEnforced;
 	}
@@ -54,16 +50,8 @@ public enum LeoRolloutProfile {
 		return observationEnabled;
 	}
 
-	public boolean explainEnabled() {
-		return explainEnabled;
-	}
-
 	public boolean cardinalityCorrectionEnabled() {
 		return cardinalityCorrectionEnabled;
-	}
-
-	public boolean ruleSteeringEnabled() {
-		return ruleSteeringEnabled;
 	}
 
 	public boolean planRerankingEnabled() {

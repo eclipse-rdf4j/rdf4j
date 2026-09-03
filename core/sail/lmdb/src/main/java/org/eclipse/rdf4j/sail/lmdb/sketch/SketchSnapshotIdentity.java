@@ -24,10 +24,6 @@ public record SketchSnapshotIdentity(long storeIdHigh, long storeIdLow, long mut
 		}
 	}
 
-	public boolean sameStore(SketchSnapshotIdentity other) {
-		return other != null && storeIdHigh == other.storeIdHigh && storeIdLow == other.storeIdLow;
-	}
-
 	public void writeTo(DataOutput output) throws IOException {
 		output.writeLong(storeIdHigh);
 		output.writeLong(storeIdLow);

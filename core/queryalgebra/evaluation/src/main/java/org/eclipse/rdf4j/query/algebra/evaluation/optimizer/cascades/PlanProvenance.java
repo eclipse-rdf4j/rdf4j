@@ -39,23 +39,4 @@ public record PlanProvenance(int memoGroupId, int expressionId, String operator,
 		reason = reason == null ? "" : reason;
 	}
 
-	public PlanProvenance withRejectedAlternatives(List<RejectedAlternative> rejected) {
-		return new PlanProvenance(memoGroupId, expressionId, operator, ruleId, ruleKind, inputs, estimate, cost,
-				requiredProperties, deliveredProperties, rejected, proofs, approximate, reason);
-	}
-
-	public PlanProvenance withInputs(List<PlanProvenance> newInputs) {
-		return new PlanProvenance(memoGroupId, expressionId, operator, ruleId, ruleKind, newInputs, estimate, cost,
-				requiredProperties, deliveredProperties, rejectedAlternatives, proofs, approximate, reason);
-	}
-
-	public PlanProvenance withProofs(List<RuleProof> newProofs) {
-		return new PlanProvenance(memoGroupId, expressionId, operator, ruleId, ruleKind, inputs, estimate, cost,
-				requiredProperties, deliveredProperties, rejectedAlternatives, newProofs, approximate, reason);
-	}
-
-	public PlanProvenance withApproximation(boolean newApproximate, String newReason) {
-		return new PlanProvenance(memoGroupId, expressionId, operator, ruleId, ruleKind, inputs, estimate, cost,
-				requiredProperties, deliveredProperties, rejectedAlternatives, proofs, newApproximate, newReason);
-	}
 }

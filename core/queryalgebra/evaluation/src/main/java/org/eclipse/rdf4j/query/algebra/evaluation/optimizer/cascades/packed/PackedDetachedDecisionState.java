@@ -261,46 +261,6 @@ final class PackedDetachedDecisionState {
 		return continuationField(candidate, COMPOSITION_MODE);
 	}
 
-	int candidateContinuationLogicalCell(int candidate) {
-		return continuationField(candidate, LOGICAL_CELL);
-	}
-
-	int candidateContinuationDeliveredProperty(int candidate) {
-		return continuationField(candidate, DELIVERED_PROPERTY);
-	}
-
-	int candidateContinuationRequiredInput(int candidate) {
-		return continuationField(candidate, REQUIRED_INPUT);
-	}
-
-	int candidateContinuationSemanticScope(int candidate) {
-		return continuationField(candidate, SEMANTIC_SCOPE);
-	}
-
-	int candidateContinuationCorrelationScope(int candidate) {
-		return continuationField(candidate, CORRELATION_SCOPE);
-	}
-
-	int candidateContinuationBindingShape(int candidate) {
-		return continuationField(candidate, BINDING_SHAPE);
-	}
-
-	int candidateContinuationOrderIdentity(int candidate) {
-		return continuationField(candidate, ORDER_IDENTITY);
-	}
-
-	int candidateContinuationEvidenceLineage(int candidate) {
-		return continuationField(candidate, EVIDENCE_LINEAGE);
-	}
-
-	int candidateContinuationEvidenceDisposition(int candidate) {
-		return continuationField(candidate, EVIDENCE_DISPOSITION);
-	}
-
-	int candidateContinuationEvidenceGuarantee(int candidate) {
-		return continuationField(candidate, EVIDENCE_GUARANTEE);
-	}
-
 	int candidateContinuationEstimatorApplicability(int candidate) {
 		return continuationField(candidate, ESTIMATOR_APPLICABILITY);
 	}

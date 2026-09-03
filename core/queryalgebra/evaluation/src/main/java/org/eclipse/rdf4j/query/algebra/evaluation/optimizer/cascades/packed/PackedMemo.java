@@ -359,10 +359,6 @@ final class PackedMemo implements AutoCloseable {
 				finiteRelationSetId, bindingEndpointId);
 	}
 
-	int internMask(long[] words, int wordOffset) {
-		return masks.intern(words, wordOffset);
-	}
-
 	int internSequence(int[] values, int offset, int length) {
 		return sequences.intern(values, offset, length);
 	}
@@ -488,10 +484,6 @@ final class PackedMemo implements AutoCloseable {
 			}
 		}
 		return sequences.intern(evidenceContextScratch, 0, cursor);
-	}
-
-	boolean propertySatisfies(int deliveredPropertyId, int requiredPropertyId) {
-		return properties.satisfies(deliveredPropertyId, requiredPropertyId);
 	}
 
 	int addPhysicalAlternative(int targetGroupId, int operatorTag, int payloadId, int deliveredPropertyId,
@@ -1506,25 +1498,12 @@ final class PackedMemo implements AutoCloseable {
 		return metadataId == 0 ? winners.startupCost(winnerId) : physicalMetadata.outputRows(metadataId);
 	}
 
-	double winnerWorkRows(int winnerId) {
-		int metadataId = winners.physicalMetadataId(winnerId);
-		return metadataId == 0 ? Double.NaN : physicalMetadata.workRows(metadataId);
-	}
-
 	double physicalMetadataOutputRows(int metadataId) {
 		return physicalMetadata.outputRows(metadataId);
 	}
 
 	double physicalMetadataWorkRows(int metadataId) {
 		return physicalMetadata.workRows(metadataId);
-	}
-
-	boolean physicalMetadataHasContextualOutputRows(int metadataId) {
-		return physicalMetadata.hasContextualOutputRows(metadataId);
-	}
-
-	boolean physicalMetadataHasComponentOutputRows(int metadataId) {
-		return physicalMetadata.hasComponentOutputRows(metadataId);
 	}
 
 	boolean winnerHasContextualOutputRows(int winnerId) {
@@ -2213,18 +2192,6 @@ final class PackedMemo implements AutoCloseable {
 		return winnerId;
 	}
 
-	long planQualityCandidateFingerprint(int traceIndex) {
-		return decisionTrace.candidateFingerprint(traceIndex);
-	}
-
-	double planQualityCandidateCost(int traceIndex) {
-		return decisionTrace.candidateCost(traceIndex);
-	}
-
-	double planQualityComparisonCost(int traceIndex) {
-		return decisionTrace.lowerBound(traceIndex);
-	}
-
 	private long planQualityStratum(int traceIndex) {
 		int physicalExpressionId = decisionTrace.physicalExpressionId(traceIndex);
 		long fingerprint = PackedPrimitiveHash.step(PackedPrimitiveHash.SEED,
@@ -2407,10 +2374,6 @@ final class PackedMemo implements AutoCloseable {
 		return PackedPlanRecipe.extract(this, rootWinnerId);
 	}
 
-	PackedPlanRecipe extractPlanRecipe(int rootWinnerId, PackedDependentPlans dependentPlans) {
-		return PackedPlanRecipe.extract(this, rootWinnerId, dependentPlans);
-	}
-
 	PackedPlanRecipe extractPlanRecipe(int rootWinnerId, PackedDependentPlans dependentPlans,
 			PackedCostSession costSession) {
 		return PackedPlanRecipe.extract(this, rootWinnerId, dependentPlans, costSession);
@@ -2499,18 +2462,6 @@ final class PackedMemo implements AutoCloseable {
 	int nextLogicalExpression(int logicalExpressionId) {
 		checkLogicalExpressionId(logicalExpressionId);
 		return nextLogicalExpression[logicalExpressionId];
-	}
-
-	int firstPhysicalExpression(int groupId) {
-		checkGroupId(groupId);
-		return firstPhysicalByGroup[groupId];
-	}
-
-	int nextPhysicalExpression(int physicalExpressionId) {
-		if (physicalExpressionId <= 0 || physicalExpressionId > physicalExpressions.size()) {
-			throw new IndexOutOfBoundsException("unknown physical expression " + physicalExpressionId);
-		}
-		return nextPhysicalExpression[physicalExpressionId];
 	}
 
 	private void seedBaseGroups() {

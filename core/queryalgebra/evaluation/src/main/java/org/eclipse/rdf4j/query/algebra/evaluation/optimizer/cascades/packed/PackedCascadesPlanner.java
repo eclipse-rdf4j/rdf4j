@@ -494,14 +494,6 @@ public final class PackedCascadesPlanner {
 	private static Computation compute(PackedQuery query, PackedSearchBudget budget,
 			boolean exploreReorderings, PackedCostSession costSession, PackedCostModel costModel,
 			long encodeNanos, long cacheNanos,
-			boolean queryTemplateCacheHit, int dominatedSamplesPerStratum) {
-		return compute(query, budget, exploreReorderings, costSession, costModel, encodeNanos, cacheNanos,
-				queryTemplateCacheHit, dominatedSamplesPerStratum, null);
-	}
-
-	private static Computation compute(PackedQuery query, PackedSearchBudget budget,
-			boolean exploreReorderings, PackedCostSession costSession, PackedCostModel costModel,
-			long encodeNanos, long cacheNanos,
 			boolean queryTemplateCacheHit, int dominatedSamplesPerStratum, PackedSearchCheckpoint checkpoint) {
 		long searchStart = System.nanoTime();
 		int relationCount = query.relationCount();

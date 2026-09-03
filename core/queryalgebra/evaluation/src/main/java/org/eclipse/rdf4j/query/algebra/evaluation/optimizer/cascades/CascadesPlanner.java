@@ -47,16 +47,6 @@ public final class CascadesPlanner {
 	}
 
 	public CascadesPlan optimize(TupleExpr root, OptimizationGoal goal, PackedPlanCache cache,
-			PackedPlanCache.Context cacheContext) {
-		return optimize(root, goal, cache, cacheContext, null);
-	}
-
-	public CascadesPlan optimize(TupleExpr root, OptimizationGoal goal, PackedPlanCache cache,
-			PackedPlanCache.Context cacheContext, PackedCostModel costModel) {
-		return optimize(root, goal, cache, cacheContext, costModel, null);
-	}
-
-	public CascadesPlan optimize(TupleExpr root, OptimizationGoal goal, PackedPlanCache cache,
 			PackedPlanCache.Context cacheContext, PackedCostModel costModel,
 			PackedPredicateRangeProvider rangeProvider) {
 		TupleExpr source = Objects.requireNonNull(root, "Cascades root");

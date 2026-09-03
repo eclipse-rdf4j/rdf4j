@@ -78,29 +78,8 @@ final class PackedCandidateArena {
 		return integerValue(candidateId, CONTINUATION_KEY_ID);
 	}
 
-	int deliveredPropertyId(int candidateId) {
-		return integerValue(candidateId, DELIVERED_PROPERTY_ID);
-	}
-
 	int costVectorId(int candidateId) {
 		return integerValue(candidateId, COST_VECTOR_ID);
-	}
-
-	int evidenceStateId(int candidateId) {
-		return integerValue(candidateId, EVIDENCE_STATE_ID);
-	}
-
-	int parentCandidateId(int candidateId) {
-		return integerValue(candidateId, PARENT_CANDIDATE_ID);
-	}
-
-	int implementationId(int candidateId) {
-		return integerValue(candidateId, IMPLEMENTATION_ID);
-	}
-
-	double objectiveScore(int candidateId) {
-		checkCandidateId(candidateId);
-		return objectiveScores[candidateId - 1];
 	}
 
 	static long requiredBytesForCapacity(int capacity) {

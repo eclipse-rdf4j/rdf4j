@@ -66,12 +66,6 @@ final class FrontierHeavyKeyTracker {
 		return result;
 	}
 
-	long allocatedBytes() {
-		return (long) (keys.length + estimatedCounts.length) * Long.BYTES
-				+ (long) (heap.length + heapPositions.length) * Integer.BYTES
-				+ 32L * keys.length;
-	}
-
 	private void siftUp(int position) {
 		int slot = heap[position];
 		while (position > 0) {

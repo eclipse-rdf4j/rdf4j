@@ -36,12 +36,10 @@ public enum LeoOperatorLearningPolicy {
 
 	private final boolean runtimeObservable;
 	private final boolean recordsDirectEvidence;
-	private final boolean appliesToPlanning;
 
 	LeoOperatorLearningPolicy(boolean runtimeObservable, boolean recordsDirectEvidence, boolean appliesToPlanning) {
 		this.runtimeObservable = runtimeObservable;
 		this.recordsDirectEvidence = recordsDirectEvidence;
-		this.appliesToPlanning = appliesToPlanning;
 	}
 
 	public boolean runtimeObservable() {
@@ -52,7 +50,4 @@ public enum LeoOperatorLearningPolicy {
 		return recordsDirectEvidence;
 	}
 
-	public boolean appliesToPlanning() {
-		return appliesToPlanning;
-	}
 }

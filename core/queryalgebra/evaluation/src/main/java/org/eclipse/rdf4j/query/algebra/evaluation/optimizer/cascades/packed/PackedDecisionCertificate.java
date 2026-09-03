@@ -282,56 +282,6 @@ final class PackedDecisionCertificate {
 		return detachedCandidateState.candidateContinuationCompositionMode(index);
 	}
 
-	int candidateContinuationLogicalCell(int index) {
-		checkIndex(index);
-		return detachedCandidateState.candidateContinuationLogicalCell(index);
-	}
-
-	int candidateContinuationDeliveredProperty(int index) {
-		checkIndex(index);
-		return detachedCandidateState.candidateContinuationDeliveredProperty(index);
-	}
-
-	int candidateContinuationRequiredInput(int index) {
-		checkIndex(index);
-		return detachedCandidateState.candidateContinuationRequiredInput(index);
-	}
-
-	int candidateContinuationSemanticScope(int index) {
-		checkIndex(index);
-		return detachedCandidateState.candidateContinuationSemanticScope(index);
-	}
-
-	int candidateContinuationCorrelationScope(int index) {
-		checkIndex(index);
-		return detachedCandidateState.candidateContinuationCorrelationScope(index);
-	}
-
-	int candidateContinuationBindingShape(int index) {
-		checkIndex(index);
-		return detachedCandidateState.candidateContinuationBindingShape(index);
-	}
-
-	int candidateContinuationOrderIdentity(int index) {
-		checkIndex(index);
-		return detachedCandidateState.candidateContinuationOrderIdentity(index);
-	}
-
-	int candidateContinuationEvidenceLineage(int index) {
-		checkIndex(index);
-		return detachedCandidateState.candidateContinuationEvidenceLineage(index);
-	}
-
-	int candidateContinuationEvidenceDisposition(int index) {
-		checkIndex(index);
-		return detachedCandidateState.candidateContinuationEvidenceDisposition(index);
-	}
-
-	int candidateContinuationEvidenceGuarantee(int index) {
-		checkIndex(index);
-		return detachedCandidateState.candidateContinuationEvidenceGuarantee(index);
-	}
-
 	int candidateContinuationEstimatorApplicability(int index) {
 		checkIndex(index);
 		return detachedCandidateState.candidateContinuationEstimatorApplicability(index);
@@ -356,13 +306,6 @@ final class PackedDecisionCertificate {
 		bytes = saturatedAdd(bytes, outcomes.length + paretoOutcomes.length + selectedByPolicy.length
 				+ comparisonTiers.length + childComposition.length);
 		return saturatedAdd(bytes, detachedCandidateState.retainedBytes());
-	}
-
-	PackedDecisionCertificate withoutDetachedEvidence() {
-		if (candidateStateOrdinals.length == 0) {
-			return this;
-		}
-		return EMPTY;
 	}
 
 	private int candidateChildIndex(int candidate, int child) {

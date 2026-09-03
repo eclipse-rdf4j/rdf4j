@@ -33,9 +33,7 @@ public final class FrontierStatisticsHeapGovernor {
 	private static final int RELEASED = 2;
 
 	private final long budgetBytes;
-	private final long queryReserveBytes;
 	private final long maximumQueryBytes;
-	private final long safetyMarginBytes;
 	private final long usableBytes;
 	private final long maximumNonQueryBytes;
 	private final long[] reservedByPurpose = new long[FrontierStatisticsMemoryPurpose.values().length];
@@ -59,9 +57,7 @@ public final class FrontierStatisticsHeapGovernor {
 					"Frontier maximum query heap must cover the reserve and fit usable heap");
 		}
 		this.budgetBytes = budgetBytes;
-		this.queryReserveBytes = queryReserveBytes;
 		this.maximumQueryBytes = maximumQueryBytes;
-		this.safetyMarginBytes = safetyMarginBytes;
 		usableBytes = usable;
 		maximumNonQueryBytes = usable - queryReserveBytes;
 	}
@@ -141,20 +137,12 @@ public final class FrontierStatisticsHeapGovernor {
 		return budgetBytes;
 	}
 
-	public synchronized long queryReserveBytes() {
-		return queryReserveBytes;
-	}
-
 	public synchronized long maximumQueryBytes() {
 		return maximumQueryBytes;
 	}
 
 	public synchronized long maximumNonQueryBytes() {
 		return maximumNonQueryBytes;
-	}
-
-	public synchronized long safetyMarginBytes() {
-		return safetyMarginBytes;
 	}
 
 	public synchronized long reservedBytes() {
@@ -245,14 +233,10 @@ public final class FrontierStatisticsHeapGovernor {
 
 		private Lease(FrontierStatisticsHeapGovernor governor, FrontierStatisticsMemoryPurpose purpose, long bytes,
 				Runnable revocationAction) {
-			this.governor = governor;
 			this.purpose = purpose;
+			this.governor = governor;
 			this.bytes = bytes;
 			this.revocationAction = revocationAction;
-		}
-
-		public FrontierStatisticsMemoryPurpose purpose() {
-			return purpose;
 		}
 
 		public long bytes() {

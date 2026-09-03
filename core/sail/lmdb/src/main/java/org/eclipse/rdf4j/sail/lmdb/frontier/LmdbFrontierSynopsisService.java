@@ -73,32 +73,6 @@ public final class LmdbFrontierSynopsisService implements AutoCloseable {
 		this.status = Objects.requireNonNull(status, "status");
 	}
 
-	/**
-	 * Opens the persistent Frontier lifecycle companion without exposing its manifest identity representation.
-	 *
-	 * <p>
-	 * Disabled mode and a zero-byte budget are resolved before the durable store ID, synopsis path, or snapshot factory
-	 * is inspected. For an enabled positive budget, the raw manifest is the sole generation selector and is loaded
-	 * before the expected identity is constructed from its epoch. Missing persistence therefore never opens an LMDB
-	 * snapshot or creates a synopsis directory.
-	 * </p>
-	 *
-	 * @param frontierDirectory     synopsis directory beneath the owning LMDB store
-	 * @param mode                  estimator operating mode
-	 * @param durableStoreId        durable LMDB store UUID, or {@code null} when unavailable
-	 * @param synopsisBudgetBytes   persistent synopsis byte budget
-	 * @param designLaneCount       number of design lanes represented by a compatible manifest
-	 * @param auditLaneCount        number of audit lanes represented by a compatible manifest
-	 * @param snapshotSourceFactory factory for one independently owned pinned LMDB source
-	 * @return a service retaining the stable bootstrap status
-	 */
-	public static LmdbFrontierSynopsisService open(Path frontierDirectory, FrontierEstimatorMode mode,
-			UUID durableStoreId, long synopsisBudgetBytes, int designLaneCount, int auditLaneCount,
-			FrontierSnapshotSourceFactory snapshotSourceFactory) {
-		return open(frontierDirectory, mode, durableStoreId, synopsisBudgetBytes, designLaneCount, auditLaneCount,
-				snapshotSourceFactory, synopsisBudgetBytes);
-	}
-
 	public static LmdbFrontierSynopsisService open(Path frontierDirectory, FrontierEstimatorMode mode,
 			UUID durableStoreId, long synopsisBudgetBytes, int designLaneCount, int auditLaneCount,
 			FrontierSnapshotSourceFactory snapshotSourceFactory, long queryIndexBudgetBytes) {

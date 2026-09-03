@@ -42,10 +42,6 @@ public final class SketchBasedJoinEstimator implements AutoCloseable {
 	public enum SketchStrategy {
 		UNIFIED;
 
-		public String configValue() {
-			return "unified";
-		}
-
 		public static SketchStrategy fromConfigValue(String value, SketchStrategy fallback) {
 			if (value == null || value.isBlank()) {
 				return fallback == null ? UNIFIED : fallback;
@@ -76,11 +72,6 @@ public final class SketchBasedJoinEstimator implements AutoCloseable {
 		service.setAdaptiveEvidenceAllowed(normalized.adaptiveEvidenceAllowed);
 	}
 
-	public SketchBasedJoinEstimator(SketchStatementSource statementSource, int nominalEntries, long throttleEveryN,
-			long throttleMillis) {
-		this(statementSource, Config.defaults().withThrottleEveryN(throttleEveryN).withThrottleMillis(throttleMillis));
-	}
-
 	public LmdbQuadSynopsisService synopsisService() {
 		return service;
 	}
@@ -100,10 +91,6 @@ public final class SketchBasedJoinEstimator implements AutoCloseable {
 
 	public long allocatedBytes() {
 		return service.allocatedBytes();
-	}
-
-	public SketchStrategy getSketchStrategy() {
-		return SketchStrategy.UNIFIED;
 	}
 
 	public boolean adaptiveEvidenceAllowed() {

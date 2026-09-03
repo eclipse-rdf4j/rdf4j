@@ -269,21 +269,6 @@ final class PackedNodeSetArena {
 		return nodeCount;
 	}
 
-	int wordCount() {
-		return wordCount;
-	}
-
-	int size() {
-		return size;
-	}
-
-	long retainedBytes() {
-		if (offsets.length == 0) {
-			return 0L;
-		}
-		return requiredBytes(offsets.length - 1, words.length, table.length, singletonIds.length, scratch.length);
-	}
-
 	boolean resourceLimitReached() {
 		return budget.resourceLimitReached();
 	}

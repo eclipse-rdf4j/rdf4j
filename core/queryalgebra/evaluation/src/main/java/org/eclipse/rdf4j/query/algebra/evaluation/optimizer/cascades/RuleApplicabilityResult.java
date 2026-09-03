@@ -23,16 +23,6 @@ public final class RuleApplicabilityResult {
 	private Status status = Status.NOT_APPLICABLE;
 	private int descriptorId;
 	private int proofSetId;
-	private int reasonId;
-	private long affectedFactMask;
-
-	public void reset() {
-		status = Status.NOT_APPLICABLE;
-		descriptorId = 0;
-		proofSetId = 0;
-		reasonId = 0;
-		affectedFactMask = 0L;
-	}
 
 	public void setApplicable(int descriptorId, int proofSetId, int reasonId, long affectedFactMask) {
 		if (descriptorId <= 0 || proofSetId <= 0) {
@@ -41,22 +31,6 @@ public final class RuleApplicabilityResult {
 		this.status = Status.APPLICABLE;
 		this.descriptorId = descriptorId;
 		this.proofSetId = proofSetId;
-		this.reasonId = reasonId;
-		this.affectedFactMask = affectedFactMask;
-	}
-
-	public void setRejected(Status status, int descriptorId, int reasonId, long affectedFactMask) {
-		if (status == null || status == Status.APPLICABLE) {
-			throw new IllegalArgumentException("a rejected rule requires a non-applicable status");
-		}
-		if (descriptorId < 0) {
-			throw new IllegalArgumentException("descriptorId must not be negative");
-		}
-		this.status = status;
-		this.descriptorId = descriptorId;
-		this.proofSetId = 0;
-		this.reasonId = reasonId;
-		this.affectedFactMask = affectedFactMask;
 	}
 
 	public Status status() {
@@ -69,14 +43,6 @@ public final class RuleApplicabilityResult {
 
 	public int proofSetId() {
 		return proofSetId;
-	}
-
-	public int reasonId() {
-		return reasonId;
-	}
-
-	public long affectedFactMask() {
-		return affectedFactMask;
 	}
 
 	public enum Status {

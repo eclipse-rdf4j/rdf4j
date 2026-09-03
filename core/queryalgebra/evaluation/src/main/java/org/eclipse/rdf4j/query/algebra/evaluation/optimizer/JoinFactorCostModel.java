@@ -44,9 +44,6 @@ public interface JoinFactorCostModel {
 			return this == EXACT || this == DECISION_EXACT;
 		}
 
-		public boolean isDecisionDriven() {
-			return this == DECISION_EXACT;
-		}
 	}
 
 	Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars);
@@ -55,17 +52,8 @@ public interface JoinFactorCostModel {
 		return estimateFactorCost(factor, context == null ? Set.of() : context.getCurrentlyBoundVars());
 	}
 
-	default Optional<FilterCostEstimate> estimateFilterCost(JoinOrderPlanner.FilterConstraint filter,
-			CostContext context) {
-		return Optional.empty();
-	}
-
 	record FilterCostEstimate(double workRows, double outputRows, double passRatio,
 			Map<String, String> stringMetrics, Map<String, Double> doubleMetrics, boolean exactOutputRows) {
-
-		public FilterCostEstimate(double workRows, double outputRows, double passRatio) {
-			this(workRows, outputRows, passRatio, Map.of(), Map.of(), false);
-		}
 
 		public FilterCostEstimate {
 			workRows = finiteNonNegative(workRows, 0.0d);
@@ -337,14 +325,6 @@ public interface JoinFactorCostModel {
 				EstimationTier estimationTier) {
 			return new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
 					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors, estimationTier);
-		}
-
-		public static CostContext forOptimization(String[] variableNames, long currentlyBoundVarMask,
-				double outerPrefixRows, double distinctLookupBindings, boolean nestedIteratorInvocation,
-				boolean collectMetrics, Map<String, Set<Value>> finiteBindingValues, List<TupleExpr> prefixFactors) {
-			return new CostContext(variableNames, currentlyBoundVarMask, outerPrefixRows, distinctLookupBindings,
-					nestedIteratorInvocation, collectMetrics, finiteBindingValues, prefixFactors,
-					EstimationTier.STANDARD);
 		}
 
 		public static CostContext of(String[] variableNames, long currentlyBoundVarMask, double outerPrefixRows,
@@ -688,10 +668,6 @@ public interface JoinFactorCostModel {
 
 		public boolean isRepeatedInvocationsCosted() {
 			return costScope == CostScope.TOTAL_FOR_CONTEXT;
-		}
-
-		public CostScope getCostScope() {
-			return costScope;
 		}
 
 		public boolean hasExactOutputRows() {

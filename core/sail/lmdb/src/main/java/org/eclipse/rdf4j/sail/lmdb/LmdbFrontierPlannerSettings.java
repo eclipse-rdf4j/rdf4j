@@ -36,9 +36,6 @@ final class LmdbFrontierPlannerSettings {
 	private final LmdbPipelinePlanCache pipelinePlanCache;
 	private final long packedPlanCacheBudgetBytes;
 	private final long allocatedPlannerCacheBudgetBytes;
-	private final int planCacheMaximumVariants;
-	private final int planCacheRefreshThreads;
-	private final double planCacheMaximumCanaryFraction;
 	private final FrontierDecisionRiskController riskController;
 	private final FrontierDecisionRiskController.Config riskConfig;
 
@@ -65,9 +62,6 @@ final class LmdbFrontierPlannerSettings {
 		this.refinementWorkUnits = refinementWorkUnits;
 		this.targetRelativeStandardError = targetRelativeStandardError;
 		this.defensiveProposalEpsilon = defensiveProposalEpsilon;
-		this.planCacheMaximumVariants = planCacheMaximumVariants;
-		this.planCacheRefreshThreads = planCacheRefreshThreads;
-		this.planCacheMaximumCanaryFraction = planCacheMaximumCanaryFraction;
 		long exactFiniteSurfaceBudgetBytes = cacheEvidenceBudgetBytes
 				/ EXACT_FINITE_SURFACE_BUDGET_DIVISOR;
 		long heuristicFilterPassBudgetBytes = cacheEvidenceBudgetBytes
@@ -156,18 +150,6 @@ final class LmdbFrontierPlannerSettings {
 
 	LmdbPipelinePlanCache pipelinePlanCache() {
 		return pipelinePlanCache;
-	}
-
-	int planCacheMaximumVariants() {
-		return planCacheMaximumVariants;
-	}
-
-	int planCacheRefreshThreads() {
-		return planCacheRefreshThreads;
-	}
-
-	double planCacheMaximumCanaryFraction() {
-		return planCacheMaximumCanaryFraction;
 	}
 
 	long packedPlanCacheBudgetBytes() {

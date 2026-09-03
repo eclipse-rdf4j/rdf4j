@@ -68,12 +68,6 @@ public final class CascadesPlanProvenanceAnnotator {
 		annotateCartesianWork(plan);
 	}
 
-	public static void sanitize(TupleExpr plan) {
-		if (plan != null) {
-			sanitizeSubtree(plan);
-		}
-	}
-
 	private static void annotateIdentity(QueryModelNode node, PlanProvenance provenance, String plannerIdOverride) {
 		EstimateSnapshot estimate = provenance.estimate();
 		String plannerId = isBlank(plannerIdOverride) ? estimate.plannerId() : plannerIdOverride;

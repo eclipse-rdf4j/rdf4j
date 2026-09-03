@@ -59,10 +59,6 @@ final class PackedLongSubsetTable {
 		this(expectedStates, new PackedSearchBudget(PackedPlannerLimits.unbounded()), null);
 	}
 
-	PackedLongSubsetTable(int expectedStates, PackedSearchBudget budget) {
-		this(expectedStates, budget, null);
-	}
-
 	PackedLongSubsetTable(int expectedStates, PackedSearchBudget budget, PackedMemo memo) {
 		if (expectedStates < 0) {
 			throw new IllegalArgumentException("expected state count must be non-negative");
@@ -136,12 +132,6 @@ final class PackedLongSubsetTable {
 			long neighborMask) {
 		return offer(mask, outputRows, totalCost, Double.NaN, 0, 0, parentStateId, appendedFactorOrdinal,
 				neighborMask);
-	}
-
-	int offer(long mask, double outputRows, double totalCost, int preferenceRank, int parentStateId,
-			int appendedFactorOrdinal, long neighborMask) {
-		return offer(mask, outputRows, totalCost, Double.NaN, 0, preferenceRank, parentStateId,
-				appendedFactorOrdinal, neighborMask);
 	}
 
 	int offer(long mask, double outputRows, double totalCost, double contributionRows, int preferenceRank,
@@ -294,18 +284,6 @@ final class PackedLongSubsetTable {
 				appendedFactorOrdinal, neighborMask);
 	}
 
-	int offerHashed(long hash, long mask, double outputRows, double totalCost, int preferenceRank, int parentStateId,
-			int appendedFactorOrdinal, long neighborMask) {
-		return offerHashed(hash, mask, outputRows, totalCost, Double.NaN, 0, preferenceRank, parentStateId,
-				appendedFactorOrdinal, neighborMask);
-	}
-
-	int offerHashed(long hash, long mask, double outputRows, double totalCost, double contributionRows,
-			int preferenceRank, int parentStateId, int appendedFactorOrdinal, long neighborMask) {
-		return offerHashed(hash, mask, outputRows, totalCost, contributionRows, 0, preferenceRank, parentStateId,
-				appendedFactorOrdinal, neighborMask);
-	}
-
 	int offerHashed(long hash, long mask, double outputRows, double totalCost, double contributionRows,
 			int evidenceStateId, int preferenceRank, int parentStateId, int appendedFactorOrdinal,
 			long neighborMask) {
@@ -398,22 +376,6 @@ final class PackedLongSubsetTable {
 
 	int findEquivalentRetained(long mask, int parentStateId, int rightChildStateId, int appendedFactorOrdinal,
 			int appendedFactorWinnerId, double outputRows, double totalCost, double contributionRows,
-			int evidenceStateId, int physicalImplementation) {
-		return findEquivalentRetained(mask, parentStateId, rightChildStateId, appendedFactorOrdinal,
-				appendedFactorWinnerId, outputRows, totalCost, contributionRows, evidenceStateId,
-				physicalImplementation, 0);
-	}
-
-	int findEquivalentRetained(long mask, int parentStateId, int rightChildStateId, int appendedFactorOrdinal,
-			int appendedFactorWinnerId, double outputRows, double totalCost, double contributionRows,
-			int evidenceStateId, int physicalImplementation, int exactContinuationIdentityId) {
-		return findEquivalentRetained(mask, parentStateId, rightChildStateId, appendedFactorOrdinal,
-				appendedFactorWinnerId, outputRows, totalCost, contributionRows, evidenceStateId,
-				physicalImplementation, exactContinuationIdentityId, 0, 0, 0, 0);
-	}
-
-	int findEquivalentRetained(long mask, int parentStateId, int rightChildStateId, int appendedFactorOrdinal,
-			int appendedFactorWinnerId, double outputRows, double totalCost, double contributionRows,
 			int evidenceStateId, int physicalImplementation, int exactContinuationIdentityId, int costVectorId) {
 		return findEquivalentRetained(mask, parentStateId, rightChildStateId, appendedFactorOrdinal,
 				appendedFactorWinnerId, outputRows, totalCost, contributionRows, evidenceStateId,
@@ -477,11 +439,6 @@ final class PackedLongSubsetTable {
 	int evidenceStateId(int stateId) {
 		checkStateId(stateId);
 		return evidenceStateIds[stateId];
-	}
-
-	int preferenceRank(int stateId) {
-		checkStateId(stateId);
-		return preferenceRanks[stateId];
 	}
 
 	int parentStateId(int stateId) {

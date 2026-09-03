@@ -141,38 +141,12 @@ final class FrontierQueryIndexView {
 		return rows;
 	}
 
-	long countMatches(FrontierLeafSelector selector) {
-		return countMatches(
-				selector,
-				FrontierManifestIdentity.SUBJECT_TO_OBJECT_DIRECTION,
-				FrontierManifestIdentity.DESIGN_LANE_ROLE,
-				0);
-	}
-
-	long countMatches(FrontierLeafSelector selector, int direction, int laneRole, int laneIndex) {
-		return countMatches(prepare(selector, direction, laneRole, laneIndex));
-	}
-
 	long countMatches(PreparedProbe probe) {
 		long rows = 0L;
 		for (int ordinal = 0; ordinal < indexes.size(); ordinal++) {
 			rows = Math.addExact(rows, indexes.get(ordinal).countMatches(probe.selector, probe.ranges[ordinal]));
 		}
 		return rows;
-	}
-
-	long visitMatches(FrontierLeafSelector selector, FrontierQueryIndexRowSink sink) {
-		return visitMatches(
-				selector,
-				FrontierManifestIdentity.SUBJECT_TO_OBJECT_DIRECTION,
-				FrontierManifestIdentity.DESIGN_LANE_ROLE,
-				0,
-				sink);
-	}
-
-	long visitMatches(FrontierLeafSelector selector, int direction, int laneRole, int laneIndex,
-			FrontierQueryIndexRowSink sink) {
-		return visitMatches(prepare(selector, direction, laneRole, laneIndex), sink);
 	}
 
 	long visitMatches(PreparedProbe probe, FrontierQueryIndexRowSink sink) {

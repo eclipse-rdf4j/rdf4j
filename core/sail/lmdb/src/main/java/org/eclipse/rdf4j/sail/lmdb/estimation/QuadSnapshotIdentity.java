@@ -24,10 +24,6 @@ public record QuadSnapshotIdentity(long storeIdHigh, long storeIdLow, long mutat
 		}
 	}
 
-	public boolean sameStore(QuadSnapshotIdentity other) {
-		return other != null && storeIdHigh == other.storeIdHigh && storeIdLow == other.storeIdLow;
-	}
-
 	void writeTo(DataOutput output) throws IOException {
 		output.writeLong(storeIdHigh);
 		output.writeLong(storeIdLow);

@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -24,22 +23,16 @@ import java.util.function.BooleanSupplier;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
-import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.CostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimationTier;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.FactorCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.FeedbackCorrection;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
@@ -49,12 +42,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
-import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
-import org.eclipse.rdf4j.sail.lmdb.sketch.CharacteristicSetEstimate;
-import org.eclipse.rdf4j.sail.lmdb.sketch.PropertyPathEstimate;
 
 /** Shared engine runtime consumed by facades and planner collaborators. */
 final class LmdbEstimatorRuntime {
@@ -82,34 +72,6 @@ final class LmdbEstimatorRuntime {
 		this(valueStore, tripleStore, synopsis, filters, feedback, cardinalities, cascadesPlanCache, null,
 				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.OFF, 0L, 0L, 0, 1.0d, 1.0d),
 				() -> false);
-	}
-
-	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
-			LmdbFilterSelectivityStats filters, LmdbOperatorFeedbackStats feedback,
-			LmdbStatementPatternCardinalitySource cardinalities, PackedPlanCache cascadesPlanCache,
-			LmdbFrontierSynopsisService frontierSynopsis, FrontierEstimatorMode frontierMode,
-			long frontierQueryMemoryBudgetBytes, int frontierRefinementWorkUnits,
-			double frontierTargetRelativeStandardError, double frontierDefensiveProposalEpsilon,
-			BooleanSupplier mayHaveInferred) {
-		this(valueStore, tripleStore, synopsis, filters, feedback, cardinalities, cascadesPlanCache,
-				frontierSynopsis, LmdbFrontierPlannerSettings.defaults(frontierMode, frontierQueryMemoryBudgetBytes,
-						LmdbStoreConfig.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS, frontierRefinementWorkUnits,
-						frontierTargetRelativeStandardError, frontierDefensiveProposalEpsilon),
-				mayHaveInferred);
-	}
-
-	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
-			LmdbFilterSelectivityStats filters, LmdbOperatorFeedbackStats feedback,
-			LmdbStatementPatternCardinalitySource cardinalities, PackedPlanCache cascadesPlanCache,
-			LmdbFrontierSynopsisService frontierSynopsis, FrontierEstimatorMode frontierMode,
-			long frontierQueryMemoryBudgetBytes, long frontierInitialMaterializationWorkUnits,
-			int frontierRefinementWorkUnits, double frontierTargetRelativeStandardError,
-			double frontierDefensiveProposalEpsilon, BooleanSupplier mayHaveInferred) {
-		this(valueStore, tripleStore, synopsis, filters, feedback, cardinalities, cascadesPlanCache,
-				frontierSynopsis, LmdbFrontierPlannerSettings.defaults(frontierMode, frontierQueryMemoryBudgetBytes,
-						frontierInitialMaterializationWorkUnits, frontierRefinementWorkUnits,
-						frontierTargetRelativeStandardError, frontierDefensiveProposalEpsilon),
-				mayHaveInferred);
 	}
 
 	LmdbEstimatorRuntime(ValueStore valueStore, TripleStore tripleStore, LmdbQuadSynopsisService synopsis,
@@ -224,11 +186,6 @@ final class LmdbEstimatorRuntime {
 		}
 		LinkedHashSet<Value> actualTerms = new LinkedHashSet<>(values.matchingValues());
 		return Optional.ofNullable(LmdbJoinPlanSupport.smallLiteralFilterAnchor(bindingName, actualTerms));
-	}
-
-	BagEstimate estimate(TupleExpr expression, CostContext costContext) {
-		CostContext cost = costContext == null ? CostContext.of(Set.of(), 1.0d, 1.0d, false) : costContext;
-		return semanticEstimate(expression, context(expression, cost));
 	}
 
 	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactAlternativeSurface(TupleExpr expression) {
@@ -362,18 +319,6 @@ final class LmdbEstimatorRuntime {
 				base.getMissingLookupComponentMask(), accessRows, true, surfaceEstimate.exact()).withBag(surfaceBag));
 	}
 
-	Optional<FeedbackCorrection> feedbackCorrection(TupleExpr expression, BagEstimate base) {
-		if (feedback == null || expression == null || base == null) {
-			return Optional.empty();
-		}
-		LmdbOperatorFeedbackStats.OperatorEstimate estimate = feedback.estimate(expression, Double.NaN, Double.NaN,
-				base.rows(), base.workRows());
-		return estimate == null ? Optional.empty()
-				: Optional.of(new FeedbackCorrection(estimate.rows(), estimate.workRows(),
-						estimate.correctionConfidence(), estimate.rowQErrorMax(), estimate.workQErrorMax(),
-						estimate.source()));
-	}
-
 	LmdbOperatorFeedbackStats.OperatorEstimate operatorFeedback(TupleExpr expression, double leftRows,
 			double rightRows, double baseRows, double baseWorkRows, String executionMode) {
 		if (feedback == null || expression == null
@@ -385,11 +330,6 @@ final class LmdbEstimatorRuntime {
 	}
 
 	LmdbOperatorFeedbackStats.OperatorEstimate operatorMultiplierFeedback(TupleExpr expression, double baseRows,
-			double baseWorkRows) {
-		return operatorMultiplierFeedback(expression, baseRows, baseWorkRows, null);
-	}
-
-	LmdbOperatorFeedbackStats.OperatorEstimate operatorMultiplierFeedback(TupleExpr expression, double baseRows,
 			double baseWorkRows, String executionMode) {
 		if (feedback == null || expression == null
 				|| !(Boolean.getBoolean(OPERATOR_FEEDBACK_APPLY_PROPERTY)
@@ -397,10 +337,6 @@ final class LmdbEstimatorRuntime {
 			return null;
 		}
 		return feedback.multiplierEstimate(expression, baseRows, baseWorkRows, executionMode);
-	}
-
-	long operatorFeedbackRevision() {
-		return feedback == null ? 0L : feedback.planningRevision();
 	}
 
 	long leoRevision() {
@@ -414,11 +350,6 @@ final class LmdbEstimatorRuntime {
 		long legacyRevision = frontierSynopsis == null ? 0L : frontierSynopsis.planningRevision();
 		return statistics == null ? legacyRevision
 				: LmdbEstimatorRevisionSupport.frontierPlanningRevision(legacyRevision, statistics.status());
-	}
-
-	long learnedEvidenceRevision() {
-		return LmdbEstimatorRevisionSupport.learnedEvidenceRevision(
-				snapshotVersion(), leoRevision(), frontierPlanningRevision());
 	}
 
 	PlanningRevisions capturePlanningRevisions() {
@@ -459,13 +390,6 @@ final class LmdbEstimatorRuntime {
 	PlanTemplateCache<Object> planTemplateCache() {
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		return scope == null ? new PlanTemplateCache<>(1) : scope.planTemplates;
-	}
-
-	Object optimizationScopedFactorFingerprint(TupleExpr factor) {
-		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
-		return scope == null
-				? FactorCostCacheKey.estimatorFingerprint(factor)
-				: scope.estimatorFingerprint(factor);
 	}
 
 	void registerPackedFactor(PackedQueryView query, int relationId, TupleExpr factor) {
@@ -534,11 +458,6 @@ final class LmdbEstimatorRuntime {
 		return storageAccess.describePackedDistinctCursorSkip(pattern, normalRows, conventional, output);
 	}
 
-	void describePackedAccessPath(int lookupMask, double accessRows, double invocations,
-			PackedCostEstimate output) {
-		describePackedAccessPath(lookupMask, accessRows, invocations, "lmdb-packed-cardinality", output);
-	}
-
 	void describePackedAccessPath(int lookupMask, double accessRows, double invocations, String estimateSource,
 			PackedCostEstimate output) {
 		storageAccess.describePackedAccessPath(lookupMask, accessRows, invocations, estimateSource, output);
@@ -555,11 +474,6 @@ final class LmdbEstimatorRuntime {
 
 	LmdbOperatorFeedbackStats feedback() {
 		return feedback;
-	}
-
-	double statementPatternRows(StatementPattern pattern, Set<String> boundNames) {
-		return pattern == null ? Double.NaN
-				: estimate(pattern, boundNames, EstimationTier.STANDARD, false).rows();
 	}
 
 	Optional<EvaluationStatistics.FilterPassEstimate> patternFilterPass(ValueExpr condition,
@@ -591,78 +505,6 @@ final class LmdbEstimatorRuntime {
 				: Optional.of(best);
 	}
 
-	Optional<PropertyPathEstimate> propertyPath(TupleExpr path, Set<String> boundNames) {
-		if (!(path instanceof ArbitraryLengthPath) && !(path instanceof ZeroLengthPath)) {
-			return Optional.empty();
-		}
-		FactorCostEstimate cost = factorCost(path,
-				CostContext.of(boundNames == null ? Set.of() : boundNames, 1.0d, 1.0d, false))
-						.orElseThrow();
-		BagEstimate estimate = cost.getBagEstimate()
-				.orElseGet(() -> estimate(path, boundNames, EstimationTier.STANDARD, false));
-		List<String> names = path.getBindingNames().stream().sorted().toList();
-		double firstDistinct = names.isEmpty() ? estimate.rows() : estimate.variable(names.get(0)).distinctRows();
-		double secondDistinct = names.size() < 2 ? firstDistinct : estimate.variable(names.get(1)).distinctRows();
-		double fanout = estimate.rows() / Math.max(1.0d, firstDistinct);
-		return Optional.of(new PropertyPathEstimate(estimate.rows(), cost.getWorkRows(), firstDistinct,
-				secondDistinct, fanout, estimate.source()));
-	}
-
-	Optional<CharacteristicSetEstimate> subjectStar(List<StatementPattern> patterns, Set<String> boundNames) {
-		if (patterns == null || patterns.isEmpty()) {
-			return Optional.empty();
-		}
-		Set<IRI> predicates = new LinkedHashSet<>();
-		for (StatementPattern pattern : patterns) {
-			Value value = pattern.getPredicateVar() == null ? null : pattern.getPredicateVar().getValue();
-			if (value instanceof IRI predicate) {
-				predicates.add(predicate);
-			}
-		}
-		if (predicates.isEmpty()) {
-			return Optional.empty();
-		}
-		BagEstimate estimate = estimate(LmdbEstimatorExpressionSupport.join(patterns), boundNames,
-				EstimationTier.STANDARD, false);
-		return Optional.of(new CharacteristicSetEstimate(predicates, Math.round(estimate.rows()), estimate.rows(),
-				Math.round(estimate.workRows()), estimate.source()));
-	}
-
-	BoundJoinProductEstimate boundJoinProduct(TupleExpr left, TupleExpr right, double knownLeftRows) {
-		if (left == null || right == null) {
-			return null;
-		}
-		Set<String> shared = LmdbEstimatorExpressionSupport.sharedBindingNames(left, right);
-		BagEstimate estimate = estimate(new Join(left.clone(), right.clone()), shared, EstimationTier.STANDARD, false);
-		double prefixRows = positive(knownLeftRows, estimate(left).rows());
-		return new BoundJoinProductEstimate(estimate.rows(), prefixRows, prefixRows, estimate.rows(),
-				shared.stream().sorted().findFirst().orElse(null), LmdbEstimateClassification.databaseExact(estimate),
-				estimate.source());
-	}
-
-	OptionalBridgeProductEstimate optionalBridgeProduct(TupleExpr left, TupleExpr right, double knownLeftRows) {
-		BoundJoinProductEstimate joined = boundJoinProduct(left, right, knownLeftRows);
-		if (joined == null) {
-			return null;
-		}
-		return new OptionalBridgeProductEstimate(joined.productRows(), joined.productRows(), joined.prefixRows(),
-				joined.prefixSurfaceRows(), joined.prefixRightSurfaceRows(), joined.productRows(), joined.productRows(),
-				joined.productRows(), joined.surfaceSource(), joined.joinVarName());
-	}
-
-	double boundJoinSurfaceRows(List<TupleExpr> factors, String ignored) {
-		TupleExpr expression = LmdbEstimatorExpressionSupport.join(factors);
-		return expression == null ? Double.NaN : estimate(expression).rows();
-	}
-
-	double boundJoinSurfaceRows(List<TupleExpr> prefix, TupleExpr factor, String ignored) {
-		List<TupleExpr> factors = new ArrayList<>(prefix == null ? List.of() : prefix);
-		if (factor != null) {
-			factors.add(factor);
-		}
-		return boundJoinSurfaceRows(factors, ignored);
-	}
-
 	private EstimateContext context(TupleExpr expression, CostContext cost) {
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		return LmdbEstimateContextBuilder.forCost(expression, cost, rootContext(expression), prefixEvidence, scope);
@@ -680,10 +522,6 @@ final class LmdbEstimatorRuntime {
 		} catch (RuntimeException e) {
 			return false;
 		}
-	}
-
-	private static double positive(double value, double fallback) {
-		return Double.isFinite(value) && value > 0.0d ? value : fallback;
 	}
 
 	private void closeScope(LmdbEstimatorOptimizationScope scope) {

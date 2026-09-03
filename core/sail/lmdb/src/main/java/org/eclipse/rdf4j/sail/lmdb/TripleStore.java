@@ -839,11 +839,6 @@ class TripleStore implements Closeable {
 		pendingRdfTermDomainCacheDeletes.clear();
 	}
 
-	private void recordRdfTermDomainDegradation(MemoryStack stack, MDBVal keyVal, long candidateMask)
-			throws IOException {
-		recordRdfTermDomainDegradation(stack, keyVal, candidateMask, 0L);
-	}
-
 	private void recordRdfTermDomainDegradation(MemoryStack stack, MDBVal keyVal, long candidateMask, long removedMask)
 			throws IOException {
 		if (candidateMask == 0L) {
@@ -2448,8 +2443,8 @@ class TripleStore implements Closeable {
 		 * transaction and takes that lock only while committing, so reversing the order could deadlock. LMDB orders the
 		 * two writers; after this commit, the write lock plus reset invalidates every reusable tracked read snapshot.
 		 * The independent-writer gate keeps this transaction out of the window a two-phase commit opens between its
-		 * durable batches; it is released before the write lock is taken so the committer, which holds that lock
-		 * while waiting for the gate, can never be blocked by an acknowledgement that waits for the lock.
+		 * durable batches; it is released before the write lock is taken so the committer, which holds that lock while
+		 * waiting for the gate, can never be blocked by an acknowledgement that waits for the lock.
 		 */
 		acquireIndependentWriterGate();
 		try {
@@ -3149,11 +3144,11 @@ class TripleStore implements Closeable {
 	}
 
 	/**
-	 * Begins the next write transaction of a two-phase commit and re-reads the persisted Frontier journal
-	 * coordinates. The previous durable batch released the LMDB writer mutex, so an independent journal
-	 * acknowledgement may have committed in between: it prunes retained rows and moves the acknowledged / gap
-	 * coordinates but never the latest sequence, which only this writer advances. Continuing the replay from the
-	 * stale in-memory coordinates would revert that acknowledgement and describe rows that no longer exist.
+	 * Begins the next write transaction of a two-phase commit and re-reads the persisted Frontier journal coordinates.
+	 * The previous durable batch released the LMDB writer mutex, so an independent journal acknowledgement may have
+	 * committed in between: it prunes retained rows and moves the acknowledged / gap coordinates but never the latest
+	 * sequence, which only this writer advances. Continuing the replay from the stale in-memory coordinates would
+	 * revert that acknowledgement and describe rows that no longer exist.
 	 */
 	private void beginWriteTransactionAfterDurableBatch() throws IOException {
 		try (MemoryStack stack = stackPush()) {

@@ -15,7 +15,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 @PackedHotPath
 final class PackedSearchBudget {
 
-	private final PackedPlannerLimits limits;
 	private final long workLimit;
 	private final long deadlineNanos;
 	private final long retainedByteLimit;
@@ -35,7 +34,6 @@ final class PackedSearchBudget {
 		if (limits == null) {
 			throw new NullPointerException("limits");
 		}
-		this.limits = limits;
 		workLimit = limits.workLimit();
 		deadlineNanos = limits.deadlineNanos();
 		retainedByteLimit = limits.maxRetainedBytes();
@@ -149,16 +147,8 @@ final class PackedSearchBudget {
 		return retainedByteLimit;
 	}
 
-	PackedPlannerLimits limits() {
-		return limits;
-	}
-
 	PackedEvidenceStateRegistry evidenceStates() {
 		return evidenceStates;
-	}
-
-	void markUnsupportedSemantics() {
-		unsupportedSemantics = true;
 	}
 
 	void markResourceLimitReached() {

@@ -40,15 +40,7 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 		InputBindingContext inputBindingContext) {
 
 	public static final String BAG_SEMANTICS = "logical-bag";
-	public static final String SET_SEMANTICS = "logical-set";
 	public static final String EXISTENCE_SEMANTICS = "existence";
-
-	public OptimizationGoal(PhysicalProperties requiredProperties, String semanticScope, CostPolicy costPolicy,
-			CostVector costBound, Set<PhysicalProperties> excludedProperties, SearchMode searchMode, long deadlineNanos,
-			int taskBudget) {
-		this(requiredProperties, semanticScope, costPolicy, costBound, excludedProperties, searchMode, deadlineNanos,
-				taskBudget, RowGoal.ALL, JoinFactorCostModel.EstimationTier.STANDARD);
-	}
 
 	public OptimizationGoal(PhysicalProperties requiredProperties, String semanticScope, CostPolicy costPolicy,
 			CostVector costBound, Set<PhysicalProperties> excludedProperties, SearchMode searchMode, long deadlineNanos,
@@ -99,87 +91,14 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 				JoinFactorCostModel.EstimationTier.STANDARD);
 	}
 
-	public static OptimizationGoal forRoot(PhysicalProperties requiredProperties, TupleExpr root) {
-		return root(root, requiredProperties);
-	}
-
-	public OptimizationGoal forGroupCostBound(CostVector bound) {
-		return new OptimizationGoal(requiredProperties, semanticScope, costPolicy, bound, excludedProperties,
-				searchMode, deadlineNanos, taskBudget, rowGoal, estimationTier, inputBindingContext);
-	}
-
 	public OptimizationGoal withRequiredProperties(PhysicalProperties properties) {
 		return new OptimizationGoal(properties, semanticScope, costPolicy, costBound, excludedProperties, searchMode,
-				deadlineNanos, taskBudget, rowGoal, estimationTier, inputBindingContext);
-	}
-
-	public OptimizationGoal withRowGoal(RowGoal outputGoal) {
-		RowGoal normalized = outputGoal == null ? RowGoal.ALL : outputGoal;
-		String normalizedScope = normalized.existenceOnly()
-				? EXISTENCE_SEMANTICS
-				: EXISTENCE_SEMANTICS.equals(semanticScope) ? BAG_SEMANTICS : semanticScope;
-		return new OptimizationGoal(requiredProperties, normalizedScope,
-				costPolicy, costBound, excludedProperties, searchMode, deadlineNanos, taskBudget, normalized,
-				estimationTier, inputBindingContext);
-	}
-
-	OptimizationGoal withRowGoalPreservingSemanticScope(RowGoal outputGoal) {
-		RowGoal normalized = outputGoal == null ? RowGoal.ALL : outputGoal;
-		return new OptimizationGoal(requiredProperties, semanticScope, costPolicy, costBound, excludedProperties,
-				searchMode, deadlineNanos, taskBudget, normalized, estimationTier, inputBindingContext);
-	}
-
-	public OptimizationGoal withoutRowGoal() {
-		String scope = EXISTENCE_SEMANTICS.equals(semanticScope) ? BAG_SEMANTICS : semanticScope;
-		return new OptimizationGoal(requiredProperties, scope, costPolicy, costBound, excludedProperties, searchMode,
-				deadlineNanos, taskBudget, RowGoal.ALL, estimationTier, inputBindingContext);
-	}
-
-	public OptimizationGoal withResultRowLimit(long rowLimit, boolean allowEarlyStop) {
-		long limit = rowLimit < 0L || rowLimit == Long.MAX_VALUE ? RowGoal.UNBOUNDED : rowLimit;
-		return withRowGoal(new RowGoal(0L, limit, allowEarlyStop && limit >= 0L, false));
-	}
-
-	public OptimizationGoal withEarlyStopAllowed(boolean allowEarlyStop) {
-		return withRowGoal(new RowGoal(rowGoal.offset(), rowGoal.limit(), allowEarlyStop, rowGoal.existenceOnly()));
-	}
-
-	public OptimizationGoal withSemanticScope(String newSemanticScope) {
-		RowGoal scopedRowGoal = EXISTENCE_SEMANTICS.equals(newSemanticScope)
-				? rowGoal.asExistenceOnly()
-				: rowGoal;
-		return new OptimizationGoal(requiredProperties, newSemanticScope, costPolicy, costBound, excludedProperties,
-				searchMode, deadlineNanos, taskBudget, scopedRowGoal, estimationTier, inputBindingContext);
-	}
-
-	public OptimizationGoal withEstimationTier(JoinFactorCostModel.EstimationTier tier) {
-		return new OptimizationGoal(requiredProperties, semanticScope, costPolicy, costBound, excludedProperties,
-				searchMode, deadlineNanos, taskBudget, rowGoal, tier, inputBindingContext);
-	}
-
-	public OptimizationGoal withCostPolicy(CostPolicy policy) {
-		return new OptimizationGoal(requiredProperties, semanticScope, policy, costBound, excludedProperties,
-				searchMode,
 				deadlineNanos, taskBudget, rowGoal, estimationTier, inputBindingContext);
 	}
 
 	public OptimizationGoal withInputBindingContext(InputBindingContext context) {
 		return new OptimizationGoal(requiredProperties, semanticScope, costPolicy, costBound, excludedProperties,
 				searchMode, deadlineNanos, taskBudget, rowGoal, estimationTier, context);
-	}
-
-	public OptimizationGoal normalized(BindingUniverse universe) {
-		if (universe == null) {
-			return this;
-		}
-		PhysicalProperties normalizedRequired = requiredProperties.normalized(universe);
-		Set<PhysicalProperties> normalizedExcluded = excludedProperties.isEmpty()
-				? Set.of()
-				: excludedProperties.stream()
-						.map(properties -> properties.normalized(universe))
-						.collect(java.util.stream.Collectors.toUnmodifiableSet());
-		return new OptimizationGoal(normalizedRequired, semanticScope, costPolicy, costBound, normalizedExcluded,
-				searchMode, deadlineNanos, taskBudget, rowGoal, estimationTier, inputBindingContext);
 	}
 
 	public OptimizationGoal asBudgeted(Duration timeout, int budget) {
@@ -191,26 +110,6 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 		}
 		return new OptimizationGoal(requiredProperties, semanticScope, costPolicy, costBound, excludedProperties,
 				SearchMode.BUDGETED, deadline, budget, rowGoal, estimationTier, inputBindingContext);
-	}
-
-	public boolean excludes(PhysicalProperties properties) {
-		return excludes(properties, null);
-	}
-
-	public boolean excludes(PhysicalProperties properties, BindingUniverse universe) {
-		if (properties == null || excludedProperties.isEmpty()) {
-			return false;
-		}
-		for (PhysicalProperties excluded : excludedProperties) {
-			if (properties.satisfies(excluded, universe) || excluded.satisfies(properties, universe)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	public boolean expired() {
-		return System.nanoTime() > deadlineNanos;
 	}
 
 	@Override
@@ -375,10 +274,6 @@ public record OptimizationGoal(PhysicalProperties requiredProperties, String sem
 
 		public boolean isAll() {
 			return offset == 0L && limit == UNBOUNDED && !earlyStopAllowed && !existenceOnly;
-		}
-
-		public boolean hasFiniteLimit() {
-			return limit >= 0L;
 		}
 
 		public long requiredRowsBeforeStop() {

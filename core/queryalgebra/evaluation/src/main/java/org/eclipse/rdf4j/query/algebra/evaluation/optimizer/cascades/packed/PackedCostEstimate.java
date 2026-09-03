@@ -599,25 +599,6 @@ public final class PackedCostEstimate {
 		plannedDoubleMetricSlots[slot] = index + 1;
 	}
 
-	void copyPhysicalCostFrom(PackedCostEstimate source) {
-		workRows = source.workRows;
-		sequentialRows = source.sequentialRows;
-		randomSeeks = source.randomSeeks;
-		iteratorOpens = source.iteratorOpens;
-		expressionEvaluations = source.expressionEvaluations;
-		hashBuildRows = source.hashBuildRows;
-		hashProbeRows = source.hashProbeRows;
-		pathExpansions = source.pathExpansions;
-		resultRows = source.resultRows;
-		remoteCalls = source.remoteCalls;
-		peakMemoryRows = source.peakMemoryRows;
-		costScope = source.costScope;
-		explicitPhysicalCost = source.explicitPhysicalCost;
-		replacesChildWork = source.replacesChildWork;
-		dependentSubqueriesCosted = source.dependentSubqueriesCosted;
-		copyDependentComponentsFrom(source);
-	}
-
 	void copyProviderInputFrom(PackedCostEstimate source) {
 		clear();
 		outputRows = source.outputRows;
@@ -1252,14 +1233,6 @@ public final class PackedCostEstimate {
 			throw new IllegalArgumentException("packed costing event ID must be non-negative");
 		}
 		this.costEventId = costEventId;
-	}
-
-	void setCostEventTelemetry(int costEventId, String phase, long contextFingerprint, double objective,
-			long digestHigh, long digestLow) {
-		setCostEventTelemetry(costEventId, phase, contextFingerprint, objective);
-		costEventDigestHigh = digestHigh;
-		costEventDigestLow = digestLow;
-		costEventDigestReady = true;
 	}
 
 	void setPendingCostEventTelemetry(int costEventId, String phase, long contextFingerprint, double objective) {

@@ -29,24 +29,13 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingShape;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.FeedbackCorrection;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RdfStatisticsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoEvidence;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoLearnedEvidenceService;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoMemoFeedback;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorLearningPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanCandidate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRankingAdvice;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
-import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
@@ -56,7 +45,7 @@ import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 /** Thin RDF4J interface adapter over the unified LMDB estimation runtime. */
 class LmdbEvaluationStatistics extends EvaluationStatistics
 		implements JoinFactorCostModel, QueryOptimizationScopeProvider,
-		LmdbPredicateObjectDomainSource, RdfStatisticsProvider, LeoLearnedEvidenceService,
+		LmdbPredicateObjectDomainSource, LeoLearnedEvidenceService,
 		LmdbEstimatorRuntimeProvider {
 
 	static final String OPERATOR_FEEDBACK_TRACKING_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackTracking";
@@ -260,23 +249,6 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	}
 
 	@Override
-	public Optional<FilterCostEstimate> estimateFilterCost(JoinOrderPlanner.FilterConstraint filter,
-			CostContext context) {
-		if (filter == null) {
-			return Optional.empty();
-		}
-		double inputRows = context == null ? 1.0d : positive(context.getOuterPrefixRows(), 1.0d);
-		double ratio = filter.getEstimatedPassRatio();
-		if (!Double.isFinite(ratio) || ratio < 0.0d || ratio > 1.0d) {
-			ratio = 0.5d;
-		}
-		double outputRows = inputRows * ratio;
-		double workRows = inputRows
-				* (filter.getConditionCost() == JoinOrderPlanner.FILTER_COST_EXPENSIVE ? 2.0d : 1.0d);
-		return Optional.of(new FilterCostEstimate(workRows, outputRows, ratio));
-	}
-
-	@Override
 	public QueryOptimizationScope beginQueryOptimizationScope() {
 		return runtime.beginScope();
 	}
@@ -286,7 +258,6 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 		return runtime.rdfTermDomain(predicate);
 	}
 
-	@Override
 	public Optional<StatisticsEstimate> statementPattern(StatementPattern pattern, Set<String> boundVars) {
 		if (pattern == null) {
 			return Optional.empty();
@@ -296,7 +267,6 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 		return estimateFactorCost(pattern, context).map(LmdbStatisticsEstimateAdapter::from);
 	}
 
-	@Override
 	public Optional<StatisticsEstimate> multiPatternJoin(List<TupleExpr> orderedFactors, Set<String> boundVars) {
 		TupleExpr expression = LmdbEstimatorExpressionSupport.join(orderedFactors);
 		return expression == null ? Optional.empty()
@@ -304,7 +274,6 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 						runtime.estimate(expression, boundVars, EstimationTier.STANDARD, false)));
 	}
 
-	@Override
 	public Optional<StatisticsEstimate> filter(TupleExpr input, ValueExpr condition, StatisticsEstimate inputEstimate,
 			Set<String> boundVars) {
 		if (input == null || condition == null || inputEstimate == null) {
@@ -312,66 +281,6 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 		}
 		return Optional.of(LmdbStatisticsEstimateAdapter.from(runtime.estimateFilter(input, condition,
 				inputEstimate.bag(), boundVars, EstimationTier.STANDARD, false)));
-	}
-
-	@Override
-	public Optional<StatisticsEstimate> starMultiPredicateScan(List<StatementPattern> patterns,
-			Set<String> boundVars) {
-		return multiPatternJoin(patterns == null ? List.of() : List.copyOf(patterns), boundVars);
-	}
-
-	@Override
-	public Optional<StatisticsEstimate> joinFrequencyInnerProduct(StatementPattern left, StatementPattern right,
-			String ignored, Set<String> boundVars) {
-		return multiPatternJoin(left == null || right == null ? List.of() : List.of(left, right), boundVars);
-	}
-
-	@Override
-	public Optional<StatisticsEstimate> bridgePath(List<StatementPattern> patterns, String ignored,
-			Set<String> boundVars) {
-		return multiPatternJoin(patterns == null ? List.of() : List.copyOf(patterns), boundVars);
-	}
-
-	@Override
-	public Optional<StatisticsEstimate> characteristicSetStar(List<StatementPattern> patterns,
-			Set<String> boundVars) {
-		return starMultiPredicateScan(patterns, boundVars);
-	}
-
-	@Override
-	public Optional<StatisticsEstimate> shapeTypeAware(StatementPattern pattern, Set<IRI> ignored,
-			Set<String> boundVars) {
-		return statementPattern(pattern, boundVars);
-	}
-
-	@Override
-	public Optional<StatisticsEstimate> propertyPathNodePairs(TupleExpr path, Set<String> boundVars) {
-		if (path == null) {
-			return Optional.empty();
-		}
-		CostContext context = CostContext.of(boundVars == null ? Set.of() : boundVars, 1.0d, 1.0d, false);
-		return runtime.factorCost(path, context).map(estimate -> {
-			String source = estimate.getStringMetrics()
-					.getOrDefault(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
-							"lmdb-property-path");
-			StatisticsEstimate converted = StatisticsEstimate.fromVector(estimate.getNormalizedEstimateVector(),
-					source);
-			return estimate.getBagEstimate().map(converted::withBag).orElse(converted);
-		});
-	}
-
-	@Override
-	public Optional<StatisticsEstimate> refineForDecision(EstimationDecision decision) {
-		if (decision == null || decision.tupleExpr() == null || !decision.canChangeWinner()) {
-			return Optional.empty();
-		}
-		return Optional.of(LmdbStatisticsEstimateAdapter.from(runtime.estimate(decision.tupleExpr(),
-				decision.boundVars(), EstimationTier.DECISION_EXACT, true)));
-	}
-
-	@Override
-	public Optional<FeedbackCorrection> feedbackCorrection(TupleExpr expression, StatisticsEstimate base) {
-		return base == null ? Optional.empty() : runtime.feedbackCorrection(expression, base.bag());
 	}
 
 	@Override
@@ -438,63 +347,9 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	}
 
 	@Override
-	public LeoOperatorLearningPolicy learningPolicy(TupleExpr expression) {
-		return runtime.feedback() == null ? LeoOperatorLearningPolicy.DO_NOT_LEARN
-				: runtime.feedback().learningPolicy(expression);
-	}
-
-	@Override
-	public void observe(TupleExpr expression, boolean completedRoot) {
-		if (runtime.feedback() != null) {
-			runtime.feedback().observe(expression, completedRoot);
-		}
-	}
-
-	@Override
-	public void observePlanCandidate(LeoPlanCandidate candidate, boolean accepted, String reason) {
-		if (runtime.feedback() != null) {
-			runtime.feedback().observePlanCandidate(candidate, accepted, reason);
-		}
-	}
-
-	@Override
-	public Optional<LeoPlanRankingAdvice> planRankingAdvice(TupleExpr expression) {
-		return runtime.feedback() == null ? Optional.empty() : runtime.feedback().planRankingAdvice(expression);
-	}
-
-	@Override
-	public String debugEvidence(TupleExpr expression) {
-		return runtime.feedback() == null ? "" : runtime.feedback().debugEvidence(expression);
-	}
-
-	@Override
-	public String explainEstimateDiff(TupleExpr expression) {
-		return runtime.feedback() == null ? "" : runtime.feedback().explainEstimateDiff(expression);
-	}
-
-	@Override
-	public LeoMemoFeedback memoFeedback(TupleExpr expression, BindingUniverse universe, BindingShape shape) {
-		return runtime.feedback() == null ? LeoMemoFeedback.empty()
-				: runtime.feedback().memoFeedback(expression, universe, shape);
-	}
-
-	@Override
-	public Optional<LeoEvidence> evidence(LeoSurfaceKey key) {
-		return runtime.feedback() == null ? Optional.empty() : runtime.feedback().evidence(key);
-	}
-
-	@Override
 	public LeoPlanRanking rankPlanCandidates(List<LeoPlanCandidate> candidates) {
 		return runtime.feedback() == null ? LeoLearnedEvidenceService.super.rankPlanCandidates(candidates)
 				: runtime.feedback().rankPlanCandidates(candidates);
 	}
 
-	@Override
-	public boolean shouldApplyPlanRanking(LeoPlanRanking ranking, String candidateId) {
-		return runtime.feedback() != null && runtime.feedback().shouldApplyPlanRanking(ranking, candidateId);
-	}
-
-	private static double positive(double value, double fallback) {
-		return Double.isFinite(value) && value > 0.0d ? value : fallback;
-	}
 }

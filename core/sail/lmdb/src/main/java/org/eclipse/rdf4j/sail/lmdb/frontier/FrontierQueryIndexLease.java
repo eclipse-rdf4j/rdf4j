@@ -22,7 +22,6 @@ public final class FrontierQueryIndexLease implements AutoCloseable {
 	private PreparedProbeMemo preparedProbes;
 	private final FrontierSynopsisStatus status;
 	private final String fallbackReason;
-	private final long requiredSnapshotEpoch;
 
 	private FrontierQueryIndexLease(FrontierQueryIndexView view, FrontierSynopsisStatus status, String fallbackReason,
 			long requiredSnapshotEpoch) {
@@ -30,7 +29,6 @@ public final class FrontierQueryIndexLease implements AutoCloseable {
 		preparedProbes = view == null ? null : new PreparedProbeMemo();
 		this.status = Objects.requireNonNull(status, "status");
 		this.fallbackReason = Objects.requireNonNull(fallbackReason, "fallbackReason");
-		this.requiredSnapshotEpoch = requiredSnapshotEpoch;
 	}
 
 	static FrontierQueryIndexLease ready(FrontierQueryIndexView view) {
@@ -57,13 +55,6 @@ public final class FrontierQueryIndexLease implements AutoCloseable {
 	public long candidateRows(FrontierLeafSelector selector) {
 		return requireView().candidateRows(prepared(selector, FrontierManifestIdentity.SUBJECT_TO_OBJECT_DIRECTION,
 				FrontierManifestIdentity.DESIGN_LANE_ROLE, 0));
-	}
-
-	/**
-	 * Returns the number of physical mapped rows in the smallest indexed candidate range without scanning it.
-	 */
-	public long candidateRangeRows(FrontierLeafSelector selector) {
-		return requireView().candidateRangeRows(selector);
 	}
 
 	/**
@@ -144,40 +135,6 @@ public final class FrontierQueryIndexLease implements AutoCloseable {
 						FrontierManifestIdentity.DESIGN_LANE_ROLE, 0),
 				maximumScannedRows,
 				Objects.requireNonNull(sink, "sink"));
-	}
-
-	/**
-	 * Summarizes all independent subject-to-object lanes in one mapped pass. The result is diagnostic only; callers
-	 * must keep design lane zero as the execution measure.
-	 */
-	public FrontierQueryIndexLaneDiagnostics laneDiagnostics(FrontierLeafSelector selector) {
-		return requireView().laneDiagnostics(selector, FrontierManifestIdentity.SUBJECT_TO_OBJECT_DIRECTION);
-	}
-
-	/**
-	 * Summarizes all independent object-to-subject lanes in one mapped pass. The result is diagnostic only.
-	 */
-	public FrontierQueryIndexLaneDiagnostics reverseLaneDiagnostics(FrontierLeafSelector selector) {
-		return requireView().laneDiagnostics(selector, FrontierManifestIdentity.OBJECT_TO_SUBJECT_DIRECTION);
-	}
-
-	/**
-	 * Visits the complete subject-to-object candidate range at most once, emitting design lanes zero and one while
-	 * accumulating all design/audit diagnostics. Emitted rows are partial and must be discarded when the result is not
-	 * complete.
-	 */
-	public FrontierQueryIndexLeafScan visitLeafOnce(
-			FrontierLeafSelector selector,
-			long maximumScannedRows,
-			FrontierQueryIndexRowSink primaryDesignSink,
-			FrontierQueryIndexRowSink independentDesignSink) {
-		return requireView().visitLeafOnce(
-				Objects.requireNonNull(selector, "selector"),
-				FrontierManifestIdentity.SUBJECT_TO_OBJECT_DIRECTION,
-				maximumScannedRows,
-				true,
-				Objects.requireNonNull(primaryDesignSink, "primaryDesignSink"),
-				Objects.requireNonNull(independentDesignSink, "independentDesignSink"));
 	}
 
 	/**

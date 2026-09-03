@@ -121,10 +121,6 @@ final class PackedIntSequenceInterner {
 		return requiredIndex == requiredLimit;
 	}
 
-	int size() {
-		return size;
-	}
-
 	int length(int sequenceId) {
 		checkSequenceId(sequenceId);
 		return sequenceId == 0 ? 0 : lengths[sequenceId];

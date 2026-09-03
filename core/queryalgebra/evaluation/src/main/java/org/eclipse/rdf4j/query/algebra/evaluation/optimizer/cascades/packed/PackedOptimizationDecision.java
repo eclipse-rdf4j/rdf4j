@@ -144,14 +144,6 @@ final class PackedOptimizationDecision {
 		return candidate(candidate).estimatedCost();
 	}
 
-	long candidateDiversityKey(int candidate) {
-		return candidate(candidate).diversityKey();
-	}
-
-	PackedPlanRecipe championRecipe() {
-		return candidates[0].recipe();
-	}
-
 	long selectedRuleProofMask() {
 		return candidates[0].recipe().ruleProofMask();
 	}

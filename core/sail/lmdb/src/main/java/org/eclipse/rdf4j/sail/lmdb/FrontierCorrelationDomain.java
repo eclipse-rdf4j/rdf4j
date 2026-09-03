@@ -105,14 +105,6 @@ final class FrontierPrimitiveCorrelationRelation {
 		return width;
 	}
 
-	long[] tuples() {
-		return tuples;
-	}
-
-	double[] multiplicities() {
-		return multiplicities;
-	}
-
 	int size() {
 		return multiplicities.length;
 	}

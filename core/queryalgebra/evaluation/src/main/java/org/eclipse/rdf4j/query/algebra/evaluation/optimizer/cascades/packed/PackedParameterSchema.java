@@ -122,10 +122,6 @@ final class PackedParameterSchema {
 		return slots.size();
 	}
 
-	Slot slot(int ordinal) {
-		return slots.get(ordinal);
-	}
-
 	boolean accepts(PackedParameterVector vector) {
 		if (vector == null || vector.size() != slots.size()) {
 			return false;

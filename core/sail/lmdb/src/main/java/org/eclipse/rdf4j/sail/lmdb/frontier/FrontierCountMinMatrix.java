@@ -97,11 +97,6 @@ final class FrontierCountMinMatrix {
 		return totals[plane];
 	}
 
-	long allocatedBytes() {
-		return (long) (counters.length + totals.length + componentHashes.length) * Long.BYTES
-				+ (long) bucketScratch.length * Integer.BYTES;
-	}
-
 	private int tableOffset(int plane, int mask) {
 		if (plane < 0 || plane >= PLANES || mask <= 0 || mask >= MASKS) {
 			throw new IllegalArgumentException("Frontier Count-Min plane or mask is invalid");

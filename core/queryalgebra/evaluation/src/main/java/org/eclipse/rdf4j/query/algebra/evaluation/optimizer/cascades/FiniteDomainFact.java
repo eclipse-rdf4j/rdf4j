@@ -13,10 +13,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -74,36 +72,6 @@ public final class FiniteDomainFact {
 
 	public List<Value> values() {
 		return values;
-	}
-
-	public Set<Value> valueSet() {
-		return Collections.unmodifiableSet(new LinkedHashSet<>(values));
-	}
-
-	public boolean assuredBound() {
-		return assuredBound;
-	}
-
-	public Precision precision() {
-		return precision;
-	}
-
-	public String provenance() {
-		return provenance;
-	}
-
-	FiniteDomainFact asUpperBound(String source) {
-		if (precision == Precision.UPPER_BOUND && Objects.equals(provenance, source)) {
-			return this;
-		}
-		return upperBound(values, assuredBound, source);
-	}
-
-	FiniteDomainFact withAssuredBound(boolean assured, String source) {
-		if (assuredBound == assured && Objects.equals(provenance, source)) {
-			return this;
-		}
-		return new FiniteDomainFact(values, assured, precision, source);
 	}
 
 	FiniteDomainFact intersectedWith(FiniteDomainFact other, boolean assured, String source) {

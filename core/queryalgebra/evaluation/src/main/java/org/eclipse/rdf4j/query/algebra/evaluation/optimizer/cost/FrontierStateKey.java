@@ -189,14 +189,6 @@ public final class FrontierStateKey implements Comparable<FrontierStateKey> {
 		return frontier;
 	}
 
-	public int boundMaskWordCount() {
-		return maskStrata.wordCount();
-	}
-
-	public long boundMaskWord(int index) {
-		return maskStrata.word(0, index);
-	}
-
 	public FrontierMaskStrata maskStrata() {
 		return maskStrata;
 	}
@@ -221,16 +213,8 @@ public final class FrontierStateKey implements Comparable<FrontierStateKey> {
 		return snapshotStoreIdLow;
 	}
 
-	public long snapshotStoreId() {
-		return snapshotStoreIdLow;
-	}
-
 	public long snapshotEpoch() {
 		return snapshotEpoch;
-	}
-
-	public int laneRole() {
-		return laneIndex;
 	}
 
 	public FrontierLaneFamily laneFamily() {

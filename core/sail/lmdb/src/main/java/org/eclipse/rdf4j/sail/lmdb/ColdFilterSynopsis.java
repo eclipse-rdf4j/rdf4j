@@ -67,10 +67,6 @@ final class ColdFilterSynopsis {
 		return new Builder(capacity);
 	}
 
-	int capacity() {
-		return capacity;
-	}
-
 	int retainedRows() {
 		return subjects.length;
 	}
@@ -81,14 +77,6 @@ final class ColdFilterSynopsis {
 
 	boolean complete() {
 		return totalRows <= capacity;
-	}
-
-	long rankAt(int index) {
-		return ranks[index];
-	}
-
-	long tieBreakAt(int index) {
-		return tieBreaks[index];
 	}
 
 	long subjectAt(int index) {

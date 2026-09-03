@@ -52,34 +52,9 @@ public record LeoPlanRanking(List<ScoredCandidate> candidates, boolean wouldChan
 		return best == null || best.candidate() == null ? "" : best.candidate().candidateId();
 	}
 
-	public String costWinnerCandidateId() {
-		if (candidates.isEmpty()) {
-			return "";
-		}
-		return candidates.stream()
-				.min(Comparator.comparingDouble(ScoredCandidate::costScore))
-				.map(scored -> scored.candidate() == null ? "" : scored.candidate().candidateId())
-				.orElse("");
-	}
-
 	public double bestConfidence() {
 		ScoredCandidate best = bestCandidate();
 		return best == null ? 0.0d : best.confidence();
-	}
-
-	public String explainSummary() {
-		if (candidates.isEmpty()) {
-			return "";
-		}
-		ScoredCandidate best = bestCandidate();
-		return "best=" + bestCandidateId()
-				+ ", costWinner=" + costWinnerCandidateId()
-				+ ", wouldChange=" + wouldChangeChoice
-				+ ", learnedScore=" + best.learnedScore()
-				+ ", costScore=" + best.costScore()
-				+ ", confidence=" + best.confidence()
-				+ ", source=" + best.source()
-				+ ", reason=" + reason;
 	}
 
 	public record ScoredCandidate(LeoPlanCandidate candidate, double learnedScore, double costScore, double confidence,

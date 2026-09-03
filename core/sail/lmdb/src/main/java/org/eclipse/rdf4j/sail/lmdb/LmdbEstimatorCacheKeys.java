@@ -33,10 +33,6 @@ record SemanticEstimateCacheKey(Object expression, Set<String> boundNames,
 		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
 		EstimateContext.MetricsPreference metricsPreference, boolean exactProbePermitted) {
 
-	static SemanticEstimateCacheKey of(TupleExpr expression, EstimateContext context) {
-		return of(expression, context, null);
-	}
-
 	static SemanticEstimateCacheKey of(TupleExpr expression, EstimateContext context,
 			LmdbEstimatorOptimizationScope scope) {
 		return new SemanticEstimateCacheKey(
@@ -58,10 +54,6 @@ record SemanticEstimateCacheKey(Object expression, Set<String> boundNames,
 
 record ExactAlternativeSurfaceCacheKey(Object factor, QuadSnapshotIdentity snapshotIdentity, long snapshotVersion) {
 
-	static ExactAlternativeSurfaceCacheKey of(TupleExpr factor, EstimateContext estimateContext) {
-		return of(factor, estimateContext, null);
-	}
-
 	static ExactAlternativeSurfaceCacheKey of(TupleExpr factor, EstimateContext estimateContext,
 			LmdbEstimatorOptimizationScope scope) {
 		return new ExactAlternativeSurfaceCacheKey(FactorCostCacheKey.factorFingerprint(factor, scope),
@@ -72,11 +64,6 @@ record ExactAlternativeSurfaceCacheKey(Object factor, QuadSnapshotIdentity snaps
 record PrefixEstimateCacheKey(FiniteBranchRowsCacheKey factors, long rowsBits,
 		JoinFactorCostModel.EstimationTier estimationTier, QuadSnapshotIdentity snapshotIdentity,
 		long snapshotVersion, long learnedRevision) {
-
-	static PrefixEstimateCacheKey of(List<TupleExpr> factors, double rows,
-			JoinFactorCostModel.EstimationTier estimationTier, EstimateContext estimateContext) {
-		return of(factors, rows, estimationTier, estimateContext, null);
-	}
 
 	static PrefixEstimateCacheKey of(List<TupleExpr> factors, double rows,
 			JoinFactorCostModel.EstimationTier estimationTier, EstimateContext estimateContext,
@@ -154,11 +141,6 @@ record FiniteDerivedPrefixCacheKey(Map<Object, Integer> factors,
 		Map<String, Set<Value>> finiteBindingValues) {
 
 	static FiniteDerivedPrefixCacheKey of(List<TupleExpr> factors,
-			Map<String, Set<Value>> finiteBindingValues) {
-		return of(factors, finiteBindingValues, null);
-	}
-
-	static FiniteDerivedPrefixCacheKey of(List<TupleExpr> factors,
 			Map<String, Set<Value>> finiteBindingValues, LmdbEstimatorOptimizationScope scope) {
 		Map<Object, Integer> occurrences = new HashMap<>();
 		if (factors != null) {
@@ -180,11 +162,6 @@ record FiniteDerivedPrefixCacheKey(Map<Object, Integer> factors,
 record FiniteDerivedSurfaceCacheKey(FiniteDerivedPrefixCacheKey prefix, Object factor) {
 
 	static FiniteDerivedSurfaceCacheKey of(List<TupleExpr> prefixFactors, TupleExpr factor,
-			Map<String, Set<Value>> finiteBindingValues) {
-		return of(prefixFactors, factor, finiteBindingValues, null);
-	}
-
-	static FiniteDerivedSurfaceCacheKey of(List<TupleExpr> prefixFactors, TupleExpr factor,
 			Map<String, Set<Value>> finiteBindingValues, LmdbEstimatorOptimizationScope scope) {
 		return new FiniteDerivedSurfaceCacheKey(
 				FiniteDerivedPrefixCacheKey.of(prefixFactors, finiteBindingValues, scope),
@@ -196,40 +173,7 @@ record FiniteDerivedSurfaceCacheKey(FiniteDerivedPrefixCacheKey prefix, Object f
 	}
 }
 
-record FiniteBranchSurfaceCacheKey(FiniteBranchRowsCacheKey factors, String joinVarName,
-		boolean allowExact, boolean forceExact) {
-
-	static FiniteBranchSurfaceCacheKey of(List<TupleExpr> factors, String joinVarName,
-			boolean allowExact) {
-		return new FiniteBranchSurfaceCacheKey(FiniteBranchRowsCacheKey.of(factors), joinVarName, allowExact,
-				false);
-	}
-}
-
-record FiniteBranchFactorSurfaceCacheKey(FiniteBranchRowsCacheKey prefixFactors, Object factor,
-		String joinVarName, boolean allowExact, boolean forceExact) {
-
-	static FiniteBranchFactorSurfaceCacheKey of(List<TupleExpr> prefixFactors, TupleExpr factor,
-			String joinVarName, boolean allowExact) {
-		return of(prefixFactors, factor, joinVarName, allowExact, false);
-	}
-
-	static FiniteBranchFactorSurfaceCacheKey of(List<TupleExpr> prefixFactors, TupleExpr factor,
-			String joinVarName, boolean allowExact, boolean forceExact) {
-		return new FiniteBranchFactorSurfaceCacheKey(FiniteBranchRowsCacheKey.of(prefixFactors),
-				FactorCostCacheKey.factorFingerprint(factor), joinVarName, allowExact, forceExact);
-	}
-}
-
 record FiniteBranchRowsCacheKey(List<Object> factors, boolean decisionDriven) {
-
-	static FiniteBranchRowsCacheKey of(List<TupleExpr> factors) {
-		return of(factors, false);
-	}
-
-	static FiniteBranchRowsCacheKey of(List<TupleExpr> factors, boolean decisionDriven) {
-		return of(factors, decisionDriven, null);
-	}
 
 	static FiniteBranchRowsCacheKey of(List<TupleExpr> factors, boolean decisionDriven,
 			LmdbEstimatorOptimizationScope scope) {

@@ -771,20 +771,14 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 
 	static final class PlanFamily {
 
-		private final PlanFamilyKey key;
 		private final AtomicReference<FamilyVersion> current;
 		private final ConcurrentHashMap<Long, AtomicBoolean> refreshClaims = new ConcurrentHashMap<>();
 		private final LongAdder requests = new LongAdder();
 		private final LongAdder admissions = new LongAdder();
 
 		private PlanFamily(PlanFamilyKey key, FamilyVersion version) {
-			this.key = key;
 			current = new AtomicReference<>(version);
 			admissions.increment();
-		}
-
-		PlanFamilyKey key() {
-			return key;
 		}
 
 		AtomicReference<FamilyVersion> current() {
@@ -1047,14 +1041,6 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 
 	LmdbPlanDecisionCache(int maximumFamilies, long maximumRetainedBytes) {
 		this(maximumFamilies, maximumRetainedBytes, 4, 1, 0.01d);
-	}
-
-	LmdbPlanDecisionCache(int maximumFamilies, long maximumRetainedBytes, int maximumVariants) {
-		this(maximumFamilies, maximumRetainedBytes, maximumVariants, 1, 0.01d);
-	}
-
-	LmdbPlanDecisionCache(int maximumFamilies, long maximumRetainedBytes, int maximumVariants, int refreshThreads) {
-		this(maximumFamilies, maximumRetainedBytes, maximumVariants, refreshThreads, 0.01d);
 	}
 
 	LmdbPlanDecisionCache(int maximumFamilies, long maximumRetainedBytes, int maximumVariants, int refreshThreads,

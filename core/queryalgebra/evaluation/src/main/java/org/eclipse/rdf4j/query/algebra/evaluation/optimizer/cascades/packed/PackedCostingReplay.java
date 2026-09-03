@@ -465,10 +465,6 @@ public final class PackedCostingReplay {
 			return eventDimension(0, eventId);
 		}
 
-		public double eventOutputRows(int eventId) {
-			return eventDimension(1, eventId);
-		}
-
 		public double eventWorkRows(int eventId) {
 			return eventDimension(2, eventId);
 		}

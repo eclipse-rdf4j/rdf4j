@@ -453,9 +453,9 @@ class LmdbOptimizerPipelineTest {
 			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 			List<String> optimizers = optimizers(
 					new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers())
-					.stream()
-					.map(optimizer -> optimizer.getClass().getSimpleName())
-					.collect(Collectors.toList());
+							.stream()
+							.map(optimizer -> optimizer.getClass().getSimpleName())
+							.collect(Collectors.toList());
 
 			int cascadesIndex = optimizers.indexOf("LmdbCascadesOptimizer");
 			int filterSimplifierIndex = optimizers.indexOf("LmdbFilterSimplifierOptimizer");
@@ -475,9 +475,9 @@ class LmdbOptimizerPipelineTest {
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		List<String> optimizers = optimizers(new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics()).getOptimizers())
-				.stream()
-				.map(optimizer -> optimizer.getClass().getSimpleName())
-				.collect(Collectors.toList());
+						.stream()
+						.map(optimizer -> optimizer.getClass().getSimpleName())
+						.collect(Collectors.toList());
 
 		int guaranteeIndex = optimizers.indexOf("Lmdb" + "GuaranteeFilterOptimizer");
 
@@ -581,7 +581,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-				.getOptimizers()) {
+						.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
@@ -604,7 +604,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-				.getOptimizers()) {
+						.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
@@ -834,7 +834,7 @@ class LmdbOptimizerPipelineTest {
 
 			@Override
 			public void meet(ValueConstant node) {
-				if (node.getValue() instanceof Literal literal && "1.5".equals(literal.getLabel())) {
+				if (node.getValue()instanceof Literal literal && "1.5".equals(literal.getLabel())) {
 					node.setValue(SimpleValueFactory.getInstance().createLiteral(new BigDecimal("1.5")));
 				}
 			}
@@ -872,7 +872,7 @@ class LmdbOptimizerPipelineTest {
 		try {
 			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 					new EvaluationStatistics())
-					.getOptimizers()) {
+							.getOptimizers()) {
 				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 			}
 			String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -905,7 +905,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-				.getOptimizers()) {
+						.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -941,7 +941,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-				.getOptimizers()) {
+						.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -978,7 +978,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-				.getOptimizers()) {
+						.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1014,7 +1014,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-				.getOptimizers()) {
+						.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1050,7 +1050,7 @@ class LmdbOptimizerPipelineTest {
 
 			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 					new LmdbEvaluationStatistics(valueStore, null, null))
-					.getOptimizers()) {
+							.getOptimizers()) {
 				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 			}
 			String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1100,7 +1100,7 @@ class LmdbOptimizerPipelineTest {
 
 			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 					new LmdbEvaluationStatistics(valueStore, null, null))
-					.getOptimizers()) {
+							.getOptimizers()) {
 				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 			}
 			String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1137,7 +1137,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new FallbackJoinFactorStatistics())
-				.getOptimizers()) {
+						.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 		String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1169,7 +1169,7 @@ class LmdbOptimizerPipelineTest {
 		try {
 			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 					new FallbackJoinFactorStatistics())
-					.getOptimizers()) {
+							.getOptimizers()) {
 				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 			}
 			String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1219,7 +1219,7 @@ class LmdbOptimizerPipelineTest {
 
 			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 					new LmdbEvaluationStatistics(valueStore, null, estimator, null, null))
-					.getOptimizers()) {
+							.getOptimizers()) {
 				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 			}
 			String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1259,7 +1259,7 @@ class LmdbOptimizerPipelineTest {
 		try {
 			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 					new EvaluationStatistics())
-					.getOptimizers()) {
+							.getOptimizers()) {
 				optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 			}
 			String diagnosticPlan = diagnosticPlan(tupleExpr);
@@ -1289,7 +1289,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new FixedFilterPassStatistics(0.50d))
-				.getOptimizers()) {
+						.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
@@ -1316,7 +1316,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-				.getOptimizers()) {
+						.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
@@ -1465,7 +1465,7 @@ class LmdbOptimizerPipelineTest {
 
 			@Override
 			public void meet(Filter node) {
-				if (node.getArg() instanceof BindingSetAssignment assignment) {
+				if (node.getArg()instanceof BindingSetAssignment assignment) {
 					Set<String> conditionVars = VarNameCollector.process(node.getCondition());
 					if (!assignment.getBindingNames().containsAll(conditionVars)
 							&& !isJoinRightBindingPrefixFilter(node, assignment, conditionVars)) {
@@ -2070,11 +2070,11 @@ class LmdbOptimizerPipelineTest {
 			return;
 		}
 		if (valueExpr instanceof ListMemberOperator list) {
-			if (!list.getArguments().isEmpty() && list.getArguments().getFirst() instanceof Var var
+			if (!list.getArguments().isEmpty() && list.getArguments().getFirst()instanceof Var var
 					&& bindingName.equals(var.getName())) {
 				for (int i = 1; i < list.getArguments().size(); i++) {
 					ValueExpr argument = list.getArguments().get(i);
-					if (argument instanceof ValueConstant constant && constant.getValue() instanceof Literal literal) {
+					if (argument instanceof ValueConstant constant && constant.getValue()instanceof Literal literal) {
 						values.add(literal.getLabel());
 					}
 				}

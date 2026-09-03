@@ -31,23 +31,11 @@ public record VariableEstimate(double distinctRows, double boundRows, double nul
 		return new VariableEstimate(Math.min(distinctRows, Math.max(1.0d, rows)), rows, nullableRows, sketch);
 	}
 
-	public VariableEstimate withNullableRows(double rows) {
-		return new VariableEstimate(distinctRows, boundRows, rows, sketch);
-	}
-
 	public VariableEstimate scale(double factor) {
 		double safe = Double.isFinite(factor) && factor >= 0.0d ? factor : 1.0d;
 		DistributionSketch scaledSketch = Math.abs(safe - 1.0d) < 0.000000001d ? sketch : null;
 		return new VariableEstimate(Math.min(distinctRows, boundRows * safe), boundRows * safe, nullableRows * safe,
 				scaledSketch);
-	}
-
-	public VariableEstimate plus(VariableEstimate other) {
-		if (other == null) {
-			return this;
-		}
-		return new VariableEstimate(distinctRows + other.distinctRows, boundRows + other.boundRows,
-				nullableRows + other.nullableRows, sketch);
 	}
 
 	private static double finiteNonNegative(double value) {

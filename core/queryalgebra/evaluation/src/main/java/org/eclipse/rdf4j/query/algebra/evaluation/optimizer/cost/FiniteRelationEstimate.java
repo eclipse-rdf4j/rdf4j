@@ -113,11 +113,6 @@ public record FiniteRelationEstimate(List<String> variables, Map<List<Value>, Do
 		return stableFrequencyMap(grouped);
 	}
 
-	public Optional<FiniteRelationEstimate> retainIfVariablesRemain(Collection<String> retainedVariables) {
-		return retainedVariables != null && retainedVariables.containsAll(variables) ? Optional.of(this)
-				: Optional.empty();
-	}
-
 	public Optional<FiniteRelationEstimate> projectTo(Collection<String> retainedVariables, String source) {
 		if (retainedVariables == null || retainedVariables.isEmpty()) {
 			return Optional.empty();

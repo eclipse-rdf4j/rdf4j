@@ -84,42 +84,6 @@ public final class FrontierExactPayloadSnapshot {
 		return new FrontierExactPayloadSnapshot(key, block);
 	}
 
-	public long snapshotStoreIdHigh() {
-		return snapshotStoreIdHigh;
-	}
-
-	public long snapshotStoreIdLow() {
-		return snapshotStoreIdLow;
-	}
-
-	public long snapshotEpoch() {
-		return snapshotEpoch;
-	}
-
-	public FrontierLaneFamily laneFamily() {
-		return laneFamily;
-	}
-
-	public int laneIndex() {
-		return laneIndex;
-	}
-
-	public int seedVersion() {
-		return seedVersion;
-	}
-
-	public int width() {
-		return width;
-	}
-
-	public int stratumCount() {
-		return stratumCount;
-	}
-
-	public int wordCount() {
-		return wordCount;
-	}
-
 	public long maskWord(int stratum, int word) {
 		if (stratum < 0 || stratum >= stratumCount || word < 0 || word >= wordCount) {
 			throw new IndexOutOfBoundsException("exact payload snapshot mask coordinate");

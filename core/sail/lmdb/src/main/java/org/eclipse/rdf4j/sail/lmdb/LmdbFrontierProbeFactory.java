@@ -75,11 +75,6 @@ final class LmdbFrontierProbeFactory {
 		}
 	}
 
-	static FrontierLeafProbe probe(ValueStore valueStore, Value subject, Value predicate, Value object, Value context,
-			int planeMask) {
-		return probe(valueStore, subject, predicate, object, context, planeMask, 0);
-	}
-
 	static FrontierLeafProbe probeForLineage(ValueStore valueStore, TupleExpr expression, int planeMask) {
 		return probeForLineage(valueStore, expression, Map.of(), planeMask);
 	}
@@ -177,17 +172,6 @@ final class LmdbFrontierProbeFactory {
 						crossComponentPairMask);
 	}
 
-	static FrontierJoinProgram joinProgram(ValueStore valueStore, List<StatementPattern> patterns, int planeMask) {
-		if (patterns == null) {
-			return null;
-		}
-		List<StatementLineage> lineages = new ArrayList<>(patterns.size());
-		for (StatementPattern pattern : patterns) {
-			lineages.add(statementLineage(pattern));
-		}
-		return joinLineageProgram(valueStore, lineages, planeMask);
-	}
-
 	static FrontierJoinProgram joinProgramForLineage(ValueStore valueStore, List<? extends TupleExpr> factors,
 			int planeMask) {
 		return joinProgramForLineage(valueStore, factors, Map.of(), planeMask);
@@ -207,11 +191,6 @@ final class LmdbFrontierProbeFactory {
 			lineages.add(lineage);
 		}
 		return joinLineageProgram(valueStore, lineages, fixedBindings, planeMask);
-	}
-
-	private static FrontierJoinProgram joinLineageProgram(ValueStore valueStore, List<StatementLineage> lineages,
-			int planeMask) {
-		return joinLineageProgram(valueStore, lineages, Map.of(), planeMask);
 	}
 
 	private static FrontierJoinProgram joinLineageProgram(ValueStore valueStore, List<StatementLineage> lineages,

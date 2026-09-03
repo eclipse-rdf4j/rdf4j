@@ -239,8 +239,4 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 		return recordIt.getDistinctCursorSkipSeekCountActual();
 	}
 
-	@Override
-	public long getSkipAheadSeekCountActual() {
-		return recordIt.getSkipAheadSeekCountActual();
-	}
 }

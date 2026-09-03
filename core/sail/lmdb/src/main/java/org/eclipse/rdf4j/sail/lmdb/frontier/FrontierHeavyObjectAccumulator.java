@@ -147,10 +147,6 @@ final class FrontierHeavyObjectAccumulator {
 		return new Snapshot(predicateColumn, objectColumn, countColumn, defaultContextCountColumn);
 	}
 
-	long allocatedBytes() {
-		return estimatedHeapBytes(predicates.length, maximumEntries);
-	}
-
 	static long estimatedHeapBytes(int predicateCount, int maximumEntries) {
 		long groups = Math.multiplyExact((long) predicateCount,
 				2L * Integer.BYTES + 2L * Integer.BYTES + Byte.BYTES + 16L);

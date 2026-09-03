@@ -42,11 +42,6 @@ final class LmdbEstimatorStorageAccess {
 	private final FrontierEstimatorMode statisticsMode;
 
 	LmdbEstimatorStorageAccess(ValueStore valueStore, TripleStore tripleStore,
-			LmdbStatementPatternCardinalitySource cardinalities, BooleanSupplier mayHaveInferred) {
-		this(valueStore, tripleStore, cardinalities, mayHaveInferred, null, FrontierEstimatorMode.OFF);
-	}
-
-	LmdbEstimatorStorageAccess(ValueStore valueStore, TripleStore tripleStore,
 			LmdbStatementPatternCardinalitySource cardinalities, BooleanSupplier mayHaveInferred,
 			LmdbStatisticsService statistics) {
 		this(valueStore, tripleStore, cardinalities, mayHaveInferred, statistics,

@@ -569,7 +569,7 @@ class TripleStoreFrontierMutationJournalLifecycleTest {
 		try {
 			method.invoke(store, coveredSequence);
 		} catch (InvocationTargetException e) {
-			if (e.getCause() instanceof Exception exception) {
+			if (e.getCause()instanceof Exception exception) {
 				throw exception;
 			}
 			throw e;

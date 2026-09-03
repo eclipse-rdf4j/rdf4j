@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost;
 
 import java.util.Map;
 import java.util.OptionalDouble;
-import java.util.Set;
 
 public record SketchEvidence(VariableSetKey key, DistributionSketch sketch, double rows, double distinctRows,
 		EvidenceQuality quality, String provenance, boolean current, boolean stale) {
@@ -34,11 +33,6 @@ public record SketchEvidence(VariableSetKey key, DistributionSketch sketch, doub
 		}
 		quality = quality == null ? EvidenceQuality.HEURISTIC : quality;
 		provenance = provenance == null || provenance.isBlank() ? "unknown" : provenance;
-	}
-
-	public static SketchEvidence of(Set<String> names, DistributionSketch sketch, double rows, double distinctRows,
-			EvidenceQuality quality, String provenance) {
-		return new SketchEvidence(VariableSetKey.of(names), sketch, rows, distinctRows, quality, provenance);
 	}
 
 	public SketchEvidence rebaseRows(double rows, String provenance) {

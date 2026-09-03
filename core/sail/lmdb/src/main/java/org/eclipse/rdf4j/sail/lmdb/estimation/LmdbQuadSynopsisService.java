@@ -81,13 +81,6 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 				buildExecutor, false, System::nanoTime);
 	}
 
-	LmdbQuadSynopsisService(SketchStatementSource statementSource, long memoryBudgetBytes,
-			int coldSampleCapacity, long throttleEveryN, long throttleMillis,
-			DerivedStateBuildExecutor buildExecutor, LongSupplier nanoTime) {
-		this(statementSource, memoryBudgetBytes, coldSampleCapacity, throttleEveryN, throttleMillis,
-				buildExecutor, false, nanoTime);
-	}
-
 	private LmdbQuadSynopsisService(SketchStatementSource statementSource, long memoryBudgetBytes,
 			int coldSampleCapacity, long throttleEveryN, long throttleMillis,
 			DerivedStateBuildExecutor buildExecutor, boolean ownsBuildExecutor, LongSupplier nanoTime) {

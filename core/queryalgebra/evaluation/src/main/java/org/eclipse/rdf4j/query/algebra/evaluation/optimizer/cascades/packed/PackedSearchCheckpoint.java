@@ -27,7 +27,6 @@ final class PackedSearchCheckpoint {
 	}
 
 	private final PackedQueryFamilyIdentity familyIdentity;
-	private final PackedQuery parameterizedQueryTemplate;
 	private final Phase phase;
 	private final PackedSearchCompletionStatus completionStatus;
 	private final PackedPlanRecipe continuationRecipe;
@@ -39,8 +38,6 @@ final class PackedSearchCheckpoint {
 	private final int[] costPruningRecords;
 	private final long[] costPruningEvidenceGenerations;
 	private final double[] costPruningMargins;
-	private final long searchSpaceGeneration;
-	private final long evidenceGeneration;
 	private final long cumulativeWorkUnits;
 	private final long retainedBytes;
 
@@ -51,7 +48,6 @@ final class PackedSearchCheckpoint {
 			double[] costPruningMargins, long searchSpaceGeneration, long evidenceGeneration,
 			long cumulativeWorkUnits) {
 		this.familyIdentity = Objects.requireNonNull(familyIdentity, "familyIdentity").detached();
-		parameterizedQueryTemplate = this.familyIdentity.parameterizedQueryTemplate();
 		this.phase = Objects.requireNonNull(phase, "phase");
 		this.completionStatus = Objects.requireNonNull(completionStatus, "completionStatus");
 		this.continuationRecipe = Objects.requireNonNull(continuationRecipe, "continuationRecipe");
@@ -70,8 +66,6 @@ final class PackedSearchCheckpoint {
 		if (searchSpaceGeneration < 0L || evidenceGeneration < 0L || cumulativeWorkUnits < 0L) {
 			throw new IllegalArgumentException("checkpoint generations and work must be nonnegative");
 		}
-		this.searchSpaceGeneration = searchSpaceGeneration;
-		this.evidenceGeneration = evidenceGeneration;
 		this.cumulativeWorkUnits = cumulativeWorkUnits;
 		retainedBytes = retainedBytes();
 	}
@@ -130,10 +124,6 @@ final class PackedSearchCheckpoint {
 			throw new IllegalArgumentException("packed search checkpoint family does not match invocation");
 		}
 		return invocation.concreteQuery();
-	}
-
-	PackedQuery parameterizedQueryTemplate() {
-		return parameterizedQueryTemplate;
 	}
 
 	private static int[] copy(int[] values) {

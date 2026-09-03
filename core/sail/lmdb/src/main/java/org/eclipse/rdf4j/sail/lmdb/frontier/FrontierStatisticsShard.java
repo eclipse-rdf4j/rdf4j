@@ -490,7 +490,6 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 		private final int bitWidth;
 		private final long rowCount;
 		private final long baseValue;
-		private final long minimumValue;
 		private final BlockReader[] blocks;
 		private final BlockReader singleBlock;
 		private static final int MAX_BLOCK_FENCES = 1 << 10;
@@ -508,7 +507,6 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 			this.bitWidth = bitWidth;
 			this.rowCount = rowCount;
 			this.baseValue = baseValue;
-			this.minimumValue = minimumValue;
 			this.blocks = blocks;
 			this.singleBlock = blocks.length == 1 ? blocks[0] : null;
 			long regularRows = regularBlockRows(blocks);
@@ -521,20 +519,12 @@ public final class FrontierStatisticsShard implements AutoCloseable {
 			this.firstDataOffset = firstDataOffset;
 		}
 
-		public int columnId() {
-			return columnId;
-		}
-
 		public int bitWidth() {
 			return bitWidth;
 		}
 
 		public long rowCount() {
 			return rowCount;
-		}
-
-		public long minimumValue() {
-			return minimumValue;
 		}
 
 		public long value(long row) throws IOException {
