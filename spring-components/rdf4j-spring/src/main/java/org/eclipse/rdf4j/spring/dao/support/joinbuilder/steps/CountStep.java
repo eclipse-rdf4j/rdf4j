@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.spring.dao.support.joinbuilder.steps;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 
+/** Configures count result variants. */
 public interface CountStep extends BuildCountStep {
 	BuildCountGroupedStep groupBy(Variable variable);
 }

@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.spring.dao.support.joinbuilder.JoinQuery;
 import org.eclipse.rdf4j.spring.dao.support.joinbuilder.evaluationbuilder.JoinQueryCountEvaluationBuilder;
 import org.eclipse.rdf4j.spring.dao.support.joinbuilder.queryfactory.JoinCountQueryFactory;
 
+/** Builds a count join query or reusable factory. */
 public interface BuildCountStep extends DoNotCacheSparqlStep<BuildCountStep> {
 	JoinQuery<JoinQueryCountEvaluationBuilder> build();
 

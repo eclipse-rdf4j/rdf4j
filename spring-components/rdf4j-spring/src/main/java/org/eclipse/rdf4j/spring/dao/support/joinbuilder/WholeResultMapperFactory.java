@@ -15,5 +15,6 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 
+/** Creates a whole-result mapper for a target identifier variable. */
 public interface WholeResultMapperFactory<T> extends Function<Variable, WholeResultMapper<T>> {
 }

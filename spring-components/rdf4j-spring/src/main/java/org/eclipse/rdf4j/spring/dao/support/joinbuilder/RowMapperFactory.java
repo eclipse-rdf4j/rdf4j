@@ -22,5 +22,6 @@ import org.eclipse.rdf4j.spring.dao.support.BindingSetMapper;
  *
  * @param <T>
  */
+/** Creates a mapper for the target entity identified by the supplied SPARQL variable. */
 public interface RowMapperFactory<T> extends Function<Variable, BindingSetMapper<T>> {
 }

@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.spring.dao.support.joinbuilder.JoinQuery;
 import org.eclipse.rdf4j.spring.dao.support.joinbuilder.evaluationbuilder.JoinQueryEntityEvaluationBuilder;
 import org.eclipse.rdf4j.spring.dao.support.joinbuilder.queryfactory.JoinEntityQueryFactory;
 
+/** Builds an entity-mapped join query or reusable factory. */
 public interface BuildEntitiesStep<T> extends DoNotCacheSparqlStep<BuildEntitiesStep<T>> {
 	JoinQuery<JoinQueryEntityEvaluationBuilder<T>> build();
 

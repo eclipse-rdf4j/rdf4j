@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -62,11 +63,16 @@ import org.slf4j.LoggerFactory;
  */
 public class JoinQueryBuilder {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+	private static final AtomicLong QUERY_SEQUENCE = new AtomicLong();
 	private static final Iri NOTHING = Rdf.iri("nothing:found_" + new Random(System.currentTimeMillis()).nextInt());
+	/** No-op graph-pattern configuration. */
 	public static final Function<Variable, GraphPattern> MAP_TO_NULL_GRAPHPATTERN = var -> null;
+	/** No-op relation graph-pattern configuration. */
 	public static final BiFunction<Variable, Variable, GraphPattern> MAP_2VARS_TO_NULL_GRAPHPATTERN = (var1,
 			var2) -> null;
+	/** No-op target projection configuration. */
 	public static final Function<Variable, Projectable[]> MAP_TO_NULL_PROJECTABLES = var -> null;
+	/** No-op target row-mapper configuration. */
 	public static final RowMapperFactory<?> MAP_TO_NULL_ROWMAPPERFACTORY = var -> null;
 	private final RdfPredicate predicate;
 
@@ -116,18 +122,22 @@ public class JoinQueryBuilder {
 		this.predicate = iri(predicate);
 	}
 
+	/** Starts a join query using an RDF predicate relation. */
 	public static SourceEntityConstraintsStep of(RdfPredicate rdfPredicate) {
 		return new JoinQueryBuilder(rdfPredicate).defaultBuilder();
 	}
 
+	/** Starts a join query using a predicate IRI relation. */
 	public static SourceEntityConstraintsStep of(IRI predicate) {
 		return new JoinQueryBuilder(predicate).defaultBuilder();
 	}
 
+	/** Starts a join query using a SPARQL property path relation. */
 	public static SourceEntityConstraintsStep of(PropertyPath propertyPath) {
 		return new JoinQueryBuilder(propertyPath).defaultBuilder();
 	}
 
+	/** Starts a join query using a property-path builder. */
 	public static SourceEntityConstraintsStep of(PropertyPathBuilder propertyPathBuilder) {
 		return of(propertyPathBuilder.build());
 	}
@@ -149,20 +159,25 @@ public class JoinQueryBuilder {
         public JoinQuery<JoinQueryDefaultEvaluationBuilder> build() {
             String queryString = makeQueryString();
             JoinType configuredJoinType = joinType;
+            Variable configuredContextIdVariable = contextIdVariable;
+            boolean configuredCacheable = isSparqlQueryCacheable();
+            String configuredCacheKey = nextCacheKey();
 
             return new JoinQuery<>(
                     template -> {
                         logRepositoryConnection(template);
                         return new JoinQueryDefaultEvaluationBuilder(
-                                makeTupleQueryAndCacheIfPossible(template, queryString),
+                                makeTupleQueryAndCacheIfPossible(
+                                        template, queryString, configuredCacheable, configuredCacheKey),
                                 configuredJoinType,
-                                contextIdVariable);
+                                configuredContextIdVariable);
                     });
         }
 
 		@Override
 		public JoinDefaultQueryFactory buildFactory() {
-			return new JoinDefaultQueryFactory(this::build);
+			JoinQuery<JoinQueryDefaultEvaluationBuilder> query = build();
+			return new JoinDefaultQueryFactory(() -> query);
 		}
 
 		@Override
@@ -306,33 +321,48 @@ public class JoinQueryBuilder {
 		public JoinQuery<JoinQueryEntityEvaluationBuilder<T>> build() {
 			String queryString = makeQueryString();
 			JoinType configuredJoinType = joinType;
+			Variable configuredContextIdVariable = contextIdVariable;
+			@SuppressWarnings("unchecked")
+			BindingSetMapper<T> configuredRowMapper =
+					(BindingSetMapper<T>) rowMapperFactory.apply(JoinQuery._targetEntity);
+			boolean configuredCacheable = isSparqlQueryCacheable();
+			String configuredCacheKey = nextCacheKey();
 			return new JoinQuery<>(
 					template -> {
 						logRepositoryConnection(template);
 						return new JoinQueryEntityEvaluationBuilder<>(
-								makeTupleQueryAndCacheIfPossible(template, queryString),
+								makeTupleQueryAndCacheIfPossible(
+										template, queryString, configuredCacheable, configuredCacheKey),
 								configuredJoinType,
-								(BindingSetMapper<T>) rowMapperFactory.apply(JoinQuery._targetEntity),
-								contextIdVariable);
+								configuredRowMapper,
+								configuredContextIdVariable);
 					});
 		}
 
 		@Override
 		public JoinEntityQueryFactory<T> buildFactory() {
-			return new JoinEntityQueryFactory<>(this::build);
+			JoinQuery<JoinQueryEntityEvaluationBuilder<T>> query = build();
+			return new JoinEntityQueryFactory<>(() -> query);
 		}
 	}
 
 	private TupleQueryEvaluationBuilder makeTupleQueryAndCacheIfPossible(
-			RDF4JTemplate template, String queryString) {
-		if (isSparqlQueryCacheable()) {
-			return template.tupleQuery(
-					getClass(),
-					this.getClass().getName() + "@" + this.hashCode(),
-					() -> queryString);
-		} else {
-			return template.tupleQuery(queryString);
+			RDF4JTemplate template,
+			String queryString,
+			boolean cacheable,
+			String cacheKey) {
+		if (cacheable) {
+			return template.tupleQuery(getClass(), cacheKey, () -> queryString);
 		}
+		return template.tupleQuery(queryString);
+	}
+
+	private String nextCacheKey() {
+		return getClass().getName()
+				+ "@"
+				+ System.identityHashCode(this)
+				+ "#"
+				+ QUERY_SEQUENCE.incrementAndGet();
 	}
 
 	/**
@@ -364,19 +394,24 @@ public class JoinQueryBuilder {
 		public JoinQuery<JoinQueryCountEvaluationBuilder> build() {
 			String queryString = makeQueryString();
 			JoinType configuredJoinType = joinType;
+			Variable configuredContextIdVariable = contextIdVariable;
+			boolean configuredCacheable = isSparqlQueryCacheable();
+			String configuredCacheKey = nextCacheKey();
 			return new JoinQuery<>(
 					template -> {
 						logRepositoryConnection(template);
 						return new JoinQueryCountEvaluationBuilder(
-								makeTupleQueryAndCacheIfPossible(template, queryString),
+								makeTupleQueryAndCacheIfPossible(
+										template, queryString, configuredCacheable, configuredCacheKey),
 								configuredJoinType,
-								JoinQueryBuilder.this.contextIdVariable);
+								configuredContextIdVariable);
 					});
 		}
 
 		@Override
 		public JoinCountQueryFactory buildFactory() {
-			return new JoinCountQueryFactory(this::build);
+			JoinQuery<JoinQueryCountEvaluationBuilder> query = build();
+			return new JoinCountQueryFactory(() -> query);
 		}
 	}
 
@@ -391,6 +426,10 @@ public class JoinQueryBuilder {
 		public JoinQuery<JoinQueryCountGroupedEvaluationBuilder> build() {
 			String queryString = makeQueryString();
 			JoinType configuredJoinType = joinType;
+			Variable configuredContextIdVariable = contextIdVariable;
+			Variable configuredGroupVariable = groupVariable;
+			boolean configuredCacheable = isSparqlQueryCacheable();
+			String configuredCacheKey = nextCacheKey();
 			if (logger.isDebugEnabled()) {
 				logger.debug("Generated query string: \n {}", queryString);
 			}
@@ -398,16 +437,18 @@ public class JoinQueryBuilder {
 					template -> {
 						logRepositoryConnection(template);
 						return new JoinQueryCountGroupedEvaluationBuilder(
-								makeTupleQueryAndCacheIfPossible(template, queryString),
+								makeTupleQueryAndCacheIfPossible(
+										template, queryString, configuredCacheable, configuredCacheKey),
 								configuredJoinType,
-								JoinQueryBuilder.this.groupVariable,
-								JoinQueryBuilder.this.contextIdVariable);
+								configuredGroupVariable,
+								configuredContextIdVariable);
 					});
 		}
 
 		@Override
 		public JoinCountGroupedQueryFactory buildFactory() {
-			return new JoinCountGroupedQueryFactory(this::build);
+			JoinQuery<JoinQueryCountGroupedEvaluationBuilder> query = build();
+			return new JoinCountGroupedQueryFactory(() -> query);
 		}
 	}
 
@@ -482,6 +523,20 @@ public class JoinQueryBuilder {
 		return groupables.toArray(new Groupable[0]);
 	}
 
+	static Projectable[] addRequiredTargetProjection(Projectable[] projections) {
+		List<Projectable> result = new ArrayList<>();
+		result.add(JoinQuery._targetEntity);
+		if (projections != null) {
+			for (Projectable projection : projections) {
+				if (!(projection instanceof Variable variable)
+							|| !variable.getVarName().equals(JoinQuery._targetEntity.getVarName())) {
+					result.add(projection);
+			}
+			}
+		}
+		return result.toArray(new Projectable[0]);
+	}
+
 	private Projectable[] getOuterProjection() {
 		if (this.queryVariant == QueryVariant.IDS) {
 			return null;
@@ -492,11 +547,10 @@ public class JoinQueryBuilder {
 		}
 
 		if (this.queryVariant == QueryVariant.ENTITIES) {
-			Projectable[] entityProjection = this.projection.apply(JoinQuery._targetEntity);
+			Projectable[] entityProjection =
+					addRequiredTargetProjection(this.projection.apply(JoinQuery._targetEntity));
 			projectables.add(JoinQuery._sourceEntity);
-			if (entityProjection != null) {
-				projectables.addAll(Arrays.asList(entityProjection));
-			}
+			projectables.addAll(Arrays.asList(entityProjection));
 		} else if (this.queryVariant == QueryVariant.COUNT) {
 			if (this.groupVariable != null) {
 				projectables.add(JoinQuery._sourceEntity);

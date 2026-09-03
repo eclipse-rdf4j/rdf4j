@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.spring.dao.support.joinbuilder.JoinQuery;
 import org.eclipse.rdf4j.spring.dao.support.joinbuilder.evaluationbuilder.JoinQueryDefaultEvaluationBuilder;
 import org.eclipse.rdf4j.spring.dao.support.joinbuilder.queryfactory.JoinDefaultQueryFactory;
 
+/** Builds an identifier-based join query or reusable factory. */
 public interface BuildDefaultStep extends DoNotCacheSparqlStep<BuildDefaultStep> {
 	JoinQuery<JoinQueryDefaultEvaluationBuilder> build();
 
