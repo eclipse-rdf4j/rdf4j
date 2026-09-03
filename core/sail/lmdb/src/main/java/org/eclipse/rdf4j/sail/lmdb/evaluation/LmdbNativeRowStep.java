@@ -263,6 +263,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	final int[] orderSlots;
 	final boolean[] orderAscending;
 	final NativeSortLayout sortLayout;
+	final NativeProjectedBindingSet.ProjectionLayout projectionLayout;
+	final NativeProjectedBindingSet.ProjectionLayout sortProjectionLayout;
 	final long offset;
 	final long limit;
 	final boolean strictCompare;
@@ -319,6 +321,9 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		this.orderSlots = orderSlots;
 		this.orderAscending = orderAscending;
 		this.sortLayout = NativeSortLayout.create(layout.slotNames().length, sourceSlots, orderSlots);
+		this.projectionLayout = NativeProjectedBindingSet.ProjectionLayout.create(targetNames, sourceSlots);
+		this.sortProjectionLayout = NativeProjectedBindingSet.ProjectionLayout.create(targetNames,
+				this.sortLayout.sourceSlots);
 		this.offset = offset;
 		this.limit = limit;
 		this.strictCompare = strictCompare;
@@ -1523,19 +1528,31 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	}
 
 	BindingSet project(long[] slots, AggContext values) {
-		return project(slots, values, sourceSlots);
+		return project(slots, values, projectionLayout);
 	}
 
 	BindingSet project(long[] slots, AggContext values, int[] projectionSlots) {
+		NativeProjectedBindingSet.ProjectionLayout activeProjection = projectionSlots == sourceSlots
+				? projectionLayout
+				: projectionSlots == sortLayout.sourceSlots
+						? sortProjectionLayout
+						: NativeProjectedBindingSet.ProjectionLayout.create(targetNames, projectionSlots);
+		return project(slots, values, activeProjection);
+	}
+
+	private BindingSet project(long[] slots, AggContext values,
+			NativeProjectedBindingSet.ProjectionLayout activeProjection) {
 		if (NativeProjectedBindingSet.enabled() && values.source != null
-				&& !containsEvaluationScopedId(values.source, slots, projectionSlots)) {
-			return new NativeProjectedBindingSet(values.source, targetNames, projectionSlots, slots);
+				&& !containsEvaluationScopedId(values.source, slots, activeProjection.sourceSlots)) {
+			return new NativeProjectedBindingSet(values.source, activeProjection, slots);
 		}
-		QueryBindingSet result = new QueryBindingSet(targetNames.length);
-		for (int i = 0; i < targetNames.length; i++) {
-			long id = slots[projectionSlots[i]];
-			if (id != UNKNOWN && id != NULL_CONTEXT_ID) {
-				result.addBinding(targetNames[i], values.value(id));
+		long[] projectedIds = new long[activeProjection.names.length];
+		activeProjection.copyIds(slots, projectedIds);
+		QueryBindingSet result = new QueryBindingSet(activeProjection.names.length);
+		for (int i = 0; i < activeProjection.names.length; i++) {
+			long id = projectedIds[i];
+			if (NativeProjectedBindingSet.isBound(id)) {
+				result.addBinding(activeProjection.names[i], values.value(id));
 			}
 		}
 		return result;

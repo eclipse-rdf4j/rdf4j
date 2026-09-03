@@ -14,6 +14,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIOException;
 
 import java.io.File;
 import java.io.IOException;
@@ -22,6 +23,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -31,6 +33,7 @@ import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -62,6 +65,7 @@ public class LmdbNativePropertyPathTest {
 	private static final String PATH_MEMO_ENABLED = "rdf4j.lmdb.nativePath.memo.enabled";
 	private static final String PATH_MEMO_MAX_VALUES = "rdf4j.lmdb.nativePath.memo.maxValues";
 	private static final String PATH_TARGETS_ENABLED = "rdf4j.lmdb.nativePath.targets.enabled";
+	private static final String PATH_TARGETS_MAX_VALUES = "rdf4j.lmdb.nativePath.targets.maxValues";
 	private static final String PATH_ADJACENCY_SEEDS_ENABLED = "rdf4j.lmdb.nativePath.adjacencySeeds.enabled";
 	private static final String PATH_BIDIRECTIONAL_ENABLED = "rdf4j.lmdb.nativePath.bidirectional.enabled";
 	private static final String PATH_FRONTIER_PARALLEL_MIN = "rdf4j.lmdb.nativePath.frontier.parallelMin";
@@ -1121,6 +1125,317 @@ public class LmdbNativePropertyPathTest {
 	}
 
 	@Test
+	public void rightRecursiveNestedJoinBuildsPatternTargetsOnceAcrossDrivingRows() throws Exception {
+		PathGraphSource source = new PathGraphSource(new long[][] {
+				{ 10L, 20L }, { 10L, 30L }, { 20L, 40L }, { 30L, 50L }
+		});
+		SingletonSet telemetry = new SingletonSet();
+		telemetry.setRuntimeTelemetryEnabled(true);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("start", 0, "target", 1), null);
+		layout.freeze(List.of("start", "target"));
+		RowState row = new RowState(source, layout, new QueryBindingSet(), telemetry);
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		row.recomputeBoundMask();
+		PatternPlan step = new PatternPlan(Term.slot(0), Term.constant(PathGraphSource.PREDICATE), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 4D);
+		PathPlan path = new PathPlan(step, 0, NativeLmdbQuerySource.UNKNOWN_ID, 1,
+				NativeLmdbQuerySource.UNKNOWN_ID, TripleIndex.SUBJ_IDX, TripleIndex.OBJ_IDX, false);
+		ValuesPlan drivers = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { 0 }, new long[] { 10L }),
+				new ValuesRow(new int[] { 0 }, new long[] { 10L })
+		});
+		PatternPlan targetPattern = new PatternPlan(Term.slot(1), Term.constant(PathGraphSource.PREDICATE),
+				Term.constant(40L), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+		JoinPlan nested = new JoinPlan(drivers, new JoinPlan(path, targetPattern));
+
+		int rows = 0;
+		try (RowCursor cursor = nested.open(row)) {
+			while (cursor.next()) {
+				rows++;
+			}
+		}
+
+		assertThat(rows).isEqualTo(2);
+		assertThat(telemetry.getLongMetricActual("nativePathTargetBuildRowsActual"))
+				.as("the uncorrelated pattern target scan should be shared across driving rows")
+				.isEqualTo(1L);
+	}
+
+	@Test
+	public void rightRecursiveHoistStopsAtCorrelatedPatternBinding() throws Exception {
+		PathGraphSource source = new PathGraphSource(new long[][] {
+				{ 10L, 20L }, { 20L, 40L }, { 30L, 35L }, { 35L, 50L }
+		}, 1D);
+		SingletonSet telemetry = new SingletonSet();
+		telemetry.setRuntimeTelemetryEnabled(true);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("start", 0, "target", 1, "qualifier", 2), null);
+		layout.freeze(List.of("start", "target", "qualifier"));
+		RowState row = new RowState(source, layout, new QueryBindingSet(), telemetry);
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		row.recomputeBoundMask();
+		PatternPlan step = new PatternPlan(Term.slot(0), Term.constant(PathGraphSource.PREDICATE), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 4D);
+		PathPlan path = new PathPlan(step, 0, NativeLmdbQuerySource.UNKNOWN_ID, 1,
+				NativeLmdbQuerySource.UNKNOWN_ID, TripleIndex.SUBJ_IDX, TripleIndex.OBJ_IDX, false);
+		ValuesPlan drivers = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { 0, 2 }, new long[] { 10L, 40L }),
+				new ValuesRow(new int[] { 0, 2 }, new long[] { 30L, 50L })
+		});
+		PatternPlan targetPattern = new PatternPlan(Term.slot(1), Term.constant(PathGraphSource.PREDICATE),
+				Term.slot(2), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+		JoinPlan nested = new JoinPlan(drivers, new JoinPlan(path, targetPattern));
+
+		int rows = 0;
+		try (RowCursor cursor = nested.open(row)) {
+			while (cursor.next()) {
+				rows++;
+			}
+		}
+
+		assertThat(rows).isEqualTo(2);
+		assertThat(source.targetPatternSweepOpens).hasValue(2);
+		assertThat(telemetry.getLongMetricActual("nativePathTargetBuildRowsActual")).isEqualTo(2L);
+		assertThat(telemetry.getLongMetricActual("nativePathTargetsActual")).isEqualTo(2L);
+	}
+
+	@Test
+	public void broadPatternTargetEstimateRefusesWithoutScanning() throws Exception {
+		PathGraphSource source = new PathGraphSource(new long[][] {
+				{ 10L, 20L }, { 10L, 30L }, { 20L, 40L }, { 30L, 50L }
+		});
+		SingletonSet telemetry = new SingletonSet();
+		telemetry.setRuntimeTelemetryEnabled(true);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("start", 0, "target", 1), null);
+		layout.freeze(List.of("start", "target"));
+		RowState row = new RowState(source, layout, new QueryBindingSet(), telemetry);
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		row.recomputeBoundMask();
+		PatternPlan step = new PatternPlan(Term.slot(0), Term.constant(PathGraphSource.PREDICATE), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 4D);
+		PathPlan path = new PathPlan(step, 0, NativeLmdbQuerySource.UNKNOWN_ID, 1,
+				NativeLmdbQuerySource.UNKNOWN_ID, TripleIndex.SUBJ_IDX, TripleIndex.OBJ_IDX, false);
+		ValuesPlan drivers = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { 0 }, new long[] { 10L }),
+				new ValuesRow(new int[] { 0 }, new long[] { 10L })
+		});
+		PatternPlan targetPattern = new PatternPlan(Term.slot(1), Term.constant(PathGraphSource.PREDICATE),
+				Term.constant(40L), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 100D);
+		JoinPlan nested = new JoinPlan(drivers, new JoinPlan(path, targetPattern));
+
+		String previous = System.setProperty(PATH_TARGETS_MAX_VALUES, "2");
+		int rows = 0;
+		try {
+			try (RowCursor cursor = nested.open(row)) {
+				while (cursor.next()) {
+					rows++;
+				}
+			}
+		} finally {
+			restoreProperty(PATH_TARGETS_MAX_VALUES, previous);
+		}
+
+		assertThat(rows).isEqualTo(2);
+		assertThat(source.targetPatternSweepOpens).hasValue(0);
+		assertThat(telemetry.getLongMetricActual("nativePathTargetBuildRefusalsActual")).isEqualTo(1L);
+	}
+
+	@Test
+	public void underestimatedPatternTargetStopsAtRuntimeCapOnce() throws Exception {
+		PathGraphSource source = new PathGraphSource(new long[][] {
+				{ 10L, 20L }, { 10L, 30L }, { 20L, 99L }, { 30L, 99L }, { 40L, 99L }
+		});
+		SingletonSet telemetry = new SingletonSet();
+		telemetry.setRuntimeTelemetryEnabled(true);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("start", 0, "target", 1), null);
+		layout.freeze(List.of("start", "target"));
+		RowState row = new RowState(source, layout, new QueryBindingSet(), telemetry);
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		row.recomputeBoundMask();
+		PatternPlan step = new PatternPlan(Term.slot(0), Term.constant(PathGraphSource.PREDICATE), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 5D);
+		PathPlan path = new PathPlan(step, 0, NativeLmdbQuerySource.UNKNOWN_ID, 1,
+				NativeLmdbQuerySource.UNKNOWN_ID, TripleIndex.SUBJ_IDX, TripleIndex.OBJ_IDX, false);
+		ValuesPlan drivers = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { 0 }, new long[] { 10L }),
+				new ValuesRow(new int[] { 0 }, new long[] { 10L })
+		});
+		PatternPlan targetPattern = new PatternPlan(Term.slot(1), Term.constant(PathGraphSource.PREDICATE),
+				Term.constant(99L), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+		JoinPlan nested = new JoinPlan(drivers, new JoinPlan(path, targetPattern));
+
+		String previous = System.setProperty(PATH_TARGETS_MAX_VALUES, "2");
+		int rows = 0;
+		try {
+			try (RowCursor cursor = nested.open(row)) {
+				while (cursor.next()) {
+					rows++;
+				}
+			}
+		} finally {
+			restoreProperty(PATH_TARGETS_MAX_VALUES, previous);
+		}
+
+		assertThat(rows).isEqualTo(4);
+		assertThat(source.targetPatternSweepOpens).hasValue(1);
+		assertThat(telemetry.getLongMetricActual("nativePathTargetBuildRowsActual")).isEqualTo(3L);
+		assertThat(telemetry.getLongMetricActual("nativePathTargetBuildRefusalsActual")).isEqualTo(1L);
+	}
+
+	@Test
+	public void filterWrappedPatternTargetsRetainBagMultiplicity() throws Exception {
+		PathGraphSource source = new PathGraphSource(new long[][] {
+				{ 10L, 20L }, { 20L, 40L }, { 20L, 40L }
+		});
+		SingletonSet telemetry = new SingletonSet();
+		telemetry.setRuntimeTelemetryEnabled(true);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("start", 0, "target", 1), null);
+		layout.freeze(List.of("start", "target"));
+		RowState row = new RowState(source, layout, new QueryBindingSet(), telemetry);
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		row.recomputeBoundMask();
+		PatternPlan step = new PatternPlan(Term.slot(0), Term.constant(PathGraphSource.PREDICATE), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 3D);
+		PathPlan path = new PathPlan(step, 0, NativeLmdbQuerySource.UNKNOWN_ID, 1,
+				NativeLmdbQuerySource.UNKNOWN_ID, TripleIndex.SUBJ_IDX, TripleIndex.OBJ_IDX, false);
+		ValuesPlan drivers = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { 0 }, new long[] { 10L }),
+				new ValuesRow(new int[] { 0 }, new long[] { 10L })
+		});
+		PatternPlan targetPattern = new PatternPlan(Term.slot(1), Term.constant(PathGraphSource.PREDICATE),
+				Term.constant(40L), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 2D);
+		FilterPlan targetFilter = new FilterPlan(targetPattern, ignored -> true, 0L);
+		FilterPlan nestedFilter = new FilterPlan(new JoinPlan(path, targetFilter), ignored -> true, 0L);
+		JoinPlan nested = new JoinPlan(drivers, nestedFilter);
+
+		int rows = 0;
+		try (RowCursor cursor = nested.open(row)) {
+			while (cursor.next()) {
+				rows++;
+			}
+		}
+
+		assertThat(rows).isEqualTo(4);
+		assertThat(source.targetPatternSweepOpens).hasValue(1);
+		assertThat(telemetry.getLongMetricActual("nativePathTargetBuildRowsActual")).isEqualTo(2L);
+		assertThat(telemetry.getLongMetricActual("nativePathTargetsActual")).isEqualTo(1L);
+	}
+
+	@Test
+	public void earlyCloseClosesSharedPatternTargetsExactlyOnce() throws Exception {
+		PathGraphSource source = new PathGraphSource(new long[][] {
+				{ 10L, 20L }, { 20L, 40L }
+		});
+		SingletonSet telemetry = new SingletonSet();
+		telemetry.setRuntimeTelemetryEnabled(true);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("start", 0, "target", 1), null);
+		layout.freeze(List.of("start", "target"));
+		RowState row = new RowState(source, layout, new QueryBindingSet(), telemetry);
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		row.recomputeBoundMask();
+		PatternPlan step = new PatternPlan(Term.slot(0), Term.constant(PathGraphSource.PREDICATE), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 2D);
+		PathPlan path = new PathPlan(step, 0, NativeLmdbQuerySource.UNKNOWN_ID, 1,
+				NativeLmdbQuerySource.UNKNOWN_ID, TripleIndex.SUBJ_IDX, TripleIndex.OBJ_IDX, false);
+		ValuesPlan drivers = new ValuesPlan(new ValuesRow[] {
+				new ValuesRow(new int[] { 0 }, new long[] { 10L }),
+				new ValuesRow(new int[] { 0 }, new long[] { 10L })
+		});
+		PatternPlan targetPattern = new PatternPlan(Term.slot(1), Term.constant(PathGraphSource.PREDICATE),
+				Term.constant(40L), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+		JoinPlan nested = new JoinPlan(drivers, new JoinPlan(path, targetPattern));
+
+		RowCursor cursor = nested.open(row);
+		assertThat(cursor.next()).isTrue();
+		cursor.close();
+		cursor.close();
+
+		assertThat(telemetry.getLongMetricActual("nativePathTargetBuildRowsActual")).isEqualTo(1L);
+		assertThat(telemetry.getLongMetricActual("nativePathTargetsActual")).isEqualTo(1L);
+	}
+
+	@Test
+	public void openFailureClosesSharedPatternTargetsExactlyOnce() {
+		PathGraphSource source = new PathGraphSource(new long[][] {
+				{ 10L, 20L }, { 20L, 40L }
+		});
+		SingletonSet telemetry = new SingletonSet();
+		telemetry.setRuntimeTelemetryEnabled(true);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("start", 0, "target", 1), null);
+		layout.freeze(List.of("start", "target"));
+		RowState row = new RowState(source, layout, new QueryBindingSet(), telemetry);
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		row.recomputeBoundMask();
+		PatternPlan step = new PatternPlan(Term.slot(0), Term.constant(PathGraphSource.PREDICATE), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 2D);
+		PathPlan path = new PathPlan(step, 0, NativeLmdbQuerySource.UNKNOWN_ID, 1,
+				NativeLmdbQuerySource.UNKNOWN_ID, TripleIndex.SUBJ_IDX, TripleIndex.OBJ_IDX, false);
+		PatternPlan targetPattern = new PatternPlan(Term.slot(1), Term.constant(PathGraphSource.PREDICATE),
+				Term.constant(40L), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+		SlotPlan failingDriver = new SlotPlan() {
+			@Override
+			public RowCursor open(RowState ignored) throws IOException {
+				throw new IOException("expected driver failure");
+			}
+
+			@Override
+			public long producedMask() {
+				return 0L;
+			}
+		};
+		JoinPlan nested = new JoinPlan(failingDriver, new JoinPlan(path, targetPattern));
+
+		assertThatIOException().isThrownBy(() -> nested.open(row)).withMessage("expected driver failure");
+
+		assertThat(telemetry.getLongMetricActual("nativePathTargetBuildRowsActual")).isEqualTo(1L);
+		assertThat(telemetry.getLongMetricActual("nativePathTargetsActual")).isEqualTo(1L);
+	}
+
+	@Test
+	public void rdfListPathAfterFivePatternsBuildsTargetsOnceWithoutAdjacency() {
+		SailRepository isolated = new SailRepository(new LmdbStore(new File(dataDir, "rdf-list-no-adjacency"),
+				new LmdbStoreConfig("spoc,posc,ospc").setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED)));
+		try {
+			try (SailRepositoryConnection conn = isolated.getConnection()) {
+				ValueFactory vf = conn.getValueFactory();
+				IRI[] predicates = new IRI[5];
+				Arrays.setAll(predicates, index -> vf.createIRI(EX, "prefix" + (index + 1)));
+				IRI listHead = vf.createIRI(EX, "listHead");
+				IRI listTail = vf.createIRI(EX, "listTail");
+				for (int driver = 1; driver <= 2; driver++) {
+					IRI current = vf.createIRI(EX, "driver" + driver);
+					for (int depth = 0; depth < predicates.length; depth++) {
+						IRI next = depth == predicates.length - 1
+								? listHead
+								: vf.createIRI(EX, "driver" + driver + "Prefix" + depth);
+						conn.add(current, predicates[depth], next);
+						current = next;
+					}
+				}
+				conn.add(listHead, RDF.FIRST, vf.createIRI(EX, "item1"));
+				conn.add(listHead, RDF.REST, listTail);
+				conn.add(listTail, RDF.FIRST, vf.createIRI(EX, "item2"));
+				conn.add(listTail, RDF.REST, RDF.NIL);
+			}
+
+			String query = "PREFIX ex: <" + EX + ">\n"
+					+ "PREFIX rdf: <" + RDF.NAMESPACE + ">\n"
+					+ "SELECT ?driver ?o WHERE { "
+					+ "?driver ex:prefix1 ?p1 . ?p1 ex:prefix2 ?p2 . ?p2 ex:prefix3 ?p3 . "
+					+ "?p3 ex:prefix4 ?p4 . ?p4 ex:prefix5 ?s . ?s rdf:rest*/rdf:first ?o . }";
+			List<String> expected = withProperty(NATIVE_FLAG, "false", () -> rows(isolated, query));
+			List<String> actual = rows(isolated, query);
+			String rendered = telemetry(isolated, query);
+
+			assertThat(actual).containsExactlyElementsOf(expected).hasSize(4);
+			assertThat(rendered)
+					.contains("nativePathTargetBuildRowsActual=2")
+					.doesNotContain("nativePathTargetBuildRefusalsActual=");
+		} finally {
+			isolated.shutDown();
+		}
+	}
+
+	@Test
 	public void allPairsStarReadsOneRowBeforeEarlyClose() throws Exception {
 		PathGraphSource source = new PathGraphSource(new long[][] {
 				{ 10L, 20L }, { 30L, 40L }, { 50L, 60L }, { 70L, 80L }
@@ -1318,6 +1633,7 @@ public class LmdbNativePropertyPathTest {
 		private final long[][] edges;
 		private final NativeLmdbQuerySource.NativeAdjacency adjacency;
 		private final AtomicInteger pathStepCalls = new AtomicInteger();
+		private final AtomicInteger targetPatternSweepOpens = new AtomicInteger();
 		private final AtomicInteger unboundRowsRead = new AtomicInteger();
 		private final AtomicInteger adjacencyRequests = new AtomicInteger();
 		private final AtomicInteger parallelSourceOpens = new AtomicInteger();
@@ -1326,20 +1642,31 @@ public class LmdbNativePropertyPathTest {
 		private final AtomicInteger seekForwardCalls = new AtomicInteger();
 		private final List<Long> pathStepKeys = Collections.synchronizedList(new ArrayList<>());
 		private final boolean orderedSweepEnabled;
+		private final double meanFanOut;
 
 		private PathGraphSource(long[][] edges) {
-			this(edges, null, false);
+			this(edges, null, false, Double.NaN);
+		}
+
+		private PathGraphSource(long[][] edges, double meanFanOut) {
+			this(edges, null, false, meanFanOut);
 		}
 
 		private PathGraphSource(long[][] edges, NativeLmdbQuerySource.NativeAdjacency adjacency) {
-			this(edges, adjacency, false);
+			this(edges, adjacency, false, Double.NaN);
 		}
 
 		private PathGraphSource(long[][] edges, NativeLmdbQuerySource.NativeAdjacency adjacency,
 				boolean orderedSweepEnabled) {
+			this(edges, adjacency, orderedSweepEnabled, Double.NaN);
+		}
+
+		private PathGraphSource(long[][] edges, NativeLmdbQuerySource.NativeAdjacency adjacency,
+				boolean orderedSweepEnabled, double meanFanOut) {
 			this.edges = edges;
 			this.adjacency = adjacency;
 			this.orderedSweepEnabled = orderedSweepEnabled;
+			this.meanFanOut = meanFanOut;
 		}
 
 		@Override
@@ -1362,6 +1689,9 @@ public class LmdbNativePropertyPathTest {
 			if (pred == PREDICATE && subj != UNKNOWN_ID) {
 				pathStepCalls.incrementAndGet();
 				pathStepKeys.add(subj);
+			}
+			if (pred == PREDICATE && subj == UNKNOWN_ID && obj != UNKNOWN_ID) {
+				targetPatternSweepOpens.incrementAndGet();
 			}
 			return new RecordIterator() {
 				private int index;
@@ -1487,6 +1817,13 @@ public class LmdbNativePropertyPathTest {
 		@Override
 		public double estimate(long subj, long pred, long obj, long context) {
 			return edges.length;
+		}
+
+		@Override
+		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
+			return predicate == PREDICATE && Double.isFinite(meanFanOut)
+					? OptionalDouble.of(meanFanOut)
+					: OptionalDouble.empty();
 		}
 
 		@Override

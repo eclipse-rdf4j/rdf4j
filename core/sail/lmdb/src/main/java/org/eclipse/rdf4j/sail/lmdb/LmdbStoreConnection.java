@@ -19,13 +19,11 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
@@ -157,20 +155,9 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset,
 			BindingSet bindings, boolean includeInferred) throws SailException {
-		// ensure that all elements of the binding set are initialized (lazy values are resolved)
-		return new IterationWrapper<BindingSet>(
-				super.evaluateInternal(tupleExpr, dataset, bindings, includeInferred)) {
-			@Override
-			public BindingSet next() throws QueryEvaluationException {
-				BindingSet bs = super.next();
-				if (bs instanceof NativeProjectedBindingSet) {
-					((NativeProjectedBindingSet) bs).materializeAndDetach();
-				} else {
-					bs.forEach(b -> initValue(b.getValue()));
-				}
-				return bs;
-			}
-		};
+		return new LmdbValueMaterializingIteration(
+				super.evaluateInternal(tupleExpr, dataset, bindings, includeInferred),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE);
 	}
 
 	@Override

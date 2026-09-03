@@ -79,8 +79,97 @@ class LmdbNativeWildcardPredicateBatchTest {
 		System.clearProperty(PARALLEL_MAX_TASKS_PROPERTY);
 		System.clearProperty(LmdbNativeKernelIrTestAccess.NODE_PREDICATES_PROPERTY);
 		System.clearProperty(LmdbNativeKernelIrTestAccess.WILDCARD_BATCH_PROPERTY);
+		System.clearProperty(LmdbNativeKernelIrTestAccess.NODE_PREDICATE_ROUTE_MAX_BYTES_PROPERTY);
+		System.clearProperty(LmdbNativeKernelIrTestAccess.NODE_PREDICATE_ROUTE_MINIMUM_SAVINGS_PROPERTY);
 		System.clearProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY);
+		System.clearProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY);
 		System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
+	}
+
+	@Test
+	void rootedPayloadUsesNodePredicateIncidenceRouteWithoutJaninoCoupling(@TempDir File dataDir) {
+		open(dataDir, true);
+		String query = "PREFIX ex: <" + NS + "> "
+				+ "SELECT ?a ?p ?value WHERE { VALUES ?a { ex:s0 ex:s1 } ?a ?p ?value }";
+
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+		List<String> generic = allRows(query);
+
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		long routesBefore = LmdbNativeKernelIrTestAccess.nodePredicateRouteBuilds();
+		long incidencesBefore = LmdbNativeKernelIrTestAccess.nodePredicateRouteIncidences();
+		long predicatesBefore = LmdbNativeKernelIrTestAccess.wildcardPredicatesTested();
+		assertThat(allRows(query)).containsExactlyElementsOf(generic);
+		assertThat(LmdbNativeKernelIrTestAccess.nodePredicateRouteBuilds())
+				.as("the reached roots should be transposed into one predicate-major physical route%n%s",
+						explain(query))
+				.isGreaterThan(routesBefore);
+		assertThat(LmdbNativeKernelIrTestAccess.nodePredicateRouteIncidences() - incidencesBefore)
+				.as("only predicates incident to s0 and s1 should enter the route")
+				.isEqualTo(8L);
+		assertThat(LmdbNativeKernelIrTestAccess.wildcardPredicatesTested() - predicatesBefore)
+				.as("unrelated global predicate planes must not be probed")
+				.isLessThan(10L);
+		assertThat(LmdbNativeKernelIrTestAccess.nodePredicatesEnabled())
+				.as("batch routing must not depend on the generated-kernel lowering switch")
+				.isFalse();
+	}
+
+	@Test
+	void reducedAndCorrelatedWildcardDemandsShareTheIncidenceRoute(@TempDir File dataDir) {
+		open(dataDir, true);
+		List<String> queries = List.of(
+				"PREFIX ex: <" + NS + "> SELECT DISTINCT ?a WHERE { "
+						+ "VALUES ?a { ex:s0 ex:s1 ex:missing } ?a ?p ?value }",
+				"PREFIX ex: <" + NS + "> SELECT DISTINCT ?a ?p WHERE { "
+						+ "VALUES ?a { ex:s0 ex:s1 } ?a ?p ?value }",
+				"PREFIX ex: <" + NS + "> SELECT ?a ?p (COUNT(*) AS ?count) WHERE { "
+						+ "VALUES ?a { ex:s0 ex:s1 } ?a ?p ?value } GROUP BY ?a ?p",
+				"PREFIX ex: <" + NS + "> SELECT ?a WHERE { VALUES ?a { ex:s0 ex:s1 ex:missing } "
+						+ "FILTER EXISTS { ?a ?p ?value } }",
+				"PREFIX ex: <" + NS + "> SELECT ?a ?p ?value WHERE { VALUES ?a { ex:s0 ex:missing } "
+						+ "OPTIONAL { ?a ?p ?value } }",
+				"PREFIX ex: <" + NS + "> SELECT ?a WHERE { VALUES ?a { ex:s0 ex:missing } "
+						+ "MINUS { ?a ?p ?value } }");
+
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+		List<List<String>> expected = queries.stream().map(this::allRows).toList();
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		for (int query = 0; query < queries.size(); query++) {
+			long routesBefore = LmdbNativeKernelIrTestAccess.nodePredicateRouteBuilds();
+			long batchesBefore = LmdbNativeKernelIrTestAccess.wildcardBatches();
+			long denseBefore = LmdbNativeKernelIrTestAccess.nodePredicateRouteDenseRefusals();
+			long memoryBefore = LmdbNativeKernelIrTestAccess.nodePredicateRouteMemoryRefusals();
+			assertThat(allRows(queries.get(query))).containsExactlyElementsOf(expected.get(query));
+			assertThat(LmdbNativeKernelIrTestAccess.nodePredicateRouteBuilds())
+					.as("wildcard demand %s must consume the shared incidence route; batches=%s, dense refusals=%s, "
+							+ "memory refusals=%s%n%s",
+							query, LmdbNativeKernelIrTestAccess.wildcardBatches() - batchesBefore,
+							LmdbNativeKernelIrTestAccess.nodePredicateRouteDenseRefusals() - denseBefore,
+							LmdbNativeKernelIrTestAccess.nodePredicateRouteMemoryRefusals() - memoryBefore,
+							explain(queries.get(query)))
+					.isGreaterThan(routesBefore);
+		}
+	}
+
+	@Test
+	void boundPairIntersectsOutgoingAndIncomingPredicateRoutes(@TempDir File dataDir) {
+		open(dataDir, true);
+		String query = "PREFIX ex: <" + NS + "> SELECT ?p WHERE { ex:s0 ?p ex:o0 }";
+
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+		List<String> generic = allRows(query);
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		long routesBefore = LmdbNativeKernelIrTestAccess.nodePredicateRouteBuilds();
+		long predicatesBefore = LmdbNativeKernelIrTestAccess.wildcardPredicatesTested();
+		assertThat(allRows(query)).containsExactlyElementsOf(generic);
+		assertThat(LmdbNativeKernelIrTestAccess.nodePredicateRouteBuilds() - routesBefore)
+				.as("both endpoint predicate rows should be bound before their unsigned intersection%n%s",
+						explain(query))
+				.isEqualTo(2L);
+		assertThat(LmdbNativeKernelIrTestAccess.wildcardPredicatesTested() - predicatesBefore)
+				.as("only the intersected predicate domain should reach the authoritative run")
+				.isEqualTo(1L);
 	}
 
 	@Test
@@ -644,6 +733,10 @@ class LmdbNativeWildcardPredicateBatchTest {
 	}
 
 	private void open(File dataDir) {
+		open(dataDir, false);
+	}
+
+	private void open(File dataDir, boolean nodePredicateProjection) {
 		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
 		System.setProperty(JANINO_PROPERTY, "false");
 		System.setProperty(JANINO_THRESHOLD_PROPERTY, "0");
@@ -656,7 +749,10 @@ class LmdbNativeWildcardPredicateBatchTest {
 		System.setProperty(NATIVE_BATCH_PROPERTY, "true");
 		System.setProperty(LmdbNativeKernelIrTestAccess.WILDCARD_BATCH_PROPERTY, "true");
 		System.setProperty(LmdbNativeKernelIrTestAccess.NODE_PREDICATES_PROPERTY, "false");
-		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY, "false");
+		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY,
+				Boolean.toString(nodePredicateProjection));
+		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY,
+				Boolean.toString(nodePredicateProjection));
 		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");
 
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,cspo")
@@ -692,10 +788,20 @@ class LmdbNativeWildcardPredicateBatchTest {
 			connection.add(vf.createIRI(NS, "o0"), RDF.TYPE, typeA);
 			connection.add(vf.createIRI(NS, "o1"), RDF.TYPE, typeA);
 			connection.add(vf.createIRI(NS, "o1"), RDF.TYPE, typeB);
+			if (nodePredicateProjection) {
+				IRI unrelated = vf.createIRI(NS, "unrelated");
+				for (int predicate = 0; predicate < 64; predicate++) {
+					connection.add(unrelated, vf.createIRI(NS, "cold" + predicate), vf.createLiteral(predicate));
+				}
+			}
 			connection.commit();
 		}
 		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
-		assertThat(AdjacencyEngagementTestAccess.nodePredicateNativeBytes(store)).isZero();
+		if (nodePredicateProjection) {
+			assertThat(AdjacencyEngagementTestAccess.nodePredicateNativeBytes(store)).isPositive();
+		} else {
+			assertThat(AdjacencyEngagementTestAccess.nodePredicateNativeBytes(store)).isZero();
+		}
 	}
 
 	private List<String> rows(String query) {

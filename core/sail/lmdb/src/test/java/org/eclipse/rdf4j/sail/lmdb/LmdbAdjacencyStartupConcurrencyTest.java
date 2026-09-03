@@ -79,13 +79,26 @@ class LmdbAdjacencyStartupConcurrencyTest {
 	@Timeout(120)
 	void queriesRemainSnapshotConsistentWhileStartupBuildCatchesContinuousTransactions(@TempDir File dataDir)
 			throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
-				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
-				.setDirectAdjacencyBuildOnStart(false)
-				.setDirectAdjacencyMaxBytes(1L << 30);
-		LmdbStore sail = new LmdbStore(dataDir, config);
-		SailRepository repository = new SailRepository(sail);
-		repository.init();
+		String property = LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY;
+		String previous = System.getProperty(property);
+		LmdbStore sail;
+		SailRepository repository;
+		try {
+			System.setProperty(property, "false");
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+					.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+					.setDirectAdjacencyBuildOnStart(false)
+					.setDirectAdjacencyMaxBytes(1L << 30);
+			sail = new LmdbStore(dataDir, config);
+			repository = new SailRepository(sail);
+			repository.init();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
 		try (ExecutorService workers = Executors.newFixedThreadPool(3)) {
 			writeEpoch(repository, 0, false);
 			LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();

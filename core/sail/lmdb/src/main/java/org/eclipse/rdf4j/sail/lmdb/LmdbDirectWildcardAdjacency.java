@@ -40,7 +40,7 @@ final class LmdbDirectWildcardAdjacency implements NativeLmdbQuerySource.Wildcar
 		this.adaptiveExecutor = adaptiveExecutor;
 	}
 
-	private static LmdbAdjacencyArenaCatalog[] sources(LmdbAdjacencyPublishedState state) {
+	static LmdbAdjacencyArenaCatalog[] sources(LmdbAdjacencyPublishedState state) {
 		LmdbAdjacencyOverlaySet overlays = state.overlays();
 		int generationCount = overlays == null ? 0 : overlays.generationCount();
 		LmdbAdjacencyArenaCatalog[] sources = new LmdbAdjacencyArenaCatalog[1 + generationCount];

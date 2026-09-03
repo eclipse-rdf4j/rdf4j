@@ -400,6 +400,33 @@ class ImmutablePagedQuadCsfIndexTest {
 	}
 
 	@Test
+	void orderedBatchPlannerMergesCompactMorselsAndPointProbesSparseOnes() {
+		List<Row> rows = irregularRows(12_000);
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows);
+				ImmutablePagedQuadCsfIndex.PartitionLookup lookup = index.partitionLookup(0, 0)) {
+			long[] compact = new long[9_000];
+			long[] references = new long[compact.length];
+			for (int i = 0; i < compact.length; i++) {
+				compact[i] = rows.get(1_000 + i).row;
+			}
+			assertThat(lookup.findBatch(compact, 0, compact.length, references, 0)).isEqualTo(compact.length);
+			assertThat(lookup.lastBatchEstimate().strategy())
+					.isEqualTo(ImmutablePagedQuadCsfIndex.PartitionLookup.BatchStrategy.ORDERED_MERGE);
+			assertThat(lookup.lastBatchEstimate().morsels()).isEqualTo(2);
+			assertThat(lookup.lastBatchEstimate().mergeWork()).isLessThan(lookup.lastBatchEstimate().pointWork());
+
+			long[] sparse = new long[64];
+			for (int i = 0; i < sparse.length; i++) {
+				sparse[i] = rows.get(i * 180).row;
+			}
+			assertThat(lookup.findBatch(sparse, 0, sparse.length, references, 0)).isEqualTo(sparse.length);
+			assertThat(lookup.lastBatchEstimate().strategy())
+					.isEqualTo(ImmutablePagedQuadCsfIndex.PartitionLookup.BatchStrategy.POINT_PROBES);
+			assertThat(lookup.lastBatchEstimate().pointWork()).isLessThan(lookup.lastBatchEstimate().mergeWork());
+		}
+	}
+
+	@Test
 	void affinePromotionVerifiesEveryKeyBeforeActivating() {
 		List<Row> rows = new ArrayList<>();
 		for (int i = 0; i < 700; i++) {

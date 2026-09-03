@@ -555,9 +555,9 @@ class LmdbNativeVariablePredicateKernelTest {
 				.isGreaterThan(loweringsBefore);
 	}
 
-	/** The wildcard switch controls Janino admission; it must not disable the equivalent interpreted IR. */
+	/** The wildcard switch controls projection lowering, not Janino admission of an equivalent scan-backed IR. */
 	@Test
-	void wildcardCodegenSwitchOffKeepsProjectionFreeIrInterpreted(@TempDir File ordinaryDir,
+	void wildcardCodegenSwitchOffKeepsProjectionFreeIrCompilable(@TempDir File ordinaryDir,
 			@TempDir File irDir) {
 		String query = truthTable().get("join-through-variable-predicate");
 
@@ -578,11 +578,12 @@ class LmdbNativeVariablePredicateKernelTest {
 		assertThat(run(query)).containsExactlyElementsOf(expected);
 		try (RepositoryConnection conn = repo.getConnection()) {
 			assertThat(conn.prepareTupleQuery(query).explain(Explanation.Level.Executed).toString())
-					.as("the wildcard codegen kill switch must retain the interpreted wildcard IR")
-					.contains("nativeExecutionPath=irKernelWildcardInterpreted");
+					.as("lowered requirements, not the projection switch, must classify the generated kernel")
+					.contains("nativeExecutionPath=irKernel")
+					.doesNotContain("nativeExecutionPath=irKernelWildcardInterpreted");
 		}
 		assertThat(JaninoPipelineTestAccess.openedAny())
-				.as("the wildcard codegen kill switch must prevent a compiled bind")
-				.isEqualTo(compiledBefore);
+				.as("projection-free wildcard IR must remain compilable when projection lowering is disabled")
+				.isGreaterThan(compiledBefore);
 	}
 }

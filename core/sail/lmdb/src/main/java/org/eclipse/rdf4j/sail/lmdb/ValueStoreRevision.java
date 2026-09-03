@@ -67,6 +67,15 @@ public interface ValueStoreRevision {
 		public boolean resolveValue(long id, LmdbValue value) {
 			return valueStore != null && valueStore.resolveValue(id, value);
 		}
+
+		@Override
+		public void resolveValues(LmdbValue[] values, int[] order, int count) {
+			if (valueStore != null) {
+				valueStore.resolveValues(this, null, values, order, count);
+			} else {
+				resolveValuesOneByOne(values, order, count);
+			}
+		}
 	}
 
 	class Lazy extends Base implements Serializable {
@@ -101,6 +110,15 @@ public interface ValueStoreRevision {
 			}
 			return false;
 		}
+
+		@Override
+		public void resolveValues(LmdbValue[] values, int[] order, int count) {
+			if (valueStore != null) {
+				valueStore.resolveValues(revision, revision, values, order, count);
+			} else {
+				resolveValuesOneByOne(values, order, count);
+			}
+		}
 	}
 
 	long getRevisionId();
@@ -108,6 +126,20 @@ public interface ValueStoreRevision {
 	ValueStore getValueStore();
 
 	boolean resolveValue(long id, LmdbValue value);
+
+	/** Resolves a same-revision batch in the caller-supplied order. */
+	default void resolveValues(LmdbValue[] values, int[] order, int count) {
+		resolveValuesOneByOne(values, order, count);
+	}
+
+	private static void resolveValuesOneByOne(LmdbValue[] values, int[] order, int count) {
+		for (int i = 0; i < count; i++) {
+			LmdbValue value = values[order[i]];
+			if (!value.isInitialized()) {
+				value.init();
+			}
+		}
+	}
 
 	default int getStoredHash(long id) {
 		ValueStore valueStore = getValueStore();

@@ -21,6 +21,7 @@ import java.util.LinkedHashSet;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -47,34 +48,14 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	Set<String> bindingNames;
 
 	NativeProjectedBindingSet(NativeLmdbQuerySource source, String[] names, int[] sourceSlots, long[] row) {
+		this(source, ProjectionLayout.create(names, sourceSlots), row);
+	}
+
+	NativeProjectedBindingSet(NativeLmdbQuerySource source, ProjectionLayout layout, long[] row) {
 		this.source = source;
-		if (hasDuplicateNames(names)) {
-			String[] uniqueNames = new String[names.length];
-			long[] uniqueIds = new long[names.length];
-			Arrays.fill(uniqueIds, UNKNOWN);
-			int uniqueCount = 0;
-			for (int i = 0; i < names.length; i++) {
-				int target = indexOf(uniqueNames, uniqueCount, names[i]);
-				if (target < 0) {
-					target = uniqueCount++;
-					uniqueNames[target] = names[i];
-				}
-				long id = row[sourceSlots[i]];
-				if (isBound(id)) {
-					// SPARQL projection applies elements in order: a later bound occurrence updates the target,
-					// while an unbound occurrence contributes no binding and therefore cannot erase it.
-					uniqueIds[target] = id;
-				}
-			}
-			this.names = Arrays.copyOf(uniqueNames, uniqueCount);
-			this.ids = Arrays.copyOf(uniqueIds, uniqueCount);
-		} else {
-			this.names = names;
-			this.ids = new long[sourceSlots.length];
-			for (int i = 0; i < sourceSlots.length; i++) {
-				this.ids[i] = row[sourceSlots[i]];
-			}
-		}
+		this.names = layout.names;
+		this.ids = new long[layout.names.length];
+		layout.copyIds(row, ids);
 		this.values = new Value[this.ids.length];
 		int bound = 0;
 		for (long id : this.ids) {
@@ -86,15 +67,6 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		CREATED.incrementAndGet();
 	}
 
-	private static boolean hasDuplicateNames(String[] names) {
-		for (int i = 1; i < names.length; i++) {
-			if (indexOf(names, i, names[i]) >= 0) {
-				return true;
-			}
-		}
-		return false;
-	}
-
 	private static int indexOf(String[] names, int length, String name) {
 		for (int i = 0; i < length; i++) {
 			if (names[i].equals(name)) {
@@ -102,6 +74,61 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 			}
 		}
 		return -1;
+	}
+
+	/** Immutable row-independent projection metadata compiled once with its owning native row step. */
+	static final class ProjectionLayout {
+		final String[] names;
+		final int[] sourceSlots;
+		/** Original projection occurrence to canonical target, or {@code null} when names are already unique. */
+		final int[] targets;
+
+		private ProjectionLayout(String[] names, int[] sourceSlots, int[] targets) {
+			this.names = names;
+			this.sourceSlots = sourceSlots;
+			this.targets = targets;
+		}
+
+		static ProjectionLayout create(String[] names, int[] sourceSlots) {
+			int[] targets = null;
+			String[] uniqueNames = new String[names.length];
+			int uniqueCount = 0;
+			for (int i = 0; i < names.length; i++) {
+				int target = indexOf(uniqueNames, uniqueCount, names[i]);
+				if (target < 0) {
+					target = uniqueCount++;
+					uniqueNames[target] = names[i];
+				} else if (targets == null) {
+					targets = new int[names.length];
+					for (int prior = 0; prior < i; prior++) {
+						targets[prior] = indexOf(uniqueNames, uniqueCount, names[prior]);
+					}
+				}
+				if (targets != null) {
+					targets[i] = target;
+				}
+			}
+			return targets == null
+					? new ProjectionLayout(names, sourceSlots, null)
+					: new ProjectionLayout(Arrays.copyOf(uniqueNames, uniqueCount), sourceSlots, targets);
+		}
+
+		void copyIds(long[] row, long[] ids) {
+			if (targets == null) {
+				for (int i = 0; i < sourceSlots.length; i++) {
+					ids[i] = row[sourceSlots[i]];
+				}
+				return;
+			}
+			Arrays.fill(ids, UNKNOWN);
+			for (int i = 0; i < sourceSlots.length; i++) {
+				long id = row[sourceSlots[i]];
+				if (isBound(id)) {
+					// Later bound occurrences replace earlier ones; unbound occurrences cannot erase a binding.
+					ids[targets[i]] = id;
+				}
+			}
+		}
 	}
 
 	static boolean enabled() {
@@ -177,14 +204,36 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		if (source == null) {
 			return;
 		}
-		for (int i = 0; i < ids.length; i++) {
-			if (isBound(ids[i])) {
-				Value value = value(i);
-				if (value instanceof LmdbValue) {
-					((LmdbValue) value).init();
-				}
+		collectMaterializationValues(value -> {
+			if (value instanceof LmdbValue lmdbValue) {
+				lmdbValue.init();
 			}
+		});
+		source = null;
+	}
+
+	/** Makes every projected value available to the Sail boundary without resolving its lexical form. */
+	public void collectMaterializationValues(Consumer<? super Value> consumer) {
+		NativeLmdbQuerySource currentSource = source;
+		if (currentSource == null) {
+			return;
 		}
+		for (int i = 0; i < ids.length; i++) {
+			if (!isBound(ids[i])) {
+				continue;
+			}
+			Value value = values[i];
+			if (value == null) {
+				value = currentSource.lazyValue(ids[i]);
+				values[i] = value;
+				MATERIALIZED_VALUES.incrementAndGet();
+			}
+			consumer.accept(value);
+		}
+	}
+
+	/** Removes the native source after the boundary has initialized every collected value. */
+	public void detachAfterMaterialization() {
 		source = null;
 	}
 

@@ -576,6 +576,12 @@ final class MinusPlan implements SlotPlan {
 
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		if (right instanceof PatternPlan pattern) {
+			RowCursor vectorized = LmdbWildcardPredicateBatch.tryOpenMinus(left, pattern, sharedMask, row);
+			if (vectorized != null) {
+				return new RowBatchCursor(vectorized, row);
+			}
+		}
 		BatchCursor batch = left.openBatch(row, capacity);
 		if (batch == null) {
 			return null;

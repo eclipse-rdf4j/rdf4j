@@ -128,6 +128,28 @@ public final class LmdbNativeKernelIrTestAccess {
 		return LmdbWildcardPredicateBatch.ADAPTIVE_INCOMING_DIRECTIONS.get();
 	}
 
+	/** Memory cap for one root-to-predicate incidence route. */
+	public static final String NODE_PREDICATE_ROUTE_MAX_BYTES_PROPERTY = LmdbNodePredicateRoute.MAX_BYTES_PROPERTY;
+
+	/** Minimum exact work reduction required after a route has been transposed. */
+	public static final String NODE_PREDICATE_ROUTE_MINIMUM_SAVINGS_PROPERTY = LmdbNodePredicateRoute.MINIMUM_SAVINGS_PROPERTY;
+
+	public static long nodePredicateRouteBuilds() {
+		return LmdbNodePredicateRoute.BUILDS.get();
+	}
+
+	public static long nodePredicateRouteIncidences() {
+		return LmdbNodePredicateRoute.INCIDENCES.get();
+	}
+
+	public static long nodePredicateRouteDenseRefusals() {
+		return LmdbNodePredicateRoute.DENSE_REFUSALS.get();
+	}
+
+	public static long nodePredicateRouteMemoryRefusals() {
+		return LmdbNodePredicateRoute.MEMORY_REFUSALS.get();
+	}
+
 	/** Gates the row-producing parallel kernel rung. */
 	public static final String ROW_PARALLEL_PROPERTY = LmdbNativeParallelKernelRows.ENABLED_PROPERTY;
 

@@ -642,6 +642,23 @@ public interface NativeLmdbQuerySource {
 	 */
 	interface NodePredicates extends RunView {
 
+		/** One bounded, forward-only enumeration of an exact node-predicate row. */
+		interface PredicateRowCursor extends AutoCloseable {
+
+			boolean advance();
+
+			long predicate();
+
+			long runHandle();
+
+			/** Cumulative physical merge/decode work observed while advancing this row. */
+			long work();
+
+			@Override
+			default void close() {
+			}
+		}
+
 		/** The node has provably no predicates in this view. */
 		long NOT_FOUND = -1L;
 
@@ -669,7 +686,70 @@ public interface NativeLmdbQuerySource {
 		int copyRow(long node, long rowHandle, long fromOffset, int length, long[] predicateTarget, int predicateOffset,
 				long[] runTarget, int runOffset);
 
-		/** Advisory mean number of statements per predicate on a node, for cost admission. */
+		/**
+		 * Opens one exact streaming enumeration for {@code node}. A {@code null} result means that this view cannot
+		 * cover the node and the caller must retain its exact fallback. The default adapts the bounded copy contract;
+		 * direct implementations should override it when they can expose their merge cursor without an extra row probe.
+		 */
+		default PredicateRowCursor openRow(long node) {
+			long rowHandle = find(node);
+			if (rowHandle == NOT_COVERED) {
+				return null;
+			}
+			return new PredicateRowCursor() {
+				private static final int CHUNK = 256;
+
+				private final long[] predicates = new long[CHUNK];
+				private final long[] runs = new long[CHUNK];
+				private long offset;
+				private long observedWork;
+				private int index;
+				private int count;
+				private long predicate;
+				private long run;
+
+				@Override
+				public boolean advance() {
+					if (rowHandle == NOT_FOUND) {
+						return false;
+					}
+					if (index == count) {
+						count = copyRow(node, rowHandle, offset, CHUNK, predicates, 0, runs, 0);
+						index = 0;
+						if (count == 0) {
+							return false;
+						}
+						if (count < 0 || count > CHUNK) {
+							throw new IllegalStateException("invalid node-predicate row copy count: " + count);
+						}
+						offset = Math.addExact(offset, count);
+					}
+					predicate = predicates[index];
+					run = runs[index++];
+					if (observedWork != Long.MAX_VALUE) {
+						observedWork++;
+					}
+					return true;
+				}
+
+				@Override
+				public long predicate() {
+					return predicate;
+				}
+
+				@Override
+				public long runHandle() {
+					return run;
+				}
+
+				@Override
+				public long work() {
+					return observedWork;
+				}
+			};
+		}
+
+		/** Advisory mean number of predicates in one node row, for cost admission. */
 		default double meanPredicateDegree() {
 			return Double.NaN;
 		}

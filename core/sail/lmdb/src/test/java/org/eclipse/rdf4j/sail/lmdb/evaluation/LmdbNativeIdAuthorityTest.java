@@ -295,6 +295,26 @@ public class LmdbNativeIdAuthorityTest {
 	}
 
 	@Test
+	public void emptyContextTransitionsToRuntimeAndQueryScopedValues() {
+		NativeExecutionContext context = new NativeExecutionContext();
+		long ordinaryStoreId = 123L;
+
+		assertThat(context.contains(ordinaryStoreId)).isFalse();
+		assertThat(context.valueOf(ordinaryStoreId)).isNull();
+
+		Value runtimeValue = VF.createLiteral("runtime");
+		long runtimeId = context.internValue(runtimeValue);
+		assertThat(context.contains(runtimeId)).isTrue();
+		assertThat(context.valueOf(runtimeId)).isSameAs(runtimeValue);
+		assertThat(context.contains(ordinaryStoreId)).isFalse();
+
+		Value queryScopedValue = VF.createLiteral("query-scoped");
+		context.retainQueryScopedValue(queryScopedValue, ordinaryStoreId);
+		assertThat(context.contains(ordinaryStoreId)).isTrue();
+		assertThat(context.valueOf(ordinaryStoreId)).isSameAs(queryScopedValue);
+	}
+
+	@Test
 	public void closedContextClosesEvaluationOwnedNativeState() {
 		NativeExecutionContext context = new NativeExecutionContext();
 		AtomicInteger closeCalls = new AtomicInteger();

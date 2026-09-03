@@ -143,9 +143,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final AtomicBoolean compactionTaskScheduled = new AtomicBoolean();
 	private final LmdbAdjacencyTieredCompactionPolicy.Candidate compactionCandidate = new LmdbAdjacencyTieredCompactionPolicy.Candidate();
 	/**
-	 * Monotone cutover bit. A populated store's initial build and commits captured before first exact publication stay
-	 * asynchronous. An empty store activates before its initial build submission. Once set, configured synchronous
-	 * maintenance remains in force across later gaps and rebuilds.
+	 * Monotone activation bit. Configured synchronous maintenance activates under the transaction fence before the
+	 * initial build is submitted, then remains in force across later gaps and rebuilds.
 	 */
 	private final AtomicBoolean synchronousUpdatesActivated = new AtomicBoolean();
 	private volatile long lastCutoverNanos;
@@ -2173,8 +2172,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	// ------------------------------------------------------------------
 
 	/**
-	 * Schedules a serialized build/rebuild. Empty stores synchronously publish their initial empty base; populated
-	 * stores return after submission and activate synchronous commit maintenance only at their first exact cutover.
+	 * Schedules a serialized build/rebuild. Synchronous maintenance activates while physical commits are fenced and
+	 * waits for the submitted build; asynchronous maintenance returns after submission.
 	 */
 	void triggerBuild() {
 		throwIfStrictMaintenanceFailed();
@@ -2195,14 +2194,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						throw new IllegalStateException(
 								"interrupted while checking direct adjacency bootstrap state", e);
 					}
-					try {
-						if (tripleStore.isEmpty()) {
-							synchronousUpdatesActivated.set(true);
-						}
-					} catch (IOException e) {
-						throw new IllegalStateException(
-								"failed to check whether direct adjacency can bootstrap synchronously", e);
-					}
+					synchronousUpdatesActivated.set(true);
 				}
 				if (rebuildPending.compareAndSet(false, true)) {
 					rebuildClaimed = true;
@@ -4007,11 +3999,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	/**
 	 * Binds the node-predicate enumerator for one direction, or {@code null} when the compiled path may not use it.
 	 * <p>
-	 * The eligibility rule is the fixed-predicate one plus a strictly stronger condition: <em>no applicable overlay
-	 * generation</em>. With a variable predicate the compiler cannot know at bind time which predicates a kernel will
-	 * touch, so unlike the fixed-predicate path it cannot pre-check overlay applicability, and a kernel cannot restart
-	 * after partial output. The interpreted row path already merges generations correctly, so the compiled path
-	 * declines to it rather than risking a stale row.
+	 * Completed immutable generations are merged into each row before it is exposed. Pending tables and
+	 * read-your-writes still decline the complete view before output because neither can be repaired by changing
+	 * physical access after a kernel has emitted rows.
 	 */
 	NativeLmdbQuerySource.NodePredicates bindNodePredicates(LmdbAdjacencyReadView view, boolean bySubject,
 			boolean explicit, AdjacencyAccessObserver observer) {
@@ -4026,9 +4016,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			KERNEL_VIEWS_SERVED.incrementAndGet();
 		}
 		observeVariablePredicate(observer, true, "NODE_PREDICATE_VIEW", bySubject);
-		LmdbAdjacencyPublishedState state = view.state();
-		return new LmdbDirectNodePredicates(state.base(), state.base().nodePredicateIndex(), state.contextCatalog(),
-				plane, this::onNodePredicateInconsistency);
+		return new LmdbDirectNodePredicates(view, plane, this::onNodePredicateInconsistency);
 	}
 
 	/**
@@ -4049,9 +4037,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			KERNEL_VIEWS_SERVED.incrementAndGet();
 		}
 		observeVariablePredicate(observer, true, "DYNAMIC_ADJACENCY_VIEW", bySubject);
-		LmdbAdjacencyPublishedState state = view.state();
-		return new LmdbDirectNodePredicates(state.base(), state.base().nodePredicateIndexOrNull(),
-				state.contextCatalog(), plane, this::onNodePredicateInconsistency);
+		return new LmdbDirectNodePredicates(view, plane, this::onNodePredicateInconsistency);
 	}
 
 	/** Binds the projection-independent predicate domain and its reusable fixed-plane cursor. */
@@ -4094,14 +4080,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		for (PendingTable pending : state.pending()) {
 			if (pending.revision() <= view.snapshotRevision()) {
 				return FallbackReason.KERNEL_REQUIRES_COMPLETE_REVISION.name();
-			}
-		}
-		LmdbAdjacencyOverlaySet overlays = state.overlays();
-		if (overlays != null) {
-			for (int i = 0; i < overlays.generationCount(); i++) {
-				if (overlays.generation(i).revision() <= view.snapshotRevision()) {
-					return "VARIABLE_PREDICATE_REQUIRES_NO_OVERLAY";
-				}
 			}
 		}
 		LmdbInMemoryAdjacencyIndex base = state.base();

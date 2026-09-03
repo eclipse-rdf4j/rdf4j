@@ -2973,6 +2973,21 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		private static final int MAX_BATCH_PROMOTION_PROBES = 1 << 20;
 		private static final int MIN_BATCH_CALLS_FOR_PROMOTION = 2;
 		private static final int PRESSURE_CHECK_INTERVAL = 256;
+		private static final int MAX_ORDERED_MORSEL_KEYS = 8192;
+		private static final long MIN_POINT_PROBE_WORK = 4L;
+
+		enum BatchStrategy {
+			EXACT_HASH,
+			ORDERED_MERGE,
+			POINT_PROBES,
+			HYBRID
+		}
+
+		record BatchEstimate(BatchStrategy strategy, long pointWork, long mergeWork, long scannedRows, int morsels) {
+		}
+
+		private record OrderedMorselPlan(BatchEstimate estimate, long fromOrdinal, long endOrdinal) {
+		}
 
 		private final ImmutablePagedQuadCsfIndex owner;
 		private final int partition;
@@ -3004,6 +3019,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		private boolean promotionRefused;
 		private boolean closed;
 		private boolean haveLast;
+		private BatchEstimate lastBatchEstimate = new BatchEstimate(BatchStrategy.POINT_PROBES, 0L, 0L, 0L, 0);
 
 		private PartitionLookup(ImmutablePagedQuadCsfIndex owner, int partition) {
 			this.owner = owner;
@@ -3059,19 +3075,19 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			int found;
 			if (exactReady) {
 				found = findExactBatch(keys, keyOffset, count, references, referenceOffset);
-			} else if (!affine && count >= 32 && unsignedNondecreasing(keys, keyOffset, count)) {
+				lastBatchEstimate = new BatchEstimate(BatchStrategy.EXACT_HASH, count, Long.MAX_VALUE, 0L,
+						count == 0 ? 0 : 1);
+			} else if (!affine && unsignedNondecreasing(keys, keyOffset, count)) {
 				// A sorted frontier can merge with the physical key/run stream without paying one point probe per
-				// key. Do not let one large, one-shot batch trigger an O(partition) exact dictionary before this
-				// memory-neutral path has had its chance. Only a sparse batch that falls back to scalar probes counts
-				// toward hash promotion.
-				found = findSortedBatch(keys, keyOffset, count, references, referenceOffset);
-				if (found < 0) {
-					found = findColdBatch(keys, keyOffset, count, references, referenceOffset);
-					observeBatch(count);
-				}
+				// key. Cost each bounded morsel from its actual physical row span so compact ranges merge while sparse
+				// ranges retain point routing. Only point-routed lanes heat the optional exact dictionary.
+				found = findOrderedBatch(keys, keyOffset, count, references, referenceOffset);
 			} else {
 				found = findColdBatch(keys, keyOffset, count, references, referenceOffset);
 				observeBatch(count);
+				long pointWork = saturatedMultiply(count, pointProbeWork());
+				lastBatchEstimate = new BatchEstimate(BatchStrategy.POINT_PROBES, pointWork, Long.MAX_VALUE, 0L,
+						count == 0 ? 0 : 1);
 			}
 			if (count > 0) {
 				lastKey = keys[keyOffset + count - 1];
@@ -3111,12 +3127,50 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		 * decoding is provably bounded relative to the number of probes; sparse sorted batches retain scalar page
 		 * routing.
 		 *
-		 * @return found count, or {@code -1} when the key span is too wide for a merge probe
+		 * Compact spans are scanned, while sparse spans are resolved through the ordinary point path. Batches larger
+		 * than {@link #MAX_ORDERED_MORSEL_KEYS} are planned and consumed incrementally.
 		 */
-		private int findSortedBatch(long[] keys, int keyOffset, int count, long[] references, int referenceOffset) {
-			Arrays.fill(references, referenceOffset, referenceOffset + count, 0L);
+		private int findOrderedBatch(long[] keys, int keyOffset, int count, long[] references, int referenceOffset) {
+			int found = 0;
+			int pointProbes = 0;
+			int mergeMorsels = 0;
+			int pointMorsels = 0;
+			long pointWork = 0L;
+			long mergeWork = 0L;
+			long scannedRows = 0L;
+			for (int consumed = 0; consumed < count;) {
+				int morselCount = Math.min(MAX_ORDERED_MORSEL_KEYS, count - consumed);
+				OrderedMorselPlan plan = planOrderedMorsel(keys, keyOffset + consumed, morselCount);
+				BatchEstimate estimate = plan.estimate();
+				pointWork = saturatedAdd(pointWork, estimate.pointWork());
+				mergeWork = saturatedAdd(mergeWork, estimate.mergeWork());
+				if (estimate.strategy() == BatchStrategy.ORDERED_MERGE) {
+					found += findSortedMorsel(keys, keyOffset + consumed, morselCount, references,
+							referenceOffset + consumed, plan.fromOrdinal(), plan.endOrdinal());
+					scannedRows = saturatedAdd(scannedRows, estimate.scannedRows());
+					mergeMorsels++;
+				} else {
+					found += findColdBatch(keys, keyOffset + consumed, morselCount, references,
+							referenceOffset + consumed);
+					pointProbes += morselCount;
+					pointMorsels++;
+				}
+				consumed += morselCount;
+			}
+			if (pointProbes > 0) {
+				observeBatch(pointProbes);
+			}
+			BatchStrategy strategy = mergeMorsels == 0 ? BatchStrategy.POINT_PROBES
+					: pointMorsels == 0 ? BatchStrategy.ORDERED_MERGE : BatchStrategy.HYBRID;
+			lastBatchEstimate = new BatchEstimate(strategy, pointWork, mergeWork, scannedRows,
+					mergeMorsels + pointMorsels);
+			return found;
+		}
+
+		private OrderedMorselPlan planOrderedMorsel(long[] keys, int keyOffset, int count) {
 			if (count == 0 || rowCount == 0) {
-				return 0;
+				return new OrderedMorselPlan(
+						new BatchEstimate(BatchStrategy.ORDERED_MERGE, 0L, 0L, 0L, 0), 0L, 0L);
 			}
 			long firstKey = keys[keyOffset];
 			long lastBatchKey = keys[keyOffset + count - 1];
@@ -3126,10 +3180,23 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				end++;
 			}
 			long span = end - from;
-			long maximumSpan = Math.max(512L, (long) count << 3);
-			if (span < 0 || span > maximumSpan) {
-				return -1;
+			long probeWork = pointProbeWork();
+			long pointWork = saturatedMultiply(count, probeWork);
+			long mergeWork = span < 0L ? Long.MAX_VALUE
+					: saturatedAdd(saturatedMultiply(2L, probeWork), saturatedAdd(count, span));
+			BatchStrategy strategy = mergeWork < pointWork ? BatchStrategy.ORDERED_MERGE
+					: BatchStrategy.POINT_PROBES;
+			return new OrderedMorselPlan(
+					new BatchEstimate(strategy, pointWork, mergeWork, Math.max(0L, span), 1), from, end);
+		}
+
+		private int findSortedMorsel(long[] keys, int keyOffset, int count, long[] references, int referenceOffset,
+				long from, long end) {
+			Arrays.fill(references, referenceOffset, referenceOffset + count, 0L);
+			if (count == 0 || rowCount == 0) {
+				return 0;
 			}
+			long span = end - from;
 			if (span == 0) {
 				return 0;
 			}
@@ -3160,6 +3227,24 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return found;
 		}
 
+		private long pointProbeWork() {
+			long searchableRows = Math.max(1L, rowCount);
+			long searchDepth = Long.SIZE - Long.numberOfLeadingZeros(searchableRows);
+			return Math.max(MIN_POINT_PROBE_WORK, searchDepth + 2L);
+		}
+
+		private static long saturatedAdd(long left, long right) {
+			long result = left + right;
+			return result < 0L || result < left ? Long.MAX_VALUE : result;
+		}
+
+		private static long saturatedMultiply(long left, long right) {
+			if (left <= 0L || right <= 0L) {
+				return 0L;
+			}
+			return left > Long.MAX_VALUE / right ? Long.MAX_VALUE : left * right;
+		}
+
 		private static boolean unsignedNondecreasing(long[] keys, int offset, int count) {
 			for (int i = 1; i < count; i++) {
 				if (Long.compareUnsigned(keys[offset + i - 1], keys[offset + i]) > 0) {
@@ -3183,6 +3268,10 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 
 		long observedBatchProbes() {
 			return batchProbes;
+		}
+
+		BatchEstimate lastBatchEstimate() {
+			return lastBatchEstimate;
 		}
 
 		private long findCold(long key) {

@@ -365,66 +365,127 @@ final class PathPlan implements SlotPlan {
 }
 
 /**
- * Bounded, evaluation-local set of admissible far endpoints collected from a later VALUES or pattern leaf. The later
- * plan is still evaluated normally, so this set is only a semijoin-style superset used to prune path work; join bag
- * multiplicity and any remaining correlations stay owned by the ordinary join cursor.
+ * One cursor-owned decision for a path-target semijoin. A selected candidate is retained even when admission or the
+ * bounded collection refuses it, so a right-recursive join cannot repeat the same failed build for every driving row.
  */
 @Experimental
-final class PathTargetSet {
-	static final long DEFAULT_MAX_VALUES = 1L << 16;
-
+final class PathTargetDecision {
 	final PathPlan path;
-	final int targetSlot;
+	final PathTargetSet targets;
 	final TupleExpr telemetryTarget;
-	LongHashSet ids;
-	long providerRows;
+	final long refusedRows;
+	final boolean refused;
 	boolean closed;
 
-	private PathTargetSet(PathPlan path, int targetSlot, RowState row, int expectedSize) {
+	private PathTargetDecision(PathPlan path, PathTargetSet targets, TupleExpr telemetryTarget, long refusedRows,
+			boolean refused) {
 		this.path = path;
-		this.targetSlot = targetSlot;
-		this.telemetryTarget = row.telemetryTarget;
-		this.ids = new LongHashSet(Math.max(4, expectedSize));
+		this.targets = targets;
+		this.telemetryTarget = telemetryTarget;
+		this.refusedRows = refusedRows;
+		this.refused = refused;
 	}
 
-	static PathTargetSet tryCreate(SlotPlan left, SlotPlan right, RowState row) throws IOException {
+	static PathTargetDecision tryCreate(SlotPlan left, SlotPlan right, RowState row) throws IOException {
 		if (!Boolean.parseBoolean(System.getProperty(PathPlan.TARGETS_ENABLED_PROPERTY, "true"))) {
 			return null;
 		}
-		long configured = Long.getLong(PathPlan.TARGETS_MAX_VALUES_PROPERTY, DEFAULT_MAX_VALUES);
+		long configured = Long.getLong(PathPlan.TARGETS_MAX_VALUES_PROPERTY, PathTargetSet.DEFAULT_MAX_VALUES);
 		long bounded = Math.max(0L, Math.min(configured, FactorizedTail.MEMO_MAX_STORED_VALUES));
 		if (bounded == 0L) {
 			return null;
 		}
+		Candidate candidate = findLocalCandidate(left, right);
+		if (candidate == null) {
+			NestedCandidate nested = findNestedCandidate(right, left.producedMask());
+			if (nested == null || (providerInputMask(nested.candidate.provider) & nested.crossedMask) != 0L) {
+				return null;
+			}
+			candidate = nested.candidate;
+		}
+
+		int maxValues = (int) Math.min(Integer.MAX_VALUE, bounded);
+		double estimatedRows = estimateProviderRows(candidate.provider, row);
+		if (Double.isFinite(estimatedRows) && estimatedRows > maxValues) {
+			return suppressed(candidate.path, row, 0L);
+		}
+		int expectedSize = expectedSize(candidate.provider, estimatedRows, maxValues);
+		PathTargetSet targets = new PathTargetSet(candidate.path, candidate.targetSlot, row, expectedSize);
+		try {
+			if (targets.collect(candidate.provider, row, maxValues)) {
+				return new PathTargetDecision(candidate.path, targets, row.telemetryTarget, 0L, false);
+			}
+			long refusedRows = targets.providerRows;
+			targets.discard();
+			return suppressed(candidate.path, row, refusedRows);
+		} catch (IOException | RuntimeException | Error problem) {
+			targets.discard();
+			throw problem;
+		}
+	}
+
+	private static PathTargetDecision suppressed(PathPlan path, RowState row, long refusedRows) {
+		return new PathTargetDecision(path, null, row.telemetryTarget, refusedRows, true);
+	}
+
+	private static Candidate findLocalCandidate(SlotPlan left, SlotPlan right) {
 		PathPlan path = findPath(left, right.producedMask());
 		if (path == null) {
 			return null;
 		}
 		int targetSlot = targetSlot(path, right.producedMask());
 		SlotPlan provider = findProvider(right, targetSlot);
-		if (provider == null) {
+		return provider == null ? null : new Candidate(path, targetSlot, provider);
+	}
+
+	private static NestedCandidate findNestedCandidate(SlotPlan plan, long crossedMask) {
+		if (plan instanceof FilterPlan filter) {
+			return findNestedCandidate(filter.arg, crossedMask);
+		}
+		if (!(plan instanceof JoinPlan join)) {
 			return null;
 		}
-		int maxValues = (int) Math.min(Integer.MAX_VALUE, bounded);
-		int expectedSize = provider instanceof ValuesPlan
-				? Math.min(maxValues, ((ValuesPlan) provider).rows.length)
-				: Math.min(maxValues, 256);
-		PathTargetSet targets = new PathTargetSet(path, targetSlot, row, expectedSize);
-		return targets.collect(provider, row, maxValues) ? targets : null;
+		Candidate local = findLocalCandidate(join.left, join.right);
+		if (local != null) {
+			return new NestedCandidate(local, crossedMask);
+		}
+		NestedCandidate nestedLeft = findNestedCandidate(join.left, crossedMask);
+		return nestedLeft != null
+				? nestedLeft
+				: findNestedCandidate(join.right, crossedMask | join.left.producedMask());
+	}
+
+	private static long providerInputMask(SlotPlan provider) {
+		return provider instanceof PatternPlan ? provider.producedMask() : 0L;
+	}
+
+	private static double estimateProviderRows(SlotPlan provider, RowState row) {
+		if (provider instanceof ValuesPlan values) {
+			return values.rows.length;
+		}
+		return ((PatternPlan) provider).estimateForBoundMask(row.boundMask(), row.source);
+	}
+
+	private static int expectedSize(SlotPlan provider, double estimatedRows, int maxValues) {
+		if (provider instanceof ValuesPlan values) {
+			return Math.min(maxValues, values.rows.length);
+		}
+		if (Double.isFinite(estimatedRows) && estimatedRows >= 0D) {
+			return Math.min(maxValues, (int) Math.ceil(estimatedRows));
+		}
+		return Math.min(maxValues, 256);
 	}
 
 	private static PathPlan findPath(SlotPlan plan, long providerMask) {
-		if (plan instanceof PathPlan) {
-			PathPlan path = (PathPlan) plan;
+		if (plan instanceof PathPlan path) {
 			return targetSlot(path, providerMask) >= 0 ? path : null;
 		}
-		if (plan instanceof JoinPlan) {
-			JoinPlan join = (JoinPlan) plan;
+		if (plan instanceof JoinPlan join) {
 			PathPlan path = findPath(join.right, providerMask);
 			return path != null ? path : findPath(join.left, providerMask);
 		}
-		if (plan instanceof FilterPlan) {
-			return findPath(((FilterPlan) plan).arg, providerMask);
+		if (plan instanceof FilterPlan filter) {
+			return findPath(filter.arg, providerMask);
 		}
 		return null;
 	}
@@ -447,29 +508,97 @@ final class PathTargetSet {
 		if (plan instanceof PatternPlan) {
 			return plan;
 		}
-		if (plan instanceof ValuesPlan) {
-			return ((ValuesPlan) plan).bindsAllSlotsEveryRow ? plan : null;
+		if (plan instanceof ValuesPlan values) {
+			return values.bindsAllSlotsEveryRow ? plan : null;
 		}
-		if (plan instanceof FilterPlan) {
-			return findProvider(((FilterPlan) plan).arg, targetSlot);
+		if (plan instanceof FilterPlan filter) {
+			return findProvider(filter.arg, targetSlot);
 		}
-		if (plan instanceof MultiJoinPlan) {
-			for (SlotPlan child : ((MultiJoinPlan) plan).children) {
+		if (plan instanceof MultiJoinPlan multiJoin) {
+			for (SlotPlan child : multiJoin.children) {
 				SlotPlan provider = findProvider(child, targetSlot);
 				if (provider != null) {
 					return provider;
 				}
 			}
 		}
-		if (plan instanceof JoinPlan) {
-			JoinPlan join = (JoinPlan) plan;
+		if (plan instanceof JoinPlan join) {
 			SlotPlan provider = findProvider(join.right, targetSlot);
 			return provider != null ? provider : findProvider(join.left, targetSlot);
 		}
 		return null;
 	}
 
-	private boolean collect(SlotPlan provider, RowState row, int maxValues) throws IOException {
+	boolean appliesTo(SlotPlan plan) {
+		if (plan == path) {
+			return true;
+		}
+		if (plan instanceof JoinPlan join) {
+			return appliesTo(join.left) || appliesTo(join.right);
+		}
+		return plan instanceof FilterPlan filter && appliesTo(filter.arg);
+	}
+
+	void close() {
+		if (closed) {
+			return;
+		}
+		closed = true;
+		if (targets != null) {
+			targets.close();
+		} else if (refused) {
+			LmdbNativeExplain.addRuntimeMetric(telemetryTarget, "nativePathTargetBuildRowsActual", refusedRows);
+			LmdbNativeExplain.addRuntimeMetric(telemetryTarget, "nativePathTargetBuildRefusalsActual", 1L);
+		}
+	}
+
+	private static final class Candidate {
+		final PathPlan path;
+		final int targetSlot;
+		final SlotPlan provider;
+
+		private Candidate(PathPlan path, int targetSlot, SlotPlan provider) {
+			this.path = path;
+			this.targetSlot = targetSlot;
+			this.provider = provider;
+		}
+	}
+
+	private static final class NestedCandidate {
+		final Candidate candidate;
+		final long crossedMask;
+
+		private NestedCandidate(Candidate candidate, long crossedMask) {
+			this.candidate = candidate;
+			this.crossedMask = crossedMask;
+		}
+	}
+}
+
+/**
+ * Bounded, evaluation-local set of admissible far endpoints collected from a later VALUES or pattern leaf. The later
+ * plan is still evaluated normally, so this set is only a semijoin-style superset used to prune path work; join bag
+ * multiplicity and any remaining correlations stay owned by the ordinary join cursor.
+ */
+@Experimental
+final class PathTargetSet {
+	static final long DEFAULT_MAX_VALUES = 1L << 16;
+
+	final PathPlan path;
+	final int targetSlot;
+	final TupleExpr telemetryTarget;
+	LongHashSet ids;
+	long providerRows;
+	boolean closed;
+
+	PathTargetSet(PathPlan path, int targetSlot, RowState row, int expectedSize) {
+		this.path = path;
+		this.targetSlot = targetSlot;
+		this.telemetryTarget = row.telemetryTarget;
+		this.ids = new LongHashSet(Math.max(4, expectedSize));
+	}
+
+	boolean collect(SlotPlan provider, RowState row, int maxValues) throws IOException {
 		if (provider instanceof ValuesPlan) {
 			if (((ValuesPlan) provider).rows.length > maxValues) {
 				return false;
@@ -512,15 +641,8 @@ final class PathTargetSet {
 		return -1;
 	}
 
-	boolean appliesTo(SlotPlan plan) {
-		if (plan == path) {
-			return true;
-		}
-		if (plan instanceof JoinPlan) {
-			JoinPlan join = (JoinPlan) plan;
-			return appliesTo(join.left) || appliesTo(join.right);
-		}
-		return plan instanceof FilterPlan && appliesTo(((FilterPlan) plan).arg);
+	void discard() {
+		ids = null;
 	}
 
 	boolean contains(long id) {

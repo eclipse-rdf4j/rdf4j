@@ -67,6 +67,30 @@ class LmdbNativeKernelLoweringTest {
 		return row;
 	}
 
+	@Test
+	void janinoPreAdmissionDoesNotGuessWildcardAccessFromNodePredicateSwitch() {
+		String janino = System.getProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
+		String nodePredicates = System.getProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY);
+		String wildcardPredicates = System.getProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY);
+		String scanSources = System.getProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY);
+		try {
+			System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
+			System.setProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, "false");
+			System.setProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, "false");
+			System.setProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, "false");
+			PatternPlan rootedWildcard = new PatternPlan(Term.constant(1L), Term.slot(0), Term.slot(1),
+					Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
+
+			assertTrue(LmdbNativeKernelExecution.janinoAdmitted(rootedWildcard),
+					"pre-admission must defer physical wildcard classification to the lowered kernel requirements");
+		} finally {
+			restoreProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, janino);
+			restoreProperty(LmdbNativeKernelIr.NODE_PREDICATES_PROPERTY, nodePredicates);
+			restoreProperty(LmdbNativeKernelIr.WILDCARD_PREDICATES_PROPERTY, wildcardPredicates);
+			restoreProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, scanSources);
+		}
+	}
+
 	// ------------------------------------------------------------------
 	// Direct LMDB scan sources (plan 23, M4)
 	// ------------------------------------------------------------------

@@ -186,24 +186,15 @@ final class LmdbNativeAdaptiveArbitration {
 	 * One dispatch of {@code winner} that may not permanently starve unexecuted arms (the 2026-08-22 HC:8 lock-in: the
 	 * rescue returned before {@code maybeProbe} ever ran, so the winner trained only its own posterior, the incumbent
 	 * stayed unmeasured forever, and the rescue re-fired on every dispatch). Bounded exploration runs on EVERY dispatch
-	 * branch with the winner retained as anchor and fallback; when probes are structurally impossible at this site (no
-	 * abort-safe harness, or the winner is too fast for any decision-useful deadline) a never-executed must-try arm
-	 * runs normally exactly once instead — the pre-adaptive ladder ran these arms unconditionally, and
-	 * {@code maybeGuard} still arms a watchdog over the mandatory run where the site supports one.
+	 * branch with the winner retained as anchor and fallback. If no bounded probe can run, the measured winner remains
+	 * selected. A missing harness, disabled probing, or an incumbent that is too fast for a decision-useful deadline is
+	 * evidence that exploration cannot be made safe at this dispatch, not permission to run the rival without a bound.
 	 */
 	private static <T> DispatchPlan<T> dispatchWithExploration(List<Priced<T>> priced, Priced<T> winner, String reason,
 			LmdbNativeAdaptiveCostModel model, ProbeContext probeContext, HedgeContext hedgeContext) {
 		DispatchPlan.Probe<T> probe = maybeProbe(priced, winner, model, probeContext);
 		if (probe != null) {
 			return maybeHedgeProbe(probe, probeContext, hedgeContext);
-		}
-		if (winner.prediction.evidenceSource() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
-				&& probeStructurallyImpossible(winner.prediction, probeContext)) {
-			Priced<T> mustTry = mustTryUnderConfirmed(priced, winner, model);
-			if (mustTry != null) {
-				return maybeGuard(new DispatchPlan.Normal<>(mustTry.candidate, mustTry.prediction,
-						"must-try exploration: never-executed engine arm at an unprobed site"), priced, hedgeContext);
-			}
 		}
 		return maybeGuard(new DispatchPlan.Normal<>(winner.candidate, winner.prediction, reason), priced,
 				hedgeContext);
@@ -253,56 +244,6 @@ final class LmdbNativeAdaptiveArbitration {
 			return true;
 		}
 		return incumbent.uniformlyPriceable() && candidate.expectedNanos() < incumbent.expectedNanos();
-	}
-
-	/**
-	 * The highest-static-preference must-try arm that still owes mandatory exploration in the current regime (see
-	 * {@link #underConfirmed}) and is not blocked by the scheduler, or null. {@code priced} arrives static-preference
-	 * sorted, so the first hit wins.
-	 */
-	static <T> Priced<T> mustTryUnderConfirmed(List<Priced<T>> priced, Priced<T> winner,
-			LmdbNativeAdaptiveCostModel model) {
-		if (LmdbNativeStrategyPreference
-				.answersWholeQueryStructurally(winner.candidate.estimate.variantKey().strategyFamily())) {
-			return null;
-		}
-		LmdbNativeProbeScheduler scheduler = model.store().probeScheduler();
-		LmdbNativeRegimeKey regime = model.currentRegime();
-		long epoch = model.store().regimeTracker().epoch();
-		for (Priced<T> candidate : priced) {
-			if (candidate == winner || candidate.candidate == winner.candidate) {
-				continue;
-			}
-			LmdbNativePhysicalVariantKey key = candidate.candidate.estimate.variantKey();
-			String family = key.strategyFamily();
-			String winnerFamily = winner.candidate.estimate.variantKey().strategyFamily();
-			if (LmdbNativeStrategyPreference.allowsUnboundedMandatoryTrial(family)
-					&& underConfirmed(family, candidate.prediction, winnerFamily, winner.prediction)
-					&& scheduler.mayProbe(key, regime, epoch)) {
-				return candidate;
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * Whether no bounded probe can ever run at this dispatch: the site registered no abort-safe harness, probing is
-	 * switched off, or the anchor is so fast that the decision-useful deadline sits below the floor. Ledger credit and
-	 * spacing are deliberately NOT part of this test — those recover on their own, and a must-try arm should wait for a
-	 * bounded probe rather than run unbounded.
-	 */
-	static boolean probeStructurallyImpossible(LmdbNativeCostPrediction anchor, ProbeContext context) {
-		if (context == null || !context.harnessPresent() || !context.config().enabled()) {
-			return true;
-		}
-		if (!anchor.uniformlyPriceable() || anchor.expectedNanos() <= 0.0) {
-			return true;
-		}
-		LmdbNativeProbeConfig config = context.config();
-		long usefulDeadline = (long) (anchor.expectedNanos() / config.gamma());
-		long slowdownCap = (long) (anchor.expectedNanos() * config.maxSlowdownFraction());
-		long deadline = Math.min(Math.min(usefulDeadline, slowdownCap), config.maxDeadlineNanos());
-		return deadline < config.minDeadlineNanos();
 	}
 
 	/**
@@ -428,7 +369,7 @@ final class LmdbNativeAdaptiveArbitration {
 			String family = key.strategyFamily();
 			String incumbentFamily = incumbent.candidate.estimate.variantKey().strategyFamily();
 			boolean boundedSpecialist = LmdbNativeStrategyPreference.mustTryFamily(family)
-					&& !LmdbNativeStrategyPreference.allowsUnboundedMandatoryTrial(family);
+					&& !LmdbNativeStrategyPreference.engineIrFamily(family);
 			if (boundedSpecialist
 					&& (anchor.evidenceSource() != LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
 							|| anchor.exactCompletedCount() == 0L)) {
@@ -550,7 +491,7 @@ final class LmdbNativeAdaptiveArbitration {
 			// a measured slow rival kept the rescue. Bounded specialist families still require the ordinary evidence
 			// floor: making them mandatory probe targets must not let a single fallback completion rescue the choice
 			// away from an IR incumbent that was waiting for compilation.
-			long floor = LmdbNativeStrategyPreference.allowsUnboundedMandatoryTrial(
+			long floor = LmdbNativeStrategyPreference.engineIrFamily(
 					rival.candidate.estimate.variantKey().strategyFamily()) ? 1L : COLD_START_EVIDENCE_FLOOR;
 			if (prediction.evidenceSource() != LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
 					|| prediction.exactCompletedCount() < floor || prediction.quarantined()

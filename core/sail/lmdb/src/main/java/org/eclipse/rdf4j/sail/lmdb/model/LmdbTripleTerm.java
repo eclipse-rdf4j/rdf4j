@@ -110,6 +110,11 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 	}
 
 	@Override
+	public boolean isInitialized() {
+		return initialized || subject != null;
+	}
+
+	@Override
 	public ValueStoreRevision getValueStoreRevision() {
 		return revision;
 	}

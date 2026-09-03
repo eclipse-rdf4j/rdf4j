@@ -411,6 +411,7 @@ class LmdbNativeKernelInterpreterParityTest {
 	 * across arms.
 	 */
 	private List<String> run(String query, boolean janino) {
+		KernelExecutionTestAccess.resetCostCalibration();
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(janino));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			return canonical(QueryResults.asList(connection.prepareTupleQuery(query).evaluate()));

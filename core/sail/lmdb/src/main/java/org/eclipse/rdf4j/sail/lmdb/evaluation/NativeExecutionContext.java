@@ -50,10 +50,14 @@ final class NativeExecutionContext implements AutoCloseable {
 	private final long executionId = NEXT_EXECUTION_ID.getAndIncrement();
 	private final ConcurrentHashMap<NativeValueKey, Long> idsByValue = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<Long, Value> valuesById = new ConcurrentHashMap<>();
+	/** Fast negative gate: ordinary store-id paths must not box and probe an empty runtime map. */
+	private volatile boolean hasInternedValues;
 	/** Query-scoped representatives (notably NOW), shared by nested native catalogs of this evaluation. */
 	private final ConcurrentHashMap<NativeValueKey, Value> queryScopedValues = new ConcurrentHashMap<>();
 	/** Authoritative representatives for canonical store ids whose decoder would otherwise allocate a fresh Value. */
 	private final ConcurrentHashMap<Long, Value> queryScopedStoreValuesById = new ConcurrentHashMap<>();
+	/** Query-owner counterpart of {@link #hasInternedValues} for retained canonical store representatives. */
+	private volatile boolean hasQueryScopedStoreValues;
 	private final AtomicLong nextId = new AtomicLong(RUNTIME_INTERN_BASE);
 	private final AtomicLong nextSolutionId = new AtomicLong(1L);
 	private final AtomicLong nextBNodeId = new AtomicLong();
@@ -168,6 +172,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		long candidate = nextId.getAndIncrement();
 		// Publish the value BEFORE the id becomes discoverable through the value map, so a reader that wins the
 		// putIfAbsent race can always resolve the id it is handed.
+		hasInternedValues = true;
 		valuesById.put(candidate, value);
 		Long prior = idsByValue.putIfAbsent(key, candidate);
 		if (prior != null) {
@@ -178,6 +183,9 @@ final class NativeExecutionContext implements AutoCloseable {
 	}
 
 	Value valueOf(long id) {
+		if (!hasResolvableValues()) {
+			return null;
+		}
 		Value value = valuesById.get(id);
 		if (value != null) {
 			return value;
@@ -186,7 +194,14 @@ final class NativeExecutionContext implements AutoCloseable {
 	}
 
 	boolean contains(long id) {
+		if (!hasResolvableValues()) {
+			return false;
+		}
 		return valuesById.containsKey(id) || queryScopeOwner.queryScopedStoreValuesById.containsKey(id);
+	}
+
+	private boolean hasResolvableValues() {
+		return hasInternedValues || queryScopeOwner.hasQueryScopedStoreValues;
 	}
 
 	/**
@@ -203,6 +218,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		}
 		Value representative = queryScopedValues.computeIfAbsent(NativeValueKey.of(value), ignored -> value);
 		if (storeId != UNKNOWN) {
+			hasQueryScopedStoreValues = true;
 			queryScopedStoreValuesById.putIfAbsent(storeId, representative);
 		}
 	}
@@ -282,9 +298,11 @@ final class NativeExecutionContext implements AutoCloseable {
 		}
 		idsByValue.clear();
 		valuesById.clear();
+		hasInternedValues = false;
 		if (queryScopeOwner == this) {
 			queryScopedValues.clear();
 			queryScopedStoreValuesById.clear();
+			hasQueryScopedStoreValues = false;
 			labeledBNodes.clear();
 			genericSteps.clear();
 		}

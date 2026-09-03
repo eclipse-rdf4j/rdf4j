@@ -159,14 +159,14 @@ class ThreeTierEngagementCensusTest {
 		ledger.put(ThreeTierParityCorpus.CLASS_PREDICATE_MATRIX,
 				new Ledger(Route.ADJACENCY, Route.ADJACENCY, false));
 		ledger.put(ThreeTierParityCorpus.REPEATED_NODE_DUMP,
-				new Ledger(Route.ADJACENCY, Route.ADJACENCY, false));
+				new Ledger(Route.ADJACENCY, Route.ADJACENCY, true));
 		ledger.put(ThreeTierParityCorpus.VARIABLE_PREDICATE_JOIN,
-				new Ledger(Route.ADJACENCY, Route.ADJACENCY, false));
+				new Ledger(Route.ADJACENCY, Route.ADJACENCY, true));
 		// The reverse direction additionally needs the incoming planes, which are their own switch. It stays
 		// interpreted even when it serves: a lone triple pattern is one scan, and the compiled tier only takes shapes
 		// with something to fuse.
 		ledger.put(ThreeTierParityCorpus.INCOMING_EDGE_DUMP,
-				new Ledger(Route.ADJACENCY, Route.ADJACENCY, false));
+				new Ledger(Route.ADJACENCY, Route.ADJACENCY, true));
 		// The all-unbound aggregate now sweeps directional adjacency roots and predicate metadata instead of
 		// statements.
 		// It does not depend on the optional node-predicate projections, so both configurations take the same route.

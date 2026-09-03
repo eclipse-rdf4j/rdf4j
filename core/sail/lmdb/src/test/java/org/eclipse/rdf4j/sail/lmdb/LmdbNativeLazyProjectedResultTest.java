@@ -16,8 +16,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
@@ -136,6 +138,40 @@ public class LmdbNativeLazyProjectedResultTest {
 		row.forEach(bindings::add);
 		assertThat(bindings).extracting(Binding::getName).containsExactly("x", "y");
 		assertThat(bindings).extracting(Binding::getValue).containsExactly(lastBoundX, y);
+	}
+
+	@Test
+	public void compiledStepReusesCanonicalDuplicateProjectionLayoutAcrossRows() {
+		ValueFactory vf = repository.getValueFactory();
+		Value firstX = vf.createLiteral("first x");
+		Value y = vf.createLiteral("y");
+		Value lastX = vf.createLiteral("last x");
+		NativeLmdbQuerySource source = new StubSource(Map.of(11L, firstX, 22L, y, 33L, lastX));
+		LinkedHashMap<String, Integer> slotNames = new LinkedHashMap<>();
+		slotNames.put("firstX", 0);
+		slotNames.put("y", 1);
+		slotNames.put("lastX", 2);
+		slotNames.put("missingX", 3);
+		NativeSlotLayout slotLayout = new NativeSlotLayout(slotNames, null);
+		slotLayout.freeze(List.copyOf(slotNames.keySet()));
+		SlotPlan plan = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 0 }, new long[] { 11L }) });
+		NativeRowsStep step = new NativeRowsStep(source, plan, slotLayout, new int[] { 0, 1, 2, 3 },
+				new String[] { "x", "y", "x", "x" }, false, new int[0], new boolean[0], 0L, -1L, false,
+				null, null, null, Set.of(), null, null);
+		AggContext values = new AggContext(source, false);
+
+		NativeProjectedBindingSet first = (NativeProjectedBindingSet) step
+				.project(new long[] { 11L, 22L, 33L, NativeLmdbQuerySource.UNKNOWN_ID }, values);
+		NativeProjectedBindingSet second = (NativeProjectedBindingSet) step
+				.project(new long[] { 11L, 22L, NativeLmdbQuerySource.UNKNOWN_ID,
+						NativeLmdbQuerySource.UNKNOWN_ID }, values);
+
+		assertThat(first.names)
+				.as("immutable duplicate-name canonicalization belongs to the compiled projection")
+				.isSameAs(second.names);
+		assertThat(first.getValue("x")).isSameAs(lastX);
+		assertThat(second.getValue("x")).isSameAs(firstX);
+		assertThat(first.getValue("y")).isSameAs(y);
 	}
 
 	private static final class StubSource implements NativeLmdbQuerySource {

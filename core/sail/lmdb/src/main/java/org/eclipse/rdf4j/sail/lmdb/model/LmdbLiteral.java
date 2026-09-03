@@ -339,6 +339,24 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	}
 
 	@Override
+	public void init(Resolver resolver) {
+		if (!initialized) {
+			synchronized (this) {
+				if (!initialized) {
+					boolean resolved = resolver.resolve(internalID, this);
+					initialized = resolved;
+					assert resolved;
+				}
+			}
+		}
+	}
+
+	@Override
+	public boolean isInitialized() {
+		return initialized;
+	}
+
+	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
 			return true;

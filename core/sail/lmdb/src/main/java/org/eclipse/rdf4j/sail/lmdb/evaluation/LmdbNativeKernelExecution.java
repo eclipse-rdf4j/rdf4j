@@ -155,15 +155,17 @@ final class LmdbNativeKernelExecution {
 	}
 
 	static boolean wildcardIrCandidate(SlotPlan plan) {
-		return !LmdbNativeKernelIr.nodePredicatesEnabled()
-				&& LmdbWildcardPredicateBatch.containsWildcard(plan);
+		// This is a logical-shape hint for proposal costing only. Whether the lowered kernel physically needs a
+		// node-predicate projection or a global wildcard view is recorded in Kernel.requirements and checked after
+		// lowering; a process-wide codegen switch cannot classify a particular plan correctly.
+		return LmdbWildcardPredicateBatch.containsWildcard(plan);
 	}
 
 	/** Whether a structurally wildcard plan may enter Janino rather than the equivalent IR interpreter. */
 	static boolean janinoAdmitted(SlotPlan plan) {
-		return LmdbNativeJaninoCodegen.enabled()
-				&& (!wildcardIrCandidate(plan) || LmdbNativeKernelIr.wildcardPredicatesEnabled()
-						|| LmdbNativeKernelLowering.scanSourcesEnabled());
+		// Pre-admission only knows that code generation is available. Concrete lowering inspects exact view
+		// requirements and may compile, re-lower unsupported sites as scans, or decline before binding resources.
+		return LmdbNativeJaninoCodegen.enabled();
 	}
 
 	private static String aggregateRoute(boolean interpreted, boolean wildcard) {

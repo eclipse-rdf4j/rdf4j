@@ -557,6 +557,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
 		try {
 			List<BindingSet> results = speculative.evaluateArbitrated(row, metrics, arg);
+			if (results == null) {
+				filterLease.discard();
+				return evaluateSequentialFallback(row);
+			}
 			filterLease.commit();
 			metrics.commitToParent();
 			return results;
@@ -1015,11 +1019,24 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	}
 
 	List<BindingSet> evaluateSequentialFallback(RowState speculativeRow, EncounterOrderFallback.Reason reason) {
+		return evaluateSequentialFallback(speculativeRow, reason, true);
+	}
+
+	private List<BindingSet> evaluateSequentialFallback(RowState speculativeRow) {
+		return evaluateSequentialFallback(speculativeRow, null, false);
+	}
+
+	private List<BindingSet> evaluateSequentialFallback(RowState speculativeRow,
+			EncounterOrderFallback.Reason reason, boolean encounterOrderRequired) {
 		RowState row = new RowState(source, layout, base, explainTarget, cancellation);
-		row.encounterOrderRequired = true;
+		row.encounterOrderRequired = encounterOrderRequired;
 		row.runtimePlan = speculativeRow.runtimePlan;
 		if (row.runtimePlan != null) {
-			row.runtimePlan.restartWithEncounterOrderFallback(reason, arg);
+			if (encounterOrderRequired) {
+				row.runtimePlan.restartWithEncounterOrderFallback(reason, arg);
+			} else {
+				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, new SlotPlan[] { arg });
+			}
 		}
 		if (!initialize(row)) {
 			return noInputResult();

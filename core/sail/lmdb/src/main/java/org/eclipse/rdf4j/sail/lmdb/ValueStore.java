@@ -1509,6 +1509,85 @@ public class ValueStore extends AbstractValueFactory {
 		return false;
 	}
 
+	void resolveValues(ValueStoreRevision expectedRevision, ValueStoreRevision resolvedRevision, LmdbValue[] values,
+			int[] order, int count) {
+		try {
+			readTransaction(env, (stack, txn) -> {
+				MDBVal keyData = MDBVal.calloc(stack);
+				MDBVal valueData = MDBVal.calloc(stack);
+				ByteBuffer keyBuffer = idBuffer(stack);
+				LmdbValue.Resolver resolver = (id, value) -> {
+					try {
+						return resolveValueInTransaction(expectedRevision, resolvedRevision, id, value, txn,
+								keyData, valueData, keyBuffer);
+					} catch (IOException e) {
+						throw new SailException(e);
+					}
+				};
+				for (int i = 0; i < count; i++) {
+					LmdbValue value = values[order[i]];
+					if (!value.isInitialized()) {
+						value.init(resolver);
+					}
+				}
+				return null;
+			});
+		} catch (IOException e) {
+			throw new SailException(e);
+		}
+	}
+
+	private boolean resolveValueInTransaction(ValueStoreRevision expectedRevision,
+			ValueStoreRevision resolvedRevision, long id, LmdbValue value, long txn, MDBVal keyData,
+			MDBVal valueData, ByteBuffer keyBuffer) throws IOException {
+		if (ValueIds.isInlined(id)) {
+			Literal unpacked = Values.unpackLiteral(id, this);
+			((LmdbLiteral) value).setLabel(unpacked.getLabel());
+			((LmdbLiteral) value).setDatatype(Values.coreDatatypeOfInlined(id));
+			((LmdbLiteral) value).setBaseDirection(unpacked.getBaseDirection());
+			setResolvedRevision(value, id, resolvedRevision);
+			return true;
+		}
+
+		LmdbValue cached = cachedValue(id);
+		if (cached != null && sameRevision(cached.getValueStoreRevision(), expectedRevision)) {
+			value.setFromInitializedValue(cached);
+			setResolvedRevision(value, id, resolvedRevision);
+			return true;
+		}
+
+		if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+			boolean resolved = resolveValue(id, value);
+			if (resolved) {
+				setResolvedRevision(value, id, resolvedRevision);
+			}
+			return resolved;
+		}
+
+		keyBuffer.clear();
+		LmdbUtil.setMDBValData(keyData, id2data(keyBuffer, id).flip());
+		if (mdb_get(txn, dbi, keyData, valueData) != MDB_SUCCESS) {
+			return false;
+		}
+		int length = Math.toIntExact(LmdbUtil.mdbValSize(valueData));
+		byte[] data = new byte[length];
+		LmdbUtil.copyMemoryToByteArray(LmdbUtil.mdbValDataAddress(valueData), data, length);
+		data2value(id, data, value);
+		setResolvedRevision(value, id, resolvedRevision);
+		cacheValue(id, value);
+		return true;
+	}
+
+	private static void setResolvedRevision(LmdbValue value, long id, ValueStoreRevision resolvedRevision) {
+		if (resolvedRevision != null) {
+			value.setInternalID(id, resolvedRevision);
+		}
+	}
+
+	private static boolean sameRevision(ValueStoreRevision left, ValueStoreRevision right) {
+		return left == right || left != null && left.equals(right);
+	}
+
 	private void resizeMap(long txn, long requiredSize) throws IOException {
 		if (autoGrow) {
 			if (LmdbUtil.requiresResize(mapSize, pageSize, txn, requiredSize)) {

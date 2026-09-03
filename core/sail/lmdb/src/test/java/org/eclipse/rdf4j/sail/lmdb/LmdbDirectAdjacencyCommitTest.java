@@ -890,7 +890,7 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void synchronousMaintenanceStartsAsynchronouslyAndWaitsAfterFirstExactPublication() throws Exception {
+	void synchronousMaintenanceWaitsForPopulatedStartupBuildAndSubsequentCommits() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		recreateStore(Map.of(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "true"));
 
@@ -910,8 +910,9 @@ class LmdbDirectAdjacencyCommitTest {
 		CompletableFuture<Void> startupCommit = null;
 		try {
 			assertThat(buildReached.await(30, TimeUnit.SECONDS)).isTrue();
-			startup.get(1, TimeUnit.SECONDS);
-			assertThat(store.synchronousUpdatesActivatedForTest()).isFalse();
+			assertThat(store.synchronousUpdatesActivatedForTest()).isTrue();
+			assertThatThrownBy(() -> startup.get(1, TimeUnit.SECONDS))
+					.isInstanceOf(java.util.concurrent.TimeoutException.class);
 
 			tripleStore.startTransaction();
 			tripleStore.storeTriple(S2, P1, O2, G1, true);
@@ -919,11 +920,14 @@ class LmdbDirectAdjacencyCommitTest {
 			LmdbDirectAdjacencyCommitDelta.SealedDirectDelta startupDelta = tripleStore
 					.drainDirectAdjacencyCommitDelta();
 			startupCommit = CompletableFuture.runAsync(() -> store.applyCommitted(startupDelta));
-			startupCommit.get(1, TimeUnit.SECONDS);
+			CompletableFuture<Void> pendingStartupCommit = startupCommit;
+			assertThatThrownBy(() -> pendingStartupCommit.get(1, TimeUnit.SECONDS))
+					.isInstanceOf(java.util.concurrent.TimeoutException.class);
 			assertThat(store.queuedCommitsForTest()).isEqualTo(1);
 		} finally {
 			releaseBuild.countDown();
 		}
+		startup.get(30, TimeUnit.SECONDS);
 		assertThat(startupCommit).isNotNull();
 		startupCommit.get(30, TimeUnit.SECONDS);
 		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).isTrue();
@@ -1007,7 +1011,7 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void defaultMaintenanceReturnsDuringStartupAndActivatesAtReadiness() throws Exception {
+	void defaultMaintenanceWaitsForPopulatedStartupBuild() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		recreateStore(Map.of());
 
@@ -1026,8 +1030,9 @@ class LmdbDirectAdjacencyCommitTest {
 		CompletableFuture<Void> startup = CompletableFuture.runAsync(store::triggerBuild);
 		try {
 			assertThat(buildReached.await(30, TimeUnit.SECONDS)).isTrue();
-			startup.get(1, TimeUnit.SECONDS);
-			assertThat(store.synchronousUpdatesActivatedForTest()).isFalse();
+			assertThat(store.synchronousUpdatesActivatedForTest()).isTrue();
+			assertThatThrownBy(() -> startup.get(1, TimeUnit.SECONDS))
+					.isInstanceOf(java.util.concurrent.TimeoutException.class);
 			try (LmdbAdjacencyReadView building = store.acquire(tripleStore.getDataRevision())) {
 				assertThat(building.isExact()).isFalse();
 				assertThat(building.fallbackReason()).isEqualTo(FallbackReason.BUILDING);
@@ -1035,6 +1040,7 @@ class LmdbDirectAdjacencyCommitTest {
 		} finally {
 			releaseBuild.countDown();
 		}
+		startup.get(30, TimeUnit.SECONDS);
 		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).isTrue();
 		assertThat(store.synchronousUpdatesActivatedForTest()).isTrue();
 

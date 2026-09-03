@@ -524,6 +524,12 @@ final class LmdbWildcardPredicateBatch {
 			if (rightReads < 0L) {
 				return null;
 			}
+			if (minus.right instanceof PatternPlan pattern && Shape.isWildcardPredicate(pattern)) {
+				RowCursor batched = tryOpenMinus(minus.left, pattern, minus.sharedMask, row);
+				if (batched != null) {
+					return refactorize(batched, row, liveMask, capacity);
+				}
+			}
 			long childLive = liveMask | minus.sharedMask | (rightReads & minus.left.producedMask());
 			RowCursor left = openWeighted(minus.left, row, childLive, capacity);
 			return left == null ? null
@@ -770,6 +776,7 @@ final class LmdbWildcardPredicateBatch {
 		private final long claimedBytes;
 		private NativeLmdbQuerySource.NativeProbe probe;
 		private NativeLmdbQuerySource.WildcardAdjacency adjacency;
+		private NativeLmdbQuerySource.NodePredicates nodePredicates;
 		private boolean bySubject;
 		private boolean directionBound;
 		private byte globalVerdict;
@@ -857,6 +864,17 @@ final class LmdbWildcardPredicateBatch {
 					: scheduledPredicates;
 			BATCHES.incrementAndGet();
 			BITMAP_TILES.incrementAndGet();
+			if (scheduledPredicates == ALL_PREDICATES && nodePredicates != null) {
+				try (LmdbNodePredicateRoute route = LmdbNodePredicateRoute.tryBuild(nodePredicates, roots, unresolved,
+						adjacency.predicateCount(), row.cancellation)) {
+					if (route != null) {
+						if (!selectRouted(batch, allowedMask, route)) {
+							return 0;
+						}
+						return compactSelection(selection, count, negated);
+					}
+				}
+			}
 			if (scheduledPredicates == ALL_PREDICATES && parallelEligible(batch, unresolved, allowedMask)) {
 				admitParallel(unresolved);
 				if (parallel != null) {
@@ -901,7 +919,7 @@ final class LmdbWildcardPredicateBatch {
 					long inputPredicate = value(p, batch, physical, allowedMask);
 					long handle = runHandles[lane];
 					if ((inputPredicate == UNKNOWN || inputPredicate == predicate) && handle > 0L
-							&& qualifies(batch, physical, roots[lane], predicate, handle, allowedMask)) {
+							&& qualifies(batch, physical, roots[lane], predicate, handle, allowedMask, adjacency)) {
 						matched[physical >>> 6] |= 1L << (physical & 63);
 						predicateMatched = true;
 					} else {
@@ -915,6 +933,50 @@ final class LmdbWildcardPredicateBatch {
 					PREDICATES_MATCHED.incrementAndGet();
 				}
 			}
+			return compactSelection(selection, count, negated);
+		}
+
+		private boolean selectRouted(NativeBatch batch, long allowedMask, LmdbNodePredicateRoute route) {
+			NativeLmdbQuerySource.RunView runView = route.runView();
+			for (int group = 0; group < route.predicateCount(); group++) {
+				if (row.cancellation.isCancellationRequested()) {
+					return false;
+				}
+				long predicate = route.predicateAt(group);
+				boolean predicateMatched = false;
+				PREDICATES_TESTED.incrementAndGet();
+				for (int incidence = route.predicateFrom(group); incidence < route.predicateTo(group); incidence++) {
+					if (row.cancellation.isCancellationRequested()) {
+						return false;
+					}
+					int rootOrdinal = route.rootOrdinalAt(incidence);
+					long root = route.rootAt(rootOrdinal);
+					long handle = route.runReferenceAt(incidence);
+					for (int lineage = route.lineageFrom(rootOrdinal); lineage < route
+							.lineageTo(rootOrdinal); lineage++) {
+						if (row.cancellation.isCancellationRequested()) {
+							return false;
+						}
+						int physical = inputRows[route.lineageAt(lineage)];
+						if ((matched[physical >>> 6] & 1L << (physical & 63)) != 0L) {
+							continue;
+						}
+						long inputPredicate = value(p, batch, physical, allowedMask);
+						if ((inputPredicate == UNKNOWN || inputPredicate == predicate)
+								&& qualifies(batch, physical, root, predicate, handle, allowedMask, runView)) {
+							matched[physical >>> 6] |= 1L << (physical & 63);
+							predicateMatched = true;
+						}
+					}
+				}
+				if (predicateMatched) {
+					PREDICATES_MATCHED.incrementAndGet();
+				}
+			}
+			return true;
+		}
+
+		private int compactSelection(int[] selection, int count, boolean negated) {
 			int accepted = 0;
 			for (int i = 0; i < count; i++) {
 				int physical = selection[i];
@@ -1033,6 +1095,7 @@ final class LmdbWildcardPredicateBatch {
 						disabled = true;
 						return false;
 					}
+					nodePredicates = probe.nodePredicates(requestedDirection);
 					bySubject = requestedDirection;
 					directionBound = true;
 					LmdbNativeKernelLowering.VARIABLE_PREDICATE_LOWERINGS.incrementAndGet();
@@ -1046,17 +1109,17 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private boolean qualifies(NativeBatch batch, int physical, long root, long predicate, long handle,
-				long allowedMask) {
+				long allowedMask, NativeLmdbQuerySource.RunView runView) {
 			if (!requiresRunInspection(batch, physical, allowedMask)) {
 				return true;
 			}
-			long size = adjacency.size(handle);
+			long size = runView.size(handle);
 			for (long offset = 0L; offset < size; offset++) {
 				if (row.cancellation.isCancellationRequested()) {
 					return false;
 				}
-				long neighbor = adjacency.neighborAt(handle, offset);
-				long context = adjacency.contextAt(handle, offset);
+				long neighbor = runView.neighborAt(handle, offset);
+				long context = runView.contextAt(handle, offset);
 				PAYLOAD_ROWS_DECODED.incrementAndGet();
 				long subject = bySubject ? root : neighbor;
 				long object = bySubject ? neighbor : root;
@@ -1092,6 +1155,7 @@ final class LmdbWildcardPredicateBatch {
 							if (adjacency != null) {
 								adjacency.close();
 								adjacency = null;
+								nodePredicates = null;
 							}
 						} finally {
 							if (probe != null) {
@@ -1118,7 +1182,10 @@ final class LmdbWildcardPredicateBatch {
 		if ((sharedMask & ~SlotPlan.assuredMask(right)) != 0L) {
 			return null;
 		}
-		long available = (row.boundMask() | SlotPlan.assuredMask(left)) & compatibilityMask;
+		// MINUS compatibility is decided per left row. A shared endpoint may therefore be a safe physical direction
+		// even when the left plan cannot prove that slot bound on every row; ExistenceBatch declines the individual
+		// batch before output if an eligible row does not actually provide the endpoint.
+		long available = (row.boundMask() | SlotPlan.assuredMask(left) | sharedMask) & compatibilityMask;
 		boolean subjectAvailable = right.s.isConstant()
 				|| right.s.hasSlot() && (available & 1L << right.s.slot) != 0L;
 		boolean objectAvailable = right.o.isConstant()
@@ -2939,6 +3006,7 @@ final class LmdbWildcardPredicateBatch {
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
 		private final NativeLmdbQuerySource.WildcardAdjacency adjacency;
+		private final NativeLmdbQuerySource.NodePredicates nodePredicates;
 		private final BatchCursor prefixCursor;
 		private final NativeBatch prefixBatch;
 		private final long[] unresolved;
@@ -2954,13 +3022,15 @@ final class LmdbWildcardPredicateBatch {
 		private boolean closed;
 
 		private NodeAnyCursor(Shape shape, RowState row, NativeLmdbQuerySource.NativeProbe probe,
-				NativeLmdbQuerySource.WildcardAdjacency adjacency, BatchCursor prefixCursor, NativeBatch prefixBatch,
+				NativeLmdbQuerySource.WildcardAdjacency adjacency,
+				NativeLmdbQuerySource.NodePredicates nodePredicates, BatchCursor prefixCursor, NativeBatch prefixBatch,
 				long[] unresolved, long[] runHandles, long[] resolved,
 				LmdbFusedSipFactorizedRuntime.Session memory, long claimedBytes) {
 			this.shape = shape;
 			this.row = row;
 			this.probe = probe;
 			this.adjacency = adjacency;
+			this.nodePredicates = nodePredicates;
 			this.prefixCursor = prefixCursor;
 			this.prefixBatch = prefixBatch;
 			this.unresolved = unresolved;
@@ -2982,6 +3052,7 @@ final class LmdbWildcardPredicateBatch {
 					probe.close();
 					return null;
 				}
+				NativeLmdbQuerySource.NodePredicates nodePredicates = probe.nodePredicates(shape.bySubject);
 				claimedBytes = presenceScratchBytes(row.slots.length, capacity, 3);
 				if (!memory.claim(claimedBytes)) {
 					MEMORY_REFUSALS.incrementAndGet();
@@ -2992,7 +3063,7 @@ final class LmdbWildcardPredicateBatch {
 				prefix = openPrefix(shape, row, capacity);
 				LmdbNativeKernelLowering.VARIABLE_PREDICATE_LOWERINGS.incrementAndGet();
 				WORKERS.incrementAndGet();
-				return new NodeAnyCursor(shape, row, probe, adjacency, prefix,
+				return new NodeAnyCursor(shape, row, probe, adjacency, nodePredicates, prefix,
 						new NativeBatch(row.slots.length, capacity), new long[capacity], new long[capacity],
 						new long[capacity], memory, claimedBytes);
 			} catch (IOException | RuntimeException | Error failure) {
@@ -3046,6 +3117,15 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private void sweepPredicates() throws IOException {
+			if (nodePredicates != null) {
+				try (LmdbNodePredicateRoute route = LmdbNodePredicateRoute.tryBuild(nodePredicates, unresolved,
+						unresolvedCount, adjacency.predicateCount(), row.cancellation)) {
+					if (route != null) {
+						sweepRoutedPredicates(route);
+						return;
+					}
+				}
+			}
 			admitParallel();
 			if (parallel != null) {
 				resolvedCount = parallel.findNodes(unresolved, unresolvedCount, adjacency.predicateCount(), resolved);
@@ -3086,6 +3166,46 @@ final class LmdbWildcardPredicateBatch {
 					PREDICATES_MATCHED.incrementAndGet();
 				}
 			}
+			emitIndex = 0;
+		}
+
+		private void sweepRoutedPredicates(LmdbNodePredicateRoute route) {
+			Arrays.fill(runHandles, 0, unresolvedCount, 0L);
+			NativeLmdbQuerySource.RunView runView = route.runView();
+			for (int group = 0; group < route.predicateCount(); group++) {
+				if (row.cancellation.isCancellationRequested()) {
+					return;
+				}
+				long predicate = route.predicateAt(group);
+				boolean predicateMatched = false;
+				PREDICATES_TESTED.incrementAndGet();
+				for (int incidence = route.predicateFrom(group); incidence < route.predicateTo(group); incidence++) {
+					if (row.cancellation.isCancellationRequested()) {
+						return;
+					}
+					int rootOrdinal = route.rootOrdinalAt(incidence);
+					if (runHandles[rootOrdinal] != 0L) {
+						continue;
+					}
+					long root = route.rootAt(rootOrdinal);
+					long handle = route.runReferenceAt(incidence);
+					if (qualifies(shape, row, runView, root, predicate, handle)) {
+						runHandles[rootOrdinal] = 1L;
+						predicateMatched = true;
+					}
+				}
+				if (predicateMatched) {
+					PREDICATES_MATCHED.incrementAndGet();
+				}
+			}
+			resolvedCount = 0;
+			for (int root = 0; root < unresolvedCount; root++) {
+				if (runHandles[root] != 0L) {
+					resolved[resolvedCount++] = unresolved[root];
+				}
+			}
+			NODE_LANES_PRUNED.addAndGet(resolvedCount);
+			unresolvedCount = 0;
 			emitIndex = 0;
 		}
 
@@ -3158,6 +3278,7 @@ final class LmdbWildcardPredicateBatch {
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
 		private final NativeLmdbQuerySource.WildcardAdjacency adjacency;
+		private final NativeLmdbQuerySource.NodePredicates nodePredicates;
 		private final BatchCursor prefixCursor;
 		private final NativeBatch prefixBatch;
 		private final long[] nodes;
@@ -3172,18 +3293,24 @@ final class LmdbWildcardPredicateBatch {
 		private int tilePredicates;
 		private int emitPredicate;
 		private int emitLane;
+		private LmdbNodePredicateRoute route;
+		private int routeGroup;
+		private int routeIncidence;
+		private boolean routeGroupMatched;
 		private boolean tileReady;
 		private ParallelPredicateTiles parallel;
 		private boolean closed;
 
 		private PairPresenceCursor(Shape shape, RowState row, NativeLmdbQuerySource.NativeProbe probe,
-				NativeLmdbQuerySource.WildcardAdjacency adjacency, BatchCursor prefixCursor, NativeBatch prefixBatch,
+				NativeLmdbQuerySource.WildcardAdjacency adjacency,
+				NativeLmdbQuerySource.NodePredicates nodePredicates, BatchCursor prefixCursor, NativeBatch prefixBatch,
 				long[] nodes, long[] runHandles, long[] bitmap, int wordsPerBatch, int tileWidth,
 				LmdbFusedSipFactorizedRuntime.Session memory, long claimedBytes) {
 			this.shape = shape;
 			this.row = row;
 			this.probe = probe;
 			this.adjacency = adjacency;
+			this.nodePredicates = nodePredicates;
 			this.prefixCursor = prefixCursor;
 			this.prefixBatch = prefixBatch;
 			this.nodes = nodes;
@@ -3207,6 +3334,7 @@ final class LmdbWildcardPredicateBatch {
 					probe.close();
 					return null;
 				}
+				NativeLmdbQuerySource.NodePredicates nodePredicates = probe.nodePredicates(shape.bySubject);
 				long baseBytes = presenceScratchBytes(row.slots.length, capacity, 2);
 				int wordsPerBatch = words(capacity);
 				long bytesPerPredicate = arrayBytes(wordsPerBatch, Long.BYTES);
@@ -3222,7 +3350,7 @@ final class LmdbWildcardPredicateBatch {
 				prefix = openPrefix(shape, row, capacity);
 				LmdbNativeKernelLowering.VARIABLE_PREDICATE_LOWERINGS.incrementAndGet();
 				WORKERS.incrementAndGet();
-				return new PairPresenceCursor(shape, row, probe, adjacency, prefix,
+				return new PairPresenceCursor(shape, row, probe, adjacency, nodePredicates, prefix,
 						new NativeBatch(row.slots.length, capacity), new long[capacity], new long[capacity],
 						new long[Math.multiplyExact(wordsPerBatch, tileWidth)], wordsPerBatch, tileWidth, memory,
 						claimedBytes);
@@ -3253,6 +3381,10 @@ final class LmdbWildcardPredicateBatch {
 				if (nodeCount == 0 && !loadNodes()) {
 					close();
 					break;
+				}
+				if (route != null) {
+					output = fillRoutedPresence(target, output);
+					continue;
 				}
 				if (tileStart == adjacency.predicateCount()) {
 					nodeCount = 0;
@@ -3295,6 +3427,60 @@ final class LmdbWildcardPredicateBatch {
 				}
 			}
 			target.finishRows(output);
+			return output;
+		}
+
+		private int fillRoutedPresence(NativeBatch target, int output) {
+			NativeLmdbQuerySource.RunView runView = route.runView();
+			while (output < target.capacity && routeGroup < route.predicateCount()) {
+				if (row.cancellation.isCancellationRequested()) {
+					target.clear();
+					close();
+					return 0;
+				}
+				long predicate = route.predicateAt(routeGroup);
+				int groupEnd = route.predicateTo(routeGroup);
+				if (routeIncidence == route.predicateFrom(routeGroup)) {
+					PREDICATES_TESTED.incrementAndGet();
+					routeGroupMatched = false;
+				}
+				while (routeIncidence < groupEnd && output < target.capacity) {
+					if (row.cancellation.isCancellationRequested()) {
+						target.clear();
+						close();
+						return 0;
+					}
+					int rootOrdinal = route.rootOrdinalAt(routeIncidence);
+					long node = route.rootAt(rootOrdinal);
+					long handle = route.runReferenceAt(routeIncidence++);
+					if (!qualifies(shape, row, runView, node, predicate, handle)) {
+						continue;
+					}
+					target.copyFromRow(row.slots, output);
+					if (bind(shape.bySubject ? shape.wildcard.s : shape.wildcard.o, node, target, output)
+							&& bind(shape.wildcard.p, predicate, target, output)) {
+						output++;
+						routeGroupMatched = true;
+					}
+				}
+				if (routeIncidence == groupEnd) {
+					if (routeGroupMatched) {
+						PREDICATES_MATCHED.incrementAndGet();
+					}
+					routeGroup++;
+					routeIncidence = routeGroup < route.predicateCount()
+							? route.predicateFrom(routeGroup)
+							: route.incidenceCount();
+				}
+			}
+			if (routeGroup == route.predicateCount()) {
+				route.close();
+				route = null;
+				nodeCount = 0;
+				routeGroup = 0;
+				routeIncidence = 0;
+				routeGroupMatched = false;
+			}
 			return output;
 		}
 
@@ -3376,6 +3562,12 @@ final class LmdbWildcardPredicateBatch {
 				}
 				nodeCount = sortUnique(nodes, count);
 				NODE_LANES_PRUNED.addAndGet(count - nodeCount);
+				route = nodePredicates == null ? null
+						: LmdbNodePredicateRoute.tryBuild(nodePredicates, nodes, nodeCount, adjacency.predicateCount(),
+								row.cancellation);
+				routeGroup = 0;
+				routeIncidence = route != null && route.predicateCount() > 0 ? route.predicateFrom(0) : 0;
+				routeGroupMatched = false;
 				tileStart = 0;
 				tilePredicates = 0;
 				emitPredicate = 0;
@@ -3392,6 +3584,10 @@ final class LmdbWildcardPredicateBatch {
 			if (!closed) {
 				closed = true;
 				try {
+					if (route != null) {
+						route.close();
+						route = null;
+					}
 					if (parallel != null) {
 						parallel.close();
 					}
@@ -3423,6 +3619,7 @@ final class LmdbWildcardPredicateBatch {
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
 		private final NativeLmdbQuerySource.WildcardAdjacency adjacency;
+		private final NativeLmdbQuerySource.NodePredicates nodePredicates;
 		private final BatchCursor prefixCursor;
 		private final NativeBatch prefixBatch;
 		private final long[] roots;
@@ -3440,7 +3637,9 @@ final class LmdbWildcardPredicateBatch {
 		private int predicateCount;
 		private int predicateIndex;
 		private boolean allPredicates;
+		private LmdbNodePredicateRoute route;
 		private int lane;
+		private int routeLineage = -1;
 		private boolean planeReady;
 		private boolean planeContainsMultiplicities;
 		private boolean predicateMatched;
@@ -3452,7 +3651,8 @@ final class LmdbWildcardPredicateBatch {
 		private boolean closed;
 
 		private PairMultiplicityCursor(Shape shape, RowState row, NativeLmdbQuerySource.NativeProbe probe,
-				NativeLmdbQuerySource.WildcardAdjacency adjacency, BatchCursor prefixCursor, NativeBatch prefixBatch,
+				NativeLmdbQuerySource.WildcardAdjacency adjacency,
+				NativeLmdbQuerySource.NodePredicates nodePredicates, BatchCursor prefixCursor, NativeBatch prefixBatch,
 				long[] roots, long[] uniqueRoots, int[] inputRows, int[] groupOffsets, int[] predicateOrdinals,
 				long[] runHandles, long[] uniqueRunHandles, long[] weights,
 				LmdbFusedSipFactorizedRuntime.Session memory, long claimedBytes) {
@@ -3460,6 +3660,7 @@ final class LmdbWildcardPredicateBatch {
 			this.row = row;
 			this.probe = probe;
 			this.adjacency = adjacency;
+			this.nodePredicates = nodePredicates;
 			this.prefixCursor = prefixCursor;
 			this.prefixBatch = prefixBatch;
 			this.roots = roots;
@@ -3486,6 +3687,7 @@ final class LmdbWildcardPredicateBatch {
 					probe.close();
 					return null;
 				}
+				NativeLmdbQuerySource.NodePredicates nodePredicates = probe.nodePredicates(shape.bySubject);
 				claimedBytes = multiplicityScratchBytes(row.slots.length, capacity);
 				if (!memory.claim(claimedBytes)) {
 					MEMORY_REFUSALS.incrementAndGet();
@@ -3496,7 +3698,7 @@ final class LmdbWildcardPredicateBatch {
 				prefix = openPrefix(shape, row, capacity);
 				LmdbNativeKernelLowering.VARIABLE_PREDICATE_LOWERINGS.incrementAndGet();
 				WORKERS.incrementAndGet();
-				return new PairMultiplicityCursor(shape, row, probe, adjacency, prefix,
+				return new PairMultiplicityCursor(shape, row, probe, adjacency, nodePredicates, prefix,
 						new NativeBatch(row.slots.length, capacity), new long[capacity], new long[capacity],
 						new int[capacity], new int[capacity + 1], new int[capacity], new long[capacity],
 						new long[capacity], new long[capacity], memory, claimedBytes);
@@ -3532,6 +3734,10 @@ final class LmdbWildcardPredicateBatch {
 				if (rootCount == 0 && !loadRoots()) {
 					close();
 					break;
+				}
+				if (route != null) {
+					output = fillRoutedMultiplicities(target, output);
+					continue;
 				}
 				if (predicateIndex == predicateCount) {
 					rootCount = 0;
@@ -3583,6 +3789,91 @@ final class LmdbWildcardPredicateBatch {
 			return weights[physicalRow];
 		}
 
+		private int fillRoutedMultiplicities(NativeBatch target, int output) {
+			NativeLmdbQuerySource.RunView runView = route.runView();
+			while (output < target.capacity && predicateIndex < predicateCount) {
+				if (row.cancellation.isCancellationRequested()) {
+					target.clear();
+					close();
+					return 0;
+				}
+				long predicate = route.predicateAt(predicateIndex);
+				int groupEnd = route.predicateTo(predicateIndex);
+				if (!planeReady) {
+					lane = route.predicateFrom(predicateIndex);
+					routeLineage = -1;
+					planeReady = true;
+					predicateMatched = false;
+					PREDICATES_TESTED.incrementAndGet();
+				}
+				while (lane < groupEnd && output < target.capacity) {
+					if (row.cancellation.isCancellationRequested()) {
+						target.clear();
+						close();
+						return 0;
+					}
+					int rootOrdinal = route.rootOrdinalAt(lane);
+					long root = route.rootAt(rootOrdinal);
+					long handle = route.runReferenceAt(lane);
+					if (routeLineage < 0) {
+						routeLineage = route.lineageFrom(rootOrdinal);
+					}
+					int lineageEnd = route.lineageTo(rootOrdinal);
+					while (routeLineage < lineageEnd && output < target.capacity) {
+						if (row.cancellation.isCancellationRequested()) {
+							target.clear();
+							close();
+							return 0;
+						}
+						int physicalInput = inputRows[route.lineageAt(routeLineage++)];
+						long inputPredicate = value(shape.wildcard.p, prefixBatch, physicalInput);
+						if (inputPredicate != UNKNOWN && inputPredicate != predicate) {
+							continue;
+						}
+						long multiplicity = qualifyingMultiplicity(shape, row, runView, root, predicate, handle,
+								prefixBatch, physicalInput);
+						if (multiplicity == 0L) {
+							continue;
+						}
+						copyInput(prefixBatch, physicalInput, target, output);
+						if (!bind(shape.bySubject ? shape.wildcard.s : shape.wildcard.o, root, target, output)
+								|| !bind(shape.wildcard.p, predicate, target, output)) {
+							continue;
+						}
+						long inputWeight = prefixCursor instanceof WeightedBatchCursor weighted
+								? weighted.weight(physicalInput)
+								: 1L;
+						weights[output] = Math.multiplyExact(inputWeight, multiplicity);
+						output++;
+						predicateMatched = true;
+					}
+					if (routeLineage == lineageEnd) {
+						lane++;
+						routeLineage = -1;
+					}
+				}
+				if (lane == groupEnd) {
+					if (predicateMatched) {
+						PREDICATES_MATCHED.incrementAndGet();
+					}
+					predicateIndex++;
+					planeReady = false;
+					predicateMatched = false;
+				}
+			}
+			if (predicateIndex == predicateCount) {
+				route.close();
+				route = null;
+				rootCount = 0;
+				predicateCount = 0;
+				predicateIndex = 0;
+				lane = 0;
+				routeLineage = -1;
+				planeReady = false;
+			}
+			return output;
+		}
+
 		private boolean loadRoots() throws IOException {
 			while (row.fill(prefixCursor, prefixBatch) > 0) {
 				int count = 0;
@@ -3607,7 +3898,12 @@ final class LmdbWildcardPredicateBatch {
 				}
 				rootCount = count;
 				allPredicates = scheduled == ALL_PREDICATES;
-				predicateCount = allPredicates ? adjacency.predicateCount() : scheduled;
+				route = allPredicates && nodePredicates != null
+						? LmdbNodePredicateRoute.tryBuild(nodePredicates, roots, count, adjacency.predicateCount(),
+								row.cancellation)
+						: null;
+				predicateCount = route != null ? route.predicateCount()
+						: allPredicates ? adjacency.predicateCount() : scheduled;
 				predicateIndex = 0;
 				lane = 0;
 				planeReady = false;
@@ -3742,6 +4038,10 @@ final class LmdbWildcardPredicateBatch {
 			if (!closed) {
 				closed = true;
 				try {
+					if (route != null) {
+						route.close();
+						route = null;
+					}
 					if (parallel != null) {
 						parallel.close();
 					}
@@ -4066,6 +4366,8 @@ final class LmdbWildcardPredicateBatch {
 		private final RowState row;
 		private final NativeLmdbQuerySource.NativeProbe probe;
 		private final NativeLmdbQuerySource.WildcardAdjacency adjacency;
+		private final NativeLmdbQuerySource.NodePredicates nodePredicates;
+		private final NativeLmdbQuerySource.NodePredicates oppositeNodePredicates;
 		private final BatchCursor prefixCursor;
 		private final NativeBatch prefixBatch;
 		private final long[] roots;
@@ -4086,8 +4388,15 @@ final class LmdbWildcardPredicateBatch {
 		private int predicateCount;
 		private int predicateIndex;
 		private boolean allPredicates;
+		private LmdbNodePredicateRoute route;
+		private LmdbNodePredicateRoute oppositeRoute;
 		private int rootLane;
 		private long runOffset;
+		private int routedCopiedCount;
+		private int routedCopiedIndex;
+		private int routedLineage = -1;
+		private boolean routedGroupReady;
+		private boolean routedGroupMatched;
 		private ParallelPredicateTiles parallel;
 		private int parallelTileStart = -1;
 		private int parallelTilePredicates;
@@ -4100,7 +4409,10 @@ final class LmdbWildcardPredicateBatch {
 		private boolean closed;
 
 		private PayloadCursor(Shape shape, RowState row, NativeLmdbQuerySource.NativeProbe probe,
-				NativeLmdbQuerySource.WildcardAdjacency adjacency, BatchCursor prefixCursor, NativeBatch prefixBatch,
+				NativeLmdbQuerySource.WildcardAdjacency adjacency,
+				NativeLmdbQuerySource.NodePredicates nodePredicates,
+				NativeLmdbQuerySource.NodePredicates oppositeNodePredicates, BatchCursor prefixCursor,
+				NativeBatch prefixBatch,
 				long[] roots, long[] uniqueRoots, int[] inputRows, int[] groupOffsets, int[] predicateOrdinals,
 				long[] runHandles, long[] uniqueRunHandles, long[] neighbors, long[] contexts, long[] weights,
 				LmdbFusedSipFactorizedRuntime.Session memory,
@@ -4109,6 +4421,8 @@ final class LmdbWildcardPredicateBatch {
 			this.row = row;
 			this.probe = probe;
 			this.adjacency = adjacency;
+			this.nodePredicates = nodePredicates;
+			this.oppositeNodePredicates = oppositeNodePredicates;
 			this.prefixCursor = prefixCursor;
 			this.prefixBatch = prefixBatch;
 			this.roots = roots;
@@ -4137,6 +4451,8 @@ final class LmdbWildcardPredicateBatch {
 					probe.close();
 					return null;
 				}
+				NativeLmdbQuerySource.NodePredicates nodePredicates = probe.nodePredicates(shape.bySubject);
+				NativeLmdbQuerySource.NodePredicates oppositeNodePredicates = probe.nodePredicates(!shape.bySubject);
 				claimedBytes = payloadScratchBytes(row.slots.length, capacity);
 				if (!memory.claim(claimedBytes)) {
 					MEMORY_REFUSALS.incrementAndGet();
@@ -4145,7 +4461,8 @@ final class LmdbWildcardPredicateBatch {
 					return null;
 				}
 				prefixCursor = openPrefix(shape, row, capacity);
-				PayloadCursor cursor = new PayloadCursor(shape, row, probe, adjacency, prefixCursor,
+				PayloadCursor cursor = new PayloadCursor(shape, row, probe, adjacency, nodePredicates,
+						oppositeNodePredicates, prefixCursor,
 						new NativeBatch(row.slots.length, capacity), new long[capacity], new long[capacity],
 						new int[capacity], new int[capacity + 1], new int[capacity], new long[capacity],
 						new long[capacity], new long[capacity], new long[capacity], new long[capacity], memory,
@@ -4180,6 +4497,10 @@ final class LmdbWildcardPredicateBatch {
 				if (rootCount == 0 && !loadPrefixBatch()) {
 					close();
 					break;
+				}
+				if (route != null) {
+					outputRows = fillRoutedPayload(target, outputRows);
+					continue;
 				}
 				admitParallel();
 				if (parallel != null && allPredicates) {
@@ -4281,6 +4602,122 @@ final class LmdbWildcardPredicateBatch {
 			return weights[physicalRow];
 		}
 
+		private int fillRoutedPayload(NativeBatch target, int outputRows) {
+			NativeLmdbQuerySource.RunView runView = route.runView();
+			while (outputRows < target.capacity && predicateIndex < predicateCount) {
+				if (row.cancellation.isCancellationRequested()) {
+					target.clear();
+					close();
+					return 0;
+				}
+				if (!routedGroupReady) {
+					long candidatePredicate = route.predicateAt(predicateIndex);
+					if (oppositeRoute != null && !oppositeRoute.containsPredicate(candidatePredicate)) {
+						predicateIndex++;
+						continue;
+					}
+					rootLane = route.predicateFrom(predicateIndex);
+					routedGroupReady = true;
+					routedGroupMatched = false;
+					PREDICATES_TESTED.incrementAndGet();
+				}
+				int groupEnd = route.predicateTo(predicateIndex);
+				long predicate = route.predicateAt(predicateIndex);
+				while (rootLane < groupEnd && outputRows < target.capacity) {
+					if (row.cancellation.isCancellationRequested()) {
+						target.clear();
+						close();
+						return 0;
+					}
+					int rootOrdinal = route.rootOrdinalAt(rootLane);
+					long root = route.rootAt(rootOrdinal);
+					long handle = route.runReferenceAt(rootLane);
+					long runSize = runView.size(handle);
+					if (routedCopiedIndex == routedCopiedCount) {
+						if (runOffset == runSize) {
+							advanceRoutedIncidence();
+							continue;
+						}
+						int requested = (int) Math.min((long) neighbors.length, runSize - runOffset);
+						int neighborCount = runView.copyNeighbors(handle, runOffset, requested, neighbors, 0);
+						if (row.cancellation.isCancellationRequested()) {
+							target.clear();
+							close();
+							return 0;
+						}
+						int contextCount = runView.copyContexts(handle, runOffset, requested, contexts, 0);
+						if (row.cancellation.isCancellationRequested()) {
+							target.clear();
+							close();
+							return 0;
+						}
+						if (neighborCount != contextCount || neighborCount <= 0) {
+							throw new IllegalStateException("routed payload copy did not preserve run alignment");
+						}
+						runOffset += neighborCount;
+						routedCopiedCount = neighborCount;
+						routedCopiedIndex = 0;
+						routedLineage = route.lineageFrom(rootOrdinal);
+						PAYLOAD_ROWS_DECODED.addAndGet(neighborCount);
+					}
+					long neighbor = neighbors[routedCopiedIndex];
+					long context = contexts[routedCopiedIndex];
+					int lineageEnd = route.lineageTo(rootOrdinal);
+					while (routedLineage < lineageEnd && outputRows < target.capacity) {
+						if (row.cancellation.isCancellationRequested()) {
+							target.clear();
+							close();
+							return 0;
+						}
+						int sortedInput = route.lineageAt(routedLineage++);
+						int physicalInput = inputRows[sortedInput];
+						Term oppositeTerm = shape.bySubject ? shape.wildcard.o : shape.wildcard.s;
+						long opposite = value(oppositeTerm, prefixBatch, physicalInput);
+						if (oppositeRoute != null && !oppositeRoute.contains(predicate, opposite)) {
+							continue;
+						}
+						long subject = shape.bySubject ? root : neighbor;
+						long object = shape.bySubject ? neighbor : root;
+						if (matchesTerms(shape.wildcard, subject, predicate, object, context,
+								prefixBatch, physicalInput)) {
+							copyInput(prefixBatch, physicalInput, target, outputRows);
+							if (bind(shape.wildcard, subject, predicate, object, context, target, outputRows)) {
+								weights[outputRows] = prefixCursor instanceof WeightedBatchCursor weighted
+										? weighted.weight(physicalInput)
+										: 1L;
+								outputRows++;
+								routedGroupMatched = true;
+							}
+						}
+					}
+					if (routedLineage == lineageEnd) {
+						routedCopiedIndex++;
+						routedLineage = route.lineageFrom(rootOrdinal);
+					}
+				}
+				if (rootLane == groupEnd) {
+					if (routedGroupMatched) {
+						PREDICATES_MATCHED.incrementAndGet();
+					}
+					predicateIndex++;
+					routedGroupReady = false;
+					routedGroupMatched = false;
+				}
+			}
+			if (predicateIndex == predicateCount) {
+				finishPrefixBatch();
+			}
+			return outputRows;
+		}
+
+		private void advanceRoutedIncidence() {
+			rootLane++;
+			runOffset = 0L;
+			routedCopiedCount = 0;
+			routedCopiedIndex = 0;
+			routedLineage = -1;
+		}
+
 		private int currentPredicateOrdinal() {
 			return allPredicates ? predicateIndex : predicateOrdinals[predicateIndex];
 		}
@@ -4349,6 +4786,9 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private void admitParallel() throws IOException {
+			if (route != null) {
+				return;
+			}
 			if (parallel != null) {
 				if (!parallel.closed || parallelPageReady) {
 					return;
@@ -4369,11 +4809,24 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private void finishPrefixBatch() {
+			if (route != null) {
+				route.close();
+				route = null;
+			}
+			if (oppositeRoute != null) {
+				oppositeRoute.close();
+				oppositeRoute = null;
+			}
 			rootCount = 0;
 			predicateCount = 0;
 			predicateIndex = 0;
 			rootLane = 0;
 			runOffset = 0L;
+			routedCopiedCount = 0;
+			routedCopiedIndex = 0;
+			routedLineage = -1;
+			routedGroupReady = false;
+			routedGroupMatched = false;
 			parallelTileStart = -1;
 			parallelTilePredicates = 0;
 			parallelPageReady = false;
@@ -4409,7 +4862,13 @@ final class LmdbWildcardPredicateBatch {
 				}
 				rootCount = count;
 				allPredicates = scheduled == ALL_PREDICATES;
-				predicateCount = allPredicates ? adjacency.predicateCount() : scheduled;
+				route = allPredicates && nodePredicates != null
+						? LmdbNodePredicateRoute.tryBuild(nodePredicates, roots, count, adjacency.predicateCount(),
+								row.cancellation)
+						: null;
+				oppositeRoute = route != null ? buildOppositeRoute(count) : null;
+				predicateCount = route != null ? route.predicateCount()
+						: allPredicates ? adjacency.predicateCount() : scheduled;
 				predicateIndex = 0;
 				rootLane = 0;
 				runOffset = 0L;
@@ -4425,11 +4884,36 @@ final class LmdbWildcardPredicateBatch {
 			}
 		}
 
+		private LmdbNodePredicateRoute buildOppositeRoute(int count) {
+			if (oppositeNodePredicates == null) {
+				return null;
+			}
+			Term opposite = shape.bySubject ? shape.wildcard.o : shape.wildcard.s;
+			for (int sortedInput = 0; sortedInput < count; sortedInput++) {
+				long oppositeRoot = value(opposite, prefixBatch, inputRows[sortedInput]);
+				if (oppositeRoot == UNKNOWN) {
+					return null;
+				}
+				uniqueRoots[sortedInput] = oppositeRoot;
+			}
+			sortUnsigned(uniqueRoots, 0, count - 1);
+			return LmdbNodePredicateRoute.tryBuild(oppositeNodePredicates, uniqueRoots, count,
+					adjacency.predicateCount(), row.cancellation);
+		}
+
 		@Override
 		public void close() {
 			if (!closed) {
 				closed = true;
 				try {
+					if (route != null) {
+						route.close();
+						route = null;
+					}
+					if (oppositeRoute != null) {
+						oppositeRoute.close();
+						oppositeRoute = null;
+					}
 					if (parallel != null) {
 						parallel.close();
 					}
@@ -4698,6 +5182,7 @@ final class LmdbWildcardPredicateBatch {
 		private final long preservedMask;
 		private final NativeLmdbQuerySource.NativeProbe probe;
 		private final NativeLmdbQuerySource.WildcardAdjacency adjacency;
+		private final NativeLmdbQuerySource.NodePredicates nodePredicates;
 		private final NativeBatch leftBatch;
 		private final long[] roots;
 		private final long[] uniqueRoots;
@@ -4727,13 +5212,16 @@ final class LmdbWildcardPredicateBatch {
 		private int copiedCount;
 		private int copiedIndex;
 		private int unmatchedIndex;
+		private int routedLineage;
 		private long multiplicity = 1L;
+		private LmdbNodePredicateRoute route;
 		private boolean closed;
 
 		private WeightedWildcardPatternCursor(FactorizedRowCursor left, PatternPlan right, RowState row,
 				boolean bySubject, boolean multiplicityOnly, boolean outer, long constraintMask, long preservedMask,
 				NativeLmdbQuerySource.NativeProbe probe,
-				NativeLmdbQuerySource.WildcardAdjacency adjacency, NativeBatch leftBatch, long[] roots,
+				NativeLmdbQuerySource.WildcardAdjacency adjacency,
+				NativeLmdbQuerySource.NodePredicates nodePredicates, NativeBatch leftBatch, long[] roots,
 				long[] uniqueRoots, int[] inputRows, int[] groupOffsets, int[] predicateOrdinals, long[] runHandles,
 				long[] uniqueRunHandles, long[] leftWeights, long[] neighbors, long[] contexts, long[] matched,
 				long[] entrySlots,
@@ -4748,6 +5236,7 @@ final class LmdbWildcardPredicateBatch {
 			this.preservedMask = preservedMask;
 			this.probe = probe;
 			this.adjacency = adjacency;
+			this.nodePredicates = nodePredicates;
 			this.leftBatch = leftBatch;
 			this.roots = roots;
 			this.uniqueRoots = uniqueRoots;
@@ -4808,6 +5297,7 @@ final class LmdbWildcardPredicateBatch {
 					probe.close();
 					return null;
 				}
+				NativeLmdbQuerySource.NodePredicates nodePredicates = probe.nodePredicates(bySubject);
 				long requiredBytes = wildcardPatternScratchBytes(row.slots.length, capacity);
 				if (!memory.claim(requiredBytes)) {
 					MEMORY_REFUSALS.incrementAndGet();
@@ -4819,7 +5309,7 @@ final class LmdbWildcardPredicateBatch {
 				LmdbNativeKernelLowering.VARIABLE_PREDICATE_LOWERINGS.incrementAndGet();
 				WORKERS.incrementAndGet();
 				return new WeightedWildcardPatternCursor(left, right, row, bySubject, multiplicityOnly, outer,
-						constraintMask, preservedMask, probe, adjacency,
+						constraintMask, preservedMask, probe, adjacency, nodePredicates,
 						new NativeBatch(row.slots.length, capacity), new long[capacity], new long[capacity],
 						new int[capacity], new int[capacity + 1], new int[capacity], new long[capacity],
 						new long[capacity], new long[capacity], new long[capacity], new long[capacity],
@@ -4842,17 +5332,23 @@ final class LmdbWildcardPredicateBatch {
 				if (rowCount == 0 && !loadLeftBatch()) {
 					return false;
 				}
-				while (predicateIndex < predicateCount) {
-					if (!planeReady && !preparePlane()) {
-						continue;
-					}
-					if (nextPlaneMatch()) {
+				if (route != null) {
+					if (nextRoutedMatch()) {
 						return true;
 					}
-					if (closed || row.cancellation.isCancellationRequested()) {
-						return false;
+				} else {
+					while (predicateIndex < predicateCount) {
+						if (!planeReady && !preparePlane()) {
+							continue;
+						}
+						if (nextPlaneMatch()) {
+							return true;
+						}
+						if (closed || row.cancellation.isCancellationRequested()) {
+							return false;
+						}
+						finishPlane();
 					}
-					finishPlane();
 				}
 				if (row.cancellation.isCancellationRequested()) {
 					close();
@@ -4873,6 +5369,10 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private boolean loadLeftBatch() throws IOException {
+			if (route != null) {
+				route.close();
+				route = null;
+			}
 			leftBatch.clear();
 			int count = 0;
 			while (count < leftBatch.capacity && left.next()) {
@@ -4900,7 +5400,12 @@ final class LmdbWildcardPredicateBatch {
 					predicateOrdinals, constraintMask);
 			rowCount = count;
 			allPredicates = scheduled == ALL_PREDICATES;
-			predicateCount = allPredicates ? adjacency.predicateCount() : scheduled;
+			route = allPredicates && nodePredicates != null
+					? LmdbNodePredicateRoute.tryBuild(nodePredicates, roots, count, adjacency.predicateCount(),
+							row.cancellation)
+					: null;
+			predicateCount = route != null ? route.predicateCount()
+					: allPredicates ? adjacency.predicateCount() : scheduled;
 			predicateIndex = 0;
 			planeReady = false;
 			lane = 0;
@@ -4909,12 +5414,133 @@ final class LmdbWildcardPredicateBatch {
 			copiedCount = 0;
 			copiedIndex = 0;
 			unmatchedIndex = 0;
+			routedLineage = 0;
 			BATCHES.incrementAndGet();
 			if (outer) {
 				OPTIONAL_BATCHES.incrementAndGet();
 			}
 			BITMAP_TILES.incrementAndGet();
 			return true;
+		}
+
+		private boolean nextRoutedMatch() {
+			NativeLmdbQuerySource.RunView runView = route.runView();
+			while (predicateIndex < predicateCount) {
+				if (row.cancellation.isCancellationRequested()) {
+					return false;
+				}
+				if (!planeReady) {
+					planeReady = true;
+					planeMatched = false;
+					lane = route.predicateFrom(predicateIndex);
+					resetRoutedRun();
+					PREDICATES_TESTED.incrementAndGet();
+				}
+				int groupEnd = route.predicateTo(predicateIndex);
+				long predicate = route.predicateAt(predicateIndex);
+				while (lane < groupEnd) {
+					if (row.cancellation.isCancellationRequested()) {
+						return false;
+					}
+					int rootOrdinal = route.rootOrdinalAt(lane);
+					long root = route.rootAt(rootOrdinal);
+					long handle = route.runReferenceAt(lane);
+					if (runSize == 0L) {
+						runSize = runView.size(handle);
+						routedLineage = route.lineageFrom(rootOrdinal);
+					}
+					int lineageEnd = route.lineageTo(rootOrdinal);
+					if (multiplicityOnly) {
+						while (routedLineage < lineageEnd) {
+							if (row.cancellation.isCancellationRequested()) {
+								return false;
+							}
+							int sortedInput = route.lineageAt(routedLineage++);
+							int physical = inputRows[sortedInput];
+							matched[physical >>> 6] |= 1L << (physical & 63);
+							markRoutedPlaneMatched();
+							emitMultiplicity(physical, predicate, runSize);
+							return true;
+						}
+						advanceRoutedIncidence();
+						continue;
+					}
+					while (true) {
+						if (row.cancellation.isCancellationRequested()) {
+							return false;
+						}
+						if (copiedIndex < copiedCount) {
+							long neighbor = neighbors[copiedIndex];
+							long context = contexts[copiedIndex];
+							while (routedLineage < lineageEnd) {
+								if (row.cancellation.isCancellationRequested()) {
+									return false;
+								}
+								int sortedInput = route.lineageAt(routedLineage++);
+								int physical = inputRows[sortedInput];
+								long subject = bySubject ? root : neighbor;
+								long object = bySubject ? neighbor : root;
+								if (matchesTerms(right.s, right.p, right.o, right.c, right.contexts,
+										right.namedContextScope, subject, predicate, object, context, leftBatch,
+										physical, constraintMask)) {
+									matched[physical >>> 6] |= 1L << (physical & 63);
+									markRoutedPlaneMatched();
+									emit(physical, subject, predicate, object, context);
+									return true;
+								}
+							}
+							copiedIndex++;
+							routedLineage = route.lineageFrom(rootOrdinal);
+							continue;
+						}
+						if (runOffset >= runSize) {
+							advanceRoutedIncidence();
+							break;
+						}
+						int requested = (int) Math.min((long) neighbors.length, runSize - runOffset);
+						int neighborCount = runView.copyNeighbors(handle, runOffset, requested, neighbors, 0);
+						if (row.cancellation.isCancellationRequested()) {
+							return false;
+						}
+						int contextCount = runView.copyContexts(handle, runOffset, requested, contexts, 0);
+						if (row.cancellation.isCancellationRequested()) {
+							return false;
+						}
+						if (neighborCount != contextCount || neighborCount <= 0) {
+							throw new IllegalStateException("routed correlated wildcard copy lost run alignment");
+						}
+						runOffset += neighborCount;
+						copiedCount = neighborCount;
+						copiedIndex = 0;
+						routedLineage = route.lineageFrom(rootOrdinal);
+						PAYLOAD_ROWS_DECODED.addAndGet(neighborCount);
+					}
+				}
+				predicateIndex++;
+				planeReady = false;
+				resetRoutedRun();
+			}
+			return false;
+		}
+
+		private void markRoutedPlaneMatched() {
+			if (!planeMatched) {
+				planeMatched = true;
+				PREDICATES_MATCHED.incrementAndGet();
+			}
+		}
+
+		private void advanceRoutedIncidence() {
+			lane++;
+			resetRoutedRun();
+		}
+
+		private void resetRoutedRun() {
+			runOffset = 0L;
+			runSize = 0L;
+			copiedCount = 0;
+			copiedIndex = 0;
+			routedLineage = 0;
 		}
 
 		private boolean preparePlane() {
@@ -5064,14 +5690,21 @@ final class LmdbWildcardPredicateBatch {
 					left.close();
 				} finally {
 					try {
-						adjacency.close();
+						if (route != null) {
+							route.close();
+							route = null;
+						}
 					} finally {
 						try {
-							probe.close();
+							adjacency.close();
 						} finally {
-							memory.release(claimedBytes);
-							System.arraycopy(entrySlots, 0, row.slots, 0, entrySlots.length);
-							row.recomputeBoundMask();
+							try {
+								probe.close();
+							} finally {
+								memory.release(claimedBytes);
+								System.arraycopy(entrySlots, 0, row.slots, 0, entrySlots.length);
+								row.recomputeBoundMask();
+							}
 						}
 					}
 				}

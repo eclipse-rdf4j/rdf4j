@@ -381,24 +381,18 @@ class LmdbNativeAdaptiveArbitrationTest {
 				{ LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED,
 						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED }
 		}) {
-			LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
-			LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
-					new LmdbNativeAdaptiveCostModel.Configuration(true, true));
 			LmdbNativeAdaptiveArbitration.Priced<String> parallel = pricedWithCompletions(pair[0], 0,
 					150_000_000, 200_000_000, 300_000_000, 1);
 			LmdbNativeAdaptiveArbitration.Priced<String> serial = pricedWithCompletions(pair[1], 1,
 					80_000_000, 100_000_000, 130_000_000, 6);
 
-			assertSame(parallel, LmdbNativeAdaptiveArbitration.mustTryUnderConfirmed(List.of(parallel, serial), serial,
-					model), pair[1] + " must re-arm its under-confirmed parallel sibling " + pair[0]);
+			assertSame(true, LmdbNativeAdaptiveArbitration.underConfirmed(pair[0], parallel.prediction(), pair[1],
+					serial.prediction()), pair[1] + " must re-arm its under-confirmed parallel sibling " + pair[0]);
 		}
 	}
 
 	@Test
 	void confirmedParallelSiblingIsNotRetriedForever() {
-		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
-		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
-				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
 		LmdbNativeAdaptiveArbitration.Priced<String> parallel = pricedWithCompletions(
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL, 0,
 				150_000_000, 200_000_000, 300_000_000, LmdbNativeAdaptiveArbitration.CONFIRMATION_FLOOR);
@@ -406,8 +400,10 @@ class LmdbNativeAdaptiveArbitrationTest {
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 1,
 				80_000_000, 100_000_000, 130_000_000, 6);
 
-		assertSame(null, LmdbNativeAdaptiveArbitration.mustTryUnderConfirmed(List.of(parallel, serial), serial,
-				model), "a confirmed slower parallel arm must settle until the regime changes");
+		assertSame(false, LmdbNativeAdaptiveArbitration.underConfirmed(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL, parallel.prediction(),
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, serial.prediction()),
+				"a confirmed slower parallel arm must settle until the regime changes");
 	}
 
 	/** The named specialist matrix is explored under a deadline with the known winner retained as fallback. */
@@ -428,11 +424,6 @@ class LmdbNativeAdaptiveArbitrationTest {
 					80_000_000, 100_000_000, 130_000_000, 6);
 			LmdbNativeAdaptiveArbitration.Priced<String> specialist = pricedWithFamilyEvidence(family, 1,
 					50_000_000, 90_000_000, 150_000_000);
-			assertSame(null,
-					LmdbNativeAdaptiveArbitration.mustTryUnderConfirmed(List.of(incumbent, specialist), incumbent,
-							model),
-					family + " must not replace the known winner without a bounded fallback harness");
-
 			LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<String> probe = LmdbNativeAdaptiveArbitration.maybeProbe(
 					List.of(incumbent, specialist), incumbent, model,
 					new LmdbNativeAdaptiveArbitration.ProbeContext(LmdbNativeProbeConfig.defaults(),
@@ -467,19 +458,62 @@ class LmdbNativeAdaptiveArbitrationTest {
 				"a specialist trial must retain a known exact winner, not an incumbent that has never completed");
 	}
 
+	/**
+	 * ANALYTICS q7, 2026-09-03: once the type-matrix incumbent is fast enough that its decision-useful probe deadline
+	 * falls below the minimum timer resolution, exploration has no useful latency budget. That must retain the measured
+	 * winner; it must not reinterpret "too cheap to probe" as permission to run a never-executed engine arm without any
+	 * deadline.
+	 */
 	@Test
-	void exactStructuralIntersectionDoesNotRunAnUnboundedEngineTrial() {
+	void fastMeasuredWinnerDoesNotTurnABelowFloorProbeIntoAnUnboundedTrial() {
 		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
 		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
 				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
-		LmdbNativeAdaptiveArbitration.Priced<String> intersection = pricedWithCompletions(
-				LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION, 0, 50_000, 100_000, 200_000, 1);
-		LmdbNativeAdaptiveArbitration.Priced<String> generic = structuralOnly(
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED, 1);
+		LmdbNativeCostEstimate typeMatrix = realEstimate(LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX);
+		LmdbNativeCostEstimate unmeasuredIr = realEstimate(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL);
+		for (int i = 0; i < 6; i++) {
+			model.record(typeMatrix, LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100),
+					100_000.0, true);
+		}
 
-		assertSame(null, LmdbNativeAdaptiveArbitration.mustTryUnderConfirmed(List.of(intersection, generic),
-				intersection, model),
-				"an exact whole-query index intersection must not trigger an unbounded generic engine trial");
+		List<LmdbNativeAdaptiveArbitration.Candidate<String>> offered = List.of(
+				new LmdbNativeAdaptiveArbitration.Candidate<>(typeMatrix, 0, observation -> "typeMatrix"),
+				new LmdbNativeAdaptiveArbitration.Candidate<>(unmeasuredIr, 1, observation -> "ir"));
+		LmdbNativeAdaptiveArbitration.DispatchPlan<String> plan = LmdbNativeAdaptiveArbitration.choose(offered, model,
+				new LmdbNativeAdaptiveArbitration.ProbeContext(LmdbNativeProbeConfig.defaults(),
+						new LmdbNativeQueryProbeBudget(), true));
+
+		assertTrue(plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Normal,
+				"a sub-floor experiment cannot be decision-useful, got " + plan);
+		LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<String> normal = (LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<String>) plan;
+		assertSame(typeMatrix, normal.candidate().estimate(),
+				"a probe-safe site must retain its fast measured winner when no useful bounded trial exists");
+	}
+
+	@Test
+	void measuredWinnerDoesNotRunAnUnboundedTrialWhenTheSiteHasNoProbeHarness() {
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeCostEstimate measured = realEstimate(LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL);
+		LmdbNativeCostEstimate unmeasuredIr = realEstimate(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED);
+		for (int i = 0; i < 6; i++) {
+			model.record(measured, LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100),
+					10_000_000.0, true);
+		}
+
+		List<LmdbNativeAdaptiveArbitration.Candidate<String>> offered = List.of(
+				new LmdbNativeAdaptiveArbitration.Candidate<>(measured, 0, observation -> "measured"),
+				new LmdbNativeAdaptiveArbitration.Candidate<>(unmeasuredIr, 1, observation -> "ir"));
+		LmdbNativeAdaptiveArbitration.DispatchPlan<String> plan = LmdbNativeAdaptiveArbitration.choose(offered, model,
+				LmdbNativeAdaptiveArbitration.ProbeContext.disabled());
+
+		assertTrue(plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Normal,
+				"an unprobed dispatch must remain normal, got " + plan);
+		LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<String> normal = (LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<String>) plan;
+		assertSame(measured, normal.candidate().estimate(),
+				"lack of an abort-safe harness must retain the measured winner rather than unbound a rival");
 	}
 
 	@Test
@@ -505,6 +539,36 @@ class LmdbNativeAdaptiveArbitrationTest {
 		LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<String> normal = (LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<String>) plan;
 		assertSame(intersection, normal.candidate().estimate(),
 				"a finer-grain engine may remain available as fallback but cannot rescue an exact structural answer");
+	}
+
+	/**
+	 * ANALYTICS q11, 2026-09-03: the exact adjacency aggregate answers the complete one-pattern GROUP BY directly, but
+	 * a cold sidecar let the rescue policy replace it with an already-measured ordered DISTINCT scan over every
+	 * statement. The structural exemption is about semantic granularity, not one particular specialist family.
+	 */
+	@Test
+	void exactAdjacencyAggregateCannotBeRescuedByAMeasuredStatementScan() {
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeCostEstimate aggregate = realEstimate(LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE);
+		LmdbNativeCostEstimate scan = realEstimate(LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS);
+		for (int i = 0; i < 6; i++) {
+			model.record(scan, LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100),
+					10_000_000.0, true);
+		}
+
+		List<LmdbNativeAdaptiveArbitration.Candidate<String>> offered = List.of(
+				new LmdbNativeAdaptiveArbitration.Candidate<>(aggregate, 0, observation -> "aggregate"),
+				new LmdbNativeAdaptiveArbitration.Candidate<>(scan, 1, observation -> "scan"));
+		LmdbNativeAdaptiveArbitration.DispatchPlan<String> plan = LmdbNativeAdaptiveArbitration.choose(offered, model,
+				LmdbNativeAdaptiveArbitration.ProbeContext.disabled());
+
+		assertTrue(plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Normal,
+				"a complete structural aggregate must be dispatched normally, got " + plan);
+		LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<String> normal = (LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<String>) plan;
+		assertSame(aggregate, normal.candidate().estimate(),
+				"a statement-enumerating strategy cannot rescue an exact whole-query adjacency aggregate");
 	}
 
 	private static LmdbNativeCostEstimate realEstimate(String family) {

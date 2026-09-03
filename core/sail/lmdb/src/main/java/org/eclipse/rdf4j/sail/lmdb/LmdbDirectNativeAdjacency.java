@@ -191,7 +191,11 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		return sources[source];
 	}
 
-	private static long localOf(long kernelHandle) {
+	static int sourceIndexOf(long kernelHandle) {
+		return (int) (kernelHandle >>> SOURCE_SHIFT) - 1;
+	}
+
+	static long localOf(long kernelHandle) {
 		return kernelHandle & LOCAL_MASK;
 	}
 

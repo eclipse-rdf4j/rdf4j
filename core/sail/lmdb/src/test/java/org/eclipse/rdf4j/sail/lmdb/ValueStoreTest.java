@@ -136,6 +136,37 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void resolveValuesUsesSingleReadTransactionForOneRevision() throws Exception {
+		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "resolve-values"),
+				new LmdbStoreConfig());
+		try {
+			LmdbBNode first = countingValueStore.createBNode("batch-resolve-first");
+			LmdbBNode second = countingValueStore.createBNode("batch-resolve-second");
+			countingValueStore.startTransaction(true);
+			long firstId = countingValueStore.storeValue(first);
+			long secondId = countingValueStore.storeValue(second);
+			countingValueStore.commit();
+			countingValueStore.clearCaches();
+
+			LmdbValue lazyFirst = countingValueStore.getLazyValue(firstId);
+			LmdbValue lazySecond = countingValueStore.getLazyValue(secondId);
+			assertFalse(lazyFirst.isInitialized());
+			assertFalse(lazySecond.isInitialized());
+
+			countingValueStore.readTransactionCount = 0;
+			LmdbValue[] values = { lazySecond, lazyFirst };
+			lazyFirst.getValueStoreRevision().resolveValues(values, new int[] { 1, 0 }, values.length);
+
+			assertTrue(lazyFirst.isInitialized());
+			assertTrue(lazySecond.isInitialized());
+			assertEquals("a same-revision batch should share one LMDB read transaction", 1,
+					countingValueStore.readTransactionCount);
+		} finally {
+			countingValueStore.close();
+		}
+	}
+
+	@Test
 	public void transactionRetainsResolvedValueIdsAfterRegularCacheEviction() throws Exception {
 		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "transaction-value-cache"),
 				new LmdbStoreConfig());

@@ -18,8 +18,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -38,6 +40,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.openjdk.jmh.annotations.Fork;
 
 class ThemeQueryBenchmarkSmokeIT {
 
@@ -54,6 +58,16 @@ class ThemeQueryBenchmarkSmokeIT {
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 	private static final String JANINO_SYNCHRONOUS_PROPERTY = "rdf4j.lmdb.janinoCodegen.synchronous";
 	private static final int QUERY_EXECUTION_REPETITIONS = 5;
+	private static final int ADAPTIVE_STABILITY_REPETITIONS = 512;
+
+	@Test
+	void benchmarkForkWaitsForExactDirectAdjacencyBeforeMeasuringQueries() {
+		Fork fork = ThemeQueryBenchmark.class.getAnnotation(Fork.class);
+
+		assertTrue(fork != null && Arrays.asList(fork.jvmArgs())
+				.contains("-D" + ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY + "=true"),
+				"steady-state query measurements must not race the asynchronous direct-adjacency rebuild");
+	}
 
 	@Test
 	void janinoTrialCompilesDeterministicallyAndRestoresCallerSetting() throws Exception {
@@ -130,6 +144,12 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	@Test
+	@Timeout(value = 3, unit = TimeUnit.MINUTES)
+	void analyticsTypeMatrixRemainsBoundedAcrossAdaptiveRepetitions() throws Exception {
+		assertThemeQueryCountWithJaninoAndDirectAdjacency(Theme.ANALYTICS, 7, ADAPTIVE_STABILITY_REPETITIONS);
+	}
+
+	@Test
 	@Disabled
 	void executeQueryReturnsExpectedCountForPharmaQueryOne() throws Exception {
 		assertThemeQueryCount(Theme.PHARMA, 1);
@@ -151,6 +171,16 @@ class ThemeQueryBenchmarkSmokeIT {
 	@Disabled
 	void executeQueryReturnsExpectedCountForPharmaQueryTwo() throws Exception {
 		assertThemeQueryCount(Theme.PHARMA, 2);
+	}
+
+	@Test
+	void executeQueryReturnsExpectedCountForPharmaQuerySix() throws Exception {
+		assertThemeQueryCountWithJanino(Theme.PHARMA, 6);
+	}
+
+	@Test
+	void executeQueryReturnsExpectedCountForPharmaQuerySeven() throws Exception {
+		assertThemeQueryCountWithJanino(Theme.PHARMA, 7);
 	}
 
 	@Test
@@ -207,12 +237,51 @@ class ThemeQueryBenchmarkSmokeIT {
 		}
 	}
 
+	private static void assertThemeQueryCountWithJanino(Theme theme, int queryIndex) throws Exception {
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = theme.name();
+		benchmark.z_queryIndex = queryIndex;
+		benchmark.z_z_janinoEnabled = "true";
+
+		benchmark.setup();
+		try {
+			assertBenchmarkQueryCount(benchmark, theme, queryIndex);
+		} finally {
+			benchmark.tearDown();
+		}
+	}
+
+	private static void assertThemeQueryCountWithJaninoAndDirectAdjacency(Theme theme, int queryIndex, int repetitions)
+			throws Exception {
+		String previous = System.getProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY);
+		try {
+			System.setProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY, Boolean.TRUE.toString());
+			ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+			benchmark.themeName = theme.name();
+			benchmark.z_queryIndex = queryIndex;
+			benchmark.z_z_janinoEnabled = "true";
+			benchmark.setup();
+			try {
+				assertBenchmarkQueryCount(benchmark, theme, queryIndex, repetitions);
+			} finally {
+				benchmark.tearDown();
+			}
+		} finally {
+			restoreProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY, previous);
+		}
+	}
+
 	private static void assertBenchmarkQueryCount(ThemeQueryBenchmark benchmark, Theme theme, int queryIndex) {
+		assertBenchmarkQueryCount(benchmark, theme, queryIndex, QUERY_EXECUTION_REPETITIONS);
+	}
+
+	private static void assertBenchmarkQueryCount(ThemeQueryBenchmark benchmark, Theme theme, int queryIndex,
+			int repetitions) {
 		long expected = ThemeQueryCatalog.expectedCountFor(theme, queryIndex);
-		for (int repetition = 1; repetition <= QUERY_EXECUTION_REPETITIONS; repetition++) {
+		for (int repetition = 1; repetition <= repetitions; repetition++) {
 			assertEquals(expected, benchmark.executeQuery(),
 					"Unexpected row count for " + theme + " query " + queryIndex + " on repetition " + repetition
-							+ " of " + QUERY_EXECUTION_REPETITIONS);
+							+ " of " + repetitions);
 		}
 	}
 

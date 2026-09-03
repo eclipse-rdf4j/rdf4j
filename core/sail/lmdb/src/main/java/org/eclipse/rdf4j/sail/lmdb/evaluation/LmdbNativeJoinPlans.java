@@ -924,12 +924,12 @@ final class JoinPlan implements SlotPlan {
 
 	@Override
 	public RowCursor open(RowState row) throws IOException {
-		PathTargetSet targets = PathTargetSet.tryCreate(left, right, row);
+		PathTargetDecision decision = PathTargetDecision.tryCreate(left, right, row);
 		try {
-			return open(row, targets, targets != null);
+			return open(row, decision, decision != null);
 		} catch (IOException | RuntimeException | Error problem) {
-			if (targets != null) {
-				targets.close();
+			if (decision != null) {
+				decision.close();
 			}
 			throw problem;
 		}
@@ -954,11 +954,24 @@ final class JoinPlan implements SlotPlan {
 			return null;
 		}
 		RowCursor leftRows = LmdbWildcardPredicateBatch.asRows(leftBatch, row, capacity);
-		return leftRows == null ? null
-				: new RowBatchCursor(new JoinCursor(leftRows, right, row, left.producedMask()), row);
+		if (leftRows == null) {
+			return null;
+		}
+		PathTargetDecision decision = null;
+		try {
+			decision = PathTargetDecision.tryCreate(left, right, row);
+			return new RowBatchCursor(new JoinCursor(leftRows, right, row, left.producedMask(), decision,
+					decision != null, Double.NaN, Double.NaN, Double.NaN), row);
+		} catch (IOException | RuntimeException | Error problem) {
+			leftRows.close();
+			if (decision != null) {
+				decision.close();
+			}
+			throw problem;
+		}
 	}
 
-	RowCursor open(RowState row, PathTargetSet targets, boolean ownsTargets) throws IOException {
+	RowCursor open(RowState row, PathTargetDecision decision, boolean ownsDecision) throws IOException {
 		double expectedProbes = Double.NaN;
 		double perProbeRows = Double.NaN;
 		double sweepEstimate = Double.NaN;
@@ -971,9 +984,9 @@ final class JoinPlan implements SlotPlan {
 		}
 		// only left-produced slots vary across left rows; slots bound at open time are constant for
 		// the lifetime of this cursor and do not disqualify replay
-		RowCursor leftCursor = openWithTargets(left, row, targets);
+		RowCursor leftCursor = openWithTargets(left, row, decision);
 		try {
-			return new JoinCursor(leftCursor, right, row, left.producedMask(), targets, ownsTargets,
+			return new JoinCursor(leftCursor, right, row, left.producedMask(), decision, ownsDecision,
 					expectedProbes, perProbeRows, sweepEstimate);
 		} catch (RuntimeException | Error problem) {
 			leftCursor.close();
@@ -981,18 +994,20 @@ final class JoinPlan implements SlotPlan {
 		}
 	}
 
-	static RowCursor openWithTargets(SlotPlan plan, RowState row, PathTargetSet targets) throws IOException {
-		if (targets == null || !targets.appliesTo(plan)) {
+	static RowCursor openWithTargets(SlotPlan plan, RowState row, PathTargetDecision decision) throws IOException {
+		if (decision == null || !decision.appliesTo(plan)) {
 			return plan.open(row);
 		}
-		if (plan == targets.path) {
-			return targets.path.open(row, null, null, targets);
+		if (plan == decision.path) {
+			return decision.targets == null
+					? decision.path.open(row)
+					: decision.path.open(row, null, null, decision.targets);
 		}
 		if (plan instanceof JoinPlan) {
-			return ((JoinPlan) plan).open(row, targets, false);
+			return ((JoinPlan) plan).open(row, decision, false);
 		}
 		FilterPlan filter = (FilterPlan) plan;
-		return new FilterCursor(openWithTargets(filter.arg, row, targets), filter.filter, row);
+		return new FilterCursor(openWithTargets(filter.arg, row, decision), filter.filter, row);
 	}
 
 	@Override
@@ -1011,8 +1026,8 @@ final class JoinCursor implements FactorizedRowCursor {
 	final RowCursor leftCursor;
 	final SlotPlan right;
 	final RowState row;
-	final PathTargetSet pathTargets;
-	final boolean ownsPathTargets;
+	final PathTargetDecision pathTargetDecision;
+	final boolean ownsPathTargetDecision;
 	private int probePollTick;
 	RowCursor rightCursor;
 	/**
@@ -1056,13 +1071,14 @@ final class JoinCursor implements FactorizedRowCursor {
 	}
 
 	JoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask,
-			PathTargetSet pathTargets, boolean ownsPathTargets, double expectedProbes, double perProbeRows,
+			PathTargetDecision pathTargetDecision, boolean ownsPathTargetDecision, double expectedProbes,
+			double perProbeRows,
 			double sweepEstimate) {
 		this.leftCursor = leftCursor;
 		this.right = right;
 		this.row = row;
-		this.pathTargets = pathTargets;
-		this.ownsPathTargets = ownsPathTargets;
+		this.pathTargetDecision = pathTargetDecision;
+		this.ownsPathTargetDecision = ownsPathTargetDecision;
 		this.patternRight = right instanceof PatternPlan pattern ? pattern : null;
 		long readMask = memoReadMask(right);
 		this.replaySlots = readMask >= 0L && (readMask & leftProducedMask) == 0L
@@ -1128,14 +1144,16 @@ final class JoinCursor implements FactorizedRowCursor {
 	}
 
 	RowCursor openRight() throws IOException {
-		if (pathTargets != null && pathTargets.appliesTo(right)) {
-			if (right == pathTargets.path) {
+		if (pathTargetDecision != null && pathTargetDecision.appliesTo(right)) {
+			if (right == pathTargetDecision.path && pathTargetDecision.targets != null) {
 				if (rightProbe == null) {
 					rightProbe = row.source.newProbe();
 				}
-				return pathTargets.path.open(row, rightProbe, null, pathTargets);
+				return pathTargetDecision.path.open(row, rightProbe, null, pathTargetDecision.targets);
 			}
-			return JoinPlan.openWithTargets(right, row, pathTargets);
+			if (right != pathTargetDecision.path) {
+				return JoinPlan.openWithTargets(right, row, pathTargetDecision);
+			}
 		}
 		if (patternRight != null || right instanceof PathPlan) {
 			if (rightProbe == null) {
@@ -1372,8 +1390,8 @@ final class JoinCursor implements FactorizedRowCursor {
 		try {
 			leftCursor.close();
 		} finally {
-			if (ownsPathTargets) {
-				pathTargets.close();
+			if (ownsPathTargetDecision) {
+				pathTargetDecision.close();
 			}
 		}
 	}

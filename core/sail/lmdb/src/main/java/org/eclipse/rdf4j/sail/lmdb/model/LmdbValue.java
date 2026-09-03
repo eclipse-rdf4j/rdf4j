@@ -19,6 +19,12 @@ public interface LmdbValue extends Value {
 
 	long UNKNOWN_ID = -1;
 
+	@FunctionalInterface
+	interface Resolver {
+
+		boolean resolve(long id, LmdbValue value);
+	}
+
 	/**
 	 * Sets the ID that is used for this value in a specific revision of the value store.
 	 */
@@ -42,6 +48,20 @@ public interface LmdbValue extends Value {
 	 * Initializes this value if it was a lazy value (ID-only value) before.
 	 */
 	void init();
+
+	/** Initializes this value through a resolver that may share a read transaction with other values. */
+	default void init(Resolver resolver) {
+		init();
+	}
+
+	/**
+	 * Checks whether this value already carries its RDF term data.
+	 *
+	 * @return {@code true} when calling {@link #init()} is not needed
+	 */
+	default boolean isInitialized() {
+		return false;
+	}
 
 	/**
 	 * Gets the revision of the value store that created this value. The value's internal ID is only valid when it's

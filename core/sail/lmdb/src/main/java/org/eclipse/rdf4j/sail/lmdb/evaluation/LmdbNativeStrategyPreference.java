@@ -186,10 +186,11 @@ final class LmdbNativeStrategyPreference {
 	 * Whether a strategy answers the complete query from exact structural information. Once one of these strategies has
 	 * completed, executing a never-tried general engine arm cannot discover a better access path: it can only repeat
 	 * the answer by enumerating a strictly finer grain. Bounded probes remain available while the structural strategy
-	 * is still being learned; this classification only suppresses the otherwise unbounded mandatory trial.
+	 * is still being learned; an authoritative answer bypasses adaptive rescue once it is the preferred incumbent.
 	 */
 	static boolean answersWholeQueryStructurally(String family) {
-		return LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION.equals(family);
+		return LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION.equals(family)
+				|| LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE.equals(family);
 	}
 
 	/**
@@ -204,12 +205,8 @@ final class LmdbNativeStrategyPreference {
 		return engineIrFamily(family) || boundedSpecialistFamily(family);
 	}
 
-	/** Engine tiers may still receive a mandatory full trial at sites that cannot host a bounded probe. */
-	static boolean allowsUnboundedMandatoryTrial(String family) {
-		return engineIrFamily(family);
-	}
-
-	private static boolean engineIrFamily(String family) {
+	/** Whether the family is one of the engine's IR execution tiers. */
+	static boolean engineIrFamily(String family) {
 		if (family == null) {
 			return false;
 		}
