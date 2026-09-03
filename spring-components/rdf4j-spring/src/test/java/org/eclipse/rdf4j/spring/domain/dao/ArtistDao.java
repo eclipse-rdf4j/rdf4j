@@ -45,14 +45,14 @@ public class ArtistDao extends SimpleRDF4JCRUDDao<Artist, IRI> {
 		super(rdf4JTemplate);
 	}
 
-	private static final JoinDefaultQueryFactory getPaintingsIdsOfArtistQuery = JoinQueryBuilder.of(EX.creatorOf)
+	private static final JoinDefaultQueryFactory PAINTING_IDS_BY_ARTIST = JoinQueryBuilder.of(EX.creatorOf)
 			.sourceEntityConstraints(artist -> artist.isA(EX.Artist))
 			.targetEntityConstraints(painting -> painting.isA(EX.Painting))
 			.leftOuterJoin()
 			.buildFactory();
 
 	public Set<IRI> getPaintingsIdsOfArtist(IRI artistId) {
-		return getPaintingsIdsOfArtistQuery.get(getRdf4JTemplate())
+		return PAINTING_IDS_BY_ARTIST.get(getRdf4JTemplate())
 				.withSourceEntityId(artistId)
 				.asTargetEntityIdSet();
 	}
@@ -67,11 +67,6 @@ public class ArtistDao extends SimpleRDF4JCRUDDao<Artist, IRI> {
 		bindingsBuilder
 				.add(ARTIST_FIRST_NAME, artist.getFirstName())
 				.add(ARTIST_LAST_NAME, artist.getLastName());
-	}
-
-	@Override
-	protected NamedSparqlSupplierPreparer prepareNamedSparqlSuppliers(NamedSparqlSupplierPreparer preparer) {
-		return null;
 	}
 
 	@Override
