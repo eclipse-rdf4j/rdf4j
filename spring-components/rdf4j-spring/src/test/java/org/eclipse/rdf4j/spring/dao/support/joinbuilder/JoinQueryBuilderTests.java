@@ -24,17 +24,17 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
-import org.eclipse.rdf4j.spring.dao.support.BindingSetMapper;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sparqlbuilder.core.Projectable;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 import org.eclipse.rdf4j.spring.RDF4JSpringTestBase;
+import org.eclipse.rdf4j.spring.dao.support.BindingSetMapper;
 import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -263,8 +263,8 @@ public class JoinQueryBuilderTests extends RDF4JSpringTestBase {
 
 		countStep.groupBy(MASTER_NAME);
 
-		Map<IRI, Map<Value, Integer>> result =
-				query.evaluationBuilder(rdf4JTemplate).getGroupedCountsBySourceEntityId();
+		Map<IRI, Map<Value, Integer>> result = query.evaluationBuilder(rdf4JTemplate)
+				.getGroupedCountsBySourceEntityId();
 
 		assertEquals(Map.of(LIGHT_SIDE, 2), result.get(LUKE));
 	}
@@ -298,8 +298,7 @@ public class JoinQueryBuilderTests extends RDF4JSpringTestBase {
 
 		configurable.withContextIdVariable(MASTER_AFFILIATION);
 
-		Map<IRI, Map<IRI, Set<IRI>>> result =
-				factory.get(rdf4JTemplate).asOneToManyByContextId();
+		Map<IRI, Map<IRI, Set<IRI>>> result = factory.get(rdf4JTemplate).asOneToManyByContextId();
 
 		assertEquals(Set.of(LUKE, ANAKIN), result.get(TATOOINE).keySet());
 		assertEquals(Set.of(REY), result.get(JAKKU).keySet());
@@ -341,7 +340,8 @@ public class JoinQueryBuilderTests extends RDF4JSpringTestBase {
 		assertEquals(2, withoutTarget.length);
 		assertEquals(JoinQuery._targetEntity.getQueryString(), withoutTarget[0].getQueryString());
 		assertEquals(MASTER_NAME.getQueryString(), withoutTarget[1].getQueryString());
-		Projectable[] withTarget = JoinQueryBuilder.addRequiredTargetProjection(new Projectable[] { JoinQuery._targetEntity, MASTER_NAME });
+		Projectable[] withTarget = JoinQueryBuilder
+				.addRequiredTargetProjection(new Projectable[] { JoinQuery._targetEntity, MASTER_NAME });
 		assertEquals(2, withTarget.length);
 		assertEquals(JoinQuery._targetEntity.getQueryString(), withTarget[0].getQueryString());
 		assertEquals(MASTER_NAME.getQueryString(), withTarget[1].getQueryString());
@@ -480,6 +480,7 @@ public class JoinQueryBuilderTests extends RDF4JSpringTestBase {
 		assertEquals(ANAKIN, anakin.id);
 		assertNotSame(luke, anakin);
 	}
+
 	private static void assertRightOuterJoinRejected(String operation, Executable executable) {
 		IllegalStateException exception = assertThrows(IllegalStateException.class, executable);
 		assertEquals(
@@ -487,6 +488,7 @@ public class JoinQueryBuilderTests extends RDF4JSpringTestBase {
 						+ " cannot be used with RIGHT_OUTER joins because unmatched targets have no source entity key.",
 				exception.getMessage());
 	}
+
 	private static void addCharacter(ModelBuilder graph, IRI character, IRI homeworld) {
 		graph.subject(character).add(RDF.TYPE, FORCE_USER).add(HOMEWORLD, homeworld);
 	}

@@ -39,6 +39,10 @@ public interface JoinTypeStep extends QueryVariantStep {
 	 * If no objectConstraints are specified, the targetEntity variable will be unbound in the result if the relation
 	 * does not exist.
 	 *
+	 * <p>
+	 * Source-keyed result methods such as {@code asOneToOne()} and {@code asOneToMany()} are not supported for right
+	 * outer joins and fail fast because unmatched targets have no source entity key.
+	 *
 	 * @return the queryVariantStep of the builder
 	 */
 	QueryVariantStep rightOuterJoin();
