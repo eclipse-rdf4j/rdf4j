@@ -979,8 +979,19 @@
             padding: 4px clamp(12px, 1.3vw, 18px) 12px clamp(16px, 3vw, 46px);
             display: flex;
             flex-direction: column;
-            gap: 10px;
             pointer-events: auto;
+        }
+        /* The list is a panel in its own right, on the same white card stock as the slide. */
+        .present-rail-card {
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 11px;
+            padding: 15px 13px;
+            border: 1px solid #eceae3;
+            border-radius: 16px;
+            background: white;
+            box-shadow: 0 1px 2px rgba(28, 25, 20, .04), 0 14px 40px rgba(28, 25, 20, .06);
         }
         .present-rail-title { margin: 0; color: var(--muted); font: 700 9px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .11em; }
         .present-heading { min-width: 0; }
@@ -988,9 +999,6 @@
         .present-slugline span:first-child { color: var(--navy); }
         .present-slugline span:not(:last-child)::after { content: " ·"; }
         #present-title { margin: 10px 0 0; font-size: clamp(21px, 2vw, 31px); line-height: 1.05; letter-spacing: -.035em; }
-        #present-lead { max-width: 78ch; margin: 8px 0 0; color: var(--muted); font-size: 13px; }
-        .present-context { flex: 0 0 auto; max-width: 30ch; margin: 0; color: var(--muted); font: 10px/1.55 var(--mono); text-align: right; }
-        .present-context strong { display: block; color: var(--ink); overflow-wrap: anywhere; }
 
         .present-actions { display: flex; align-items: center; gap: 9px; }
         .present-nav {
@@ -1024,19 +1032,17 @@
         .present-statements { min-height: 0; overflow: auto; }
         .present-statements .statement-list { display: grid; gap: 2px; margin: 0; padding: 0; }
         .present-statements .statement-button { margin: 0; padding: 9px 10px 9px 38px; }
-        .present-statements .statement-button[aria-selected="true"] { background: white; box-shadow: 0 1px 2px rgba(28, 25, 20, .05); }
         .present-statements .statement-number { top: 9px; left: 10px; width: 19px; height: 19px; font-size: 9px; }
         .present-statements .statement-rdf { font-size: 10px; line-height: 1.42; }
         .present-statements .statement-meta { margin-top: 5px; font-size: 9px; }
 
         @media (max-width: 820px) {
-            .present-hint, .present-context { display: none; }
+            .present-hint { display: none; }
         }
 
         /* On a short screen the chrome is competing with the slide for the only scarce axis. The
            lead is the cheapest thing to give up: the presenter is saying it out loud anyway. */
         @media (max-height: 820px) {
-            html[data-present="true"] #present-lead { display: none; }
             html[data-present="true"] #present-title { font-size: 19px; }
             html[data-present="true"] .present-bar { padding-top: 9px; padding-bottom: 9px; }
             html[data-present="true"] .lesson {
@@ -1227,16 +1233,16 @@
             <div class="present-heading">
                 <p class="present-slugline"><span id="present-counter">01 / 01</span><span id="present-eyebrow"></span></p>
                 <h2 id="present-title"></h2>
-                <p id="present-lead"></p>
             </div>
             <div class="present-aside">
                 <div class="present-controls" id="present-controls"></div>
-                <p class="present-context" id="present-context"></p>
             </div>
         </header>
         <aside class="present-rail" aria-label="Fixture statements">
-            <p class="present-rail-title">Eight statements in the fixture</p>
-            <div class="present-statements" id="present-statements"></div>
+            <div class="present-rail-card">
+                <p class="present-rail-title">Eight statements in the fixture</p>
+                <div class="present-statements" id="present-statements"></div>
+            </div>
         </aside>
         <footer class="present-bar present-bar-bottom">
             <p class="present-hint">← → slide · 1–8 statement · D direction · Esc exit</p>
@@ -2254,7 +2260,7 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
                     "[data-testid=\"read-summary\"]", "[data-testid=\"read-omission-note\"]"]
             })
         ]);
-        const PRESENT_DESIGN_WIDTH = 1120;
+        const PRESENT_WIDTH_CHOICES = Object.freeze([900, 1010, 1120, 1250, 1400]);
         const PRESENT_MIN_SCALE = 0.42;
         const PRESENT_MAX_SCALE = 2.1;
         /* FIXTURE:PAGE_FLAG_HELP_V1 */
@@ -2375,8 +2381,6 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
         const presentCounter = document.getElementById("present-counter");
         const presentEyebrow = document.getElementById("present-eyebrow");
         const presentTitle = document.getElementById("present-title");
-        const presentLead = document.getElementById("present-lead");
-        const presentContext = document.getElementById("present-context");
         const presentProgress = document.getElementById("present-progress");
         const presentControls = document.getElementById("present-controls");
         const presentStatements = document.getElementById("present-statements");
@@ -3550,9 +3554,14 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
         }
 
         /**
-         * Scale the fixed-width slide card to the screen. The card is laid out once at
-         * PRESENT_DESIGN_WIDTH so line breaks never move, then transformed; the stage takes the
-         * transformed size so overflow and scrolling still behave when a dense slide is clamped.
+         * Lay the slide card out at a fixed width, then scale it to the screen.
+         *
+         * Which fixed width is not obvious, and it is the whole game for legibility. A card laid
+         * out narrow runs tall and has to be shrunk; laid out wide it runs short but there is less
+         * room to magnify it. The two bounds move in opposite directions, so the widths below are
+         * tried and the one that can be drawn largest wins — that is the one whose text ends up
+         * biggest on the wall. A slide that pins its own width (because its content assumes one,
+         * like the 32-byte hex rows) opts out and is measured only at that width.
          */
         function fitStage() {
             const stage = document.getElementById("present-stage");
@@ -3563,14 +3572,21 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             const styles = getComputedStyle(lesson);
             const availableWidth = lesson.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
             const availableHeight = lesson.clientHeight - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom);
-            frame.style.width = `${PRESENT_SLIDES[state.presentSlide].width || PRESENT_DESIGN_WIDTH}px`;
-            const naturalWidth = frame.offsetWidth || PRESENT_DESIGN_WIDTH;
-            const naturalHeight = frame.offsetHeight || 1;
-            const scale = Math.min(PRESENT_MAX_SCALE, Math.max(PRESENT_MIN_SCALE,
-                Math.min(availableWidth / naturalWidth, availableHeight / naturalHeight)));
-            frame.style.transform = `scale(${scale})`;
-            stage.style.width = `${Math.ceil(naturalWidth * scale)}px`;
-            stage.style.height = `${Math.ceil(naturalHeight * scale)}px`;
+            const pinned = PRESENT_SLIDES[state.presentSlide].width;
+            let best = null;
+            (pinned ? [pinned] : PRESENT_WIDTH_CHOICES).forEach((width) => {
+                frame.style.width = `${width}px`;
+                const height = frame.offsetHeight || 1;
+                const scale = Math.min(PRESENT_MAX_SCALE, Math.max(PRESENT_MIN_SCALE,
+                    Math.min(availableWidth / width, availableHeight / height)));
+                if (!best || scale > best.scale) {
+                    best = { width, height, scale };
+                }
+            });
+            frame.style.width = `${best.width}px`;
+            frame.style.transform = `scale(${best.scale})`;
+            stage.style.width = `${Math.ceil(best.width * best.scale)}px`;
+            stage.style.height = `${Math.ceil(best.height * best.scale)}px`;
         }
 
         function renderPresentProgress() {
@@ -3586,14 +3602,11 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             });
         }
 
-        function renderPresentChrome(model, slide) {
+        function renderPresentChrome(slide) {
             const total = String(PRESENT_SLIDES.length).padStart(2, "0");
             presentCounter.textContent = `${String(state.presentSlide + 1).padStart(2, "0")} / ${total}`;
             presentEyebrow.textContent = slide.eyebrow;
             presentTitle.textContent = slide.title;
-            presentLead.textContent = slide.lead;
-            presentContext.innerHTML = `<strong>${escapeHtml(model.quad.rdf)}</strong>
-                statement ${model.quad.index + 1} · ${state.direction} · P${model.trace.predicateOrdinal} / plane ${model.trace.plane}`;
             presentPrevious.disabled = state.presentSlide === 0;
             presentNext.disabled = state.presentSlide === PRESENT_SLIDES.length - 1;
             renderPresentProgress();
@@ -3637,7 +3650,7 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             renderedSlide = state.presentSlide;
             lesson.append(stage);
             stage.append(frame);
-            renderPresentChrome(model, slide);
+            renderPresentChrome(slide);
             fitStage();
         }
 
@@ -3649,7 +3662,7 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             renderLesson(model);
             if (announce) {
                 liveStatus.textContent = presenting
-                    ? `Slide ${state.presentSlide + 1} of ${PRESENT_SLIDES.length}: ${PRESENT_SLIDES[state.presentSlide].title}. Statement ${state.statementIndex + 1}, ${state.direction}, partition ${model.trace.key}.`
+                    ? `Slide ${state.presentSlide + 1} of ${PRESENT_SLIDES.length}: ${PRESENT_SLIDES[state.presentSlide].title}. ${PRESENT_SLIDES[state.presentSlide].lead} Statement ${state.statementIndex + 1}, ${state.direction}, partition ${model.trace.key}.`
                     : `Statement ${state.statementIndex + 1}, ${state.direction}, partition ${model.trace.key}, step ${state.step + 1}: ${steps[state.step].title}.`;
             }
         }

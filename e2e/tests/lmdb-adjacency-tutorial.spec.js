@@ -406,6 +406,10 @@ test('presentation mode fills the screen and keeps one focused artefact per slid
     await expect(page.locator('.lesson-frame')).toHaveAttribute('data-present-slide', '1');
     await expect(page.locator('#present-counter')).toHaveText('01 / 18');
     await expect(page.locator('#present-title')).not.toBeEmpty();
+    // The bar carries the slide's name and nothing else: the lead reads as body copy nobody looks
+    // at, and the traced statement is already named in the rail.
+    await expect(page.locator('#present-lead')).toHaveCount(0);
+    await expect(page.locator('#present-context')).toHaveCount(0);
     await expect(page.locator('.term-strip')).toBeVisible();
     await expect(page.locator('.card-grid')).toBeVisible();
 
@@ -490,7 +494,7 @@ test('presentation mode stays a live instrument, not a slideshow of screenshots'
     await chips.nth(5).click();
     await expect(chips.nth(5)).toHaveAttribute('aria-selected', 'true');
     expect(await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.getState().statementIndex)).toBe(5);
-    await expect(page.locator('#present-context')).toContainText('_:team');
+    await expect(chips.nth(5)).toContainText('_:team');
 
     // They are a full-height list beside the slide, not a strip squeezed under it, and every
     // statement renders its whole RDF text rather than being cut off mid-term.
@@ -498,6 +502,7 @@ test('presentation mode stays a live instrument, not a slideshow of screenshots'
     const stage = await page.locator('#present-stage').boundingBox();
     expect(rail.x + rail.width).toBeLessThanOrEqual(stage.x + 1);
     expect(rail.height).toBeGreaterThan(400);
+    await expect(page.locator('.present-rail-card [data-statement]')).toHaveCount(8);
     for (let index = 0; index < 8; index++) {
         const text = chips.nth(index).locator('.statement-rdf');
         const untruncated = await text.evaluate((node) => node.scrollWidth <= node.clientWidth + 1);
@@ -520,9 +525,11 @@ test('presentation mode stays a live instrument, not a slideshow of screenshots'
 
     await page.locator('#present-controls [data-control="direction"][data-value="incoming"]').click();
     expect(await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.getState().direction)).toBe('incoming');
-    await expect(page.locator('#present-context')).toContainText('plane 1');
+    expect(await page.evaluate(() =>
+        window.Rdf4jAdjacencyTutorialTesting.getCurrentModel().trace.plane)).toBe(1);
     await page.locator('#present-controls [data-control="direction"][data-value="outgoing"]').click();
-    await expect(page.locator('#present-context')).toContainText('plane 0');
+    expect(await page.evaluate(() =>
+        window.Rdf4jAdjacencyTutorialTesting.getCurrentModel().trace.plane)).toBe(0);
 
     // The view group is not offered on a slide, but it shares the reading layout's click handler,
     // so that handler must still move the deck rather than only the lesson underneath it.
@@ -538,4 +545,29 @@ test('presentation mode stays a live instrument, not a slideshow of screenshots'
     await expect(page.locator('.control-deck [data-control="direction"]')).toHaveCount(2);
     await page.locator('[data-control="terms"][data-value="labels"]').click();
     await expect(page.locator('[data-statement="5"]')).toHaveAttribute('aria-selected', 'true');
+});
+
+test('every slide is drawn at least life size on a presentation screen', async ({ page }) => {
+    await page.setViewportSize({ width: 1800, height: 1100 });
+    await loadTutorial(page);
+    await page.locator('#present-toggle').click();
+
+    // A slide that has to be shrunk below its authored size is a slide nobody at the back of the
+    // room can read. This is the guard that catches a lesson quietly outgrowing its card.
+    const total = await page.evaluate(() => window.Rdf4jAdjacencyTutorialTesting.presentSlides.length);
+    const tooSmall = [];
+    for (let index = 0; index < total; index++) {
+        await page.evaluate((n) => window.Rdf4jAdjacencyTutorialTesting.setPresentSlide(n), index);
+        const measured = await page.evaluate(() => {
+            const frame = document.querySelector('#present-stage > .lesson-frame');
+            return {
+                scale: Number(/scale\(([\d.]+)\)/.exec(frame.style.transform)[1]),
+                title: document.getElementById('present-title').textContent
+            };
+        });
+        if (measured.scale < 1) {
+            tooSmall.push(`${index}: ${measured.scale.toFixed(2)} — ${measured.title}`);
+        }
+    }
+    expect(tooSmall, `slides scaled below life size:\n${tooSmall.join('\n')}`).toEqual([]);
 });
