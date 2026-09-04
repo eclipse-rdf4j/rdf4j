@@ -70,4 +70,10 @@ class ObservingSailDataset extends DelegatingSailDataset {
 		return super.getStatements(subj, pred, obj, contexts);
 	}
 
+	@Override
+	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		observer.observe(subj, pred, obj, contexts);
+		return super.getStatementCount(subj, pred, obj, contexts);
+	}
+
 }
