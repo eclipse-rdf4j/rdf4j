@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
@@ -156,6 +157,10 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 		}
 
 		if (mergedBindingSets.isEmpty()) {
+			if (!QueryEvaluationUtility.canDiscardWithoutEvaluation(filter.getArg())) {
+				// skip the merge: the empty result may not suppress a query-fatal error in the argument
+				return false;
+			}
 			filter.replaceWith(new EmptySet());
 			return true;
 		}

@@ -26,6 +26,10 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * This class will take over for QueryEvaluationUtil. Currently marked as InternalUseOnly because there may still be
@@ -36,6 +40,62 @@ import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
  */
 @InternalUseOnly()
 public class QueryEvaluationUtility {
+
+	/**
+	 * Returns whether a query-model subtree may raise an error that fails the whole query rather than a single
+	 * solution. Ordinary expression errors are row-local (a BIND error leaves the target variable unbound, a FILTER
+	 * error drops the solution, an ORDER expression error sorts as an unbound value); a failed non-silent SERVICE
+	 * invocation is an error for the whole query, and unknown tuple-expression extensions are conservatively assumed
+	 * capable of the same.
+	 */
+	public static boolean mayRaiseQueryFatalError(QueryModelNode subtree) {
+		QueryFatalErrorCollector collector = new QueryFatalErrorCollector();
+		subtree.visit(collector);
+		return collector.fatal;
+	}
+
+	/**
+	 * Returns whether a subtree may be discarded without ever being evaluated — for example because a sibling join
+	 * operand is empty, a condition is statically false, or a physical strategy short-circuits — without suppressing an
+	 * observable query-fatal error. Whether a query fails or returns a (possibly empty) result is observable SPARQL
+	 * behavior: the formal algebra evaluates each operand, so a discarded operand's non-silent SERVICE failure must
+	 * still surface.
+	 */
+	public static boolean canDiscardWithoutEvaluation(QueryModelNode subtree) {
+		return !mayRaiseQueryFatalError(subtree);
+	}
+
+	private static final class QueryFatalErrorCollector extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private boolean fatal;
+
+		@Override
+		public void meet(Service node) {
+			if (!node.isSilent()) {
+				fatal = true;
+			}
+			// The service's inner pattern is evaluated remotely as part of the invocation; a silent invocation
+			// converts any failure into the singleton empty mapping, so there is nothing further to inspect.
+		}
+
+		@Override
+		public void meetOther(QueryModelNode node) {
+			if (node instanceof TupleExpr) {
+				// Unknown tuple-expression extensions (for example tuple function calls or store-specific nodes)
+				// have no declared error contract; assume they can fail the query.
+				fatal = true;
+			} else {
+				super.meetOther(node);
+			}
+		}
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			if (!fatal) {
+				super.meetNode(node);
+			}
+		}
+	}
 
 	/**
 	 * Determines the effective boolean value (EBV) of the supplied value as defined in the
