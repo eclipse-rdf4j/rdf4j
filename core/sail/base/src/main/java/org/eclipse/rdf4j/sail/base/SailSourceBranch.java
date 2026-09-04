@@ -16,6 +16,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -86,6 +87,15 @@ class SailSourceBranch implements SailSource {
 	private SailDataset snapshot;
 
 	/**
+	 * Snapshot datasets superseded by a flush of this branch's changes to the backing source, still borrowed by open
+	 * observers. Invariant: {@code snapshot} plus the unflushed {@code changes} must equal the latest state — once
+	 * changes are flushed they are only visible through a freshly derived backing dataset, and backing datasets may be
+	 * pinned to their creation-time snapshot (native SNAPSHOT support in stores such as LMDB). Closed as soon as no
+	 * observer remains; guarded by {@code semaphore}.
+	 */
+	private final List<SailDataset> retiredSnapshots = new ArrayList<>();
+
+	/**
 	 * Non-null when in {@link IsolationLevels#SERIALIZABLE} (or higher) mode.
 	 */
 	private SailSink serializable;
@@ -134,11 +144,7 @@ class SailSourceBranch implements SailSource {
 		try {
 			try {
 				try {
-					SailDataset toCloseSnapshot = snapshot;
-					snapshot = null;
-					if (toCloseSnapshot != null) {
-						toCloseSnapshot.close();
-					}
+					retireSnapshot();
 				} finally {
 					SailSink toCloseSerializable = serializable;
 					serializable = null;
@@ -285,14 +291,39 @@ class SailSourceBranch implements SailSource {
 
 			@Override
 			public void close() throws SailException {
-				super.close();
+				Throwable failure = null;
+				try {
+					super.close();
+				} catch (RuntimeException | Error closeFailure) {
+					failure = closeFailure;
+				}
 				try {
 					semaphore.lock();
-					observers.remove(this);
-					compressChanges();
-					autoFlush();
-				} finally {
-					semaphore.unlock();
+					try {
+						observers.remove(this);
+						try {
+							compressChanges();
+						} catch (RuntimeException | Error cleanupFailure) {
+							failure = addFailure(failure, cleanupFailure);
+						}
+						try {
+							autoFlush();
+						} catch (RuntimeException | Error cleanupFailure) {
+							failure = addFailure(failure, cleanupFailure);
+						}
+						try {
+							closeRetiredSnapshotsIfUnobserved();
+						} catch (RuntimeException | Error cleanupFailure) {
+							failure = addFailure(failure, cleanupFailure);
+						}
+					} finally {
+						semaphore.unlock();
+					}
+				} catch (RuntimeException | Error cleanupFailure) {
+					failure = addFailure(failure, cleanupFailure);
+				}
+				if (failure != null) {
+					rethrow(failure);
 				}
 			}
 		};
@@ -303,6 +334,26 @@ class SailSourceBranch implements SailSource {
 			semaphore.unlock();
 		}
 		return dataset;
+	}
+
+	private static Throwable addFailure(Throwable failure, Throwable later) {
+		if (failure == null) {
+			return later;
+		}
+		if (failure != later) {
+			failure.addSuppressed(later);
+		}
+		return failure;
+	}
+
+	private static void rethrow(Throwable failure) throws SailException {
+		if (failure instanceof SailException sailException) {
+			throw sailException;
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		throw (Error) failure;
 	}
 
 	@Override
@@ -355,14 +406,40 @@ class SailSourceBranch implements SailSource {
 				} finally {
 					prepared = null;
 				}
+				retireSnapshot();
 			}
 		} catch (Throwable e) {
 			// clear changes if flush fails
 			changes.clear();
 			prepared = null;
+			retireSnapshot();
 			throw e;
 		} finally {
 			semaphore.unlock();
+		}
+	}
+
+	/**
+	 * Retires the cached snapshot dataset after this branch's changes were flushed to the backing source: the flushed
+	 * changes are only visible through a freshly derived backing dataset (which may be pinned to its creation-time
+	 * snapshot), so reusing the pre-flush dataset would serve stale state. Borrowing observers keep the retired dataset
+	 * alive until they close. Callers hold {@code semaphore}.
+	 */
+	private void retireSnapshot() {
+		if (snapshot != null) {
+			retiredSnapshots.add(snapshot);
+			snapshot = null;
+		}
+		closeRetiredSnapshotsIfUnobserved();
+	}
+
+	private void closeRetiredSnapshotsIfUnobserved() {
+		if (observers.isEmpty() && !retiredSnapshots.isEmpty()) {
+			List<SailDataset> toClose = new ArrayList<>(retiredSnapshots);
+			retiredSnapshots.clear();
+			for (SailDataset dataset : toClose) {
+				dataset.close();
+			}
 		}
 	}
 
