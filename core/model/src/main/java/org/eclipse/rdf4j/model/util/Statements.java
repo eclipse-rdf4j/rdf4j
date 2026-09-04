@@ -378,6 +378,7 @@ public class Statements {
 
 	public static void convertRDFTo12Basic(ValueFactory vf, Statement st, Consumer<Statement> consumer,
 			RDFVersionsConversionContext conversionContext) {
+		conversionContext.observe(st);
 		if (st.getObject().isTripleTerm()) {
 			consumeTripleTermInRDF12Basic(vf, st, consumer, conversionContext, false);
 		} else {
@@ -387,6 +388,7 @@ public class Statements {
 
 	public static void convertRDFTo11(ValueFactory vf, Statement st, Consumer<Statement> consumer,
 			RDFVersionsConversionContext conversionContext) {
+		conversionContext.observe(st);
 		Resource subject = st.getSubject();
 		IRI predicate = st.getPredicate();
 		Value object = st.getObject();
