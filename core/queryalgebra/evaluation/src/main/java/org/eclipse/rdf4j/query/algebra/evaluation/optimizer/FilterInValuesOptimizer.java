@@ -70,6 +70,14 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 				return;
 			}
 
+			// The rewritten Join(VALUES, arg) may be executed as a bind join that pushes each VALUES row into
+			// the cloned argument, so the argument must additionally satisfy the binding-injection contract
+			// for the VALUES variables (an Extend target collision or an expression observing the injected
+			// name would change results).
+			if (!QueryEvaluationUtility.permitsBindingInjection(filter.getArg(), assignment.getBindingNames())) {
+				return;
+			}
+
 			if (mergeWithExistingValuesAnchor(filter, assignment)) {
 				return;
 			}

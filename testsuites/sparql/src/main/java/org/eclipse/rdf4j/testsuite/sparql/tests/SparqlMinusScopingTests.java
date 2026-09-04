@@ -244,12 +244,17 @@ public class SparqlMinusScopingTests extends AbstractComplianceTest {
 			hasMaybe.put(s, bound);
 		}
 
-		// With the dataset, only :c lacks :q, so OPTIONAL survives only for c.
+		// Bottom-up algebra (SPARQL 1.1 §18.6): the OPTIONAL group is evaluated independently of the outer
+		// pattern, as Minus(Extend(Z, maybe, 1), BGP(?s :q ?w)). The single mapping {maybe->1} shares no
+		// variables with any right-hand-side mapping, so the MINUS domain-disjointness clause keeps it, and
+		// the OPTIONAL extends every outer row with ?maybe=1. (An earlier expectation encoded the bind-join
+		// substitution behavior, where the injected ?s made the domains overlap and MINUS removed the row —
+		// an instance of the independent-operand defect fixed by the materialized-replay LeftJoin routing.)
 		assertEquals(4, rows.size());
-		assertEquals(Boolean.FALSE, hasMaybe.get("a"));
-		assertEquals(Boolean.FALSE, hasMaybe.get("b"));
+		assertEquals(Boolean.TRUE, hasMaybe.get("a"));
+		assertEquals(Boolean.TRUE, hasMaybe.get("b"));
 		assertEquals(Boolean.TRUE, hasMaybe.get("c"));
-		assertEquals(Boolean.FALSE, hasMaybe.get("e"));
+		assertEquals(Boolean.TRUE, hasMaybe.get("e"));
 	}
 
 	void T13_minus_no_shared_vars_is_noop_select(RepositoryConnection conn) throws IOException {

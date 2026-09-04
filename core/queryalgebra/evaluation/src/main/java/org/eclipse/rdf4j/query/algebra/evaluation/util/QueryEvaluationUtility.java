@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
 import java.util.Objects;
+import java.util.Set;
 
 import javax.xml.datatype.DatatypeConstants;
 import javax.xml.datatype.Duration;
@@ -25,11 +26,90 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Day;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Hours;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Minutes;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Month;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Seconds;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Timezone;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Tz;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Year;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.MD5;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.SHA1;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.SHA256;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.SHA384;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.SHA512;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Abs;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Ceil;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Floor;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Round;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.StrDt;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.StrLang;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Concat;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Contains;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.EncodeForUri;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.LowerCase;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Replace;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrAfter;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrBefore;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrEnds;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrLen;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrStarts;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Substring;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.UpperCase;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.triple.IsTripleFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.triple.StatementFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.triple.TripleObjectFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.triple.TriplePredicateFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.triple.TripleSubjectFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.BooleanCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.ByteCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.DateCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.DateTimeCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.DecimalCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.DoubleCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.FloatCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.IntCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.IntegerCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.LongCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.NegativeIntegerCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.NonNegativeIntegerCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.NonPositiveIntegerCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.PositiveIntegerCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.ShortCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.StringCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedByteCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedIntCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedLongCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedShortCast;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * This class will take over for QueryEvaluationUtil. Currently marked as InternalUseOnly because there may still be
@@ -40,6 +120,153 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  */
 @InternalUseOnly()
 public class QueryEvaluationUtility {
+	@SuppressWarnings("deprecation")
+	private static final Set<Class<?>> DETERMINISTIC_FUNCTION_CLASSES = Set.of(
+			Day.class,
+			Hours.class,
+			Minutes.class,
+			Month.class,
+			Seconds.class,
+			Timezone.class,
+			Tz.class,
+			Year.class,
+			MD5.class,
+			SHA1.class,
+			SHA256.class,
+			SHA384.class,
+			SHA512.class,
+			Abs.class,
+			Ceil.class,
+			Floor.class,
+			Round.class,
+			StrDt.class,
+			StrLang.class,
+			Concat.class,
+			Contains.class,
+			EncodeForUri.class,
+			LowerCase.class,
+			Replace.class,
+			StrAfter.class,
+			StrBefore.class,
+			StrEnds.class,
+			StrLen.class,
+			StrStarts.class,
+			Substring.class,
+			UpperCase.class,
+			IsTripleFunction.class,
+			StatementFunction.class,
+			TripleObjectFunction.class,
+			TriplePredicateFunction.class,
+			TripleSubjectFunction.class,
+			BooleanCast.class,
+			ByteCast.class,
+			DateCast.class,
+			DateTimeCast.class,
+			DecimalCast.class,
+			DoubleCast.class,
+			FloatCast.class,
+			IntCast.class,
+			IntegerCast.class,
+			LongCast.class,
+			NegativeIntegerCast.class,
+			NonNegativeIntegerCast.class,
+			NonPositiveIntegerCast.class,
+			PositiveIntegerCast.class,
+			ShortCast.class,
+			StringCast.class,
+			UnsignedByteCast.class,
+			UnsignedIntCast.class,
+			UnsignedLongCast.class,
+			UnsignedShortCast.class,
+			org.eclipse.rdf4j.query.algebra.evaluation.function.BooleanCast.class,
+			org.eclipse.rdf4j.query.algebra.evaluation.function.DateTimeCast.class,
+			org.eclipse.rdf4j.query.algebra.evaluation.function.DecimalCast.class,
+			org.eclipse.rdf4j.query.algebra.evaluation.function.DoubleCast.class,
+			org.eclipse.rdf4j.query.algebra.evaluation.function.FloatCast.class,
+			org.eclipse.rdf4j.query.algebra.evaluation.function.IntegerCast.class,
+			org.eclipse.rdf4j.query.algebra.evaluation.function.StringCast.class);
+
+	/**
+	 * Returns whether evaluating a query-model subtree again with the same bindings is guaranteed to produce the same
+	 * result. Function calls are resolved through the {@link FunctionRegistry}; unresolvable calls and functions that
+	 * are not known built-ins are conservative barriers, as are BNODE(), aggregates, SAMPLE, SERVICE and unknown
+	 * tuple-expression extensions.
+	 */
+	public static boolean isRepeatable(QueryModelNode node) {
+		RepeatabilityCollector collector = new RepeatabilityCollector();
+		node.visit(collector);
+		return collector.repeatable;
+	}
+
+	/**
+	 * Returns whether a resolved function implementation is stable within one query execution: equal argument tuples
+	 * produce equal RDF terms or equivalent errors, so the optimizer may collapse equal expressions and re-evaluate
+	 * calls with equal arguments. True for exact whitelisted builtin classes and for RDF4J's query-constant NOW
+	 * implementation. A {@link Function#mustReturnDifferentResult() must-differ} freshness guarantee dominates.
+	 */
+	public static boolean isRepeatable(Function function) {
+		if (function.mustReturnDifferentResult()) {
+			return false;
+		}
+		return isQueryStable(function) || DETERMINISTIC_FUNCTION_CLASSES.contains(function.getClass());
+	}
+
+	/**
+	 * Returns whether a resolved function is RDF4J's query-constant NOW implementation.
+	 */
+	private static boolean isQueryStable(Function function) {
+		return function.getClass() == Now.class;
+	}
+
+	private static final class RepeatabilityCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		private boolean repeatable = true;
+
+		private RepeatabilityCollector() {
+			super(false);
+		}
+
+		@Override
+		public void meet(FunctionCall node) {
+			Function function = FunctionRegistry.getInstance().get(node.getURI()).orElse(null);
+			if (function == null || !isRepeatable(function)) {
+				repeatable = false;
+			}
+			super.meet(node);
+		}
+
+		@Override
+		public void meet(BNodeGenerator node) {
+			repeatable = false;
+			super.meet(node);
+		}
+
+		@Override
+		public void meet(AggregateFunctionCall node) {
+			repeatable = false;
+			super.meet(node);
+		}
+
+		@Override
+		public void meet(Sample node) {
+			repeatable = false;
+			super.meet(node);
+		}
+
+		@Override
+		public void meet(Service node) {
+			repeatable = false;
+			super.meet(node);
+		}
+
+		@Override
+		public void meetOther(QueryModelNode node) {
+			if (node instanceof TupleExpr) {
+				repeatable = false;
+			}
+			super.meetOther(node);
+		}
+	}
 
 	/**
 	 * Returns whether a query-model subtree may raise an error that fails the whole query rather than a single
@@ -63,6 +290,207 @@ public class QueryEvaluationUtility {
 	 */
 	public static boolean canDiscardWithoutEvaluation(QueryModelNode subtree) {
 		return !mayRaiseQueryFatalError(subtree);
+	}
+
+	/**
+	 * Returns whether pushing the given set of bindings into the subtree as evaluation-time input is proven equivalent
+	 * to evaluating the subtree independently and applying a compatible-mapping join afterwards (the binding-injection
+	 * contract behind physical bind joins). Injection safety is a JOINT property of the injected set, not a
+	 * per-variable one: {@code FILTER(!BOUND(?x) || !BOUND(?y))} is safe for {?x} alone and for {?y} alone but not for
+	 * {?x,?y} — so callers must ask about the exact set they intend to inject and must never union per-variable
+	 * answers. This initial analysis is conservative: it permits injection only into positive pattern shapes (statement
+	 * patterns, joins, unions, nested optionals, VALUES) where injected names act purely as pattern-variable
+	 * selections, and rejects the subtree outright when any expression reads an injected name that the subtree does not
+	 * assuredly bind, when any BIND target collides with one (an {@code Extend} whose target is pre-bound is undefined
+	 * in the algebra and RDF4J's evaluation would overwrite it), and for mapping-parameterized operators such as
+	 * property paths, whose seeded evaluation observably differs from independent evaluation (see
+	 * {@link #usesMappingParameterizedEvaluation(TupleExpr)}). Every conservative rejection is a candidate for later
+	 * refinement, not a semantic claim.
+	 */
+	public static boolean permitsBindingInjection(TupleExpr subtree, Set<String> injectedNames) {
+		if (injectedNames.isEmpty()) {
+			return true;
+		}
+		BindingInjectionCollector collector = new BindingInjectionCollector(injectedNames);
+		subtree.visit(collector);
+		return collector.safe;
+	}
+
+	/**
+	 * Returns whether the subtree contains an operator whose RDF4J evaluation is intentionally a function of the input
+	 * mapping (mapping-parameterized): zero-length and arbitrary-length property paths (GH-3053 — an endpoint bound by
+	 * another part of the query matches itself even when the term does not occur in the graph), SERVICE (evaluated
+	 * through the federated-service pipeline, which receives the input bindings), LATERAL (per-left-row evaluation by
+	 * definition), triple-reference patterns (whose seeded and unseeded physical evaluations are not established as
+	 * equivalent), and tuple-function or other non-standard extension operators (whose SPI receives the input
+	 * bindings). For such subtrees the correlated per-input evaluation IS the defined semantics — "independent
+	 * evaluation plus compatible-mapping join" is not an equivalent baseline — so physical strategies must keep the
+	 * correlated evaluation path and must never reroute these subtrees through independent-evaluation replay.
+	 */
+	public static boolean usesMappingParameterizedEvaluation(TupleExpr subtree) {
+		MappingParameterizedCollector collector = new MappingParameterizedCollector();
+		subtree.visit(collector);
+		return collector.mappingParameterized;
+	}
+
+	private static final class MappingParameterizedCollector extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private boolean mappingParameterized;
+
+		@Override
+		public void meet(ZeroLengthPath node) {
+			mappingParameterized = true;
+		}
+
+		@Override
+		public void meet(ArbitraryLengthPath node) {
+			mappingParameterized = true;
+		}
+
+		@Override
+		public void meet(Service node) {
+			mappingParameterized = true;
+		}
+
+		@Override
+		public void meet(Lateral node) {
+			// LATERAL's per-left-row evaluation is its defining semantics
+			mappingParameterized = true;
+		}
+
+		@Override
+		public void meet(TripleRef node) {
+			// TripleRef/ReifiedTripleRef evaluation dispatches on which input variables carry values (a bound
+			// triple/reifier is decomposed; unbound patterns enumerate) — the seeded and unseeded physical
+			// evaluations are not established as observationally equivalent, so the correlated path is kept.
+			// Refinement candidate: prove seeded == unseeded + join for each triple-term source.
+			mappingParameterized = true;
+		}
+
+		@Override
+		public void meetOther(QueryModelNode node) {
+			// tuple functions and third-party extension operators receive the input bindings through their
+			// SPI — correlated evaluation is their established contract
+			mappingParameterized = true;
+		}
+	}
+
+	private static final class BindingInjectionCollector extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private final Set<String> injectedNames;
+		private boolean safe = true;
+
+		private BindingInjectionCollector(Set<String> injectedNames) {
+			this.injectedNames = injectedNames;
+		}
+
+		@Override
+		public void meet(Filter node) {
+			checkExpression(node.getCondition(), node.getArg().getAssuredBindingNames());
+			if (safe) {
+				node.getArg().visit(this);
+			}
+		}
+
+		@Override
+		public void meet(Extension node) {
+			Set<String> assuredByArg = node.getArg().getAssuredBindingNames();
+			for (ExtensionElem elem : node.getElements()) {
+				if (injectedNames.contains(elem.getName())) {
+					// the Extend target would already be bound in the injected mapping
+					safe = false;
+					return;
+				}
+				checkExpression(elem.getExpr(), assuredByArg);
+				if (!safe) {
+					return;
+				}
+			}
+			node.getArg().visit(this);
+		}
+
+		@Override
+		public void meet(LeftJoin node) {
+			if (node.hasCondition()) {
+				checkExpression(node.getCondition(), node.getAssuredBindingNames());
+			}
+			if (safe) {
+				node.getLeftArg().visit(this);
+			}
+			if (safe) {
+				node.getRightArg().visit(this);
+			}
+		}
+
+		@Override
+		public void meet(StatementPattern node) {
+			// pattern-variable injection is a selection over the pattern's solutions — always equivalent
+		}
+
+		@Override
+		public void meet(ZeroLengthPath node) {
+			// Path endpoint injection is NOT equivalent to independent evaluation plus a join: a zero-length
+			// path seeded with an injected term matches that term even when it is absent from the graph
+			// (GH-3053), while independent evaluation only enumerates graph terms. Injection is these
+			// operators' DEFINED evaluation (see usesMappingParameterizedEvaluation), which is precisely why a
+			// rewrite that newly introduces injection — e.g. Filter-to-VALUES-join — changes observable results.
+			safe = false;
+		}
+
+		@Override
+		public void meet(ArbitraryLengthPath node) {
+			// see meet(ZeroLengthPath) — same mapping-parameterized contract (zero-length step included)
+			safe = false;
+		}
+
+		@Override
+		public void meet(BindingSetAssignment node) {
+			// evaluated as a compatible-mapping merge with the input — equivalent by definition
+		}
+
+		@Override
+		public void meet(SingletonSet node) {
+		}
+
+		@Override
+		public void meet(Join node) {
+			node.getLeftArg().visit(this);
+			if (safe) {
+				node.getRightArg().visit(this);
+			}
+		}
+
+		@Override
+		public void meet(Union node) {
+			// Union distributes over a compatible-mapping join: (A ∪ B) ⋈ μ = (A ⋈ μ) ∪ (B ⋈ μ)
+			node.getLeftArg().visit(this);
+			if (safe) {
+				node.getRightArg().visit(this);
+			}
+		}
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			if (node instanceof TupleExpr) {
+				// unknown or not-yet-analyzed operator: conservatively unsafe for injection
+				safe = false;
+			} else {
+				super.meetNode(node);
+			}
+		}
+
+		private void checkExpression(ValueExpr expression, Set<String> assuredBySubtree) {
+			for (String name : VarNameCollector.process(expression)) {
+				if (injectedNames.contains(name) && !assuredBySubtree.contains(name)) {
+					// an expression observing an injected name that the subtree does not itself assuredly
+					// bind can distinguish injected evaluation (value present) from independent evaluation
+					// (unbound). When the subtree assuredly binds the name, the expression observes the
+					// pattern-produced value in both cases — injection is then a plain selection.
+					safe = false;
+					return;
+				}
+			}
+		}
 	}
 
 	private static final class QueryFatalErrorCollector extends AbstractQueryModelVisitor<RuntimeException> {
