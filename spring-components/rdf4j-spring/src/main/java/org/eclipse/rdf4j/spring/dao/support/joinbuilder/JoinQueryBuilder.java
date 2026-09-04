@@ -486,9 +486,9 @@ public class JoinQueryBuilder {
 				entityQuery = entityQuery.and(targetPattern.optional());
 			}
 			queryString = Queries.SELECT(getOuterProjection())
-				.distinct()
-				.where(entityQuery)
-				.getQueryString();
+					.distinct()
+					.where(entityQuery)
+					.getQueryString();
 		} else {
 			queryString = Queries.SELECT(getOuterProjection())
 					.where(select(getInnerProjection()).distinct().where(getWhereClause()))

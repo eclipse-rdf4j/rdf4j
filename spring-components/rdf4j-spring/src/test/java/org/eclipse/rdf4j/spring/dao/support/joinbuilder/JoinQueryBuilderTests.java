@@ -305,6 +305,47 @@ public class JoinQueryBuilderTests extends RDF4JSpringTestBase {
 	}
 
 	@Test
+	public void queryFactoriesCreateAndReuseEveryQueryVariant() {
+		var defaultFactory = JoinQueryBuilder.of(TRAINED_BY)
+				.sourceEntityConstraints(character -> character.isA(FORCE_USER))
+				.targetEntityConstraints(master -> master.isA(MASTER))
+				.innerJoin()
+				.buildFactory();
+		assertEquals(Set.of(OBI_WAN, YODA),
+				defaultFactory.get(rdf4JTemplate).asOneToMany().get(LUKE));
+		assertEquals(Set.of(OBI_WAN, YODA),
+				defaultFactory.get(rdf4JTemplate).asOneToMany().get(LUKE));
+
+		var entityFactory = JoinQueryBuilder.of(TRAINED_BY)
+				.sourceEntityConstraints(character -> character.isA(FORCE_USER))
+				.targetEntityConstraints(master -> master.isA(MASTER))
+				.innerJoin()
+				.rowMapper(master -> bindings -> getIRI(bindings, master))
+				.buildFactory();
+		assertEquals(Set.of(OBI_WAN, YODA),
+				entityFactory.get(rdf4JTemplate).asOneToMany().get(LUKE));
+
+		var countFactory = JoinQueryBuilder.of(TRAINED_BY)
+				.sourceEntityConstraints(character -> character.isA(FORCE_USER))
+				.targetEntityConstraints(master -> master.isA(MASTER))
+				.innerJoin()
+				.count()
+				.buildFactory();
+		assertEquals(2, countFactory.get(rdf4JTemplate).getCountsBySourceEntityId().get(LUKE));
+
+		var groupedCountFactory = JoinQueryBuilder.of(TRAINED_BY)
+				.sourceEntityConstraints(character -> character.isA(FORCE_USER))
+				.targetEntityConstraints(master -> master.isA(MASTER).andHas(AFFILIATION, MASTER_AFFILIATION))
+				.innerJoin()
+				.count()
+				.groupBy(MASTER_AFFILIATION)
+				.buildFactory();
+		assertEquals(Map.of(LIGHT_SIDE, 2), groupedCountFactory.get(rdf4JTemplate)
+				.getGroupedCountsBySourceEntityId()
+				.get(LUKE));
+	}
+
+	@Test
 	public void queriesBuiltFromSameBuilderUseDistinctCachedSparql() {
 		var configurable = JoinQueryBuilder.of(TRAINED_BY)
 				.sourceEntityConstraints(character -> character.isA(FORCE_USER))
