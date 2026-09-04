@@ -26,11 +26,6 @@ import java.util.ArrayDeque;
 import java.util.Base64;
 import java.util.Deque;
 
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.Model;
@@ -52,6 +47,11 @@ import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockHttpServletRequest;
+
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 class WorkbenchServletTest {
 
@@ -78,8 +78,10 @@ class WorkbenchServletTest {
 
 		WorkbenchServlet real = new WorkbenchServlet();
 		assertThat(real.createRepositoryManager(tempDir.toURI().toString())).isInstanceOf(LocalRepositoryManager.class);
-		assertThat(real.createRepositoryManager("https://example.org/rdf4j-server"))
-				.isInstanceOf(RemoteRepositoryManager.class);
+		RepositoryManager remoteManager = real.createRepositoryManager("https://example.org/rdf4j-server");
+		assertThat(remoteManager).isInstanceOf(RemoteRepositoryManager.class);
+		assertThat(remoteManager.getClass()).isEqualTo(RemoteRepositoryManager.class);
+		remoteManager.shutDown();
 	}
 
 	@Test

@@ -298,7 +298,7 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 		}
 	}
 
-	public class ByteBufferBackedInputStream extends InputStream {
+	public static class ByteBufferBackedInputStream extends InputStream {
 
 		final ByteBuffer buf;
 

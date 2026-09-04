@@ -712,7 +712,7 @@ public class SPARQLResultsODSWriter implements TupleQueryResultWriter {
 			handleIriCell(writer, (IRI) value, STYLE_IRI); // Default IRI style
 		} else if (value.isBNode()) {
 			writeStringCell(writer, value.stringValue(), STYLE_DEFAULT);
-		} else if (value.isTriple()) {
+		} else if (value.isTripleTerm()) {
 			writeStringCell(writer, value.stringValue(), STYLE_DEFAULT); // Or a dedicated style?
 		} else {
 			writeStringCell(writer, value.stringValue(), STYLE_DEFAULT);

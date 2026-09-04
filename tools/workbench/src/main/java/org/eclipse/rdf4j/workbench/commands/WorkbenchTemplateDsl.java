@@ -37,7 +37,7 @@ final class WorkbenchTemplateDsl {
 			"default", "id");
 
 	private static final Set<String> FIELD_METADATA_KEYS = Set.of("name", "len", "rows", "cols", "placeholder",
-			"control");
+			"control", "unset");
 
 	private WorkbenchTemplateDsl() {
 	}
@@ -173,17 +173,19 @@ final class WorkbenchTemplateDsl {
 		private final Integer cols;
 		private final String placeholder;
 		private final CreateTemplateConfig.FieldControl control;
+		private final boolean unsettable;
 
 		private UiHints(Integer len, Integer rows, Integer cols, String placeholder,
-				CreateTemplateConfig.FieldControl control) {
+				CreateTemplateConfig.FieldControl control, boolean unsettable) {
 			this.len = len;
 			this.rows = rows;
 			this.cols = cols;
 			this.placeholder = placeholder;
 			this.control = control;
+			this.unsettable = unsettable;
 		}
 
-		static UiHints parse(Map<String, String> attributes) {
+		static UiHints parse(Map<String, String> attributes, int lineNumber) {
 			if (attributes.isEmpty()) {
 				return empty();
 			}
@@ -191,11 +193,12 @@ final class WorkbenchTemplateDsl {
 					parseInteger(attributes.get("cols")), attributes.get("placeholder"),
 					attributes.containsKey("control")
 							? CreateTemplateConfig.FieldControl.parse(attributes.get("control"))
-							: null);
+							: null,
+					parseUnsettable(attributes.get("unset"), lineNumber));
 		}
 
 		static UiHints empty() {
-			return new UiHints(null, null, null, null, null);
+			return new UiHints(null, null, null, null, null, false);
 		}
 
 		CreateTemplateConfig.FieldControl control() {
@@ -204,6 +207,10 @@ final class WorkbenchTemplateDsl {
 
 		String placeholder() {
 			return placeholder;
+		}
+
+		boolean unsettable() {
+			return unsettable;
 		}
 
 		int defaultSize(CreateTemplateConfig.FieldControl fallbackControl) {
@@ -223,7 +230,8 @@ final class WorkbenchTemplateDsl {
 					overridingHints.rows != null ? overridingHints.rows : rows,
 					overridingHints.cols != null ? overridingHints.cols : cols,
 					overridingHints.placeholder != null ? overridingHints.placeholder : placeholder,
-					overridingHints.control != null ? overridingHints.control : control);
+					overridingHints.control != null ? overridingHints.control : control,
+					unsettable || overridingHints.unsettable);
 		}
 	}
 
@@ -251,6 +259,11 @@ final class WorkbenchTemplateDsl {
 
 			List<String> remaining = new ArrayList<>(lineSpecs.keySet());
 			for (FieldDirective directive : directives) {
+				if (directive.uiHints.unsettable() && placeholders.size() != 1) {
+					throw new IllegalArgumentException(
+							"# @workbench.field unset=true is only supported on lines with a single placeholder (line "
+									+ lineNumber + ")");
+				}
 				String target = directive.selectTarget(placeholders, remaining, lineNumber);
 				lineSpecs.computeIfPresent(target, (ignored, spec) -> spec.merge(directive.uiHints));
 			}
@@ -279,7 +292,7 @@ final class WorkbenchTemplateDsl {
 
 			Map<String, String> uiAttributes = new LinkedHashMap<>(attributes);
 			String targetName = uiAttributes.remove("name");
-			return new FieldDirective(targetName, UiHints.parse(uiAttributes));
+			return new FieldDirective(targetName, UiHints.parse(uiAttributes, lineNumber));
 		}
 
 		private String selectTarget(List<String> placeholders, List<String> remaining, int lineNumber) {
@@ -304,5 +317,16 @@ final class WorkbenchTemplateDsl {
 
 	private static Integer parseInteger(String value) {
 		return value == null || value.isEmpty() ? null : Integer.valueOf(value);
+	}
+
+	private static boolean parseUnsettable(String value, int lineNumber) {
+		if (value == null || value.isEmpty() || "false".equalsIgnoreCase(value)) {
+			return false;
+		}
+		if ("true".equalsIgnoreCase(value)) {
+			return true;
+		}
+		throw new IllegalArgumentException(
+				"Unsupported # @workbench.field unset value \"" + value + "\" on line " + lineNumber);
 	}
 }

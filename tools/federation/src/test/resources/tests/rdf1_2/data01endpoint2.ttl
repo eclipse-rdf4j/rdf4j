@@ -1,0 +1,6 @@
+PREFIX :    <http://www.example.org/>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+
+:alice  :familyName                     "Alice" .
+_:anno1 rdf:reifies <<( :alice :jobTitle "HR Manager" )>> .
+_:anno1 :accordingTo                     :sourceAliceTitle .

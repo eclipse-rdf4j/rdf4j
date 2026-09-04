@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<sparql xmlns="http://www.w3.org/2005/sparql-results#">
+<head>
+<variable name="s"/>
+<variable name="o"/>
+<variable name="label"/>
+</head>
+<results>
+<result>
+<binding name="s"><uri>http://example.org/subject1</uri></binding>
+<binding name="o"><uri>http://example.org/object1</uri></binding>
+<binding name="label"><literal>Label 1</literal></binding>
+</result>
+</results>
+</sparql>

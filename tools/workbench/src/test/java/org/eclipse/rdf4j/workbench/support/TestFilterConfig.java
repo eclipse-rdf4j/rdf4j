@@ -16,10 +16,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Vector;
 
-import javax.servlet.FilterConfig;
-import javax.servlet.ServletContext;
-
 import org.springframework.mock.web.MockServletContext;
+
+import jakarta.servlet.FilterConfig;
+import jakarta.servlet.ServletContext;
 
 public class TestFilterConfig implements FilterConfig {
 

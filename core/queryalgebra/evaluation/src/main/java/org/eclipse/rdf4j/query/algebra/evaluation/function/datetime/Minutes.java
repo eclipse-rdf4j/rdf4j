@@ -41,8 +41,7 @@ public class Minutes implements Function {
 		}
 
 		Value argValue = args[0];
-		if (argValue instanceof Literal) {
-			Literal literal = (Literal) argValue;
+		if (argValue instanceof Literal literal) {
 
 			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 

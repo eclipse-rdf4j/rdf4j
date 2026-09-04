@@ -38,6 +38,11 @@ public class AbstractLiteralTest extends LiteralTest {
 	}
 
 	@Override
+	protected Literal literal(String label, String language, Literal.BaseDirection dir) {
+		return factory.createLiteral(label, language, dir);
+	}
+
+	@Override
 	protected Literal literal(String label, IRI datatype) {
 		return factory.createLiteral(label, datatype);
 	}
@@ -51,5 +56,4 @@ public class AbstractLiteralTest extends LiteralTest {
 	protected IRI datatype(String iri) {
 		return factory.createIRI(iri);
 	}
-
 }

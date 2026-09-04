@@ -41,9 +41,7 @@ public class StrStarts implements Function {
 		Value leftVal = args[0];
 		Value rightVal = args[1];
 
-		if (leftVal instanceof Literal && rightVal instanceof Literal) {
-			Literal leftLit = (Literal) leftVal;
-			Literal rightLit = (Literal) rightVal;
+		if (leftVal instanceof Literal leftLit && rightVal instanceof Literal rightLit) {
 
 			if (QueryEvaluationUtility.compatibleArguments(leftLit, rightLit)) {
 

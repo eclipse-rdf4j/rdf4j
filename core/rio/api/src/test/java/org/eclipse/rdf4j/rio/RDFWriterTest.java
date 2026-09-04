@@ -31,6 +31,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Reader;
+import java.io.StringWriter;
 import java.io.Writer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -47,9 +48,10 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
@@ -123,17 +125,13 @@ public abstract class RDFWriterTest {
 
 	private final IRI uri5;
 
-	private final Triple triple1;
+	private final TripleTerm tripleTerm1;
 
-	private final Triple triple2;
+	private final TripleTerm tripleTerm2;
 
-	private final Triple triple3;
+	private final TripleTerm tripleTerm3;
 
-	private final Triple triple4;
-
-	private final Triple triple5;
-
-	private final Triple triple6;
+	private final TripleTerm tripleTerm4;
 
 	private final Literal plainLit;
 
@@ -199,12 +197,10 @@ public abstract class RDFWriterTest {
 
 		litBigPlaceholder = vf.createLiteral(prng.nextDouble());
 
-		triple1 = vf.createTriple(uri1, uri2, plainLit);
-		triple2 = vf.createTriple(bnode, uri3, litWithMultipleNewlines);
-		triple3 = vf.createTriple(uri3, uri4, bnodeSingleLetter);
-		triple4 = vf.createTriple(uri5, uri1, uri3);
-		triple5 = vf.createTriple(triple1, uri3, litBigPlaceholder);
-		triple6 = vf.createTriple(triple2, uri4, triple5);
+		tripleTerm1 = vf.createTripleTerm(uri1, uri2, plainLit);
+		tripleTerm2 = vf.createTripleTerm(bnode, uri3, litWithMultipleNewlines);
+		tripleTerm3 = vf.createTripleTerm(uri3, uri4, bnodeSingleLetter);
+		tripleTerm4 = vf.createTripleTerm(uri5, uri1, uri3);
 
 		potentialSubjects = new ArrayList<>();
 		potentialSubjects.add(bnode);
@@ -219,7 +215,6 @@ public abstract class RDFWriterTest {
 		potentialSubjects.add(uri3);
 		potentialSubjects.add(uri4);
 		potentialSubjects.add(uri5);
-		potentialSubjects.addAll(Arrays.asList(triple1, triple2, triple2, triple3, triple4, triple5, triple6));
 		for (int i = 0; i < 50; i++) {
 			potentialSubjects.add(vf.createBNode());
 		}
@@ -242,7 +237,7 @@ public abstract class RDFWriterTest {
 		potentialObjects.add(plainLit);
 		potentialObjects.add(dtLit);
 		potentialObjects.add(langLit);
-		potentialObjects.addAll(Arrays.asList(triple1, triple2, triple2, triple3, triple4, triple5, triple6));
+		potentialObjects.addAll(Arrays.asList(tripleTerm1, tripleTerm2, tripleTerm2, tripleTerm3, tripleTerm4));
 		// FIXME: SES-879: The following break the RDF/XML parser/writer
 		// combination in terms of getting the same number of triples back as we
 		// start with
@@ -754,14 +749,6 @@ public abstract class RDFWriterTest {
 			}
 
 			IRI pred = potentialPredicates.get(prng.nextInt(potentialPredicates.size()));
-			while (obj instanceof Triple && pred.equals(RDF.TYPE)) {
-				// Avoid statements "x rdf:type <<triple>>" as those use the shorter syntax in RDFXMLPrettyWriter
-				// and the writer produces invalid XML in that case. Even though the RDF-star triples are encoded as
-				// valid IRIs, XML has limitations on what characters may form an XML tag name and thus a limitation
-				// on what IRIs may be used in predicates (predicates are XML tags) or the short form of rdf:type
-				// (where the type is also an XML tag).
-				obj = potentialObjects.get(prng.nextInt(potentialObjects.size()));
-			}
 			model.add(potentialSubjects.get(prng.nextInt(potentialSubjects.size())),
 					pred, obj);
 		}
@@ -1828,15 +1815,31 @@ public abstract class RDFWriterTest {
 	}
 
 	@Test
-	public void testRDFStarConversion() throws IOException {
+	public void testReificationConversion() throws IOException {
 		Model model = new LinkedHashModel();
-		model.add(vf.createStatement(triple3, uri1, triple6, uri4));
+
+		BNode triple1Reifier = vf.createBNode();
+		BNode triple2Reifier = vf.createBNode();
+		BNode triple3Reifier = vf.createBNode();
+		BNode triple5Reifier = vf.createBNode();
+		BNode triple6Reifier = vf.createBNode();
+
+		TripleTerm tripleTerm5 = vf.createTripleTerm(triple1Reifier, uri3, litBigPlaceholder);
+		TripleTerm tripleTerm6 = vf.createTripleTerm(triple2Reifier, uri4, triple5Reifier);
+
+		model.add(vf.createStatement(triple1Reifier, RDF.REIFIES, tripleTerm1, uri4));
+		model.add(vf.createStatement(triple2Reifier, RDF.REIFIES, tripleTerm2, uri4));
+		model.add(vf.createStatement(triple3Reifier, RDF.REIFIES, tripleTerm3, uri4));
+		model.add(vf.createStatement(triple5Reifier, RDF.REIFIES, tripleTerm5, uri4));
+		model.add(vf.createStatement(triple6Reifier, RDF.REIFIES, tripleTerm6, uri4));
+
+		model.add(vf.createStatement(triple3Reifier, uri1, triple6Reifier, uri4));
 		model.add(vf.createStatement(uri1, uri2, uri3, uri5));
 
 		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
 		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
 		setupWriterConfig(rdfWriter.getWriterConfig());
-		rdfWriter.getWriterConfig().set(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION, true);
+		rdfWriter.getWriterConfig().set(BasicWriterSettings.CONVERT_RDF_12_REIFICATION, true);
 		rdfWriter.startRDF();
 		model.forEach(rdfWriter::handleStatement);
 		rdfWriter.endRDF();
@@ -1848,13 +1851,8 @@ public abstract class RDFWriterTest {
 		rdfParser.setRDFHandler(new StatementCollector(parsedOutput));
 		rdfParser.parse(inputReader, "");
 
-		// 1 non-RDF-star statement
-		// 1 RDF-star statement whose conversion yields 20 additional statements:
-		// 4 for triple3
-		// 4 for triple6
-		// 4 for triple2 (contained in triple6)
-		// 4 for triple5 (contained in triple6)
-		// 4 for triple1 (contained in triple5)
+		// 2 statements without triple terms
+		// 5 reification statements using RDF 1.2, each translates to 4 RDF 1.1 statements
 		assertEquals(22, parsedOutput.size());
 	}
 
@@ -1937,5 +1935,22 @@ public abstract class RDFWriterTest {
 			assertTrue(actual.contains(subj, pred, obj), "Missing " + st);
 			assertEquals(actual.filter(subj, pred, obj).size(), actual.filter(subj, pred, obj).size());
 		}
+	}
+
+	// Helper method for testing dirLangString literals in supported formats (Turtle, NTriples, TriG, NQuads)
+	public void dirLangStringTest(RDFFormat format) throws Exception {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		String ns = "http://example.org/";
+		IRI uri1 = vf.createIRI(ns, "uri1");
+		IRI uri2 = vf.createIRI(ns, "uri2");
+		model.add(vf.createStatement(uri1, uri2, vf.createLiteral("hello", "en", Literal.BaseDirection.LTR)));
+		model.add(vf.createStatement(uri1, uri2, vf.createLiteral("שלום", "he", Literal.BaseDirection.RTL)));
+
+		StringWriter stringWriter = new StringWriter();
+		Rio.write(model, stringWriter, format);
+		String output = stringWriter.toString();
+
+		assertThat(output).contains("\"hello\"@en--ltr");
+		assertThat(output).contains("\"שלום\"@he--rtl");
 	}
 }

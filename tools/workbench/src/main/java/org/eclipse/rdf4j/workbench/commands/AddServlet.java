@@ -21,8 +21,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
@@ -35,12 +33,15 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.helpers.RioCompression;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 public class AddServlet extends TransformationServlet {
 
@@ -115,7 +116,7 @@ public class AddServlet extends TransformationServlet {
 		try (RepositoryConnection con = repository.getConnection()) {
 			boolean transactionStarted = beginIfRequested(con, isolationLevel);
 			try {
-				con.add(stream, baseURI, format, context);
+				con.add(RioCompression.decompressIfDetected(stream, contentFileName), baseURI, format, context);
 				commitIfNeeded(con, transactionStarted);
 			} catch (RDFParseException | IllegalArgumentException exc) {
 				rollbackIfNeeded(con, transactionStarted);

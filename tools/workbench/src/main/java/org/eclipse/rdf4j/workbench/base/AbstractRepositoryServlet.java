@@ -15,8 +15,6 @@ import java.net.URL;
 
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletException;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -28,6 +26,9 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.workbench.RepositoryServlet;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletException;
 
 public abstract class AbstractRepositoryServlet extends AbstractServlet implements RepositoryServlet {
 

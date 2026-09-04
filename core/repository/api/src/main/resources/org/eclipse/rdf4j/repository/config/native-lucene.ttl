@@ -20,6 +20,12 @@
                 config:sail.type "openrdf:NativeStore" ;
                 config:sail.iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
                 # @workbench.field len=16
+                config:sail.slowQueryLogThresholdSeconds "{%Slow query log threshold (seconds)|0%}" ;
+                # @workbench.field len=16
+                config:sail.slowQueryLogFirstResultThresholdSeconds "{%Slow query first-result threshold (seconds)|0%}" ;
+                # @workbench.field len=16
+                config:sail.slowQueryLogFile "{%Slow query log file|%}" ;
+                # @workbench.field len=48
                 config:native.tripleIndexes "{%Triple indexes|spoc,posc%}";
                 # @workbench.field len=16
                 config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"

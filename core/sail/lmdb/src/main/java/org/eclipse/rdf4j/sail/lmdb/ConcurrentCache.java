@@ -172,18 +172,7 @@ public class ConcurrentCache<K, V> {
 		return 1 << (Integer.SIZE - Integer.numberOfLeadingZeros(n - 1));
 	}
 
-	private static final class Entry<K, V> {
+	private record Entry<K, V> (K key, V value, int hash, long generation) {
 
-		private final K key;
-		private final V value;
-		private final int hash;
-		private final long generation;
-
-		private Entry(K key, V value, int hash, long generation) {
-			this.key = key;
-			this.value = value;
-			this.hash = hash;
-			this.generation = generation;
-		}
 	}
 }

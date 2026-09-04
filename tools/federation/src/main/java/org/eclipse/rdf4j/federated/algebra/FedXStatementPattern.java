@@ -78,6 +78,10 @@ public abstract class FedXStatementPattern extends StatementPattern
 		}
 	}
 
+	public void addStatementSource(StatementSource statementSource) {
+		statementSources.add(statementSource);
+	}
+
 	@Override
 	public <X extends Exception> void visit(QueryModelVisitor<X> visitor)
 			throws X {

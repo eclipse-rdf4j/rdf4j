@@ -15,8 +15,9 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * This is an experimental feature. It may be changed, moved or potentially removed in a future release.
@@ -37,7 +38,12 @@ public class ExplanationImpl implements Explanation {
 		}
 	}
 
-	ObjectMapper objectMapper = new ObjectMapper();
+	ObjectMapper objectMapper = JsonMapper.builder()
+			.changeDefaultVisibility(vc -> vc
+					.withVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.PUBLIC_ONLY)
+					.withVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.NONE))
+			.changeDefaultPropertyInclusion(incl -> incl.withValueInclusion(JsonInclude.Include.NON_NULL))
+			.build();
 
 	@Override
 	public Object tupleExpr() {
@@ -51,16 +57,10 @@ public class ExplanationImpl implements Explanation {
 
 	@Override
 	public String toJson() {
-		try {
-			// TODO: Consider removing pretty printer
-			return this.objectMapper.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.PUBLIC_ONLY)
-					.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.NONE)
-					.setSerializationInclusion(JsonInclude.Include.NON_NULL)
-					.writerWithDefaultPrettyPrinter()
-					.writeValueAsString(toGenericPlanNode());
-		} catch (JsonProcessingException e) {
-			throw new RuntimeException(e);
-		}
+		// TODO: Consider removing pretty printer
+		return this.objectMapper
+				.writerWithDefaultPrettyPrinter()
+				.writeValueAsString(toGenericPlanNode());
 	}
 
 	@Override

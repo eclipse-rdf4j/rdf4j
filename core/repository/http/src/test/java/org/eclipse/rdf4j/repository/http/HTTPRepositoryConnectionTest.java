@@ -13,11 +13,7 @@ package org.eclipse.rdf4j.repository.http;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -141,8 +137,8 @@ public class HTTPRepositoryConnectionTest {
 
 		assertThatCode(() -> query.explain(Explanation.Level.Optimized)).doesNotThrowAnyException();
 		verify(connection).flushTransactionState(Protocol.Action.QUERY);
-		verify(explainSession).sendQueryExplanation(eq(QueryLanguage.SPARQL), any(), eq((String) null), eq(null),
-				eq(true), eq(0), eq(Explanation.Level.Optimized), any());
+		verify(explainSession).sendQueryExplanation(eq(QueryLanguage.SPARQL), any(), isNull(), isNull(),
+				eq(true), eq(0), eq(Explanation.Level.Optimized));
 	}
 
 	@Test
@@ -159,7 +155,7 @@ public class HTTPRepositoryConnectionTest {
 		ExecutorService executor = Executors.newSingleThreadExecutor();
 
 		repository.init();
-		when(activeSession.sendQueryExplanation(any(), any(), any(), any(), anyBoolean(), anyInt(), any(), any()))
+		when(activeSession.sendQueryExplanation(any(), any(), any(), any(), anyBoolean(), anyInt(), any()))
 				.thenAnswer(invocation -> {
 					explainStarted.countDown();
 					assertThat(allowExplainToFinish.await(5, TimeUnit.SECONDS)).isTrue();

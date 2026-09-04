@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -37,7 +37,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 
 /**
  * Factory methods to quickly create {@link Value} objects ( {@link IRI}, {@link Literal}, {@link BNode}, and
- * {@link Triple}) without having to create a {@link ValueFactory} first.
+ * {@link TripleTerm}) without having to create a {@link ValueFactory} first.
  * <p>
  * Example usage:
  *
@@ -609,30 +609,30 @@ public class Values {
 	/* triple factory methods */
 
 	/**
-	 * Creates a new {@link Triple RDF-star embedded triple} with the supplied subject, predicate, and object.
+	 * Creates a new {@link TripleTerm embedded triple} with the supplied subject, predicate, and object.
 	 *
 	 * @param subject   the Triple subject
 	 * @param predicate the Triple predicate
 	 * @param object    the Triple object
-	 * @return a {@link Triple} with the supplied subject, predicate, and object.
+	 * @return a {@link TripleTerm} with the supplied subject, predicate, and object.
 	 * @throws NullPointerException if any of the supplied input parameters is <code>null</code>.
 	 */
-	public static Triple triple(Resource subject, IRI predicate, Value object) {
-		return triple(VALUE_FACTORY, subject, predicate, object);
+	public static TripleTerm tripleTerm(Resource subject, IRI predicate, Value object) {
+		return tripleTerm(VALUE_FACTORY, subject, predicate, object);
 	}
 
 	/**
-	 * Creates a new {@link Triple RDF-star embedded triple} with the supplied subject, predicate, and object.
+	 * Creates a new {@link TripleTerm embedded triple} with the supplied subject, predicate, and object.
 	 *
-	 * @param vf        the {@link ValueFactory} to use for creation of the {@link Triple}
-	 * @param subject   the Triple subject
-	 * @param predicate the Triple predicate
-	 * @param object    the Triple object
-	 * @return a {@link Triple} with the supplied subject, predicate, and object.
+	 * @param vf        the {@link ValueFactory} to use for creation of the {@link TripleTerm}
+	 * @param subject   the TripleTerm subject
+	 * @param predicate the TripleTerm predicate
+	 * @param object    the TripleTerm object
+	 * @return a {@link TripleTerm} with the supplied subject, predicate, and object.
 	 * @throws NullPointerException if any of the supplied input parameters is <code>null</code>.
 	 */
-	public static Triple triple(ValueFactory vf, Resource subject, IRI predicate, Value object) {
-		return vf.createTriple(
+	public static TripleTerm tripleTerm(ValueFactory vf, Resource subject, IRI predicate, Value object) {
+		return vf.createTripleTerm(
 				Objects.requireNonNull(subject, "subject may not be null"),
 				Objects.requireNonNull(predicate, "predicate may not be null"),
 				Objects.requireNonNull(object, "object may not be null")
@@ -640,30 +640,30 @@ public class Values {
 	}
 
 	/**
-	 * Creates a new {@link Triple RDF-star embedded triple} using the subject, predicate and object from the supplied
+	 * Creates a new {@link TripleTerm embedded triple} using the subject, predicate and object from the supplied
 	 * {@link Statement}.
 	 *
-	 * @param statement the {@link Statement} from which to construct a {@link Triple}
-	 * @return a {@link Triple} with the same subject, predicate, and object as the supplied Statement.
+	 * @param statement the {@link Statement} from which to construct a {@link TripleTerm}
+	 * @return a {@link TripleTerm} with the same subject, predicate, and object as the supplied Statement.
 	 * @throws NullPointerException if statement is <code>null</code>.
 	 */
-	public static Triple triple(Statement statement) {
+	public static TripleTerm tripleTerm(Statement statement) {
 		Objects.requireNonNull(statement, "statement may not be null");
-		return VALUE_FACTORY.createTriple(statement.getSubject(), statement.getPredicate(), statement.getObject());
+		return VALUE_FACTORY.createTripleTerm(statement.getSubject(), statement.getPredicate(), statement.getObject());
 	}
 
 	/**
-	 * Creates a new {@link Triple RDF-star embedded triple} using the subject, predicate and object from the supplied
+	 * Creates a new {@link TripleTerm embedded triple} using the subject, predicate and object from the supplied
 	 * {@link Statement}.
 	 *
-	 * @param vf        the {@link ValueFactory} to use for creation of the {@link Triple}
-	 * @param statement the {@link Statement} from which to construct a {@link Triple}
-	 * @return a {@link Triple} with the same subject, predicate, and object as the supplied Statement.
+	 * @param vf        the {@link ValueFactory} to use for creation of the {@link TripleTerm}
+	 * @param statement the {@link Statement} from which to construct a {@link TripleTerm}
+	 * @return a {@link TripleTerm} with the same subject, predicate, and object as the supplied Statement.
 	 * @throws NullPointerException if any of the supplied input parameters is <code>null</code>.
 	 */
-	public static Triple triple(ValueFactory vf, Statement statement) {
+	public static TripleTerm tripleTerm(ValueFactory vf, Statement statement) {
 		Objects.requireNonNull(statement, "statement may not be null");
-		return vf.createTriple(statement.getSubject(), statement.getPredicate(), statement.getObject());
+		return vf.createTripleTerm(statement.getSubject(), statement.getPredicate(), statement.getObject());
 	}
 
 	/**

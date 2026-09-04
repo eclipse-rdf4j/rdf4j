@@ -16,6 +16,8 @@ public class ASTUnionGraphPattern extends SimpleNode {
 
 	public ASTUnionGraphPattern(int id) {
 		super(id);
+		// Moved scope change to constructor to prevent loss when SPARQL grammar is regenerated
+		setScopeChange(true);
 	}
 
 	public ASTUnionGraphPattern(SyntaxTreeBuilder p, int id) {

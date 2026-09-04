@@ -36,6 +36,8 @@ import org.eclipse.rdf4j.testsuite.sparql.tests.ExistsTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.FilterScopeTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.GroupByTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.InTest;
+import org.eclipse.rdf4j.testsuite.sparql.tests.LateralScopeTest;
+import org.eclipse.rdf4j.testsuite.sparql.tests.LateralTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.MinusTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.OptionalTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.OrderByTest;
@@ -119,6 +121,16 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 	@TestFactory
 	Stream<DynamicTest> optional() throws RDF4JException, IOException {
 		return new OptionalTest(this::getEmptyInitializedRepository).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> lateral() throws RDF4JException, IOException {
+		return new LateralTest(this::getEmptyInitializedRepository).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> lateralScope() throws RDF4JException, IOException {
+		return new LateralScopeTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory

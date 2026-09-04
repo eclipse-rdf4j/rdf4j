@@ -38,8 +38,7 @@ public class SHA384 extends HashFunction {
 			throw new ValueExprEvaluationException("SHA384 requires exactly 1 argument, got " + args.length);
 		}
 
-		if (args[0] instanceof Literal) {
-			Literal literal = (Literal) args[0];
+		if (args[0]instanceof Literal literal) {
 
 			if (QueryEvaluationUtility.isSimpleLiteral(literal)) {
 				String lexValue = literal.getLabel();

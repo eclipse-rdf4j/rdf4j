@@ -45,23 +45,17 @@ class MemoryMappedTxnStatusFile extends TxnStatusFile {
 
 	private static final String ALWAYS_FORCE_SYNC_PROP = "org.eclipse.rdf4j.sail.nativerdf.MemoryMappedTxnStatusFile.alwaysForceSync";
 
-	static boolean ALWAYS_FORCE_SYNC = Boolean.getBoolean(ALWAYS_FORCE_SYNC_PROP);
+	final boolean ALWAYS_FORCE_SYNC;
 
 	private final File statusFile;
 	private final FileChannel channel;
 	private final MappedByteBuffer mapped;
 
-	/**
-	 * Creates a new transaction status file. New files are initialized with {@link TxnStatus#NONE}.
-	 *
-	 * @param dataDir The directory for the transaction status file.
-	 * @throws IOException If the file could not be opened or created.
-	 */
-	public MemoryMappedTxnStatusFile(File dataDir) throws IOException {
+	public MemoryMappedTxnStatusFile(File dataDir, boolean forceSync) throws IOException {
 		super();
 		this.statusFile = new File(dataDir, FILE_NAME);
 
-		ALWAYS_FORCE_SYNC = !Boolean.getBoolean(ALWAYS_FORCE_SYNC_PROP);
+		ALWAYS_FORCE_SYNC = forceSync || !Boolean.getBoolean(ALWAYS_FORCE_SYNC_PROP);
 
 		EnumSet<StandardOpenOption> openOptions = EnumSet.of(StandardOpenOption.READ, StandardOpenOption.WRITE,
 				StandardOpenOption.CREATE);

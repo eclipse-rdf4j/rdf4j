@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -114,8 +114,8 @@ public class ValueEqualityBenchmark {
 	private final Literal dateX = factory.createLiteral(new Date(1_000_000L));
 	private final Literal dateY = factory.createLiteral(new Date(1_000_000L));
 
-	private final Triple tripleX = factory.createTriple(iriUnaryX, iriUnaryX, iriUnaryX);
-	private final Triple tripleY = factory.createTriple(iriUnaryY, iriUnaryY, iriUnaryY);
+	private final TripleTerm tripleTermX = factory.createTripleTerm(iriUnaryX, iriUnaryX, iriUnaryX);
+	private final TripleTerm tripleTermY = factory.createTripleTerm(iriUnaryY, iriUnaryY, iriUnaryY);
 
 	private final Statement statementX = factory.createStatement(iriUnaryX, iriUnaryX, iriUnaryX);
 	private final Statement statementY = factory.createStatement(iriUnaryY, iriUnaryY, iriUnaryY);
@@ -149,7 +149,7 @@ public class ValueEqualityBenchmark {
 			calendarX, calendarY,
 			dateX, dateY,
 
-			tripleX, tripleY,
+			tripleTermX, tripleTermY,
 
 			statementX, statementY,
 			statementContextX, statementContextY,
@@ -287,7 +287,7 @@ public class ValueEqualityBenchmark {
 	@Benchmark
 	public void compareTriple() {
 		for (long c = samples; c > 0; --c) {
-			tripleX.equals(tripleY);
+			tripleTermX.equals(tripleTermY);
 		}
 	}
 

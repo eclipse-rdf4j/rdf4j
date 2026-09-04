@@ -19,11 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.io.CharSink;
-import org.eclipse.rdf4j.model.BNode;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.*;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -37,7 +33,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
  * TupleQueryResultWriter for the SPARQL CSV (Comma-Separated Values) format.
  *
  * @author Jeen Broekstra
- * @see <a href="http://www.w3.org/TR/sparql11-results-csv-tsv/#csv">SPARQL 1.1 Query Results CSV Format</a>
+ * @see <a href="http://www.w3.org/TR/sparql12-results-csv-tsv/#csv">SPARQL 1.2 Query Results CSV Format</a>
  */
 public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter, CharSink {
 
@@ -126,10 +122,43 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 	}
 
 	protected void writeValue(Value val) throws IOException {
-		if (val instanceof Resource) {
+		if (val instanceof TripleTerm) {
+			writeTripleTerm((TripleTerm) val);
+		} else if (val instanceof Resource) {
 			writeResource((Resource) val);
 		} else {
 			writeLiteral((Literal) val);
+		}
+	}
+
+	/**
+	 * Handles cases where a literal is present at object position, which requires outer triple term to be encapsulation
+	 * in "<<(...)>>" and literals or escaped URIs to have double quotes. Any other case is handled as usual with no
+	 * encapsulation of the term.
+	 *
+	 * @param tt - the outermost Triple Term.
+	 * @throws IOException
+	 */
+	protected void writeTripleTerm(TripleTerm tt) throws IOException {
+		// Check beforehand if encapsulation of triple term in "" is necessary:
+		boolean encapsulationNeeded = checkEncapsulationNeeded(tt);
+
+		if (encapsulationNeeded) {
+			writer.write("\"<<( ");
+			writeDoubleQuotedValue(tt.getSubject());
+			writer.write(' ');
+			writeDoubleQuotedURI(tt.getPredicate());
+			writer.write(' ');
+			writeDoubleQuotedValue(tt.getObject());
+			writer.write(" )>>\"");
+		} else {
+			writer.write("<<( ");
+			writeValue(tt.getSubject());
+			writer.write(' ');
+			writeValue(tt.getPredicate());
+			writer.write(' ');
+			writeValue(tt.getObject());
+			writer.write(" )>>");
 		}
 	}
 
@@ -200,6 +229,97 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 			writer.write("\"");
 		}
 
+	}
+
+	protected boolean checkEncapsulationNeeded(Value val) {
+		if (val instanceof TripleTerm) {
+			// Encapsulation of the triple term is needed if the object is a
+			// literal, or if the subject or predicate uri contains a comma.
+			return checkEncapsulationNeeded(((TripleTerm) val).getSubject()) ||
+					checkEncapsulationNeeded(((TripleTerm) val).getPredicate()) ||
+					checkEncapsulationNeeded(((TripleTerm) val).getObject());
+		} else if (val instanceof IRI) {
+			return ((IRI) val).toString().contains(",");
+		} else
+			return val instanceof Literal;
+	}
+
+	protected void writeDoubleQuotedValue(Value val) throws IOException {
+		if (val instanceof TripleTerm) {
+			writer.write("<<( ");
+			writeDoubleQuotedValue(((TripleTerm) val).getSubject());
+			writer.write(' ');
+			writeDoubleQuotedValue(((TripleTerm) val).getPredicate());
+			writer.write(' ');
+			writeDoubleQuotedValue(((TripleTerm) val).getObject());
+			writer.write(" )>>");
+		} else if (val instanceof Resource) {
+			writeDoubleQuotedResource((Resource) val);
+		} else {
+			writeDoubleQuotedLiteral((Literal) val);
+		}
+	}
+
+	private void writeDoubleQuotedLiteral(Literal literal) throws IOException {
+		String label = literal.getLabel();
+		IRI datatype = literal.getDatatype();
+
+		if (XMLDatatypeUtil.isIntegerDatatype(datatype) || XMLDatatypeUtil.isDecimalDatatype(datatype)
+				|| XSD.DOUBLE.equals(datatype)) {
+			try {
+				String normalized = XMLDatatypeUtil.normalize(label, datatype);
+				// encapsulate:
+				writer.write("\"\"");
+				writer.write(normalized);
+				writer.write("\"\"");
+				return; // done
+			} catch (IllegalArgumentException e) {
+				// not a valid numeric datatyped literal. ignore error and write as
+				// (optionally quoted) string instead.
+			}
+		}
+
+		if (label.contains(",") || label.contains("\r") || label.contains("\n") || label.contains("\"")) {
+			// Since this method applies to an outer triple term encapsulated in "<<()>>"
+			// which requires doubling the number of the escaping " of the literal value
+			// itself, we also need to multiply by 4 the escapes of any inner quotes.
+			// Example: "<<( uri_s uri_p ""Hello, world! My name is """"Alice""""."")>>",
+			// as opposed to a no literals case: <<( uri_s uri_p uri_o)>>.
+			label = label.replace("\"", "\"\"\"\"");
+		}
+
+		// write opening quotes for entire value
+		writer.write("\"\"");
+
+		writer.write(label);
+
+		// write closing quotes for entire value
+		writer.write("\"\"");
+	}
+
+	protected void writeDoubleQuotedResource(Resource res) throws IOException {
+		if (res instanceof IRI) {
+			writeDoubleQuotedURI((IRI) res);
+		} else {
+			writeBNode((BNode) res);
+		}
+	}
+
+	protected void writeDoubleQuotedURI(IRI uri) throws IOException {
+		String uriString = uri.toString();
+		boolean quoted = uriString.contains(",");
+
+		if (quoted) {
+			// write opening quote for entire value
+			writer.write("\"\"");
+		}
+
+		writer.write(uriString);
+
+		if (quoted) {
+			// write closing quote for entire value
+			writer.write("\"\"");
+		}
 	}
 
 	@Override

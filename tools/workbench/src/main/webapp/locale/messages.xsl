@@ -115,6 +115,7 @@
 	</variable>
 	<variable name="true.label">Yes</variable>
 	<variable name="false.label">No</variable>
+	<variable name="repository-default.label">Repository default</variable>
 	<variable name="none.label">None</variable>
 	<variable name="all.label">All</variable>
 	<variable name="readable.label">Readable</variable>

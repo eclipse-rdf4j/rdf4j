@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -164,7 +165,7 @@ public class OrderComparator implements Comparator<BindingSet> {
 				final Value v1 = o1.getValue(bindingName);
 				final Value v2 = o2.getValue(bindingName);
 
-				final int compare = cmp.compare(v1, v2);
+				final int compare = compareForTotalOrder(v1, v2);
 				if (compare != 0) {
 					return compare;
 				}
@@ -175,6 +176,25 @@ public class OrderComparator implements Comparator<BindingSet> {
 			logger.debug(e.getMessage(), e);
 			return 0;
 		}
+	}
+
+	private int compareForTotalOrder(Value v1, Value v2) {
+		int compare = cmp.compare(v1, v2);
+		if (compare != 0 || Objects.equals(v1, v2)) {
+			return compare;
+		}
+
+		compare = v1.toString().compareTo(v2.toString());
+		if (compare != 0) {
+			return compare;
+		}
+
+		compare = v1.getClass().getName().compareTo(v2.getClass().getName());
+		if (compare != 0) {
+			return compare;
+		}
+
+		return Integer.compare(System.identityHashCode(v1), System.identityHashCode(v2));
 	}
 
 	private boolean sortedEquals(List<String> o1bindingNamesOrdered, List<String> o2bindingNamesOrdered) {

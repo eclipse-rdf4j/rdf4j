@@ -57,8 +57,8 @@ import org.eclipse.rdf4j.sail.memory.model.MemStatement;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementIterator;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementIteratorCache;
 import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
-import org.eclipse.rdf4j.sail.memory.model.MemTriple;
 import org.eclipse.rdf4j.sail.memory.model.MemTripleIterator;
+import org.eclipse.rdf4j.sail.memory.model.MemTripleTerm;
 import org.eclipse.rdf4j.sail.memory.model.MemValue;
 import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
 import org.eclipse.rdf4j.sail.memory.model.WeakObjectRegistry;
@@ -90,7 +90,7 @@ class MemorySailStore implements SailStore {
 	private static final double CLEANUP_MINIMUM_FREE_MEMORY_RATIO = 1.0 / 8;
 
 	public static final EmptyIteration<MemStatement> EMPTY_ITERATION = (EmptyIteration<MemStatement>) StatementPatternQueryEvaluationStep.EMPTY_ITERATION;
-	public static final EmptyIteration<MemTriple> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
+	public static final EmptyIteration<MemTripleTerm> EMPTY_TRIPLE_ITERATION = new EmptyIteration<>();
 	public static final MemResource[] EMPTY_CONTEXT = {};
 	public static final MemResource[] NULL_CONTEXT = { null };
 
@@ -347,7 +347,7 @@ class MemorySailStore implements SailStore {
 	 * Creates a TripleIterator that contains the triples matching the specified pattern of subject, predicate, object,
 	 * context.
 	 */
-	private CloseableIteration<MemTriple> createTripleIterator(Resource subj, IRI pred, Value obj,
+	private CloseableIteration<MemTripleTerm> createTripleIterator(Resource subj, IRI pred, Value obj,
 			int snapshot) throws InterruptedException {
 		// Perform look-ups for value-equivalents of the specified values
 
@@ -1049,7 +1049,7 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public CloseableIteration<MemTriple> getTriples(Resource subj, IRI pred, Value obj)
+		public CloseableIteration<MemTripleTerm> getTriples(Resource subj, IRI pred, Value obj)
 				throws SailException {
 			try {
 				return createTripleIterator(subj, pred, obj, getCurrentSnapshot());

@@ -14,8 +14,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.federated.algebra.NJoin;
+import org.eclipse.rdf4j.federated.algebra.TripleRefStatementPattern;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
 public class OptimizerUtil {
@@ -47,5 +50,30 @@ public class OptimizerUtil {
 		} else {
 			joinArgs.add(node);
 		}
+	}
+
+	public static TupleExpr flattenTripleRefJoins(Join join, QueryInfo queryInfo) {
+		// recursion
+		if (join.getLeftArg()instanceof Join nestedJoin) {
+			join.setLeftArg(flattenTripleRefJoins(nestedJoin, queryInfo));
+		}
+		if (join.getRightArg()instanceof Join nestedJoin) {
+			join.setRightArg(flattenTripleRefJoins(nestedJoin, queryInfo));
+		}
+
+		// handle own node
+		if (join.getLeftArg()instanceof TripleRef tr && join.getRightArg()instanceof StatementPattern stmt) {
+
+			TupleExpr newExpr = new TripleRefStatementPattern(stmt, tr, queryInfo);
+			return newExpr;
+		}
+		if (join.getRightArg()instanceof TripleRef tr && join.getLeftArg()instanceof StatementPattern stmt) {
+
+			TupleExpr newExpr = new TripleRefStatementPattern(stmt, tr, queryInfo);
+			return newExpr;
+		}
+
+		// leave actual join untouched
+		return join;
 	}
 }

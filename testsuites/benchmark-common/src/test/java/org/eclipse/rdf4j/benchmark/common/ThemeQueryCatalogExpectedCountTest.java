@@ -42,4 +42,29 @@ class ThemeQueryCatalogExpectedCountTest {
 			}
 		}
 	}
+
+	@Test
+	void expectedCountBindingValuesMatchCatalogValues() {
+		Map<Theme, long[]> expectedCountBindingValues = Map.of(
+				Theme.MEDICAL_RECORDS, new long[] { 7571, 49835, -1, 8309, 24971, 0, -1, 0, -1, 16352, 8335,
+						-1, -1 },
+				Theme.SOCIAL_MEDIA, new long[] { 6, 2, 3, -1, 5, 480, -1, 5, 3, 11, 2, -1, -1 },
+				Theme.LIBRARY, new long[] { 128853, 0, -1, 7958, 0, 217, -1, 77295, -1, 0, 4, -1, -1 },
+				Theme.ENGINEERING, new long[] { 132672, 0, -1, 348, 2, 0, -1, 0, -1, 0, 2, -1, -1 },
+				Theme.HIGHLY_CONNECTED, new long[] { 40251, 36767, -1, 39720, 770, 3279, -1, 32513, 119, -1,
+						59, -1, -1 },
+				Theme.TRAIN, new long[] { 8268, 0, -1, 67380, 2, 24, -1, 1, 9, -1, 18788, -1, -1 },
+				Theme.ELECTRICAL_GRID, new long[] { 7396, 0, -1, 59629, 5, 47, -1, 6, -1, 0, 0, -1, -1 },
+				Theme.PHARMA, new long[] { 18, -1, -1, -1, 4972, 32, -1, 2885, -1, 13, -1, -1, -1 }
+		);
+
+		for (Map.Entry<Theme, long[]> entry : expectedCountBindingValues.entrySet()) {
+			Theme theme = entry.getKey();
+			long[] values = entry.getValue();
+			for (int index = 0; index < values.length; index++) {
+				assertEquals(values[index], ThemeQueryCatalog.expectedCountBindingValueFor(theme, index).orElse(-1),
+						"Unexpected count binding value for theme " + theme + " and query index " + index);
+			}
+		}
+	}
 }

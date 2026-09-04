@@ -174,7 +174,7 @@ class TripleStore implements Closeable {
 	public TripleStore(File dir, String indexSpecStr, boolean forceSync) throws IOException, SailException {
 		this.dir = dir;
 		this.forceSync = forceSync;
-		this.txnStatusFile = createTxnStatusFile(dir);
+		this.txnStatusFile = createTxnStatusFile(dir, forceSync);
 
 		File propFile = new File(dir, PROPERTIES_FILE);
 
@@ -229,11 +229,11 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private static TxnStatusFile createTxnStatusFile(File dir) throws IOException {
+	private static TxnStatusFile createTxnStatusFile(File dir, boolean forceSync) throws IOException {
 		if (Boolean.getBoolean(MEMORY_MAPPED_TXN_STATUS_FILE_ENABLED_PROP)) {
-			return new MemoryMappedTxnStatusFile(dir);
+			return new MemoryMappedTxnStatusFile(dir, forceSync);
 		}
-		return new TxnStatusFile(dir);
+		return new TxnStatusFile(dir, forceSync);
 	}
 
 	/*---------*
@@ -593,13 +593,7 @@ class TripleStore implements Closeable {
 	 * Inner class ExplicitStatementFilter *
 	 *-------------------------------------*/
 
-	private static class ExplicitStatementFilter implements RecordIterator {
-
-		private final RecordIterator wrappedIter;
-
-		public ExplicitStatementFilter(RecordIterator wrappedIter) {
-			this.wrappedIter = wrappedIter;
-		}
+	private record ExplicitStatementFilter(RecordIterator wrappedIter) implements RecordIterator {
 
 		@Override
 		public byte[] next() throws IOException {
@@ -631,13 +625,7 @@ class TripleStore implements Closeable {
 		}
 	} // end inner class ExplicitStatementFilter
 
-	private static class ImplicitStatementFilter implements RecordIterator {
-
-		private final RecordIterator wrappedIter;
-
-		public ImplicitStatementFilter(RecordIterator wrappedIter) {
-			this.wrappedIter = wrappedIter;
-		}
+	private record ImplicitStatementFilter(RecordIterator wrappedIter) implements RecordIterator {
 
 		@Override
 		public byte[] next() throws IOException {
@@ -1510,29 +1498,33 @@ class TripleStore implements Closeable {
 			int a = (int) INT_BE.get(key, first);
 			int b = (int) INT_BE.get(data, offset + first);
 			int x = a ^ b;
-			if (x != 0)
+			if (x != 0) {
 				return diffFromXorInt(a, b, x);
+			}
 
 			// Field 2
 			a = (int) INT_BE.get(key, second);
 			b = (int) INT_BE.get(data, offset + second);
 			x = a ^ b;
-			if (x != 0)
+			if (x != 0) {
 				return diffFromXorInt(a, b, x);
+			}
 
 			// Field 3
 			a = (int) INT_BE.get(key, third);
 			b = (int) INT_BE.get(data, offset + third);
 			x = a ^ b;
-			if (x != 0)
+			if (x != 0) {
 				return diffFromXorInt(a, b, x);
+			}
 
 			// Field 4
 			a = (int) INT_BE.get(key, fourth);
 			b = (int) INT_BE.get(data, offset + fourth);
 			x = a ^ b;
-			if (x != 0)
+			if (x != 0) {
 				return diffFromXorInt(a, b, x);
+			}
 
 			return 0;
 		}
@@ -1556,8 +1548,9 @@ class TripleStore implements Closeable {
 			final int b = (int) INT_BE.get(data, offset + fieldIdx);
 
 			final int x = a ^ b; // mask of differing bits
-			if (x == 0)
+			if (x == 0) {
 				return 0; // all 4 bytes equal
+			}
 
 			// Find the first differing *byte* from the left (k .. k+3).
 			// With a big‑endian view, the first byte lives in bits 31..24, etc.

@@ -21,8 +21,6 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointClassification;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategyFactory;
-import org.eclipse.rdf4j.federated.evaluation.SailFederationEvalStrategy;
-import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.NamingThreadFactory;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.Scheduler;
@@ -107,7 +105,6 @@ public class FederationManager {
 		FederationEvaluationStrategyFactory strategyFactory = federation.getFederationEvaluationStrategyFactory();
 		strategyFactory.setFederationType(federationType);
 		strategyFactory.setFederationContext(federationContext);
-		strategyFactory.setCollectionFactory(federation.getCollectionFactory());
 		return strategyFactory;
 	}
 

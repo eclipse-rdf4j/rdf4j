@@ -198,8 +198,7 @@ public class SPARQLMinusIterationFuzzTest {
 		for (Binding b : bs) {
 			Value v = b.getValue();
 			String vs;
-			if (v instanceof Literal) {
-				Literal lit = (Literal) v;
+			if (v instanceof Literal lit) {
 				String dt = lit.getDatatype() != null ? lit.getDatatype().stringValue() : "<no-dt>";
 				String lang = lit.getLanguage().orElse("");
 				vs = "L(" + lit.getLabel() + ")^" + dt + "@" + lang;

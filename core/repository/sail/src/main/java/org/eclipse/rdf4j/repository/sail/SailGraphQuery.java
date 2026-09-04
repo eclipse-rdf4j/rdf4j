@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 
 /**
  * @author Arjohn Kampman
@@ -58,7 +60,13 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 		try {
 
 			SailConnection sailCon = getConnection().getSailConnection();
-			bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
+			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
+					.set(getParsedQuery().getSourceString(), Query.QueryType.GRAPH);
+			try {
+				bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
+			} finally {
+				SlowQueryContextHolder.restore(previous);
+			}
 
 			// Filters out all partial and invalid matches
 			bindingsIter2 = new FilterIteration<BindingSet>(bindingsIter1) {

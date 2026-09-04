@@ -110,9 +110,9 @@ public class TripleStoreAlignedSortResetTest {
 			Field indexesField = TripleStore.class.getDeclaredField("indexes");
 			indexesField.setAccessible(true);
 
-			List<TripleStore.TripleIndex> indexes = (List<TripleStore.TripleIndex>) indexesField.get(this);
-			Map<String, TripleStore.TripleIndex> indexesByFieldSeq = new HashMap<>();
-			for (TripleStore.TripleIndex index : indexes) {
+			List<TripleIndex> indexes = (List<TripleIndex>) indexesField.get(this);
+			Map<String, TripleIndex> indexesByFieldSeq = new HashMap<>();
+			for (TripleIndex index : indexes) {
 				indexesByFieldSeq.put(new String(index.getFieldSeq()), index);
 			}
 

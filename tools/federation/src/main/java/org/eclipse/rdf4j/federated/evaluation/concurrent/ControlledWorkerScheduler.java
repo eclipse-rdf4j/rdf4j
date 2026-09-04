@@ -117,11 +117,6 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 		return nWorkers;
 	}
 
-	@Deprecated(forRemoval = true, since = "5.1") // currently unused and this class is internal
-	public int getNumberOfTasks() {
-		return _taskQueue.size();
-	}
-
 	/**
 	 * Create the {@link BlockingQueue} used for the thread pool. The default implementation creates a
 	 * {@link LinkedBlockingQueue}.

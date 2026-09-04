@@ -25,8 +25,6 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -41,6 +39,8 @@ import org.eclipse.rdf4j.repository.http.HTTPQueryEvaluationException;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 class QueryServletExplainCoverageTest {
 

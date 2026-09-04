@@ -480,10 +480,9 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			if (obj == null) {
 				return false;
 			}
-			if (!(obj instanceof ValuePair)) {
+			if (!(obj instanceof ValuePair other)) {
 				return false;
 			}
-			ValuePair other = (ValuePair) obj;
 			if (endValue == null) {
 				if (other.endValue != null) {
 					return false;

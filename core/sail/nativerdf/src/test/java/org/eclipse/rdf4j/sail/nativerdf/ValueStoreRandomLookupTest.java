@@ -58,9 +58,10 @@ import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalValueKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.core.ObjectReadContext;
+import tools.jackson.core.json.JsonFactory;
 
 class ValueStoreRandomLookupTest {
 
@@ -331,7 +332,7 @@ class ValueStoreRandomLookupTest {
 		}
 
 		static ParsedRecord parse(byte[] json) throws IOException {
-			try (JsonParser parser = JSON_FACTORY.createParser(json)) {
+			try (JsonParser parser = JSON_FACTORY.createParser(ObjectReadContext.empty(), json)) {
 				char type = '?';
 				int id = 0;
 				long crc32 = 0L;
@@ -339,8 +340,8 @@ class ValueStoreRandomLookupTest {
 				int segment = 0;
 				while (parser.nextToken() != null) {
 					JsonToken token = parser.currentToken();
-					if (token == JsonToken.FIELD_NAME) {
-						String field = parser.getCurrentName();
+					if (token == JsonToken.PROPERTY_NAME) {
+						String field = parser.currentName();
 						parser.nextToken();
 						if ("t".equals(field)) {
 							String value = parser.getValueAsString("");

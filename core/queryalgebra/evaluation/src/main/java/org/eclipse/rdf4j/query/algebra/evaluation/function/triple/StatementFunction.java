@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * Function constructing RDF-star Triple from its 3 arguments reused the IRI of rdf:Statement as name
+ * Function constructing RDF-star TripleTerm from its 3 arguments reused the IRI of rdf:Statement as name
  *
  * @author damyan.ognyanov
  */
@@ -43,6 +43,6 @@ public class StatementFunction implements Function {
 		if (!(args[2] instanceof Value)) {
 			throw new ValueExprEvaluationException("arg3 must be Value");
 		}
-		return vf.createTriple((Resource) args[0], (IRI) args[1], args[2]);
+		return vf.createTripleTerm((Resource) args[0], (IRI) args[1], args[2]);
 	}
 }

@@ -33,9 +33,10 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.core.ObjectReadContext;
+import tools.jackson.core.json.JsonFactory;
 
 /**
  * Restores a value record from a compressed ValueStore WAL segment by performing a binary search on segment first LSNs.
@@ -219,12 +220,12 @@ class ValueStoreWalCompressedSegmentRestoreTest {
 
 	private static Parsed parseJson(byte[] jsonBytes) throws IOException {
 		Parsed parsed = new Parsed();
-		try (JsonParser jp = JSON_FACTORY.createParser(jsonBytes)) {
+		try (JsonParser jp = JSON_FACTORY.createParser(ObjectReadContext.empty(), jsonBytes)) {
 			if (jp.nextToken() != JsonToken.START_OBJECT) {
 				return parsed;
 			}
 			while (jp.nextToken() != JsonToken.END_OBJECT) {
-				String field = jp.getCurrentName();
+				String field = jp.currentName();
 				jp.nextToken();
 				if ("t".equals(field)) {
 					String t = jp.getValueAsString("");

@@ -11,9 +11,9 @@
 
 package org.eclipse.rdf4j.http.server.repository.handler;
 
-import javax.servlet.http.HttpServletRequest;
-
 import org.springframework.web.servlet.ModelAndView;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * An interface used by {@link org.eclipse.rdf4j.http.server.repository.AbstractRepositoryController} to process HTTP

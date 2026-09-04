@@ -37,6 +37,9 @@ public abstract class SPARQL12QueryComplianceTest extends SPARQLQueryComplianceT
 
 	@TestFactory
 	public Collection<DynamicTest> tests() {
-		return getTestData("testcases-sparql-1.2/manifest-all.ttl");
+		Collection<DynamicTest> sparql12Tests = getTestData("testcases-sparql-1.2/manifest-all.ttl");
+		sparql12Tests.addAll(getTestData("testcases-sparql-1.2-w3c/manifest.ttl"));
+
+		return sparql12Tests;
 	}
 }

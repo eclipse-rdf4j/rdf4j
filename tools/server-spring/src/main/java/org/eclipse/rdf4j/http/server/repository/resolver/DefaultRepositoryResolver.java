@@ -11,8 +11,6 @@
 
 package org.eclipse.rdf4j.http.server.repository.resolver;
 
-import javax.servlet.http.HttpServletRequest;
-
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.Repository;
@@ -21,6 +19,8 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 public class DefaultRepositoryResolver implements RepositoryResolver {
 

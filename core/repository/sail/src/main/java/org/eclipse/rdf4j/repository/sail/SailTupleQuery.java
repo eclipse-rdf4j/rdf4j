@@ -14,6 +14,7 @@ import java.util.ArrayList;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -25,6 +26,7 @@ import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 
 /**
  * @author Arjohn Kampman
@@ -48,8 +50,13 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 
 		try {
 			SailConnection sailCon = getConnection().getSailConnection();
-
-			bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
+			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
+					.set(getParsedQuery().getSourceString(), Query.QueryType.TUPLE);
+			try {
+				bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
+			} finally {
+				SlowQueryContextHolder.restore(previous);
+			}
 			bindingsIter = enforceMaxQueryTime(bindingsIter);
 
 			return new IteratingTupleQueryResult(new ArrayList<>(tupleExpr.getBindingNames()), bindingsIter);

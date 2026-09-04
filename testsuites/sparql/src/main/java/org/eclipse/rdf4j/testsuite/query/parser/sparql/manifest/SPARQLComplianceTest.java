@@ -18,10 +18,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.text.StringUtil;
@@ -161,11 +163,24 @@ public abstract class SPARQLComplianceTest {
 				// rdfParser.setPreserveBNodeIDs(true);
 
 				RDFInserter rdfInserter = new RDFInserter(con);
-				rdfInserter.enforceContext(context);
+				// Skip context enforcement for SPARQL 1.2 tests due to missing ut:graphData in manifests
+				// See: https://github.com/w3c/rdf-tests/issues/344
+				if (!graphURI.toString().contains("sparql-1.2")) {
+					rdfInserter.enforceContext(context);
+				}
 				rdfParser.setRDFHandler(rdfInserter);
 
 				URL graphURL = new URL(graphURI.toString());
 				try (InputStream in = graphURL.openStream()) {
+					// Try the SPARQL INSERT/WHERE parsing with the following.
+					// Note that one test is failing because of
+					// the different handling of the datatype
+//					String content = new String(in.readAllBytes());
+//					String prefixes = extractPrefixes(content);
+//					String triples = extractTriples(content);
+//
+//					String query = prefixes + "\nINSERT {\n" + triples + "\n} WHERE {}";
+//					con.prepareUpdate(query).execute();
 					rdfParser.parse(in, graphURI.toString());
 				}
 
@@ -178,6 +193,24 @@ public abstract class SPARQLComplianceTest {
 			} finally {
 				con.close();
 			}
+		}
+
+		private String extractTriples(String content) {
+			return Arrays.stream(content.split("\n"))
+					.filter(line -> {
+						String trimmed = line.trim().toUpperCase();
+						return !trimmed.startsWith("PREFIX") &&
+								!trimmed.isEmpty() &&
+								!trimmed.startsWith("@PREFIX");
+					})
+					.collect(Collectors.joining("\n"));
+
+		}
+
+		private String extractPrefixes(String content) {
+			return Arrays.stream(content.split("\n"))
+					.filter(line -> line.trim().toUpperCase().startsWith("PREFIX"))
+					.collect(Collectors.joining("\n"));
 		}
 
 		protected void compareGraphs(Iterable<Statement> queryResult, Iterable<Statement> expectedResult)

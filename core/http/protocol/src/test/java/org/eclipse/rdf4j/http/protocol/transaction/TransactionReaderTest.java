@@ -26,12 +26,16 @@ import java.util.Collection;
 import java.util.List;
 
 import org.eclipse.rdf4j.http.protocol.transaction.operations.AddStatementOperation;
+import org.eclipse.rdf4j.http.protocol.transaction.operations.SPARQLUpdateOperation;
 import org.eclipse.rdf4j.http.protocol.transaction.operations.TransactionOperation;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.Binding;
+import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.xml.sax.SAXException;
@@ -88,6 +92,59 @@ public class TransactionReaderTest {
 
 	}
 
+	@Test
+	public void testRoundtripDirectedLanguageLiteralStatementPreservesBaseDirection() throws Exception {
+		Literal directedLiteral = vf.createLiteral("שלום", "he", Literal.BaseDirection.RTL);
+		AddStatementOperation operation = new AddStatementOperation(bob, knows, directedLiteral, context1);
+
+		List<TransactionOperation> txn = new ArrayList<>();
+		txn.add(operation);
+
+		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
+		TransactionWriter w = new TransactionWriter();
+		w.serialize(txn, out);
+
+		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
+		TransactionReader r = new TransactionReader();
+		Collection<TransactionOperation> parsedTxn = r.parse(in);
+
+		TransactionOperation parsedOperation = parsedTxn.iterator().next();
+		assertTrue(parsedOperation instanceof AddStatementOperation);
+		Literal parsedLiteral = (Literal) ((AddStatementOperation) parsedOperation).getObject();
+
+		assertEquals("he", parsedLiteral.getLanguage().orElseThrow());
+		assertEquals(Literal.BaseDirection.RTL, parsedLiteral.getBaseDirection());
+		assertEquals(RDF.DIRLANGSTRING, parsedLiteral.getDatatype());
+	}
+
+	@Test
+	public void testRoundtripDirectedLanguageLiteralUpdateBindingPreservesBaseDirection() throws Exception {
+		Literal directedLiteral = vf.createLiteral("שלום", "he", Literal.BaseDirection.RTL);
+		SPARQLUpdateOperation operation = new SPARQLUpdateOperation("INSERT DATA {}", null, false, null,
+				new SimpleBinding("label", directedLiteral));
+
+		List<TransactionOperation> txn = new ArrayList<>();
+		txn.add(operation);
+
+		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
+		TransactionWriter w = new TransactionWriter();
+		w.serialize(txn, out);
+
+		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());
+		TransactionReader r = new TransactionReader();
+		Collection<TransactionOperation> parsedTxn = r.parse(in);
+
+		TransactionOperation parsedOperation = parsedTxn.iterator().next();
+		assertTrue(parsedOperation instanceof SPARQLUpdateOperation);
+		Binding parsedBinding = ((SPARQLUpdateOperation) parsedOperation).getBindings()[0];
+		Literal parsedLiteral = (Literal) parsedBinding.getValue();
+
+		assertEquals("label", parsedBinding.getName());
+		assertEquals("he", parsedLiteral.getLanguage().orElseThrow());
+		assertEquals(Literal.BaseDirection.RTL, parsedLiteral.getBaseDirection());
+		assertEquals(RDF.DIRLANGSTRING, parsedLiteral.getDatatype());
+	}
+
 	/**
 	 * reproduces GH-3048
 	 *
@@ -97,7 +154,7 @@ public class TransactionReaderTest {
 	public void testRoundtripRDFStar() throws Exception {
 
 		AddStatementOperation rdfStarOperation = new AddStatementOperation(alice, knows,
-				vf.createTriple(bob, knows, alice), context1);
+				vf.createTripleTerm(bob, knows, alice), context1);
 
 		List<TransactionOperation> txn = new ArrayList<>();
 		txn.add(rdfStarOperation);

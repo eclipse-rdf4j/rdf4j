@@ -10,11 +10,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.turtle;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.StringWriter;
+import java.net.URISyntaxException;
 
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -141,5 +147,77 @@ public class TurtlePrettyWriterTest extends AbstractTurtleWriterTest {
 		assertTrue(result.contains("\"1234567.89\"^^<http://www.w3.org/2001/XMLSchema#double>"));
 		assertTrue(result.contains("\"-2\"^^<http://www.w3.org/2001/XMLSchema#integer>"));
 		assertTrue(result.contains("\"55.66\"^^<http://www.w3.org/2001/XMLSchema#decimal>"));
+	}
+
+	@Test
+	public void testVersionAnnouncementWithBufferingTripleTerm() {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		model.add(vf.createIRI("http://example.com/s"), vf.createIRI("http://example.com/p"), vf.createLiteral("o"));
+		model.add(vf.createBNode("b"), RDF.REIFIES, vf.createTripleTerm(vf.createBNode("b2"),
+				vf.createIRI("http://example.com/p"), vf.createLiteral("literal")));
+		StringWriter stringWriter = new StringWriter();
+		// pretty printing means that buffering is used
+		Rio.write(model, stringWriter, RDFFormat.TURTLE,
+				new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, true));
+
+		assertEquals("@version \"1.2\" .\n\n"
+				+ "<http://example.com/s> <http://example.com/p> \"o\" .\n\n"
+				+ "_:b <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( _:b2 <http://example.com/p> \"literal\" )>> .\n",
+				stringWriter.toString());
+	}
+
+	@Test
+	public void testVersionAnnouncementWithBufferingDirLangString() {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		model.add(vf.createIRI("http://example.com/s"), vf.createIRI("http://example.com/p"), vf.createLiteral("o"));
+		model.add(vf.createBNode("b"), RDF.ALT, vf.createLiteral("literal", "en", Literal.BaseDirection.LTR));
+		StringWriter stringWriter = new StringWriter();
+		// pretty printing means that buffering is used
+		Rio.write(model, stringWriter, RDFFormat.TURTLE,
+				new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, true));
+
+		assertEquals("@version \"1.2\" .\n\n"
+				+ "<http://example.com/s> <http://example.com/p> \"o\" .\n\n"
+				+ "_:b <http://www.w3.org/1999/02/22-rdf-syntax-ns#Alt> \"literal\"@en--ltr .\n",
+				stringWriter.toString());
+	}
+
+	@Test
+	public void testRDFStyleDirectivesPrintedByDefault() throws URISyntaxException {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		model.setNamespace("ex", "http://example.com/prefix/");
+		// Triple term in order to trigger version 1.2 print
+		model.add(vf.createBNode("b"), RDF.REIFIES, vf.createTripleTerm(vf.createBNode("b2"),
+				vf.createIRI("http://example.com/p"), vf.createLiteral("literal")));
+		StringWriter stringWriter = new StringWriter();
+
+		Rio.write(model, stringWriter, "http://example.com/base/", RDFFormat.TURTLE,
+				new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, true));
+		assertEquals("@base <http://example.com/base/> .\n" +
+				"@prefix ex: <http://example.com/prefix/> .\n" +
+				"@version \"1.2\" .\n\n" +
+				"_:b <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( _:b2 </p> \"literal\" )>> .\n",
+				stringWriter.toString());
+	}
+
+	@Test
+	public void testSPARQLStyleDirectivesPrintedUponConfiguration() throws URISyntaxException {
+		Model model = new DynamicModelFactory().createEmptyModel();
+		model.setNamespace("ex", "http://example.com/prefix/");
+		// Triple term in order to trigger version 1.2 print
+		model.add(vf.createBNode("b"), RDF.REIFIES, vf.createTripleTerm(vf.createBNode("b2"),
+				vf.createIRI("http://example.com/p"), vf.createLiteral("literal")));
+		StringWriter stringWriter = new StringWriter();
+
+		WriterConfig writerConfig = new WriterConfig();
+		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
+		writerConfig.set(TurtleWriterSettings.USE_SPARQL_STYLE_DIRECTIVES, true);
+
+		Rio.write(model, stringWriter, "http://example.com/base/", RDFFormat.TURTLE, writerConfig);
+		assertEquals("BASE <http://example.com/base/>\n" +
+				"PREFIX ex: <http://example.com/prefix/>\n" +
+				"VERSION \"1.2\"\n\n" +
+				"_:b <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( _:b2 </p> \"literal\" )>> .\n",
+				stringWriter.toString());
 	}
 }

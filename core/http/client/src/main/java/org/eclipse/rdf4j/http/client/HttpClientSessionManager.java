@@ -10,20 +10,26 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
-import org.apache.http.client.HttpClient;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 
 /**
- * Manager for remote HTTP sessions using a {@link HttpClient}.
+ * Manager for remote HTTP sessions using a {@link RDF4JHttpClient}.
  *
  * @author James Leigh
  */
-@SuppressWarnings("deprecation")
 public interface HttpClientSessionManager {
 
 	/**
 	 * @return Returns the httpClient.
 	 */
-	HttpClient getHttpClient();
+	RDF4JHttpClient getHttpClient();
+
+	/**
+	 * Assign an {@link RDF4JHttpClient} that this session manager should use.
+	 *
+	 * @param client the client to use.
+	 */
+	void setHttpClient(RDF4JHttpClient client);
 
 	/**
 	 * Creates a new SPARQL Protocol session to the remote SPARQL endpoint.

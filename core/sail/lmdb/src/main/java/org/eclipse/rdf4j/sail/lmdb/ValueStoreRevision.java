@@ -28,10 +28,9 @@ public interface ValueStoreRevision {
 			if (this == o) {
 				return true;
 			}
-			if (!(o instanceof ValueStoreRevision)) {
+			if (!(o instanceof ValueStoreRevision other)) {
 				return false;
 			}
-			ValueStoreRevision other = (ValueStoreRevision) o;
 			return getRevisionId() == other.getRevisionId() && Objects.equals(getValueStore(), other.getValueStore());
 		}
 
@@ -109,7 +108,8 @@ public interface ValueStoreRevision {
 
 	default int getStoredHash(long id) {
 		ValueStore valueStore = getValueStore();
-		if (valueStore == null || valueStore.getRevision().getRevisionId() != getRevisionId()) {
+		if (valueStore == null || !valueStore.valueHashCacheEnabled
+				|| valueStore.getRevision().getRevisionId() != getRevisionId()) {
 			return 0;
 		}
 		return valueStore.getStoredHash(id);

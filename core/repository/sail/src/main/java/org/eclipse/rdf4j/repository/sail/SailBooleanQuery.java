@@ -14,11 +14,13 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 
 /**
  * @author Arjohn Kampman
@@ -49,8 +51,13 @@ public class SailBooleanQuery extends SailQuery implements BooleanQuery {
 
 		try {
 			SailConnection sailCon = getConnection().getSailConnection();
-
-			bindingsIter1 = sailCon.evaluate(tupleExpr, dataset, getBindings(), getIncludeInferred());
+			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
+					.set(getParsedQuery().getSourceString(), Query.QueryType.BOOLEAN);
+			try {
+				bindingsIter1 = sailCon.evaluate(tupleExpr, dataset, getBindings(), getIncludeInferred());
+			} finally {
+				SlowQueryContextHolder.restore(previous);
+			}
 
 			bindingsIter2 = enforceMaxQueryTime(bindingsIter1);
 

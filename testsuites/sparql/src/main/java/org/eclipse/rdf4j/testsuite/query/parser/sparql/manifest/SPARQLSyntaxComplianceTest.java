@@ -61,6 +61,8 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 
 	private static final List<String> excludedSubdirs = List.of();
 
+	private String testsSource;
+
 	public class DynamicSPARQLSyntaxComplianceTest extends DynamicSparqlComplianceTest {
 		private final String queryFileURL;
 		private final boolean positiveTest;
@@ -158,7 +160,7 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 
 		Deque<String> manifests = new ArrayDeque<>();
 		manifests.add(SPARQLSyntaxComplianceTest.class.getClassLoader()
-				.getResource("testcases-sparql-1.1-w3c/manifest-all.ttl")
+				.getResource(testsSource)
 				.toExternalForm());
 		while (!manifests.isEmpty()) {
 			String pop = manifests.pop();
@@ -207,28 +209,31 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 				query.append("WHERE { [] rdf:first ?TestURI. ");
 				query.append("        ?TestURI a ?Type ; ");
 				query.append("                 mf:name ?Name ;");
-				query.append("                 mf:action ?Action ;");
-				query.append("                 dawgt:approval dawgt:Approved . ");
+				query.append("                 mf:action ?Action .");
+				// TODO: use these:
+				// query.append(" mf:action ?Action ;");
+				// query.append(" dawgt:approval dawgt:Approved . ");
 				query.append(
-						"        FILTER(?Type IN (mf:PositiveSyntaxTest, mf:NegativeSyntaxTest, mf:PositiveSyntaxTest11, mf:NegativeSyntaxTest11, mf:PositiveUpdateSyntaxTest11, mf:NegativeUpdateSyntaxTest11)) ");
+						"        FILTER(?Type IN (mf:PositiveSyntaxTest, mf:PositiveUpdateSyntaxTest, mf:NegativeSyntaxTest, mf:NegativeUpdateSyntaxTest )) ");
 				query.append(" } ");
 
 				try (TupleQueryResult result = connection.prepareTupleQuery(query.toString()).evaluate()) {
 					for (BindingSet bs : result) {
-						// FIXME I'm sure there's a neater way to do this
 						String testName = bs.getValue("Name").stringValue();
-						String displayName = filename
-								.substring(filename.lastIndexOf("testcases-sparql-1.1-w3c/")
-										+ "testcases-sparql-1.1-w3c/".length(), filename.lastIndexOf("/"))
+
+						String root = testsSource.substring(0, testsSource.lastIndexOf('/') + 1);
+						String displayName = filename.substring(
+								filename.indexOf(root),
+								filename.lastIndexOf('/'))
 								+ ": " + testName;
 
 						IRI testURI = (IRI) bs.getValue("TestURI");
 						Value action = bs.getValue("Action");
 						String type = bs.getValue("Type").toString();
 						boolean positiveTest = type
-								.equals("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11")
+								.equals("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest")
 								|| type.equals(
-										"http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest11");
+										"http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest");
 
 						DynamicSPARQLSyntaxComplianceTest ds11ut = new DynamicSPARQLSyntaxComplianceTest(displayName,
 								testURI.stringValue(), testName, action.stringValue(),
@@ -246,4 +251,12 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 	}
 
 	protected abstract ParsedOperation parseOperation(String operation, String fileURL) throws MalformedQueryException;
+
+	public String getTestsSource() {
+		return testsSource;
+	}
+
+	public void setTestsSource(String testsSource) {
+		this.testsSource = testsSource;
+	}
 }

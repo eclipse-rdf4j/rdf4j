@@ -12,10 +12,69 @@ In this chapter, we explain how you can install RDF4J Server (the actual databas
 
 RDF4J Server and RDF4J Workbench requires the following software:
 
-- Java 11 or newer
+- Java 25 or newer
 - A Java Servlet Container that supports Java Servlet API 3.1 and Java Server Pages (JSP) 2.2, or newer.
 
 We recommend using a recent, stable version of [Apache Tomcat](https://tomcat.apache.org/) (version 9.0) or [Jetty](https://jetty.org) (version 9.4)
+
+## Running with Docker
+
+The quickest way to get RDF4J Server and Workbench running locally is to use the Docker environment included in the `docker/` directory of the source distribution. It builds the project, packages it into a Docker image, and starts it via Docker Compose.
+
+All commands below are run from that directory:
+
+```sh
+cd docker
+```
+
+### Quick start
+
+```sh
+./run.sh
+```
+
+This script builds the Maven project, assembles the SDK, builds the Docker image, and starts the container. Once ready it prints:
+
+```
+Workbench is available at http://localhost:8080/rdf4j-workbench
+```
+
+### Choosing the application server
+
+By default Apache Tomcat is used. To use Jetty instead, set `APP_SERVER` before running:
+
+```sh
+APP_SERVER=jetty ./run.sh
+```
+
+### Access
+
+| Application     | URL                                   |
+|-----------------|---------------------------------------|
+| RDF4J Server    | http://localhost:8080/rdf4j-server    |
+| RDF4J Workbench | http://localhost:8080/rdf4j-workbench |
+
+### Useful Docker Compose commands
+
+Follow logs in real time:
+
+```sh
+docker compose logs -f
+```
+
+Stop the container (data volumes are preserved):
+
+```sh
+docker compose stop
+```
+
+### Stopping and cleaning up
+
+To stop the container and remove the image and all volumes:
+
+```sh
+./shutdown.sh
+```
 
 ## Deploying Server and Workbench
 
@@ -255,6 +314,29 @@ There are two ways to reach the “Change Server” page, which allows you to en
 2. Clicking on “RDF4J Server” on the sidebar menu.
 
 A full URL is expected in the “Change Server” field. You may enter a `file:///` URL to access a local repository on the Workbench server, but need to be sure that the Workbench server process has permission to access the given folder.
+
+### Configuring Accepted Server Prefixes
+
+For security, Workbench does not allow users to switch to arbitrary servers by default. A server URL entered on the "Change Server" page must start with one of the accepted server prefixes before Workbench will connect to it. The default accepted prefix is `/rdf4j-server`, which allows the RDF4J Server deployed next to Workbench and rejects remote `http://...`, `https://...`, and `file:///...` targets unless an administrator explicitly allows them.
+
+Administrators can configure the allow-list as a whitespace-separated list of concrete prefixes. The JVM system property `org.eclipse.rdf4j.workbench.accepted-server-prefixes` has highest precedence and overrides the Workbench servlet init-param `accepted-server-prefixes` in `WEB-INF/web.xml`. If neither value is set to a non-blank value, Workbench uses `/rdf4j-server`.
+
+For example, when starting `rdf4j-server-boot` or a servlet container, allow the local server and two remote RDF4J Server deployments like this:
+
+```sh
+-Dorg.eclipse.rdf4j.workbench.accepted-server-prefixes="/rdf4j-server https://rdf4j.example.org/rdf4j-server https://staging.example.net/rdf4j-server"
+```
+
+For WAR deployments, you can instead edit the Workbench servlet init-param:
+
+```xml
+<init-param>
+  <param-name>accepted-server-prefixes</param-name>
+  <param-value>/rdf4j-server https://rdf4j.example.org/rdf4j-server</param-value>
+</init-param>
+```
+
+Use concrete host/path prefixes. Prefixes are plain prefix matches with a path, query, or fragment boundary; they are not regular expressions. Scheme-only `http:`, `https:`, and `file:` entries are ignored. Broad `http://` or `https://` prefixes are technically possible but not recommended because they allow Workbench users to make server-side connections to arbitrary HTTP(S) hosts. To allow a local file repository, configure a specific `file:///...` directory prefix and make sure the Workbench process can read that directory.
 
 ### Important Security Consideration
 

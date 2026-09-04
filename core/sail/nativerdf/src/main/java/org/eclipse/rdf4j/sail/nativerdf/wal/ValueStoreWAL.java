@@ -42,10 +42,12 @@ import java.util.zip.GZIPOutputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.core.ObjectReadContext;
+import tools.jackson.core.ObjectWriteContext;
+import tools.jackson.core.json.JsonFactory;
 
 /**
  * Write-ahead log (WAL) for the ValueStore. The WAL records minted values in append-only segments so they can be
@@ -401,10 +403,10 @@ public final class ValueStoreWAL implements AutoCloseable {
 			// skip CRC
 			in.readNBytes(4);
 			JsonFactory factory = new JsonFactory();
-			try (JsonParser parser = factory.createParser(jsonBytes)) {
+			try (JsonParser parser = factory.createParser(ObjectReadContext.empty(), jsonBytes)) {
 				while (parser.nextToken() != JsonToken.END_OBJECT) {
-					if (parser.currentToken() == JsonToken.FIELD_NAME) {
-						String field = parser.getCurrentName();
+					if (parser.currentToken() == JsonToken.PROPERTY_NAME) {
+						String field = parser.currentName();
 						parser.nextToken();
 						if ("segment".equals(field)) {
 							return parser.getIntValue();
@@ -823,11 +825,11 @@ public final class ValueStoreWAL implements AutoCloseable {
 		private byte[] buildSummaryFrame(int lastMintedId, long crc32Value) throws IOException {
 			JsonFactory factory = new JsonFactory();
 			ByteArrayOutputStream baos = new ByteArrayOutputStream(128);
-			try (JsonGenerator gen = factory.createGenerator(baos)) {
+			try (JsonGenerator gen = factory.createGenerator(ObjectWriteContext.empty(), baos)) {
 				gen.writeStartObject();
-				gen.writeStringField("t", "S");
-				gen.writeNumberField("lastId", lastMintedId);
-				gen.writeNumberField("crc32", crc32Value & 0xFFFFFFFFL);
+				gen.writeStringProperty("t", "S");
+				gen.writeNumberProperty("lastId", lastMintedId);
+				gen.writeNumberProperty("crc32", crc32Value & 0xFFFFFFFFL);
 				gen.writeEndObject();
 			}
 			baos.write('\n');
@@ -846,15 +848,15 @@ public final class ValueStoreWAL implements AutoCloseable {
 		private void writeHeader(int firstId) throws IOException {
 			JsonFactory factory = new JsonFactory();
 			ByteArrayOutputStream baos = new ByteArrayOutputStream(256);
-			try (JsonGenerator gen = factory.createGenerator(baos)) {
+			try (JsonGenerator gen = factory.createGenerator(ObjectWriteContext.empty(), baos)) {
 				gen.writeStartObject();
-				gen.writeStringField("t", "V");
-				gen.writeNumberField("ver", 1);
-				gen.writeStringField("store", config.storeUuid());
-				gen.writeStringField("engine", "valuestore");
-				gen.writeNumberField("created", Instant.now().getEpochSecond());
-				gen.writeNumberField("segment", segmentSequence);
-				gen.writeNumberField("firstId", firstId);
+				gen.writeStringProperty("t", "V");
+				gen.writeNumberProperty("ver", 1);
+				gen.writeStringProperty("store", config.storeUuid());
+				gen.writeStringProperty("engine", "valuestore");
+				gen.writeNumberProperty("created", Instant.now().getEpochSecond());
+				gen.writeNumberProperty("segment", segmentSequence);
+				gen.writeNumberProperty("firstId", firstId);
 				gen.writeEndObject();
 			}
 			// NDJSON: newline-delimited JSON
@@ -884,16 +886,16 @@ public final class ValueStoreWAL implements AutoCloseable {
 
 		private int encodeIntoReusableBuffer(ValueStoreWalRecord record) throws IOException {
 			jsonBuffer.reset();
-			try (JsonGenerator gen = jsonFactory.createGenerator(jsonBuffer)) {
+			try (JsonGenerator gen = jsonFactory.createGenerator(ObjectWriteContext.empty(), jsonBuffer)) {
 				gen.writeStartObject();
-				gen.writeStringField("t", "M");
-				gen.writeNumberField("lsn", record.lsn());
-				gen.writeNumberField("id", record.id());
-				gen.writeStringField("vk", String.valueOf(record.valueKind().code()));
-				gen.writeStringField("lex", record.lexical() == null ? "" : record.lexical());
-				gen.writeStringField("dt", record.datatype() == null ? "" : record.datatype());
-				gen.writeStringField("lang", record.language() == null ? "" : record.language());
-				gen.writeNumberField("hash", record.hash());
+				gen.writeStringProperty("t", "M");
+				gen.writeNumberProperty("lsn", record.lsn());
+				gen.writeNumberProperty("id", record.id());
+				gen.writeStringProperty("vk", String.valueOf(record.valueKind().code()));
+				gen.writeStringProperty("lex", record.lexical() == null ? "" : record.lexical());
+				gen.writeStringProperty("dt", record.datatype() == null ? "" : record.datatype());
+				gen.writeStringProperty("lang", record.language() == null ? "" : record.language());
+				gen.writeNumberProperty("hash", record.hash());
 				gen.writeEndObject();
 			}
 			jsonBuffer.write('\n'); // NDJSON newline

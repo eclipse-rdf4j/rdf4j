@@ -30,7 +30,7 @@ import org.xml.sax.XMLReader;
  */
 public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 
-	private final static Set<RioSetting<Boolean>> compulsoryXmlFeatureSettings = Set.of(
+	private static final Set<RioSetting<Boolean>> COMPULSORY_XML_FEATURE_SETTINGS = Set.of(
 			XMLParserSettings.SECURE_PROCESSING,
 			XMLParserSettings.DISALLOW_DOCTYPE_DECL,
 			XMLParserSettings.EXTERNAL_GENERAL_ENTITIES,
@@ -65,7 +65,7 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 	 *         {@link XMLReader#setFeature(String, boolean)}.
 	 */
 	public Collection<RioSetting<Boolean>> getCompulsoryXmlFeatureSettings() {
-		return Collections.unmodifiableSet(compulsoryXmlFeatureSettings);
+		return Collections.unmodifiableSet(COMPULSORY_XML_FEATURE_SETTINGS);
 	}
 
 	/**
@@ -164,4 +164,5 @@ public abstract class XMLReaderBasedParser extends AbstractRDFParser {
 
 		return xmlReader;
 	}
+
 }

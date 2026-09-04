@@ -18,12 +18,13 @@ import java.util.ArrayList;
 import java.util.Collection;
 
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
@@ -35,7 +36,7 @@ import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
+import org.eclipse.rdf4j.rio.helpers.TripleTermUtil;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -48,13 +49,13 @@ public abstract class AbstractTupleQueryResultWriterTest {
 	protected final static ValueFactory vf = SimpleValueFactory.getInstance();
 
 	@Test
-	public void testRDFStarHandling_WithEncoding() throws Exception {
+	public void testRDFTripleTermHandling_WithEncoding() throws Exception {
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		TupleQueryResultWriter writer = getWriterFactory().getWriter(baos);
 
-		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_RDF_STAR, true);
+		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_TRIPLE_TERMS, true);
 
-		Triple t = vf.createTriple(RDF.ALT, RDF.TYPE, RDFS.CLASS);
+		TripleTerm t = vf.createTripleTerm(RDF.ALT, RDF.TYPE, RDFS.CLASS);
 		MapBindingSet bs = new MapBindingSet();
 		bs.addBinding("t", t);
 
@@ -64,31 +65,31 @@ public abstract class AbstractTupleQueryResultWriterTest {
 
 		QueryResultCollector collector = new QueryResultCollector();
 		TupleQueryResultParser parser = getParserFactory().getParser();
-		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);
+		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_TRIPLE_TERMS, false);
 		parser.setQueryResultHandler(collector);
 		parser.parseQueryResult(new ByteArrayInputStream(baos.toByteArray()));
 
 		BindingSet actual = collector.getBindingSets().get(0);
 
-		if (writer.getTupleQueryResultFormat().supportsRDFStar()) {
-			// natively-supporting RDF-star writers should ignore the encoding setting and just always use their
-			// extended format
-			assertThat(actual.getValue("t")).isInstanceOf(Triple.class);
+		if (writer.getTupleQueryResultFormat().supportsTripleTerms()) {
+			// natively-supporting RDF triple terms writers should ignore the encoding setting and just always use their
+			// format
+			assertThat(actual.getValue("t")).isInstanceOf(TripleTerm.class);
 		} else {
 			assertThat(actual.getValue("t")).isInstanceOf(IRI.class);
-			assertThat(actual.getValue("t")).isEqualTo(RDFStarUtil.toRDFEncodedValue((Resource) t));
+			assertThat(actual.getValue("t")).isEqualTo(TripleTermUtil.toRDFEncodedValue(t));
 
 		}
 	}
 
 	@Test
-	public void testRDFStarHandling_NoEncoding() throws Exception {
+	public void testRDFTripleTermsHandling_NoEncoding() throws Exception {
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		TupleQueryResultWriter writer = getWriterFactory().getWriter(baos);
 
-		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_RDF_STAR, false);
+		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_TRIPLE_TERMS, false);
 
-		Triple t = vf.createTriple(RDF.ALT, RDF.TYPE, RDFS.CLASS);
+		TripleTerm t = vf.createTripleTerm(RDF.ALT, RDF.TYPE, RDFS.CLASS);
 		MapBindingSet bs = new MapBindingSet();
 		bs.addBinding("t", t);
 
@@ -99,24 +100,25 @@ public abstract class AbstractTupleQueryResultWriterTest {
 		QueryResultCollector collector = new QueryResultCollector();
 		TupleQueryResultParser parser = getParserFactory().getParser();
 
-		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);
+		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_TRIPLE_TERMS, false);
 		parser.setQueryResultHandler(collector);
 		parser.parseQueryResult(new ByteArrayInputStream(baos.toByteArray()));
 
 		BindingSet actual = collector.getBindingSets().get(0);
-		assertThat(actual.getValue("t")).isInstanceOf(Triple.class);
+		assertThat(actual.getValue("t")).isInstanceOf(TripleTerm.class);
 	}
 
 	@Test
-	public void testRDFStarHandling_DeepNesting() throws Exception {
+	public void testRDFTripleTermHandling_DeepNesting() throws Exception {
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		TupleQueryResultWriter writer = getWriterFactory().getWriter(baos);
 
-		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_RDF_STAR, false);
+		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_TRIPLE_TERMS, false);
 
-		Triple t2 = vf.createTriple(RDF.ALT, RDF.TYPE, RDFS.CLASS);
-		Triple t = vf.createTriple(RDF.BAG, RDFS.COMMENT, t2);
+		TripleTerm t2 = vf.createTripleTerm(RDF.ALT, RDF.TYPE, RDFS.CLASS);
+		TripleTerm t = vf.createTripleTerm(RDF.BAG, RDFS.COMMENT, t2);
+
 		MapBindingSet bs = new MapBindingSet();
 		bs.addBinding("t", t);
 
@@ -127,22 +129,106 @@ public abstract class AbstractTupleQueryResultWriterTest {
 		QueryResultCollector collector = new QueryResultCollector();
 		TupleQueryResultParser parser = getParserFactory().getParser();
 
-		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);
+		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_TRIPLE_TERMS, false);
 		parser.setQueryResultHandler(collector);
 		parser.parseQueryResult(new ByteArrayInputStream(baos.toByteArray()));
 
 		BindingSet actual = collector.getBindingSets().get(0);
-		assertThat(actual.getValue("t")).isInstanceOf(Triple.class);
+		assertThat(actual.getValue("t")).isInstanceOf(TripleTerm.class);
 
-		Triple actualT = (Triple) actual.getValue("t");
+		TripleTerm actualT = (TripleTerm) actual.getValue("t");
 		assertThat(actualT.getSubject()).isEqualTo(RDF.BAG);
 		assertThat(actualT.getPredicate()).isEqualTo(RDFS.COMMENT);
-		assertThat(actualT.getObject()).isInstanceOf(Triple.class);
+		assertThat(actualT.getObject()).isInstanceOf(TripleTerm.class);
 
-		Triple actualT2 = (Triple) actualT.getObject();
+		TripleTerm actualT2 = (TripleTerm) actualT.getObject();
 		assertThat(actualT2.getSubject()).isEqualTo(RDF.ALT);
 		assertThat(actualT2.getPredicate()).isEqualTo(RDF.TYPE);
 		assertThat(actualT2.getObject()).isEqualTo(RDFS.CLASS);
+	}
+
+	@Test
+	public void testRDFTripleTermHandling_DeepNestingLiteralObject() throws Exception {
+
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		TupleQueryResultWriter writer = getWriterFactory().getWriter(baos);
+
+		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_TRIPLE_TERMS, false);
+
+		IRI carol = vf.createIRI("http://example/carol");
+		IRI says = vf.createIRI("http://example/says");
+		Literal alice = vf.createLiteral("Hello world, my name is \"Alice\".");
+
+		TripleTerm t2 = vf.createTripleTerm(carol, says, alice);
+
+		IRI iriWithComma = vf.createIRI("http://example/iri,with,comma");
+		IRI exampleSubject = vf.createIRI("http://example/subject");
+
+		TripleTerm t = vf.createTripleTerm(exampleSubject, iriWithComma, t2);
+
+		MapBindingSet bs = new MapBindingSet();
+		bs.addBinding("t", t);
+
+		writer.startQueryResult(new ArrayList<>(bs.getBindingNames()));
+		writer.handleSolution(bs);
+		writer.endQueryResult();
+
+		QueryResultCollector collector = new QueryResultCollector();
+		TupleQueryResultParser parser = getParserFactory().getParser();
+
+		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_TRIPLE_TERMS, false);
+		parser.setQueryResultHandler(collector);
+		parser.parseQueryResult(new ByteArrayInputStream(baos.toByteArray()));
+
+		BindingSet actual = collector.getBindingSets().get(0);
+		assertThat(actual.getValue("t")).isInstanceOf(TripleTerm.class);
+
+		TripleTerm actualT = (TripleTerm) actual.getValue("t");
+		assertThat(actualT.getSubject()).isEqualTo(exampleSubject);
+		assertThat(actualT.getPredicate()).isEqualTo(iriWithComma);
+		assertThat(actualT.getObject()).isInstanceOf(TripleTerm.class);
+
+		TripleTerm actualT2 = (TripleTerm) actualT.getObject();
+		assertThat(actualT2.getSubject()).isEqualTo(carol);
+		assertThat(actualT2.getPredicate()).isEqualTo(says);
+		assertThat(actualT2.getObject()).isEqualTo(alice);
+	}
+
+	@Test
+	public void testRDFTripleTermHandling_ObjectAsLiteralNumber() throws Exception {
+
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		TupleQueryResultWriter writer = getWriterFactory().getWriter(baos);
+
+		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_TRIPLE_TERMS, false);
+
+		IRI carol = vf.createIRI("http://example/carol");
+		IRI pays = vf.createIRI("http://example/pays");
+		Literal price = vf.createLiteral("89", XSD.INTEGER);
+
+		TripleTerm t2 = vf.createTripleTerm(carol, pays, price);
+
+		MapBindingSet bs = new MapBindingSet();
+		bs.addBinding("t", t2);
+
+		writer.startQueryResult(new ArrayList<>(bs.getBindingNames()));
+		writer.handleSolution(bs);
+		writer.endQueryResult();
+
+		QueryResultCollector collector = new QueryResultCollector();
+		TupleQueryResultParser parser = getParserFactory().getParser();
+
+		parser.getParserConfig().set(BasicParserSettings.NORMALIZE_DATATYPE_VALUES, true);
+		parser.setQueryResultHandler(collector);
+		parser.parseQueryResult(new ByteArrayInputStream(baos.toByteArray()));
+
+		BindingSet actual = collector.getBindingSets().get(0);
+		assertThat(actual.getValue("t")).isInstanceOf(TripleTerm.class);
+
+		TripleTerm actualT = (TripleTerm) actual.getValue("t");
+		assertThat(actualT.getSubject()).isEqualTo(carol);
+		assertThat(actualT.getPredicate()).isEqualTo(pays);
+		assertThat(actualT.getObject()).isEqualTo(price);
 	}
 
 	@Test

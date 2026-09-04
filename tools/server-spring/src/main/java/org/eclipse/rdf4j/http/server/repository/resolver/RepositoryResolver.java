@@ -11,13 +11,13 @@
 
 package org.eclipse.rdf4j.http.server.repository.resolver;
 
-import javax.servlet.http.HttpServletRequest;
-
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * An adapter interface to allow the {@link org.eclipse.rdf4j.http.server.repository.handler.QueryRequestHandler},

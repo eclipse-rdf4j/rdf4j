@@ -14,7 +14,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
@@ -542,8 +542,8 @@ public abstract class Protocol {
 			return null;
 		} else {
 			Resource context = decodeResource(encodedValue, valueFactory);
-			// Context must be an IRI or BNode but never Triple
-			if (context instanceof Triple) {
+			// Context must be an IRI or BNode but never TripleTerm
+			if (context instanceof TripleTerm) {
 				throw new IllegalArgumentException("Invalid context value: " + encodedValue);
 			}
 			return context;

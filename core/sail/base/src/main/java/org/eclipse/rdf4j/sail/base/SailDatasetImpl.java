@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.sail.SailException;
@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 class SailDatasetImpl implements SailDataset {
 
-	private static final EmptyIteration<Triple> TRIPLE_EMPTY_ITERATION = new EmptyIteration<>();
+	private static final EmptyIteration<TripleTerm> TRIPLE_EMPTY_ITERATION = new EmptyIteration<>();
 	private static final EmptyIteration<Namespace> NAMESPACES_EMPTY_ITERATION = new EmptyIteration<>();
 
 	/**
@@ -290,10 +290,10 @@ class SailDatasetImpl implements SailDataset {
 	}
 
 	@Override
-	public CloseableIteration<? extends Triple> getTriples(Resource subj, IRI pred, Value obj)
+	public CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
 
-		CloseableIteration<? extends Triple> iter;
+		CloseableIteration<? extends TripleTerm> iter;
 		if (changes.isStatementCleared()) {
 			// nothing in the backing source is relevant, but we may still need to return approved data
 			// from the changeset
@@ -308,7 +308,7 @@ class SailDatasetImpl implements SailDataset {
 
 		if (changes.hasApproved()) {
 			if (iter != null) {
-				CloseableIteratorIteration<? extends Triple> tripleExceptionCloseableIteratorIteration = new CloseableIteratorIteration<>(
+				CloseableIteratorIteration<? extends TripleTerm> tripleExceptionCloseableIteratorIteration = new CloseableIteratorIteration<>(
 						changes.getApprovedTriples(subj, pred, obj).iterator());
 
 				// merge newly approved triples in the changeset with data from the backing source
@@ -343,12 +343,12 @@ class SailDatasetImpl implements SailDataset {
 		};
 	}
 
-	private CloseableIteration<? extends Triple> triplesDifference(
-			CloseableIteration<? extends Triple> result, Function<Triple, Boolean> excluded) {
-		return new FilterIteration<Triple>(result) {
+	private CloseableIteration<? extends TripleTerm> triplesDifference(
+			CloseableIteration<? extends TripleTerm> result, Function<TripleTerm, Boolean> excluded) {
+		return new FilterIteration<TripleTerm>(result) {
 
 			@Override
-			protected boolean accept(Triple stmt) {
+			protected boolean accept(TripleTerm stmt) {
 				return !excluded.apply(stmt);
 			}
 
@@ -359,20 +359,11 @@ class SailDatasetImpl implements SailDataset {
 		};
 	}
 
-	private boolean isDeprecated(Triple triple, List<Statement> deprecatedStatements) {
-		// the triple is deprecated if the changeset deprecates all existing statements in the backing dataset that
-		// involve this triple.
-		try (CloseableIteration<? extends Statement> subjectStatements = derivedFrom
-				.getStatements(triple, null, null)) {
-			while (subjectStatements.hasNext()) {
-				Statement st = subjectStatements.next();
-				if (!deprecatedStatements.contains(st)) {
-					return false;
-				}
-			}
-		}
+	private boolean isDeprecated(TripleTerm tripleTerm, List<Statement> deprecatedStatements) {
+		// the tripleTerm is deprecated if the changeset deprecates all existing statements in the backing dataset that
+		// involve this tripleTerm.
 		try (CloseableIteration<? extends Statement> objectStatements = derivedFrom
-				.getStatements(null, null, triple)) {
+				.getStatements(null, null, tripleTerm)) {
 			while (objectStatements.hasNext()) {
 				Statement st = objectStatements.next();
 				if (!deprecatedStatements.contains(st)) {

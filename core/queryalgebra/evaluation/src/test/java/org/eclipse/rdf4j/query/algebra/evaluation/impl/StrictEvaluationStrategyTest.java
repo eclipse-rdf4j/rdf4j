@@ -125,7 +125,7 @@ public class StrictEvaluationStrategyTest {
 
 		bindingSets = QueryResults.asList(result);
 		assertThat(bindingSets).hasSize(1);
-		assertThat(bindingSets.get(0).getValue("a").stringValue()).isEqualTo("foo.bar");
+		assertThat(bindingSets.getFirst().getValue("a").stringValue()).isEqualTo("foo.bar");
 
 		// match with i and q flag
 		query = "SELECT ?a WHERE { "

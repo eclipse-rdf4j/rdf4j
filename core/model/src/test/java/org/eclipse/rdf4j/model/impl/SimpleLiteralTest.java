@@ -31,6 +31,11 @@ public class SimpleLiteralTest extends LiteralTest {
 	}
 
 	@Override
+	protected Literal literal(String label, String language, Literal.BaseDirection dir) {
+		return new SimpleLiteral(label, language, dir);
+	}
+
+	@Override
 	protected Literal literal(String label, IRI datatype) {
 		return new SimpleLiteral(label, datatype);
 	}

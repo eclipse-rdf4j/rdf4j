@@ -20,8 +20,8 @@ class KindAwareVar extends Var {
 
 	private String kind;
 
-	KindAwareVar(String name, Value value, boolean anonymous, boolean constant) {
-		super(name, value, anonymous, constant);
+	KindAwareVar(String name, Value value, boolean anonymous, boolean constant, boolean isBNode) {
+		super(name, value, anonymous, constant, isBNode);
 	}
 
 	String getKind() {

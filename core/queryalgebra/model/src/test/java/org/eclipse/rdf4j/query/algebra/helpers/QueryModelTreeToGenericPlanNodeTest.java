@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.KindAwareVarProvider;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.WithVarProvider;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -189,6 +191,7 @@ public class QueryModelTreeToGenericPlanNodeTest {
 	}
 
 	@Test
+	@WithVarProvider(KindAwareVarProvider.class)
 	public void skipsCartesianAnnotationForUnsupportedVarSubclass() {
 		Join join = new Join(
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
@@ -311,6 +314,36 @@ public class QueryModelTreeToGenericPlanNodeTest {
 				.containsEntry(TelemetryMetricNames.BINDING_STATE, "bound");
 		assertThat(telemetry.toString()).contains("sampleCountActual=");
 		assertThat(telemetry.toString()).contains("varianceActual=");
+	}
+
+	@Test
+	public void copiesOptimizerMetricsAtOptimizedLevelWithoutRuntimeTelemetry() {
+		Join join = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
+		join.setRuntimeTelemetryEnabled(true);
+		join.setSourceRowsScannedActual(99);
+		join.setLongMetricActual("optimizer.candidateCount", 3L);
+		join.setDoubleMetricActual("optimizer.score", 12.5);
+		join.setStringMetricActual("optimizer.strategy", "greedy");
+		join.setStringMetricActual("optimizer.thresholds", "DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT=8");
+		join.setStringMetricActual(TelemetryMetricNames.METRIC_ORIGIN + ".selectivityActual", "runtime");
+
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(join, null,
+				Explanation.Level.Optimized);
+		join.visit(converter);
+
+		GenericPlanNode root = converter.getGenericPlanNode();
+		assertThat(root.getSourceRowsScannedActual()).isNull();
+		assertThat(root.getLongMetricsActual()).containsEntry("optimizer.candidateCount", 3L);
+		assertThat(root.getDoubleMetricsActual()).containsEntry("optimizer.score", 12.5);
+		assertThat(root.getStringMetricsActual())
+				.containsEntry("optimizer.strategy", "greedy")
+				.containsEntry("optimizer.thresholds", "DYNAMIC_PROGRAMMING_JOIN_ARG_LIMIT=8")
+				.doesNotContainKey(TelemetryMetricNames.METRIC_ORIGIN + ".selectivityActual");
+		assertThat(root.toString())
+				.contains("optimizer.strategy=greedy")
+				.doesNotContain("sourceRowsScannedActual=");
 	}
 
 	private static GenericPlanNode statementPattern(GenericPlanNode join, int index) {

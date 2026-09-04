@@ -82,7 +82,7 @@ class ExclusiveReentrantLockManagerTest {
 
 		assertThat(memoryAppender.countEventsForLogger(ExclusiveReentrantLockManager.class.getName())).isEqualTo(2);
 		memoryAppender.assertContains(
-				"at org.eclipse.rdf4j.common.concurrent.locks.ExclusiveReentrantLockManagerTest.lambda$lock$",
+				"at org.eclipse.rdf4j.common.concurrent.locks.ExclusiveReentrantLockManagerTest.acquireExclusiveLockAndForget(",
 				Level.WARN);
 
 	}
@@ -92,12 +92,7 @@ class ExclusiveReentrantLockManagerTest {
 	void stalledTest() throws InterruptedException {
 
 		AtomicReference<Lock> exclusiveLock1 = new AtomicReference<>();
-		Thread thread = new Thread(() -> {
-			try {
-				exclusiveLock1.set(lockManagerTracking.getExclusiveLock());
-			} catch (InterruptedException ignored) {
-			}
-		});
+		Thread thread = new Thread(() -> acquireExclusiveLock(lockManagerTracking, exclusiveLock1));
 		thread.start();
 		thread.join();
 
@@ -131,18 +126,27 @@ class ExclusiveReentrantLockManagerTest {
 		memoryAppender.assertContains("is waiting on a possibly stalled lock \"ExclusiveReentrantLockManager\" with id",
 				Level.INFO);
 		memoryAppender.assertContains(
-				"at org.eclipse.rdf4j.common.concurrent.locks.ExclusiveReentrantLockManagerTest.lambda$stalledTest$0(ExclusiveReentrantLockManagerTest.java:",
+				"at org.eclipse.rdf4j.common.concurrent.locks.ExclusiveReentrantLockManagerTest.acquireExclusiveLock(",
 				Level.INFO);
 
 	}
 
+	private void acquireExclusiveLockAndForget(ExclusiveReentrantLockManager lockManager) {
+		try {
+			lockManager.getExclusiveLock(); // intentionally not released
+		} catch (InterruptedException ignored) {
+		}
+	}
+
+	private void acquireExclusiveLock(ExclusiveReentrantLockManager lockManager, AtomicReference<Lock> ref) {
+		try {
+			ref.set(lockManager.getExclusiveLock());
+		} catch (InterruptedException ignored) {
+		}
+	}
+
 	private void lock(ExclusiveReentrantLockManager lockManager) throws InterruptedException {
-		Thread thread = new Thread(() -> {
-			try {
-				lockManager.getExclusiveLock();
-			} catch (InterruptedException ignored) {
-			}
-		});
+		Thread thread = new Thread(() -> acquireExclusiveLockAndForget(lockManager));
 		thread.start();
 		thread.join(2000);
 		assertThat(thread.isAlive()).isFalse();

@@ -14,10 +14,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.concurrent.Executors;
 
-import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,14 +38,17 @@ public class SPARQLRepositoryTest {
 
 			@Override
 			public void shutDown() {
-				// TODO Auto-generated method stub
-
+				// no-op
 			}
 
 			@Override
-			public HttpClient getHttpClient() {
-				// TODO Auto-generated method stub
+			public RDF4JHttpClient getHttpClient() {
 				return null;
+			}
+
+			@Override
+			public void setHttpClient(RDF4JHttpClient client) {
+				// no-op
 			}
 
 			@Override
@@ -59,7 +62,6 @@ public class SPARQLRepositoryTest {
 
 			@Override
 			public RDF4JProtocolSession createRDF4JProtocolSession(String serverURL) {
-				// TODO Auto-generated method stub
 				return null;
 			}
 		});

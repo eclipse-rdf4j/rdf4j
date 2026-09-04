@@ -119,20 +119,25 @@ public class QueryBenchmarkTest {
 
 	@BeforeAll
 	public static void beforeClass() throws IOException {
-		tempDir.create();
-		dataDir = tempDir.newFolder();
+		try {
+			tempDir.create();
+			dataDir = tempDir.newFolder();
 
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
-		repository = new SailRepository(new LmdbStore(dataDir, config));
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
+			repository = new SailRepository(new LmdbStore(dataDir, config));
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
-			connection.commit();
-		}
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
+				connection.commit();
+			}
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
+			}
+		} catch (IOException | RuntimeException | Error e) {
+			cleanupStore();
+			throw e;
 		}
 	}
 
@@ -145,16 +150,26 @@ public class QueryBenchmarkTest {
 
 	@AfterAll
 	public static void afterClass() {
+		cleanupStore();
+	}
+
+	private static void cleanupStore() {
 		try {
-			repository.shutDown();
+			if (repository != null) {
+				repository.shutDown();
+			}
 		} finally {
-			LmdbTestUtil.deleteDir(dataDir);
+			if (dataDir != null) {
+				LmdbTestUtil.deleteDir(dataDir);
+			}
+			if (tempDir != null) {
+				tempDir.delete();
+			}
+			tempDir = null;
+			dataDir = null;
+			repository = null;
+			statementList = null;
 		}
-		tempDir.delete();
-		tempDir = null;
-		dataDir = null;
-		repository = null;
-		statementList = null;
 	}
 
 	@Test

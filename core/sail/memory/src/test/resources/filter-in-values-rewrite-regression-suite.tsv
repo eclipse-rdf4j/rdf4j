@@ -1,0 +1,19 @@
+id	category	coverage	expected_optimizer_action
+P1	portable-pass	bound IRI with non-empty constant RHS	add values semijoin anchor
+P2	portable-pass	empty RHS with possibly unbound variable	empty result or empty values semijoin
+P3	core-pass	simple literal constants	add values semijoin anchor
+P4	core-pass	xsd:string literal constants	add values semijoin anchor
+P5	core-pass	language-tagged literal constants	add values semijoin anchor
+P6	core-pass	containing group is UNION	add semijoin at containing-group output
+N1	negative	duplicate RHS terms	deduplicate before values generation
+N2	negative	non-empty RHS with possibly unbound variable	refuse values semijoin anchor
+N3	negative	numeric value equality	refuse values semijoin anchor
+N4	negative	boolean lexical value equality	refuse values semijoin anchor
+N5	negative	dateTime value equality	refuse values semijoin anchor
+N6	negative	IN under OR	refuse values semijoin anchor
+N7	negative	optional right-side pushdown	refuse pushed values semijoin
+N8	negative	partial UNION-arm pushdown	refuse pushed values semijoin
+N9	negative	subquery ORDER BY LIMIT pushdown	refuse pushed values semijoin
+N10	negative	expression left-hand side	refuse direct values rewrite
+N11	negative	non-constant RHS expression	refuse direct values rewrite
+E1	sentinel	custom datatype equality extension	document portability canary

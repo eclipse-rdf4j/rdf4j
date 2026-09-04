@@ -202,6 +202,39 @@ class QueryPlanCaptureTest {
 	}
 
 	@Test
+	void capturesOptimizerDiagnosticsInDebugMetrics() {
+		QueryPlanCapture capture = new QueryPlanCapture();
+		String query = "SELECT ?s WHERE { ?s ?p ?o . ?s ?p2 ?o2 }";
+		EnumMap<Explanation.Level, Explanation> explanations = new EnumMap<>(Explanation.Level.class);
+		for (Explanation.Level level : Explanation.Level.values()) {
+			TupleExpr tupleExpr = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			if (level == Explanation.Level.Optimized) {
+				tupleExpr.setRuntimeTelemetryEnabled(true);
+				tupleExpr.setStringMetricActual("optimizer.strategy", "greedy");
+				tupleExpr.setStringMetricActual("optimizer.decisionTrace",
+						"seed[0] candidate[1] rejected; seed[1] candidate[0] chosen");
+			}
+			explanations.put(level, toExplanation(tupleExpr, level));
+		}
+
+		QueryPlanCaptureContext context = QueryPlanCaptureContext.builder()
+				.outputDirectory(tempDir)
+				.queryId("optimizer-diagnostics")
+				.queryString(query)
+				.benchmark("QueryPlanCaptureTest")
+				.build();
+
+		QueryPlanSnapshot snapshot = capture.capture(context, () -> stubTupleQueryFor(explanations));
+		QueryPlanExplanation optimized = snapshot.getExplanations().get("optimized");
+		assertNotNull(optimized);
+		assertTrue(optimized.getExplanationJson().contains("optimizer.decisionTrace"),
+				"Expected optimizer trace in persisted explanation JSON");
+		assertEquals("greedy", optimized.getDebugMetrics().get("optimizer.strategy"));
+		assertEquals("seed[0] candidate[1] rejected; seed[1] candidate[0] chosen",
+				optimized.getDebugMetrics().get("optimizer.decisionTrace"));
+	}
+
+	@Test
 	void capturesTelemetryLevelIntoTelemetrySnapshotSlot() {
 		QueryPlanCapture capture = new QueryPlanCapture();
 		String query = "SELECT ?s WHERE { ?s ?p ?o }";
@@ -285,6 +318,10 @@ class QueryPlanCaptureTest {
 			explanations.put(level, toExplanation(tupleExpr));
 		}
 
+		return stubTupleQueryFor(explanations);
+	}
+
+	private static TupleQuery stubTupleQueryFor(EnumMap<Explanation.Level, Explanation> explanations) {
 		return (TupleQuery) Proxy.newProxyInstance(
 				QueryPlanCaptureTest.class.getClassLoader(),
 				new Class<?>[] { TupleQuery.class },
@@ -303,7 +340,14 @@ class QueryPlanCaptureTest {
 	}
 
 	private static Explanation toExplanation(TupleExpr tupleExpr) {
+		return toExplanation(tupleExpr, null);
+	}
+
+	private static Explanation toExplanation(TupleExpr tupleExpr, Explanation.Level level) {
 		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr);
+		if (level != null) {
+			converter = new QueryModelTreeToGenericPlanNode(tupleExpr, null, level);
+		}
 		tupleExpr.visit(converter);
 		return new ExplanationImpl(converter.getGenericPlanNode(), false, tupleExpr);
 	}

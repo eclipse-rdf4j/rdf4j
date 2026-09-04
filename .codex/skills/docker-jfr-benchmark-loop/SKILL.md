@@ -41,9 +41,10 @@ Explicit selector plus params:
   - `jdk.CPUTimeSample#enabled=true`
   - `report-on-exit=cpu-time-hot-methods`
 - This skill wrapper adds the missing fidelity flags:
-  - `-XX:FlightRecorderOptions=stackdepth=1024,samplethreads=true`
+  - `-XX:FlightRecorderOptions=stackdepth=1024`
   - `-XX:+UnlockDiagnosticVMOptions`
   - `-XX:+DebugNonSafepoints`
+- The repo helper sets `-XX:StartFlightRecording:method-profiling=max` for CPU-time JFR runs.
 
 ## Core loop
 

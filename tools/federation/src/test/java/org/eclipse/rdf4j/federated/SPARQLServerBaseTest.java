@@ -19,6 +19,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringService;
+import org.eclipse.rdf4j.federated.repository.ConfigurableSailRepository;
 import org.eclipse.rdf4j.federated.repository.RepositorySettings;
 import org.eclipse.rdf4j.federated.server.NativeStoreServer;
 import org.eclipse.rdf4j.federated.server.SPARQLEmbeddedServer;
@@ -33,6 +34,8 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.TestInstance.Lifecycle;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +46,7 @@ import org.slf4j.LoggerFactory;
  * @author as
  *
  */
+@TestInstance(Lifecycle.PER_CLASS)
 public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 
 	/**
@@ -53,8 +57,6 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 		REMOTEREPOSITORY,
 		NATIVE
 	}
-
-	protected static final int MAX_ENDPOINTS = 4;
 
 	public static Logger log;
 
@@ -68,8 +70,17 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 
 	private static REPOSITORY_TYPE repositoryType = REPOSITORY_TYPE.SPARQLREPOSITORY;
 
+	/**
+	 * The maximum number of endpoints available and prepared in the server
+	 *
+	 * @return
+	 */
+	protected int getMaxEndpoints() {
+		return 4;
+	}
+
 	@BeforeAll
-	public static void initTest() throws Exception {
+	public void initTest() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 
 		log = LoggerFactory.getLogger(SPARQLServerBaseTest.class);
@@ -90,7 +101,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	}
 
 	@AfterAll
-	public static void afterTest() throws Exception {
+	public void afterTest() throws Exception {
 		if (server != null) {
 			server.shutdown();
 		}
@@ -100,7 +111,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	@BeforeEach
 	public void beforeEachTest() {
 		// reset operations counter and fail after
-		for (int i = 1; i <= MAX_ENDPOINTS; i++) {
+		for (int i = 1; i <= getMaxEndpoints(); i++) {
 			RepositorySettings repoSettings = repoSettings(i);
 			repoSettings.resetOperationsCounter();
 			repoSettings.setFailAfter(-1);
@@ -117,17 +128,19 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	 *
 	 * @throws Exception
 	 */
-	private static void initializeServer() throws Exception {
+	private void initializeServer() throws Exception {
+
+		int maxEndpoints = getMaxEndpoints();
 
 		// set up the server: the maximal number of endpoints must be known
-		List<String> repositoryIds = new ArrayList<>(MAX_ENDPOINTS);
-		for (int i = 1; i <= MAX_ENDPOINTS; i++) {
+		List<String> repositoryIds = new ArrayList<>();
+		for (int i = 1; i <= maxEndpoints; i++) {
 			repositoryIds.add("endpoint" + i);
 		}
 		File dataDir = new File(tempDir.toFile(), "datadir");
 		server = new SPARQLEmbeddedServer(dataDir, repositoryIds, repositoryType == REPOSITORY_TYPE.REMOTEREPOSITORY);
 
-		server.initialize(MAX_ENDPOINTS);
+		server.initialize(maxEndpoints);
 	}
 
 	/**
@@ -136,11 +149,11 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	 *
 	 * @throws Exception
 	 */
-	private static void initializeLocalNativeStores() throws Exception {
+	private void initializeLocalNativeStores() throws Exception {
 
 		File dataDir = new File(tempDir.toFile(), "datadir");
 		server = new NativeStoreServer(dataDir);
-		server.initialize(MAX_ENDPOINTS);
+		server.initialize(getMaxEndpoints());
 	}
 
 	/**
@@ -151,8 +164,12 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	 * @param i the index of the repository, starting with 1
 	 * @return
 	 */
-	protected static Repository getRepository(int i) {
+	protected static ConfigurableSailRepository getRepository(int i) {
 		return server.getRepository(i);
+	}
+
+	protected String getSparqlEndpointUrl(int endpointIndex) {
+		return ((SPARQLEmbeddedServer) server).getRepositoryUrl("endpoint" + endpointIndex);
 	}
 
 	protected List<Endpoint> prepareTest(List<String> sparqlEndpointData) throws Exception {
@@ -161,7 +178,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 		federationContext().getManager().removeAll();
 
 		// prepare the test endpoints (i.e. load data)
-		if (sparqlEndpointData.size() > MAX_ENDPOINTS) {
+		if (sparqlEndpointData.size() > getMaxEndpoints()) {
 			throw new RuntimeException("MAX_ENDPOINTs to low, " + sparqlEndpointData.size()
 					+ " repositories needed. Adjust configuration");
 		}
@@ -272,6 +289,20 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 		Assertions.assertEquals(expectedRequests,
 				(monitoringInformation != null ? monitoringInformation.getNumberOfRequests() : 0));
 
+	}
+
+	@Override
+	protected String readQueryString(String queryFile) throws RepositoryException, IOException {
+		String query = super.readQueryString(queryFile);
+		if (!(server instanceof SPARQLEmbeddedServer)) {
+			return query;
+		}
+
+		String serverUrl = ((SPARQLEmbeddedServer) server).getServerUrl();
+		String serverBase = serverUrl.endsWith("/") ? serverUrl.substring(0, serverUrl.length() - 1) : serverUrl;
+		return query.replace("http://localhost:18080/rdf4j-server", serverUrl)
+				.replace("http://localhost:18080",
+						serverBase);
 	}
 
 }

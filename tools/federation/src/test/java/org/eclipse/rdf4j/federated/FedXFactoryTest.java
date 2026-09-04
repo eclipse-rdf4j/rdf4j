@@ -14,7 +14,6 @@ import java.io.File;
 
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.server.SPARQLEmbeddedServer;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,9 +47,7 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 
 		repo.init();
 		federationContext = repo.getFederationContext();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			execute("/tests/medium/query01.rq", "/tests/medium/query01.srx", false, true);
-		}
+		execute("/tests/medium/query01.rq", "/tests/medium/query01.srx", false, true);
 
 		repo.shutDown();
 	}
@@ -77,9 +74,7 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 		loadDataSet(repo, "/tests/medium/data1.ttl");
 
 		federationContext = repo.getFederationContext();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			execute("/tests/medium/query01.rq", "/tests/medium/query01.srx", false, true);
-		}
+		execute("/tests/medium/query01.rq", "/tests/medium/query01.srx", false, true);
 
 		repo.shutDown();
 	}
@@ -104,9 +99,7 @@ public class FedXFactoryTest extends SPARQLServerBaseTest {
 
 		repo.init();
 		federationContext = repo.getFederationContext();
-		try (RepositoryConnection conn = repo.getConnection()) {
-			execute("/tests/medium/query01.rq", "/tests/medium/query01.srx", false, true);
-		}
+		execute("/tests/medium/query01.rq", "/tests/medium/query01.srx", false, true);
 
 		repo.shutDown();
 	}

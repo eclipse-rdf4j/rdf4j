@@ -27,8 +27,10 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -55,7 +57,6 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvaluationContext {
 
 	private static final int FULL_MASK_CACHE_MAX_VARIABLES = 12;
-	private static final int FULL_MASK_CACHE_MAX_VARIABLES_POW = 2 << FULL_MASK_CACHE_MAX_VARIABLES;
 
 	public static final Predicate<BindingSet> HAS_BINDING_FALSE = (bs) -> false;
 	public static final Function<BindingSet, Binding> GET_BINDING_NULL = (bs) -> null;
@@ -120,6 +121,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	@Override
 	public Dataset getDataset() {
 		return context.getDataset();
+	}
+
+	@Override
+	public BNode getOrCreateBNode(String nodeLabel, BindingSet bindings, ValueFactory valueFactory) {
+		return context.getOrCreateBNode(nodeLabel, bindings, valueFactory);
 	}
 
 	@Override

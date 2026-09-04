@@ -158,6 +158,16 @@ public class TriGWriter extends TurtleWriter {
 		super.writeNamespace(prefix, name);
 	}
 
+	@Override
+	protected void writeVersionAnnouncement() throws RDFHandlerException {
+		try {
+			closeActiveContext();
+		} catch (IOException e) {
+			throw new RDFHandlerException(e);
+		}
+		super.writeVersionAnnouncement();
+	}
+
 	protected void closeActiveContext() throws IOException {
 		if (inActiveContext) {
 			writer.decreaseIndentation();

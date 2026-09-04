@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -457,7 +458,7 @@ class NativeSailStore implements SailStore {
 			for (Resource context : contexts) {
 				if (context == null) {
 					contextIDList.add(0);
-				} else if (!context.isTriple()) {
+				} else if (!context.isTripleTerm()) {
 					int contextID = valueStore.getID(context);
 
 					if (contextID != NativeValue.UNKNOWN_ID) {
@@ -479,6 +480,32 @@ class NativeSailStore implements SailStore {
 			return perContextIterList.get(0);
 		} else {
 			return new UnionIteration<>(perContextIterList);
+		}
+	}
+
+	CloseableIteration<? extends TripleTerm> createTripleTermIterator(Resource subj, IRI pred, Value obj,
+			boolean explicit) throws IOException {
+		LinkedHashSet<TripleTerm> tripleTerms = new LinkedHashSet<>();
+		try (CloseableIteration<? extends Statement> statements = createStatementIterator(null, null, null, explicit)) {
+			while (statements.hasNext()) {
+				Value statementObject = statements.next().getObject();
+				if (statementObject instanceof TripleTerm) {
+					collectTripleTerms((TripleTerm) statementObject, subj, pred, obj, tripleTerms);
+				}
+			}
+		}
+		return new CloseableIteratorIteration<>(tripleTerms.iterator());
+	}
+
+	private void collectTripleTerms(TripleTerm tripleTerm, Resource subj, IRI pred, Value obj,
+			Set<TripleTerm> tripleTerms) {
+		if ((subj == null || subj.equals(tripleTerm.getSubject()))
+				&& (pred == null || pred.equals(tripleTerm.getPredicate()))
+				&& (obj == null || obj.equals(tripleTerm.getObject()))) {
+			tripleTerms.add(tripleTerm);
+		}
+		if (tripleTerm.getObject() instanceof TripleTerm) {
+			collectTripleTerms((TripleTerm) tripleTerm.getObject(), subj, pred, obj, tripleTerms);
 		}
 	}
 
@@ -908,6 +935,16 @@ class NativeSailStore implements SailStore {
 				return createStatementIterator(subj, pred, obj, explicit, contexts);
 			} catch (IOException e) {
 				throw new SailException("Unable to get statements", e);
+			}
+		}
+
+		@Override
+		public CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred, Value obj)
+				throws SailException {
+			try {
+				return createTripleTermIterator(subj, pred, obj, explicit);
+			} catch (IOException e) {
+				throw new SailException("Unable to get triple terms", e);
 			}
 		}
 	}

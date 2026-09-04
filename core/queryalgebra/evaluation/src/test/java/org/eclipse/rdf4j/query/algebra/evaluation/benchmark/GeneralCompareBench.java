@@ -145,7 +145,7 @@ public class GeneralCompareBench {
 					genDuration(i, rnd);
 					isDuration = true; // this type requires non-strict to hit the duration path
 				} else if ((pick -= wUnsup) < 0) {
-					genUnsupported(i, rnd);
+					genUnsupported(i);
 				} else {
 					genIncompatibleSupported(i, rnd);
 				}
@@ -274,7 +274,7 @@ public class GeneralCompareBench {
 			// strictness is handled by caller (forced false for durations)
 		}
 
-		private void genUnsupported(int i, Random rnd) {
+		private void genUnsupported(int i) {
 			a[i] = vf.createLiteral("x", unknownDT);
 			b[i] = vf.createLiteral("y", unknownDT);
 		}

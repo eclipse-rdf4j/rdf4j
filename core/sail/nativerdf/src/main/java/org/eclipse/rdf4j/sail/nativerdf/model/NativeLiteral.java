@@ -58,6 +58,16 @@ public class NativeLiteral extends SimpleLiteral implements NativeValue {
 		setInternalID(internalID, revision);
 	}
 
+	public NativeLiteral(ValueStoreRevision revision, String label, String lang, BaseDirection baseDirection) {
+		this(revision, label, lang, baseDirection, UNKNOWN_ID);
+	}
+
+	public NativeLiteral(ValueStoreRevision revision, String label, String lang, BaseDirection baseDirection,
+			int internalID) {
+		super(label, lang, baseDirection);
+		setInternalID(internalID, revision);
+	}
+
 	public NativeLiteral(ValueStoreRevision revision, String label, IRI datatype) {
 		this(revision, label, datatype, UNKNOWN_ID);
 	}

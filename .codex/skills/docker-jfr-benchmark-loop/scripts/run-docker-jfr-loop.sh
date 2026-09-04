@@ -17,7 +17,7 @@ Options:
 Notes:
   - This wrapper always uses scripts/run-single-benchmark-docker.sh.
   - JFR CPU-time profiling is already enabled by the repo docker helper.
-  - This wrapper injects stackdepth/samplethreads plus DebugNonSafepoints fidelity flags.
+  - This wrapper injects stackdepth plus DebugNonSafepoints fidelity flags.
   - Raw JMH args are intentionally blocked. Use --param or --jvm-arg instead.
 USAGE
 }
@@ -135,7 +135,7 @@ if [[ -z "${benchmark_id}" && ( -z "${module}" || -z "${benchmark_class}" || -z 
 fi
 
 default_jvm_args=(
-	"-XX:FlightRecorderOptions=stackdepth=1024,samplethreads=true"
+	"-XX:FlightRecorderOptions=stackdepth=1024"
 	"-XX:+UnlockDiagnosticVMOptions"
 	"-XX:+DebugNonSafepoints"
 )

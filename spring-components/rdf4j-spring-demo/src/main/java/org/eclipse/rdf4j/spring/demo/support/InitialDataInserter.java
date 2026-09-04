@@ -11,10 +11,10 @@
 
 package org.eclipse.rdf4j.spring.demo.support;
 
-import javax.annotation.PostConstruct;
-
 import org.eclipse.rdf4j.spring.support.DataInserter;
 import org.springframework.core.io.Resource;
+
+import jakarta.annotation.PostConstruct;
 
 /**
  * Inserts data from the specified TTL file into the repository at startup.

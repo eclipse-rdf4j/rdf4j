@@ -48,7 +48,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -291,8 +291,8 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements ByteSink {
 			writeBNode((BNode) value);
 		} else if (value instanceof Literal) {
 			writeLiteral((Literal) value);
-		} else if (value instanceof Triple) {
-			writeTriple((Triple) value);
+		} else if (value instanceof TripleTerm) {
+			writeTripleTerm((TripleTerm) value);
 		} else {
 			throw new RDFHandlerException("Unknown Value object type: " + value.getClass());
 		}
@@ -327,11 +327,11 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements ByteSink {
 		}
 	}
 
-	private void writeTriple(Triple triple) throws IOException {
+	private void writeTripleTerm(TripleTerm tripleTerm) throws IOException {
 		out.writeByte(TRIPLE_VALUE);
-		writeValue(triple.getSubject());
-		writeValue(triple.getPredicate());
-		writeValue(triple.getObject());
+		writeValue(tripleTerm.getSubject());
+		writeValue(tripleTerm.getPredicate());
+		writeValue(tripleTerm.getObject());
 	}
 
 	private void writeString(String s) throws IOException {

@@ -30,10 +30,12 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.core.ObjectReadContext;
+import tools.jackson.core.ObjectWriteContext;
+import tools.jackson.core.json.JsonFactory;
 
 /**
  * Validates that ValueStoreWalReader verifies the CRC32 summary embedded in compressed segments and marks the scan as
@@ -119,14 +121,14 @@ class ValueStoreWalCompressedSummaryCrcValidationTest {
 			pos += 4;
 
 			// Parse JSON and detect summary frame
-			try (JsonParser jp = new JsonFactory().createParser(json)) {
+			try (JsonParser jp = new JsonFactory().createParser(ObjectReadContext.empty(), json)) {
 				if (jp.nextToken() != JsonToken.START_OBJECT) {
 					continue;
 				}
 				String type = null;
 				Integer lid = null;
 				while (jp.nextToken() != JsonToken.END_OBJECT) {
-					String field = jp.getCurrentName();
+					String field = jp.currentName();
 					jp.nextToken();
 					if ("t".equals(field)) {
 						type = jp.getValueAsString("");
@@ -166,11 +168,11 @@ class ValueStoreWalCompressedSummaryCrcValidationTest {
 	private static byte[] buildSummaryFrameWithCrc(int lastMintedId, long wrongCrc32) throws IOException {
 		JsonFactory factory = new JsonFactory();
 		ByteArrayOutputStream baos = new ByteArrayOutputStream(128);
-		try (JsonGenerator gen = factory.createGenerator(baos)) {
+		try (JsonGenerator gen = factory.createGenerator(ObjectWriteContext.empty(), baos)) {
 			gen.writeStartObject();
-			gen.writeStringField("t", "S");
-			gen.writeNumberField("lastId", lastMintedId);
-			gen.writeNumberField("crc32", wrongCrc32 & 0xFFFFFFFFL);
+			gen.writeStringProperty("t", "S");
+			gen.writeNumberProperty("lastId", lastMintedId);
+			gen.writeNumberProperty("crc32", wrongCrc32 & 0xFFFFFFFFL);
 			gen.writeEndObject();
 		}
 		baos.write('\n');

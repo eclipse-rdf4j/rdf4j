@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.performance;
 
+import java.io.File;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -26,8 +27,8 @@ import com.google.common.collect.Maps;
 /**
  * Simple manual performance test for FedX.
  * <p>
- * Can be applied against a scenario created with {@link DataGenerator} and {@link ResultGenerator}. An example scenario
- * is on the classpath in "build/test/fedxPerformanceScenario.jar"
+ * Can be applied against a scenario created with {@link DataGenerator} and {@link ResultGenerator}. Example data can be
+ * produced with {@link #setupData()}.
  * </p>
  *
  * <p>
@@ -40,23 +41,24 @@ import com.google.common.collect.Maps;
  * </p>
  *
  * <pre>
- * query01: avg=916, min=858, max=984
- * query02: avg=5, min=5, max=6
- * query03: avg=17, min=14, max=24
- * query04: avg=902, min=847, max=972
- * query05: avg=145, min=121, max=239
- * query06: avg=57, min=43, max=79
- * query07: avg=276, min=246, max=346
- * query08: avg=2640, min=2083, max=3747
- * query09: avg=72, min=66, max=94
- * query10: avg=785, min=664, max=1006
- * query11: avg=2465, min=2249, max=3707
+ * query01: avg=280, min=265, max=296
+ * query02: avg=6, min=5, max=7
+ * query03: avg=11, min=10, max=13
+ * query04: avg=259, min=252, max=270
+ * query05: avg=85, min=78, max=105
+ * query06: avg=44, min=38, max=51
+ * query07: avg=118, min=106, max=131
+ * query08: avg=2672, min=2598, max=2817
+ * query09: avg=49, min=45, max=55
+ * query10: avg=96, min=92, max=101
+ * query11: avg=3446, min=3381, max=3613
  * </pre>
  *
  *
  * @author Andreas Schwarte
  *
  */
+@Disabled("manual performance test implemented as unit test")
 public class FedXPerformanceTest extends SPARQLBaseTest {
 
 	static final String[] queries = new String[] {
@@ -64,10 +66,34 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 			"query10", "query11" /* , "query12" */
 	};
 
+	/**
+	 * The package in the test resources classes folder, where data is written to
+	 */
+	static final String basePackage = "/tests/performance/";
+
+	@Override
+	protected void initFedXConfig() {
+
+		// optionally force ASK queries
+		// fedxRule.withConfiguration(c -> c.withEnableGroupedSourceSelection(false));
+	}
+
 	@Test
-	@Disabled
+	@Disabled("Activate and run for initial one-time setup")
+	public void setupData() throws Exception {
+
+		var benchmarkFolder = new File("src/test/resources" + basePackage);
+
+		new DataGenerator().run(benchmarkFolder);
+		new ResultGenerator().run(benchmarkFolder);
+	}
+
+	@Test
 	public void testPerformance() throws Throwable {
-		String basePackage = "/tests/performance/";
+
+		// change this to see the impact of source selection caching
+		// default: cached source selection information
+		final boolean SOURCE_SELECTION_CACHE = false;
 
 		/* prepare endpoints */
 		prepareTest(Arrays.asList(basePackage + "data1.ttl", basePackage + "data2.ttl", basePackage + "data3.ttl",
@@ -75,6 +101,10 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 
 		// warm-up
 		for (String query : queries) {
+			if (!SOURCE_SELECTION_CACHE) {
+				fedxRule.getFederationContext().getSourceSelectionCache().invalidate();
+			}
+
 			long start = System.currentTimeMillis();
 			execute(basePackage + query + ".rq", basePackage + query + ".srx", false, true);
 			long duration = System.currentTimeMillis() - start;
@@ -89,6 +119,11 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 			Run run = new Run(i);
 			runs.add(run);
 			for (String query : queries) {
+
+				if (!SOURCE_SELECTION_CACHE) {
+					fedxRule.getFederationContext().getSourceSelectionCache().invalidate();
+				}
+
 				SingleQueryRun queryRun = new SingleQueryRun(query);
 				run.addRun(queryRun);
 				long start = System.currentTimeMillis();
@@ -121,7 +156,6 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 	@Test
 	@Disabled // FIXME currently stack overflow error in result comparison due to implementation issue in RDF4J
 	public void testRun() throws Exception {
-		String basePackage = "/tests/performance/";
 
 		/* prepare endpoints */
 		prepareTest(Arrays.asList(basePackage + "data1.ttl", basePackage + "data2.ttl", basePackage + "data3.ttl",

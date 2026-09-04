@@ -30,7 +30,7 @@ public final class ListMemberValueOperationStep implements QueryValueEvaluationS
 
 	@Override
 	public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
-		Value leftValue = compiledArgs.get(0).evaluate(bindings);
+		Value leftValue = compiledArgs.getFirst().evaluate(bindings);
 		boolean result = false;
 		ValueExprEvaluationException typeError = null;
 		for (int i = 1; i < compiledArgs.size(); i++) {

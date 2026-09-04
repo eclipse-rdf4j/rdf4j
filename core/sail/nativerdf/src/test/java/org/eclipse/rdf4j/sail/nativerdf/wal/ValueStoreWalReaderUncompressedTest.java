@@ -27,8 +27,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.ObjectWriteContext;
+import tools.jackson.core.json.JsonFactory;
 
 /**
  * Exercises ValueStoreWalReader's uncompressed path by writing a minimal .v1 segment by hand and verifying iteration.
@@ -99,15 +100,15 @@ class ValueStoreWalReaderUncompressedTest {
 	private static byte[] headerJson(String store, int segment, int firstId) throws IOException {
 		JsonFactory f = new JsonFactory();
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		try (JsonGenerator g = f.createGenerator(baos)) {
+		try (JsonGenerator g = f.createGenerator(ObjectWriteContext.empty(), baos)) {
 			g.writeStartObject();
-			g.writeStringField("t", "V");
-			g.writeNumberField("ver", 1);
-			g.writeStringField("store", store);
-			g.writeStringField("engine", "valuestore");
-			g.writeNumberField("created", 0);
-			g.writeNumberField("segment", segment);
-			g.writeNumberField("firstId", firstId);
+			g.writeStringProperty("t", "V");
+			g.writeNumberProperty("ver", 1);
+			g.writeStringProperty("store", store);
+			g.writeStringProperty("engine", "valuestore");
+			g.writeNumberProperty("created", 0);
+			g.writeNumberProperty("segment", segment);
+			g.writeNumberProperty("firstId", firstId);
 			g.writeEndObject();
 		}
 		baos.write('\n');
@@ -118,16 +119,16 @@ class ValueStoreWalReaderUncompressedTest {
 			throws IOException {
 		JsonFactory f = new JsonFactory();
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		try (JsonGenerator g = f.createGenerator(baos)) {
+		try (JsonGenerator g = f.createGenerator(ObjectWriteContext.empty(), baos)) {
 			g.writeStartObject();
-			g.writeStringField("t", "M");
-			g.writeNumberField("lsn", lsn);
-			g.writeNumberField("id", id);
-			g.writeStringField("vk", vk);
-			g.writeStringField("lex", lex == null ? "" : lex);
-			g.writeStringField("dt", dt == null ? "" : dt);
-			g.writeStringField("lang", lang == null ? "" : lang);
-			g.writeNumberField("hash", hash);
+			g.writeStringProperty("t", "M");
+			g.writeNumberProperty("lsn", lsn);
+			g.writeNumberProperty("id", id);
+			g.writeStringProperty("vk", vk);
+			g.writeStringProperty("lex", lex == null ? "" : lex);
+			g.writeStringProperty("dt", dt == null ? "" : dt);
+			g.writeStringProperty("lang", lang == null ? "" : lang);
+			g.writeNumberProperty("hash", hash);
 			g.writeEndObject();
 		}
 		baos.write('\n');

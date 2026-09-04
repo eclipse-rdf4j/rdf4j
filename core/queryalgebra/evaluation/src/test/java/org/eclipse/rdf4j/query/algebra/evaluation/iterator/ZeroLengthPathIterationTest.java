@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -50,6 +52,10 @@ public class ZeroLengthPathIterationTest {
 		m.add(RDF.ALT, RDF.TYPE, RDFS.CLASS);
 		m.add(RDF.BAG, RDF.TYPE, RDFS.CLASS);
 
+		evaluator = createEvaluationStrategy(m);
+	}
+
+	private EvaluationStrategy createEvaluationStrategy(Model m) {
 		TripleSource ts = new TripleSource() {
 
 			@Override
@@ -63,7 +69,7 @@ public class ZeroLengthPathIterationTest {
 				return vf;
 			}
 		};
-		evaluator = new StrictEvaluationStrategy(ts, null);
+		return new StrictEvaluationStrategy(ts, null);
 	}
 
 	/**
@@ -86,6 +92,24 @@ public class ZeroLengthPathIterationTest {
 			assertTrue(result.hasBinding("a"), "zlp evaluation should have retained unrelated input binding");
 			assertTrue(result.hasBinding("x"), "zlp evaluation should binding for subject var");
 			assertTrue(result.hasBinding("y"), "zlp evaluation should binding for object var");
+		}
+	}
+
+	@Test
+	public void testContextBindingCanShareEndpointVariable() {
+		Model m = new LinkedHashModel();
+		m.add(RDF.ALT, RDF.TYPE, RDFS.CLASS, RDF.ALT);
+
+		Var subjectVar = Var.of("g");
+		Var objVar = Var.of("x");
+		Var contextVar = Var.of("g");
+		try (ZeroLengthPathIteration zlp = new ZeroLengthPathIteration(createEvaluationStrategy(m), subjectVar, objVar,
+				null, null, contextVar, new MapBindingSet(), new QueryEvaluationContext.Minimal(null))) {
+			BindingSet result = zlp.getNextElement();
+
+			assertNotNull(result);
+			assertEquals(RDF.ALT, result.getValue("g"));
+			assertTrue(result.hasBinding("x"), "zlp evaluation should bind the object var");
 		}
 	}
 }

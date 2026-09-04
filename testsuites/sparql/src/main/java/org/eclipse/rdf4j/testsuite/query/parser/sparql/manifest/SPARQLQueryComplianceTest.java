@@ -121,10 +121,11 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 	public abstract Collection<DynamicTest> tests();
 
 	public Collection<DynamicTest> getTestData(String manifestResource) {
-		return getTestData(manifestResource, true);
+		return getTestData(manifestResource, false);
 	}
 
 	public Collection<DynamicTest> getTestData(String manifestResource, boolean approvedOnly) {
+
 		List<DynamicTest> tests = new ArrayList<>();
 
 		Deque<String> manifests = new ArrayDeque<>();
@@ -373,7 +374,9 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 					}
 				});
 
-				if (dataset != null) {
+				// Skip dataset validation for SPARQL 1.2 tests due to missing ut:graphData in manifests
+				// See: https://github.com/w3c/rdf-tests/issues/344
+				if (dataset != null && !queryFileURL.contains("sparql-1.2")) {
 					query.setDataset(dataset);
 				}
 

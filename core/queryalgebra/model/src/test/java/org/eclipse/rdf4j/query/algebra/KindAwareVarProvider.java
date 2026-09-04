@@ -18,15 +18,15 @@ import org.eclipse.rdf4j.model.Value;
 public class KindAwareVarProvider implements Var.Provider {
 
 	@Override
-	public Var newVar(String name, Value value, boolean anonymous, boolean constant) {
-		return new KindAwareVar(name, value, anonymous, constant);
+	public Var newVar(String name, Value value, boolean anonymous, boolean constant, boolean isBNode) {
+		return new KindAwareVar(name, value, anonymous, constant, isBNode);
 	}
 
 	@Override
 	public Var cloneVar(Var original) {
 		KindAwareVar source = (KindAwareVar) original;
 		KindAwareVar clone = new KindAwareVar(source.getName(), source.getValue(), source.isAnonymous(),
-				source.isConstant());
+				source.isConstant(), source.isBNode());
 		clone.setKind(source.getKind());
 		return clone;
 	}

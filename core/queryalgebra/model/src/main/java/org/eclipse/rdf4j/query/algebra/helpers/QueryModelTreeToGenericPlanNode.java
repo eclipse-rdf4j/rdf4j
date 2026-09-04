@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -59,6 +60,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 
 	private GenericPlanNode top = null;
 	private final QueryModelNode topTupleExpr;
+	private final QueryModelNode optimizerMetricWrapper;
 	private final Explanation.Level level;
 	private final Set<String> rootIncomingBindings;
 	private final CartesianJoinExplainAnalyzer cartesianJoinExplainAnalyzer;
@@ -73,10 +75,13 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 
 	public QueryModelTreeToGenericPlanNode(QueryModelNode topTupleExpr, Set<String> rootIncomingBindings,
 			Explanation.Level level) {
+		QueryModelNode optimizerMetricWrapper = null;
 		if (topTupleExpr instanceof QueryRoot) {
+			optimizerMetricWrapper = topTupleExpr;
 			topTupleExpr = ((QueryRoot) topTupleExpr).getArg();
 		}
 		this.topTupleExpr = topTupleExpr;
+		this.optimizerMetricWrapper = optimizerMetricWrapper;
 		this.level = level == null ? defaultExplanationLevel(topTupleExpr) : level;
 		this.rootIncomingBindings = rootIncomingBindings == null ? Collections.emptySet()
 				: Collections.unmodifiableSet(new LinkedHashSet<>(rootIncomingBindings));
@@ -126,6 +131,16 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 			genericPlanNode.setDoubleMetricsActual(new LinkedHashMap<>(node.getDoubleMetricsActual()));
 			genericPlanNode.setStringMetricsActual(new LinkedHashMap<>(node.getStringMetricsActual()));
 			applyVariableShapeMetrics(node, genericPlanNode);
+		} else if (level.includesEvaluationAnnotations()) {
+			copyOptimizerMetrics(node, genericPlanNode);
+		}
+		if (level.includesEvaluationAnnotations()) {
+			genericPlanNode.setLongMetricsPlanned(new LinkedHashMap<>(node.getLongMetricsPlanned()));
+			genericPlanNode.setDoubleMetricsPlanned(new LinkedHashMap<>(node.getDoubleMetricsPlanned()));
+			genericPlanNode.setStringMetricsPlanned(new LinkedHashMap<>(node.getStringMetricsPlanned()));
+		}
+		if (node == topTupleExpr && optimizerMetricWrapper != null) {
+			copyOptimizerMetricsIfAbsent(optimizerMetricWrapper, genericPlanNode);
 		}
 		if (level.includesEvaluationAnnotations()) {
 			applyExplainAnnotations(node, genericPlanNode, incomingBindings);
@@ -150,6 +165,45 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 			return Math.max(0, value);
 		}
 		return -1;
+	}
+
+	private static void copyOptimizerMetrics(QueryModelNode node, GenericPlanNode genericPlanNode) {
+		for (Map.Entry<String, Long> entry : node.getLongMetricsActual().entrySet()) {
+			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+				genericPlanNode.setLongMetricActual(entry.getKey(), entry.getValue());
+			}
+		}
+		for (Map.Entry<String, Double> entry : node.getDoubleMetricsActual().entrySet()) {
+			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+				genericPlanNode.setDoubleMetricActual(entry.getKey(), entry.getValue());
+			}
+		}
+		for (Map.Entry<String, String> entry : node.getStringMetricsActual().entrySet()) {
+			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())) {
+				genericPlanNode.setStringMetricActual(entry.getKey(), entry.getValue());
+			}
+		}
+	}
+
+	private static void copyOptimizerMetricsIfAbsent(QueryModelNode node, GenericPlanNode genericPlanNode) {
+		for (Map.Entry<String, Long> entry : node.getLongMetricsActual().entrySet()) {
+			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+					&& genericPlanNode.getLongMetricActual(entry.getKey()) == null) {
+				genericPlanNode.setLongMetricActual(entry.getKey(), entry.getValue());
+			}
+		}
+		for (Map.Entry<String, Double> entry : node.getDoubleMetricsActual().entrySet()) {
+			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+					&& genericPlanNode.getDoubleMetricActual(entry.getKey()) == null) {
+				genericPlanNode.setDoubleMetricActual(entry.getKey(), entry.getValue());
+			}
+		}
+		for (Map.Entry<String, String> entry : node.getStringMetricsActual().entrySet()) {
+			if (TelemetryMetricNames.isOptimizerMetric(entry.getKey())
+					&& genericPlanNode.getStringMetricActual(entry.getKey()) == null) {
+				genericPlanNode.setStringMetricActual(entry.getKey(), entry.getValue());
+			}
+		}
 	}
 
 	private static Explanation.Level defaultExplanationLevel(QueryModelNode node) {
@@ -216,7 +270,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		}
 
 		if (node instanceof StatementPattern) {
-			applyIndexAnnotation((StatementPattern) node, genericPlanNode);
+			applyIndexAnnotation((StatementPattern) node, genericPlanNode, !level.includesRuntimeTelemetry());
 		}
 
 		if (cartesianJoinExplainAnalyzer != null) {
@@ -227,15 +281,22 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		}
 	}
 
-	private static void applyIndexAnnotation(StatementPattern statementPattern, GenericPlanNode genericPlanNode) {
+	private static void applyIndexAnnotation(StatementPattern statementPattern, GenericPlanNode genericPlanNode,
+			boolean includeLegacyActualAlias) {
 		String indexName = statementPattern.getIndexName();
 		if (indexName == null || indexName.isEmpty()) {
 			return;
 		}
 		if (indexName.contains(",")) {
-			genericPlanNode.setStringMetricActual(TelemetryMetricNames.INDEX_NAMES, indexName);
+			genericPlanNode.setStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_NAME, indexName);
+			if (includeLegacyActualAlias) {
+				genericPlanNode.setStringMetricActual(TelemetryMetricNames.INDEX_NAMES, indexName);
+			}
 		} else {
-			genericPlanNode.setStringMetricActual(TelemetryMetricNames.INDEX_NAME, indexName);
+			genericPlanNode.setStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_NAME, indexName);
+			if (includeLegacyActualAlias) {
+				genericPlanNode.setStringMetricActual(TelemetryMetricNames.INDEX_NAME, indexName);
+			}
 		}
 	}
 

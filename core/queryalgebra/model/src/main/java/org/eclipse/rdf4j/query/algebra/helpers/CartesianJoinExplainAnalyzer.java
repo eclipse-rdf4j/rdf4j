@@ -280,7 +280,8 @@ final class CartesianJoinExplainAnalyzer {
 
 		if (globallySupported && !guaranteedBindingsTainted && leftInfo.supportedSubtree && rightInfo.supportedSubtree
 				&& isCorrelationEmpty(leftInfo.bindingNames, leftInfo.use, rightInfo.bindingNames, rightInfo.use)
-				&& !regionConnects(join, List.of(left), List.of(right))) {
+				&& !regionConnects(join, List.of(left), List.of(right))
+				&& !contextConnects(join, List.of(left), List.of(right))) {
 			joinTypeByNode.put(join, "Cartesian product");
 		}
 
@@ -326,7 +327,8 @@ final class CartesianJoinExplainAnalyzer {
 
 			if (globallySupported && !guaranteedBindingsTainted && prefixSupported && argInfo.supportedSubtree
 					&& isCorrelationEmpty(prefixBindingNames, prefixUse, argInfo.bindingNames, argInfo.use)
-					&& !regionConnects(nJoin, args.subList(0, index), List.of(arg))) {
+					&& !regionConnects(nJoin, args.subList(0, index), List.of(arg))
+					&& !contextConnects(nJoin, args.subList(0, index), List.of(arg))) {
 				boundaries.add(formatBoundary(index + 1));
 			}
 
@@ -495,6 +497,56 @@ final class CartesianJoinExplainAnalyzer {
 		QueryModelNode regionRoot = findMandatoryRegionRoot(boundaryOwner);
 		List<QueryModelNode> atoms = new ArrayList<>();
 		collectMandatoryRegionAtoms(regionRoot, atoms);
+		return atomsConnect(atoms, leftRoots, rightRoots);
+	}
+
+	private boolean contextConnects(QueryModelNode boundaryOwner, Collection<? extends QueryModelNode> leftRoots,
+			Collection<? extends QueryModelNode> rightRoots) {
+		QueryModelNode regionRoot = findMandatoryRegionRoot(boundaryOwner);
+		List<QueryModelNode> atoms = new ArrayList<>();
+		collectMandatoryRegionAtoms(regionRoot, atoms);
+
+		QueryModelNode child = regionRoot;
+		QueryModelNode parent = child.getParentNode();
+		boolean addedContext = false;
+		while (parent != null) {
+			if (isExact(parent, LeftJoin.class)) {
+				LeftJoin leftJoin = (LeftJoin) parent;
+				if (child == leftJoin.getLeftArg()) {
+					collectMandatoryRegionAtoms(leftJoin.getRightArg(), atoms);
+					addedContext = true;
+				} else if (child == leftJoin.getRightArg()) {
+					collectMandatoryRegionAtoms(leftJoin.getLeftArg(), atoms);
+					addedContext = true;
+				}
+				if (leftJoin.getCondition() != null) {
+					atoms.add(leftJoin.getCondition());
+					addedContext = true;
+				}
+				child = parent;
+				parent = child.getParentNode();
+				continue;
+			}
+			if (isExact(parent, Filter.class)) {
+				atoms.add(((Filter) parent).getCondition());
+				addedContext = true;
+				child = parent;
+				parent = child.getParentNode();
+				continue;
+			}
+			if (isTransparentRegionWrapper(parent) || isAlternativeRegionBoundary(parent)) {
+				child = parent;
+				parent = child.getParentNode();
+				continue;
+			}
+			break;
+		}
+
+		return addedContext && atomsConnect(atoms, leftRoots, rightRoots);
+	}
+
+	private boolean atomsConnect(List<QueryModelNode> atoms, Collection<? extends QueryModelNode> leftRoots,
+			Collection<? extends QueryModelNode> rightRoots) {
 
 		List<QueryModelNode> leftAtoms = new ArrayList<>();
 		List<QueryModelNode> rightAtoms = new ArrayList<>();
@@ -571,6 +623,15 @@ final class CartesianJoinExplainAnalyzer {
 		if (node == null) {
 			return;
 		}
+		if (node instanceof Filter) {
+			atoms.add(((Filter) node).getCondition());
+		}
+		if (node instanceof Extension) {
+			atoms.addAll(((Extension) node).getElements());
+		}
+		if (node instanceof Projection && !((Projection) node).isSubquery()) {
+			atoms.add(((Projection) node).getProjectionElemList());
+		}
 		if (isMandatoryJoinNode(node) || isTransparentRegionWrapper(node)) {
 			for (TupleExpr child : tupleChildren(node)) {
 				collectMandatoryRegionAtoms(child, atoms);
@@ -613,6 +674,13 @@ final class CartesianJoinExplainAnalyzer {
 				|| isClass(node, PRECOMPILED_CLASS)
 				|| (node instanceof VariableScopeChange && ((VariableScopeChange) node).isVariableScopeChange())
 				|| (isExact(node, Projection.class) && ((Projection) node).isSubquery());
+	}
+
+	private static boolean isAlternativeRegionBoundary(QueryModelNode node) {
+		return isExact(node, Union.class)
+				|| isExact(node, Difference.class)
+				|| isExact(node, Intersection.class)
+				|| isClass(node, NUNION_CLASS);
 	}
 
 	private static List<TupleExpr> tupleChildren(QueryModelNode node) {

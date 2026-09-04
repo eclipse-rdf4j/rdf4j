@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -57,6 +58,8 @@ import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
 import org.eclipse.rdf4j.sail.UpdateContext;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSailConnection;
 import org.eclipse.rdf4j.sail.helpers.AbstractSail;
+import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
+import org.eclipse.rdf4j.sail.helpers.SlowQuerySupport;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -224,6 +227,17 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
+		SlowQueryContextHolder.SlowQueryContext slowQueryContext = SlowQueryContextHolder.get();
+		long slowQueryThresholdSeconds = getSailBase().getSlowQueryLogThresholdSeconds();
+		long slowQueryFirstResultThresholdSeconds = getSailBase().getSlowQueryLogFirstResultThresholdSeconds();
+		boolean slowQueryLoggingEnabled = (slowQueryThresholdSeconds > 0 || slowQueryFirstResultThresholdSeconds > 0)
+				&& slowQueryContext != null;
+		TupleExpr unoptimizedTupleExpr = tupleExpr;
+		long slowQueryStartMillis = 0L;
+		if (slowQueryLoggingEnabled) {
+			slowQueryStartMillis = SlowQuerySupport.getTimestampMillis(getSailBase());
+		}
+
 		if (cloneTupleExpression) {
 			// Clone the tuple expression to allow for more aggressive optimizations
 			tupleExpr = tupleExpr.clone();
@@ -243,7 +257,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			branch = branch(IncludeInferred.fromBoolean(includeInferred));
 			rdfDataset = branch.dataset(getIsolationLevel());
 
-			TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);
+			TripleSource tripleSource = new SailDatasetTripleTermSource(vf, rdfDataset);
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
 			if (trackResultSize) {
 				strategy.setTrackResultSize(trackResultSize);
@@ -254,11 +268,24 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			}
 
 			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
+			SlowQueryLogInfo slowQueryLogInfo = null;
+			if (slowQueryLoggingEnabled) {
+				slowQueryLogInfo = new SlowQueryLogInfo(getSailBase().getClass().getName(),
+						slowQueryThresholdSeconds, slowQueryFirstResultThresholdSeconds,
+						slowQueryContext.getQueryType(),
+						slowQueryContext.getRawQueryText(),
+						unoptimizedTupleExpr, tupleExpr, dataset,
+						bindings == null ? Set.of() : bindings.getBindingNames());
+			}
 
 			logger.trace("Optimized query model:\n{}", tupleExpr);
 			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
 			iteration = qes.evaluate(EmptyBindingSet.getInstance());
 			iteration = interlock(iteration, rdfDataset, branch);
+			if (slowQueryLogInfo != null) {
+				iteration = new SlowQueryLoggingIteration<>(iteration, getSailBase(), slowQueryLogInfo,
+						new SlowQueryLogFormatter(), slowQueryStartMillis);
+			}
 			allGood = true;
 			return iteration;
 		} catch (QueryEvaluationException e) {
@@ -808,8 +835,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			}
 		} else {
 			for (Resource ctx : contexts) {
-				if (ctx != null && ctx.isTriple()) {
-					throw new SailException("context argument can not be of type Triple: " + ctx.stringValue());
+				if (ctx != null && ctx.isTripleTerm()) {
+					throw new SailException("context argument can not be of type TripleTerm: " + ctx.stringValue());
 				}
 
 				Resource[] contextsToCheck;

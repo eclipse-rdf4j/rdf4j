@@ -37,8 +37,7 @@ public class StringCast extends CastFunction {
 					getXsdName() + " cast requires exactly 1 argument, got " + args.length);
 		}
 
-		if (args[0] instanceof Literal) {
-			Literal literal = (Literal) args[0];
+		if (args[0]instanceof Literal literal) {
 			CoreDatatype datatype = literal.getCoreDatatype();
 
 			// we override because unlike most other cast functions, xsd:string should not accept a language-tagged
@@ -63,8 +62,7 @@ public class StringCast extends CastFunction {
 	protected Literal convert(ValueFactory valueFactory, Value value) throws ValueExprEvaluationException {
 		if (value instanceof IRI) {
 			return valueFactory.createLiteral(value.toString(), XSD.STRING);
-		} else if (value instanceof Literal) {
-			Literal literal = (Literal) value;
+		} else if (value instanceof Literal literal) {
 			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 
 			if (QueryEvaluationUtility.isSimpleLiteral(literal)) {

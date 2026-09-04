@@ -391,6 +391,116 @@ public class PROV {
 	/** prov:wasStartedBy */
 	public static final IRI WAS_STARTED_BY;
 
+	// recommended inverse properties
+
+	/** prov:activityOfInfluence – inverse of prov:hadActivity */
+	public static final IRI ACTIVITY_OF_INFLUENCE;
+
+	/** prov:agentOfInfluence – inverse of prov:agent */
+	public static final IRI AGENT_OF_INFLUENCE;
+
+	/** prov:contributed – inverse of prov:wasAttributedTo */
+	public static final IRI CONTRIBUTED;
+
+	/** prov:ended – inverse of prov:wasEndedBy */
+	public static final IRI ENDED;
+
+	/** prov:entityOfInfluence – inverse of prov:entity */
+	public static final IRI ENTITY_OF_INFLUENCE;
+
+	/** prov:generalizationOf – inverse of prov:specializationOf */
+	public static final IRI GENERALIZATION_OF;
+
+	/** prov:hadDelegate – inverse of prov:actedOnBehalfOf */
+	public static final IRI HAD_DELEGATE;
+
+	/** prov:hadDerivation – inverse of prov:wasDerivedFrom */
+	public static final IRI HAD_DERIVATION;
+
+	/** prov:hadInfluence – inverse of prov:influencer */
+	public static final IRI HAD_INFLUENCE;
+
+	/** prov:hadRevision – inverse of prov:wasRevisionOf */
+	public static final IRI HAD_REVISION;
+
+	/** prov:informed – inverse of prov:wasInformedBy */
+	public static final IRI INFORMED;
+
+	/** prov:locationOf – inverse of prov:atLocation */
+	public static final IRI LOCATION_OF;
+
+	/** prov:qualifiedAssociationOf – inverse of prov:qualifiedAssociation */
+	public static final IRI QUALIFIED_ASSOCIATION_OF;
+
+	/** prov:qualifiedAttributionOf – inverse of prov:qualifiedAttribution */
+	public static final IRI QUALIFIED_ATTRIBUTION_OF;
+
+	/** prov:qualifiedCommunicationOf – inverse of prov:qualifiedCommunication */
+	public static final IRI QUALIFIED_COMMUNICATION_OF;
+
+	/** prov:qualifiedDelegationOf – inverse of prov:qualifiedDelegation */
+	public static final IRI QUALIFIED_DELEGATION_OF;
+
+	/** prov:qualifiedDerivationOf – inverse of prov:qualifiedDerivation */
+	public static final IRI QUALIFIED_DERIVATION_OF;
+
+	/** prov:qualifiedEndOf – inverse of prov:qualifiedEnd */
+	public static final IRI QUALIFIED_END_OF;
+
+	/** prov:qualifiedGenerationOf – inverse of prov:qualifiedGeneration */
+	public static final IRI QUALIFIED_GENERATION_OF;
+
+	/** prov:qualifiedInfluenceOf – inverse of prov:qualifiedInfluence */
+	public static final IRI QUALIFIED_INFLUENCE_OF;
+
+	/** prov:qualifiedInvalidationOf – inverse of prov:qualifiedInvalidation */
+	public static final IRI QUALIFIED_INVALIDATION_OF;
+
+	/** prov:qualifiedQuotationOf – inverse of prov:qualifiedQuotation */
+	public static final IRI QUALIFIED_QUOTATION_OF;
+
+	/** prov:qualifiedSourceOf – inverse of prov:qualifiedPrimarySource */
+	public static final IRI QUALIFIED_SOURCE_OF;
+
+	/** prov:qualifiedStartOf – inverse of prov:qualifiedStart */
+	public static final IRI QUALIFIED_START_OF;
+
+	/** prov:qualifiedUsingActivity – inverse of prov:qualifiedUsage */
+	public static final IRI QUALIFIED_USING_ACTIVITY;
+
+	/** prov:quotedAs – inverse of prov:wasQuotedFrom */
+	public static final IRI QUOTED_AS;
+
+	/** prov:revisedEntity – inverse of prov:qualifiedRevision */
+	public static final IRI REVISED_ENTITY;
+
+	/** prov:started – inverse of prov:wasStartedBy */
+	public static final IRI STARTED;
+
+	/** prov:wasActivityOfInfluence – inverse of prov:hadActivity (activity perspective) */
+	public static final IRI WAS_ACTIVITY_OF_INFLUENCE;
+
+	/** prov:wasAssociateFor – inverse of prov:wasAssociatedWith */
+	public static final IRI WAS_ASSOCIATE_FOR;
+
+	/** prov:wasMemberOf – inverse of prov:hadMember */
+	public static final IRI WAS_MEMBER_OF;
+
+	/** prov:wasPlanOf – inverse of prov:hadPlan */
+	public static final IRI WAS_PLAN_OF;
+
+	/** prov:wasPrimarySourceOf – inverse of prov:hadPrimarySource */
+	public static final IRI WAS_PRIMARY_SOURCE_OF;
+
+	/** prov:wasRoleIn – inverse of prov:hadRole */
+	public static final IRI WAS_ROLE_IN;
+
+	/** prov:wasUsedBy – inverse of prov:used */
+	public static final IRI WAS_USED_BY;
+
+	/** prov:wasUsedInDerivation – inverse of prov:hadUsage */
+	public static final IRI WAS_USED_IN_DERIVATION;
+
 	static {
 
 		ACCEPT = Vocabularies.createIRI(NAMESPACE, "Accept");
@@ -512,5 +622,42 @@ public class PROV {
 		WAS_QUOTED_FROM = Vocabularies.createIRI(NAMESPACE, "wasQuotedFrom");
 		WAS_REVISION_OF = Vocabularies.createIRI(NAMESPACE, "wasRevisionOf");
 		WAS_STARTED_BY = Vocabularies.createIRI(NAMESPACE, "wasStartedBy");
+
+		ACTIVITY_OF_INFLUENCE = Vocabularies.createIRI(NAMESPACE, "activityOfInfluence");
+		AGENT_OF_INFLUENCE = Vocabularies.createIRI(NAMESPACE, "agentOfInfluence");
+		CONTRIBUTED = Vocabularies.createIRI(NAMESPACE, "contributed");
+		ENDED = Vocabularies.createIRI(NAMESPACE, "ended");
+		ENTITY_OF_INFLUENCE = Vocabularies.createIRI(NAMESPACE, "entityOfInfluence");
+		GENERALIZATION_OF = Vocabularies.createIRI(NAMESPACE, "generalizationOf");
+		HAD_DELEGATE = Vocabularies.createIRI(NAMESPACE, "hadDelegate");
+		HAD_DERIVATION = Vocabularies.createIRI(NAMESPACE, "hadDerivation");
+		HAD_INFLUENCE = Vocabularies.createIRI(NAMESPACE, "hadInfluence");
+		HAD_REVISION = Vocabularies.createIRI(NAMESPACE, "hadRevision");
+		INFORMED = Vocabularies.createIRI(NAMESPACE, "informed");
+		LOCATION_OF = Vocabularies.createIRI(NAMESPACE, "locationOf");
+		QUALIFIED_ASSOCIATION_OF = Vocabularies.createIRI(NAMESPACE, "qualifiedAssociationOf");
+		QUALIFIED_ATTRIBUTION_OF = Vocabularies.createIRI(NAMESPACE, "qualifiedAttributionOf");
+		QUALIFIED_COMMUNICATION_OF = Vocabularies.createIRI(NAMESPACE, "qualifiedCommunicationOf");
+		QUALIFIED_DELEGATION_OF = Vocabularies.createIRI(NAMESPACE, "qualifiedDelegationOf");
+		QUALIFIED_DERIVATION_OF = Vocabularies.createIRI(NAMESPACE, "qualifiedDerivationOf");
+		QUALIFIED_END_OF = Vocabularies.createIRI(NAMESPACE, "qualifiedEndOf");
+		QUALIFIED_GENERATION_OF = Vocabularies.createIRI(NAMESPACE, "qualifiedGenerationOf");
+		QUALIFIED_INFLUENCE_OF = Vocabularies.createIRI(NAMESPACE, "qualifiedInfluenceOf");
+		QUALIFIED_INVALIDATION_OF = Vocabularies.createIRI(NAMESPACE, "qualifiedInvalidationOf");
+		QUALIFIED_QUOTATION_OF = Vocabularies.createIRI(NAMESPACE, "qualifiedQuotationOf");
+		QUALIFIED_SOURCE_OF = Vocabularies.createIRI(NAMESPACE, "qualifiedSourceOf");
+		QUALIFIED_START_OF = Vocabularies.createIRI(NAMESPACE, "qualifiedStartOf");
+		QUALIFIED_USING_ACTIVITY = Vocabularies.createIRI(NAMESPACE, "qualifiedUsingActivity");
+		QUOTED_AS = Vocabularies.createIRI(NAMESPACE, "quotedAs");
+		REVISED_ENTITY = Vocabularies.createIRI(NAMESPACE, "revisedEntity");
+		STARTED = Vocabularies.createIRI(NAMESPACE, "started");
+		WAS_ACTIVITY_OF_INFLUENCE = Vocabularies.createIRI(NAMESPACE, "wasActivityOfInfluence");
+		WAS_ASSOCIATE_FOR = Vocabularies.createIRI(NAMESPACE, "wasAssociateFor");
+		WAS_MEMBER_OF = Vocabularies.createIRI(NAMESPACE, "wasMemberOf");
+		WAS_PLAN_OF = Vocabularies.createIRI(NAMESPACE, "wasPlanOf");
+		WAS_PRIMARY_SOURCE_OF = Vocabularies.createIRI(NAMESPACE, "wasPrimarySourceOf");
+		WAS_ROLE_IN = Vocabularies.createIRI(NAMESPACE, "wasRoleIn");
+		WAS_USED_BY = Vocabularies.createIRI(NAMESPACE, "wasUsedBy");
+		WAS_USED_IN_DERIVATION = Vocabularies.createIRI(NAMESPACE, "wasUsedInDerivation");
 	}
 }

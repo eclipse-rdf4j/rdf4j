@@ -72,8 +72,8 @@ public class ShaclSparqlConstraintFailureException extends RDF4JException {
 		if (id.isBNode()) {
 			return id.toString();
 		}
-		if (id.isTriple()) {
-			return "TRIPLE " + id;
+		if (id.isTripleTerm()) {
+			return "TRIPLE TERM " + id;
 		}
 		return id.toString();
 	}

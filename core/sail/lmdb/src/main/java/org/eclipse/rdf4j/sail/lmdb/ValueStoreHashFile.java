@@ -14,8 +14,11 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileChannel.MapMode;
 import java.nio.charset.StandardCharsets;
@@ -36,12 +39,13 @@ final class ValueStoreHashFile implements AutoCloseable {
 	private static final String VERSION_KEY = "version";
 	private static final String SIZE_KEY = "size";
 	private static final String CRC32C_KEY = "crc32c";
-	private static final byte[] ZERO_CHUNK = new byte[8192];
+	private static final ValueLayout.OfInt HASH_LAYOUT = ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
 
 	private final File file;
 	private final File integrityFile;
-	private final List<MappedByteBuffer> segments = new ArrayList<>();
+	private final List<MemorySegment> segments = new ArrayList<>();
 	private FileChannel channel;
+	private Arena arena;
 	private long mappedSize;
 	private boolean discardExistingContents;
 
@@ -62,7 +66,7 @@ final class ValueStoreHashFile implements AutoCloseable {
 			return 0;
 		}
 
-		return buffer(byteOffset).getInt(offset(byteOffset));
+		return segment(byteOffset).get(HASH_LAYOUT, offset(byteOffset));
 	}
 
 	synchronized void put(long id, int hash) throws IOException {
@@ -72,7 +76,7 @@ final class ValueStoreHashFile implements AutoCloseable {
 
 		long byteOffset = byteOffset(id);
 		ensureCapacity(byteOffset + Integer.BYTES);
-		buffer(byteOffset).putInt(offset(byteOffset), hash);
+		segment(byteOffset).set(HASH_LAYOUT, offset(byteOffset), hash);
 	}
 
 	synchronized void clear(long id) throws IOException {
@@ -85,11 +89,11 @@ final class ValueStoreHashFile implements AutoCloseable {
 			return;
 		}
 
-		buffer(byteOffset).putInt(offset(byteOffset), 0);
+		segment(byteOffset).set(HASH_LAYOUT, offset(byteOffset), 0);
 	}
 
 	synchronized void force() {
-		for (MappedByteBuffer segment : segments) {
+		for (MemorySegment segment : segments) {
 			segment.force();
 		}
 	}
@@ -105,6 +109,7 @@ final class ValueStoreHashFile implements AutoCloseable {
 	}
 
 	private void open() throws IOException {
+		arena = Arena.ofShared();
 		channel = FileChannel.open(file.toPath(), StandardOpenOption.CREATE, StandardOpenOption.READ,
 				StandardOpenOption.WRITE);
 		if (discardExistingContents) {
@@ -134,7 +139,7 @@ final class ValueStoreHashFile implements AutoCloseable {
 		while (mappedSize < targetSize) {
 			long remaining = targetSize - mappedSize;
 			long size = Math.min(SEGMENT_SIZE, remaining);
-			MappedByteBuffer segment = channel.map(MapMode.READ_WRITE, mappedSize, size);
+			MemorySegment segment = channel.map(MapMode.READ_WRITE, mappedSize, size, arena);
 			if (discardExistingContents) {
 				zero(segment);
 			}
@@ -143,12 +148,12 @@ final class ValueStoreHashFile implements AutoCloseable {
 		}
 	}
 
-	private MappedByteBuffer buffer(long byteOffset) {
+	private MemorySegment segment(long byteOffset) {
 		return segments.get((int) (byteOffset / SEGMENT_SIZE));
 	}
 
-	private int offset(long byteOffset) {
-		return (int) (byteOffset % SEGMENT_SIZE);
+	private long offset(long byteOffset) {
+		return byteOffset % SEGMENT_SIZE;
 	}
 
 	private long byteOffset(long id) {
@@ -205,42 +210,58 @@ final class ValueStoreHashFile implements AutoCloseable {
 
 	private void close(boolean writeIntegrity) throws IOException {
 		IOException failure = null;
-		if (!segments.isEmpty()) {
-			try {
-				force();
-			} catch (RuntimeException e) {
-				failure = new IOException("Could not force hash cache file " + file, e);
-			}
-		}
-		if (channel != null) {
-			try {
-				channel.close();
-			} catch (IOException e) {
-				failure = append(failure, e);
-			} finally {
-				channel = null;
-			}
-		}
-		segments.clear();
-		mappedSize = 0L;
-
-		Path filePath = file.toPath();
-		Path integrityPath = integrityFile.toPath();
-		if (writeIntegrity && failure == null) {
-			if (discardExistingContents) {
-				deleteCacheFilesQuietly(filePath, integrityPath);
-			} else {
+		try {
+			if (!segments.isEmpty()) {
 				try {
-					writeIntegrityFile(filePath, integrityPath);
-				} catch (IOException e) {
-					deleteCacheFilesQuietly(filePath, integrityPath);
-					failure = append(failure, e);
+					force();
+				} catch (RuntimeException e) {
+					failure = new IOException("Could not force hash cache file " + file, e);
 				}
 			}
-		} else if (!writeIntegrity) {
-			Files.deleteIfExists(integrityPath);
-		} else if (failure != null) {
-			deleteCacheFilesQuietly(filePath, integrityPath);
+		} finally {
+			try {
+				if (arena != null) {
+					try {
+						arena.close();
+					} catch (RuntimeException e) {
+						failure = append(failure, new IOException("Could not close hash cache mapping " + file, e));
+					} finally {
+						arena = null;
+					}
+				}
+			} finally {
+
+				if (channel != null) {
+					try {
+						channel.close();
+					} catch (IOException e) {
+						failure = append(failure, e);
+					} finally {
+						channel = null;
+					}
+				}
+				segments.clear();
+				mappedSize = 0L;
+
+				Path filePath = file.toPath();
+				Path integrityPath = integrityFile.toPath();
+				if (writeIntegrity && failure == null) {
+					if (discardExistingContents) {
+						deleteCacheFilesQuietly(filePath, integrityPath);
+					} else {
+						try {
+							writeIntegrityFile(filePath, integrityPath);
+						} catch (IOException e) {
+							deleteCacheFilesQuietly(filePath, integrityPath);
+							failure = append(failure, e);
+						}
+					}
+				} else if (!writeIntegrity) {
+					Files.deleteIfExists(integrityPath);
+				} else if (failure != null) {
+					deleteCacheFilesQuietly(filePath, integrityPath);
+				}
+			}
 		}
 
 		if (failure != null) {
@@ -312,12 +333,7 @@ final class ValueStoreHashFile implements AutoCloseable {
 		return failure;
 	}
 
-	private static void zero(MappedByteBuffer segment) {
-		segment.position(0);
-		while (segment.hasRemaining()) {
-			int length = Math.min(segment.remaining(), ZERO_CHUNK.length);
-			segment.put(ZERO_CHUNK, 0, length);
-		}
-		segment.position(0);
+	private static void zero(MemorySegment segment) {
+		segment.fill((byte) 0);
 	}
 }

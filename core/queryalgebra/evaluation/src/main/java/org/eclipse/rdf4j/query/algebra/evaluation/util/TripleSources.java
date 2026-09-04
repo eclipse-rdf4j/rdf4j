@@ -34,8 +34,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 												// removed
 public class TripleSources {
 
-	private static final ValueFactory vf = SimpleValueFactory.getInstance();
-
 	TripleSources() {
 	}
 

@@ -759,6 +759,13 @@ class QueryTemplateTest {
 						"type=\"radio\" id=\"lmdb_noReadahead-1\" name=\"No readahead\" value=\"true\"[^>]*>Yes")
 				.containsPattern(
 						"type=\"radio\" id=\"lmdb_noReadahead-2\" name=\"No readahead\" value=\"false\"[^>]*checked[^>]*>No")
+				.contains("name=\"Sketch estimator enabled\"")
+				.containsPattern(
+						"type=\"radio\" id=\"lmdb_sketchEstimatorEnabled-1\" name=\"Sketch estimator enabled\" value=\"__workbench_unset__\"[^>]*checked[^>]*>Repository default")
+				.containsPattern(
+						"type=\"radio\" id=\"lmdb_sketchEstimatorEnabled-2\" name=\"Sketch estimator enabled\" value=\"true\"[^>]*>Yes")
+				.containsPattern(
+						"type=\"radio\" id=\"lmdb_sketchEstimatorEnabled-3\" name=\"Sketch estimator enabled\" value=\"false\"[^>]*>No")
 				.contains("name=\"Query Evaluation Mode\"")
 				.contains("<option value=\"" + templateDefault(template, "Query Evaluation Mode") + "\" selected")
 				.contains("option value=\"" + templateOption(template, "Query Evaluation Mode", 1) + "\"");
@@ -877,6 +884,9 @@ class QueryTemplateTest {
 				"Value cache size", "text", List.of(templateDefault(template, "Value cache size")), "16", "", "", "");
 		appendTemplateField(xml, "lmdb", "LMDB Store", "lmdb_noReadahead", "lmdb:noReadahead", "", "No readahead",
 				"radio", templateOptions(template, "No readahead"), "", "", "", "");
+		appendTemplateField(xml, "lmdb", "LMDB Store", "lmdb_sketchEstimatorEnabled",
+				"lmdb:sketchEstimatorEnabled", "", "Sketch estimator enabled", "radio",
+				List.of("__workbench_unset__", "true", "false"), "", "", "", "");
 		appendTemplateField(xml, "lmdb", "LMDB Store", "config_sail-defaultQueryEvaluationMode",
 				"config:sail.defaultQueryEvaluationMode", "", "Query Evaluation Mode", "select",
 				templateOptions(template, "Query Evaluation Mode"), "", "", "", "");

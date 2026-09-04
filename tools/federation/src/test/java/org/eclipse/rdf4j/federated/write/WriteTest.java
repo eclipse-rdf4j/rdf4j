@@ -86,19 +86,19 @@ public class WriteTest extends SPARQLBaseTest {
 
 		Assertions.assertEquals(false, fedxRule.getRepository().isWritable());
 
-		Assertions.assertThrows(UnsupportedOperationException.class, () -> {
-			Statement st = simpleStatement();
-			try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
-				try {
-					conn.add(st);
-				} catch (RuntimeException e) {
-					// rollback to avoid a stack trace in the output
-					conn.rollback();
-					throw e;
-				}
-			}
-		});
+		Statement st = simpleStatement();
+		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
+			try {
+				conn.add(st);
+			} catch (RepositoryException e) {
+				// rollback to avoid a stack trace in the output
+				conn.rollback();
 
+				Assertions.assertTrue(e.getMessage()
+						.contains(
+								"java.lang.UnsupportedOperationException: Writing not supported to a federation: the federation is readonly."));
+			}
+		}
 	}
 
 	@Test

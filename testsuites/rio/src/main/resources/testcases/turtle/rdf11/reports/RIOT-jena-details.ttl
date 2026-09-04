@@ -1,0 +1,116 @@
+@prefix dc:      <http://purl.org/dc/elements/1.1/> .
+@prefix rdft:    <http://www.w3.org/ns/rdftest#> .
+@prefix earl:    <http://www.w3.org/ns/earl#> .
+@prefix foaf:    <http://xmlns.com/foaf/0.1/> .
+@prefix dct:     <http://purl.org/dc/terms/> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix doap:    <http://usefulinc.com/ns/doap#> .
+
+<http://jena.apache.org/#riot>
+    a           doap:Project ;
+    <http://projects.apache.org/ns/asfext#implements>
+                [ a           <http://projects.apache.org/ns/asfext#Standard> ;
+                  <http://projects.apache.org/ns/asfext#body>
+                              "W3C" ;
+                  <http://projects.apache.org/ns/asfext#id>
+                              "" ;
+                  <http://projects.apache.org/ns/asfext#title>
+                              "SPARQL" ;
+                  <http://projects.apache.org/ns/asfext#url>
+                              <http://www.w3.org/TR/rdf-sparql-query/>
+                ] ;
+    <http://projects.apache.org/ns/asfext#implements>
+                [ a           <http://projects.apache.org/ns/asfext#Standard> ;
+                  <http://projects.apache.org/ns/asfext#body>
+                              "W3C" ;
+                  <http://projects.apache.org/ns/asfext#id>
+                              "" ;
+                  <http://projects.apache.org/ns/asfext#title>
+                              "Resource Description Framework" ;
+                  <http://projects.apache.org/ns/asfext#url>
+                              <http://www.w3.org/RDF/>
+                ] ;
+    <http://projects.apache.org/ns/asfext#pmc>
+                <http://jena.apache.org> ;
+    doap:bug-database
+                <https://issues.apache.org/jira/browse/JENA> ;
+    doap:category
+                <http://projects.apache.org/category/library> ;
+    doap:created
+                "2012-05-03" ;
+    doap:description
+                "Apache Jena provides a complete framework for building Semantic Web and Linked Data applications in Java, and provides: parsers for RDF/XML, Turtle and N-triples; a Java programming API; a complete implementation of the SPARQL query language; a rule-based inference engine for RDFS and OWL entailments; TDB (a non-SQL persistent triple store); SDB (a persistent triples store built on a relational store) and Fuseki, an RDF server using web protocols. Jena complies with all relevant recommendations for RDF and related technologies from the W3C." ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:rvesse@apache.org> ;
+                  foaf:name   "Rob Vesse"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:castagna@apache.org> ;
+                  foaf:name   "Paolo Castagna"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:chrisdollin@apache.org> ;
+                  foaf:name   "Chris Dollin"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:sallen@apache.org> ;
+                  foaf:name   "Stephen Allen"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:ijd@apache.org> ;
+                  foaf:name   "Ian Dickinson"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:damian@apache.org> ;
+                  foaf:name   "Damian Steer"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:andy@apache.org> ;
+                  foaf:name   "Andy Seaborne"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:claude@apache.org> ;
+                  foaf:name   "Claude Warren"
+                ] ;
+    doap:developer
+                [ a           foaf:Person ;
+                  foaf:mbox   <mailto:der@apache.org> ;
+                  foaf:name   "Dave Reynolds"
+                ] ;
+    doap:download-page
+                <http://jena.apache.org/download/index.html> ;
+    doap:homepage
+                <http://jena.apache.org> ;
+    doap:license
+                <http://usefulinc.com/doap/licenses/asl20> ;
+    doap:mailing-list
+                <http://jena.apache.org/help_and_support/index.html> ;
+    doap:name   "Apache Jena"@en ;
+    doap:programming-language
+                "Java"@en ;
+    doap:release
+                [ a           doap:Version ;
+                  doap:created
+                              "2013-02-21"@en ;
+                  doap:name   "apache-jena-2.10.0"@en ;
+                  doap:revision
+                              "2.10.0"@en
+                ] ;
+    doap:repository
+                [ a           doap:SVNRepository ;
+                  doap:browse
+                              <http://svn.apache.org/viewvc/jena/> ;
+                  doap:location
+                              <http://svn.apache.org/repos/asf/jena/trunk/>
+                ] ;
+    doap:shortdesc
+                "A framework for developing Semantic Web and Linked Data applications in Java."@en .

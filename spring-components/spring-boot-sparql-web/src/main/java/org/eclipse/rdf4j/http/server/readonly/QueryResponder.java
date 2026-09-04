@@ -15,9 +15,6 @@ import static org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED_VAL
 
 import java.io.IOException;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.http.server.readonly.sparql.SparqlQueryEvaluator;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -28,6 +25,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 @Experimental
 @RestController
@@ -49,7 +49,8 @@ public class QueryResponder {
 		this.repository = repository;
 	}
 
-	@RequestMapping(value = "/sparql", method = RequestMethod.POST, consumes = APPLICATION_FORM_URLENCODED_VALUE)
+	@RequestMapping(value = { "/sparql",
+			"/sparql/" }, method = RequestMethod.POST, consumes = APPLICATION_FORM_URLENCODED_VALUE)
 	public void sparqlPostURLencoded(
 			@RequestParam(value = "default-graph-uri", required = false) String defaultGraphUri,
 			@RequestParam(value = "named-graph-uri", required = false) String namedGraphUri,
@@ -64,7 +65,7 @@ public class QueryResponder {
 		}
 	}
 
-	@RequestMapping(value = "/sparql", method = RequestMethod.GET)
+	@RequestMapping(value = { "/sparql", "/sparql/" }, method = RequestMethod.GET)
 	public void sparqlGet(@RequestParam(value = "default-graph-uri", required = false) String defaultGraphUri,
 			@RequestParam(value = "named-graph-uri", required = false) String namedGraphUri,
 			@RequestParam(value = "query") String query, @RequestHeader(ACCEPT) String acceptHeader,

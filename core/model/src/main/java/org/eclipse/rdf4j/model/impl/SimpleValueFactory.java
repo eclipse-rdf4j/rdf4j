@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
@@ -115,6 +115,11 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	}
 
 	@Override
+	public Literal createLiteral(String value, String language, Literal.BaseDirection baseDirection) {
+		return new SimpleLiteral(value, language, baseDirection);
+	}
+
+	@Override
 	public Literal createLiteral(boolean b) {
 		return b ? BooleanLiteral.TRUE : BooleanLiteral.FALSE;
 	}
@@ -135,8 +140,8 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	}
 
 	@Override
-	public Triple createTriple(Resource subject, IRI predicate, Value object) {
-		return new SimpleTriple(subject, predicate, object);
+	public TripleTerm createTripleTerm(Resource subject, IRI predicate, Value object) {
+		return new SimpleTripleTerm(subject, predicate, object);
 	}
 
 	@Override
