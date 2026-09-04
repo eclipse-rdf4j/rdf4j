@@ -1762,6 +1762,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				long end = adjacency.size(rh);
 				for (long i = 0; i < end; i++) {
 					poll();
+					if (path.contexts.length > 0 && !pathContextMatches(path, adjacency.contextAt(rh, i))) {
+						continue;
+					}
 					long nb = adjacency.neighborAt(rh, i);
 					if (emitted.add(nb)) {
 						v[path.dstCol] = nb;
@@ -1777,6 +1780,15 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}
 			return false;
 		};
+	}
+
+	private boolean pathContextMatches(PathExpand path, long contextId) {
+		for (Operand context : path.contexts) {
+			if (read(context) == contextId) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// --- containers ------------------------------------------------------------------------

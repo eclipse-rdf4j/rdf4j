@@ -2087,8 +2087,14 @@ final class LmdbNativeKernelIr {
 		final Operand source;
 		final int dstCol;
 		final int minHops; // 0 or 1
+		/** Empty means every context; otherwise an incidence is traversable when its context matches any operand. */
+		final Operand[] contexts;
 
 		PathExpand(int adjacency, Operand source, int dstCol, int minHops) {
+			this(adjacency, source, dstCol, minHops, new Operand[0]);
+		}
+
+		PathExpand(int adjacency, Operand source, int dstCol, int minHops, Operand[] contexts) {
 			if (minHops != 0 && minHops != 1) {
 				throw new IllegalArgumentException("minHops must be 0 (*) or 1 (+): " + minHops);
 			}
@@ -2096,6 +2102,7 @@ final class LmdbNativeKernelIr {
 			this.source = source;
 			this.dstCol = dstCol;
 			this.minHops = minHops;
+			this.contexts = contexts.clone();
 		}
 
 		@Override
@@ -2107,8 +2114,15 @@ final class LmdbNativeKernelIr {
 					.append("->")
 					.append(dstCol)
 					.append(",h")
-					.append(minHops)
-					.append(");");
+					.append(minHops);
+			if (contexts.length > 0) {
+				key.append(",cx[");
+				for (Operand context : contexts) {
+					key.append(context.token()).append(',');
+				}
+				key.append(']');
+			}
+			key.append(");");
 		}
 
 		@Override
@@ -2120,6 +2134,9 @@ final class LmdbNativeKernelIr {
 		void requirements(Requirements requirements) {
 			requirements.adjacency(adjacency);
 			requirements.operand(source);
+			for (Operand context : contexts) {
+				requirements.operand(context);
+			}
 		}
 	}
 

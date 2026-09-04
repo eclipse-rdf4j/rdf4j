@@ -52,6 +52,7 @@ public class LmdbNativeDeepOptionalStrategyTest {
 	private static final String EX = "http://example.com/organization/";
 	private static final String FROM_CORE_GRAPH = EX + "graph/from-core";
 	private static final String FROM_DETAIL_GRAPH = EX + "graph/from-detail";
+	private static final String OUTSIDE_FROM_GRAPH = EX + "graph/outside-from";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String EXECUTION_PATH_METRIC = "nativeExecutionPath";
 	private static final String[] PROPERTIES = {
@@ -178,6 +179,38 @@ public class LmdbNativeDeepOptionalStrategyTest {
 		assertThat(executionPaths(executedPlan))
 				.as("the forced interpreted aggregate must execute without an outer BGP:%n%s", executedPlan)
 				.contains("irAggregateInterpreted");
+	}
+
+	@Test
+	public void forcedInterpretedIrAggregateHandlesLeadingBindsJoinedToPathsAcrossUnionBranches() {
+		String query = groupedOrderedFourLeadingBindPathUnionQuery();
+		List<BindingSet> genericRows = evaluate(query, false);
+		List<BindingSet> forcedRows = evaluate(query, "irAggregateInterpreted");
+		GenericPlanNode executedPlan = explain(query, "irAggregateInterpreted");
+
+		assertThat(genericRows).as("the leading-BIND path fixture must produce grouped rows").isNotEmpty();
+		assertThat(forcedRows).containsExactlyElementsOf(genericRows);
+		assertThat(executionPaths(executedPlan))
+				.as("the interpreted aggregate must lower each Extension(SingletonPlan) union branch:%n%s",
+						executedPlan)
+				.contains("irAggregateInterpreted");
+	}
+
+	@Test
+	public void leadingBindsJoinedToPathsAcrossUnionBranchesAutomaticallyActivateNativeStrategy() {
+		String query = groupedOrderedFourLeadingBindPathUnionQuery();
+		List<BindingSet> genericRows = evaluate(query, false);
+		List<BindingSet> nativeRows = evaluate(query, true);
+		GenericPlanNode executedPlan = explain(query);
+		Set<String> executionPaths = executionPaths(executedPlan);
+
+		assertThat(nativeRows).containsExactlyElementsOf(genericRows);
+		assertThat(executionPaths)
+				.as("normal arbitration must activate a concrete non-nested strategy for this path UNION:%n%s",
+						executedPlan)
+				.contains("irAggregateInterpreted")
+				.doesNotContain("nestedLoop");
+		assertThat(executedPlan.toString()).doesNotContain("strategy: NOT_ACTIVATED");
 	}
 
 	@Test
@@ -344,6 +377,7 @@ public class LmdbNativeDeepOptionalStrategyTest {
 	private static void loadFromClauseFixture(SailRepositoryConnection connection, ValueFactory vf) {
 		IRI coreGraph = vf.createIRI(FROM_CORE_GRAPH);
 		IRI detailGraph = vf.createIRI(FROM_DETAIL_GRAPH);
+		IRI outsideGraph = vf.createIRI(OUTSIDE_FROM_GRAPH);
 		IRI personType = vf.createIRI(EX, "FromPerson");
 		IRI worksFor = vf.createIRI(EX, "worksFor");
 		IRI memberOf = vf.createIRI(EX, "memberOf");
@@ -367,6 +401,9 @@ public class LmdbNativeDeepOptionalStrategyTest {
 			connection.add(person, worksFor, department, coreGraph);
 			connection.add(person, memberOf, team, detailGraph);
 			connection.add(team, belongsTo, department, detailGraph);
+			if (index == 0) {
+				connection.add(team, belongsTo, vf.createIRI(EX, "outside-from-target"), outsideGraph);
+			}
 			connection.add(person, layer1Entry, bridge1, detailGraph);
 			connection.add(bridge1, index % 2 == 0 ? layer1Primary : layer1Alternate, target, coreGraph);
 			if (index % 6 == 0) {
@@ -724,6 +761,41 @@ public class LmdbNativeDeepOptionalStrategyTest {
 				"}",
 				"GROUP BY ?route ?target",
 				"ORDER BY ?count ?route ?target");
+	}
+
+	private static String groupedOrderedFourLeadingBindPathUnionQuery() {
+		return String.join("\n",
+				"PREFIX ex: <" + EX + ">",
+				"SELECT ?department ?route (COUNT(DISTINCT ?target) AS ?count)",
+				"FROM <" + FROM_CORE_GRAPH + ">",
+				"FROM <" + FROM_DETAIL_GRAPH + ">",
+				"WHERE {",
+				"  {",
+				"    BIND(\"route-1\" AS ?route)",
+				"    ?person a ex:FromPerson ; ex:worksFor ?department ; ex:memberOf ?team .",
+				"    ?team ex:belongsTo* ?target .",
+				"  }",
+				"  UNION",
+				"  {",
+				"    BIND(\"route-2\" AS ?route)",
+				"    ?person a ex:FromPerson ; ex:worksFor ?department ; ex:memberOf ?team .",
+				"    ?team ex:belongsTo* ?target .",
+				"  }",
+				"  UNION",
+				"  {",
+				"    BIND(\"route-3\" AS ?route)",
+				"    ?person a ex:FromPerson ; ex:worksFor ?department ; ex:memberOf ?team .",
+				"    ?team ex:belongsTo* ?target .",
+				"  }",
+				"  UNION",
+				"  {",
+				"    BIND(\"route-4\" AS ?route)",
+				"    ?person a ex:FromPerson ; ex:worksFor ?department ; ex:memberOf ?team .",
+				"    ?team ex:belongsTo* ?target .",
+				"  }",
+				"}",
+				"GROUP BY ?department ?route",
+				"ORDER BY ?count ?department ?route");
 	}
 
 	private static String groupedOrderedFourUnionBoundGroupKeysQuery() {

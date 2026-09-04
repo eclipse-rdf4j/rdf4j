@@ -527,6 +527,22 @@ class LmdbNativeKernelIrEmitterTest {
 				new long[][] { { 1 }, { 2 }, { 3 }, { 4 } });
 	}
 
+	@Test
+	void pathExpandFiltersEveryHopByFixedDatasetContexts() throws Exception {
+		NativeLmdbQuerySource.NativeAdjacency scoped = new ContextFixtureAdjacency(new long[][] {
+				{ 1, 2, 10, 9, 99 },
+				{ 2, 3, 20, 8, 99 },
+				{ 3, 4, 10 },
+				{ 9, 10, 10 } });
+		Kernel path = new Kernel(1,
+				List.of(new PathExpand(0, Operand.constant(0), 0, 1,
+						new Operand[] { Operand.constant(1), Operand.constant(2) })),
+				emit(0));
+
+		assertRows(run(path, context().adjacencies(scoped).constants(1L, 10L, 20L)),
+				new long[][] { { 2 }, { 3 }, { 4 } });
+	}
+
 	// ------------------------------------------------------------------
 	// Aggregate
 	// ------------------------------------------------------------------

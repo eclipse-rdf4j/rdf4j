@@ -832,6 +832,11 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							? interpretedParallelTag
 							: compiledIr ? compiledSerialTag : interpretedIr ? interpretedSerialTag : null;
 			boolean algorithmicSpecialist = algorithmicSpecialistHandlesRow(row);
+			boolean orderedDistinctSpecialist = orderedDistinct != null && orderedDistinct.specialized();
+			// Fixed-context IR scans are exact, but a normal dispatch must not let that newly widened capability
+			// displace an already-admitted ordered DISTINCT stream. Forcing is a capability request and bypasses this
+			// ownership rule; plans with no ordered specialist may use the exact fixed-context IR route automatically.
+			boolean allowFixedContexts = forcedExecutionStrategy != null || !orderedDistinctSpecialist;
 			if (forcedExecutionStrategy != null && logger.isInfoEnabled()) {
 				logger.info(
 						"LMDB forced GROUP BY shape: requested={}, input={}, originalInput={}, groupSlots={}, aggregates={}, "
@@ -874,8 +879,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					if (compiledIr) {
 						arbiter.offer(() -> estimatedProposal(
 								() -> LmdbNativeKernelExecution.tryEvaluateAggregateParallel(arg, row, groupSlots,
-										aggregates, this, explainTarget, havingCondition, false,
-										forcedExecutionStrategy != null),
+										aggregates, this, explainTarget, havingCondition, false, allowFixedContexts),
 								compiledParallelTag,
 								LmdbNativeKernelExecution.parallelProposalWork(irAggregateWork),
 								LmdbNativeKernelExecution.parallelStartupWork()));
@@ -883,8 +887,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					if (interpretedIr) {
 						arbiter.offer(() -> estimatedProposal(
 								() -> LmdbNativeKernelExecution.tryEvaluateAggregateParallel(arg, row, groupSlots,
-										aggregates, this, explainTarget, havingCondition, true,
-										forcedExecutionStrategy != null),
+										aggregates, this, explainTarget, havingCondition, true, allowFixedContexts),
 								interpretedParallelTag,
 								LmdbNativeKernelExecution.parallelProposalWork(irAggregateWork),
 								LmdbNativeKernelExecution.parallelStartupWork()));
@@ -894,7 +897,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					arbiter.offer(() -> estimatedProposal(() -> {
 						List<BindingSet> result = LmdbNativeKernelExecution.tryEvaluateAggregateSerial(arg, row,
 								groupSlots, aggregates, this, explainTarget, havingCondition, false,
-								forcedExecutionStrategy != null);
+								allowFixedContexts);
 						if (result != null) {
 							LmdbNativeExplain.recordExecutionPath(explainTarget, compiledSerialTag);
 						}
@@ -905,12 +908,19 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					arbiter.offer(() -> estimatedProposal(() -> {
 						List<BindingSet> result = LmdbNativeKernelExecution.tryEvaluateAggregateSerial(arg, row,
 								groupSlots, aggregates, this, explainTarget, havingCondition, true,
-								forcedExecutionStrategy != null);
+								allowFixedContexts);
 						if (result != null) {
 							LmdbNativeExplain.recordExecutionPath(explainTarget, interpretedSerialTag);
 						}
 						return result;
 					}, interpretedSerialTag, irAggregateWork));
+				}
+			} else if (highestIrTag != null) {
+				String reason = "suppressed-by-algorithmic-specialist";
+				LmdbNativeAttemptMetrics.recordDecline(explainTarget, highestIrTag, reason);
+				if (compiledIr && row.runtimePlan != null) {
+					row.runtimePlan.janinoDeclined(
+							"STRATEGY_SUPPRESSED[route=" + highestIrTag + ",reason=" + reason + "]");
 				}
 			}
 			if (!typeMatrixOwned && replaySafe && orderedSinglePatternHandlesRow()) {

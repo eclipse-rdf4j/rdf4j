@@ -7615,8 +7615,27 @@ final class LmdbNativeKernelEmitter {
 					.append("        for (long i = 0L; i < end; i++) {\n")
 					.append(indent)
 					.append("            if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
-					.append(indent)
-					.append("            long nb = ")
+					.append(indent);
+			if (path.contexts.length > 0) {
+				body.append("            long contextId = ")
+						.append(a)
+						.append(".contextAt(rh, i);\n")
+						.append(indent)
+						.append("            if (!(");
+				for (int i = 0; i < path.contexts.length; i++) {
+					if (i > 0) {
+						body.append(" || ");
+					}
+					body.append("contextId == ").append(path.contexts[i].token());
+				}
+				body.append(")) {\n")
+						.append(indent)
+						.append("                continue;\n")
+						.append(indent)
+						.append("            }\n")
+						.append(indent);
+			}
+			body.append("            long nb = ")
 					.append(a)
 					.append(".neighborAt(rh, i);\n")
 					.append(indent)

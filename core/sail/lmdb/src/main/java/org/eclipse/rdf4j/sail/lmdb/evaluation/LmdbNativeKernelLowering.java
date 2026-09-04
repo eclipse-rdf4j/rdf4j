@@ -905,7 +905,7 @@ final class LmdbNativeKernelLowering {
 				scanVariablePredicates, strictCompare, false);
 	}
 
-	/** Aggregate lowering with fixed dataset contexts admitted for an explicit forced-strategy request. */
+	/** Aggregate lowering with exact fixed-dataset-context scans when admitted by the aggregate execution route. */
 	static Lowered lowerAggregate(SlotPlan arg, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
 			LmdbNativeKernelIr.Having having, TupleExpr declineTarget, boolean preferScans,
 			boolean scanVariablePredicates, boolean strictCompare, boolean allowFixedContexts) {
@@ -1404,7 +1404,7 @@ final class LmdbNativeKernelLowering {
 		java.util.Set<Long> scanPredicates;
 		/** Bind-time fallback for incomplete wildcard coverage; fixed covered predicates retain adjacency access. */
 		boolean scanVariablePredicates;
-		/** Fixed {@code FROM}/{@code FROM NAMED} context sets, enabled only for an explicitly forced IR aggregate. */
+		/** Fixed {@code FROM}/{@code FROM NAMED} context sets admitted by the aggregate execution route. */
 		boolean allowFixedContexts;
 		long assuredMask;
 		String reason;
@@ -1927,6 +1927,18 @@ final class LmdbNativeKernelLowering {
 				lowerPlanRows(plan, 0L);
 				return true;
 			}
+			if (plan == SingletonPlan.INSTANCE) {
+				if (++joinOperands > MAX_CHILDREN) {
+					reason = reasonPrefix + "too-many-children";
+					return false;
+				}
+				// SingletonPlan is the relational identity. It is still a real one-row producer when an enclosing
+				// Extension needs a position for its BIND copies, including Extension(SingletonPlan) on the left of a
+				// join or inside a UNION branch.
+				openDepth();
+				currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateEntry());
+				return true;
+			}
 			if (plan instanceof EntryBindingCompatibilityPlan) {
 				EntryBindingCompatibilityPlan entry = (EntryBindingCompatibilityPlan) plan;
 				if (!top) {
@@ -2442,9 +2454,12 @@ final class LmdbNativeKernelLowering {
 		 * appearing only as objects — which is a different enumeration than this node performs.
 		 */
 		private boolean lowerPath(PathPlan path) {
-			if (path.steps.length != 1 || path.namedContextScope || path.contexts.isFixed() || path.ctx.hasSlot()
-					|| path.ctx.isConstant()) {
+			if (path.steps.length != 1 || path.namedContextScope || path.ctx.hasSlot() || path.ctx.isConstant()) {
 				reason = reasonPrefix + "path-guards";
+				return false;
+			}
+			if (path.contexts.isEmpty()) {
+				reason = reasonPrefix + "path-empty-contexts";
 				return false;
 			}
 			PathStep step = path.steps[0];
@@ -2455,6 +2470,7 @@ final class LmdbNativeKernelLowering {
 			int minHops = path.zeroLength ? 0 : 1;
 			Operand subject = pathEndpoint(path.subjSlot, path.subjConst);
 			Operand object = pathEndpoint(path.objSlot, path.objConst);
+			Operand[] contexts = pathContexts(path);
 			// A NULL start is not an empty path: the endpoint is unbound, so the pattern must enumerate its
 			// starts. PathExpand skips the whole traversal when start == -1 (emitPathExpand), which would drop
 			// rows (gap-analysis B16).
@@ -2466,14 +2482,14 @@ final class LmdbNativeKernelLowering {
 				openDepth();
 				int adj = adjacency(step.predicate, true, false);
 				currentDepthNodes().add(new LmdbNativeKernelIr.PathExpand(adj, subject,
-						newColumn(path.objSlot), minHops));
+						newColumn(path.objSlot), minHops, contexts));
 				return true;
 			}
 			if (object != null && subject == null && path.subjSlot >= 0 && slotFresh(path.subjSlot)) {
 				openDepth();
 				int adj = adjacency(step.predicate, false, false);
 				currentDepthNodes().add(new LmdbNativeKernelIr.PathExpand(adj, object,
-						newColumn(path.subjSlot), minHops));
+						newColumn(path.subjSlot), minHops, contexts));
 				return true;
 			}
 			// Both ends free: enumerate the possible starts, then expand from each. The two operators differ only in
@@ -2486,6 +2502,12 @@ final class LmdbNativeKernelLowering {
 			// starts cannot collide, so no cross-start dedup is needed on top.
 			if (subject == null && object == null && path.subjSlot >= 0 && path.objSlot >= 0
 					&& path.subjSlot != path.objSlot && slotFresh(path.subjSlot) && slotFresh(path.objSlot)) {
+				if (minHops == 0 && contexts.length > 0) {
+					// EnumerateTerms currently scans every graph. A fixed dataset therefore needs a scoped term
+					// enumerator before the zero-hop half of a both-free path can be lowered safely.
+					reason = reasonPrefix + "path-zero-free-fixed-contexts";
+					return false;
+				}
 				if (minHops == 0 && !scanSourcesEnabled()) {
 					// The term enumeration is a direct LMDB scan; without scan sources the kernel has no scanner.
 					reason = reasonPrefix + "path-shape";
@@ -2500,11 +2522,22 @@ final class LmdbNativeKernelLowering {
 					currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateAdjKeys(adj, startColumn, -1));
 				}
 				currentDepthNodes().add(new LmdbNativeKernelIr.PathExpand(adj, Operand.col(startColumn),
-						newColumn(path.objSlot), minHops));
+						newColumn(path.objSlot), minHops, contexts));
 				return true;
 			}
 			reason = reasonPrefix + "path-shape";
 			return false;
+		}
+
+		private Operand[] pathContexts(PathPlan path) {
+			if (!path.contexts.isFixed()) {
+				return new Operand[0];
+			}
+			Operand[] contexts = new Operand[path.contexts.ids.length];
+			for (int i = 0; i < contexts.length; i++) {
+				contexts[i] = Operand.constant(constantIndex(path.contexts.ids[i]));
+			}
+			return contexts;
 		}
 
 		/**
@@ -2790,7 +2823,7 @@ final class LmdbNativeKernelLowering {
 		 * up issuing the same {@code probe.open(subj, pred, obj, context)} call, with the same operand ids, that
 		 * {@code PatternPlan.openIterator} would have issued for this pattern. What must therefore be refused is
 		 * anything whose meaning lives in {@code PatternPlan.bind} rather than in the scan itself — named-graph
-		 * scoping, a dataset context restriction outside the explicitly forced aggregate route, a term that both
+		 * scoping, a dataset context restriction outside a fixed-context-aware aggregate route, a term that both
 		 * matches a constant and binds a slot, and an ordered-scan promise a consumer may be relying on. Each of those
 		 * would be silently lost.
 		 *
