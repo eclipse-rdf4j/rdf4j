@@ -400,23 +400,34 @@ final class LmdbNativeParallelKernelAggregate {
 			HashMap<LongsKey, long[]> merged = new HashMap<>();
 			Throwable firstProblem = null;
 			for (Future<HashMap<LongsKey, long[]>> future : futures) {
-				try {
-					HashMap<LongsKey, long[]> partial = future.get();
-					for (Map.Entry<LongsKey, long[]> entry : partial.entrySet()) {
-						long[] target = merged.computeIfAbsent(entry.getKey(),
-								ignored -> new long[terminal.outputCount]);
-						for (int output = 0; output < target.length; output++) {
-							target[output] = FactorizedTail.addCounts(target[output], entry.getValue()[output]);
+				while (true) {
+					try {
+						HashMap<LongsKey, long[]> partial = future.get();
+						for (Map.Entry<LongsKey, long[]> entry : partial.entrySet()) {
+							long[] target = merged.computeIfAbsent(entry.getKey(),
+									ignored -> new long[terminal.outputCount]);
+							for (int output = 0; output < target.length; output++) {
+								target[output] = FactorizedTail.addCounts(target[output],
+										entry.getValue()[output]);
+							}
 						}
-					}
-				} catch (InterruptedException problem) {
-					interrupted = true;
-					if (firstProblem == null) {
-						firstProblem = problem;
-					}
-				} catch (ExecutionException problem) {
-					if (firstProblem == null) {
-						firstProblem = problem.getCause() == null ? problem : problem.getCause();
+						break;
+					} catch (InterruptedException problem) {
+						interrupted = true;
+						failure.compareAndSet(null, problem);
+						if (firstProblem == null) {
+							firstProblem = problem;
+						}
+					} catch (ExecutionException problem) {
+						if (firstProblem == null) {
+							firstProblem = problem.getCause() == null ? problem : problem.getCause();
+						}
+						break;
+					} catch (RuntimeException | Error problem) {
+						if (firstProblem == null) {
+							firstProblem = problem;
+						}
+						break;
 					}
 				}
 			}

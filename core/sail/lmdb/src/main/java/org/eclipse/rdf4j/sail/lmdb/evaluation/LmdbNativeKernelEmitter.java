@@ -372,11 +372,6 @@ final class LmdbNativeKernelEmitter {
 		private final List<Node> runtimeFilterSites = new ArrayList<>();
 		private FlatRootExists flatRootExistsShape;
 
-		/**
-		 * Predicates read per {@code copyRow} call. Sized so an ordinary node's whole row fits in one call while a
-		 * supernode-class row still costs a bounded, per-node allocation rather than one proportional to its width.
-		 */
-		private static final int PREDICATE_CHUNK = 64;
 		/** Keys per key-only root batch. Large enough to amortize dispatch, small enough to stay L1-resident. */
 		private static final int KEY_CHUNK = 256;
 
@@ -927,19 +922,15 @@ final class LmdbNativeKernelEmitter {
 						.append(i)
 						.append(";\n");
 			}
-			// Scratch is per enumerating node, never per view: two nested enumerations share a view, and a shared
-			// buffer would let the inner one overwrite predicates the outer has not processed yet.
-			for (int i = 0; i < nextPredicateEnumId; i++) {
-				source.append("    private final long[] epP")
-						.append(i)
-						.append(" = new long[")
-						.append(PREDICATE_CHUNK)
-						.append("];\n");
-				source.append("    private final long[] epR")
-						.append(i)
-						.append(" = new long[")
-						.append(PREDICATE_CHUNK)
-						.append("];\n");
+			// A resumable enumeration owns one independent cursor per node. Keeping it on the generated kernel
+			// preserves
+			// the exact merge position across fill calls without sharing mutable traversal state between nested nodes.
+			if (kernel.resumable) {
+				for (int i = 0; i < nextPredicateEnumId; i++) {
+					source.append("    private NativeLmdbQuerySource.NodePredicates.PredicateRowCursor epC")
+							.append(i)
+							.append(";\n");
+				}
 			}
 			for (int i = 0; i < kernel.requirements.constants; i++) {
 				source.append("    private long c").append(i).append(";\n");
@@ -1618,6 +1609,20 @@ final class LmdbNativeKernelEmitter {
 						.append(i)
 						.append(" = null;\n")
 						.append("        }\n");
+			}
+			if (kernel.resumable) {
+				for (int i = 0; i < nextPredicateEnumId; i++) {
+					source.append("        if (epC")
+							.append(i)
+							.append(" != null) {\n")
+							.append("            epC")
+							.append(i)
+							.append(".close();\n")
+							.append("            epC")
+							.append(i)
+							.append(" = null;\n")
+							.append("        }\n");
+				}
 			}
 			for (int i = 0; i < kernel.requirements.plans; i++) {
 				source.append("        if (pc")
@@ -4929,81 +4934,50 @@ final class LmdbNativeKernelEmitter {
 					body.append(indent).append("        ").append(a).append("++;\n");
 					body.append(indent).append("    }\n");
 				} else {
-					int scratch = nextPredicateEnumId++;
-					String predicates = "epP" + scratch;
-					String runs = "epR" + scratch;
-					body.append(indent).append("    long rowH = ").append(view).append(".find(key);\n");
-					body.append(indent).append("    if (rowH == NativeLmdbQuerySource.NodePredicates.NOT_COVERED) {\n");
+					String cursor = "epC" + nextPredicateEnumId++;
+					body.append(indent).append("    if (").append(cursor).append(" == null) {\n");
+					body.append(indent)
+							.append("        ")
+							.append(cursor)
+							.append(" = ")
+							.append(view)
+							.append(".openRow(key);\n");
+					body.append(indent).append("    }\n");
+					body.append(indent).append("    if (").append(cursor).append(" == null) {\n");
 					body.append(indent)
 							.append("        throw new IllegalStateException(\"node-predicate projection refused a node after kernel bind\");\n");
 					body.append(indent).append("    }\n");
-					body.append(indent).append("    if (rowH > 0L) {\n");
-					body.append(indent).append("        long rowSize = ").append(view).append(".rowSize(rowH);\n");
-					body.append(indent).append("        if (").append(a).append(" < 0) {\n");
-					body.append(indent).append("            ").append(a).append(" = 0L;\n");
+					body.append(indent).append("    while (true) {\n");
+					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+					body.append(indent).append("        if (").append(b).append(" < 0L) {\n");
+					body.append(indent).append("            if (!").append(cursor).append(".advance()) { break; }\n");
+					body.append(indent).append("            ").append(b).append(" = 0L;\n");
 					body.append(indent).append("        }\n");
 					body.append(indent)
-							.append("        while (")
-							.append(a)
-							.append(" < rowSize || ")
-							.append(b)
-							.append(" >= 0L) {\n");
-					body.append(indent).append("            int rn;\n");
-					body.append(indent).append("            if (").append(b).append(" < 0L) {\n");
-					body.append(indent)
-							.append("                rn = ")
-							.append(view)
-							.append(".copyRow(key, rowH, ")
-							.append(a)
-							.append(", ")
-							.append(PREDICATE_CHUNK)
-							.append(", ")
-							.append(predicates)
-							.append(", 0, ")
-							.append(runs)
-							.append(", 0);\n");
-					body.append(indent).append("                if (rn <= 0) { break; }\n");
-					body.append(indent).append("                ").append(a).append(" += rn;\n");
-					body.append(indent).append("                ").append(b).append(" = 0L;\n");
-					body.append(indent).append("                ").append(d).append(" = rn;\n");
-					body.append(indent).append("            } else {\n");
-					body.append(indent).append("                rn = (int) ").append(d).append(";\n");
-					body.append(indent).append("            }\n");
-					body.append(indent)
-							.append("            for (; ")
-							.append(b)
-							.append(" < rn; ")
-							.append(b)
-							.append("++) {\n");
-					body.append(indent)
-							.append("                v")
+							.append("        v")
 							.append(enumerate.predicateCol)
 							.append(" = ")
-							.append(predicates)
-							.append("[(int) ")
-							.append(b)
-							.append("];\n");
+							.append(cursor)
+							.append(".predicate();\n");
 					body.append(indent)
-							.append("                long rh = ")
-							.append(runs)
-							.append("[(int) ")
-							.append(b)
-							.append("];\n");
-					body.append(indent).append("                long end = ").append(view).append(".size(rh);\n");
+							.append("        long rh = ")
+							.append(cursor)
+							.append(".runHandle();\n");
+					body.append(indent).append("        long end = ").append(view).append(".size(rh);\n");
 					body.append(indent)
-							.append("                if (")
+							.append("        if (")
 							.append(c)
 							.append(" < 0) { ")
 							.append(c)
 							.append(" = 0L; }\n");
 					body.append(indent)
-							.append("                for (; ")
+							.append("        for (; ")
 							.append(c)
 							.append(" < end; ")
 							.append(c)
 							.append("++) {\n");
 					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
-					String inner = emitCtxEntry(body, indent + "                    ", enumerate, view, c);
+					String inner = emitCtxEntry(body, indent + "            ", enumerate, view, c);
 					body.append(inner)
 							.append("v")
 							.append(enumerate.valueCol)
@@ -5013,15 +4987,14 @@ final class LmdbNativeKernelEmitter {
 							.append(c)
 							.append(");\n");
 					body.append(next(nextTemplate, inner));
-					closeCtxEntry(body, indent + "                    ", enumerate);
-					emitPause(body, indent + "                    ", c, tailmost);
-					body.append(indent).append("                }\n");
-					body.append(indent).append("                ").append(c).append(" = -1L;\n");
-					body.append(indent).append("            }\n");
-					body.append(indent).append("            ").append(b).append(" = -1L;\n");
-					body.append(indent).append("            ").append(d).append(" = -1L;\n");
+					closeCtxEntry(body, indent + "            ", enumerate);
+					emitPause(body, indent + "            ", c, tailmost);
 					body.append(indent).append("        }\n");
+					body.append(indent).append("        ").append(c).append(" = -1L;\n");
+					body.append(indent).append("        ").append(b).append(" = -1L;\n");
 					body.append(indent).append("    }\n");
+					body.append(indent).append("    ").append(cursor).append(".close();\n");
+					body.append(indent).append("    ").append(cursor).append(" = null;\n");
 				}
 				body.append(indent).append("}\n");
 				body.append(indent).append(a).append(" = -1L;\n");
@@ -6666,9 +6639,7 @@ final class LmdbNativeKernelEmitter {
 							.append("}\n");
 				} else {
 					String v = "np" + enumerate.view;
-					int scratch = nextPredicateEnumId++;
-					String predicates = "epP" + scratch;
-					String runs = "epR" + scratch;
+					String cursor = "epC" + nextPredicateEnumId++;
 					body.append(indent)
 							.append("long key = ")
 							.append(enumerate.key.token())
@@ -6676,59 +6647,44 @@ final class LmdbNativeKernelEmitter {
 							.append(indent)
 							.append("if (key != -1L) {\n")
 							.append(indent)
-							.append("    long rowH = ")
+							.append("    try (NativeLmdbQuerySource.NodePredicates.PredicateRowCursor ")
+							.append(cursor)
+							.append(" = ")
 							.append(v)
-							.append(".find(key);\n")
+							.append(".openRow(key)) {\n")
 							.append(indent)
-							.append("    if (rowH > 0L) {\n")
+							.append("        if (")
+							.append(cursor)
+							.append(" == null) {\n")
 							.append(indent)
-							.append("        long rowSize = ")
-							.append(v)
-							.append(".rowSize(rowH);\n")
+							.append("            throw new IllegalStateException(\"node-predicate projection refused a node after kernel bind\");\n")
 							.append(indent)
-							// The row is read in bounded chunks, never as one array the size of the row: a pathological
-							// node must not force a large uncharged allocation inside every parallel worker, and the
-							// row
-							// length is a long that has no business being narrowed to an array size.
-							.append("        for (long ro = 0L; ro < rowSize; ) {\n")
+							.append("        }\n")
 							.append(indent)
-							.append("            int rn = ")
-							.append(v)
-							.append(".copyRow(key, rowH, ro, ")
-							.append(PREDICATE_CHUNK)
-							.append(", ")
-							.append(predicates)
-							.append(", 0, ")
-							.append(runs)
-							.append(", 0);\n")
+							.append("        while (")
+							.append(cursor)
+							.append(".advance()) {\n")
 							.append(indent)
-							.append("            if (rn <= 0) {\n")
-							.append(indent)
-							.append("                break;\n")
-							.append(indent)
-							.append("            }\n")
-							.append(indent)
-							.append("            for (int pi = 0; pi < rn; pi++) {\n")
-							.append(indent)
-							.append("                v")
+							.append("            v")
 							.append(enumerate.predicateCol)
 							.append(" = ")
-							.append(predicates)
-							.append("[pi];\n")
-							// Total resolution: copyRow raises rather than returning a non-positive handle, so there is
+							.append(cursor)
+							.append(".predicate();\n")
+							// Total resolution: the cursor raises rather than returning a non-positive handle, so there
+							// is
 							// deliberately no branch here that would skip a predicate and under-report.
 							.append(indent)
-							.append("                long rh = ")
-							.append(runs)
-							.append("[pi];\n")
+							.append("            long rh = ")
+							.append(cursor)
+							.append(".runHandle();\n")
 							.append(indent)
-							.append("                long end = ")
+							.append("            long end = ")
 							.append(v)
 							.append(".size(rh);\n")
 							.append(indent)
-							.append("                for (long i = 0L; i < end; i++) {\n");
+							.append("            for (long i = 0L; i < end; i++) {\n");
 					body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
-					String enumInner = indent + "                    ";
+					String enumInner = indent + "                ";
 					enumInner = emitCtxEntry(body, enumInner, enumerate, v, "i");
 					body.append(enumInner)
 							.append("v")
@@ -6737,13 +6693,9 @@ final class LmdbNativeKernelEmitter {
 							.append(v)
 							.append(".neighborAt(rh, i);\n")
 							.append(next(nextTemplate, enumInner));
-					closeCtxEntry(body, indent + "                    ", enumerate);
+					closeCtxEntry(body, indent + "                ", enumerate);
 					body.append(indent)
-							.append("                }\n")
-							.append(indent)
 							.append("            }\n")
-							.append(indent)
-							.append("            ro += rn;\n")
 							.append(indent)
 							.append("        }\n")
 							.append(indent)

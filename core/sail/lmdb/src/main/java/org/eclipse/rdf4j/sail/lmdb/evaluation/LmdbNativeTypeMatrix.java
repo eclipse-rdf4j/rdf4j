@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.DynamicAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NodePredicates;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NodePredicates.PredicateRowCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView;
 
 /**
@@ -374,7 +375,6 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 					return null;
 				}
 				ArrayList<BindingSet> results = new ArrayList<>();
-				PredicateScratch scratch = new PredicateScratch();
 				RunMerge targetMerge = linkageMode() ? new RunMerge(outgoingRuns) : null;
 				while (typeRoots.advance()) {
 					TYPE_ROOTS_VISITED.incrementAndGet();
@@ -403,10 +403,10 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 							if (linkageMode()) {
 								accumulateLinkage(instance, sourceTypeMultiplicity, acceptedPredicates,
 										outgoingPredicates, null, predicateCatalog, targetTypeRuns,
-										scratch, targetMerge, counters);
+										targetMerge, counters);
 							} else {
 								accumulateUsage(instance, sourceTypeMultiplicity, acceptedPredicates,
-										outgoingPredicates, null, predicateCatalog, scratch, counters);
+										outgoingPredicates, null, predicateCatalog, counters);
 							}
 							offset = next;
 						}
@@ -3353,7 +3353,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 
 	private void accumulateUsage(long instance, long sourceTypeMultiplicity, LongHashSet acceptedPredicates,
 			NodePredicates outgoingPredicates, DynamicAdjacency dynamicOutgoing, long[] predicateCatalog,
-			PredicateScratch scratch, LongCountMap counters) {
+			LongCountMap counters) {
 		if (outgoingPredicates == null) {
 			DYNAMIC_PREDICATE_SWEEPS.incrementAndGet();
 			for (long predicate : predicateCatalog) {
@@ -3370,37 +3370,29 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			}
 			return;
 		}
-		long rowHandle = outgoingPredicates.find(instance);
-		if (rowHandle == NodePredicates.NOT_FOUND) {
-			return;
-		}
-		if (rowHandle <= 0L) {
-			throw new IllegalStateException("complete outgoing node-predicate view declined node "
-					+ Long.toUnsignedString(instance));
-		}
-		NODE_PREDICATE_ROWS_VISITED.incrementAndGet();
-		long rowSize = outgoingPredicates.rowSize(rowHandle);
-		for (long offset = 0L; offset < rowSize;) {
-			int copied = outgoingPredicates.copyRow(instance, rowHandle, offset, scratch.predicates.length,
-					scratch.predicates, 0, scratch.runs, 0);
-			if (copied <= 0) {
-				throw new IllegalStateException("node-predicate row ended before its declared size");
+		try (PredicateRowCursor cursor = outgoingPredicates.openRow(instance)) {
+			if (cursor == null) {
+				throw new IllegalStateException("complete outgoing node-predicate view declined node "
+						+ Long.toUnsignedString(instance));
 			}
-			for (int i = 0; i < copied; i++) {
-				long predicate = scratch.predicates[i];
+			if (!cursor.advance()) {
+				return;
+			}
+			NODE_PREDICATE_ROWS_VISITED.incrementAndGet();
+			do {
+				long predicate = cursor.predicate();
 				if (acceptedPredicates == null || acceptedPredicates.contains(predicate)) {
 					long contribution = Math.multiplyExact(sourceTypeMultiplicity,
-							outgoingPredicates.size(scratch.runs[i]));
+							outgoingPredicates.size(cursor.runHandle()));
 					counters.add(predicate, contribution);
 				}
-			}
-			offset += copied;
+			} while (cursor.advance());
 		}
 	}
 
 	private void accumulateLinkage(long instance, long sourceTypeMultiplicity, LongHashSet acceptedPredicates,
 			NodePredicates outgoingPredicates, DynamicAdjacency dynamicOutgoing, long[] predicateCatalog,
-			NativeAdjacency.BoundRunCursor targetTypeRuns, PredicateScratch scratch, RunMerge targetMerge,
+			NativeAdjacency.BoundRunCursor targetTypeRuns, RunMerge targetMerge,
 			LongCountMap counters) {
 		if (outgoingPredicates == null) {
 			DYNAMIC_PREDICATE_SWEEPS.incrementAndGet();
@@ -3420,32 +3412,25 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			accumulateMergedTargets(sourceTypeMultiplicity, targetTypeRuns, targetMerge, counters);
 			return;
 		}
-		long rowHandle = outgoingPredicates.find(instance);
-		if (rowHandle == NodePredicates.NOT_FOUND) {
-			return;
-		}
-		if (rowHandle <= 0L) {
-			throw new IllegalStateException("complete outgoing node-predicate view declined node "
-					+ Long.toUnsignedString(instance));
-		}
-		NODE_PREDICATE_ROWS_VISITED.incrementAndGet();
 		targetMerge.clear();
-		long rowSize = outgoingPredicates.rowSize(rowHandle);
-		for (long offset = 0L; offset < rowSize;) {
-			int copied = outgoingPredicates.copyRow(instance, rowHandle, offset, scratch.predicates.length,
-					scratch.predicates, 0, scratch.runs, 0);
-			if (copied <= 0) {
-				throw new IllegalStateException("node-predicate row ended before its declared size");
+		try (PredicateRowCursor cursor = outgoingPredicates.openRow(instance)) {
+			if (cursor == null) {
+				throw new IllegalStateException("complete outgoing node-predicate view declined node "
+						+ Long.toUnsignedString(instance));
 			}
-			for (int i = 0; i < copied; i++) {
-				if (acceptedPredicates == null || acceptedPredicates.contains(scratch.predicates[i])) {
-					long runSize = outgoingPredicates.size(scratch.runs[i]);
+			if (!cursor.advance()) {
+				return;
+			}
+			NODE_PREDICATE_ROWS_VISITED.incrementAndGet();
+			do {
+				if (acceptedPredicates == null || acceptedPredicates.contains(cursor.predicate())) {
+					long run = cursor.runHandle();
+					long runSize = outgoingPredicates.size(run);
 					if (runSize > 0L) {
-						targetMerge.add(scratch.runs[i], runSize);
+						targetMerge.add(run, runSize);
 					}
 				}
-			}
-			offset += copied;
+			} while (cursor.advance());
 		}
 		PEAK_PREDICATES_MERGED.accumulateAndGet(targetMerge.entryCount(), Math::max);
 		accumulateMergedTargets(sourceTypeMultiplicity, targetTypeRuns, targetMerge, counters);
@@ -3496,11 +3481,6 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			}
 			results.add(row);
 		}
-	}
-
-	private static final class PredicateScratch {
-		final long[] predicates = new long[64];
-		final long[] runs = new long[64];
 	}
 
 	/** Heap merge of the accepted predicate runs of one source instance by unsigned target id. */

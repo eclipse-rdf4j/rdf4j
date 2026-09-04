@@ -93,8 +93,6 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	/** Keys per key-only / batched-probe chunk, mirroring the emitter's KEY_CHUNK. */
 	private static final int KEY_CHUNK = 256;
-	/** Predicates read per {@code copyRow} call, mirroring the emitter's PREDICATE_CHUNK. */
-	private static final int PREDICATE_CHUNK = 64;
 
 	static boolean enabled() {
 		return Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"));
@@ -897,29 +895,24 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return buildEnumerateWildcardPredicates(enumerate, next);
 		}
 		NativeLmdbQuerySource.NodePredicates np = context.nodePredicates[enumerate.view];
-		long[] predicates = new long[PREDICATE_CHUNK];
-		long[] runs = new long[PREDICATE_CHUNK];
 		boolean ctxActive = enumerate.ctxActive();
 		return () -> {
 			long key = read(enumerate.key);
 			if (key == -1L) {
 				return false;
 			}
-			long rowH = np.find(key);
-			if (rowH <= 0L) {
-				return false;
-			}
-			long rowSize = np.rowSize(rowH);
-			for (long ro = 0; ro < rowSize;) {
-				poll();
-				int rn = np.copyRow(key, rowH, ro, PREDICATE_CHUNK, predicates, 0, runs, 0);
-				if (rn <= 0) {
-					break;
+			try (NativeLmdbQuerySource.NodePredicates.PredicateRowCursor cursor = np.openRow(key)) {
+				if (cursor == null) {
+					throw new IllegalStateException("node-predicate projection refused a node after kernel bind");
 				}
-				for (int pi = 0; pi < rn; pi++) {
-					v[enumerate.predicateCol] = predicates[pi];
+				while (true) {
+					poll();
+					if (!cursor.advance()) {
+						break;
+					}
+					v[enumerate.predicateCol] = cursor.predicate();
 					// Total resolution: every listed predicate carries a valid run handle by contract.
-					long rh = runs[pi];
+					long rh = cursor.runHandle();
 					long end = np.size(rh);
 					for (long i = 0; i < end; i++) {
 						poll();
@@ -938,7 +931,6 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 					}
 				}
-				ro += rn;
 			}
 			return false;
 		};
