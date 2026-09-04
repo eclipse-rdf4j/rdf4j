@@ -53,7 +53,7 @@ public class JoinQueryCountGroupedEvaluationBuilder
 				.evaluateAndConvert()
 				.toStream()
 				.collect(
-						groupingBy(this::getSourceEntityId, toMap(this::getGroup, this::getCount)));
+						groupingBy(this::getSourceEntityId, filtering(this::hasGroupBinding, toMap(this::getGroup, this::getCount))));
 	}
 
 	public Map<IRI, Map<IRI, Map<Value, Integer>>> getGroupedCountsBySourceEntityIdByContextId() {
@@ -72,7 +72,7 @@ public class JoinQueryCountGroupedEvaluationBuilder
 										b -> b.hasBinding(JoinQuery._sourceEntity.getVarName()),
 										groupingBy(
 												this::getSourceEntityId,
-												toMap(this::getGroup, this::getCount)))));
+												filtering(this::hasGroupBinding, toMap(this::getGroup, this::getCount))))));
 	}
 
 	public TupleQueryResultConverter evaluateAndConvert() {
@@ -84,7 +84,11 @@ public class JoinQueryCountGroupedEvaluationBuilder
 				.toStream()
 				.collect(
 						Collectors.groupingBy(
-								this::getSourceEntityId, toMap(this::getGroup, this::getCount)));
+								this::getSourceEntityId, filtering(this::hasGroupBinding, toMap(this::getGroup, this::getCount))));
+	}
+
+	private boolean hasGroupBinding(BindingSet bindingSet) {
+		return bindingSet.hasBinding(this.groupVariable.getVarName());
 	}
 
 	private Value getGroup(BindingSet bs) {

@@ -480,17 +480,15 @@ public class JoinQueryBuilder {
 									JoinQuery._targetEntity,
 									NOTHING),
 							targetOpt));
+			GraphPattern entityQuery = select(innerProjection).distinct().where(getWhereClause());
+			GraphPattern targetPattern = this.targetEntityPattern.apply(targetOpt);
+			if (targetPattern != null) {
+				entityQuery = entityQuery.and(targetPattern.optional());
+			}
 			queryString = Queries.SELECT(getOuterProjection())
-					.distinct()
-					.where(
-							select(innerProjection)
-									.distinct()
-									.where(getWhereClause())
-									.and(
-											this.targetEntityPattern
-													.apply(targetOpt)
-													.optional()))
-					.getQueryString();
+				.distinct()
+				.where(entityQuery)
+				.getQueryString();
 		} else {
 			queryString = Queries.SELECT(getOuterProjection())
 					.where(select(getInnerProjection()).distinct().where(getWhereClause()))
