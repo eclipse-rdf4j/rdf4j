@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
@@ -97,7 +98,11 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 
 		TupleExpr scopedRight = rightArg.clone();
 		scopedRight.visit(new HiddenLateralBindingRenamer(lateralBindingNames));
-		return strategy.precompile(scopedRight, context);
+		// The clone is otherwise parentless, so scope-sensitive steps inside it cannot discover which input bindings
+		// the enclosing LATERAL deliberately exposes. Retain a lightweight model parent while precompiling the right
+		// subtree; projections within it remain their own scope boundaries and still hide renamed private variables.
+		Lateral scopedLateral = new Lateral(new SingletonSet(), scopedRight, rightInputBindingNames);
+		return strategy.precompile(scopedLateral.getRightArg(), context);
 	}
 
 	private BindingSet filterRightInput(BindingSet originalBindings, BindingSet leftBindings) {

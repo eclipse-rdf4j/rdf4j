@@ -584,6 +584,53 @@ public class LateralTest extends AbstractComplianceTest {
 		}
 	}
 
+	private void testLateralFilterInRightOperandSeesLeftBinding(RepositoryConnection conn) throws Exception {
+		conn.add(new StringReader(LATERAL_FILTER_DATA), "", RDFFormat.TURTLE);
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, LATERAL_FILTER_QUERY);
+
+		try (TupleQueryResult result = tq.evaluate()) {
+			List<BindingSet> results = QueryResults.asList(result);
+			assertEquals(1, results.size());
+			assertThat(results.get(0).getValue("a").stringValue()).isEqualTo("http://example.org/a");
+			assertThat(results.get(0).getValue("b").stringValue()).isEqualTo("http://example.org/b");
+		}
+	}
+
+	private void testLateralFilterInRightOperandSeesLeftBindingWithInitialBindings(RepositoryConnection conn)
+			throws Exception {
+		conn.add(new StringReader(LATERAL_FILTER_DATA), "", RDFFormat.TURTLE);
+
+		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, LATERAL_FILTER_QUERY);
+		// An initial binding forces the LATERAL right operand to be re-scoped and compiled from a clone.
+		tq.setBinding("unrelated", conn.getValueFactory().createLiteral("initial"));
+
+		try (TupleQueryResult result = tq.evaluate()) {
+			List<BindingSet> results = QueryResults.asList(result);
+			assertEquals(1, results.size());
+			assertThat(results.get(0).getValue("a").stringValue()).isEqualTo("http://example.org/a");
+			assertThat(results.get(0).getValue("b").stringValue()).isEqualTo("http://example.org/b");
+		}
+	}
+
+	private static final String LATERAL_FILTER_DATA = "@prefix ex: <http://example.org/> .\n"
+			+ "\n"
+			+ "ex:a ex:score 10 ; ex:knows ex:b, ex:c .\n"
+			+ "ex:b ex:score 20 .\n"
+			+ "ex:c ex:score 5 .\n"
+			+ "ex:d ex:score 30 ; ex:knows ex:b .\n";
+
+	private static final String LATERAL_FILTER_QUERY = "PREFIX ex: <http://example.org/>\n"
+			+ "\n"
+			+ "SELECT ?a ?b {\n"
+			+ "   ?a ex:score ?s\n"
+			+ "   LATERAL {\n"
+			+ "      ?a ex:knows ?b .\n"
+			+ "      ?b ex:score ?t .\n"
+			+ "      FILTER(?t > ?s)\n"
+			+ "   }\n"
+			+ "}\n";
+
 	public Stream<DynamicTest> tests() {
 		return Stream.of(
 				makeTest("LateralBasic", this::testLateralBasic),
@@ -608,6 +655,10 @@ public class LateralTest extends AbstractComplianceTest {
 				makeTest("LateralFilterBeforeClauseSeesRightBinding",
 						this::testLateralFilterBeforeClauseSeesRightBinding),
 				makeTest("LateralPreservesInitialBindingForRightOnlyVariable",
-						this::testLateralPreservesInitialBindingForRightOnlyVariable));
+						this::testLateralPreservesInitialBindingForRightOnlyVariable),
+				makeTest("LateralFilterInRightOperandSeesLeftBinding",
+						this::testLateralFilterInRightOperandSeesLeftBinding),
+				makeTest("LateralFilterInRightOperandSeesLeftBindingWithInitialBindings",
+						this::testLateralFilterInRightOperandSeesLeftBindingWithInitialBindings));
 	}
 }
