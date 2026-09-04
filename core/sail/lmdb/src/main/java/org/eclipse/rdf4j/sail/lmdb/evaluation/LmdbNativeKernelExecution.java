@@ -112,30 +112,33 @@ final class LmdbNativeKernelExecution {
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
 			ValueExpr havingCondition) {
 		return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, havingCondition,
-				ParallelExecution.PREFER, KernelTier.AUTO);
+				ParallelExecution.PREFER, KernelTier.AUTO, false);
 	}
 
 	static List<BindingSet> tryEvaluateAggregateParallel(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
-			ValueExpr havingCondition, boolean interpreted) {
+			ValueExpr havingCondition, boolean interpreted, boolean allowFixedContexts) {
 		return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, havingCondition,
-				ParallelExecution.REQUIRE, interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED);
+				ParallelExecution.REQUIRE, interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED,
+				allowFixedContexts);
 	}
 
 	static List<BindingSet> tryEvaluateAggregateSerial(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
-			ValueExpr havingCondition, boolean interpreted) {
+			ValueExpr havingCondition, boolean interpreted, boolean allowFixedContexts) {
 		return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, havingCondition,
-				ParallelExecution.DISABLE, interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED);
+				ParallelExecution.DISABLE, interpreted ? KernelTier.INTERPRETED : KernelTier.COMPILED,
+				allowFixedContexts);
 	}
 
 	private static List<BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
-			ValueExpr havingCondition, ParallelExecution parallelExecution, KernelTier tier) {
+			ValueExpr havingCondition, ParallelExecution parallelExecution, KernelTier tier,
+			boolean allowFixedContexts) {
 		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
 		if (inherited != null) {
 			return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget, havingCondition,
-					false, false, parallelExecution, tier);
+					false, false, parallelExecution, tier, allowFixedContexts);
 		}
 		LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime.create(
 				System.identityHashCode(arg), Long.getLong("rdf4j.lmdb.native.fused.maxBytes", 8L << 20),
@@ -143,7 +146,7 @@ final class LmdbNativeKernelExecution {
 		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
 			List<BindingSet> result = tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
 					havingCondition,
-					false, false, parallelExecution, tier);
+					false, false, parallelExecution, tier, allowFixedContexts);
 			if (result != null) {
 				session.recordMaterializationBoundary(result.size());
 			}
@@ -277,7 +280,7 @@ final class LmdbNativeKernelExecution {
 	private static List<BindingSet> tryEvaluateAggregate(SlotPlan arg, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration emitter, TupleExpr explainTarget,
 			ValueExpr havingCondition, boolean preferScans, boolean scanVariablePredicates,
-			ParallelExecution parallelExecution, KernelTier requestedTier) {
+			ParallelExecution parallelExecution, KernelTier requestedTier, boolean allowFixedContexts) {
 		// With janino codegen disabled, the interpreted tier (M1 of the kernel-interpreter plan) executes the same
 		// lowered IR through LmdbNativeKernelInterpreter. Only when BOTH tiers are off does the route decline.
 		NativeLmdbQuerySource.NativeProbe probe = null;
@@ -290,7 +293,7 @@ final class LmdbNativeKernelExecution {
 		try {
 			LmdbNativeKernelLowering.Lowered semantic = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
 					aggregates, LmdbNativeKernelLowering.recognizeHaving(havingCondition, aggregates), explainTarget,
-					preferScans, scanVariablePredicates, emitter.strictCompare);
+					preferScans, scanVariablePredicates, emitter.strictCompare, allowFixedContexts);
 			if (semantic == null) {
 				AGG_DECLINED.incrementAndGet();
 				if (row.runtimePlan != null) {
@@ -314,7 +317,7 @@ final class LmdbNativeKernelExecution {
 				// an honest, retryable arm rather than disappearing behind the interpreted wildcard arm.
 				if (wildcardKernel && !scanVariablePredicates && LmdbNativeKernelLowering.scanSourcesEnabled()) {
 					return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
-							havingCondition, false, true, parallelExecution, requestedTier);
+							havingCondition, false, true, parallelExecution, requestedTier, allowFixedContexts);
 				}
 				LmdbNativeAttemptMetrics.recordDecline(explainTarget,
 						aggregateRoute(false, wildcardKernel), "disabled");
@@ -410,7 +413,7 @@ final class LmdbNativeKernelExecution {
 					kernel.close();
 					kernel = null;
 					return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
-							havingCondition, false, true, parallelExecution, requestedTier);
+							havingCondition, false, true, parallelExecution, requestedTier, allowFixedContexts);
 				}
 				LmdbNativeAttemptMetrics.recordDecline(explainTarget, pathTag,
 						"variable-predicate-view-unavailable");
@@ -431,7 +434,8 @@ final class LmdbNativeKernelExecution {
 					kernel.close();
 					kernel = null;
 					return tryEvaluateAggregate(arg, row, groupSlots, aggregates, emitter, explainTarget,
-							havingCondition, true, scanVariablePredicates, parallelExecution, requestedTier);
+							havingCondition, true, scanVariablePredicates, parallelExecution, requestedTier,
+							allowFixedContexts);
 				}
 				if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 					System.err.println("[ir-aggregate] decline: adjacency-unavailable");

@@ -901,21 +901,30 @@ final class LmdbNativeKernelLowering {
 	static Lowered lowerAggregate(SlotPlan arg, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
 			LmdbNativeKernelIr.Having having, TupleExpr declineTarget, boolean preferScans,
 			boolean scanVariablePredicates, boolean strictCompare) {
+		return lowerAggregate(arg, row, groupSlots, aggregates, having, declineTarget, preferScans,
+				scanVariablePredicates, strictCompare, false);
+	}
+
+	/** Aggregate lowering with fixed dataset contexts admitted for an explicit forced-strategy request. */
+	static Lowered lowerAggregate(SlotPlan arg, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
+			LmdbNativeKernelIr.Having having, TupleExpr declineTarget, boolean preferScans,
+			boolean scanVariablePredicates, boolean strictCompare, boolean allowFixedContexts) {
 		Lowered lowered = lowerAggregateInternal(arg, row, groupSlots, aggregates, having, declineTarget, preferScans,
-				scanVariablePredicates);
+				scanVariablePredicates, allowFixedContexts);
 		return lowered == null ? null : lowered.withStrictOrderCompare(strictCompare);
 	}
 
 	/** As above with a recognized HAVING guard to sink into the aggregate terminal when its output is count-kind. */
 	static Lowered lowerAggregate(SlotPlan arg, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
 			LmdbNativeKernelIr.Having having, TupleExpr declineTarget, boolean preferScans) {
-		return lowerAggregateInternal(arg, row, groupSlots, aggregates, having, declineTarget, preferScans, false);
+		return lowerAggregateInternal(arg, row, groupSlots, aggregates, having, declineTarget, preferScans, false,
+				false);
 	}
 
 	private static Lowered lowerAggregateInternal(SlotPlan arg, RowState row, int[] groupSlots,
 			AggregateSpec[] aggregates,
 			LmdbNativeKernelIr.Having having, TupleExpr declineTarget, boolean preferScans,
-			boolean scanVariablePredicates) {
+			boolean scanVariablePredicates, boolean allowFixedContexts) {
 		Lowered typeMatrix = lowerTypeMatrixAggregate(arg, groupSlots, aggregates, having);
 		if (typeMatrix != null) {
 			return typeMatrix;
@@ -948,6 +957,7 @@ final class LmdbNativeKernelLowering {
 		Builder builder = new Builder(row, "agg:");
 		builder.preferScans = preferScans;
 		builder.scanVariablePredicates = scanVariablePredicates;
+		builder.allowFixedContexts = allowFixedContexts;
 		if (core instanceof EmptyPlan) {
 			// Preserve empty global aggregate semantics inside the kernel. An empty domain is a real zero-row producer;
 			// dummy column mappings make aggregate/group references structurally valid, but no value can escape because
@@ -1394,6 +1404,8 @@ final class LmdbNativeKernelLowering {
 		java.util.Set<Long> scanPredicates;
 		/** Bind-time fallback for incomplete wildcard coverage; fixed covered predicates retain adjacency access. */
 		boolean scanVariablePredicates;
+		/** Fixed {@code FROM}/{@code FROM NAMED} context sets, enabled only for an explicitly forced IR aggregate. */
+		boolean allowFixedContexts;
 		long assuredMask;
 		String reason;
 
@@ -2778,8 +2790,9 @@ final class LmdbNativeKernelLowering {
 		 * up issuing the same {@code probe.open(subj, pred, obj, context)} call, with the same operand ids, that
 		 * {@code PatternPlan.openIterator} would have issued for this pattern. What must therefore be refused is
 		 * anything whose meaning lives in {@code PatternPlan.bind} rather than in the scan itself — named-graph
-		 * scoping, a dataset context restriction, a term that both matches a constant and binds a slot, and an
-		 * ordered-scan promise a consumer may be relying on. Each of those would be silently lost.
+		 * scoping, a dataset context restriction outside the explicitly forced aggregate route, a term that both
+		 * matches a constant and binds a slot, and an ordered-scan promise a consumer may be relying on. Each of those
+		 * would be silently lost.
 		 *
 		 * A repeated variable is the one item that used to be on that list and no longer is. It is expressible here,
 		 * exactly as {@link LmdbNativeKernelIr.ScanQuad}'s own contract describes: scan with both positions free,
@@ -2792,14 +2805,19 @@ final class LmdbNativeKernelLowering {
 			if (!scanSourcesEnabled()) {
 				return false;
 			}
-			if (pattern.contexts.isFixed() || pattern.c.isConstant() || pattern.s.bindConstant
-					|| pattern.o.bindConstant || pattern.p.bindConstant) {
+			if (pattern.contexts.isFixed() && !allowFixedContexts) {
 				return false;
 			}
-			// A named-graph scope is only expressible when the context is projected: the guard below is what excludes
-			// default-graph quads, and it needs a column to test. `GRAPH <g>` (a constant context) is left refused —
-			// it is a scan bound rather than a guard, and nothing in the corpus needed it.
-			if (pattern.namedContextScope && !pattern.c.hasSlot()) {
+			if (pattern.contexts.isEmpty() || pattern.s.bindConstant || pattern.o.bindConstant
+					|| pattern.p.bindConstant || pattern.c.bindConstant) {
+				return false;
+			}
+			// Several fixed contexts are concatenated in dataset order. They cannot satisfy one global ordered-scan
+			// promise, just as PatternPlan.openContexts has to use an explicit merge for that case.
+			if (pattern.contexts.isFixed() && pattern.contexts.ids.length > 1 && pattern.statementOrder != null) {
+				return false;
+			}
+			if (pattern.namedContextScope && !pattern.c.hasSlot() && !pattern.c.isConstant()) {
 				return false;
 			}
 			Operand[] terms = new Operand[4];
@@ -2811,26 +2829,40 @@ final class LmdbNativeKernelLowering {
 					|| !scanTerm(pattern.o, LmdbNativeKernelIr.ScanQuad.OBJ, terms, outCols, claimedSlots, repeats)) {
 				return false;
 			}
+			Operand contextOperand = null;
+			if (pattern.c.isConstant()) {
+				contextOperand = Operand.constant(constantIndex(pattern.c.constant));
+			} else if (pattern.c.hasSlot()) {
+				contextOperand = operandOf(pattern.c);
+			}
 			if (pattern.c.hasSlot()) {
-				if (!slotFresh(pattern.c.slot)) {
-					// The graph variable is already bound: that is a scan bound on the context position, and
-					// `ScanQuad` would need it as a term rather than an output. Not modelled here.
-					return false;
+				if (contextOperand != null) {
+					terms[LmdbNativeKernelIr.ScanQuad.CTX] = contextOperand;
+				} else {
+					outCols[LmdbNativeKernelIr.ScanQuad.CTX] = newColumn(pattern.c.slot);
 				}
-				outCols[LmdbNativeKernelIr.ScanQuad.CTX] = newColumn(pattern.c.slot);
+			} else if (contextOperand != null) {
+				terms[LmdbNativeKernelIr.ScanQuad.CTX] = contextOperand;
 			}
 			if (outCols[0] < 0 && outCols[1] < 0 && outCols[2] < 0
 					&& outCols[LmdbNativeKernelIr.ScanQuad.CTX] < 0) {
-				// Every position already known: that is an existence/multiplicity check, not a producer.
-				return false;
+				// A fully bound pattern still contributes one row per match. Keep that multiplicity in a scratch context
+				// column rather than declining merely because the scan has no projected output.
+				outCols[LmdbNativeKernelIr.ScanQuad.CTX] = scratchColumn();
 			}
 			if (pattern.s.hasSlot()) {
 				assuredMask |= 1L << pattern.s.slot;
 			}
-			boolean forceLmdb = isMeasuredNamedContextLmdbScan(pattern, terms);
-			currentDepthNodes().add(
-					new LmdbNativeKernelIr.ScanQuad(scan(pattern.statementOrder, pattern.range, forceLmdb), terms,
-							outCols));
+			if (pattern.contexts.isFixed()) {
+				if (!lowerFixedContextScans(pattern, terms, outCols, contextOperand)) {
+					return false;
+				}
+			} else {
+				boolean forceLmdb = isMeasuredNamedContextLmdbScan(pattern, terms);
+				currentDepthNodes().add(
+						new LmdbNativeKernelIr.ScanQuad(scan(pattern.statementOrder, pattern.range, forceLmdb), terms,
+								outCols));
+			}
 			// The equality guards belong with the scan, at the same depth, so they run per scanned quad.
 			currentDepthNodes().addAll(repeats);
 			if (pattern.namedContextScope) {
@@ -2838,9 +2870,51 @@ final class LmdbNativeKernelLowering {
 				// default-graph quads at bind time. The scan itself has no such notion — it is opened with the context
 				// unbound and therefore returns them — so the rejection is re-expressed as a guard on the context
 				// column against the default-graph sentinel.
-				currentDepthNodes().add(new LmdbNativeKernelIr.FilterCompareId(true,
-						Operand.col(outCols[LmdbNativeKernelIr.ScanQuad.CTX]),
+				Operand projectedContext = contextOperand != null
+						? contextOperand
+						: Operand.col(outCols[LmdbNativeKernelIr.ScanQuad.CTX]);
+				currentDepthNodes().add(new LmdbNativeKernelIr.FilterCompareId(true, projectedContext,
 						Operand.constant(constantIndex(LmdbNativeAggregateCompiler.NULL_CONTEXT_ID))));
+			}
+			return true;
+		}
+
+		/**
+		 * Emits the fixed-context equivalent of {@link PatternPlan#openContexts}: one exact context scan for a
+		 * singleton dataset and a multiset {@link LmdbNativeKernelIr.Union} for several {@code FROM}/{@code FROM NAMED}
+		 * graphs. An already-bound graph variable guards each arm; a fresh graph variable is populated from the scanned
+		 * quad's context position.
+		 */
+		private boolean lowerFixedContextScans(PatternPlan pattern, Operand[] terms, int[] outCols,
+				Operand contextOperand) {
+			long[] contextIds;
+			if (pattern.c.isConstant()) {
+				if (!pattern.contexts.contains(pattern.c.constant)) {
+					return false;
+				}
+				contextIds = new long[] { pattern.c.constant };
+			} else {
+				contextIds = pattern.contexts.ids;
+			}
+			List<List<Node>> branches = contextIds.length > 1 ? new ArrayList<>(contextIds.length) : null;
+			for (long contextId : contextIds) {
+				Operand fixedContext = Operand.constant(constantIndex(contextId));
+				Operand[] armTerms = terms.clone();
+				armTerms[LmdbNativeKernelIr.ScanQuad.CTX] = fixedContext;
+				List<Node> arm = new ArrayList<>(2);
+				if (pattern.c.hasSlot() && contextOperand != null) {
+					arm.add(new LmdbNativeKernelIr.FilterCompareId(false, contextOperand, fixedContext));
+				}
+				arm.add(new LmdbNativeKernelIr.ScanQuad(scan(pattern.statementOrder, pattern.range, false), armTerms,
+						outCols));
+				if (branches == null) {
+					currentDepthNodes().addAll(arm);
+				} else {
+					branches.add(arm);
+				}
+			}
+			if (branches != null) {
+				currentDepthNodes().add(new LmdbNativeKernelIr.Union(branches));
 			}
 			return true;
 		}

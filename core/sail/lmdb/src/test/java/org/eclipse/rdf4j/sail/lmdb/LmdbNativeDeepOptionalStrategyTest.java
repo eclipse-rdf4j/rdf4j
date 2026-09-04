@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -150,6 +151,33 @@ public class LmdbNativeDeepOptionalStrategyTest {
 				.contains("strategy: orderedDistinctGroups")
 				.doesNotContain("strategy: NOT_ACTIVATED")
 				.doesNotContain("NOT_ATTEMPTED[no Janino activation point reached]");
+	}
+
+	@Test
+	public void forcedInterpretedIrAggregateHandlesMultipleGroupKeysDistinctCountsAndOrderedUnionBinds() {
+		String query = groupedOrderedFourFlatUnionBindQuery();
+		List<BindingSet> genericRows = evaluate(query, false);
+		List<BindingSet> forcedRows = evaluate(query, "irAggregateInterpreted");
+		GenericPlanNode executedPlan = explain(query, "irAggregateInterpreted");
+
+		assertThat(forcedRows).containsExactlyElementsOf(genericRows);
+		assertThat(executionPaths(executedPlan))
+				.as("the forced interpreted aggregate must execute this multi-key grouped query:%n%s", executedPlan)
+				.contains("irAggregateInterpreted");
+	}
+
+	@Test
+	public void forcedInterpretedIrAggregatePreservesMultipleFromNamedContextsAndGraphBinding() {
+		String query = groupedFromNamedQuery();
+		List<BindingSet> genericRows = evaluate(query, false);
+		List<BindingSet> forcedRows = evaluate(query, "irAggregateInterpreted");
+		GenericPlanNode executedPlan = explain(query, "irAggregateInterpreted");
+
+		assertThat(genericRows).as("both named graphs must contribute an aggregate group").hasSize(2);
+		assertThat(forcedRows).containsExactlyElementsOf(genericRows);
+		assertThat(executionPaths(executedPlan))
+				.as("the forced interpreted aggregate must retain FROM NAMED graph semantics:%n%s", executedPlan)
+				.contains("irAggregateInterpreted");
 	}
 
 	private void assertUsesSetAtATimeStrategy(String query) {
@@ -322,10 +350,14 @@ public class LmdbNativeDeepOptionalStrategyTest {
 	}
 
 	private GenericPlanNode explain(String query) {
+		return explain(query, null);
+	}
+
+	private GenericPlanNode explain(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query)
-					.explain(Explanation.Level.Telemetry)
-					.toGenericPlanNode();
+			SailTupleQuery preparedQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+			preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			return preparedQuery.explain(Explanation.Level.Telemetry).toGenericPlanNode();
 		}
 	}
 
@@ -335,6 +367,14 @@ public class LmdbNativeDeepOptionalStrategyTest {
 			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
 		} finally {
 			System.setProperty(NATIVE_FLAG, "true");
+		}
+	}
+
+	private List<BindingSet> evaluate(String query, String forcedStrategy) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery preparedQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+			preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			return QueryResults.asList(preparedQuery.evaluate());
 		}
 	}
 
@@ -572,5 +612,18 @@ public class LmdbNativeDeepOptionalStrategyTest {
 				"}",
 				"GROUP BY ?department ?route",
 				"ORDER BY DESC(?rows) DESC(?people) ?department ?route");
+	}
+
+	private static String groupedFromNamedQuery() {
+		return String.join("\n",
+				"PREFIX ex: <" + EX + ">",
+				"SELECT ?graph (COUNT(DISTINCT ?target) AS ?count)",
+				"FROM NAMED <" + FROM_CORE_GRAPH + ">",
+				"FROM NAMED <" + FROM_DETAIL_GRAPH + ">",
+				"WHERE {",
+				"  GRAPH ?graph { ?bridge ex:layer1Alternate ?target . }",
+				"}",
+				"GROUP BY ?graph",
+				"ORDER BY ?graph");
 	}
 }

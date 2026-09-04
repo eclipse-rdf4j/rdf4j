@@ -827,7 +827,11 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					: interpretedIr && parallelIr
 							? interpretedParallelTag
 							: compiledIr ? compiledSerialTag : interpretedIr ? interpretedSerialTag : null;
-			if (highestIrTag != null && !algorithmicSpecialistHandlesRow(row)) {
+			// Specialist suppression is an adaptive-selection policy, not an IR capability boundary. A forced request
+			// must reach the arbiter so the named IR tier can either run or report its own concrete lowering/bind
+			// decline.
+			if (highestIrTag != null
+					&& (forcedExecutionStrategy != null || !algorithmicSpecialistHandlesRow(row))) {
 				LmdbNativeWork candidateWork = arg.estimateWork(row, row.boundMask());
 				if (nodeDomainIntersectionIr) {
 					LmdbNativeWork intersectionWork = existsIntersection.nodeDomainIrWork(source, row);
@@ -853,7 +857,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					if (compiledIr) {
 						arbiter.offer(() -> estimatedProposal(
 								() -> LmdbNativeKernelExecution.tryEvaluateAggregateParallel(arg, row, groupSlots,
-										aggregates, this, explainTarget, havingCondition, false),
+										aggregates, this, explainTarget, havingCondition, false,
+										forcedExecutionStrategy != null),
 								compiledParallelTag,
 								LmdbNativeKernelExecution.parallelProposalWork(irAggregateWork),
 								LmdbNativeKernelExecution.parallelStartupWork()));
@@ -861,7 +866,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					if (interpretedIr) {
 						arbiter.offer(() -> estimatedProposal(
 								() -> LmdbNativeKernelExecution.tryEvaluateAggregateParallel(arg, row, groupSlots,
-										aggregates, this, explainTarget, havingCondition, true),
+										aggregates, this, explainTarget, havingCondition, true,
+										forcedExecutionStrategy != null),
 								interpretedParallelTag,
 								LmdbNativeKernelExecution.parallelProposalWork(irAggregateWork),
 								LmdbNativeKernelExecution.parallelStartupWork()));
@@ -870,7 +876,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				if (compiledIr) {
 					arbiter.offer(() -> estimatedProposal(() -> {
 						List<BindingSet> result = LmdbNativeKernelExecution.tryEvaluateAggregateSerial(arg, row,
-								groupSlots, aggregates, this, explainTarget, havingCondition, false);
+								groupSlots, aggregates, this, explainTarget, havingCondition, false,
+								forcedExecutionStrategy != null);
 						if (result != null) {
 							LmdbNativeExplain.recordExecutionPath(explainTarget, compiledSerialTag);
 						}
@@ -880,7 +887,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				if (interpretedIr) {
 					arbiter.offer(() -> estimatedProposal(() -> {
 						List<BindingSet> result = LmdbNativeKernelExecution.tryEvaluateAggregateSerial(arg, row,
-								groupSlots, aggregates, this, explainTarget, havingCondition, true);
+								groupSlots, aggregates, this, explainTarget, havingCondition, true,
+								forcedExecutionStrategy != null);
 						if (result != null) {
 							LmdbNativeExplain.recordExecutionPath(explainTarget, interpretedSerialTag);
 						}

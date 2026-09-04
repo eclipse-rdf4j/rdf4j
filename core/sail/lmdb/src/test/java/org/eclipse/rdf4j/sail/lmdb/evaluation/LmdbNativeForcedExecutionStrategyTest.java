@@ -241,6 +241,10 @@ class LmdbNativeForcedExecutionStrategyTest {
 
 	private static final String GROUP_BY_QUERY = "PREFIX ex: <" + EX + "> "
 			+ "SELECT ?p (count(*) as ?count) WHERE { ?s ex:worksAt ex:acme . ?s ?p ?o } GROUP BY ?p";
+	private static final String GROUP_BY_FIXED_JOIN_QUERY = "PREFIX ex: <" + EX + "> "
+			+ "SELECT ?company (COUNT(DISTINCT ?colleague) AS ?count) WHERE { "
+			+ "?person ex:knows ?colleague . ?person ex:worksAt ?company . ?colleague ex:worksAt ?company "
+			+ "} GROUP BY ?company ORDER BY ?count";
 
 	/**
 	 * Regression guard for a forced strategy silently doing nothing on a {@code GROUP BY} query.
@@ -295,6 +299,17 @@ class LmdbNativeForcedExecutionStrategyTest {
 
 			assertThat(wrongResults).as("forced strategies disagreeing with adaptive selection").isEmpty();
 			assertThat(honored).as("strategies actually honored for this GROUP BY query").isNotEmpty();
+		}
+	}
+
+	@Test
+	void forcingInterpretedAggregateBypassesAdaptiveSpecialistSuppression() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			List<BindingSet> expected = QueryResults.asList(prepare(conn, GROUP_BY_FIXED_JOIN_QUERY, null).evaluate());
+			List<BindingSet> actual = QueryResults.asList(prepare(conn, GROUP_BY_FIXED_JOIN_QUERY,
+					LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED).evaluate());
+
+			assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
 		}
 	}
 
