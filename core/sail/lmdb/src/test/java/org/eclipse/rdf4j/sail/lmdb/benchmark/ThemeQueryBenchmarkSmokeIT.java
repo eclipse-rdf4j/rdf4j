@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -67,6 +69,18 @@ class ThemeQueryBenchmarkSmokeIT {
 		assertTrue(fork != null && Arrays.asList(fork.jvmArgs())
 				.contains("-D" + ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY + "=true"),
 				"steady-state query measurements must not race the asynchronous direct-adjacency rebuild");
+	}
+
+	@Test
+	void cachedStoreMetadataRequiresCurrentDatasetRevision() {
+		Properties properties = new Properties();
+		assertFalse(ThemeQueryBenchmark.hasCurrentDatasetRevision(properties));
+
+		properties.setProperty(ThemeQueryBenchmark.DATASET_REVISION_PROPERTY, "theme-data-v1-default-graph");
+		assertFalse(ThemeQueryBenchmark.hasCurrentDatasetRevision(properties));
+
+		properties.setProperty(ThemeQueryBenchmark.DATASET_REVISION_PROPERTY, "theme-data-v2-named-graphs");
+		assertTrue(ThemeQueryBenchmark.hasCurrentDatasetRevision(properties));
 	}
 
 	@Test
@@ -141,6 +155,11 @@ class ThemeQueryBenchmarkSmokeIT {
 		} finally {
 			benchmark.tearDown();
 		}
+	}
+
+	@Test
+	void executeQueryReturnsExpectedCountForExplorationGraphCensus() throws Exception {
+		assertThemeQueryCountWithJaninoAndDirectAdjacency(Theme.EXPLORATION, 1, 1);
 	}
 
 	@Test

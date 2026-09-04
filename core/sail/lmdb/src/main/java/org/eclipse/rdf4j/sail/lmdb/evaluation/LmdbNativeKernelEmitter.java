@@ -3302,6 +3302,15 @@ final class LmdbNativeKernelEmitter {
 			return true;
 		}
 
+		private static boolean hasResumableState(List<Node> pipeline) {
+			for (Node node : pipeline) {
+				if (!LmdbNativeKernelIr.isStatelessRowNode(node)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
 		/**
 		 * True when the node is an adjacency producer carrying context access — a projected context column, a context
 		 * match operand, or a named-graph default exclusion (three-tier parity plan, M7).
@@ -4558,6 +4567,44 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append(a).append(" = -1;\n");
 				body.append(indent).append(b).append(" = -1;\n");
 				body.append(indent).append(c).append(" = -1;\n");
+				return true;
+			}
+			if (node instanceof Union) {
+				Union union = (Union) node;
+				List<String> branchMethods = new ArrayList<>(union.branches.size());
+				for (List<Node> branch : union.branches) {
+					branchMethods.add(emitPipeline(branch, nextTemplate, false, !tailmost));
+				}
+				body.append(indent).append("if (").append(a).append(" < 0) {\n");
+				body.append(indent).append("    ").append(a).append(" = 0;\n");
+				body.append(indent).append("}\n");
+				int[] resetColumns = union.resetColumns();
+				for (int branchIndex = 0; branchIndex < union.branches.size(); branchIndex++) {
+					body.append(indent).append("if (").append(a).append(" == ").append(branchIndex).append(") {\n");
+					for (int col : resetColumns) {
+						body.append(indent).append("    v").append(col).append(" = -1L;\n");
+					}
+					body.append(indent).append("    ").append(branchMethods.get(branchIndex)).append("();\n");
+					body.append(indent).append("    if (full) {\n");
+					if (tailmost && !hasResumableState(union.branches.get(branchIndex))) {
+						body.append(indent)
+								.append("        ")
+								.append(a)
+								.append(" = ")
+								.append(branchIndex + 1)
+								.append(";\n");
+					}
+					body.append(indent).append("        return;\n");
+					body.append(indent).append("    }\n");
+					body.append(indent)
+							.append("    ")
+							.append(a)
+							.append(" = ")
+							.append(branchIndex + 1)
+							.append(";\n");
+					body.append(indent).append("}\n");
+				}
+				body.append(indent).append(a).append(" = -1;\n");
 				return true;
 			}
 			if (node instanceof LmdbNativeKernelIr.LeftGroup) {

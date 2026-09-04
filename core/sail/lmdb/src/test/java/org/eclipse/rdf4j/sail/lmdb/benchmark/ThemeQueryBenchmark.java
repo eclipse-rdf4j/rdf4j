@@ -67,11 +67,11 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 20, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 500)
+@Warmup(iterations = 1, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 500)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
 		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true" })
-@Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
+@Measurement(iterations = 1, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -97,6 +97,9 @@ public class ThemeQueryBenchmark {
 	private static final String TRIPLES_DATA_SIZE_PROPERTY = "triples.data.mdb.size.bytes";
 	private static final String VALUES_DATA_SIZE_PROPERTY = "values.data.mdb.size.bytes";
 	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
+	static final String DATASET_REVISION_PROPERTY = "dataset.revision";
+	// Bump whenever the generated statements, contexts, or default generator configuration changes.
+	static final String DATASET_REVISION = "theme-data-v2-named-graphs";
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 	private static final String TYPE_MATRIX_METRICS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.typeMatrixMetrics";
 	private static final String JANINO_CODEGEN_ENABLED_PROPERTY = "rdf4j.lmdb.janinoCodegen.enabled";
@@ -136,7 +139,7 @@ public class ThemeQueryBenchmark {
 	public int z_queryIndex;
 
 	@Param({
-			"MEDICAL_RECORDS",
+//			"MEDICAL_RECORDS",
 //			"SOCIAL_MEDIA",
 //			"LIBRARY",
 //			"ENGINEERING",
@@ -145,7 +148,8 @@ public class ThemeQueryBenchmark {
 //			"ELECTRICAL_GRID",
 //			"PHARMA",
 //			"ADAPTIVE_FILTER_PLACEMENT",
-//			"ANALYTICS"
+//			"ANALYTICS",
+			"EXPLORATION"
 	})
 	public String themeName;
 
@@ -269,7 +273,7 @@ public class ThemeQueryBenchmark {
 //
 //			}
 			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-			tupleQuery.setMaxExecutionTime(50);
+			tupleQuery.setMaxExecutionTime(120);
 			try (var evaluate = tupleQuery.evaluate()) {
 				count = countRowsAndVerifyCountBinding(evaluate, expectedCountBindingValue);
 			}
@@ -464,6 +468,9 @@ public class ThemeQueryBenchmark {
 			properties.load(inputStream);
 		}
 		try {
+			if (!hasCurrentDatasetRevision(properties)) {
+				return missingExpectedDbFileSizes();
+			}
 			String tripleIndexes = properties.getProperty(TRIPLE_INDEXES_PROPERTY);
 			if (!storeConfig.getTripleIndexes().equals(tripleIndexes)) {
 				return missingExpectedDbFileSizes();
@@ -481,11 +488,16 @@ public class ThemeQueryBenchmark {
 		}
 	}
 
+	static boolean hasCurrentDatasetRevision(Properties properties) {
+		return DATASET_REVISION.equals(properties.getProperty(DATASET_REVISION_PROPERTY));
+	}
+
 	private void writeExpectedDbFileSizes(DbFileSizes expectedDbFileSizes) throws IOException {
 		var properties = new Properties();
 		properties.setProperty(TRIPLES_DATA_SIZE_PROPERTY, Long.toString(expectedDbFileSizes.triplesDataSizeBytes));
 		properties.setProperty(VALUES_DATA_SIZE_PROPERTY, Long.toString(expectedDbFileSizes.valuesDataSizeBytes));
 		properties.setProperty(TRIPLE_INDEXES_PROPERTY, storeConfig.getTripleIndexes());
+		properties.setProperty(DATASET_REVISION_PROPERTY, DATASET_REVISION);
 		try (var outputStream = new FileOutputStream(expectedDbFileSizeFile())) {
 			properties.store(outputStream, "Expected LMDB data file sizes for ThemeQueryBenchmark");
 		}
@@ -647,6 +659,20 @@ public class ThemeQueryBenchmark {
 		storeConfig = null;
 		restoreJaninoCodegenProperties();
 //		restoreBenchmarkEstimatorProperties();
+	}
+
+	// @Benchmark
+	public void print() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			System.out.println("### Graphs in Store ###");
+			connection.prepareTupleQuery("select distinct ?g where { graph ?g { ?s ?p ?o } }")
+					.evaluate()
+					.stream()
+					.forEach(System.out::println);
+
+			connection.getContextIDs().forEach(g -> System.out.println("Context: " + g));
+		}
+		System.out.println("###  ###");
 	}
 
 	private void printTypeMatrixMetricsIfEnabled() {

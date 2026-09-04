@@ -2662,12 +2662,22 @@ final class LmdbNativeKernelIr {
 		return isResumablePipeline(arm);
 	}
 
+	private static boolean isResumableUnion(Union union) {
+		for (List<Node> branch : union.branches) {
+			if (!isResumableArm(branch)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	private static boolean isResumablePipeline(List<Node> pipeline) {
 		for (int i = 0; i < pipeline.size(); i++) {
 			Node node = pipeline.get(i);
 			boolean streamable = isResumableProducer(node)
 					|| i == pipeline.size() - 1 && node instanceof LeftProbe
-					|| node instanceof LeftGroup && isResumableArm(((LeftGroup) node).arm);
+					|| node instanceof LeftGroup && isResumableArm(((LeftGroup) node).arm)
+					|| node instanceof Union && isResumableUnion((Union) node);
 			if (!streamable) {
 				return false;
 			}

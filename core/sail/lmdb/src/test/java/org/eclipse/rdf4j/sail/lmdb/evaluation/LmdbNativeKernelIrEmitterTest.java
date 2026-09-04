@@ -1417,8 +1417,13 @@ class LmdbNativeKernelIrEmitterTest {
 				long bridge = root * 1000L + layer + 1;
 				long output = root * 100L + layer + 1;
 				entryRows.add(new long[] { input, bridge });
-				List<long[]> selectedRows = (root + layer) % 2 == 0 ? primaryRows : alternateRows;
+				boolean usePrimary = (root + layer) % 2 == 0;
+				List<long[]> selectedRows = usePrimary ? primaryRows : alternateRows;
 				selectedRows.add(new long[] { bridge, output });
+				if (root == 1 && layer == 4) {
+					List<long[]> otherRows = usePrimary ? alternateRows : primaryRows;
+					otherRows.add(new long[] { bridge, output });
+				}
 			}
 			adjacencies[adjacencyBase] = new FixtureAdjacency(entryRows.toArray(long[][]::new));
 			adjacencies[adjacencyBase + 1] = new FixtureAdjacency(primaryRows.toArray(long[][]::new));
@@ -1444,6 +1449,7 @@ class LmdbNativeKernelIrEmitterTest {
 		assertTrue(streaming.resumable, "UNION branches nested inside OPTIONAL groups must stream");
 
 		long[][] expected = {
+				{ 1, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110 },
 				{ 1, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110 },
 				{ 2, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210 },
 				{ 3, 301, 302, 303, 304, 305, -1, -1, -1, -1, -1 } };
