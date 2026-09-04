@@ -40,8 +40,8 @@ class ThemeQueryCatalogComplexityTest {
 			List<String> queries = ThemeQueryCatalog.queriesFor(theme);
 			assertEquals(ThemeQueryCatalog.QUERY_COUNT, queries.size(),
 					"Unexpected query count for theme " + theme);
-			if (theme == Theme.ANALYTICS) {
-				// The cross-theme ANALYTICS queries deliberately range from trivial catalog scans to heavy
+			if (theme == Theme.ANALYTICS || theme == Theme.EXPLORATION) {
+				// The cross-theme analytical queries deliberately range from trivial catalog scans to heavy
 				// aggregations, so the per-query complexity-marker requirement does not apply.
 				continue;
 			}

@@ -2652,25 +2652,23 @@ final class LmdbNativeKernelIr {
 		if (pipeline.isEmpty()) {
 			return false;
 		}
-		for (int i = 0; i < pipeline.size(); i++) {
-			Node node = pipeline.get(i);
-			boolean streamable = isResumableProducer(node)
-					|| i == pipeline.size() - 1 && node instanceof LeftProbe
-					|| i == pipeline.size() - 1 && node instanceof LeftGroup
-							&& isResumableArm(((LeftGroup) node).arm);
-			if (!streamable) {
-				return false;
-			}
-		}
-		return true;
+		return isResumablePipeline(pipeline);
 	}
 
 	private static boolean isResumableArm(List<Node> arm) {
 		if (arm.isEmpty()) {
 			return false;
 		}
-		for (Node node : arm) {
-			if (!isResumableProducer(node)) {
+		return isResumablePipeline(arm);
+	}
+
+	private static boolean isResumablePipeline(List<Node> pipeline) {
+		for (int i = 0; i < pipeline.size(); i++) {
+			Node node = pipeline.get(i);
+			boolean streamable = isResumableProducer(node)
+					|| i == pipeline.size() - 1 && node instanceof LeftProbe
+					|| node instanceof LeftGroup && isResumableArm(((LeftGroup) node).arm);
+			if (!streamable) {
 				return false;
 			}
 		}

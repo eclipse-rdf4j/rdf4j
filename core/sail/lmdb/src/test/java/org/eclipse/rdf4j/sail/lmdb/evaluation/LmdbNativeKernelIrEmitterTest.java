@@ -1367,6 +1367,93 @@ class LmdbNativeKernelIrEmitterTest {
 	}
 
 	@Test
+	void streamingFourNestedAndSequentialLeftGroupsPreserveEveryOptionalBoundary() throws Exception {
+		NativeLmdbQuerySource.NativeAdjacency first = new FixtureAdjacency(new long[][] { { 1, 10 } });
+		NativeLmdbQuerySource.NativeAdjacency second = new FixtureAdjacency(new long[][] { { 10, 100 } });
+		NativeLmdbQuerySource.NativeAdjacency third = new FixtureAdjacency(new long[][] { { 100, 1000 } });
+		NativeLmdbQuerySource.NativeAdjacency fourth = new FixtureAdjacency(new long[][] { { 1000, 10000 } });
+		NativeLmdbQuerySource.NativeAdjacency siblingFirst = new FixtureAdjacency(
+				new long[][] { { 1, 11 }, { 2, 22 } });
+		NativeLmdbQuerySource.NativeAdjacency siblingSecond = new FixtureAdjacency(new long[][] { { 11, 111 } });
+		LeftGroup fourLayers = new LeftGroup(List.of(new Probe(0, Operand.col(0), 1),
+				new LeftGroup(List.of(new Probe(1, Operand.col(1), 2),
+						new LeftGroup(List.of(new Probe(2, Operand.col(2), 3),
+								new LeftGroup(List.of(new Probe(3, Operand.col(3), 4)))))))));
+		LeftGroup sibling = new LeftGroup(List.of(new Probe(4, Operand.col(0), 5),
+				new LeftProbe(5, Operand.col(5), 6)));
+		Kernel streaming = new Kernel(7, List.of(new EnumerateDomain(0, 0), fourLayers, sibling),
+				emit(0, 1, 2, 3, 4, 5, 6));
+
+		assertTrue(streaming.resumable, "nested and sequential OPTIONAL groups must stream");
+		long[][] expected = {
+				{ 1, 10, 100, 1000, 10000, 11, 111 },
+				{ 2, -1, -1, -1, -1, 22, -1 } };
+		for (int maxRows : new int[] { 1, 2, 3, 64 }) {
+			assertRows(drain(streaming,
+					context().adjacencies(first, second, third, fourth, siblingFirst, siblingSecond)
+							.domains(new long[] { 1, 2 }),
+					maxRows), expected, "drained " + maxRows + " row(s) at a time");
+		}
+	}
+
+	@Test
+	void streamingTenNestedLeftGroupsWithUnionsPreserveBranchesAndNullExtensions() throws Exception {
+		NativeLmdbQuerySource.NativeAdjacency[] adjacencies = new NativeLmdbQuerySource.NativeAdjacency[30];
+		List<Node> nestedArm = null;
+		for (int layer = 9; layer >= 0; layer--) {
+			int inputCol = layer == 0 ? 0 : layer * 2;
+			int bridgeCol = layer * 2 + 1;
+			int outputCol = layer * 2 + 2;
+			int adjacencyBase = layer * 3;
+			List<long[]> entryRows = new ArrayList<>();
+			List<long[]> primaryRows = new ArrayList<>();
+			List<long[]> alternateRows = new ArrayList<>();
+			for (int root = 1; root <= 3; root++) {
+				int depth = root == 3 ? 5 : 10;
+				if (layer >= depth) {
+					continue;
+				}
+				long input = layer == 0 ? root : root * 100L + layer;
+				long bridge = root * 1000L + layer + 1;
+				long output = root * 100L + layer + 1;
+				entryRows.add(new long[] { input, bridge });
+				List<long[]> selectedRows = (root + layer) % 2 == 0 ? primaryRows : alternateRows;
+				selectedRows.add(new long[] { bridge, output });
+			}
+			adjacencies[adjacencyBase] = new FixtureAdjacency(entryRows.toArray(long[][]::new));
+			adjacencies[adjacencyBase + 1] = new FixtureAdjacency(primaryRows.toArray(long[][]::new));
+			adjacencies[adjacencyBase + 2] = new FixtureAdjacency(alternateRows.toArray(long[][]::new));
+
+			List<Node> arm = new ArrayList<>();
+			arm.add(new Probe(adjacencyBase, Operand.col(inputCol), bridgeCol));
+			arm.add(new Union(List.of(
+					List.of(new Probe(adjacencyBase + 1, Operand.col(bridgeCol), outputCol)),
+					List.of(new Probe(adjacencyBase + 2, Operand.col(bridgeCol), outputCol)))));
+			if (nestedArm != null) {
+				arm.add(new LeftGroup(nestedArm));
+			}
+			nestedArm = arm;
+		}
+
+		int[] outputColumns = new int[11];
+		for (int i = 0; i < outputColumns.length; i++) {
+			outputColumns[i] = i * 2;
+		}
+		Kernel streaming = new Kernel(21,
+				List.of(new EnumerateDomain(0, 0), new LeftGroup(nestedArm)), emit(outputColumns));
+		assertTrue(streaming.resumable, "UNION branches nested inside OPTIONAL groups must stream");
+
+		long[][] expected = {
+				{ 1, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110 },
+				{ 2, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210 },
+				{ 3, 301, 302, 303, 304, 305, -1, -1, -1, -1, -1 } };
+		for (int maxRows : new int[] { 1, 2, 3, 64 }) {
+			assertRows(drain(streaming, context().adjacencies(adjacencies).domains(new long[] { 1, 2, 3 }), maxRows),
+					expected, "drained " + maxRows + " row(s) at a time");
+		}
+	}
+
+	@Test
 	void resumableOptionalArmsReuseBoundRunCursors() {
 		Kernel kernel = new Kernel(4,
 				List.of(new EnumerateDomain(0, 0),

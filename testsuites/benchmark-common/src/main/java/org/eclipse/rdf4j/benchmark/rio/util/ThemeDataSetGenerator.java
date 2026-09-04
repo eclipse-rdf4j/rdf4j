@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Random;
 import java.util.function.Consumer;
@@ -25,12 +26,15 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFHandler;
+import org.eclipse.rdf4j.rio.RDFHandlerException;
+import org.eclipse.rdf4j.rio.helpers.RDFHandlerWrapper;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 
 public final class ThemeDataSetGenerator {
@@ -46,7 +50,8 @@ public final class ThemeDataSetGenerator {
 		PHARMA,
 		ADAPTIVE_FILTER_PLACEMENT,
 		REAL_ESTATE,
-		ANALYTICS
+		ANALYTICS,
+		EXPLORATION
 	}
 
 	private static final String BASE = "http://example.com/theme/";
@@ -117,9 +122,14 @@ public final class ThemeDataSetGenerator {
 		return generateModel(handler -> generate(theme, handler));
 	}
 
+	/**
+	 * Generates one physical theme into a stable theme-specific named graph. Virtual cross-theme query suites such as
+	 * {@link Theme#ANALYTICS} and {@link Theme#EXPLORATION} contribute no statements of their own.
+	 */
 	public static void generate(Theme theme, RDFHandler handler) {
 		Objects.requireNonNull(theme, "theme");
 		Objects.requireNonNull(handler, "handler");
+		handler = namedGraphHandler(theme, handler);
 		switch (theme) {
 		case MEDICAL_RECORDS:
 			generateMedicalRecords(medicalConfig(), handler);
@@ -155,9 +165,24 @@ public final class ThemeDataSetGenerator {
 			// The ANALYTICS theme runs cross-theme analytical queries against the union of all other theme
 			// datasets and contributes no statements of its own, so fixed benchmark stores stay byte-identical.
 			break;
+		case EXPLORATION:
+			// The EXPLORATION theme profiles the named graphs contributed by all physical themes and contributes
+			// no statements of its own.
+			break;
 		default:
 			throw new IllegalArgumentException("Unsupported theme " + theme);
 		}
+	}
+
+	private static RDFHandler namedGraphHandler(Theme theme, RDFHandler handler) {
+		IRI graph = iri(BASE + "graph/", theme.name().toLowerCase(Locale.ROOT).replace('_', '-'));
+		return new RDFHandlerWrapper(handler) {
+			@Override
+			public void handleStatement(Statement statement) throws RDFHandlerException {
+				super.handleStatement(VF.createStatement(statement.getSubject(), statement.getPredicate(),
+						statement.getObject(), graph));
+			}
+		};
 	}
 
 	public static Model generateMedicalRecords(MedicalConfig config) {

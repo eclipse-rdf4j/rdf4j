@@ -2488,6 +2488,16 @@ final class LmdbNativeKernelEmitter {
 		 * boolean-mode statement such as {@code return true;}.
 		 */
 		private String emitPipeline(List<Node> nodes, String terminalStatement, boolean booleanMode) {
+			return emitPipeline(nodes, terminalStatement, booleanMode, false);
+		}
+
+		/**
+		 * Emits a pipeline whose terminal may continue through resumable state owned by an enclosing pipeline. A
+		 * producer may advance past an emitted row before pausing only when neither its local suffix nor that external
+		 * continuation has state to resume.
+		 */
+		private String emitPipeline(List<Node> nodes, String terminalStatement, boolean booleanMode,
+				boolean statefulTerminal) {
 			int pipelineId = nextPipelineId++;
 			String prefix = (booleanMode ? "q" : "m") + pipelineId + "_";
 			if (nodes.isEmpty()) {
@@ -2513,7 +2523,7 @@ final class LmdbNativeKernelEmitter {
 				// Container arms need the same saved-counter discipline as the root. The resumability proof admits
 				// only arms whose nodes the streaming emitter understands.
 				int stateIndex = kernel.resumable && !booleanMode ? nextStateId++ : -1;
-				if (stateIndex >= 0 && tailmost(nodes, i)) {
+				if (stateIndex >= 0 && !statefulTerminal && tailmost(nodes, i)) {
 					tailmostStateIds.set(stateIndex);
 				}
 				if (i == tail) {
@@ -4554,7 +4564,8 @@ final class LmdbNativeKernelEmitter {
 				LmdbNativeKernelIr.LeftGroup group = (LmdbNativeKernelIr.LeftGroup) node;
 				int groupId = nextLeftGroupId++;
 				String matched = "lg" + groupId;
-				String armFirst = emitPipeline(group.arm, matched + " = true;\n%I%" + nextTemplate, false);
+				String armFirst = emitPipeline(group.arm, matched + " = true;\n%I%" + nextTemplate, false,
+						!tailmost);
 				body.append(indent).append("if (").append(a).append(" < 0) {\n");
 				body.append(indent).append("    ").append(a).append(" = 0;\n");
 				body.append(indent).append("    ").append(matched).append(" = false;\n");

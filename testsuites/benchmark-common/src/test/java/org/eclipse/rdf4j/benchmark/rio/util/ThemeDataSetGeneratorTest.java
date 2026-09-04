@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
+import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.util.Values;
@@ -137,6 +138,16 @@ class ThemeDataSetGeneratorTest {
 				() -> "Expected sparse price coverage but got " + priceCount + " of " + propertyCount);
 		assertTrue(soldCount < propertyCount * 3 / 10,
 				() -> "Expected sparse soldDate coverage but got " + soldCount + " of " + propertyCount);
+	}
+
+	@Test
+	void genericThemeGenerationUsesAStableNamedGraph() {
+		Model model = ThemeDataSetGenerator.generate(Theme.ADAPTIVE_FILTER_PLACEMENT);
+		IRI expectedGraph = Values.iri(BASE, "graph/adaptive-filter-placement");
+
+		assertFalse(model.isEmpty());
+		assertTrue(model.contexts().contains(expectedGraph));
+		assertTrue(model.stream().allMatch(statement -> expectedGraph.equals(statement.getContext())));
 	}
 
 	private static Model generateModel(String configMethodName, String generateMethodName) throws Exception {

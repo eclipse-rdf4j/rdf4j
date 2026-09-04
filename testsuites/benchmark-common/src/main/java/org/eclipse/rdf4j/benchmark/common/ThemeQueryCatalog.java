@@ -1987,6 +1987,415 @@ public final class ThemeQueryCatalog {
 								"ORDER BY DESC(?statements) ?ns"),
 						11L)));
 
+		QUERIES.put(Theme.EXPLORATION, List.of(
+				query("Exploration: global dataset census",
+						"""
+								SELECT
+								  (COUNT(*) AS ?quads)
+								  (COUNT(DISTINCT ?g) AS ?namedGraphs)
+								  (COUNT(DISTINCT ?s) AS ?subjects)
+								  (COUNT(DISTINCT ?p) AS ?predicates)
+								  (COUNT(DISTINCT ?o) AS ?objects)
+								  (SUM(IF(isIRI(?o), 1, 0)) AS ?iriObjectQuads)
+								  (SUM(IF(isLiteral(?o), 1, 0)) AS ?literalObjectQuads)
+								  (SUM(IF(isBlank(?o), 1, 0)) AS ?blankObjectQuads)
+								  (SUM(IF(!isIRI(?o) && !isLiteral(?o) && !isBlank(?o), 1, 0)) AS ?otherObjectQuads)
+								  (SUM(IF(isBlank(?s), 1, 0)) AS ?blankSubjectQuads)
+								WHERE {
+								  GRAPH ?g {
+								    ?s ?p ?o
+								  }
+								}
+								""",
+						1L),
+				query("Exploration: per-graph census",
+						"""
+								SELECT
+								  ?g
+								  (COUNT(*) AS ?quads)
+								  (COUNT(DISTINCT ?s) AS ?subjects)
+								  (COUNT(DISTINCT ?p) AS ?predicates)
+								  (COUNT(DISTINCT ?o) AS ?objects)
+								  (SUM(IF(isIRI(?o), 1, 0)) AS ?iriObjectQuads)
+								  (SUM(IF(isLiteral(?o), 1, 0)) AS ?literalObjectQuads)
+								  (SUM(IF(isBlank(?o), 1, 0)) AS ?blankObjectQuads)
+								WHERE {
+								  GRAPH ?g {
+								    ?s ?p ?o
+								  }
+								}
+								GROUP BY ?g
+								ORDER BY DESC(?quads)
+								""",
+						10L),
+				query("Exploration: predicate inventory and value kinds",
+						"""
+								SELECT
+								  ?p
+								  (COUNT(*) AS ?quads)
+								  (COUNT(DISTINCT ?g) AS ?graphs)
+								  (COUNT(DISTINCT ?s) AS ?subjects)
+								  (COUNT(DISTINCT ?o) AS ?objects)
+								  (SUM(IF(isIRI(?o), 1, 0)) AS ?iriObjectQuads)
+								  (SUM(IF(isLiteral(?o), 1, 0)) AS ?literalObjectQuads)
+								  (SUM(IF(isBlank(?o), 1, 0)) AS ?blankObjectQuads)
+								  (SUM(IF(!isIRI(?o) && !isLiteral(?o) && !isBlank(?o), 1, 0)) AS ?otherObjectQuads)
+								WHERE {
+								  GRAPH ?g {
+								    ?s ?p ?o
+								  }
+								}
+								GROUP BY ?p
+								ORDER BY DESC(?quads)
+								""",
+						100L),
+				query("Exploration: graph-predicate matrix",
+						"""
+								SELECT
+								  ?g
+								  ?p
+								  (COUNT(*) AS ?quads)
+								  (COUNT(DISTINCT ?s) AS ?subjects)
+								  (COUNT(DISTINCT ?o) AS ?objects)
+								  (SUM(IF(isIRI(?o), 1, 0)) AS ?iriObjectQuads)
+								  (SUM(IF(isLiteral(?o), 1, 0)) AS ?literalObjectQuads)
+								  (SUM(IF(isBlank(?o), 1, 0)) AS ?blankObjectQuads)
+								WHERE {
+								  GRAPH ?g {
+								    ?s ?p ?o
+								  }
+								}
+								GROUP BY ?g ?p
+								ORDER BY ?g DESC(?quads)
+								""",
+						109L),
+				query("Exploration: class inventory",
+						"""
+								PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+
+								SELECT
+								  ?class
+								  ?classKind
+								  (COUNT(*) AS ?typeQuads)
+								  (COUNT(DISTINCT ?instance) AS ?instances)
+								  (COUNT(DISTINCT ?g) AS ?graphs)
+								WHERE {
+								  GRAPH ?g {
+								    ?instance rdf:type ?class
+								  }
+								  BIND(
+								    IF(isIRI(?class), "IRI",
+								      IF(isBlank(?class), "BNODE",
+								        IF(isLiteral(?class), "LITERAL", "OTHER")
+								      )
+								    )
+								    AS ?classKind
+								  )
+								}
+								GROUP BY ?class ?classKind
+								ORDER BY DESC(?instances)
+								""",
+						53L),
+				query("Exploration: literal datatype language and lexical size",
+						"""
+								SELECT
+								  ?p
+								  ?datatype
+								  ?language
+								  (COUNT(*) AS ?literalQuads)
+								  (COUNT(DISTINCT ?s) AS ?subjects)
+								  (COUNT(DISTINCT ?o) AS ?distinctValues)
+								  (MIN(STRLEN(STR(?o))) AS ?minimumLexicalLength)
+								  (AVG(STRLEN(STR(?o))) AS ?averageLexicalLength)
+								  (MAX(STRLEN(STR(?o))) AS ?maximumLexicalLength)
+								WHERE {
+								  GRAPH ?g {
+								    ?s ?p ?o
+								  }
+								  FILTER(isLiteral(?o))
+								  BIND(DATATYPE(?o) AS ?datatype)
+								  BIND(LCASE(LANG(?o)) AS ?language)
+								}
+								GROUP BY ?p ?datatype ?language
+								ORDER BY DESC(?literalQuads)
+								""",
+						45L),
+				query("Exploration: properties by class with coverage",
+						"""
+								PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+								PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+								SELECT
+								  ?class
+								  ?p
+								  ?classInstances
+								  ?instancesUsingProperty
+								  ?coverage
+								  ?propertyQuads
+								  ?distinctValues
+								  ?iriValueQuads
+								  ?literalValueQuads
+								  ?blankValueQuads
+								WHERE {
+								  {
+								    SELECT ?class (COUNT(*) AS ?classInstances)
+								    WHERE {
+								      {
+								        SELECT DISTINCT ?class ?s
+								        WHERE {
+								          GRAPH ?typeGraph {
+								            ?s rdf:type ?class
+								          }
+								        }
+								      }
+								    }
+								    GROUP BY ?class
+								  }
+								  {
+								    SELECT
+								      ?class
+								      ?p
+								      (COUNT(DISTINCT ?s) AS ?instancesUsingProperty)
+								      (COUNT(*) AS ?propertyQuads)
+								      (COUNT(DISTINCT ?o) AS ?distinctValues)
+								      (SUM(IF(isIRI(?o), 1, 0)) AS ?iriValueQuads)
+								      (SUM(IF(isLiteral(?o), 1, 0)) AS ?literalValueQuads)
+								      (SUM(IF(isBlank(?o), 1, 0)) AS ?blankValueQuads)
+								    WHERE {
+								      {
+								        SELECT DISTINCT ?s ?class
+								        WHERE {
+								          GRAPH ?typeGraph {
+								            ?s rdf:type ?class
+								          }
+								        }
+								      }
+								      GRAPH ?dataGraph {
+								        ?s ?p ?o
+								      }
+								      FILTER(?p != rdf:type)
+								    }
+								    GROUP BY ?class ?p
+								  }
+								  BIND(xsd:decimal(?instancesUsingProperty) / xsd:decimal(?classInstances) AS ?coverage)
+								}
+								ORDER BY DESC(?classInstances) ?class DESC(?coverage) DESC(?propertyQuads)
+								""",
+						125L),
+				query("Exploration: object classes by predicate",
+						"""
+								PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+
+								SELECT
+								  ?p
+								  ?objectClass
+								  (COUNT(*) AS ?linkQuads)
+								  (COUNT(DISTINCT ?s) AS ?subjects)
+								  (COUNT(DISTINCT ?o) AS ?objects)
+								  (COUNT(DISTINCT ?dataGraph) AS ?graphs)
+								WHERE {
+								  GRAPH ?dataGraph {
+								    ?s ?p ?o
+								  }
+								  FILTER(isIRI(?o) || isBlank(?o))
+								  OPTIONAL {
+								    {
+								      SELECT DISTINCT ?o ?declaredClass
+								      WHERE {
+								        GRAPH ?typeGraph {
+								          ?o rdf:type ?declaredClass
+								        }
+								      }
+								    }
+								  }
+								  BIND(COALESCE(?declaredClass, <urn:store-profile:untyped-resource>) AS ?objectClass)
+								}
+								GROUP BY ?p ?objectClass
+								ORDER BY ?p DESC(?objects) DESC(?linkQuads)
+								""",
+						56L),
+				query("Exploration: forward and inverse cardinality by predicate",
+						"""
+								SELECT
+								  ?direction
+								  ?p
+								  (COUNT(*) AS ?nodes)
+								  (MIN(?cardinality) AS ?minimumCardinality)
+								  (AVG(?cardinality) AS ?averageCardinality)
+								  (MAX(?cardinality) AS ?maximumCardinality)
+								  (SUM(IF(?cardinality = 1, 1, 0)) AS ?singleValuedNodes)
+								  (SUM(IF(?cardinality > 1, 1, 0)) AS ?multiValuedNodes)
+								WHERE {
+								  {
+								    {
+								      SELECT ?p ?node (COUNT(DISTINCT ?value) AS ?cardinality)
+								      WHERE {
+								        GRAPH ?g {
+								          ?node ?p ?value
+								        }
+								      }
+								      GROUP BY ?p ?node
+								    }
+								    BIND("values-per-subject" AS ?direction)
+								  }
+								  UNION
+								  {
+								    {
+								      SELECT ?p ?node (COUNT(DISTINCT ?value) AS ?cardinality)
+								      WHERE {
+								        GRAPH ?g {
+								          ?value ?p ?node
+								        }
+								      }
+								      GROUP BY ?p ?node
+								    }
+								    BIND("subjects-per-object" AS ?direction)
+								  }
+								}
+								GROUP BY ?direction ?p
+								ORDER BY ?direction DESC(?nodes)
+								""",
+						200L),
+				query("Exploration: predicate co-occurrence",
+						"""
+								SELECT ?p1 ?p2 (COUNT(*) AS ?subjectsWithBoth)
+								WHERE {
+								  {
+								    SELECT DISTINCT ?s ?p1
+								    WHERE {
+								      GRAPH ?g1 {
+								        ?s ?p1 ?o1
+								      }
+								    }
+								  }
+								  {
+								    SELECT DISTINCT ?s ?p2
+								    WHERE {
+								      GRAPH ?g2 {
+								        ?s ?p2 ?o2
+								      }
+								    }
+								  }
+								  FILTER(STR(?p1) < STR(?p2))
+								}
+								GROUP BY ?p1 ?p2
+								ORDER BY DESC(?subjectsWithBoth)
+								""",
+						272L),
+				query("Exploration: recurring structural signatures",
+						"""
+								SELECT ?shape (COUNT(*) AS ?subjects) (SAMPLE(?s) AS ?exampleSubject)
+								WHERE {
+								  {
+								    SELECT ?s (GROUP_CONCAT(?feature; separator=" | ") AS ?shape)
+								    WHERE {
+								      {
+								        SELECT ?s ?feature
+								        WHERE {
+								          {
+								            SELECT ?s ?p ?objectKind (COUNT(DISTINCT ?o) AS ?valueCount)
+								            WHERE {
+								              GRAPH ?g {
+								                ?s ?p ?o
+								              }
+								              BIND(
+								                IF(isIRI(?o), "IRI",
+								                  IF(isLiteral(?o), "LITERAL",
+								                    IF(isBlank(?o), "BNODE", "OTHER")
+								                  )
+								                )
+								                AS ?objectKind
+								              )
+								            }
+								            GROUP BY ?s ?p ?objectKind
+								          }
+								          BIND(CONCAT(STR(?p), " [", ?objectKind, "] x", STR(?valueCount)) AS ?feature)
+								        }
+								        ORDER BY ?s ?feature
+								      }
+								    }
+								    GROUP BY ?s
+								  }
+								}
+								GROUP BY ?shape
+								ORDER BY DESC(?subjects)
+								LIMIT 200
+								""",
+						200L),
+				query("Exploration: class co-occurrence",
+						"""
+								PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+
+								SELECT ?class1 ?class2 (COUNT(*) AS ?instancesWithBoth)
+								WHERE {
+								  {
+								    SELECT DISTINCT ?s ?class1
+								    WHERE {
+								      GRAPH ?g1 {
+								        ?s rdf:type ?class1
+								      }
+								    }
+								  }
+								  {
+								    SELECT DISTINCT ?s ?class2
+								    WHERE {
+								      GRAPH ?g2 {
+								        ?s rdf:type ?class2
+								      }
+								    }
+								  }
+								  FILTER(STR(?class1) < STR(?class2))
+								}
+								GROUP BY ?class1 ?class2
+								ORDER BY DESC(?instancesWithBoth)
+								""",
+						0L),
+				query("Exploration: incoming and outgoing degree distributions",
+						"""
+								SELECT ?direction ?degree (COUNT(*) AS ?nodes)
+								WHERE {
+								  {
+								    {
+								      SELECT ?s (COUNT(*) AS ?degree)
+								      WHERE {
+								        {
+								          SELECT DISTINCT ?s ?p ?o
+								          WHERE {
+								            GRAPH ?g {
+								              ?s ?p ?o
+								            }
+								          }
+								        }
+								      }
+								      GROUP BY ?s
+								    }
+								    BIND("outgoing" AS ?direction)
+								  }
+								  UNION
+								  {
+								    {
+								      SELECT ?o (COUNT(*) AS ?degree)
+								      WHERE {
+								        {
+								          SELECT DISTINCT ?s ?p ?o
+								          WHERE {
+								            GRAPH ?g {
+								              ?s ?p ?o
+								            }
+								            FILTER(isIRI(?o) || isBlank(?o))
+								          }
+								        }
+								      }
+								      GROUP BY ?o
+								    }
+								    BIND("incoming" AS ?direction)
+								  }
+								}
+								GROUP BY ?direction ?degree
+								ORDER BY ?direction ?degree
+								""",
+						362L)));
+
 		registerExpectedCountBindingValues();
 		validateQueries();
 	}
@@ -2088,6 +2497,8 @@ public final class ThemeQueryCatalog {
 				-1, -1, -1, -1, 39314, -1, 333, 18524, 519, -1, -1, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.ANALYTICS, expectedCountBindingValues(
 				53, 100, -1, -1, -1, -1, -1, -1, -1, -1, 2364850, -1, -1));
+		EXPECTED_COUNT_BINDING_VALUES.put(Theme.EXPLORATION, expectedCountBindingValues(
+				-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
 	}
 
 	private static long[] expectedCountBindingValues(long... values) {

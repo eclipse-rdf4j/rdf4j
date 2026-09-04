@@ -36,8 +36,8 @@ class ThemeQueryCatalogOptimizerGapTest {
 			List<String> queries = ThemeQueryCatalog.queriesFor(theme);
 			assertEquals(ThemeQueryCatalog.QUERY_COUNT, queries.size(),
 					"Unexpected query count for theme " + theme);
-			if (theme == Theme.ANALYTICS) {
-				// The cross-theme ANALYTICS queries target aggregation and full-scan performance rather than
+			if (theme == Theme.ANALYTICS || theme == Theme.EXPLORATION) {
+				// The cross-theme analytical queries target aggregation and full-scan performance rather than
 				// the optimizer gaps this test enforces for the per-theme catalogs.
 				continue;
 			}

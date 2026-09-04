@@ -36,7 +36,9 @@ class ThemeQueryCatalogExpectedCountTest {
 				Map.entry(Theme.ADAPTIVE_FILTER_PLACEMENT,
 						new long[] { 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256 }),
 				Map.entry(Theme.REAL_ESTATE, new long[] { 35, 1, 25, 75, 1, 75, 1, 1, 1, 75, 520, 99720, 108771 }),
-				Map.entry(Theme.ANALYTICS, new long[] { 1, 1, 100, 53, 100, 7, 24, 125, 56, 113, 1, 100, 11 })
+				Map.entry(Theme.ANALYTICS, new long[] { 1, 1, 100, 53, 100, 7, 24, 125, 56, 113, 1, 100, 11 }),
+				Map.entry(Theme.EXPLORATION,
+						new long[] { 1, 10, 100, 109, 53, 45, 125, 56, 200, 272, 200, 0, 362 })
 		);
 
 		for (Map.Entry<Theme, long[]> entry : expectedCounts.entrySet()) {
@@ -66,7 +68,9 @@ class ThemeQueryCatalogExpectedCountTest {
 						new long[] { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 }),
 				Map.entry(Theme.REAL_ESTATE, new long[] { -1, -1, -1, -1, 39314, -1, 333, 18524, 519, -1, -1, -1, -1 }),
 				Map.entry(Theme.ANALYTICS,
-						new long[] { 53, 100, -1, -1, -1, -1, -1, -1, -1, -1, 2364850, -1, -1 })
+						new long[] { 53, 100, -1, -1, -1, -1, -1, -1, -1, -1, 2364850, -1, -1 }),
+				Map.entry(Theme.EXPLORATION,
+						new long[] { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 })
 		);
 
 		for (Map.Entry<Theme, long[]> entry : expectedCountBindingValues.entrySet()) {
