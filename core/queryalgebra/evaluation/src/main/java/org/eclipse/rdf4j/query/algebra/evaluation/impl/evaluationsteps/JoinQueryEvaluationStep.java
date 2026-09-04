@@ -13,9 +13,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -29,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 public class JoinQueryEvaluationStep implements QueryEvaluationStep {
@@ -53,6 +56,11 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		BoundStatementPatternGuardJoinIteration.GuardCounter rightGuardCounter = getGuardCounter(join.getRightArg(),
 				rightRaw);
 		guardCounter = combineGuardCounters(leftGuardCounter, rightGuardCounter);
+		// A discarded or never-opened right operand may not suppress an observable query-fatal error (for
+		// example a failed non-silent SERVICE nested in the right operand). When the right operand is
+		// fatal-capable, the specialized fast paths below are skipped and the hash/nested-loop paths guarantee
+		// that the right operand is evaluated even when the left operand turns out to be empty.
+		boolean rightDiscardable = QueryEvaluationUtility.canDiscardWithoutEvaluation(join.getRightArg());
 		if (join.getRightArg() instanceof Service) {
 			eval = bindings -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
 					(Service) join.getRightArg(), bindings,
@@ -60,21 +68,27 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
-			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
-					joinAttributes, context);
+			if (rightDiscardable) {
+				eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
+						joinAttributes, context);
+			} else {
+				eval = bindings -> withGuaranteedRightEvaluation(rightPrepared, bindings,
+						trackedRight -> new HashJoinIteration(leftPrepared, trackedRight, bindings, false,
+								joinAttributes, context));
+			}
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
-		} else if (join.isMergeJoin() && context.getComparator() != null) {
+		} else if (rightDiscardable && join.isMergeJoin() && context.getComparator() != null) {
 			eval = bindings -> InnerMergeJoinIterator.getInstance(leftPrepared, rightPrepared, bindings,
 					context.getComparator(), context.getValue(join.getOrder().getName()), context);
 			join.setAlgorithm(InnerMergeJoinIterator.class.getSimpleName());
-		} else if (!runtimeTelemetryTrackingActive
+		} else if (rightDiscardable && !runtimeTelemetryTrackingActive
 				&& leftRaw instanceof StatementPatternQueryEvaluationStep
 				&& isFullyBoundLeftStatementGuardCandidate(join.getLeftArg())) {
 			StatementPatternQueryEvaluationStep leftStatementPattern = (StatementPatternQueryEvaluationStep) leftRaw;
 			eval = bindings -> new BoundStatementPatternLeftJoinIteration(leftStatementPattern, rightPrepared,
 					bindings);
 			join.setAlgorithm(BoundStatementPatternLeftJoinIteration.class.getSimpleName());
-		} else if (!runtimeTelemetryTrackingActive
+		} else if (rightDiscardable && !runtimeTelemetryTrackingActive
 				&& leftRaw instanceof StatementPatternQueryEvaluationStep
 				&& isBoundStatementPatternGuardCandidate(join.getLeftArg())) {
 			StatementPatternQueryEvaluationStep leftStatementPattern = (StatementPatternQueryEvaluationStep) leftRaw;
@@ -103,9 +117,52 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					rightGuardCounter, rightPrepared);
 			join.setAlgorithm(BoundStatementPatternGuardJoinIteration.class.getSimpleName());
 		} else {
-			eval = bindings -> JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
+			if (rightDiscardable) {
+				eval = bindings -> JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
+			} else {
+				eval = bindings -> withGuaranteedRightEvaluation(rightPrepared, bindings,
+						trackedRight -> JoinIterator.getInstance(leftPrepared, trackedRight, bindings));
+			}
 			join.setAlgorithm(JoinIterator.class.getSimpleName());
 		}
+	}
+
+	/**
+	 * Wraps a join whose right operand may raise a query-fatal error, ensuring the right operand is evaluated even when
+	 * the join completes without ever opening it (for example because the left operand is empty). The formal algebra
+	 * evaluates each join operand independently, so a discarded operand's query-fatal error is observable. An early
+	 * {@code close()} by the caller (cancellation) intentionally does not force the evaluation.
+	 */
+	static CloseableIteration<BindingSet> withGuaranteedRightEvaluation(QueryEvaluationStep rightPrepared,
+			BindingSet bindings, Function<QueryEvaluationStep, CloseableIteration<BindingSet>> open) {
+		AtomicBoolean rightEvaluated = new AtomicBoolean();
+		QueryEvaluationStep trackedRight = bs -> {
+			rightEvaluated.set(true);
+			return rightPrepared.evaluate(bs);
+		};
+		CloseableIteration<BindingSet> inner = open.apply(trackedRight);
+		return new LookAheadIteration<>() {
+
+			@Override
+			protected BindingSet getNextElement() {
+				if (inner.hasNext()) {
+					return inner.next();
+				}
+				if (rightEvaluated.compareAndSet(false, true)) {
+					try (CloseableIteration<BindingSet> right = rightPrepared.evaluate(bindings)) {
+						while (right.hasNext()) {
+							right.next();
+						}
+					}
+				}
+				return null;
+			}
+
+			@Override
+			protected void handleClose() {
+				inner.close();
+			}
+		};
 	}
 
 	@Override
