@@ -23,7 +23,6 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -35,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -74,19 +74,20 @@ class LmdbTimedOutQueryReadHandleTest {
 			+ "  ?s3 ex:p ?o3 .\n"
 			+ "}";
 	private static final String HEALTH_QUERY = "ASK { ?s ?p ?o }";
+	private static final String TUPLE_QUERY_RESULT_VIEW_LOGGER = "org.eclipse.rdf4j.http.server.repository.TupleQueryResultView";
 
 	@LocalServerPort
 	private int port;
 
 	private final ValueFactory valueFactory = SimpleValueFactory.getInstance();
 	private final List<String> createdRepositories = new ArrayList<>();
-	private final List<Logger> lmdbLoggers = new ArrayList<>();
-	private ListAppender<ILoggingEvent> lmdbLogAppender;
+	private final List<Logger> capturedLoggers = new ArrayList<>();
+	private ListAppender<ILoggingEvent> logAppender;
 	private RemoteRepositoryManager repositoryManager;
 
 	@BeforeEach
 	void setUp() {
-		attachLmdbLogAppender();
+		attachLogAppender();
 		repositoryManager = RemoteRepositoryManager.getInstance(serverUrl());
 	}
 
@@ -107,7 +108,7 @@ class LmdbTimedOutQueryReadHandleTest {
 			repositoryManager.shutDown();
 			repositoryManager = null;
 		} finally {
-			detachLmdbLogAppender();
+			detachLogAppender();
 		}
 	}
 
@@ -117,11 +118,12 @@ class LmdbTimedOutQueryReadHandleTest {
 		loadData(repositoryId);
 
 		QueryStats stats = runTimedQueries(repositoryId);
-		System.out.println("LMDB timeout reproducer stats: timeouts=" + stats.timeouts
+		long serverTimeouts = serverTimeoutLogEvents();
+		System.out.println("LMDB timeout reproducer stats: serverTimeouts=" + serverTimeouts
 				+ ", readerHandleFailures=" + stats.readerHandleFailures
 				+ ", failureSamples=" + stats.failureSamples);
 
-		assertThat(stats.timeouts)
+		assertThat(serverTimeouts)
 				.as("at least one query should hit the one-second server-side timeout; failures: %s",
 						stats.failureSamples)
 				.isPositive();
@@ -175,12 +177,10 @@ class LmdbTimedOutQueryReadHandleTest {
 		}
 	}
 
-	private final Random random = new Random();
-
 	private Callable<QueryResponse> timedQuery(String repositoryId) {
 		return () -> {
 			try {
-				return executeQuery(repositoryId, SLOW_QUERY, random.nextInt(3) + 1);
+				return executeQuery(repositoryId, SLOW_QUERY, 1);
 			} catch (Exception e) {
 				return new QueryResponse(-1, exceptionMessage(e));
 			}
@@ -303,33 +303,43 @@ class LmdbTimedOutQueryReadHandleTest {
 		return "http://localhost:" + port + "/rdf4j-server";
 	}
 
-	private void attachLmdbLogAppender() {
-		lmdbLogAppender = new ListAppender<>();
-		lmdbLogAppender.start();
-		attachLmdbLogger("org.eclipse.rdf4j.sail.lmdb.LmdbUtil");
-		attachLmdbLogger("org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStatistics");
+	private void attachLogAppender() {
+		logAppender = new ListAppender<>();
+		logAppender.start();
+		attachLogger("org.eclipse.rdf4j.sail.lmdb.LmdbUtil");
+		attachLogger("org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStatistics");
+		attachLogger(TUPLE_QUERY_RESULT_VIEW_LOGGER);
 	}
 
-	private void attachLmdbLogger(String loggerName) {
+	private void attachLogger(String loggerName) {
 		Logger logger = (Logger) LoggerFactory.getLogger(loggerName);
-		logger.addAppender(lmdbLogAppender);
-		lmdbLoggers.add(logger);
+		logger.addAppender(logAppender);
+		capturedLoggers.add(logger);
 	}
 
-	private void detachLmdbLogAppender() {
-		for (Logger logger : lmdbLoggers) {
-			logger.detachAppender(lmdbLogAppender);
+	private void detachLogAppender() {
+		for (Logger logger : capturedLoggers) {
+			logger.detachAppender(logAppender);
 		}
-		lmdbLoggers.clear();
-		if (lmdbLogAppender != null) {
-			lmdbLogAppender.stop();
-			lmdbLogAppender = null;
+		capturedLoggers.clear();
+		if (logAppender != null) {
+			logAppender.stop();
+			logAppender = null;
 		}
+	}
+
+	private long serverTimeoutLogEvents() {
+		return logAppender.list.stream()
+				.filter(event -> TUPLE_QUERY_RESULT_VIEW_LOGGER.equals(event.getLoggerName()))
+				.filter(event -> event.getThrowableProxy() != null)
+				.filter(event -> QueryInterruptedException.class.getName()
+						.equals(event.getThrowableProxy().getClassName()))
+				.count();
 	}
 
 	private List<String> lmdbReaderHandleLogEvents() {
 		List<String> events = new ArrayList<>();
-		for (ILoggingEvent event : lmdbLogAppender.list) {
+		for (ILoggingEvent event : logAppender.list) {
 			String throwableMessage = throwableMessage(event);
 			if (containsReaderHandleFailure(event.getFormattedMessage())
 					|| containsReaderHandleFailure(throwableMessage)) {
@@ -352,15 +362,10 @@ class LmdbTimedOutQueryReadHandleTest {
 	}
 
 	private static final class QueryStats {
-		private int timeouts;
 		private int readerHandleFailures;
 		private final List<String> failureSamples = new ArrayList<>();
 
 		private void record(QueryResponse response) {
-			if (isTimeout(response)) {
-				timeouts++;
-				return;
-			}
 			if (isReaderHandleFailure(response)) {
 				readerHandleFailures++;
 			}
@@ -371,15 +376,6 @@ class LmdbTimedOutQueryReadHandleTest {
 
 		private boolean isSuccess(QueryResponse response) {
 			return response.status >= 200 && response.status < 300;
-		}
-
-		private boolean isTimeout(QueryResponse response) {
-			return (response.status == HttpStatus.SERVICE_UNAVAILABLE.value()
-					&& response.body.contains("Query evaluation took too long"))
-					|| response.body.contains("Query evaluation took too long")
-					|| response.body.contains("SocketTimeoutException")
-					|| response.body.contains("Unexpected end of file from server")
-					|| response.body.contains("Connection reset");
 		}
 
 		private boolean isReaderHandleFailure(QueryResponse response) {

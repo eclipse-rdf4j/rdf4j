@@ -87,6 +87,8 @@ import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.IndexShape;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -109,6 +111,11 @@ class TripleStore implements Closeable {
 	 * The default triple indexes.
 	 */
 	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,posc";
+	/**
+	 * Emergency JVM switch for replacing the page-walking estimator with the RDF4J 5.3.2 cursor sampler. The value is
+	 * read when a {@link TripleStore} is constructed; only {@code true} disables page walking.
+	 */
+	static final String DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.disablePageWalkingEstimator";
 	private static final boolean REUSE_SECONDARY_WRITE_CURSOR = true;
 	/*-----------*
 	 * Variables *
@@ -135,7 +142,7 @@ class TripleStore implements Closeable {
 	private final int contextsDbi;
 	private int pageSize;
 	private final boolean autoGrow;
-	private final boolean pageCardinalityEstimator;
+	private final boolean pageWalkingEstimatorEnabled;
 	private long mapSize;
 	private final TxnManager txnManager;
 	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.LSD_RADIX;
@@ -163,7 +170,8 @@ class TripleStore implements Closeable {
 		boolean forceSync = config.getForceSync();
 		boolean noReadahead = config.getNoReadahead();
 		this.autoGrow = config.getAutoGrow();
-		this.pageCardinalityEstimator = config.getPageCardinalityEstimator();
+		this.pageWalkingEstimatorEnabled = config.getPageCardinalityEstimator()
+				&& !Boolean.getBoolean(DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY);
 		this.valueStore = valueStore;
 		// create directory if it not exists
 		this.dir.mkdirs();
@@ -198,7 +206,7 @@ class TripleStore implements Closeable {
 		});
 
 		txnManager = new TxnManager(env, Mode.RESET);
-		pageEstimator = pageCardinalityEstimator ? new LmdbPageCardinalityEstimator(dataMdbFile) : null;
+		pageEstimator = pageWalkingEstimatorEnabled ? new LmdbPageCardinalityEstimator(dataMdbFile, env) : null;
 
 		try {
 			String indexSpecStr = config.getTripleIndexes();
@@ -243,6 +251,13 @@ class TripleStore implements Closeable {
 		}
 
 		resetAlignedWriteCursorState();
+		if (pageEstimator != null) {
+			List<String> fieldSequences = new ArrayList<>(indexes.size());
+			for (TripleIndex index : indexes) {
+				fieldSequences.add(new String(index.getFieldSeq()));
+			}
+			pageEstimator.configureIndexes(fieldSequences);
+		}
 	}
 
 	private Set<String> getIndexSpecs() throws SailException {
@@ -642,56 +657,99 @@ class TripleStore implements Closeable {
 		});
 	}
 
+	/**
+	 * Estimates the number of explicit and inferred statements matching the supplied value IDs.
+	 *
+	 * <p>
+	 * With {@code pageCardinalityEstimator} enabled, the normal path uses the bounded page-walking estimator. Disabling
+	 * it selects the RDF4J 5.3.2 cursor sampler, as does setting {@value #DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY} to
+	 * {@code true} or encountering an unexpected failure in the page-walking path. The system property provides an
+	 * operational override for stores whose repository configuration still enables page walking.
+	 * </p>
+	 */
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
-		if (!pageCardinalityEstimator) {
-			return exactCardinality(subj, pred, obj, context);
+		if (!pageWalkingEstimatorEnabled) {
+			return cardinalityUsingRdf4j532Estimator(subj, pred, obj, context);
 		}
 
-		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
+		LmdbPageCardinalityEstimator estimator = pageEstimator;
+		if (estimator == null) {
+			return cardinalityUsingRdf4j532Estimator(subj, pred, obj, context);
+		}
 
+		int bindingMask = LmdbPageCardinalityEstimator.bindingMask(subj, pred, obj, context);
+		int primaryIndexPosition = estimator.primaryIndex(bindingMask);
+		TripleIndex primaryIndex = indexes.get(primaryIndexPosition);
 		try {
-			return cardinalityUsingPageEstimator(index, subj, pred, obj, context);
+			CardinalityEstimate primary = cardinalityUsingPageEstimator(primaryIndexPosition, subj, pred, obj, context,
+					bindingMask);
+			if (!primary.secondaryEvidenceRecommended()) {
+				return primary.entries();
+			}
+
+			int secondaryIndexPosition = estimator.secondaryIndex(bindingMask);
+			if (secondaryIndexPosition < 0) {
+				return primary.entries();
+			}
+			TripleIndex secondaryIndex = indexes.get(secondaryIndexPosition);
+			try {
+				CardinalityEstimate secondary = cardinalityUsingPageEstimator(secondaryIndexPosition, subj, pred, obj,
+						context, bindingMask);
+				return LmdbPageCardinalityEstimator.combineIndexEstimates(primary, secondary).entries();
+			} catch (IOException | RuntimeException secondaryFailure) {
+				logger.debug("Secondary page cardinality estimate failed for index {}; using primary index {}",
+						new String(secondaryIndex.getFieldSeq()), new String(primaryIndex.getFieldSeq()),
+						secondaryFailure);
+				return primary.entries();
+			}
 		} catch (IOException | RuntimeException e) {
-			logger.warn("Page-walk cardinality estimator failed for index {}, falling back to sampling",
-					new String(index.getFieldSeq()), e);
-			return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+			logger.warn("Page cardinality estimator failed for index {}, falling back to the RDF4J 5.3.2 sampler",
+					new String(primaryIndex.getFieldSeq()), e);
+			return cardinalityUsingRdf4j532Estimator(subj, pred, obj, context);
 		}
 	}
 
-	private double cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj, long context)
-			throws IOException {
+	private CardinalityEstimate cardinalityUsingPageEstimator(int indexPosition, long subj, long pred, long obj,
+			long context, int bindingMask) throws IOException {
 		LmdbPageCardinalityEstimator estimator = pageEstimator;
 		if (estimator == null) {
-			return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+			return CardinalityEstimate
+					.unqualified(cardinalityUsingRdf4j532Estimator(subj, pred, obj, context));
 		}
-		int relevantParts = index.getPatternScore(subj, pred, obj, context);
+		TripleIndex index = indexes.get(indexPosition);
+		IndexShape indexShape = estimator.indexShape(indexPosition, bindingMask);
 		final String explicitDbName = index.getName(true);
 		final String inferredDbName = index.getName(false);
 
 		return txnManager.doWith((stack, txn) -> {
 			long txnId = mdb_txn_id(txn);
-			if (relevantParts == 0) {
-				long explicitEntries = estimator.totalEntries(txnId, explicitDbName);
-				long inferredEntries = estimator.totalEntries(txnId, inferredDbName);
-				return (double) (explicitEntries + inferredEntries);
+			if (bindingMask == 0) {
+				double exact = (double) estimator.totalEntries(txnId, explicitDbName)
+						+ estimator.totalEntries(txnId, inferredDbName);
+				return CardinalityEstimate.exact(exact);
 			}
 
-			ByteBuffer minKeyBuffer = ByteBuffer.allocate(TripleIndex.MAX_KEY_LENGTH);
-			index.getMinKey(minKeyBuffer, subj, pred, obj, context);
+			ByteBuffer minKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.getMinKey(minKeyBuffer, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
+					indexShape.rangeObject(obj), indexShape.rangeContext(context));
 			minKeyBuffer.flip();
 			byte[] minKey = toArray(minKeyBuffer);
 
-			ByteBuffer maxKeyBuffer = ByteBuffer.allocate(TripleIndex.MAX_KEY_LENGTH);
-			index.getMaxKey(maxKeyBuffer, subj, pred, obj, context);
+			ByteBuffer maxKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.getMaxKey(maxKeyBuffer, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
+					indexShape.rangeObject(obj), indexShape.rangeContext(context));
 			maxKeyBuffer.flip();
 			byte[] maxKey = toArray(maxKeyBuffer);
 
-			GroupMatcher matcher = index.createMatcher(subj, pred, obj, context);
-			long explicitCount = estimator.estimateEntries(txnId, explicitDbName, minKey, minKey.length, maxKey,
-					maxKey.length, matcher);
-			long inferredCount = estimator.estimateEntries(txnId, inferredDbName, minKey, minKey.length, maxKey,
-					maxKey.length, matcher);
-			return (double) (explicitCount + inferredCount);
+			GroupMatcher matcher = indexShape.residualFieldCount() == 0 ? null
+					: index.createMatcher(subj, pred, obj, context);
+			LmdbPageCardinalityEstimator.Estimate explicit = estimator.estimateEntriesWithQuality(txnId,
+					explicitDbName, minKey, minKey.length, maxKey, maxKey.length, matcher,
+					indexShape.residualFieldCount());
+			LmdbPageCardinalityEstimator.Estimate inferred = estimator.estimateEntriesWithQuality(txnId,
+					inferredDbName, minKey, minKey.length, maxKey, maxKey.length, matcher,
+					indexShape.residualFieldCount());
+			return LmdbPageCardinalityEstimator.combineDatabaseEstimates(explicit, inferred);
 		});
 	}
 
@@ -701,6 +759,30 @@ class TripleStore implements Closeable {
 		return data;
 	}
 
+	/**
+	 * Runs the complete estimator selection used by RDF4J 5.3.2. Compatibility includes the old index tie-break: the
+	 * first configured index with the longest bound prefix wins. The page walker has a different, intentional
+	 * residual-layout tie-break, so passing its selected index to the old sampler would not fully restore 5.3.2
+	 * behavior.
+	 */
+	private double cardinalityUsingRdf4j532Estimator(long subj, long pred, long obj, long context)
+			throws IOException {
+		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
+		return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+	}
+
+	/**
+	 * Cursor sampler from RDF4J 5.3.2 ({@code e0bbd99d3b5d1ed1ee9e48e4394006768581e2c0}). Its executable algorithm is
+	 * intentionally unchanged: it uses three interpolated key-space buckets, reads at most one hundred rows per bucket,
+	 * derives per-field densities from adjacent sampled keys, and estimates the unsampled gaps.
+	 *
+	 * <p>
+	 * This method was extracted from the old {@code cardinality} method, and {@code MAX_KEY_LENGTH} moved from
+	 * {@code TripleStore} to {@link TripleIndex}; those are the only mechanical differences from the tagged source. Do
+	 * not improve or retune this compatibility path in place. Fixes belong in the page-walking estimator unless a
+	 * deliberate change to the 5.3.2 fallback contract is accompanied by updated golden compatibility tests.
+	 * </p>
+	 */
 	private double cardinalityUsingSamplingEstimator(TripleIndex index, long subj, long pred, long obj, long context)
 			throws IOException {
 
@@ -865,21 +947,6 @@ class TripleStore implements Closeable {
 			} finally {
 				pool.free(s);
 			}
-		});
-	}
-
-	private double exactCardinality(long subj, long pred, long obj, long context) throws IOException {
-		return txnManager.doWith((stack, txn) -> {
-			double cardinality = 0.0;
-			TxnManager.Txn txnRef = txnManager.createTxn(txn);
-			for (boolean explicit : new boolean[] { true, false }) {
-				try (RecordIterator triples = getTriples(txnRef, subj, pred, obj, context, explicit)) {
-					while (triples.next() != null) {
-						cardinality++;
-					}
-				}
-			}
-			return cardinality;
 		});
 	}
 
