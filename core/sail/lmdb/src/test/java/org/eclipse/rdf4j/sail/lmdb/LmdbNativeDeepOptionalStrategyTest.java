@@ -40,15 +40,17 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 
 /**
- * Guards strategy arbitration for wide {@code DISTINCT} queries whose mandatory join graph is followed by several
- * multi-pattern {@code OPTIONAL} branches, including a four-level nested branch. Such a query still contains sizeable
- * inner-join regions that a set-at-a-time strategy can execute even though the left-join boundaries themselves retain
- * their required optional semantics.
+ * Guards strategy arbitration for wide {@code DISTINCT} and aggregate queries composed from joins, {@code UNION},
+ * {@code OPTIONAL}, {@code BIND}, and named default graphs. Such queries still contain sizeable regions that a
+ * set-at-a-time strategy can execute even when their left-join boundaries retain optional semantics or their branch
+ * labels are store-absent constants.
  */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbNativeDeepOptionalStrategyTest {
 
 	private static final String EX = "http://example.com/organization/";
+	private static final String FROM_CORE_GRAPH = EX + "graph/from-core";
+	private static final String FROM_DETAIL_GRAPH = EX + "graph/from-detail";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String EXECUTION_PATH_METRIC = "nativeExecutionPath";
 	private static final String[] PROPERTIES = {
@@ -112,6 +114,42 @@ public class LmdbNativeDeepOptionalStrategyTest {
 	@Test
 	public void distinctWideJoinWithTenNestedOptionalLayersAndUnionsUsesSetAtATimeStrategy() {
 		assertUsesSetAtATimeStrategy(tenLayerOptionalUnionQuery());
+	}
+
+	@Test
+	public void groupedCountsOrderedAcrossFromClausesAndUnionBindBranchesUseNativeAggregateStrategy() {
+		String query = groupedOrderedUnionBindQuery();
+		List<BindingSet> genericRows = evaluate(query, false);
+		GenericPlanNode executedPlan = explain(query);
+		Set<String> executionPaths = executionPaths(executedPlan);
+
+		assertThat(genericRows).as("the grouped fixture must produce ordered aggregate rows").isNotEmpty();
+		assertThat(evaluate(query, true)).containsExactlyElementsOf(genericRows);
+		assertThat(executionPaths)
+				.as("GROUP BY over UNION/BIND branches must select the native aggregate strategy:%n%s", executedPlan)
+				.contains("orderedDistinctGroups")
+				.doesNotContain("nestedLoop");
+	}
+
+	@Test
+	public void groupedOrderedFourFlatUnionBindBranchesActivateNativeRuntime() {
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+		String query = groupedOrderedFourFlatUnionBindQuery();
+		List<BindingSet> genericRows = evaluate(query, false);
+		GenericPlanNode executedPlan = explain(query);
+		Set<String> executionPaths = executionPaths(executedPlan);
+
+		assertThat(genericRows).as("the flat UNION fixture must produce grouped rows").isNotEmpty();
+		assertThat(evaluate(query, true)).containsExactlyElementsOf(genericRows);
+		assertThat(executionPaths)
+				.as("the flat UNION aggregate must not fall back to nested loops:%n%s", executedPlan)
+				.doesNotContain("nestedLoop");
+		assertThat(executedPlan.toString())
+				.as("the four-branch UNION must reach runtime arbitration and a concrete Janino decision:%n%s",
+						executedPlan)
+				.contains("strategy: orderedDistinctGroups")
+				.doesNotContain("strategy: NOT_ACTIVATED")
+				.doesNotContain("NOT_ATTEMPTED[no Janino activation point reached]");
 	}
 
 	private void assertUsesSetAtATimeStrategy(String query) {
@@ -228,7 +266,58 @@ public class LmdbNativeDeepOptionalStrategyTest {
 					optionalInput = optionalOutput;
 				}
 			}
+			loadFromClauseFixture(connection, vf);
 			connection.commit();
+		}
+	}
+
+	private static void loadFromClauseFixture(SailRepositoryConnection connection, ValueFactory vf) {
+		IRI coreGraph = vf.createIRI(FROM_CORE_GRAPH);
+		IRI detailGraph = vf.createIRI(FROM_DETAIL_GRAPH);
+		IRI personType = vf.createIRI(EX, "FromPerson");
+		IRI worksFor = vf.createIRI(EX, "worksFor");
+		IRI memberOf = vf.createIRI(EX, "memberOf");
+		IRI belongsTo = vf.createIRI(EX, "belongsTo");
+		IRI layer1Entry = vf.createIRI(EX, "layer1Entry");
+		IRI layer1Primary = vf.createIRI(EX, "layer1Primary");
+		IRI layer1Alternate = vf.createIRI(EX, "layer1Alternate");
+		IRI profile = vf.createIRI(EX, "profile");
+		IRI primarySkill = vf.createIRI(EX, "primarySkill");
+		IRI layer2Entry = vf.createIRI(EX, "layer2Entry");
+		IRI layer2Primary = vf.createIRI(EX, "layer2Primary");
+		IRI layer2Alternate = vf.createIRI(EX, "layer2Alternate");
+
+		for (int index = 0; index < 36; index++) {
+			IRI person = vf.createIRI(EX, "from-person/" + index);
+			IRI department = vf.createIRI(EX, "from-department/" + (index % 6));
+			IRI team = vf.createIRI(EX, "from-team/" + (index % 12));
+			IRI bridge1 = vf.createIRI(EX, "from-bridge/" + index + "/1");
+			IRI target = vf.createIRI(EX, "from-target/" + (index % 18));
+			connection.add(person, RDF.TYPE, personType, coreGraph);
+			connection.add(person, worksFor, department, coreGraph);
+			connection.add(person, memberOf, team, detailGraph);
+			connection.add(team, belongsTo, department, detailGraph);
+			connection.add(person, layer1Entry, bridge1, detailGraph);
+			connection.add(bridge1, index % 2 == 0 ? layer1Primary : layer1Alternate, target, coreGraph);
+			if (index % 6 == 0) {
+				connection.add(bridge1, layer1Alternate, target, detailGraph);
+			}
+
+			if (index % 2 == 0) {
+				IRI personProfile = vf.createIRI(EX, "from-profile/" + index);
+				connection.add(person, profile, personProfile, coreGraph);
+				connection.add(personProfile, primarySkill, target, detailGraph);
+			}
+
+			if (index % 4 != 0) {
+				IRI bridge2 = vf.createIRI(EX, "from-bridge/" + index + "/2");
+				IRI detail = vf.createIRI(EX, "from-detail/" + (index % 9));
+				connection.add(target, layer2Entry, bridge2, coreGraph);
+				connection.add(bridge2, index % 3 == 0 ? layer2Primary : layer2Alternate, detail, detailGraph);
+				if (index % 10 == 0) {
+					connection.add(bridge2, layer2Primary, detail, coreGraph);
+				}
+			}
 		}
 	}
 
@@ -387,5 +476,101 @@ public class LmdbNativeDeepOptionalStrategyTest {
 				"    }",
 				"  }",
 				"}");
+	}
+
+	private static String groupedOrderedUnionBindQuery() {
+		return String.join("\n",
+				"PREFIX ex: <" + EX + ">",
+				"SELECT ?department ?route ?detailRoute",
+				"       (COUNT(*) AS ?rows)",
+				"       (COUNT(DISTINCT ?person) AS ?people)",
+				"       (COUNT(DISTINCT ?boundTarget) AS ?targets)",
+				"FROM <" + FROM_CORE_GRAPH + ">",
+				"FROM <" + FROM_DETAIL_GRAPH + ">",
+				"WHERE {",
+				"  ?person a ex:FromPerson ;",
+				"          ex:worksFor ?department ;",
+				"          ex:memberOf ?team .",
+				"  ?team ex:belongsTo ?department .",
+				"  {",
+				"    ?person ex:layer1Entry ?bridge1 .",
+				"    ?bridge1 ex:layer1Primary ?target .",
+				"    BIND(\"primary\" AS ?route)",
+				"    BIND(?target AS ?boundTarget)",
+				"  }",
+				"  UNION",
+				"  {",
+				"    ?person ex:layer1Entry ?bridge1 .",
+				"    ?bridge1 ex:layer1Alternate ?target .",
+				"    BIND(\"alternate\" AS ?route)",
+				"    BIND(?target AS ?boundTarget)",
+				"  }",
+				"  UNION",
+				"  {",
+				"    ?person ex:profile ?profile .",
+				"    ?profile ex:primarySkill ?target .",
+				"    BIND(\"profile\" AS ?route)",
+				"    BIND(?target AS ?boundTarget)",
+				"  }",
+				"  OPTIONAL {",
+				"    {",
+				"      ?target ex:layer2Entry ?bridge2 .",
+				"      ?bridge2 ex:layer2Primary ?detail .",
+				"      BIND(\"detail-primary\" AS ?detailRoute)",
+				"      BIND(?detail AS ?boundDetail)",
+				"    }",
+				"    UNION",
+				"    {",
+				"      ?target ex:layer2Entry ?bridge2 .",
+				"      ?bridge2 ex:layer2Alternate ?detail .",
+				"      BIND(\"detail-alternate\" AS ?detailRoute)",
+				"      BIND(?detail AS ?boundDetail)",
+				"    }",
+				"  }",
+				"}",
+				"GROUP BY ?department ?route ?detailRoute",
+				"ORDER BY DESC(?rows) DESC(?people) ?department ?route ?detailRoute");
+	}
+
+	private static String groupedOrderedFourFlatUnionBindQuery() {
+		return String.join("\n",
+				"PREFIX ex: <" + EX + ">",
+				"SELECT ?department ?route",
+				"       (COUNT(*) AS ?rows)",
+				"       (COUNT(DISTINCT ?person) AS ?people)",
+				"       (COUNT(DISTINCT ?target) AS ?targets)",
+				"FROM <" + FROM_CORE_GRAPH + ">",
+				"FROM <" + FROM_DETAIL_GRAPH + ">",
+				"WHERE {",
+				"  ?person a ex:FromPerson ;",
+				"          ex:worksFor ?department ;",
+				"          ex:memberOf ?team .",
+				"  ?team ex:belongsTo ?department .",
+				"  {",
+				"    ?person ex:layer1Entry ?bridge1 .",
+				"    ?bridge1 ex:layer1Primary ?target .",
+				"    BIND(\"primary\" AS ?route)",
+				"  }",
+				"  UNION",
+				"  {",
+				"    ?person ex:layer1Entry ?bridge1 .",
+				"    ?bridge1 ex:layer1Alternate ?target .",
+				"    BIND(\"alternate\" AS ?route)",
+				"  }",
+				"  UNION",
+				"  {",
+				"    ?person ex:profile ?profile .",
+				"    ?profile ex:primarySkill ?target .",
+				"    BIND(\"profile\" AS ?route)",
+				"  }",
+				"  UNION",
+				"  {",
+				"    ?person ex:memberOf ?routeTeam .",
+				"    ?routeTeam ex:belongsTo ?target .",
+				"    BIND(\"membership\" AS ?route)",
+				"  }",
+				"}",
+				"GROUP BY ?department ?route",
+				"ORDER BY DESC(?rows) DESC(?people) ?department ?route");
 	}
 }

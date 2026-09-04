@@ -104,6 +104,24 @@ class QueryTemplateTest {
 	}
 
 	@Test
+	void forcedStrategyShouldBePartOfExplainStateAndImmutableRequest() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("type StaleReason = 'query' | 'level' | 'format' | 'strategy';")
+				.contains("forcedLmdbExecutionStrategy: string;")
+				.contains("forcedLmdbExecutionStrategy: <string>$('#lmdb-forced-strategy').val() || ''")
+				.contains("left.forcedLmdbExecutionStrategy === right.forcedLmdbExecutionStrategy")
+				.contains("explanation.forcedLmdbExecutionStrategy !== inputs.forcedLmdbExecutionStrategy")
+				.contains("serializedForm[i].name === 'lmdb-forced-strategy'")
+				.contains("signature.forcedLmdbExecutionStrategy")
+				.contains("{ type: 'FORCED_STRATEGY_CHANGED' }")
+				.contains("case 'FORCED_STRATEGY_CHANGED':")
+				.contains("$('#lmdb-forced-strategy').change(function()")
+				.contains("notifyQueryPageInputChange('FORCED_STRATEGY_CHANGED')");
+	}
+
+	@Test
 	void queryScriptShouldDefineHierarchicalQueryPageStateMachine() throws IOException {
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 

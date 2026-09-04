@@ -80,6 +80,10 @@
 	</servlet-mapping>
 	<servlet-mapping>
 		<servlet-name>rdf4j-http-server</servlet-name>
+		<url-pattern>/system/lmdb/strategies</url-pattern>
+	</servlet-mapping>
+	<servlet-mapping>
+		<servlet-name>rdf4j-http-server</servlet-name>
 		<url-pattern>*.view</url-pattern>
 	</servlet-mapping>
 	<servlet-mapping>

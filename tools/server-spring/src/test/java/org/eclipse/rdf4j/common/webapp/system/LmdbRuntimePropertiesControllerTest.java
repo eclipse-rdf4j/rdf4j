@@ -42,6 +42,17 @@ class LmdbRuntimePropertiesControllerTest {
 	}
 
 	@Test
+	void mapsForceableStrategiesEndpointThroughServletAndSpring() throws Exception {
+		String servletConfig = Files.readString(
+				Path.of("..", "server", "src", "main", "webapp", "WEB-INF", "common-webapp-system-servlet.xml"));
+		String webXml = Files.readString(Path.of("..", "server", "src", "main", "webapp", "WEB-INF", "web.xml"));
+
+		assertThat(servletConfig)
+				.contains("<prop key=\"/system/lmdb/strategies\">commonWebappLmdbForceableStrategiesController</prop>");
+		assertThat(webXml).contains("<url-pattern>/system/lmdb/strategies</url-pattern>");
+	}
+
+	@Test
 	void getReturnsSortedJsonAndNoStore() throws Exception {
 		MockHttpServletResponse response = request("GET", null, null);
 

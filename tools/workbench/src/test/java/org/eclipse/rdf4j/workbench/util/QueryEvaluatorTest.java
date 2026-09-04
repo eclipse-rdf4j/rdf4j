@@ -41,6 +41,8 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.http.HTTPTupleQuery;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.junit.jupiter.api.Test;
 
 import jakarta.servlet.http.HttpServletResponse;
@@ -82,6 +84,26 @@ class QueryEvaluatorTest {
 		verify(builder).start("explanation", "explanation-format", "explanation-level");
 		verify(builder).result("optimized plan", "text", "Optimized");
 		verify(builder).end();
+	}
+
+	@Test
+	void shouldApplyForcedLmdbStrategyToLocalSailExplanation() throws Exception {
+		SailTupleQuery tupleQuery = mock(SailTupleQuery.class);
+
+		explainWithForcedStrategy(tupleQuery, "nestedLoop");
+
+		verify(tupleQuery).setForcedLmdbExecutionStrategy("nestedLoop");
+		verify(tupleQuery).explain(Explanation.Level.Optimized);
+	}
+
+	@Test
+	void shouldApplyForcedLmdbStrategyToRemoteHttpExplanation() throws Exception {
+		HTTPTupleQuery tupleQuery = mock(HTTPTupleQuery.class);
+
+		explainWithForcedStrategy(tupleQuery, "irKernel");
+
+		verify(tupleQuery).setForcedLmdbExecutionStrategy("irKernel");
+		verify(tupleQuery).explain(Explanation.Level.Optimized);
 	}
 
 	@Test
@@ -315,6 +337,28 @@ class QueryEvaluatorTest {
 		MapBindingSet bindingSet = new MapBindingSet();
 		bindingSet.addBinding("s", SimpleValueFactory.getInstance().createLiteral(value));
 		return bindingSet;
+	}
+
+	private static void explainWithForcedStrategy(TupleQuery tupleQuery, String strategy) throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		Explanation explanation = mock(Explanation.class);
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("explain")).thenReturn(true);
+		when(req.getParameter("explain")).thenReturn("Optimized");
+		when(req.getParameter("explain-format")).thenReturn("text");
+		when(req.getParameter("lmdb-forced-strategy")).thenReturn(strategy);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("optimized plan");
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), "/xsl", con,
+				queryText, req, cookies, null);
 	}
 
 	private void withBreakerProperties(ThrowingRunnable action) throws Exception {

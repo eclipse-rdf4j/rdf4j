@@ -47,7 +47,7 @@ module workbench {
 
         type ExplainLevel = 'Unoptimized' | 'Optimized' | 'Executed' | 'Telemetry' | 'Timed';
         type ExplainFormat = 'text' | 'dot' | 'json';
-        type StaleReason = 'query' | 'level' | 'format';
+        type StaleReason = 'query' | 'level' | 'format' | 'strategy';
         type ExplanationView = 'text' | 'jsonTree' | 'jsonRawFallback' | 'dotRendering' | 'dotReady' | 'dotRenderError';
         type PaneKey = 'primary' | 'compare';
         type ExplainRequestControllerKey = 'primary' | 'compare';
@@ -60,6 +60,7 @@ module workbench {
             queryHash: string;
             level: ExplainLevel;
             requestedFormat: ExplainFormat;
+            forcedLmdbExecutionStrategy: string;
             responseFormat: 'text' | 'json' | 'dot';
             view: ExplanationView;
             rawContent: string;
@@ -73,6 +74,7 @@ module workbench {
             queryHash: string;
             level: ExplainLevel;
             format: ExplainFormat;
+            forcedLmdbExecutionStrategy: string;
             groupId?: number;
         }
 
@@ -110,6 +112,7 @@ module workbench {
             compareQueryHash: string;
             explainLevel: ExplainLevel;
             explainFormat: ExplainFormat;
+            forcedLmdbExecutionStrategy: string;
         }
 
         interface QueryPageState {
@@ -128,6 +131,7 @@ module workbench {
             | { type: 'COMPARE_QUERY_CHANGED' }
             | { type: 'EXPLAIN_LEVEL_CHANGED' }
             | { type: 'EXPLAIN_FORMAT_CHANGED' }
+            | { type: 'FORCED_STRATEGY_CHANGED' }
             | { type: 'REQUEST_EXPLAIN'; signature: RequestSignature }
             | { type: 'SPINNER_DELAY_ELAPSED'; signature: RequestSignature }
             | { type: 'EXPLAIN_SUCCESS'; signature: RequestSignature; explanation: StableExplanation }
@@ -518,7 +522,8 @@ module workbench {
                 primaryQueryHash: '',
                 compareQueryHash: '',
                 explainLevel: 'Optimized',
-                explainFormat: 'text'
+                explainFormat: 'text',
+                forcedLmdbExecutionStrategy: ''
             };
         }
 
@@ -527,7 +532,8 @@ module workbench {
                 primaryQueryHash: buildQueryHash(getPaneRawQueryValue('primary')),
                 compareQueryHash: buildQueryHash(getPaneRawQueryValue('compare')),
                 explainLevel: getNormalizedExplainLevel(<string>$('#explain-level').val()),
-                explainFormat: getNormalizedExplainFormat(<string>$('#explain-format').val())
+                explainFormat: getNormalizedExplainFormat(<string>$('#explain-format').val()),
+                forcedLmdbExecutionStrategy: <string>$('#lmdb-forced-strategy').val() || ''
             };
         }
 
@@ -546,6 +552,7 @@ module workbench {
                 queryHash: getPaneQueryHashFromInputs(paneKey, currentInputs),
                 level: currentInputs.explainLevel,
                 format: currentInputs.explainFormat,
+                forcedLmdbExecutionStrategy: currentInputs.forcedLmdbExecutionStrategy,
                 groupId: groupId
             };
         }
@@ -622,6 +629,7 @@ module workbench {
                 queryHash: explanation.queryHash,
                 level: explanation.level,
                 requestedFormat: explanation.requestedFormat,
+                forcedLmdbExecutionStrategy: explanation.forcedLmdbExecutionStrategy,
                 responseFormat: explanation.responseFormat,
                 view: explanation.view,
                 rawContent: explanation.rawContent
@@ -636,6 +644,7 @@ module workbench {
                 explanation.queryHash,
                 explanation.level,
                 explanation.requestedFormat,
+                explanation.forcedLmdbExecutionStrategy,
                 explanation.responseFormat,
                 explanation.view,
                 explanation.rawContent
@@ -650,6 +659,7 @@ module workbench {
                 explanation.queryHash,
                 explanation.level,
                 explanation.requestedFormat,
+                explanation.forcedLmdbExecutionStrategy,
                 explanation.responseFormat,
                 explanation.rawContent
             ].join('||');
@@ -685,6 +695,9 @@ module workbench {
             }
             if (explanation.requestedFormat !== inputs.explainFormat) {
                 staleReasons.push('format');
+            }
+            if (explanation.forcedLmdbExecutionStrategy !== inputs.forcedLmdbExecutionStrategy) {
+                staleReasons.push('strategy');
             }
             return staleReasons;
         }
@@ -755,6 +768,7 @@ module workbench {
                 && left.queryHash === right.queryHash
                 && left.level === right.level
                 && left.format === right.format
+                && left.forcedLmdbExecutionStrategy === right.forcedLmdbExecutionStrategy
                 && left.groupId === right.groupId;
         }
 
@@ -851,6 +865,7 @@ module workbench {
                     return restorePaneStateFromPrevious(paneState, paneKey, inputs, layout);
                 case 'EXPLAIN_LEVEL_CHANGED':
                 case 'EXPLAIN_FORMAT_CHANGED':
+                case 'FORCED_STRATEGY_CHANGED':
                     return restorePaneStateFromPrevious(paneState, paneKey, inputs, layout);
                 case 'DOT_RENDER_OK':
                     if (paneState.kind !== 'ready'
@@ -2171,11 +2186,18 @@ module workbench {
             return 'Explain request failed.';
         }
 
-        function serializeExplainFormData(queryValue: string, level: string, format: string, serverRequestId: string): string {
+        function serializeExplainFormData(
+            queryValue: string,
+            level: string,
+            format: string,
+            forcedLmdbExecutionStrategy: string,
+            serverRequestId: string
+        ): string {
             var serializedForm: any[] = <any[]>$('form[action="query"]').serializeArray();
             var seenAction = false;
             var seenExplain = false;
             var seenFormat = false;
+            var seenForcedLmdbExecutionStrategy = false;
             var seenInfer = false;
             var seenQuery = false;
             var seenExplainRequestId = false;
@@ -2189,6 +2211,9 @@ module workbench {
                 } else if (serializedForm[i].name === 'explain-format') {
                     serializedForm[i].value = format;
                     seenFormat = true;
+                } else if (serializedForm[i].name === 'lmdb-forced-strategy') {
+                    serializedForm[i].value = forcedLmdbExecutionStrategy;
+                    seenForcedLmdbExecutionStrategy = true;
                 } else if (serializedForm[i].name === 'infer') {
                     seenInfer = true;
                 } else if (serializedForm[i].name === 'query') {
@@ -2207,6 +2232,9 @@ module workbench {
             }
             if (!seenFormat) {
                 serializedForm.push({ name: 'explain-format', value: format });
+            }
+            if (!seenForcedLmdbExecutionStrategy) {
+                serializedForm.push({ name: 'lmdb-forced-strategy', value: forcedLmdbExecutionStrategy });
             }
             if (!seenInfer) {
                 serializedForm.push({ name: 'infer', value: 'false' });
@@ -2262,6 +2290,7 @@ module workbench {
                 queryHash: signature.queryHash,
                 level: signature.level,
                 requestedFormat: signature.format,
+                forcedLmdbExecutionStrategy: signature.forcedLmdbExecutionStrategy,
                 responseFormat: responseFormat,
                 view: explanationView,
                 rawContent: explanationText
@@ -2293,6 +2322,7 @@ module workbench {
                     getPaneRawQueryValue('primary'),
                     signature.level,
                     signature.format,
+                    signature.forcedLmdbExecutionStrategy,
                     signature.serverRequestId
                 ),
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
@@ -2418,7 +2448,8 @@ module workbench {
         }
 
         function handleQueryPageInputChange(
-            eventType: 'PRIMARY_QUERY_CHANGED' | 'COMPARE_QUERY_CHANGED' | 'EXPLAIN_LEVEL_CHANGED' | 'EXPLAIN_FORMAT_CHANGED'
+            eventType: 'PRIMARY_QUERY_CHANGED' | 'COMPARE_QUERY_CHANGED' | 'EXPLAIN_LEVEL_CHANGED'
+                | 'EXPLAIN_FORMAT_CHANGED' | 'FORCED_STRATEGY_CHANGED'
         ) {
             if (activeComparePendingRequests > 0) {
                 cancelCompareExplain();
@@ -2439,7 +2470,8 @@ module workbench {
             if (eventType === 'PRIMARY_QUERY_CHANGED'
                     || eventType === 'COMPARE_QUERY_CHANGED'
                     || eventType === 'EXPLAIN_LEVEL_CHANGED'
-                    || eventType === 'EXPLAIN_FORMAT_CHANGED') {
+                    || eventType === 'EXPLAIN_FORMAT_CHANGED'
+                    || eventType === 'FORCED_STRATEGY_CHANGED') {
                 handleQueryPageInputChange(<any>eventType);
             }
         }
@@ -2672,6 +2704,7 @@ module workbench {
                     getPaneRawQueryValue(signature.pane),
                     signature.level,
                     signature.format,
+                    signature.forcedLmdbExecutionStrategy,
                     signature.serverRequestId
                 ),
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
@@ -2985,7 +3018,8 @@ module workbench {
                     source: 'primary-explain',
                     queryHash: buildQueryHash(getPaneRawQueryValue('primary')),
                     level: getNormalizedExplainLevel(<string>$('#explain-level').val()),
-                    format: initialFormat
+                    format: initialFormat,
+                    forcedLmdbExecutionStrategy: <string>$('#lmdb-forced-strategy').val() || ''
                 }, {
                     content: initialExplanation,
                     format: initialFormat,
@@ -3677,6 +3711,9 @@ workbench.addLoad(function queryPageLoaded() {
     });
     $('#explain-format').change(function() {
         workbench.query.notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
+    });
+    $('#lmdb-forced-strategy').change(function() {
+        workbench.query.notifyQueryPageInputChange('FORCED_STRATEGY_CHANGED');
     });
     $('#query-diff-modal').click(function(event) {
         if (event.target && (<HTMLElement>event.target).id === 'query-diff-modal') {

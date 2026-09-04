@@ -1283,4 +1283,19 @@ abstract class LmdbNativeAggregatePlannerBase {
 		return source.idOf(value);
 	}
 
+	/**
+	 * Resolves a constant introduced by an Extension (SPARQL BIND), assigning a plan-local id when its exact term is
+	 * provably absent from the store. This keeps true constants on the replayable alias path instead of misclassifying
+	 * them as row-computed values, while language-tag spelling variants retain the semantic interning path because a
+	 * dictionary miss does not prove term absence for them.
+	 */
+	long idOfExtensionConstant(Value value, String targetName) {
+		long id = idOf(value);
+		if (id != UNKNOWN || !termSafeAbsenceProof(value)) {
+			return id;
+		}
+		syntheticVarNames.add(targetName);
+		return planValueCatalog.internConstant(value);
+	}
+
 }
