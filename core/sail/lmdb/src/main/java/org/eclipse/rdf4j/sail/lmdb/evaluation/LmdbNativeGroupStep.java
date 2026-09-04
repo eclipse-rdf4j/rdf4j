@@ -50,6 +50,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Experimental
 final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
@@ -308,6 +310,8 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 
 @Experimental
 final class NativeGroupIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
+	private static final Logger logger = LoggerFactory.getLogger(NativeGroupIteration.class);
+
 	static final AtomicLong PRIMITIVE_TUPLE_GROUP_ROWS = new AtomicLong();
 	static final AtomicLong PRIMITIVE_COUNT_GROUP_ROWS = new AtomicLong();
 	static final AtomicLong ORDERED_GROUP_ROWS = new AtomicLong();
@@ -827,11 +831,24 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					: interpretedIr && parallelIr
 							? interpretedParallelTag
 							: compiledIr ? compiledSerialTag : interpretedIr ? interpretedSerialTag : null;
+			boolean algorithmicSpecialist = algorithmicSpecialistHandlesRow(row);
+			if (forcedExecutionStrategy != null && logger.isInfoEnabled()) {
+				logger.info(
+						"LMDB forced GROUP BY shape: requested={}, input={}, originalInput={}, groupSlots={}, aggregates={}, "
+								+ "replaySafe={}, typeMatrixIr={}, typeMatrixOwned={}, wildcardIr={}, compiledIr={}, "
+								+ "interpretedIr={}, parallelIr={}, nodeDomainIntersectionIr={}, algorithmicSpecialist={}, "
+								+ "serialTags=[{}, {}], parallelTags=[{}, {}], highestIrTag={}",
+						forcedExecutionStrategy, arg.getClass().getSimpleName(), originalArg.getClass().getSimpleName(),
+						groupSlots.length, aggregates.length, replaySafe, typeMatrixIr, typeMatrixOwned, wildcardIr,
+						compiledIr, interpretedIr, parallelIr, nodeDomainIntersectionIr, algorithmicSpecialist,
+						compiledSerialTag, interpretedSerialTag, compiledParallelTag, interpretedParallelTag,
+						highestIrTag);
+			}
 			// Specialist suppression is an adaptive-selection policy, not an IR capability boundary. A forced request
 			// must reach the arbiter so the named IR tier can either run or report its own concrete lowering/bind
 			// decline.
 			if (highestIrTag != null
-					&& (forcedExecutionStrategy != null || !algorithmicSpecialistHandlesRow(row))) {
+					&& (forcedExecutionStrategy != null || !algorithmicSpecialist)) {
 				LmdbNativeWork candidateWork = arg.estimateWork(row, row.boundMask());
 				if (nodeDomainIntersectionIr) {
 					LmdbNativeWork intersectionWork = existsIntersection.nodeDomainIrWork(source, row);

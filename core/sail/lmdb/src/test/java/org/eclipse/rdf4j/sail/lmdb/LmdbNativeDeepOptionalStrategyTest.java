@@ -167,6 +167,48 @@ public class LmdbNativeDeepOptionalStrategyTest {
 	}
 
 	@Test
+	public void forcedInterpretedIrAggregateHandlesFourPureUnionBindBranches() {
+		String query = groupedOrderedFourPureUnionBindQuery();
+		List<BindingSet> genericRows = evaluate(query, false);
+		List<BindingSet> forcedRows = evaluate(query, "irAggregateInterpreted");
+		GenericPlanNode executedPlan = explain(query, "irAggregateInterpreted");
+
+		assertThat(genericRows).as("the pure UNION fixture must produce grouped rows").isNotEmpty();
+		assertThat(forcedRows).containsExactlyElementsOf(genericRows);
+		assertThat(executionPaths(executedPlan))
+				.as("the forced interpreted aggregate must execute without an outer BGP:%n%s", executedPlan)
+				.contains("irAggregateInterpreted");
+	}
+
+	@Test
+	public void forcedInterpretedIrAggregateHandlesFourSinglePatternUnionBindBranches() {
+		String query = groupedOrderedFourSinglePatternUnionBindQuery();
+		List<BindingSet> genericRows = evaluate(query, false);
+		List<BindingSet> forcedRows = evaluate(query, "irAggregateInterpreted");
+		GenericPlanNode executedPlan = explain(query, "irAggregateInterpreted");
+
+		assertThat(genericRows).as("the union-of-scans fixture must produce grouped rows").isNotEmpty();
+		assertThat(forcedRows).containsExactlyElementsOf(genericRows);
+		assertThat(executionPaths(executedPlan))
+				.as("the forced interpreted aggregate must execute a pure union of scans:%n%s", executedPlan)
+				.contains("irAggregateInterpreted");
+	}
+
+	@Test
+	public void forcedInterpretedIrAggregateHandlesGroupKeysBoundInsideEveryUnionBranch() {
+		String query = groupedOrderedFourUnionBoundGroupKeysQuery();
+		List<BindingSet> genericRows = evaluate(query, false);
+		List<BindingSet> forcedRows = evaluate(query, "irAggregateInterpreted");
+		GenericPlanNode executedPlan = explain(query, "irAggregateInterpreted");
+
+		assertThat(genericRows).as("the branch-local BIND fixture must produce grouped rows").isNotEmpty();
+		assertThat(forcedRows).containsExactlyElementsOf(genericRows);
+		assertThat(executionPaths(executedPlan))
+				.as("the forced interpreted aggregate must retain branch-local grouped bindings:%n%s", executedPlan)
+				.contains("irAggregateInterpreted");
+	}
+
+	@Test
 	public void forcedInterpretedIrAggregatePreservesMultipleFromNamedContextsAndGraphBinding() {
 		String query = groupedFromNamedQuery();
 		List<BindingSet> genericRows = evaluate(query, false);
@@ -625,5 +667,97 @@ public class LmdbNativeDeepOptionalStrategyTest {
 				"}",
 				"GROUP BY ?graph",
 				"ORDER BY ?graph");
+	}
+
+	private static String groupedOrderedFourPureUnionBindQuery() {
+		return String.join("\n",
+				"PREFIX ex: <" + EX + ">",
+				"SELECT ?department ?route",
+				"       (COUNT(*) AS ?rows)",
+				"       (COUNT(DISTINCT ?person) AS ?people)",
+				"       (COUNT(DISTINCT ?target) AS ?targets)",
+				"FROM <" + FROM_CORE_GRAPH + ">",
+				"FROM <" + FROM_DETAIL_GRAPH + ">",
+				"WHERE {",
+				"  {",
+				"    ?person a ex:FromPerson ; ex:worksFor ?department ; ex:layer1Entry ?bridge .",
+				"    ?bridge ex:layer1Primary ?target .",
+				"    BIND(\"primary\" AS ?route)",
+				"  }",
+				"  UNION",
+				"  {",
+				"    ?person a ex:FromPerson ; ex:worksFor ?department ; ex:layer1Entry ?bridge .",
+				"    ?bridge ex:layer1Alternate ?target .",
+				"    BIND(\"alternate\" AS ?route)",
+				"  }",
+				"  UNION",
+				"  {",
+				"    ?person a ex:FromPerson ; ex:worksFor ?department ; ex:profile ?profile .",
+				"    ?profile ex:primarySkill ?target .",
+				"    BIND(\"profile\" AS ?route)",
+				"  }",
+				"  UNION",
+				"  {",
+				"    ?person a ex:FromPerson ; ex:worksFor ?department ; ex:memberOf ?team .",
+				"    ?team ex:belongsTo ?target .",
+				"    BIND(\"membership\" AS ?route)",
+				"  }",
+				"}",
+				"GROUP BY ?department ?route",
+				"ORDER BY DESC(?rows) DESC(?people) ?department ?route");
+	}
+
+	private static String groupedOrderedFourSinglePatternUnionBindQuery() {
+		return String.join("\n",
+				"PREFIX ex: <" + EX + ">",
+				"SELECT ?route ?target (COUNT(DISTINCT ?person) AS ?count)",
+				"FROM <" + FROM_CORE_GRAPH + ">",
+				"FROM <" + FROM_DETAIL_GRAPH + ">",
+				"WHERE {",
+				"  { ?person ex:worksFor ?target . BIND(\"works-for\" AS ?route) }",
+				"  UNION",
+				"  { ?person ex:memberOf ?target . BIND(\"member-of\" AS ?route) }",
+				"  UNION",
+				"  { ?person ex:layer1Entry ?target . BIND(\"layer-entry\" AS ?route) }",
+				"  UNION",
+				"  { ?person ex:profile ?target . BIND(\"profile\" AS ?route) }",
+				"}",
+				"GROUP BY ?route ?target",
+				"ORDER BY ?count ?route ?target");
+	}
+
+	private static String groupedOrderedFourUnionBoundGroupKeysQuery() {
+		return String.join("\n",
+				"PREFIX ex: <" + EX + ">",
+				"SELECT ?route ?target (COUNT(DISTINCT ?person) AS ?count)",
+				"FROM <" + FROM_CORE_GRAPH + ">",
+				"FROM <" + FROM_DETAIL_GRAPH + ">",
+				"WHERE {",
+				"  {",
+				"    ?person ex:worksFor ?branchTarget .",
+				"    BIND(?branchTarget AS ?target)",
+				"    BIND(\"works-for\" AS ?route)",
+				"  }",
+				"  UNION",
+				"  {",
+				"    ?person ex:memberOf ?branchTarget .",
+				"    BIND(?branchTarget AS ?target)",
+				"    BIND(\"member-of\" AS ?route)",
+				"  }",
+				"  UNION",
+				"  {",
+				"    ?person ex:layer1Entry ?branchTarget .",
+				"    BIND(?branchTarget AS ?target)",
+				"    BIND(\"layer-entry\" AS ?route)",
+				"  }",
+				"  UNION",
+				"  {",
+				"    ?person ex:profile ?branchTarget .",
+				"    BIND(?branchTarget AS ?target)",
+				"    BIND(\"profile\" AS ?route)",
+				"  }",
+				"}",
+				"GROUP BY ?route ?target",
+				"ORDER BY ?count ?route ?target");
 	}
 }

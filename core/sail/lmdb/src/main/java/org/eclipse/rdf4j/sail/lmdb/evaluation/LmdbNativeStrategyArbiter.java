@@ -23,6 +23,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Chooses among candidate execution strategies by cost, falling back to the engine's declared specialization order
@@ -48,6 +50,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledExcept
  */
 @Experimental
 final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
+	private static final Logger logger = LoggerFactory.getLogger(LmdbNativeStrategyArbiter.class);
 
 	@FunctionalInterface
 	interface Proposer<T> {
@@ -448,6 +451,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	 * Returns whether any candidate matched.
 	 */
 	private boolean applyForcedFilter() {
+		if (logger.isInfoEnabled()) {
+			logger.info("LMDB forced strategy candidates: requested={}, decisionPoint={}, offered={}", forcedTag,
+					forcedDecisionPoint, candidates.stream().map(candidate -> candidate.tag).toList());
+		}
 		List<LmdbNativeStrategyProposal<T>> rejected = new ArrayList<>(candidates.size());
 		Iterator<LmdbNativeStrategyProposal<T>> it = candidates.iterator();
 		while (it.hasNext()) {
