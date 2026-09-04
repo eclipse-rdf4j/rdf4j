@@ -776,6 +776,83 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	/**
+	 * Whether the store may contain inferred statements.
+	 */
+	boolean mayHaveInferred() {
+		return mayHaveInferred;
+	}
+
+	/**
+	 * Whether an index supports a prefix-run scan (see {@link TripleStore#prefixRunPlan}) for the distinct combinations
+	 * of {@code prefixFields} among the statements matching a pattern with the given bound fields.
+	 */
+	boolean supportsPrefixRun(int[] prefixFields, boolean subjBound, boolean predBound, boolean objBound,
+			boolean contextBound) {
+		return tripleStore.prefixRunPlan(prefixFields, subjBound, predBound, objBound, contextBound) != null;
+	}
+
+	/**
+	 * Opens a prefix-run scan that emits one representative statement per distinct combination of {@code prefixFields}
+	 * among the statements matching the supplied pattern. The scan owns a read transaction that is released by
+	 * {@link LmdbPrefixRunScan#close()}.
+	 *
+	 * @param context      the context to match, or {@code null} to match statements in all contexts
+	 * @param countRunRows whether the number of matching statements per prefix combination must be reported
+	 * @return the scan, or {@code null} when no index supports the prefix-run (see {@link #supportsPrefixRun})
+	 */
+	LmdbPrefixRunScan openPrefixRunScan(boolean explicit, int[] prefixFields, Resource subj, IRI pred, Value obj,
+			Resource context, boolean countRunRows) throws IOException {
+		LmdbPrefixRunPlan plan = tripleStore.prefixRunPlan(prefixFields, subj != null, pred != null, obj != null,
+				context != null);
+		if (plan == null) {
+			return null;
+		}
+		if (!explicit && !mayHaveInferred) {
+			return LmdbPrefixRunScan.empty();
+		}
+		long subjID = LmdbValue.UNKNOWN_ID;
+		if (subj != null) {
+			subjID = valueStore.getId(subj);
+			if (subjID == LmdbValue.UNKNOWN_ID) {
+				return LmdbPrefixRunScan.empty();
+			}
+		}
+		long predID = LmdbValue.UNKNOWN_ID;
+		if (pred != null) {
+			predID = valueStore.getId(pred);
+			if (predID == LmdbValue.UNKNOWN_ID) {
+				return LmdbPrefixRunScan.empty();
+			}
+		}
+		long objID = LmdbValue.UNKNOWN_ID;
+		if (obj != null) {
+			objID = valueStore.getId(obj);
+			if (objID == LmdbValue.UNKNOWN_ID) {
+				return LmdbPrefixRunScan.empty();
+			}
+		}
+		long contextID = LmdbValue.UNKNOWN_ID;
+		if (context != null) {
+			if (context.isTripleTerm()) {
+				return LmdbPrefixRunScan.empty();
+			}
+			contextID = valueStore.getId(context);
+			if (contextID == LmdbValue.UNKNOWN_ID) {
+				return LmdbPrefixRunScan.empty();
+			}
+		}
+		Txn txn = tripleStore.getTxnManager().createReadTxn();
+		try {
+			LmdbPrefixRunIterator cursor = tripleStore.getPrefixRuns(txn, plan, subjID, predID, objID, contextID,
+					explicit, countRunRows);
+			return new LmdbPrefixRunScan(txn, cursor, valueStore);
+		} catch (IOException | RuntimeException e) {
+			txn.close();
+			throw e;
+		}
+	}
+
 	long countStatementIterator(
 			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
 		if (!explicit && !mayHaveInferred) {
