@@ -13,7 +13,10 @@ package org.eclipse.rdf4j.model.util;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * @author Arjohn Kampman
@@ -109,5 +112,50 @@ public class URIUtilTest {
 		assertFalse(URIUtil.isValidLocalName("foo\nbar"));
 		assertFalse(URIUtil.isValidLocalName("*foobar"));
 		assertTrue(URIUtil.isValidLocalName("fo\\'obar"));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"http://example.org/x",
+			"https://example.org/x?y=z#frag",
+			"urn:isbn:0451450523",
+			"mailto:user@example.org",
+			"tel:+1-816-555-1212",
+			"file:///tmp/data.ttl",
+			"a:b", // single-letter scheme is valid
+			"z:", // scheme with empty hier-part
+			"news:comp.infosystems",
+			"scheme+ext.1-x:path", // ALPHA *( ALPHA / DIGIT / + / - / . )
+			"HTTP://EXAMPLE.ORG/x" // scheme is case-insensitive
+	})
+	void absoluteIris(String iri) {
+		Assertions.assertTrue(URIUtil.isAbsoluteIri(iri),
+				"should be classified as absolute: " + iri);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"", // same-document reference
+			"#frag",
+			"#a:b", // colon in fragment
+			"?q=a:b", // colon in query
+			"path/foo:bar", // colon in a later path segment
+			"./a:b", // dot-segment then colon — classic RFC 3986 example
+			"foo/bar",
+			"../up/one",
+			"//example.org/x", // network-path reference: relative!
+			"/rooted/path",
+			":foo", // empty scheme is not a scheme
+			"1http://example.org/", // scheme must start with ALPHA
+			"-http:x",
+			"+ssh:x",
+			"ht tp://example.org/", // space before colon breaks scheme
+			"héllo:x", // non-ASCII letter — not a valid scheme
+			"http٣x:y", // Arabic-Indic digit in scheme
+			"ｈttp://example.org/" // fullwidth letter
+	})
+	void relativeReferences(String iri) {
+		Assertions.assertFalse(URIUtil.isAbsoluteIri(iri),
+				"should be classified as relative: " + iri);
 	}
 }

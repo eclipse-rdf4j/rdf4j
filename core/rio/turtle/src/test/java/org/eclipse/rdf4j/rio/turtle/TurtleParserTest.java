@@ -28,6 +28,7 @@ import java.net.URL;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
@@ -39,7 +40,9 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.DC;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -538,6 +541,32 @@ public class TurtleParserTest extends AbstractParserTest {
 			assertTrue(statementCollector.getStatements().size() == 1);
 		} catch (RDFParseException e) {
 			fail("Complex unicode characters should be parsed correctly (" + e.getMessage() + ")");
+		}
+	}
+
+	@Test
+	public void testParseBaseIriParsing() throws Exception {
+		String data = """
+				@base <http://example.com/> .
+				@prefix my: <https://mydomain.com/> .
+
+				<system/x:ABC> a my:Item .
+
+				<http://example.com/system/x:DEF> a my:Item .
+
+				my:abc a my:Item .
+				""";
+		Reader r = new StringReader(data);
+		try {
+			parser.parse(r);
+			var stmts = statementCollector.getStatements();
+			assertEquals(3, stmts.size());
+			var model = new TreeModel(stmts);
+			assertEquals(Set.of(Values.iri("http://example.com/system/x:ABC"),
+					Values.iri("http://example.com/system/x:DEF"), Values.iri("https://mydomain.com/abc")),
+					model.subjects());
+		} catch (RDFParseException e) {
+			fail("parse error on correct data: " + e.getMessage());
 		}
 	}
 
