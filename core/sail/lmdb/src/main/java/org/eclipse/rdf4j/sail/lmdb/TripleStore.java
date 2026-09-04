@@ -496,6 +496,75 @@ class TripleStore implements Closeable {
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
 	}
 
+	/**
+	 * Checks whether at least one triple matches the supplied pattern without materializing any record. Fully bound
+	 * patterns are answered with a single key lookup; other patterns position a cursor on the best index and stop at
+	 * the first matching record.
+	 */
+	boolean hasTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit) throws IOException {
+		if (subj < 0 && pred < 0 && obj < 0 && context < 0) {
+			return hasAnyTriples(txn, explicit);
+		}
+		if (subj > 0 && pred > 0 && obj > 0 && context >= 0) {
+			return exactTripleExists(txn, indexes.getFirst(), subj, pred, obj, context, explicit);
+		}
+
+		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
+		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
+		try (RecordIterator records = getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index,
+				doRangeSearch)) {
+			return records.next() != null;
+		}
+	}
+
+	private boolean hasAnyTriples(Txn txnRef, boolean explicit) throws IOException {
+		long readStamp;
+		try {
+			readStamp = txnRef.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		try (MemoryStack stack = stackPush()) {
+			TripleIndex mainIndex = indexes.getFirst();
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txnRef.get(), mainIndex.getDB(explicit), stat));
+			return stat.ms_entries() > 0;
+		} finally {
+			txnRef.lockManager().unlockRead(readStamp);
+		}
+	}
+
+	private boolean exactTripleExists(Txn txnRef, TripleIndex index, long subj, long pred, long obj, long context,
+			boolean explicit) throws IOException {
+		long readStamp;
+		try {
+			readStamp = txnRef.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.toKey(keyBuf, subj, pred, obj, context);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+			int rc = mdb_get(txnRef.get(), index.getDB(explicit), keyVal, dataVal);
+			if (rc == MDB_SUCCESS) {
+				return true;
+			}
+			if (rc == MDB_NOTFOUND) {
+				return false;
+			}
+			E(rc);
+			return false;
+		} finally {
+			txnRef.lockManager().unlockRead(readStamp);
+		}
+	}
+
 	boolean hasTriples(boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.getFirst();
 		return txnManager.doWith((stack, txn) -> {

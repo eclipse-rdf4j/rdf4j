@@ -240,6 +240,42 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
+	public void testHasStatementsProbesExplicitDatasetWithoutMaterializing() throws SailException {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+
+		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+			// wildcard probe
+			assertTrue(dataset.hasStatements(null, null, null));
+			// fully bound probes (exact key lookup)
+			assertTrue(dataset.hasStatements(S0.getSubject(), S0.getPredicate(), S0.getObject()));
+			assertTrue(dataset.hasStatements(S0.getSubject(), S0.getPredicate(), S0.getObject(), (Resource) null));
+			assertTrue(dataset.hasStatements(S1.getSubject(), S1.getPredicate(), S1.getObject(), CTX_1));
+			assertFalse(dataset.hasStatements(S1.getSubject(), S1.getPredicate(), S1.getObject(), CTX_2));
+			assertTrue(dataset.hasStatements(S1.getSubject(), S1.getPredicate(), S1.getObject(), CTX_2, CTX_1));
+			assertFalse(dataset.hasStatements(S1.getSubject(), S1.getPredicate(), S1.getObject(), CTX_INV));
+			assertFalse(dataset.hasStatements(S0.getSubject(), S0.getPredicate(), S1.getObject()));
+			// partially bound probes (cursor positioned on the best index)
+			assertTrue(dataset.hasStatements(S2.getSubject(), null, null));
+			assertTrue(dataset.hasStatements(null, RDFS.LABEL, null, CTX_2));
+			assertFalse(dataset.hasStatements(null, RDFS.LABEL, null, CTX_INV));
+			assertFalse(dataset.hasStatements(null, RDFS.COMMENT, null));
+			assertFalse(dataset.hasStatements(F.createIRI("http://example.org/unknown"), null, null));
+		}
+	}
+
+	@Test
+	public void testHasStatementsOnInferredDatasetWithoutInferredStatements() throws SailException {
+		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
+		LmdbSailStore backingStore = sail.getBackingStore();
+
+		try (SailDataset dataset = backingStore.getInferredSailSource().dataset(IsolationLevels.NONE)) {
+			assertFalse(dataset.hasStatements(null, null, null));
+			assertFalse(dataset.hasStatements(S0.getSubject(), S0.getPredicate(), S0.getObject()));
+		}
+	}
+
+	@Test
 	public void testExplainExecutedShowsIndexName() {
 		try (RepositoryConnection conn = repo.getConnection()) {
 			String actual = conn.prepareTupleQuery("select * { ?s <" + RDFS.LABEL + "> ?o }")

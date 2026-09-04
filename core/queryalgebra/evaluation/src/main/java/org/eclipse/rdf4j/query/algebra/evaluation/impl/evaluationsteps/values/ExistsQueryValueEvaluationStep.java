@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
 
 public final class ExistsQueryValueEvaluationStep implements QueryValueEvaluationStep {
 	private final QueryEvaluationStep subquery;
@@ -28,6 +29,10 @@ public final class ExistsQueryValueEvaluationStep implements QueryValueEvaluatio
 
 	@Override
 	public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
+		if (subquery instanceof StatementPatternQueryEvaluationStep statementPatternStep) {
+			return BooleanLiteral.valueOf(statementPatternStep.hasStatement(bindings));
+		}
+
 		try (CloseableIteration<BindingSet> iter = subquery.evaluate(bindings)) {
 			return BooleanLiteral.valueOf(iter.hasNext());
 		}

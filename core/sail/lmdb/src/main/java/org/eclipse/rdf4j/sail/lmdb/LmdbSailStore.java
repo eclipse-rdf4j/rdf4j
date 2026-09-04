@@ -835,6 +835,60 @@ class LmdbSailStore implements SailStore {
 		return count;
 	}
 
+	boolean hasStatementIterator(
+			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
+		if (!explicit && !mayHaveInferred) {
+			// there are no inferred statements and the iterator should only return inferred statements
+			return false;
+		}
+		long subjID = LmdbValue.UNKNOWN_ID;
+		if (subj != null) {
+			subjID = valueStore.getId(subj);
+			if (subjID == LmdbValue.UNKNOWN_ID) {
+				return false;
+			}
+		}
+
+		long predID = LmdbValue.UNKNOWN_ID;
+		if (pred != null) {
+			predID = valueStore.getId(pred);
+			if (predID == LmdbValue.UNKNOWN_ID) {
+				return false;
+			}
+		}
+
+		long objID = LmdbValue.UNKNOWN_ID;
+		if (obj != null) {
+			objID = valueStore.getId(obj);
+
+			if (objID == LmdbValue.UNKNOWN_ID) {
+				return false;
+			}
+		}
+
+		if (contexts.length == 0) {
+			return tripleStore.hasTriples(txn, subjID, predID, objID, LmdbValue.UNKNOWN_ID, explicit);
+		}
+
+		for (Resource context : contexts) {
+			long contextID;
+			if (context == null) {
+				contextID = 0L;
+			} else if (!context.isTripleTerm()) {
+				contextID = valueStore.getId(context);
+				if (contextID == LmdbValue.UNKNOWN_ID) {
+					continue;
+				}
+			} else {
+				continue;
+			}
+			if (tripleStore.hasTriples(txn, subjID, predID, objID, contextID, explicit)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/**
 	 * Creates a triple term iterator based on the supplied pattern.
 	 *
@@ -1671,6 +1725,22 @@ class LmdbSailStore implements SailStore {
 					return countStatementIterator(txn, subj, pred, obj, explicit, contexts);
 				} catch (IOException e2) {
 					throw new SailException("Unable to count statements", e);
+				}
+			}
+		}
+
+		@Override
+		public boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+			try {
+				return hasStatementIterator(txn, subj, pred, obj, explicit, contexts);
+			} catch (IOException e) {
+				try {
+					logger.warn("Failed to check statements, retrying", e);
+					// try once more before giving up
+					Thread.yield();
+					return hasStatementIterator(txn, subj, pred, obj, explicit, contexts);
+				} catch (IOException e2) {
+					throw new SailException("Unable to check statements", e);
 				}
 			}
 		}
