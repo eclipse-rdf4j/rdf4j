@@ -12,17 +12,24 @@
 package org.eclipse.rdf4j.rio.jsonld.legacy;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.util.VersionLabel;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.rio.ParserConfig;
@@ -111,12 +118,62 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 	}
 
 	/**
-	 * Ignored because the legacy JSON-LD writer relies on jsonld-java's RDFDataset, which does not support RDF 1.2
-	 * direction-aware language-tagged literals, so base direction cannot be preserved.
+	 * The legacy JSON-LD parser restores i18n datatype IRIs as directional literals. Inspect the serialized form
+	 * directly to verify that RDF 1.1 output remains downgraded to the interoperable i18n datatype representation.
 	 */
 	@Override
 	@Test
-	public void testRDF12FullTo12BasicConversion() {
+	public void testRDF12FullTo11Conversion() {
+		Model model = createRDF12FullConversionModel();
+
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		RDFWriter writer = rdfWriterFactory.getWriter(output);
+		setupWriterConfig(writer.getWriterConfig());
+		writer.getWriterConfig().set(BasicWriterSettings.RDF_OUTPUT_VERSION, VersionLabel.RDF_1_1);
+		writer.startRDF();
+		model.forEach(writer::handleStatement);
+		writer.endRDF();
+
+		assertRDF11Serialization(output.toString(StandardCharsets.UTF_8));
+	}
+
+	private Model createRDF12FullConversionModel() {
+		Model model = new LinkedHashModel();
+		BNode triple1Reifier = vf.createBNode();
+		BNode triple2Reifier = vf.createBNode();
+		BNode triple3Reifier = vf.createBNode();
+		BNode triple5Reifier = vf.createBNode();
+		BNode triple6Reifier = vf.createBNode();
+		Literal rtlLiteral = vf.createLiteral("שלום", "he", Literal.BaseDirection.RTL);
+		TripleTerm tripleTerm6 = vf.createTripleTerm(triple2Reifier, uri4, rtlLiteral);
+
+		model.add(vf.createStatement(triple1Reifier, RDF.REIFIES, tripleTerm1, uri4));
+		model.add(vf.createStatement(triple2Reifier, RDF.REIFIES, tripleTerm2, uri4));
+		model.add(vf.createStatement(triple3Reifier, RDF.REIFIES, tripleTerm3, uri4));
+		model.add(vf.createStatement(triple5Reifier, RDF.REIFIES, tripleTerm1, uri4));
+		model.add(vf.createStatement(triple6Reifier, RDF.REIFIES, tripleTerm6, uri4));
+		model.add(vf.createStatement(triple3Reifier, uri1, triple6Reifier, uri4));
+		model.add(vf.createStatement(uri1, uri2, uri3, uri5));
+		return model;
+	}
+
+	private void assertRDF11Serialization(String output) {
+		assertTrue(output.contains("שלום"));
+		assertTrue(output.contains("https://www.w3.org/ns/i18n#he_rtl"));
+		assertFalse(output.contains("\"@language\""));
+		assertFalse(output.contains("\"@direction\""));
+		assertTrue(output.contains(RDF.PROPOSITION_FORM.stringValue()));
+		assertTrue(output.contains(RDF.PROPOSITION_FORM_OBJECT.stringValue()));
+		assertTrue(output.contains(RDF.REIFIES.stringValue()));
+	}
+
+	/**
+	 * The legacy JSON-LD writer uses the JSON-LD i18n datatype representation to preserve base direction.
+	 */
+	@Override
+	@Test
+	public void testRDF12FullTo12BasicConversion() throws IOException {
+		super.testRDF12FullTo12BasicConversion();
 	}
 
 	@Override
@@ -124,6 +181,7 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 		return new RioSetting[] {
 				BasicWriterSettings.BASE_DIRECTIVE,
 				BasicWriterSettings.PRETTY_PRINT,
+				BasicWriterSettings.RDF_OUTPUT_VERSION,
 				JSONLDSettings.COMPACT_ARRAYS,
 				JSONLDSettings.HIERARCHICAL_VIEW,
 				JSONLDSettings.JSONLD_MODE,
