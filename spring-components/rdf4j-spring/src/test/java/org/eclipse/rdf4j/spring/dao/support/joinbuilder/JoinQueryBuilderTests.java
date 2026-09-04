@@ -335,6 +335,19 @@ public class JoinQueryBuilderTests extends RDF4JSpringTestBase {
 	}
 
 	@Test
+	public void entityQueryCanMapAutomaticallyProjectedTargetWithoutAdditionalPattern() {
+		Map<IRI, Set<IRI>> result = JoinQueryBuilder.of(TRAINED_BY)
+				.sourceEntityConstraints(character -> character.isA(FORCE_USER))
+				.targetEntityConstraints(master -> master.isA(MASTER))
+				.innerJoin()
+				.rowMapper(master -> bindings -> getIRI(bindings, master))
+				.build()
+				.evaluationBuilder(rdf4JTemplate)
+				.asOneToMany();
+		assertEquals(Set.of(OBI_WAN, YODA), result.get(LUKE));
+	}
+
+	@Test
 	public void requiredTargetProjectionIsNotDuplicated() {
 		Projectable[] withoutTarget = JoinQueryBuilder.addRequiredTargetProjection(new Projectable[] { MASTER_NAME });
 		assertEquals(2, withoutTarget.length);
@@ -405,6 +418,35 @@ public class JoinQueryBuilderTests extends RDF4JSpringTestBase {
 
 		assertEquals(Map.of(LIGHT_SIDE, 2), result.get(LUKE));
 		assertEquals(Map.of(LIGHT_SIDE, 1, DARK_SIDE, 1), result.get(ANAKIN));
+	}
+
+	@Test
+	public void groupedLeftOuterCountKeepsUnmatchedSourceWithEmptyGroups() {
+		Map<IRI, Map<Value, Integer>> result = JoinQueryBuilder.of(TRAINED_BY)
+				.sourceEntityConstraints(character -> character.isA(FORCE_USER))
+				.targetEntityConstraints(master -> master.isA(MASTER).andHas(AFFILIATION, MASTER_AFFILIATION))
+				.leftOuterJoin()
+				.count()
+				.groupBy(MASTER_AFFILIATION)
+				.build()
+				.evaluationBuilder(rdf4JTemplate)
+				.getGroupedCountsBySourceEntityId();
+		assertEquals(Map.of(), result.get(REY));
+	}
+
+	@Test
+	public void groupedLeftOuterCountByContextKeepsUnmatchedSourceWithEmptyGroups() {
+		Map<IRI, Map<IRI, Map<Value, Integer>>> result = JoinQueryBuilder.of(TRAINED_BY)
+				.sourceEntityConstraints(character -> character.isA(FORCE_USER).andHas(HOMEWORLD, CHARACTER_HOMEWORLD))
+				.targetEntityConstraints(master -> master.isA(MASTER).andHas(AFFILIATION, MASTER_AFFILIATION))
+				.withContextIdVariable(CHARACTER_HOMEWORLD)
+				.leftOuterJoin()
+				.count()
+				.groupBy(MASTER_AFFILIATION)
+				.build()
+				.evaluationBuilder(rdf4JTemplate)
+				.getGroupedCountsBySourceEntityIdByContextId();
+		assertEquals(Map.of(), result.get(JAKKU).get(REY));
 	}
 
 	@Test
