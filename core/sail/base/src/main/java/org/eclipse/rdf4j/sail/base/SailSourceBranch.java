@@ -287,7 +287,21 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public SailDataset dataset(IsolationLevel level) throws SailException {
-		SailDataset dataset = new DelegatingSailDataset(derivedFromSerializable(level)) {
+		// Derive the snapshot and register the observer under ONE semaphore hold: a concurrent flush() retires and
+		// closes the cached snapshot when no observer is registered, so the new dataset must be observed before the
+		// semaphore is released.
+		try {
+			semaphore.lock();
+			SailDataset dataset = newObservedDataset(level);
+			observers.add(dataset);
+			return dataset;
+		} finally {
+			semaphore.unlock();
+		}
+	}
+
+	private SailDataset newObservedDataset(IsolationLevel level) throws SailException {
+		return new DelegatingSailDataset(derivedFromSerializable(level)) {
 
 			@Override
 			public void close() throws SailException {
@@ -327,13 +341,6 @@ class SailSourceBranch implements SailSource {
 				}
 			}
 		};
-		try {
-			semaphore.lock();
-			observers.add(dataset);
-		} finally {
-			semaphore.unlock();
-		}
-		return dataset;
 	}
 
 	private static Throwable addFailure(Throwable failure, Throwable later) {
@@ -412,7 +419,11 @@ class SailSourceBranch implements SailSource {
 			// clear changes if flush fails
 			changes.clear();
 			prepared = null;
-			retireSnapshot();
+			try {
+				retireSnapshot();
+			} catch (RuntimeException | Error retireFailure) {
+				e.addSuppressed(retireFailure);
+			}
 			throw e;
 		} finally {
 			semaphore.unlock();
@@ -437,8 +448,16 @@ class SailSourceBranch implements SailSource {
 		if (observers.isEmpty() && !retiredSnapshots.isEmpty()) {
 			List<SailDataset> toClose = new ArrayList<>(retiredSnapshots);
 			retiredSnapshots.clear();
+			Throwable failure = null;
 			for (SailDataset dataset : toClose) {
-				dataset.close();
+				try {
+					dataset.close();
+				} catch (RuntimeException | Error closeFailure) {
+					failure = addFailure(failure, closeFailure);
+				}
+			}
+			if (failure != null) {
+				rethrow(failure);
 			}
 		}
 	}

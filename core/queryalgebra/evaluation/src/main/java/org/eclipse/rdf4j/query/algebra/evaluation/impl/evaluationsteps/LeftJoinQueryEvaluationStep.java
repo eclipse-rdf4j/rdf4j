@@ -53,7 +53,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			String[] joinAttributes = leftBindingNames.stream()
 					.filter(rightBindingNames::contains)
 					.toArray(String[]::new);
-			if (QueryEvaluationUtility.canDiscardWithoutEvaluation(leftJoin.getRightArg())) {
+			if (QueryEvaluationUtility.canDiscardWithoutEvaluation(leftJoin.getRightArg(), leftJoin.getLeftArg())) {
 				return bs -> new HashJoinIteration(left, right, bs, true, joinAttributes, context);
 			}
 			return bs -> JoinQueryEvaluationStep.withGuaranteedRightEvaluation(right, bs,
@@ -78,8 +78,17 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 					? new ScopedQueryValueEvaluationStep(leftJoin.getBindingNames(),
 							strategy.precompile(leftJoin.getCondition(), context))
 					: null;
+			// Entry bindings for variables that only the optional operand binds (a "badly designed" left join,
+			// Pérez et al. 2006 section 4.2) must not be pushed into the independent evaluation; the iterator strips
+			// them and re-imposes them by compatibility filtering, as BadlyDesignedLeftJoinIterator does.
+			Set<String> optionalOnlyVars = new HashSet<>(rightArg.getBindingNames());
+			if (leftJoin.hasCondition()) {
+				optionalOnlyVars.addAll(VarNameCollector.process(leftJoin.getCondition()));
+			}
+			optionalOnlyVars.removeAll(leftJoin.getLeftArg().getBindingNames());
 			leftJoin.setAlgorithm(MaterializedReplayJoinIterator.class.getSimpleName());
-			return bs -> new MaterializedReplayJoinIterator(left, right, scopedCondition, bs, true);
+			return bs -> new MaterializedReplayJoinIterator(left, right, scopedCondition, bs, true,
+					optionalOnlyVars);
 		}
 
 		// Check whether optional join is "well designed" as defined in section
@@ -206,7 +215,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		if (joinCondition == null) {
 			return prepareRightArg;
 		} else if (canEvaluateConditionBasedOnLeftHandSide(join)
-				&& QueryEvaluationUtility.canDiscardWithoutEvaluation(join.getRightArg())) {
+				&& QueryEvaluationUtility.canDiscardWithoutEvaluation(join.getRightArg(), join.getLeftArg())) {
 			// pre-filtering skips right-hand evaluation for rejected left solutions, which is only permitted
 			// when the skipped operand cannot raise an observable query-fatal error
 			return new PreFilterQueryEvaluationStep(

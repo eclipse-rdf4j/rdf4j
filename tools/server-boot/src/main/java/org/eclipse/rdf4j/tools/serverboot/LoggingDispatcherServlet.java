@@ -48,10 +48,11 @@ class LoggingDispatcherServlet extends DispatcherServlet {
 				throw throwable;
 			}
 			try {
-				shutdownServer();
-			} finally {
-				throw outOfMemoryError;
+				shutdownServer(outOfMemoryError);
+			} catch (RuntimeException | Error shutdownFailure) {
+				outOfMemoryError.addSuppressed(shutdownFailure);
 			}
+			throw outOfMemoryError;
 		}
 	}
 
@@ -75,13 +76,29 @@ class LoggingDispatcherServlet extends DispatcherServlet {
 		return null;
 	}
 
-	private void shutdownServer() {
+	private void shutdownServer(OutOfMemoryError outOfMemoryError) {
+		logger.error("OutOfMemoryError while dispatching a request; shutting down the server", outOfMemoryError);
 		ApplicationContext context = getWebApplicationContext();
 		while (context != null && context.getParent() != null) {
 			context = context.getParent();
 		}
-		if (context instanceof ConfigurableApplicationContext configurableContext) {
-			configurableContext.close();
-		}
+		ConfigurableApplicationContext rootContext = context instanceof ConfigurableApplicationContext configurable
+				? configurable
+				: null;
+		// Shut down on a dedicated thread: this request thread still holds the servlet allocation, which the
+		// container's graceful shutdown would otherwise wait for, and the JVM must exit with a failure status
+		// (forced after a delay) even if closing the context hangs under memory pressure.
+		Thread thread = new Thread(
+				() -> SignalShutdownHandler.shutdownAndExit(rootContext, "OutOfMemoryError", 1, this::exitJvm),
+				"rdf4j-oom-shutdown");
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	/**
+	 * Exits the JVM with the given status. Overridable for tests.
+	 */
+	protected void exitJvm(int status) {
+		System.exit(status);
 	}
 }

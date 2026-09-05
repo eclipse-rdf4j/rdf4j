@@ -656,8 +656,10 @@ class TripleStore implements Closeable {
 		for (int i = 0; i < fieldSeq.length; i++) {
 			int field = LmdbPrefixRunIterator.fieldIndex(fieldSeq[i]);
 			if (bound[field]) {
-				if (matchedPrefixField && field != TripleIndex.CONTEXT_IDX) {
-					// a bound field between or after the prefix fields would break the runs into fragments
+				if (matchedPrefixField && (remaining != 0 || field != TripleIndex.CONTEXT_IDX)) {
+					// a bound field between the prefix fields (or a bound non-context field after them) would break
+					// the runs into fragments: the cursor treats a mismatch inside the prefix as end of range, not
+					// as a row to skip
 					return -1;
 				}
 				continue;

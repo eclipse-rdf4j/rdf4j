@@ -32,6 +32,18 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 /**
  * A comparator that compares values according the SPARQL value ordering as specified in
  * <A href="http://www.w3.org/TR/rdf-sparql-query/#modOrderBy">SPARQL Query Language for RDF</a>.
+ * <p>
+ * Calendar literals are ordered by a total order derived from each value's own timezone interval (a timezone-less value
+ * spans the ±14:00 range), which is deliberately independent of the comparison partner so that ORDER BY is
+ * antisymmetric and transitive. This differs from the pairwise comparison used by the {@code <}, {@code >} and
+ * {@code =} operators ({@link QueryEvaluationUtility#compareLiterals}) in three known cases: recurring types
+ * ({@code xsd:time}, {@code xsd:gDay}, {@code xsd:gMonth}, {@code xsd:gMonthDay}) with a timezone offset, where the
+ * operators follow {@link XMLGregorianCalendar#compare} and let a timezone carry wrap around the recurring period while
+ * this comparator anchors the value linearly; facet-invalid {@code xsd:dateTimeStamp} values without a timezone, which
+ * the operators still compare as a {@code xsd:dateTime} but this comparator sorts with the invalid values; and, in
+ * non-strict mode, {@code xsd:gMonth} versus {@code xsd:gMonthDay}, which this comparator orders by datatype. For every
+ * valid {@code xsd:dateTime}, {@code xsd:dateTimeStamp}, {@code xsd:date}, {@code xsd:gYear} and {@code xsd:gYearMonth}
+ * pair the two agree.
  *
  * @author james
  * @author Arjohn Kampman

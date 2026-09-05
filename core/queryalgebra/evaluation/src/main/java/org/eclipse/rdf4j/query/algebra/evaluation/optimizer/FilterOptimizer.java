@@ -367,7 +367,8 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(LeftJoin leftJoin) {
-			if (leftJoin.getLeftArg().getBindingNames().containsAll(filterVars)) {
+			// the optional operand can still bind a variable the left operand binds only on some solutions
+			if (canRelocateInto(leftJoin.getLeftArg(), leftJoin.getRightArg())) {
 				leftJoin.getLeftArg().visit(this);
 			} else {
 				relocate(filter, leftJoin);

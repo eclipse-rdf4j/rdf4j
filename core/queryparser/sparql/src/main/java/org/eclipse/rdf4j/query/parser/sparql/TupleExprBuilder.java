@@ -242,16 +242,19 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 * <li>If the supplied ValueExpr is a {@link Var}, the object itself is returned.</li>
 	 * <li>If it is a {@link ValueConstant}, a constant variable is created via
 	 * {@link TupleExprs#createConstVar(Value)}.</li>
-	 * <li>Otherwise, an anonymous variable is created and the expression is registered as an {@link ExtensionElem} on
-	 * the current graph pattern, so that the expression is evaluated at runtime and its result bound to the returned
-	 * var.</li>
+	 * <li>Otherwise, an anonymous variable is created and the expression is registered as a pending
+	 * {@link ExtensionElem} on the current graph pattern, so that the expression is evaluated at runtime over the group
+	 * (or, inside a BIND, over the patterns preceding the BIND) and its result bound to the returned var.</li>
 	 * </ul>
 	 *
 	 * @param expr the ValueExpr to map to a Var
 	 * @return a Var representing the given expression
-	 * @throws IllegalArgumentException if the supplied ValueExpr is null or of an unexpected type
+	 * @throws IllegalArgumentException if the supplied ValueExpr is null
+	 * @throws VisitorException         if the expression is not a variable or constant and the current group graph
+	 *                                  pattern has already been built (SELECT, GROUP BY, HAVING and ORDER BY
+	 *                                  expressions), where the component could not be bound
 	 */
-	private Var toVar(ValueExpr expr) {
+	private Var toVar(ValueExpr expr) throws VisitorException {
 		if (expr instanceof Var) {
 			return (Var) expr;
 		} else if (expr instanceof ValueConstant) {
@@ -259,17 +262,16 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr is null");
 		}
+		if (graphPattern.isBuilt()) {
+			// the WHERE group has already been turned into algebra; an extension registered now would never be
+			// applied and the component variable would silently stay unbound
+			throw new VisitorException(
+					"Expression-valued triple term components are only supported inside a group graph pattern (use BIND): "
+							+ expr);
+		}
 
 		Var var = createAnonVar();
-		Extension extension = new Extension();
-		extension.addElement(new ExtensionElem(expr, var.getName()));
-
-		TupleExpr arg = graphPattern.buildJoinFromRequiredTEs();
-		arg = graphPattern.buildOptionalTE(arg);
-		extension.setArg(arg);
-
-		graphPattern.clearRequiredTEs();
-		graphPattern.addRequiredTE(extension);
+		graphPattern.addPendingExtensionElem(new ExtensionElem(expr, var.getName()));
 		return var;
 	}
 
@@ -2605,6 +2607,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Object visit(ASTBind node, Object data) throws VisitorException {
+		// triple term component expressions registered while parsing THIS bind expression are bound by the bind
+		// itself (over the preceding patterns), like the bind's own expression
+		int pendingExtensionElemsBefore = graphPattern.getPendingExtensionElemCount();
 		// bind expression
 		Object child0 = node.jjtGetChild(0).jjtAccept(this, data);
 		ValueExpr ve;
@@ -2646,6 +2651,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		TupleExpr arg = graphPattern.buildJoinFromRequiredTEs();
 		// apply optionals, if any
 		arg = graphPattern.buildOptionalTE(arg);
+		arg = graphPattern.applyPendingExtensionElems(arg, pendingExtensionElemsBefore);
 
 		// check if alias is not previously used in the BGP
 		if (arg.getBindingNames().contains(alias)) {

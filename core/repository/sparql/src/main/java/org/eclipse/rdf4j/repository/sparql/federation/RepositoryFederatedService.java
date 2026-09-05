@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.repository.sparql.federation;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -32,8 +31,12 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.Repository;
@@ -334,7 +337,7 @@ public class RepositoryFederatedService implements FederatedService {
 
 		// materialize all bindings (to allow for fallback in case of errors)
 		// note that this may be blocking depending on the underlying iterator
-		List<BindingSet> allBindings = new LinkedList<>();
+		List<BindingSet> allBindings = new ArrayList<>();
 		while (bindings.hasNext()) {
 			allBindings.add(bindings.next());
 		}
@@ -362,9 +365,10 @@ public class RepositoryFederatedService implements FederatedService {
 		// UNLESS the user explicitly projects the ?__rowIdx correlation variable in the service pattern,
 		// which is the documented opt-in to row-correlated vectored evaluation (an RDF4J extension contract;
 		// a degenerate use that duplicates the VALUES variable falls through to the single-invocation
-		// fallback via the malformed-query handling).
-		boolean userRequestedRowCorrelation = service.getServiceExpressionString() != null
-				&& service.getServiceExpressionString().contains("?" + ROW_IDX_VAR);
+		// fallback via the malformed-query handling). The opt-in is detected on the parsed pattern (projected or
+		// pattern variables), not on the raw query text, so comments or string literals mentioning the name do
+		// not trigger it.
+		boolean userRequestedRowCorrelation = referencesRowIndexVariable(service.getArg());
 		if (!userRequestedRowCorrelation && TupleExprs.containsSubquery(service.getArg())) {
 			return evaluateOnceAndJoinLocally(service, allBindings, baseUri);
 		}
@@ -498,12 +502,50 @@ public class RepositoryFederatedService implements FederatedService {
 	 * @param baseUri     the base URI
 	 * @return resulting iteration
 	 */
+	/**
+	 * Whether the parsed service pattern projects or otherwise references the {@link #ROW_IDX_VAR} correlation variable
+	 * (the opt-in to row-correlated vectored evaluation).
+	 */
+	private static boolean referencesRowIndexVariable(TupleExpr serviceArg) {
+		boolean[] found = new boolean[1];
+		serviceArg.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+
+			@Override
+			public void meet(ProjectionElem node) {
+				if (ROW_IDX_VAR.equals(node.getName())
+						|| ROW_IDX_VAR.equals(node.getProjectionAlias().orElse(null))) {
+					found[0] = true;
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Var node) {
+				if (ROW_IDX_VAR.equals(node.getName())) {
+					found[0] = true;
+				}
+				super.meet(node);
+			}
+		});
+		return found[0];
+	}
+
 	private CloseableIteration<BindingSet> evaluateOnceAndJoinLocally(Service service,
 			List<BindingSet> allBindings, String baseUri) {
 
 		Set<String> projectionVars = new HashSet<>(service.getServiceVars());
-		CloseableIteration<BindingSet> remote = select(service, projectionVars, EmptyBindingSet.getInstance(),
-				baseUri);
+		CloseableIteration<BindingSet> remote;
+		try {
+			remote = select(service, projectionVars, EmptyBindingSet.getInstance(), baseUri);
+		} catch (RuntimeException e) {
+			// select() buffers a SILENT result and only substitutes the empty mapping for MID-STREAM failures; a
+			// request-time failure (unreachable endpoint, HTTP error, parse error) surfaces here and must be
+			// silenced the same way: a failed SILENT Invocation is one empty mapping, joined with the input.
+			if (service.isSilent()) {
+				return new CollectionIteration<>(allBindings);
+			}
+			throw e;
+		}
 		return new LocalServiceJoinIteration(remote, allBindings);
 	}
 
@@ -528,7 +570,16 @@ public class RepositoryFederatedService implements FederatedService {
 						if (!inputs.hasNext()) {
 							return null;
 						}
-						current = select(service, projectionVars, inputs.next(), baseUri);
+						BindingSet input = inputs.next();
+						try {
+							current = select(service, projectionVars, input, baseUri);
+						} catch (RuntimeException e) {
+							// request-time failure of a SILENT invocation: pass the input binding through
+							if (!service.isSilent()) {
+								throw e;
+							}
+							current = new CollectionIteration<>(List.of(input));
+						}
 					}
 					if (current.hasNext()) {
 						return current.next();
@@ -585,14 +636,15 @@ public class RepositoryFederatedService implements FederatedService {
 		}
 
 		private static BindingSet merge(BindingSet input, BindingSet remoteSolution) {
+			// test compatibility before allocating: most (remote, input) pairs of a nested-loop join do not merge
+			if (!input.isCompatible(remoteSolution)) {
+				return null;
+			}
 			SPARQLQueryBindingSet merged = new SPARQLQueryBindingSet(input.size() + remoteSolution.size());
 			merged.addAll(input);
 			for (Binding binding : remoteSolution) {
-				Value existing = merged.getValue(binding.getName());
-				if (existing == null) {
+				if (!merged.hasBinding(binding.getName())) {
 					merged.addBinding(binding);
-				} else if (!existing.equals(binding.getValue())) {
-					return null;
 				}
 			}
 			return merged;

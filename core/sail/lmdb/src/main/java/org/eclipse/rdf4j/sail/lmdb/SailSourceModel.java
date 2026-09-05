@@ -97,7 +97,17 @@ class SailSourceModel extends AbstractModel {
 			if (last == null) {
 				throw new IllegalStateException("next() not yet called");
 			}
-			SailSourceModel.this.remove(last);
+			// Deprecate the statement directly: it was just read from this iterator's dataset, so the contains()
+			// pre-check of remove(...) — and the dataset rollover it triggers, which closes every open iterator
+			// including this one — is unnecessary and would silently end the driving loop.
+			synchronized (SailSourceModel.this) {
+				try {
+					sink().deprecate(last);
+					size = -1;
+				} catch (SailException e) {
+					throw new ModelException(e);
+				}
+			}
 			last = null;
 		}
 
@@ -433,8 +443,13 @@ class SailSourceModel extends AbstractModel {
 	public synchronized void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
 			Resource... contexts) {
 		try {
+			// While an iterator is open this is called from its removal loop: enumerate against the dataset that
+			// iterator reads from, because a rollover here would close it and silently end the loop (the sink's
+			// pending changes are then the deprecations issued by the loop itself; re-deprecating is harmless).
+			// Without open iterators, roll over as usual so pending additions are visible.
+			SailDataset current = dataset != null && !openStatementIterators.isEmpty() ? dataset : dataset();
 			CloseableIteration<? extends Statement> stmts;
-			stmts = dataset().getStatements(subj, pred, obj, contexts);
+			stmts = current.getStatements(subj, pred, obj, contexts);
 			try {
 				while (stmts.hasNext()) {
 					Statement st = stmts.next();
