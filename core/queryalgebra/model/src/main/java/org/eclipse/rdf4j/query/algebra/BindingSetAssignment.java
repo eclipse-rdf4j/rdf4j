@@ -10,7 +10,10 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
@@ -22,31 +25,82 @@ import org.eclipse.rdf4j.query.BindingSet;
  */
 public class BindingSetAssignment extends AbstractQueryModelNode implements TupleExpr {
 
+	/** Names declared by the VALUES tuple header, when one was supplied. */
 	private Set<String> bindingNames;
 
 	private Iterable<BindingSet> bindingSets;
+	private List<BindingSet> bindingSetSnapshot;
+	private Set<String> possibleBindingNames;
+	private Set<String> assuredBindingNames;
 
 	@Override
 	public Set<String> getBindingNames() {
-		return getAssuredBindingNames();
+		ensureBindingNameSets();
+		return possibleBindingNames;
 	}
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		if (bindingNames == null) {
-			bindingNames = findBindingNames();
-		}
-		return bindingNames;
+		ensureBindingNameSets();
+		return assuredBindingNames;
 	}
 
-	private Set<String> findBindingNames() {
-		Set<String> result = new LinkedHashSet<>();
-		if (bindingSets != null) {
-			for (BindingSet set : bindingSets) {
-				result.addAll(set.getBindingNames());
+	private void ensureBindingNameSets() {
+		if (possibleBindingNames != null) {
+			return;
+		}
+
+		LinkedHashSet<String> possible = new LinkedHashSet<>();
+		if (bindingNames != null) {
+			possible.addAll(bindingNames);
+		}
+		LinkedHashSet<String> assured = null;
+		Iterable<BindingSet> rows = getBindingSets();
+		if (rows != null) {
+			for (BindingSet row : rows) {
+				Set<String> rowNames = row.getBindingNames();
+				possible.addAll(rowNames);
+				LinkedHashSet<String> boundRowNames = new LinkedHashSet<>(rowNames.size());
+				for (String rowName : rowNames) {
+					if (row.getValue(rowName) != null) {
+						boundRowNames.add(rowName);
+					}
+				}
+				if (assured == null) {
+					assured = boundRowNames;
+				} else {
+					assured.retainAll(boundRowNames);
+				}
 			}
 		}
-		return result;
+		// possibleBindingNames doubles as the initialization guard: publish it LAST so a concurrent reader that
+		// passes the guard never observes a null assured set
+		assuredBindingNames = assured == null ? Set.of() : immutableNames(assured);
+		possibleBindingNames = immutableNames(possible);
+	}
+
+	private static Set<String> immutableNames(LinkedHashSet<String> names) {
+		return names.isEmpty() ? Set.of() : Collections.unmodifiableSet(names);
+	}
+
+	private List<BindingSet> snapshotBindingSets() {
+		if (bindingSets == null) {
+			return null;
+		}
+		if (bindingSetSnapshot == null) {
+			List<BindingSet> rows = new ArrayList<>();
+			for (BindingSet bindingSet : bindingSets) {
+				rows.add(bindingSet);
+			}
+			bindingSetSnapshot = Collections.unmodifiableList(rows);
+			bindingSets = bindingSetSnapshot;
+		}
+		return bindingSetSnapshot;
+	}
+
+	private void invalidateBindingNameSets() {
+		possibleBindingNames = null;
+		assuredBindingNames = null;
 	}
 
 	@Override
@@ -73,17 +127,19 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 			return false;
 		}
 		BindingSetAssignment other = (BindingSetAssignment) obj;
-		return Objects.equals(this.bindingNames, other.bindingNames)
-				&& Objects.equals(this.bindingSets, other.bindingSets);
+		return Objects.equals(this.getBindingNames(), other.getBindingNames())
+				&& Objects.equals(this.getBindingSets(), other.getBindingSets());
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(bindingNames, bindingSets);
+		return Objects.hash(getBindingNames(), getBindingSets());
 	}
 
 	@Override
 	public BindingSetAssignment clone() {
+		// Snapshot before cloning so both query-model nodes replay the same immutable row sequence.
+		snapshotBindingSets();
 		return (BindingSetAssignment) super.clone();
 	}
 
@@ -108,7 +164,10 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	 * @param bindingNames The bindingNames to set if known.
 	 */
 	public void setBindingNames(Set<String> bindingNames) {
-		this.bindingNames = bindingNames;
+		this.bindingNames = bindingNames == null
+				? null
+				: immutableNames(new LinkedHashSet<>(bindingNames));
+		invalidateBindingNameSets();
 	}
 
 	/**
@@ -116,13 +175,15 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	 */
 	public void setBindingSets(Iterable<BindingSet> bindingSets) {
 		this.bindingSets = bindingSets;
+		this.bindingSetSnapshot = null;
+		invalidateBindingNameSets();
 	}
 
 	/**
 	 * @return Returns the bindingSets.
 	 */
 	public Iterable<BindingSet> getBindingSets() {
-		return bindingSets;
+		return snapshotBindingSets();
 	}
 
 	@Override

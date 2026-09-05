@@ -11,7 +11,9 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.federation;
 
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -20,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase;
 
 /**
@@ -34,6 +37,13 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 	protected EvaluationStrategy strategy;
 
 	/**
+	 * Whether a non-silent SERVICE is still invoked (unbound, for its error effect) when the left operand is empty.
+	 * False when the service pattern shares variables with the left operand: it is then only ever evaluated with a left
+	 * solution's bindings, so there is no unbound invocation whose failure could be observed.
+	 */
+	private final boolean invokeWhenLeftEmpty;
+
+	/**
 	 * Construct a service join iteration to use vectored evaluation. The constructor automatically starts evaluation.
 	 *
 	 * @param leftIter
@@ -44,9 +54,22 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 	 */
 	public ServiceJoinIterator(CloseableIteration<BindingSet> leftIter, Service service,
 			BindingSet bindings, EvaluationStrategy strategy) throws QueryEvaluationException {
+		this(leftIter, service, bindings, strategy, true);
+	}
+
+	/**
+	 * @param invokeWhenLeftEmpty whether a non-silent SERVICE is invoked (unbound, for its error effect) when the left
+	 *                            operand is empty; pass {@code false} when the service pattern shares variables with
+	 *                            the left operand.
+	 */
+	@Experimental
+	public ServiceJoinIterator(CloseableIteration<BindingSet> leftIter, Service service,
+			BindingSet bindings, EvaluationStrategy strategy, boolean invokeWhenLeftEmpty)
+			throws QueryEvaluationException {
 		super(leftIter, service, bindings);
 		this.service = service;
 		this.strategy = strategy;
+		this.invokeWhenLeftEmpty = invokeWhenLeftEmpty;
 		run();
 	}
 
@@ -84,6 +107,22 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 						estimateUtf8Bytes(service.getServiceExpressionString()));
 			}
 			FederatedService fs = strategy.getService(serviceUri);
+			if (!leftIter.hasNext()) {
+				// A join with an empty operand yields no solutions, but the SERVICE operand still denotes one
+				// logical invocation whose non-silent failure is observable. Perform the invocation for its
+				// error effect; a silent invocation's outcome is unobservable here and is skipped, as is a
+				// service pattern correlated with the left operand (never evaluated unbound).
+				if (invokeWhenLeftEmpty && !service.isSilent()) {
+					try (CloseableIteration<BindingSet> invocation = fs.select(service,
+							new HashSet<>(service.getServiceVars()), EmptyBindingSet.getInstance(),
+							service.getBaseURI())) {
+						while (invocation.hasNext()) {
+							invocation.next();
+						}
+					}
+				}
+				return;
+			}
 			long started = runtimeTelemetryEnabled ? System.nanoTime() : 0L;
 			try {
 				CloseableIteration<BindingSet> result = fs.evaluate(service, leftIter, service.getBaseURI());

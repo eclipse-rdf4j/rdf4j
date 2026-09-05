@@ -28,12 +28,14 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
@@ -68,11 +70,33 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 				return;
 			}
 
+			// The rewritten Join(VALUES, arg) may be executed as a bind join that pushes each VALUES row into
+			// the cloned argument, so the argument must additionally satisfy the binding-injection contract
+			// for the VALUES variables (an Extend target collision or an expression observing the injected
+			// name would change results).
+			if (!QueryEvaluationUtility.permitsBindingInjection(filter.getArg(), assignment.getBindingNames())) {
+				return;
+			}
+
 			if (mergeWithExistingValuesAnchor(filter, assignment)) {
 				return;
 			}
 
+			invalidateAncestorMergeJoins(filter);
 			filter.replaceWith(new Join(assignment, filter.getArg().clone()));
+		}
+	}
+
+	/**
+	 * This optimizer runs after physical join planning. Introducing an unordered VALUES input changes the ordering
+	 * contract of every containing join, so an ancestor merge-join hint derived from the old subtree is no longer
+	 * valid. Descendant hints remain valid because their inputs are unchanged.
+	 */
+	private static void invalidateAncestorMergeJoins(QueryModelNode rewrittenNode) {
+		for (QueryModelNode parent = rewrittenNode.getParentNode(); parent != null; parent = parent.getParentNode()) {
+			if (parent instanceof Join join) {
+				join.setMergeJoin(false);
+			}
 		}
 	}
 
@@ -141,6 +165,10 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 		}
 
 		if (mergedBindingSets.isEmpty()) {
+			if (!QueryEvaluationUtility.canDiscardWithoutEvaluation(filter.getArg())) {
+				// skip the merge: the empty result may not suppress a query-fatal error in the argument
+				return false;
+			}
 			filter.replaceWith(new EmptySet());
 			return true;
 		}

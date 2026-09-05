@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import java.io.IOException;
+
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
@@ -24,6 +26,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
+import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
@@ -132,9 +136,13 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset,
 			BindingSet bindings, boolean includeInferred) throws SailException {
+		CloseableIteration<? extends BindingSet> result = evaluateWithPrefixRun(tupleExpr, dataset, bindings,
+				includeInferred);
+		if (result == null) {
+			result = super.evaluateInternal(tupleExpr, dataset, bindings, includeInferred);
+		}
 		// ensure that all elements of the binding set are initialized (lazy values are resolved)
-		return new IterationWrapper<BindingSet>(
-				super.evaluateInternal(tupleExpr, dataset, bindings, includeInferred)) {
+		return new IterationWrapper<BindingSet>(result) {
 			@Override
 			public BindingSet next() throws QueryEvaluationException {
 				BindingSet bs = super.next();
@@ -161,6 +169,47 @@ public class LmdbStoreConnection extends SailSourceConnection {
 				return stmt;
 			}
 		};
+	}
+
+	/**
+	 * Evaluates distinct-prefix query shapes (see {@link LmdbPrefixRunQuery}) with a prefix-run index scan. The scan
+	 * reads the committed store directly, so it is only used outside transactions, without initial bindings and without
+	 * a query dataset, only while no inferred statements need to be merged in, and only while the snapshot store's
+	 * auto-flush branches hold no committed-but-unflushed changes (which every other read sees through the branch).
+	 *
+	 * @return the result, or {@code null} when the query must be evaluated as usual
+	 */
+	private CloseableIteration<? extends BindingSet> evaluateWithPrefixRun(TupleExpr tupleExpr, Dataset dataset,
+			BindingSet bindings, boolean includeInferred) throws SailException {
+		if (!LmdbPrefixRunPlan.isEnabled() || isActive() || (bindings != null && bindings.size() > 0)
+				|| !LmdbPrefixRunQuery.hasNoGraphs(dataset)) {
+			return null;
+		}
+		LmdbSailStore store = lmdbStore.getBackingStore();
+		if (store == null || (includeInferred && store.mayHaveInferred())) {
+			return null;
+		}
+		SailStore snapshotStore = lmdbStore.getSailStore();
+		if (snapshotStore instanceof SnapshotSailStore
+				&& ((SnapshotSailStore) snapshotStore).hasUnflushedChanges(includeInferred)) {
+			// committed changes still parked in the shared auto-flush branch (another connection keeps a dataset
+			// open) are invisible to a direct index scan
+			return null;
+		}
+		try {
+			CloseableIteration<BindingSet> distinct = LmdbPrefixRunQuery.evaluateDistinct(store, tupleExpr, true);
+			if (distinct != null) {
+				return distinct;
+			}
+			TupleExpr rewritten = LmdbPrefixRunQuery.rewriteDistinctCounts(store, tupleExpr, true,
+					lmdbStore.getValueFactory());
+			if (rewritten != null) {
+				return super.evaluateInternal(rewritten, dataset, bindings, includeInferred);
+			}
+			return null;
+		} catch (IOException e) {
+			throw new SailException(e);
+		}
 	}
 
 	/**

@@ -208,7 +208,11 @@ public class RepositoryFederatedServiceIntegrationTest {
 
 		List<BindingSet> res = evaluateQuery(query);
 		assertResultEquals(res, "var", Lists.newArrayList(l("val1"), l("val2")));
-		assertResultEquals(res, "output", Lists.newArrayList(l("val1_processed"), l("val2_processed")));
+		// Without the explicit ?__rowIdx opt-in (compare test5a) the subselect service is ONE logical
+		// Invocation, in which ?var is unbound and CONCAT errors — ?output stays unbound. The previous
+		// "_processed" outcome relied on implicitly injecting each input binding into the remote subselect,
+		// which is not observationally equivalent to any single Invocation.
+		assertResultEquals(res, "output", Lists.newArrayList(null, null));
 	}
 
 	@Test
@@ -224,6 +228,8 @@ public class RepositoryFederatedServiceIntegrationTest {
 		assertEquals(2, res.size());
 		BindingSet b1 = res.get(0);
 		assertEquals(l("val1"), b1.getValue("var"));
+		// the explicit ?__rowIdx projection opts into row-correlated vectored evaluation: the count is
+		// computed per input binding with the binding injected into the remote subquery
 		assertEquals(1, ((Literal) b1.getValue("cnt")).intValue());
 	}
 
@@ -240,6 +246,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 		assertEquals(1, res.size());
 		BindingSet b1 = res.get(0);
 		assertEquals(l("val1"), b1.getValue("var"));
+		// the explicit ?__rowIdx projection opts into row-correlated vectored evaluation — see test6
 		assertEquals(1, ((Literal) b1.getValue("cnt")).intValue());
 	}
 

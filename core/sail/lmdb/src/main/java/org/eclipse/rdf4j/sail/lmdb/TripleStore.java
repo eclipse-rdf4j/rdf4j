@@ -116,7 +116,7 @@ class TripleStore implements Closeable {
 	 * read when a {@link TripleStore} is constructed; only {@code true} disables page walking.
 	 */
 	static final String DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.disablePageWalkingEstimator";
-	private static final boolean REUSE_SECONDARY_WRITE_CURSOR = true;
+	private static final boolean REUSE_ALIGNED_WRITE_CURSOR = true;
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -496,6 +496,75 @@ class TripleStore implements Closeable {
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);
 	}
 
+	/**
+	 * Checks whether at least one triple matches the supplied pattern without materializing any record. Fully bound
+	 * patterns are answered with a single key lookup; other patterns position a cursor on the best index and stop at
+	 * the first matching record.
+	 */
+	boolean hasTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit) throws IOException {
+		if (subj < 0 && pred < 0 && obj < 0 && context < 0) {
+			return hasAnyTriples(txn, explicit);
+		}
+		if (subj > 0 && pred > 0 && obj > 0 && context >= 0) {
+			return exactTripleExists(txn, indexes.getFirst(), subj, pred, obj, context, explicit);
+		}
+
+		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
+		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
+		try (RecordIterator records = getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index,
+				doRangeSearch)) {
+			return records.next() != null;
+		}
+	}
+
+	private boolean hasAnyTriples(Txn txnRef, boolean explicit) throws IOException {
+		long readStamp;
+		try {
+			readStamp = txnRef.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		try (MemoryStack stack = stackPush()) {
+			TripleIndex mainIndex = indexes.getFirst();
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txnRef.get(), mainIndex.getDB(explicit), stat));
+			return stat.ms_entries() > 0;
+		} finally {
+			txnRef.lockManager().unlockRead(readStamp);
+		}
+	}
+
+	private boolean exactTripleExists(Txn txnRef, TripleIndex index, long subj, long pred, long obj, long context,
+			boolean explicit) throws IOException {
+		long readStamp;
+		try {
+			readStamp = txnRef.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.toKey(keyBuf, subj, pred, obj, context);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+			int rc = mdb_get(txnRef.get(), index.getDB(explicit), keyVal, dataVal);
+			if (rc == MDB_SUCCESS) {
+				return true;
+			}
+			if (rc == MDB_NOTFOUND) {
+				return false;
+			}
+			E(rc);
+			return false;
+		} finally {
+			txnRef.lockManager().unlockRead(readStamp);
+		}
+	}
+
 	boolean hasTriples(boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.getFirst();
 		return txnManager.doWith((stack, txn) -> {
@@ -508,6 +577,109 @@ class TripleStore implements Closeable {
 	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
 		return new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txn);
+	}
+
+	/**
+	 * Plans a prefix-run scan that emits one representative statement per distinct combination of {@code prefixFields}
+	 * among the statements matching the supplied pattern (ids {@code <= 0} for subject, predicate and object and
+	 * {@code < 0} for context mark unbound fields). An index qualifies when its leading key fields consist of the bound
+	 * fields of the pattern followed by exactly the prefix fields (in any order), so that every statement sharing a
+	 * prefix combination forms one contiguous key run; a bound context may additionally follow the prefix. Among
+	 * qualifying indexes the shortest run prefix wins.
+	 *
+	 * @return the plan, or {@code null} when prefix-run scans are disabled or no index qualifies
+	 */
+	LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
+		return prefixRunPlan(prefixFields, subj > 0, pred > 0, obj > 0, context >= 0);
+	}
+
+	/**
+	 * Variant of {@link #prefixRunPlan(int[], long, long, long, long)} that only needs to know which fields of the
+	 * pattern are bound.
+	 */
+	LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, boolean subjBound, boolean predBound, boolean objBound,
+			boolean contextBound) {
+		if (!LmdbPrefixRunPlan.isEnabled() || prefixFields == null || prefixFields.length == 0
+				|| prefixFields.length > 3) {
+			return null;
+		}
+		boolean[] bound = new boolean[4];
+		bound[TripleIndex.SUBJ_IDX] = subjBound;
+		bound[TripleIndex.PRED_IDX] = predBound;
+		bound[TripleIndex.OBJ_IDX] = objBound;
+		bound[TripleIndex.CONTEXT_IDX] = contextBound;
+		int prefixMask = 0;
+		for (int field : prefixFields) {
+			if (field < 0 || field > 3 || bound[field] || (prefixMask & (1 << field)) != 0) {
+				return null;
+			}
+			prefixMask |= 1 << field;
+		}
+		TripleIndex best = null;
+		int bestPrefixLength = Integer.MAX_VALUE;
+		for (TripleIndex index : indexes) {
+			int prefixLength = prefixRunLength(index, prefixMask, bound);
+			if (prefixLength > 0 && prefixLength < bestPrefixLength) {
+				best = index;
+				bestPrefixLength = prefixLength;
+			}
+		}
+		if (best == null) {
+			return null;
+		}
+		return new LmdbPrefixRunPlan(best, prefixFields, bestPrefixLength);
+	}
+
+	/**
+	 * Opens a prefix-run cursor for a previously planned scan.
+	 *
+	 * @param countRunRows whether every row of each run must be visited so that the cursor can report the number of
+	 *                     matching statements per prefix
+	 */
+	LmdbPrefixRunIterator getPrefixRuns(Txn txn, LmdbPrefixRunPlan plan, long subj, long pred, long obj,
+			long context, boolean explicit, boolean countRunRows) throws IOException {
+		if (plan == null) {
+			throw new IllegalArgumentException("Prefix-run plan must not be null");
+		}
+		return new LmdbPrefixRunIterator(plan, txn, subj, pred, obj, context, explicit, countRunRows);
+	}
+
+	/**
+	 * Returns the number of leading key fields of {@code index} that form the run prefix for the given prefix-field set
+	 * (a bit mask over statement field indexes) and bound fields, or -1 when the index does not qualify.
+	 */
+	private static int prefixRunLength(TripleIndex index, int prefixMask, boolean[] bound) {
+		char[] fieldSeq = index.getFieldSeq();
+		int remaining = prefixMask;
+		int matchedPrefixLength = -1;
+		boolean matchedPrefixField = false;
+		for (int i = 0; i < fieldSeq.length; i++) {
+			int field = LmdbPrefixRunIterator.fieldIndex(fieldSeq[i]);
+			if (bound[field]) {
+				if (matchedPrefixField && (remaining != 0 || field != TripleIndex.CONTEXT_IDX)) {
+					// a bound field between the prefix fields (or a bound non-context field after them) would break
+					// the runs into fragments: the cursor treats a mismatch inside the prefix as end of range, not
+					// as a row to skip
+					return -1;
+				}
+				continue;
+			}
+			if ((remaining & (1 << field)) != 0) {
+				matchedPrefixField = true;
+				remaining &= ~(1 << field);
+				if (remaining == 0) {
+					matchedPrefixLength = i + 1;
+				}
+				continue;
+			}
+			if (remaining == 0) {
+				// unbound fields after the complete prefix are free
+				continue;
+			}
+			// an unbound non-prefix field before the prefix is complete: the prefix is not contiguous
+			return -1;
+		}
+		return matchedPrefixLength;
 	}
 
 	/**
@@ -1128,7 +1300,7 @@ class TripleStore implements Closeable {
 		int addedCount = 0;
 		int remainingStart = count;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
-			PointerBuffer cursorHandle = REUSE_SECONDARY_WRITE_CURSOR
+			PointerBuffer cursorHandle = REUSE_ALIGNED_WRITE_CURSOR
 					? stack.mallocPointer(1)
 					: null;
 			MDBVal keyVal = MDBVal.malloc(stack);
@@ -1137,6 +1309,9 @@ class TripleStore implements Closeable {
 			int[] sortedIndices = new int[count];
 			boolean[] promotedFromImplicit = new boolean[count];
 			LongIntHashMap contextIncrements = new LongIntHashMap();
+			long mainWriteCursor = REUSE_ALIGNED_WRITE_CURSOR
+					? getAlignedWriteCursor(0, mainIndex, explicit, cursorHandle)
+					: 0;
 
 			for (int i = 0; i < count; i++) {
 				if (shouldFallBackFromAlignedWrite()) {
@@ -1148,7 +1323,9 @@ class TripleStore implements Closeable {
 				keyBuf.flip();
 				keyVal.mv_data(keyBuf);
 
-				int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
+				int rc = REUSE_ALIGNED_WRITE_CURSOR
+						? mdb_cursor_put(mainWriteCursor, keyVal, dataVal, MDB_NOOVERWRITE)
+						: mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
 				if (rc == MDB_MAP_FULL && autoGrow) {
 					remainingStart = i;
 					break;
@@ -1199,7 +1376,7 @@ class TripleStore implements Closeable {
 				}
 				sortStatementIndicesByLeadingField(sortedIndices, addedCount, index, subj, pred, obj, context);
 				currentFieldSeq = index.getFieldSeq();
-				long secondaryWriteCursor = REUSE_SECONDARY_WRITE_CURSOR && addedCount > 0
+				long secondaryWriteCursor = REUSE_ALIGNED_WRITE_CURSOR && addedCount > 0
 						? getAlignedWriteCursor(i, index, explicit, cursorHandle)
 						: 0;
 				for (int sortedIndex = 0; sortedIndex < addedCount; sortedIndex++) {
@@ -1219,7 +1396,7 @@ class TripleStore implements Closeable {
 								addedIndexConsumer);
 						return;
 					}
-					if (REUSE_SECONDARY_WRITE_CURSOR) {
+					if (REUSE_ALIGNED_WRITE_CURSOR) {
 						int rc = mdb_cursor_put(secondaryWriteCursor, keyVal, dataVal, 0);
 						if (rc == MDB_MAP_FULL && autoGrow) {
 							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
