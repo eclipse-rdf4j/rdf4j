@@ -10,17 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.ntriples;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-import java.io.StringWriter;
-
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Model;
-import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
-import org.eclipse.rdf4j.rio.RDFFormat;
-import org.eclipse.rdf4j.rio.Rio;
-import org.junit.jupiter.api.Test;
-
 /**
  * JUnit test for the RDF/JSON parser.
  *
