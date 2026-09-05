@@ -41,7 +41,7 @@ class LmdbNativeEncounterOrderAccessTest {
 	}
 
 	@Test
-	void allUnboundNamedContextScanUsesMeasuredLmdbException() throws Exception {
+	void allUnboundNamedContextScanUsesCandidateSelection() throws Exception {
 		TrackingSource source = new TrackingSource();
 		RowState row = unknownRow(source, Map.of("s", 0, "p", 1, "o", 2, "g", 3));
 		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.slot(3),
@@ -51,8 +51,8 @@ class LmdbNativeEncounterOrderAccessTest {
 			// Opening is enough to observe the physical source selection.
 		}
 
-		assertThat(source.candidateRequests).isZero();
-		assertThat(source.forcedLmdbRequests).isEqualTo(1);
+		assertThat(source.candidateRequests).isEqualTo(1);
+		assertThat(source.forcedLmdbRequests).isZero();
 	}
 
 	@Test

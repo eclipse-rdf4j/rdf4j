@@ -65,6 +65,16 @@ public interface KernelHooks {
 	 */
 	long computeBind(int bindId, long a0, long a1);
 
+	/** Installs one argument of an arbitrary-arity BIND without per-row array allocation. */
+	default void setBindInput(int bindId, int argument, long value) {
+		throw new UnsupportedOperationException("arbitrary-arity bindings are not supported");
+	}
+
+	/** Evaluates a BIND once using its installed arguments. */
+	default long computeBindRow(int bindId) {
+		throw new UnsupportedOperationException("arbitrary-arity bindings are not supported");
+	}
+
 	/** SPARQL ORDER BY comparison of two ids (negative/zero/positive contract like a {@code Comparator}). */
 	int compareValues(long left, long right);
 
@@ -91,6 +101,16 @@ public interface KernelHooks {
 	 * primitive while preserving datatype promotion, arbitrary-precision integers and decimals, and type errors.
 	 */
 	void accumulateNumeric(int aggregateId, int groupId, long valueId);
+
+	/** Installs one kernel column for an exact row-valued aggregate. */
+	default void setAggregateInput(int column, long value) {
+		throw new UnsupportedOperationException("row aggregate inputs are not supported");
+	}
+
+	/** Adds one solution to a registered exact aggregate (for example SAMPLE or COUNT(DISTINCT *)). */
+	default void accumulateRow(int aggregateId, int groupId) {
+		throw new UnsupportedOperationException("row aggregates are not supported");
+	}
 
 	/**
 	 * Adds one bound value to a DISTINCT channel owned by the engine, returning true when the value was not already

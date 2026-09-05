@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.sail.lmdb.EmptyRecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -65,6 +67,41 @@ class LmdbNativeKernelLoweringTest {
 		java.util.Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
 		row.recomputeBoundMask();
 		return row;
+	}
+
+	@Test
+	void nativePlanBindingPreservesCorrelatedScope() {
+		RowState parent = freshRow();
+		parent.bind(0, PRED);
+		parent.enterLexicalScope(parent.boundMask());
+		SlotPlan nested = new SlotPlan() {
+			@Override
+			public RowCursor open(RowState row) {
+				assertEquals(parent.lexicalScopeDepth, row.lexicalScopeDepth,
+						"OPTIONAL must still recognize a correlated lexical scope inside a kernel operator");
+				assertEquals(parent.lexicalInputMask, row.lexicalInputMask);
+				assertEquals(PRED, row.slots[0]);
+				return SingletonPlan.INSTANCE.open(row);
+			}
+
+			@Override
+			public long producedMask() {
+				return 0L;
+			}
+		};
+		LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
+				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
+				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0],
+				new int[0], List.of(), new StatementOrder[0],
+				new LmdbNativeKernelBindings.PlanRequest[] {
+						new LmdbNativeKernelBindings.PlanRequest(nested, new int[0]) },
+				null, false, 16);
+		KernelPlan plan = bindings.context(new NativeLmdbQuerySource.NativeAdjacency[0],
+				new LmdbNativeKernelBindings.BoundDomains(new long[0][], new int[0], new int[0]), parent,
+				null).plans[0];
+		try (KernelPlan.Cursor cursor = plan.open()) {
+			assertEquals(1, cursor.fill(new long[0], 1));
+		}
 	}
 
 	@Test
@@ -233,7 +270,7 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
-	void allUnboundNamedContextKernelScanUsesMeasuredLmdbException() {
+	void allUnboundNamedContextKernelScanUsesCandidateSelection() {
 		PatternPlan named = new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.slot(3),
 				ContextConstraint.UNRESTRICTED, true, 10D);
 		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { named }, new MaskedFilter[0]);
@@ -246,8 +283,8 @@ class LmdbNativeKernelLoweringTest {
 					LmdbNativeAggregateCompiler.UNKNOWN, LmdbNativeAggregateCompiler.UNKNOWN);
 		}
 
-		assertEquals(0, source.candidateRequests);
-		assertEquals(1, source.forcedLmdbRequests);
+		assertEquals(1, source.candidateRequests);
+		assertEquals(0, source.forcedLmdbRequests);
 	}
 
 	/** A repeated-variable shape still needs its exact scan fallback; it declines when scan sources are disabled. */
@@ -452,7 +489,7 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
-	void optionalChainWithMaybeUnboundKeyStaysOnSemanticNativeRowTier() {
+	void optionalChainWithMaybeUnboundKeyUsesCorrelatedNativeOperator() {
 		SlotPlan first = new LeftJoinPlan(
 				pattern(Term.slot(0), Term.slot(1)),
 				pattern(Term.slot(1), Term.slot(2)));
@@ -464,7 +501,8 @@ class LmdbNativeKernelLoweringTest {
 
 			assertNotNull(lowered, "an unbound earlier OPTIONAL key must use semantic native evaluation");
 			assertNull(lowered.planBridgeReason);
-			assertTrue(lowered.kernel.shapeKey().contains("PR(p0->"), lowered.kernel.shapeKey());
+			assertTrue(lowered.kernel.shapeKey().contains("lg[PR(p0,"), lowered.kernel.shapeKey());
+			assertArrayEquals(new int[] { 0, 1, 2 }, lowered.bindings.planRequests[0].inputSlots);
 		} finally {
 			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
 		}
@@ -520,6 +558,60 @@ class LmdbNativeKernelLoweringTest {
 		hooks[0] = new LmdbNativeKernelHooks(freshRow(), bindings);
 
 		assertTrue(hooks[0].testFilter(0, 11L, -1L, -1L));
+	}
+
+	@Test
+	void kernelScratchPreservesEntryScopeAndRestoresResidualBindings() {
+		RowState parent = freshRow();
+		parent.bind(3, PRED);
+		parent.enterLexicalScope(parent.boundMask());
+		LmdbNativeKernelHooks[] hooks = new LmdbNativeKernelHooks[1];
+		NativeBooleanFilter residual = row -> {
+			assertEquals(-1L, row.slots[2], "unbound witness variables must retain the native sentinel");
+			assertEquals(PRED, row.slots[3]);
+			assertEquals(parent.lexicalScopeDepth, row.lexicalScopeDepth);
+			assertEquals(parent.lexicalInputMask, row.lexicalInputMask);
+			return row.slots[0] == 11L;
+		};
+		NativeBooleanFilter checkRestored = row -> row.slots[0] == -1L && row.slots[3] == PRED;
+		LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
+				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
+				new LmdbNativeKernelBindings.DomainRequest[0],
+				new LmdbNativeKernelBindings.FilterHook[] { new LmdbNativeKernelBindings.FilterHook(
+						new MaskedFilter(checkRestored, 0L), new int[0]) },
+				new LmdbNativeKernelBindings.BindHook[0], new int[0], List.of(), new StatementOrder[0],
+				new LmdbNativeKernelBindings.PlanRequest[0], null, true, 0,
+				new MaskedFilter[] { new MaskedFilter(residual, 1L) });
+		hooks[0] = new LmdbNativeKernelHooks(parent, bindings);
+		hooks[0].residualSlot(0, 11L);
+		assertTrue(hooks[0].testResidual(0));
+		assertTrue(hooks[0].testFilter(0, -1L, -1L, -1L));
+	}
+
+	@Test
+	void declinedCompositeWitnessDoesNotRetainUnusedScanBindings() {
+		LmdbKeyRange range = new LmdbKeyRange(new byte[] { 1, 2 }, new byte[] { 1, 3 }, "posc", 2);
+		PatternPlan ranged = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, null, "posc", range, 2D);
+		SlotPlan unsupportedWitness = new SlotPlan() {
+			@Override
+			public RowCursor open(RowState row) {
+				return SingletonPlan.INSTANCE.open(row);
+			}
+
+			@Override
+			public long producedMask() {
+				return 0L;
+			}
+		};
+		NativeBooleanFilter conjunction = new BooleanCombinationFilter(new ExistsFilter(ranged),
+				new ExistsFilter(unsupportedWitness), true);
+		SlotPlan plan = SlotPlan.filter(pattern(Term.slot(0), Term.slot(2)), conjunction, -1L);
+		LmdbNativeKernelLowering.Lowered lowered = lowerCounting(plan, 0);
+		assertNotNull(lowered);
+		assertEquals(0, lowered.bindings.scanSites.length,
+				"a rejected partial witness must not leave native scan resources in the residual kernel");
+		assertEquals(1, lowered.bindings.kernelResiduals.length);
 	}
 
 	@Test
@@ -881,7 +973,7 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
-	void aggregateWitnessCorrelatedOnNullableOptionalSlotDeclinesIrLowering() {
+	void aggregateWitnessCorrelatedOnNullableOptionalSlotUsesExactResidual() {
 		StubSource source = new StubSource();
 		SlotPlan optional = new LeftJoinPlan(
 				pattern(Term.slot(0), Term.slot(1)),
@@ -894,8 +986,9 @@ class LmdbNativeKernelLoweringTest {
 		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(plan, freshRow(source),
 				new int[0], new AggregateSpec[] { AggregateSpec.slot("count", 0, false, AggKind.COUNT) }, null);
 
-		assertNull(lowered,
-				"a nullable outer correlation needs a per-row shared-domain mask and must stay on the semantic native row tier");
+		assertNotNull(lowered);
+		assertEquals(1, lowered.bindings.kernelResiduals.length,
+				"nullable correlation must retain native shared-domain semantics inside the kernel");
 	}
 
 	/**
@@ -1015,7 +1108,7 @@ class LmdbNativeKernelLoweringTest {
 	 * Computed BINDs lower through {@code hooks.computeBind} since the M7 bind-hook seam. Three boundaries pinned here:
 	 * a zero-input repeatable expression folds at lowering time into a constant alias (no per-row hook), an
 	 * input-bearing expression registers a bind hook carrying its argument slots, and a non-repeatable expression
-	 * (RAND-family) still declines because a re-runnable kernel cannot promise one evaluation per solution.
+	 * (RAND-family) uses the exact row hook on the serial encounter-order path.
 	 */
 	@Test
 	void aggregateRungLowersAComputedBindThroughTheBindHookSeam() {
@@ -1031,8 +1124,11 @@ class LmdbNativeKernelLoweringTest {
 		assertArrayEquals(new int[] { 1 }, hooked.bindings.bindHooks[0].argSlots);
 
 		LmdbNativeCompiledInlineId unstable = new LmdbNativeCompiledInlineId(0L, false, row -> PRED);
-		assertNull(lowerCounting(computedBindCore(unstable), 2),
-				"a non-repeatable expression must keep declining");
+		LmdbNativeKernelLowering.Lowered volatileBind = lowerCounting(computedBindCore(unstable), 2);
+		assertNotNull(volatileBind);
+		assertEquals(1, volatileBind.bindings.bindHooks.length);
+		assertNotNull(volatileBind.bindings.bindHooks[0].copy,
+				"a non-repeatable expression must retain its original per-solution binding operation");
 	}
 
 	/** The kill switch restores the pre-M7 decline unchanged. */
@@ -1330,7 +1426,7 @@ class LmdbNativeKernelLoweringTest {
 		String key = lowered.kernel.shapeKey();
 		int leftGroupStart = key.indexOf("lg[");
 		int leftGroupEnd = key.indexOf("];", leftGroupStart);
-		int membership = key.indexOf("in(v0");
+		int membership = key.indexOf("PR(p0,");
 		assertTrue(leftGroupStart >= 0 && leftGroupEnd > leftGroupStart, "expected an OPTIONAL left group; key=" + key);
 		assertTrue(membership > leftGroupStart && membership < leftGroupEnd,
 				"the VALUES membership test must stay inside the OPTIONAL arm; key=" + key);
@@ -1389,7 +1485,8 @@ class LmdbNativeKernelLoweringTest {
 			assertNull(root.planBridgeReason);
 			assertNull(child.planBridgeReason);
 			assertTrue(root.kernel.shapeKey().contains("PR(p0->"), root.kernel.shapeKey());
-			assertTrue(child.kernel.shapeKey().contains("PR(p0->"), child.kernel.shapeKey());
+			assertTrue(child.kernel.shapeKey().contains("PR(p0,v0,v1->"), child.kernel.shapeKey());
+			assertArrayEquals(new int[] { 0, 1 }, child.bindings.planRequests[0].inputSlots);
 		} finally {
 			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
 		}
@@ -1480,6 +1577,32 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
+	void rowWitnessRetainsItsResidualCallbacks() {
+		NativeBooleanFilter fourSlotFilter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				return row.view.size() >= 0;
+			}
+
+			@Override
+			public long batchReadMask() {
+				return 0b1111L;
+			}
+		};
+		SlotPlan core = new MultiJoinPlan(
+				new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)) },
+				new MaskedFilter[0]);
+		SlotPlan witness = new FilterPlan(pattern(Term.slot(1), Term.slot(3)), fourSlotFilter, -1L);
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(
+				new FilterPlan(core, new ExistsFilter(witness), -1L), freshRow(), null);
+
+		assertNotNull(lowered);
+		assertTrue(lowered.kernel.shapeKey().contains("fr0("), lowered.kernel.shapeKey());
+		assertEquals(1, lowered.bindings.kernelResiduals.length);
+		assertTrue(lowered.bindings.needsHooks());
+	}
+
+	@Test
 	void aggregateWitnessLowersAssuredAliasWithNullOnErrorContract() {
 		StubSource source = new StubSource();
 		SlotPlan witness = new ExtensionPlan(pattern(Term.slot(1), Term.slot(2)),
@@ -1539,7 +1662,7 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
-	void aggregateWitnessDeclinesPartialValuesRowsBeforeAJoin() {
+	void aggregateWitnessUsesExactResidualForPartialValuesBeforeAJoin() {
 		StubSource source = new StubSource();
 		ValuesPlan values = new ValuesPlan(new ValuesRow[] {
 				new ValuesRow(new int[] { 3 }, new long[] { 100L }),
@@ -1548,8 +1671,10 @@ class LmdbNativeKernelLoweringTest {
 				new SlotPlan[] { values, pattern(Term.slot(1), Term.slot(3)) },
 				new MaskedFilter[0]);
 
-		assertNull(lowerCountingWithSticky(source, new ExistsFilter(witness)),
-				"UNDEF needs a row-specific unbound graph-pattern path, not a -1 adjacency probe");
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithSticky(source, new ExistsFilter(witness));
+		assertNotNull(lowered);
+		assertEquals(1, lowered.bindings.kernelResiduals.length,
+				"UNDEF must use a row-specific native graph-pattern path");
 	}
 
 	/**
@@ -1568,23 +1693,26 @@ class LmdbNativeKernelLoweringTest {
 		assertEquals(2, key.split("nx\\{", -1).length - 1, "both witnesses must be negated; key=" + key);
 	}
 
-	/** A bare disjunction needs a real OR of witnesses, which the IR cannot express — it must decline. */
+	/** A bare disjunction retains its complete boolean operation in one residual callback. */
 	@Test
-	void aggregateRungDeclinesADisjunctionOfWitnesses() {
+	void aggregateRungPreservesADisjunctionOfWitnesses() {
 		StubSource source = new StubSource();
-		assertNull(lowerCountingWithSticky(source,
-				new BooleanCombinationFilter(existsWitness(source, 1), existsWitness(source, 2), false)),
-				"A OR B cannot become two sequential filters, which would AND them");
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithSticky(source,
+				new BooleanCombinationFilter(existsWitness(source, 1), existsWitness(source, 2), false));
+		assertNotNull(lowered);
+		assertEquals(1, lowered.bindings.kernelResiduals.length, "A OR B must remain one boolean operation");
 	}
 
-	/** {@code NOT(A AND B)} is {@code NOT A OR NOT B} — also a disjunction, so it must decline too. */
+	/** {@code NOT(A AND B)} must remain a disjunction of negations. */
 	@Test
-	void aggregateRungDeclinesANegatedConjunction() {
+	void aggregateRungPreservesANegatedConjunction() {
 		StubSource source = new StubSource();
 		NativeBooleanFilter conjunction = new BooleanCombinationFilter(existsWitness(source, 1),
 				existsWitness(source, 2), true);
-		assertNull(lowerCountingWithSticky(source, new NegatedNativeBooleanFilter(conjunction)),
-				"NOT(A AND B) is a disjunction of negations, not a conjunction");
+		LmdbNativeKernelLowering.Lowered lowered = lowerCountingWithSticky(source,
+				new NegatedNativeBooleanFilter(conjunction));
+		assertNotNull(lowered);
+		assertEquals(1, lowered.bindings.kernelResiduals.length, "the negated conjunction must remain intact");
 	}
 
 	/**

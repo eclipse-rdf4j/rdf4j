@@ -40,18 +40,22 @@ final class UnionPlan implements SlotPlan {
 
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
-		BatchCursor leftBatch = left.openBatch(row, capacity);
+		// Both cursors remain open together. Row-backed batches can retain bindings until their next fill or close,
+		// so sharing their mutable row would make one UNION arm constrain or roll back the other arm.
+		RowState leftRow = row.fork();
+		RowState rightRow = row.fork();
+		BatchCursor leftBatch = left.openBatch(leftRow, capacity);
 		BatchCursor rightBatch = null;
 		try {
-			rightBatch = right.openBatch(row, capacity);
+			rightBatch = right.openBatch(rightRow, capacity);
 			if (leftBatch == null && rightBatch == null) {
 				return null;
 			}
 			if (leftBatch == null) {
-				leftBatch = new RowBatchCursor(left.open(row), row);
+				leftBatch = new RowBatchCursor(left.open(leftRow), leftRow);
 			}
 			if (rightBatch == null) {
-				rightBatch = new RowBatchCursor(right.open(row), row);
+				rightBatch = new RowBatchCursor(right.open(rightRow), rightRow);
 			}
 			return new UnionBatchCursor(leftBatch, rightBatch);
 		} catch (IOException | RuntimeException | Error failure) {

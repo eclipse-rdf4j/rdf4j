@@ -49,7 +49,7 @@ public final class LmdbRuntimeProperties {
 					"Lower supported BIND expressions through generated-kernel hooks.", BOOLEAN),
 			on("Code generation", "rdf4j.lmdb.janinoCodegen.contextColumns", "Context columns",
 					"Lower context columns into generated kernels.", BOOLEAN),
-			off("Code generation", "rdf4j.lmdb.janinoCodegen.distinctNumericAggregates",
+			on("Code generation", "rdf4j.lmdb.janinoCodegen.distinctNumericAggregates",
 					"Distinct numeric aggregates", "Lower distinct numeric aggregates into generated kernels.",
 					BOOLEAN),
 			on("Code generation", "rdf4j.lmdb.janinoCodegen.distinctRootExists", "Distinct root existence",

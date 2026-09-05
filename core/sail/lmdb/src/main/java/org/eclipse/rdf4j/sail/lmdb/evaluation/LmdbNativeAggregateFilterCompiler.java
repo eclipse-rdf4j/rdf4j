@@ -435,7 +435,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			// Native leaves collapse type errors to false at the row gate. Negation is safe only when the
 			// operand cannot produce an error; otherwise the generic evaluator must preserve ERROR under Not.
 			NativeBooleanFilter arg = compileBoolean(((Not) expr).getArg(), assuredMask);
-			return arg == null ? null : new NegatedNativeBooleanFilter(arg);
+			return arg == null ? null : new NegatedNativeBooleanFilter(arg, true);
 		}
 		LmdbNativeCompiledBoolean nativeExpression = LmdbNativeExpressionCompiler
 				.compileBoolean(expr, source, this::existingSlot, strictCompare(), assuredMask);

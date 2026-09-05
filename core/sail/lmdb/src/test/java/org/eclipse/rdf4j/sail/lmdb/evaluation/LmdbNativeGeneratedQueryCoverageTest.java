@@ -353,6 +353,37 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	}
 
 	@Test
+	void nestedUnionFallbackPreservesEveryOuterBinding() {
+		String[] properties = { LmdbNativeJaninoCodegen.ENABLED_PROPERTY,
+				LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "rdf4j.lmdb.nativeBatch.enabled" };
+		Map<String, String> previous = new TreeMap<>();
+		for (String property : properties) {
+			previous.put(property, System.getProperty(property));
+		}
+		try {
+			System.setProperty(properties[0], "false");
+			System.setProperty(properties[1], "false");
+			for (boolean batch : new boolean[] { false, true }) {
+				System.setProperty(properties[2], Boolean.toString(batch));
+				for (GeneratedQuery query : generatedQueriesAt(1578, 2788, 4508, 7688, 8718).values()) {
+					List<String> expected = genericRows(query.sparql(), true);
+					List<String> actual = rows(query.sparql(), true);
+					assertThat(actual).as("batch=%s\n%s\n%s", batch, query.sparql(), explain(query.sparql()))
+							.isEqualTo(expected);
+				}
+			}
+		} finally {
+			previous.forEach((property, value) -> {
+				if (value == null) {
+					System.clearProperty(property);
+				} else {
+					System.setProperty(property, value);
+				}
+			});
+		}
+	}
+
+	@Test
 	void everyEnabledRendererQueryParsesAndIsAccountedFor() throws Exception {
 		Map<String, Integer> counts = new LinkedHashMap<>();
 		List<String> failures = new ArrayList<>();

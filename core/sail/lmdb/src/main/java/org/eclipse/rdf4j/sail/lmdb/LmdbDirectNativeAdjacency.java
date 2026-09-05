@@ -689,11 +689,11 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		return new RootScanCursor(baseCursor, fromOrdinal, toOrdinal, merged);
 	}
 
-	private static final class DirectPageCursor
+	static final class DirectPageCursor
 			implements NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor {
 		private final ImmutablePagedQuadCsfIndex.PageCursor delegate;
 
-		private DirectPageCursor(ImmutablePagedQuadCsfIndex.PageCursor delegate) {
+		DirectPageCursor(ImmutablePagedQuadCsfIndex.PageCursor delegate) {
 			this.delegate = delegate;
 		}
 
@@ -720,6 +720,26 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		@Override
 		public long firstRow() {
 			return delegate.firstRoot();
+		}
+
+		@Override
+		public long firstNeighbor() {
+			return delegate.firstNeighbor();
+		}
+
+		@Override
+		public boolean hasCommonContext() {
+			return delegate.hasCommonContext();
+		}
+
+		@Override
+		public long commonContext() {
+			return delegate.commonContext();
+		}
+
+		@Override
+		public int copyRowQuads(int rowIndex, int fromQuad, int length, long[] neighbors, long[] contexts) {
+			return delegate.copyRootQuads(rowIndex, fromQuad, length, neighbors, contexts);
 		}
 
 		@Override

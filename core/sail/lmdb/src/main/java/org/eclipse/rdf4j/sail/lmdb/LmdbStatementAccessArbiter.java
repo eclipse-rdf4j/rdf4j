@@ -160,6 +160,7 @@ final class LmdbStatementAccessArbiter {
 		private static final long MIN_COMPLETIONS = 8L;
 		private final long[] completions = new long[EVIDENCE_SLOTS];
 		private final long[] censors = new long[EVIDENCE_SLOTS];
+		private final long[] alternativeSamples = new long[EVIDENCE_SLOTS];
 		private final double[] rateSums = new double[EVIDENCE_SLOTS];
 		private final double[] rateSquareSums = new double[EVIDENCE_SLOTS];
 		private final long[] regimes = new long[EVIDENCE_SLOTS];
@@ -178,7 +179,22 @@ final class LmdbStatementAccessArbiter {
 			}
 			boolean warmed = completions[adjacencyKey] >= MIN_COMPLETIONS && completions[lmdbKey] >= MIN_COMPLETIONS;
 			if (!warmed) {
-				return LmdbStatementAccessArbiter.choose(adjacencyLow, adjacencyHigh, lmdbLow, lmdbHigh);
+				Source preferred = LmdbStatementAccessArbiter.choose(adjacencyLow, adjacencyHigh, lmdbLow, lmdbHigh);
+				int preferredKey = preferred == Source.ADJACENCY ? adjacencyKey : lmdbKey;
+				int alternativeKey = preferred == Source.ADJACENCY ? lmdbKey : adjacencyKey;
+				// Overlapping structural estimates cannot warm both candidates by repeatedly choosing the same one.
+				// After observing the preferred candidate, collect at most the existing minimum sample budget from
+				// its alternative. Count decisions, including censored/in-flight requests, to bound the extra work.
+				if (completions[preferredKey] >= MIN_COMPLETIONS
+						&& completions[alternativeKey] < MIN_COMPLETIONS
+						&& alternativeSamples[alternativeKey] < MIN_COMPLETIONS
+						&& valid(adjacencyLow, adjacencyHigh) && valid(lmdbLow, lmdbHigh)
+						&& !beats(adjacencyLow, adjacencyHigh, lmdbLow)
+						&& !beats(lmdbLow, lmdbHigh, adjacencyLow)) {
+					alternativeSamples[alternativeKey]++;
+					return preferred == Source.ADJACENCY ? Source.LMDB : Source.ADJACENCY;
+				}
+				return preferred;
 			}
 			double adjacencyMean = mean(adjacencyKey) * Math.max(1D, adjacencyWork);
 			double lmdbMean = mean(lmdbKey) * Math.max(1D, lmdbWork);
@@ -248,6 +264,7 @@ final class LmdbStatementAccessArbiter {
 			regimes[key] = regime;
 			completions[key] = 0L;
 			censors[key] = 0L;
+			alternativeSamples[key] = 0L;
 			rateSums[key] = 0D;
 			rateSquareSums[key] = 0D;
 			return true;
@@ -380,9 +397,13 @@ final class LmdbStatementAccessArbiter {
 				long actualMatched = matched >= 0L ? matched : rows;
 				long actualFiltered = filtered >= 0L ? filtered : Math.max(0L, actualScanned - actualMatched);
 				if (exhausted) {
-					double actualWork = scanned >= 0L ? Math.max(1L, actualScanned)
-							: Math.max(1D, Math.max(rows, estimatedWork));
-					evidence.completed(regime, variantKey, activeNanos, actualWork);
+					// Calibrate the same work units used by choose(). Actual scan counts remain telemetry: using
+					// them here would penalize a selective index whenever the shared cardinality estimate is high,
+					// while an iterator without scan telemetry would be calibrated against the estimate instead.
+					double calibrationWork = Double.isFinite(estimatedWork) && estimatedWork > 0D
+							? Math.max(1D, estimatedWork)
+							: Math.max(1L, actualScanned);
+					evidence.completed(regime, variantKey, activeNanos, calibrationWork);
 				} else {
 					evidence.censored(regime, variantKey);
 				}

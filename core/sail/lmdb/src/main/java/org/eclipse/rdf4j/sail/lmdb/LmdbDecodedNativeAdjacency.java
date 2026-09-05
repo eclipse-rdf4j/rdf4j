@@ -64,6 +64,21 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 	}
 
 	@Override
+	public NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor openPageCursor() {
+		return new LmdbDirectNativeAdjacency.DirectPageCursor(keys.pageCursor());
+	}
+
+	@Override
+	public long pageCount() {
+		return keys.pageCount();
+	}
+
+	@Override
+	public NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor openPageCursor(long fromPage, long toPage) {
+		return new LmdbDirectNativeAdjacency.DirectPageCursor(keys.pageCursor(fromPage, toPage));
+	}
+
+	@Override
 	public boolean borrowNeighbors(long key, NativeLmdbQuerySource.NativeAdjacency.NeighborSlice target) {
 		Objects.requireNonNull(target, "target");
 		if (key <= 0) {

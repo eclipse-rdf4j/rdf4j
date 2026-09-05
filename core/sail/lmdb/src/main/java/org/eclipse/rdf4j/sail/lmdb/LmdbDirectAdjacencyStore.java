@@ -3136,7 +3136,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return iterator;
 		}
 
-		if (!predicateBound && subjectBound != objectBound) {
+		if (!predicateBound && (subjectBound || objectBound)) {
 			// Bound node, unbound predicate requires a complete node-to-predicate projection for the requested plane.
 			//
 			// Predicate order is served rather than refused: the projection orders rows by unsigned key and then by
@@ -3149,8 +3149,14 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						object, context);
 				return null;
 			}
-			long key = subjectBound ? subject : object;
-			int plane = plane(subjectBound, explicit);
+			boolean bySubject = subjectBound;
+			if (subjectBound && objectBound && nodePredicateDecline(view, object, plane(false, explicit)) == null) {
+				bySubject = nodePredicateDecline(view, subject, plane(true, explicit)) == null
+						&& preferOutgoingNodePredicates(view, subject, object, explicit, searchContext);
+			}
+			long key = bySubject ? subject : object;
+			long neighbor = subjectBound && objectBound ? bySubject ? object : subject : -1L;
+			int plane = plane(bySubject, explicit);
 			FallbackReason enumerationDecline = nodePredicateDecline(view, key, plane);
 			if (enumerationDecline != null) {
 				if (exactFullSnapshot(view)) {
@@ -3163,18 +3169,18 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				observe(observer, false, enumerationDecline.name(), order, subject, predicate, object, context);
 				return null;
 			}
-			if (!ValueIds.isReference(key) && subjectBound) {
+			if (!ValueIds.isReference(key) && bySubject) {
 				// subjects are never inlined: nothing can match an inlined subject key
 				metrics.recordExactMiss();
 				observe(observer, true, "EXACT_EMPTY", order, subject, predicate, object, context);
 				return options.mode() == DirectAdjacencyMode.SHADOW ? null : EmptyRecordIterator.INSTANCE;
 			}
-			int direction = subjectBound ? LmdbDirectAdjacencyIterator.BY_SUBJECT
+			int direction = bySubject ? LmdbDirectAdjacencyIterator.BY_SUBJECT
 					: LmdbDirectAdjacencyIterator.BY_OBJECT;
 			if (options.mode() == DirectAdjacencyMode.SHADOW) {
 				if (shadowSampleDue(txn)) {
 					shadowCompare(view, txn, subject, predicate, object, context, explicit,
-							new LmdbDirectNodeIterator(view, plane, key, context, direction,
+							new LmdbDirectNodeIterator(view, plane, key, context, direction, neighbor,
 									this::onNodePredicateInconsistency),
 							direction);
 				}
@@ -3183,7 +3189,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 			metrics.recordHit();
 			observe(observer, true, "BOUND_NODE_PREDICATE_ENUMERATION", order, subject, predicate, object, context);
-			return new LmdbDirectNodeIterator(view, plane, key, context, direction, this::onNodePredicateInconsistency);
+			return new LmdbDirectNodeIterator(view, plane, key, context, direction, neighbor,
+					this::onNodePredicateInconsistency);
 		}
 
 		if (predicateBound && !subjectBound && !objectBound) {
@@ -3238,10 +3245,18 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		RecordIterator result;
 		if (order == null || order == StatementOrder.P) {
-			result = predicate > 0
-					? openCompletePredicateSlice(view, subject, predicate, object, context, explicit, order)
-					: new LmdbDirectAdjacencyPredicateSweepIterator(this, view, subject, object, context, explicit,
-							order);
+			int direction = predicate <= 0 ? nodePredicateDirection(view, subject, object, explicit) : -1;
+			if (direction >= 0) {
+				boolean bySubject = direction == LmdbDirectAdjacencyIterator.BY_SUBJECT;
+				long neighbor = subject > 0 && object > 0 ? bySubject ? object : subject : -1L;
+				result = new LmdbDirectNodeIterator(view, plane(bySubject, explicit), bySubject ? subject : object,
+						context, direction, neighbor, this::onNodePredicateInconsistency);
+			} else {
+				result = predicate > 0
+						? openCompletePredicateSlice(view, subject, predicate, object, context, explicit, order)
+						: new LmdbDirectAdjacencyPredicateSweepIterator(this, view, subject, object, context, explicit,
+								order);
+			}
 		} else {
 			result = openUniversalOrdered(view, order, subject, predicate, object, context, explicit);
 		}
@@ -3258,7 +3273,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		RecordIterator broad = predicate > 0
 				? openCompletePredicateSlice(view, subject, predicate, object, context, explicit, null)
-				: new LmdbDirectAdjacencyPredicateSweepIterator(this, view, subject, object, context, explicit, null);
+				: tryOpenUniversal(view, null, subject, predicate, object, context, explicit);
 		RecordIterator ordered = new LmdbDirectAdjacencySpillSortIterator(broad, range.indexFieldSeq());
 		return new LmdbKeyRangeFilteringIterator(ordered, range);
 	}
@@ -3277,13 +3292,29 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	double estimateUniversalWork(LmdbAdjacencyReadView view, StatementOrder order, long subject, long predicate,
 			long object, long context, boolean explicit) {
 		double rows = estimateResultRows(view, subject, predicate, object, explicit);
+		return estimateUniversalWork(view, order, subject, predicate, object, context, explicit, rows);
+	}
+
+	double estimateUniversalWork(LmdbAdjacencyReadView view, StatementOrder order, long subject, long predicate,
+			long object, long context, boolean explicit, double rows) {
 		if (!Double.isFinite(rows) || rows <= 0D) {
 			return rows;
 		}
 		LmdbAdjacencyPlaneStatistics.PredicateDomain domain = view.state().planeStatistics().predicateDomain();
 		double work = rows;
 		if (predicate <= 0) {
-			work += domain.size();
+			int direction = order == null || order == StatementOrder.P
+					? nodePredicateDirection(view, subject, object, explicit)
+					: -1;
+			if (direction >= 0) {
+				boolean bySubject = direction == LmdbDirectAdjacencyIterator.BY_SUBJECT;
+				try (LmdbAdjacencyLookupContext lookup = new LmdbAdjacencyLookupContext()) {
+					work += nodePredicateWork(view, bySubject ? subject : object, plane(bySubject, explicit), lookup,
+							new ImmutablePagedQuadCsfIndex.RowCursor());
+				}
+			} else {
+				work += domain.size();
+			}
 		}
 		if (order == StatementOrder.S || order == StatementOrder.O) {
 			if (predicate <= 0 && domain.size() > 1) {
@@ -3311,6 +3342,16 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		if (predicate > 0) {
 			rows = estimatePredicateRows(view, predicate, subject, object, explicit, statistics);
 		} else if (subject > 0 || object > 0) {
+			int direction = nodePredicateDirection(view, subject, object, explicit);
+			if (direction >= 0) {
+				boolean bySubject = direction == LmdbDirectAdjacencyIterator.BY_SUBJECT;
+				// Whole-run lengths give the same upper bound as the catalog sweep, including context multiplicity.
+				// Enumerate only predicates present on this node; resolve visible overlay versions through the cursor.
+				try (LmdbDirectNodeIterator iterator = new LmdbDirectNodeIterator(view, plane(bySubject, explicit),
+						bySubject ? subject : object, -1L, direction, this::onNodePredicateInconsistency)) {
+					return iterator.countStatements();
+				}
+			}
 			boolean bySubject = subject > 0;
 			long key = bySubject ? subject : object;
 			int plane = plane(bySubject, explicit);
@@ -3673,10 +3714,56 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return configured == null || Boolean.parseBoolean(configured);
 	}
 
+	private int nodePredicateDirection(LmdbAdjacencyReadView view, long subject, long object, boolean explicit) {
+		boolean outgoing = subject > 0 && nodePredicateDecline(view, subject, plane(true, explicit)) == null;
+		boolean incoming = object > 0 && nodePredicateDecline(view, object, plane(false, explicit)) == null;
+		if (outgoing && (!incoming || preferOutgoingNodePredicates(view, subject, object, explicit, null))) {
+			return LmdbDirectAdjacencyIterator.BY_SUBJECT;
+		}
+		return incoming ? LmdbDirectAdjacencyIterator.BY_OBJECT : -1;
+	}
+
+	/** Compare node-local predicate work, including every visible overlay row, before choosing the direction. */
+	private boolean preferOutgoingNodePredicates(LmdbAdjacencyReadView view, long subject, long object,
+			boolean explicit, LmdbAdjacencyLookupContext supplied) {
+		LmdbAdjacencyLookupContext lookup = supplied == null ? new LmdbAdjacencyLookupContext() : supplied;
+		try {
+			ImmutablePagedQuadCsfIndex.RowCursor row = new ImmutablePagedQuadCsfIndex.RowCursor();
+			return nodePredicateWork(view, subject, plane(true, explicit), lookup, row) <= nodePredicateWork(view,
+					object, plane(false, explicit), lookup, row);
+		} finally {
+			if (supplied == null) {
+				lookup.close();
+			}
+		}
+	}
+
+	private long nodePredicateWork(LmdbAdjacencyReadView view, long node, int plane,
+			LmdbAdjacencyLookupContext lookup, ImmutablePagedQuadCsfIndex.RowCursor row) {
+		LmdbAdjacencyPublishedState state = view.state();
+		LmdbNodePredicateIndex projection = state.base().nodePredicateIndex();
+		long reference = projection.findLocalReference(plane, node, lookup.csfCursor());
+		long work = 0L;
+		if (reference != 0L) {
+			projection.resolve(reference, row);
+			work = row.edgeCount();
+		}
+		LmdbAdjacencyOverlaySet overlays = state.overlays();
+		if (overlays != null) {
+			for (int i = 0; i < overlays.generationCount(); i++) {
+				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
+				if (generation.revision() <= view.snapshotRevision()) {
+					long range = generation.nodeRange(node, plane);
+					work += (int) range - (int) (range >>> 32);
+				}
+			}
+		}
+		return work;
+	}
+
 	/**
 	 * The reason a bound-node/unbound-predicate access cannot be served out of the projection, or {@code null} when it
-	 * can. Shared by the iterator branch and the count/existence shortcuts so the two can never disagree about what is
-	 * servable — a count that engages where the equivalent iterator declines would be a count of a different thing.
+	 * can. Iteration, estimation and count/existence shortcuts share the same snapshot admission rules.
 	 */
 	private FallbackReason nodePredicateDecline(LmdbAdjacencyReadView view, long key, int plane) {
 		LmdbAdjacencyPublishedState state = view.state();

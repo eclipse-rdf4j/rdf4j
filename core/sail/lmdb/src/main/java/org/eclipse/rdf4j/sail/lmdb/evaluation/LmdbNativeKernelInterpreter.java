@@ -644,6 +644,15 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 		if (node instanceof BindHook) {
 			BindHook bind = (BindHook) node;
+			if (bind.args.length > 2) {
+				return () -> {
+					for (int i = 0; i < bind.args.length; i++) {
+						hooks.setBindInput(bind.bindId, i, read(bind.args[i]));
+					}
+					v[bind.dstCol] = hooks.computeBindRow(bind.bindId);
+					return next.run();
+				};
+			}
 			return () -> {
 				long a0 = bind.args.length > 0 ? read(bind.args[0]) : -1L;
 				long a1 = bind.args.length > 1 ? read(bind.args[1]) : -1L;
@@ -1577,7 +1586,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private Op buildPlanRows(PlanRows plan, Op next) {
 		int width = plan.outCols.length;
 		return () -> {
-			KernelPlan.Cursor cursor = context.plans[plan.plan].open();
+			KernelPlan bound = context.plans[plan.plan];
+			for (int i = 0; i < plan.inputs.length; i++) {
+				bound.setInput(i, read(plan.inputs[i]));
+			}
+			KernelPlan.Cursor cursor = bound.open();
 			planCursors[plan.plan] = cursor;
 			long[] buffer = planBuffers[plan.plan];
 			if (buffer == null) {
@@ -1601,6 +1614,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			} finally {
 				cursor.close();
 				planCursors[plan.plan] = null;
+				for (int col : plan.outCols) {
+					int input = plan.inputForColumn(col);
+					v[col] = input < 0 ? -1L : bound.input(input);
+				}
 			}
 			return false;
 		};
@@ -2127,6 +2144,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							context.keyDomainLengths[output.orderedDomain]);
 				}
 				break;
+			case LmdbNativeKernelIr.AGG_ROW_STATE:
 			case LmdbNativeKernelIr.AGG_SUM:
 			case LmdbNativeKernelIr.AGG_AVG:
 				// Exact numeric state lives in the engine hook sidecar keyed by (aggregateId, groupId).
@@ -2267,7 +2285,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		ensure(g);
 		for (int i = 0; i < aggregate.outputs.length; i++) {
 			AggregateOutput output = aggregate.outputs[i];
-			long value = output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? 0L : v[output.col];
+			long value = output.col < 0 ? 0L : v[output.col];
 			switch (output.kind) {
 			case LmdbNativeKernelIr.AGG_COUNT_STAR:
 				agC[i][g]++;
@@ -2296,6 +2314,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					}
 				}
 				break;
+			case LmdbNativeKernelIr.AGG_ROW_STATE:
+				for (int column : output.rowCols) {
+					hooks.setAggregateInput(column, v[column]);
+				}
+				hooks.accumulateRow(i, g);
+				break;
+
 			case LmdbNativeKernelIr.AGG_SUM:
 			case LmdbNativeKernelIr.AGG_AVG:
 				if (value != -1L) {
@@ -2459,6 +2484,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				// A hook-distinct count is not countable yet: ship the group ordinal instead.
 				rowScratch[target] = output.hookDistinct ? g : distinctCount(output, i, g);
 				break;
+			case LmdbNativeKernelIr.AGG_ROW_STATE:
 			case LmdbNativeKernelIr.AGG_SUM:
 			case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
 			case LmdbNativeKernelIr.AGG_AVG:

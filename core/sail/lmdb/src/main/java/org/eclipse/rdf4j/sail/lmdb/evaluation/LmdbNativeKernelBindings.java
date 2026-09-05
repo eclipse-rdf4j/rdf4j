@@ -86,18 +86,33 @@ final class LmdbNativeKernelBindings {
 		 * this is non-null.
 		 */
 		final LmdbNativeCompiledValue computedValue;
-		final int[] argSlots; // engine slots receiving computeBind's a0..a1, ascending mask order
+		final int[] argSlots; // engine slots receiving arguments, ascending mask order
+		final CopyBinding copy;
+		final boolean startsSolution;
+
+		BindHook(CopyBinding copy, int[] argSlots) {
+			this(null, null, copy, argSlots, false);
+		}
 
 		BindHook(LmdbNativeCompiledInlineId computed, int[] argSlots) {
-			this.computed = computed;
-			this.computedValue = null;
-			this.argSlots = argSlots;
+			this(computed, null, null, argSlots, false);
 		}
 
 		BindHook(LmdbNativeCompiledValue computedValue, int[] argSlots) {
-			this.computed = null;
+			this(null, computedValue, null, argSlots, false);
+		}
+
+		private BindHook(LmdbNativeCompiledInlineId computed, LmdbNativeCompiledValue computedValue, CopyBinding copy,
+				int[] argSlots, boolean startsSolution) {
+			this.computed = computed;
 			this.computedValue = computedValue;
+			this.copy = copy;
 			this.argSlots = argSlots;
+			this.startsSolution = startsSolution;
+		}
+
+		BindHook withSolutionScope() {
+			return new BindHook(computed, computedValue, copy, argSlots, true);
 		}
 	}
 
@@ -105,6 +120,7 @@ final class LmdbNativeKernelBindings {
 	static final int ENC_LONG_COUNT = 0;
 	static final int ENC_EXACT_NUMERIC = 1;
 	static final int ENC_VALUE_ID = 2;
+	static final int ENC_ROW_STATE = 3;
 
 	/** Longs this encoding occupies in the packed group row. */
 	static int encodingWidth(int encoding) {
@@ -231,10 +247,16 @@ final class LmdbNativeKernelBindings {
 	static final class PlanRequest {
 		final SlotPlan plan;
 		final int[] outputSlots;
+		final int[] inputSlots;
 
 		PlanRequest(SlotPlan plan, int[] outputSlots) {
+			this(plan, outputSlots, new int[0]);
+		}
+
+		PlanRequest(SlotPlan plan, int[] outputSlots, int[] inputSlots) {
 			this.plan = plan;
 			this.outputSlots = outputSlots.clone();
+			this.inputSlots = inputSlots.clone();
 		}
 	}
 
@@ -871,26 +893,40 @@ final class LmdbNativeKernelBindings {
 		private final PlanRequest request;
 		private final RowState parent;
 		private BoundCursor active;
+		private final long[] inputs;
 
 		private BoundPlan(PlanRequest request, RowState parent) {
 			this.request = request;
 			this.parent = parent;
+			this.inputs = new long[request.inputSlots.length];
+		}
+
+		@Override
+		public void setInput(int index, long value) {
+			inputs[index] = value;
+		}
+
+		@Override
+		public long input(int index) {
+			return inputs[index];
 		}
 
 		@Override
 		public Cursor open() {
 			close();
-			RowState scratch = new RowState(parent.source, parent.layout, parent.base, parent.exactValuesMetrics,
-					parent.cancellation);
-			scratch.memoryScope = parent.memoryScope;
-			scratch.runtimePlan = parent.runtimePlan;
-			System.arraycopy(parent.slots, 0, scratch.slots, 0, parent.slots.length);
+			RowState scratch = parent.fork();
+			for (int i = 0; i < inputs.length; i++) {
+				scratch.slots[request.inputSlots[i]] = inputs[i];
+			}
 			scratch.recomputeBoundMask();
+			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 			try {
 				active = new BoundCursor(request.plan.open(scratch), scratch, request.outputSlots, this);
 				return active;
 			} catch (java.io.IOException problem) {
 				throw new PlanFailure(problem);
+			} finally {
+				LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
 			}
 		}
 
@@ -928,6 +964,7 @@ final class LmdbNativeKernelBindings {
 				return 0;
 			}
 			int rows = 0;
+			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 			try {
 				while (rows < maxRows && cursor.next()) {
 					int base = rows * outputSlots.length;
@@ -940,6 +977,8 @@ final class LmdbNativeKernelBindings {
 			} catch (java.io.IOException problem) {
 				close();
 				throw new PlanFailure(problem);
+			} finally {
+				LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
 			}
 		}
 

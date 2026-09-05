@@ -73,6 +73,12 @@ final class LmdbDirectNodePredicates
 	// ------------------------------------------------------------------
 
 	@Override
+	public long nodeCount() {
+		return applicableGenerationCount == 0 && base.coverage().isFull() && projection != null
+				&& projection.supportsPlane(plane) ? projection.rowCount(plane) : -1L;
+	}
+
+	@Override
 	public long find(long node) {
 		if (node == NativeLmdbQuerySource.UNKNOWN_ID || projection == null) {
 			return NativeLmdbQuerySource.NodePredicates.NOT_FOUND;

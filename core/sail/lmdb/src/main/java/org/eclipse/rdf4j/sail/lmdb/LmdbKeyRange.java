@@ -124,11 +124,17 @@ public final class LmdbKeyRange {
 
 	/** Applies this half-open raw index range to one decoded quad. */
 	boolean includes(long[] quad) {
+		return includes(quad, 0);
+	}
+
+	/** Applies the range to a decoded quad in a native batch without copying its four fields. */
+	public boolean includes(long[] quad, int offset) {
 		if (decodedBounds != null) {
-			return decodedBounds.includes(indexFieldSeq, quad);
+			return decodedBounds.includes(indexFieldSeq, quad, offset);
 		}
-		byte[] encoded = TripleIndex.encodeKey(indexFieldSeq, quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
-				quad[TripleIndex.OBJ_IDX], quad[TripleIndex.CONTEXT_IDX]);
+		byte[] encoded = TripleIndex.encodeKey(indexFieldSeq, quad[offset + TripleIndex.SUBJ_IDX],
+				quad[offset + TripleIndex.PRED_IDX], quad[offset + TripleIndex.OBJ_IDX],
+				quad[offset + TripleIndex.CONTEXT_IDX]);
 		return (lowKey == null || Arrays.compareUnsigned(encoded, lowKey) >= 0)
 				&& (highKeyExclusive == null || Arrays.compareUnsigned(encoded, highKeyExclusive) < 0);
 	}
@@ -231,16 +237,16 @@ public final class LmdbKeyRange {
 			this.highPrefixExclusive = highPrefixExclusive;
 		}
 
-		private boolean includes(String fieldSequence, long[] quad) {
-			return (lowPrefix == null || compareQuadToPrefix(fieldSequence, quad, lowPrefix) >= 0)
+		private boolean includes(String fieldSequence, long[] quad, int offset) {
+			return (lowPrefix == null || compareQuadToPrefix(fieldSequence, quad, offset, lowPrefix) >= 0)
 					&& (highPrefixExclusive == null
-							|| compareQuadToPrefix(fieldSequence, quad, highPrefixExclusive) < 0);
+							|| compareQuadToPrefix(fieldSequence, quad, offset, highPrefixExclusive) < 0);
 		}
 
-		private static int compareQuadToPrefix(String fieldSequence, long[] quad, long[] prefix) {
+		private static int compareQuadToPrefix(String fieldSequence, long[] quad, int offset, long[] prefix) {
 			for (int ordinal = 0; ordinal < prefix.length; ordinal++) {
 				int component = component(fieldSequence.charAt(ordinal));
-				int compared = Long.compareUnsigned(quad[component], prefix[ordinal]);
+				int compared = Long.compareUnsigned(quad[offset + component], prefix[ordinal]);
 				if (compared != 0) {
 					return compared;
 				}

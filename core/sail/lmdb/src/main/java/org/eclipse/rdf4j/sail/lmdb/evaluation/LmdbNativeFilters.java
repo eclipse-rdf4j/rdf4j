@@ -1335,9 +1335,15 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 @Experimental
 final class NegatedNativeBooleanFilter implements NativeBooleanFilter {
 	final NativeBooleanFilter delegate;
+	final boolean errorFreeOperand;
 
 	NegatedNativeBooleanFilter(NativeBooleanFilter delegate) {
+		this(delegate, false);
+	}
+
+	NegatedNativeBooleanFilter(NativeBooleanFilter delegate, boolean errorFreeOperand) {
 		this.delegate = delegate;
+		this.errorFreeOperand = errorFreeOperand;
 	}
 
 	@Override
@@ -1366,7 +1372,7 @@ final class NegatedNativeBooleanFilter implements NativeBooleanFilter {
 	@Override
 	public NativeBooleanFilter forkForParallelWorker() {
 		NativeBooleanFilter forked = delegate.forkForParallelWorker();
-		return forked == delegate ? this : new NegatedNativeBooleanFilter(forked);
+		return forked == delegate ? this : new NegatedNativeBooleanFilter(forked, errorFreeOperand);
 	}
 
 	@Override

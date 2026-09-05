@@ -1432,15 +1432,16 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		if (pageId < 0 || pageId >= pageCount) {
 			throw new IllegalArgumentException("page ID out of range: " + pageId);
 		}
-		int hint = pageShardHints[pageId >>> PAGE_HINT_SHIFT];
-		int shard = hint;
-		while (shard + 1 < shards.length && shardFirstPageIds[shard + 1] <= pageId) {
-			shard++;
+		int block = pageId >>> PAGE_HINT_SHIFT;
+		int hint = pageShardHints[block];
+		if (hint + 1 == shards.length || pageId < shardFirstPageIds[hint + 1]) {
+			return hint;
 		}
-		while (shard > 0 && shardFirstPageIds[shard] > pageId) {
-			shard--;
-		}
-		return shard;
+		// A hint bucket can contain hundreds of one-page predicate shards. Bound the floor search by the next
+		// bucket's hint instead of walking every intervening shard for each adjacency row resolution.
+		int end = block + 1 < pageShardHints.length ? pageShardHints[block + 1] + 1 : shards.length;
+		int found = Arrays.binarySearch(shardFirstPageIds, hint + 1, end, pageId);
+		return found >= 0 ? found : -found - 2;
 	}
 
 	private static int[] buildPageShardHints(int[] starts, CsfShard[] shards, int pages) {
@@ -4212,6 +4213,30 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		public long firstRoot() {
 			ensurePageReady();
 			return firstRow();
+		}
+
+		@Override
+		public long firstNeighbor() {
+			ensurePageReady();
+			return super.firstNeighbor();
+		}
+
+		@Override
+		public boolean hasCommonContext() {
+			ensurePageReady();
+			return super.hasCommonContext();
+		}
+
+		@Override
+		public long commonContext() {
+			ensurePageReady();
+			return super.commonContext();
+		}
+
+		/** Copies page-local pairs; continuation pages are visited separately by this cursor. */
+		public int copyRootQuads(int rowIndex, int fromQuad, int length, long[] neighbors, long[] contexts) {
+			ensurePageReady();
+			return copyRow(rowIndex, fromQuad, length, neighbors, 0, contexts, 0);
 		}
 
 		public long rootAt(int rowIndex) {

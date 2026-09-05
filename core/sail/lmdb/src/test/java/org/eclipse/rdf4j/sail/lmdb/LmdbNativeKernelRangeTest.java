@@ -42,6 +42,7 @@ class LmdbNativeKernelRangeTest {
 	private static final String EX = "http://example.com/";
 	private static final String[] PROPERTIES = {
 			"rdf4j.lmdb.nativeQueryEngine.enabled",
+			"rdf4j.lmdb.costCalibration.enabled",
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
 			"rdf4j.lmdb.janinoCodegen.synchronous",
@@ -67,6 +68,8 @@ class LmdbNativeKernelRangeTest {
 			previousProperties.put(property, System.getProperty(property));
 		}
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		// Route contracts use stable strategy preference, independent of earlier runtime cost samples.
+		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
@@ -271,8 +274,8 @@ class LmdbNativeKernelRangeTest {
 		KernelExecutionTestAccess.resetMetrics();
 		assertThat(nativeCount(query)).isEqualTo(3);
 		assertThat(KernelExecutionTestAccess.aggOpened())
-				.as("the test must exercise the exact plan fallback, not a ranged kernel scan")
-				.isZero();
+				.as("the aggregate kernel must retain the exact ranged native operator")
+				.isPositive();
 	}
 
 	@ParameterizedTest(name = "aggregate multi-pattern MINUS preserves range with codegen={0}")
@@ -342,8 +345,19 @@ class LmdbNativeKernelRangeTest {
 		KernelExecutionTestAccess.resetMetrics();
 		assertThat(nativeCount(query)).isEqualTo(expectedCount);
 		assertThat(KernelExecutionTestAccess.aggOpened())
-				.as("the test must exercise the exact plan fallback, not a ranged kernel scan")
-				.isZero();
+				.as("the aggregate kernel must retain the exact ranged residual witness")
+				.isPositive();
+	}
+
+	@ParameterizedTest(name = "bound range witness {0}, kernel scans={2}")
+	@CsvSource({ "EXISTS,4,true", "NOT EXISTS,6,true", "EXISTS,4,false", "NOT EXISTS,6,false" })
+	void existenceRangeChecksAnAlreadyBoundValue(String operator, long expected, boolean scans) throws Exception {
+		assertThat(((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		System.setProperty("rdf4j.lmdb.janinoCodegen.scanSources", Boolean.toString(scans));
+		String query = prefixes() + "SELECT (COUNT(*) AS ?c) WHERE { ?s ex:score ?value . FILTER " + operator
+				+ " { ?s ex:observation ?observation . ?observation ex:observationValue ?value . FILTER(?value < 2) } }";
+		assertThat(genericCount(query)).isEqualTo(expected);
+		assertThat(nativeCount(query)).isEqualTo(expected);
 	}
 
 	private long genericCount(String query) {

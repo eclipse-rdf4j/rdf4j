@@ -58,6 +58,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	private final boolean nativeEnabled;
 	private final boolean forceRootGeneric;
 	private final String forcedExecutionStrategy;
+	private static final ThreadLocal<Boolean> KERNEL_SUBPLAN = new ThreadLocal<>();
 	private final EvaluationStatistics evaluationStatistics;
 	private final LmdbStableOrderPlanner stableOrderPlanner;
 	// Constructor inputs retained so the claim-suppressed sibling view can be built with identical configuration.
@@ -138,7 +139,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	 * {@link LmdbNativeForceableStrategies}), or {@code null} when the engine's own selection should decide as usual.
 	 */
 	String forcedExecutionStrategyName() {
-		return forcedExecutionStrategy;
+		return KERNEL_SUBPLAN.get() == null ? forcedExecutionStrategy : null;
 	}
 
 	/**
@@ -150,7 +151,20 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	 * point, exactly as if it had not been requested, rather than throwing or using a stale value.
 	 */
 	static String forcedExecutionStrategyForCurrentThread() {
-		return currentForcedExecutionStrategy();
+		return KERNEL_SUBPLAN.get() == null ? currentForcedExecutionStrategy() : null;
+	}
+
+	/** The enclosing kernel honors the forced strategy; its internal operators choose their own access paths. */
+	static boolean enterKernelSubplan() {
+		boolean nested = KERNEL_SUBPLAN.get() != null;
+		KERNEL_SUBPLAN.set(Boolean.TRUE);
+		return nested;
+	}
+
+	static void leaveKernelSubplan(boolean nested) {
+		if (!nested) {
+			KERNEL_SUBPLAN.remove();
+		}
 	}
 
 	/**

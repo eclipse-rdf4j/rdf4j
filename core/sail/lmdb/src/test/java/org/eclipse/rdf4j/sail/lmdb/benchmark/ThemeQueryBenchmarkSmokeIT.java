@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -43,6 +44,10 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.openjdk.jmh.annotations.Fork;
 
 class ThemeQueryBenchmarkSmokeIT {
@@ -83,26 +88,28 @@ class ThemeQueryBenchmarkSmokeIT {
 		assertTrue(ThemeQueryBenchmark.hasCurrentDatasetRevision(properties));
 	}
 
-	@Test
-	void janinoTrialCompilesDeterministicallyAndRestoresCallerSetting() throws Exception {
+	@ParameterizedTest
+	@CsvSource({ "disabled, MEDICAL_RECORDS", "auto, MEDICAL_RECORDS", "disabled, EXPLORATION", "auto, EXPLORATION" })
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void irTrialReturnsExpectedCountAndRestoresCallerSetting(String irMode, Theme theme) throws Exception {
 		String previousProfiling = System.getProperty(PROFILING_PROPERTY);
 		String previousSynchronous = System.getProperty(JANINO_SYNCHRONOUS_PROPERTY);
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
-		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
+		benchmark.themeName = theme.name();
 		benchmark.z_queryIndex = 0;
-		benchmark.z_z_janinoEnabled = "true";
+		benchmark.z_z_irMode = irMode;
 		boolean initialized = false;
 		try {
 			System.setProperty(PROFILING_PROPERTY, "true");
-			System.setProperty(JANINO_SYNCHRONOUS_PROPERTY, "false");
+			System.setProperty(JANINO_SYNCHRONOUS_PROPERTY, "true");
 			benchmark.setup();
 			initialized = true;
-			assertEquals("true", System.getProperty(JANINO_SYNCHRONOUS_PROPERTY),
-					"the matched Janino arm must compile before the benchmark query falls back");
-			assertBenchmarkQueryCount(benchmark, Theme.MEDICAL_RECORDS, 0);
+			assertNull(System.getProperty(JANINO_SYNCHRONOUS_PROPERTY),
+					"IR trials must use the normal asynchronous compilation policy");
+			assertBenchmarkQueryCount(benchmark, theme, 0);
 			benchmark.tearDown();
 			initialized = false;
-			assertEquals("false", System.getProperty(JANINO_SYNCHRONOUS_PROPERTY),
+			assertEquals("true", System.getProperty(JANINO_SYNCHRONOUS_PROPERTY),
 					"trial teardown must restore the caller's compilation policy");
 		} finally {
 			if (initialized) {
@@ -159,13 +166,13 @@ class ThemeQueryBenchmarkSmokeIT {
 
 	@Test
 	void executeQueryReturnsExpectedCountForExplorationGraphCensus() throws Exception {
-		assertThemeQueryCountWithJaninoAndDirectAdjacency(Theme.EXPLORATION, 1, 1);
+		assertThemeQueryCountWithAutoIrAndDirectAdjacency(Theme.EXPLORATION, 1, 1);
 	}
 
 	@Test
 	@Timeout(value = 3, unit = TimeUnit.MINUTES)
 	void analyticsTypeMatrixRemainsBoundedAcrossAdaptiveRepetitions() throws Exception {
-		assertThemeQueryCountWithJaninoAndDirectAdjacency(Theme.ANALYTICS, 7, ADAPTIVE_STABILITY_REPETITIONS);
+		assertThemeQueryCountWithAutoIrAndDirectAdjacency(Theme.ANALYTICS, 7, ADAPTIVE_STABILITY_REPETITIONS);
 	}
 
 	@Test
@@ -194,12 +201,12 @@ class ThemeQueryBenchmarkSmokeIT {
 
 	@Test
 	void executeQueryReturnsExpectedCountForPharmaQuerySix() throws Exception {
-		assertThemeQueryCountWithJanino(Theme.PHARMA, 6);
+		assertThemeQueryCountWithAutoIr(Theme.PHARMA, 6);
 	}
 
 	@Test
 	void executeQueryReturnsExpectedCountForPharmaQuerySeven() throws Exception {
-		assertThemeQueryCountWithJanino(Theme.PHARMA, 7);
+		assertThemeQueryCountWithAutoIr(Theme.PHARMA, 7);
 	}
 
 	@Test
@@ -256,11 +263,11 @@ class ThemeQueryBenchmarkSmokeIT {
 		}
 	}
 
-	private static void assertThemeQueryCountWithJanino(Theme theme, int queryIndex) throws Exception {
+	private static void assertThemeQueryCountWithAutoIr(Theme theme, int queryIndex) throws Exception {
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
 		benchmark.themeName = theme.name();
 		benchmark.z_queryIndex = queryIndex;
-		benchmark.z_z_janinoEnabled = "true";
+		benchmark.z_z_irMode = "auto";
 
 		benchmark.setup();
 		try {
@@ -270,7 +277,7 @@ class ThemeQueryBenchmarkSmokeIT {
 		}
 	}
 
-	private static void assertThemeQueryCountWithJaninoAndDirectAdjacency(Theme theme, int queryIndex, int repetitions)
+	private static void assertThemeQueryCountWithAutoIrAndDirectAdjacency(Theme theme, int queryIndex, int repetitions)
 			throws Exception {
 		String previous = System.getProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY);
 		try {
@@ -278,7 +285,7 @@ class ThemeQueryBenchmarkSmokeIT {
 			ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
 			benchmark.themeName = theme.name();
 			benchmark.z_queryIndex = queryIndex;
-			benchmark.z_z_janinoEnabled = "true";
+			benchmark.z_z_irMode = "auto";
 			benchmark.setup();
 			try {
 				assertBenchmarkQueryCount(benchmark, theme, queryIndex, repetitions);

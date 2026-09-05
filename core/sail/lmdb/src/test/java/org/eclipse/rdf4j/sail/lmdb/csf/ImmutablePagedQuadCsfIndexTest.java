@@ -646,6 +646,35 @@ class ImmutablePagedQuadCsfIndexTest {
 	}
 
 	@Test
+	void resolvesRowsAcrossManySmallShardsAndHintBoundaries() {
+		int predicates = 1100;
+		long root = id(1, 7);
+		ImmutablePagedQuadCsfIndex.BuildPlan plan;
+		try (ImmutablePagedQuadCsfIndex.Builder sizing = ImmutablePagedQuadCsfIndex.sizingBuilder(predicates)) {
+			for (int predicate = 0; predicate < predicates; predicate++) {
+				feed(sizing, predicate, 0,
+						List.of(new Row(root, new long[] { id(1, predicate + 1) }, new long[] { 0 })));
+			}
+			plan = sizing.finishPlan();
+		}
+		try (ImmutablePagedQuadCsfIndex.Builder materializing = ImmutablePagedQuadCsfIndex.materializingBuilder(plan)) {
+			for (int predicate = 0; predicate < predicates; predicate++) {
+				feed(materializing, predicate, 0,
+						List.of(new Row(root, new long[] { id(1, predicate + 1) }, new long[] { 0 })));
+			}
+			try (ImmutablePagedQuadCsfIndex index = materializing.finishIndex()) {
+				assertThat(index.shardCount()).isEqualTo(predicates);
+				ImmutablePagedQuadCsfIndex.RowCursor cursor = new ImmutablePagedQuadCsfIndex.RowCursor();
+				for (int predicate = predicates - 1; predicate >= 0; predicate--) {
+					index.resolve(index.findLocalReference(predicate, 0, root), cursor);
+					assertThat(cursor.edgeCount()).isEqualTo(1);
+					assertThat(cursor.neighborAt(0)).isEqualTo(id(1, predicate + 1));
+				}
+			}
+		}
+	}
+
+	@Test
 	void plannedAndMaterializedRoutingBytesAreExactAndCloseEveryCharge() {
 		String previous = System.getProperty(SHARD_TARGET_PAGES_PROPERTY);
 		System.setProperty(SHARD_TARGET_PAGES_PROPERTY, "2");

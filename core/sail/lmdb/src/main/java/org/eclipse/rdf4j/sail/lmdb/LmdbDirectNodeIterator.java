@@ -41,6 +41,7 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 	private final int plane;
 	private final long key;
 	private final long boundContext;
+	private final long boundNeighbor;
 	private final int direction;
 	private final long baseGroupCount;
 
@@ -86,6 +87,12 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 
 	LmdbDirectNodeIterator(LmdbAdjacencyReadView view, int plane, long key, long boundContext, int direction,
 			InconsistencyListener inconsistencyListener) {
+		this(view, plane, key, boundContext, direction, -1L, inconsistencyListener);
+	}
+
+	LmdbDirectNodeIterator(LmdbAdjacencyReadView view, int plane, long key, long boundContext, int direction,
+			long boundNeighbor, InconsistencyListener inconsistencyListener) {
+		this.boundNeighbor = boundNeighbor;
 		this.inconsistencyListener = inconsistencyListener;
 		view.retainLease();
 		try {
@@ -159,6 +166,10 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 			while (pos < end) {
 				int at = chunkIndexOf(pos);
 				long neighbor = neighborChunk[at];
+				if (boundNeighbor != -1L && neighbor != boundNeighbor) {
+					pos = end;
+					break;
+				}
 				long context = contextChunk[at];
 				pos++;
 				if (boundContext >= 0 && context != boundContext) {
@@ -287,6 +298,10 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 			pos = 0;
 			LmdbAdjacencyRunCodec.resolve(runCatalog, runHandle, runCursor);
 			end = runCursor.edgeCount();
+			if (boundNeighbor != -1L) {
+				pos = LmdbAdjacencyRunCodec.lowerBound(contextCatalog, runCursor, 0L, boundNeighbor,
+						boundContext < 0L ? 0L : boundContext);
+			}
 			chunkStart = 0;
 			chunkLength = 0;
 			return true;
@@ -305,7 +320,7 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 	 * two would show up as a count that disagrees with the rows the very same query would return.
 	 */
 	long countStatements() {
-		if (boundContext >= 0) {
+		if (boundContext >= 0 || boundNeighbor != -1L) {
 			throw new IllegalStateException("countStatements cannot honour a context restriction");
 		}
 		long total = 0;
@@ -322,7 +337,7 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 	 * row and a tombstoned group is skipped inside the merge.
 	 */
 	boolean hasAnyStatement() {
-		if (boundContext >= 0) {
+		if (boundContext >= 0 || boundNeighbor != -1L) {
 			throw new IllegalStateException("hasAnyStatement cannot honour a context restriction");
 		}
 		return advanceGroup();

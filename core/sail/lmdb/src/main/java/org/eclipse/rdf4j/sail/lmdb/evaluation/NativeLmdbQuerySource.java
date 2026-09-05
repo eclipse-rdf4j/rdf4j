@@ -642,6 +642,11 @@ public interface NativeLmdbQuerySource {
 	 */
 	interface NodePredicates extends RunView {
 
+		/** Exact number of distinct roots in this complete visible plane, or -1 when unavailable. */
+		default long nodeCount() {
+			return -1L;
+		}
+
 		/** One bounded, forward-only enumeration of an exact node-predicate row. */
 		interface PredicateRowCursor extends AutoCloseable {
 
@@ -933,6 +938,26 @@ public interface NativeLmdbQuerySource {
 			long quadCount();
 
 			long firstRow();
+
+			/** First neighbor stored in the page header; does not decode the neighbor vector. */
+			default long firstNeighbor() {
+				return neighborAt(0, 0);
+			}
+
+			/** Whether every quad on this page has the same context. */
+			default boolean hasCommonContext() {
+				return false;
+			}
+
+			/** Raw common context, valid only when {@link #hasCommonContext()} is true. */
+			default long commonContext() {
+				throw new UnsupportedOperationException("common context is unavailable");
+			}
+
+			/** Copies page-local quads from one row, including exact raw contexts. */
+			default int copyRowQuads(int rowIndex, int fromQuad, int length, long[] neighbors, long[] contexts) {
+				return -1;
+			}
 
 			long rowAt(int rowIndex);
 

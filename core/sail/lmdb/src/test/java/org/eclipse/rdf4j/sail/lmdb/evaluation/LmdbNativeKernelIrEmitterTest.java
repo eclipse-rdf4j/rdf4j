@@ -1133,8 +1133,6 @@ class LmdbNativeKernelIrEmitterTest {
 		assertTrue(source.contains("KernelRuntime.selectRangeUnsigned(tvec, rn,"),
 				"the range must vectorize; source:\n" + source);
 		assertTrue(source.contains("hooks.testFilter(7,"), "the hook filter must survive as a guard");
-		assertTrue(source.indexOf("hooks.testFilter(7,") > source.indexOf(".copyNeighbors("),
-				"the hook guard must sit inside the vectorized loop");
 
 		// Accept only neighbor 2 through the hook so both tiers demonstrably run.
 		TestHooks onlyTwo = new TestHooks();
@@ -1144,6 +1142,7 @@ class LmdbNativeKernelIrEmitterTest {
 		assertRows(run(vectorized,
 				context().adjacencies(follows()).domains(new long[] { 1, 2, 3 }).constants(1, 3).hooks(onlyTwo)),
 				expected);
+		assertEquals(4, onlyTwo.filterCalls, "the hook must test each row surviving the inclusive vectorized range");
 		assertRows(run(scalar,
 				context().adjacencies(follows()).domains(new long[] { 1, 2, 3 }).constants(1, 3).hooks(onlyTwo)),
 				expected);
@@ -2108,11 +2107,13 @@ class LmdbNativeKernelIrEmitterTest {
 		final Map<Long, Long> numericCounts = new HashMap<>();
 		final Map<Long, Set<Long>> distinctSets = new HashMap<>();
 		int lastFilterId;
+		int filterCalls;
 		long lastA1;
 		long lastA2;
 
 		@Override
 		public boolean testFilter(int filterId, long a0, long a1, long a2) {
+			filterCalls++;
 			lastFilterId = filterId;
 			lastA1 = a1;
 			lastA2 = a2;

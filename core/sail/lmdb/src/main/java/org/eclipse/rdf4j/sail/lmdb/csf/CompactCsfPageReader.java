@@ -289,6 +289,17 @@ class CompactCsfPageReader {
 		return UnsafeAccess.getLongLE(address + CompactCsfPageFormat.FIRST_NEIGHBOR_AT);
 	}
 
+	boolean hasCommonContext() {
+		return flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT);
+	}
+
+	long commonContext() {
+		if (!hasCommonContext()) {
+			throw new IllegalStateException("page does not have a common context");
+		}
+		return UnsafeAccess.getLongLE(address + CompactCsfPageFormat.COMMON_CONTEXT_AT);
+	}
+
 	long lastNeighbor() {
 		return UnsafeAccess.getLongLE(address + CompactCsfPageFormat.LAST_NEIGHBOR_AT);
 	}

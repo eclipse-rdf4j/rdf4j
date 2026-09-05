@@ -22,8 +22,10 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -51,6 +53,8 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	private final LmdbNativeValueCodec codec;
 	private final LmdbNativeKernelBindings.FilterHook[] filters;
 	private final LmdbNativeKernelBindings.BindHook[] binds;
+	private final long[][] bindInputs;
+	private final long[][] bindPrevious;
 	private final MaskedFilter[] residuals;
 	private final ValueComparator comparator = new ValueComparator();
 	private final AggKind[] numericKinds;
@@ -58,6 +62,14 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	private final long[][] numericCounts;
 	private final boolean[][] numericErrors;
 	private final AggContext numericContext;
+	private final LmdbNativeKernelBindings.KernelGroupLayout groupLayout;
+	private final int[] columnSlots;
+	private final AggState[][] rowStates;
+	private int[] scratchWriteSlots = new int[8];
+	private long[] scratchWritePrevious = new long[8];
+	private int scratchWriteCount;
+	private int pendingScratchStart;
+	private final AggContext rowAggregateContext;
 	/**
 	 * DISTINCT id sets for hook-routed channels, indexed {@code [aggregateId][groupOrdinal]}; the outer entry is null
 	 * for any aggregate that is not a DISTINCT spec. Only the parallel rungs' worker kernel variant fills these — the
@@ -97,11 +109,32 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base, liveRow.exactValuesMetrics,
 				liveRow.cancellation);
 		this.scratch.memoryScope = liveRow.memoryScope;
+		this.scratch.runtimePlan = liveRow.runtimePlan;
+		this.scratch.lexicalInputMask = liveRow.lexicalInputMask;
+		this.scratch.lexicalScopeDepth = liveRow.lexicalScopeDepth;
+		this.scratch.encounterOrderRequired = liveRow.encounterOrderRequired;
+		System.arraycopy(liveRow.slots, 0, scratch.slots, 0, liveRow.slots.length);
+		this.scratch.recomputeBoundMask();
 		this.codec = liveRow.source.nativeValueCodec();
 		this.filters = filterHooks;
 		this.binds = bindings.bindHooks;
+		this.bindInputs = new long[binds.length][];
+		this.bindPrevious = new long[binds.length][];
+		for (int i = 0; i < binds.length; i++) {
+			bindInputs[i] = new long[binds[i].argSlots.length];
+			bindPrevious[i] = new long[binds[i].argSlots.length];
+		}
 		this.residuals = bindings.kernelResiduals;
+		this.groupLayout = bindings.groupLayout;
+		this.columnSlots = bindings.columnEngineSlots;
 		int aggregateCount = bindings.groupLayout == null ? 0 : bindings.groupLayout.outs.length;
+		this.rowStates = new AggState[aggregateCount][];
+		this.rowAggregateContext = new AggContext(source, false, false);
+		for (int i = 0; i < aggregateCount; i++) {
+			if (bindings.groupLayout.outs[i].encoding == LmdbNativeKernelBindings.ENC_ROW_STATE) {
+				rowStates[i] = new AggState[16];
+			}
+		}
 		this.numericKinds = new AggKind[aggregateCount];
 		this.numericSums = new Literal[aggregateCount][];
 		this.numericCounts = new long[aggregateCount][];
@@ -191,6 +224,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		long previous1 = UNKNOWN;
 		long previous2 = UNKNOWN;
 		int installed = 0;
+		boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 		try {
 			if (argSlots.length > 0) {
 				previous0 = scratch.replaceSlot(argSlots[0], a0);
@@ -206,6 +240,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			}
 			return hook.source.filter.accept(scratch);
 		} finally {
+			LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
 			if (installed > 2) {
 				scratch.replaceSlot(argSlots[2], previous2);
 			}
@@ -228,10 +263,14 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	@Override
 	public long computeBind(int bindId, long a0, long a1) {
 		LmdbNativeKernelBindings.BindHook hook = binds[bindId];
+		if (hook.startsSolution) {
+			scratch.beginLogicalSolution();
+		}
 		int[] argSlots = hook.argSlots;
 		long previous0 = UNKNOWN;
 		long previous1 = UNKNOWN;
 		int installed = 0;
+		boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 		try {
 			if (argSlots.length > 0) {
 				previous0 = scratch.replaceSlot(argSlots[0], a0);
@@ -241,11 +280,15 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 				previous1 = scratch.replaceSlot(argSlots[1], a1);
 				installed = 2;
 			}
+			if (hook.copy != null) {
+				return hook.copy.value(scratch);
+			}
 			if (hook.computedValue != null) {
 				return computeInternedBind(hook.computedValue);
 			}
 			return hook.computed.id(scratch);
 		} finally {
+			LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
 			if (installed > 1) {
 				scratch.replaceSlot(argSlots[1], previous1);
 			}
@@ -255,12 +298,40 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		}
 	}
 
+	@Override
+	public void setBindInput(int bindId, int argument, long value) {
+		bindInputs[bindId][argument] = value;
+	}
+
+	@Override
+	public long computeBindRow(int bindId) {
+		LmdbNativeKernelBindings.BindHook hook = binds[bindId];
+		if (hook.startsSolution) {
+			scratch.beginLogicalSolution();
+		}
+		long[] previous = bindPrevious[bindId];
+		int installed = 0;
+		boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
+		try {
+			for (; installed < hook.argSlots.length; installed++) {
+				previous[installed] = scratch.replaceSlot(hook.argSlots[installed], bindInputs[bindId][installed]);
+			}
+			if (hook.copy != null) {
+				return hook.copy.value(scratch);
+			}
+			return hook.computedValue != null ? computeInternedBind(hook.computedValue) : hook.computed.id(scratch);
+		} finally {
+			LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
+			while (installed > 0) {
+				--installed;
+				scratch.replaceSlot(hook.argSlots[installed], previous[installed]);
+			}
+		}
+	}
+
 	/**
-	 * Interned computed BIND (completion plan M1.3b): evaluates the decoded value against the scratch row and interns
-	 * it through the evaluation-scoped synthetic source — the exact runtime discipline of
-	 * {@code CopyBinding.value(RowState)} — so a kernel-produced computed id equals the interpreted tier's id for the
-	 * same value within one evaluation. An evaluation error, or a non-synthetic source (which lowering should have
-	 * prevented), surfaces as UNKNOWN: the row survives with the target unbound.
+	 * Evaluates a computed BIND against the scratch row and interns its value through the evaluation-scoped synthetic
+	 * source, matching {@code CopyBinding.value(RowState)}. Evaluation errors leave the target unbound.
 	 */
 	private long computeInternedBind(LmdbNativeCompiledValue computedValue) {
 		RowState scratchRow = scratch;
@@ -299,14 +370,39 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 
 	@Override
 	public void residualSlot(int engineSlot, long id) {
-		scratch.replaceSlot(engineSlot, id);
+		installScratchInput(engineSlot, id);
+	}
+
+	private void installScratchInput(int engineSlot, long id) {
+		if (scratchWriteCount == scratchWriteSlots.length) {
+			scratchWriteSlots = Arrays.copyOf(scratchWriteSlots, scratchWriteCount * 2);
+			scratchWritePrevious = Arrays.copyOf(scratchWritePrevious, scratchWriteCount * 2);
+		}
+		scratchWriteSlots[scratchWriteCount] = engineSlot;
+		scratchWritePrevious[scratchWriteCount++] = scratch.replaceSlot(engineSlot, id);
+	}
+
+	private void restoreScratchInputs(int start) {
+		while (scratchWriteCount > start) {
+			int index = --scratchWriteCount;
+			scratch.replaceSlot(scratchWriteSlots[index], scratchWritePrevious[index]);
+		}
+		pendingScratchStart = start;
 	}
 
 	@Override
 	public boolean testResidual(int residualId) {
 		// Every slot in the residual's read mask was just installed by residualSlot calls, so the scratch row is
 		// exactly the row the interpreted chain's own FilterCursor would present.
-		return residuals[residualId].filter.accept(scratch);
+		int start = pendingScratchStart;
+		pendingScratchStart = scratchWriteCount;
+		boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
+		try {
+			return residuals[residualId].filter.accept(scratch);
+		} finally {
+			LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
+			restoreScratchInputs(start);
+		}
 	}
 
 	/**
@@ -365,6 +461,62 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			return decoded.floatingValue();
 		}
 		return decoded.decimalValue().doubleValue();
+	}
+
+	@Override
+	public void setAggregateInput(int column, long value) {
+		installScratchInput(columnSlots[column], value);
+	}
+
+	@Override
+	public void accumulateRow(int aggregateId, int groupId) {
+		int start = pendingScratchStart;
+		pendingScratchStart = scratchWriteCount;
+		boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
+		try {
+			rowState(aggregateId, groupId).add(scratch);
+		} finally {
+			LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
+			restoreScratchInputs(start);
+		}
+	}
+
+	private AggState rowState(int aggregateId, int groupId) {
+		AggState[] states = rowStates[aggregateId];
+		if (groupId >= states.length) {
+			states = Arrays.copyOf(states, Math.max(groupId + 1, states.length * 2));
+			rowStates[aggregateId] = states;
+		}
+		if (states[groupId] == null) {
+			AggregateSpec[] specs = { groupLayout.outs[aggregateId].spec };
+			states[groupId] = new AggState(specs, distinctExpected, rowAggregateContext,
+					AggregateDistinctChannels.allHash(specs));
+		}
+		return states[groupId];
+	}
+
+	Value rowAggregateResult(int aggregateId, int groupId) {
+		boolean empty = groupId >= rowStates[aggregateId].length || rowStates[aggregateId][groupId] == null;
+		AggState state = rowState(aggregateId, groupId);
+		return switch (state.specs[0].kind) {
+		case COUNT -> AggContext.integerLiteral(state.count(0));
+		case SAMPLE -> state.extremes[0];
+		case GROUP_CONCAT -> SimpleValueFactory.getInstance()
+				.createLiteral(state.concats[0] == null ? "" : state.concats[0].toString());
+		case CUSTOM -> {
+			if (empty) {
+				state.specs[0].custom.process(EmptyBindingSet.getInstance(), state.customPredicates[0],
+						state.customCollectors[0]);
+			}
+			try {
+				yield state.customCollectors[0].getFinalValue();
+			} catch (ValueExprEvaluationException error) {
+				// A finalization type error leaves this output unbound, as in the sequential aggregate collector.
+				yield null;
+			}
+		}
+		default -> throw new IllegalStateException("unsupported row aggregate: " + state.specs[0].kind);
+		};
 	}
 
 	@Override

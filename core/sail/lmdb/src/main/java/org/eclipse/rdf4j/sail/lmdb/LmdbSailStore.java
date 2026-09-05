@@ -3748,7 +3748,7 @@ class LmdbSailStore implements SailStore {
 			if (view != null && directAdjacency.offersUniversalCandidate(view)) {
 				double adjacencyRows = directAdjacency.estimateResultRows(view, subj, pred, obj, explicit);
 				double adjacencyWork = directAdjacency.estimateUniversalWork(view, order, subj, pred, obj, context,
-						explicit);
+						explicit, adjacencyRows);
 				int adjacencyKey = LmdbStatementAccessArbiter.variantKey(
 						LmdbStatementAccessArbiter.Source.ADJACENCY, subj, pred, obj, context, order, false,
 						adjacencyTraversal(order, subj, pred, obj));
@@ -4120,7 +4120,7 @@ class LmdbSailStore implements SailStore {
 						long context, AdjacencyAccessObserver observer) throws IOException {
 					double adjacencyRows = directAdjacency.estimateResultRows(view, subj, pred, obj, explicit);
 					double adjacencyWork = directAdjacency.estimateUniversalWork(view, null, subj, pred, obj, context,
-							explicit);
+							explicit, adjacencyRows);
 					double lmdbWork = lmdbStatementWork(subj, pred, obj, context, adjacencyRows);
 					int adjacencyKey = LmdbStatementAccessArbiter.variantKey(
 							LmdbStatementAccessArbiter.Source.ADJACENCY, subj, pred, obj, context, null, false,
@@ -4415,7 +4415,7 @@ class LmdbSailStore implements SailStore {
 				AdjacencyAccessObserver observer) throws IOException {
 			double adjacencyRows = directAdjacency.estimateResultRows(view, subj, pred, obj, explicit);
 			double adjacencyWork = directAdjacency.estimateUniversalWork(view, null, subj, pred, obj, context,
-					explicit);
+					explicit, adjacencyRows);
 			double lmdbWork = lmdbStatementWork(subj, pred, obj, context, adjacencyRows);
 			int adjacencyKey = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.ADJACENCY,
 					subj, pred, obj, context, null, false, true, adjacencyTraversal(null, subj, pred, obj));
@@ -4950,7 +4950,7 @@ class LmdbSailStore implements SailStore {
 					double adjacencyRows = directAdjacency.estimateResultRows(adjacencyView, subj, pred, obj,
 							explicit);
 					double adjacencyWork = directAdjacency.estimateUniversalWork(adjacencyView, order, subj, pred,
-							obj, context, explicit);
+							obj, context, explicit, adjacencyRows);
 					int adjacencyKey = LmdbStatementAccessArbiter.variantKey(
 							LmdbStatementAccessArbiter.Source.ADJACENCY, subj, pred, obj, context, order, false,
 							adjacencyTraversal(order, subj, pred, obj));
@@ -5415,7 +5415,7 @@ class LmdbSailStore implements SailStore {
 					AdjacencyAccessObserver observer) throws IOException {
 				double adjacencyRows = directAdjacency.estimateResultRows(adjacencyView, subj, pred, obj, explicit);
 				double adjacencyWork = directAdjacency.estimateUniversalWork(adjacencyView, null, subj, pred, obj,
-						context, explicit);
+						context, explicit, adjacencyRows);
 				double lmdbWork = lmdbStatementWork(subj, pred, obj, context, adjacencyRows);
 				int adjacencyKey = LmdbStatementAccessArbiter.variantKey(
 						LmdbStatementAccessArbiter.Source.ADJACENCY, subj, pred, obj, context, null, false,
@@ -5745,7 +5745,7 @@ class LmdbSailStore implements SailStore {
 				AdjacencyAccessObserver observer) throws IOException {
 			double adjacencyRows = directAdjacency.estimateResultRows(adjacencyView, subj, pred, obj, explicit);
 			double adjacencyWork = directAdjacency.estimateUniversalWork(adjacencyView, null, subj, pred, obj,
-					context, explicit);
+					context, explicit, adjacencyRows);
 			double lmdbWork = lmdbStatementWork(subj, pred, obj, context, adjacencyRows);
 			int adjacencyKey = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.ADJACENCY,
 					subj, pred, obj, context, null, false, true, adjacencyTraversal(null, subj, pred, obj));

@@ -190,7 +190,9 @@ final class AdjacencyKeyDomain implements LmdbNativeIdDomain {
 final class UnionIdDomain implements LmdbNativeIdDomain {
 
 	private final LmdbNativeIdDomain[] domains;
-	private final boolean[] active;
+	private final long[] heads;
+	private final int[] heap;
+	private int heapSize;
 	private final long cardinalityUpperBound;
 	private long current;
 	private long multiplicity;
@@ -200,7 +202,8 @@ final class UnionIdDomain implements LmdbNativeIdDomain {
 
 	UnionIdDomain(LmdbNativeIdDomain[] domains) {
 		this.domains = domains;
-		this.active = new boolean[domains.length];
+		this.heads = new long[domains.length];
+		this.heap = new int[domains.length];
 		long upperBound = 0L;
 		for (int i = 0; i < domains.length; i++) {
 			LmdbNativeIdDomain domain = Objects.requireNonNull(domains[i], "domains[" + i + "]");
@@ -222,15 +225,11 @@ final class UnionIdDomain implements LmdbNativeIdDomain {
 		}
 		if (!initialized) {
 			for (int i = 0; i < domains.length; i++) {
-				active[i] = domains[i].advance();
-			}
-			initialized = true;
-		} else if (positioned) {
-			for (int i = 0; i < domains.length; i++) {
-				if (active[i] && domains[i].current() == current) {
-					active[i] = domains[i].advance();
+				if (domains[i].advance()) {
+					addHead(i);
 				}
 			}
+			initialized = true;
 		}
 		return selectCurrent();
 	}
@@ -240,8 +239,11 @@ final class UnionIdDomain implements LmdbNativeIdDomain {
 		if (closed) {
 			return false;
 		}
+		heapSize = 0;
 		for (int i = 0; i < domains.length; i++) {
-			active[i] = domains[i].seekAtLeast(id);
+			if (domains[i].seekAtLeast(id)) {
+				addHead(i);
+			}
 		}
 		initialized = true;
 		return selectCurrent();
@@ -249,30 +251,67 @@ final class UnionIdDomain implements LmdbNativeIdDomain {
 
 	private boolean selectCurrent() {
 		positioned = false;
-		for (int i = 0; i < domains.length; i++) {
-			if (!active[i]) {
-				continue;
-			}
-			long candidate = domains[i].current();
-			if (!positioned || Long.compareUnsigned(candidate, current) < 0) {
-				current = candidate;
-				positioned = true;
-			}
-		}
-		if (!positioned) {
+		if (heapSize == 0) {
 			multiplicity = 0L;
 			return false;
 		}
+		current = heads[heap[0]];
 		multiplicity = 0L;
-		for (int i = 0; i < domains.length; i++) {
-			if (active[i] && domains[i].current() == current) {
-				long memberMultiplicity = domains[i].multiplicity();
-				multiplicity = Long.MAX_VALUE - multiplicity < memberMultiplicity
-						? Long.MAX_VALUE
-						: multiplicity + memberMultiplicity;
+		// Consume every matching head and prefetch its successor. Cached heads make the merge O(inputs * log
+		// members), without a scan of all members for each output or an allocation for each heap entry.
+		do {
+			int member = heap[0];
+			long memberMultiplicity = domains[member].multiplicity();
+			multiplicity = Long.MAX_VALUE - multiplicity < memberMultiplicity
+					? Long.MAX_VALUE
+					: multiplicity + memberMultiplicity;
+			if (domains[member].advance()) {
+				heads[member] = domains[member].current();
+			} else {
+				heap[0] = heap[--heapSize];
 			}
-		}
+			siftDown();
+		} while (heapSize != 0 && heads[heap[0]] == current);
+		positioned = true;
 		return true;
+	}
+
+	private void addHead(int member) {
+		long head = domains[member].current();
+		heads[member] = head;
+		int index = heapSize++;
+		while (index > 0) {
+			int parent = (index - 1) >>> 1;
+			if (Long.compareUnsigned(heads[heap[parent]], head) <= 0) {
+				break;
+			}
+			heap[index] = heap[parent];
+			index = parent;
+		}
+		heap[index] = member;
+	}
+
+	private void siftDown() {
+		if (heapSize == 0) {
+			return;
+		}
+		int member = heap[0];
+		long head = heads[member];
+		int index = 0;
+		int half = heapSize >>> 1;
+		while (index < half) {
+			int child = (index << 1) + 1;
+			int right = child + 1;
+			if (right < heapSize && Long.compareUnsigned(heads[heap[right]], heads[heap[child]]) < 0) {
+				child = right;
+			}
+			if (Long.compareUnsigned(head, heads[heap[child]]) <= 0) {
+				break;
+			}
+			heap[index] = heap[child];
+			index = child;
+		}
+		heap[index] = member;
 	}
 
 	@Override

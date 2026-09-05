@@ -1132,6 +1132,7 @@ final class LmdbNativeKernelEmitter {
 									.append(";\n");
 						}
 						break;
+					case LmdbNativeKernelIr.AGG_ROW_STATE:
 					case LmdbNativeKernelIr.AGG_SUM:
 					case LmdbNativeKernelIr.AGG_AVG:
 						// Exact numeric state lives in the engine hook sidecar; generated code keeps no RDF objects.
@@ -1428,6 +1429,7 @@ final class LmdbNativeKernelEmitter {
 										.append(");\n");
 							}
 							break;
+						case LmdbNativeKernelIr.AGG_ROW_STATE:
 						case LmdbNativeKernelIr.AGG_SUM:
 						case LmdbNativeKernelIr.AGG_AVG:
 							// Exact numeric state is initialized with the bound engine hooks.
@@ -1997,6 +1999,17 @@ final class LmdbNativeKernelEmitter {
 				case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
 					emitCountDistinctUpdate(source, output, i, value);
 					break;
+				case LmdbNativeKernelIr.AGG_ROW_STATE:
+					for (int column : output.rowCols) {
+						source.append("        hooks.setAggregateInput(")
+								.append(column)
+								.append(", v")
+								.append(column)
+								.append(");\n");
+					}
+					source.append("        hooks.accumulateRow(").append(i).append(", g);\n");
+					break;
+
 				case LmdbNativeKernelIr.AGG_SUM:
 					source.append("        if (")
 							.append(value)
@@ -2170,6 +2183,7 @@ final class LmdbNativeKernelEmitter {
 						emitArrayGrow(source, "agB" + i, "boolean");
 					}
 					break;
+				case LmdbNativeKernelIr.AGG_ROW_STATE:
 				case LmdbNativeKernelIr.AGG_SUM:
 				case LmdbNativeKernelIr.AGG_AVG:
 					// Exact numeric arrays grow in the engine hook sidecar.
@@ -2249,6 +2263,7 @@ final class LmdbNativeKernelEmitter {
 							.append(output.hookDistinct ? "g" : distinctCountExpression(output, i))
 							.append(";\n");
 					break;
+				case LmdbNativeKernelIr.AGG_ROW_STATE:
 				case LmdbNativeKernelIr.AGG_SUM:
 				case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
 				case LmdbNativeKernelIr.AGG_AVG:
@@ -2780,13 +2795,8 @@ final class LmdbNativeKernelEmitter {
 			if (residual.isEmpty()) {
 				body.append(next(nextTemplate, guarded));
 			} else {
-				body.append(guarded).append("if (");
-				for (int i = 0; i < residual.size(); i++) {
-					body.append(i == 0 ? "" : " && ").append(scalarFilterCondition(residual.get(i)));
-				}
-				body.append(") {\n");
-				body.append(next(nextTemplate, guarded + "    "));
-				body.append(guarded).append("}\n");
+				String filtersMethod = emitPipeline(residual, next(nextTemplate, ""), false);
+				body.append(guarded).append(filtersMethod).append("();\n");
 			}
 			closeCtxSliceEntry(body, inner, ctx ? producer : null);
 			// The slice loop always feeds the sink (a vector tail only ever has filters below it), so it must step past
@@ -3027,13 +3037,8 @@ final class LmdbNativeKernelEmitter {
 			if (residual.isEmpty()) {
 				body.append(next(nextTemplate, inner));
 			} else {
-				body.append(inner).append("if (");
-				for (int i = 0; i < residual.size(); i++) {
-					body.append(i == 0 ? "" : " && ").append(scalarFilterCondition(residual.get(i)));
-				}
-				body.append(") {\n");
-				body.append(next(nextTemplate, inner + "    "));
-				body.append(inner).append("}\n");
+				String filtersMethod = emitPipeline(residual, next(nextTemplate, ""), false);
+				body.append(inner).append(filtersMethod).append("();\n");
 			}
 			closeCtxSliceEntry(body, loop + "    ", ctx ? producer : null);
 			body.append(loop).append("}\n");
@@ -4856,6 +4861,7 @@ final class LmdbNativeKernelEmitter {
 				String cursor = "pc" + plan.plan;
 				String buffer = "pb" + plan.plan;
 				body.append(indent).append("if (").append(cursor).append(" == null) {\n");
+				emitPlanInputs(body, indent + "    ", plan);
 				body.append(indent).append("    ").append(cursor).append(" = p").append(plan.plan).append(".open();\n");
 				body.append(indent).append("    ").append(a).append(" = 0;\n");
 				body.append(indent).append("    ").append(b).append(" = 0;\n");
@@ -4893,6 +4899,7 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("}\n");
 				body.append(indent).append(cursor).append(".close();\n");
 				body.append(indent).append(cursor).append(" = null;\n");
+				emitPlanRestore(body, indent, plan);
 				body.append(indent).append(a).append(" = -1;\n");
 				body.append(indent).append(b).append(" = -1;\n");
 				return true;
@@ -5290,6 +5297,32 @@ final class LmdbNativeKernelEmitter {
 					.append(Math.max(columns, 1))
 					.append("];\n");
 			body.append(indent).append("}\n");
+		}
+
+		/** Captures correlation bindings before opening this native operator. */
+		private void emitPlanInputs(StringBuilder body, String indent, PlanRows plan) {
+			for (int i = 0; i < plan.inputs.length; i++) {
+				body.append(indent)
+						.append("p")
+						.append(plan.plan)
+						.append(".setInput(")
+						.append(i)
+						.append(", ")
+						.append(plan.inputs[i].token())
+						.append(");\n");
+			}
+		}
+
+		private static void emitPlanRestore(StringBuilder body, String indent, PlanRows plan) {
+			for (int col : plan.outCols) {
+				int input = plan.inputForColumn(col);
+				body.append(indent)
+						.append("v")
+						.append(col)
+						.append(" = ")
+						.append(input < 0 ? "-1L" : "p" + plan.plan + ".input(" + input + ")")
+						.append(";\n");
+			}
 		}
 
 		/** Copies one packed engine-plan row into the columns registered for that plan site. */
@@ -6377,6 +6410,7 @@ final class LmdbNativeKernelEmitter {
 				PlanRows plan = (PlanRows) node;
 				String cursor = "pc" + plan.plan;
 				String buffer = "pb" + plan.plan;
+				emitPlanInputs(body, indent, plan);
 				body.append(indent).append(cursor).append(" = p").append(plan.plan).append(".open();\n");
 				emitPlanBuffer(body, indent, buffer, plan.outCols.length);
 				body.append(indent)
@@ -6400,6 +6434,7 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("}\n");
 				body.append(indent).append(cursor).append(".close();\n");
 				body.append(indent).append(cursor).append(" = null;\n");
+				emitPlanRestore(body, indent, plan);
 				return;
 			}
 			if (node instanceof EnumerateNodeDomainIntersection) {
@@ -6705,11 +6740,13 @@ final class LmdbNativeKernelEmitter {
 							.append(indent)
 							.append("if (key != -1L) {\n")
 							.append(indent)
-							.append("    try (NativeLmdbQuerySource.NodePredicates.PredicateRowCursor ")
+							.append("    NativeLmdbQuerySource.NodePredicates.PredicateRowCursor ")
 							.append(cursor)
 							.append(" = ")
 							.append(v)
-							.append(".openRow(key)) {\n")
+							.append(".openRow(key);\n")
+							.append(indent)
+							.append("    try {\n")
 							.append(indent)
 							.append("        if (")
 							.append(cursor)
@@ -6756,6 +6793,14 @@ final class LmdbNativeKernelEmitter {
 							.append("            }\n")
 							.append(indent)
 							.append("        }\n")
+							.append(indent)
+							.append("    } finally {\n")
+							.append(indent)
+							.append("        if (")
+							.append(cursor)
+							.append(" != null) ")
+							.append(cursor)
+							.append(".close();\n")
 							.append(indent)
 							.append("    }\n")
 							.append(indent)
@@ -7317,6 +7362,26 @@ final class LmdbNativeKernelEmitter {
 						.append(next(nextTemplate, indent));
 			} else if (node instanceof BindHook) {
 				BindHook bind = (BindHook) node;
+				if (bind.args.length > 2) {
+					for (int i = 0; i < bind.args.length; i++) {
+						body.append(indent)
+								.append("hooks.setBindInput(")
+								.append(bind.bindId)
+								.append(", ")
+								.append(i)
+								.append(", ")
+								.append(bind.args[i].token())
+								.append(");\n");
+					}
+					body.append(indent)
+							.append('v')
+							.append(bind.dstCol)
+							.append(" = hooks.computeBindRow(")
+							.append(bind.bindId)
+							.append(");\n")
+							.append(next(nextTemplate, indent));
+					return;
+				}
 				String[] args = { "-1L", "-1L" };
 				for (int i = 0; i < bind.args.length; i++) {
 					args[i] = bind.args[i].token();

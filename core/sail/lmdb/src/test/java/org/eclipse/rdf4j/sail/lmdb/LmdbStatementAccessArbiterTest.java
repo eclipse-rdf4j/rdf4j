@@ -100,6 +100,77 @@ class LmdbStatementAccessArbiterTest {
 	}
 
 	@Test
+	void measuredRatesCalibrateTheWorkEstimateUsedForSelection() {
+		LmdbStatementAccessArbiter.RuntimeEvidence evidence = new LmdbStatementAccessArbiter.RuntimeEvidence();
+		for (int sample = 0; sample < 8; sample++) {
+			evidence.completed(0, 30_000_000_000L, 100D);
+			RecordIterator measured = LmdbStatementAccessArbiter.measured(new RecordIterator() {
+				@Override
+				public long[] next() {
+					return null;
+				}
+
+				@Override
+				public long getSourceRowsScannedActual() {
+					return 4L;
+				}
+
+				@Override
+				public void close() {
+				}
+			}, evidence, 1, 10_000_000_000L, 100D);
+			assertThat(measured.next()).isNull();
+			measured.close();
+		}
+		assertThat(evidence.choose(10D, 20D, 0, 100D, 10D, 20D, 1, 100D))
+				.isEqualTo(LmdbStatementAccessArbiter.Source.LMDB);
+	}
+
+	@Test
+	void repeatedDecisionsLearnTheUnobservedFasterAlternative() {
+		LmdbStatementAccessArbiter.RuntimeEvidence evidence = new LmdbStatementAccessArbiter.RuntimeEvidence();
+		for (int sample = 0; sample < 32; sample++) {
+			LmdbStatementAccessArbiter.Source selected = evidence.choose(10D, 20D, 0, 1D, 10D, 20D, 1, 1D);
+			boolean adjacency = selected == LmdbStatementAccessArbiter.Source.ADJACENCY;
+			evidence.completed(adjacency ? 0 : 1, adjacency ? 1_000L : 10L, 1D);
+		}
+		assertThat(evidence.completedCount(0)).isGreaterThanOrEqualTo(8L);
+		assertThat(evidence.completedCount(1)).isGreaterThanOrEqualTo(8L);
+		assertThat(evidence.choose(10D, 20D, 0, 1D, 10D, 20D, 1, 1D))
+				.isEqualTo(LmdbStatementAccessArbiter.Source.LMDB);
+	}
+
+	@Test
+	void alternativeSamplingStopsWhenEveryAlternativeIsCensored() {
+		LmdbStatementAccessArbiter.RuntimeEvidence evidence = new LmdbStatementAccessArbiter.RuntimeEvidence();
+		for (int sample = 0; sample < 64; sample++) {
+			LmdbStatementAccessArbiter.Source selected = evidence.choose(10D, 20D, 0, 1D, 10D, 20D, 1, 1D);
+			if (selected == LmdbStatementAccessArbiter.Source.ADJACENCY) {
+				evidence.completed(0, 100L, 1D);
+			} else {
+				evidence.censored(1);
+			}
+		}
+		assertThat(evidence.censoredCount(1)).isEqualTo(8L);
+		assertThat(evidence.completedCount(1)).isZero();
+		assertThat(evidence.choose(10D, 20D, 0, 1D, 10D, 20D, 1, 1D))
+				.isEqualTo(LmdbStatementAccessArbiter.Source.ADJACENCY);
+	}
+
+	@Test
+	void repeatedDecisionsRetainTheMeasuredFasterPreferredCandidate() {
+		LmdbStatementAccessArbiter.RuntimeEvidence evidence = new LmdbStatementAccessArbiter.RuntimeEvidence();
+		for (int sample = 0; sample < 32; sample++) {
+			LmdbStatementAccessArbiter.Source selected = evidence.choose(10D, 20D, 0, 1D, 10D, 20D, 1, 1D);
+			boolean adjacency = selected == LmdbStatementAccessArbiter.Source.ADJACENCY;
+			evidence.completed(adjacency ? 0 : 1, adjacency ? 10L : 1_000L, 1D);
+		}
+		assertThat(evidence.completedCount(1)).isGreaterThanOrEqualTo(8L);
+		assertThat(evidence.choose(10D, 20D, 0, 1D, 10D, 20D, 1, 1D))
+				.isEqualTo(LmdbStatementAccessArbiter.Source.ADJACENCY);
+	}
+
+	@Test
 	void warmedEvidenceDoesNotCrossAdjacencyPublicationRegimes() throws Exception {
 		LmdbStatementAccessArbiter.RuntimeEvidence evidence = new LmdbStatementAccessArbiter.RuntimeEvidence();
 		int adjacencyKey = 0;

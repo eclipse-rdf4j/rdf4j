@@ -208,6 +208,11 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	QueryEvaluationStep compileGroup(Group group, ValueExpr havingCondition, TupleExpr originalExpr) {
+		QueryEvaluationStep census = LmdbNativeCensusAggregate.tryCreate(group, source, strategy, context, originalExpr,
+				pattern -> compileContextConstraint(pattern, context.getDataset()));
+		if (census != null) {
+			return census;
+		}
 		if (containsUnsafeNestedVariableScopeChange(group.getArg())) {
 			if (!islandsEnabled) {
 				return null;
@@ -237,7 +242,10 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 		}
 		int[] groupSlots = compileGroupSlots(group.getGroupBindingNames());
-		boolean duplicateInsensitive = !duplicatesMatter(aggregates, havingCondition);
+		// DISTINCT at the aggregate output does not permit discarding duplicate inputs before volatile expressions:
+		// two equal VALUES rows can produce two different RAND/UUID/BNODE values.
+		boolean duplicateInsensitive = !duplicatesMatter(aggregates, havingCondition)
+				&& QueryEvaluationUtility.isRepeatableWithinPreparation(group);
 		if (havingCondition == null) {
 			// These recognizers own complete aggregate shapes with computed group keys. Total semantic BIND support
 			// means the general tuple compiler now accepts their interiors, so waiting for that compiler to decline

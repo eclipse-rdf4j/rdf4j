@@ -31,6 +31,7 @@ import java.util.function.Supplier;
 import org.codehaus.janino.SimpleCompiler;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -343,7 +344,7 @@ final class LmdbNativeJaninoCodegen {
 			throw validationException;
 		}
 		if (problem instanceof LmdbNativeKernelBindings.PlanFailure
-				|| problem instanceof EncounterOrderFallback) {
+				|| problem instanceof EncounterOrderFallback || problem instanceof KernelCancelledException) {
 			return;
 		}
 		if (failOnError()) {

@@ -117,6 +117,21 @@ final class RowState implements LmdbNativeSlotReader {
 		return slots[slot];
 	}
 
+	/** Independent binding/trail state at an operator boundary, sharing this evaluation's resources and scope. */
+	RowState fork() {
+		RowState copy = new RowState(source, layout, base, telemetryTarget, exactValuesMetrics, cancellation);
+		System.arraycopy(slots, 0, copy.slots, 0, slots.length);
+		copy.recomputeBoundMask();
+		copy.memoryScope = memoryScope;
+		copy.runtimePlan = runtimePlan;
+		copy.lexicalInputMask = lexicalInputMask;
+		copy.lexicalScopeDepth = lexicalScopeDepth;
+		copy.logicalSolutionIdentity = logicalSolutionIdentity;
+		copy.encounterOrderRequired = encounterOrderRequired;
+		copy.parallelOwnership = parallelOwnership;
+		return copy;
+	}
+
 	@Override
 	public NativeTermAuthority termAuthority() {
 		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).authority() : null;

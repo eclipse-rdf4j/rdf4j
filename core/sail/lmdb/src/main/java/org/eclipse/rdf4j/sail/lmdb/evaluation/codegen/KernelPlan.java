@@ -31,6 +31,16 @@ public interface KernelPlan extends AutoCloseable {
 	/** Opens a fresh cursor over this bound physical plan. */
 	Cursor open();
 
+	/** Installs a correlated input before opening this operator. */
+	default void setInput(int index, long value) {
+		throw new UnsupportedOperationException("correlated inputs are not supported");
+	}
+
+	/** The saved input for restoring a kernel column after this operator. */
+	default long input(int index) {
+		throw new UnsupportedOperationException("correlated inputs are not supported");
+	}
+
 	/** Closes any cursor still owned by this plan binding. */
 	@Override
 	void close();

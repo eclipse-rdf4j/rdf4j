@@ -397,15 +397,34 @@ final class LmdbNativeKernelIr {
 	static final class PlanRows extends Node {
 		final int plan;
 		final int[] outCols;
+		final Operand[] inputs;
 
 		PlanRows(int plan, int[] outCols) {
+			this(plan, outCols, new Operand[0]);
+		}
+
+		PlanRows(int plan, int[] outCols, Operand[] inputs) {
 			this.plan = plan;
 			this.outCols = outCols.clone();
+			this.inputs = inputs.clone();
+		}
+
+		int inputForColumn(int column) {
+			for (int i = 0; i < inputs.length; i++) {
+				if (inputs[i].kind == Operand.COL && inputs[i].index == column) {
+					return i;
+				}
+			}
+			return -1;
 		}
 
 		@Override
 		void key(StringBuilder key) {
-			key.append("PR(p").append(plan).append("->");
+			key.append("PR(p").append(plan);
+			for (Operand input : inputs) {
+				key.append(',').append(input.token());
+			}
+			key.append("->");
 			for (int i = 0; i < outCols.length; i++) {
 				key.append(i == 0 ? "" : ",").append(outCols[i]);
 			}
@@ -415,12 +434,17 @@ final class LmdbNativeKernelIr {
 		@Override
 		void produced(BitSet columns) {
 			for (int col : outCols) {
-				columns.set(col);
+				if (inputForColumn(col) < 0) {
+					columns.set(col);
+				}
 			}
 		}
 
 		@Override
 		void requirements(Requirements requirements) {
+			for (Operand input : inputs) {
+				requirements.operand(input);
+			}
 			requirements.plan(plan);
 		}
 	}
@@ -2046,8 +2070,8 @@ final class LmdbNativeKernelIr {
 		final int dstCol;
 
 		BindHook(int bindId, Operand[] args, int dstCol) {
-			if (args.length > 2) {
-				throw new IllegalArgumentException("bind hooks take at most 2 arguments");
+			if (args.length > LmdbNativeAggregateCompiler.MAX_NATIVE_SLOTS) {
+				throw new IllegalArgumentException("bind arguments exceed the native slot limit");
 			}
 			this.bindId = bindId;
 			this.args = args;
@@ -2276,6 +2300,7 @@ final class LmdbNativeKernelIr {
 	static final int AGG_MAX_ID = 8;
 	static final int AGG_SUM_DISTINCT = 9;
 	static final int AGG_AVG_DISTINCT = 10;
+	static final int AGG_ROW_STATE = 11;
 
 	/**
 	 * One projected aggregate. Count kinds emit plain longs; SUM/AVG emit their engine-side group ordinal so exact RDF
@@ -2294,6 +2319,7 @@ final class LmdbNativeKernelIr {
 		 * Part of the shape key, so the variant never collides with the sequential kernel in the compile cache.
 		 */
 		final boolean hookDistinct;
+		final int[] rowCols;
 
 		private AggregateOutput(int kind, int col) {
 			this(kind, col, -1);
@@ -2304,10 +2330,19 @@ final class LmdbNativeKernelIr {
 		}
 
 		private AggregateOutput(int kind, int col, int orderedDomain, boolean hookDistinct) {
+			this(kind, col, orderedDomain, hookDistinct, new int[0]);
+		}
+
+		private AggregateOutput(int kind, int col, int orderedDomain, boolean hookDistinct, int[] rowCols) {
+			this.rowCols = rowCols.clone();
 			this.kind = kind;
 			this.col = col;
 			this.orderedDomain = orderedDomain;
 			this.hookDistinct = hookDistinct;
+		}
+
+		static AggregateOutput rowState(int[] columns) {
+			return new AggregateOutput(AGG_ROW_STATE, -1, -1, false, columns);
 		}
 
 		static AggregateOutput countStar() {
@@ -2394,7 +2429,8 @@ final class LmdbNativeKernelIr {
 		}
 
 		boolean needsHooks() {
-			return needsNumericHooks() || kind == AGG_MIN_ID || kind == AGG_MAX_ID || hookDistinct;
+			return needsNumericHooks() || kind == AGG_MIN_ID || kind == AGG_MAX_ID || kind == AGG_ROW_STATE
+					|| hookDistinct;
 		}
 	}
 
@@ -2493,6 +2529,9 @@ final class LmdbNativeKernelIr {
 						.append(outputs[i].orderedDomain)
 						// the worker variant emits different code for the same kind/col, so it must key differently
 						.append(outputs[i].hookDistinct ? "!" : "");
+				for (int column : outputs[i].rowCols) {
+					key.append('/').append(column);
+				}
 			}
 			if (having != null) {
 				key.append(";h=")
@@ -3197,6 +3236,14 @@ final class LmdbNativeKernelIr {
 				}
 				return false;
 			}
+			if (node instanceof PlanRows plan) {
+				for (Operand input : plan.inputs) {
+					if (reads(input, columns)) {
+						return true;
+					}
+				}
+				return false;
+			}
 			if (node instanceof BindAlias alias) {
 				return reads(alias.source, columns);
 			}
@@ -3459,7 +3506,11 @@ final class LmdbNativeKernelIr {
 					checkColumn(col);
 				}
 				for (AggregateOutput output : aggregate.outputs) {
-					if (output.kind != AGG_COUNT_STAR) {
+					if (output.kind == AGG_ROW_STATE) {
+						for (int col : output.rowCols) {
+							checkColumn(col);
+						}
+					} else if (output.kind != AGG_COUNT_STAR) {
 						checkColumn(output.col);
 					}
 				}

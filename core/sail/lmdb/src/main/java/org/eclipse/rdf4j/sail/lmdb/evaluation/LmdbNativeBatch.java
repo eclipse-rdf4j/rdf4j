@@ -233,6 +233,9 @@ final class PatternBatchCursor implements BatchCursor {
 	}
 
 	boolean bind(long[] quad, int offset, NativeBatch batch, int row) {
+		if (pattern.range != null && !pattern.range.includes(quad, offset)) {
+			return false;
+		}
 		if (pattern.namedContextScope && !pattern.contexts.isFixed()
 				&& quad[offset + TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {
 			return false;

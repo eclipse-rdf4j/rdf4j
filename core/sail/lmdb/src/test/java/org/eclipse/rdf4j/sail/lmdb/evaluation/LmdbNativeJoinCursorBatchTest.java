@@ -24,6 +24,7 @@ import java.util.function.LongToIntFunction;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.junit.jupiter.api.AfterEach;
@@ -36,6 +37,33 @@ class LmdbNativeJoinCursorBatchTest {
 	@AfterEach
 	void resetQueryMemoryOverride() {
 		LmdbAdaptiveLongArray.queryMemoryOverride = null;
+	}
+
+	@Test
+	void directPatternBatchesRetainDeclinedRangePredicate() throws Exception {
+		// This source implements only unrestricted scans, as allowed by the optional physical-range contract.
+		RowState row = row(new BatchTrackingSource(13));
+		LmdbKeyRange range = new LmdbKeyRange(new byte[] { 5 }, new byte[] { 10 }, "ospc", 2);
+		PatternPlan pattern = new PatternPlan(Term.constant(42), Term.constant(PREDICATE), Term.slot(1),
+				Term.constant(NULL_CONTEXT_ID), ContextConstraint.UNRESTRICTED, false, null, "ospc", range, 13);
+		List<Long> scalar = new ArrayList<>();
+		try (RowCursor cursor = pattern.open(row)) {
+			while (cursor.next()) {
+				scalar.add(row.slots[1]);
+			}
+		}
+		assertThat(scalar).containsExactly(5L, 6L, 7L, 8L, 9L);
+		List<Long> batched = new ArrayList<>();
+		NativeBatch batch = new NativeBatch(row.slots.length, 4);
+		try (BatchCursor cursor = pattern.openBatch(row, batch.capacity)) {
+			assertThat(cursor).isNotNull();
+			while (cursor.fill(batch) != 0) {
+				for (int i = 0; i < batch.selectedCount; i++) {
+					batched.add(batch.get(1, batch.selection[i]));
+				}
+			}
+		}
+		assertThat(batched).isEqualTo(scalar);
 	}
 
 	@Test

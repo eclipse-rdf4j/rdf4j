@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -539,13 +540,25 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	}
 
 	private List<BindingSet> evaluateInitialized(RowState row) {
-		if (containsComputedValueCopy(arg) || AggregateSpec.anyFullRowDistinct(aggregates)) {
-			// A computed, non-inline group key (e.g. COALESCE(STR(?type), "..")) is interned to a runtime id through
-			// the (single) serial value source. The parallel/Janino/IR/prefix strategies each resolve group keys
-			// through their own (sometimes per-worker) source and group by raw longs, so they are disqualified here to
-			// keep computed-key interning and materialization on one source. Grouping is cheap relative to the scan.
-			// COUNT(DISTINCT *) (M-F3) is forced serial for the same reason: only AggState's full-row tracker can
-			// represent full-solution distinctness.
+		if (containsComputedValueCopy(arg) || AggregateSpec.anyFullRowDistinct(aggregates)
+				|| !SlotPlan.encounterOrderReplaySafe(arg)) {
+			boolean forceInterpreted = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED
+					.equals(forcedExecutionStrategy);
+			boolean forceCompiled = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE.equals(forcedExecutionStrategy);
+			if (forcedExecutionStrategy == null || forceInterpreted || forceCompiled) {
+				boolean interpreted = forceInterpreted || !forceCompiled && !LmdbNativeJaninoCodegen.enabled();
+				List<BindingSet> kernelRows = LmdbNativeKernelExecution.tryEvaluateAggregateSerial(arg, row, groupSlots,
+						aggregates, this, explainTarget, havingCondition, interpreted, true);
+				if (kernelRows != null) {
+					return kernelRows;
+				}
+				if (forcedExecutionStrategy != null) {
+					throw new QueryEvaluationException("LMDB execution strategy '" + forcedExecutionStrategy
+							+ "' could not bind the serial aggregate kernel");
+				}
+			}
+			// Computed keys and full-row DISTINCT share one serial value authority. If the serial kernel cannot
+			// bind its inputs, the ordinary AggState cursor retains the same authority and encounter order.
 			LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
 			try {
 				List<BindingSet> results = evaluateSequential(row, aggContext, metrics);
@@ -807,19 +820,24 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					&& LmdbNativeKernelLowering.nodeDomainIntersectionAggregate(arg, row, groupSlots, aggregates,
 							LmdbNativeKernelLowering.recognizeHaving(havingCondition, aggregates));
 			compiledIr = typeMatrixIr ? LmdbNativeJaninoCodegen.enabled() : compiledIr;
-			String compiledSerialTag = typeMatrixIr
-					? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX
-					: nodeDomainIntersectionIr
-							? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION
-							: wildcardIr ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD
-									: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE;
-			String interpretedSerialTag = typeMatrixIr
-					? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED
-					: nodeDomainIntersectionIr
-							? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION
-							: wildcardIr
-									? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED
-									: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED;
+			String compiledSerialTag = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE.equals(forcedExecutionStrategy)
+					? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE
+					: typeMatrixIr
+							? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX
+							: nodeDomainIntersectionIr
+									? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION
+									: wildcardIr ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD
+											: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE;
+			String interpretedSerialTag = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED
+					.equals(forcedExecutionStrategy)
+							? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED
+							: typeMatrixIr
+									? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED
+									: nodeDomainIntersectionIr
+											? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION
+											: wildcardIr
+													? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED
+													: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED;
 			String compiledParallelTag = typeMatrixIr
 					? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL
 					: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL;
@@ -1839,6 +1857,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				result.addBinding(out.spec.name,
 						SimpleValueFactory.getInstance().createLiteral(BigInteger.valueOf(raw)));
 				break;
+			case LmdbNativeKernelBindings.ENC_ROW_STATE: {
+				Value value = hooks.rowAggregateResult(i, Math.toIntExact(raw));
+				if (value != null) {
+					result.addBinding(out.spec.name, value);
+				}
+				break;
+			}
 			case LmdbNativeKernelBindings.ENC_EXACT_NUMERIC: {
 				Literal numeric = hooks.numericResult(i, Math.toIntExact(raw));
 				if (numeric != null) {

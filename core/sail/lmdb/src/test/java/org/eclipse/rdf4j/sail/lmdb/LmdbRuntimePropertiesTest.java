@@ -192,12 +192,18 @@ class LmdbRuntimePropertiesTest {
 	@Test
 	void experimentalPerformanceTiersAreReportedDefaultOff() throws Exception {
 		List<?> states = invokeList(LmdbRuntimeProperties.class.getMethod("list"));
-		for (String name : List.of("rdf4j.lmdb.janinoCodegen.distinctNumericAggregates",
-				"rdf4j.lmdb.janinoCodegen.planBridge", "rdf4j.lmdb.janinoCodegen.wildcardPredicates",
+		for (String name : List.of("rdf4j.lmdb.janinoCodegen.planBridge", "rdf4j.lmdb.janinoCodegen.wildcardPredicates",
 				"rdf4j.lmdb.nativeAccumulateJoin.enabled", "rdf4j.lmdb.nativeHashJoin.byteAdmission.enabled",
 				"rdf4j.lmdb.wcoj.streamingFrontiers.enabled")) {
 			assertThat(booleanValue(stateByName(states, name), "defaultEnabled")).as(name).isFalse();
 		}
+	}
+
+	@Test
+	void distinctNumericAggregatesAreReportedDefaultOn() throws Exception {
+		List<?> states = invokeList(LmdbRuntimeProperties.class.getMethod("list"));
+		assertThat(booleanValue(stateByName(states, "rdf4j.lmdb.janinoCodegen.distinctNumericAggregates"),
+				"defaultEnabled")).isTrue();
 	}
 
 	/** The runtime gate must agree with the registry default: warm-up serves with the property absent. */
