@@ -10,7 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfxml;
 
-import static org.eclipse.rdf4j.rio.rdfxml.RDFXMLParser.ITS_NAMESPACE;
+import static org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLConstants.ITS_NAMESPACE;
+import static org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLConstants.ITS_PREFIX;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -113,6 +114,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 	public Collection<RioSetting<?>> getSupportedSettings() {
 		final Collection<RioSetting<?>> settings = new HashSet<>(super.getSupportedSettings());
 		settings.add(BasicWriterSettings.BASE_DIRECTIVE);
+		settings.add(BasicWriterSettings.RDF_OUTPUT_VERSION);
 		settings.add(XMLWriterSettings.USE_SINGLE_QUOTES);
 		settings.add(XMLWriterSettings.QUOTES_TO_ENTITIES_IN_TEXT);
 		settings.add(XMLWriterSettings.INCLUDE_ROOT_RDF_TAG);
@@ -125,7 +127,7 @@ public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
 			// This export format needs the RDF namespace to be defined, add a
 			// prefix for it if there isn't one yet.
 			setNamespace(RDF.PREFIX, RDF.NAMESPACE);
-			setNamespace("its", ITS_NAMESPACE);
+			setNamespace(ITS_PREFIX, ITS_NAMESPACE);
 
 			WriterConfig writerConfig = getWriterConfig();
 			quote = writerConfig.get(XMLWriterSettings.USE_SINGLE_QUOTES) ? '\'' : '\"';

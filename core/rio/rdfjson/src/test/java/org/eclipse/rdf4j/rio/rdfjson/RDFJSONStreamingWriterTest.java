@@ -44,7 +44,8 @@ public class RDFJSONStreamingWriterTest extends RDFWriterTest {
 	@Override
 	protected RioSetting<?>[] getExpectedSupportedSettings() {
 		return new RioSetting[] { BasicWriterSettings.PRETTY_PRINT,
-				RDFJSONWriterSettings.ALLOW_MULTIPLE_OBJECT_VALUES };
+				RDFJSONWriterSettings.ALLOW_MULTIPLE_OBJECT_VALUES,
+				BasicWriterSettings.RDF_OUTPUT_VERSION };
 	}
 
 	@Override
