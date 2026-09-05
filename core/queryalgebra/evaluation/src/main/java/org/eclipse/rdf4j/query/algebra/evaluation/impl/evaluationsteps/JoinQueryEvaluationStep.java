@@ -61,11 +61,13 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		// example a failed non-silent SERVICE nested in the right operand). When the right operand is
 		// fatal-capable, the specialized fast paths below are skipped and the hash/nested-loop paths guarantee
 		// that the right operand is evaluated even when the left operand turns out to be empty.
-		boolean rightDiscardable = QueryEvaluationUtility.canDiscardWithoutEvaluation(join.getRightArg());
+		boolean rightDiscardable = QueryEvaluationUtility.canDiscardWithoutEvaluation(join.getRightArg(),
+				join.getLeftArg());
 		if (join.getRightArg() instanceof Service) {
+			boolean invokeWhenLeftEmpty = !rightDiscardable;
 			eval = bindings -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
 					(Service) join.getRightArg(), bindings,
-					strategy);
+					strategy, invokeWhenLeftEmpty);
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);

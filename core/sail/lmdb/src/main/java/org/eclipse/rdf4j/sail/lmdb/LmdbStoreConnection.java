@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
+import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
@@ -172,7 +174,8 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	/**
 	 * Evaluates distinct-prefix query shapes (see {@link LmdbPrefixRunQuery}) with a prefix-run index scan. The scan
 	 * reads the committed store directly, so it is only used outside transactions, without initial bindings and without
-	 * a query dataset, and only while no inferred statements need to be merged in.
+	 * a query dataset, only while no inferred statements need to be merged in, and only while the snapshot store's
+	 * auto-flush branches hold no committed-but-unflushed changes (which every other read sees through the branch).
 	 *
 	 * @return the result, or {@code null} when the query must be evaluated as usual
 	 */
@@ -184,6 +187,13 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		}
 		LmdbSailStore store = lmdbStore.getBackingStore();
 		if (store == null || (includeInferred && store.mayHaveInferred())) {
+			return null;
+		}
+		SailStore snapshotStore = lmdbStore.getSailStore();
+		if (snapshotStore instanceof SnapshotSailStore
+				&& ((SnapshotSailStore) snapshotStore).hasUnflushedChanges(includeInferred)) {
+			// committed changes still parked in the shared auto-flush branch (another connection keeps a dataset
+			// open) are invisible to a direct index scan
 			return null;
 		}
 		try {

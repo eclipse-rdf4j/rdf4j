@@ -12,13 +12,16 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -46,7 +49,18 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 	private final QueryValueEvaluationStep condition;
 	private final BindingSet bindings;
 	private final boolean leftJoin;
+	/**
+	 * The unfiltered join-entry bindings; differs from {@link #bindings} only when {@link #problemVars} is non-empty.
+	 */
+	private final BindingSet inputBindings;
+	/**
+	 * Entry-bound variables that only the optional operand of a left join binds (a "badly designed" left join): they
+	 * are stripped before evaluation and re-imposed by compatibility filtering, as in
+	 * {@link BadlyDesignedLeftJoinIterator}.
+	 */
+	private final Set<String> problemVars;
 
+	private CloseableIteration<BindingSet> rightIter;
 	private CloseableIteration<BindingSet> leftIter;
 	private List<BindingSet> rightRows;
 	private BindingSet currentLeft;
@@ -62,15 +76,69 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 	 */
 	public MaterializedReplayJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
 			QueryValueEvaluationStep condition, BindingSet bindings, boolean leftJoin) {
+		this(left, right, condition, bindings, leftJoin, Set.of());
+	}
+
+	/**
+	 * @param optionalOnlyVars for a left join, the variables bound by the optional operand (or condition) but not by
+	 *                         the left operand; entry bindings for these are stripped before evaluation and re-imposed
+	 *                         by compatibility filtering.
+	 */
+	public MaterializedReplayJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
+			QueryValueEvaluationStep condition, BindingSet bindings, boolean leftJoin, Set<String> optionalOnlyVars) {
 		this.left = left;
 		this.right = right;
 		this.condition = condition;
-		this.bindings = bindings;
 		this.leftJoin = leftJoin;
+		this.inputBindings = bindings;
+		Set<String> problemVars = Set.of();
+		for (String name : optionalOnlyVars) {
+			if (bindings.hasBinding(name)) {
+				if (problemVars.isEmpty()) {
+					problemVars = new HashSet<>();
+				}
+				problemVars.add(name);
+			}
+		}
+		this.problemVars = problemVars;
+		if (problemVars.isEmpty()) {
+			this.bindings = bindings;
+		} else {
+			QueryBindingSet filtered = new QueryBindingSet(bindings);
+			problemVars.forEach(filtered::removeBinding);
+			this.bindings = filtered;
+		}
 	}
 
 	@Override
 	protected BindingSet getNextElement() {
+		if (problemVars.isEmpty()) {
+			return nextJoinElement();
+		}
+		// Ignore all results that are not compatible with the stripped input bindings, then make sure the problem
+		// variables are part of the returned results (see BadlyDesignedLeftJoinIterator).
+		BindingSet result = nextJoinElement();
+		while (result != null && !inputBindings.isCompatible(result)) {
+			result = nextJoinElement();
+		}
+		if (result != null) {
+			MutableBindingSet extended = null;
+			for (String problemVar : problemVars) {
+				if (!result.hasBinding(problemVar)) {
+					if (extended == null) {
+						extended = new QueryBindingSet(result);
+					}
+					extended.addBinding(problemVar, inputBindings.getValue(problemVar));
+				}
+			}
+			if (extended != null) {
+				result = extended;
+			}
+		}
+		return result;
+	}
+
+	private BindingSet nextJoinElement() {
 		if (rightRows == null) {
 			initialize();
 		}
@@ -108,24 +176,29 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 		// each operand independently, and materializing first also surfaces the right operand's query-fatal
 		// errors even when the left operand is empty. Solutions are snapshotted because producers may reuse
 		// mutable row objects.
+		// The right iteration is kept in a field so that close() (cancellation, time limit) can stop the
+		// materialization loop: a closed iteration reports no further elements.
 		List<BindingSet> materialized = new ArrayList<>();
-		try (CloseableIteration<BindingSet> rightIter = right.evaluate(bindings)) {
+		rightIter = right.evaluate(bindings);
+		try {
 			while (rightIter.hasNext()) {
 				materialized.add(new QueryBindingSet(rightIter.next()));
 			}
+		} finally {
+			rightIter.close();
 		}
 		rightRows = materialized;
 		leftIter = left.evaluate(bindings);
 	}
 
 	private static BindingSet merge(BindingSet leftSolution, BindingSet rightSolution) {
+		if (!leftSolution.isCompatible(rightSolution)) {
+			return null;
+		}
 		QueryBindingSet merged = new QueryBindingSet(leftSolution);
 		for (Binding binding : rightSolution) {
-			Value existing = merged.getValue(binding.getName());
-			if (existing == null) {
+			if (!merged.hasBinding(binding.getName())) {
 				merged.addBinding(binding);
-			} else if (!existing.equals(binding.getValue())) {
-				return null;
 			}
 		}
 		return merged;
@@ -142,8 +215,14 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 
 	@Override
 	protected void handleClose() {
-		if (leftIter != null) {
-			leftIter.close();
+		try {
+			if (rightIter != null) {
+				rightIter.close();
+			}
+		} finally {
+			if (leftIter != null) {
+				leftIter.close();
+			}
 		}
 	}
 }

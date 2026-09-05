@@ -15,6 +15,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -62,7 +65,10 @@ class LoggingDispatcherServletTest {
 			Throwable thrown = catchThrowable(() -> servlet.dispatch(request, new MockHttpServletResponse()));
 
 			assertThat(thrown).isSameAs(outOfMemoryError);
+			// the shutdown runs on a dedicated thread and ends with a (here intercepted) JVM exit
+			assertThat(servlet.exited.await(10, TimeUnit.SECONDS)).isTrue();
 			assertThat(rootContext.isActive()).isFalse();
+			assertThat(servlet.exitStatus.get()).isEqualTo(1);
 		} finally {
 			servlet.destroy();
 			servletContext.close();
@@ -74,8 +80,17 @@ class LoggingDispatcherServletTest {
 
 		private static final long serialVersionUID = 1L;
 
+		private final CountDownLatch exited = new CountDownLatch(1);
+		private final AtomicInteger exitStatus = new AtomicInteger(-1);
+
 		private void dispatch(HttpServletRequest request, HttpServletResponse response) throws Exception {
 			super.doService(request, response);
+		}
+
+		@Override
+		protected void exitJvm(int status) {
+			exitStatus.compareAndSet(-1, status);
+			exited.countDown();
 		}
 	}
 }

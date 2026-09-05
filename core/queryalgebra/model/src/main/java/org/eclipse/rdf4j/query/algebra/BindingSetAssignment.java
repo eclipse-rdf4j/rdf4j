@@ -73,8 +73,10 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 				}
 			}
 		}
-		possibleBindingNames = immutableNames(possible);
+		// possibleBindingNames doubles as the initialization guard: publish it LAST so a concurrent reader that
+		// passes the guard never observes a null assured set
 		assuredBindingNames = assured == null ? Set.of() : immutableNames(assured);
+		possibleBindingNames = immutableNames(possible);
 	}
 
 	private static Set<String> immutableNames(LinkedHashSet<String> names) {
