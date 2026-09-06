@@ -12,8 +12,11 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -39,6 +42,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
  * error counts as not satisfied — a row-local outcome). The right operand is materialized before the left operand is
  * consumed, so its query-fatal errors surface even when the left operand is empty.
  * <p>
+ * The materialized solutions are indexed by the values of the join attributes (the variables both operands may bind): a
+ * left solution that binds all of them only visits the candidates with equal values plus the candidates that leave one
+ * of them unbound; other left solutions visit every candidate.
+ * <p>
  * The materialization buffer is in-memory, matching {@link HashJoinIteration}'s default iteration cache; spill-to-disk
  * support follows the same extension-hook pattern as a follow-up.
  */
@@ -59,11 +66,21 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 	 * {@link BadlyDesignedLeftJoinIterator}.
 	 */
 	private final Set<String> problemVars;
+	/** The variables both operands may bind; the materialized solutions are indexed by their values. */
+	private final String[] joinAttributes;
 
 	private CloseableIteration<BindingSet> rightIter;
 	private CloseableIteration<BindingSet> leftIter;
+	/** All materialized right solutions. */
 	private List<BindingSet> rightRows;
+	/** Right solutions binding every join attribute, by the values of the join attributes. */
+	private Map<List<Value>, List<BindingSet>> indexedRows;
+	/** Right solutions leaving a join attribute unbound: compatible with any join-attribute values. */
+	private List<BindingSet> unindexedRows;
 	private BindingSet currentLeft;
+	/** The candidates of the current left solution: {@link #candidates} first, then {@link #moreCandidates}. */
+	private List<BindingSet> candidates;
+	private List<BindingSet> moreCandidates;
 	private int candidateIndex;
 	private boolean currentLeftMatched;
 
@@ -86,11 +103,23 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 	 */
 	public MaterializedReplayJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
 			QueryValueEvaluationStep condition, BindingSet bindings, boolean leftJoin, Set<String> optionalOnlyVars) {
+		this(left, right, condition, bindings, leftJoin, optionalOnlyVars, new String[0]);
+	}
+
+	/**
+	 * @param joinAttributes the variables both operands may bind (see
+	 *                       {@link HashJoinIteration#hashJoinAttributeNames}); used to index the materialized right
+	 *                       solutions. An empty array disables the index.
+	 */
+	public MaterializedReplayJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
+			QueryValueEvaluationStep condition, BindingSet bindings, boolean leftJoin, Set<String> optionalOnlyVars,
+			String[] joinAttributes) {
 		this.left = left;
 		this.right = right;
 		this.condition = condition;
 		this.leftJoin = leftJoin;
 		this.inputBindings = bindings;
+		this.joinAttributes = joinAttributes;
 		Set<String> problemVars = Set.of();
 		for (String name : optionalOnlyVars) {
 			if (bindings.hasBinding(name)) {
@@ -148,11 +177,20 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 					return null;
 				}
 				currentLeft = leftIter.next();
-				candidateIndex = 0;
+				selectCandidates(currentLeft);
 				currentLeftMatched = false;
 			}
-			while (candidateIndex < rightRows.size()) {
-				BindingSet candidate = rightRows.get(candidateIndex++);
+			while (true) {
+				if (candidateIndex >= candidates.size()) {
+					if (moreCandidates == null) {
+						break;
+					}
+					candidates = moreCandidates;
+					moreCandidates = null;
+					candidateIndex = 0;
+					continue;
+				}
+				BindingSet candidate = candidates.get(candidateIndex++);
 				BindingSet merged = merge(currentLeft, candidate);
 				if (merged == null) {
 					continue;
@@ -188,7 +226,50 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 			rightIter.close();
 		}
 		rightRows = materialized;
+		if (joinAttributes.length == 0) {
+			indexedRows = Map.of();
+			unindexedRows = materialized;
+		} else {
+			indexedRows = new HashMap<>();
+			unindexedRows = new ArrayList<>();
+			for (BindingSet row : materialized) {
+				List<Value> key = joinKey(row);
+				if (key == null) {
+					unindexedRows.add(row);
+				} else {
+					indexedRows.computeIfAbsent(key, k -> new ArrayList<>()).add(row);
+				}
+			}
+		}
 		leftIter = left.evaluate(bindings);
+	}
+
+	private void selectCandidates(BindingSet leftSolution) {
+		candidateIndex = 0;
+		List<Value> key = joinAttributes.length == 0 ? null : joinKey(leftSolution);
+		if (key == null) {
+			// no join attributes, or the left solution leaves one unbound: every right solution may be compatible
+			candidates = rightRows;
+			moreCandidates = null;
+		} else {
+			candidates = indexedRows.getOrDefault(key, List.of());
+			moreCandidates = unindexedRows.isEmpty() ? null : unindexedRows;
+		}
+	}
+
+	/**
+	 * @return the values of the join attributes, or {@code null} when the solution leaves one of them unbound.
+	 */
+	private List<Value> joinKey(BindingSet solution) {
+		Value[] values = new Value[joinAttributes.length];
+		for (int i = 0; i < joinAttributes.length; i++) {
+			Value value = solution.getValue(joinAttributes[i]);
+			if (value == null) {
+				return null;
+			}
+			values[i] = value;
+		}
+		return Arrays.asList(values);
 	}
 
 	private static BindingSet merge(BindingSet leftSolution, BindingSet rightSolution) {

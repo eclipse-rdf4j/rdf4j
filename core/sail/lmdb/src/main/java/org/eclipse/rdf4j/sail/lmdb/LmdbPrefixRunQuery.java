@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 
 /**
  * Recognizes query shapes whose answer is the set of distinct combinations of some fields of a single statement
@@ -204,14 +205,20 @@ final class LmdbPrefixRunQuery {
 		}
 		QueryBindingSet counts = new QueryBindingSet(names.size());
 		Map<Integer, Long> countByField = new HashMap<>();
-		for (int i = 0; i < names.size(); i++) {
-			int field = countFields.get(i);
-			Long count = countByField.get(field);
-			if (count == null) {
-				count = countDistinct(store, explicit, field, fields);
-				countByField.put(field, count);
+		// all counts of one result row are read from one snapshot
+		Txn txn = store.createReadTxn();
+		try {
+			for (int i = 0; i < names.size(); i++) {
+				int field = countFields.get(i);
+				Long count = countByField.get(field);
+				if (count == null) {
+					count = countDistinct(store, txn, explicit, field, fields);
+					countByField.put(field, count);
+				}
+				counts.addBinding(names.get(i), vf.createLiteral(Long.toString(count), CoreDatatype.XSD.INTEGER));
 			}
-			counts.addBinding(names.get(i), vf.createLiteral(Long.toString(count), CoreDatatype.XSD.INTEGER));
+		} finally {
+			txn.close();
 		}
 
 		// replace the Group in a copy of the query so that the caller's query model stays untouched
@@ -228,9 +235,9 @@ final class LmdbPrefixRunQuery {
 		return copy;
 	}
 
-	private static long countDistinct(LmdbSailStore store, boolean explicit, int field, PatternFields fields)
+	private static long countDistinct(LmdbSailStore store, Txn txn, boolean explicit, int field, PatternFields fields)
 			throws IOException {
-		try (LmdbPrefixRunScan scan = store.openPrefixRunScan(explicit, new int[] { field }, fields.subj,
+		try (LmdbPrefixRunScan scan = store.openPrefixRunScan(txn, explicit, new int[] { field }, fields.subj,
 				fields.pred, fields.obj, fields.context, false)) {
 			if (scan == null) {
 				throw new IllegalStateException("Prefix-run support was checked before opening the scan");

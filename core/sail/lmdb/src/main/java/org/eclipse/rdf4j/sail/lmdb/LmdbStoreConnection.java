@@ -23,12 +23,14 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
+import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
@@ -132,6 +134,23 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		return ret;
 	}
 
+	/**
+	 * Set while {@link #explain} runs: an explanation reports the optimized plan, actual result sizes and timings,
+	 * which only the regular evaluation path produces.
+	 */
+	private volatile boolean explaining;
+
+	@Override
+	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
+			boolean includeInferred, int timeoutSeconds) {
+		explaining = true;
+		try {
+			return super.explain(level, tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);
+		} finally {
+			explaining = false;
+		}
+	}
+
 	@Override
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset,
@@ -175,14 +194,16 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	 * Evaluates distinct-prefix query shapes (see {@link LmdbPrefixRunQuery}) with a prefix-run index scan. The scan
 	 * reads the committed store directly, so it is only used outside transactions, without initial bindings and without
 	 * a query dataset, only while no inferred statements need to be merged in, and only while the snapshot store's
-	 * auto-flush branches hold no committed-but-unflushed changes (which every other read sees through the branch).
+	 * auto-flush branches hold no committed-but-unflushed changes (which every other read sees through the branch). It
+	 * is also not used while the query is being explained or slow-query logging is active, which the regular path
+	 * reports on.
 	 *
 	 * @return the result, or {@code null} when the query must be evaluated as usual
 	 */
 	private CloseableIteration<? extends BindingSet> evaluateWithPrefixRun(TupleExpr tupleExpr, Dataset dataset,
 			BindingSet bindings, boolean includeInferred) throws SailException {
-		if (!LmdbPrefixRunPlan.isEnabled() || isActive() || (bindings != null && bindings.size() > 0)
-				|| !LmdbPrefixRunQuery.hasNoGraphs(dataset)) {
+		if (!LmdbPrefixRunPlan.isEnabled() || isActive() || explaining || isSlowQueryLoggingActive()
+				|| (bindings != null && bindings.size() > 0) || !LmdbPrefixRunQuery.hasNoGraphs(dataset)) {
 			return null;
 		}
 		LmdbSailStore store = lmdbStore.getBackingStore();
@@ -210,6 +231,12 @@ public class LmdbStoreConnection extends SailSourceConnection {
 		} catch (IOException e) {
 			throw new SailException(e);
 		}
+	}
+
+	private boolean isSlowQueryLoggingActive() {
+		return (getSailBase().getSlowQueryLogThresholdSeconds() > 0
+				|| getSailBase().getSlowQueryLogFirstResultThresholdSeconds() > 0)
+				&& SlowQueryContextHolder.get() != null;
 	}
 
 	/**

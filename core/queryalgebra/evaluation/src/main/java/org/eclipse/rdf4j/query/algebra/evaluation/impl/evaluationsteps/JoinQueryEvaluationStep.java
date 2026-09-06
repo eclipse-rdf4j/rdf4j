@@ -91,8 +91,9 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			// errors even when the left operand is empty). Mapping-parameterized operands (property paths,
 			// SERVICE, extension operators) are exempt: correlated per-input evaluation is their defined
 			// semantics, so they keep the bind-join paths below.
+			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
 			eval = bindings -> new MaterializedReplayJoinIterator(leftPrepared, rightPrepared, null, bindings,
-					false);
+					false, Set.of(), joinAttributes);
 			join.setAlgorithm(MaterializedReplayJoinIterator.class.getSimpleName());
 		} else if (rightDiscardable && join.isMergeJoin() && context.getComparator() != null) {
 			eval = bindings -> InnerMergeJoinIterator.getInstance(leftPrepared, rightPrepared, bindings,
@@ -167,9 +168,9 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 				}
 				if (rightEvaluated.compareAndSet(false, true)) {
 					try (CloseableIteration<BindingSet> right = rightPrepared.evaluate(bindings)) {
-						while (right.hasNext()) {
-							right.next();
-						}
+						// a bounded probe: opening the operand and asking for its first solution surfaces a
+						// failed invocation without consuming the whole (possibly unbounded) result
+						right.hasNext();
 					}
 				}
 				return null;
