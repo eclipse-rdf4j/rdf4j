@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.OrderedIntegerDomain;
@@ -60,6 +61,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	 */
 	private static final int MATERIALIZE_WINDOW_EDGES = 4096;
 
+	private final LmdbAdjacencyReadView readView;
 	private final LmdbInMemoryAdjacencyIndex base;
 	private final LmdbAdjacencyOverlaySet overlays;
 	private final long snapshotRevision;
@@ -134,6 +136,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	LmdbDirectNativeAdjacency(LmdbAdjacencyReadView view, long predicate,
 			long basePredicateOrdinal, int plane, LmdbAdjacencyArenaCatalog[] sources, ContextCatalog contexts,
 			Executor adaptiveExecutor) {
+		this.readView = view;
 		this.base = view.state().base();
 		this.overlays = view.state().overlays();
 		this.snapshotRevision = view.snapshotRevision();
@@ -490,6 +493,24 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 	private static int materializedCapacity(int count) {
 		return Math.max(64, Integer.highestOneBit(count - 1) << 1);
+	}
+
+	@Override
+	public BorrowedFactorBatch.Source openFactorSource() {
+		ensureOpen();
+		return new LmdbBorrowedAdjacencySource(readView, sources, contexts);
+	}
+
+	@Override
+	public boolean borrowRun(long runHandle, BorrowedFactorBatch target, int lane) {
+		ensureOpen();
+		if (!(target.source() instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
+			throw new IllegalArgumentException("factor source belongs to another snapshot");
+		owner.checkOpen();
+		if (runHandle <= 0L) return false;
+		resolve(runHandle);
+		runCursor.borrow(runHandle, target, lane);
+		return true;
 	}
 
 	@Override
@@ -1001,6 +1022,18 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		@Override
 		public long distinctNeighborCount() {
 			return directBaseRun ? baseCursor.distinctNeighborCount() : DISTINCT_NEIGHBOR_COUNT_UNKNOWN;
+		}
+
+		@Override
+		public boolean borrow(BorrowedFactorBatch target, int lane) {
+			if (!(target.source() instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
+				throw new IllegalArgumentException("factor source belongs to another snapshot");
+			owner.checkOpen();
+			if (!directBaseRun) return borrowRun(run, target, lane);
+			target.bindNative(lane, baseCursor.singlePageRow() ? BorrowedFactorBatch.CSF_PAGE
+					: BorrowedFactorBatch.ENCODED_RUN, baseCursor.firstPageAddress(), run,
+					baseCursor.firstLocalRow(), runSize());
+			return true;
 		}
 
 		long size() {

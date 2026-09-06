@@ -1236,7 +1236,11 @@ final class LmdbNativeKernelLowering {
 				requiredMask |= 1L << aggregate.slot;
 			}
 		}
-		bridge.lowerPlanRows(arg, requiredMask);
+		boolean countsOnly = aggregates.length > 0;
+		for (AggregateSpec aggregate : aggregates) {
+			countsOnly &= aggregate.kind == AggKind.COUNT && !aggregate.distinct;
+		}
+		bridge.lowerPlanRows(arg, requiredMask, countsOnly);
 		return bridge.buildAggregate(groupSlots, aggregates, having,
 				distinctExpected(arg, row, groupSlots.length > 0));
 	}
@@ -1872,6 +1876,10 @@ final class LmdbNativeKernelLowering {
 
 		/** Installs one streaming engine-plan producer and maps every aggregate-visible slot to its packed output. */
 		void lowerPlanRows(SlotPlan plan, long requiredMask) {
+			lowerPlanRows(plan, requiredMask, false);
+		}
+
+		void lowerPlanRows(SlotPlan plan, long requiredMask, boolean factorProjection) {
 			openDepth();
 			int[] outputSlots = slots(requiredMask, slotColumn.length);
 			int[] outputColumns = new int[outputSlots.length];
@@ -1882,7 +1890,7 @@ final class LmdbNativeKernelLowering {
 				// COUNT(*) still needs a structurally non-empty kernel even though the producer exports no values.
 				scratchColumn();
 			}
-			planRequests.add(new LmdbNativeKernelBindings.PlanRequest(plan, outputSlots));
+			planRequests.add(new LmdbNativeKernelBindings.PlanRequest(plan, outputSlots, new int[0], factorProjection));
 			currentDepthNodes().add(new LmdbNativeKernelIr.PlanRows(planRequests.size() - 1, outputColumns));
 			joinOperands = 1;
 		}

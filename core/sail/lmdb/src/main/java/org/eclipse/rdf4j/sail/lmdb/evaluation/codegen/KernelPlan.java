@@ -51,6 +51,18 @@ public interface KernelPlan extends AutoCloseable {
 		/** Writes up to {@code maxRows} rows and returns the number written; zero means exhausted. */
 		int fill(long[] rowBuffer, int maxRows);
 
+		/**
+		 * Optional exact bag transfer. A consumer must account for every positive weight; a weight is not a physical
+		 * row count. Ordinary producers remain compatible through unit weights. Admission belongs to the consumer:
+		 * per-mapping expressions, DISTINCT and arbitrary intervening operators must not be silently bypassed.
+		 */
+		default int fillWeighted(long[] rowBuffer, long[] weights, int maxRows) {
+			if (maxRows < 0 || maxRows > weights.length) throw new IllegalArgumentException("weight buffer capacity");
+			int count = fill(rowBuffer, maxRows);
+			java.util.Arrays.fill(weights, 0, count, 1L);
+			return count;
+		}
+
 		@Override
 		void close();
 	}

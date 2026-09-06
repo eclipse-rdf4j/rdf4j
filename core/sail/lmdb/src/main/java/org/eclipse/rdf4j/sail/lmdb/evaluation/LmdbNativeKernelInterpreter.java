@@ -1585,6 +1585,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	private Op buildPlanRows(PlanRows plan, Op next) {
 		int width = plan.outCols.length;
+		boolean weighted = LmdbNativeKernelIr.weightedPlanCount(kernel);
+		long[] bagWeights = weighted ? new long[KernelRuntime.SCAN_BATCH_ROWS] : null;
 		return () -> {
 			KernelPlan bound = context.plans[plan.plan];
 			for (int i = 0; i < plan.inputs.length; i++) {
@@ -1600,13 +1602,17 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}
 			try {
 				int n;
-				while ((n = cursor.fill(buffer, KernelRuntime.SCAN_BATCH_ROWS)) > 0) {
+				while ((n = weighted ? cursor.fillWeighted(buffer, bagWeights, KernelRuntime.SCAN_BATCH_ROWS)
+						: cursor.fill(buffer, KernelRuntime.SCAN_BATCH_ROWS)) > 0) {
 					poll();
 					for (int i = 0; i < n; i++) {
 						for (int j = 0; j < width; j++) {
 							v[plan.outCols[j]] = buffer[i * width + j];
 						}
-						if (next.run()) {
+						if (weighted) {
+							if (bagWeights[i] <= 0L) throw new IllegalStateException("nonpositive plan multiplicity");
+							updateTerminalBy(bagWeights[i]);
+						} else if (next.run()) {
 							return true;
 						}
 					}
@@ -2237,9 +2243,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			for (int i = 0; i < aggregate.outputs.length; i++) {
 				AggregateOutput output = aggregate.outputs[i];
 				if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) {
-					sgC[i] += multiplicity;
+					sgC[i] = Math.addExact(sgC[i], multiplicity);
 				} else if (output.kind == LmdbNativeKernelIr.AGG_COUNT && v[output.col] != -1L) {
-					sgC[i] += multiplicity;
+					sgC[i] = Math.addExact(sgC[i], multiplicity);
 				} else if (output.kind != LmdbNativeKernelIr.AGG_COUNT) {
 					throw new IllegalStateException("non-count output in multiplicity tail");
 				}
@@ -2261,9 +2267,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		for (int i = 0; i < aggregate.outputs.length; i++) {
 			AggregateOutput output = aggregate.outputs[i];
 			if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) {
-				agC[i][group] += multiplicity;
+				agC[i][group] = Math.addExact(agC[i][group], multiplicity);
 			} else if (output.kind == LmdbNativeKernelIr.AGG_COUNT && v[output.col] != -1L) {
-				agC[i][group] += multiplicity;
+				agC[i][group] = Math.addExact(agC[i][group], multiplicity);
 			} else if (output.kind != LmdbNativeKernelIr.AGG_COUNT) {
 				throw new IllegalStateException("non-count output in multiplicity tail");
 			}

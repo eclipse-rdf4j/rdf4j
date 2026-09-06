@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -43,8 +44,9 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeContext;
 /**
  * Packed arbitrary-f-tree execution for LMDB basic graph-pattern joins.
  * <p>
- * This is deliberately a physical representation, not another tail rewrite. Every variable owns one packed vector; a
- * fanout child owns an offset state mapping parent lanes to contiguous child slices, while a non-expanding child may
+ * This is deliberately a physical representation, not another tail rewrite. An unrestricted terminal can retain a
+ * snapshot-owned borrowed group and exact summary per parent; a materialized variable owns a packed vector. A
+ * materialized fanout child has offsets mapping parents to contiguous slices, while a non-expanding child may
  * share its parent's selector state. Branches are therefore represented independently and their Cartesian product is
  * only implied until a flat consumer asks for rows. Reductions are propagated through a delta-driven AGG/SCATTER
  * cascade before stale states are consumed.
@@ -74,6 +76,9 @@ final class LmdbNativePackedFtree {
 	private static final long[] EMPTY_LONG_ARRAY = new long[0];
 	/** Lane count staged per bulk run copy; bounds scratch memory while amortizing the CSF page decode. */
 	static final int RUN_COPY_WINDOW = 4096;
+	static boolean borrowedFactorsEnabled() {
+		return !"false".equals(System.getProperty("rdf4j.lmdb.factor.borrowed.enabled"));
+	}
 
 	private LmdbNativePackedFtree() {
 	}
@@ -184,6 +189,23 @@ final class LmdbNativePackedFtree {
 		});
 	}
 
+	/** Shared slot/IR projection entry: reuse the production f-tree, not a second join executor. */
+	static FactorizedRowCursor openProjected(MultiJoinPlan join, RowState row, int[] outputSlots) throws IOException {
+		if (!enabled() || !borrowedFactorsEnabled() || join == null) return null;
+		long observed = 0L;
+		for (int slot : outputSlots) observed |= 1L << slot;
+		if ((join.producedMask() & ~observed) == 0L) return null;
+		Plan plan = Planner.plan(join, row, outputSlots);
+		if (plan == null || (plan.variableMask & row.boundMask()) != 0L) return null;
+		for (int slot : outputSlots) if (!slotAvailable(plan, row, slot)) return null;
+		try {
+			Runtime runtime = Runtime.open(plan, row);
+			return runtime == null ? null : new ProjectedRowCursor(plan, row, runtime, outputSlots);
+		} catch (PackedDecline unsupported) {
+			return null;
+		}
+	}
+
 	/**
 	 * Executes grouped or ungrouped aggregates directly over packed f-tree chunks. This is the important factorized
 	 * sink: the number of logical rows is computed from subtree cardinalities and aggregate values receive exact
@@ -237,8 +259,10 @@ final class LmdbNativePackedFtree {
 		AggState state = new AggState(aggregates, 64, context, AggregateDistinctChannels.allHash(aggregates));
 		boolean sawRow = false;
 		Chunk chunk;
+		long valueDemand = localDemandedMask(plan, aggregateDemandedSlots(new int[0], aggregates));
 		while ((chunk = runtime.nextChunk()) != null) {
-			long rows = chunk.computeSubtreeCounts(row);
+			chunk.materializeBorrowed(valueDemand);
+			long rows = chunk.computeSubtreeCounts(row, valueDemand != 0L);
 			if (rows == 0L) {
 				continue;
 			}
@@ -496,6 +520,7 @@ final class LmdbNativePackedFtree {
 		long demandedMask = localDemandedMask(plan, aggregateDemandedSlots(groupSlots, aggregates));
 		Chunk chunk;
 		while ((chunk = runtime.nextChunk()) != null) {
+			chunk.materializeBorrowed(demandedMask);
 			long rows = chunk.computeSubtreeCounts(row);
 			if (rows == 0L) {
 				continue;
@@ -555,7 +580,9 @@ final class LmdbNativePackedFtree {
 		StructuredGroupSink sink = new StructuredGroupSink(plan, row, layout, groupSlots, aggregates, context,
 				popcountCapable);
 		Chunk chunk;
+		long valueDemand = localDemandedMask(plan, aggregateDemandedSlots(groupSlots, aggregates));
 		while ((chunk = runtime.nextChunk()) != null) {
+			chunk.materializeBorrowed(valueDemand);
 			if (chunk.computeSubtreeCounts(row) == 0L) {
 				continue;
 			}
@@ -1007,6 +1034,7 @@ final class LmdbNativePackedFtree {
 		final MultiJoinPlan sourcePlan;
 		final NodePlan root;
 		final NodePlan[] nodes;
+		final int[][] childOrdinals;
 		final Map<Integer, NodePlan> bySlot;
 		final ConstantPattern[] constants;
 		final long variableMask;
@@ -1019,6 +1047,12 @@ final class LmdbNativePackedFtree {
 			this.sourcePlan = sourcePlan;
 			this.root = root;
 			this.nodes = nodes;
+			this.childOrdinals = new int[nodes.length][];
+			for (NodePlan node : nodes) {
+				int[] children = new int[node.children.length];
+				for (int i = 0; i < children.length; i++) children[i] = node.children[i].ordinal;
+				childOrdinals[node.ordinal] = children;
+			}
 			this.constants = constants;
 			this.variableMask = variableMask;
 			this.fixedSlots = fixedSlots;
@@ -1985,6 +2019,7 @@ final class LmdbNativePackedFtree {
 		final EdgeRuntime[][] constraintEdges;
 		final UnaryRuntime[][] unaryRuntimes;
 		final WitnessRuntime[][] witnessRuntimes;
+		final boolean borrowEnabled;
 		/** Windowed run staging: scalar per-element cursor reads re-decode CSF fibers, bulk copies decode once. */
 		long[] runNeighborScratch = EMPTY_LONG_ARRAY;
 		long[] runContextScratch = EMPTY_LONG_ARRAY;
@@ -2003,6 +2038,7 @@ final class LmdbNativePackedFtree {
 				PatternRuntime[] constantPatterns) {
 			this.plan = plan;
 			this.row = row;
+			this.borrowEnabled = borrowedFactorsEnabled();
 			this.probe = probe;
 			this.entryMark = row.mark();
 			this.roots = roots;
@@ -2263,7 +2299,14 @@ final class LmdbNativePackedFtree {
 			}
 			NodeData rootData = chunk.data[plan.root.ordinal];
 			rootData.ensureCapacity(ROOT_BATCH_SIZE);
-			int n = roots.fill(rootData, ROOT_BATCH_SIZE);
+			NodeData seedGroup = prepareSeedBorrowing(chunk);
+			int n;
+			if (seedGroup == null) n = roots.fill(rootData, ROOT_BATCH_SIZE);
+			else {
+				KeyRootProducer producer = (KeyRootProducer) roots;
+				n = producer.fillBorrowed(rootData, ROOT_BATCH_SIZE, seedGroup.retainedBorrowed);
+				if (!producer.borrowUnsupported) seedGroup.borrowed = seedGroup.retainedBorrowed;
+			}
 			if (n == 0) {
 				exhausted = true;
 				return null;
@@ -2299,6 +2342,7 @@ final class LmdbNativePackedFtree {
 		}
 
 		private void buildNode(Chunk chunk, NodePlan node) throws IOException {
+			if (tryBorrowTerminal(chunk, node)) return;
 			NodePlan parentPlan = node.parent;
 			NodeData parent = chunk.data[parentPlan.ordinal];
 			NodeData out = chunk.data[node.ordinal];
@@ -2345,7 +2389,87 @@ final class LmdbNativePackedFtree {
 			}
 		}
 
+		/** Retain the seed row while its key cursor is positioned; do not look it up again for the child. */
+		private NodeData prepareSeedBorrowing(Chunk chunk) {
+			if (!borrowEnabled || !(roots instanceof KeyRootProducer producer) || producer.borrowUnsupported
+					|| rootSeed == null || !rootSeed.variableIsKey) return null;
+			for (NodePlan child : plan.root.children) {
+				if (child.primary.pattern != rootSeed.pattern || !borrowableTerminal(child)) continue;
+				EdgeRuntime edge = primaryEdges[child.ordinal];
+				BorrowedFactorBatch.Source source = edge.factorSource();
+				if (source == null) return null;
+				NodeData data = chunk.data[child.ordinal];
+				ensureBorrowed(data, source, ROOT_BATCH_SIZE).reset(ROOT_BATCH_SIZE);
+				return data;
+			}
+			return null;
+		}
+
+		private boolean borrowableTerminal(NodePlan node) {
+			return borrowEnabled && node.children.length == 0 && node.constraintEdges.length == 0
+					&& node.unary.length == 0 && node.filters.length == 0 && node.witnesses.length == 0
+					&& contextFree(node.primary.pattern);
+		}
+
+		private static BorrowedFactorBatch ensureBorrowed(NodeData data, BorrowedFactorBatch.Source source,
+				int capacity) {
+			if (data.retainedBorrowed == null || data.retainedBorrowed.source() != source)
+				data.retainedBorrowed = new BorrowedFactorBatch(source, capacity);
+			return data.retainedBorrowed;
+		}
+
+		/** Leaves without member-dependent restrictions stay as exact groups in the existing f-tree. */
+		private boolean tryBorrowTerminal(Chunk chunk, NodePlan node) {
+			if (!borrowableTerminal(node)) return false;
+			EdgeRuntime primary = primaryEdges[node.ordinal];
+			BorrowedFactorBatch.Source source = primary.factorSource();
+			if (source == null) return false;
+			NodeData parent = chunk.data[node.parent.ordinal];
+			NodeData out = chunk.data[node.ordinal];
+			BorrowedFactorBatch groups = out.borrowed;
+			if (groups == null) {
+				groups = ensureBorrowed(out, source, parent.size);
+				groups.reset(parent.size);
+				for (int lane = parent.state.nextSetBit(parent.startLane()); lane >= 0 && lane < parent.endLane();
+						lane = parent.state.nextSetBit(lane + 1)) {
+					LmdbNativeProbeDeadline.poll(lane);
+					long count = primary.bind(parent.value(lane));
+					if (count == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) return false;
+					if (count > 0L && !primary.cursor.borrow(groups, lane)) return false;
+				}
+			}
+			// Publish only after every descriptor is exact. Failed capability export is never logical absence.
+			out.borrowed = groups;
+			out.size = 0;
+			out.offsets = null;
+			for (int lane = parent.state.nextSetBit(parent.startLane()); lane >= 0 && lane < parent.endLane();
+					lane = parent.state.nextSetBit(lane + 1)) {
+				if (groups.count(lane) == 0L) parent.state.clear(lane);
+			}
+			return true;
+		}
+
 		private int copyDirectRun(NodeData out, int parentLane, EdgeRuntime primary, int count) {
+			// Nonterminal groups need lanes, but never expand contexts just to collapse them again.
+			BorrowedFactorBatch.Cursor fibers = borrowEnabled && primary.ordered ? primary.packedFibers() : null;
+			if (fibers != null) {
+				int start = out.size;
+				out.ensureBuildParents();
+				int tick = 0;
+				while (fibers.next()) {
+					LmdbNativeProbeDeadline.poll(++tick);
+					long value = fibers.value();
+					if (out.size > start && out.value(out.size - 1) == value) {
+						out.setWeight(out.size - 1, FactorizedTail.addCounts(out.weight(out.size - 1), fibers.weight()));
+					} else {
+						out.ensureCapacity(checkedLaneEnd(out.size, 1));
+						out.setValue(out.size, value);
+						out.setWeight(out.size, fibers.weight());
+						out.buildParentLane[out.size++] = parentLane;
+					}
+				}
+				return out.size - start;
+			}
 			// Direct CSF -> packed-vector path. No quad buffer, no parent-row copying and no scalar decode loop.
 			int from = out.size;
 			int end = checkedLaneEnd(from, count);
@@ -2712,40 +2836,48 @@ final class LmdbNativePackedFtree {
 
 		@Override
 		public void close() {
-			if (closed) {
-				return;
-			}
+			if (closed) return;
 			closed = true;
-			for (EdgeRuntime edge : primaryEdges) {
-				if (edge != null) {
-					edge.close();
-				}
-			}
-			for (EdgeRuntime[] edges : constraintEdges) {
-				if (edges != null) {
-					for (EdgeRuntime edge : edges) {
-						edge.close();
+			try {
+				Throwable failure = null;
+				for (EdgeRuntime edge : primaryEdges) failure = closeEdge(edge, failure);
+				for (EdgeRuntime[] edges : constraintEdges) {
+					if (edges != null) {
+						for (EdgeRuntime edge : edges) failure = closeEdge(edge, failure);
 					}
 				}
-			}
-			try {
-				if (roots != null) {
-					roots.close();
-				}
+				if (failure instanceof RuntimeException problem) throw problem;
+				if (failure instanceof Error problem) throw problem;
 			} finally {
 				try {
-					probe.close();
+					if (roots != null) roots.close();
 				} finally {
 					try {
-						if (lookupProbe != null) {
-							lookupProbe.close();
-							lookupProbe = null;
-						}
+						probe.close();
 					} finally {
-						closeNodeFilters();
+						try {
+							if (lookupProbe != null) {
+								lookupProbe.close();
+								lookupProbe = null;
+							}
+						} finally {
+							closeNodeFilters();
+						}
 					}
 				}
 			}
+		}
+
+
+		private static Throwable closeEdge(EdgeRuntime edge, Throwable failure) {
+			if (edge != null) {
+				try { edge.close(); }
+				catch (RuntimeException | Error problem) {
+					if (failure == null) return problem;
+					if (failure != problem) failure.addSuppressed(problem);
+				}
+			}
+			return failure;
 		}
 
 		/**
@@ -2831,6 +2963,7 @@ final class LmdbNativePackedFtree {
 	static final class KeyRootProducer implements RootProducer {
 		final NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor;
 		final long[] scratch = new long[ROOT_BATCH_SIZE];
+		boolean borrowUnsupported;
 
 		KeyRootProducer(NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor) {
 			this.cursor = cursor;
@@ -2839,6 +2972,19 @@ final class LmdbNativePackedFtree {
 		@Override
 		public int fill(NodeData target, int maximum) {
 			int count = cursor.fillKeys(scratch, 0, Math.min(maximum, scratch.length));
+			target.copyValues(scratch, 0, 0, count);
+			return count;
+		}
+
+		int fillBorrowed(NodeData target, int maximum, BorrowedFactorBatch groups) {
+			int count = 0;
+			int limit = Math.min(maximum, scratch.length);
+			while (count < limit && cursor.advance()) {
+				LmdbNativeProbeDeadline.poll(count);
+				scratch[count] = cursor.key();
+				if (!borrowUnsupported && !cursor.borrow(groups, count)) borrowUnsupported = true;
+				count++;
+			}
 			target.copyValues(scratch, 0, 0, count);
 			return count;
 		}
@@ -3409,6 +3555,29 @@ final class LmdbNativePackedFtree {
 		final EdgePlan plan;
 		final NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor cursor;
 		final boolean ordered;
+		BorrowedFactorBatch.Source borrowedSource;
+		boolean borrowedSourceOpened;
+		BorrowedFactorBatch packedGroups;
+		BorrowedFactorBatch.Cursor packedReader;
+
+		BorrowedFactorBatch.Cursor packedFibers() {
+			BorrowedFactorBatch.Source source = factorSource();
+			if (source == null) return null;
+			if (packedGroups == null) packedGroups = new BorrowedFactorBatch(source, 1);
+			packedGroups.reset(1);
+			if (!cursor.borrow(packedGroups, 0)) return null;
+			if (packedReader == null) packedReader = packedGroups.cursor(RUN_COPY_WINDOW);
+			packedReader.bind(0);
+			return packedReader;
+		}
+
+		BorrowedFactorBatch.Source factorSource() {
+			if (!borrowedSourceOpened) {
+				borrowedSourceOpened = true;
+				borrowedSource = adjacency == null ? null : adjacency.openFactorSource();
+			}
+			return borrowedSource;
+		}
 
 		EdgeRuntime(NativeLmdbQuerySource.NativeAdjacency adjacency, EdgePlan plan) {
 			super(adjacency, plan.pattern, plan.keyIsSubject);
@@ -3481,8 +3650,10 @@ final class LmdbNativePackedFtree {
 		}
 
 		void close() {
-			if (cursor != null) {
-				cursor.close();
+			try { if (cursor != null) cursor.close(); }
+			finally {
+				try { if (packedReader != null) packedReader.close(); }
+				finally { if (borrowedSource != null) borrowedSource.close(); }
 			}
 		}
 	}
@@ -3946,12 +4117,16 @@ final class LmdbNativePackedFtree {
 		boolean sliceValuesDistinct = true;
 		long[] subtreeCounts;
 		long[] outsideCounts;
+		/** Non-null only for exact terminal groups, indexed by parent lane, not child lane. */
+		BorrowedFactorBatch borrowed;
+		BorrowedFactorBatch retainedBorrowed;
 
 		NodeData(NodePlan plan) {
 			this.plan = plan;
 		}
 
 		void resetForBuild() {
+			borrowed = null;
 			if (weights != null && size > 0) {
 				Arrays.fill(weights, 0, size, 0L);
 			}
@@ -4113,15 +4288,53 @@ final class LmdbNativePackedFtree {
 			}
 		}
 
-		long computeSubtreeCounts(RowState row) {
-			if (LmdbNativePackedFtreeJanino.compute(plan, this, row)) {
-				return totalRows;
+		/** Opens only value-demanded leaves; untouched sibling relations remain borrowed. */
+		void materializeBorrowed(long demandedMask) {
+			for (NodeData d : data) {
+				if (d.borrowed == null || (demandedMask & (1L << d.plan.slot)) == 0L) continue;
+				NodeData parent = data[d.plan.parent.ordinal];
+				BorrowedFactorBatch groups = d.borrowed;
+				d.ensureOffsets(parent.size + 1);
+				d.size = 0;
+				try (BorrowedFactorBatch.Cursor cursor = groups.cursor(RUN_COPY_WINDOW)) {
+					int tick = 0;
+					for (int p = 0; p < parent.size; p++) {
+						d.offsets[p] = d.size;
+						if (parent.state.isSet(p)) {
+							cursor.bind(p);
+							int start = d.size;
+							while (cursor.next()) {
+								LmdbNativeProbeDeadline.poll(++tick);
+								long value = cursor.value();
+								if (d.size > start && d.value(d.size - 1) == value) {
+									d.setWeight(d.size - 1, FactorizedTail.addCounts(d.weight(d.size - 1), cursor.weight()));
+								} else {
+									d.ensureCapacity(checkedLaneEnd(d.size, 1));
+									d.setValue(d.size, value);
+									d.setWeight(d.size, cursor.weight());
+									d.size++;
+								}
+							}
+						}
+						d.offsets[p + 1] = d.size;
+					}
+				}
+				d.state.reset(d.size);
+				d.borrowed = null;
 			}
-			return computeSubtreeCountsInterpreted();
 		}
 
-		long computeSubtreeCountsInterpreted() {
-			prepareCountArrays();
+		long computeSubtreeCounts(RowState row) { return computeSubtreeCounts(row, true); }
+
+		long computeSubtreeCounts(RowState row, boolean outsideNeeded) {
+			if (LmdbNativePackedFtreeJanino.compute(plan, this, row, outsideNeeded)) return totalRows;
+			return computeSubtreeCountsInterpreted(outsideNeeded);
+		}
+
+		long computeSubtreeCountsInterpreted() { return computeSubtreeCountsInterpreted(true); }
+
+		long computeSubtreeCountsInterpreted(boolean outsideNeeded) {
+			prepareCountArrays(outsideNeeded);
 			for (int i = plan.nodes.length - 1; i >= 0; i--) {
 				NodePlan node = plan.nodes[i];
 				NodeData d = data[node.ordinal];
@@ -4135,7 +4348,9 @@ final class LmdbNativePackedFtree {
 					for (NodePlan childPlan : node.children) {
 						NodeData child = data[childPlan.ordinal];
 						long sum = 0L;
-						if (child.sharedWithParent) {
+						if (child.borrowed != null) {
+							sum = child.borrowed.count(lane);
+						} else if (child.sharedWithParent) {
 							if (child.state.isSet(lane)) {
 								sum = child.subtreeCounts[lane];
 							}
@@ -4163,16 +4378,18 @@ final class LmdbNativePackedFtree {
 				total = FactorizedTail.addCounts(total, root.subtreeCounts[lane]);
 			}
 			totalRows = total;
-			computeOutsideCounts();
+			if (outsideNeeded) computeOutsideCounts();
 			return total;
 		}
 
-		void prepareCountArrays() {
+		void prepareCountArrays() { prepareCountArrays(true); }
+
+		void prepareCountArrays(boolean outsideNeeded) {
 			for (NodeData d : data) {
 				if (d.subtreeCounts == null || d.subtreeCounts.length < d.size) {
 					d.subtreeCounts = new long[d.size];
 				}
-				if (d.outsideCounts == null || d.outsideCounts.length < d.size) {
+				if (outsideNeeded && (d.outsideCounts == null || d.outsideCounts.length < d.size)) {
 					d.outsideCounts = new long[d.size];
 				}
 			}
@@ -4195,6 +4412,7 @@ final class LmdbNativePackedFtree {
 				packedContext.starts[i] = d.startLane();
 				packedContext.ends[i] = d.endLane();
 				packedContext.sharedWithParent[i] = d.sharedWithParent;
+				packedContext.borrowedCounts[i] = d.borrowed == null ? null : d.borrowed.exactCounts();
 			}
 			return packedContext;
 		}
@@ -4243,6 +4461,7 @@ final class LmdbNativePackedFtree {
 						long outside = FactorizedTail.multiplyCounts(base,
 								FactorizedTail.multiplyCounts(prefix[i], suffix[i]));
 						NodeData child = data[node.children[i].ordinal];
+						if (child.borrowed != null) continue;
 						if (child.sharedWithParent) {
 							if (child.state.isSet(p)) {
 								child.outsideCounts[p] = outside;
@@ -4261,6 +4480,7 @@ final class LmdbNativePackedFtree {
 		}
 
 		long childSum(NodeData child, int parentLane) {
+			if (child.borrowed != null) return child.borrowed.count(parentLane);
 			if (child.sharedWithParent) {
 				return child.state.isSet(parentLane) ? child.subtreeCounts[parentLane] : 0L;
 			}
@@ -4534,6 +4754,96 @@ final class LmdbNativePackedFtree {
 		}
 	}
 
+	/**
+	 * Streams only the observable projection. Hidden branches supply subtree weights; no factor pointer is placed in
+	 * a scalar slot. Multiplicity-aware consumers take a bag in one call, ordinary consumers see its exact replay.
+	 * Eligibility and placement must establish that per-solution expressions and ordering are not observable here.
+	 */
+	static final class ProjectedRowCursor implements FactorizedRowCursor {
+		final Plan plan;
+		final RowState row;
+		final Runtime runtime;
+		final int[] outputSlots;
+		final int baseMark;
+		final long demandedMask;
+		Chunk chunk;
+		PackedProjectionCursor projection;
+		long repeatRemaining;
+		boolean emittedEmptyProjection;
+		boolean closed;
+		int cancellationTick;
+
+		ProjectedRowCursor(Plan plan, RowState row, Runtime runtime, int[] outputSlots) {
+			this.plan = plan;
+			this.row = row;
+			this.runtime = runtime;
+			this.outputSlots = outputSlots.clone();
+			this.baseMark = row.mark();
+			this.demandedMask = localDemandedMask(plan, outputSlots);
+		}
+
+		@Override
+		public long multiplicity() {
+			long result = repeatRemaining + 1L;
+			repeatRemaining = 0L;
+			return result;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			LmdbNativeProbeDeadline.poll(++cancellationTick);
+			if (closed) return false;
+			if (repeatRemaining > 0L) {
+				repeatRemaining--;
+				install();
+				return true;
+			}
+			while (true) {
+				if (chunk == null) {
+					row.rollback(baseMark);
+					try { chunk = runtime.nextChunk(); }
+					catch (PackedDecline problem) {
+						throw new QueryEvaluationException("factor projection lost complete adjacency coverage", problem);
+					}
+					if (chunk == null) { close(); return false; }
+					chunk.materializeBorrowed(demandedMask);
+					if (chunk.computeSubtreeCounts(row, false) == 0L) { chunk = null; continue; }
+					projection = demandedMask == 0L ? null : new PackedProjectionCursor(chunk, demandedMask);
+					emittedEmptyProjection = false;
+				}
+				long weight;
+				if (projection == null) {
+					if (emittedEmptyProjection) { chunk = null; continue; }
+					emittedEmptyProjection = true;
+					weight = chunk.totalRows;
+				} else {
+					if (!projection.next()) { chunk = null; continue; }
+					weight = projection.weight();
+				}
+				if (weight == 0L) continue;
+				repeatRemaining = weight - 1L;
+				install();
+				return true;
+			}
+		}
+
+		private void install() {
+			row.rollback(baseMark);
+			for (int slot : outputSlots) {
+				long value = projectedValue(plan, row, chunk, projection, slot);
+				if (value != UNKNOWN) row.bind(slot, value);
+			}
+		}
+
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				try { runtime.close(); } finally { row.rollback(baseMark); }
+			}
+		}
+	}
+
 	/** Pull cursor that flattens only at the RDF4J row boundary. */
 	static final class PackedRowCursor implements FactorizedRowCursor {
 		final Plan plan;
@@ -4543,6 +4853,8 @@ final class LmdbNativePackedFtree {
 		Chunk chunk;
 		int[] lanes;
 		long repeatRemaining;
+		final BorrowedFactorBatch.Cursor[] borrowedReaders;
+		int cancellationTick;
 		boolean initialized;
 		boolean closed;
 
@@ -4566,6 +4878,7 @@ final class LmdbNativePackedFtree {
 			this.runtime = runtime;
 			this.baseMark = row.mark();
 			this.lanes = new int[plan.nodes.length];
+			this.borrowedReaders = new BorrowedFactorBatch.Cursor[plan.nodes.length];
 			Arrays.fill(lanes, -1);
 		}
 
@@ -4580,6 +4893,7 @@ final class LmdbNativePackedFtree {
 
 		@Override
 		public boolean next() throws IOException {
+			LmdbNativeProbeDeadline.poll(++cancellationTick);
 			if (closed) {
 				return false;
 			}
@@ -4666,6 +4980,15 @@ final class LmdbNativePackedFtree {
 			if (parentLane < 0) {
 				return -1;
 			}
+			if (d.borrowed != null) {
+				BorrowedFactorBatch.Cursor reader = borrowedReaders[node.ordinal];
+				if (reader == null) {
+					reader = d.borrowed.cursor(256);
+					borrowedReaders[node.ordinal] = reader;
+				}
+				reader.bind(parentLane);
+				return reader.next() ? 0 : -1;
+			}
 			if (d.sharedWithParent) {
 				return d.state.isSet(parentLane) ? parentLane : -1;
 			}
@@ -4681,6 +5004,7 @@ final class LmdbNativePackedFtree {
 				int lane = d.state.nextSetBit(from);
 				return lane >= 0 && lane < d.endLane() ? lane : -1;
 			}
+			if (d.borrowed != null) return borrowedReaders[node.ordinal].next() ? 0 : -1;
 			if (d.sharedWithParent) {
 				return -1;
 			}
@@ -4693,7 +5017,9 @@ final class LmdbNativePackedFtree {
 		private long tupleMultiplicity() {
 			long weight = 1L;
 			for (NodePlan node : plan.nodes) {
-				weight = FactorizedTail.multiplyCounts(weight, chunk.data[node.ordinal].weight(lanes[node.ordinal]));
+				NodeData d = chunk.data[node.ordinal];
+				weight = FactorizedTail.multiplyCounts(weight, d.borrowed == null ? d.weight(lanes[node.ordinal])
+						: borrowedReaders[node.ordinal].weight());
 			}
 			return weight;
 		}
@@ -4704,7 +5030,9 @@ final class LmdbNativePackedFtree {
 				row.bind(plan.fixedSlots[i], plan.fixedValues[i]);
 			}
 			for (NodePlan node : plan.nodes) {
-				row.bind(node.slot, chunk.data[node.ordinal].value(lanes[node.ordinal]));
+				NodeData d = chunk.data[node.ordinal];
+				row.bind(node.slot, d.borrowed == null ? d.value(lanes[node.ordinal])
+						: borrowedReaders[node.ordinal].value());
 			}
 		}
 
@@ -4715,7 +5043,9 @@ final class LmdbNativePackedFtree {
 			}
 			closed = true;
 			row.rollback(baseMark);
-			runtime.close();
+			try {
+				for (BorrowedFactorBatch.Cursor reader : borrowedReaders) if (reader != null) reader.close();
+			} finally { runtime.close(); }
 		}
 	}
 

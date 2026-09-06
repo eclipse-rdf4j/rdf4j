@@ -71,6 +71,11 @@ final class MultiJoinPlan implements SlotPlan {
 	}
 
 	@Override
+	public FactorizedRowCursor openProjected(RowState row, int[] outputSlots) throws IOException {
+		return LmdbNativePackedFtree.openProjected(this, row, outputSlots);
+	}
+
+	@Override
 	public RowCursor open(RowState row) throws IOException {
 		if (children.length == 0) {
 			RowCursor cursor = new SingletonCursor();

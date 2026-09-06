@@ -248,12 +248,18 @@ final class LmdbNativeKernelBindings {
 		final SlotPlan plan;
 		final int[] outputSlots;
 		final int[] inputSlots;
+		final boolean factorProjection;
 
 		PlanRequest(SlotPlan plan, int[] outputSlots) {
 			this(plan, outputSlots, new int[0]);
 		}
 
 		PlanRequest(SlotPlan plan, int[] outputSlots, int[] inputSlots) {
+			this(plan, outputSlots, inputSlots, false);
+		}
+
+		PlanRequest(SlotPlan plan, int[] outputSlots, int[] inputSlots, boolean factorProjection) {
+			this.factorProjection = factorProjection;
 			this.plan = plan;
 			this.outputSlots = outputSlots.clone();
 			this.inputSlots = inputSlots.clone();
@@ -921,7 +927,10 @@ final class LmdbNativeKernelBindings {
 			scratch.recomputeBoundMask();
 			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 			try {
-				active = new BoundCursor(request.plan.open(scratch), scratch, request.outputSlots, this);
+				RowCursor producer = request.factorProjection
+						? request.plan.openProjected(scratch, request.outputSlots) : null;
+				if (producer == null) producer = request.plan.open(scratch);
+				active = new BoundCursor(producer, scratch, request.outputSlots, this);
 				return active;
 			} catch (java.io.IOException problem) {
 				throw new PlanFailure(problem);
@@ -972,6 +981,31 @@ final class LmdbNativeKernelBindings {
 						rowBuffer[base + i] = row.slots[outputSlots[i]];
 					}
 					rows++;
+				}
+				return rows;
+			} catch (java.io.IOException problem) {
+				close();
+				throw new PlanFailure(problem);
+			} finally {
+				LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
+			}
+		}
+
+		@Override
+		public int fillWeighted(long[] rowBuffer, long[] weights, int maxRows) {
+			if (maxRows < 0 || maxRows > weights.length
+					|| (long) maxRows * outputSlots.length > rowBuffer.length)
+				throw new IllegalArgumentException("weighted plan buffer capacity");
+			if (closed || maxRows == 0) return 0;
+			int rows = 0;
+			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
+			try {
+				while (rows < maxRows && cursor.next()) {
+					int base = rows * outputSlots.length;
+					for (int i = 0; i < outputSlots.length; i++) rowBuffer[base + i] = row.slots[outputSlots[i]];
+					long weight = cursor instanceof FactorizedRowCursor factor ? factor.multiplicity() : 1L;
+					if (weight <= 0L) throw new IllegalStateException("nonpositive projected bag weight");
+					weights[rows++] = weight;
 				}
 				return rows;
 			} catch (java.io.IOException problem) {

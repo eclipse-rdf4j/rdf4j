@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 
 /**
@@ -1087,6 +1088,34 @@ final class LmdbAdjacencyRunCodec {
 
 		long edgeCount() {
 			return edgeCount;
+		}
+
+		void borrow(long kernelHandle, BorrowedFactorBatch target, int lane) {
+			if (edgeCount <= 0L) throw new IllegalStateException("unresolved borrowed run");
+			if (codec == CODEC_PAGED_CSF) {
+				long address = csf.firstPageAddress();
+				target.bindNative(lane, csf.singlePageRow() ? BorrowedFactorBatch.CSF_PAGE
+						: BorrowedFactorBatch.ENCODED_RUN, address, kernelHandle, csf.firstLocalRow(), edgeCount);
+			} else {
+				target.bindNative(lane, BorrowedFactorBatch.ENCODED_RUN, segment.address() + baseOffset,
+						kernelHandle, 0, edgeCount);
+			}
+		}
+
+		int copyBorrowedFibers(ContextCatalog contexts, long offset, int maximum,
+				long[] values, long[] weights, long[] scratch) {
+			if (codec == CODEC_PAGED_CSF) return csf.copyFibers(offset, maximum, values, weights);
+			int got = copy(contexts, this, offset, (int) Math.min(maximum, edgeCount - offset),
+					scratch, 0, null, 0);
+			int out = 0;
+			for (int i = 0; i < got; ) {
+				long value = scratch[i];
+				int start = i++;
+				while (i < got && scratch[i] == value) i++;
+				values[out] = value;
+				weights[out++] = i - start;
+			}
+			return out;
 		}
 
 		private boolean resolves(LmdbAdjacencyArenaCatalog catalog, long runHandle) {

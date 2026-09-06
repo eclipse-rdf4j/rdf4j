@@ -20,6 +20,9 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties;
 class CompactCsfPageReader {
 
 	private long address;
+
+	/** Valid only while the immutable page owner is retained. */
+	final long nativeAddress() { return address; }
 	private int flags;
 	private int usedBytes;
 	private int rowCount;
@@ -446,6 +449,26 @@ class CompactCsfPageReader {
 			PackedLongVector.nativeCopy(contextCountsAddress(), fiberCount, start + fromFiber, copied,
 					multiplicityTarget, multiplicityOffset);
 		}
+		return copied;
+	}
+
+	/** Sequential continuation using the preceding decoded neighbor, never a repeated row-prefix walk. */
+	int copyFollowingFibers(int rowIndex, int fromFiber, int maximum, long previousNeighbor,
+			long[] neighbors, int neighborOffset, long[] weights, int weightOffset) {
+		if (fromFiber == 0) return copyFibers(rowIndex, 0, maximum, neighbors, neighborOffset, weights, weightOffset);
+		checkRow(rowIndex);
+		int start = rowFiberOffset(rowIndex);
+		int count = rowFiberOffset(rowIndex + 1) - start;
+		if (fromFiber < 0 || fromFiber > count || maximum < 0) throw new IllegalArgumentException("invalid fiber range");
+		int copied = Math.min(maximum, count - fromFiber);
+		if (neighborOffset < 0 || neighborOffset > neighbors.length - copied
+				|| weightOffset < 0 || weightOffset > weights.length - copied)
+			throw new IllegalArgumentException("invalid fiber targets");
+		if (copied == 0) return 0;
+		PackedLongVector.nativeCopyCumulative(neighborTailsAddress(), fiberCount - rowCount,
+				start - rowIndex + fromFiber - 1, 1, copied, previousNeighbor, neighbors, neighborOffset);
+		if (flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE)) Arrays.fill(weights, weightOffset, weightOffset + copied, 1L);
+		else PackedLongVector.nativeCopy(contextCountsAddress(), fiberCount, start + fromFiber, copied, weights, weightOffset);
 		return copied;
 	}
 

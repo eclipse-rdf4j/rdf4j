@@ -2366,7 +2366,7 @@ final class LmdbNativeKernelEmitter {
 				String value = "v" + output.col;
 				switch (output.kind) {
 				case LmdbNativeKernelIr.AGG_COUNT_STAR:
-					source.append("        agC").append(i).append(weighted ? " += n;\n" : "++;\n");
+					source.append("        agC").append(i).append(weighted ? " = Math.addExact(agC" + i + ", n);\n" : "++;\n");
 					break;
 				case LmdbNativeKernelIr.AGG_COUNT:
 					source.append("        if (")
@@ -2374,7 +2374,7 @@ final class LmdbNativeKernelEmitter {
 							.append(" != -1L) {\n")
 							.append("            agC")
 							.append(i)
-							.append(weighted ? " += n;\n" : "++;\n")
+							.append(weighted ? " = Math.addExact(agC" + i + ", n);\n" : "++;\n")
 							.append("        }\n");
 					break;
 				case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
@@ -3262,7 +3262,7 @@ final class LmdbNativeKernelEmitter {
 				String value = "v" + output.col;
 				switch (output.kind) {
 				case LmdbNativeKernelIr.AGG_COUNT_STAR:
-					source.append("        agC").append(i).append("[g] += n;\n");
+					source.append("        agC").append(i).append("[g] = Math.addExact(agC").append(i).append("[g], n);\n");
 					break;
 				case LmdbNativeKernelIr.AGG_COUNT:
 					source.append("        if (")
@@ -3270,7 +3270,7 @@ final class LmdbNativeKernelEmitter {
 							.append(" != -1L) {\n")
 							.append("            agC")
 							.append(i)
-							.append("[g] += n;\n")
+							.append("[g] = Math.addExact(agC").append(i).append("[g], n);\n")
 							.append("        }\n");
 					break;
 				default: // AGG_COUNT_DISTINCT over a column constant across the slice
@@ -5374,7 +5374,7 @@ final class LmdbNativeKernelEmitter {
 			if (!(kernel.terminal instanceof Aggregate)) {
 				return false;
 			}
-			if (nodeDomainIntersectionBulkCount()) {
+			if (LmdbNativeKernelIr.weightedPlanCount(kernel) || nodeDomainIntersectionBulkCount()) {
 				return true;
 			}
 			if (wildcardMultiplicityTail()) {
@@ -6410,26 +6410,33 @@ final class LmdbNativeKernelEmitter {
 				PlanRows plan = (PlanRows) node;
 				String cursor = "pc" + plan.plan;
 				String buffer = "pb" + plan.plan;
+				boolean weighted = LmdbNativeKernelIr.weightedPlanCount(kernel);
+				String bagWeights = "pw" + plan.plan;
+				String read = weighted ? ".fillWeighted(" + buffer + ", " + bagWeights : ".fill(" + buffer;
+				if (weighted) body.append(indent).append("long[] ").append(bagWeights)
+						.append(" = new long[KernelRuntime.SCAN_BATCH_ROWS];\n");
 				emitPlanInputs(body, indent, plan);
 				body.append(indent).append(cursor).append(" = p").append(plan.plan).append(".open();\n");
 				emitPlanBuffer(body, indent, buffer, plan.outCols.length);
 				body.append(indent)
 						.append("int n = ")
 						.append(cursor)
-						.append(".fill(")
-						.append(buffer)
+						.append(read)
 						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
 				body.append(indent).append("while (n > 0) {\n");
 				body.append(indent).append("    KernelRuntime.checkCancelled(cancel);\n");
 				body.append(indent).append("    for (int i = 0; i < n; i++) {\n");
 				emitPlanColumns(body, indent + "        ", plan, buffer, "i");
-				body.append(next(nextTemplate, indent + "        "));
+				if (weighted) {
+					body.append(indent).append("        if (").append(bagWeights)
+							.append("[i] <= 0L) throw new IllegalStateException(\"nonpositive plan multiplicity\");\n");
+					body.append(indent).append("        updateBy(").append(bagWeights).append("[i]);\n");
+				} else body.append(next(nextTemplate, indent + "        "));
 				body.append(indent).append("    }\n");
 				body.append(indent)
 						.append("    n = ")
 						.append(cursor)
-						.append(".fill(")
-						.append(buffer)
+						.append(read)
 						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
 				body.append(indent).append("}\n");
 				body.append(indent).append(cursor).append(".close();\n");

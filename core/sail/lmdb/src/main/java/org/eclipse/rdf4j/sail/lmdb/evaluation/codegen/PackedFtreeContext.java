@@ -31,6 +31,9 @@ public final class PackedFtreeContext {
 	public final int[] starts;
 	public final int[] ends;
 	public final boolean[] sharedWithParent;
+	/** Parent-indexed exact borrowed relation counts; null means ordinary packed node. */
+	public final long[][] borrowedCounts;
+	public boolean needOutsideCounts = true;
 	public long totalRows;
 
 	public PackedFtreeContext(long[][] selectors, long[][] weights, long[][] subtreeCounts, long[][] outsideCounts,
@@ -44,5 +47,6 @@ public final class PackedFtreeContext {
 		this.starts = starts;
 		this.ends = ends;
 		this.sharedWithParent = sharedWithParent;
+		this.borrowedCounts = new long[sizes.length][];
 	}
 }

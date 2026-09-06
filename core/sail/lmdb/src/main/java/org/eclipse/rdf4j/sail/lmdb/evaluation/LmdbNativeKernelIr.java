@@ -52,6 +52,16 @@ final class LmdbNativeKernelIr {
 		QUAD
 	}
 
+	/** Exact weighted transfer is legal only with no intervening per-mapping work or distinct channel. */
+	static boolean weightedPlanCount(Kernel kernel) {
+		if (kernel.pipeline.size() != 1 || !(kernel.pipeline.get(0) instanceof PlanRows)
+				|| !(kernel.terminal instanceof Aggregate aggregate) || aggregate.outputs.length == 0) return false;
+		for (AggregateOutput output : aggregate.outputs) {
+			if (output.hookDistinct || (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT)) return false;
+		}
+		return true;
+	}
+
 	private LmdbNativeKernelIr() {
 	}
 

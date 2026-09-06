@@ -27,6 +27,15 @@ interface SlotPlan {
 		return null;
 	}
 
+	/**
+	 * Exact bag projection that may leave unobserved groups unexpanded. Only outputSlots are installed in the scalar
+	 * row; this never marks a deferred factor as a bound dictionary id. Null means use the ordinary cursor. The
+	 * default is deliberately conservative: expression side effects and ordering are not inferred from projection.
+	 */
+	default FactorizedRowCursor openProjected(RowState row, int[] outputSlots) throws IOException {
+		return null;
+	}
+
 	long producedMask();
 
 	default double estimate(RowState row) {

@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Objects;
+import org.eclipse.rdf4j.sail.lmdb.factor.HeapFactorSource;
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
@@ -102,6 +104,9 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 		target.bind(cursor.neighborArray(), cursor.neighborOffset(), size);
 		return true;
 	}
+
+	@Override
+	public BorrowedFactorBatch.Source openFactorSource() { return new HeapFactorSource(lookup); }
 
 	@Override
 	public boolean supportsBorrowedNeighbors() {
@@ -265,6 +270,14 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 			}
 			token = decoded.ordinal() + 1L;
 			return size;
+		}
+
+		@Override
+		public boolean borrow(BorrowedFactorBatch target, int lane) {
+			if (token <= 0L) return false;
+			target.bindHeap(lane, decoded.neighborArray(), decoded.neighborOffset(),
+					Math.toIntExact(lookup.decodedEdgeCount(token)));
+			return true;
 		}
 
 		@Override

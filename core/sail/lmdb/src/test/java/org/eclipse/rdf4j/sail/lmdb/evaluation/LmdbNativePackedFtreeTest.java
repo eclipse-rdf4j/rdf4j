@@ -32,6 +32,8 @@ import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 
+import org.eclipse.rdf4j.sail.lmdb.factor.HeapFactorSource;
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.codehaus.janino.SimpleCompiler;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
@@ -139,6 +141,73 @@ class LmdbNativePackedFtreeTest {
 			assertEquals(13, physicalValues(chunk),
 					"1 root + 2 b + 3 a + 2 d + 5 e values, not the 15-row sibling product");
 			assertNull(runtime.nextChunk());
+		}
+	}
+
+	@Test
+	void borrowedLeavesRetainOnlyInternalLanesAndMaterializeOnlyDemandedValues() throws Exception {
+		TestGraph graph = pathGraph();
+		graph.borrow = true;
+		RowState row = row(graph.source(), "a", "b", "c", "d", "e");
+		MultiJoinPlan join = join(pattern(0, P1, 1), pattern(1, P2, 2), pattern(2, P3, 3), pattern(3, P4, 4));
+		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join, row, new int[] { 0, 1, 2, 3, 4 });
+		assertNotNull(plan);
+		try (LmdbNativePackedFtree.Runtime runtime = LmdbNativePackedFtree.Runtime.open(plan, row)) {
+			LmdbNativePackedFtree.Chunk chunk = runtime.nextChunk();
+			assertNotNull(chunk.data[plan.bySlot.get(0).ordinal].borrowed);
+			assertNotNull(chunk.data[plan.bySlot.get(4).ordinal].borrowed);
+			assertEquals(5, physicalValues(chunk), "only root and nonterminal branches are packed");
+			assertEquals(15, chunk.computeSubtreeCountsInterpreted(false));
+			for (LmdbNativePackedFtree.NodeData data : chunk.data) assertNull(data.outsideCounts);
+			chunk.materializeBorrowed(1L << 0);
+			assertNull(chunk.data[plan.bySlot.get(0).ordinal].borrowed);
+			assertNotNull(chunk.data[plan.bySlot.get(4).ordinal].borrowed);
+			assertEquals(8, physicalValues(chunk));
+			assertEquals(15, chunk.computeSubtreeCountsInterpreted(false));
+		}
+	}
+
+	@Test
+	void borrowedRowsAndSlotProjectionKeepTheExactBag() throws Exception {
+		TestGraph graph = pathGraph();
+		graph.borrow = true;
+		RowState row = row(graph.source(), "a", "b", "c", "d", "e");
+		MultiJoinPlan join = join(pattern(0, P1, 1), pattern(1, P2, 2), pattern(2, P3, 3), pattern(3, P4, 4));
+		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join, row, new int[] { 0, 1, 2, 3, 4 });
+		long expanded = 0L;
+		try (FactorizedRowCursor cursor = LmdbNativePackedFtree.PackedRowCursor.open(plan, row)) {
+			while (cursor.next()) expanded = Math.addExact(expanded, cursor.multiplicity());
+		}
+		assertEquals(15, expanded);
+		try (FactorizedRowCursor cursor = join.openProjected(row, new int[] { 2 })) {
+			assertNotNull(cursor);
+			assertTrue(cursor.next());
+			assertEquals(20L, row.slots[2]);
+			assertEquals(-1L, row.slots[0], "hidden group must not be advertised as a scalar binding");
+			assertEquals(-1L, row.slots[4]);
+			assertEquals(15L, cursor.multiplicity());
+			assertFalse(cursor.next());
+		}
+		try (FactorizedRowCursor cursor = join.openProjected(row, new int[0])) {
+			assertNotNull(cursor);
+			assertTrue(cursor.next());
+			assertEquals(15L, cursor.multiplicity(), "empty projection still carries the complete bag");
+			assertFalse(cursor.next());
+		}
+	}
+
+	@Test
+	void unsupportedExportFallsBackWithoutPublishingPartialParentReduction() throws Exception {
+		TestGraph graph = pathGraph();
+		graph.borrow = true;
+		graph.failExportKey = 12L;
+		RowState row = row(graph.source(), "a", "b", "c", "d", "e");
+		MultiJoinPlan join = join(pattern(0, P1, 1), pattern(1, P2, 2), pattern(2, P3, 3), pattern(3, P4, 4));
+		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join, row, new int[] { 0, 1, 2, 3, 4 });
+		try (LmdbNativePackedFtree.Runtime runtime = LmdbNativePackedFtree.Runtime.open(plan, row)) {
+			LmdbNativePackedFtree.Chunk chunk = runtime.nextChunk();
+			assertNull(chunk.data[plan.bySlot.get(0).ordinal].borrowed);
+			assertEquals(15, chunk.computeSubtreeCountsInterpreted(false));
 		}
 	}
 
@@ -542,6 +611,8 @@ class LmdbNativePackedFtreeTest {
 	}
 
 	private static final class TestGraph {
+		boolean borrow;
+		long failExportKey = -1L;
 		private final Map<AdjacencyKey, MutableAdjacency> mutable = new HashMap<>();
 		private NativeLmdbQuerySource source;
 
@@ -558,7 +629,7 @@ class LmdbNativePackedFtreeTest {
 			}
 			Map<AdjacencyKey, TestAdjacency> adjacencies = new HashMap<>();
 			for (Map.Entry<AdjacencyKey, MutableAdjacency> entry : mutable.entrySet()) {
-				adjacencies.put(entry.getKey(), entry.getValue().freeze());
+				adjacencies.put(entry.getKey(), entry.getValue().freeze(this));
 			}
 			NativeLmdbQuerySource result = mock(NativeLmdbQuerySource.class);
 			NativeLmdbQuerySource.NativeProbe probe = mock(NativeLmdbQuerySource.NativeProbe.class);
@@ -601,19 +672,21 @@ class LmdbNativePackedFtreeTest {
 			rows.computeIfAbsent(key, ignored -> new ArrayList<>()).add(new long[] { neighbor, context });
 		}
 
-		TestAdjacency freeze() {
-			return new TestAdjacency(rows);
+		TestAdjacency freeze(TestGraph owner) {
+			return new TestAdjacency(rows, owner);
 		}
 	}
 
 	private static final class TestAdjacency implements NativeAdjacency {
+		private final TestGraph owner;
 		private final long[] keys;
 		private final long[][] neighbors;
 		private final long[][] contexts;
 		private final Map<Long, Integer> ordinalByKey = new HashMap<>();
 		private final long edgeCount;
 
-		TestAdjacency(Map<Long, List<long[]>> input) {
+		TestAdjacency(Map<Long, List<long[]>> input, TestGraph owner) {
+			this.owner = owner;
 			keys = input.keySet().stream().mapToLong(Long::longValue).toArray();
 			sortUnsigned(keys);
 			neighbors = new long[keys.length][];
@@ -639,6 +712,19 @@ class LmdbNativePackedFtreeTest {
 
 		double meanFanOut() {
 			return keys.length == 0 ? 0D : (double) edgeCount / keys.length;
+		}
+
+		@Override
+		public BorrowedFactorBatch.Source openFactorSource() {
+			return owner.borrow ? new HeapFactorSource(this) : null;
+		}
+
+		@Override
+		public boolean borrowRun(long handle, BorrowedFactorBatch target, int lane) {
+			int row = index(handle);
+			if (!owner.borrow || keys[row] == owner.failExportKey) return false;
+			target.bindHeap(lane, neighbors[row], 0, neighbors[row].length);
+			return true;
 		}
 
 		@Override
