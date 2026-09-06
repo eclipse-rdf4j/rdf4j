@@ -431,11 +431,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					double candidateConnectedCost = Double.MAX_VALUE;
 					double candidateCost = Double.MAX_VALUE;
 					for (TupleExpr prev : ret) {
+						boolean eligibleForCartesianFallback = statementPatternWithMinimumOneConstant(prev);
+						boolean connectedCandidate = connectedByRealBinding(prev, cand);
+						if (!eligibleForCartesianFallback && !connectedCandidate) {
+							continue;
+						}
 						double cost = getCard.apply(prev, cand);
-						if (statementPatternWithMinimumOneConstant(prev) && cost < candidateCost) {
+						if (eligibleForCartesianFallback && cost < candidateCost) {
 							candidateCost = cost;
 						}
-						if (connectedByRealBinding(prev, cand) && cost < candidateConnectedCost) {
+						if (connectedCandidate && cost < candidateConnectedCost) {
 							candidateConnectedCost = cost;
 						}
 					}
