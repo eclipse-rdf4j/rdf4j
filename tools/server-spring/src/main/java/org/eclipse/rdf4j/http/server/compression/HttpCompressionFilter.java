@@ -34,6 +34,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.rio.helpers.RDFInputDecompressionLimitException;
 import org.eclipse.rdf4j.rio.helpers.RioCompression;
 
 import jakarta.servlet.Filter;
@@ -141,10 +142,16 @@ public class HttpCompressionFilter implements Filter {
 
 	private static boolean handleDecompressionFailure(Throwable failure, HttpServletResponse response)
 			throws IOException {
-		Throwable cause = failure;
-		while (cause != null && !(cause instanceof DecompressionLimitException)
-				&& !(cause instanceof MalformedCompressionException)) {
-			cause = cause.getCause();
+		Throwable cause = null;
+		for (Throwable candidate = failure; candidate != null; candidate = candidate.getCause()) {
+			if (candidate instanceof DecompressionLimitException
+					|| candidate instanceof RDFInputDecompressionLimitException) {
+				cause = candidate;
+				break;
+			}
+			if (cause == null && candidate instanceof MalformedCompressionException) {
+				cause = candidate;
+			}
 		}
 		if (cause == null) {
 			return false;
@@ -157,8 +164,10 @@ public class HttpCompressionFilter implements Filter {
 		}
 		response.reset();
 		response.sendError(cause instanceof DecompressionLimitException
-				? HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE
-				: HttpServletResponse.SC_BAD_REQUEST, cause.getMessage());
+				|| cause instanceof RDFInputDecompressionLimitException
+						? HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE
+						: HttpServletResponse.SC_BAD_REQUEST,
+				cause.getMessage());
 		return true;
 	}
 

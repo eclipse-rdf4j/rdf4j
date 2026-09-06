@@ -75,6 +75,8 @@
 		<guava.version>33.6.0-jre</guava.version>
 		<brotli4j.version>1.23.0</brotli4j.version>
 		<zstd-jni.version>1.5.7-11</zstd-jni.version>
+		<commons-compress.version>1.28.0</commons-compress.version>
+		<xz.version>1.12</xz.version>
 		<jmhVersion>1.37</jmhVersion>
 		<junit.version>6.1.1</junit.version>
 		<junit-pioneer.version>2.3.0</junit-pioneer.version>
@@ -596,6 +598,16 @@
 				<groupId>commons-io</groupId>
 				<artifactId>commons-io</artifactId>
 				<version>2.22.0</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.commons</groupId>
+				<artifactId>commons-compress</artifactId>
+				<version>${commons-compress.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.tukaani</groupId>
+				<artifactId>xz</artifactId>
+				<version>${xz.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>co.elastic.clients</groupId>

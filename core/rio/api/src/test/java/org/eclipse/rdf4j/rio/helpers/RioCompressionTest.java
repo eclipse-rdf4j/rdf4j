@@ -12,15 +12,23 @@
 package org.eclipse.rdf4j.rio.helpers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.GZIPOutputStream;
 
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream;
+import org.apache.commons.compress.compressors.lz4.FramedLZ4CompressorOutputStream;
+import org.apache.commons.compress.compressors.lzma.LZMACompressorOutputStream;
+import org.apache.commons.compress.compressors.snappy.FramedSnappyCompressorOutputStream;
+import org.apache.commons.compress.compressors.xz.XZCompressorOutputStream;
 import org.junit.jupiter.api.Test;
 
 class RioCompressionTest {
@@ -52,6 +60,101 @@ class RioCompressionTest {
 	}
 
 	@Test
+	void decompressesBzip2BySignatureAndSuffix() throws Exception {
+		byte[] compressed = bzip2(TURTLE);
+
+		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(compressed))))
+				.isEqualTo(TURTLE);
+		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(compressed),
+				"https://example.test/DATA.TTL.BZIP2?download=true#part"))).isEqualTo(TURTLE);
+	}
+
+	@Test
+	void decompressesEveryAdditionalReliableSignature() throws Exception {
+		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(bzip2(TURTLE)))))
+				.isEqualTo(TURTLE);
+		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(xz(TURTLE)))))
+				.isEqualTo(TURTLE);
+		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(lz4(TURTLE)))))
+				.isEqualTo(TURTLE);
+		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(snappy(TURTLE)))))
+				.isEqualTo(TURTLE);
+		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(unixCompressTurtle()))))
+				.isEqualTo(TURTLE);
+	}
+
+	@Test
+	void decompressesEveryAdditionalSuffixWithCaseQueryAndFragment() throws Exception {
+		assertDecompressesSuffix(bzip2(TURTLE), "data.ttl.bz2");
+		assertDecompressesSuffix(bzip2(TURTLE), "data.ttl.BZIP2?download=true#member");
+		assertDecompressesSuffix(xz(TURTLE), "data.ttl.xz");
+		assertDecompressesSuffix(lzma(TURTLE), "data.ttl.lzma");
+		assertDecompressesSuffix(lz4(TURTLE), "data.ttl.lz4");
+		assertDecompressesSuffix(snappy(TURTLE), "data.ttl.sz");
+		assertDecompressesSuffix(snappy(TURTLE), "data.ttl.snappy");
+		assertDecompressesSuffix(unixCompressTurtle(), "data.ttl.Z");
+	}
+
+	@Test
+	void prefersReliableSignatureToMismatchedSuffix() throws Exception {
+		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(bzip2(TURTLE)),
+				"data.ttl.xz"))).isEqualTo(TURTLE);
+	}
+
+	@Test
+	void supportsNonMarkableAndShortStreams() throws Exception {
+		InputStream nonMarkable = new FilterInputStream(new ByteArrayInputStream(xz(TURTLE))) {
+			@Override
+			public boolean markSupported() {
+				return false;
+			}
+		};
+
+		assertThat(read(RioCompression.decompressIfDetected(nonMarkable))).isEqualTo(TURTLE);
+		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(new byte[] { 0x42 }))))
+				.containsExactly(0x42);
+	}
+
+	@Test
+	void rejectsMalformedAdditionalCompression() {
+		assertThatThrownBy(() -> read(RioCompression.decompressIfDetected(
+				new ByteArrayInputStream(new byte[] { 0x42, 0x5a, 0x68, 0x39, 0x00 }))))
+						.isInstanceOf(IOException.class);
+	}
+
+	@Test
+	void decompressesConcatenatedAdditionalStreams() throws Exception {
+		assertThat(read(RioCompression.decompressIfDetected(
+				new ByteArrayInputStream(concat(bzip2(TURTLE), bzip2(TURTLE))))))
+						.isEqualTo(concat(TURTLE, TURTLE));
+	}
+
+	@Test
+	void enforcesConfiguredDecoderMemoryLimit() throws Exception {
+		String previous = System.getProperty(RioCompression.MAX_DECODER_MEMORY_KIB_PROPERTY);
+		System.setProperty(RioCompression.MAX_DECODER_MEMORY_KIB_PROPERTY, "1");
+		try {
+			assertThatThrownBy(() -> read(RioCompression.decompressIfDetected(new ByteArrayInputStream(xz(TURTLE)))))
+					.isInstanceOf(RDFInputDecoderMemoryLimitException.class)
+					.extracting("memoryLimitKiB")
+					.isEqualTo(1);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(RioCompression.MAX_DECODER_MEMORY_KIB_PROPERTY);
+			} else {
+				System.setProperty(RioCompression.MAX_DECODER_MEMORY_KIB_PROPERTY, previous);
+			}
+		}
+	}
+
+	@Test
+	void exposesDecoderMemoryLimitMetadata() {
+		assertThat(RioCompression.MAX_DECODER_MEMORY_KIB_PROPERTY)
+				.isEqualTo("org.eclipse.rdf4j.rio.compression.maxDecoderMemoryKiB");
+		assertThat(RioCompression.DEFAULT_MAX_DECODER_MEMORY_KIB).isEqualTo(64 * 1024);
+	}
+
+	@Test
 	void leavesUncompressedStreamsReadable() throws Exception {
 		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(TURTLE)))).isEqualTo(TURTLE);
 	}
@@ -74,6 +177,62 @@ class RioCompressionTest {
 			outputStream.write(body);
 		}
 		return buffer.toByteArray();
+	}
+
+	private static byte[] bzip2(byte[] body) throws IOException {
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		try (BZip2CompressorOutputStream outputStream = new BZip2CompressorOutputStream(buffer)) {
+			outputStream.write(body);
+		}
+		return buffer.toByteArray();
+	}
+
+	private static byte[] xz(byte[] body) throws IOException {
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		try (XZCompressorOutputStream outputStream = new XZCompressorOutputStream(buffer)) {
+			outputStream.write(body);
+		}
+		return buffer.toByteArray();
+	}
+
+	private static byte[] lzma(byte[] body) throws IOException {
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		try (LZMACompressorOutputStream outputStream = new LZMACompressorOutputStream(buffer)) {
+			outputStream.write(body);
+		}
+		return buffer.toByteArray();
+	}
+
+	private static byte[] lz4(byte[] body) throws IOException {
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		try (FramedLZ4CompressorOutputStream outputStream = new FramedLZ4CompressorOutputStream(buffer)) {
+			outputStream.write(body);
+		}
+		return buffer.toByteArray();
+	}
+
+	private static byte[] snappy(byte[] body) throws IOException {
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		try (FramedSnappyCompressorOutputStream outputStream = new FramedSnappyCompressorOutputStream(buffer)) {
+			outputStream.write(body);
+		}
+		return buffer.toByteArray();
+	}
+
+	private static byte[] unixCompressTurtle() {
+		return Base64.getDecoder().decode("H52QPOrIcaNjjg8QAQfqgHMwIcE3B10A");
+	}
+
+	private static byte[] concat(byte[] first, byte[] second) {
+		byte[] result = new byte[first.length + second.length];
+		System.arraycopy(first, 0, result, 0, first.length);
+		System.arraycopy(second, 0, result, first.length, second.length);
+		return result;
+	}
+
+	private static void assertDecompressesSuffix(byte[] compressed, String sourceName) throws IOException {
+		assertThat(read(RioCompression.decompressIfDetected(new ByteArrayInputStream(compressed), sourceName)))
+				.isEqualTo(TURTLE);
 	}
 
 }

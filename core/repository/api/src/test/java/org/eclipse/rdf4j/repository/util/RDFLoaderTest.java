@@ -43,6 +43,8 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.ParserConfig;
@@ -55,6 +57,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockserver.client.MockServerClient;
 import org.mockserver.junit.jupiter.MockServerExtension;
 import org.mockserver.model.MediaType;
+
+import com.github.luben.zstd.ZstdOutputStream;
 
 /**
  * Unit tests for {@link RDFLoader}.
@@ -179,6 +183,36 @@ public class RDFLoaderTest {
 	}
 
 	@Test
+	public void loadsTurtleFromTarArchive() throws Exception {
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+
+		rdfLoader.load(new ByteArrayInputStream(tar("Socrates.ttl",
+				"<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")), null, null,
+				rdfHandler);
+
+		verify(rdfHandler).startRDF();
+		verify(rdfHandler)
+				.handleStatement(statement(iri("http://example.org/Socrates"), RDF.TYPE, FOAF.PERSON, null));
+		verify(rdfHandler).endRDF();
+	}
+
+	@Test
+	public void loadsTurtleFromZstandardCompressedTarArchive() throws Exception {
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+		byte[] archive = tar("Socrates.ttl",
+				"<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .");
+
+		rdfLoader.load(new ByteArrayInputStream(zstd(archive)), null, null, rdfHandler);
+
+		verify(rdfHandler).startRDF();
+		verify(rdfHandler)
+				.handleStatement(statement(iri("http://example.org/Socrates"), RDF.TYPE, FOAF.PERSON, null));
+		verify(rdfHandler).endRDF();
+	}
+
+	@Test
 	public void sharesExpandedByteBudgetAcrossZipEntries() throws Exception {
 		String property = "org.eclipse.rdf4j.rio.loader.max_expanded_bytes";
 		String previous = System.getProperty(property);
@@ -286,6 +320,27 @@ public class RDFLoaderTest {
 				outputStream.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
 				outputStream.closeEntry();
 			}
+		}
+		return buffer.toByteArray();
+	}
+
+	private static byte[] tar(String entryName, String body) throws Exception {
+		byte[] content = body.getBytes(StandardCharsets.UTF_8);
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		try (TarArchiveOutputStream outputStream = new TarArchiveOutputStream(buffer)) {
+			TarArchiveEntry entry = new TarArchiveEntry(entryName);
+			entry.setSize(content.length);
+			outputStream.putArchiveEntry(entry);
+			outputStream.write(content);
+			outputStream.closeArchiveEntry();
+		}
+		return buffer.toByteArray();
+	}
+
+	private static byte[] zstd(byte[] input) throws Exception {
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		try (ZstdOutputStream outputStream = new ZstdOutputStream(buffer)) {
+			outputStream.write(input);
 		}
 		return buffer.toByteArray();
 	}
