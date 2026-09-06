@@ -43,7 +43,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.ResourceUtil;
 import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
+import org.eclipse.rdf4j.http.client.CancellableOperationCoordinator;
+import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -51,6 +54,8 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -446,7 +451,7 @@ public class QueryServletTest {
 	}
 
 	@Test
-	public void testCancelExplainShouldRejectBlankRequestId() throws Exception {
+	public void testCancelExplainShouldRejectBlankRequestIdAndReturnNotFoundForUnknownId() throws Exception {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.getParameter("action")).thenReturn("cancel-explain");
 		when(request.isParameterPresent("explain-request-id")).thenReturn(true);
@@ -457,6 +462,16 @@ public class QueryServletTest {
 		servlet.doPost(request, response, "/transformations");
 
 		verify(response).sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: explain-request-id");
+
+		WorkbenchRequest unknownRequest = mock(WorkbenchRequest.class);
+		when(unknownRequest.getParameter("action")).thenReturn("cancel-explain");
+		when(unknownRequest.isParameterPresent("explain-request-id")).thenReturn(true);
+		when(unknownRequest.getParameter("explain-request-id")).thenReturn("completed-explanation");
+		HttpServletResponse unknownResponse = mock(HttpServletResponse.class);
+
+		servlet.doPost(unknownRequest, unknownResponse, "/transformations");
+
+		verify(unknownResponse).sendError(HttpServletResponse.SC_NOT_FOUND);
 	}
 
 	@Test
@@ -532,6 +547,111 @@ public class QueryServletTest {
 		} finally {
 			executor.shutdownNow();
 			asyncExplainCoordinator.shutdown();
+		}
+	}
+
+	@Test
+	public void testCancelQueryShouldRejectBlankRequestIdAndReturnNotFoundForUnknownId() throws Exception {
+		WorkbenchRequest blankRequest = mock(WorkbenchRequest.class);
+		when(blankRequest.getParameter("action")).thenReturn("cancel-query");
+		when(blankRequest.isParameterPresent("query-request-id")).thenReturn(true);
+		when(blankRequest.getParameter("query-request-id")).thenReturn("   ");
+		HttpServletResponse blankResponse = mock(HttpServletResponse.class);
+
+		servlet.doPost(blankRequest, blankResponse, "/transformations");
+
+		verify(blankResponse).sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: query-request-id");
+
+		WorkbenchRequest unknownRequest = mock(WorkbenchRequest.class);
+		when(unknownRequest.getParameter("action")).thenReturn("cancel-query");
+		when(unknownRequest.isParameterPresent("query-request-id")).thenReturn(true);
+		when(unknownRequest.getParameter("query-request-id")).thenReturn("completed-request");
+		HttpServletResponse unknownResponse = mock(HttpServletResponse.class);
+
+		servlet.doPost(unknownRequest, unknownResponse, "/transformations");
+
+		verify(unknownResponse).sendError(HttpServletResponse.SC_NOT_FOUND);
+	}
+
+	@Test
+	public void testTrackedQueryShouldInterruptInlineExecutionAndPropagateRemoteCancel() throws Exception {
+		HTTPRepository repository = mock(HTTPRepository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		@SuppressWarnings("unchecked")
+		RepositoryResult<Namespace> namespaces = mock(RepositoryResult.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		CancellableOperationCoordinator queryCoordinator = new CancellableOperationCoordinator();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		servlet.setRepository(repository);
+		servlet.substituteQueryCoordinator(queryCoordinator);
+
+		CountDownLatch queryStarted = new CountDownLatch(1);
+		CountDownLatch queryInterrupted = new CountDownLatch(1);
+		AtomicBoolean contextPropagated = new AtomicBoolean(false);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.getRepository()).thenReturn(repository);
+		when(connection.getNamespaces()).thenReturn(namespaces);
+		when(namespaces.hasNext()).thenReturn(false);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.evaluate()).thenAnswer(invocation -> {
+			contextPropagated.set("query-123".equals(QueryRequestContext.getQueryRequestId()));
+			queryStarted.countDown();
+			try {
+				new CountDownLatch(1).await();
+				return null;
+			} catch (InterruptedException e) {
+				queryInterrupted.countDown();
+				throw new RepositoryException("connection closed during cancellation", e);
+			}
+		});
+
+		WorkbenchRequest queryRequest = mock(WorkbenchRequest.class);
+		when(queryRequest.getParameter("action")).thenReturn("exec");
+		when(queryRequest.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+		when(queryRequest.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(queryRequest.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
+		when(queryRequest.isParameterPresent("query-request-id")).thenReturn(true);
+		when(queryRequest.getParameter("query-request-id")).thenReturn("query-123");
+		when(queryRequest.getParameter("queryLn")).thenReturn("SPARQL");
+		when(queryRequest.isParameterPresent("infer")).thenReturn(false);
+		when(queryRequest.isParameterPresent("Accept")).thenReturn(false);
+		when(queryRequest.isParameterPresent("explain")).thenReturn(false);
+		when(queryRequest.getInt("offset")).thenReturn(0);
+		when(queryRequest.getInt("limit_query")).thenReturn(0);
+		when(queryRequest.getInt("know_total")).thenReturn(0);
+		when(queryRequest.getInt("query-timeout")).thenReturn(0);
+		when(queryRequest.getHeader("Accept-Encoding")).thenReturn(null);
+		when(queryRequest.getContextPath()).thenReturn("");
+
+		HttpServletResponse queryResponse = mock(HttpServletResponse.class);
+		when(queryResponse.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
+
+		WorkbenchRequest cancelRequest = mock(WorkbenchRequest.class);
+		when(cancelRequest.getParameter("action")).thenReturn("cancel-query");
+		when(cancelRequest.isParameterPresent("query-request-id")).thenReturn(true);
+		when(cancelRequest.getParameter("query-request-id")).thenReturn("query-123");
+		HttpServletResponse cancelResponse = mock(HttpServletResponse.class);
+
+		try {
+			Future<?> queryFuture = executor.submit(() -> {
+				servlet.service(queryRequest, queryResponse, "/transformations");
+				return null;
+			});
+
+			assertThat(queryStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(contextPropagated).isTrue();
+			assertThat(queryFuture.isDone()).isFalse();
+
+			servlet.doPost(cancelRequest, cancelResponse, "/transformations");
+
+			verify(cancelResponse).setStatus(HttpServletResponse.SC_NO_CONTENT);
+			assertThat(queryInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThatCode(() -> queryFuture.get(5, TimeUnit.SECONDS)).doesNotThrowAnyException();
+			verify(connection, atLeastOnce()).close();
+			verify(repository).cancelQuery("query-123");
+		} finally {
+			executor.shutdownNow();
+			queryCoordinator.shutdown();
 		}
 	}
 

@@ -78,9 +78,15 @@ public class GraphQueryResultView extends QueryResultView {
 					GraphQueryResult graphQueryResult = (GraphQueryResult) model.get(QUERY_RESULT_KEY);
 					QueryResults.report(graphQueryResult, rdfWriter);
 				} catch (QueryInterruptedException e) {
+					if (isExplicitlyCancelled(model)) {
+						return;
+					}
 					logger.error("Query interrupted", e);
 					sendServiceUnavailable(response, e, "Query evaluation took too long");
 				} catch (QueryEvaluationException e) {
+					if (isExplicitlyCancelled(model)) {
+						return;
+					}
 					logger.error("Query evaluation error", e);
 					response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
 				} catch (RDFHandlerException e) {

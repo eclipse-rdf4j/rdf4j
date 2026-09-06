@@ -29,8 +29,10 @@ import java.util.zip.GZIPOutputStream;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
+import org.eclipse.rdf4j.http.client.CancellableOperationCoordinator;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
+import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
@@ -89,7 +91,11 @@ public class QueryServlet extends TransformationServlet {
 
 	private static final String ACTION_CANCEL_EXPLAIN = "cancel-explain";
 
+	private static final String ACTION_CANCEL_QUERY = "cancel-query";
+
 	private static final String EXPLAIN_REQUEST_ID = "explain-request-id";
+
+	private static final String QUERY_REQUEST_ID = "query-request-id";
 
 	private static final String EXPLAIN_TIMEOUT_MESSAGE = "Query explanation took too long";
 
@@ -104,6 +110,8 @@ public class QueryServlet extends TransformationServlet {
 	private QueryStorage storage;
 
 	private AsyncExplainCoordinator asyncExplainCoordinator = new AsyncExplainCoordinator();
+
+	private CancellableOperationCoordinator queryCoordinator = new CancellableOperationCoordinator();
 
 	protected boolean writeQueryCookie;
 
@@ -126,6 +134,10 @@ public class QueryServlet extends TransformationServlet {
 
 	protected void substituteAsyncExplainCoordinator(AsyncExplainCoordinator asyncExplainCoordinator) {
 		this.asyncExplainCoordinator = asyncExplainCoordinator;
+	}
+
+	protected void substituteQueryCoordinator(CancellableOperationCoordinator queryCoordinator) {
+		this.queryCoordinator = queryCoordinator;
 	}
 
 	/**
@@ -168,6 +180,7 @@ public class QueryServlet extends TransformationServlet {
 	@Override
 	public void destroy() {
 		this.asyncExplainCoordinator.shutdown();
+		this.queryCoordinator.shutdown();
 		this.storage.shutdown();
 		super.destroy();
 	}
@@ -408,6 +421,21 @@ public class QueryServlet extends TransformationServlet {
 		};
 	}
 
+	private Runnable createRemoteQueryCancelAction(String queryRequestId) {
+		if (!(repository instanceof HTTPRepository)) {
+			return null;
+		}
+
+		HTTPRepository httpRepository = (HTTPRepository) repository;
+		return () -> {
+			try {
+				httpRepository.cancelQuery(queryRequestId);
+			} catch (RepositoryException e) {
+				LOGGER.debug("Remote query cancellation failed for request {}", queryRequestId, e);
+			}
+		};
+	}
+
 	private void writeExplainSuccessResponse(final HttpServletResponse resp,
 			QueryEvaluator.ExplainQueryResult explainQueryResult) throws IOException {
 		ObjectNode jsonObject = mapper.createObjectNode();
@@ -454,16 +482,38 @@ public class QueryServlet extends TransformationServlet {
 
 	private void handleStandardBrowserRequest(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
 			throws IOException, RDF4JException, QueryResultHandlerException {
-		boolean shouldWriteQueryCookie = shouldWriteQueryCookie(req.getParameter(QUERY));
-		cacheLongQueryReferenceIfNeeded(req, resp, shouldWriteQueryCookie);
-		boolean downloadResponse = setContentType(req, resp);
-		OutputStream out = getResponseOutputStream(req, resp, downloadResponse);
+		CancellableOperationCoordinator.Handle handle = null;
+		if (req.isParameterPresent(QUERY_REQUEST_ID)) {
+			String queryRequestId = getQueryRequestId(req);
+			if (queryRequestId == null) {
+				resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: " + QUERY_REQUEST_ID);
+				return;
+			}
+			try {
+				handle = queryCoordinator.register(queryRequestId, createRemoteQueryCancelAction(queryRequestId));
+			} catch (IllegalStateException e) {
+				resp.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+				return;
+			}
+		}
+
+		OutputStream out = null;
 		try {
-			service(req, resp, out, xslPath);
+			boolean shouldWriteQueryCookie = shouldWriteQueryCookie(req.getParameter(QUERY));
+			cacheLongQueryReferenceIfNeeded(req, resp, shouldWriteQueryCookie);
+			boolean downloadResponse = setContentType(req, resp);
+			out = getResponseOutputStream(req, resp, downloadResponse);
+			service(req, resp, out, xslPath, handle);
 		} catch (BadRequestException | HTTPQueryEvaluationException exc) {
+			if (isCancelled(handle)) {
+				return;
+			}
 			LOGGER.warn(exc.toString(), exc);
 			writeBrowserErrorResponse(req, resp, out, xslPath, exc.getMessage());
 		} catch (QueryInterruptedException exc) {
+			if (isCancelled(handle)) {
+				return;
+			}
 			LOGGER.warn(exc.toString(), exc);
 			QueryCircuitBreaker.CircuitBreakerException breakerException = QueryCircuitBreaker
 					.asCircuitBreakerException(exc);
@@ -475,9 +525,29 @@ public class QueryServlet extends TransformationServlet {
 				resp.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
 				writeBrowserErrorResponse(req, resp, out, xslPath, "Query evaluation took too long");
 			}
+		} catch (RDF4JException | IOException exc) {
+			if (!isCancelled(handle)) {
+				throw exc;
+			}
 		} finally {
-			flushResponseOutputStream(out);
+			try {
+				if (out != null) {
+					flushResponseOutputStream(out);
+				}
+			} catch (IOException e) {
+				if (!isCancelled(handle)) {
+					throw e;
+				}
+			} finally {
+				if (handle != null) {
+					queryCoordinator.complete(handle);
+				}
+			}
 		}
+	}
+
+	private boolean isCancelled(CancellableOperationCoordinator.Handle handle) {
+		return handle != null && !handle.isActive();
 	}
 
 	private OutputStream getResponseOutputStream(WorkbenchRequest req, HttpServletResponse resp,
@@ -610,9 +680,21 @@ public class QueryServlet extends TransformationServlet {
 			if (explainRequestId == null) {
 				resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: " + EXPLAIN_REQUEST_ID);
 				return;
-			} else {
-				asyncExplainCoordinator.cancel(explainRequestId);
+			} else if (asyncExplainCoordinator.cancel(explainRequestId)) {
 				resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+			} else {
+				resp.sendError(HttpServletResponse.SC_NOT_FOUND);
+			}
+		} else if (ACTION_CANCEL_QUERY.equals(action)) {
+			final String queryRequestId = getQueryRequestId(req);
+			if (queryRequestId == null) {
+				resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: " + QUERY_REQUEST_ID);
+				return;
+			}
+			if (queryCoordinator.cancel(queryRequestId)) {
+				resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+			} else {
+				resp.sendError(HttpServletResponse.SC_NOT_FOUND);
 			}
 		} else {
 			throw new BadRequestException("POST with unexpected action parameter value: " + action);
@@ -688,6 +770,18 @@ public class QueryServlet extends TransformationServlet {
 		return explainRequestId.isEmpty() ? null : explainRequestId;
 	}
 
+	private String getQueryRequestId(WorkbenchRequest req) {
+		if (!req.isParameterPresent(QUERY_REQUEST_ID)) {
+			return null;
+		}
+		String queryRequestId = req.getParameter(QUERY_REQUEST_ID);
+		if (queryRequestId == null) {
+			return null;
+		}
+		queryRequestId = queryRequestId.trim();
+		return queryRequestId.isEmpty() ? null : queryRequestId;
+	}
+
 	private String getRepositoryReference() {
 		if (repository instanceof HTTPRepository) {
 			return ((HTTPRepository) repository).getRepositoryURL();
@@ -744,32 +838,65 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private void service(final WorkbenchRequest req, final HttpServletResponse resp, final OutputStream out,
-			final String xslPath)
+			final String xslPath, CancellableOperationCoordinator.Handle handle)
 			throws BadRequestException, RDF4JException, UnsupportedQueryResultFormatException, IOException {
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
-			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, out);
-			for (Namespace ns : Iterations.asList(con.getNamespaces())) {
-				builder.prefix(ns.getPrefix(), ns.getName());
-			}
-			String query = getQueryText(req);
-			if (query.isEmpty()) {
-				builder.transform(xslPath, "query.xsl");
-				builder.start();
-				builder.link(Arrays.asList(INFO, "namespaces"));
-				builder.end();
-			} else {
+			if (handle != null) {
 				try {
-					EVAL.extractQueryAndEvaluate(builder, resp, out, xslPath, con, query, req, this.cookies,
-							getResponseQueryText(req, query), getRepositoryReference());
-				} catch (MalformedQueryException exc) {
-					throw new BadRequestException(exc.getMessage(), exc);
-				} catch (HTTPQueryEvaluationException exc) {
-					if (exc.getCause() instanceof MalformedQueryException) {
-						throw new BadRequestException(exc.getCause().getMessage(), exc);
+					queryCoordinator.execute(handle, con,
+							currentHandle -> QueryRequestContext.activate(currentHandle.getRequestId())::close,
+							() -> {
+								try {
+									evaluateQuery(req, resp, out, xslPath, con);
+								} catch (Exception e) {
+									throw new TrackedQueryExecutionException(e);
+								}
+								return null;
+							});
+				} catch (TrackedQueryExecutionException e) {
+					Throwable cause = e.getCause();
+					if (cause instanceof IOException) {
+						throw (IOException) cause;
 					}
-					throw exc;
+					if (cause instanceof BadRequestException) {
+						throw (BadRequestException) cause;
+					}
+					if (cause instanceof RuntimeException) {
+						throw (RuntimeException) cause;
+					}
+					throw e;
 				}
+				return;
+			}
+			evaluateQuery(req, resp, out, xslPath, con);
+		}
+	}
+
+	private void evaluateQuery(final WorkbenchRequest req, final HttpServletResponse resp, final OutputStream out,
+			final String xslPath, RepositoryConnection con)
+			throws BadRequestException, RDF4JException, UnsupportedQueryResultFormatException, IOException {
+		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, out);
+		for (Namespace ns : Iterations.asList(con.getNamespaces())) {
+			builder.prefix(ns.getPrefix(), ns.getName());
+		}
+		String query = getQueryText(req);
+		if (query.isEmpty()) {
+			builder.transform(xslPath, "query.xsl");
+			builder.start();
+			builder.link(Arrays.asList(INFO, "namespaces"));
+			builder.end();
+		} else {
+			try {
+				EVAL.extractQueryAndEvaluate(builder, resp, out, xslPath, con, query, req, this.cookies,
+						getResponseQueryText(req, query), getRepositoryReference());
+			} catch (MalformedQueryException exc) {
+				throw new BadRequestException(exc.getMessage(), exc);
+			} catch (HTTPQueryEvaluationException exc) {
+				if (exc.getCause() instanceof MalformedQueryException) {
+					throw new BadRequestException(exc.getCause().getMessage(), exc);
+				}
+				throw exc;
 			}
 		}
 	}
@@ -860,6 +987,14 @@ public class QueryServlet extends TransformationServlet {
 
 	private boolean isSavedQueryReference(WorkbenchRequest req) {
 		return req.isParameterPresent(REF) && "id".equals(req.getParameter(REF));
+	}
+
+	private static final class TrackedQueryExecutionException extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+
+		private TrackedQueryExecutionException(Exception cause) {
+			super(cause);
+		}
 	}
 
 }

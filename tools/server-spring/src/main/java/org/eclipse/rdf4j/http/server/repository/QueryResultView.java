@@ -18,9 +18,11 @@ import java.nio.charset.Charset;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.lang.FileFormat;
+import org.eclipse.rdf4j.http.client.CancellableOperationCoordinator;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.slf4j.Logger;
@@ -71,18 +73,39 @@ public abstract class QueryResultView implements View {
 
 	public static final String BREAKER_HANDLE_KEY = "breakerHandle";
 
+	public static final String CANCELLATION_COORDINATOR_KEY = "cancellationCoordinator";
+
+	public static final String CANCELLATION_HANDLE_KEY = "cancellationHandle";
+
 	@SuppressWarnings("rawtypes")
 	@Override
 	public final void render(Map model, HttpServletRequest request, HttpServletResponse response) throws IOException {
 		RepositoryConnection conn = (RepositoryConnection) model.get(CONNECTION_KEY);
 		QueryCircuitBreakerHandle breakerHandle = (QueryCircuitBreakerHandle) model.get(BREAKER_HANDLE_KEY);
+		CancellableOperationCoordinator cancellationCoordinator = (CancellableOperationCoordinator) model
+				.get(CANCELLATION_COORDINATOR_KEY);
+		CancellableOperationCoordinator.Handle cancellationHandle = (CancellableOperationCoordinator.Handle) model
+				.get(CANCELLATION_HANDLE_KEY);
 		QueryExecutionContext.Activation activation = null;
 		try {
 			if (breakerHandle != null) {
 				breakerHandle.attachCurrentThread(conn);
 				activation = QueryExecutionContext.activate(breakerHandle);
 			}
-			renderInternal(model, request, response);
+			if (cancellationCoordinator == null || cancellationHandle == null) {
+				renderInternal(model, request, response);
+			} else {
+				cancellationCoordinator.execute(cancellationHandle, conn,
+						currentHandle -> QueryRequestContext.activate(currentHandle.getRequestId())::close,
+						() -> {
+							renderInternal(model, request, response);
+							return null;
+						});
+			}
+		} catch (IOException | RuntimeException e) {
+			if (!isExplicitlyCancelled(model)) {
+				throw e;
+			}
 		} finally {
 			try {
 				if (activation != null) {
@@ -94,8 +117,14 @@ public abstract class QueryResultView implements View {
 						conn.close();
 					}
 				} finally {
-					if (breakerHandle != null) {
-						QueryCircuitBreaker.getInstance().complete(breakerHandle);
+					try {
+						if (breakerHandle != null) {
+							QueryCircuitBreaker.getInstance().complete(breakerHandle);
+						}
+					} finally {
+						if (cancellationCoordinator != null && cancellationHandle != null) {
+							cancellationCoordinator.complete(cancellationHandle);
+						}
 					}
 				}
 			}
@@ -105,6 +134,13 @@ public abstract class QueryResultView implements View {
 	@SuppressWarnings("rawtypes")
 	protected abstract void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
 			throws IOException;
+
+	@SuppressWarnings("rawtypes")
+	protected boolean isExplicitlyCancelled(Map model) {
+		CancellableOperationCoordinator.Handle handle = (CancellableOperationCoordinator.Handle) model
+				.get(CANCELLATION_HANDLE_KEY);
+		return handle != null && !handle.isActive();
+	}
 
 	protected void setContentType(HttpServletResponse response, FileFormat fileFormat) throws IOException {
 		String mimeType = fileFormat.getDefaultMIMEType();

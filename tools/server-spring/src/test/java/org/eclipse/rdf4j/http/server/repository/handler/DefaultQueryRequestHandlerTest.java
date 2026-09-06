@@ -18,6 +18,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
+import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.repository.ExplainQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.resolver.RepositoryResolver;
@@ -217,7 +219,7 @@ class DefaultQueryRequestHandlerTest {
 	}
 
 	@Test
-	void handleCancelExplainShouldRejectBlankRequestId() throws Exception {
+	void handleCancelExplainShouldRejectBlankRequestIdAndReturnNotFoundForUnknownIds() throws Exception {
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(mock(RepositoryResolver.class));
 
 		MockHttpServletRequest request = new MockHttpServletRequest();
@@ -230,6 +232,131 @@ class DefaultQueryRequestHandlerTest {
 		assertThat(response.getStatus()).isEqualTo(MockHttpServletResponse.SC_BAD_REQUEST);
 		assertThat(response.getErrorMessage())
 				.isEqualTo("Missing parameter: " + Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME);
+
+		MockHttpServletRequest unknownRequest = newCancelExplainRequest("unknown-explanation");
+		MockHttpServletResponse unknownResponse = new MockHttpServletResponse();
+		assertThat(handler.handleCancelExplain(unknownRequest, unknownResponse)).isTrue();
+		assertThat(unknownResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_NOT_FOUND);
+	}
+
+	@Test
+	void handleCancelQueryShouldRejectBlankRequestIdAndReturnNotFoundForUnknownIds() throws Exception {
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(mock(RepositoryResolver.class));
+
+		MockHttpServletRequest blankRequest = newCancelQueryRequest("   ");
+		MockHttpServletResponse blankResponse = new MockHttpServletResponse();
+		assertThat(handler.handleCancelQuery(blankRequest, blankResponse)).isTrue();
+		assertThat(blankResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_BAD_REQUEST);
+		assertThat(blankResponse.getErrorMessage())
+				.isEqualTo("Missing parameter: " + Protocol.QUERY_REQUEST_ID_PARAM_NAME);
+
+		MockHttpServletRequest unknownRequest = newCancelQueryRequest("unknown-query");
+		MockHttpServletResponse unknownResponse = new MockHttpServletResponse();
+		assertThat(handler.handleCancelQuery(unknownRequest, unknownResponse)).isTrue();
+		assertThat(unknownResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_NOT_FOUND);
+	}
+
+	@Test
+	void regularQueryRequestIdShouldInterruptEvaluationAndForwardToProxyRepository() throws Exception {
+		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
+		HTTPRepository repository = mock(HTTPRepository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+
+		CountDownLatch queryStarted = new CountDownLatch(1);
+		CountDownLatch queryInterrupted = new CountDownLatch(1);
+		AtomicReference<String> queryRequestId = new AtomicReference<>();
+
+		MockHttpServletRequest queryRequest = newRegularQueryRequest("query-http");
+		MockHttpServletResponse queryResponse = new MockHttpServletResponse();
+
+		when(repositoryResolver.getRepository(queryRequest)).thenReturn(repository);
+		when(repositoryResolver.getRepositoryConnection(queryRequest, repository)).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null)).thenReturn(tupleQuery);
+		when(tupleQuery.evaluate()).thenAnswer(invocation -> {
+			queryRequestId.set(QueryRequestContext.getQueryRequestId());
+			queryStarted.countDown();
+			try {
+				new CountDownLatch(1).await();
+				return mock(TupleQueryResult.class);
+			} catch (InterruptedException e) {
+				queryInterrupted.countDown();
+				throw new QueryInterruptedException("interrupted", e);
+			}
+		});
+
+		try {
+			Future<ModelAndView> queryFuture = executor
+					.submit(() -> handler.handleQueryRequest(queryRequest, RequestMethod.POST, queryResponse));
+
+			assertThat(queryStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(queryRequestId).hasValue("query-http");
+
+			MockHttpServletResponse cancelResponse = new MockHttpServletResponse();
+			assertThat(handler.handleCancelQuery(newCancelQueryRequest("query-http"), cancelResponse)).isTrue();
+			assertThat(cancelResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_NO_CONTENT);
+			assertThat(queryInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(queryFuture.get(5, TimeUnit.SECONDS)).isNull();
+			verify(connection, atLeastOnce()).close();
+			verify(repository).cancelQuery("query-http");
+		} finally {
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void regularQueryRemainsCancellableWhileTupleResultIsRendered() throws Exception {
+		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult tupleResult = mock(TupleQueryResult.class);
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		CountDownLatch renderingStarted = new CountDownLatch(1);
+		CountDownLatch renderingInterrupted = new CountDownLatch(1);
+
+		MockHttpServletRequest queryRequest = newRegularQueryRequest("query-stream");
+		MockHttpServletResponse queryResponse = new MockHttpServletResponse();
+		when(repositoryResolver.getRepository(queryRequest)).thenReturn(repository);
+		when(repositoryResolver.getRepositoryConnection(queryRequest, repository)).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null)).thenReturn(tupleQuery);
+		when(tupleQuery.evaluate()).thenReturn(tupleResult);
+		when(tupleResult.getBindingNames()).thenReturn(List.of());
+		when(tupleResult.hasNext()).thenAnswer(invocation -> {
+			renderingStarted.countDown();
+			try {
+				new CountDownLatch(1).await();
+				return false;
+			} catch (InterruptedException e) {
+				renderingInterrupted.countDown();
+				throw new QueryInterruptedException("interrupted", e);
+			}
+		});
+
+		try {
+			ModelAndView result = handler.handleQueryRequest(queryRequest, RequestMethod.POST, queryResponse);
+			assertThat(result).isNotNull();
+
+			Future<?> renderFuture = executor.submit(() -> {
+				result.getView().render(result.getModel(), queryRequest, queryResponse);
+				return null;
+			});
+			assertThat(renderingStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+			MockHttpServletResponse cancelResponse = new MockHttpServletResponse();
+			assertThat(handler.handleCancelQuery(newCancelQueryRequest("query-stream"), cancelResponse)).isTrue();
+			assertThat(cancelResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_NO_CONTENT);
+			assertThat(renderingInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+			renderFuture.get(5, TimeUnit.SECONDS);
+
+			assertThat(queryResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_OK);
+			verify(connection, atLeastOnce()).close();
+		} finally {
+			executor.shutdownNow();
+		}
 	}
 
 	@Test
@@ -380,6 +507,24 @@ class DefaultQueryRequestHandlerTest {
 		request.setMethod(RequestMethod.POST.name());
 		request.setParameter(Protocol.CANCEL_EXPLAIN_PARAM_NAME, "true");
 		request.setParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME, explainRequestId);
+		return request;
+	}
+
+	private static MockHttpServletRequest newRegularQueryRequest(String queryRequestId) {
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.setMethod(RequestMethod.POST.name());
+		request.setContentType(Protocol.FORM_MIME_TYPE);
+		request.setParameter(Protocol.QUERY_PARAM_NAME, SELECT_ALL_QUERY);
+		request.setParameter(Protocol.QUERY_REQUEST_ID_PARAM_NAME, queryRequestId);
+		request.addHeader("Accept", "application/sparql-results+json");
+		return request;
+	}
+
+	private static MockHttpServletRequest newCancelQueryRequest(String queryRequestId) {
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.setMethod(RequestMethod.POST.name());
+		request.setParameter(Protocol.CANCEL_QUERY_PARAM_NAME, "true");
+		request.setParameter(Protocol.QUERY_REQUEST_ID_PARAM_NAME, queryRequestId);
 		return request;
 	}
 

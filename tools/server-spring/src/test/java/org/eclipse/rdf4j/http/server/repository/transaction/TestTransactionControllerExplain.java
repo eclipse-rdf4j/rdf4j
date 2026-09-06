@@ -220,6 +220,38 @@ class TestTransactionControllerExplain {
 	}
 
 	@Test
+	void shouldRejectTrackedAndCancelRegularQueryRequestsOnTransactionEndpoint() throws Exception {
+		Transaction txn = new Transaction(repository);
+		ActiveTransactionRegistry.INSTANCE.register(txn);
+
+		try {
+			TransactionController transactionController = new TransactionController();
+			MockHttpServletRequest trackedRequest = newRegularQueryRequest(txn.getID());
+			trackedRequest.setParameter(Protocol.QUERY_REQUEST_ID_PARAM_NAME, "query-123");
+
+			assertThatThrownBy(() -> transactionController.handleRequestInternal(trackedRequest, response))
+					.isInstanceOfSatisfying(ClientHTTPException.class, error -> {
+						assertThat(error.getStatusCode()).isEqualTo(400);
+						assertThat(error.getMessage()).contains("Tracked queries are not supported");
+					});
+
+			MockHttpServletRequest cancelRequest = newRegularQueryRequest(txn.getID());
+			cancelRequest.setParameter(Protocol.CANCEL_QUERY_PARAM_NAME, Boolean.TRUE.toString());
+			cancelRequest.setParameter(Protocol.QUERY_REQUEST_ID_PARAM_NAME, "query-123");
+
+			assertThatThrownBy(() -> transactionController.handleRequestInternal(cancelRequest,
+					new MockHttpServletResponse()))
+							.isInstanceOfSatisfying(ClientHTTPException.class, error -> {
+								assertThat(error.getStatusCode()).isEqualTo(400);
+								assertThat(error.getMessage()).contains("Canceling queries is not supported");
+							});
+		} finally {
+			closeQuietly(txn);
+			deregisterQuietly(txn);
+		}
+	}
+
+	@Test
 	void shouldRejectTransactionQueriesWhenCircuitBreakerIsHighPressure() throws Exception {
 		Transaction txn = new Transaction(repository);
 		ActiveTransactionRegistry.INSTANCE.register(txn);
@@ -289,6 +321,19 @@ class TestTransactionControllerExplain {
 		cancelRequest.setParameter(Protocol.CANCEL_EXPLAIN_PARAM_NAME, Boolean.TRUE.toString());
 		cancelRequest.setParameter(Protocol.EXPLAIN_REQUEST_ID_PARAM_NAME, explainRequestId);
 		return cancelRequest;
+	}
+
+	private MockHttpServletRequest newRegularQueryRequest(UUID transactionId) {
+		MockHttpServletRequest queryRequest = new MockHttpServletRequest();
+		queryRequest.setRequestURI("/repositories/" + repositoryID + "/transactions/" + transactionId);
+		queryRequest.setPathInfo(repositoryID + "/transactions/" + transactionId);
+		queryRequest.setMethod(HttpMethod.PUT.name());
+		queryRequest.setCharacterEncoding(StandardCharsets.UTF_8.name());
+		queryRequest.setContentType("application/sparql-query; charset=utf-8");
+		queryRequest.setContent(SELECT_ALL_QUERY.getBytes(StandardCharsets.UTF_8));
+		queryRequest.setParameter(Protocol.ACTION_PARAM_NAME, Protocol.Action.QUERY.toString());
+		queryRequest.addHeader("Accept", "application/sparql-results+json");
+		return queryRequest;
 	}
 
 	private static void closeQuietly(Transaction txn) {

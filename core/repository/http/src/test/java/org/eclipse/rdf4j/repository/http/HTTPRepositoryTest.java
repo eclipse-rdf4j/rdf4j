@@ -46,6 +46,31 @@ public class HTTPRepositoryTest {
 		verify(fallbackSession, never()).close();
 	}
 
+	@Test
+	public void testCancelQueryDelegatesToProtocolSession() throws Exception {
+		RDF4JProtocolSession session = mock(RDF4JProtocolSession.class);
+		TestHTTPRepository repository = new TestHTTPRepository(session);
+
+		repository.cancelQuery("query-789");
+
+		verify(session).cancelQuery("query-789");
+		verify(session).close();
+	}
+
+	@Test
+	public void testCancelQueryPrefersActiveQuerySession() throws Exception {
+		RDF4JProtocolSession activeSession = mock(RDF4JProtocolSession.class);
+		RDF4JProtocolSession fallbackSession = mock(RDF4JProtocolSession.class);
+		TestHTTPRepository repository = new TestHTTPRepository(fallbackSession);
+
+		repository.registerActiveQuerySession("query-789", activeSession);
+		repository.cancelQuery("query-789");
+
+		verify(activeSession).cancelQuery("query-789");
+		verify(fallbackSession, never()).cancelQuery(anyString());
+		verify(fallbackSession, never()).close();
+	}
+
 	private static final class TestHTTPRepository extends HTTPRepository {
 		private final RDF4JProtocolSession session;
 

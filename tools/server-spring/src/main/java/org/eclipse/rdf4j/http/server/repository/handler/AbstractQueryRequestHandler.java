@@ -21,10 +21,12 @@ import java.util.Optional;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
 import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
+import org.eclipse.rdf4j.http.client.CancellableOperationCoordinator;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
+import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.HTTPException;
@@ -60,10 +62,34 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 
 	private final AsyncExplainCoordinator asyncExplainCoordinator = new AsyncExplainCoordinator();
 
+	private final CancellableOperationCoordinator queryCoordinator = new CancellableOperationCoordinator();
+
 	private final QueryCircuitBreaker queryCircuitBreaker = QueryCircuitBreaker.getInstance();
 
 	public AbstractQueryRequestHandler(RepositoryResolver repositoryResolver) {
 		this.repositoryResolver = repositoryResolver;
+	}
+
+	@Override
+	public boolean handleCancelQuery(HttpServletRequest request, HttpServletResponse response) throws IOException {
+		if (!RequestMethod.POST.name().equals(request.getMethod())
+				|| request.getParameter(Protocol.CANCEL_QUERY_PARAM_NAME) == null) {
+			return false;
+		}
+
+		String queryRequestId = request.getParameter(Protocol.QUERY_REQUEST_ID_PARAM_NAME);
+		if (queryRequestId == null || queryRequestId.trim().isEmpty()) {
+			response.sendError(HttpServletResponse.SC_BAD_REQUEST,
+					"Missing parameter: " + Protocol.QUERY_REQUEST_ID_PARAM_NAME);
+			return true;
+		}
+
+		if (queryCoordinator.cancel(queryRequestId.trim())) {
+			response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+		} else {
+			response.sendError(HttpServletResponse.SC_NOT_FOUND);
+		}
+		return true;
 	}
 
 	@Override
@@ -80,9 +106,18 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			return true;
 		}
 
-		asyncExplainCoordinator.cancel(explainRequestId.trim());
-		response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+		if (asyncExplainCoordinator.cancel(explainRequestId.trim())) {
+			response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+		} else {
+			response.sendError(HttpServletResponse.SC_NOT_FOUND);
+		}
 		return true;
+	}
+
+	@Override
+	public void shutdown() {
+		queryCoordinator.shutdown();
+		asyncExplainCoordinator.shutdown();
 	}
 
 	@Override
@@ -94,6 +129,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		RepositoryConnection repositoryCon = null;
 		Object queryResponse = null;
 		QueryCircuitBreakerHandle breakerHandle = null;
+		CancellableOperationCoordinator.Handle queryHandle = null;
 
 		try {
 			Repository repository = repositoryResolver.getRepository(request);
@@ -102,10 +138,17 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			String queryString = getQueryString(request, requestMethod);
 			boolean headersOnly = requestMethod == RequestMethod.HEAD;
 			final Optional<String> explainRequestId = getExplainRequestId(request);
+			final Optional<String> queryRequestId = getQueryRequestId(request);
+			if (request.getParameter(Protocol.QUERY_REQUEST_ID_PARAM_NAME) != null && queryRequestId.isEmpty()) {
+				throw new ClientHTTPException("Missing parameter: " + Protocol.QUERY_REQUEST_ID_PARAM_NAME);
+			}
 			Runnable remoteCancel = null;
 			if (!headersOnly && request.getParameter(Protocol.EXPLAIN_PARAM_NAME) != null
 					&& explainRequestId.isPresent()) {
-				remoteCancel = createRemoteCancelAction(repository, explainRequestId.get());
+				remoteCancel = createRemoteExplainCancelAction(repository, explainRequestId.get());
+			} else if (!headersOnly && request.getParameter(Protocol.EXPLAIN_PARAM_NAME) == null
+					&& queryRequestId.isPresent()) {
+				remoteCancel = createRemoteQueryCancelAction(repository, queryRequestId.get());
 			}
 
 			logQuery(requestMethod, queryString);
@@ -132,6 +175,21 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 						explainRequestId.get(), breakerHandle);
 			}
 
+			if (!headersOnly && explainLevel.isEmpty() && queryRequestId.isPresent()) {
+				try {
+					queryHandle = queryCoordinator.register(queryRequestId.get(),
+							createRemoteQueryCancelAction(repository, queryRequestId.get()));
+				} catch (IllegalStateException e) {
+					closeConnection(repositoryCon);
+					repositoryCon = null;
+					queryCircuitBreaker.complete(breakerHandle);
+					breakerHandle = null;
+					response.sendError(HttpServletResponse.SC_BAD_REQUEST,
+							"Query request already active: " + queryRequestId.get());
+					return null;
+				}
+			}
+
 			try {
 				if (!headersOnly) {
 					// explain param is present, return the query explanation
@@ -149,8 +207,33 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 							repositoryCon = null;
 						}
 					}
-					try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activate(breakerHandle)) {
-						queryResponse = evaluateQuery(query, limit, offset, distinct);
+					if (queryHandle == null) {
+						try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activate(breakerHandle)) {
+							queryResponse = evaluateQuery(query, limit, offset, distinct);
+						}
+					} else {
+						QueryCircuitBreakerHandle activeBreakerHandle = breakerHandle;
+						queryResponse = queryCoordinator.execute(queryHandle, repositoryCon,
+								currentHandle -> {
+									QueryRequestContext.Activation queryActivation = QueryRequestContext
+											.activate(currentHandle.getRequestId());
+									QueryExecutionContext.Activation breakerActivation = QueryExecutionContext
+											.activate(activeBreakerHandle);
+									return () -> {
+										breakerActivation.close();
+										queryActivation.close();
+									};
+								},
+								() -> evaluateQuery(query, limit, offset, distinct));
+						if (!queryHandle.isActive()) {
+							closeConnection(repositoryCon);
+							repositoryCon = null;
+							queryCoordinator.complete(queryHandle);
+							queryHandle = null;
+							queryCircuitBreaker.complete(breakerHandle);
+							breakerHandle = null;
+							return null;
+						}
 					}
 				}
 
@@ -168,6 +251,11 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 
 				ModelAndView modelAndView = getModelAndView(request, response, headersOnly, repositoryCon, view,
 						queryResponse, registry, breakerHandle);
+				if (queryHandle != null) {
+					modelAndView.addObject(QueryResultView.CANCELLATION_COORDINATOR_KEY, queryCoordinator);
+					modelAndView.addObject(QueryResultView.CANCELLATION_HANDLE_KEY, queryHandle);
+					queryHandle = null;
+				}
 				breakerHandle = null;
 				repositoryCon = null;
 				return modelAndView;
@@ -188,6 +276,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			}
 
 		} catch (Exception e) {
+			boolean explicitlyCancelled = queryHandle != null && !queryHandle.isActive();
 			// only close the response & connection when an exception occurs. Otherwise, the QueryResultView will take
 			// care of closing it.
 			try {
@@ -204,8 +293,17 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 				} catch (Exception qre) {
 					logger.warn("Connection closing error", qre);
 				} finally {
-					queryCircuitBreaker.complete(breakerHandle);
+					try {
+						queryCircuitBreaker.complete(breakerHandle);
+					} finally {
+						if (queryHandle != null) {
+							queryCoordinator.complete(queryHandle);
+						}
+					}
 				}
+			}
+			if (explicitlyCancelled) {
+				return null;
 			}
 			throw e;
 		}
@@ -223,7 +321,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			throws IOException, HTTPException {
 		final AsyncExplainCoordinator.Handle handle;
 		try {
-			handle = asyncExplainCoordinator.register(explainRequestId, createRemoteCancelAction(repository,
+			handle = asyncExplainCoordinator.register(explainRequestId, createRemoteExplainCancelAction(repository,
 					explainRequestId));
 		} catch (IllegalStateException e) {
 			closeConnection(repositoryCon);
@@ -288,7 +386,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		}
 	}
 
-	private Runnable createRemoteCancelAction(Repository repository, String explainRequestId) {
+	private Runnable createRemoteExplainCancelAction(Repository repository, String explainRequestId) {
 		if (!(repository instanceof HTTPRepository)) {
 			return null;
 		}
@@ -299,6 +397,21 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 				httpRepository.cancelQueryExplanation(explainRequestId);
 			} catch (RepositoryException e) {
 				logger.debug("Remote explain cancellation failed for request {}", explainRequestId, e);
+			}
+		};
+	}
+
+	private Runnable createRemoteQueryCancelAction(Repository repository, String queryRequestId) {
+		if (!(repository instanceof HTTPRepository)) {
+			return null;
+		}
+
+		HTTPRepository httpRepository = (HTTPRepository) repository;
+		return () -> {
+			try {
+				httpRepository.cancelQuery(queryRequestId);
+			} catch (RepositoryException e) {
+				logger.debug("Remote query cancellation failed for request {}", queryRequestId, e);
 			}
 		};
 	}
@@ -396,6 +509,18 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			return Optional.empty();
 		}
 		return Optional.of(normalizedExplainRequestId);
+	}
+
+	protected Optional<String> getQueryRequestId(HttpServletRequest request) {
+		String queryRequestId = request.getParameter(Protocol.QUERY_REQUEST_ID_PARAM_NAME);
+		if (queryRequestId == null) {
+			return Optional.empty();
+		}
+		String normalizedQueryRequestId = queryRequestId.trim();
+		if (normalizedQueryRequestId.isEmpty()) {
+			return Optional.empty();
+		}
+		return Optional.of(normalizedQueryRequestId);
 	}
 
 	<T> T getParam(HttpServletRequest request, String distinctParamName, T defaultValue, Class<T> clazz)
