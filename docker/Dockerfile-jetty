@@ -1,14 +1,20 @@
 # Temp to reduce image size
 FROM ubuntu:noble AS temp
 
-RUN  apt-get clean && apt-get update && apt-get install -y unzip
+ARG OTEL_JAVAAGENT_VERSION=2.14.0
 
+RUN  apt-get clean && apt-get update && apt-get install -y unzip curl
 
 COPY ignore/rdf4j.zip /tmp/rdf4j.zip
 
 WORKDIR /tmp
 
 RUN unzip -q /tmp/rdf4j.zip
+
+# bundle the OpenTelemetry Java agent so it is available offline at container startup;
+# activated conditionally by entrypoint-jetty.sh, see there
+RUN curl -fsSL -o /tmp/opentelemetry-javaagent.jar \
+	"https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/${OTEL_JAVAAGENT_VERSION}/opentelemetry-javaagent-${OTEL_JAVAAGENT_VERSION}.jar"
 
 # Final workbench
 FROM jetty:12-jdk25-eclipse-temurin
@@ -20,6 +26,8 @@ ENV JAVA_OPTIONS="-Xmx2g -Dorg.eclipse.rdf4j.appdata.basedir=/var/rdf4j -Dorg.ec
 ENV JETTY_MODULES="server,bytebufferpool,threadpool,http,security,ee11-servlet,ee11-webapp,ee11-ext,ee11-plus,ee11-deploy,ee11-annotations,ee11-jsp,ee11-jstl"
 
 COPY --from=temp /tmp/eclipse-rdf4j*/war/*.war /var/lib/jetty/webapps/
+COPY --from=temp /tmp/opentelemetry-javaagent.jar /opt/otel/opentelemetry-javaagent.jar
+COPY entrypoint-jetty.sh /entrypoint.sh
 
 # mimic Tomcat directories for data and logs
 
@@ -28,9 +36,12 @@ RUN	ln -s /usr/local/jetty/logs /var/lib/jetty/logs && \
 	chown -R jetty:jetty /usr/local/jetty/logs && \
 	chown -R jetty:jetty /var/rdf4j && \
 	chown -R jetty:jetty /var/lib/jetty/webapps && \
+	chmod +x /entrypoint.sh && \
 	java -jar $JETTY_HOME/start.jar --add-to-start=$JETTY_MODULES --approve-all-licenses
 
 USER jetty
 
 EXPOSE 8080
+
+ENTRYPOINT ["/entrypoint.sh"]
 
