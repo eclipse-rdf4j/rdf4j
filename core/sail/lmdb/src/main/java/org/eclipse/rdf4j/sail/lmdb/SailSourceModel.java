@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Collection;
+import java.util.ConcurrentModificationException;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
@@ -58,6 +59,8 @@ class SailSourceModel extends AbstractModel {
 
 		final CloseableIteration<? extends Statement> stmts;
 		private final AtomicBoolean closed = new AtomicBoolean();
+		/** Set when a dataset rollover closed this iterator underneath its user. */
+		private volatile boolean invalidated;
 
 		Statement last;
 
@@ -68,6 +71,7 @@ class SailSourceModel extends AbstractModel {
 
 		@Override
 		public boolean hasNext() {
+			checkNotInvalidated();
 			try {
 				if (stmts.hasNext()) {
 					return true;
@@ -81,6 +85,7 @@ class SailSourceModel extends AbstractModel {
 
 		@Override
 		public Statement next() {
+			checkNotInvalidated();
 			try {
 				last = stmts.next();
 				if (last == null) {
@@ -118,6 +123,23 @@ class SailSourceModel extends AbstractModel {
 				} finally {
 					openStatementIterators.remove(this);
 				}
+			}
+		}
+
+		/**
+		 * Closes this iterator because its dataset is being rolled over; any further use fails instead of silently
+		 * reporting the end of the iteration.
+		 */
+		void invalidate() {
+			invalidated = true;
+			close();
+		}
+
+		private void checkNotInvalidated() {
+			if (invalidated) {
+				throw new ConcurrentModificationException(
+						"The model was modified and re-read while this iterator was open; use the iterator's remove() "
+								+ "or finish iterating before mixing modifications and reads");
 			}
 		}
 	}
@@ -509,7 +531,7 @@ class SailSourceModel extends AbstractModel {
 		Throwable failure = null;
 		for (StatementIterator iterator : openStatementIterators.toArray(StatementIterator[]::new)) {
 			try {
-				iterator.close();
+				iterator.invalidate();
 			} catch (RuntimeException | Error e) {
 				failure = suppress(failure, e);
 			}

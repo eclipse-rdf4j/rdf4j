@@ -87,22 +87,31 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			}
 			optionalOnlyVars.removeAll(leftJoin.getLeftArg().getBindingNames());
 			leftJoin.setAlgorithm(MaterializedReplayJoinIterator.class.getSimpleName());
+			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(leftJoin);
 			return bs -> new MaterializedReplayJoinIterator(left, right, scopedCondition, bs, true,
-					optionalOnlyVars);
+					optionalOnlyVars, joinAttributes);
 		}
 
 		// Check whether optional join is "well designed" as defined in section
 		// 4.2 of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
 		VarNameCollector optionalVarCollector = new VarNameCollector();
 		leftJoin.getRightArg().visit(optionalVarCollector);
-		QueryValueEvaluationStep condition;
+		final QueryValueEvaluationStep condition;
 		if (leftJoin.hasCondition()) {
 			leftJoin.getCondition().visit(optionalVarCollector);
 			condition = strategy.precompile(leftJoin.getCondition(), context);
 		} else {
 			condition = null;
 		}
-		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames());
+		Set<String> optionalVars = optionalVarCollector.getVarNames();
+		if (QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg, leftJoin.getLeftArg())) {
+			return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVars);
+		}
+		// The bind join never opens the optional operand when the left operand is empty, which may not suppress the
+		// operand's observable query-fatal error (for example a failed non-silent SERVICE).
+		return bs -> JoinQueryEvaluationStep.withGuaranteedRightEvaluation(right, bs,
+				trackedRight -> new LeftJoinQueryEvaluationStep(trackedRight, condition, left, leftJoin, optionalVars)
+						.evaluate(bs));
 	}
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,

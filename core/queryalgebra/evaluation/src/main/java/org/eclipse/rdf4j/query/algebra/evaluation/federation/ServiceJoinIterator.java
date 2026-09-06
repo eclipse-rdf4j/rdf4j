@@ -116,9 +116,9 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 					try (CloseableIteration<BindingSet> invocation = fs.select(service,
 							new HashSet<>(service.getServiceVars()), EmptyBindingSet.getInstance(),
 							service.getBaseURI())) {
-						while (invocation.hasNext()) {
-							invocation.next();
-						}
+						// a bounded probe: a failed request surfaces from select() itself or from the first
+						// response; the (unbounded) result is deliberately not consumed further
+						invocation.hasNext();
 					}
 				}
 				return;

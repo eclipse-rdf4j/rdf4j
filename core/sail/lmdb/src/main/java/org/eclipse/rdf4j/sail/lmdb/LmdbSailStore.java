@@ -803,6 +803,26 @@ class LmdbSailStore implements SailStore {
 	 */
 	LmdbPrefixRunScan openPrefixRunScan(boolean explicit, int[] prefixFields, Resource subj, IRI pred, Value obj,
 			Resource context, boolean countRunRows) throws IOException {
+		return openPrefixRunScan(null, explicit, prefixFields, subj, pred, obj, context, countRunRows);
+	}
+
+	/**
+	 * Opens a read transaction for
+	 * {@link #openPrefixRunScan(Txn, boolean, int[], Resource, IRI, Value, Resource, boolean)}; several scans sharing
+	 * it read one snapshot. The caller closes it after closing the scans.
+	 */
+	Txn createReadTxn() throws IOException {
+		return tripleStore.getTxnManager().createReadTxn();
+	}
+
+	/**
+	 * See {@link #openPrefixRunScan(boolean, int[], Resource, IRI, Value, Resource, boolean)}.
+	 *
+	 * @param sharedTxn a read transaction owned by the caller and kept open while the scan is used, so that several
+	 *                  scans read the same snapshot; {@code null} to let the scan own a fresh transaction
+	 */
+	LmdbPrefixRunScan openPrefixRunScan(Txn sharedTxn, boolean explicit, int[] prefixFields, Resource subj, IRI pred,
+			Value obj, Resource context, boolean countRunRows) throws IOException {
 		LmdbPrefixRunPlan plan = tripleStore.prefixRunPlan(prefixFields, subj != null, pred != null, obj != null,
 				context != null);
 		if (plan == null) {
@@ -842,13 +862,15 @@ class LmdbSailStore implements SailStore {
 				return LmdbPrefixRunScan.empty();
 			}
 		}
-		Txn txn = tripleStore.getTxnManager().createReadTxn();
+		Txn txn = sharedTxn != null ? sharedTxn : tripleStore.getTxnManager().createReadTxn();
 		try {
 			LmdbPrefixRunIterator cursor = tripleStore.getPrefixRuns(txn, plan, subjID, predID, objID, contextID,
 					explicit, countRunRows);
-			return new LmdbPrefixRunScan(txn, cursor, valueStore);
+			return new LmdbPrefixRunScan(sharedTxn != null ? null : txn, cursor, valueStore);
 		} catch (IOException | RuntimeException e) {
-			txn.close();
+			if (sharedTxn == null) {
+				txn.close();
+			}
 			throw e;
 		}
 	}

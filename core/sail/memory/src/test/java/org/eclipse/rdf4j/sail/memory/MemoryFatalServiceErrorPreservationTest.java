@@ -80,6 +80,12 @@ public class MemoryFatalServiceErrorPreservationTest {
 	}
 
 	@Test
+	public void emptyOptionalLeftOperandDoesNotSuppressServiceError() {
+		assertThrows(QueryEvaluationException.class,
+				() -> evaluate("SELECT * WHERE { VALUES ?x { } OPTIONAL { SERVICE <urn:fail:10> { ?s ?p ?o } } }"));
+	}
+
+	@Test
 	public void impossibleSameTermFilterDoesNotSuppressServiceError() {
 		assertThrows(QueryEvaluationException.class,
 				() -> evaluate(

@@ -174,10 +174,10 @@ public class RepositoryFederatedService implements FederatedService {
 	private final Repository rep;
 
 	/**
-	 * Whether the wrapped endpoint has been declared tolerant to partitioning one logical SERVICE Invocation into
-	 * several remote requests. See {@link #setPartitionToleranceDeclared(boolean)}.
+	 * Whether the wrapped endpoint is treated as tolerant to partitioning one logical SERVICE Invocation into several
+	 * remote requests. See {@link #setPartitionToleranceDeclared(boolean)}.
 	 */
-	private boolean partitionToleranceDeclared = false;
+	private boolean partitionToleranceDeclared = true;
 
 	/**
 	 * The number of bindings sent in a single subquery in {@link #evaluate(Service, CloseableIteration, String)} If
@@ -316,9 +316,10 @@ public class RepositoryFederatedService implements FederatedService {
 		// for SILENT, one empty mapping on failure). Splitting the input bindings into blocks and sending one
 		// remote request per block partitions that Invocation: separate requests may observe different remote
 		// state, generate distinct fresh values (UUID/BNODE), and fail partially — outcomes no single
-		// Invocation can produce. Partitioned (batched) evaluation is therefore only used when the endpoint
-		// has been explicitly declared partition-tolerant; otherwise the input is either pushed down in one
-		// single request (when small enough) or the service pattern is evaluated once and joined locally.
+		// Invocation can produce. Partitioned (batched) evaluation is nevertheless the default (every remote
+		// request stays constrained by the input bindings); when the endpoint has been declared NOT
+		// partition-tolerant the input is either pushed down in one single request (when small enough) or the
+		// service pattern is evaluated once and joined locally.
 		if (partitionToleranceDeclared && boundJoinBlockSize > 0) {
 			return new BatchingServiceIteration(bindings, boundJoinBlockSize, service);
 		}
@@ -777,10 +778,12 @@ public class RepositoryFederatedService implements FederatedService {
 	 * requests with observationally equivalent outcomes. SPARQL defines a constant-IRI SERVICE as one Invocation
 	 * producing one result multiset; block-wise evaluation sends several requests, which is only equivalent when the
 	 * endpoint guarantees: stable results for the duration of the query, equivalent blank node and volatile-function
-	 * behavior across requests, all-or-nothing failure, and equivalent SILENT handling. This is an affirmative
-	 * capability declaration by the operator — a deterministic remote pattern alone does not establish it. Default:
-	 * {@code false}, in which case the input bindings are either pushed down in one single request or the service
-	 * pattern is evaluated once and joined locally.
+	 * behavior across requests, all-or-nothing failure, and equivalent SILENT handling. Default: {@code true}, the
+	 * historical block-wise bound-join evaluation ({@link #setBoundJoinBlockSize(int)}), which keeps every remote
+	 * request constrained by the input bindings. Set to {@code false} to require one-Invocation semantics: the input
+	 * bindings are then either pushed down in one single request or, when they do not fit, the service pattern is
+	 * evaluated once unconstrained and joined locally (which can download the whole remote pattern extent and, for
+	 * endpoints that cap result sizes, silently truncate the join).
 	 */
 	public void setPartitionToleranceDeclared(boolean partitionToleranceDeclared) {
 		this.partitionToleranceDeclared = partitionToleranceDeclared;

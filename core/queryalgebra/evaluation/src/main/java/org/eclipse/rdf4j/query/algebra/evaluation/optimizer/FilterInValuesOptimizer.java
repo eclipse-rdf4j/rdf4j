@@ -90,13 +90,43 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 	/**
 	 * This optimizer runs after physical join planning. Introducing an unordered VALUES input changes the ordering
 	 * contract of every containing join, so an ancestor merge-join hint derived from the old subtree is no longer
-	 * valid. Descendant hints remain valid because their inputs are unchanged.
+	 * valid. Descendant hints remain valid because their inputs are unchanged. The statement orders a demoted merge
+	 * join pushed into its operands are reset too: left in place they would force ordered statement iteration and
+	 * disable the direct-lookup cache for a join that no longer merges.
 	 */
 	private static void invalidateAncestorMergeJoins(QueryModelNode rewrittenNode) {
+		Join outermostDemoted = null;
 		for (QueryModelNode parent = rewrittenNode.getParentNode(); parent != null; parent = parent.getParentNode()) {
-			if (parent instanceof Join join) {
+			if (parent instanceof Join join && join.isMergeJoin()) {
 				join.setMergeJoin(false);
+				outermostDemoted = join;
 			}
+		}
+		if (outermostDemoted != null) {
+			resetStaleOrders(outermostDemoted);
+		}
+	}
+
+	private static void resetStaleOrders(Join outermostDemoted) {
+		// remember the orders of the merge joins that stay valid below (outermost first), clear everything the
+		// demoted joins pushed down, then re-apply the valid orders so that inner hints keep their ordered inputs
+		List<Join> validMergeJoins = new ArrayList<>();
+		outermostDemoted.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
+			@Override
+			public void meet(Join join) {
+				if (join != outermostDemoted && join.isMergeJoin()) {
+					validMergeJoins.add(join);
+				}
+				super.meet(join);
+			}
+		});
+		List<Var> validOrders = new ArrayList<>(validMergeJoins.size());
+		for (Join join : validMergeJoins) {
+			validOrders.add(join.getOrder());
+		}
+		outermostDemoted.setOrder(null);
+		for (int i = 0; i < validMergeJoins.size(); i++) {
+			validMergeJoins.get(i).setOrder(validOrders.get(i));
 		}
 	}
 

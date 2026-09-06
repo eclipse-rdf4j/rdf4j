@@ -118,8 +118,9 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 				for (BindingSetAssignment bsa : collector.getBindingSetAssignments()) {
 					// check if the VALUES clause / bindingsetassignment contains
 					// one of the arguments of the sameTerm.
-					// if so, we can not inline.
-					Set<String> names = bsa.getAssuredBindingNames();
+					// if so, we can not inline. Any column that may bind the variable counts, including one
+					// with UNDEF rows (which is not an assured binding name).
+					Set<String> names = bsa.getBindingNames();
 					if (leftArg instanceof Var) {
 						if (names.contains(((Var) leftArg).getName())) {
 							return;

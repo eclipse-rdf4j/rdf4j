@@ -22,6 +22,7 @@ import static org.mockito.Mockito.when;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.ConcurrentModificationException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
@@ -50,6 +51,23 @@ import org.junit.jupiter.api.Timeout;
 public class SailSourceModelTest extends ModelTest {
 	List<LmdbSailStore> stores = new ArrayList<>();
 	List<File> storeDirs = new ArrayList<>();
+
+	/** A read after a modification rolls the dataset over; an iterator opened before must fail, not end silently. */
+	@Test
+	public void iteratorInvalidatedByRolloverFailsLoudly() {
+		SailSourceModel model = getNewModel();
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		for (int i = 0; i < 3; i++) {
+			model.add(vf.createIRI("urn:s" + i), RDF.TYPE, RDF.VALUE);
+		}
+		Iterator<Statement> it = model.iterator();
+		it.next();
+		model.add(vf.createIRI("urn:s3"), RDF.TYPE, RDF.VALUE);
+		// the contains() pre-check of remove(...) re-reads the model and rolls the dataset over
+		model.remove(vf.createIRI("urn:s3"), RDF.TYPE, RDF.VALUE);
+
+		assertThat(catchThrowable(it::hasNext)).isInstanceOf(ConcurrentModificationException.class);
+	}
 
 	@Test
 	public void testRemove() {

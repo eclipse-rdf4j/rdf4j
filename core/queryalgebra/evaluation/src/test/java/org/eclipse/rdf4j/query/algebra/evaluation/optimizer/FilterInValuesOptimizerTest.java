@@ -86,6 +86,34 @@ public class FilterInValuesOptimizerTest {
 				.matches(Join::isMergeJoin);
 	}
 
+	@Test
+	public void filterInValuesResetsStatementOrdersOfDemotedMergeJoinsOnly() {
+		StatementPattern inner1 = pattern("label", "inner1");
+		StatementPattern inner2 = pattern("label", "inner2");
+		Join descendantMergeJoin = new Join(inner1, inner2);
+		descendantMergeJoin.setOrder(Var.of("label"));
+		descendantMergeJoin.setMergeJoin(true);
+		Filter filter = new Filter(descendantMergeJoin,
+				new SameTerm(Var.of("label"),
+						new ValueConstant(SimpleValueFactory.getInstance().createLiteral("kept"))));
+		StatementPattern outer = pattern("label", "outer");
+		Join parentMergeJoin = new Join(outer, filter);
+		parentMergeJoin.setOrder(Var.of("label"));
+		parentMergeJoin.setMergeJoin(true);
+		QueryRoot root = new QueryRoot(parentMergeJoin);
+
+		new FilterInValuesOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(parentMergeJoin.isMergeJoin()).isFalse();
+		assertThat(outer.getStatementOrder())
+				.as("the demoted join no longer needs ordered input")
+				.isNull();
+		assertThat(findAll(root, StatementPattern.class))
+				.filteredOn(sp -> sp != outer && sp.getPredicateVar().getName().startsWith("pinner"))
+				.as("the descendant merge join keeps its ordered inputs (including the cloned copies)")
+				.allMatch(sp -> sp.getStatementOrder() != null);
+	}
+
 	private static StatementPattern pattern(String subjectName, String suffix) {
 		return new StatementPattern(Var.of(subjectName), Var.of("p" + suffix), Var.of("o" + suffix));
 	}

@@ -108,13 +108,15 @@ public class RepositoryFederatedServiceSemanticsTest {
 	}
 
 	/**
-	 * 16 input bindings exceed the default block size of 15. Without a declared partition tolerance the service must
-	 * still behave as ONE invocation: a remote {@code BIND(UUID())} yields one fresh UUID shared by every result row.
-	 * Block-wise evaluation would perform one invocation per block and expose two distinct UUIDs.
+	 * 16 input bindings exceed the default block size of 15. With the partition tolerance declared absent the service
+	 * must still behave as ONE invocation: a remote {@code BIND(UUID())} yields one fresh UUID shared by every result
+	 * row. Block-wise evaluation (the default) would perform one invocation per block and expose two distinct UUIDs.
 	 */
 	@Test
 	public void moreBindingsThanBlockSizeIsStillOneInvocation() {
-		useService(new RepositoryFederatedService(serviceRepo, false));
+		RepositoryFederatedService service = new RepositoryFederatedService(serviceRepo, false);
+		service.setPartitionToleranceDeclared(false);
+		useService(service);
 
 		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { " + values16("x")
 				+ " SERVICE <urn:dummy> { BIND(UUID() AS ?u) } }");
