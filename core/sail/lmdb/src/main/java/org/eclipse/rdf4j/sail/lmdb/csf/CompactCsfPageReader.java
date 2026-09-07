@@ -452,6 +452,41 @@ class CompactCsfPageReader {
 		return copied;
 	}
 
+	/**
+	 * Position relative to an already-known fiber boundary. The result packs the local fiber in
+	 * the high word and the skipped contexts in its low word. Skipping single-context rows is
+	 * constant time; other rows visit only intervening context counts, never their neighbor IDs.
+	 */
+	long seekFollowingFiber(int rowIndex, int fromFiber, int skipQuads) {
+		checkRow(rowIndex);
+		int start = rowFiberOffset(rowIndex);
+		int count = rowFiberOffset(rowIndex + 1) - start;
+		if (fromFiber < 0 || fromFiber > count || skipQuads < 0)
+			throw new IllegalArgumentException("invalid positioned fiber seek");
+		if (flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE)) {
+			int target = Math.addExact(fromFiber, skipQuads);
+			if (target > count) throw new IllegalArgumentException("fiber seek beyond row");
+			return (long) target << Integer.SIZE;
+		}
+		int fiber = fromFiber;
+		while (skipQuads > 0 && fiber < count) {
+			int contexts = fiberContextCount(start + fiber);
+			if (skipQuads < contexts) break;
+			skipQuads -= contexts;
+			fiber++;
+		}
+		if (fiber == count && skipQuads != 0) throw new IllegalArgumentException("fiber seek beyond row");
+		return ((long) fiber << Integer.SIZE) | Integer.toUnsignedLong(skipQuads);
+	}
+
+	/** Continue a decoded prefix across a gap without walking it again from the start of the row. */
+	long neighborBeforeFollowingFiber(int rowIndex, int fromFiber, int toFiber, long previousNeighbor) {
+		if (toFiber == fromFiber) return previousNeighbor;
+		if (fromFiber == 0) return neighborAtFiber(rowIndex, toFiber - 1);
+		int tail = rowFiberStart(rowIndex) - rowIndex + fromFiber - 1;
+		return previousNeighbor + neighborRangeSum(tail, toFiber - fromFiber);
+	}
+
 	/** Sequential continuation using the preceding decoded neighbor, never a repeated row-prefix walk. */
 	int copyFollowingFibers(int rowIndex, int fromFiber, int maximum, long previousNeighbor,
 			long[] neighbors, int neighborOffset, long[] weights, int weightOffset) {

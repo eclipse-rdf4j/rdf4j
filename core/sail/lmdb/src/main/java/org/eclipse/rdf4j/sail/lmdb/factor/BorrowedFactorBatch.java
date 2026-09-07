@@ -24,6 +24,8 @@ public final class BorrowedFactorBatch {
 	public static final byte RAW_U64 = 2;
 	public static final byte CSF_PAGE = 3;
 	public static final byte ENCODED_RUN = 4;
+	/** Query-local position selection; its address is intentionally zero, not a raw value span. */
+	public static final byte SELECTED = 5;
 
 	private final Source source;
 	private byte[] kinds;
@@ -66,6 +68,7 @@ public final class BorrowedFactorBatch {
 		ensureCapacity(lanes);
 		Arrays.fill(kinds, 0, Math.max(size, lanes), EMPTY);
 		Arrays.fill(counts, 0, Math.max(size, lanes), 0L);
+		if (source instanceof SelectedFactorSource) Arrays.fill(references, 0, Math.max(size, lanes), 0L);
 		if (arrays != null) Arrays.fill(arrays, 0, size, null);
 		size = lanes;
 		generation++;
@@ -84,7 +87,7 @@ public final class BorrowedFactorBatch {
 	}
 
 	public void bindNative(int lane, byte kind, long address, long reference, int coordinate, long count) {
-		checkLane(lane);
+		checkTargetLane(lane);
 		if (kind != RAW_U64 && kind != CSF_PAGE && kind != ENCODED_RUN)
 			throw new IllegalArgumentException("not a native relation kind");
 		if (count <= 0L || address == 0L || coordinate < 0)
@@ -103,7 +106,7 @@ public final class BorrowedFactorBatch {
 	}
 
 	public void bindHeap(int lane, long[] values, int offset, int count) {
-		checkLane(lane);
+		checkTargetLane(lane);
 		Objects.checkFromIndexSize(offset, count, Objects.requireNonNull(values).length);
 		if (arrays == null) arrays = new long[counts.length][];
 		arrays[lane] = values;
@@ -114,9 +117,23 @@ public final class BorrowedFactorBatch {
 		kinds[lane] = count == 0 ? EMPTY : HEAP;
 	}
 
+	/** Package-private: only the selected source can publish this descriptor kind. */
+	void bindSelected(int lane, long count) {
+		source.checkOpen();
+		Objects.checkIndex(lane, size);
+		if (!(source instanceof SelectedFactorSource) || count < 0L)
+			throw new IllegalArgumentException("invalid selected factor source or count");
+		kinds[lane] = count == 0L ? EMPTY : SELECTED;
+		counts[lane] = count;
+		addresses[lane] = 0L;
+		references[lane] = generation; // selected-source version survives descriptor copies
+		coordinates[lane] = 0;
+		if (arrays != null) arrays[lane] = null;
+	}
+
 	/** Copies positioning information only, never the relation's values. */
 	public void copyLaneFrom(int lane, BorrowedFactorBatch from, int fromLane) {
-		checkLane(lane);
+		checkTargetLane(lane);
 		from.checkLane(fromLane);
 		if (!source.sameSnapshot(from.source)) throw new IllegalArgumentException("mixed factor snapshots");
 		kinds[lane] = from.kinds[fromLane];
@@ -132,22 +149,42 @@ public final class BorrowedFactorBatch {
 
 	public Cursor cursor(int windowSize) { return new Cursor(this, windowSize); }
 
-	private void checkLane(int lane) {
+	private void checkTargetLane(int lane) {
 		source.checkOpen();
 		Objects.checkIndex(lane, size);
+	}
+
+	private void checkLane(int lane) {
+		checkTargetLane(lane);
+		if (source.extraValidation) source.validateDescriptor(kinds[lane], references[lane], coordinates[lane]);
 	}
 
 	/** An evaluation/snapshot lease, not one reference count per descriptor. */
 	public abstract static class Source implements AutoCloseable {
 		private final Object snapshot;
+		private final boolean extraValidation;
 		private boolean closed;
-		protected Source(Object snapshot) { this.snapshot = Objects.requireNonNull(snapshot); }
+		protected Source(Object snapshot) { this(snapshot, false); }
+		/** Dependent query-local sources opt into generation/descriptor checks at consumption boundaries. */
+		protected Source(Object snapshot, boolean extraValidation) {
+			this.snapshot = Objects.requireNonNull(snapshot);
+			this.extraValidation = extraValidation;
+		}
 		public final boolean sameSnapshot(Source other) {
 			return other != null && getClass() == other.getClass() && snapshot == other.snapshot;
 		}
 		public final void checkOpen() {
+			checkNotClosed();
+			if (extraValidation) validate();
+		}
+		/** Producer reset may discard an old view after its upstream producer has advanced. */
+		protected final void checkNotClosed() {
 			if (closed) throw new IllegalStateException("borrowed factor source is closed");
 		}
+		/** Derived sources validate dependency generations; ordinary physical sources have no extra work. */
+		protected void validate() { }
+		/** Versioned query-local descriptors remain valid even when copied to another batch. */
+		protected void validateDescriptor(byte kind, long reference, int coordinate) { }
 		public abstract Reader openReader();
 		protected void release() { }
 		@Override public final void close() {
@@ -169,10 +206,13 @@ public final class BorrowedFactorBatch {
 	 */
 	public static final class Cursor implements AutoCloseable {
 		private final BorrowedFactorBatch batch;
+		private final Source source;
+		private final boolean extraValidation;
 		private final Reader reader;
 		private final long[] values;
 		private final long[] weights;
 		private long generation;
+		private int lane;
 		private long end;
 		private long offset;
 		private int index;
@@ -186,7 +226,9 @@ public final class BorrowedFactorBatch {
 		private Cursor(BorrowedFactorBatch batch, int windowSize) {
 			if (windowSize <= 0) throw new IllegalArgumentException("non-positive window");
 			this.batch = batch;
-			this.reader = batch.source.openReader();
+			this.source = batch.source;
+			this.extraValidation = source.extraValidation;
+			this.reader = source.openReader();
 			values = new long[windowSize];
 			weights = new long[windowSize];
 		}
@@ -194,6 +236,7 @@ public final class BorrowedFactorBatch {
 		public void bind(int lane) {
 			checkOpen();
 			end = batch.count(lane);
+			this.lane = lane;
 			generation = batch.generation;
 			offset = 0L;
 			index = size = 0;
@@ -233,6 +276,7 @@ public final class BorrowedFactorBatch {
 			checkOpen();
 			if (!bound) throw new IllegalStateException("factor cursor has not been bound");
 			if (generation != batch.generation) throw new IllegalStateException("factor batch was reset during consumption");
+			if (extraValidation) source.validateDescriptor(batch.kinds[lane], batch.references[lane], batch.coordinates[lane]);
 		}
 
 		private boolean refill() {
@@ -255,7 +299,8 @@ public final class BorrowedFactorBatch {
 		public long weight() { return weight; }
 		private void checkOpen() {
 			if (closed) throw new IllegalStateException("factor cursor is closed");
-			batch.source.checkOpen();
+			if (extraValidation) source.checkOpen();
+			else source.checkNotClosed();
 		}
 		@Override public void close() {
 			if (!closed) { closed = true; reader.close(); }

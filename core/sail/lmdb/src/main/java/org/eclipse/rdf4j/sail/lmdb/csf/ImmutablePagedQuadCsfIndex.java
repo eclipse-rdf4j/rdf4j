@@ -3794,26 +3794,48 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	public static final class BorrowedPageReader extends CompactCsfPageReader {
 		private int row;
 		private int nextFiber;
+		private int skipContexts;
 		private long nextQuad;
+		private long edgeCount;
 		private long previousNeighbor;
+		private boolean bound;
 
 		public void bind(long pageAddress, int localRow) {
+			bound = false;
 			// Only validated addresses exported by RowCursor/KeyCursor enter this trusted boundary.
 			bindTrusted(pageAddress);
 			row = localRow;
-			rowQuadCount(row); // Check the row coordinate once, before native iteration.
-			nextFiber = 0;
-			nextQuad = 0L;
+			edgeCount = rowQuadCount(row); // Check the row coordinate before native iteration.
+			nextFiber = skipContexts = 0;
+			nextQuad = previousNeighbor = 0L;
+			bound = true;
 		}
 
+		/** Sequential windows, monotone gap seeks, and explicit backward seeks all preserve weights. */
 		public int copyFibers(long fromQuad, int maximum, long[] values, long[] weights) {
+			if (!bound || fromQuad < 0L || fromQuad > edgeCount || maximum < 0
+					|| maximum > values.length || maximum > weights.length)
+				throw new IllegalArgumentException("invalid borrowed page fiber range");
+			if (maximum == 0 || fromQuad == edgeCount) return 0;
 			if (fromQuad != nextQuad) {
-				throw new IllegalArgumentException("borrowed page fiber reader requires monotone complete fibers");
+				boolean forward = fromQuad > nextQuad;
+				int fromFiber = forward ? nextFiber : 0;
+				int skip = Math.toIntExact(forward ? fromQuad - nextQuad : fromQuad);
+				long position = seekFollowingFiber(row, fromFiber, skip);
+				int fiber = (int) (position >>> Integer.SIZE);
+				previousNeighbor = neighborBeforeFollowingFiber(row, fromFiber, fiber, forward ? previousNeighbor : 0L);
+				nextFiber = fiber;
+				skipContexts = (int) position;
+				nextQuad = fromQuad;
 			}
 			int copied = super.copyFollowingFibers(row, nextFiber, maximum, previousNeighbor, values, 0, weights, 0);
-			for (int i = 0; i < copied; i++) nextQuad = Math.addExact(nextQuad, weights[i]);
-			nextFiber += copied;
-			if (copied > 0) previousNeighbor = values[copied - 1];
+			if (copied > 0) {
+				weights[0] -= skipContexts;
+				skipContexts = 0;
+				for (int i = 0; i < copied; i++) nextQuad = Math.addExact(nextQuad, weights[i]);
+				nextFiber += copied;
+				previousNeighbor = values[copied - 1];
+			}
 			return copied;
 		}
 	}
@@ -3903,21 +3925,20 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		private void positionBorrowed(long ordinal) {
-			borrowedExtent = singlePageRow ? 0 : extentIndexOf(ordinal);
-			loadPage(singlePageRow ? firstPageId : extentPageIds[borrowedExtent]);
-			int localRow = borrowedExtent == 0 ? firstLocalRow : 0;
-			int local = Math.toIntExact(ordinal - (singlePageRow ? 0L : extentStarts[borrowedExtent]));
-			int fiberStart = rowFiberStart(localRow);
-			int fiber = 0;
-			while (local > 0) {
-				int count = fiberContextCount(fiberStart + fiber);
-				if (local < count) break;
-				local -= count;
-				fiber++;
-			}
+			int targetExtent = singlePageRow ? 0 : extentIndexOf(ordinal);
+			boolean forward = borrowedNextQuad >= 0L && ordinal > borrowedNextQuad && targetExtent == borrowedExtent;
+			loadPage(singlePageRow ? firstPageId : extentPageIds[targetExtent]);
+			int localRow = targetExtent == 0 ? firstLocalRow : 0;
+			int local = Math.toIntExact(forward ? ordinal - borrowedNextQuad
+					: ordinal - (singlePageRow ? 0L : extentStarts[targetExtent]));
+			int fromFiber = forward ? borrowedFiber : 0;
+			long position = seekFollowingFiber(localRow, fromFiber, local);
+			int fiber = (int) (position >>> Integer.SIZE);
+			borrowedPreviousNeighbor = neighborBeforeFollowingFiber(localRow, fromFiber, fiber,
+					forward ? borrowedPreviousNeighbor : 0L);
+			borrowedExtent = targetExtent;
 			borrowedFiber = fiber;
-			borrowedSkipContexts = local;
-			borrowedPreviousNeighbor = fiber == 0 ? 0L : neighborAtFiber(localRow, fiber - 1);
+			borrowedSkipContexts = (int) position;
 			borrowedNextQuad = ordinal;
 		}
 

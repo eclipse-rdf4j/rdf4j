@@ -8,7 +8,10 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.memoReadMask;
 
 import java.io.IOException;
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
+import org.eclipse.rdf4j.sail.lmdb.factor.FactorSelection;
+import org.eclipse.rdf4j.sail.lmdb.factor.SelectedFactorSource;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorProductCursor;
 
 /** Local, dependency-driven bridges between existing slot operators and grouped relation rows. */
@@ -21,10 +24,25 @@ final class LmdbNativeFactorRows {
 	}
 
 	static LmdbNativeFactorCursor filter(FilterPlan plan, RowState row) throws IOException {
+		return filter(plan, row, 0L);
+	}
+
+	/** Retain groups only when the immediate consumer does not already require their scalar values. */
+	private static LmdbNativeFactorCursor openDemanded(SlotPlan plan, RowState row, long scalarDemand) throws IOException {
+		return plan instanceof FilterPlan filter ? filter(filter, row, scalarDemand) : plan.openFactors(row);
+	}
+
+	private static LmdbNativeFactorCursor filter(FilterPlan plan, RowState row, long scalarDemand) throws IOException {
 		if (!enabled() || row.encounterOrderRequired || plan.filterMask < 0L) return null;
-		LmdbNativeFactorCursor input = plan.arg.openFactors(row);
+		boolean retainSelection = !"false".equals(System.getProperty("rdf4j.lmdb.factor.selection.enabled"))
+				&& (plan.filterMask & ~scalarDemand) != 0L;
+		LmdbNativeFactorCursor input = openDemanded(plan.arg, row, scalarDemand);
 		if (input == null) return null;
-		try { return new Filter(new Expanded(input, row, plan.filterMask), plan.filter, row); }
+		try {
+			if (retainSelection)
+				return new SelectingFilter(input, plan.filter, row, plan.filterMask);
+			return new Filter(new Expanded(input, row, plan.filterMask), plan.filter, row);
+		}
 		catch (RuntimeException | Error problem) { closeSuppressing(input, problem); throw problem; }
 	}
 
@@ -33,7 +51,7 @@ final class LmdbNativeFactorRows {
 		long reads = memoReadMask(plan.right);
 		// A known dependency set alone does not grant replay permission to unknown future plan kinds.
 		if (reads < 0L || !SlotPlan.encounterOrderReplaySafe(plan.right)) return null;
-		LmdbNativeFactorCursor left = plan.left.openFactors(row);
+		LmdbNativeFactorCursor left = openDemanded(plan.left, row, reads | plan.right.producedMask());
 		if (left == null) return null;
 		try { return new Joined(new Expanded(left, row, reads | plan.right.producedMask()), plan.right, row); }
 		catch (RuntimeException | Error problem) { closeSuppressing(left, problem); throw problem; }
@@ -48,7 +66,7 @@ final class LmdbNativeFactorRows {
 		}
 		// Keep intermediate scalar dependencies on a private trail. Only requested bindings escape.
 		RowState scratch = row.fork();
-		LmdbNativeFactorCursor input = plan.openFactors(scratch);
+		LmdbNativeFactorCursor input = openDemanded(plan, scratch, demanded);
 		if (input == null) return null;
 		try { return new Projected(new Expanded(input, scratch, demanded), scratch, row, slots); }
 		catch (RuntimeException | Error problem) { closeSuppressing(input, problem); throw problem; }
@@ -156,6 +174,184 @@ final class LmdbNativeFactorRows {
 		@Override public long multiplicity() { return weight; }
 		@Override public FactorEnvironment factors() { return empty; }
 		@Override public void close() { input.close(); }
+	}
+
+	/**
+	 * A unary restriction stays a relation. Each emitted selection is exact, but covers at most
+	 * one input decode window. Consequently an early consumer never forces a full degree-sized
+	 * selection or predicate scan. A cross-factor condition still opens its dependent product;
+	 * it is not incorrectly represented as independent unary selections.
+	 */
+	private static final class SelectingFilter implements LmdbNativeFactorCursor {
+		private static final int NONE = 0, UNARY = 1, PRODUCT = 2;
+		final LmdbNativeFactorCursor input;
+		final NativeBooleanFilter filter;
+		final RowState row;
+		final long reads;
+		final FactorEnvironment result;
+		SelectedFactorSource selected;
+		FactorSelection selection;
+		FactorProductCursor product;
+		BorrowedFactorBatch boundBatch;
+		BorrowedFactorBatch.Cursor reader;
+		FactorEnvironment factors;
+		int mark = -1, mode, slot, tick, windowAt, windowEnd;
+		boolean firstPart;
+		long inputWeight, weight, offset, demand;
+		long firstValue, firstWeight;
+		boolean closed;
+
+		SelectingFilter(LmdbNativeFactorCursor input, NativeBooleanFilter filter, RowState row, long reads) {
+			this.input = input; this.filter = filter; this.row = row; this.reads = reads;
+			result = new FactorEnvironment(row.slots.length);
+		}
+
+		@Override public boolean next() throws IOException {
+			if (closed) return false;
+			try {
+				result.clear();
+				if (selected != null) selected.clear();
+				while (true) {
+					if (cancelled(row, ++tick)) { close(); return false; }
+					if (mark >= 0) row.rollback(mark);
+					if (mode == UNARY) {
+						if (windowAt == windowEnd) {
+							int n = reader.nextWindow();
+							if (n == 0) { mode = NONE; continue; }
+							windowAt = reader.windowStart(); windowEnd = windowAt + n;
+						}
+						int acceptedMembers = scanWindow();
+						if (acceptedMembers < 0) { close(); return false; }
+						if (acceptedMembers == 0) continue;
+						long bit = 1L << slot;
+						result.append(factors, ~bit);
+						if (acceptedMembers == 1) {
+							// A singleton is already decoded and has no product to defer. Inline it instead of
+							// allocating a selection/reader merely to retrieve the same value again.
+							if (!row.bindOrCheckTerm(slot, firstValue)) throw new IllegalStateException("inconsistent filter binding");
+							weight = Math.multiplyExact(inputWeight, firstWeight);
+							return true;
+						}
+						long dependencies = factors.dependencies(slot) | (reads & ~bit);
+						// The whole factor passed: retain its original representation, including tiny spans.
+						if (selection.count() == factors.count(slot))
+							result.bind(slot, factors.batch(slot), factors.lane(slot), dependencies);
+						else {
+							if (selected == null) selected = new SelectedFactorSource(8);
+							result.bind(slot, selected.select(factors.batch(slot), factors.lane(slot), selection), 0,
+									dependencies);
+						}
+						weight = inputWeight;
+						return true;
+					}
+					if (mode == PRODUCT) {
+						while (product.next()) {
+							if (cancelled(row, ++tick)) { close(); return false; }
+							row.rollback(mark);
+							boolean compatible = true;
+							for (long rest = product.expandedMask(); rest != 0L; rest &= rest - 1L) {
+								int variable = Long.numberOfTrailingZeros(rest);
+								compatible &= row.bindOrCheckTerm(variable, product.value(variable));
+							}
+							if (compatible && filter.accept(row)) {
+								result.append(factors, ~demand);
+								weight = product.multiplicity();
+								return true;
+							}
+						}
+						row.rollback(mark);
+						mode = NONE;
+					}
+					if (!input.next()) { close(); return false; }
+					mark = row.mark();
+					factors = input.factors();
+					if ((row.boundMask() & factors.mask()) != 0L)
+						throw new IllegalStateException("deferred factor installed as a scalar binding");
+					inputWeight = input.multiplicity();
+					if (inputWeight < 0L) throw new IllegalStateException("negative input multiplicity");
+					boolean empty = inputWeight == 0L;
+					for (long rest = factors.mask(); rest != 0L; rest &= rest - 1L)
+						empty |= factors.count(Long.numberOfTrailingZeros(rest)) == 0L;
+					if (empty) continue;
+					demand = factors.mask() & reads;
+					if (demand == 0L) {
+						if (filter.accept(row)) {
+							result.append(factors, -1L); weight = inputWeight; return true;
+						}
+						continue;
+					}
+					if (Long.bitCount(demand) != 1) {
+						if (product == null) product = new FactorProductCursor(row.slots.length, READ_WINDOW);
+						product.bind(factors, reads, inputWeight);
+						mode = PRODUCT;
+						continue;
+					}
+					slot = Long.numberOfTrailingZeros(demand);
+					BorrowedFactorBatch batch = factors.batch(slot);
+					if (boundBatch != batch) {
+						if (reader != null) reader.close();
+						reader = null; boundBatch = null;
+						reader = batch.cursor(READ_WINDOW); boundBatch = batch;
+					}
+					reader.bind(factors.lane(slot)); offset = 0L; mode = UNARY;
+					windowAt = windowEnd = 0; firstPart = true;
+				}
+			} catch (IOException | RuntimeException | Error failure) {
+				closeSuppressing(this, failure); throw failure;
+			}
+		}
+
+		/** The hot unary kernel is separate from relation publication and product-state dispatch. */
+		private int scanWindow() {
+			FactorSelection matches = selection;
+			if (matches != null) matches.clear();
+			int acceptedMembers = 0, at = windowAt, end = windowEnd, checks = tick;
+			long position = offset, firstOffset = 0L, value = 0L, multiplicity = 0L;
+			boolean witness = firstPart;
+			long[] values = reader.windowValues(), weights = reader.windowWeights();
+			RowState state = row;
+			NativeBooleanFilter predicate = filter;
+			int variable = slot, restore = mark;
+			while (at < end) {
+				int i = at++;
+				if (cancelled(state, ++checks)) return -1;
+				boolean accepted;
+				try { accepted = state.bindOrCheckTerm(variable, values[i]) && predicate.accept(state); }
+				finally { state.rollback(restore); }
+				long count = weights[i];
+				if (accepted) {
+					if (acceptedMembers++ == 0) {
+						firstOffset = position; value = values[i]; multiplicity = count;
+					} else {
+						if (matches == null) matches = new FactorSelection(8);
+						if (acceptedMembers == 2) matches.add(firstOffset, multiplicity);
+						matches.add(position, count);
+					}
+				}
+				position = Math.addExact(position, count);
+				if (accepted && witness) { witness = false; break; }
+			}
+			windowAt = at; offset = position; tick = checks; firstPart = witness;
+			firstValue = value; firstWeight = multiplicity; selection = matches;
+			return acceptedMembers;
+		}
+
+		@Override public long multiplicity() { return weight; }
+		@Override public FactorEnvironment factors() { return result; }
+		@Override public void close() {
+			if (closed) return;
+			closed = true; result.clear(); factors = null;
+			try { if (reader != null) reader.close(); }
+			finally {
+				reader = null; boundBatch = null;
+				try { if (product != null) product.close(); }
+				finally {
+					if (selected != null) selected.close();
+					try { if (mark >= 0) row.rollback(mark); input.close(); }
+					finally { filter.close(); }
+				}
+			}
+		}
 	}
 
 	private static final class Filter implements LmdbNativeFactorCursor {

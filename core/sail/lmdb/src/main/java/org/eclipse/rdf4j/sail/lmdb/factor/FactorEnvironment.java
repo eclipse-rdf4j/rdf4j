@@ -95,7 +95,8 @@ public final class FactorEnvironment {
 	}
 
 	public void checkValid() {
-		for (long rest = mask; rest != 0L; rest &= rest - 1L) checkSlot(Long.numberOfTrailingZeros(rest));
+		for (long rest = mask; rest != 0L; rest &= rest - 1L)
+			count(Long.numberOfTrailingZeros(rest)); // also validate copied selected-descriptor versions
 	}
 
 	private void checkSlot(int slot) {
