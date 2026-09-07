@@ -36,7 +36,12 @@ public final class BorrowedTupleBatch {
 	public int size() { return size; }
 	public long generation() { return generation; }
 	public long reference(int lane) { checkLane(lane); return references[lane]; }
-	public long count(int lane) { checkLane(lane); return counts[lane]; }
+	public long count(int lane) {
+		checkLane(lane);
+		if (source.dependentViews && (references[lane] != 0L || counts[lane] != 0L))
+			source.validate(references[lane], counts[lane]);
+		return counts[lane];
+	}
 
 	public void reset(int lanes) {
 		source.checkOpen();
@@ -47,6 +52,7 @@ public final class BorrowedTupleBatch {
 			references = Arrays.copyOf(references, capacity);
 			counts = Arrays.copyOf(counts, capacity);
 		}
+		Arrays.fill(references, 0, Math.max(size, lanes), 0L);
 		Arrays.fill(counts, 0, Math.max(size, lanes), 0L);
 		size = lanes;
 		generation++;
@@ -56,7 +62,7 @@ public final class BorrowedTupleBatch {
 	public void bind(int lane, long reference, long count) {
 		checkLane(lane);
 		if (count < 0L) throw new IllegalArgumentException("negative tuple count");
-		if (count != 0L) source.validate(reference, count);
+		if (count != 0L || source.dependentViews) source.validate(reference, count);
 		references[lane] = reference;
 		counts[lane] = count;
 	}
@@ -64,13 +70,23 @@ public final class BorrowedTupleBatch {
 	/** Copies a descriptor, not payload or reader state. Sources must be identical. */
 	public void copyLaneFrom(int lane, BorrowedTupleBatch from, int fromLane) {
 		checkLane(lane);
-		from.checkLane(fromLane);
+		from.count(fromLane); // includes provenance of copied selected descriptors
 		if (source != from.source) throw new IllegalArgumentException("different tuple source");
 		references[lane] = from.references[fromLane];
 		counts[lane] = from.counts[fromLane];
 	}
 
 	public Cursor cursor(int window) { return new Cursor(this, window); }
+
+	/** Validate a retained descriptor in one dependency traversal, not through several getters. */
+	void checkSnapshot(int lane, long expectedGeneration, long reference, long count) {
+		if (generation != expectedGeneration)
+			throw new IllegalStateException("tuple descriptor generation changed");
+		checkLane(lane);
+		if (references[lane] != reference || counts[lane] != count)
+			throw new IllegalStateException("tuple descriptor was rebound");
+		if (source.dependentViews && (reference != 0L || count != 0L)) source.validate(reference, count);
+	}
 
 	private void checkLane(int lane) {
 		source.checkOpen();
@@ -80,15 +96,25 @@ public final class BorrowedTupleBatch {
 	/** One owner per immutable relation store, not an ownership operation per tuple or descriptor. */
 	public abstract static class Source implements AutoCloseable {
 		private final int columns;
+		private final boolean dependentViews;
 		private boolean closed;
-		protected Source(int columns) {
+		protected Source(int columns) { this(columns, false); }
+		/** A selected source validates its borrowed dependencies outside payload access. */
+		protected Source(int columns, boolean dependentViews) {
+			this.dependentViews = dependentViews;
 			if (columns < 1 || columns > Long.SIZE) throw new IllegalArgumentException("invalid tuple arity");
 			this.columns = columns;
 		}
 		public final int columns() { return columns; }
 		public final void checkOpen() {
+			checkNotClosed();
+			if (dependentViews) validateState();
+		}
+		protected final void checkNotClosed() {
 			if (closed) throw new IllegalStateException("borrowed tuple source is closed");
 		}
+		/** Query-specific views override this; physical sources need no extra dependent check. */
+		protected void validateState() { }
 		/** Validates a descriptor at publication/bind, not once per value. */
 		protected abstract void validate(long reference, long count);
 		public abstract Reader openReader();
@@ -134,7 +160,8 @@ public final class BorrowedTupleBatch {
 		private long[] currentRows;
 		private int currentOffset;
 		private long currentWeight;
-		private long generation, count, offset;
+		private long generation, count, offset, currentPosition;
+		private int lane;
 		private int index, size;
 		private boolean bound, closed;
 
@@ -154,7 +181,9 @@ public final class BorrowedTupleBatch {
 		public void bind(int lane) {
 			checkOpen();
 			batch.checkLane(lane);
-			count = batch.counts[lane];
+			count = batch.count(lane);
+			this.lane = lane;
+			currentPosition = 0L;
 			generation = batch.generation;
 			offset = 0L;
 			index = -1;
@@ -173,6 +202,7 @@ public final class BorrowedTupleBatch {
 		public boolean next() {
 			checkBound();
 			if (direct != null) return nextDirect();
+			currentPosition += currentWeight;
 			if (++index >= size && !refill()) {
 				currentWeight = 0L; return false;
 			}
@@ -212,6 +242,38 @@ public final class BorrowedTupleBatch {
 			index = 0;
 			return true;
 		}
+
+		/** True only for immutable source-owned rows, never a reusable decoding window. */
+		public boolean hasDirectRows() { return direct != null; }
+
+		/** Stable for this binding; callers must retain the source and descriptor provenance. */
+		public long[] directRowArray() {
+			checkBound();
+			if (direct == null || count == 0L) throw new IllegalStateException("no direct tuple backing");
+			return currentRows;
+		}
+
+		/** Offset already resolved by the source reader. No repeated chain walk or payload copy. */
+		public int directRowOffset() {
+			if (direct == null) throw new IllegalStateException("not a direct tuple reader");
+			weight();
+			return currentOffset;
+		}
+
+		/** Logical bag coordinate at the start of the current weighted tuple fragment. */
+		public long position() { weight(); return direct == null ? currentPosition : offset - currentWeight; }
+
+		/** One provenance check when capturing all current coordinates, not one check per accessor. */
+		void capture(TupleSelection selection) {
+			checkBound();
+			if (currentWeight == 0L) throw new IllegalStateException("no current tuple");
+			selection.addCurrent(batch, lane, generation, direct == null ? currentPosition : offset - currentWeight,
+					currentWeight, currentRows, currentOffset);
+		}
+
+		BorrowedTupleBatch boundBatch() { checkBound(); return batch; }
+		int boundLane() { checkBound(); return lane; }
+		long boundGeneration() { checkBound(); return generation; }
 
 		public long value(int column) {
 			Objects.checkIndex(column, columns);

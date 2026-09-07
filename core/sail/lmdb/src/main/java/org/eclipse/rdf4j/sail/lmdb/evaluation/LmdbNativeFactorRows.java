@@ -40,7 +40,7 @@ final class LmdbNativeFactorRows {
 		if (input == null) return null;
 		try {
 			if (retainSelection && input.mayHaveFactors())
-				return new SelectingFilter(input, plan.filter, row, plan.filterMask);
+				return new SelectingFilter(input, plan.filter, row, plan.filterMask, scalarDemand);
 			return new Filter(expand(input, row, plan.filterMask), plan.filter, row);
 		}
 		catch (RuntimeException | Error problem) { closeSuppressing(input, problem); throw problem; }
@@ -195,12 +195,13 @@ final class LmdbNativeFactorRows {
 	 * it is not incorrectly represented as independent unary selections.
 	 */
 	private static final class SelectingFilter implements LmdbNativeFactorCursor {
-		private static final int NONE = 0, UNARY = 1, PRODUCT = 2;
+		private static final int NONE = 0, UNARY = 1, PRODUCT = 2, TUPLE = 3;
 		final LmdbNativeFactorCursor input;
 		final NativeBooleanFilter filter;
 		final RowState row;
-		final long reads;
+		final long reads, scalarDemand;
 		final FactorEnvironment result;
+		TupleFactorFilter tupleFilter;
 		SelectedFactorSource selected;
 		FactorSelection selection;
 		FactorProductCursor product;
@@ -213,8 +214,8 @@ final class LmdbNativeFactorRows {
 		long firstValue, firstWeight;
 		boolean closed;
 
-		SelectingFilter(LmdbNativeFactorCursor input, NativeBooleanFilter filter, RowState row, long reads) {
-			this.input = input; this.filter = filter; this.row = row; this.reads = reads;
+		SelectingFilter(LmdbNativeFactorCursor input, NativeBooleanFilter filter, RowState row, long reads, long scalarDemand) {
+			this.input = input; this.filter = filter; this.row = row; this.reads = reads; this.scalarDemand = scalarDemand;
 			result = new FactorEnvironment(row.slots.length);
 		}
 
@@ -223,6 +224,7 @@ final class LmdbNativeFactorRows {
 			try {
 				result.clear();
 				if (selected != null) selected.clear();
+				if (tupleFilter != null) tupleFilter.clearOutput();
 				while (true) {
 					if (cancelled(row, ++tick)) { close(); return false; }
 					if (mark >= 0) row.rollback(mark);
@@ -256,6 +258,11 @@ final class LmdbNativeFactorRows {
 						weight = inputWeight;
 						return true;
 					}
+					if (mode == TUPLE) {
+						if (tupleFilter.next(result)) { weight = tupleFilter.multiplicity(); return true; }
+						mode = NONE;
+						if (row.cancellation.isCancellationRequested()) { close(); return false; }
+					}
 					if (mode == PRODUCT) {
 						while (product.next()) {
 							if (cancelled(row, ++tick)) { close(); return false; }
@@ -282,7 +289,7 @@ final class LmdbNativeFactorRows {
 					inputWeight = input.multiplicity();
 					if (inputWeight < 0L) throw new IllegalStateException("negative input multiplicity");
 					boolean empty = inputWeight == 0L;
-					for (long rest = factors.mask(); rest != 0L; rest &= rest - 1L)
+					for (long rest = factors.groupLeaders(); rest != 0L; rest &= rest - 1L)
 						empty |= factors.count(Long.numberOfTrailingZeros(rest)) == 0L;
 					if (empty) continue;
 					demand = factors.expansionClosure(reads);
@@ -292,7 +299,13 @@ final class LmdbNativeFactorRows {
 						}
 						continue;
 					}
-					if (Long.bitCount(demand) != 1 || factors.isTuple(Long.numberOfTrailingZeros(demand))) {
+					int leader = Long.numberOfTrailingZeros(demand);
+					boolean neededNow = (factors.expansionClosure(scalarDemand) & demand) != 0L;
+					if (!neededNow && factors.isTuple(leader) && factors.groupMask(leader) == demand) {
+						if (tupleFilter == null) tupleFilter = new TupleFactorFilter(row, filter, reads);
+						tupleFilter.bind(factors, leader, inputWeight, mark); mode = TUPLE; continue;
+					}
+					if (neededNow || Long.bitCount(demand) != 1 || factors.isTuple(leader)) {
 						if (product == null) product = new FactorProductCursor(row.slots.length, READ_WINDOW);
 						product.bind(factors, reads, inputWeight);
 						mode = PRODUCT;
@@ -358,9 +371,14 @@ final class LmdbNativeFactorRows {
 				reader = null; boundBatch = null;
 				try { if (product != null) product.close(); }
 				finally {
-					if (selected != null) selected.close();
-					try { if (mark >= 0) row.rollback(mark); input.close(); }
-					finally { filter.close(); }
+					try { if (tupleFilter != null) tupleFilter.close(); }
+					finally {
+						try { if (selected != null) selected.close(); }
+						finally {
+							try { if (mark >= 0) row.rollback(mark); input.close(); }
+							finally { filter.close(); }
+						}
+					}
 				}
 			}
 		}

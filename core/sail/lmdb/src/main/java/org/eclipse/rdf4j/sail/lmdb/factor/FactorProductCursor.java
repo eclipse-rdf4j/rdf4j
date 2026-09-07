@@ -95,10 +95,27 @@ public final class FactorProductCursor implements AutoCloseable {
 			}
 			return true;
 		}
+		// The common adjacency-only path never needs tuple tags or correlated-column traversal.
+		if (tupleLeaders == 0L) return nextUnary();
 		for (int i = width - 1; i >= 0; i--) {
 			int slot = order[i];
 			if (!((tupleLeaders & (1L << slot)) == 0L ? readers[slot].next() : tupleReaders[slot].next())) continue;
 			capture(i);
+			for (int j = i + 1; j < width; j++)
+				if (!restart(j)) throw new IllegalStateException("exact immutable factor changed during replay");
+			return true;
+		}
+		exhausted = true;
+		return false;
+	}
+
+	private boolean nextUnary() {
+		for (int i = width - 1; i >= 0; i--) {
+			int slot = order[i];
+			BorrowedFactorBatch.Cursor reader = readers[slot];
+			if (!reader.next()) continue;
+			values[slot] = reader.value();
+			prefixWeights[i + 1] = Math.multiplyExact(prefixWeights[i], reader.weight());
 			for (int j = i + 1; j < width; j++)
 				if (!restart(j)) throw new IllegalStateException("exact immutable factor changed during replay");
 			return true;
