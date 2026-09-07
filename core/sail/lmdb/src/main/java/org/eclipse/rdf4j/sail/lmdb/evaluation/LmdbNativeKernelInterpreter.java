@@ -64,6 +64,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorPredicate;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelIdMasks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
@@ -1591,7 +1593,67 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		};
 	}
 
+	private long guardScalar(Operand operand, long[] prefix, LmdbNativeKernelIr.FactorCountGuards spec) {
+		int position = spec.position(operand);
+		return position < 0 ? read(operand) : prefix[position];
+	}
+
+	private long[] guardColumn(Operand operand, long[][] columns, LmdbNativeKernelIr.FactorCountGuards spec) {
+		int position = spec.position(operand);
+		return position < 0 ? null : columns[position];
+	}
+
+	/** Dispatch per guard/window, sharing the exact primitive masks with generated code. */
+	private KernelFactorPredicate countPredicate(LmdbNativeKernelIr.FactorCountGuards spec) {
+		return new KernelFactorPredicate() {
+			@Override public int guardCount() { return spec.guards.length; }
+			@Override public long dependencies(int guard) { return spec.dependencies[guard]; }
+			@Override public boolean test(int guard, long[] prefix) {
+				Node node = spec.guards[guard];
+				if (node instanceof FilterCompareId filter) {
+					long a = guardScalar(filter.left, prefix, spec), b = guardScalar(filter.right, prefix, spec);
+					return filter.negated ? a != b : a == b;
+				}
+				if (node instanceof FilterEntryCompatible filter) {
+					long value = guardScalar(filter.value, prefix, spec);
+					return value == -1L || value == context.constants[filter.constant];
+				}
+				if (node instanceof FilterRangeUnsigned filter) {
+					long value = guardScalar(filter.value, prefix, spec);
+					return Long.compareUnsigned(value, context.constants[filter.lowConstant]) >= 0
+							&& Long.compareUnsigned(value, context.constants[filter.highConstant]) <= 0;
+				}
+				FilterInConstants filter = (FilterInConstants) node;
+				long value = guardScalar(filter.value, prefix, spec);
+				for (int constant : filter.constantIndices) if (value == context.constants[constant]) return true;
+				return false;
+			}
+			@Override public void filter(int guard, long[][] columns, long[] prefix, long[] selected, int size) {
+				Node node = spec.guards[guard];
+				if (node instanceof FilterCompareId filter) {
+					KernelIdMasks.compare(guardColumn(filter.left, columns, spec), guardScalar(filter.left, prefix, spec),
+							guardColumn(filter.right, columns, spec), guardScalar(filter.right, prefix, spec), filter.negated, selected, size);
+				} else if (node instanceof FilterEntryCompatible filter) {
+					KernelIdMasks.compatible(guardColumn(filter.value, columns, spec), guardScalar(filter.value, prefix, spec),
+							context.constants[filter.constant], selected, size);
+				} else if (node instanceof FilterRangeUnsigned filter) {
+					KernelIdMasks.range(guardColumn(filter.value, columns, spec), guardScalar(filter.value, prefix, spec),
+							context.constants[filter.lowConstant], context.constants[filter.highConstant], selected, size);
+				} else {
+					FilterInConstants filter = (FilterInConstants) node;
+					int[] indices = filter.constantIndices;
+					KernelIdMasks.in4(guardColumn(filter.value, columns, spec), guardScalar(filter.value, prefix, spec),
+							context.constants[indices[0]], context.constants[indices[indices.length > 1 ? 1 : 0]],
+							context.constants[indices[indices.length > 2 ? 2 : 0]], context.constants[indices[indices.length > 3 ? 3 : 0]], selected, size);
+				}
+			}
+		};
+	}
+
 	private Op buildPlanFactors(PlanFactors plan, Op next) {
+		LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
+		KernelFactorPredicate predicate = spec == null ? null : countPredicate(spec);
+		long[] terminalValues = spec == null ? null : new long[spec.terminalCols.length];
 		return () -> {
 			KernelPlan bound = context.plans[plan.plan];
 			for (int i = 0; i < plan.inputs.length; i++) bound.setInput(i, read(plan.inputs[i]));
@@ -1599,14 +1661,29 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			factorCursor = cursor;
 			long[] values = cursor.values();
 			try {
-				if (cursor.grouped() && factorCountFold) {
+				if (cursor.grouped() && (factorCountFold || predicate != null)) {
 					while (cursor.nextPrefix()) {
+						if (predicate != null) {
+							boolean exact = false;
+							for (AggregateOutput output : ((Aggregate) kernel.terminal).outputs) {
+								if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) { exact = true; break; }
+								int index = java.util.Arrays.binarySearch(spec.terminalCols, output.col);
+								if (guardScalar(spec.terminalValues[index], values, spec) != -1L) exact = true;
+							}
+							long reduced = cursor.reduceIndependent(predicate, spec.terminalDependencies, exact);
+							if (reduced >= 0L) {
+								for (int i = 0; i < terminalValues.length; i++) terminalValues[i] = guardScalar(spec.terminalValues[i], values, spec);
+								for (int i = 0; i < terminalValues.length; i++) v[spec.terminalCols[i]] = terminalValues[i];
+								if (reduced != 0L) updateTerminalBy(reduced);
+								continue;
+							}
+						}
 						factorAccepted = 0L;
 						while (cursor.nextBinding()) {
 							for (int i = 0; i < plan.scalarOutputs.length; i++) v[plan.outCols[plan.scalarOutputs[i]]] = values[i];
 							if (next.run()) return true;
 						}
-						if (factorAccepted != 0L) updateTerminalBy(Math.multiplyExact(factorAccepted, cursor.remainderMultiplicity()));
+						if (factorCountFold && factorAccepted != 0L) updateTerminalBy(Math.multiplyExact(factorAccepted, cursor.remainderMultiplicity()));
 					}
 				} else if (cursor.grouped()) {
 					while (cursor.next()) {

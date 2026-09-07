@@ -518,6 +518,108 @@ final class LmdbNativeKernelIr {
 		return true;
 	}
 
+	static final String FACTOR_WINDOWS_PROPERTY = "rdf4j.lmdb.janinoCodegen.factorWindows";
+
+	/**
+	 * Pure guard graph for prefix-local count elimination. Aliases are substituted structurally;
+	 * dependencies are compact scalar-output positions, independent of physical factor grouping.
+	 * Runtime grouping decides whether a guard is scalar, local to one zipped group, or a join.
+	 */
+	static final class FactorCountGuards {
+		final Node[] guards;
+		final long[] dependencies;
+		final int[] positions;
+		final int[] terminalCols;
+		final Operand[] terminalValues;
+		final long terminalDependencies;
+
+		FactorCountGuards(Node[] guards, long[] dependencies, int[] positions, int[] terminalCols,
+				Operand[] terminalValues, long terminalDependencies) {
+			this.guards = guards; this.dependencies = dependencies; this.positions = positions;
+			this.terminalCols = terminalCols; this.terminalValues = terminalValues;
+			this.terminalDependencies = terminalDependencies;
+		}
+		int position(Operand operand) { return operand.kind == Operand.COL ? positions[operand.index] : -1; }
+	}
+
+	private static FactorCountGuards factorCountGuards(Kernel kernel) {
+		if (factorPlan(kernel) == null || !(kernel.terminal instanceof Aggregate aggregate)
+				|| aggregate.outputs.length == 0 || kernel.telemetryMode != Kernel.TelemetryMode.NONE
+				|| "false".equals(System.getProperty(FACTOR_WINDOWS_PROPERTY))) return null;
+		for (AggregateOutput output : aggregate.outputs)
+			if (output.hookDistinct || (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT)) return null;
+		PlanFactors plan = factorPlan(kernel);
+		Operand[] aliases = new Operand[Long.SIZE];
+		int[] positions = new int[Long.SIZE]; java.util.Arrays.fill(positions, -1);
+		for (int i = 0; i < Long.SIZE; i++) aliases[i] = Operand.col(i);
+		for (int i = 0; i < plan.scalarOutputs.length; i++) positions[plan.outCols[plan.scalarOutputs[i]]] = i;
+		List<Node> guards = new ArrayList<>();
+		List<Long> dependencies = new ArrayList<>();
+		for (int i = 1; i < kernel.pipeline.size(); i++) {
+			Node node = kernel.pipeline.get(i);
+			if (node instanceof BindAlias alias) {
+				Operand value = resolveAlias(alias.source, aliases);
+				if (!prefixOperand(value, positions)) return null;
+				aliases[alias.dstCol] = value;
+				continue;
+			}
+			Node guard;
+			long dependency;
+			if (node instanceof FilterCompareId filter) {
+				Operand left = resolveAlias(filter.left, aliases), right = resolveAlias(filter.right, aliases);
+				if (!prefixOperand(left, positions) || !prefixOperand(right, positions)) return null;
+				guard = new FilterCompareId(filter.negated, left, right);
+				dependency = guardDependency(left, positions) | guardDependency(right, positions);
+			} else if (node instanceof FilterEntryCompatible filter) {
+				Operand value = resolveAlias(filter.value, aliases);
+				if (!prefixOperand(value, positions)) return null;
+				guard = new FilterEntryCompatible(value, filter.constant);
+				dependency = guardDependency(value, positions);
+			} else if (node instanceof FilterInConstants filter) {
+				// Preserve SIP observations and existing large-domain membership algorithms.
+				if (filter.domain >= 0 || filter.constantIndices.length > 4) return null;
+				Operand value = resolveAlias(filter.value, aliases);
+				if (!prefixOperand(value, positions)) return null;
+				guard = new FilterInConstants(value, filter.constantIndices.clone());
+				dependency = guardDependency(value, positions);
+			} else if (node instanceof FilterRangeUnsigned filter) {
+				Operand value = resolveAlias(filter.value, aliases);
+				if (!prefixOperand(value, positions)) return null;
+				guard = new FilterRangeUnsigned(value, filter.lowConstant, filter.highConstant);
+				dependency = guardDependency(value, positions);
+			} else return null;
+			guards.add(guard); dependencies.add(dependency);
+			if (guards.size() > Long.SIZE) return null;
+		}
+		long[] masks = new long[guards.size()];
+		for (int i = 0; i < masks.length; i++) masks[i] = dependencies.get(i);
+		BitSet terminals = new BitSet();
+		for (int col : aggregate.groupCols) terminals.set(col);
+		for (AggregateOutput output : aggregate.outputs) if (output.kind == AGG_COUNT) terminals.set(output.col);
+		int[] terminalCols = terminals.stream().toArray();
+		Operand[] terminalValues = new Operand[terminalCols.length];
+		long terminalDependencies = 0L;
+		for (int i = 0; i < terminalCols.length; i++) {
+			terminalValues[i] = aliases[terminalCols[i]];
+			if (!prefixOperand(terminalValues[i], positions)) return null;
+			terminalDependencies |= guardDependency(terminalValues[i], positions);
+		}
+		return new FactorCountGuards(guards.toArray(Node[]::new), masks, positions, terminalCols, terminalValues, terminalDependencies);
+	}
+
+	private static Operand resolveAlias(Operand operand, Operand[] aliases) {
+		return operand.kind == Operand.COL && operand.index < aliases.length ? aliases[operand.index] : operand;
+	}
+	private static boolean prefixOperand(Operand operand, int[] positions) {
+		// Reject loop-carried or uninitialized scratch registers: alias substitution is only sound
+		// for a closed current-prefix expression, not an arbitrary imperative register program.
+		return operand.kind != Operand.COL || (operand.index < positions.length && positions[operand.index] >= 0);
+	}
+	private static long guardDependency(Operand operand, int[] positions) {
+		int position = operand.kind == Operand.COL ? positions[operand.index] : -1;
+		return position < 0 ? 0L : 1L << position;
+	}
+
 	/** Shared by both execution tiers. Unknown or per-mapping effects conservatively reject the rewrite. */
 	private static int[] factorScalarOutputs(List<Node> pipeline, Terminal terminal) {
 		if (pipeline.isEmpty() || !(pipeline.get(0) instanceof PlanRows plan)
@@ -2939,6 +3041,7 @@ final class LmdbNativeKernelIr {
 		final int columnCount;
 		final Terminal terminal;
 		final Requirements requirements;
+		final FactorCountGuards factorCountGuards;
 		final TelemetryMode telemetryMode;
 		final AggregateStateMode aggregateStateMode;
 		final AggregateDistinctMode[] aggregateDistinctModes;
@@ -2980,6 +3083,7 @@ final class LmdbNativeKernelIr {
 			}
 			this.terminal.requirements(requirements);
 			validateColumns();
+			this.factorCountGuards = factorCountGuards(this);
 			AggregateProperties aggregateProperties = aggregateProperties(this.pipeline, this.terminal);
 			this.aggregateStateMode = aggregateProperties.stateMode;
 			this.aggregateDistinctModes = aggregateProperties.distinctModes;
@@ -2993,6 +3097,7 @@ final class LmdbNativeKernelIr {
 					? -1
 					: vectorTail;
 			StringBuilder key = new StringBuilder("ir1:");
+			if (factorCountGuards != null) key.append("fw1;");
 			if (vectorTailIndex >= 0) {
 				key.append("vt").append(vectorTailIndex).append(';');
 			}

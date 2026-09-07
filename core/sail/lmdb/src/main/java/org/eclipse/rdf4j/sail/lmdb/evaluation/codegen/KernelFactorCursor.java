@@ -29,9 +29,15 @@ public final class KernelFactorCursor implements AutoCloseable {
 	private final KernelCancellation cancellation;
 	private final long demand;
 	private FactorProductCursor product;
+	private KernelFactorCount counter;
+	private boolean productBound;
+	private boolean singletonDemand;
+	private boolean bindingsStarted;
+	private boolean reduced;
 	private FactorEnvironment environment;
 	private long epoch;
 	private long expanded;
+	private long deferredOutputs;
 	private long prefixWeight;
 	private long residualWeight;
 	private long currentWeight;
@@ -130,12 +136,19 @@ public final class KernelFactorCursor implements AutoCloseable {
 	}
 
 	private boolean nextBindingInternal() {
+		if (reduced) throw new IllegalStateException("prefix already reduced");
+		bindingsStarted = true;
 		positioned = false;
 		if ((++pollTick & 255) == 0) KernelRuntime.checkCancelled(cancellation);
 		if (expanded == 0L) {
 			if (!scalarPending) return false;
 			scalarPending = false;
 		} else {
+			if (!productBound) {
+				if (product == null) product = new FactorProductCursor(Long.SIZE, 256);
+				product.bind(environment, demand, 1L);
+				productBound = true;
+			}
 			if (!product.next()) return false;
 			copyExpanded();
 		}
@@ -156,20 +169,82 @@ public final class KernelFactorCursor implements AutoCloseable {
 			expanded = environment.expansionClosure(demand);
 			residualKnown = false;
 			boolean empty = false;
+			singletonDemand = expanded != 0L;
 			for (long rest = environment.groupLeaders(); rest != 0L; rest &= rest - 1L) {
-				if (environment.count(Long.numberOfTrailingZeros(rest)) == 0L) { empty = true; break; }
+				int leader = Long.numberOfTrailingZeros(rest);
+				long count = environment.count(leader);
+				if (count == 0L) { empty = true; break; }
+				if ((expanded & (1L << leader)) != 0L && count != 1L) singletonDemand = false;
 			}
 			if (empty) continue;
-			for (int i = 0; i < outputs.length; i++)
+			deferredOutputs = 0L;
+			for (int i = 0; i < outputs.length; i++) {
 				if ((expanded & (1L << slots[i])) == 0L) values[i] = factors.scalar(outputs[i]);
-			if (expanded != 0L) {
-				if (product == null) product = new FactorProductCursor(Long.SIZE, 256);
-				product.bind(environment, demand, 1L);
+				else deferredOutputs |= 1L << i;
 			}
+			productBound = bindingsStarted = reduced = false;
 			prefixActive = true;
 			scalarPending = true;
 			return true;
 		}
+	}
+
+	/**
+	 * Reduce pure guards independently where every guard touches at most one grouped relation.
+	 * Returns -1 without consuming the prefix when a guard couples distinct groups. A nonnegative
+	 * result consumes this prefix, including its hidden multiplicities; advance with nextPrefix().
+	 */
+	public long reduceIndependent(KernelFactorPredicate predicate) {
+		return reduceIndependent(predicate, 0L, true);
+	}
+
+	/**
+	 * terminalOutputs must be scalar in this prefix. When exactMultiplicity is false the caller
+	 * observes only existence (e.g. all COUNT operands unbound); a successful relation contributes
+	 * a witness weight of one, without multiplying an unobserved, possibly overflowing product.
+	 */
+	public long reduceIndependent(KernelFactorPredicate predicate, long terminalOutputs, boolean exactMultiplicity) {
+		if (groupedMode != 2 || !prefixActive || closed || bindingsStarted || reduced)
+			throw new IllegalStateException("prefix not available for independent reduction");
+		try {
+			if (environment.epoch() != epoch) throw new IllegalStateException("factor prefix advanced");
+			long schema = slots.length == Long.SIZE ? -1L : (1L << slots.length) - 1L;
+			if ((terminalOutputs & ~schema) != 0L) throw new IllegalArgumentException("terminal output outside schema");
+			// Pure scalar guards can reject even when a later guard or grouping key requires
+			// the general product path. Classify before allocating any selection workspace.
+			boolean independent = (terminalOutputs & deferredOutputs) == 0L;
+			int guards = predicate.guardCount();
+			if (guards < 0 || guards > Long.SIZE) throw new IllegalArgumentException("invalid guard count");
+			for (int i = 0; i < guards; i++) {
+				long dependencies = predicate.dependencies(i);
+				if ((dependencies & ~schema) != 0L) throw new IllegalArgumentException("guard outside schema");
+				long related = dependencies & deferredOutputs;
+				if (related == 0L) {
+					if (!predicate.test(i, values)) {
+						if (environment.epoch() != epoch) throw new IllegalStateException("prefix advanced during reduction");
+						environment.checkValid(); reduced = true; return 0L;
+					}
+				} else if ((related & (related - 1L)) != 0L) {
+					long group = environment.groupMask(slots[Long.numberOfTrailingZeros(related)]);
+					for (long rest = related & (related - 1L); rest != 0L; rest &= rest - 1L)
+						if ((group & (1L << slots[Long.numberOfTrailingZeros(rest)])) == 0L) independent = false;
+				}
+			}
+			if (environment.epoch() != epoch) throw new IllegalStateException("prefix advanced during reduction");
+			environment.checkValid();
+			if (!independent) return KernelFactorCount.UNSUPPORTED;
+			if (expanded == 0L) {
+				reduced = true;
+				return exactMultiplicity ? remainderMultiplicity() : 1L;
+			}
+			// One demanded logical tuple has no Cartesian growth to eliminate. Reuse the existing
+			// scalar continuation instead of allocating selection windows and invoking mask kernels.
+			if (singletonDemand && exactMultiplicity) return KernelFactorCount.UNSUPPORTED;
+			if (counter == null) counter = new KernelFactorCount(slots, cancellation);
+			long count = counter.count(environment, values, prefixWeight, predicate, exactMultiplicity);
+			reduced = count != KernelFactorCount.UNSUPPORTED;
+			return count;
+		} catch (RuntimeException | Error failure) { closeOnFailure(failure); throw failure; }
 	}
 
 	/** Weight already carried by the opened binding; no hidden cardinality is evaluated. */
@@ -264,6 +339,10 @@ public final class KernelFactorCursor implements AutoCloseable {
 		Throwable failure = null;
 		try { if (product != null) product.close(); }
 		catch (RuntimeException | Error problem) { failure = problem; }
+		try { if (counter != null) counter.close(); }
+		catch (RuntimeException | Error problem) {
+			if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
+		}
 		try { if (factors != null) factors.close(); else rows.close(); }
 		catch (RuntimeException | Error problem) {
 			if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);

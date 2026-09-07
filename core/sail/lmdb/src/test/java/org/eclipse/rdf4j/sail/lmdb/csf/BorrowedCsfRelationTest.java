@@ -197,4 +197,24 @@ public class BorrowedCsfRelationTest {
 		}
 	}
 
+ @Test public void independentCountWindowsUseRealCsfPagesAndContinuationFibers(){
+  for(int size:new int[]{91,180001}){
+   long[] values=new long[size],contexts=new long[size];long expected=0;
+   long low=Long.MIN_VALUE+id(1011),high=Long.MIN_VALUE+id(1111);
+   for(int i=0;i<size;i++){values[i]=Long.MIN_VALUE+id(i/7+1000);contexts[i]=id(i%7+1);if(Long.compareUnsigned(values[i],low)>=0&&Long.compareUnsigned(values[i],high)<=0)expected++;}
+   Row input=new Row(id(47),values,contexts);
+   try(var index=build(List.of(input));var source=new Source(index);var counter=new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorCount(new int[]{1},null)){
+    var row=new ImmutablePagedQuadCsfIndex.RowCursor();long ref=index.findLocalReference(0,0,input.root);index.resolve(ref,row);
+    var batch=new BorrowedFactorBatch(source,1);batch.reset(1);source.export(batch,0,row,ref);
+    var env=new org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment(2);env.bind(1,batch,0,1);
+    var predicate=new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorPredicate(){
+     public int guardCount(){return 1;}public long dependencies(int guard){return 1;}
+     public boolean test(int guard,long[] prefix){throw new AssertionError("factor not scalar");}
+     public void filter(int guard,long[][] columns,long[] prefix,long[] mask,int n){org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelIdMasks.range(columns[0],0,low,high,mask,n);}
+    };
+    equal(expected*3,counter.count(env,new long[1],3,predicate));
+   }
+  }
+ }
+
 }

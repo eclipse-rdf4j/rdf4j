@@ -436,12 +436,15 @@ final class LmdbNativeKernelEmitter {
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorCursor;\n")
+					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorPredicate;\n")
+					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelIdMasks;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;\n\n")
 					.append("public final class ")
 					.append(simpleName)
-					.append(" implements JaninoKernel {\n");
+					.append(kernel.factorCountGuards == null ? " implements JaninoKernel {\n"
+							: " implements JaninoKernel, KernelFactorPredicate {\n");
 
 			emitFields(source);
 			emitBind(source);
@@ -465,6 +468,7 @@ final class LmdbNativeKernelEmitter {
 			for (String method : methods) {
 				source.append(method);
 			}
+			if (kernel.factorCountGuards != null) emitFactorPredicate(source);
 			source.append("}\n");
 			return LmdbNativeGeneratedSourceOptimizer.optimize(source.toString(), telemetryEnabled());
 		}
@@ -6408,6 +6412,85 @@ final class LmdbNativeKernelEmitter {
 			body.append(indent).append("}\n");
 		}
 
+
+		private String factorScalar(Operand operand) {
+			int position = kernel.factorCountGuards.position(operand);
+			return position < 0 ? operand.token() : "prefix[" + position + "]";
+		}
+
+		private String factorColumn(Operand operand) {
+			int position = kernel.factorCountGuards.position(operand);
+			return position < 0 ? "null" : "columns[" + position + "]";
+		}
+
+		private String factorCondition(Node node) {
+			if (node instanceof FilterCompareId filter)
+				return factorScalar(filter.left) + (filter.negated ? " != " : " == ") + factorScalar(filter.right);
+			if (node instanceof FilterEntryCompatible filter)
+				return factorScalar(filter.value) + " == -1L || " + factorScalar(filter.value) + " == c" + filter.constant;
+			if (node instanceof FilterRangeUnsigned filter)
+				return "Long.compareUnsigned(" + factorScalar(filter.value) + ", c" + filter.lowConstant
+						+ ") >= 0 && Long.compareUnsigned(" + factorScalar(filter.value) + ", c" + filter.highConstant + ") <= 0";
+			FilterInConstants filter = (FilterInConstants) node;
+			StringBuilder result = new StringBuilder();
+			for (int constant : filter.constantIndices) {
+				if (!result.isEmpty()) result.append(" || ");
+				result.append(factorScalar(filter.value)).append(" == c").append(constant);
+			}
+			return result.toString();
+		}
+
+		private String factorMultiplicityObserved() {
+			Aggregate aggregate = (Aggregate) kernel.terminal;
+			LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
+			StringBuilder needed = new StringBuilder();
+			for (AggregateOutput output : aggregate.outputs) {
+				if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) return "true";
+				int index = java.util.Arrays.binarySearch(spec.terminalCols, output.col);
+				if (!needed.isEmpty()) needed.append(" || ");
+				needed.append(factorScalar(spec.terminalValues[index])).append(" != -1L");
+			}
+			return needed.isEmpty() ? "false" : "(" + needed + ")";
+		}
+
+		/** Shape-specialized mask dispatch, once per bounded window rather than per binding. */
+		private void emitFactorPredicate(StringBuilder source) {
+			LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
+			source.append("    public int guardCount() { return ").append(spec.guards.length).append("; }\n")
+					.append("    public long dependencies(int guard) {\n        switch (guard) {\n");
+			for (int i = 0; i < spec.guards.length; i++) source.append("        case ").append(i)
+					.append(": return 0x").append(Long.toUnsignedString(spec.dependencies[i], 16)).append("L;\n");
+			source.append("        default: throw new IllegalArgumentException(\"unknown factor guard\");\n        }\n    }\n")
+					.append("    public boolean test(int guard, long[] prefix) {\n        switch (guard) {\n");
+			for (int i = 0; i < spec.guards.length; i++) source.append("        case ").append(i)
+					.append(": return ").append(factorCondition(spec.guards[i])).append(";\n");
+			source.append("        default: throw new IllegalArgumentException(\"unknown factor guard\");\n        }\n    }\n")
+					.append("    public void filter(int guard, long[][] columns, long[] prefix, long[] selected, int size) {\n")
+					.append("        switch (guard) {\n");
+			for (int i = 0; i < spec.guards.length; i++) {
+				source.append("        case ").append(i).append(": ");
+				Node node = spec.guards[i];
+				if (node instanceof FilterCompareId filter) {
+					source.append("KernelIdMasks.compare(").append(factorColumn(filter.left)).append(", ")
+							.append(factorScalar(filter.left)).append(", ").append(factorColumn(filter.right)).append(", ")
+							.append(factorScalar(filter.right)).append(", ").append(filter.negated);
+				} else if (node instanceof FilterEntryCompatible filter) {
+					source.append("KernelIdMasks.compatible(").append(factorColumn(filter.value)).append(", ")
+							.append(factorScalar(filter.value)).append(", c").append(filter.constant);
+				} else if (node instanceof FilterRangeUnsigned filter) {
+					source.append("KernelIdMasks.range(").append(factorColumn(filter.value)).append(", ")
+							.append(factorScalar(filter.value)).append(", c").append(filter.lowConstant)
+							.append(", c").append(filter.highConstant);
+				} else {
+					FilterInConstants filter = (FilterInConstants) node;
+					source.append("KernelIdMasks.in4(").append(factorColumn(filter.value)).append(", ").append(factorScalar(filter.value));
+					for (int k = 0; k < 4; k++) source.append(", c").append(filter.constantIndices[k < filter.constantIndices.length ? k : 0]);
+				}
+				source.append(", selected, size); return;\n");
+			}
+			source.append("        default: throw new IllegalArgumentException(\"unknown factor guard\");\n        }\n    }\n");
+		}
+
 		private void emitPlanFactors(StringBuilder body, PlanFactors plan, String nextTemplate) {
 			String indent = "        ";
 			String cursor = "fc" + plan.plan;
@@ -6423,19 +6506,36 @@ final class LmdbNativeKernelEmitter {
 			body.append(indent).append("    if (").append(cursor).append(".grouped()) {\n");
 			body.append(indent).append("        long[] fv = ").append(cursor).append(".values();\n");
 			boolean fold = LmdbNativeKernelIr.foldFactorCounts(kernel);
-			if (fold) {
-				body.append(indent).append("        while (").append(cursor).append(".nextPrefix()) {\n")
-						.append(indent).append("            fa").append(plan.plan).append(" = 0L;\n")
-						.append(indent).append("            while (").append(cursor).append(".nextBinding()) {\n");
+			boolean structured = fold || kernel.factorCountGuards != null;
+			if (structured) {
+				body.append(indent).append("        while (").append(cursor).append(".nextPrefix()) {\n");
+				if (kernel.factorCountGuards != null) {
+					LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
+					body.append(indent).append("            long reduced = ").append(cursor)
+							.append(".reduceIndependent(this, 0x").append(Long.toUnsignedString(spec.terminalDependencies, 16))
+							.append("L, ").append(factorMultiplicityObserved().replace("prefix[", "fv[")).append(");\n")
+							.append(indent).append("            if (reduced >= 0L) {\n");
+					// Snapshot all alias sources before writing potentially overlapping result registers.
+					for (int i = 0; i < spec.terminalCols.length; i++) body.append(indent).append("                long ft")
+							.append(i).append(" = ").append(factorScalar(spec.terminalValues[i]).replace("prefix[", "fv[")).append(";\n");
+					for (int i = 0; i < spec.terminalCols.length; i++) body.append(indent).append("                v")
+							.append(spec.terminalCols[i]).append(" = ft").append(i).append(";\n");
+					body.append(indent).append("                if (reduced != 0L) updateBy(reduced);\n")
+							.append(indent).append("                continue;\n").append(indent).append("            }\n");
+				}
+				if (fold) body.append(indent).append("            fa").append(plan.plan).append(" = 0L;\n");
+				body.append(indent).append("            while (").append(cursor).append(".nextBinding()) {\n");
 			} else body.append(indent).append("        while (").append(cursor).append(".next()) {\n");
-			String inner = indent + (fold ? "                " : "            ");
+			String inner = indent + (structured ? "                " : "            ");
 			for (int i = 0; i < plan.scalarOutputs.length; i++)
 				body.append(inner).append("v").append(plan.outCols[plan.scalarOutputs[i]])
 						.append(" = fv[").append(i).append("];\n");
 			body.append(next(nextTemplate, inner));
-			if (fold) body.append(indent).append("            }\n")
-					.append(indent).append("            if (fa").append(plan.plan).append(" != 0L) updateBy(Math.multiplyExact(fa")
-					.append(plan.plan).append(", ").append(cursor).append(".remainderMultiplicity()));\n");
+			if (structured) {
+				body.append(indent).append("            }\n");
+				if (fold) body.append(indent).append("            if (fa").append(plan.plan).append(" != 0L) updateBy(Math.multiplyExact(fa")
+						.append(plan.plan).append(", ").append(cursor).append(".remainderMultiplicity()));\n");
+			}
 			body.append(indent).append("        }\n");
 			body.append(indent).append("    } else {\n");
 			body.append(indent).append("        long[] rows = ").append(cursor).append(".rowValues();\n")
