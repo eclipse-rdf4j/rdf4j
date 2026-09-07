@@ -15,6 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.util.Comparator;
 import java.util.Set;
@@ -34,6 +37,37 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.Test;
 
 class UnionSailDatasetTest {
+
+	@Test
+	void nestedNamespaceChangesPreserveNativeStatementCounting() {
+		SailDataset backing = mock(SailDataset.class);
+		when(backing.getStatementCount(null, null, null)).thenReturn(17L);
+		when(backing.getStatements(null, null, null))
+				.thenThrow(new AssertionError("namespace changes must not force statement iteration"));
+		Changeset addedNamespace = namespaceChangeset();
+		addedNamespace.setNamespace("ex", "urn:example:");
+		Changeset clearedNamespaces = namespaceChangeset();
+		clearedNamespaces.clearNamespaces();
+		try (SailDataset dataset = new SailDatasetImpl(new SailDatasetImpl(backing, addedNamespace),
+				clearedNamespaces)) {
+			assertEquals(17L, dataset.getStatementCount(null, null, null));
+			verify(backing).getStatementCount(null, null, null);
+		}
+		verify(backing).close();
+	}
+
+	private static Changeset namespaceChangeset() {
+		return new Changeset() {
+			@Override
+			public void flush() throws SailException {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+		};
+	}
 
 	@Test
 	void getComparatorReturnsNullWhenOnlyOneBranchHasComparator() {

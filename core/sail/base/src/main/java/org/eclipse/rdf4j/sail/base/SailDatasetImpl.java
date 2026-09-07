@@ -95,6 +95,14 @@ class SailDatasetImpl implements SailDataset {
 	}
 
 	@Override
+	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		if (!hasStatementChanges()) {
+			return derivedFrom.getStatementCount(subj, pred, obj, contexts);
+		}
+		return SailDataset.super.getStatementCount(subj, pred, obj, contexts);
+	}
+
+	@Override
 	public String getNamespace(String prefix) throws SailException {
 		Map<String, String> addedNamespaces = changes.getAddedNamespaces();
 		if (addedNamespaces != null && addedNamespaces.containsKey(prefix)) {

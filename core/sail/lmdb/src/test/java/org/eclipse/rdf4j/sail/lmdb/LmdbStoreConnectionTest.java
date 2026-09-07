@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -19,9 +20,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
@@ -29,9 +32,14 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryConnectionTest;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -44,6 +52,86 @@ public class LmdbStoreConnectionTest extends RepositoryConnectionTest {
 	@Override
 	protected boolean deleteDataDirAfterShutdown() {
 		return true;
+	}
+
+	@ParameterizedTest
+	@MethodSource("parameters")
+	@Timeout(30)
+	public void testSizeWithContextsInferredStatementsAndPendingChanges(IsolationLevel level) {
+		setupTest(level);
+		IRI firstContext = vf.createIRI("urn:size:first");
+		IRI secondContext = vf.createIRI("urn:size:second");
+		IRI unknownContext = vf.createIRI("urn:size:unknown");
+		testCon.begin();
+		testCon.add(bob, RDF.TYPE, FOAF.PERSON);
+		testCon.add(bob, RDF.TYPE, FOAF.PERSON, firstContext);
+		testCon.add(alice, RDF.TYPE, FOAF.PERSON, firstContext, secondContext);
+		testCon.commit();
+		testCon.begin();
+		InferencerConnection sailConnection = (InferencerConnection) ((SailRepositoryConnection) testCon)
+				.getSailConnection();
+		sailConnection.addInferredStatement(vf.createIRI("urn:size:inferred"), RDF.TYPE, FOAF.PERSON, firstContext);
+		testCon.commit();
+
+		assertEquals(4, testCon.size());
+		assertEquals(1, testCon.size((IRI) null));
+		assertEquals(2, testCon.size(firstContext));
+		assertEquals(1, testCon.size(secondContext));
+		assertEquals(3, testCon.size(firstContext, secondContext));
+		assertEquals(3, testCon.size(null, firstContext));
+		assertEquals(0, testCon.size(unknownContext));
+		assertEquals(2, testCon.size(firstContext, unknownContext));
+
+		testCon.begin();
+		testCon.setNamespace("size", "urn:size:");
+		assertEquals(4, testCon.size());
+		testCon.add(bob, RDF.TYPE, FOAF.PERSON, firstContext);
+		assertEquals(4, testCon.size(), "a repeated statement must not increase the count");
+		testCon.remove(bob, RDF.TYPE, FOAF.PERSON, firstContext);
+		assertEquals(3, testCon.size());
+		assertEquals(1, testCon.size(firstContext));
+		testCon.clear(secondContext);
+		assertEquals(2, testCon.size());
+		assertEquals(0, testCon.size(secondContext));
+		testCon.add(bob, RDF.TYPE, FOAF.PERSON, secondContext);
+		assertEquals(3, testCon.size());
+		testCon.commit();
+		assertEquals(3, testCon2.size());
+		assertEquals(1, testCon2.size(firstContext));
+	}
+
+	static Stream<IsolationLevel> snapshotSizeLevels() {
+		return Stream.of(IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
+	}
+
+	@ParameterizedTest
+	@MethodSource("snapshotSizeLevels")
+	@Timeout(30)
+	public void testSizeRetainsSnapshotAndIncludesLocalChanges(IsolationLevel level) {
+		setupTest(level);
+		testCon.add(bob, RDF.TYPE, FOAF.PERSON);
+		testCon.begin();
+		assertEquals(1, testCon.size());
+		testCon2.add(alice, RDF.TYPE, FOAF.PERSON);
+		assertEquals(1, testCon.size(), "the count must retain the reader's snapshot");
+		testCon.add(vf.createIRI("urn:size:local"), RDF.TYPE, FOAF.PERSON);
+		assertEquals(2, testCon.size(), "local changes must be combined with the pinned snapshot");
+		testCon.rollback();
+		assertEquals(2, testCon.size(), "rollback must release the snapshot and discard local changes");
+	}
+
+	@Test
+	@Timeout(30)
+	public void testSerializableSizeObservesConcurrentInsert() {
+		setupTest(IsolationLevels.SERIALIZABLE);
+		testCon.add(bob, RDF.TYPE, FOAF.PERSON);
+		testCon.begin();
+		assertEquals(1, testCon.size());
+		testCon2.add(alice, RDF.TYPE, FOAF.PERSON);
+		testCon.add(vf.createIRI("urn:size:local"), RDF.TYPE, FOAF.PERSON);
+		assertThrows(RepositoryException.class, testCon::commit);
+		testCon.rollback();
+		assertEquals(2, testCon2.size());
 	}
 
 	@ParameterizedTest

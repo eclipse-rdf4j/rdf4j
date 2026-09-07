@@ -21,7 +21,6 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
-import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -532,10 +531,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	@Override
 	protected long sizeInternal(Resource... contexts) throws SailException {
-//		try (Stream<? extends Statement> stream = getStatementsInternal(null, null, null, false, contexts).stream()) {
-//			return stream.count();
-//		}
-		return 0;
+		try (SailSource branch = branch(IncludeInferred.explicitOnly);
+				SailDataset snapshot = branch.dataset(getIsolationLevel())) {
+			return snapshot.getStatementCount(null, null, null, contexts);
+		}
 	}
 
 	@Override
