@@ -12,7 +12,7 @@ import java.util.Objects;
 /**
  * Borrowed native unsigned-64-bit ID spans. The supplied lease must keep the allocation
  * immutable and address-stable until this source closes; a raw address alone is not a lease.
- * Readers use a bounded slice of the original segment, never ofAddress/reinterpret.
+ * Readers validate a span against the original allocation, never ofAddress/reinterpret.
  * Closing a caller-owned FFM arena early therefore fails safely rather than reading freed memory.
  */
 public final class NativeLongFactorSource extends BorrowedFactorBatch.Source {
@@ -33,37 +33,47 @@ public final class NativeLongFactorSource extends BorrowedFactorBatch.Source {
 		if (target.source() != this) throw new IllegalArgumentException("different source");
 		if (count <= 0L) throw new IllegalArgumentException("non-positive count");
 		long bytes = Math.multiplyExact(count, Long.BYTES);
-		MemorySegment slice = allocation.asSlice(byteOffset, bytes);
-		target.bindNative(lane, BorrowedFactorBatch.RAW_U64, slice.address(), byteOffset, 0, count);
+		Objects.checkFromIndexSize(byteOffset, bytes, allocation.byteSize());
+		target.bindNative(lane, BorrowedFactorBatch.RAW_U64, allocation.address() + byteOffset, byteOffset, 0, count);
 	}
 
 	@Override public BorrowedFactorBatch.Reader openReader() {
 		checkOpen();
 		return new BorrowedFactorBatch.Reader() {
-			private MemorySegment span;
+			private long byteBase;
+			private boolean bound;
 			private long count;
 			@Override public void bind(BorrowedFactorBatch batch, int lane) {
 				checkOpen();
 				if (batch.source() != NativeLongFactorSource.this || batch.kind(lane) != BorrowedFactorBatch.RAW_U64)
 					throw new IllegalArgumentException("incompatible raw factor");
-				count = batch.count(lane);
-				span = allocation.asSlice(batch.reference(lane), Math.multiplyExact(count, Long.BYTES));
-				if (span.address() != batch.address(lane)) throw new IllegalArgumentException("inconsistent raw address");
+				bound = false;
+				long length = batch.count(lane);
+				long base = batch.reference(lane);
+				Objects.checkFromIndexSize(base, Math.multiplyExact(length, Long.BYTES), allocation.byteSize());
+				if (allocation.address() + base != batch.address(lane))
+					throw new IllegalArgumentException("inconsistent raw address");
+				byteBase = base;
+				count = length;
+				bound = true;
 			}
 			@Override public int copyFibers(long offset, int maximum, long[] values, long[] weights) {
 				checkOpen();
-				if (span == null || offset < 0L || offset > count || maximum < 0
+				if (!bound || offset < 0L || offset > count || maximum < 0
 						|| maximum > values.length || maximum > weights.length)
 					throw new IllegalArgumentException("invalid raw read");
-				MemorySegment memory = span;
-				int copied = 0;
-				long end = offset + Math.min(count - offset, Math.max(maximum, 4096));
-				while (offset < end && copied < maximum) {
-					long value = memory.get(ID, offset * Long.BYTES);
-					long start = offset++;
-					while (offset < end && memory.get(ID, offset * Long.BYTES) == value) offset++;
+				// Validate the retained allocation once per bulk window, not once per decoded ID.
+				// This copies only the requested transient read window; the factor remains borrowed.
+				// Adjacent duplicate fragments across windows retain exact weights by Reader contract.
+				int end = (int) Math.min(count - offset, maximum);
+				MemorySegment.copy(allocation, ID, byteBase + offset * Long.BYTES, values, 0, end);
+				int at = 0, copied = 0;
+				while (at < end) {
+					long value = values[at];
+					int start = at++;
+					while (at < end && values[at] == value) at++;
 					values[copied] = value;
-					weights[copied++] = offset - start;
+					weights[copied++] = at - start;
 				}
 				return copied;
 			}

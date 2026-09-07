@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
+import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -187,6 +188,36 @@ final class LmdbNativePackedFtree {
 			return NativeUnorderedInput.rows(row, cursor);
 		}, work, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, () -> {
 		});
+	}
+
+	/** Export the existing f-tree's borrowed leaves without collapsing them to scalar weights. */
+	static LmdbNativeFactorCursor openFactors(MultiJoinPlan join, RowState row) throws IOException {
+		if (!enabled() || !borrowedFactorsEnabled() || !LmdbNativeFactorRows.enabled()
+				|| row.encounterOrderRequired || join == null) return null;
+		Plan plan = Planner.plan(join, row, LmdbNativeAggregateCompiler.slotsOf(join.producedMask()));
+		if (plan == null || (plan.variableMask & row.boundMask()) != 0L) return null;
+		Runtime runtime = null;
+		try {
+			runtime = Runtime.open(plan, row);
+			if (runtime == null) return null;
+			boolean capable = false;
+			for (NodePlan node : plan.nodes) {
+				if (node.parent != null && runtime.borrowableTerminal(node)
+						&& runtime.primaryEdges[node.ordinal].factorSource() != null) {
+					capable = true; break;
+				}
+			}
+			if (!capable) { runtime.close(); return null; }
+			return new GroupedRowCursor(plan, row, runtime);
+		} catch (PackedDecline unsupported) {
+			if (runtime != null) runtime.close();
+			return null;
+		} catch (IOException | RuntimeException | Error failure) {
+			if (runtime != null) {
+				try { runtime.close(); } catch (Throwable closeFailure) { failure.addSuppressed(closeFailure); }
+			}
+			throw failure;
+		}
 	}
 
 	/** Shared slot/IR projection entry: reuse the production f-tree, not a second join executor. */
@@ -2456,16 +2487,22 @@ final class LmdbNativePackedFtree {
 				int start = out.size;
 				out.ensureBuildParents();
 				int tick = 0;
-				while (fibers.next()) {
-					LmdbNativeProbeDeadline.poll(++tick);
-					long value = fibers.value();
-					if (out.size > start && out.value(out.size - 1) == value) {
-						out.setWeight(out.size - 1, FactorizedTail.addCounts(out.weight(out.size - 1), fibers.weight()));
-					} else {
-						out.ensureCapacity(checkedLaneEnd(out.size, 1));
-						out.setValue(out.size, value);
-						out.setWeight(out.size, fibers.weight());
-						out.buildParentLane[out.size++] = parentLane;
+				int copied;
+				long[] values = fibers.windowValues();
+				long[] weights = fibers.windowWeights();
+				while ((copied = fibers.nextWindow()) != 0) {
+					int from = fibers.windowStart(), end = from + copied;
+					out.ensureCapacity(checkedLaneEnd(out.size, copied));
+					for (int i = from; i < end; i++) {
+						LmdbNativeProbeDeadline.poll(++tick);
+						long value = values[i];
+						if (out.size > start && out.value(out.size - 1) == value) {
+							out.setWeight(out.size - 1, FactorizedTail.addCounts(out.weight(out.size - 1), weights[i]));
+						} else {
+							out.setValue(out.size, value);
+							out.setWeight(out.size, weights[i]);
+							out.buildParentLane[out.size++] = parentLane;
+						}
 					}
 				}
 				return out.size - start;
@@ -4303,16 +4340,21 @@ final class LmdbNativePackedFtree {
 						if (parent.state.isSet(p)) {
 							cursor.bind(p);
 							int start = d.size;
-							while (cursor.next()) {
-								LmdbNativeProbeDeadline.poll(++tick);
-								long value = cursor.value();
-								if (d.size > start && d.value(d.size - 1) == value) {
-									d.setWeight(d.size - 1, FactorizedTail.addCounts(d.weight(d.size - 1), cursor.weight()));
-								} else {
-									d.ensureCapacity(checkedLaneEnd(d.size, 1));
-									d.setValue(d.size, value);
-									d.setWeight(d.size, cursor.weight());
-									d.size++;
+							int count;
+							long[] values = cursor.windowValues(), weights = cursor.windowWeights();
+							while ((count = cursor.nextWindow()) != 0) {
+								int from = cursor.windowStart(), end = from + count;
+								d.ensureCapacity(checkedLaneEnd(d.size, count));
+								for (int i = from; i < end; i++) {
+									LmdbNativeProbeDeadline.poll(++tick);
+									long value = values[i];
+									if (d.size > start && d.value(d.size - 1) == value) {
+										d.setWeight(d.size - 1, FactorizedTail.addCounts(d.weight(d.size - 1), weights[i]));
+									} else {
+										d.setValue(d.size, value);
+										d.setWeight(d.size, weights[i]);
+										d.size++;
+									}
 								}
 							}
 						}
@@ -4504,13 +4546,19 @@ final class LmdbNativePackedFtree {
 	 */
 	static final class PackedProjectionCursor {
 		final Chunk chunk;
+		final boolean summarizeHidden;
 		final boolean[] included;
 		final int[] lanes;
 		boolean initialized;
 		long currentWeight;
 
 		PackedProjectionCursor(Chunk chunk, long demandedMask) {
+			this(chunk, demandedMask, true);
+		}
+
+		PackedProjectionCursor(Chunk chunk, long demandedMask, boolean summarizeHidden) {
 			this.chunk = chunk;
+			this.summarizeHidden = summarizeHidden;
 			this.included = new boolean[chunk.plan.nodes.length];
 			this.lanes = new int[chunk.plan.nodes.length];
 			Arrays.fill(lanes, -1);
@@ -4622,7 +4670,7 @@ final class LmdbNativePackedFtree {
 				int lane = lanes[node.ordinal];
 				weight = FactorizedTail.multiplyCounts(weight, chunk.data[node.ordinal].weight(lane));
 				for (NodePlan child : node.children) {
-					if (!included[child.ordinal]) {
+					if (!included[child.ordinal] && summarizeHidden) {
 						weight = FactorizedTail.multiplyCounts(weight,
 								chunk.childSum(chunk.data[child.ordinal], lane));
 					}
@@ -4751,6 +4799,72 @@ final class LmdbNativePackedFtree {
 					scatterChildren(childPlan, childDelta, null);
 				}
 			}
+		}
+	}
+
+	/**
+	 * A materialized binding prefix with independent borrowed terminal factors. Packed internal
+	 * dependencies remain aligned; this does not pretend unrelated child ordinals are interchangeable.
+	 * No total-product or outside-count arrays are constructed merely to transport a group.
+	 */
+	static final class GroupedRowCursor implements LmdbNativeFactorCursor {
+		final Plan plan;
+		final RowState row;
+		final Runtime runtime;
+		final FactorEnvironment factors;
+		final int mark;
+		Chunk chunk;
+		PackedProjectionCursor prefix;
+		boolean closed;
+		int tick;
+
+		GroupedRowCursor(Plan plan, RowState row, Runtime runtime) {
+			this.plan = plan; this.row = row; this.runtime = runtime;
+			factors = new FactorEnvironment(row.slots.length);
+			mark = row.mark();
+		}
+
+		@Override public boolean next() throws IOException {
+			if (closed) return false;
+			try {
+				while (true) {
+					if (LmdbNativeFactorRows.cancelled(row, ++tick)) { close(); return false; }
+					factors.clear();
+					row.rollback(mark);
+					if (chunk == null) {
+						chunk = runtime.nextChunk();
+						if (chunk == null) { close(); return false; }
+						long scalarMask = 0L;
+						for (NodeData node : chunk.data)
+							if (node.borrowed == null) scalarMask |= 1L << node.plan.slot;
+						prefix = new PackedProjectionCursor(chunk, scalarMask, false);
+					}
+					if (!prefix.next()) { chunk = null; continue; }
+					for (int i = 0; i < plan.fixedSlots.length; i++)
+						row.bind(plan.fixedSlots[i], plan.fixedValues[i]);
+					for (NodeData node : chunk.data) {
+						if (node.borrowed == null)
+							row.bind(node.plan.slot, node.value(prefix.lanes[node.plan.ordinal]));
+						else
+							factors.bind(node.plan.slot, node.borrowed,
+									prefix.lanes[node.plan.parent.ordinal], 1L << node.plan.parent.slot);
+					}
+					return true;
+				}
+			} catch (PackedDecline lostCoverage) {
+				close();
+				throw new QueryEvaluationException("factor transport lost adjacency coverage", lostCoverage);
+			} catch (IOException | RuntimeException | Error failure) {
+				try { close(); } catch (Throwable closeFailure) { failure.addSuppressed(closeFailure); }
+				throw failure;
+			}
+		}
+		@Override public long multiplicity() { return prefix.weight(); }
+		@Override public FactorEnvironment factors() { return factors; }
+		@Override public void close() {
+			if (closed) return; closed = true;
+			factors.clear();
+			try { runtime.close(); } finally { row.rollback(mark); }
 		}
 	}
 

@@ -899,6 +899,7 @@ final class LmdbNativeKernelBindings {
 		private final PlanRequest request;
 		private final RowState parent;
 		private BoundCursor active;
+		private BoundFactorCursor activeFactors;
 		private final long[] inputs;
 
 		private BoundPlan(PlanRequest request, RowState parent) {
@@ -940,16 +941,74 @@ final class LmdbNativeKernelBindings {
 		}
 
 		@Override
-		public void close() {
-			if (active != null) {
-				active.close();
+		public FactorCursor openFactors() {
+			close();
+			RowState scratch = parent.fork();
+			for (int i = 0; i < inputs.length; i++) scratch.slots[request.inputSlots[i]] = inputs[i];
+			scratch.recomputeBoundMask();
+			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
+			try {
+				LmdbNativeFactorCursor producer = request.plan.openFactors(scratch);
+				if (producer == null) return null;
+				activeFactors = new BoundFactorCursor(producer, scratch, request.outputSlots, this);
+				return activeFactors;
+			} catch (java.io.IOException problem) {
+				throw new PlanFailure(problem);
+			} finally {
+				LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
 			}
+		}
+
+		@Override
+		public void close() {
+			try { if (active != null) active.close(); }
+			finally { if (activeFactors != null) activeFactors.close(); }
 		}
 
 		private void released(BoundCursor cursor) {
 			if (active == cursor) {
 				active = null;
 			}
+		}
+	}
+
+	private static final class BoundFactorCursor implements KernelPlan.FactorCursor {
+		final LmdbNativeFactorCursor producer;
+		final RowState row;
+		final int[] slots;
+		final BoundPlan owner;
+		boolean closed;
+		BoundFactorCursor(LmdbNativeFactorCursor producer, RowState row, int[] slots, BoundPlan owner) {
+			this.producer = producer; this.row = row; this.slots = slots; this.owner = owner;
+		}
+		@Override public boolean next() {
+			if (closed) return false;
+			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
+			try {
+				if (producer.next()) return true;
+				close(); return false;
+			} catch (java.io.IOException failure) {
+				try { close(); } catch (Throwable closeFailure) { failure.addSuppressed(closeFailure); }
+				throw new PlanFailure(failure);
+			} catch (RuntimeException | Error failure) {
+				try { close(); } catch (Throwable closeFailure) { failure.addSuppressed(closeFailure); }
+				throw failure;
+			} finally {
+				LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
+			}
+		}
+		@Override public int slot(int column) { return slots[column]; }
+		@Override public long scalar(int column) {
+			int slot = slots[column];
+			if ((producer.factors().mask() & (1L << slot)) != 0L)
+				throw new IllegalStateException("deferred factor requested as a scalar ID");
+			return row.slots[slot];
+		}
+		@Override public long multiplicity() { return producer.multiplicity(); }
+		@Override public org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment factors() { return producer.factors(); }
+		@Override public void close() {
+			if (closed) return; closed = true;
+			try { producer.close(); } finally { if (owner.activeFactors == this) owner.activeFactors = null; }
 		}
 	}
 

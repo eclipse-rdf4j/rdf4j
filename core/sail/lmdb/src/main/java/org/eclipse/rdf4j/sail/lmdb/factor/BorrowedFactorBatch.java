@@ -177,6 +177,7 @@ public final class BorrowedFactorBatch {
 		private long offset;
 		private int index;
 		private int size;
+		private int windowStart;
 		private boolean closed;
 		private boolean bound;
 		private long value;
@@ -202,23 +203,51 @@ public final class BorrowedFactorBatch {
 		}
 
 		public boolean next() {
+			checkPosition();
+			if (index == size && !refill()) return false;
+			value = values[index];
+			weight = weights[index++];
+			return true;
+		}
+
+		/**
+		 * Consumes the remainder of one bounded decode window without a per-member cursor dispatch.
+		 * Read the returned range [windowStart(), windowStart()+result) immediately, before any next
+		 * cursor operation. The arrays are read-only to consumers and are reused on refill. Scalar
+		 * next() and nextWindow() may be interleaved without losing or repeating a member.
+		 */
+		public int nextWindow() {
+			checkPosition();
+			if (index == size && !refill()) return 0;
+			windowStart = index;
+			int count = size - index;
+			index = size;
+			return count;
+		}
+
+		public long[] windowValues() { return values; }
+		public long[] windowWeights() { return weights; }
+		public int windowStart() { return windowStart; }
+
+		private void checkPosition() {
 			checkOpen();
 			if (!bound) throw new IllegalStateException("factor cursor has not been bound");
 			if (generation != batch.generation) throw new IllegalStateException("factor batch was reset during consumption");
-			if (index == size) {
-				if (offset == end) return false;
-				int maximum = (int) Math.min(values.length, end - offset);
-				size = reader.copyFibers(offset, maximum, values, weights);
-				index = 0;
-				if (size <= 0 || size > maximum) throw new IllegalStateException("factor decoder made no progress");
-				for (int i = 0; i < size; i++) {
-					if (weights[i] <= 0 || weights[i] > end - offset)
-						throw new IllegalStateException("invalid factor multiplicity");
-					offset += weights[i];
-				}
+		}
+
+		private boolean refill() {
+			if (offset == end) return false;
+			int maximum = (int) Math.min(values.length, end - offset);
+			size = reader.copyFibers(offset, maximum, values, weights);
+			index = 0;
+			if (size <= 0 || size > maximum) throw new IllegalStateException("factor decoder made no progress");
+			long nextOffset = offset;
+			for (int i = 0; i < size; i++) {
+				long w = weights[i];
+				if (w <= 0 || w > end - nextOffset) throw new IllegalStateException("invalid factor multiplicity");
+				nextOffset += w;
 			}
-			value = values[index];
-			weight = weights[index++];
+			offset = nextOffset;
 			return true;
 		}
 

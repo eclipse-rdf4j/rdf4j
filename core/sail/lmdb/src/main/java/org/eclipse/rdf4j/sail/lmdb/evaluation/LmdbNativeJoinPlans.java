@@ -72,7 +72,14 @@ final class MultiJoinPlan implements SlotPlan {
 
 	@Override
 	public FactorizedRowCursor openProjected(RowState row, int[] outputSlots) throws IOException {
-		return LmdbNativePackedFtree.openProjected(this, row, outputSlots);
+		// Preserve the exact summary-only shortcut before the more general factor-row bridge.
+		FactorizedRowCursor result = LmdbNativePackedFtree.openProjected(this, row, outputSlots);
+		return result != null ? result : LmdbNativeFactorRows.openProjected(this, row, outputSlots);
+	}
+
+	@Override
+	public LmdbNativeFactorCursor openFactors(RowState row) throws IOException {
+		return LmdbNativePackedFtree.openFactors(this, row);
 	}
 
 	@Override
@@ -928,7 +935,14 @@ final class JoinPlan implements SlotPlan {
 	}
 
 	@Override
+	public LmdbNativeFactorCursor openFactors(RowState row) throws IOException {
+		return LmdbNativeFactorRows.join(this, row);
+	}
+
+	@Override
 	public RowCursor open(RowState row) throws IOException {
+		LmdbNativeFactorCursor grouped = openFactors(row);
+		if (grouped != null) return LmdbNativeFactorRows.asRows(grouped, row);
 		PathTargetDecision decision = PathTargetDecision.tryCreate(left, right, row);
 		try {
 			return open(row, decision, decision != null);

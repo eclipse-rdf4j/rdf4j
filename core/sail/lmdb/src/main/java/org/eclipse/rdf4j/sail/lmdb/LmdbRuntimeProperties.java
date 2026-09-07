@@ -37,6 +37,8 @@ public final class LmdbRuntimeProperties {
 			: !"false".equalsIgnoreCase(value);
 
 	private static final List<Property> PROPERTIES = List.of(
+			on("Factorization", "rdf4j.lmdb.factor.transport.enabled", "Factor sidecar transport",
+					"Preserve borrowed groups through dependency-safe slot filters and inner joins.", UNLESS_FALSE),
 			on("Factorization", "rdf4j.lmdb.factor.borrowed.enabled", "Borrowed adjacency groups",
 					"Keep eligible f-tree leaves in snapshot-owned adjacency storage.", UNLESS_FALSE),
 			on("Code generation", "rdf4j.lmdb.irAggregate.having.enabled", "Compiled HAVING",

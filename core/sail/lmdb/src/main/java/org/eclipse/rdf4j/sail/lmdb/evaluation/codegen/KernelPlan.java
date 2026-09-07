@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /**
@@ -30,6 +31,26 @@ public interface KernelPlan extends AutoCloseable {
 
 	/** Opens a fresh cursor over this bound physical plan. */
 	Cursor open();
+
+	/**
+	 * Optional native grouped-relation bridge. Unlike fillWeighted, this retains actual child
+	 * relations. Null means unsupported, not empty. The caller owns the returned cursor and must
+	 * consume its current sidecar before advancing. Existing scalar kernels remain unchanged.
+	 */
+	default FactorCursor openFactors() { return null; }
+
+	interface FactorCursor extends AutoCloseable {
+		boolean next();
+		/** Engine slot corresponding to one registered output column. Hoist this mapping outside loops. */
+		int slot(int outputColumn);
+		/** A scalar ID only; throws if that column is still a deferred factor. */
+		long scalar(int outputColumn);
+		/** Stable exact prefix weight, excluding the independent relations in factors(). */
+		long multiplicity();
+		/** Engine-slot namespace. Backing sources and descriptors remain owned by this cursor. */
+		FactorEnvironment factors();
+		@Override void close();
+	}
 
 	/** Installs a correlated input before opening this operator. */
 	default void setInput(int index, long value) {

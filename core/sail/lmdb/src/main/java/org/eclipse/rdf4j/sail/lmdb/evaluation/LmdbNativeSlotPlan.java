@@ -33,6 +33,15 @@ interface SlotPlan {
 	 * default is deliberately conservative: expression side effects and ordering are not inferred from projection.
 	 */
 	default FactorizedRowCursor openProjected(RowState row, int[] outputSlots) throws IOException {
+		return LmdbNativeFactorRows.openProjected(this, row, outputSlots);
+	}
+
+	/**
+	 * Optional grouped-relation transport. Scalar slots contain only installed IDs; the returned sidecar
+	 * owns the currently deferred variable bindings. Null declines before advancing the plan or changing
+	 * the entry row. Consumers must expand their complete dependency set before invoking scalar code.
+	 */
+	default LmdbNativeFactorCursor openFactors(RowState row) throws IOException {
 		return null;
 	}
 

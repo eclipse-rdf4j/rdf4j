@@ -193,7 +193,14 @@ final class FilterPlan implements SlotPlan {
 	}
 
 	@Override
+	public LmdbNativeFactorCursor openFactors(RowState row) throws IOException {
+		return LmdbNativeFactorRows.filter(this, row);
+	}
+
+	@Override
 	public RowCursor open(RowState row) throws IOException {
+		LmdbNativeFactorCursor grouped = openFactors(row);
+		if (grouped != null) return LmdbNativeFactorRows.asRows(grouped, row);
 		return new FilterCursor(arg.open(row), filter, row);
 	}
 
