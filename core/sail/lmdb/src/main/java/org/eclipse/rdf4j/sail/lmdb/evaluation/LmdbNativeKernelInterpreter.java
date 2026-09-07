@@ -375,6 +375,15 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	@Override
 	public int fill(long[] rowBuffer, int maxRows) {
+		if (maxRows <= 0) return 0;
+		try { return fillOpen(rowBuffer, maxRows); }
+		catch (RuntimeException | Error failure) {
+			KernelRuntime.closeAfterFailure(this, failure);
+			throw failure;
+		}
+	}
+
+	private int fillOpen(long[] rowBuffer, int maxRows) {
 		if (!ran) {
 			ran = true;
 			root.run();
@@ -392,30 +401,24 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	@Override
 	public void close() {
-		if (closed) {
-			return;
-		}
+		if (closed) return;
 		closed = true;
-		fireCloseTelemetry();
+		Throwable failure = null;
+		try { fireCloseTelemetry(); }
+		catch (RuntimeException | Error problem) { failure = problem; }
 		for (NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor cursor : boundCursors) {
-			cursor.close();
+			failure = KernelRuntime.closeResource(cursor, failure);
 		}
 		boundCursors.clear();
 		for (NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[] slot : activeKeyCursors) {
-			if (slot[0] != null) {
-				slot[0].close();
-				slot[0] = null;
-			}
+			failure = KernelRuntime.closeResource(slot[0], failure);
+			slot[0] = null;
 		}
 		if (planCursors != null) {
 			for (int i = 0; i < planCursors.length; i++) {
-				if (planCursors[i] != null) {
-					planCursors[i].close();
-					planCursors[i] = null;
-				}
-				if (context != null && context.plans[i] != null) {
-					context.plans[i].close();
-				}
+				failure = KernelRuntime.closeResource(planCursors[i], failure);
+				planCursors[i] = null;
+				if (context != null) failure = KernelRuntime.closeResource(context.plans[i], failure);
 			}
 		}
 		activeKeyCursors.clear();
@@ -456,6 +459,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		implicitSipDriven = null;
 		sipBatchTests = null;
 		sipBatchRejects = null;
+		KernelRuntime.rethrowCloseFailure(failure);
 	}
 
 	int retainedRowCapacityForTest() {
@@ -501,58 +505,14 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private int nextLeftGroupId;
 
 	private void allocateHashTables() {
-		int maxTable = -1;
-		maxTable = maxHashTableId(kernel.pipeline, maxTable);
-		hashTables = new KernelRuntime.LongRowMap[maxTable + 1];
-		hashKeyScratch = new long[maxTable + 1][];
-		hashPayloadScratch = new long[maxTable + 1][];
-		installHashScratch(kernel.pipeline);
-	}
-
-	private static int maxHashTableId(List<Node> pipeline, int max) {
-		for (Node node : pipeline) {
-			if (node instanceof HashBuild) {
-				max = Math.max(max, ((HashBuild) node).tableId);
-				max = maxHashTableId(((HashBuild) node).pipeline, max);
-			} else if (node instanceof HashProbe) {
-				max = Math.max(max, ((HashProbe) node).tableId);
-			} else if (node instanceof Exists) {
-				max = maxHashTableId(((Exists) node).pipeline, max);
-			} else if (node instanceof LeftGroup) {
-				max = maxHashTableId(((LeftGroup) node).arm, max);
-			} else if (node instanceof LexicalFrameLeftJoin) {
-				LexicalFrameLeftJoin lexical = (LexicalFrameLeftJoin) node;
-				max = maxHashTableId(lexical.left, max);
-				max = maxHashTableId(lexical.right, max);
-			} else if (node instanceof Union) {
-				for (List<Node> branch : ((Union) node).branches) {
-					max = maxHashTableId(branch, max);
-				}
-			}
-		}
-		return max;
-	}
-
-	private void installHashScratch(List<Node> pipeline) {
-		for (Node node : pipeline) {
-			if (node instanceof HashBuild) {
-				HashBuild build = (HashBuild) node;
-				hashKeyScratch[build.tableId] = new long[build.keyCols.length];
-				hashPayloadScratch[build.tableId] = new long[build.payloadCols.length];
-				installHashScratch(build.pipeline);
-			} else if (node instanceof Exists) {
-				installHashScratch(((Exists) node).pipeline);
-			} else if (node instanceof LeftGroup) {
-				installHashScratch(((LeftGroup) node).arm);
-			} else if (node instanceof LexicalFrameLeftJoin) {
-				LexicalFrameLeftJoin lexical = (LexicalFrameLeftJoin) node;
-				installHashScratch(lexical.left);
-				installHashScratch(lexical.right);
-			} else if (node instanceof Union) {
-				for (List<Node> branch : ((Union) node).branches) {
-					installHashScratch(branch);
-				}
-			}
+		java.util.SortedMap<Integer, int[]> layouts = LmdbNativeKernelIr.hashScratchLayouts(kernel.pipeline);
+		int size = layouts.isEmpty() ? 0 : Math.addExact(layouts.lastKey(), 1);
+		hashTables = new KernelRuntime.LongRowMap[size];
+		hashKeyScratch = new long[size][];
+		hashPayloadScratch = new long[size][];
+		for (var entry : layouts.entrySet()) {
+			hashKeyScratch[entry.getKey()] = new long[entry.getValue()[0]];
+			hashPayloadScratch[entry.getKey()] = new long[entry.getValue()[1]];
 		}
 	}
 
@@ -703,6 +663,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					return false;
 				}
 				slot[0] = ak;
+				Throwable cursorFailure = null;
 				try {
 					int kn;
 					while ((kn = ak.fillKeys(keyBuffer, 0, KEY_CHUNK)) > 0) {
@@ -717,9 +678,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							}
 						}
 					}
+				} catch (RuntimeException | Error failure) {
+					cursorFailure = failure;
+					throw failure;
 				} finally {
-					ak.close();
 					slot[0] = null;
+					KernelRuntime.closeCursor(ak, cursorFailure);
 				}
 				return false;
 			};
@@ -731,6 +695,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				return false;
 			}
 			slot[0] = ak;
+			Throwable cursorFailure = null;
 			try {
 				while (ak.advance()) {
 					poll();
@@ -756,9 +721,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 					}
 				}
+			} catch (RuntimeException | Error failure) {
+				cursorFailure = failure;
+				throw failure;
 			} finally {
-				ak.close();
 				slot[0] = null;
+				KernelRuntime.closeCursor(ak, cursorFailure);
 			}
 			return false;
 		};
@@ -783,10 +751,15 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				throw new IllegalStateException("wildcard plane refused key enumeration after bind");
 			}
 			slot[0] = cursor;
+			Throwable cursorFailure = null;
 			try {
 				while (cursor.advance()) {
 					poll();
 					v[enumerate.keyCol] = cursor.key();
+					if (enumerate.valueCol < 0) {
+						if (next.run()) return true;
+						continue;
+					}
 					long end = cursor.runSize();
 					for (long runOffset = 0L; runOffset < end; runOffset++) {
 						poll();
@@ -805,9 +778,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 					}
 				}
+			} catch (RuntimeException | Error failure) {
+				cursorFailure = failure;
+				throw failure;
 			} finally {
-				cursor.close();
 				slot[0] = null;
+				KernelRuntime.closeCursor(cursor, cursorFailure);
 			}
 			return false;
 		};
@@ -877,13 +853,14 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private Op buildEnumerateTerms(EnumerateTerms terms, Op next) {
 		return () -> {
 			KernelQuadCursor cur = context.scanner.open(terms.scan, -1L, -1L, -1L, -1L);
-			long[] buffer = scanBuffer(terms.scan);
 			// Fresh per activation: a correlated re-open must re-enumerate the full term set.
-			KernelRuntime.LongHashSet seen = new KernelRuntime.LongHashSet();
+			Throwable failure = null;
 			try {
+				long[] buffer = scanBuffer(terms.scan);
+				KernelRuntime.LongHashSet seen = new KernelRuntime.LongHashSet();
 				int n;
 				while ((n = cur.fill(buffer, KernelRuntime.SCAN_BATCH_ROWS)) > 0) {
-					poll();
+					KernelRuntime.checkCancelled(cancel);
 					for (int i = 0; i < n; i++) {
 						// Subject before object within one quad, matching the generated order.
 						long subject = buffer[i * 4 + ScanQuad.SUBJ];
@@ -902,8 +879,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 					}
 				}
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+				throw problem;
 			} finally {
-				cur.close();
+				KernelRuntime.closeScanCursor(cur, failure);
 			}
 			return false;
 		};
@@ -1062,6 +1042,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					throw new IllegalStateException("wildcard plane refused key enumeration after bind");
 				}
 				slot[0] = cursor;
+				Throwable cursorFailure = null;
 				try {
 					while (cursor.advance()) {
 						poll();
@@ -1114,9 +1095,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							}
 						}
 					}
+				} catch (RuntimeException | Error failure) {
+					cursorFailure = failure;
+					throw failure;
 				} finally {
-					cursor.close();
 					slot[0] = null;
+					KernelRuntime.closeCursor(cursor, cursorFailure);
 				}
 			}
 			return false;
@@ -1332,6 +1316,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				return false;
 			}
 			slot[0] = cursor;
+			Throwable cursorFailure = null;
 			try {
 				int count;
 				while ((count = cursor.fillKeys(keys, 0, KEY_CHUNK)) > 0) {
@@ -1366,9 +1351,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 					}
 				}
+			} catch (RuntimeException | Error failure) {
+				cursorFailure = failure;
+				throw failure;
 			} finally {
-				cursor.close();
 				slot[0] = null;
+				KernelRuntime.closeCursor(cursor, cursorFailure);
 			}
 			return false;
 		};
@@ -1420,6 +1408,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 				slot[0] = cursor;
 				boolean predicateSatisfied = false;
+				Throwable cursorFailure = null;
 				try {
 					int count;
 					while (!predicateSatisfied && (count = cursor.fillKeys(keys, 0, KEY_CHUNK)) > 0) {
@@ -1432,9 +1421,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 						predicateSatisfied = status == 1;
 					}
+				} catch (RuntimeException | Error failure) {
+					cursorFailure = failure;
+					throw failure;
 				} finally {
-					cursor.close();
 					slot[0] = null;
+					KernelRuntime.closeCursor(cursor, cursorFailure);
 				}
 				if (predicateSatisfied && probe.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
 					return false;
@@ -1569,11 +1561,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			long t2 = scan.terms[2] == null ? -1L : read(scan.terms[2]);
 			long t3 = scan.terms[3] == null ? -1L : read(scan.terms[3]);
 			KernelQuadCursor cur = context.scanner.open(scan.scan, t0, t1, t2, t3);
-			long[] buffer = scanBuffer(scan.scan);
+
+			Throwable failure = null;
 			try {
+				long[] buffer = scanBuffer(scan.scan);
 				int n;
 				while ((n = cur.fill(buffer, KernelRuntime.SCAN_BATCH_ROWS)) > 0) {
-					poll();
+					KernelRuntime.checkCancelled(cancel);
 					for (int i = 0; i < n; i++) {
 						for (int position = 0; position < 4; position++) {
 							int col = scan.outCols[position];
@@ -1586,8 +1580,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 					}
 				}
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+				throw problem;
 			} finally {
-				cur.close();
+				KernelRuntime.closeScanCursor(cur, failure);
 			}
 			return false;
 		};
@@ -1737,6 +1734,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				buffer = new long[KernelRuntime.SCAN_BATCH_ROWS * Math.max(width, 1)];
 				planBuffers[plan.plan] = buffer;
 			}
+			Throwable failure = null;
 			try {
 				int n;
 				while ((n = weighted ? cursor.fillWeighted(buffer, bagWeights, KernelRuntime.SCAN_BATCH_ROWS)
@@ -1754,13 +1752,17 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 					}
 				}
-			} finally {
-				cursor.close();
-				planCursors[plan.plan] = null;
+			 } catch (RuntimeException | Error problem) {
+                failure = problem;
+				throw problem;
+            } finally {
+                planCursors[plan.plan] = null;
+                try { KernelRuntime.closePlanCursor(cursor, failure); } finally {
 				for (int col : plan.outCols) {
 					int input = plan.inputForColumn(col);
 					v[col] = input < 0 ? -1L : bound.input(input);
 				}
+                }
 			}
 			return false;
 		};

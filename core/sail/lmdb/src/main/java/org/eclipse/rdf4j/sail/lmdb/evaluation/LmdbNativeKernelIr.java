@@ -214,6 +214,41 @@ final class LmdbNativeKernelIr {
 		}
 	}
 
+	/** Visits every instruction, including nested execution regions, in stable depth-first order. */
+	static void visitNodes(List<Node> pipeline, java.util.function.Consumer<Node> visitor) {
+		for (Node node : pipeline) {
+			visitor.accept(node);
+			if (node instanceof Exists exists) visitNodes(exists.pipeline, visitor);
+			else if (node instanceof HashBuild build) visitNodes(build.pipeline, visitor);
+			else if (node instanceof LeftGroup group) visitNodes(group.arm, visitor);
+			else if (node instanceof LexicalFrameLeftJoin join) {
+				visitNodes(join.left, visitor); visitNodes(join.right, visitor);
+			} else if (node instanceof Union union) {
+				for (List<Node> branch : union.branches) visitNodes(branch, visitor);
+			}
+		}
+	}
+
+	/**
+	 * Complete hash-state layout, shared by both execution tiers. Scratch widths are maxima: sibling regions may
+	 * rebuild the same table ID with different widths, but must never resize scratch inside a row loop.
+	 */
+	static java.util.SortedMap<Integer, int[]> hashScratchLayouts(List<Node> pipeline) {
+		java.util.SortedMap<Integer, int[]> layouts = new java.util.TreeMap<>();
+		visitNodes(pipeline, node -> {
+			int table, keys, payload;
+			if (node instanceof HashBuild build) {
+				table = build.tableId; keys = build.keyCols.length; payload = build.payloadCols.length;
+			} else if (node instanceof HashProbe probe) {
+				table = probe.tableId; keys = probe.keys.length; payload = probe.dstCols.length;
+			} else return;
+			if (table < 0) throw new IllegalArgumentException("negative hash table ID");
+			int[] layout = layouts.computeIfAbsent(table, ignored -> new int[2]);
+			layout[0] = Math.max(layout[0], keys); layout[1] = Math.max(layout[1], payload);
+		});
+		return layouts;
+	}
+
 	/** Enumerate the key domain of a CSR view; optionally also expand each key's neighbor run in the same loop. */
 	static final class EnumerateAdjKeys extends Node {
 		final int adjacency;
@@ -2920,13 +2955,14 @@ final class LmdbNativeKernelIr {
 	}
 
 	/**
-	 * Admits projection-free wildcard-predicate IR to Janino. When false, the same IR remains available through the
+	 * Admits projection-free wildcard-predicate IR to Janino. Default-on, like other supported IR producers.
+	 * When explicitly false, the same IR remains available through the
 	 * interpreter; this is a code-generation kill switch, not a semantic lowering switch.
 	 */
 	static final String WILDCARD_PREDICATES_PROPERTY = "rdf4j.lmdb.janinoCodegen.wildcardPredicates";
 
 	static boolean wildcardPredicatesEnabled() {
-		return Boolean.parseBoolean(System.getProperty(WILDCARD_PREDICATES_PROPERTY, "false"));
+		return Boolean.parseBoolean(System.getProperty(WILDCARD_PREDICATES_PROPERTY, "true"));
 	}
 
 	/**

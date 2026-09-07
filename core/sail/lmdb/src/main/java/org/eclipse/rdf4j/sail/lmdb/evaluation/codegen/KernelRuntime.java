@@ -29,6 +29,67 @@ public final class KernelRuntime {
 	private KernelRuntime() {
 	}
 
+	/** Closes all resources without letting one failed release skip subsequent releases. */
+	public static Throwable closeResource(AutoCloseable resource, Throwable failure) {
+		if (resource != null) {
+			try { resource.close(); }
+			catch (Throwable cleanup) { return retainCloseFailure(failure, cleanup); }
+		}
+		return failure;
+	}
+
+	/** Quad cursors deliberately do not inherit checked exceptions from AutoCloseable. */
+	public static Throwable closeResource(KernelQuadCursor resource, Throwable failure) {
+		if (resource != null) {
+			try { resource.close(); }
+			catch (Throwable cleanup) { return retainCloseFailure(failure, cleanup); }
+		}
+		return failure;
+	}
+
+	private static Throwable retainCloseFailure(Throwable failure, Throwable cleanup) {
+		if (failure == null) return cleanup;
+		if (cleanup != failure) failure.addSuppressed(cleanup);
+		return failure;
+	}
+
+	public static void rethrowCloseFailure(Throwable failure) {
+		if (failure == null) return;
+		if (failure instanceof RuntimeException problem) throw problem;
+		if (failure instanceof Error problem) throw problem;
+		throw new IllegalStateException("kernel resource close failed", failure);
+	}
+
+	/** An exceptional fill cannot be resumed; drain owned cursors, preserving the evaluation failure. */
+	public static void closeAfterFailure(JaninoKernel kernel, Throwable primary) {
+		try { kernel.close(); }
+		catch (Throwable cleanup) { retainCloseFailure(primary, cleanup); }
+	}
+
+	/** Releases an activation-local owner without replacing a primary evaluation failure. */
+	public static void closeCursor(AutoCloseable cursor, Throwable primary) {
+		Throwable failure = closeResource(cursor, primary);
+		if (primary == null) rethrowCloseFailure(failure);
+	}
+
+	/** Close a scoped scan while preserving a primary evaluation failure. No per-row allocation or dispatch. */
+	public static void closeScanCursor(KernelQuadCursor cursor, Throwable primary) {
+		try { cursor.close(); }
+		catch (RuntimeException | Error cleanup) {
+			if (primary == null) throw cleanup;
+			if (primary != cleanup) primary.addSuppressed(cleanup);
+		}
+	}
+
+	/** The plan-cursor equivalent of {@link #closeScanCursor}. */
+	public static void closePlanCursor(KernelPlan.Cursor cursor, Throwable primary) {
+		try { cursor.close(); }
+		catch (RuntimeException | Error cleanup) {
+			if (primary == null) throw cleanup;
+			if (primary != cleanup) primary.addSuppressed(cleanup);
+		}
+	}
+
 	/**
 	 * Poll site emitted inside generated kernel loops (and mirrored by the interpreter): throws the stackless
 	 * {@link KernelCancelledException} when a probe deadline has fired. A {@code null} cancellation — every normal,

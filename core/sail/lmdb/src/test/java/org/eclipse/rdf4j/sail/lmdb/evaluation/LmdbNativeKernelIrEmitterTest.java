@@ -913,7 +913,7 @@ class LmdbNativeKernelIrEmitterTest {
 				"decoded SIP must open the concrete cursor; source:\n" + source);
 		assertTrue(source.contains(".bindSize(sipKey)"),
 				"decoded SIP must fuse key lookup and run-size retrieval; source:\n" + source);
-		assertTrue(source.contains(".neighborAtInt(i)"),
+		assertTrue(source.contains(".neighborAtInt("),
 				"decoded SIP must retain the int-indexed CSR hot loop; source:\n" + source);
 		assertTrue(source.contains(".findBatch(sipDomain"),
 				"non-decoded views must retain the exact batch fallback; source:\n" + source);
@@ -930,7 +930,7 @@ class LmdbNativeKernelIrEmitterTest {
 				"the physical key-domain producer must remain streaming; source:\n" + source);
 		assertTrue(source.contains(".bindSize(sipKey)"),
 				"decoded probe targets must avoid generic batch handles; source:\n" + source);
-		assertTrue(source.contains(".neighborAtInt(i)"),
+		assertTrue(source.contains(".neighborAtInt("),
 				"decoded probe targets must retain direct CSR iteration; source:\n" + source);
 		assertTrue(source.contains(".findBatch(sipK"),
 				"non-decoded probe targets must retain the batch fallback; source:\n" + source);
@@ -1212,7 +1212,7 @@ class LmdbNativeKernelIrEmitterTest {
 		String source = LmdbNativeKernelEmitter.emit(vectorized);
 		assertTrue(source.contains("updateBy(rend - rpos);"),
 				"with nothing reading or filtering the neighbors, the count is the run length; source:\n" + source);
-		assertTrue(source.contains("agC0 += n;") || source.contains("agC0[g] += n;"),
+		assertTrue(source.contains("Math.addExact(agC0, n)") || source.contains("Math.addExact(agC0[g], n)"),
 				"COUNT(*) must accumulate by the run length");
 		assertFalse(source.contains("v1 = tvec["), "the tail column must not be materialized per row");
 		assertFalse(source.contains(".copyNeighbors("), "an unfiltered count must not read a single neighbor");

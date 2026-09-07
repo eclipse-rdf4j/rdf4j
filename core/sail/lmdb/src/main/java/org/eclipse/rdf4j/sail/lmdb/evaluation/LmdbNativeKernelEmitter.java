@@ -1054,23 +1054,14 @@ final class LmdbNativeKernelEmitter {
 					source.append("    private long[] cvec;\n");
 				}
 			}
-			for (Node node : kernel.pipeline) {
-				if (node instanceof HashBuild) {
-					HashBuild build = (HashBuild) node;
-					// The table plus key/payload staging rows for its build inserts and probe lookups.
-					source.append("    private KernelRuntime.LongRowMap t").append(build.tableId).append(";\n");
-					source.append("    private long[] tk")
-							.append(build.tableId)
-							.append(" = new long[")
-							.append(build.keyCols.length)
-							.append("];\n");
-					source.append("    private long[] tp")
-							.append(build.tableId)
-							.append(" = new long[")
-							.append(build.payloadCols.length)
-							.append("];\n");
-				}
+			for (var entry : LmdbNativeKernelIr.hashScratchLayouts(kernel.pipeline).entrySet()) {
+				int table = entry.getKey(); int[] layout = entry.getValue();
+				source.append("    private KernelRuntime.LongRowMap t").append(table).append(";\n");
+				source.append("    private long[] tk").append(table).append(" = new long[").append(layout[0]).append("];\n");
+				source.append("    private long[] tp").append(table).append(" = new long[").append(layout[1]).append("];\n");
 			}
+			source.append("    private boolean closed;\n");
+
 			if (flatRootExistsShape != null) {
 				source.append("    private boolean ran;\n")
 						.append("    private boolean flatReturned;\n")
@@ -1494,7 +1485,9 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		private void emitClose(StringBuilder source) {
-			source.append("    public void close() {\n");
+			source.append("    public void close() {\n")
+					.append("        if (closed) return;\n        closed = true;\n");
+			source.append("        Throwable closeFailure = null;\n        try {\n");
 			for (int i = 0; i < sipFilterSites.size(); i++) {
 				FilterInConstants filter = sipFilterSites.get(i);
 				source.append("        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordSipBatch(")
@@ -1589,106 +1582,40 @@ final class LmdbNativeKernelEmitter {
 				source.append(
 						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.recordFactorizedLevel(0L, 0L, factorCandidates, factorCandidates - factorRejected, factorRejected, 0L, factorCandidates, 0L);\n");
 			}
+			source.append("        } catch (RuntimeException failure) { closeFailure = failure; }\n")
+					.append("        catch (Error failure) { closeFailure = failure; }\n");
+			for (int i = 0; i < kernel.requirements.scans; i++) emitCloseResource(source, "sc" + i);
 			for (int i = 0; i < nextBoundRunCursorId; i++) {
-				source.append("        if (ar")
-						.append(i)
-						.append(" != null) {\n")
-						.append("            ar")
-						.append(i)
-						.append(".close();\n")
-						.append("            ar")
-						.append(i)
-						.append(" = null;\n")
-						.append("        }\n");
-				if (flatRootExistsShape != null) {
-					source.append("        if (dr")
-							.append(i)
-							.append(" != null) {\n")
-							.append("            dr")
-							.append(i)
-							.append(".close();\n")
-							.append("            dr")
-							.append(i)
-							.append(" = null;\n")
-							.append("        }\n");
-				}
+				emitCloseResource(source, "ar" + i);
+				if (flatRootExistsShape != null) emitCloseResource(source, "dr" + i);
 			}
-			for (int i = 0; i < nextKeyRunCursorId; i++) {
-				source.append("        if (ak")
-						.append(i)
-						.append(" != null) {\n")
-						.append("            ak")
-						.append(i)
-						.append(".close();\n")
-						.append("            ak")
-						.append(i)
-						.append(" = null;\n")
-						.append("        }\n");
-			}
+			for (int i = 0; i < nextKeyRunCursorId; i++) emitCloseResource(source, "ak" + i);
 			for (int i = 0; i < sipBatchProbeSites.size(); i++) {
-				source.append("        if (sipC")
-						.append(i)
-						.append(" != null) {\n")
-						.append("            sipC")
-						.append(i)
-						.append(".close();\n")
-						.append("            sipC")
-						.append(i)
-						.append(" = null;\n")
-						.append("        }\n")
-						.append("        if (sipDR")
-						.append(i)
-						.append(" != null) {\n")
-						.append("            sipDR")
-						.append(i)
-						.append(".close();\n")
-						.append("            sipDR")
-						.append(i)
-						.append(" = null;\n")
-						.append("        }\n");
+				emitCloseResource(source, "sipC" + i); emitCloseResource(source, "sipDR" + i);
 			}
-			if (kernel.resumable) {
-				for (int i = 0; i < nextPredicateEnumId; i++) {
-					source.append("        if (epC")
-							.append(i)
-							.append(" != null) {\n")
-							.append("            epC")
-							.append(i)
-							.append(".close();\n")
-							.append("            epC")
-							.append(i)
-							.append(" = null;\n")
-							.append("        }\n");
-				}
-			}
+			if (kernel.resumable) for (int i = 0; i < nextPredicateEnumId; i++) emitCloseResource(source, "epC" + i);
 			PlanFactors factors = LmdbNativeKernelIr.factorPlan(kernel);
-			if (factors != null) source.append("        if (fc").append(factors.plan).append(" != null) { fc")
-					.append(factors.plan).append(".close(); fc").append(factors.plan).append(" = null; }\n");
+			if (factors != null) emitCloseResource(source, "fc" + factors.plan);
 			for (int i = 0; i < kernel.requirements.plans; i++) {
-				source.append("        if (pc")
-						.append(i)
-						.append(" != null) {\n")
-						.append("            pc")
-						.append(i)
-						.append(".close();\n")
-						.append("            pc")
-						.append(i)
-						.append(" = null;\n")
-						.append("        }\n")
-						.append("        if (p")
-						.append(i)
-						.append(" != null) {\n")
-						.append("            p")
-						.append(i)
-						.append(".close();\n")
-						.append("        }\n");
+				emitCloseResource(source, "pc" + i); emitCloseResource(source, "p" + i);
 			}
-			source.append("    }\n\n");
+			source.append("        KernelRuntime.rethrowCloseFailure(closeFailure);\n    }\n\n");
+		}
+
+		private static void emitCloseResource(StringBuilder source, String field) {
+			source.append("        closeFailure = KernelRuntime.closeResource(").append(field)
+					.append(", closeFailure); ").append(field).append(" = null;\n");
 		}
 
 		private void emitFill(StringBuilder source) {
+			source.append("    public int fill(long[] rowBuffer, int maxRows) {\n")
+					.append("        if (maxRows <= 0) return 0;\n")
+					.append("        try { return fillOpen(rowBuffer, maxRows); }\n")
+					.append("        catch (RuntimeException failure) { KernelRuntime.closeAfterFailure(this, failure); throw failure; }\n")
+					.append("        catch (Error failure) { KernelRuntime.closeAfterFailure(this, failure); throw failure; }\n")
+					.append("    }\n\n");
 			if (flatRootExistsShape != null) {
-				source.append("    public int fill(long[] rowBuffer, int maxRows) {\n")
+				source.append("    private int fillOpen(long[] rowBuffer, int maxRows) {\n")
 						.append("        if (flatReturned || maxRows <= 0) {\n")
 						.append("            return 0;\n")
 						.append("        }\n")
@@ -1705,7 +1632,7 @@ final class LmdbNativeKernelEmitter {
 			if (kernel.resumable) {
 				// Streaming: run the pipeline directly into the caller's buffer, pausing when it fills. The pipeline
 				// resumes from its saved counters on the next call, so no row is ever produced twice or skipped.
-				source.append("    public int fill(long[] rowBuffer, int maxRows) {\n")
+				source.append("    private int fillOpen(long[] rowBuffer, int maxRows) {\n")
 						.append("        if (done || maxRows <= 0) {\n")
 						.append("            return 0;\n")
 						.append("        }\n")
@@ -1721,7 +1648,7 @@ final class LmdbNativeKernelEmitter {
 						.append("    }\n\n");
 				return;
 			}
-			source.append("    public int fill(long[] rowBuffer, int maxRows) {\n")
+			source.append("    private int fillOpen(long[] rowBuffer, int maxRows) {\n")
 					.append("        if (!ran) {\n")
 					.append("            ran = true;\n")
 					.append("            run();\n")
@@ -5455,7 +5382,7 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		private boolean nodeDomainIntersectionBulkCount() {
-			if (kernel.pipeline.size() != 1
+			if (!(kernel.terminal instanceof Aggregate) || kernel.pipeline.size() != 1
 					|| !(kernel.pipeline.get(0) instanceof EnumerateNodeDomainIntersection)) {
 				return false;
 			}
@@ -5689,8 +5616,9 @@ final class LmdbNativeKernelEmitter {
 					.append(indent)
 					.append("if (sipC")
 					.append(site)
-					.append(" != null) {\n")
-					.append(indent)
+					.append(" != null) {\n");
+			beginCursorScope(body, indent + "    ");
+			body.append(indent)
 					.append("    int sipCount;\n")
 					.append(indent)
 					.append("    while ((sipCount = sipC")
@@ -5807,17 +5735,9 @@ final class LmdbNativeKernelEmitter {
 					.append(indent)
 					.append("        }\n")
 					.append(indent)
-					.append("    }\n")
-					.append(indent)
-					.append("    sipC")
-					.append(site)
-					.append(".close();\n")
-					.append(indent)
-					.append("    sipC")
-					.append(site)
-					.append(" = null;\n")
-					.append(indent)
-					.append("}\n");
+					.append("    }\n");
+			endKeyCursorScope(body, indent + "    ", "sipC" + site);
+			body.append(indent).append("}\n");
 		}
 
 		private void emitSipDomainWildcard(StringBuilder body, SipDomainWildcard probe, String nextTemplate) {
@@ -5930,8 +5850,9 @@ final class LmdbNativeKernelEmitter {
 					.append(indent)
 					.append("    if (")
 					.append(cursor)
-					.append(" != null) {\n")
-					.append(indent)
+					.append(" != null) {\n");
+			beginCursorScope(body, indent + "        ");
+			body.append(indent)
 					.append("        int sipCount;\n")
 					.append(indent)
 					.append("        while (")
@@ -5976,17 +5897,9 @@ final class LmdbNativeKernelEmitter {
 					.append(indent)
 					.append("            }\n")
 					.append(indent)
-					.append("        }\n")
-					.append(indent)
-					.append("        ")
-					.append(cursor)
-					.append(".close();\n")
-					.append(indent)
-					.append("        ")
-					.append(cursor)
-					.append(" = null;\n")
-					.append(indent)
-					.append("    }\n");
+					.append("        }\n");
+			endKeyCursorScope(body, indent + "        ", cursor);
+			body.append(indent).append("    }\n");
 			if (probe.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
 				body.append(indent).append("    wildcardDone = predicateSatisfied;\n");
 			}
@@ -6291,6 +6204,7 @@ final class LmdbNativeKernelEmitter {
 			body.append(indent)
 					.append("        throw new IllegalStateException(\"wildcard plane refused key enumeration after bind\");\n");
 			body.append(indent).append("    }\n");
+			beginCursorScope(body, indent + "    ");
 			if (predicateAny) {
 				body.append(indent).append("    boolean predicateAny = false;\n");
 			}
@@ -6390,8 +6304,7 @@ final class LmdbNativeKernelEmitter {
 				throw new IllegalStateException("unknown wildcard demand " + enumerate.demand);
 			}
 			body.append(indent).append("    }\n");
-			body.append(indent).append("    ").append(cursor).append(".close();\n");
-			body.append(indent).append("    ").append(cursor).append(" = null;\n");
+			endKeyCursorScope(body, indent + "    ", cursor);
 			body.append(indent).append("}\n");
 		}
 
@@ -6562,6 +6475,26 @@ final class LmdbNativeKernelEmitter {
 			body.append(indent).append("    }\n").append(indent).append("}\n");
 		}
 
+		private static void endKeyCursorScope(StringBuilder body, String indent, String cursor) {
+			endCursorScope(body, indent, "AutoCloseable closing = " + cursor + "; " + cursor
+					+ " = null; KernelRuntime.closeCursor(closing, cursorFailure);");
+		}
+
+		private static void beginCursorScope(StringBuilder body, String indent) {
+			body.append(indent).append("Throwable cursorFailure = null;\n")
+					.append(indent).append("try {\n");
+		}
+
+		private static void endCursorScope(StringBuilder body, String indent, String close) {
+			body.append(indent).append("} catch (RuntimeException failure) {\n")
+					.append(indent).append("    cursorFailure = failure; throw failure;\n")
+					.append(indent).append("} catch (Error failure) {\n")
+					.append(indent).append("    cursorFailure = failure; throw failure;\n")
+					.append(indent).append("} finally {\n")
+					.append(indent).append("    ").append(close).append("\n")
+					.append(indent).append("}\n");
+		}
+
 		private void emitNode(StringBuilder body, Node node, String nextTemplate, boolean booleanMode, int stateIndex) {
 			String indent = "        ";
 			if (node instanceof PlanFactors factors) {
@@ -6580,6 +6513,7 @@ final class LmdbNativeKernelEmitter {
 						.append(", ")
 						.append(scanTerms(scan))
 						.append(");\n");
+				beginCursorScope(body, indent);
 				emitScanBuffer(body, indent, buffer);
 				body.append(indent)
 						.append("int n = cur.fill(")
@@ -6596,7 +6530,7 @@ final class LmdbNativeKernelEmitter {
 						.append(buffer)
 						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
 				body.append(indent).append("}\n");
-				body.append(indent).append("cur.close();\n");
+				endCursorScope(body, indent, "KernelRuntime.closeScanCursor(cur, cursorFailure);");
 				return;
 			}
 			if (node instanceof PlanRows) {
@@ -6610,6 +6544,7 @@ final class LmdbNativeKernelEmitter {
 						.append(" = new long[KernelRuntime.SCAN_BATCH_ROWS];\n");
 				emitPlanInputs(body, indent, plan);
 				body.append(indent).append(cursor).append(" = p").append(plan.plan).append(".open();\n");
+				beginCursorScope(body, indent);
 				emitPlanBuffer(body, indent, buffer, plan.outCols.length);
 				body.append(indent)
 						.append("int n = ")
@@ -6632,9 +6567,13 @@ final class LmdbNativeKernelEmitter {
 						.append(read)
 						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
 				body.append(indent).append("}\n");
-				body.append(indent).append(cursor).append(".close();\n");
-				body.append(indent).append(cursor).append(" = null;\n");
-				emitPlanRestore(body, indent, plan);
+				StringBuilder cleanup = new StringBuilder();
+				cleanup.append("KernelPlan.Cursor closing = ").append(cursor).append("; ")
+						.append(cursor).append(" = null;\n")
+						.append("try { KernelRuntime.closePlanCursor(closing, cursorFailure); } finally {\n");
+				emitPlanRestore(cleanup, indent + "        ", plan);
+				cleanup.append(indent).append("    }");
+				endCursorScope(body, indent, cleanup.toString());
 				return;
 			}
 			if (node instanceof EnumerateNodeDomainIntersection) {
@@ -6669,6 +6608,7 @@ final class LmdbNativeKernelEmitter {
 						.append(".cursor(partition);\n")
 						.append(indent)
 						.append("    while (ndiCursor.next()) {\n")
+						.append(indent).append("        if ((++pollTick & 1023) == 0) KernelRuntime.checkCancelled(cancel);\n")
 						.append(indent)
 						.append("        v")
 						.append(enumerate.col)
@@ -6709,6 +6649,7 @@ final class LmdbNativeKernelEmitter {
 					String keyBuffer = "akb" + keyRunCursorId(enumerate);
 					emitOpenKeyCursor(body, indent, enumerate, adjacency, cursor);
 					body.append(indent).append("if (").append(cursor).append(" != null) {\n");
+				beginCursorScope(body, indent + "    ");
 					body.append(indent).append("    int kn;\n");
 					body.append(indent)
 							.append("    while ((kn = ")
@@ -6735,13 +6676,13 @@ final class LmdbNativeKernelEmitter {
 					body.append(next(nextTemplate, indent + "            "));
 					body.append(indent).append("        }\n");
 					body.append(indent).append("    }\n");
-					body.append(indent).append("    ").append(cursor).append(".close();\n");
-					body.append(indent).append("    ").append(cursor).append(" = null;\n");
+					endKeyCursorScope(body, indent + "    ", cursor);
 					body.append(indent).append("}\n");
 					return;
 				}
 				emitOpenKeyCursor(body, indent, enumerate, adjacency, cursor);
 				body.append(indent).append("if (").append(cursor).append(" != null) {\n");
+				beginCursorScope(body, indent + "    ");
 				body.append(indent).append("    while (").append(cursor).append(".advance()) {\n");
 				body.append(indent)
 						.append("        v")
@@ -6769,8 +6710,7 @@ final class LmdbNativeKernelEmitter {
 				closeCtxEntry(body, indent + "            ", enumerate);
 				body.append(indent).append("        }\n");
 				body.append(indent).append("    }\n");
-				body.append(indent).append("    ").append(cursor).append(".close();\n");
-				body.append(indent).append("    ").append(cursor).append(" = null;\n");
+				endKeyCursorScope(body, indent + "    ", cursor);
 				body.append(indent).append("}\n");
 			} else if (node instanceof EnumerateDomain) {
 				EnumerateDomain enumerate = (EnumerateDomain) node;
@@ -7261,6 +7201,7 @@ final class LmdbNativeKernelEmitter {
 						.append("KernelQuadCursor cur = scanner.open(")
 						.append(terms.scan)
 						.append(", -1L, -1L, -1L, -1L);\n");
+				beginCursorScope(body, indent);
 				emitScanBuffer(body, indent, buffer);
 				// The dedup set is local to this node's activation: the enumeration is a producer at one pipeline
 				// position, so a fresh set per entry is both correct and what keeps a correlated re-open honest.
@@ -7270,6 +7211,7 @@ final class LmdbNativeKernelEmitter {
 						.append(buffer)
 						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
 				body.append(indent).append("while (n > 0) {\n");
+				body.append(indent).append("    KernelRuntime.checkCancelled(cancel);\n");
 				body.append(indent).append("    for (int i = 0; i < n; i++) {\n");
 				for (int position : new int[] { LmdbNativeKernelIr.ScanQuad.SUBJ, LmdbNativeKernelIr.ScanQuad.OBJ }) {
 					body.append(indent)
@@ -7301,7 +7243,7 @@ final class LmdbNativeKernelEmitter {
 						.append(buffer)
 						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
 				body.append(indent).append("}\n");
-				body.append(indent).append("cur.close();\n");
+				endCursorScope(body, indent, "KernelRuntime.closeScanCursor(cur, cursorFailure);");
 			} else if (node instanceof LmdbNativeKernelIr.LeftGroup) {
 				LmdbNativeKernelIr.LeftGroup group = (LmdbNativeKernelIr.LeftGroup) node;
 				// "Did the arm produce anything for this row" cannot be a local: the arm is emitted as its own methods,
