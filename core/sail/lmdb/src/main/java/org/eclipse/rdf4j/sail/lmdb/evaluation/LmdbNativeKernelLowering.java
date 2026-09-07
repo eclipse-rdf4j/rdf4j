@@ -1240,6 +1240,39 @@ final class LmdbNativeKernelLowering {
 		for (AggregateSpec aggregate : aggregates) {
 			countsOnly &= aggregate.kind == AggKind.COUNT && !aggregate.distinct;
 		}
+		// Opt-in only: selected-factor physical filters can outperform per-binding IR guards.
+		// Preserve the existing projected shortcut by default, while retaining this composable
+		// lowering for workload-specific verification. Filter order is unchanged.
+		// A failed speculative lowering is discarded, not partly committed to the fallback builder.
+		if (countsOnly && arg instanceof FilterPlan
+				&& Boolean.getBoolean(LmdbNativeKernelIr.FACTOR_GUARD_PEELING_PROPERTY)
+				&& !"false".equals(System.getProperty(LmdbNativeKernelIr.FACTOR_PLAN_PROPERTY))) {
+			List<FilterPlan> filters = new ArrayList<>();
+			SlotPlan core = arg;
+			long demanded = requiredMask;
+			while (core instanceof FilterPlan filter && filter.filterMask != -1L) {
+				filters.add(filter);
+				demanded |= filter.filterMask;
+				core = filter.arg;
+			}
+			if (!filters.isEmpty()) {
+				Builder factored = new Builder(row, "agg:");
+				factored.aggregateInputAssuredMask = SlotPlan.assuredMask(core) | row.boundMask();
+				factored.lowerPlanRows(core, demanded, false);
+				boolean admitted = true;
+				for (int i = filters.size() - 1; i >= 0; i--) {
+					if (!factored.lowerIdFilter(Builder.inspectFilter(filters.get(i).filter))) {
+						admitted = false;
+						break;
+					}
+				}
+				if (admitted) {
+					Lowered lowered = factored.buildAggregate(groupSlots, aggregates, having,
+							distinctExpected(arg, row, groupSlots.length > 0));
+					if (lowered != null && LmdbNativeKernelIr.factorPlan(lowered.kernel) != null) return lowered;
+				}
+			}
+		}
 		bridge.lowerPlanRows(arg, requiredMask, countsOnly);
 		return bridge.buildAggregate(groupSlots, aggregates, having,
 				distinctExpected(arg, row, groupSlots.length > 0));

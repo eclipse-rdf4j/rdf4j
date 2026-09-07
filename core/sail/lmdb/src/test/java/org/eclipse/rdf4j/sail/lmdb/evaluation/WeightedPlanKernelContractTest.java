@@ -68,14 +68,14 @@ public class WeightedPlanKernelContractTest {
   KernelPlan plan=new KernelPlan(){public Cursor open(){return new Cursor(){boolean done;public int fill(long[]o,int n){if(done)return 0;done=true;return 2;}public void close(){}};}public void close(){}};
   equal(new long[][]{{2}},run(shape(0,new int[0],false,false,false),plan,1));
  }
- @Test public void distinctAndInterveningFiltersDoNotTakeWeightedShortcut() throws Exception {
+ @Test public void distinctDeclinesAndIdFiltersRetainExactWeights() throws Exception {
   var distinct=shape(2,new int[0],true,true,false);
   Bags d=new Bags(new long[][]{{11,101},{11,101},{11,102}},new long[]{2,3,5});
   // COUNT(DISTINCT) uses RDF-term hooks in production; legality can be checked without inventing value semantics.
   if(LmdbNativeKernelIr.weightedPlanCount(distinct)||LmdbNativeKernelEmitter.emit(distinct).contains(".fillWeighted("))throw new AssertionError("distinct admitted");
   Bags filtered=new Bags(new long[][]{{11,11},{11,47}},new long[]{2,3});
   equal(new long[][]{{2}},run(shape(2,new int[0],false,false,true),filtered,1));
-  if(filtered.weightedRead)throw new AssertionError("filter was bypassed");
+  if(!filtered.weightedRead)throw new AssertionError("factor fallback failed to retain weights");
  }
  @Test public void weightedOverflowDoesNotWrap() throws Exception {
   Bags plan=new Bags(new long[][]{{},{}},new long[]{Long.MAX_VALUE,1});

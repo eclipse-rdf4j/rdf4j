@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PathExpand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanRows;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanFactors;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Probe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeVariable;
@@ -392,6 +393,31 @@ final class LmdbNativeKernelEmitter {
 			String simpleName = kernel.className().substring(kernel.className().lastIndexOf('.') + 1);
 			boolean aggregate = kernel.terminal instanceof Aggregate;
 			String terminalCall = aggregate ? "update();" : "emitRow();";
+			PlanFactors factorPlan = LmdbNativeKernelIr.factorPlan(kernel);
+			if (factorPlan != null) {
+				Aggregate counts = (Aggregate) kernel.terminal;
+				BitSet counted = new BitSet();
+				boolean countStar = false;
+				for (AggregateOutput output : counts.outputs) {
+					if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) countStar = true;
+					else counted.set(output.col);
+				}
+				String weight = "(fc" + factorPlan.plan + ".grouped() ? fc" + factorPlan.plan + ".multiplicity() : fw" + factorPlan.plan + ")";
+				if (!countStar) {
+					StringBuilder bound = new StringBuilder();
+					for (int col = counted.nextSetBit(0); col >= 0; col = counted.nextSetBit(col + 1)) {
+						if (!bound.isEmpty()) bound.append(" || ");
+						bound.append("v").append(col).append(" != -1L");
+					}
+					// Still create zero-count groups, but do not multiply an unobserved product.
+					weight = "(" + bound + ") ? " + weight + " : 1L";
+				}
+				terminalCall = LmdbNativeKernelIr.foldFactorCounts(kernel)
+						? "if (fc" + factorPlan.plan + ".grouped()) { fa" + factorPlan.plan + " = Math.addExact(fa"
+								+ factorPlan.plan + ", fc" + factorPlan.plan + ".openedMultiplicity()); } else { updateBy(fw"
+								+ factorPlan.plan + "); }"
+						: "updateBy(" + weight + ");";
+			}
 			FlatRootExists flatRootExists = flatRootExists();
 			this.flatRootExistsShape = flatRootExists;
 			String firstMethod = flatRootExists == null
@@ -409,6 +435,7 @@ final class LmdbNativeKernelEmitter {
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;\n")
+					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorCursor;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;\n\n")
@@ -1010,6 +1037,10 @@ final class LmdbNativeKernelEmitter {
 					source.append("    private long[] pb").append(i).append(";\n");
 				}
 			}
+			PlanFactors factors = LmdbNativeKernelIr.factorPlan(kernel);
+			if (factors != null) source.append("    private KernelFactorCursor fc").append(factors.plan)
+					.append(";\n    private long fw").append(factors.plan)
+					.append(";\n    private long fa").append(factors.plan).append(";\n");
 			if (kernel.vectorTailIndex >= 0) {
 				// Vector-tail scratch: one run slice and its selection, allocated once in bind and reused per run.
 				source.append("    private long[] tvec;\n");
@@ -1626,6 +1657,9 @@ final class LmdbNativeKernelEmitter {
 							.append("        }\n");
 				}
 			}
+			PlanFactors factors = LmdbNativeKernelIr.factorPlan(kernel);
+			if (factors != null) source.append("        if (fc").append(factors.plan).append(" != null) { fc")
+					.append(factors.plan).append(".close(); fc").append(factors.plan).append(" = null; }\n");
 			for (int i = 0; i < kernel.requirements.plans; i++) {
 				source.append("        if (pc")
 						.append(i)
@@ -5374,7 +5408,8 @@ final class LmdbNativeKernelEmitter {
 			if (!(kernel.terminal instanceof Aggregate)) {
 				return false;
 			}
-			if (LmdbNativeKernelIr.weightedPlanCount(kernel) || nodeDomainIntersectionBulkCount()) {
+			if (LmdbNativeKernelIr.factorPlan(kernel) != null
+					|| LmdbNativeKernelIr.weightedPlanCount(kernel) || nodeDomainIntersectionBulkCount()) {
 				return true;
 			}
 			if (wildcardMultiplicityTail()) {
@@ -6373,8 +6408,66 @@ final class LmdbNativeKernelEmitter {
 			body.append(indent).append("}\n");
 		}
 
+		private void emitPlanFactors(StringBuilder body, PlanFactors plan, String nextTemplate) {
+			String indent = "        ";
+			String cursor = "fc" + plan.plan;
+			emitPlanInputs(body, indent, plan);
+			body.append(indent).append(cursor).append(" = KernelFactorCursor.open(p").append(plan.plan)
+					.append(", ").append(plan.outCols.length).append(", new int[] {");
+			for (int i = 0; i < plan.scalarOutputs.length; i++) {
+				if (i != 0) body.append(", ");
+				body.append(plan.scalarOutputs[i]);
+			}
+			body.append("}, cancel);\n");
+			body.append(indent).append("try {\n");
+			body.append(indent).append("    if (").append(cursor).append(".grouped()) {\n");
+			body.append(indent).append("        long[] fv = ").append(cursor).append(".values();\n");
+			boolean fold = LmdbNativeKernelIr.foldFactorCounts(kernel);
+			if (fold) {
+				body.append(indent).append("        while (").append(cursor).append(".nextPrefix()) {\n")
+						.append(indent).append("            fa").append(plan.plan).append(" = 0L;\n")
+						.append(indent).append("            while (").append(cursor).append(".nextBinding()) {\n");
+			} else body.append(indent).append("        while (").append(cursor).append(".next()) {\n");
+			String inner = indent + (fold ? "                " : "            ");
+			for (int i = 0; i < plan.scalarOutputs.length; i++)
+				body.append(inner).append("v").append(plan.outCols[plan.scalarOutputs[i]])
+						.append(" = fv[").append(i).append("];\n");
+			body.append(next(nextTemplate, inner));
+			if (fold) body.append(indent).append("            }\n")
+					.append(indent).append("            if (fa").append(plan.plan).append(" != 0L) updateBy(Math.multiplyExact(fa")
+					.append(plan.plan).append(", ").append(cursor).append(".remainderMultiplicity()));\n");
+			body.append(indent).append("        }\n");
+			body.append(indent).append("    } else {\n");
+			body.append(indent).append("        long[] rows = ").append(cursor).append(".rowValues();\n")
+					.append(indent).append("        long[] weights = ").append(cursor).append(".rowWeights();\n")
+					.append(indent).append("        int n;\n")
+					.append(indent).append("        while ((n = ").append(cursor).append(".nextRowWindow()) != 0) {\n")
+					.append(indent).append("            for (int i = 0; i < n; i++) {\n")
+					.append(indent).append("                int base = i * ").append(plan.outCols.length).append(";\n");
+			for (int output : plan.scalarOutputs)
+				body.append(indent).append("                v").append(plan.outCols[output])
+						.append(" = rows[base + ").append(output).append("];\n");
+			body.append(indent).append("                fw").append(plan.plan).append(" = weights[i];\n");
+			body.append(next(nextTemplate, indent + "                "));
+			body.append(indent).append("            }\n").append(indent).append("        }\n")
+					.append(indent).append("    }\n");
+			body.append(indent).append("} catch (RuntimeException failure) {\n")
+					.append(indent).append("    ").append(cursor).append(".closeOnFailure(failure); throw failure;\n")
+					.append(indent).append("} catch (Error failure) {\n")
+					.append(indent).append("    ").append(cursor).append(".closeOnFailure(failure); throw failure;\n")
+					.append(indent).append("} finally {\n")
+					.append(indent).append("    try { ").append(cursor).append(".close(); } finally {\n")
+					.append(indent).append("        ").append(cursor).append(" = null;\n");
+			emitPlanRestore(body, indent + "        ", plan);
+			body.append(indent).append("    }\n").append(indent).append("}\n");
+		}
+
 		private void emitNode(StringBuilder body, Node node, String nextTemplate, boolean booleanMode, int stateIndex) {
 			String indent = "        ";
+			if (node instanceof PlanFactors factors) {
+				emitPlanFactors(body, factors, nextTemplate);
+				return;
+			}
 			if (stateIndex >= 0 && emitResumableProducer(body, node, nextTemplate, stateIndex)) {
 				return;
 			}

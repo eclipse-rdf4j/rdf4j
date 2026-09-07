@@ -55,6 +55,7 @@ final class LmdbNativeKernelIr {
 	/** Exact weighted transfer is legal only with no intervening per-mapping work or distinct channel. */
 	static boolean weightedPlanCount(Kernel kernel) {
 		if (kernel.pipeline.size() != 1 || !(kernel.pipeline.get(0) instanceof PlanRows)
+				|| kernel.pipeline.get(0) instanceof PlanFactors
 				|| !(kernel.terminal instanceof Aggregate aggregate) || aggregate.outputs.length == 0) return false;
 		for (AggregateOutput output : aggregate.outputs) {
 			if (output.hookDistinct || (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT)) return false;
@@ -404,7 +405,7 @@ final class LmdbNativeKernelIr {
 	 * or dataset-scoped statement patterns). The bound {@code KernelPlan} owns the real row state and cursor; this node
 	 * sees only the registered output ids.
 	 */
-	static final class PlanRows extends Node {
+	static class PlanRows extends Node {
 		final int plan;
 		final int[] outCols;
 		final Operand[] inputs;
@@ -457,6 +458,139 @@ final class LmdbNativeKernelIr {
 			}
 			requirements.plan(plan);
 		}
+	}
+
+	/**
+	 * Grouped physical producer: only scalarOutputs are opened and made available as ID registers.
+	 * Remaining groups stay borrowed until a COUNT terminal requests their exact product, after
+	 * the scalar guards accept. Output positions, IR registers, and engine slots are distinct
+	 * namespaces. Shape fields contain neither addresses nor snapshot-specific descriptors.
+	 *
+	 * The first admitted continuation is deterministic ID guards/aliases followed by COUNT
+	 * channels. Unknown effects and expanding continuations remain explicit admission barriers.
+	 */
+	static final class PlanFactors extends PlanRows {
+		final int[] scalarOutputs;
+
+		PlanFactors(int plan, int[] outCols, Operand[] inputs, int[] scalarOutputs) {
+			super(plan, outCols, inputs);
+			if (plan < 0) throw new IllegalArgumentException("negative plan resource");
+			for (int col : outCols) if (col < 0 || col >= Long.SIZE)
+				throw new IllegalArgumentException("invalid factor output register");
+			this.scalarOutputs = scalarOutputs.clone();
+			BitSet seen = new BitSet();
+			for (int output : this.scalarOutputs) {
+				if (output < 0 || output >= outCols.length || seen.get(output))
+					throw new IllegalArgumentException("invalid or repeated scalar output");
+				seen.set(output);
+			}
+		}
+
+		@Override void key(StringBuilder key) {
+			key.append("PF[");
+			for (int output : scalarOutputs) key.append(output).append(',');
+			key.append("]");
+			super.key(key);
+		}
+
+		@Override void produced(BitSet columns) {
+			for (int output : scalarOutputs) {
+				int col = outCols[output];
+				if (inputForColumn(col) < 0) columns.set(col);
+			}
+		}
+	}
+
+	static final String FACTOR_PLAN_PROPERTY = "rdf4j.lmdb.janinoCodegen.factorPlans";
+	/** Experimental: r5's selected-factor filters beat scalarized IR guards on some measured leaves. */
+	static final String FACTOR_GUARD_PEELING_PROPERTY = "rdf4j.lmdb.janinoCodegen.factorGuardPeeling";
+
+	static PlanFactors factorPlan(Kernel kernel) {
+		return !kernel.pipeline.isEmpty() && kernel.pipeline.get(0) instanceof PlanFactors factors ? factors : null;
+	}
+
+	/** Linear COUNT(*) channels can be folded per prefix before multiplying independent siblings. */
+	static boolean foldFactorCounts(Kernel kernel) {
+		if (factorPlan(kernel) == null || !(kernel.terminal instanceof Aggregate aggregate)
+				|| aggregate.groupCols.length != 0 || aggregate.outputs.length == 0) return false;
+		for (AggregateOutput output : aggregate.outputs)
+			if (output.kind != AGG_COUNT_STAR || output.hookDistinct) return false;
+		return true;
+	}
+
+	/** Shared by both execution tiers. Unknown or per-mapping effects conservatively reject the rewrite. */
+	private static int[] factorScalarOutputs(List<Node> pipeline, Terminal terminal) {
+		if (pipeline.isEmpty() || !(pipeline.get(0) instanceof PlanRows plan)
+				|| !(terminal instanceof Aggregate aggregate) || aggregate.outputs.length == 0) return null;
+		BitSet required = new BitSet();
+		for (int col : aggregate.groupCols) required.set(col);
+		for (AggregateOutput output : aggregate.outputs) {
+			if (output.hookDistinct || (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT)) return null;
+			if (output.kind == AGG_COUNT) required.set(output.col);
+		}
+		for (int i = pipeline.size() - 1; i > 0; i--) {
+			Node node = pipeline.get(i);
+			if (node instanceof FilterCompareId filter) {
+				demand(required, filter.left); demand(required, filter.right);
+			} else if (node instanceof FilterEntryCompatible filter) {
+				demand(required, filter.value);
+			} else if (node instanceof FilterInConstants filter) {
+				demand(required, filter.value);
+			} else if (node instanceof FilterRangeUnsigned filter) {
+				demand(required, filter.value);
+			} else if (node instanceof BindAlias alias) {
+				required.clear(alias.dstCol);
+				demand(required, alias.source); // the alias still executes when its result is unused
+			} else return null;
+		}
+		int[] result = new int[plan.outCols.length];
+		int size = 0;
+		for (int i = 0; i < plan.outCols.length; i++)
+			if (required.get(plan.outCols[i])) result[size++] = i;
+		return java.util.Arrays.copyOf(result, size);
+	}
+
+	private static void demand(BitSet required, Operand operand) {
+		if (operand.kind == Operand.COL) required.set(operand.index);
+	}
+
+	/** Grouped continuations are not silently accepted inside unsupported algebra containers. */
+	private static void validateFactorPlacement(List<Node> pipeline, boolean topLevel) {
+		for (int i = 0; i < pipeline.size(); i++) {
+			Node node = pipeline.get(i);
+			if (node instanceof PlanFactors && (!topLevel || i != 0))
+				throw new IllegalArgumentException("unsupported nested grouped producer");
+			if (node instanceof Exists exists) validateFactorPlacement(exists.pipeline, false);
+			else if (node instanceof HashBuild build) validateFactorPlacement(build.pipeline, false);
+			else if (node instanceof Union union) {
+				for (List<Node> branch : union.branches) validateFactorPlacement(branch, false);
+			} else if (node instanceof LeftGroup group) validateFactorPlacement(group.arm, false);
+			else if (node instanceof LexicalFrameLeftJoin join) {
+				validateFactorPlacement(join.left, false);
+				validateFactorPlacement(join.right, false);
+			}
+		}
+	}
+
+	private static List<Node> factorizePlanCounts(List<Node> pipeline, Terminal terminal) {
+		int[] demanded = factorScalarOutputs(pipeline, terminal);
+		if (!pipeline.isEmpty() && pipeline.get(0) instanceof PlanFactors factors) {
+			if (demanded == null) throw new IllegalArgumentException("unsupported factor continuation");
+			BitSet supplied = new BitSet();
+			for (int output : factors.scalarOutputs) supplied.set(output);
+			for (int output : demanded) if (!supplied.get(output))
+				throw new IllegalArgumentException("factor continuation reads a deferred scalar");
+			return pipeline;
+		}
+		for (Node node : pipeline) if (node instanceof PlanFactors)
+			throw new IllegalArgumentException("grouped producer must be the first instruction");
+		// Do not replace a sufficient existing compact projection/count shortcut.
+		if (demanded == null || pipeline.size() == 1 || "false".equals(System.getProperty(FACTOR_PLAN_PROPERTY)))
+			return pipeline;
+		PlanRows plan = (PlanRows) pipeline.get(0);
+		List<Node> result = new ArrayList<>(pipeline);
+		result.set(0, new PlanFactors(plan.plan, plan.outCols, plan.inputs, demanded));
+		return List.copyOf(result);
 	}
 
 	/**
@@ -2833,10 +2967,11 @@ final class LmdbNativeKernelIr {
 				throw new IllegalArgumentException("column count out of range: " + columnCount);
 			}
 			this.telemetryMode = java.util.Objects.requireNonNull(telemetryMode, "telemetryMode");
+			validateFactorPlacement(pipeline, true);
 			OptimizedKernel optimized = distinctRootExistsEnabled()
 					? optimizeDistinctRootExists(pipeline, terminal)
 					: new OptimizedKernel(List.copyOf(pipeline), terminal);
-			this.pipeline = optimized.pipeline;
+			this.pipeline = factorizePlanCounts(optimized.pipeline, optimized.terminal);
 			this.columnCount = columnCount;
 			this.terminal = optimized.terminal;
 			this.requirements = new Requirements();

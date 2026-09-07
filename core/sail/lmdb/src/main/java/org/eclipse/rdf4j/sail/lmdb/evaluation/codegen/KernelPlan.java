@@ -39,6 +39,9 @@ public interface KernelPlan extends AutoCloseable {
 	 */
 	default FactorCursor openFactors() { return null; }
 
+	/** Scalar demand in this plan's registered output-column namespace, not the engine slot namespace. */
+	default FactorCursor openFactors(int[] scalarOutputColumns) { return openFactors(); }
+
 	interface FactorCursor extends AutoCloseable {
 		boolean next();
 		/** Engine slot corresponding to one registered output column. Hoist this mapping outside loops. */

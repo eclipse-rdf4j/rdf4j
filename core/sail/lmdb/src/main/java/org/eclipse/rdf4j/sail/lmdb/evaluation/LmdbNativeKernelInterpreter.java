@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PathExpand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanRows;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanFactors;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Probe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeVariable;
@@ -62,6 +63,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
@@ -198,6 +200,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private final Kernel kernel;
+	private final boolean factorCountFold;
 	/** Aggregate terminal, or null for a row (Emit) kernel. */
 	private final Aggregate aggregate;
 	/** Emit terminal, or null for an aggregate kernel. */
@@ -229,6 +232,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private final List<NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[]> activeKeyCursors = new ArrayList<>();
 	/** One live cursor slot per plan site; the plan itself is also closed by close() (EM:1289-1307). */
 	private KernelPlan.Cursor[] planCursors;
+	private KernelFactorCursor factorCursor;
+	private long factorFallbackWeight;
+	private long factorAccepted;
 	private long[][] scanBuffers;
 	private long[][] planBuffers;
 	private KernelRuntime.LongRowMap[] hashTables;
@@ -292,6 +298,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	private LmdbNativeKernelInterpreter(Kernel kernel) {
 		this.kernel = kernel;
+		this.factorCountFold = LmdbNativeKernelIr.foldFactorCounts(kernel);
 		this.aggregate = kernel.terminal instanceof Aggregate ? (Aggregate) kernel.terminal : null;
 		this.emit = kernel.terminal instanceof LmdbNativeKernelIr.Emit ? (LmdbNativeKernelIr.Emit) kernel.terminal
 				: null;
@@ -605,6 +612,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (node instanceof ScanQuad) {
 			return buildScanQuad((ScanQuad) node, next);
 		}
+		if (node instanceof PlanFactors factors) return buildPlanFactors(factors, next);
 		if (node instanceof PlanRows) {
 			return buildPlanRows((PlanRows) node, next);
 		}
@@ -1583,6 +1591,58 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		};
 	}
 
+	private Op buildPlanFactors(PlanFactors plan, Op next) {
+		return () -> {
+			KernelPlan bound = context.plans[plan.plan];
+			for (int i = 0; i < plan.inputs.length; i++) bound.setInput(i, read(plan.inputs[i]));
+			KernelFactorCursor cursor = KernelFactorCursor.open(bound, plan.outCols.length, plan.scalarOutputs, cancel);
+			factorCursor = cursor;
+			long[] values = cursor.values();
+			try {
+				if (cursor.grouped() && factorCountFold) {
+					while (cursor.nextPrefix()) {
+						factorAccepted = 0L;
+						while (cursor.nextBinding()) {
+							for (int i = 0; i < plan.scalarOutputs.length; i++) v[plan.outCols[plan.scalarOutputs[i]]] = values[i];
+							if (next.run()) return true;
+						}
+						if (factorAccepted != 0L) updateTerminalBy(Math.multiplyExact(factorAccepted, cursor.remainderMultiplicity()));
+					}
+				} else if (cursor.grouped()) {
+					while (cursor.next()) {
+						for (int i = 0; i < plan.scalarOutputs.length; i++) v[plan.outCols[plan.scalarOutputs[i]]] = values[i];
+						if (next.run()) return true;
+					}
+				} else {
+					long[] rows = cursor.rowValues();
+					long[] weights = cursor.rowWeights();
+					int n;
+					while ((n = cursor.nextRowWindow()) != 0) {
+						for (int i = 0; i < n; i++) {
+							int base = i * plan.outCols.length;
+							for (int output : plan.scalarOutputs) v[plan.outCols[output]] = rows[base + output];
+							factorFallbackWeight = weights[i];
+							if (next.run()) return true;
+						}
+					}
+				}
+			} catch (RuntimeException | Error failure) {
+				cursor.closeOnFailure(failure);
+				throw failure;
+			} finally {
+				try { cursor.close(); }
+				finally {
+					factorCursor = null;
+					for (int col : plan.outCols) {
+						int input = plan.inputForColumn(col);
+						v[col] = input < 0 ? -1L : bound.input(input);
+					}
+				}
+			}
+			return false;
+		};
+	}
+
 	private Op buildPlanRows(PlanRows plan, Op next) {
 		int width = plan.outCols.length;
 		boolean weighted = LmdbNativeKernelIr.weightedPlanCount(kernel);
@@ -2213,7 +2273,19 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	/** The pipeline terminal: accumulate the current row. Always returns false (void-mode continuation). */
 	private boolean updateTerminal() {
-		if (streamingGroups()) {
+		if (factorCursor != null && factorCursor.grouped() && factorCountFold) {
+			factorAccepted = Math.addExact(factorAccepted, factorCursor.openedMultiplicity());
+		} else if (factorCursor != null) {
+			boolean needsWeight = false;
+			for (AggregateOutput output : aggregate.outputs) {
+				if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR || v[output.col] != -1L) {
+					needsWeight = true;
+					break;
+				}
+			}
+			// An all-unbound COUNT projection still creates its zero-count group.
+			updateTerminalBy(needsWeight ? (factorCursor.grouped() ? factorCursor.multiplicity() : factorFallbackWeight) : 1L);
+		} else if (streamingGroups()) {
 			updateStreaming();
 		} else {
 			updateHashed();

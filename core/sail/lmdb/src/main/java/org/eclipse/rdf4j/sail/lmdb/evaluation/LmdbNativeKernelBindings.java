@@ -941,14 +941,24 @@ final class LmdbNativeKernelBindings {
 		}
 
 		@Override
-		public FactorCursor openFactors() {
+		public FactorCursor openFactors() { return openFactors(new int[0]); }
+
+		@Override
+		public FactorCursor openFactors(int[] scalarOutputColumns) {
+			long demand = 0L;
+			for (int column : scalarOutputColumns) {
+				java.util.Objects.checkIndex(column, request.outputSlots.length);
+				int slot = request.outputSlots[column];
+				java.util.Objects.checkIndex(slot, Long.SIZE);
+				demand |= 1L << slot;
+			}
 			close();
 			RowState scratch = parent.fork();
 			for (int i = 0; i < inputs.length; i++) scratch.slots[request.inputSlots[i]] = inputs[i];
 			scratch.recomputeBoundMask();
 			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 			try {
-				LmdbNativeFactorCursor producer = request.plan.openFactors(scratch);
+				LmdbNativeFactorCursor producer = request.plan.openFactors(scratch, demand);
 				if (producer == null) return null;
 				activeFactors = new BoundFactorCursor(producer, scratch, request.outputSlots, this);
 				return activeFactors;
