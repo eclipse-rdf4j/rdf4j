@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentBinding;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentTelemetry;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.LongPredicateFragment;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.PredicateStatus;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.PrimitiveSumAccumulator;
 
 /**
  * Engine-side implementation of the generated-kernel callback SPI (plan:
@@ -49,6 +50,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.PredicateStatus;
 final class LmdbNativeKernelHooks implements KernelHooks {
 
 	private final NativeLmdbQuerySource source;
+	private final boolean directTermHash = Boolean.getBoolean("rdf4j.lmdb.irAggregate.prototype")
+			&& !"false".equals(System.getProperty("rdf4j.lmdb.irAggregate.prototype.directTermHash"));
 	private final RowState scratch;
 	private final LmdbNativeValueCodec codec;
 	private final LmdbNativeKernelBindings.FilterHook[] filters;
@@ -61,6 +64,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	private final Literal[][] numericSums;
 	private final long[][] numericCounts;
 	private final boolean[][] numericErrors;
+	private final PrimitiveSumAccumulator[] primitiveNumeric;
 	private final AggContext numericContext;
 	private final LmdbNativeKernelBindings.KernelGroupLayout groupLayout;
 	private final int[] columnSlots;
@@ -139,6 +143,9 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		this.numericSums = new Literal[aggregateCount][];
 		this.numericCounts = new long[aggregateCount][];
 		this.numericErrors = new boolean[aggregateCount][];
+		this.primitiveNumeric = Boolean.getBoolean("rdf4j.lmdb.irAggregate.prototype")
+				? new PrimitiveSumAccumulator[aggregateCount]
+				: null;
 		this.distinctSets = new KernelRuntime.LongHashSet[aggregateCount][];
 		this.distinctExpected = bindings.distinctExpected;
 		boolean hasNumericAggregate = false;
@@ -150,6 +157,9 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 				numericKinds[i] = kind;
 				numericSums[i] = new Literal[16];
 				numericErrors[i] = new boolean[16];
+				if (primitiveNumeric != null) {
+					primitiveNumeric[i] = new PrimitiveSumAccumulator(i, numericEscapeBridge());
+				}
 				if (kind == AggKind.AVG) {
 					numericCounts[i] = new long[16];
 				}
@@ -187,6 +197,12 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 
 	@Override
 	public long rdfTermHash(long id) {
+		if (directTermHash) {
+			// Hashing needs only the authoritative Value hash. Classifying canonical ids first would read a
+			// literal's language (and initialize its lexical payload), defeating the stored-hash fast path.
+			Value value = scratch.termAuthority().valueOf(id);
+			return value != null ? value.hashCode() : id;
+		}
 		return scratch.termAuthority().rdfTermHash(id);
 	}
 
@@ -522,6 +538,15 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	@Override
 	public void accumulateNumeric(int aggregateId, int groupId, long valueId) {
 		requireNumericAccumulator(aggregateId, groupId);
+		if (primitiveNumeric != null) {
+			primitiveNumeric[aggregateId].accumulate(groupId, valueId);
+			return;
+		}
+		accumulateNumericExact(aggregateId, groupId, valueId);
+	}
+
+	private void accumulateNumericExact(int aggregateId, int groupId, long valueId) {
+		requireNumericAccumulator(aggregateId, groupId);
 		ensureNumericCapacity(aggregateId, groupId);
 		if (numericErrors[aggregateId][groupId]) {
 			return;
@@ -587,6 +612,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	 */
 	Literal numericResult(int aggregateId, int groupId) {
 		requireNumericAccumulator(aggregateId, groupId);
+		promoteNumericGroup(aggregateId, groupId);
 		if (groupId < numericErrors[aggregateId].length && numericErrors[aggregateId][groupId]) {
 			return null;
 		}
@@ -644,11 +670,13 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	/** Partial-state accessors and installer for the parallel aggregate merge (three-tier plan, Milestone 10B). */
 	Literal numericSumAt(int aggregateId, int groupId) {
 		requireNumericAccumulator(aggregateId, groupId);
+		promoteNumericGroup(aggregateId, groupId);
 		return groupId < numericSums[aggregateId].length ? numericSums[aggregateId][groupId] : null;
 	}
 
 	long numericCountAt(int aggregateId, int groupId) {
 		requireNumericAccumulator(aggregateId, groupId);
+		promoteNumericGroup(aggregateId, groupId);
 		long[] counts = numericCounts[aggregateId];
 		return counts != null && groupId < counts.length ? counts[groupId] : 0L;
 	}
@@ -661,8 +689,8 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	/**
 	 * The aggregate escape bridge (fragment-fusion M8): lets a fragment-side primitive accumulator
 	 * ({@code PrimitiveSumAccumulator}) re-home a group's scaled-long partial into this hook set's exact numeric
-	 * machinery and route all later values of that group through {@link #accumulateNumeric}. Promotion installs the
-	 * partial through the same path the parallel merge uses, so finalization semantics are identical by construction.
+	 * machinery and route all later values of that group through the exact accumulator. Promotion installs the partial
+	 * through the same path the parallel merge uses, so finalization semantics are identical by construction.
 	 */
 	org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.NumericAggregateEscape numericEscapeBridge() {
 		return new org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.NumericAggregateEscape() {
@@ -678,18 +706,30 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 					sum = SimpleValueFactory.getInstance()
 							.createLiteral(java.math.BigDecimal.valueOf(unscaledSum, scale));
 				}
-				installNumericPartial(aggregateSite, group, sum, count, false);
+				installExactNumericPartial(aggregateSite, group, sum, count, false);
 			}
 
 			@Override
 			public void accumulateExact(int aggregateSite, int group, long valueId) {
-				accumulateNumeric(aggregateSite, group, valueId);
+				accumulateNumericExact(aggregateSite, group, valueId);
 			}
 		};
 	}
 
 	/** Installs one merged partial so {@link #numericResult} finalizes it with the ordinary emission rules. */
 	void installNumericPartial(int aggregateId, int groupId, Literal sum, long count, boolean error) {
+		requireNumericAccumulator(aggregateId, groupId);
+		promoteNumericGroup(aggregateId, groupId);
+		installExactNumericPartial(aggregateId, groupId, sum, count, error);
+	}
+
+	private void promoteNumericGroup(int aggregateId, int groupId) {
+		if (primitiveNumeric != null) {
+			primitiveNumeric[aggregateId].promoteGroup(groupId);
+		}
+	}
+
+	private void installExactNumericPartial(int aggregateId, int groupId, Literal sum, long count, boolean error) {
 		requireNumericAccumulator(aggregateId, groupId);
 		ensureNumericCapacity(aggregateId, groupId);
 		numericSums[aggregateId][groupId] = sum;
