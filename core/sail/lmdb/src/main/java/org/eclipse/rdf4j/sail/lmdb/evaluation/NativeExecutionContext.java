@@ -193,6 +193,19 @@ final class NativeExecutionContext implements AutoCloseable {
 		return queryScopeOwner.queryScopedStoreValuesById.get(id);
 	}
 
+	/**
+	 * Only an actually published runtime-interner value, never a retained representative of a store id.
+	 * The allocation interval is a negative gate; map membership remains the positive proof. In particular,
+	 * arbitrary high-bit store ids are not classified by their sign or by an allocated-but-unpublished number.
+	 */
+	Value internedValueOf(long id) {
+		if (!hasInternedValues
+				|| Long.compareUnsigned(id - RUNTIME_INTERN_BASE, nextId.get() - RUNTIME_INTERN_BASE) >= 0) {
+			return null;
+		}
+		return valuesById.get(id);
+	}
+
 	boolean contains(long id) {
 		if (!hasResolvableValues()) {
 			return false;

@@ -56,6 +56,33 @@ interface NativeTermAuthority {
 	/** Hash consistent with {@link #sameRdfTerm}: equal terms hash equal regardless of id space or spelling. */
 	long rdfTermHash(long id);
 
+	/**
+	 * Whether {@link #canonicalTermKey(long)} supplies an exact, stable equivalence key for every id in this
+	 * authority. This is a lifetime-stable capability, not a per-row guess. The default keeps foreign/legacy
+	 * authorities on their value-semantic path.
+	 */
+	default boolean supportsCanonicalTermKeys() {
+		return false;
+	}
+
+	/**
+	 * A representative id for RDF-term identity within {@link #token()}, not a SPARQL value-comparison key.
+	 * Equal keys are equivalent terms; unlike a hash this key is collision-free within the authority. Store ids
+	 * should pass through without resolving a Value. Synthetic aliases may require normalization at their boundary.
+	 * Keys must not escape this authority or replace the original ids in output bindings.
+	 */
+	default long canonicalTermKey(long id) {
+		throw new UnsupportedOperationException("canonical term keys are not supported by this authority");
+	}
+
+	/**
+	 * Input to an operator's integer hash mixer. Equal terms must produce equal inputs within this authority.
+	 * This is deliberately separate from the authority-independent {@link #rdfTermHash(long)} and Value.hashCode().
+	 */
+	default long termHashKey(long id) {
+		return supportsCanonicalTermKeys() ? canonicalTermKey(id) : rdfTermHash(id);
+	}
+
 	TermProbeDisposition probeDisposition(long id);
 
 	/**

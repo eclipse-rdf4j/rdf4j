@@ -628,22 +628,38 @@ final class NativeTermReferenceCache {
 	private static final byte OCCUPIED = 1;
 
 	private final NativeTermAuthority authority;
-	private final HashMap<Object, Long> equivalenceIds = new HashMap<>();
-	private long[] ids = new long[256];
-	private NativeTermRef[] refs = new NativeTermRef[256];
-	private long[] equivalents = new long[256];
-	private byte[] states = new byte[256];
+	private final boolean canonicalKeys;
+	private HashMap<Object, Long> equivalenceIds;
+	private long[] ids;
+	private NativeTermRef[] refs;
+	private long[] equivalents;
+	private byte[] states;
 	private int size;
 	private int threshold = 192;
 	private long nextEquivalenceId = 1L;
 
 	NativeTermReferenceCache(NativeTermAuthority authority) {
 		this.authority = authority;
+		this.canonicalKeys = authority.supportsCanonicalTermKeys();
+		if (!canonicalKeys) {
+			allocateValueCache();
+		}
+	}
+
+	private void allocateValueCache() {
+		equivalenceIds = new HashMap<>();
+		ids = new long[256];
+		refs = new NativeTermRef[256];
+		equivalents = new long[256];
+		states = new byte[256];
 	}
 
 	NativeTermRef termRef(long id) {
 		if (id == UNKNOWN || id == NULL_CONTEXT_ID) {
 			return null;
+		}
+		if (ids == null) {
+			allocateValueCache();
 		}
 		int slot = slot(id);
 		if ((states[slot] & OCCUPIED) == 0) {
@@ -655,6 +671,9 @@ final class NativeTermReferenceCache {
 	long equivalenceId(long id) {
 		if (id == UNKNOWN || id == NULL_CONTEXT_ID) {
 			return UNKNOWN;
+		}
+		if (canonicalKeys) {
+			return authority.canonicalTermKey(id);
 		}
 		int slot = slot(id);
 		if ((states[slot] & OCCUPIED) == 0) {

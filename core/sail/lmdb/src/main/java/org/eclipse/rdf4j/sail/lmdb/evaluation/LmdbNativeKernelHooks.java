@@ -191,6 +191,11 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	}
 
 	@Override
+	public long termHashKey(long id) {
+		return scratch.termAuthority().termHashKey(id);
+	}
+
+	@Override
 	public long importRdfTerm(KernelHooks sourceHooks, long sourceId) {
 		if (sourceHooks == this) {
 			return sourceId;

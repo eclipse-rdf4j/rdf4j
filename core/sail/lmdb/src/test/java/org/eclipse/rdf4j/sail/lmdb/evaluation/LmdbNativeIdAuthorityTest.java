@@ -82,6 +82,11 @@ public class LmdbNativeIdAuthorityTest {
 		}
 
 		@Override
+		public boolean hasCanonicalIds() {
+			return false;
+		}
+
+		@Override
 		public Object idSpace() {
 			return this;
 		}

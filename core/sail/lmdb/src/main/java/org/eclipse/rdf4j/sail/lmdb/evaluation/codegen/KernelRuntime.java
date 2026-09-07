@@ -516,7 +516,7 @@ public final class KernelRuntime {
 		}
 
 		private int hash(long key) {
-			return (int) mix(semantics == null ? key : semantics.rdfTermHash(key));
+			return (int) mix(semantics == null ? key : semantics.termHashKey(key));
 		}
 
 		private boolean same(long left, long right) {
@@ -653,7 +653,7 @@ public final class KernelRuntime {
 		}
 
 		private int hash(long key) {
-			return (int) mix(semantics == null ? key : semantics.rdfTermHash(key));
+			return (int) mix(semantics == null ? key : semantics.termHashKey(key));
 		}
 
 		private boolean same(long left, long right) {
@@ -888,7 +888,7 @@ public final class KernelRuntime {
 			long hash = 0xCBF29CE484222325L;
 			for (int i = 0; i < stride; i++) {
 				long value = buf[offset + i];
-				hash = mix(hash ^ (semantics == null ? value : semantics.rdfTermHash(value)));
+				hash = mix(hash ^ (semantics == null ? value : semantics.termHashKey(value)));
 			}
 			return (int) hash;
 		}

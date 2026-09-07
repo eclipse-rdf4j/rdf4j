@@ -73,7 +73,9 @@ import org.openjdk.jmh.runner.options.TimeValue;
 @Warmup(iterations = 4, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 10000)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
-		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true", "-Drdf4j.lmdb.janinoCodegen.factorGuardPeeling=true" })
+		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true"
+//		, "-Drdf4j.lmdb.janinoCodegen.factorGuardPeeling=true"
+})
 @Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
@@ -133,24 +135,24 @@ public class ThemeQueryBenchmark {
 	public String z_z_irMode;
 
 	@Param({
-//			"0",
-//			"1",
-//			"2",
+			"0",
+			"1",
+			"2",
 			"3",
-//			"4",
-//			"5",
-//			"6",
-//			"7",
-//			"8",
-//			"9",
-//			"10",
-//			"11",
-//			"12"
+			"4",
+			"5",
+			"6",
+			"7",
+			"8",
+			"9",
+			"10",
+			"11",
+			"12"
 	})
 	public int z_queryIndex;
 
 	@Param({
-//			"MEDICAL_RECORDS",
+			"MEDICAL_RECORDS",
 //			"SOCIAL_MEDIA",
 //			"LIBRARY",
 //			"ENGINEERING",

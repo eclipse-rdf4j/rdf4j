@@ -1010,11 +1010,14 @@ final class GroupKey {
 final class LongHashSet {
 	static final long EMPTY = Long.MIN_VALUE;
 	final NativeTermAuthority authority;
+	final boolean canonicalKeys;
 	final HashMap<Value, Long> nonCanonicalValues;
 	long[] table;
 	int size;
 	int threshold;
 	boolean containsEmptySentinel;
+	/** Original output id whose canonical key occupies the reserved empty-key channel. */
+	long emptyRepresentative = EMPTY;
 
 	LongHashSet(int expectedSize) {
 		this(expectedSize, null);
@@ -1022,7 +1025,8 @@ final class LongHashSet {
 
 	LongHashSet(int expectedSize, NativeTermAuthority authority) {
 		this.authority = authority;
-		this.nonCanonicalValues = authority == null ? null : new HashMap<>();
+		this.canonicalKeys = authority != null && authority.supportsCanonicalTermKeys();
+		this.nonCanonicalValues = authority == null || canonicalKeys ? null : new HashMap<>();
 		int capacity = 1;
 		while (capacity < expectedSize * 2) {
 			capacity <<= 1;
@@ -1043,10 +1047,12 @@ final class LongHashSet {
 	}
 
 	private boolean addRaw(long value) {
-		if (value == EMPTY) {
+		long key = canonicalKeys ? authority.canonicalTermKey(value) : value;
+		if (key == EMPTY) {
 			boolean added = !containsEmptySentinel;
 			containsEmptySentinel = true;
 			if (added) {
+				emptyRepresentative = value;
 				size++;
 			}
 			return added;
@@ -1056,7 +1062,7 @@ final class LongHashSet {
 		}
 		long[] t = table;
 		int mask = t.length - 1;
-		int index = mix(value) & mask;
+		int index = mix(key) & mask;
 		while (true) {
 			long current = t[index];
 			if (current == EMPTY) {
@@ -1064,7 +1070,7 @@ final class LongHashSet {
 				size++;
 				return true;
 			}
-			if (current == value) {
+			if (sameKey(current, value)) {
 				return false;
 			}
 			index = (index + 1) & mask;
@@ -1076,7 +1082,7 @@ final class LongHashSet {
 		long[] result = new long[size];
 		int i = 0;
 		if (containsEmptySentinel) {
-			result[i++] = EMPTY;
+			result[i++] = emptyRepresentative;
 		}
 		for (long value : table) {
 			if (value != EMPTY) {
@@ -1104,18 +1110,19 @@ final class LongHashSet {
 	}
 
 	private boolean containsRaw(long value) {
-		if (value == EMPTY) {
+		long key = canonicalKeys ? authority.canonicalTermKey(value) : value;
+		if (key == EMPTY) {
 			return containsEmptySentinel;
 		}
 		long[] t = table;
 		int mask = t.length - 1;
-		int index = mix(value) & mask;
+		int index = mix(key) & mask;
 		while (true) {
 			long current = t[index];
 			if (current == EMPTY) {
 				return false;
 			}
-			if (current == value) {
+			if (sameKey(current, value)) {
 				return true;
 			}
 			index = (index + 1) & mask;
@@ -1134,7 +1141,8 @@ final class LongHashSet {
 	}
 
 	private boolean removeRaw(long value) {
-		if (value == EMPTY) {
+		long key = canonicalKeys ? authority.canonicalTermKey(value) : value;
+		if (key == EMPTY) {
 			if (!containsEmptySentinel) {
 				return false;
 			}
@@ -1144,13 +1152,13 @@ final class LongHashSet {
 		}
 		long[] t = table;
 		int mask = t.length - 1;
-		int index = mix(value) & mask;
+		int index = mix(key) & mask;
 		while (true) {
 			long current = t[index];
 			if (current == EMPTY) {
 				return false;
 			}
-			if (current == value) {
+			if (sameKey(current, value)) {
 				break;
 			}
 			index = (index + 1) & mask;
@@ -1173,7 +1181,9 @@ final class LongHashSet {
 	/** Unions another set into this one (parallel worker merge). */
 	void addAll(LongHashSet other) {
 		if (other.containsEmptySentinel) {
-			add(EMPTY);
+			long value = other.emptyRepresentative;
+			add(authority != null && other.authority != null && authority.token() != other.authority.token()
+					? authority.importId(other.authority, value) : value);
 		}
 		for (long value : other.table) {
 			if (value != EMPTY) {
@@ -1201,11 +1211,16 @@ final class LongHashSet {
 	}
 
 	private boolean isNonCanonical(long value) {
-		if (authority == null || value == EMPTY || value == UNKNOWN || value == NULL_CONTEXT_ID) {
+		if (authority == null || canonicalKeys || value == EMPTY || value == UNKNOWN || value == NULL_CONTEXT_ID) {
 			return false;
 		}
 		NativeTermRef term = authority.termRef(value);
 		return term == null || term.canonicalId().isEmpty();
+	}
+
+
+	private boolean sameKey(long left, long right) {
+		return left == right || canonicalKeys && authority.sameRdfTerm(left, right);
 	}
 
 	static int mix(long value) {

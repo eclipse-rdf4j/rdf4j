@@ -36,6 +36,15 @@ public interface KernelHooks {
 		return id;
 	}
 
+	/**
+	 * Authority-local input to the integer hash mixer used by native hash tables. Canonical dictionaries return
+	 * the id (or a canonical synthetic-alias representative), without resolving a Value. The default preserves
+	 * existing semantic hooks. This is not a globally portable hash and must agree with sameRdfTerm for all inputs.
+	 */
+	default long termHashKey(long id) {
+		return rdfTermHash(id);
+	}
+
 	/** Imports an id owned by another bound kernel before parallel DISTINCT sets are merged. */
 	default long importRdfTerm(KernelHooks source, long sourceId) {
 		return sourceId;

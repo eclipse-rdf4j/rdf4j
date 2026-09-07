@@ -31,11 +31,16 @@ final class LmdbNativeTermAuthority implements NativeTermAuthority {
 	private final NativeLmdbQuerySource store;
 	private final PlanValueCatalog catalog;
 	private final NativeExecutionContext context;
+	private final NativeCanonicalTermKeys canonicalKeys;
 
 	LmdbNativeTermAuthority(NativeLmdbQuerySource store, PlanValueCatalog catalog, NativeExecutionContext context) {
 		this.store = store;
 		this.catalog = catalog;
 		this.context = context;
+		// The proof belongs to the complete backing source. A nested spelling-preserving synthetic source is not
+		// a canonical dictionary, even if its underlying physical store is; retain semantic fallback there.
+		this.canonicalKeys = store.hasCanonicalIds() && !(store instanceof SyntheticValueSource)
+				? new NativeCanonicalTermKeys(store, catalog, context) : null;
 	}
 
 	NativeExecutionContext executionContext() {
@@ -117,6 +122,9 @@ final class LmdbNativeTermAuthority implements NativeTermAuthority {
 		if (leftId == UNKNOWN || rightId == UNKNOWN || leftId == NULL_CONTEXT_ID || rightId == NULL_CONTEXT_ID) {
 			return false;
 		}
+		if (canonicalKeys != null) {
+			return canonicalKeys.key(leftId) == canonicalKeys.key(rightId);
+		}
 		NativeTermRef left = termRef(leftId);
 		NativeTermRef right = termRef(rightId);
 		return left != null && right != null && left.sameRdfTerm(right);
@@ -125,9 +133,27 @@ final class LmdbNativeTermAuthority implements NativeTermAuthority {
 	@Override
 	public long rdfTermHash(long id) {
 		NativeTermRef term = termRef(id);
-		// Value.hashCode already respects term equality (language tags hash lowercased), so it agrees with
+		// The Value.hashCode contract respects RDF term equality, so it agrees with
 		// sameRdfTerm across id spaces and spellings; the sentinels hash as themselves.
 		return term != null ? term.rdfTermHash() : id;
+	}
+
+	@Override
+	public boolean supportsCanonicalTermKeys() {
+		return canonicalKeys != null;
+	}
+
+	@Override
+	public long canonicalTermKey(long id) {
+		if (canonicalKeys == null) {
+			throw new UnsupportedOperationException("backing source does not guarantee canonical term ids");
+		}
+		return canonicalKeys.key(id);
+	}
+
+	@Override
+	public long termHashKey(long id) {
+		return canonicalKeys != null ? canonicalKeys.key(id) : rdfTermHash(id);
 	}
 
 	@Override
