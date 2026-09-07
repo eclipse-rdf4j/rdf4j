@@ -14,7 +14,9 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Comparator;
 import java.util.function.LongSupplier;
 
 /**
@@ -62,114 +64,198 @@ final class LmdbNativeProbeScheduler {
 
 	private final long cooldownBaseMillis;
 	private final LongSupplier wallMillis;
-	private final ConcurrentHashMap<Key, Entry> entries = new ConcurrentHashMap<>();
+	/* Both policy and ownership are guarded by this scheduler, never by independent map operations. */
+	private final Map<Key, Entry> entries = new HashMap<>();
+	private final Map<Key, Flight> flights = new HashMap<>();
+
+	/** Identity token: an old callback cannot finish a later flight, even in the same epoch (ABA). */
+	static final class Flight {
+		private final Key key;
+		private final long epoch;
+		private final boolean legacy;
+
+		private Flight(Key key, long epoch, boolean legacy) {
+			this.key = key;
+			this.epoch = epoch;
+			this.legacy = legacy;
+		}
+	}
 
 	LmdbNativeProbeScheduler(LmdbNativeProbeConfig config, LongSupplier wallMillis) {
 		this.cooldownBaseMillis = config.cooldownBaseMillis();
+		if (cooldownBaseMillis <= 0) {
+			throw new IllegalArgumentException("positive cooldown required");
+		}
 		this.wallMillis = Objects.requireNonNull(wallMillis, "wallMillis");
 	}
 
-	State state(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
-		Entry entry = entries.get(new Key(variant, regime));
+	synchronized State state(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
+		return state(new Key(variant, regime), epoch, wallMillis.getAsLong());
+	}
+
+	private State state(Key key, long epoch, long now) {
+		Entry entry = entries.get(key);
+		if (entry != null && entry.epoch > epoch) {
+			return State.DORMANT_UNTIL_EPOCH; // a stale dispatch must not undo a newer decision
+		}
+		// A live physical attempt must drain before another starts, including across epoch changes.
+		if (flights.containsKey(key)) {
+			if (entry != null && entry.epoch == epoch && entry.state == State.QUARANTINED
+					&& now < entry.untilWallMillis) {
+				return State.QUARANTINED;
+			}
+			return State.PROBING;
+		}
 		if (entry == null) {
 			return State.UNKNOWN;
 		}
 		if (entry.epoch < epoch) {
-			return State.PROBE_ELIGIBLE; // epoch bump revives lazily
+			return State.PROBE_ELIGIBLE;
 		}
 		if ((entry.state == State.COOLDOWN || entry.state == State.QUARANTINED)
-				&& wallMillis.getAsLong() >= entry.untilWallMillis) {
+				&& now >= entry.untilWallMillis) {
 			return State.PROBE_ELIGIBLE;
 		}
 		return entry.state;
 	}
 
-	boolean mayProbe(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
-		State state = state(variant, regime, epoch);
-		return state != State.COOLDOWN && state != State.DORMANT_UNTIL_EPOCH && state != State.QUARANTINED
-				&& state != State.PROBING;
-	}
-
-	/**
-	 * Single-flight (duplicate-cache-fill suppression): marks the arm as being probed right now so concurrent matching
-	 * queries cannot independently launch more probes of it before this one's evidence lands. Returns false when a
-	 * probe of the arm is already in flight. The caller MUST resolve the flight via
-	 * {@link #completed}/{@link #censored}/{@link #quarantine} or {@link #probeAbandoned}.
-	 */
-	boolean beginProbe(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
+	synchronized boolean mayProbe(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
 		Key key = new Key(variant, regime);
-		boolean[] begun = new boolean[1];
-		entries.compute(key, (ignored, previous) -> {
-			if (previous != null && previous.state == State.PROBING && previous.epoch >= epoch) {
-				return previous;
-			}
-			if (entries.size() >= MAX_ENTRIES && previous == null) {
-				begun[0] = true; // bounded map: untracked arms cannot be single-flighted, probing stays allowed
-				return null;
-			}
-			begun[0] = true;
-			int strikes = previous == null || previous.epoch < epoch ? 0 : previous.strikes;
-			return new Entry(State.PROBING, 0L, strikes, epoch);
-		});
-		return begun[0];
+		return (entries.containsKey(key) || entries.size() < MAX_ENTRIES)
+				&& eligible(state(key, epoch, wallMillis.getAsLong()));
 	}
 
-	/** The probe never ran (declined before opening): clear the in-flight marker without recording an outcome. */
-	void probeAbandoned(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
+	private static boolean eligible(State state) {
+		return state == State.UNKNOWN || state == State.PROBE_ELIGIBLE || state == State.ACTIVE;
+	}
+
+	/** Atomic admission, with capacity and ALL policy gates rechecked at the linearization point. */
+	synchronized Flight tryBeginProbe(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
+		return begin(variant, regime, epoch, false);
+	}
+
+	/* Compatibility for existing package clients. Production dispatch uses the ownership-token API. */
+	synchronized boolean beginProbe(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
+		return begin(variant, regime, epoch, true) != null;
+	}
+
+	private Flight begin(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch,
+			boolean legacy) {
 		Key key = new Key(variant, regime);
-		entries.computeIfPresent(key, (ignored, previous) -> previous.state == State.PROBING
-				? new Entry(previous.strikes > 0 ? State.PROBE_ELIGIBLE : State.UNKNOWN, 0L, previous.strikes,
-						previous.epoch)
-				: previous);
+		Entry previous = entries.get(key);
+		if ((previous == null && entries.size() >= MAX_ENTRIES)
+				|| !eligible(state(key, epoch, wallMillis.getAsLong()))) {
+			return null;
+		}
+		Flight flight = new Flight(key, epoch, legacy);
+		flights.put(key, flight);
+		entries.put(key, new Entry(State.PROBING, 0L,
+				previous == null || previous.epoch < epoch ? 0 : previous.strikes, epoch));
+		return flight;
 	}
 
-	/** Whether the arm's learned price is currently untrustworthy (severe-miss quarantine in force). */
-	boolean quarantined(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
-		return state(variant, regime, epoch) == State.QUARANTINED;
+	/** Returns true only for the exact current owner; duplicated and stale callbacks are no-ops. */
+	private boolean release(Flight flight) {
+		return flight != null && flights.remove(flight.key, flight);
 	}
 
-	void completed(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch,
-			boolean decisivelyBad) {
-		if (decisivelyBad) {
-			strike(variant, regime, epoch, false);
-		} else {
-			put(new Key(variant, regime), new Entry(State.ACTIVE, 0L, 0, epoch));
+	private void releaseLegacy(Key key, long epoch) {
+		Flight flight = flights.get(key);
+		if (flight != null && flight.legacy && flight.epoch == epoch) {
+			flights.remove(key);
 		}
 	}
 
-	/**
-	 * A deadline censoring: the first same-epoch strike starts the exponential cooldown, the second parks the arm until
-	 * the next epoch; a severe miss escalates straight to quarantine.
-	 */
-	void censored(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch, boolean severeMiss) {
-		strike(variant, regime, epoch, severeMiss);
+	synchronized void probeAbandoned(Flight flight) {
+		if (release(flight)) {
+			abandon(flight.key, flight.epoch);
+		}
 	}
 
-	/**
-	 * A probe that filled its private row buffer instead of running out of time. This is deliberately NOT a strike: the
-	 * arm produced rows at whatever speed it produces them and was stopped by a capacity ceiling that a fast arm with a
-	 * large answer reaches sooner than a slow one, so it carries no evidence of slowness. The arm is rested for one
-	 * cooldown base interval — without that, an arm whose answer is permanently larger than the buffer would be
-	 * re-probed and overflow on every dispatch — but its strike count is carried forward unchanged, so this path can
-	 * never escalate to {@link State#DORMANT_UNTIL_EPOCH} or {@link State#QUARANTINED}.
-	 */
-	void capacityExceeded(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
+	synchronized void probeAbandoned(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
 		Key key = new Key(variant, regime);
-		entries.compute(key, (ignored, previous) -> {
-			if (entries.size() >= MAX_ENTRIES && previous == null) {
-				return null; // bounded map: an untracked arm simply stays probe-eligible
-			}
-			int strikes = previous == null || previous.epoch < epoch ? 0 : previous.strikes;
-			return new Entry(State.COOLDOWN, wallMillis.getAsLong() + cooldownBaseMillis, strikes, epoch);
-		});
+		Flight flight = flights.get(key);
+		if (flight != null && flight.legacy && flight.epoch == epoch) {
+			probeAbandoned(flight);
+		}
 	}
 
-	void quarantine(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
-		long until = wallMillis.getAsLong() + cooldownBaseMillis * QUARANTINE_MULTIPLIER;
-		put(new Key(variant, regime), new Entry(State.QUARANTINED, until, 0, epoch));
+	private void abandon(Key key, long epoch) {
+		Entry previous = entries.get(key);
+		if (previous != null && previous.epoch == epoch && previous.state == State.PROBING) {
+			entries.put(key, new Entry(previous.strikes > 0 ? State.PROBE_ELIGIBLE : State.UNKNOWN,
+					0L, previous.strikes, epoch));
+		}
 	}
 
-	List<CooldownEntry> snapshotCooldowns() {
+	synchronized boolean quarantinedAt(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime,
+			long epoch, long nowMillis) {
+		return state(new Key(variant, regime), epoch, nowMillis) == State.QUARANTINED;
+	}
+
+	synchronized boolean quarantined(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
+		return state(variant, regime, epoch) == State.QUARANTINED;
+	}
+
+	/** Applies a pricing decision independently of any physical flight; only its owner can release that flight. */
+	synchronized void quarantine(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
+		Key key = new Key(variant, regime);
+		releaseLegacy(key, epoch);
+		put(key, new Entry(State.QUARANTINED, deadline(QUARANTINE_MULTIPLIER), 0, epoch));
+	}
+
+	synchronized void completed(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch,
+			boolean decisivelyBad) {
+		Key key = new Key(variant, regime);
+		releaseLegacy(key, epoch);
+		if (decisivelyBad) {
+			strike(key, epoch, false);
+		} else {
+			put(key, new Entry(State.ACTIVE, 0L, 0, epoch));
+		}
+	}
+
+	synchronized void censored(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch,
+			boolean severeMiss) {
+		Key key = new Key(variant, regime);
+		releaseLegacy(key, epoch);
+		strike(key, epoch, severeMiss);
+	}
+
+	/** Buffer capacity is not a timing strike and cannot escalate dormancy by itself. */
+	synchronized void capacityExceeded(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
+		Key key = new Key(variant, regime);
+		releaseLegacy(key, epoch);
+		Entry previous = entries.get(key);
+		int strikes = previous == null || previous.epoch < epoch ? 0 : previous.strikes;
+		put(key, new Entry(State.COOLDOWN, deadline(1L), strikes, epoch));
+	}
+
+	synchronized void completed(Flight flight, boolean decisivelyBad) {
+		if (release(flight)) {
+			completed(flight.key.variant(), flight.key.regime(), flight.epoch, decisivelyBad);
+		}
+	}
+
+	synchronized void censored(Flight flight, boolean severeMiss) {
+		if (release(flight)) {
+			censored(flight.key.variant(), flight.key.regime(), flight.epoch, severeMiss);
+		}
+	}
+
+	synchronized void capacityExceeded(Flight flight) {
+		if (release(flight)) {
+			capacityExceeded(flight.key.variant(), flight.key.regime(), flight.epoch);
+		}
+	}
+
+	synchronized void quarantine(Flight flight) {
+		if (release(flight)) {
+			quarantine(flight.key.variant(), flight.key.regime(), flight.epoch);
+		}
+	}
+
+	synchronized List<CooldownEntry> snapshotCooldowns() {
 		List<CooldownEntry> snapshot = new ArrayList<>();
 		long now = wallMillis.getAsLong();
 		entries.forEach((key, entry) -> {
@@ -181,11 +267,20 @@ final class LmdbNativeProbeScheduler {
 						entry.strikes, entry.epoch));
 			}
 		});
+		snapshot.sort(Comparator.comparing((CooldownEntry e) -> e.regime().toString())
+				.thenComparing(CooldownEntry::variant));
 		return snapshot;
 	}
 
-	void restoreCooldowns(List<CooldownEntry> restored, long nowWallMillis) {
+	synchronized void restoreCooldowns(List<CooldownEntry> restored, long nowWallMillis) {
 		for (CooldownEntry entry : restored) {
+			if (entry.state() != State.COOLDOWN && entry.state() != State.DORMANT_UNTIL_EPOCH
+					&& entry.state() != State.QUARANTINED) {
+				throw new IllegalArgumentException("non-persistent scheduler state");
+			}
+			if (entry.strikes() < 0 || entry.epoch() < 0) {
+				throw new IllegalArgumentException("invalid scheduler counters");
+			}
 			boolean expired = entry.state() != State.DORMANT_UNTIL_EPOCH && entry.untilWallMillis() <= nowWallMillis;
 			if (!expired) {
 				put(new Key(entry.variant(), entry.regime()),
@@ -194,33 +289,40 @@ final class LmdbNativeProbeScheduler {
 		}
 	}
 
-	int trackedArms() {
+	synchronized int trackedArms() {
 		return entries.size();
 	}
 
-	private void strike(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch,
-			boolean severeMiss) {
-		Key key = new Key(variant, regime);
-		entries.compute(key, (ignored, previous) -> {
-			if (entries.size() >= MAX_ENTRIES && previous == null) {
-				return null; // bounded map: an untracked arm simply stays probe-eligible
-			}
-			int strikes = previous == null || previous.epoch < epoch ? 0 : previous.strikes;
-			strikes++;
-			if (severeMiss) {
-				return new Entry(State.QUARANTINED,
-						wallMillis.getAsLong() + cooldownBaseMillis * QUARANTINE_MULTIPLIER, strikes, epoch);
-			}
-			if (strikes >= 2) {
-				return new Entry(State.DORMANT_UNTIL_EPOCH, 0L, strikes, epoch);
-			}
-			long backoff = cooldownBaseMillis << Math.min(MAX_STRIKE_SHIFT, strikes - 1);
-			return new Entry(State.COOLDOWN, wallMillis.getAsLong() + backoff, strikes, epoch);
-		});
+	private void strike(Key key, long epoch, boolean severeMiss) {
+		Entry previous = entries.get(key);
+		if (previous != null && previous.epoch > epoch) {
+			return;
+		}
+		int strikes = previous == null || previous.epoch < epoch ? 0 : previous.strikes;
+		strikes = strikes == Integer.MAX_VALUE ? strikes : strikes + 1;
+		if (severeMiss) {
+			put(key, new Entry(State.QUARANTINED, deadline(QUARANTINE_MULTIPLIER), strikes, epoch));
+		} else if (strikes >= 2) {
+			put(key, new Entry(State.DORMANT_UNTIL_EPOCH, 0L, strikes, epoch));
+		} else {
+			put(key, new Entry(State.COOLDOWN, deadline(1L << Math.min(MAX_STRIKE_SHIFT, strikes - 1)),
+					strikes, epoch));
+		}
+	}
+
+	private long deadline(long multiplier) {
+		long duration = cooldownBaseMillis > Long.MAX_VALUE / multiplier
+				? Long.MAX_VALUE : cooldownBaseMillis * multiplier;
+		long now = wallMillis.getAsLong();
+		return now > Long.MAX_VALUE - duration ? Long.MAX_VALUE : now + duration;
 	}
 
 	private void put(Key key, Entry entry) {
-		if (entries.size() < MAX_ENTRIES || entries.containsKey(key)) {
+		Entry previous = entries.get(key);
+		if (previous != null && previous.epoch > entry.epoch) {
+			return;
+		}
+		if (previous != null || entries.size() < MAX_ENTRIES) {
 			entries.put(key, entry);
 		}
 	}

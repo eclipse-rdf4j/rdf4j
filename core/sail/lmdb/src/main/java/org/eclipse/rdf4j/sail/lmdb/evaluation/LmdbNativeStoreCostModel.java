@@ -148,7 +148,7 @@ final class LmdbNativeStoreCostModel {
 	}
 
 	/** EWMA update of the per-feature log(actual/estimated) ratios; latency deliberately plays no part here. */
-	void updateFeatureRatios(LmdbNativePhysicalVariantKey key, LmdbNativeCostVector estimated,
+	synchronized void updateFeatureRatios(LmdbNativePhysicalVariantKey key, LmdbNativeCostVector estimated,
 			LmdbNativeCostVector actual) {
 		Objects.requireNonNull(key, "key");
 		Objects.requireNonNull(estimated, "estimated");

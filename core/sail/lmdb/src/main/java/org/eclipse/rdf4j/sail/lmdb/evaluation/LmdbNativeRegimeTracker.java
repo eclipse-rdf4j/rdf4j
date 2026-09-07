@@ -30,28 +30,35 @@ final class LmdbNativeRegimeTracker {
 		this.context = context;
 	}
 
+	/** Regime and epoch must be captured together, not read across a concurrent transition. */
+	record Snapshot(LmdbNativeRegimeKey regime, long epoch) {
+	}
+
+	synchronized Snapshot snapshot() {
+		LmdbNativeRegimeKey composed = context == null ? LmdbNativeRegimeKey.STEADY : compose();
+		if (!composed.equals(cached)) {
+			cached = composed;
+			bump();
+		}
+		return new Snapshot(cached, epoch.get());
+	}
+
 	LmdbNativeRegimeKey current() {
-		if (context == null) {
-			return LmdbNativeRegimeKey.STEADY;
-		}
-		LmdbNativeRegimeKey composed = compose();
-		LmdbNativeRegimeKey previous = cached;
-		if (!composed.equals(previous)) {
-			synchronized (this) {
-				if (!composed.equals(cached)) {
-					cached = composed;
-					epoch.incrementAndGet();
-				}
-			}
-		}
-		return composed;
+		return snapshot().regime();
 	}
 
 	long epoch() {
 		return epoch.get();
 	}
 
-	void forceEpochBump() {
+	synchronized void forceEpochBump() {
+		bump();
+	}
+
+	private void bump() {
+		if (epoch.get() == Long.MAX_VALUE) {
+			throw new IllegalStateException("regime epoch exhausted");
+		}
 		epoch.incrementAndGet();
 	}
 

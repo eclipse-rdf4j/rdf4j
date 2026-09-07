@@ -54,6 +54,13 @@ record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double 
 	record Components(LmdbNativeRegimeKey regime, LmdbNativeCostPosteriorStore.Lane lane,
 			LmdbNativeFamilyShapeKey familyShape, double logBase, double meanLog, double varGlobal, double varFamily,
 			double varExact, double noiseVar) {
+		Components {
+			if (regime == null || lane == null || familyShape == null || !Double.isFinite(logBase)
+					|| !Double.isFinite(meanLog) || !Double.isFinite(logBase + meanLog)
+					|| !valid(varGlobal) || !valid(varFamily) || !valid(varExact) || !valid(noiseVar)) {
+				throw new IllegalArgumentException("invalid prediction components");
+			}
+		}
 	}
 
 	private static final double Z99 = 2.5758293035489004;
@@ -66,6 +73,9 @@ record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double 
 				|| expectedNanos > latentHigh99Nanos || !Double.isFinite(nEff) || nEff < 0.0
 				|| exactCompletedCount < 0L || latestObservedNanos < 0L) {
 			throw new IllegalArgumentException("invalid prediction interval");
+		}
+		if (priceBasis == null || evidenceSource == null) {
+			throw new IllegalArgumentException("missing prediction basis or evidence source");
 		}
 		if ((priceBasis == PriceBasis.ORDINAL_ONLY) != (components == null)) {
 			throw new IllegalArgumentException("components accompany exactly the numerical price bases");
@@ -112,23 +122,29 @@ record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double 
 	 */
 	static boolean displaces(LmdbNativeCostPrediction challenger, LmdbNativeCostPrediction incumbent,
 			double logGamma) {
+		if (!Double.isFinite(logGamma) || logGamma < 0.0) {
+			throw new IllegalArgumentException("finite nonnegative displacement margin required");
+		}
 		if (challenger.priceBasis == PriceBasis.ORDINAL_ONLY || incumbent.priceBasis == PriceBasis.ORDINAL_ONLY
 				|| !challenger.learnedDominanceAllowed || challenger.quarantined) {
 			return false;
 		}
 		if (challenger.latestObservedNanos > 0L && incumbent.latestObservedNanos > 0L) {
-			return Math.log((double) challenger.latestObservedNanos)
-					- Math.log((double) incumbent.latestObservedNanos) < -logGamma;
+			return pairwiseDeltaMean(challenger, incumbent) < -logGamma;
 		}
 		return pairwiseDeltaMean(challenger, incumbent)
-				+ Z99 * Math.sqrt(pairwiseDeltaVariance(challenger, incumbent)) < -logGamma;
+				+ Z99 * StrictMath.sqrt(pairwiseDeltaVariance(challenger, incumbent)) < -logGamma;
 	}
 
 	/** Latent log-cost difference challenger minus incumbent; both sides must carry components. */
 	static double pairwiseDeltaMean(LmdbNativeCostPrediction challenger, LmdbNativeCostPrediction incumbent) {
-		Components c = challenger.components;
-		Components i = incumbent.components;
-		return (c.logBase + c.meanLog) - (i.logBase + i.meanLog);
+		return logLocation(challenger) - logLocation(incumbent);
+	}
+
+	/** Every comparison uses the SAME per-arm potential, including mixed measured/estimated comparisons. */
+	private static double logLocation(LmdbNativeCostPrediction prediction) {
+		return prediction.latestObservedNanos > 0L ? StrictMath.log((double) prediction.latestObservedNanos)
+				: prediction.components.logBase + prediction.components.meanLog;
 	}
 
 	/** Variance of the pairwise difference: only the hierarchy components in the symmetric difference count. */

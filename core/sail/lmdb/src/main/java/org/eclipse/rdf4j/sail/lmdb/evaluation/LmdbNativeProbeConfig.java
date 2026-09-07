@@ -15,8 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
  * Numeric tuning for bounded experimental probes, read from plain system properties under
  * {@code rdf4j.lmdb.adaptiveProbe.*} (the workbench registry is boolean-only; only the {@code enabled} gate is
  * registered there). {@code alpha} is the allowed throughput-loss fraction: every normal incumbent execution of
- * {@code b} nanoseconds earns {@code alpha/(1-alpha) * b} of probe credit, so total charged probe cost can never exceed
- * an {@code alpha} fraction of useful work. {@code gamma} is the displacement speed margin the probe deadline is
+ * {@code b} nanoseconds earns {@code alpha/(1-alpha) * b} of probe credit, which finances optional probes. Mandatory trials and actual deadline overshoots can create debt;
+ * this is not an unconditional alpha bound on charged runtime. {@code gamma} is the displacement speed margin the probe deadline is
  * derived from: a rival only deserves a deadline of {@code incumbentExpected / gamma} — running longer could not
  * justify a switch anyway.
  */
@@ -46,13 +46,13 @@ record LmdbNativeProbeConfig(
 				atLeastOne(PREFIX + "gamma", 1.25),
 				unitFraction(PREFIX + "maxSlowdownFraction", 0.8),
 				nonNegative(PREFIX + "lambdaInfo", 0.1),
-				positiveLong(PREFIX + "maxDeadlineMillis", 10000L) * 1_000_000L,
-				positiveLong(PREFIX + "minDeadlineMicros", 500L) * 1_000L,
-				positiveLong(PREFIX + "cancelBoundMillis", 10L) * 1_000_000L,
-				(int) positiveLong(PREFIX + "bufferRows", 4_096L),
-				(int) positiveLong(PREFIX + "maxPerQuery", 1L),
-				(int) positiveLong(PREFIX + "minSpacingDecisions", 4L),
-				positiveLong(PREFIX + "minSpacingMillis", 250L) * 1_000_000L,
+				scaledPositive(PREFIX + "maxDeadlineMillis", 10000L, 1_000_000L),
+				scaledPositive(PREFIX + "minDeadlineMicros", 500L, 1_000L),
+				scaledPositive(PREFIX + "cancelBoundMillis", 10L, 1_000_000L),
+				positiveInt(PREFIX + "bufferRows", 4_096),
+				positiveInt(PREFIX + "maxPerQuery", 1),
+				positiveInt(PREFIX + "minSpacingDecisions", 4),
+				scaledPositive(PREFIX + "minSpacingMillis", 250L, 1_000_000L),
 				positiveLong(PREFIX + "cooldownBaseMillis", 30_000L),
 				unitFraction(PREFIX + "minWinProbability", 0.02));
 	}
@@ -92,6 +92,17 @@ record LmdbNativeProbeConfig(
 		} catch (NumberFormatException invalid) {
 			return fallback;
 		}
+	}
+
+	private static long scaledPositive(String property, long fallback, long scale) {
+		long value = positiveLong(property, fallback);
+		// Out-of-range settings use the documented default, not a wrapped or effectively unbounded limit.
+		return value > Long.MAX_VALUE / scale ? fallback * scale : value * scale;
+	}
+
+	private static int positiveInt(String property, int fallback) {
+		long value = positiveLong(property, fallback);
+		return value > Integer.MAX_VALUE ? fallback : (int) value;
 	}
 
 	private static long positiveLong(String property, long fallback) {

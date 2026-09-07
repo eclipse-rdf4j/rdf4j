@@ -140,7 +140,11 @@ final class LmdbNativeMachineCostModel {
 	}
 
 	Prediction predict(LmdbNativeCostVector vector) {
-		Snapshot snapshot = published.get();
+		return predict(vector, published.get());
+	}
+
+	/** A dispatch pins one immutable coefficient revision for every competing arm. */
+	Prediction predict(LmdbNativeCostVector vector, Snapshot snapshot) {
 		double low = vector.dotLow(snapshot.coefficients);
 		double expected = vector.dotExpected(snapshot.coefficients);
 		double high = vector.dotHigh(snapshot.coefficients);

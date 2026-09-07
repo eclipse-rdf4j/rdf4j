@@ -157,7 +157,7 @@ final class LmdbNativeCostCalibration {
 	 * @param predictedWork the work the cost model predicted for it
 	 * @param elapsedNanos  how long it actually took
 	 */
-	static void record(String tag, double predictedWork, long elapsedNanos) {
+	static synchronized void record(String tag, double predictedWork, long elapsedNanos) {
 		if (!recording() || tag == null || elapsedNanos <= 0L || !(predictedWork >= MIN_WORK)
 				|| !Double.isFinite(predictedWork)) {
 			return;
@@ -182,7 +182,22 @@ final class LmdbNativeCostCalibration {
 		if (!enabled() || tag == null || !work.known()) {
 			return work;
 		}
-		Factor factor = FACTORS.get(tag);
+		return applyFactor(work, FACTORS.get(tag));
+	}
+
+	/** One calibration revision for a complete candidate comparison; no record can interleave halfway through it. */
+	static synchronized LmdbNativeWork[] toTimes(String[] tags, LmdbNativeWork[] work) {
+		if (tags.length != work.length) throw new IllegalArgumentException("mismatched cost columns");
+		boolean consume = enabled();
+		LmdbNativeWork[] result = new LmdbNativeWork[work.length];
+		for (int i = 0; i < work.length; i++) {
+			result[i] = consume && tags[i] != null && work[i].known()
+					? applyFactor(work[i], FACTORS.get(tags[i])) : work[i];
+		}
+		return result;
+	}
+
+	private static LmdbNativeWork applyFactor(LmdbNativeWork work, Factor factor) {
 		if (factor == null || factor.observations() < 2L) {
 			return work;
 		}
@@ -260,7 +275,7 @@ final class LmdbNativeCostCalibration {
 		return sb.toString();
 	}
 
-	static void reset() {
+	static synchronized void reset() {
 		FACTORS.clear();
 		LmdbNativeMachineCostModel.jvmWide().resetForTests();
 	}

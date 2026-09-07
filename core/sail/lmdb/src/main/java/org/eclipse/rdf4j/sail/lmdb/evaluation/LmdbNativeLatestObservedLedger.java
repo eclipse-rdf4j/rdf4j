@@ -29,7 +29,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * deliberately symmetric: faster and slower observations both replace the prior value.
  * <p>
  * <b>Staleness.</b> Entries are qualified by regime epoch. The {@link LmdbNativeCostPosteriorStore.ExactKey} already
- * carries the {@link LmdbNativeRegimeKey}; the epoch additionally covers within-regime shifts the tracker detects
+ * carries the {@link LmdbNativeRegimeKey}; only its regime and quantized physical variant identify a measurement.
+ * DIRECT versus RESIDUAL is deliberately excluded: changing the machine model's readiness does not undo a completed
+ * execution. The epoch additionally covers within-regime shifts the tracker detects
  * (adjacency store publishing, a data-generation bump, drift). A time recorded under an older epoch reads as absent, so
  * a time measured against different data can never pin a price against the new data.
  * <p>
@@ -44,11 +46,19 @@ final class LmdbNativeLatestObservedLedger {
 	/** Mirrors the posterior store's per-sub-population variant cap so the two cannot diverge in footprint. */
 	private static final int MAX_ENTRIES = LmdbNativeCostPosteriorStore.MAX_VARIANTS_PER_SUBPOPULATION;
 
+	/** Statistical lane is a modelling choice, not part of an execution's physical identity. */
+	private record ExecutionKey(LmdbNativeRegimeKey regime, LmdbNativePhysicalVariantKey variant) {
+		static ExecutionKey of(LmdbNativeCostPosteriorStore.ExactKey key) {
+			// ExactKey.of already applies the shared consumption-fraction quantization.
+			return new ExecutionKey(key.regime(), key.variant());
+		}
+	}
+
 	private record Latest(long nanos, long epoch) {
 	}
 
 	private final boolean enabled;
-	private final ConcurrentHashMap<LmdbNativeCostPosteriorStore.ExactKey, Latest> latest = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<ExecutionKey, Latest> latest = new ConcurrentHashMap<>();
 
 	LmdbNativeLatestObservedLedger() {
 		this(!"false".equalsIgnoreCase(System.getProperty(ENABLED_PROPERTY)));
@@ -67,25 +77,27 @@ final class LmdbNativeLatestObservedLedger {
 		if (!enabled) {
 			return 0L;
 		}
-		Latest current = latest.get(key);
+		Latest current = latest.get(ExecutionKey.of(key));
 		return current == null || current.epoch != epoch ? 0L : current.nanos;
 	}
 
 	/**
-	 * Offers one full, non-probe execution. The last completion callback wins; a regime-qualified value is never
+	 * Offers one full, non-probe execution. Within one epoch the last completion callback wins; a newer epoch is never replaced by an older one. A value is never
 	 * compared with a previous epoch.
 	 */
-	void observe(LmdbNativeCostPosteriorStore.ExactKey key, long nanos, long epoch) {
+	synchronized void observe(LmdbNativeCostPosteriorStore.ExactKey key, long nanos, long epoch) {
 		if (!enabled || nanos <= 0L) {
 			return;
 		}
-		// Admission is checked before the merge rather than inside it: ConcurrentHashMap remapping functions must stay
-		// simple and must not re-enter the map. A racing pair may overshoot the cap by the number of racing threads,
-		// which is the same tolerance the posterior store's admission counter accepts.
-		if (!latest.containsKey(key) && latest.size() >= MAX_ENTRIES) {
+		ExecutionKey execution = ExecutionKey.of(key);
+		Latest previous = latest.get(execution);
+		if (previous != null && previous.epoch > epoch) {
+			return; // an old completion may not erase a newer epoch's valid price
+		}
+		if (previous == null && latest.size() >= MAX_ENTRIES) {
 			return;
 		}
-		latest.put(key, new Latest(nanos, epoch));
+		latest.put(execution, new Latest(nanos, epoch));
 	}
 
 	int size() {

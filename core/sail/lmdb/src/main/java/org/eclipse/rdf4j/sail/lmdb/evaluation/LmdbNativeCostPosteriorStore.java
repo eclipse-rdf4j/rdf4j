@@ -25,11 +25,10 @@ import java.util.function.BiConsumer;
  * model cannot price). Every map is keyed by {@link LmdbNativeRegimeKey}, which makes regime isolation structural: an
  * observation taken while the adjacency view is building cannot touch the steady-state nodes.
  *
- * Reads are lock-free: a read decays a copy of each node (never writing back — the next update persists the decay) and
- * lazily applies epoch inflation to exact nodes. Updates replace whole immutable nodes via
- * {@link ConcurrentHashMap#compute}; the three-node update is not cross-node atomic, which is accepted — the Huber clip
- * and the per-level variance floors bound what a racing pair of updates can do, the same class of race the previous
- * EWMA store carried.
+ * The store monitor linearizes reads, three-node updates, and admission. Nodes remain immutable; reads decay
+ * copies without writing back. A concurrent map alone does not make a read/modify/put sequence atomic: the former
+ * implementation lost completed observations and could publish mixed hierarchy generations. Learning is performed
+ * at execution boundaries, never in a row loop.
  */
 final class LmdbNativeCostPosteriorStore {
 
@@ -129,7 +128,7 @@ final class LmdbNativeCostPosteriorStore {
 		return config;
 	}
 
-	Reading read(ExactKey key, long epoch, long nowMillis) {
+	synchronized Reading read(ExactKey key, long epoch, long nowMillis) {
 		LmdbNativePosteriorNode g = global.get(key.globalKey());
 		LmdbNativePosteriorNode f = families.get(key.familyKey());
 		LmdbNativePosteriorNode v = variants.get(key);
@@ -148,7 +147,7 @@ final class LmdbNativeCostPosteriorStore {
 	 * caller feeds to the change detector. {@code weight} is 1.0 for a complete run, or the consumed fraction (floored
 	 * at 0.25) for a LIMIT-truncated but still eligible run.
 	 */
-	double updateCompleted(ExactKey key, double y, double weight, long epoch, long nowMillis) {
+	synchronized double updateCompleted(ExactKey key, double y, double weight, long epoch, long nowMillis) {
 		Reading reading = read(key, epoch, nowMillis);
 		double mean = reading.meanLog();
 		double epistemic = reading.epistemicVariance();
@@ -200,7 +199,7 @@ final class LmdbNativeCostPosteriorStore {
 	 * evidence weight, clamped to [0.1, 1.0]. Intrinsic noise is deliberately untouched — a censoring says nothing
 	 * about within-arm dispersion.
 	 */
-	void updateCensored(ExactKey key, double logDeadline, long epoch, long nowMillis) {
+	synchronized void updateCensored(ExactKey key, double logDeadline, long epoch, long nowMillis) {
 		Reading reading = read(key, epoch, nowMillis);
 		double mean = reading.meanLog();
 		double epistemic = reading.epistemicVariance();
@@ -222,33 +221,47 @@ final class LmdbNativeCostPosteriorStore {
 				epoch, nowMillis));
 	}
 
-	int admittedVariants(SubPopulationKey subPopulation) {
+	/**
+	 * Completed executions of this physical variant, independently of their statistical representation. Every
+	 * completion updates exactly one lane. Confirmation/cold-start policy must not reset when DIRECT gives way to
+	 * RESIDUAL, nor treat a censor as a completed execution. This count is NOT a merged posterior/effective sample
+	 * size: means, variances and decay stay in their original log-coordinate systems. The caller supplies the count
+	 * from its existing same-lane Reading, avoiding a second lookup of that exact node on every prediction.
+	 */
+	synchronized long completedExecutions(ExactKey key, long sameLaneCompleted) {
+		Lane otherLane = key.lane() == Lane.DIRECT ? Lane.RESIDUAL : Lane.DIRECT;
+		LmdbNativePosteriorNode other = variants.get(new ExactKey(key.regime(), otherLane, key.variant()));
+		long b = other == null ? 0L : other.completedCount;
+		return sameLaneCompleted > Long.MAX_VALUE - b ? Long.MAX_VALUE : sameLaneCompleted + b;
+	}
+
+	synchronized int admittedVariants(SubPopulationKey subPopulation) {
 		AtomicInteger count = variantAdmissions.get(subPopulation);
 		return count == null ? 0 : count.get();
 	}
 
-	void forEachGlobal(BiConsumer<GlobalKey, LmdbNativePosteriorNode> consumer) {
+	synchronized void forEachGlobal(BiConsumer<GlobalKey, LmdbNativePosteriorNode> consumer) {
 		global.forEach(consumer);
 	}
 
-	void forEachFamily(BiConsumer<FamilyKey, LmdbNativePosteriorNode> consumer) {
+	synchronized void forEachFamily(BiConsumer<FamilyKey, LmdbNativePosteriorNode> consumer) {
 		families.forEach(consumer);
 	}
 
-	void forEachExact(BiConsumer<ExactKey, LmdbNativePosteriorNode> consumer) {
+	synchronized void forEachExact(BiConsumer<ExactKey, LmdbNativePosteriorNode> consumer) {
 		variants.forEach(consumer);
 	}
 
 	/** Persistence restore path: install a loaded node without running an observation update. */
-	void restoreGlobal(GlobalKey key, LmdbNativePosteriorNode node) {
+	synchronized void restoreGlobal(GlobalKey key, LmdbNativePosteriorNode node) {
 		global.put(key, node);
 	}
 
-	void restoreFamily(FamilyKey key, LmdbNativePosteriorNode node) {
+	synchronized void restoreFamily(FamilyKey key, LmdbNativePosteriorNode node) {
 		families.put(key, node);
 	}
 
-	void restoreExact(ExactKey key, LmdbNativePosteriorNode node) {
+	synchronized void restoreExact(ExactKey key, LmdbNativePosteriorNode node) {
 		if (admit(key)) {
 			variants.put(key, node);
 		}
@@ -279,8 +292,8 @@ final class LmdbNativeCostPosteriorStore {
 		double newVariance = Math.max(floor, v - v * v / totalVariance);
 		return new LmdbNativePosteriorNode(newMean, newVariance, newNoise, node.weightSum + weight,
 				node.squaredWeightSum + weight * weight,
-				completed ? node.completedCount + 1 : node.completedCount,
-				completed ? node.censoredCount : node.censoredCount + 1,
+				completed ? increment(node.completedCount) : node.completedCount,
+				completed ? node.censoredCount : increment(node.censoredCount),
 				epoch, nowMillis);
 	}
 
@@ -291,7 +304,7 @@ final class LmdbNativeCostPosteriorStore {
 		double newMean = node.meanLog + gain * meanShift;
 		double newVariance = Math.max(floor, v * (1.0 - gain * delta));
 		return new LmdbNativePosteriorNode(newMean, newVariance, node.noiseVariance, node.weightSum + weight,
-				node.squaredWeightSum + weight * weight, node.completedCount, node.censoredCount + 1, epoch, nowMillis);
+				node.squaredWeightSum + weight * weight, node.completedCount, increment(node.censoredCount), epoch, nowMillis);
 	}
 
 	private void storeExact(ExactKey key, LmdbNativePosteriorNode updated) {
@@ -300,7 +313,14 @@ final class LmdbNativeCostPosteriorStore {
 		}
 	}
 
+	private static long increment(long count) {
+		return count == Long.MAX_VALUE ? count : count + 1L;
+	}
+
 	private boolean admit(ExactKey key) {
+		if (variants.containsKey(key)) {
+			return true; // restoring/updating an existing key never consumes a new admission
+		}
 		AtomicInteger count = variantAdmissions.computeIfAbsent(key.subPopulation(), ignored -> new AtomicInteger());
 		while (true) {
 			int current = count.get();

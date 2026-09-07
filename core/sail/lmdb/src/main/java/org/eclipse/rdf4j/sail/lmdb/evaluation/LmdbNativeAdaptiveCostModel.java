@@ -13,6 +13,8 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.Collections;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Objects;
 import java.util.WeakHashMap;
@@ -133,14 +135,59 @@ final class LmdbNativeAdaptiveCostModel {
 		return new ProbeValue(pWin, benefit, infoGain);
 	}
 
+	/**
+	 * One immutable quote pass. Lock order: store -> regime -> posterior -> latest -> scheduler.
+	 * The shared machine is read once as an immutable snapshot, never locked while holding a learner lock.
+	 * No opener, row loop, or I/O executes here. Admission is a later, separately linearized transaction.
+	 */
+	record PricingBatch(LmdbNativeRegimeKey regime, long epoch, long nowMillis,
+			List<LmdbNativeCostPrediction> predictions) {
+		PricingBatch {
+			predictions = List.copyOf(predictions);
+		}
+	}
+
+	PricingBatch predictAll(List<LmdbNativeCostEstimate> estimates) {
+		Objects.requireNonNull(estimates, "estimates");
+		synchronized (store) {
+			synchronized (store.regimeTracker()) {
+				synchronized (store.posteriors()) {
+					synchronized (store.latestObserved()) {
+						synchronized (store.probeScheduler()) {
+							LmdbNativeRegimeTracker.Snapshot state = store.regimeTracker().snapshot();
+							PricingInputs inputs = new PricingInputs(state.epoch(), store.nowMillis(), machine.snapshot());
+							List<LmdbNativeCostPrediction> predictions = new ArrayList<>(estimates.size());
+							for (LmdbNativeCostEstimate estimate : estimates) {
+								predictions.add(predictFor(Objects.requireNonNull(estimate), state.regime(), inputs));
+							}
+							return new PricingBatch(state.regime(), state.epoch(), inputs.nowMillis(), predictions);
+						}
+					}
+				}
+			}
+		}
+	}
+
 	LmdbNativeCostPrediction predict(LmdbNativeCostEstimate estimate) {
-		Objects.requireNonNull(estimate, "estimate");
-		return predictFor(estimate, currentRegime());
+		return predictAll(List.of(estimate)).predictions().get(0);
+	}
+
+	private record PricingInputs(long epoch, long nowMillis, LmdbNativeMachineCostModel.Snapshot machine) {
+	}
+
+	private PricingInputs pricingInputs() {
+		return new PricingInputs(store.regimeTracker().epoch(), store.nowMillis(), machine.snapshot());
 	}
 
 	private LmdbNativeCostPrediction predictFor(LmdbNativeCostEstimate estimate, LmdbNativeRegimeKey regime) {
-		Quote quote = quote(estimate, regime);
-		if (!quote.priceable) {
+		return predictFor(estimate, regime, pricingInputs());
+	}
+
+	private LmdbNativeCostPrediction predictFor(LmdbNativeCostEstimate estimate, LmdbNativeRegimeKey regime,
+			PricingInputs inputs) {
+		Quote quote = predictionQuote(estimate, regime, inputs);
+		long latestObservedNanos = store.latestObserved().latestNanos(quote.exactKey, quote.epoch);
+		if (!quote.priceable && latestObservedNanos <= 0L) {
 			return LmdbNativeCostPrediction.ordinalOnly("no comparable features and no timing evidence");
 		}
 		LmdbNativeCostPosteriorStore.Reading reading = quote.reading;
@@ -149,7 +196,6 @@ final class LmdbNativeAdaptiveCostModel {
 		// log(latest), which is the quantity pairwiseDeltaMean compares; varExact collapses to its floor because a
 		// direct time carries no per-arm estimation uncertainty. The family and global variances stay as they
 		// are: they are shared with sibling arms and cancel in pairwise comparison.
-		long latestObservedNanos = store.latestObserved().latestNanos(quote.exactKey, quote.epoch);
 		boolean measured = latestObservedNanos > 0L;
 		double meanLog = measured ? Math.log((double) latestObservedNanos) - quote.logBase : reading.meanLog();
 		double expected = measured ? latestObservedNanos : finite(Math.exp(quote.logBase + meanLog));
@@ -174,9 +220,10 @@ final class LmdbNativeAdaptiveCostModel {
 		double latentLow99 = Math.min(expected, finite(expected * Math.exp(-Z99 * latentSigma)));
 		double latentHigh99 = boundedHigh(expected, expected * Math.exp(Z99 * latentSigma));
 
-		LmdbNativeCostPrediction.EvidenceSource source = evidenceSource(quote);
+		LmdbNativeCostPrediction.EvidenceSource source = measured
+				? LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT : evidenceSource(quote);
 		boolean quarantined = store.probeScheduler()
-				.quarantined(estimate.variantKey(), regime, quote.epoch);
+				.quarantinedAt(estimate.variantKey(), regime, quote.epoch, quote.nowMillis);
 		// A measured arm has been directly timed to completion, so neither the machine model's readiness nor the
 		// posterior's effective evidence is the question any more — the readiness gates exist to stop an arm priced
 		// from priors alone from displacing a measured one, and this arm IS the measurement.
@@ -196,7 +243,8 @@ final class LmdbNativeAdaptiveCostModel {
 				: LmdbNativeCostPrediction.PriceBasis.DIRECT_POSTERIOR;
 		return new LmdbNativeCostPrediction(Math.min(low95, expected), expected, high95, Math.min(low99, low95),
 				high99, latentLow99, latentHigh99, basis, learnedAllowed, quarantined, reading.nEff(),
-				reading.exact().completedCount, latestObservedNanos, source, components, reason);
+				store.posteriors().completedExecutions(quote.exactKey, reading.exact().completedCount),
+				latestObservedNanos, source, components, reason);
 	}
 
 	/**
@@ -206,6 +254,26 @@ final class LmdbNativeAdaptiveCostModel {
 	 * detector; a severe miss (actual above the previous predictive 99% bound) is reported for quarantine.
 	 */
 	TrainingResult recordCompleted(LmdbNativeCostEstimate estimate, LmdbNativeCostVector actualFeatures,
+			double elapsedNanos, double weight, LmdbNativeRegimeKey regime) {
+		return recordCompleted(estimate, actualFeatures, elapsedNanos, weight, regime, -1L);
+	}
+
+	TrainingResult recordCompleted(LmdbNativeCostEstimate estimate, LmdbNativeCostVector actualFeatures,
+			double elapsedNanos, double weight, LmdbNativeRegimeKey regime, long dispatchEpoch) {
+		TrainingResult result;
+		synchronized (store) {
+			synchronized (store.regimeTracker()) {
+				if (dispatchEpoch >= 0L && store.regimeTracker().snapshot().epoch() != dispatchEpoch) {
+					return new TrainingResult(false, "stale dispatch epoch", false, false);
+				}
+				result = recordCompletedLocked(estimate, actualFeatures, elapsedNanos, weight, regime);
+			}
+		}
+		if (configuration.record && Double.isFinite(elapsedNanos) && elapsedNanos >= 0.0) store.noteEvidenceRecorded();
+		return result;
+	}
+
+	private TrainingResult recordCompletedLocked(LmdbNativeCostEstimate estimate, LmdbNativeCostVector actualFeatures,
 			double elapsedNanos, double weight, LmdbNativeRegimeKey regime) {
 		Objects.requireNonNull(estimate, "estimate");
 		Objects.requireNonNull(actualFeatures, "actualFeatures");
@@ -243,9 +311,9 @@ final class LmdbNativeAdaptiveCostModel {
 		if (severe) {
 			store.probeScheduler().quarantine(estimate.variantKey(), regime, quote.epoch);
 		}
-		store.noteEvidenceRecorded();
 		return new TrainingResult(machineUpdate.accepted(),
 				severe ? "accepted and flagged severe 99% miss" : "accepted", machineUpdate.clipped(), severe);
+
 	}
 
 	/**
@@ -255,6 +323,26 @@ final class LmdbNativeAdaptiveCostModel {
 	 * priced and still failed to finish, which the scheduler escalates to quarantine.
 	 */
 	CensorResult recordCensored(LmdbNativeCostEstimate estimate, long deadlineNanos,
+			LmdbNativeCostVector partialFeatures, LmdbNativeRegimeKey regime) {
+		return recordCensored(estimate, deadlineNanos, partialFeatures, regime, -1L);
+	}
+
+	CensorResult recordCensored(LmdbNativeCostEstimate estimate, long deadlineNanos,
+			LmdbNativeCostVector partialFeatures, LmdbNativeRegimeKey regime, long dispatchEpoch) {
+		CensorResult result;
+		synchronized (store) {
+			synchronized (store.regimeTracker()) {
+				if (dispatchEpoch >= 0L && store.regimeTracker().snapshot().epoch() != dispatchEpoch) {
+					return new CensorResult(false, false, "stale dispatch epoch");
+				}
+				result = recordCensoredLocked(estimate, deadlineNanos, partialFeatures, regime);
+			}
+		}
+		if (result.recorded()) store.noteEvidenceRecorded();
+		return result;
+	}
+
+	private CensorResult recordCensoredLocked(LmdbNativeCostEstimate estimate, long deadlineNanos,
 			LmdbNativeCostVector partialFeatures, LmdbNativeRegimeKey regime) {
 		Objects.requireNonNull(estimate, "estimate");
 		Objects.requireNonNull(regime, "regime");
@@ -290,9 +378,9 @@ final class LmdbNativeAdaptiveCostModel {
 				store.regimeTracker().forceEpochBump();
 			}
 		}
-		store.noteEvidenceRecorded();
 		return new CensorResult(true, severeMiss,
 				severeMiss ? "censored above the previous 99% bound" : "censored at deadline");
+
 	}
 
 	/**
@@ -303,6 +391,21 @@ final class LmdbNativeAdaptiveCostModel {
 	 * {@link LmdbNativeCostObservation} knows the completion kind and the dispatch role.
 	 */
 	void noteLatestObserved(LmdbNativeCostEstimate estimate, double elapsedNanos, LmdbNativeRegimeKey regime) {
+		noteLatestObserved(estimate, elapsedNanos, regime, -1L);
+	}
+
+	void noteLatestObserved(LmdbNativeCostEstimate estimate, double elapsedNanos, LmdbNativeRegimeKey regime,
+			long dispatchEpoch) {
+		synchronized (store) {
+			synchronized (store.regimeTracker()) {
+				if (dispatchEpoch >= 0L && store.regimeTracker().snapshot().epoch() != dispatchEpoch) return;
+				noteLatestObservedLocked(estimate, elapsedNanos, regime);
+			}
+		}
+	}
+
+	private void noteLatestObservedLocked(LmdbNativeCostEstimate estimate, double elapsedNanos,
+			LmdbNativeRegimeKey regime) {
 		Objects.requireNonNull(estimate, "estimate");
 		Objects.requireNonNull(regime, "regime");
 		if (!configuration.record || !Double.isFinite(elapsedNanos) || elapsedNanos <= 0.0) {
@@ -310,6 +413,7 @@ final class LmdbNativeAdaptiveCostModel {
 		}
 		Quote quote = quote(estimate, regime);
 		store.latestObserved().observe(quote.exactKey, (long) elapsedNanos, quote.epoch);
+
 	}
 
 	/**
@@ -336,10 +440,40 @@ final class LmdbNativeAdaptiveCostModel {
 		return configuration;
 	}
 
+	/**
+	 * Reading may retain an exact DIRECT posterior while the first RESIDUAL observations are still absent. Becoming
+	 * feature-priceable is not evidence that an already timed arm is unmeasured: otherwise cold-start rescue can
+	 * replace a known fast kernel with a much slower rival measured after the readiness transition.
+	 *
+	 * This is a prediction-only fallback. Training still uses {@link #quote} and establishes the new residual lane.
+	 * A new exact residual censor counts as evidence too; it must not be hidden by old direct completions. No direct
+	 * log-latency mean is ever reinterpreted as a residual or added to the machine model's log base.
+	 */
+	private Quote predictionQuote(LmdbNativeCostEstimate estimate, LmdbNativeRegimeKey regime, PricingInputs inputs) {
+		Quote selected = quote(estimate, regime, inputs);
+		if (selected.lane != LmdbNativeCostPosteriorStore.Lane.RESIDUAL || selected.reading.exactPresent()) {
+			return selected;
+		}
+		// Reuse the already-quantized physical key; do not repeat ExactKey.of's bucket arithmetic.
+		LmdbNativeCostPosteriorStore.ExactKey directKey = new LmdbNativeCostPosteriorStore.ExactKey(
+				selected.exactKey.regime(), LmdbNativeCostPosteriorStore.Lane.DIRECT, selected.exactKey.variant());
+		LmdbNativeCostPosteriorStore.Reading direct = store.posteriors().read(directKey, selected.epoch,
+				selected.nowMillis);
+		if (!direct.exactPresent()) {
+			return selected;
+		}
+		return new Quote(LmdbNativeCostPosteriorStore.Lane.DIRECT, 0.0, 0.0, directKey, direct,
+				selected.epoch, selected.nowMillis, true, selected.machinePrediction);
+	}
+
 	private Quote quote(LmdbNativeCostEstimate estimate, LmdbNativeRegimeKey regime) {
+		return quote(estimate, regime, pricingInputs());
+	}
+
+	private Quote quote(LmdbNativeCostEstimate estimate, LmdbNativeRegimeKey regime, PricingInputs inputs) {
 		LmdbNativeStoreCostModel.Correction correction = store.correction(estimate.variantKey());
 		LmdbNativeCostVector corrected = applyFeatureCorrection(estimate.total(), correction);
-		LmdbNativeMachineCostModel.Prediction machinePrediction = machine.predict(corrected);
+		LmdbNativeMachineCostModel.Prediction machinePrediction = machine.predict(corrected, inputs.machine());
 		boolean featuresComparable = machinePrediction.adaptiveReady()
 				&& !corrected.hasUnsupportedFeatures(machinePrediction.supportedFeatureMask())
 				&& machinePrediction.expectedNanos() > 0.0 && Double.isFinite(machinePrediction.expectedNanos());
@@ -351,8 +485,8 @@ final class LmdbNativeAdaptiveCostModel {
 			double relative = machinePrediction.standardDeviation() / machinePrediction.expectedNanos();
 			machineLogVariance = Math.min(4.0, relative * relative);
 		}
-		long epoch = store.regimeTracker().epoch();
-		long nowMillis = store.nowMillis();
+		long epoch = inputs.epoch();
+		long nowMillis = inputs.nowMillis();
 		LmdbNativeCostPosteriorStore.ExactKey exactKey = LmdbNativeCostPosteriorStore.ExactKey.of(regime, lane,
 				estimate.variantKey());
 		LmdbNativeCostPosteriorStore.Reading reading = store.posteriors().read(exactKey, epoch, nowMillis);

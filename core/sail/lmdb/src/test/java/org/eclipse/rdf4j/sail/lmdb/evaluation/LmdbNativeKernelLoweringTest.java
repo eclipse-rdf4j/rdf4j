@@ -69,6 +69,40 @@ class LmdbNativeKernelLoweringTest {
 		return row;
 	}
 
+	/** Medical-query regression: DISTINCT + numeric IN + NOT EXISTS is not a factor-guard peeling candidate. */
+	@Test
+	void distinctNumericMembershipAndNotExistsAreInvariantUnderGuardPeeling() {
+		String property = LmdbNativeKernelIr.FACTOR_GUARD_PEELING_PROPERTY;
+		String previous = System.getProperty(property);
+		String shape = null;
+		try {
+			for (String enabled : List.of("false", "true")) {
+				System.setProperty(property, enabled);
+				StubSource source = new StubSource();
+				PatternPlan type = pattern(Term.slot(0), Term.constant(PRED + 128));
+				MultiJoinPlan chain = new MultiJoinPlan(new SlotPlan[] { type,
+						pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)),
+						pattern(Term.slot(2), Term.slot(3)) }, new MaskedFilter[0]);
+				var vf = SimpleValueFactory.getInstance();
+				ValueSetFilter in = new ValueSetFilter(source, 3, new long[] { 50L, 60L, 70L },
+						new Value[] { vf.createLiteral(50), vf.createLiteral(60), vf.createLiteral(70) });
+				StatementPatternExistsFilter condition = new StatementPatternExistsFilter(source, Term.slot(1),
+						Term.constant(PRED + 256), Term.unbound(), Term.unbound(),
+						ContextConstraint.UNRESTRICTED, false);
+				SlotPlan filtered = new FilterPlan(new FilterPlan(chain, in, 1L << 3),
+						new NegatedNativeBooleanFilter(condition), -1L);
+				var lowered = LmdbNativeKernelLowering.lowerAggregate(filtered, freshRow(source), new int[0],
+						new AggregateSpec[] { AggregateSpec.slot("count", 0, true, AggKind.COUNT) }, null);
+				assertNotNull(lowered, "numeric membership/witness must remain lowerable");
+				assertNull(LmdbNativeKernelIr.factorPlan(lowered.kernel), "DISTINCT must not enter the count-only peel");
+				if (shape == null) shape = lowered.kernel.shapeKey();
+				else assertEquals(shape, lowered.kernel.shapeKey(), "an ineligible flag must not change this IR");
+			}
+		} finally {
+			restoreProperty(property, previous);
+		}
+	}
+
 	@Test
 	void nativePlanBindingPreservesCorrelatedScope() {
 		RowState parent = freshRow();

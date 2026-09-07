@@ -21,6 +21,10 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.TreeMap;
+import java.util.Comparator;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.CRC32C;
@@ -32,7 +36,7 @@ import java.util.zip.CRC32C;
  * anomaly (magic, version, CRC32C, fingerprint) discards and starts cold. Loaded precision is soft-capped —
  * {@code tau_loaded = min(tau_cap, kappa * e^(-age/halfLife) * tau_saved)} — so persisted evidence prevents unnecessary
  * probes without ever loading with unlimited confidence. The safety ledger is deliberately NOT persisted. Writes happen
- * only from the store's flush/close hooks, never on the dispatch path.
+ * from completion or store flush/close hooks, never from a ranking or row loop.
  */
 final class LmdbNativeCostModelPersistence {
 
@@ -106,7 +110,7 @@ final class LmdbNativeCostModelPersistence {
 			if (storedCrc != crc.getValue()) {
 				return;
 			}
-			try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes))) {
+			try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes, 0, bytes.length - 8))) {
 				if (in.readInt() != MAGIC || in.readInt() != VERSION) {
 					return;
 				}
@@ -116,49 +120,116 @@ final class LmdbNativeCostModelPersistence {
 				long savedWallMillis = in.readLong();
 				long now = store.nowMillis();
 				LmdbNativePosteriorConfig config = store.posteriorConfig();
-				double age = Math.max(0L, now - savedWallMillis);
+				double age = Math.max(0.0, (double) now - (double) savedWallMillis);
 				double staleness = config.persistKappa()
 						* Math.exp(-age / config.persistStaleHalfLifeMillis() * Math.log(2.0));
 
-				int globals = in.readInt();
+				// Parse and validate the ENTIRE payload before publishing any prefix into the live model.
+				Map<LmdbNativeCostPosteriorStore.GlobalKey, LmdbNativePosteriorNode> stagedGlobals = new LinkedHashMap<>();
+				Map<LmdbNativeCostPosteriorStore.FamilyKey, LmdbNativePosteriorNode> stagedFamilies = new LinkedHashMap<>();
+				Map<LmdbNativeCostPosteriorStore.ExactKey, LmdbNativePosteriorNode> stagedExacts = new LinkedHashMap<>();
+				int globals = readCount(in);
 				for (int i = 0; i < globals; i++) {
 					LmdbNativeCostPosteriorStore.GlobalKey key = new LmdbNativeCostPosteriorStore.GlobalKey(
 							readRegime(in), readLane(in));
-					store.posteriors()
-							.restoreGlobal(key, decay(LmdbNativePosteriorNode.readFrom(in), staleness,
+					putUnique(stagedGlobals, key, decay(LmdbNativePosteriorNode.readFrom(in), staleness,
 									config.priorVariance(LmdbNativeCostPosteriorStore.Level.GLOBAL), config, now));
 				}
-				int familyCount = in.readInt();
+				int familyCount = readCount(in);
 				for (int i = 0; i < familyCount; i++) {
 					LmdbNativeCostPosteriorStore.FamilyKey key = new LmdbNativeCostPosteriorStore.FamilyKey(
 							readRegime(in), readLane(in), readFamilyShape(in));
-					store.posteriors()
-							.restoreFamily(key, decay(LmdbNativePosteriorNode.readFrom(in), staleness,
+					putUnique(stagedFamilies, key, decay(LmdbNativePosteriorNode.readFrom(in), staleness,
 									config.priorVariance(LmdbNativeCostPosteriorStore.Level.FAMILY), config, now));
 				}
-				int exactCount = in.readInt();
+				int exactCount = readCount(in);
 				for (int i = 0; i < exactCount; i++) {
 					LmdbNativeCostPosteriorStore.ExactKey key = LmdbNativeCostPosteriorStore.ExactKey.of(
 							readRegime(in), readLane(in), readVariantKey(in));
-					store.posteriors()
-							.restoreExact(key, decay(LmdbNativePosteriorNode.readFrom(in), staleness,
+					putUnique(stagedExacts, key, decay(LmdbNativePosteriorNode.readFrom(in), staleness,
 									config.priorVariance(LmdbNativeCostPosteriorStore.Level.EXACT), config, now));
 				}
-				int cooldowns = in.readInt();
+				int cooldowns = readCount(in);
 				List<LmdbNativeProbeScheduler.CooldownEntry> restored = new ArrayList<>(cooldowns);
 				for (int i = 0; i < cooldowns; i++) {
 					restored.add(new LmdbNativeProbeScheduler.CooldownEntry(readVariantKey(in), readRegime(in),
 							LmdbNativeProbeScheduler.State.values()[in.readByte()], in.readLong(), in.readInt(),
 							in.readLong()));
 				}
-				store.probeScheduler().restoreCooldowns(restored, now);
+				if (in.available() != 0) throw new IOException("trailing checkpoint payload");
+				for (LmdbNativeProbeScheduler.CooldownEntry entry : restored) {
+					if ((entry.state() != LmdbNativeProbeScheduler.State.COOLDOWN
+							&& entry.state() != LmdbNativeProbeScheduler.State.DORMANT_UNTIL_EPOCH
+							&& entry.state() != LmdbNativeProbeScheduler.State.QUARANTINED)
+							|| entry.strikes() < 0 || entry.epoch() < 0) {
+						throw new IOException("invalid persisted scheduler state");
+					}
+				}
+				synchronized (store) {
+					synchronized (store.posteriors()) {
+						synchronized (store.probeScheduler()) {
+							stagedGlobals.forEach(store.posteriors()::restoreGlobal);
+							stagedFamilies.forEach(store.posteriors()::restoreFamily);
+							stagedExacts.forEach(store.posteriors()::restoreExact);
+							store.probeScheduler().restoreCooldowns(restored, now);
+						}
+					}
+				}
 			}
 		} catch (IOException | RuntimeException problem) {
 			// start cold; a corrupt or incompatible sidecar must never poison dispatch
 		}
 	}
 
+	private static int readCount(DataInputStream in) throws IOException {
+		int count = in.readInt();
+		if (count < 0 || count > in.available()) throw new IOException("invalid checkpoint section size");
+		return count;
+	}
+
+	private static <K, V> void putUnique(Map<K, V> values, K key, V value) throws IOException {
+		if (values.putIfAbsent(key, value) != null) throw new IOException("duplicate checkpoint key");
+	}
+
+	/** Captures all persisted sections together, then releases learner locks BEFORE encoding or file I/O. */
+	private record Checkpoint(Map<LmdbNativeCostPosteriorStore.GlobalKey, LmdbNativePosteriorNode> globals,
+			Map<LmdbNativeCostPosteriorStore.FamilyKey, LmdbNativePosteriorNode> families,
+			Map<LmdbNativeCostPosteriorStore.ExactKey, LmdbNativePosteriorNode> exacts,
+			List<LmdbNativeProbeScheduler.CooldownEntry> cooldowns) { }
+
+	private Checkpoint checkpoint() {
+		Comparator<LmdbNativeRegimeKey> regimes = Comparator.comparing(LmdbNativeRegimeKey::phase)
+				.thenComparingLong(LmdbNativeRegimeKey::adjacencyEpoch)
+				.thenComparing(LmdbNativeRegimeKey::kernelReady)
+				.thenComparingLong(LmdbNativeRegimeKey::dataGeneration);
+		Comparator<LmdbNativeFamilyShapeKey> shapes = Comparator.comparing(LmdbNativeFamilyShapeKey::strategyFamily)
+				.thenComparing(LmdbNativeFamilyShapeKey::executionMode)
+				.thenComparingInt(LmdbNativeFamilyShapeKey::boundMaskClass);
+		Map<LmdbNativeCostPosteriorStore.GlobalKey, LmdbNativePosteriorNode> globals = new TreeMap<>(
+				Comparator.comparing(LmdbNativeCostPosteriorStore.GlobalKey::regime, regimes)
+						.thenComparing(LmdbNativeCostPosteriorStore.GlobalKey::lane));
+		Map<LmdbNativeCostPosteriorStore.FamilyKey, LmdbNativePosteriorNode> families = new TreeMap<>(
+				Comparator.comparing(LmdbNativeCostPosteriorStore.FamilyKey::regime, regimes)
+						.thenComparing(LmdbNativeCostPosteriorStore.FamilyKey::lane)
+						.thenComparing(LmdbNativeCostPosteriorStore.FamilyKey::shape, shapes));
+		Map<LmdbNativeCostPosteriorStore.ExactKey, LmdbNativePosteriorNode> exacts = new TreeMap<>(
+				Comparator.comparing(LmdbNativeCostPosteriorStore.ExactKey::regime, regimes)
+						.thenComparing(LmdbNativeCostPosteriorStore.ExactKey::lane)
+						.thenComparing(LmdbNativeCostPosteriorStore.ExactKey::variant));
+		synchronized (store) {
+			synchronized (store.posteriors()) {
+				synchronized (store.probeScheduler()) {
+					store.posteriors().forEachGlobal(globals::put);
+					store.posteriors().forEachFamily(families::put);
+					store.posteriors().forEachExact(exacts::put);
+					return new Checkpoint(globals, families, exacts, store.probeScheduler().snapshotCooldowns());
+				}
+			}
+		}
+	}
+
 	private void write(long pendingDirty, long now) throws IOException {
+		Checkpoint checkpoint = checkpoint();
 		ByteArrayOutputStream buffer = new ByteArrayOutputStream(1 << 16);
 		try (DataOutputStream out = new DataOutputStream(buffer)) {
 			out.writeInt(MAGIC);
@@ -169,7 +240,7 @@ final class LmdbNativeCostModelPersistence {
 			ByteArrayOutputStream globals = new ByteArrayOutputStream();
 			int[] counts = new int[3];
 			try (DataOutputStream g = new DataOutputStream(globals)) {
-				store.posteriors().forEachGlobal((key, node) -> {
+				checkpoint.globals().forEach((key, node) -> {
 					try {
 						writeRegime(g, key.regime());
 						g.writeByte(key.lane().ordinal());
@@ -182,7 +253,7 @@ final class LmdbNativeCostModelPersistence {
 			}
 			ByteArrayOutputStream families = new ByteArrayOutputStream();
 			try (DataOutputStream f = new DataOutputStream(families)) {
-				store.posteriors().forEachFamily((key, node) -> {
+				checkpoint.families().forEach((key, node) -> {
 					try {
 						writeRegime(f, key.regime());
 						f.writeByte(key.lane().ordinal());
@@ -196,7 +267,7 @@ final class LmdbNativeCostModelPersistence {
 			}
 			ByteArrayOutputStream exacts = new ByteArrayOutputStream();
 			try (DataOutputStream x = new DataOutputStream(exacts)) {
-				store.posteriors().forEachExact((key, node) -> {
+				checkpoint.exacts().forEach((key, node) -> {
 					try {
 						writeRegime(x, key.regime());
 						x.writeByte(key.lane().ordinal());
@@ -215,7 +286,7 @@ final class LmdbNativeCostModelPersistence {
 			out.writeInt(counts[2]);
 			buffer.write(exacts.toByteArray());
 
-			List<LmdbNativeProbeScheduler.CooldownEntry> cooldowns = store.probeScheduler().snapshotCooldowns();
+			List<LmdbNativeProbeScheduler.CooldownEntry> cooldowns = checkpoint.cooldowns();
 			out.writeInt(cooldowns.size());
 			for (LmdbNativeProbeScheduler.CooldownEntry entry : cooldowns) {
 				writeVariantKey(out, entry.variant());

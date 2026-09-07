@@ -64,6 +64,7 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	private final Role role;
 	/** The regime of the dispatch decision, captured at construction — completion may run much later. */
 	private final LmdbNativeRegimeKey regimeAtDispatch;
+	private final long epochAtDispatch;
 	private final long startedNanos;
 	private volatile long censorDeadlineNanos = -1L;
 	private final double[] counters = new double[FEATURE_COUNT];
@@ -100,7 +101,9 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 		this.model = Objects.requireNonNull(model, "model");
 		this.clock = Objects.requireNonNull(clock, "clock");
 		this.role = Objects.requireNonNull(role, "role");
-		this.regimeAtDispatch = model.currentRegime();
+		LmdbNativeRegimeTracker.Snapshot dispatch = model.store().regimeTracker().snapshot();
+		this.regimeAtDispatch = dispatch.regime();
+		this.epochAtDispatch = dispatch.epoch();
 		startedNanos = clock.nanoTime();
 	}
 
@@ -259,7 +262,7 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 			trainedFeatures = actual;
 			double weight = (result == Completion.EXPECTED_EARLY_CLOSE ? Math.max(0.25, fraction) : 1.0)
 					* contendedWeightFactor;
-			trainingResult = model.recordCompleted(consumedEstimate, actual, elapsed, weight, regimeAtDispatch);
+			trainingResult = model.recordCompleted(consumedEstimate, actual, elapsed, weight, regimeAtDispatch, epochAtDispatch);
 			if (role != Role.PROBE) {
 				model.earnSafetyCredit(elapsed);
 				if (result == Completion.EXHAUSTED) {
@@ -269,12 +272,12 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 					// comparable. A HEDGE_BACKUP that got here did produce the user's rows,
 					// so it qualifies exactly as a normal dispatch does. Ordered after recordCompleted so the
 					// severe-miss check inside it still sees the pre-run price.
-					model.noteLatestObserved(consumedEstimate, elapsed, regimeAtDispatch);
+					model.noteLatestObserved(consumedEstimate, elapsed, regimeAtDispatch, epochAtDispatch);
 				}
 			}
 		} else if (result == Completion.BUDGET_CENSORED) {
 			trainedFeatures = actual;
-			censorResult = model.recordCensored(estimate, censorDeadlineNanos, actual, regimeAtDispatch);
+			censorResult = model.recordCensored(estimate, censorDeadlineNanos, actual, regimeAtDispatch, epochAtDispatch);
 			trainingResult = new LmdbNativeAdaptiveCostModel.TrainingResult(false,
 					"budget censored: " + censorResult.reason(), false, censorResult.severeMiss());
 		} else {

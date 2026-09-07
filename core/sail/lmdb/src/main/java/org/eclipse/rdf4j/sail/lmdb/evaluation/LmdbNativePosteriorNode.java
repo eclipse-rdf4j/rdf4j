@@ -58,7 +58,7 @@ final class LmdbNativePosteriorNode {
 	}
 
 	long observationCount() {
-		return completedCount + censoredCount;
+		return completedCount > Long.MAX_VALUE - censoredCount ? Long.MAX_VALUE : completedCount + censoredCount;
 	}
 
 	/**
@@ -102,8 +102,16 @@ final class LmdbNativePosteriorNode {
 	}
 
 	static LmdbNativePosteriorNode readFrom(DataInputStream in) throws IOException {
-		return new LmdbNativePosteriorNode(in.readDouble(), in.readDouble(), in.readDouble(), in.readDouble(),
-				in.readDouble(), in.readLong(), in.readLong(), in.readLong(), in.readLong());
+		LmdbNativePosteriorNode node = new LmdbNativePosteriorNode(in.readDouble(), in.readDouble(), in.readDouble(),
+				in.readDouble(), in.readDouble(), in.readLong(), in.readLong(), in.readLong(), in.readLong());
+		if (!Double.isFinite(node.meanLog) || !Double.isFinite(node.epistemicVariance) || node.epistemicVariance <= 0
+				|| !Double.isFinite(node.noiseVariance) || node.noiseVariance < 0
+				|| !Double.isFinite(node.weightSum) || node.weightSum < 0
+				|| !Double.isFinite(node.squaredWeightSum) || node.squaredWeightSum < 0
+				|| !Double.isFinite(node.nEff()) || node.completedCount < 0 || node.censoredCount < 0 || node.epoch < 0) {
+			throw new IOException("invalid posterior node");
+		}
+		return node;
 	}
 
 	@Override

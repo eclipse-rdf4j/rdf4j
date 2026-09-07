@@ -19,7 +19,9 @@ import java.util.function.LongSupplier;
  * {@code b} nanoseconds earns {@code eta * b} credit with {@code eta = alpha/(1-alpha)}; a probe must reserve its worst
  * case — deadline plus cancellation bound plus interference bound — before it may run, and afterwards commits the
  * <em>actual</em> charge (even when it overshoots the reservation: overshoot is honestly charged, never clamped). The
- * prefix invariant this enforces: total charged probe cost never exceeds an {@code alpha} fraction of useful work.
+ * optional-admission invariant is that outstanding reservations are covered by earned credit. Mandatory trials can
+ * create debt and actual overshoots are debited even beyond credit; therefore this is NOT an unconditional bound of
+ * {@code alpha} on charged runtime or query latency.
  * Spacing adds the per-request protection a prefix bound cannot give: at least {@code minSpacingDecisions} normal
  * decisions AND {@code minSpacingNanos} between probes, so two consecutive dispatches never both probe. The ledger
  * deliberately starts at zero and is never persisted — persisted evidence prevents unnecessary probes, but stale credit
@@ -68,18 +70,33 @@ final class LmdbNativeSafetyLedger {
 	/**
 	 * Mandatory financing for a must-try arm's trials: always reserves, letting the credit balance go negative. The
 	 * debt is real — future normal completions must earn it back before {@link #tryReserve} finances any value-optional
-	 * probe — so total speculative overhead stays bounded; only the ORDER of spending changes (mandatory exploration
-	 * first).
+	 * probe — so optional admission stops until the debt is repaid. There is no unconditional alpha prefix bound for mandatory
+	 * trials or a guarantee of an eventual completion (capacity/censor outcomes need not increase completion counts).
 	 * <p>
 	 * This covers an arm's first trial and, when the arm's own measurements price it below the incumbent, its
 	 * confirmation trials up to {@link LmdbNativeAdaptiveArbitration#CONFIRMATION_FLOOR} completed measurements per
 	 * exact variant per regime. The cap is enforced by the completed count, which only rises on an actual completion,
-	 * so the debt a single arm can open is bounded at four trials beyond the first. Never use this for repeat probes of
+	 * so incomplete attempts do NOT imply a finite total-debt bound. Never use this for repeat probes of
 	 * an arm that has already settled, or of one its own measurements price no better than the incumbent.
 	 */
 	synchronized Reservation reserveMandatory(long worstCaseNanos) {
 		outstandingNanos += Math.max(0L, worstCaseNanos);
 		return new Reservation(Math.max(0L, worstCaseNanos));
+	}
+
+	/**
+	 * Linearization point for a NEW probe: spacing, financing and clock reset form one transaction.
+	 * A separate precheck is advisory only. Hedge supplements use the plain reservation methods instead.
+	 */
+	synchronized Reservation tryReserveProbe(long worstCaseNanos, boolean mandatory) {
+		if (worstCaseNanos <= 0L || !spacingAllows()) {
+			return null;
+		}
+		Reservation reservation = mandatory ? reserveMandatory(worstCaseNanos) : tryReserve(worstCaseNanos);
+		if (reservation != null) {
+			noteProbeDecision();
+		}
+		return reservation;
 	}
 
 	synchronized void noteNormalDecision() {
