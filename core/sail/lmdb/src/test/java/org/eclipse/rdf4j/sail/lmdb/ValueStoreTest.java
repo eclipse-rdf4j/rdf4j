@@ -28,6 +28,11 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -81,6 +86,50 @@ public class ValueStoreTest {
 
 	private LmdbStoreConfig hashCacheEnabledConfig() {
 		return new LmdbStoreConfig().setValueHashCacheEnabled(true);
+	}
+
+	@Test
+	public void autoGrowWaitsForEnvironmentCopy() throws Exception {
+		CountDownLatch copyStarted = new CountDownLatch(1);
+		CountDownLatch allowCopyToComplete = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<?> copy = executor.submit(() -> {
+				try {
+					valueStore.withEnvironmentCopyLock(() -> {
+						copyStarted.countDown();
+						try {
+							if (!allowCopyToComplete.await(10, TimeUnit.SECONDS)) {
+								throw new AssertionError("Timed out waiting to complete the environment copy");
+							}
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+							throw new AssertionError(e);
+						}
+					});
+				} catch (IOException e) {
+					throw new AssertionError(e);
+				}
+			});
+			assertTrue(copyStarted.await(10, TimeUnit.SECONDS));
+
+			Future<?> resize = executor.submit(() -> {
+				try {
+					valueStore.withMapResizeLock(() -> {
+					});
+				} catch (IOException e) {
+					throw new AssertionError(e);
+				}
+			});
+			assertFalse("auto-grow must wait for the environment copy", resize.isDone());
+
+			allowCopyToComplete.countDown();
+			copy.get(10, TimeUnit.SECONDS);
+			resize.get(10, TimeUnit.SECONDS);
+		} finally {
+			allowCopyToComplete.countDown();
+			executor.shutdownNow();
+		}
 	}
 
 	@Test
