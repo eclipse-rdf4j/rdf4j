@@ -906,8 +906,6 @@ abstract class LmdbNativeAggregatePlannerBase {
 	AggregateSpec[] compileAggregates(Group group) {
 		List<GroupElem> groupElements = group.getGroupElements();
 		AggregateSpec[] specs = new AggregateSpec[groupElements.size()];
-		Map<ValueExpr, Integer> shared = Boolean.getBoolean("rdf4j.lmdb.irAggregate.prototype")
-				&& LmdbNativeJaninoCodegen.enabled() ? new HashMap<>() : null;
 		for (int i = 0; i < groupElements.size(); i++) {
 			GroupElem elem = groupElements.get(i);
 			AggregateOperator op = elem.getOperator();
@@ -952,20 +950,8 @@ abstract class LmdbNativeAggregatePlannerBase {
 				// M-F3 aggregates over expressions: evaluate the argument once per input solution into a hidden
 				// computed slot (error ⇒ slot unbound, matching the generic evaluator's null-on-error skip);
 				// DISTINCT then applies to the computed slot exactly like a plain variable argument.
-				// Share the hidden result itself, avoiding alias hooks and repeated expression evaluation. The map
-				// belongs to this GROUP scope; volatile expressions retain independent evaluations per occurrence.
-				boolean repeatable = shared != null && QueryEvaluationUtility.isRepeatableWithinPreparation(arg);
-				Integer previous = repeatable ? shared.get(arg) : null;
-				int hidden;
-				if (previous != null) {
-					hidden = previous;
-				} else {
-					hidden = slot("#aggExpr" + i);
-					pendingAggregateExpressions.add(new PendingAggregateExpression(hidden, arg));
-					if (repeatable) {
-						shared.put(arg.clone(), hidden);
-					}
-				}
+				int hidden = slot("#aggExpr" + i);
+				pendingAggregateExpressions.add(new PendingAggregateExpression(hidden, arg));
 				if (kind == AggKind.GROUP_CONCAT) {
 					String separator = groupConcatSeparator((org.eclipse.rdf4j.query.algebra.GroupConcat) op);
 					if (separator == null) {
