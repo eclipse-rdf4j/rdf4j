@@ -15,6 +15,8 @@ import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
  */
 interface LmdbNativeFactorCursor extends AutoCloseable {
 	boolean next() throws IOException;
+	/** Conservative whole-cursor capability: false guarantees that every emitted relation is scalar. */
+	default boolean mayHaveFactors() { return true; }
 	long multiplicity();
 	FactorEnvironment factors();
 	@Override void close();

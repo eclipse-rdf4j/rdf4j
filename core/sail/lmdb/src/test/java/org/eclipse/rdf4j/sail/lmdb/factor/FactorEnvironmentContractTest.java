@@ -95,4 +95,13 @@ public class FactorEnvironmentContractTest {
             }
         }
     }
+
+    @Test public void copiedSelectedProvenanceIsCheckedBeforeAppending() {
+        try(HeapFactorSource heap=new HeapFactorSource(this);SelectedFactorSource selected=new SelectedFactorSource(2)){
+            BorrowedFactorBatch b=batch(heap,new long[]{1,2,3});FactorSelection ranges=new FactorSelection(2);ranges.add(0,2);
+            BorrowedFactorBatch view=selected.select(b,0,ranges),copy=new BorrowedFactorBatch(selected,1);copy.reset(1);copy.copyLaneFrom(0,view,0);
+            FactorEnvironment from=new FactorEnvironment(2),to=new FactorEnvironment(2);from.bind(1,copy,0,1);selected.select(b,0,ranges);
+            fails(IllegalStateException.class,()->to.append(from,-1));eq(0,to.mask());
+        }
+    }
 }

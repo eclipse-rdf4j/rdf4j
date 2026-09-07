@@ -79,7 +79,29 @@ final class MultiJoinPlan implements SlotPlan {
 
 	@Override
 	public LmdbNativeFactorCursor openFactors(RowState row) throws IOException {
-		return LmdbNativePackedFtree.openFactors(this, row);
+		return openFactors(row, 0L);
+	}
+
+	@Override
+	public LmdbNativeFactorCursor openFactors(RowState row, long scalarDemand) throws IOException {
+		LmdbNativeFactorCursor grouped = LmdbNativePackedFtree.openFactors(this, row);
+		if (grouped != null || !LmdbNativeFactorRows.enabled() || row.encounterOrderRequired) return grouped;
+		// Preserve the existing wildcard, then merge, then hash batch preference. Unsupported grouped
+		// outputs remain valid scalar factor producers; borrowing must not disable an applicable shortcut.
+		int capacity = NativeBatch.configuredRows();
+		BatchCursor merge = LmdbWildcardPredicateBatch.tryOpenPayload(this, row, capacity);
+		if (merge == null) merge = LmdbNativeMergeJoin.tryOpen(this, row, capacity);
+		if (merge != null) {
+			try {
+				RowCursor rows = LmdbWildcardPredicateBatch.asRows(merge, row, capacity);
+				return rows == null ? null : LmdbNativeFactorRows.scalar(rows, row.slots.length);
+			}
+			catch (RuntimeException | Error failure) {
+				try { merge.close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				throw failure;
+			}
+		}
+		return LmdbNativeHashJoin.tryOpenFactors(this, row, capacity, scalarDemand);
 	}
 
 	@Override

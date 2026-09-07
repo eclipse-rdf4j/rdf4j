@@ -29,7 +29,7 @@ final class LmdbNativeFactorRows {
 
 	/** Retain groups only when the immediate consumer does not already require their scalar values. */
 	private static LmdbNativeFactorCursor openDemanded(SlotPlan plan, RowState row, long scalarDemand) throws IOException {
-		return plan instanceof FilterPlan filter ? filter(filter, row, scalarDemand) : plan.openFactors(row);
+		return plan instanceof FilterPlan filter ? filter(filter, row, scalarDemand) : plan.openFactors(row, scalarDemand);
 	}
 
 	private static LmdbNativeFactorCursor filter(FilterPlan plan, RowState row, long scalarDemand) throws IOException {
@@ -39,11 +39,18 @@ final class LmdbNativeFactorRows {
 		LmdbNativeFactorCursor input = openDemanded(plan.arg, row, scalarDemand);
 		if (input == null) return null;
 		try {
-			if (retainSelection)
+			if (retainSelection && input.mayHaveFactors())
 				return new SelectingFilter(input, plan.filter, row, plan.filterMask);
-			return new Filter(new Expanded(input, row, plan.filterMask), plan.filter, row);
+			return new Filter(expand(input, row, plan.filterMask), plan.filter, row);
 		}
 		catch (RuntimeException | Error problem) { closeSuppressing(input, problem); throw problem; }
+	}
+
+	/** Known deterministic restriction over any grouped producer, including existing physical joins. */
+	static LmdbNativeFactorCursor restrict(LmdbNativeFactorCursor input, NativeBooleanFilter filter,
+			RowState row, long reads) {
+		if (reads < 0L) throw new IllegalArgumentException("opaque grouped filter");
+		return new Filter(expand(input, row, reads), filter, row);
 	}
 
 	static LmdbNativeFactorCursor join(JoinPlan plan, RowState row) throws IOException {
@@ -53,7 +60,7 @@ final class LmdbNativeFactorRows {
 		if (reads < 0L || !SlotPlan.encounterOrderReplaySafe(plan.right)) return null;
 		LmdbNativeFactorCursor left = openDemanded(plan.left, row, reads | plan.right.producedMask());
 		if (left == null) return null;
-		try { return new Joined(new Expanded(left, row, reads | plan.right.producedMask()), plan.right, row); }
+		try { return new Joined(expand(left, row, reads | plan.right.producedMask()), plan.right, row); }
 		catch (RuntimeException | Error problem) { closeSuppressing(left, problem); throw problem; }
 	}
 
@@ -68,12 +75,16 @@ final class LmdbNativeFactorRows {
 		RowState scratch = row.fork();
 		LmdbNativeFactorCursor input = openDemanded(plan, scratch, demanded);
 		if (input == null) return null;
-		try { return new Projected(new Expanded(input, scratch, demanded), scratch, row, slots); }
+		try { return new Projected(expand(input, scratch, demanded), scratch, row, slots); }
 		catch (RuntimeException | Error problem) { closeSuppressing(input, problem); throw problem; }
 	}
 
 	static FactorizedRowCursor asRows(LmdbNativeFactorCursor input, RowState row) {
-		return new Flattened(new Expanded(input, row, -1L));
+		return new Flattened(expand(input, row, -1L), row);
+	}
+
+	private static LmdbNativeFactorCursor expand(LmdbNativeFactorCursor input, RowState row, long demanded) {
+		return input.mayHaveFactors() ? new Expanded(input, row, demanded) : input;
 	}
 
 	static LmdbNativeFactorCursor scalar(RowCursor input, int slots) {
@@ -136,8 +147,8 @@ final class LmdbNativeFactorRows {
 					FactorEnvironment factors = input.factors();
 					if ((row.boundMask() & factors.mask()) != 0L)
 						throw new IllegalStateException("deferred factor installed as a scalar binding");
-					remaining.append(factors, ~demanded);
 					product.bind(factors, demanded, input.multiplicity());
+					remaining.append(factors, ~product.expandedMask());
 					active = true;
 				}
 			} catch (IOException | RuntimeException | Error failure) {
@@ -165,6 +176,7 @@ final class LmdbNativeFactorRows {
 		final FactorEnvironment empty;
 		long weight;
 		Scalar(RowCursor input, int slots) { this.input = input; empty = new FactorEnvironment(slots); }
+		@Override public boolean mayHaveFactors() { return false; }
 		@Override public boolean next() throws IOException {
 			if (!input.next()) return false;
 			weight = input instanceof FactorizedRowCursor factor ? factor.multiplicity() : 1L;
@@ -273,14 +285,14 @@ final class LmdbNativeFactorRows {
 					for (long rest = factors.mask(); rest != 0L; rest &= rest - 1L)
 						empty |= factors.count(Long.numberOfTrailingZeros(rest)) == 0L;
 					if (empty) continue;
-					demand = factors.mask() & reads;
+					demand = factors.expansionClosure(reads);
 					if (demand == 0L) {
 						if (filter.accept(row)) {
 							result.append(factors, -1L); weight = inputWeight; return true;
 						}
 						continue;
 					}
-					if (Long.bitCount(demand) != 1) {
+					if (Long.bitCount(demand) != 1 || factors.isTuple(Long.numberOfTrailingZeros(demand))) {
 						if (product == null) product = new FactorProductCursor(row.slots.length, READ_WINDOW);
 						product.bind(factors, reads, inputWeight);
 						mode = PRODUCT;
@@ -377,6 +389,7 @@ final class LmdbNativeFactorRows {
 		}
 		@Override public long multiplicity() { return input.multiplicity(); }
 		@Override public FactorEnvironment factors() { return input.factors(); }
+		@Override public boolean mayHaveFactors() { return input.mayHaveFactors(); }
 		@Override public void close() {
 			if (closed) return; closed = true;
 			try { input.close(); } finally { filter.close(); }
@@ -431,18 +444,22 @@ final class LmdbNativeFactorRows {
 
 	/** Ordinary cursor semantics include replay unless a weighted consumer explicitly takes it. */
 	private static final class Flattened implements FactorizedRowCursor {
-		final Expanded input;
+		final LmdbNativeFactorCursor input;
 		long repeat;
 		boolean closed;
 		int tick;
-		Flattened(Expanded input) { this.input = input; }
+		final RowState row;
+		Flattened(LmdbNativeFactorCursor input, RowState row) { this.input = input; this.row = row; }
 		@Override public boolean next() throws IOException {
 			if (closed) return false;
 			try {
-				if (cancelled(input.row, ++tick)) { close(); return false; }
+				if (cancelled(row, ++tick)) { close(); return false; }
 				if (repeat > 0L) { repeat--; return true; }
 				if (!input.next()) { close(); return false; }
-				repeat = input.multiplicity() - 1L;
+				if (input.factors().mask() != 0L) throw new IllegalStateException("unexpanded factor at scalar consumer");
+				long count = input.multiplicity();
+				if (count <= 0L) throw new IllegalStateException("invalid scalar prefix weight");
+				repeat = count - 1L;
 				return true;
 			} catch (IOException | RuntimeException | Error failure) {
 				closeSuppressing(this, failure); throw failure;
@@ -483,7 +500,10 @@ final class LmdbNativeFactorRows {
 			}
 		}
 		private void install() {
+			long deferred = input.factors().mask();
 			for (int slot : slots) {
+				if ((deferred & (1L << slot)) != 0L)
+					throw new IllegalStateException("unexpanded factor at projected scalar consumer");
 				long value = scratch.slots[slot];
 				if (value != UNKNOWN && !target.bindOrCheckTerm(slot, value))
 					throw new IllegalStateException("factor projection changed an entry binding");

@@ -20,7 +20,6 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.IntUnaryOperator;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
@@ -88,7 +87,7 @@ final class LmdbNativeHashJoin {
 			buckets <<= 1;
 		}
 		long payloadCapacity = Math.max(32, rows);
-		long bucketBytes = buckets * (8L * keyWidth + 1 + 1 + 4 + 4 + 4);
+		long bucketBytes = buckets * (8L * keyWidth + 1 + 1 + 4 + 4 + 4 + 4);
 		long payloadBytes = payloadCapacity * (8L * Math.max(1, payloadWidth) + 4);
 		return bucketBytes + payloadBytes;
 	}
@@ -96,6 +95,38 @@ final class LmdbNativeHashJoin {
 	static BatchCursor tryOpen(MultiJoinPlan plan, RowState row, int capacity) {
 		Candidate candidate = tryPlan(plan, row);
 		return candidate == null ? null : candidate.open(plan, row, capacity);
+	}
+
+	/** Existing hash admission and build/probe implementation, with grouped rather than flat output. */
+	static LmdbNativeFactorCursor tryOpenFactors(MultiJoinPlan plan, RowState row, int capacity) {
+		return tryOpenFactors(plan, row, capacity, 0L);
+	}
+
+	static LmdbNativeFactorCursor tryOpenFactors(MultiJoinPlan plan, RowState row, int capacity, long scalarDemand) {
+		if (!LmdbNativeFactorRows.enabled() || row.encounterOrderRequired) return null;
+		for (MaskedFilter filter : plan.filters) {
+			if (filter.mask < 0L) return null;
+			// Tuple selections are not yet represented; an embedded payload filter consumes that tuple now.
+			scalarDemand |= filter.mask;
+		}
+		Candidate candidate = tryPlan(plan, row);
+		if (candidate == null) return null;
+		long payloadMask = candidate.build.producedMask() & ~HashJoinBatchCursor.maskOf(candidate.keySlots);
+		// Tuple transport currently requires assured-bound columns, not per-tuple nullable binding masks.
+		if ((payloadMask & ~SlotPlan.assuredMask(candidate.build)) != 0L || (payloadMask & row.boundMask()) != 0L)
+			return null;
+		HashJoinBatchCursor core = new HashJoinBatchCursor(new MultiJoinPlan(plan.children, new MaskedFilter[0]),
+				candidate.probe, candidate.build, row, candidate.keySlots, capacity,
+				candidate.maxBuildRows, candidate.buildRowsEstimate);
+		LmdbNativeFactorCursor grouped = new HashJoinFactorCursor(core, scalarDemand);
+		try {
+			for (MaskedFilter filter : plan.filters)
+				grouped = LmdbNativeFactorRows.restrict(grouped, filter.filter, row, filter.mask);
+			return grouped;
+		} catch (RuntimeException | Error failure) {
+			try { grouped.close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+			throw failure;
+		}
 	}
 
 	/**
@@ -400,7 +431,7 @@ final class LmdbNativeHashJoin {
 
 @Experimental
 final class HashJoinBatchCursor implements BatchCursor {
-	private static final int END_OF_PROBE = -2;
+	static final int END_OF_PROBE = -2;
 
 	/** Opened when the build refuses (row cap, ledger, sweep abort): the untouched non-batch execution. */
 	final SlotPlan fallbackPlan;
@@ -425,6 +456,8 @@ final class HashJoinBatchCursor implements BatchCursor {
 	BatchCursor fallback;
 	boolean initialized;
 	boolean closed;
+	boolean buildCancelled;
+	private int buildTick;
 	final double buildRowsEstimate;
 	org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation reservation;
 
@@ -454,6 +487,7 @@ final class HashJoinBatchCursor implements BatchCursor {
 		if (!initialized) {
 			initialized = true;
 			if (!build()) {
+				if (buildCancelled) { close(); return 0; }
 				// The specific refusal counter (row cap, preflight, late, sweep abort) was recorded inside build().
 				fallback = new RowBatchCursor(fallbackPlan.open(row), row);
 			}
@@ -595,6 +629,21 @@ final class HashJoinBatchCursor implements BatchCursor {
 				probeBuckets[currentProbe], probeHeads[currentProbe]);
 	}
 
+	/** Same batched hash/probe work as scalar emission; retain the resolved bucket for grouped consumers. */
+	int nextProbeBucket() throws IOException {
+		while (probeIndex >= probeCount) {
+			if (probeCursor.fill(probeBatch) == 0) return END_OF_PROBE;
+			probeCount = probeBatch.selectedCount;
+			probeIndex = 0;
+			table.hashBatch(probeBatch, probeBatch.selection, probeCount, keySlots, probeHashState, probeHashes);
+			table.headBatch(probeHashes, probeCount, probeBuckets, probeHeads);
+		}
+		int currentProbe = probeIndex++;
+		currentProbeRow = probeBatch.selection[currentProbe];
+		return table.lookupPreparedBucket(probeBatch, currentProbeRow, keySlots,
+				probeHashes[currentProbe], probeBuckets[currentProbe]);
+	}
+
 	boolean build() throws IOException {
 		if (LmdbNativeHashJoin.byteAdmissionEnabled() && !preflight()) {
 			LmdbNativeHashJoin.PREFLIGHT_REFUSALS.incrementAndGet();
@@ -672,6 +721,12 @@ final class HashJoinBatchCursor implements BatchCursor {
 
 	/** Adds one build row under the row-cap and byte-admission guards. False when the build must be abandoned. */
 	private boolean addTableRow(long[] slots) {
+		if (LmdbNativeFactorRows.cancelled(row, ++buildTick)) {
+			buildCancelled = true;
+			table = null;
+			releaseLedger();
+			return false;
+		}
 		if (table.payloadCount >= maxBuildRows) {
 			table = null;
 			releaseLedger();
@@ -773,294 +828,21 @@ final class HashJoinBatchCursor implements BatchCursor {
 
 	@Override
 	public void close() {
-		if (!closed) {
-			closed = true;
-			if (fallback != null) {
-				fallback.close();
-				fallback = null;
-			}
-			if (probeCursor != null) {
-				probeCursor.close();
-				probeCursor = null;
-			}
-			table = null;
-			probeBatch = null;
-			releaseLedger();
+		if (closed) return;
+		closed = true;
+		Throwable failure = null;
+		try { if (fallback != null) fallback.close(); }
+		catch (RuntimeException | Error problem) { failure = problem; }
+		finally { fallback = null; }
+		try { if (probeCursor != null) probeCursor.close(); }
+		catch (RuntimeException | Error problem) {
+			if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
+		} finally { probeCursor = null; table = null; probeBatch = null; }
+		try { releaseLedger(); }
+		catch (RuntimeException | Error problem) {
+			if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
 		}
-	}
-}
-
-@Experimental
-final class PrimitiveHashJoinTable {
-	final int keyWidth;
-	final int payloadWidth;
-	final IntUnaryOperator hashHook;
-	long[] keys;
-	byte[] occupied;
-	byte[] fingerprints;
-	int[] fullHashes;
-	int[] heads;
-	int[] tails;
-	/** Duplicate-chain length per bucket — the §6.2 build-time chain statistic, maintained as rows arrive. */
-	int[] chainCounts;
-	int maxChainLength;
-	int distinctKeys;
-	boolean uniqueKeys = true;
-	long[] payloads;
-	int[] next;
-	int payloadCount;
-
-	PrimitiveHashJoinTable(int keyWidth, int payloadWidth) {
-		this(keyWidth, payloadWidth, IntUnaryOperator.identity());
-	}
-
-	PrimitiveHashJoinTable(int keyWidth, int payloadWidth, IntUnaryOperator hashHook) {
-		this.keyWidth = keyWidth;
-		this.payloadWidth = payloadWidth;
-		this.hashHook = hashHook;
-		this.keys = new long[keyWidth * 32];
-		this.occupied = new byte[32];
-		this.fingerprints = new byte[32];
-		this.fullHashes = new int[32];
-		this.heads = new int[32];
-		this.tails = new int[32];
-		Arrays.fill(heads, -1);
-		Arrays.fill(tails, -1);
-		this.chainCounts = new int[32];
-		this.payloads = new long[Math.max(32, payloadWidth * 32)];
-		this.next = new int[32];
-		Arrays.fill(next, -1);
-	}
-
-	/** Physical data bytes across every backing array (headers excluded; the admission estimate absorbs them). */
-	long byteSize() {
-		return 8L * keys.length + occupied.length + fingerprints.length + 4L * fullHashes.length + 4L * heads.length
-				+ 4L * tails.length + 4L * chainCounts.length + 8L * payloads.length + 4L * next.length;
-	}
-
-	/** Longest duplicate chain observed at build time — the §6.2 skew statistic. */
-	int maxChainLength() {
-		return maxChainLength;
-	}
-
-	/** Mean duplicate-chain length (payload rows per distinct key), the §6.3 conditional-fanout ingredient. */
-	double meanChainLength() {
-		return distinctKeys == 0 ? 0D : (double) payloadCount / distinctKeys;
-	}
-
-	/** The duplicate-chain length behind one bucket — the chain handle's count, consumable without walking it. */
-	int chainLength(int bucket) {
-		return chainCounts[bucket];
-	}
-
-	void add(long[] row, int[] keySlots, int[] payloadSlots) {
-		if ((distinctKeys + 1) * 4 > occupied.length * 3) {
-			growBuckets();
-		}
-		int hash = hash(row, keySlots);
-		int bucket = find(row, keySlots, hash);
-		if (occupied[bucket] == 0) {
-			occupied[bucket] = 1;
-			fingerprints[bucket] = fingerprint(hash);
-			fullHashes[bucket] = hash;
-			int offset = bucket * keyWidth;
-			for (int i = 0; i < keyWidth; i++) {
-				keys[offset + i] = row[keySlots[i]];
-			}
-			distinctKeys++;
-		} else {
-			uniqueKeys = false;
-		}
-		ensurePayloadCapacity(payloadCount + 1);
-		int payload = payloadCount++;
-		for (int i = 0; i < payloadWidth; i++) {
-			payloads[payload * payloadWidth + i] = row[payloadSlots[i]];
-		}
-		if (heads[bucket] < 0) {
-			heads[bucket] = payload;
-		} else {
-			next[tails[bucket]] = payload;
-		}
-		tails[bucket] = payload;
-		int length = ++chainCounts[bucket];
-		if (length > maxChainLength) {
-			maxChainLength = length;
-		}
-	}
-
-	/**
-	 * Chain-count lookup for probes that consume the duplicate chain as a multiplicity instead of walking it: the
-	 * resolved bucket's chain length, or 0 on a miss.
-	 */
-	int lookupPreparedChainCount(NativeBatch batch, int row, int[] keySlots, int hash, int bucket) {
-		int mask = occupied.length - 1;
-		byte fingerprint = fingerprint(hash);
-		while (occupied[bucket] != 0) {
-			if (fingerprints[bucket] == fingerprint && fullHashes[bucket] == hash
-					&& matches(batch, row, keySlots, bucket)) {
-				return chainCounts[bucket];
-			}
-			bucket = (bucket + 1) & mask;
-		}
-		return 0;
-	}
-
-	int lookup(NativeBatch batch, int row, int[] keySlots) {
-		int hash = hash(batch, row, keySlots);
-		int bucket = hash & (occupied.length - 1);
-		return lookupPrepared(batch, row, keySlots, hash, bucket, heads[bucket]);
-	}
-
-	void hashBatch(NativeBatch batch, int[] rows, int rowCount, int[] keySlots, long[] hashState,
-			int[] hashes) {
-		Arrays.fill(hashState, 0, rowCount, 0x9e3779b97f4a7c15L);
-		for (int keySlot : keySlots) {
-			int columnOffset = keySlot * batch.capacity;
-			for (int i = 0; i < rowCount; i++) {
-				hashState[i] = mix(hashState[i] ^ batch.slots[columnOffset + rows[i]]);
-			}
-		}
-		for (int i = 0; i < rowCount; i++) {
-			hashes[i] = hashHook.applyAsInt((int) hashState[i]);
-		}
-	}
-
-	void headBatch(int[] hashes, int rowCount, int[] buckets, int[] candidateHeads) {
-		int mask = occupied.length - 1;
-		for (int i = 0; i < rowCount; i++) {
-			int bucket = hashes[i] & mask;
-			buckets[i] = bucket;
-			candidateHeads[i] = heads[bucket];
-		}
-	}
-
-	int lookupPrepared(NativeBatch batch, int row, int[] keySlots, int hash, int bucket, int candidateHead) {
-		int mask = occupied.length - 1;
-		byte fingerprint = fingerprint(hash);
-		boolean initialBucket = true;
-		while (occupied[bucket] != 0) {
-			if (fingerprints[bucket] == fingerprint && fullHashes[bucket] == hash
-					&& matches(batch, row, keySlots, bucket)) {
-				return initialBucket ? candidateHead : heads[bucket];
-			}
-			bucket = (bucket + 1) & mask;
-			initialBucket = false;
-		}
-		return -1;
-	}
-
-	long payload(int payload, int offset) {
-		return payloads[payload * payloadWidth + offset];
-	}
-
-	int find(long[] row, int[] keySlots, int hash) {
-		int mask = occupied.length - 1;
-		int bucket = hash & mask;
-		byte fingerprint = fingerprint(hash);
-		while (occupied[bucket] != 0 && (fingerprints[bucket] != fingerprint || fullHashes[bucket] != hash
-				|| !matches(row, keySlots, bucket))) {
-			bucket = (bucket + 1) & mask;
-		}
-		return bucket;
-	}
-
-	boolean matches(long[] row, int[] keySlots, int bucket) {
-		int offset = bucket * keyWidth;
-		for (int i = 0; i < keyWidth; i++) {
-			if (keys[offset + i] != row[keySlots[i]]) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	boolean matches(NativeBatch batch, int row, int[] keySlots, int bucket) {
-		int offset = bucket * keyWidth;
-		for (int i = 0; i < keyWidth; i++) {
-			if (keys[offset + i] != batch.get(keySlots[i], row)) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	int hash(long[] row, int[] keySlots) {
-		long hash = 0x9e3779b97f4a7c15L;
-		for (int keySlot : keySlots) {
-			hash = mix(hash ^ row[keySlot]);
-		}
-		return hashHook.applyAsInt((int) hash);
-	}
-
-	int hash(NativeBatch batch, int row, int[] keySlots) {
-		long hash = 0x9e3779b97f4a7c15L;
-		for (int keySlot : keySlots) {
-			hash = mix(hash ^ batch.get(keySlot, row));
-		}
-		return hashHook.applyAsInt((int) hash);
-	}
-
-	static byte fingerprint(int hash) {
-		return (byte) (hash ^ (hash >>> 8) ^ (hash >>> 16) ^ (hash >>> 24));
-	}
-
-	static long mix(long value) {
-		value ^= value >>> 33;
-		value *= 0xff51afd7ed558ccdL;
-		value ^= value >>> 33;
-		value *= 0xc4ceb9fe1a85ec53L;
-		return value ^ (value >>> 33);
-	}
-
-	void ensurePayloadCapacity(int requiredRows) {
-		if (requiredRows <= next.length) {
-			return;
-		}
-		int oldLength = next.length;
-		int newLength = oldLength << 1;
-		while (newLength < requiredRows) {
-			newLength <<= 1;
-		}
-		next = Arrays.copyOf(next, newLength);
-		Arrays.fill(next, oldLength, newLength, -1);
-		payloads = Arrays.copyOf(payloads, Math.max(newLength, payloadWidth * newLength));
-	}
-
-	void growBuckets() {
-		long[] oldKeys = keys;
-		byte[] oldOccupied = occupied;
-		byte[] oldFingerprints = fingerprints;
-		int[] oldFullHashes = fullHashes;
-		int[] oldHeads = heads;
-		int[] oldTails = tails;
-		int[] oldChainCounts = chainCounts;
-		int newLength = oldOccupied.length << 1;
-		keys = new long[keyWidth * newLength];
-		occupied = new byte[newLength];
-		fingerprints = new byte[newLength];
-		fullHashes = new int[newLength];
-		heads = new int[newLength];
-		tails = new int[newLength];
-		chainCounts = new int[newLength];
-		Arrays.fill(heads, -1);
-		Arrays.fill(tails, -1);
-		for (int oldBucket = 0; oldBucket < oldOccupied.length; oldBucket++) {
-			if (oldOccupied[oldBucket] == 0) {
-				continue;
-			}
-			int mask = newLength - 1;
-			int hash = oldFullHashes[oldBucket];
-			int bucket = hash & mask;
-			while (occupied[bucket] != 0) {
-				bucket = (bucket + 1) & mask;
-			}
-			occupied[bucket] = 1;
-			fingerprints[bucket] = oldFingerprints[oldBucket];
-			fullHashes[bucket] = hash;
-			System.arraycopy(oldKeys, oldBucket * keyWidth, keys, bucket * keyWidth, keyWidth);
-			heads[bucket] = oldHeads[oldBucket];
-			tails[bucket] = oldTails[oldBucket];
-			chainCounts[bucket] = oldChainCounts[oldBucket];
-		}
+		if (failure instanceof RuntimeException problem) throw problem;
+		if (failure instanceof Error problem) throw problem;
 	}
 }

@@ -45,6 +45,14 @@ interface SlotPlan {
 		return null;
 	}
 
+	/**
+	 * Same relation, with an immediate scalar-demand hint. Producers may fuse lookup with expansion
+	 * when those bindings are needed now; this never authorizes dropping unrequested multiplicities.
+	 */
+	default LmdbNativeFactorCursor openFactors(RowState row, long scalarDemand) throws IOException {
+		return openFactors(row);
+	}
+
 	long producedMask();
 
 	default double estimate(RowState row) {
