@@ -8,7 +8,8 @@
 	</parent>
 	<artifactId>rdf4j-opentelemetry</artifactId>
 	<name>RDF4J: OpenTelemetry support</name>
-	<description>Opt-in OpenTelemetry tracing instrumentation for outbound SPARQL Protocol HTTP requests.</description>
+	<description>Opt-in OpenTelemetry tracing instrumentation for RDF4J: RepositoryConnection query/update spans,
+		RepositoryManager wrappers, and outbound SPARQL Protocol HTTP requests.</description>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>

@@ -52,7 +52,13 @@ class TracingQueryResult<T> implements QueryResult<T> {
 	@Override
 	public boolean hasNext() throws QueryEvaluationException {
 		try (Scope scope = span.makeCurrent()) {
-			return delegate.hasNext();
+			boolean hasNext = delegate.hasNext();
+			if (!hasNext) {
+				// callers that iterate to exhaustion without an explicit close() must still get the span ended
+				// and the row count recorded
+				close();
+			}
+			return hasNext;
 		} catch (RuntimeException e) {
 			TracingOperation.recordException(e, span);
 			throw e;

@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.http.server.repository.manager;
 
 import java.io.File;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.opentelemetry.repository.manager.OpenTelemetrySettings;
 import org.eclipse.rdf4j.opentelemetry.repository.manager.TracingLocalRepositoryManager;
@@ -25,8 +26,8 @@ import org.springframework.beans.factory.InitializingBean;
  * is created.
  * <p>
  * This lets a single Spring bean definition (see {@code rdf4j-http-server-servlet.xml}) opt into OpenTelemetry tracing
- * for every repository the RDF4J Server serves, purely via a system property, without instantiating (or even loading)
- * any OpenTelemetry-related class when tracing isn't enabled.
+ * for every repository the RDF4J Server serves, purely via a system property: no {@link TracingLocalRepositoryManager}
+ * is instantiated unless tracing is enabled.
  * <p>
  * Spring applies {@code init-method}/{@code destroy-method} declared on a {@code FactoryBean}'s bean definition to the
  * factory itself, not to the object returned by {@link #getObject()}. This class therefore drives the produced
@@ -46,9 +47,12 @@ public class LocalRepositoryManagerFactoryBean
 
 	@Override
 	public void afterPropertiesSet() throws Exception {
-		repositoryManager = OpenTelemetrySettings.isEnabled() ? new TracingLocalRepositoryManager(baseDir)
+		Objects.requireNonNull(baseDir, "baseDir must be set");
+		LocalRepositoryManager manager = OpenTelemetrySettings.isEnabled() ? new TracingLocalRepositoryManager(baseDir)
 				: new LocalRepositoryManager(baseDir);
-		repositoryManager.init();
+		manager.init();
+		// only assign once fully initialized, so a failed init() never exposes a partially-initialized manager
+		this.repositoryManager = manager;
 	}
 
 	@Override
@@ -68,6 +72,8 @@ public class LocalRepositoryManagerFactoryBean
 
 	@Override
 	public void destroy() {
-		repositoryManager.shutDown();
+		if (repositoryManager != null) {
+			repositoryManager.shutDown();
+		}
 	}
 }
