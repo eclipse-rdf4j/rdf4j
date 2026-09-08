@@ -206,24 +206,37 @@ class LmdbNativeOrderedDistinctTest {
 			ValueFactory vf = repository.getValueFactory();
 			IRI group2Predicate = vf.createIRI(EX, "group2");
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				for (int first = 1; first <= 2; first++) {
+				for (int first = 1; first <= 3; first++) {
 					IRI group1 = vf.createIRI(EX, "group1/" + first);
 					connection.add(group1, vf.createIRI(EX, "value/1"), vf.createIRI(EX, "name/1"));
 					connection.add(group1, vf.createIRI(EX, "value/1"), vf.createIRI(EX, "name/2"));
 					connection.add(group1, vf.createIRI(EX, "value/2"), vf.createIRI(EX, "name/3"));
-					connection.add(group1, group2Predicate, vf.createIRI(EX, "group2/a"));
-					connection.add(group1, group2Predicate, vf.createIRI(EX, "group2/b"));
+					if (first <= 2) {
+						connection.add(group1, group2Predicate, vf.createIRI(EX, "group2/a"));
+						connection.add(group1, group2Predicate, vf.createIRI(EX, "group2/b"));
+					}
 				}
 			}
 			String query = "SELECT ?group1 ?group2 (COUNT(DISTINCT ?value) AS ?count) WHERE { "
 					+ "?group1 ?value ?name . FILTER(?value != <" + EX + "group2>) "
 					+ "?group1 <" + EX + "group2> ?group2 } GROUP BY ?group1 ?group2";
+			// The inner join may legally prefer the selective group2 pattern and use hash DISTINCT.
+			assertNativeMatchesGeneric(repository, query, 4);
+			// OPTIONAL keeps the ordered value scan on the left without relying on cardinality-based join promotion.
+			query = "SELECT ?group1 ?group2 (COUNT(DISTINCT ?value) AS ?count) WHERE { "
+					+ "?group1 ?value ?name . FILTER(?value != <" + EX + "group2>) "
+					+ "OPTIONAL { ?group1 <" + EX + "group2> ?group2 } } GROUP BY ?group1 ?group2";
 
 			assertThat(explain(repository, query))
 					.contains("distinctChannels=[MONOTONIC]")
 					.contains("groupOrderPrefix=1")
 					.contains("indexName=spoc");
-			assertNativeMatchesGeneric(repository, query, 4);
+			assertNativeMatchesGeneric(repository, query, 5);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				assertThat(QueryResults.asList(connection.prepareTupleQuery(query).evaluate()))
+						.extracting(row -> row.getValue("count").stringValue())
+						.containsOnly("2");
+			}
 		} finally {
 			repository.shutDown();
 		}

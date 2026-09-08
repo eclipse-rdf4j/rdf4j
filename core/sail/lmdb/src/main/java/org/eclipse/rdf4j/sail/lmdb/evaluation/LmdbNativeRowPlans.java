@@ -423,16 +423,10 @@ final class ExtensionCursor implements FactorizedRowCursor {
 	@Override
 	public boolean next() throws IOException {
 		release();
-		long previousSolution = row.logicalSolutionIdentity;
 		while (arg.next()) {
-			// The innermost Extension seeing a physical input row establishes its logical-solution identity. Outer
-			// chained Extensions retain the identity established by their argument so every expression evaluated over
-			// the same mapping shares labeled BNODE state, while the next physical occurrence receives a fresh
-			// identity.
-			if (row.logicalSolutionIdentity == previousSolution) {
-				row.beginLogicalSolution();
-			}
-			previousSolution = row.logicalSolutionIdentity;
+			// Like ExtensionIterator's copied target bindings, each extension evaluates a new mapping. Expressions
+			// within this extension share labeled BNODE state; a later extension must not reuse its child's state.
+			row.beginLogicalSolution();
 			// a run of bind conflicts advances without emitting; poll or the probe deadline starves
 			LmdbNativeProbeDeadline.poll(++probePollTick);
 			int mark = row.mark();

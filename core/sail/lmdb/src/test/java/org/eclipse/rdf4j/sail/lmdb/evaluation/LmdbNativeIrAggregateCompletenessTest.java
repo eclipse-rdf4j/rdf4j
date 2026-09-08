@@ -290,6 +290,50 @@ class LmdbNativeIrAggregateCompletenessTest {
 		assertThat(after).as("%s must bind %s", name, strategy).isGreaterThan(before);
 	}
 
+	static Stream<Arguments> bnodeScopes() {
+		String input = "VALUES ?v { 1 1 2 } ";
+		String first = "BIND(BNODE('label') AS ?a) ";
+		String second = "BIND(BNODE('label') AS ?b) FILTER(sameTerm(?a, ?b)) ";
+		return Stream.of(
+				new String[] { "chained", input + first + second, "0" },
+				new String[] { "subquery", "{ SELECT ?v ?a WHERE { " + input + first + " } } " + second, "0" },
+				new String[] { "join", input + first + "VALUES ?duplicate { 1 2 } " + second, "0" },
+				new String[] { "union", "{ " + input + first + second + " } UNION { " + input + first + second + " }",
+						"0" },
+				new String[] { "optional", input + "OPTIONAL { " + first + second + " } FILTER(BOUND(?a))", "0" },
+				new String[] { "copy", input + first + "BIND(?a AS ?b) FILTER(sameTerm(?a, ?b))", "3" },
+				new String[] { "same-expression", input
+						+ "BIND(sameTerm(BNODE('label'), BNODE('label')) AS ?same) FILTER(?same)", "3" },
+				new String[] { "different-labels", input
+						+ "BIND(sameTerm(BNODE('first'), BNODE('second')) AS ?same) FILTER(?same)", "0" },
+				new String[] { "unlabeled", input + "BIND(sameTerm(BNODE(), BNODE()) AS ?same) FILTER(?same)", "0" })
+				.flatMap(c -> Stream.of(false, true)
+						.flatMap(indexed -> Stream.of(
+								Arguments.of(c[0], "SELECT (COUNT(*) AS ?n) WHERE { " + c[1] + " }", c[2],
+										"irAggregateInterpreted", indexed),
+								Arguments.of(c[0], "SELECT (COUNT(*) AS ?n) WHERE { " + c[1] + " }", c[2],
+										"irAggregate", indexed))));
+	}
+
+	@ParameterizedTest(name = "{0} [{3}, indexes={4}]")
+	@MethodSource("bnodeScopes")
+	void bnodeIdentityFollowsExtensionMappings(String name, String query, String count, String strategy,
+			boolean indexed) {
+		if (indexed) {
+			assertThat(AdjacencyEngagementTestAccess.buildNow((LmdbStore) repository.getSail())).isTrue();
+		}
+		List<String> expected = List.of("n=\"" + count + "\"^^<http://www.w3.org/2001/XMLSchema#integer>");
+		assertThat(rows(query, false, null)).as("%s generic semantics", name).isEqualTo(expected);
+		long before = strategy.equals("irAggregateInterpreted")
+				? LmdbNativeKernelExecution.AGG_INTERPRETED_BINDS.get()
+				: LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get();
+		assertThat(rows(query, true, strategy)).as("%s native semantics", name).isEqualTo(expected);
+		long after = strategy.equals("irAggregateInterpreted")
+				? LmdbNativeKernelExecution.AGG_INTERPRETED_BINDS.get()
+				: LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get();
+		assertThat(after).as("%s must bind %s", name, strategy).isGreaterThan(before);
+	}
+
 	private List<String> rows(String text, boolean nativeEnabled, String strategy) {
 		set(NATIVE, Boolean.toString(nativeEnabled));
 		try (SailRepositoryConnection connection = repository.getConnection()) {

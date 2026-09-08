@@ -151,21 +151,52 @@ class LmdbDirectAdjacencyConsolidationTest {
 	}
 
 	@Test
-	void continuousSynchronousCommitsKeepTheGenerationBacklogBounded() throws Exception {
+	void continuousSynchronousCommitsDrainTheGenerationBacklogAfterCompaction() throws Exception {
 		commitAdd(S1, P1, O_BASE);
 		assertThat(store.buildNowForTest()).isTrue();
 
-		int maximumGenerationCount = 0;
-		for (int i = 1; i <= 1_000; i++) {
-			commitAdd(S1, P1, uri(100_000 + i));
-			maximumGenerationCount = Math.max(maximumGenerationCount,
-					store.publishedStateForTest().overlays().generationCount());
-		}
-		store.awaitCompactionForTest();
+		CountDownLatch candidateReady = new CountDownLatch(1);
+		CountDownLatch allowPublication = new CountDownLatch(1);
+		store.beforeDeltaCompactionPublicationForTest = () -> {
+			store.beforeDeltaCompactionPublicationForTest = null;
+			candidateReady.countDown();
+			try {
+				if (!allowPublication.await(10, TimeUnit.SECONDS)) {
+					throw new AssertionError("test did not release delta-compaction publication");
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(e);
+			}
+		};
+		try (LmdbAdjacencyReadView pinned = store.acquire(tripleStore.getDataRevision())) {
+			try {
+				// Synchronous publication must remain exact even when the background compactor cannot keep up.
+				// Generation count is a compaction trigger, not a commit-path backpressure limit.
+				for (int i = 1; i <= 1_000; i++) {
+					commitAdd(S1, P1, uri(100_000 + i));
+					assertThat(store.publishedStateForTest().appliedRevision())
+							.isEqualTo(tripleStore.getDataRevision());
+				}
+				assertThat(candidateReady.await(10, TimeUnit.SECONDS)).isTrue();
+				try (LmdbAdjacencyReadView latest = store.acquire(tripleStore.getDataRevision())) {
+					assertThat(latest.isExact()).isTrue();
+					assertThat(probe(latest, S1, P1)).hasSize(1_001);
+				}
+			} finally {
+				allowPublication.countDown();
+			}
+			store.awaitCompactionForTest();
 
-		assertThat(maximumGenerationCount).isLessThanOrEqualTo(64);
-		assertThat(store.publishedStateForTest().overlays().generationCount())
-				.isLessThanOrEqualTo(store.options().maxDeltaGenerations());
+			assertThat(store.publishedStateForTest().overlays().generationCount())
+					.isLessThanOrEqualTo(store.options().maxDeltaGenerations());
+			assertThat(store.snapshotMetrics().deltaMerges).isPositive();
+			assertThat(probe(pinned, S1, P1)).hasSize(1);
+			try (LmdbAdjacencyReadView latest = store.acquire(tripleStore.getDataRevision())) {
+				assertThat(latest.isExact()).isTrue();
+				assertThat(probe(latest, S1, P1)).hasSize(1_001);
+			}
+		}
 	}
 
 	@Test
