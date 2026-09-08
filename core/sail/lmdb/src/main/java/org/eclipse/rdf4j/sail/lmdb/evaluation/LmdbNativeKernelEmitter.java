@@ -2790,9 +2790,9 @@ final class LmdbNativeKernelEmitter {
 				body.append(guarded).append(filtersMethod).append("();\n");
 			}
 			closeCtxSliceEntry(body, inner, ctx ? producer : null);
-			// The slice loop always feeds the sink (a vector tail only ever has filters below it), so it must step past
-			// the row it just emitted before pausing, or that row would be produced again on resume.
-			emitPause(body, inner, sliceState, true);
+			// Value and residual filters retain activation state across a pause. Resume them on the same slice entry
+			// before advancing, just as scalar producers do; otherwise their completed activation skips the next row.
+			emitPause(body, inner, sliceState, tailmostStateIds.get(stateIndex));
 			body.append(loop).append("}\n");
 			body.append(loop).append(sliceState).append(" = -1;\n");
 			body.append(loop).append(runState).append(" = ").append(runState).append(" + rn;\n");

@@ -41,6 +41,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.io.TempDir;
+import org.junitpioneer.jupiter.SetSystemProperty;
 
 /**
  * Census of direct-adjacency engagement per query shape (Kuzu parity survey). For each catalog query, executed under
@@ -53,10 +54,14 @@ import org.junit.jupiter.api.io.TempDir;
  * node edge dumps, multi-hop joins, star joins, object-object joins, triangles (WCOJ), VALUES-batched lookups, property
  * paths, semijoins, and unbound-predicate statistics queries.
  *
- * Every query also asserts that exact-full coverage records no structural adjacency fallback. An LMDB arm may still win
- * arbitration; that is an eligible candidate losing on cost, not a fallback-counter event.
+ * Every query also asserts that exact-full coverage, with both node-predicate projections available, records no
+ * structural adjacency fallback. An LMDB arm may still win arbitration; that is an eligible candidate losing on cost,
+ * not a fallback-counter event.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@SetSystemProperty(key = "rdf4j.lmdb.nativeQueryEngine.enabled", value = "true")
+@SetSystemProperty(key = LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY, value = "true")
+@SetSystemProperty(key = LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY, value = "true")
 class LmdbAdjacencyUsageCensusTest {
 
 	private static final String NS = "http://example.com/adjcensus/";
@@ -282,14 +287,13 @@ class LmdbAdjacencyUsageCensusTest {
 					continue;
 				}
 				KernelExecutionTestAccess.resetCostCalibration();
-				long adjacencyOpenedBefore = LmdbPrefixRunPlan.ADJACENCY_OPENED.get();
 				LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
 				long rows = executeAndCount(scenario.query());
 				LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
 
 				assertEquals(scenario.expectedRows(), rows, scenario.name() + " row count");
-				assertTrue(LmdbPrefixRunPlan.ADJACENCY_OPENED.get() > adjacencyOpenedBefore,
-						scenario.name() + " must open an adjacency prefix cursor");
+				// Prefix cursors and wildcard predicate reductions both answer from adjacency. The selected physical
+				// consumer may change, but engagement and the absence of root-scan fallback remain the contract.
 				assertTrue(after.lookupHits > before.lookupHits,
 						scenario.name() + " must record direct-adjacency engagement");
 				assertEquals(before.fallbacks(FallbackReason.ROOT_SCAN),

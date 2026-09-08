@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterCompareId
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterEntryCompatible;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterInConstants;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterRangeUnsigned;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterResidual;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterValue;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Intersect;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
@@ -70,6 +71,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Compile-and-run coverage for every kernel IR primitive and for cross-primitive compositions (plan:
@@ -1171,6 +1174,84 @@ class LmdbNativeKernelIrEmitterTest {
 		for (int i = 0; i < length; i++) {
 			assertEquals(i + 100L, vectorRows.get(i)[1], "neighbor at position " + i);
 			assertEquals(scalarRows.get(i)[1], vectorRows.get(i)[1], "modes disagree at position " + i);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 2, 3, 64, 256, 257 })
+	void vectorTailResumesStatefulFiltersWithoutSkippingRows(int maxRows) throws Exception {
+		int length = KernelRuntime.VECTOR_SIZE + 3;
+		long[] wideRow = new long[length + 1];
+		wideRow[0] = 1;
+		for (int i = 1; i <= length; i++) {
+			wideRow[i] = i;
+		}
+		FixtureAdjacency adjacency = new FixtureAdjacency(new long[][] { wideRow, { 2, 2, 3 } });
+		for (int producer = 0; producer < 3; producer++) {
+			for (int filterKind = 0; filterKind < 3; filterKind++) {
+				List<Node> nodes = new ArrayList<>();
+				if (producer == 0) {
+					nodes.add(new EnumerateAdjKeys(0, 0, 1));
+				} else {
+					nodes.add(new EnumerateDomain(0, producer == 2 ? 2 : 0));
+					if (producer == 2) {
+						nodes.add(new Probe(1, Operand.col(2), 0));
+					}
+					nodes.add(new Probe(0, Operand.col(0), 1));
+				}
+				// Exercise both an unfiltered vector and a vector selection followed by multiple stateful guards.
+				if (filterKind == 2) {
+					nodes.add(new FilterRangeUnsigned(Operand.col(1), 0, 1));
+				}
+				if (filterKind != 1) {
+					nodes.add(new FilterValue(0, new Operand[] { Operand.col(1) }));
+				}
+				if (filterKind != 0) {
+					nodes.add(new FilterResidual(0, new Operand[] { Operand.col(1) }, new int[] { 0 }));
+				}
+				Kernel kernel = withVectorTail(true, () -> new Kernel(3, nodes, emit(0, 1)));
+				assertTrue(kernel.resumable && kernel.vectorTailIndex >= 0);
+				int[] calls = new int[2];
+				TestHooks hooks = new TestHooks() {
+					private long installed;
+
+					@Override
+					public boolean testFilter(int filterId, long a0, long a1, long a2) {
+						calls[0]++;
+						return true;
+					}
+
+					@Override
+					public void residualSlot(int engineSlot, long id) {
+						installed = id;
+					}
+
+					@Override
+					public boolean testResidual(int residualId) {
+						calls[1]++;
+						return installed % 3 != 0;
+					}
+				};
+				List<long[]> expected = new ArrayList<>();
+				int candidates = 0;
+				for (long[] input : new long[][] { wideRow, { 2, 2, 3 } }) {
+					for (int i = 1; i < input.length; i++) {
+						if (filterKind != 2 || input[i] >= 2 && input[i] <= length - 1) {
+							candidates++;
+							if (filterKind == 0 || input[i] % 3 != 0) {
+								expected.add(new long[] { input[0], input[i] });
+							}
+						}
+					}
+				}
+				assertRows(drain(kernel, context().adjacencies(adjacency,
+						new FixtureAdjacency(new long[][] { { 10, 1, 2, 9 } }))
+						.domains(producer == 2 ? new long[] { 10 } : new long[] { 1, 2, 9 })
+						.constants(2, length - 1).hooks(hooks), maxRows), expected.toArray(long[][]::new),
+						"producer=" + producer + ", filterKind=" + filterKind + ", maxRows=" + maxRows);
+				assertEquals(filterKind == 1 ? 0 : candidates, calls[0], "value filter runs once per candidate");
+				assertEquals(filterKind == 0 ? 0 : candidates, calls[1], "residual filter runs once per candidate");
+			}
 		}
 	}
 
