@@ -2,6 +2,7 @@
 FROM ubuntu:noble AS temp
 
 ARG OTEL_JAVAAGENT_VERSION=2.14.0
+ARG OTEL_JAVAAGENT_SHA256=16f8e28fa1ddcd56ed85bf633bd1d1fbc78ea7c4cc50e8c5726b2a319f5058c8
 
 RUN  apt-get clean && apt-get update && apt-get install -y unzip curl
 
@@ -12,9 +13,12 @@ WORKDIR /tmp
 RUN unzip -q /tmp/rdf4j.zip
 
 # bundle the OpenTelemetry Java agent so it is available offline at container startup;
-# activated conditionally by entrypoint-tomcat.sh, see there
+# activated conditionally by entrypoint-tomcat.sh, see there. The checksum is pinned to guard
+# against a corrupted/tampered download; update it together with OTEL_JAVAAGENT_VERSION, e.g.:
+#   curl -fsSL "https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/<version>/opentelemetry-javaagent-<version>.jar.sha256"
 RUN curl -fsSL -o /tmp/opentelemetry-javaagent.jar \
-	"https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/${OTEL_JAVAAGENT_VERSION}/opentelemetry-javaagent-${OTEL_JAVAAGENT_VERSION}.jar"
+	"https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/${OTEL_JAVAAGENT_VERSION}/opentelemetry-javaagent-${OTEL_JAVAAGENT_VERSION}.jar" && \
+	echo "${OTEL_JAVAAGENT_SHA256}  /tmp/opentelemetry-javaagent.jar" | sha256sum -c -
 
 # Final workbench
 FROM tomcat:11.0-jdk25-temurin-noble
