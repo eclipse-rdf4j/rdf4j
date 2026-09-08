@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.vocabulary.RSX;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.Shape;
+import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.DatatypeFilter;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
@@ -65,18 +66,31 @@ public class DatatypeConstraintComponent extends AbstractSimpleConstraintCompone
 
 	@Override
 	String getSparqlFilterExpression(Variable<Value> variable, boolean negated) {
-		String checkDatatypeConformance = "<" + RSX.valueConformsToXsdDatatypeFunction + ">("
-				+ variable.asSparqlVariable() + ", <"
-				+ datatype + ">)";
+		// xsd:string has no lexical constraints beyond being a string — any label is
+		// trivially valid, so the conformance check is unnecessary and would otherwise
+		// force a full literal materialization (via valueConformsToXsdDatatypeFunction
+		// -> XMLDatatypeUtil.isValidValue -> literal.stringValue()) for every value,
+		// just to confirm something that's always true.
+		boolean needsConformanceCheck = coreDatatype != CoreDatatype.XSD.STRING;
+
 		if (negated) {
 			return "isLiteral(" + variable.asSparqlVariable() + ") && datatype(" + variable.asSparqlVariable() + ") = <"
 					+ datatype + ">"
-					+ (coreDatatype.isXSDDatatype() ? " && " + checkDatatypeConformance : "");
+					+ (needsConformanceCheck ? " && " + getCheckDatatypeConformance(variable) : "");
 		} else {
 			return "!isLiteral(" + variable.asSparqlVariable() + ") || datatype(" + variable.asSparqlVariable()
 					+ ") != <" + datatype + ">"
-					+ (coreDatatype.isXSDDatatype() ? " || !" + checkDatatypeConformance : "");
+					+ (needsConformanceCheck ? " || !" + getCheckDatatypeConformance(variable) : "");
 		}
+	}
+
+	@Override
+	protected String getSparqlFilter(boolean negatePlan, Variable<Value> variable,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+		if (coreDatatype == CoreDatatype.XSD.STRING) {
+			return "FILTER(" + getSparqlFilterExpression(variable, negatePlan) + ")";
+		}
+		return super.getSparqlFilter(negatePlan, variable, stableRandomVariableProvider);
 	}
 
 	// @formatter:off
@@ -112,5 +126,11 @@ public class DatatypeConstraintComponent extends AbstractSimpleConstraintCompone
 	@Override
 	public int hashCode(IdentityHashMap<Shape, Boolean> identityHashMap) {
 		return datatype.hashCode() + "DatatypeConstraintComponent".hashCode();
+	}
+
+	private String getCheckDatatypeConformance(Variable<Value> variable) {
+		return "<" + RSX.valueConformsToXsdDatatypeFunction + ">("
+				+ variable.asSparqlVariable() + ", <"
+				+ datatype + ">)";
 	}
 }
