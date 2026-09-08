@@ -74,7 +74,15 @@ final class LmdbNativeFactorRows {
 		// Keep intermediate scalar dependencies on a private trail. Only requested bindings escape.
 		RowState scratch = row.fork();
 		LmdbNativeFactorCursor input = openDemanded(plan, scratch, demanded);
-		if (input == null) return null;
+		if (input == null) {
+			// OPTIONAL/computed BIND do not yet export arbitrary borrowed subtrees, but the
+			// existing wildcard pipeline can transport their exact projected multiplicities.
+			// Retain that shared physical path instead of falling straight back to scalar rows.
+			RowCursor weighted = LmdbWildcardPredicateBatch.openWeightedProjection(plan, scratch, slots, READ_WINDOW);
+			if (weighted == null) return null;
+			try { input = scalar(weighted, scratch.slots.length); }
+			catch (RuntimeException | Error problem) { closeSuppressing(weighted, problem); throw problem; }
+		}
 		try { return new Projected(expand(input, scratch, demanded), scratch, row, slots); }
 		catch (RuntimeException | Error problem) { closeSuppressing(input, problem); throw problem; }
 	}

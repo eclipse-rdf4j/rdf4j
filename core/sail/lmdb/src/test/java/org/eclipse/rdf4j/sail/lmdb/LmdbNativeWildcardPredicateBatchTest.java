@@ -669,6 +669,84 @@ class LmdbNativeWildcardPredicateBatchTest {
 	}
 
 	@Test
+	void computedTypeGroupKeepsWeightedWildcardsInInterpretedIr(@TempDir File dataDir) {
+		assertComputedTypeGroupUsesWeightedInput(dataDir, "irAggregateInterpreted");
+	}
+
+	@Test
+	void computedTypeGroupKeepsWeightedWildcardsInCompiledIr(@TempDir File dataDir) {
+		assertComputedTypeGroupUsesWeightedInput(dataDir, "irAggregate");
+	}
+
+	@Test
+	void computedTypeGroupKeepsWeightedWildcardsWithoutIr(@TempDir File dataDir) {
+		assertComputedTypeGroupUsesWeightedInput(dataDir, null);
+	}
+
+	private void assertComputedTypeGroupUsesWeightedInput(File dataDir, String strategy) {
+		open(dataDir, true);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			connection.begin();
+			for (int i = 0; i < 64; i++) {
+				connection.add(vf.createIRI(NS, "anchor" + i), vf.createIRI(NS, "fixed1"),
+						vf.createIRI(NS, "mid" + i % 2));
+			}
+			for (int i = 0; i < 2; i++) {
+				connection.add(vf.createIRI(NS, "mid" + i), vf.createIRI(NS, "fixed2"), vf.createIRI(NS, "s0"));
+				connection.add(vf.createIRI(NS, "mid" + i), vf.createIRI(NS, "fixed2"), vf.createIRI(NS, "s1"));
+			}
+			// Distinct terms can have the same STR result. The final group must merge their weights.
+			connection.add(vf.createIRI(NS, "o0"), RDF.TYPE, vf.createLiteral(NS + "TypeA"));
+			connection.add(vf.createIRI(NS, "o1"), RDF.TYPE, vf.createLiteral("UnknownType"));
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		String query = "PREFIX ex: <" + NS + "> "
+				+ "SELECT ?typeLabel (COUNT(*) AS ?count) WHERE { "
+				+ "?root ex:fixed1 ?mid . ?mid ex:fixed2 ?bridge . ?bridge ?p ?object . "
+				+ "OPTIONAL { ?object a ?type } "
+				+ "BIND(COALESCE(STR(?type), \"UnknownType\") AS ?typeLabel) "
+				+ "} GROUP BY ?typeLabel ORDER BY DESC(?count) ?typeLabel";
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+		List<String> generic = allRows(query);
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		String synchronous = System.getProperty("rdf4j.lmdb.janinoCodegen.synchronous");
+		String projection = System.getProperty("rdf4j.lmdb.janinoCodegen.weightedComputedGroups");
+		try {
+			System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
+			System.setProperty("rdf4j.lmdb.janinoCodegen.weightedComputedGroups", "true");
+			System.setProperty(JANINO_PROPERTY, Boolean.toString("irAggregate".equals(strategy)));
+			System.setProperty(KERNEL_INTERPRETER_PROPERTY, Boolean.toString(strategy != null));
+			long folded = LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded();
+			try (RepositoryConnection connection = repository.getConnection()) {
+				org.eclipse.rdf4j.repository.sail.SailTupleQuery prepared =
+						(org.eclipse.rdf4j.repository.sail.SailTupleQuery) connection.prepareTupleQuery(query);
+				if (strategy != null) prepared.setForcedLmdbExecutionStrategy(strategy);
+				List<BindingSet> result = QueryResults.asList(prepared.evaluate());
+				List<String> actual = result.stream().map(bindings -> bindings.getBindingNames().stream().sorted()
+						.map(name -> name + '=' + bindings.getValue(name).stringValue())
+						.reduce((left, right) -> left + '|' + right).orElse("")).sorted().toList();
+				assertThat(actual).containsExactlyElementsOf(generic);
+				long previous = Long.MAX_VALUE;
+				for (BindingSet bindings : result) {
+					long count = Long.parseLong(bindings.getValue("count").stringValue());
+					assertThat(count).isLessThanOrEqualTo(previous);
+					previous = count;
+				}
+			}
+			assertThat(LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded())
+					.as("computed grouping must execute the weighted wildcard path, not only a native fallback")
+					.isGreaterThan(folded);
+		} finally {
+			if (synchronous == null) System.clearProperty("rdf4j.lmdb.janinoCodegen.synchronous");
+			else System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", synchronous);
+			if (projection == null) System.clearProperty("rdf4j.lmdb.janinoCodegen.weightedComputedGroups");
+			else System.setProperty("rdf4j.lmdb.janinoCodegen.weightedComputedGroups", projection);
+		}
+	}
+
+	@Test
 	void groupedCountBatchesWildcardOptionalRightArm(@TempDir File dataDir) {
 		open(dataDir);
 		String query = "PREFIX ex: <" + NS + "> "

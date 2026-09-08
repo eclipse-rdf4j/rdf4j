@@ -262,6 +262,60 @@ final class LmdbWildcardPredicateBatch {
 		}
 	}
 
+	/**
+	 * Exact weighted projection shared with the slot-to-IR bridge. This does not perform DISTINCT:
+	 * every omitted dimension still contributes its complete multiplicity. Runtime-interned group
+	 * keys remain in this evaluation's authority; only their primitive IDs cross the bridge.
+	 *
+	 * A declined attempt must precede evaluation of any input row. The recursive weighted opener
+	 * only constructs cursors, and order-sensitive or opaque inputs are rejected before opening.
+	 */
+	static RowCursor openWeightedProjection(SlotPlan plan, RowState row, int[] outputSlots, int capacity)
+			throws IOException {
+		if (!weightedProjectionCandidate(plan) || row.encounterOrderRequired) {
+			return null;
+		}
+		if (capacity <= 0) {
+			throw new IllegalArgumentException("non-positive weighted projection capacity");
+		}
+		long liveMask = 0L;
+		for (int slot : outputSlots) {
+			java.util.Objects.checkIndex(slot, row.slots.length);
+			java.util.Objects.checkIndex(slot, Long.SIZE);
+			liveMask |= 1L << slot;
+		}
+		SlotPlan weightedPlan = plan instanceof PatternPlan
+				? new MultiJoinPlan(new SlotPlan[] { plan }, new MaskedFilter[0]) : plan;
+		return openWeighted(weightedPlan, row, liveMask, capacity);
+	}
+
+	/** Capability admission only: physical access and bounded memory can still decline at open. */
+	static boolean weightedProjectionCandidate(SlotPlan plan) {
+		return enabled() && NativeBatch.enabled() && containsWildcard(plan)
+				&& SlotPlan.encounterOrderReplaySafe(plan);
+	}
+
+	/**
+	 * Reverse transfer across sequential BINDs. All copies execute (including unprojected ones),
+	 * so every expression's input must survive until its evaluation. A target produced by the
+	 * child also stays live for ExtensionCursor's bind/conflict check. Merely adding the read
+	 * masks of projected copies loses inputs of intermediate aliases and unused computed copies.
+	 * Returns -1 for an opaque or non-repeatable expression instead of compressing its input.
+	 */
+	static long extensionInputMask(ExtensionPlan extension, long liveMask) {
+		long required = liveMask;
+		for (int i = extension.copies.length - 1; i >= 0; i--) {
+			CopyBinding copy = extension.copies[i];
+			long reads = copy.requiredMask();
+			if (reads < 0L || !copy.encounterOrderReplaySafe) {
+				return -1L;
+			}
+			long target = 1L << copy.targetSlot;
+			required = (required & ~target) | reads | (extension.arg.producedMask() & target);
+		}
+		return required & extension.arg.producedMask();
+	}
+
 	/** Opens a factorized wildcard input for a compatible aggregate, or {@code null} for the exact ordinary path. */
 	static RowCursor openWeightedAggregate(SlotPlan plan, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
 			int capacity) throws IOException {
@@ -454,16 +508,9 @@ final class LmdbWildcardPredicateBatch {
 	private static RowCursor openWeighted(SlotPlan plan, RowState row, long liveMask, int capacity)
 			throws IOException {
 		if (plan instanceof ExtensionPlan extension) {
-			long childLive = liveMask & extension.arg.producedMask();
-			for (CopyBinding copy : extension.copies) {
-				if ((liveMask & 1L << copy.targetSlot) == 0L) {
-					continue;
-				}
-				long required = copy.requiredMask();
-				if (required < 0L) {
-					return null;
-				}
-				childLive |= required;
+			long childLive = extensionInputMask(extension, liveMask);
+			if (childLive < 0L) {
+				return null;
 			}
 			RowCursor child = openWeighted(extension.arg, row, childLive, capacity);
 			return child == null ? null

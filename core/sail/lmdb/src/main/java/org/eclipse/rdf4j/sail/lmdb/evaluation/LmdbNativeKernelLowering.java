@@ -934,6 +934,16 @@ final class LmdbNativeKernelLowering {
 		if (nodeDomainIntersection != null) {
 			return nodeDomainIntersection;
 		}
+		// A computed group key routes through one serial value authority. Do not erase the
+		// already-composable wildcard/OPTIONAL/extension reducer while lowering that path:
+		// PlanRows carries its exact projected weights into the ordinary IR aggregate in both
+		// tiers. A runtime access/memory refusal retains the exact scalar plan on that boundary.
+		if (!preferScans && !scanVariablePredicates && preferWeightedComputedCount(arg, row, groupSlots, aggregates)) {
+			Lowered weighted = lowerAggregateWithPlanProducer(arg, row, groupSlots, aggregates, having);
+			if (weighted != null) {
+				return new Lowered(weighted.kernel, weighted.bindings, "agg:weighted-computed-wildcard");
+			}
+		}
 		// Sticky (EXISTS-bearing) filters never flatten into a MultiJoinPlan — they arrive as FilterPlan wrappers
 		// around the producer. Peel the wrapper chain, collecting the conditions, then lower the core.
 		List<MaskedFilter> filters = new ArrayList<>();
@@ -979,6 +989,24 @@ final class LmdbNativeKernelLowering {
 			return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, having, declineTarget, builder.reason);
 		}
 		return lowered;
+	}
+
+	/** Preserve a stronger existing physical producer locally; this is not another aggregate strategy. */
+	static boolean preferWeightedComputedCount(SlotPlan arg, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates) {
+		if (row.encounterOrderRequired || groupSlots.length == 0 || aggregates.length == 0
+				|| !LmdbNativeFactorRows.enabled()
+				|| "false".equals(System.getProperty("rdf4j.lmdb.janinoCodegen.weightedComputedGroups", "true"))
+				|| !LmdbWildcardPredicateBatch.weightedProjectionCandidate(arg)
+				|| !NativeGroupIteration.containsComputedValueCopy(arg)) {
+			return false;
+		}
+		for (AggregateSpec aggregate : aggregates) {
+			if (aggregate.kind != AggKind.COUNT || aggregate.distinct || aggregate.rowSlots != null) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static Lowered lowerTypeMatrixAggregate(SlotPlan arg, int[] groupSlots, AggregateSpec[] aggregates,

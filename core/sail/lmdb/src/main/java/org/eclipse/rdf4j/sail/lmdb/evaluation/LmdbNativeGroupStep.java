@@ -561,7 +561,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			// bind its inputs, the ordinary AggState cursor retains the same authority and encounter order.
 			LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
 			try {
-				List<BindingSet> results = evaluateSequential(row, aggContext, metrics);
+				// Retain the same weighted physical producer when no serial IR kernel binds.
+				// Runtime group IDs still belong to this evaluation's single value authority.
+				List<BindingSet> results = LmdbNativeKernelLowering.preferWeightedComputedCount(arg, row,
+						groupSlots, aggregates) ? evaluateWildcardWeighted(row, aggContext, metrics) : null;
+				if (results == null) {
+					results = evaluateSequential(row, aggContext, metrics);
+				}
 				metrics.commitToParent();
 				return results;
 			} catch (EncounterOrderFallback fallback) {
