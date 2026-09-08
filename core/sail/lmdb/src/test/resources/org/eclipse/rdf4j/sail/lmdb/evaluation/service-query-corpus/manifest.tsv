@@ -42,3 +42,14 @@ rows-silent-failure	false	-
 distinct-remote-values	true	-
 group-and-having	true	-
 unbound-aggregate	true	-
+
+# r14 resumable producer composition; real RDF4J execution remains an integration requirement.
+rows-local-star-path-service-first	false	-
+rows-local-plus-path-service-first	false	-
+rows-dynamic-predicate-service-first	false	-
+rows-dynamic-predicate-service-resume	false	-
+rows-optional-missing-service-resume	false	-
+rows-identity-optional-service	false	-
+rows-identity-union-service	false	-
+rows-two-hop-path-after-service	false	-
+count-shared-leaf-with-service	true	-

@@ -53,6 +53,15 @@ final class LmdbNativeKernelIr {
 	}
 
 	/** Exact weighted transfer is legal only with no intervening per-mapping work or distinct channel. */
+    /** A complete tail duplicate group has one binding; only bag counts may consume its exact multiplicity. */
+    static boolean intersectionCountTail(Kernel kernel) {
+        if (!(kernel.terminal instanceof Aggregate aggregate) || kernel.pipeline.isEmpty()
+                || !(kernel.pipeline.get(kernel.pipeline.size()-1) instanceof Intersect) || aggregate.outputs.length==0) return false;
+        for (AggregateOutput output : aggregate.outputs)
+            if (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT) return false;
+        return true;
+    }
+
 	static boolean weightedPlanCount(Kernel kernel) {
 		if (kernel.pipeline.size() != 1 || !(kernel.pipeline.get(0) instanceof PlanRows)
 				|| kernel.pipeline.get(0) instanceof PlanFactors
@@ -1608,7 +1617,8 @@ final class LmdbNativeKernelIr {
 
 	/**
 	 * Sorted k-way intersection (the worst-case-optimal building block): emits each id present in every key's neighbor
-	 * run, in unsigned order, with set semantics (duplicates within a run collapse).
+	 * run in unsigned order. Matching duplicate ranges are a product under bag semantics; each matched tuple
+     * group can be counted without replaying that product.
 	 */
 	static final class Intersect extends Node {
 		final int[] adjacencies;
@@ -3014,7 +3024,7 @@ final class LmdbNativeKernelIr {
 		for (int i = 0; i < pipeline.size(); i++) {
 			Node node = pipeline.get(i);
 			boolean streamable = isResumableProducer(node)
-					|| i == pipeline.size() - 1 && node instanceof LeftProbe
+					|| node instanceof LeftProbe
 					|| node instanceof LeftGroup && isResumableArm(((LeftGroup) node).arm)
 					|| node instanceof Union && isResumableUnion((Union) node)
 					|| node instanceof LexicalFrameLeftJoin lexical
@@ -3029,6 +3039,8 @@ final class LmdbNativeKernelIr {
 	private static boolean isResumableProducer(Node node) {
 		return isStatelessRowNode(node) || isSingleActivationNode(node) || node instanceof HashProbe
 				|| node instanceof EnumerateDomain || node instanceof Probe
+                || node instanceof EnumerateTerms || node instanceof EnumerateNodeDomainIntersection
+                || node instanceof Intersect || node instanceof PathExpand
 				|| node instanceof SipDomainProbe || node instanceof SipKeyProbe
 				|| node instanceof ScanQuad || node instanceof PlanRows || node instanceof ProbeClose
 				|| node instanceof ProbeVariable
@@ -3040,7 +3052,7 @@ final class LmdbNativeKernelIr {
 						&& ((SipDomainWildcard) node).demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD
 				|| node instanceof SipKeyWildcard
 						&& ((SipKeyWildcard) node).demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD
-				|| node instanceof EnumerateAdjKeys && ((EnumerateAdjKeys) node).valueCol >= 0;
+				|| node instanceof EnumerateAdjKeys;
 	}
 
 	/** True for straight-line row nodes which are safe to re-evaluate after a streaming pause. */
@@ -3140,8 +3152,12 @@ final class LmdbNativeKernelIr {
 			this.aggregateDistinctModes = aggregateProperties.distinctModes;
 			this.orderedInputsRequired = aggregateProperties.orderedInputsRequired;
 			this.uniqueDomainsRequired = (BitSet) aggregateProperties.uniqueDomainsRequired.clone();
-			this.resumable = resumableEnabled() && isResumable(this.pipeline, this.terminal);
 			int vectorTail = vectorTailEnabled() ? findVectorTail(this.pipeline) : -1;
+			// Keep the established vectorized OPTIONAL tail for pure native pipelines. A delegated plan needs
+			// the resumable null-arm state instead, even when that costs a scalar tail.
+			boolean nativeOptionalTail = requirements.plans == 0 && vectorTail >= 0 && vectorTail < this.pipeline.size() - 1
+					&& this.pipeline.get(vectorTail) instanceof LeftProbe;
+			this.resumable = resumableEnabled() && isResumable(this.pipeline, this.terminal) && !nativeOptionalTail;
 			// LeftProbe's null-extension phase has its own resumable state machine. Keep that terminal scalar when
 			// streaming; the vector-tail emitter intentionally handles only ordinary run producers.
 			this.vectorTailIndex = resumable && vectorTail >= 0 && this.pipeline.get(vectorTail) instanceof LeftProbe

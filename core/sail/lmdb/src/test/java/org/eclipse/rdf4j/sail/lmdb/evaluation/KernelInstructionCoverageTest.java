@@ -160,7 +160,7 @@ public class KernelInstructionCoverageTest {
         }});
         return ctx;
     }
-    private record Case(String name,Supplier<Kernel> shape,Supplier<KernelContext> context,long[][] expected){}
+    record Case(String name,Supplier<Kernel> shape,Supplier<KernelContext> context,long[][] expected){}
     private static long[][] tuples(long[]... rows){return rows;}
     private static long[] row(long... values){return values;}
     private static Case test(String name,List<Node> nodes,int[] output,long[][] expected){
@@ -170,7 +170,7 @@ public class KernelInstructionCoverageTest {
     private static long[][] edges(boolean predicates,boolean contexts){
         return Arrays.stream(QUADS).filter(q->predicates||q[1]==101).map(q->contexts?q.clone():new long[]{q[0],q[2]}).toArray(long[][]::new);
     }
-    private static List<Case> cases(){
+    static List<Case> cases(){
         var a=new ArrayList<Case>();
         a.add(test("entry",List.of(new EnumerateEntry(),new BindAlias(Operand.entry(0),0)),new int[]{0},tuples(row(10))));
         a.add(test("domain",List.of(new EnumerateDomain(0,0)),new int[]{0},tuples(row(10),row(11),row(20))));

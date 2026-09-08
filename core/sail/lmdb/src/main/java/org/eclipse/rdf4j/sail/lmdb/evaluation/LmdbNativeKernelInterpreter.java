@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainWildca
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
@@ -231,6 +232,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	// --- cursors and per-site scratch -----------------------------------------------------
 	/** BoundRunCursors opened in bind, one per Probe node (in op-construction order). */
 	private final List<NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor> boundCursors = new ArrayList<>();
+	private final List<KernelExpansionCursors.Intersection> intersectionCursors = new ArrayList<>();
 	/** Key-run cursors held during an activation (EnumerateAdjKeys / SipKeyProbe); swept by close(). */
 	private final List<NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[]> activeKeyCursors = new ArrayList<>();
 	/** One live cursor slot per plan site; the plan itself is also closed by close() (EM:1289-1307). */
@@ -421,6 +423,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			failure = KernelRuntime.closeResource(cursor, failure);
 		}
 		boundCursors.clear();
+		for (KernelExpansionCursors.Intersection cursor : intersectionCursors) failure = KernelRuntime.closeResource(cursor, failure);
+		intersectionCursors.clear();
 		for (NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[] slot : activeKeyCursors) {
 			failure = KernelRuntime.closeResource(slot[0], failure);
 			slot[0] = null;
@@ -607,6 +611,69 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 			};
 		}
+        if (node instanceof EnumerateNodeDomainIntersection domain) {
+            return expansionStage(() -> new KernelExpansionCursors.Domains(
+                    context.nodeDomainIntersections[domain.view], cancel), domain.col);
+        }
+        if (node instanceof EnumerateTerms terms) {
+            return expansionStage(() -> new KernelExpansionCursors.Terms(
+                    context.scanner, terms.scan, cancel), terms.col);
+        }
+        if (node instanceof PathExpand path) {
+            return expansionStage(() -> {
+                long[] contexts = new long[path.contexts.length];
+                for (int i=0; i<contexts.length; i++) contexts[i]=read(path.contexts[i]);
+                return new KernelExpansionCursors.Path(
+                        context.adjacencies[path.adjacency], read(path.source), path.minHops, contexts, cancel);
+            }, path.dstCol);
+        }
+        if (node instanceof Intersect intersect) {
+            return expansionStage(() -> {
+                NativeLmdbQuerySource.NativeAdjacency[] views=new NativeLmdbQuerySource.NativeAdjacency[intersect.adjacencies.length];
+                long[] keys=new long[views.length];
+                for (int i=0; i<views.length; i++) { views[i]=context.adjacencies[intersect.adjacencies[i]]; keys[i]=read(intersect.keys[i]); }
+                return new KernelExpansionCursors.Intersection(views, keys, cancel);
+            }, intersect.valueCol);
+        }
+        if (node instanceof ProbeVariable probe) {
+            var view = context.dynamicAdjacencies[probe.view];
+            return new PullStage() {
+                long handle, position, end;
+                @Override void reset() {
+                    position=end=0; long key=read(probe.key), predicate=read(probe.predicate);
+                    if(key == -1L || predicate == -1L) return;
+                    handle=view.runFor(key,predicate);
+                    if(handle==NativeLmdbQuerySource.DynamicAdjacency.NOT_COVERED)
+                        throw new IllegalStateException("dynamic adjacency refused a runtime predicate after kernel bind");
+                    if(handle>0) end=view.size(handle);
+                }
+                @Override boolean advance() {
+                    while(position<end) {
+                        poll(); long at=position++;
+                        if(probe.ctxActive()) {
+                            long ctx=view.contextAt(handle,at);
+                            if(!ctxAccepted(ctx,probe.ctxMatch,probe.ctxExcludeDefault)) continue;
+                            if(probe.ctxCol>=0) v[probe.ctxCol]=ctx;
+                        }
+                        v[probe.valueCol]=view.neighborAt(handle,at); return true;
+                    }
+                    return false;
+                }
+            };
+        }
+        if (node instanceof LeftProbe probe) {
+            var cursor=context.adjacencies[probe.adjacency].openBoundRunCursor(); boundCursors.add(cursor);
+            return new PullStage() {
+                long position,end; boolean nullSent;
+                @Override void reset() { position=0;nullSent=false;long key=read(probe.key);end=key == -1L ? 0 : cursor.bind(key); }
+                @Override boolean advance() {
+                    if(position<end) { v[probe.valueCol]=cursor.neighborAt(position++); return true; }
+                    if(end<=0 && !nullSent) { nullSent=true;v[probe.valueCol]=-1L;return true; }
+                    return false;
+                }
+            };
+        }
+
 		if (node instanceof EnumerateDomain domain) {
 			int site = telemetry && domain.sipDriven ? registerSipDriven(domain) : -1;
 			return new PullStage() {
@@ -642,12 +709,22 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 			};
 		}
-		if (node instanceof EnumerateAdjKeys keys && !keys.wildcard) {
+		if (node instanceof EnumerateAdjKeys keys) {
 			int site = telemetry && keys.sipDriven ? registerImplicitSipDriven(keys) : -1;
 			return new PullStage() {
 				NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor;
 				long key, position, end;
-				@Override void reset() { position = end = 0; cursor = context.adjacencies[keys.adjacency].openKeyRunCursor(); }
+				@Override void reset() {
+                    position = end = 0;
+                    if (!keys.wildcard) cursor = context.adjacencies[keys.adjacency].openKeyRunCursor();
+                    else {
+                        var view=context.wildcardAdjacencies[keys.adjacency]; long predicate=read(keys.runtimePredicate);
+                        int ordinal=predicate == -1L ? -1 : view.predicateOrdinal(predicate);
+                        if(ordinal<0) { cursor=null;return; }
+                        view.bind(ordinal);cursor=view.openKeyRunCursor();
+                        if(cursor==null) throw new IllegalStateException("wildcard plane refused key enumeration after bind");
+                    }
+                }
 				@Override boolean advance() {
 					if (cursor == null) return false;
 					while (true) {
@@ -846,6 +923,15 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		};
 	}
 
+    private PullStage expansionStage(java.util.function.Supplier<KernelExpansionCursors.Values> factory, int column) {
+        return new PullStage() {
+            KernelExpansionCursors.Values cursor;
+            @Override void reset() { cursor=factory.get(); }
+            @Override boolean advance() { if(!cursor.next()) return false; v[column]=cursor.value(); return true; }
+            @Override void release() { var owned=cursor;cursor=null;KernelRuntime.closeCursor(owned,null); }
+        };
+    }
+
 	int retainedRowCapacityForTest() {
 		return out == null ? 0 : out.length;
 	}
@@ -909,7 +995,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return terminal;
 		}
 		Op next = build(nodes, idx + 1, terminal, booleanMode);
-		return buildNode(nodes.get(idx), next, booleanMode);
+        if (!booleanMode && nodes == kernel.pipeline && idx == nodes.size()-1
+                && nodes.get(idx) instanceof Intersect intersection && LmdbNativeKernelIr.intersectionCountTail(kernel))
+            return buildIntersect(intersection, next, true);
+        return buildNode(nodes.get(idx), next, booleanMode);
 	}
 
 	private Op buildNode(Node node, Op next, boolean booleanMode) {
@@ -2152,102 +2241,33 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		};
 	}
 
-	private Op buildIntersect(Intersect intersect, Op next) {
-		int k = intersect.adjacencies.length;
-		NativeLmdbQuerySource.NativeAdjacency[] views = new NativeLmdbQuerySource.NativeAdjacency[k];
-		for (int i = 0; i < k; i++) {
-			views[i] = context.adjacencies[intersect.adjacencies[i]];
-		}
-		return () -> {
-			long[] handles = new long[k];
-			long[] positions = new long[k];
-			long[] sizes = new long[k];
-			for (int i = 0; i < k; i++) {
-				long key = read(intersect.keys[i]);
-				if (key == -1L) {
-					return false;
-				}
-				handles[i] = views[i].find(key);
-				if (handles[i] <= 0L) {
-					return false;
-				}
-				positions[i] = 0L;
-				sizes[i] = views[i].size(handles[i]);
-			}
-			while (true) {
-				poll();
-				boolean exhausted = false;
-				long max = 0L;
-				boolean first = true;
-				boolean allEqual = true;
-				for (int i = 0; i < k; i++) {
-					if (positions[i] >= sizes[i]) {
-						exhausted = true;
-						break;
-					}
-					long cur = views[i].neighborAt(handles[i], positions[i]);
-					if (first) {
-						max = cur;
-						first = false;
-					} else if (cur != max) {
-						allEqual = false;
-						if (Long.compareUnsigned(cur, max) > 0) {
-							max = cur;
-						}
-					}
-				}
-				if (exhausted) {
-					return false;
-				}
-				if (allEqual) {
-					// Counts rule: a solution's multiplicity is the PRODUCT of each list's duplicate count.
-					long times = 1L;
-					for (int i = 0; i < k; i++) {
-						long dup = 0L;
-						while (positions[i] < sizes[i] && views[i].neighborAt(handles[i], positions[i]) == max) {
-							positions[i]++;
-							dup++;
-						}
-						times *= dup;
-					}
-					v[intersect.valueCol] = max;
-					for (long t = 0; t < times; t++) {
-						poll();
-						if (next.run()) {
-							return true;
-						}
-					}
-				} else {
-					// Galloping advance: exponential probe, then binary search in [lo, hi) unsigned.
-					for (int i = 0; i < k; i++) {
-						long lo = positions[i];
-						if (lo < sizes[i] && Long.compareUnsigned(views[i].neighborAt(handles[i], lo), max) < 0) {
-							long step = 1L;
-							long hi = lo + 1L;
-							while (hi < sizes[i]
-									&& Long.compareUnsigned(views[i].neighborAt(handles[i], hi), max) < 0) {
-								lo = hi;
-								step = step << 1;
-								hi = lo + step;
-							}
-							if (hi > sizes[i]) {
-								hi = sizes[i];
-							}
-							while (lo < hi) {
-								long mid = (lo + hi) >>> 1;
-								if (Long.compareUnsigned(views[i].neighborAt(handles[i], mid), max) < 0) {
-									lo = mid + 1L;
-								} else {
-									hi = mid;
-								}
-							}
-							positions[i] = lo;
-						}
-					}
-				}
-			}
-		};
-	}
+    private Op buildIntersect(Intersect intersect, Op next) { return buildIntersect(intersect, next, false); }
+
+    private Op buildIntersect(Intersect intersect, Op next, boolean countGroups) {
+        var views=new NativeLmdbQuerySource.NativeAdjacency[intersect.adjacencies.length];
+        for(int i=0;i<views.length;i++) views[i]=context.adjacencies[intersect.adjacencies[i]];
+        var cursor = new KernelExpansionCursors.Intersection(views, cancel);
+        intersectionCursors.add(cursor);
+        return () -> {
+            for(int i=0;i<views.length;i++) cursor.key(i,read(intersect.keys[i]));
+            cursor.bind();
+            {
+                if(countGroups) {
+                    while(cursor.nextGroup()) {
+                        v[intersect.valueCol]=cursor.value();
+                        boolean counted=false;
+                        for(AggregateOutput output:aggregate.outputs)
+                            if(output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR || v[output.col] != -1L) { counted=true;break; }
+                        updateTerminalBy(counted ? cursor.groupMultiplicity() : 1L);
+                    }
+                } else while(cursor.next()) {
+                    v[intersect.valueCol]=cursor.value();
+                    if(next.run()) return true;
+                }
+            }
+            return false;
+        };
+    }
 
 	private Op buildLeftProbe(LeftProbe probe, Op next) {
 		NativeLmdbQuerySource.NativeAdjacency adjacency = context.adjacencies[probe.adjacency];
@@ -2277,65 +2297,20 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		};
 	}
 
-	private Op buildPathExpand(PathExpand path, Op next) {
-		NativeLmdbQuerySource.NativeAdjacency adjacency = context.adjacencies[path.adjacency];
-		return () -> {
-			long start = read(path.source);
-			if (start == -1L) {
-				return false;
-			}
-			KernelRuntime.LongHashSet emitted = new KernelRuntime.LongHashSet();
-			KernelRuntime.LongHashSet expanded = new KernelRuntime.LongHashSet();
-			long[] stack = new long[16];
-			int top = 0;
-			stack[top++] = start;
-			if (path.minHops == 0 && emitted.add(start)) {
-				v[path.dstCol] = start;
-				if (next.run()) {
-					return true;
-				}
-			}
-			while (top > 0) {
-				poll();
-				long node = stack[--top];
-				if (!expanded.add(node)) {
-					continue;
-				}
-				long rh = adjacency.find(node);
-				if (rh <= 0L) {
-					continue;
-				}
-				long end = adjacency.size(rh);
-				for (long i = 0; i < end; i++) {
-					poll();
-					if (path.contexts.length > 0 && !pathContextMatches(path, adjacency.contextAt(rh, i))) {
-						continue;
-					}
-					long nb = adjacency.neighborAt(rh, i);
-					if (emitted.add(nb)) {
-						v[path.dstCol] = nb;
-						if (next.run()) {
-							return true;
-						}
-					}
-					if (top == stack.length) {
-						stack = Arrays.copyOf(stack, stack.length * 2);
-					}
-					stack[top++] = nb;
-				}
-			}
-			return false;
-		};
-	}
-
-	private boolean pathContextMatches(PathExpand path, long contextId) {
-		for (Operand context : path.contexts) {
-			if (read(context) == contextId) {
-				return true;
-			}
-		}
-		return false;
-	}
+    private Op buildPathExpand(PathExpand path, Op next) {
+        return () -> {
+            long[] contexts=new long[path.contexts.length];
+            for(int i=0;i<contexts.length;i++) contexts[i]=read(path.contexts[i]);
+            try(var cursor=new KernelExpansionCursors.Path(
+                    context.adjacencies[path.adjacency],read(path.source),path.minHops,contexts,cancel)) {
+                while(cursor.next()) {
+                    v[path.dstCol]=cursor.value();
+                    if(next.run()) return true;
+                }
+            }
+            return false;
+        };
+    }
 
 	// --- containers ------------------------------------------------------------------------
 

@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.BindHook;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Emit;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateAdjKeys;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateTerms;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateEntry;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateNodeDomainIntersection;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumeratePredicates;
@@ -338,6 +339,7 @@ final class LmdbNativeKernelEmitter {
 		private final Kernel kernel;
 		private final int stride;
 		private final List<String> methods = new ArrayList<>();
+		private final List<String> expansionCursorTypes = new ArrayList<>();
 		private int nextPipelineId;
 		/** Hash-build inputs drain synchronously even when their enclosing row kernel is resumable. */
 		private int synchronousPipelineDepth;
@@ -875,6 +877,8 @@ final class LmdbNativeKernelEmitter {
 		// ------------------------------------------------------------------
 
 		private void emitFields(StringBuilder source) {
+            for (int i=0;i<expansionCursorTypes.size();i++) source.append("    private org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.")
+                    .append(expansionCursorTypes.get(i)).append(" xc").append(i).append(";\n");
 			for (int i = 0; i < kernel.requirements.adjacencies; i++) {
 				source.append("    private NativeLmdbQuerySource.NativeAdjacency a").append(i).append(";\n");
 			}
@@ -1593,6 +1597,7 @@ final class LmdbNativeKernelEmitter {
 			source.append("        } catch (RuntimeException failure) { closeFailure = failure; }\n")
 					.append("        catch (Error failure) { closeFailure = failure; }\n");
 			for (int i = 0; i < kernel.requirements.scans; i++) emitCloseResource(source, "sc" + i);
+            for (int i = 0; i < expansionCursorTypes.size(); i++) emitCloseResource(source, "xc" + i);
 			for (int i = 0; i < nextBoundRunCursorId; i++) {
 				emitCloseResource(source, "ar" + i);
 				if (flatRootExistsShape != null) emitCloseResource(source, "dr" + i);
@@ -4487,6 +4492,51 @@ final class LmdbNativeKernelEmitter {
 					.append(" = -1L;\n");
 		}
 
+        /** Concrete cursor type per site: source algorithms are shared, not a runtime opcode interpreter. */
+        private boolean emitExpansionCursor(StringBuilder body, Node node, String nextTemplate, int stateIndex) {
+            String type, arguments; int column;
+            if (node instanceof EnumerateTerms terms) {
+                type="Terms"; arguments="scanner, "+terms.scan+", cancel"; column=terms.col;
+            } else if (node instanceof EnumerateNodeDomainIntersection domain) {
+                type="Domains"; arguments="ndi"+domain.view+", cancel"; column=domain.col;
+            } else if (node instanceof PathExpand path) {
+                type="Path"; column=path.dstCol;
+                StringBuilder contexts=new StringBuilder("new long[]{");
+                for(int i=0;i<path.contexts.length;i++) contexts.append(i==0?"":", ").append(path.contexts[i].token());
+                contexts.append('}');
+                arguments="a"+path.adjacency+", "+path.source.token()+", "+path.minHops+", "+contexts+", cancel";
+            } else if (node instanceof Intersect intersection) {
+                type="Intersection"; column=intersection.valueCol;
+                StringBuilder views=new StringBuilder("new NativeLmdbQuerySource.NativeAdjacency[]{");
+                StringBuilder keys=new StringBuilder("new long[]{");
+                for(int i=0;i<intersection.adjacencies.length;i++) {
+                    views.append(i==0?"":", ").append("a").append(intersection.adjacencies[i]);
+                    keys.append(i==0?"":", ").append(intersection.keys[i].token());
+                }
+                arguments=views.append('}').toString()+", "+keys.append('}')+", cancel";
+            } else return false;
+            String cursor="xc"+expansionCursorTypes.size(); expansionCursorTypes.add(type);
+            String state="stA"+stateIndex;
+            body.append("        if (").append(cursor).append(" == null) {\n")
+                    .append("            ").append(cursor).append(" = new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.")
+                    .append(type).append('(').append(arguments).append(");\n")
+                    .append("            ").append(state).append(" = 0L;\n        }\n")
+                    .append("        while (true) {\n")
+                    .append("            if ((++pollTick & 1023) == 0) KernelRuntime.checkCancelled(cancel);\n")
+                    .append("            if (").append(state).append(" == 0L) {\n")
+                    .append("                if (!").append(cursor).append(".next()) break;\n")
+                    .append("                ").append(state).append(" = 1L;\n            }\n")
+                    .append("            v").append(column).append(" = ").append(cursor).append(".value();\n")
+                    .append(next(nextTemplate,"            "))
+                    .append("            if (full) {\n");
+            if(tailmostStateIds.get(stateIndex)) body.append("                ").append(state).append(" = 0L;\n");
+            body.append("                return;\n            }\n")
+                    .append("            ").append(state).append(" = 0L;\n        }\n")
+                    .append("        ").append(cursor).append(".close();\n        ").append(cursor).append(" = null;\n")
+                    .append("        ").append(state).append(" = -1L;\n");
+            return true;
+        }
+
 		private boolean emitResumableProducer(StringBuilder body, Node node, String nextTemplate, int stateIndex) {
 			String indent = "        ";
 			String a = "stA" + stateIndex;
@@ -4494,7 +4544,30 @@ final class LmdbNativeKernelEmitter {
 			String c = "stC" + stateIndex;
 			String d = "stD" + stateIndex;
 			boolean tailmost = tailmostStateIds.get(stateIndex);
-			if (LmdbNativeKernelIr.isSingleActivationNode(node)) {
+            if (emitExpansionCursor(body, node, nextTemplate, stateIndex)) return true;
+            if (node instanceof ProbeVariable probe) {
+                String view="dy"+probe.view;
+                body.append(indent).append("if (").append(a).append(" < 0L) {\n")
+                        .append(indent).append("    long key = ").append(probe.key.token()).append(";\n")
+                        .append(indent).append("    long predicate = ").append(probe.predicate.token()).append(";\n")
+                        .append(indent).append("    ").append(c).append(" = key == -1L || predicate == -1L ? 0L : ")
+                        .append(view).append(".runFor(key, predicate);\n")
+                        .append(indent).append("    if (").append(c).append(" == NativeLmdbQuerySource.DynamicAdjacency.NOT_COVERED) ")
+                        .append("throw new IllegalStateException(\"dynamic adjacency refused a runtime predicate after kernel bind\");\n")
+                        .append(indent).append("    ").append(b).append(" = ").append(c).append(" > 0L ? ").append(view).append(".size(").append(c).append(") : 0L;\n")
+                        .append(indent).append("    ").append(a).append(" = 0L;\n").append(indent).append("}\n")
+                        .append(indent).append("long rh = ").append(c).append(";\n")
+                        .append(indent).append("for (; ").append(a).append(" < ").append(b).append("; ").append(a).append("++) {\n")
+                        .append(indent).append("    if ((++pollTick & 1023) == 0) KernelRuntime.checkCancelled(cancel);\n");
+                String inner=emitCtxEntry(body,indent+"    ",probe,view,a);
+                body.append(inner).append("v").append(probe.valueCol).append(" = ").append(view).append(".neighborAt(rh, ").append(a).append(");\n")
+                        .append(next(nextTemplate,inner));
+                closeCtxEntry(body,indent+"    ",probe);
+                emitPause(body,indent+"    ",a,tailmost);
+                body.append(indent).append("}\n").append(indent).append(a).append(" = -1L;\n");
+                return true;
+            }
+            if (LmdbNativeKernelIr.isSingleActivationNode(node)) {
 				body.append(indent).append("if (").append(a).append(" < 0L) {\n")
 						.append(indent).append("    ").append(a).append(" = 1L;\n");
 				// Delegate semantics to the existing emitter, but invoke them once per input activation.
@@ -4585,11 +4658,13 @@ final class LmdbNativeKernelEmitter {
 				emitPause(body, indent + "        ", a, tailmost);
 				body.append(indent).append("    }\n");
 				body.append(indent).append("    ").append(c).append(" = 1;\n");
-				body.append(indent).append("    if (!").append(matched).append(") {\n");
+                body.append(indent).append("}\n");
+                body.append(indent).append("if (").append(c).append(" == 1) {\n");
+                body.append(indent).append("    if (!").append(matched).append(") {\n");
 				body.append(indent).append("        v").append(probe.valueCol).append(" = -1L;\n");
 				body.append(next(nextTemplate, indent + "        "));
 				body.append(indent).append("        if (full) {\n");
-				body.append(indent).append("            ").append(c).append(" = 2;\n");
+				if (tailmost) body.append(indent).append("            ").append(c).append(" = 2;\n");
 				body.append(indent).append("            return;\n");
 				body.append(indent).append("        }\n");
 				body.append(indent).append("    }\n");
@@ -4709,7 +4784,7 @@ final class LmdbNativeKernelEmitter {
 				}
 				body.append(next(nextTemplate, indent + "    "));
 				body.append(indent).append("    if (full) {\n");
-				body.append(indent).append("        ").append(a).append(" = 2;\n");
+				if (tailmost) body.append(indent).append("        ").append(a).append(" = 2;\n");
 				body.append(indent).append("        return;\n");
 				body.append(indent).append("    }\n");
 				body.append(indent).append("}\n");
@@ -5449,7 +5524,8 @@ final class LmdbNativeKernelEmitter {
 				return false;
 			}
 			if (LmdbNativeKernelIr.factorPlan(kernel) != null
-					|| LmdbNativeKernelIr.weightedPlanCount(kernel) || nodeDomainIntersectionBulkCount()) {
+					|| LmdbNativeKernelIr.weightedPlanCount(kernel) || nodeDomainIntersectionBulkCount()
+                    || LmdbNativeKernelIr.intersectionCountTail(kernel)) {
 				return true;
 			}
 			if (wildcardMultiplicityTail()) {
@@ -7883,335 +7959,45 @@ final class LmdbNativeKernelEmitter {
 			}
 		}
 
-		private void emitIntersect(StringBuilder body, Intersect intersect, String nextTemplate, String indent) {
-			int k = intersect.adjacencies.length;
-			body.append(indent)
-					.append("NativeLmdbQuerySource.NativeAdjacency[] xa = new ")
-					.append("NativeLmdbQuerySource.NativeAdjacency[")
-					.append(k)
-					.append("];\n")
-					.append(indent)
-					.append("long[] xk = new long[")
-					.append(k)
-					.append("];\n");
-			for (int i = 0; i < k; i++) {
-				body.append(indent)
-						.append("xa[")
-						.append(i)
-						.append("] = a")
-						.append(intersect.adjacencies[i])
-						.append(";\n")
-						.append(indent)
-						.append("xk[")
-						.append(i)
-						.append("] = ")
-						.append(intersect.keys[i].token())
-						.append(";\n");
-			}
-			body.append(indent)
-					.append("long[] xr = new long[")
-					.append(k)
-					.append("];\n")
-					.append(indent)
-					.append("long[] xp = new long[")
-					.append(k)
-					.append("];\n")
-					.append(indent)
-					.append("long[] xn = new long[")
-					.append(k)
-					.append("];\n")
-					.append(indent)
-					.append("boolean ok = true;\n")
-					.append(indent)
-					.append("for (int i = 0; i < ")
-					.append(k)
-					.append("; i++) {\n")
-					.append(indent)
-					.append("    if (xk[i] == -1L) {\n")
-					.append(indent)
-					.append("        ok = false;\n")
-					.append(indent)
-					.append("        break;\n")
-					.append(indent)
-					.append("    }\n")
-					.append(indent)
-					.append("    xr[i] = xa[i].find(xk[i]);\n")
-					.append(indent)
-					.append("    if (xr[i] <= 0L) {\n")
-					.append(indent)
-					.append("        ok = false;\n")
-					.append(indent)
-					.append("        break;\n")
-					.append(indent)
-					.append("    }\n")
-					.append(indent)
-					.append("    xp[i] = 0L;\n")
-					.append(indent)
-					.append("    xn[i] = xa[i].size(xr[i]);\n")
-					.append(indent)
-					.append("}\n")
-					.append(indent)
-					.append("while (ok) {\n")
-					.append(indent)
-					.append("    if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
-					.append(indent)
-					.append("    boolean exhausted = false;\n")
-					.append(indent)
-					.append("    long max = 0L;\n")
-					.append(indent)
-					.append("    boolean first = true;\n")
-					.append(indent)
-					.append("    boolean allEqual = true;\n")
-					.append(indent)
-					.append("    for (int i = 0; i < ")
-					.append(k)
-					.append("; i++) {\n")
-					.append(indent)
-					.append("        if (xp[i] >= xn[i]) {\n")
-					.append(indent)
-					.append("            exhausted = true;\n")
-					.append(indent)
-					.append("            break;\n")
-					.append(indent)
-					.append("        }\n")
-					.append(indent)
-					.append("        long cur = xa[i].neighborAt(xr[i], xp[i]);\n")
-					.append(indent)
-					.append("        if (first) {\n")
-					.append(indent)
-					.append("            max = cur;\n")
-					.append(indent)
-					.append("            first = false;\n")
-					.append(indent)
-					.append("        } else if (cur != max) {\n")
-					.append(indent)
-					.append("            allEqual = false;\n")
-					.append(indent)
-					.append("            if (Long.compareUnsigned(cur, max) > 0) {\n")
-					.append(indent)
-					.append("                max = cur;\n")
-					.append(indent)
-					.append("            }\n")
-					.append(indent)
-					.append("        }\n")
-					.append(indent)
-					.append("    }\n")
-					.append(indent)
-					.append("    if (exhausted) {\n")
-					.append(indent)
-					.append("        break;\n")
-					.append(indent)
-					.append("    }\n")
-					.append(indent)
-					.append("    if (allEqual) {\n")
-					// counts rule (M9): a solution's multiplicity is the PRODUCT of each list's duplicate count for
-					// the matched value — advance every cursor past its duplicates while counting, then emit that
-					// many continuations (matches the interpreted leapfrog's duplicate-quad semantics).
-					.append(indent)
-					.append("        long times = 1L;\n")
-					.append(indent)
-					.append("        for (int i = 0; i < ")
-					.append(k)
-					.append("; i++) {\n")
-					.append(indent)
-					.append("            long dup = 0L;\n")
-					.append(indent)
-					.append("            while (xp[i] < xn[i] && xa[i].neighborAt(xr[i], xp[i]) == max) {\n")
-					.append(indent)
-					.append("                xp[i] = xp[i] + 1L;\n")
-					.append(indent)
-					.append("                dup = dup + 1L;\n")
-					.append(indent)
-					.append("            }\n")
-					.append(indent)
-					.append("            times = times * dup;\n")
-					.append(indent)
-					.append("        }\n")
-					.append(indent)
-					.append("        v")
-					.append(intersect.valueCol)
-					.append(" = max;\n")
-					.append(indent)
-					.append("        for (long t = 0L; t < times; t++) {\n")
-					.append(indent)
-					.append("            if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
-					.append(next(nextTemplate, indent + "            "))
-					.append(indent)
-					.append("        }\n")
-					.append(indent)
-					.append("    } else {\n")
-					// galloping advance (M9): exponential probe then binary search inside [lo, hi) — the run views
-					// are O(1) random access, so a sparse list skips ahead instead of stepping.
-					.append(indent)
-					.append("        for (int i = 0; i < ")
-					.append(k)
-					.append("; i++) {\n")
-					.append(indent)
-					.append("            long lo = xp[i];\n")
-					.append(indent)
-					.append("            if (lo < xn[i] && Long.compareUnsigned(xa[i].neighborAt(xr[i], lo), max) < 0) {\n")
-					.append(indent)
-					.append("                long step = 1L;\n")
-					.append(indent)
-					.append("                long hi = lo + 1L;\n")
-					.append(indent)
-					.append("                while (hi < xn[i] && Long.compareUnsigned(xa[i].neighborAt(xr[i], hi), max) < 0) {\n")
-					.append(indent)
-					.append("                    lo = hi;\n")
-					.append(indent)
-					.append("                    step = step << 1;\n")
-					.append(indent)
-					.append("                    hi = lo + step;\n")
-					.append(indent)
-					.append("                }\n")
-					.append(indent)
-					.append("                if (hi > xn[i]) {\n")
-					.append(indent)
-					.append("                    hi = xn[i];\n")
-					.append(indent)
-					.append("                }\n")
-					.append(indent)
-					.append("                while (lo < hi) {\n")
-					.append(indent)
-					.append("                    long mid = (lo + hi) >>> 1;\n")
-					.append(indent)
-					.append("                    if (Long.compareUnsigned(xa[i].neighborAt(xr[i], mid), max) < 0) {\n")
-					.append(indent)
-					.append("                        lo = mid + 1L;\n")
-					.append(indent)
-					.append("                    } else {\n")
-					.append(indent)
-					.append("                        hi = mid;\n")
-					.append(indent)
-					.append("                    }\n")
-					.append(indent)
-					.append("                }\n")
-					.append(indent)
-					.append("                xp[i] = lo;\n")
-					.append(indent)
-					.append("            }\n")
-					.append(indent)
-					.append("        }\n")
-					.append(indent)
-					.append("    }\n")
-					.append(indent)
-					.append("}\n");
-		}
+        private void emitIntersect(StringBuilder body, Intersect intersect, String nextTemplate, String indent) {
+            StringBuilder views=new StringBuilder("new NativeLmdbQuerySource.NativeAdjacency[]{");
+            String cursor="xc"+expansionCursorTypes.size(); expansionCursorTypes.add("Intersection");
+            for(int i=0;i<intersect.adjacencies.length;i++) {
+                views.append(i==0?"":", ").append("a").append(intersect.adjacencies[i]);
+            }
+            views.append('}');
+            boolean counted=LmdbNativeKernelIr.intersectionCountTail(kernel)
+                    && kernel.pipeline.get(kernel.pipeline.size()-1)==intersect && nextTemplate.equals("update();");
+            body.append(indent).append("if (").append(cursor).append(" == null) ").append(cursor)
+                    .append(" = new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.Intersection(")
+                    .append(views).append(", cancel);\n");
+            for (int i=0; i<intersect.keys.length; i++) body.append(indent).append(cursor).append(".key(").append(i).append(", ").append(intersect.keys[i].token()).append(");\n");
+            body.append(indent).append(cursor).append(".bind();\n")
+                    .append(indent).append("while (").append(cursor).append(counted?".nextGroup()":".next()").append(") {\n")
+                    .append(indent).append("    v").append(intersect.valueCol).append(" = ").append(cursor).append(".value();\n");
+            if(counted) {
+                StringBuilder needs=new StringBuilder();
+                for(AggregateOutput output:((Aggregate)kernel.terminal).outputs) {
+                    if(output.kind==LmdbNativeKernelIr.AGG_COUNT_STAR) { needs=new StringBuilder("true");break; }
+                    if(!needs.isEmpty()) needs.append(" || ");
+                    needs.append("v").append(output.col).append(" != -1L");
+                }
+                body.append(indent).append("        updateBy((").append(needs).append(") ? ").append(cursor).append(".groupMultiplicity() : 1L);\n");
+            } else body.append(next(nextTemplate,indent+"        "));
+            body.append(indent).append("}\n");
+        }
 
-		private void emitPathExpand(StringBuilder body, PathExpand path, String nextTemplate, String indent) {
-			String a = "a" + path.adjacency;
-			body.append(indent)
-					.append("long start = ")
-					.append(path.source.token())
-					.append(";\n")
-					.append(indent)
-					.append("if (start != -1L) {\n")
-					.append(indent)
-					.append("    KernelRuntime.LongHashSet emitted = new KernelRuntime.LongHashSet();\n")
-					.append(indent)
-					.append("    KernelRuntime.LongHashSet expanded = new KernelRuntime.LongHashSet();\n")
-					.append(indent)
-					.append("    long[] stack = new long[16];\n")
-					.append(indent)
-					.append("    int top = 0;\n")
-					.append(indent)
-					.append("    stack[top] = start;\n")
-					.append(indent)
-					.append("    top = top + 1;\n");
-			if (path.minHops == 0) {
-				body.append(indent)
-						.append("    if (emitted.add(start)) {\n")
-						.append(indent)
-						.append("        v")
-						.append(path.dstCol)
-						.append(" = start;\n")
-						.append(next(nextTemplate, indent + "        "))
-						.append(indent)
-						.append("    }\n");
-			}
-			body.append(indent)
-					.append("    while (top > 0) {\n")
-					.append(indent)
-					.append("        top = top - 1;\n")
-					.append(indent)
-					.append("        long node = stack[top];\n")
-					.append(indent)
-					.append("        if (!expanded.add(node)) {\n")
-					.append(indent)
-					.append("            continue;\n")
-					.append(indent)
-					.append("        }\n")
-					.append(indent)
-					.append("        long rh = ")
-					.append(a)
-					.append(".find(node);\n")
-					.append(indent)
-					.append("        if (rh <= 0L) {\n")
-					.append(indent)
-					.append("            continue;\n")
-					.append(indent)
-					.append("        }\n")
-					.append(indent)
-					.append("        long end = ")
-					.append(a)
-					.append(".size(rh);\n")
-					.append(indent)
-					.append("        for (long i = 0L; i < end; i++) {\n")
-					.append(indent)
-					.append("            if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
-					.append(indent);
-			if (path.contexts.length > 0) {
-				body.append("            long contextId = ")
-						.append(a)
-						.append(".contextAt(rh, i);\n")
-						.append(indent)
-						.append("            if (!(");
-				for (int i = 0; i < path.contexts.length; i++) {
-					if (i > 0) {
-						body.append(" || ");
-					}
-					body.append("contextId == ").append(path.contexts[i].token());
-				}
-				body.append(")) {\n")
-						.append(indent)
-						.append("                continue;\n")
-						.append(indent)
-						.append("            }\n")
-						.append(indent);
-			}
-			body.append("            long nb = ")
-					.append(a)
-					.append(".neighborAt(rh, i);\n")
-					.append(indent)
-					.append("            if (emitted.add(nb)) {\n")
-					.append(indent)
-					.append("                v")
-					.append(path.dstCol)
-					.append(" = nb;\n")
-					.append(next(nextTemplate, indent + "                "))
-					.append(indent)
-					.append("            }\n")
-					.append(indent)
-					.append("            if (top == stack.length) {\n")
-					.append(indent)
-					.append("                long[] bigger = new long[stack.length * 2];\n")
-					.append(indent)
-					.append("                System.arraycopy(stack, 0, bigger, 0, top);\n")
-					.append(indent)
-					.append("                stack = bigger;\n")
-					.append(indent)
-					.append("            }\n")
-					.append(indent)
-					.append("            stack[top] = nb;\n")
-					.append(indent)
-					.append("            top = top + 1;\n")
-					.append(indent)
-					.append("        }\n")
-					.append(indent)
-					.append("    }\n")
-					.append(indent)
-					.append("}\n");
-			body.append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
-		}
+        private void emitPathExpand(StringBuilder body, PathExpand path, String nextTemplate, String indent) {
+            StringBuilder contexts=new StringBuilder("new long[]{");
+            for(int i=0;i<path.contexts.length;i++) contexts.append(i==0?"":", ").append(path.contexts[i].token());
+            contexts.append('}');
+            body.append(indent).append("try (org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.Path xc = new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.Path(a")
+                    .append(path.adjacency).append(", ").append(path.source.token()).append(", ").append(path.minHops).append(", ").append(contexts).append(", cancel)) {\n")
+                    .append(indent).append("    while (xc.next()) {\n")
+                    .append(indent).append("        v").append(path.dstCol).append(" = xc.value();\n")
+                    .append(next(nextTemplate,indent+"        "))
+                    .append(indent).append("    }\n").append(indent).append("}\n");
+        }
+
 	}
 }
