@@ -293,7 +293,8 @@ final class GenericEvalPlan implements SlotPlan {
 			List<BindingSet> rows = new ArrayList<>();
 			try (CloseableIteration<BindingSet> iteration = step.evaluate(input)) {
 				while (iteration.hasNext()) {
-					rows.add(iteration.next());
+					// Some adapters reuse their BindingSet or resolve it through a cursor-owned scope.
+					rows.add(new QueryBindingSet(iteration.next()));
 				}
 			}
 			return rows;
@@ -325,11 +326,13 @@ final class IslandCursor implements RowCursor {
 
 	@Override
 	public boolean next() throws IOException {
+		if (closed) return false;
 		release();
 		try {
-			while (advance()) {
+			while (!row.cancellation.isCancellationRequested() && advance()) {
 				BindingSet solution = current();
-				int mark = row.mark();
+				// Own the mark before importing any value: idOfOrIntern/bindOrCheckTerm may throw.
+				activeMark = row.mark();
 				boolean ok = true;
 				for (int i = 0; i < plan.outSlots.length; i++) {
 					Value value = solution.getValue(plan.outNames[i]);
@@ -342,15 +345,14 @@ final class IslandCursor implements RowCursor {
 						break;
 					}
 				}
-				if (ok) {
-					activeMark = mark;
-					return true;
-				}
-				row.rollback(mark);
+				if (ok) return true;
+				release();
 			}
+			close();
 			return false;
 		} catch (RuntimeException | Error problem) {
-			close();
+			try { close(); }
+			catch (Throwable cleanup) { if (cleanup != problem) problem.addSuppressed(cleanup); }
 			throw problem;
 		}
 	}
@@ -382,10 +384,9 @@ final class IslandCursor implements RowCursor {
 			return;
 		}
 		closed = true;
-		release();
-		if (generic != null) {
-			generic.close();
-		}
+		pending = null;
+		try { release(); }
+		finally { if (generic != null) generic.close(); }
 	}
 
 	void release() {

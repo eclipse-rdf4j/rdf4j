@@ -339,6 +339,8 @@ final class LmdbNativeKernelEmitter {
 		private final int stride;
 		private final List<String> methods = new ArrayList<>();
 		private int nextPipelineId;
+		/** Hash-build inputs drain synchronously even when their enclosing row kernel is resumable. */
+		private int synchronousPipelineDepth;
 		/** Saved-counter field ids for every node reachable from a resumable pipeline, including OPTIONAL arms. */
 		private int nextStateId;
 		/** State ids whose continuation contains no later resumable producer. */
@@ -468,7 +470,10 @@ final class LmdbNativeKernelEmitter {
 			for (String method : methods) {
 				source.append(method);
 			}
-			if (kernel.factorCountGuards != null) emitFactorPredicate(source);
+			if (kernel.factorCountGuards != null) {
+				emitFactorPredicate(source);
+				if (kernel.compiledCountSpecialization) emitFusedFactorSums(source);
+			}
 			source.append("}\n");
 			return LmdbNativeGeneratedSourceOptimizer.optimize(source.toString(), telemetryEnabled());
 		}
@@ -1087,6 +1092,9 @@ final class LmdbNativeKernelEmitter {
 						.append("    private int cap;\n")
 						.append("    private boolean full;\n")
 						.append("    private boolean done;\n");
+				if (kernel.terminal.mods.offset != 0 || kernel.terminal.mods.limit >= 0) {
+					source.append("    private long streamSkipped;\n    private long streamReturned;\n");
+				}
 				// Four saved counters per pipeline position cover the deepest streaming node (predicate, batch, lane,
 				// run position). -1 means "not started", which is also what a
 				// node restores when its own loop finishes, so the next outer value starts it afresh.
@@ -1636,6 +1644,8 @@ final class LmdbNativeKernelEmitter {
 						.append("        if (done || maxRows <= 0) {\n")
 						.append("            return 0;\n")
 						.append("        }\n")
+						.append("        if ((long)maxRows * ").append(stride).append(" > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\");\n")
+						.append(kernel.terminal.mods.limit == 0 ? "        done = true; if (done) return 0;\n" : "")
 						.append("        sink = rowBuffer;\n")
 						.append("        cap = maxRows;\n")
 						.append("        sinkRows = 0;\n")
@@ -1780,9 +1790,21 @@ final class LmdbNativeKernelEmitter {
 					}
 					emitDistinctGuard(source, emit);
 				}
+				if (emit.mods.offset > 0) {
+					source.append("        if (streamSkipped < ").append(emit.mods.offset)
+							.append("L) { streamSkipped++; return; }\n");
+				}
+				if (emit.mods.limit >= 0) {
+					source.append("        if (streamReturned >= ").append(emit.mods.limit)
+							.append("L) { done = full = true; return; }\n");
+				}
 				source.append("        int base = sinkRows * ").append(stride).append(";\n");
 				for (int i = 0; i < emit.cols.length; i++) {
 					source.append("        sink[base + ").append(i).append("] = v").append(emit.cols[i]).append(";\n");
+				}
+				if (emit.mods.limit >= 0) {
+					source.append("        if (++streamReturned >= ").append(emit.mods.limit)
+							.append("L) { done = full = true; }\n");
 				}
 				source.append("        sinkRows++;\n")
 						.append("        if (sinkRows >= cap) {\n")
@@ -2502,7 +2524,7 @@ final class LmdbNativeKernelEmitter {
 				StringBuilder body = new StringBuilder();
 				// Container arms need the same saved-counter discipline as the root. The resumability proof admits
 				// only arms whose nodes the streaming emitter understands.
-				int stateIndex = kernel.resumable && !booleanMode ? nextStateId++ : -1;
+				int stateIndex = kernel.resumable && !booleanMode && synchronousPipelineDepth == 0 ? nextStateId++ : -1;
 				if (stateIndex >= 0 && !statefulTerminal && tailmost(nodes, i)) {
 					tailmostStateIds.set(stateIndex);
 				}
@@ -2574,10 +2596,14 @@ final class LmdbNativeKernelEmitter {
 
 			List<Node> vectorized = new ArrayList<>();
 			List<Node> residual = new ArrayList<>();
+			boolean vectorPrefix = true;
 			for (Node filter : filters) {
-				if (vectorFilterCall(filter, valueCol, false) != null) {
+				if (vectorPrefix && vectorFilterCall(filter, valueCol, false) != null) {
 					vectorized.add(filter);
 				} else {
+					// Only a leading pure vector prefix may move into a batch pass. In particular, a later ID
+					// guard must not suppress an earlier SERVICE/volatile/error-bearing semantic callback.
+					vectorPrefix = false;
 					residual.add(filter);
 				}
 			}
@@ -2822,10 +2848,14 @@ final class LmdbNativeKernelEmitter {
 
 			List<Node> vectorized = new ArrayList<>();
 			List<Node> residual = new ArrayList<>();
+			boolean vectorPrefix = true;
 			for (Node filter : filters) {
-				if (vectorFilterCall(filter, valueCol, false) != null) {
+				if (vectorPrefix && vectorFilterCall(filter, valueCol, false) != null) {
 					vectorized.add(filter);
 				} else {
+					// Only a leading pure vector prefix may move into a batch pass. In particular, a later ID
+					// guard must not suppress an earlier SERVICE/volatile/error-bearing semantic callback.
+					vectorPrefix = false;
 					residual.add(filter);
 				}
 			}
@@ -4464,6 +4494,36 @@ final class LmdbNativeKernelEmitter {
 			String c = "stC" + stateIndex;
 			String d = "stD" + stateIndex;
 			boolean tailmost = tailmostStateIds.get(stateIndex);
+			if (LmdbNativeKernelIr.isSingleActivationNode(node)) {
+				body.append(indent).append("if (").append(a).append(" < 0L) {\n")
+						.append(indent).append("    ").append(a).append(" = 1L;\n");
+				// Delegate semantics to the existing emitter, but invoke them once per input activation.
+				emitNode(body, node, a + " = 0L;", false, -1);
+				body.append(indent).append("}\n").append(indent).append("if (").append(a).append(" == 0L) {\n");
+				body.append(next(nextTemplate, indent + "    "));
+				emitPause(body, indent + "    ", a, tailmost);
+				body.append(indent).append("}\n").append(indent).append(a).append(" = -1L;\n");
+				return true;
+			}
+			if (node instanceof HashProbe probe) {
+				String table = "t" + probe.tableId;
+				body.append(indent).append("if (").append(a).append(" < 0L) {\n");
+				for (int i = 0; i < probe.keys.length; i++) body.append(indent).append("    tk")
+						.append(probe.tableId).append('[').append(i).append("] = ").append(probe.keys[i].token()).append(";\n");
+				body.append(indent).append("    ").append(a).append(" = (long)").append(table)
+						.append(".lookup(tk").append(probe.tableId).append(") + 1L;\n")
+						.append(indent).append("}\n").append(indent).append("while (").append(a).append(" > 0L) {\n")
+						.append(indent).append("    if ((++pollTick & 1023) == 0) KernelRuntime.checkCancelled(cancel);\n")
+						.append(indent).append("    int match = (int)(").append(a).append(" - 1L);\n");
+				for (int i = 0; i < probe.dstCols.length; i++) body.append(indent).append("    v").append(probe.dstCols[i])
+						.append(" = ").append(table).append(".payload(match, ").append(i).append(");\n");
+				body.append(next(nextTemplate, indent + "    ")).append(indent).append("    if (full) {\n");
+				if (tailmost) body.append(indent).append("        ").append(a).append(" = (long)").append(table).append(".next(match) + 1L;\n");
+				body.append(indent).append("        return;\n").append(indent).append("    }\n")
+						.append(indent).append("    ").append(a).append(" = (long)").append(table).append(".next(match) + 1L;\n")
+						.append(indent).append("}\n").append(indent).append(a).append(" = -1L;\n");
+				return true;
+			}
 			if (node instanceof SipDomainProbe probe) {
 				emitResumableSipDomainProbe(body, probe, nextTemplate, a, b, c, tailmost);
 				return true;
@@ -4539,6 +4599,55 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append(c).append(" = -1;\n");
 				return true;
 			}
+			if (node instanceof LexicalFrameLeftJoin lexical) {
+				int frameId = lexicalFrames.size();
+				lexicalFrames.add(lexical);
+				String prefix = "lfj" + frameId;
+				StringBuilder compatible = new StringBuilder();
+				StringBuilder clear = new StringBuilder(), restore = new StringBuilder();
+				for (int i = 0; i < lexical.problemCols.length; i++) {
+					int col = lexical.problemCols[i];
+					if (i != 0) compatible.append(" && ");
+					compatible.append('(').append(prefix).append('s').append(i)
+							.append(" == -1L || v").append(col).append(" == -1L || v").append(col)
+							.append(" == ").append(prefix).append('s').append(i).append(')');
+					clear.append("v").append(col).append(" = -1L;\n%I%");
+					restore.append("v").append(col).append(" = ").append(prefix).append('s').append(i)
+							.append(";\n%I%");
+				}
+				String rightTerminal = prefix + "Exists = true;\n%I%if (" + compatible + ") {\n%I%"
+						+ restore + nextTemplate + "\n%I%}";
+				String rightFirst = emitPipeline(lexical.right, rightTerminal, false, !tailmost);
+				StringBuilder leftTerminal = new StringBuilder("if (").append(b).append(" < 0) { ")
+						.append(b).append(" = 0; ").append(prefix).append("Exists = false; }\n%I%")
+						.append(clear).append("if (").append(b).append(" == 0) {\n%I%    ")
+						.append(rightFirst).append("();\n%I%    if (full) { ");
+				if (tailmost && !hasResumableState(lexical.right)) leftTerminal.append(b).append(" = 1; ");
+				leftTerminal.append("return; }\n%I%    ").append(b).append(" = 1;\n%I%}\n%I%")
+						.append("if (").append(b).append(" == 1 && !").append(prefix).append("Exists) {\n%I%");
+				for (int col : lexical.resetColumns()) leftTerminal.append("v").append(col).append(" = -1L;\n%I%");
+				leftTerminal.append(restore).append(nextTemplate).append("\n%I%if (full) { ");
+				if (tailmost) leftTerminal.append(b).append(" = 2; ");
+				leftTerminal.append("return; }\n%I%}\n%I%").append(b).append(" = -1;");
+				// The right activation, including a pending null extension, belongs to the current left mapping.
+				String leftFirst = emitPipeline(lexical.left, leftTerminal.toString(), false, true);
+				body.append(indent).append("if (").append(a).append(" < 0) {\n");
+				for (int i = 0; i < lexical.problemCols.length; i++) {
+					body.append(indent).append("    ").append(prefix).append('s').append(i)
+							.append(" = v").append(lexical.problemCols[i]).append(";\n");
+				}
+				body.append(indent).append("    ").append(a).append(" = 0; ").append(b).append(" = -1;\n")
+						.append(indent).append("}\n");
+				body.append(next(clear.toString(), indent));
+				body.append(indent).append("try {\n").append(indent).append("    ").append(leftFirst).append("();\n")
+						.append(indent).append("    if (full) return;\n")
+						.append(indent).append("    ").append(a).append(" = -1; ").append(b).append(" = -1;\n")
+						.append(indent).append("} finally {\n");
+				body.append(next(restore.toString(), indent + "    "));
+				body.append(indent).append("}\n");
+				return true;
+			}
+
 			if (node instanceof Union) {
 				Union union = (Union) node;
 				List<String> branchMethods = new ArrayList<>(union.branches.size());
@@ -6404,6 +6513,227 @@ final class LmdbNativeKernelEmitter {
 			source.append("        default: throw new IllegalArgumentException(\"unknown factor guard\");\n        }\n    }\n");
 		}
 
+		/**
+		 * Partially evaluate the guard graph, not the snapshot. At most four guards and two
+		 * dependent columns are fused per region; arbitrary grouping falls back to vector masks.
+		 * Single-guard regions plus equal-dependency regions and the complete graph cover common
+		 * independent unary and zipped-pair cases without enumerating the power set of guards.
+		 */
+		private void emitFusedFactorSums(StringBuilder source) {
+			LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
+			java.util.LinkedHashSet<Long> regions = new java.util.LinkedHashSet<>();
+			regions.add((1L << spec.guards.length) - 1L);
+			for (int i = 0; i < spec.guards.length; i++) {
+				long region = 0L;
+				for (int j = 0; j < spec.guards.length; j++)
+					if (spec.dependencies[i] == spec.dependencies[j]) region |= 1L << j;
+				regions.add(region);
+				regions.add(1L << i);
+			}
+			StringBuilder helpers = new StringBuilder();
+			source.append("    public long sum(long guards, long[][] columns, long[] prefix, long[] weights, long[] selected, int size) {\n");
+			int regionId = 0;
+			for (long region : regions) {
+				long dependencies = 0L;
+				for (long rest = region; rest != 0L; rest &= rest - 1L)
+					dependencies |= spec.dependencies[Long.numberOfTrailingZeros(rest)];
+				// A null column broadcasts a scalar. Partial tuple layouts with >2 columns stay generic.
+				if (dependencies == 0L || Long.bitCount(dependencies) > 2) continue;
+				int[] positions = new int[Long.bitCount(dependencies)];
+				int n = 0;
+				for (long rest = dependencies; rest != 0L; rest &= rest - 1L)
+					positions[n++] = Long.numberOfTrailingZeros(rest);
+				source.append("        if (guards == 0x").append(Long.toUnsignedString(region, 16)).append("L) {\n");
+				// <=2 columns: three non-empty layouts at most. Every check is outside the ID loop.
+				for (int layout = (1 << positions.length) - 1; layout > 0; layout--) {
+					// Measurements favor separate vector passes for an unbounded range/inequality
+					// conjunction with a scalar broadcast. Keep finite-domain and zipped cases fused.
+					if (Integer.bitCount(layout) == 1 && Long.bitCount(region) > 1
+							&& hasCrossColumnInequality(region)
+							&& finiteFactorDomain(region, positions[Integer.numberOfTrailingZeros(layout)],
+									new java.util.LinkedHashMap<>()) == null) continue;
+					source.append("            if (");
+					for (int i = 0; i < positions.length; i++) {
+						if (i != 0) source.append(" && ");
+						source.append("columns[").append(positions[i]).append("] ")
+								.append((layout & (1 << i)) != 0 ? "!= null" : "== null");
+					}
+					source.append(") return factorSum").append(regionId).append('_').append(layout)
+							.append("(columns, prefix, weights, size);\n");
+					emitFusedFactorSum(helpers, regionId, region, positions, layout);
+				}
+				source.append("        }\n");
+				regionId++;
+			}
+			source.append("        return KernelFactorPredicate.sumGeneric(this, guards, columns, prefix, weights, selected, size);\n    }\n");
+			source.append(helpers);
+		}
+
+		private void emitFusedFactorSum(StringBuilder source, int id, long region, int[] positions, int layout) {
+			LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
+			source.append("    private long factorSum").append(id).append('_').append(layout)
+					.append("(long[][] columns, long[] prefix, long[] weights, int size) {\n")
+					.append("        java.util.Objects.checkFromIndexSize(0, size, weights.length);\n");
+			for (int i = 0; i < positions.length; i++) {
+				int pos = positions[i];
+				if ((layout & (1 << i)) != 0) {
+					source.append("        long[] a").append(pos).append(" = columns[").append(pos).append("];\n")
+							.append("        java.util.Objects.checkFromIndexSize(0, size, a").append(pos).append(".length);\n");
+				} else source.append("        long x").append(pos).append(" = prefix[").append(pos).append("];\n");
+			}
+			// Constants are bind-local fields, hoisted once. No runtime ID enters the shape key.
+			java.util.LinkedHashMap<String, String> constants = new java.util.LinkedHashMap<>();
+			java.util.LinkedHashMap<String, String[]> ranges = new java.util.LinkedHashMap<>();
+			StringBuilder mask = new StringBuilder();
+			for (long rest = region; rest != 0L; rest &= rest - 1L) {
+				if (!mask.isEmpty()) mask.append(" & ");
+				mask.append('(').append(fusedFactorMask(spec.guards[Long.numberOfTrailingZeros(rest)], constants, ranges)).append(')');
+			}
+			// A finite equality/IN domain bounds all accepted values of one varying column.
+			// Evaluate the complete guard graph on its <=4 candidates once per window, not per ID.
+			int varyingPosition = Integer.bitCount(layout) == 1
+					? positions[Integer.numberOfTrailingZeros(layout)] : -1;
+			String[] candidates = varyingPosition < 0 ? null : finiteFactorDomain(region, varyingPosition, constants);
+			for (java.util.Map.Entry<String, String> entry : constants.entrySet())
+				source.append("        long ").append(entry.getValue()).append(" = ").append(entry.getKey()).append(";\n");
+			for (java.util.Map.Entry<String, String[]> range : ranges.entrySet()) {
+				String low = range.getValue()[0], high = range.getValue()[1];
+				source.append("        if (Long.compareUnsigned(").append(low).append(", ").append(high)
+						.append(") > 0) return 0L;\n")
+						.append("        long ").append(range.getKey()).append(" = ").append(high).append(" - ")
+						.append(low).append(";\n");
+			}
+			if (candidates != null) {
+				String original = mask.toString();
+				mask.setLength(0);
+				for (int candidate = 0; candidate < candidates.length; candidate++) {
+					String accepted = original.replaceAll("\\bx" + varyingPosition + "\\b", candidates[candidate]);
+					source.append("        long pick").append(candidate).append(" = ").append(accepted).append(";\n");
+					if (!mask.isEmpty()) mask.append(" | ");
+					mask.append("(KernelIdMasks.equalMask(x").append(varyingPosition).append(", ")
+							.append(candidates[candidate]).append(") & pick").append(candidate).append(')');
+				}
+				if (mask.isEmpty()) mask.append("0L");
+			}
+			source.append("        long total = 0L;\n        for (int i = 0; i < size; i++) {\n");
+			for (int i = 0; i < positions.length; i++) if ((layout & (1 << i)) != 0)
+				source.append("            long x").append(positions[i]).append(" = a").append(positions[i]).append("[i];\n");
+			source.append("            total += weights[i] & (").append(mask).append(");\n")
+					.append("        }\n        return total;\n    }\n");
+		}
+
+		private boolean hasCrossColumnInequality(long region) {
+			LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
+			for (long rest = region; rest != 0L; rest &= rest - 1L) {
+				int guard = Long.numberOfTrailingZeros(rest);
+				if (spec.guards[guard] instanceof FilterCompareId filter && filter.negated
+						&& Long.bitCount(spec.dependencies[guard]) == 2) return true;
+			}
+			return false;
+		}
+
+		/** A sound finite superset of accepted IDs; null means no finite-domain specialization. */
+		private String[] finiteFactorDomain(long region, int varyingPosition,
+				java.util.LinkedHashMap<String, String> constants) {
+			LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
+			String[] best = null;
+			for (long rest = region; rest != 0L; rest &= rest - 1L) {
+				Node node = spec.guards[Long.numberOfTrailingZeros(rest)];
+				String[] domain = null;
+				if (node instanceof FilterInConstants filter && spec.position(filter.value) == varyingPosition) {
+					domain = new String[filter.constantIndices.length];
+					for (int i = 0; i < domain.length; i++)
+						domain[i] = fusedFactorConstant("c" + filter.constantIndices[i], constants);
+				} else if (node instanceof FilterEntryCompatible filter && spec.position(filter.value) == varyingPosition) {
+					domain = new String[] {"-1L", fusedFactorConstant("c" + filter.constant, constants)};
+				} else if (node instanceof FilterCompareId filter && !filter.negated) {
+					if (spec.position(filter.left) == varyingPosition && spec.position(filter.right) != varyingPosition)
+						domain = new String[] {fusedFactorOperand(filter.right, constants)};
+					else if (spec.position(filter.right) == varyingPosition && spec.position(filter.left) != varyingPosition)
+						domain = new String[] {fusedFactorOperand(filter.left, constants)};
+				}
+				if (domain != null && (best == null || domain.length < best.length)) best = domain;
+			}
+			return best;
+		}
+
+		private String fusedFactorOperand(Operand operand, java.util.LinkedHashMap<String, String> constants) {
+			int position = kernel.factorCountGuards.position(operand);
+			return position >= 0 ? "x" + position : fusedFactorConstant(operand.token(), constants);
+		}
+
+		private static String fusedFactorConstant(String expression, java.util.LinkedHashMap<String, String> constants) {
+			return constants.computeIfAbsent(expression, ignored -> "k" + constants.size());
+		}
+
+		private String fusedFactorMask(Node node, java.util.LinkedHashMap<String, String> constants,
+				java.util.LinkedHashMap<String, String[]> ranges) {
+			if (node instanceof FilterCompareId filter) {
+				String expression = "KernelIdMasks.equalMask(" + fusedFactorOperand(filter.left, constants)
+						+ ", " + fusedFactorOperand(filter.right, constants) + ")";
+				return filter.negated ? "~" + expression : expression;
+			}
+			if (node instanceof FilterEntryCompatible filter) {
+				String value = fusedFactorOperand(filter.value, constants);
+				return "KernelIdMasks.equalMask(" + value + ", -1L) | KernelIdMasks.equalMask(" + value + ", "
+						+ fusedFactorConstant("c" + filter.constant, constants) + ")";
+			}
+			if (node instanceof FilterRangeUnsigned filter) {
+				String value = fusedFactorOperand(filter.value, constants);
+				String low = fusedFactorConstant("c" + filter.lowConstant, constants);
+				String high = fusedFactorConstant("c" + filter.highConstant, constants);
+				String width = "r" + ranges.size();
+				ranges.put(width, new String[] {low, high});
+				// For a non-wrapping unsigned interval, x is inside iff (x-low) <= (high-low).
+				// Subtractions are intentionally modulo 2^64; this is ID ordering, not RDF arithmetic.
+				return "~KernelIdMasks.belowMask(" + width + ", " + value + " - " + low + ")";
+			}
+			FilterInConstants filter = (FilterInConstants) node;
+			String value = fusedFactorOperand(filter.value, constants);
+			StringBuilder mask = new StringBuilder();
+			for (int constant : filter.constantIndices) {
+				if (!mask.isEmpty()) mask.append(" | ");
+				mask.append("KernelIdMasks.equalMask(").append(value).append(", ")
+						.append(fusedFactorConstant("c" + constant, constants)).append(')');
+			}
+			return mask.isEmpty() ? "0L" : mask.toString();
+		}
+
+
+		private boolean specializedScalarCount() {
+			if (!kernel.compiledCountSpecialization || !(kernel.terminal instanceof Aggregate aggregate)
+					|| aggregate.groupCols.length != 0) return false;
+			for (AggregateOutput output : aggregate.outputs)
+				if (output.kind != LmdbNativeKernelIr.AGG_COUNT_STAR || output.hookDistinct) return false;
+			return true;
+		}
+
+		/**
+		 * A physical scalar fallback is already flat. Fuse its pure guards and global COUNT(*)
+		 * into one batch loop instead of writing virtual registers and updating aggregate arrays
+		 * per accepted row. Unlike a bounded relation, arbitrary row weights need checked sums.
+		 */
+		private void emitScalarCountWindow(StringBuilder body, PlanFactors plan, String indent) {
+			body.append(indent).append("long acceptedWeight = 0L;\n")
+					.append(indent).append("for (int i = 0; i < n; i++) {\n")
+					.append(indent).append("    int base = i * ").append(plan.outCols.length).append(";\n");
+			for (int i = 0; i < plan.scalarOutputs.length; i++)
+				body.append(indent).append("    long s").append(i).append(" = rows[base + ")
+						.append(plan.scalarOutputs[i]).append("];\n");
+			StringBuilder condition = new StringBuilder();
+			for (Node guard : kernel.factorCountGuards.guards) {
+				if (!condition.isEmpty()) condition.append(" && ");
+				String expression = factorCondition(guard);
+				for (int i = 0; i < plan.scalarOutputs.length; i++) expression = expression.replace("prefix[" + i + "]", "s" + i);
+				condition.append('(').append(expression).append(')');
+			}
+			body.append(indent).append("    if (").append(condition.isEmpty() ? "true" : condition)
+					.append(") acceptedWeight = Math.addExact(acceptedWeight, weights[i]);\n")
+					.append(indent).append("}\n")
+					.append(indent).append("if (acceptedWeight != 0L) updateBy(acceptedWeight);\n");
+		}
+
+
 		private void emitPlanFactors(StringBuilder body, PlanFactors plan, String nextTemplate) {
 			String indent = "        ";
 			String cursor = "fc" + plan.plan;
@@ -6454,16 +6784,20 @@ final class LmdbNativeKernelEmitter {
 			body.append(indent).append("        long[] rows = ").append(cursor).append(".rowValues();\n")
 					.append(indent).append("        long[] weights = ").append(cursor).append(".rowWeights();\n")
 					.append(indent).append("        int n;\n")
-					.append(indent).append("        while ((n = ").append(cursor).append(".nextRowWindow()) != 0) {\n")
-					.append(indent).append("            for (int i = 0; i < n; i++) {\n")
-					.append(indent).append("                int base = i * ").append(plan.outCols.length).append(";\n");
-			for (int output : plan.scalarOutputs)
-				body.append(indent).append("                v").append(plan.outCols[output])
-						.append(" = rows[base + ").append(output).append("];\n");
-			body.append(indent).append("                fw").append(plan.plan).append(" = weights[i];\n");
-			body.append(next(nextTemplate, indent + "                "));
-			body.append(indent).append("            }\n").append(indent).append("        }\n")
-					.append(indent).append("    }\n");
+					.append(indent).append("        while ((n = ").append(cursor).append(".nextRowWindow()) != 0) {\n");
+			if (specializedScalarCount()) {
+				emitScalarCountWindow(body, plan, indent + "            ");
+			} else {
+				body.append(indent).append("            for (int i = 0; i < n; i++) {\n")
+						.append(indent).append("                int base = i * ").append(plan.outCols.length).append(";\n");
+				for (int output : plan.scalarOutputs)
+					body.append(indent).append("                v").append(plan.outCols[output])
+							.append(" = rows[base + ").append(output).append("];\n");
+				body.append(indent).append("                fw").append(plan.plan).append(" = weights[i];\n");
+				body.append(next(nextTemplate, indent + "                "));
+				body.append(indent).append("            }\n");
+			}
+			body.append(indent).append("        }\n").append(indent).append("    }\n");
 			body.append(indent).append("} catch (RuntimeException failure) {\n")
 					.append(indent).append("    ").append(cursor).append(".closeOnFailure(failure); throw failure;\n")
 					.append(indent).append("} catch (Error failure) {\n")
@@ -7417,7 +7751,10 @@ final class LmdbNativeKernelEmitter {
 						.append(", tp")
 						.append(build.tableId)
 						.append(");");
-				String first = emitPipeline(build.pipeline, insert.toString(), false);
+				String first;
+				synchronousPipelineDepth++;
+				try { first = emitPipeline(build.pipeline, insert.toString(), false); }
+				finally { synchronousPipelineDepth--; }
 				body.append(indent)
 						.append('t')
 						.append(build.tableId)

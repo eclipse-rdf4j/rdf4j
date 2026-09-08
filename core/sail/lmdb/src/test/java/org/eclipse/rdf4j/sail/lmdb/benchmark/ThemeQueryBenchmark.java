@@ -70,11 +70,11 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 4, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 1000)
+@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 5000)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
 		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true"
-//		, "-Drdf4j.lmdb.janinoCodegen.factorGuardPeeling=true"
+		, "-Drdf4j.lmdb.janinoCodegen.factorGuardPeeling=true"
 })
 @Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
@@ -131,6 +131,7 @@ public class ThemeQueryBenchmark {
 	 * Auto trials use the engine defaults, including normal Janino thresholds and asynchronous compilation. Each trial
 	 * restores the caller's properties, including when running both modes in the same JVM via {@link #main}.
 	 */
+//	@Param({  "auto" })
 	@Param({  "auto","disabled" })
 	public String z_z_irMode;
 
@@ -153,14 +154,14 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"MEDICAL_RECORDS",
-//			"SOCIAL_MEDIA",
-//			"LIBRARY",
-//			"ENGINEERING",
-//			"HIGHLY_CONNECTED",
-//			"TRAIN",
-//			"ELECTRICAL_GRID",
-//			"PHARMA",
-//			"ADAPTIVE_FILTER_PLACEMENT",
+			"SOCIAL_MEDIA",
+			"LIBRARY",
+			"ENGINEERING",
+			"HIGHLY_CONNECTED",
+			"TRAIN",
+			"ELECTRICAL_GRID",
+			"PHARMA",
+			"ADAPTIVE_FILTER_PLACEMENT",
 			"ANALYTICS",
 			"EXPLORATION"
 	})
@@ -286,7 +287,7 @@ public class ThemeQueryBenchmark {
 //
 //			}
 			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-			tupleQuery.setMaxExecutionTime(120);
+			tupleQuery.setMaxExecutionTime(60);
 			try (var evaluate = tupleQuery.evaluate()) {
 				count = countRowsAndVerifyCountBinding(evaluate, expectedCountBindingValue);
 			}
@@ -651,7 +652,6 @@ public class ThemeQueryBenchmark {
 
 		try {
 			if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
-				Thread.sleep(5000);
 				try (SailRepositoryConnection connection = repository.getConnection()) {
 					System.out.println("### Optimized Query ###");
 					Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
@@ -670,8 +670,6 @@ public class ThemeQueryBenchmark {
 				}
 			}
 			printTypeMatrixMetricsIfEnabled();
-		} catch (InterruptedException e) {
-			throw new RuntimeException(e);
 		} finally {
 			try {
 				if (repository != null) {

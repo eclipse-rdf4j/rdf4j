@@ -554,6 +554,7 @@ final class LmdbNativeKernelIr {
 	}
 
 	static final String FACTOR_WINDOWS_PROPERTY = "rdf4j.lmdb.janinoCodegen.factorWindows";
+	static final String COUNT_SPECIALIZATION_PROPERTY = "rdf4j.lmdb.janinoCodegen.countSpecialization";
 
 	/**
 	 * Pure guard graph for prefix-local count elimination. Aliases are substituted structurally;
@@ -2966,11 +2967,11 @@ final class LmdbNativeKernelIr {
 	}
 
 	/**
-	 * A pipeline can stream when its terminal writes plain rows with no post-pass over the whole result — ordering and
-	 * limits need every row in hand before the first can be served — and when every node either carries no state across
+	 * A pipeline can stream when its terminal writes plain rows with no post-pass over the whole result — ordering
+	 * needs every row in hand before the first can be served; LIMIT/OFFSET are streaming counters — and when every node either carries no state across
 	 * a pause (straight-line guards and aliases) or carries state the emitter knows how to save and restore (the
-	 * looping producers). {@code EnumerateEntry} is excluded deliberately: it emits its continuation exactly once with
-	 * nothing to resume from, so re-entering it after a pause would emit a second time.
+	 * looping producers). Single-activation nodes have a saved completion flag so expressions and SERVICE witnesses are not
+	 * re-evaluated when a downstream producer resumes.
 	 * <p>
 	 * {@code ProbeClose} is admitted even though it produces no column, because its state is a single repetition
 	 * counter and its repetition count is recomputable from the adjacency view: it re-emits the continuation once per
@@ -2984,7 +2985,7 @@ final class LmdbNativeKernelIr {
 			return false;
 		}
 		OutputMods mods = terminal.mods;
-		if (mods.orderKeys != null || mods.limit >= 0 || mods.offset != 0) {
+		if (mods.orderKeys != null) {
 			return false;
 		}
 		if (pipeline.isEmpty()) {
@@ -3015,7 +3016,9 @@ final class LmdbNativeKernelIr {
 			boolean streamable = isResumableProducer(node)
 					|| i == pipeline.size() - 1 && node instanceof LeftProbe
 					|| node instanceof LeftGroup && isResumableArm(((LeftGroup) node).arm)
-					|| node instanceof Union && isResumableUnion((Union) node);
+					|| node instanceof Union && isResumableUnion((Union) node)
+					|| node instanceof LexicalFrameLeftJoin lexical
+							&& isResumableArm(lexical.left) && isResumableArm(lexical.right);
 			if (!streamable) {
 				return false;
 			}
@@ -3024,7 +3027,7 @@ final class LmdbNativeKernelIr {
 	}
 
 	private static boolean isResumableProducer(Node node) {
-		return isStatelessRowNode(node)
+		return isStatelessRowNode(node) || isSingleActivationNode(node) || node instanceof HashProbe
 				|| node instanceof EnumerateDomain || node instanceof Probe
 				|| node instanceof SipDomainProbe || node instanceof SipKeyProbe
 				|| node instanceof ScanQuad || node instanceof PlanRows || node instanceof ProbeClose
@@ -3042,7 +3045,14 @@ final class LmdbNativeKernelIr {
 
 	/** True for straight-line row nodes which are safe to re-evaluate after a streaming pause. */
 	static boolean isStatelessRowNode(Node node) {
-		return isFilter(node) || node instanceof FilterEntryCompatible || node instanceof BindAlias;
+		return (isFilter(node) && !(node instanceof FilterResidual) && !(node instanceof FilterValue))
+				|| node instanceof FilterEntryCompatible || node instanceof BindAlias;
+	}
+
+	/** These nodes produce at most one continuation per input, but must not be re-evaluated after a pause. */
+	static boolean isSingleActivationNode(Node node) {
+		return node instanceof EnumerateEntry || node instanceof BindHook || node instanceof Exists
+				|| node instanceof FilterResidual || node instanceof FilterValue || node instanceof HashBuild;
 	}
 
 	/** True for the row-level guard nodes, which neither produce a column nor branch the pipeline. */
@@ -3078,6 +3088,8 @@ final class LmdbNativeKernelIr {
 		final Terminal terminal;
 		final Requirements requirements;
 		final FactorCountGuards factorCountGuards;
+		/** Emission choice is captured once and participates in the compiler cache identity. */
+		final boolean compiledCountSpecialization;
 		final TelemetryMode telemetryMode;
 		final AggregateStateMode aggregateStateMode;
 		final AggregateDistinctMode[] aggregateDistinctModes;
@@ -3120,6 +3132,9 @@ final class LmdbNativeKernelIr {
 			this.terminal.requirements(requirements);
 			validateColumns();
 			this.factorCountGuards = factorCountGuards(this);
+			this.compiledCountSpecialization = factorCountGuards != null && factorCountGuards.guards.length > 0
+					&& factorCountGuards.guards.length <= 4
+					&& !"false".equals(System.getProperty(COUNT_SPECIALIZATION_PROPERTY));
 			AggregateProperties aggregateProperties = aggregateProperties(this.pipeline, this.terminal);
 			this.aggregateStateMode = aggregateProperties.stateMode;
 			this.aggregateDistinctModes = aggregateProperties.distinctModes;
@@ -3134,6 +3149,7 @@ final class LmdbNativeKernelIr {
 					: vectorTail;
 			StringBuilder key = new StringBuilder("ir1:");
 			if (factorCountGuards != null) key.append("fw1;");
+			if (compiledCountSpecialization) key.append("ff1;");
 			if (vectorTailIndex >= 0) {
 				key.append("vt").append(vectorTailIndex).append(';');
 			}

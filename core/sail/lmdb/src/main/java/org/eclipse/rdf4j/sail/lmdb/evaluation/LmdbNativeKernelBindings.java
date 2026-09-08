@@ -249,6 +249,8 @@ final class LmdbNativeKernelBindings {
 		final int[] outputSlots;
 		final int[] inputSlots;
 		final boolean factorProjection;
+		/** No speculative pull across SERVICE, volatile expressions, or unknown semantic boundaries. */
+		final boolean batchSafe;
 
 		PlanRequest(SlotPlan plan, int[] outputSlots) {
 			this(plan, outputSlots, new int[0]);
@@ -259,7 +261,8 @@ final class LmdbNativeKernelBindings {
 		}
 
 		PlanRequest(SlotPlan plan, int[] outputSlots, int[] inputSlots, boolean factorProjection) {
-			this.factorProjection = factorProjection;
+			this.batchSafe = SlotPlan.encounterOrderReplaySafe(plan);
+			this.factorProjection = factorProjection && batchSafe;
 			this.plan = plan;
 			this.outputSlots = outputSlots.clone();
 			this.inputSlots = inputSlots.clone();
@@ -945,6 +948,8 @@ final class LmdbNativeKernelBindings {
 
 		@Override
 		public FactorCursor openFactors(int[] scalarOutputColumns) {
+			// Grouped replay changes invocation counts for mapping-parameterized/volatile sources.
+			if (!request.batchSafe) return null;
 			long demand = 0L;
 			for (int column : scalarOutputColumns) {
 				java.util.Objects.checkIndex(column, request.outputSlots.length);
@@ -1041,6 +1046,9 @@ final class LmdbNativeKernelBindings {
 			if (closed || maxRows <= 0) {
 				return 0;
 			}
+			if ((long) maxRows * outputSlots.length > rowBuffer.length)
+				throw new IllegalArgumentException("plan buffer capacity");
+			if (!owner.request.batchSafe) maxRows = Math.min(maxRows, 1);
 			int rows = 0;
 			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 			try {
@@ -1051,10 +1059,14 @@ final class LmdbNativeKernelBindings {
 					}
 					rows++;
 				}
+				if (rows == 0) close();
 				return rows;
 			} catch (java.io.IOException problem) {
-				close();
+				closeAfterFailure(problem);
 				throw new PlanFailure(problem);
+			} catch (RuntimeException | Error problem) {
+				closeAfterFailure(problem);
+				throw problem;
 			} finally {
 				LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
 			}
@@ -1066,6 +1078,7 @@ final class LmdbNativeKernelBindings {
 					|| (long) maxRows * outputSlots.length > rowBuffer.length)
 				throw new IllegalArgumentException("weighted plan buffer capacity");
 			if (closed || maxRows == 0) return 0;
+			if (!owner.request.batchSafe) maxRows = Math.min(maxRows, 1);
 			int rows = 0;
 			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 			try {
@@ -1076,21 +1089,29 @@ final class LmdbNativeKernelBindings {
 					if (weight <= 0L) throw new IllegalStateException("nonpositive projected bag weight");
 					weights[rows++] = weight;
 				}
+				if (rows == 0) close();
 				return rows;
 			} catch (java.io.IOException problem) {
-				close();
+				closeAfterFailure(problem);
 				throw new PlanFailure(problem);
+			} catch (RuntimeException | Error problem) {
+				closeAfterFailure(problem);
+				throw problem;
 			} finally {
 				LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested);
 			}
+		}
+
+		private void closeAfterFailure(Throwable original) {
+			try { close(); }
+			catch (Throwable cleanup) { if (cleanup != original) original.addSuppressed(cleanup); }
 		}
 
 		@Override
 		public void close() {
 			if (!closed) {
 				closed = true;
-				cursor.close();
-				owner.released(this);
+				try { cursor.close(); } finally { owner.released(this); }
 			}
 		}
 	}

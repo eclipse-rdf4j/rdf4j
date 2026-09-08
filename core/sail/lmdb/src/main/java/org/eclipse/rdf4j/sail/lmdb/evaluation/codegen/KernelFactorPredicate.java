@@ -19,4 +19,25 @@ public interface KernelFactorPredicate {
 	long dependencies(int guard);
 	boolean test(int guard, long[] prefix);
 	void filter(int guard, long[][] columns, long[] prefix, long[] selected, int size);
+
+	/**
+	 * Reduce one exact relation window after intersecting the selected pure guards. A compiled
+	 * predicate may fuse this into a shape-specific loop without constructing a selection mask.
+	 * The default deliberately retains the shared vector primitives for interpreted predicates,
+	 * large guard graphs, and unsupported runtime layouts. Weights obey sumBounded's source bound;
+	 * this contract does not permit unchecked multiplication or global aggregate accumulation.
+	 * The selected array is reusable scratch only; its contents after this call are unspecified.
+	 */
+	default long sum(long guards, long[][] columns, long[] prefix, long[] weights, long[] selected, int size) {
+		return sumGeneric(this, guards, columns, prefix, weights, selected, size);
+	}
+
+	/** Non-virtual fallback for generated classes; avoids relying on interface-super syntax. */
+	static long sumGeneric(KernelFactorPredicate predicate, long guards, long[][] columns,
+			long[] prefix, long[] weights, long[] selected, int size) {
+		java.util.Arrays.fill(selected, 0, size, -1L);
+		for (long rest = guards; rest != 0L; rest &= rest - 1L)
+			predicate.filter(Long.numberOfTrailingZeros(rest), columns, prefix, selected, size);
+		return KernelIdMasks.sumBounded(weights, selected, size);
+	}
 }

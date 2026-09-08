@@ -69,6 +69,59 @@ class LmdbNativeKernelLoweringTest {
 		return row;
 	}
 
+	private static SlotPlan opaqueEndpoint() {
+		return new SlotPlan() {
+			@Override public long producedMask() { return 1L << 1; }
+			@Override public RowCursor open(RowState row) {
+				throw new AssertionError("lowering must never execute the endpoint");
+			}
+		};
+	}
+
+	@Test void opaqueProducerKeepsNativeNeighborsInsideTheSameKernel() {
+		SlotPlan endpoint = opaqueEndpoint();
+		SlotPlan local = pattern(Term.slot(0), Term.constant(PRED + 128));
+		var lowered = lowerWithScans(new JoinPlan(local, endpoint));
+		assertNotNull(lowered, "an opaque algebra boundary is a producer, not a whole-query rejection");
+		assertEquals(1, lowered.bindings.planRequests.length);
+		assertEquals(endpoint, lowered.bindings.planRequests[0].plan);
+		assertFalse(lowered.bindings.planRequests[0].batchSafe);
+		assertFalse(lowered.bindings.planRequests[0].factorProjection);
+		assertTrue(lowered.kernel.pipeline.stream().anyMatch(LmdbNativeKernelIr.ScanQuad.class::isInstance));
+		assertTrue(lowered.kernel.pipeline.stream().anyMatch(LmdbNativeKernelIr.PlanRows.class::isInstance));
+	}
+
+	@Test void filtersDoNotCrossAnObservableProducerBoundary() {
+		SlotPlan local = pattern(Term.slot(0), Term.constant(PRED + 128));
+		for (boolean before : new boolean[] { true, false }) {
+			SlotPlan endpoint = opaqueEndpoint();
+			NativeBooleanFilter condition = row -> true;
+			SlotPlan plan = before ? new JoinPlan(new FilterPlan(local, condition, 1L), endpoint)
+					: new FilterPlan(new JoinPlan(local, endpoint), condition, 1L);
+			var lowered = lowerWithScans(plan);
+			assertNotNull(lowered);
+			int boundary = -1, guard = -1;
+			for (int i = 0; i < lowered.kernel.pipeline.size(); i++) {
+				var node = lowered.kernel.pipeline.get(i);
+				if (node instanceof LmdbNativeKernelIr.PlanRows) boundary = i;
+				if (LmdbNativeKernelIr.isFilter(node)) guard = i;
+			}
+			assertTrue(boundary >= 0 && guard >= 0, lowered.kernel.shapeKey());
+			assertEquals(before, guard < boundary, "FILTER position relative to SERVICE is observable");
+		}
+	}
+
+	@Test void aggregateAlsoKeepsOpaqueProducerAsLocalBoundary() {
+		SlotPlan endpoint = opaqueEndpoint();
+		SlotPlan plan = new JoinPlan(pattern(Term.slot(0), Term.constant(PRED + 128)), endpoint);
+		var lowered = LmdbNativeKernelLowering.lowerAggregate(plan, freshRow(), new int[0],
+				new AggregateSpec[] { AggregateSpec.slot("count", 0, false, AggKind.COUNT) }, null);
+		assertNotNull(lowered);
+		assertEquals(1, lowered.bindings.planRequests.length);
+		assertEquals(endpoint, lowered.bindings.planRequests[0].plan);
+		assertTrue(lowered.kernel.terminal instanceof LmdbNativeKernelIr.Aggregate);
+	}
+
 	/** Medical-query regression: DISTINCT + numeric IN + NOT EXISTS is not a factor-guard peeling candidate. */
 	@Test
 	void distinctNumericMembershipAndNotExistsAreInvariantUnderGuardPeeling() {

@@ -1678,13 +1678,13 @@ class LmdbNativeKernelIrEmitterTest {
 
 	@Test
 	void streamingDeclinesWhereTheWholeResultIsNeededFirst() {
-		// ORDER BY and LIMIT need every row in hand before the first can be served.
+		// ORDER BY blocks; an unordered LIMIT is a demand bound, not a blocking operator.
 		OutputMods ordered = new OutputMods(new int[] { 0 }, null, false, -1L, 0L);
 		assertFalse(new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
 				new Emit(new int[] { 0, 1 }, false, ordered)).resumable, "ordering must not stream");
 		OutputMods limited = new OutputMods(null, null, false, 5L, 0L);
-		assertFalse(new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
-				new Emit(new int[] { 0, 1 }, false, limited)).resumable, "a limit must not stream");
+		assertTrue(new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
+				new Emit(new int[] { 0, 1 }, false, limited)).resumable, "an unordered limit must stream");
 		// An aggregate terminal is bounded by group count and keeps the eager path.
 		assertFalse(new Kernel(2, List.of(new EnumerateAdjKeys(0, 0, 1)),
 				new Aggregate(new int[] { 0 }, new AggregateOutput[] { AggregateOutput.countStar() }, null,

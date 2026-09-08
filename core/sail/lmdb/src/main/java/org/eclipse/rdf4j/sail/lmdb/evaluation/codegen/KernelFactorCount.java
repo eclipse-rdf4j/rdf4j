@@ -197,10 +197,7 @@ public final class KernelFactorCount implements AutoCloseable {
 	}
 
 	private long selectedWeight(int leader, long[] prefix, KernelFactorPredicate predicate, long[] weights, int size) {
-		Arrays.fill(selection, 0, size, -1L);
-		for (long rest = guardGroups[leader]; rest != 0L; rest &= rest - 1L)
-			predicate.filter(Long.numberOfTrailingZeros(rest), columns, prefix, selection, size);
-		return KernelIdMasks.sumBounded(weights, selection, size);
+		return predicate.sum(guardGroups[leader], columns, prefix, weights, selection, size);
 	}
 
 	private static void checkEpoch(FactorEnvironment environment, long epoch) {

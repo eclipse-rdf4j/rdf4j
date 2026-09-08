@@ -77,8 +77,9 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
  * views, monotonic distinct channels — with Janino's advantage reduced to operator fusion.
  *
  * The node semantics mirrored here are specified in {@code .agent/kernel-ir-node-semantics.md}; the three
- * performance-only specializations (flat root-exists, vector tail, resumable emission) are deliberately not
- * implemented, because generic scalar execution of the same rewritten IR produces identical results.
+ * specializations for pure native pipelines remain independent of delegated row execution. Pipelines containing
+ * PlanRows use a pull interpreter when the terminal is nonblocking, so remote errors and volatile evaluation
+ * cannot be advanced past downstream demand.
  */
 @Experimental
 final class LmdbNativeKernelInterpreter implements JaninoKernel {
@@ -133,9 +134,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	/**
 	 * Returns an interpreted kernel for the row rung (M4), or null when the kernel is not interpretable (Aggregate
-	 * terminals go through {@link #forAggregate}; unknown node kinds decline). Uses the materialize-then-copy fill
-	 * model exclusively — a {@code kernel.resumable} shape still executes correctly, because resumability is a
-	 * fill-protocol specialization of the same pipeline, not a semantics change (D15). Never throws.
+	 * terminals go through {@link #forAggregate}; unknown node kinds decline). Uses demand-driven pull frames across
+	 * delegated row boundaries for nonblocking terminals. Pure native pipelines and blocking ORDER BY retain the
+	 * existing materialized implementation.
 	 */
 	static JaninoKernel forRows(Kernel kernel) {
 		if (kernel == null || !(kernel.terminal instanceof LmdbNativeKernelIr.Emit)) {
@@ -336,8 +337,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 		// Build the op chain. Site lists and cursors are collected as a side effect, in the same DFS order the
 		// emitter numbers its methods and sites.
-		this.root = build(kernel.pipeline, 0, aggregate != null ? this::updateTerminal : this::emitRowTerminal,
-				false);
+		if (emit != null && emit.mods.orderKeys == null && hasPlanRows(kernel.pipeline)) {
+			this.pullRows = new PullPipeline(kernel.pipeline);
+		} else {
+			this.root = build(kernel.pipeline, 0, aggregate != null ? this::updateTerminal : this::emitRowTerminal, false);
+		}
 
 		this.rfTest = new long[filterSites.size()];
 		this.rfAccept = new long[filterSites.size()];
@@ -384,6 +388,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private int fillOpen(long[] rowBuffer, int maxRows) {
+		if (closed) return 0;
+		if ((long) maxRows * stride > rowBuffer.length) throw new IllegalArgumentException("row buffer too small");
+		if (pullRows != null) return fillPull(rowBuffer, maxRows);
 		if (!ran) {
 			ran = true;
 			root.run();
@@ -406,6 +413,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		Throwable failure = null;
 		try { fireCloseTelemetry(); }
 		catch (RuntimeException | Error problem) { failure = problem; }
+		if (pullRows != null) {
+			failure = KernelRuntime.closeResource(pullRows, failure);
+			pullRows = null;
+		}
 		for (NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor cursor : boundCursors) {
 			failure = KernelRuntime.closeResource(cursor, failure);
 		}
@@ -460,6 +471,379 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		sipBatchTests = null;
 		sipBatchRejects = null;
 		KernelRuntime.rethrowCloseFailure(failure);
+	}
+
+	// Row kernels crossing delegated algebra must suspend at downstream demand. In particular a SERVICE result
+	// after the first requested row may fail, perform another request, or evaluate a volatile expression.
+	// Aggregates and ORDER BY are genuine blocking consumers and retain the original fused Op chain.
+	private PullPipeline pullRows;
+	private long pullAccepted;
+	private boolean pullDone;
+
+	private static boolean hasPlanRows(List<Node> nodes) {
+		for (Node node : nodes) {
+			if (node instanceof PlanRows) return true;
+			if (node instanceof Union union) {
+				for (List<Node> branch : union.branches) if (hasPlanRows(branch)) return true;
+			} else if (node instanceof LeftGroup left && hasPlanRows(left.arm)) return true;
+			else if (node instanceof Exists exists && hasPlanRows(exists.pipeline)) return true;
+			else if (node instanceof LexicalFrameLeftJoin left
+					&& (hasPlanRows(left.left) || hasPlanRows(left.right))) return true;
+			else if (node instanceof HashBuild build && hasPlanRows(build.pipeline)) return true;
+		}
+		return false;
+	}
+
+	private int fillPull(long[] target, int maximum) {
+		if (pullDone) return 0;
+		if (emit.mods.limit == 0L) {
+			pullDone = true;
+			pullRows.close();
+			return 0;
+		}
+		KernelRuntime.checkCancelled(cancel);
+		int count = 0;
+		while (count < maximum) {
+			if (emitCutoffCap >= 0 && pullAccepted >= emitCutoffCap || !pullRows.next()) {
+				pullDone = true;
+				pullRows.close();
+				break;
+			}
+			if (!prepareEmitRow()) continue;
+			long position = pullAccepted++;
+			if (position < emit.mods.offset) continue;
+			System.arraycopy(rowScratch, 0, target, count * stride, stride);
+			count++;
+		}
+		return count;
+	}
+
+	/** One frame per IR site, reused across correlated activations; no thread, replay, or generated-code fallback. */
+	private abstract class PullStage {
+		final long[] saved = new long[kernel.columnCount];
+		boolean active;
+
+		final void open() {
+			System.arraycopy(v, 0, saved, 0, v.length);
+			active = true; // publish ownership before activation, so failures are swept as well
+			reset();
+		}
+		final boolean next() {
+			System.arraycopy(saved, 0, v, 0, v.length);
+			poll();
+			return advance();
+		}
+		final void close() {
+			if (!active) return;
+			active = false;
+			try { release(); }
+			finally { System.arraycopy(saved, 0, v, 0, v.length); }
+		}
+		void reset() { }
+		abstract boolean advance();
+		void release() { }
+	}
+
+	private final class PullPipeline implements AutoCloseable {
+		final PullStage[] stages;
+		int depth;
+		boolean output, done;
+
+		PullPipeline(List<Node> nodes) {
+			stages = new PullStage[nodes.size()];
+			for (int i = 0; i < stages.length; i++) stages[i] = pullStage(nodes.get(i));
+		}
+		void reset() { depth = 0; output = false; done = false; }
+		boolean next() {
+			if (done) return false;
+			if (output) { output = false; depth--; }
+			while (depth >= 0) {
+				if (depth == stages.length) { output = true; return true; }
+				PullStage stage = stages[depth];
+				if (!stage.active) stage.open();
+				if (stage.next()) depth++;
+				else { stage.close(); depth--; }
+			}
+			done = true;
+			return false;
+		}
+		@Override public void close() {
+			done = true;
+			Throwable failure = null;
+			for (int i = stages.length - 1; i >= 0; i--) {
+				try { stages[i].close(); }
+				catch (RuntimeException | Error problem) {
+					if (failure == null) failure = problem;
+					else if (problem != failure) failure.addSuppressed(problem);
+				}
+			}
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
+	}
+
+	private PullStage pullStage(Node node) {
+		if (node instanceof PlanRows plan) {
+			return new PullStage() {
+				final long[] values = new long[Math.max(1, plan.outCols.length)];
+				KernelPlan.Cursor cursor;
+				@Override void reset() {
+					KernelPlan owner = context.plans[plan.plan];
+					for (int i = 0; i < plan.inputs.length; i++) owner.setInput(i, read(plan.inputs[i]));
+					cursor = owner.open();
+				}
+				@Override boolean advance() {
+					KernelRuntime.checkCancelled(cancel);
+					// Pull one result, not an arbitrary batch: this is an observable/effectful boundary.
+					int count = cursor.fill(values, 1);
+					if (count == 0) return false;
+					if (count != 1) throw new IllegalStateException("plan cursor exceeded row demand");
+					for (int i = 0; i < plan.outCols.length; i++) v[plan.outCols[i]] = values[i];
+					return true;
+				}
+				@Override void release() {
+					KernelPlan.Cursor owned = cursor;
+					cursor = null;
+					KernelRuntime.closePlanCursor(owned, null);
+				}
+			};
+		}
+		if (node instanceof EnumerateDomain domain) {
+			int site = telemetry && domain.sipDriven ? registerSipDriven(domain) : -1;
+			return new PullStage() {
+				int position;
+				@Override void reset() { position = 0; }
+				@Override boolean advance() {
+					if (position >= context.keyDomainLengths[domain.domain]) return false;
+					v[domain.col] = context.keyDomains[domain.domain][context.keyDomainOffsets[domain.domain] + position++];
+					if (site >= 0) sipDriven[site]++;
+					return true;
+				}
+			};
+		}
+		if (node instanceof Probe probe) {
+			NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor cursor = context.adjacencies[probe.adjacency].openBoundRunCursor();
+			boundCursors.add(cursor);
+			return new PullStage() {
+				long position, end;
+				@Override void reset() { position = 0; long key = read(probe.key); end = key == -1L ? 0 : cursor.bind(key); }
+				@Override boolean advance() {
+					while (position < end) {
+						poll();
+						long at = position++;
+						if (probe.ctxActive()) {
+							long ctx = cursor.contextAt(at);
+							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) continue;
+							if (probe.ctxCol >= 0) v[probe.ctxCol] = ctx;
+						}
+						v[probe.valueCol] = cursor.neighborAt(at);
+						return true;
+					}
+					return false;
+				}
+			};
+		}
+		if (node instanceof EnumerateAdjKeys keys && !keys.wildcard) {
+			int site = telemetry && keys.sipDriven ? registerImplicitSipDriven(keys) : -1;
+			return new PullStage() {
+				NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor;
+				long key, position, end;
+				@Override void reset() { position = end = 0; cursor = context.adjacencies[keys.adjacency].openKeyRunCursor(); }
+				@Override boolean advance() {
+					if (cursor == null) return false;
+					while (true) {
+						while (position < end) {
+							poll();
+							long at = position++;
+							if (keys.ctxActive()) {
+								long ctx = cursor.contextAt(at);
+								if (!ctxAccepted(ctx, keys.ctxMatch, keys.ctxExcludeDefault)) continue;
+								if (keys.ctxCol >= 0) v[keys.ctxCol] = ctx;
+							}
+							v[keys.keyCol] = key;
+							v[keys.valueCol] = cursor.neighborAt(at);
+							return true;
+						}
+						poll();
+						if (!cursor.advance()) return false;
+						key = cursor.key();
+						if (site >= 0) implicitSipDriven[site]++;
+						if (keys.valueCol < 0) { v[keys.keyCol] = key; return true; }
+						position = 0; end = cursor.runSize();
+					}
+				}
+				@Override void release() {
+					var owned = cursor; cursor = null; KernelRuntime.closeCursor(owned, null);
+				}
+			};
+		}
+		if (node instanceof ScanQuad scan) {
+			return new PullStage() {
+				final long[] values = new long[4];
+				KernelQuadCursor cursor;
+				@Override void reset() {
+					cursor = context.scanner.open(scan.scan,
+							scan.terms[0] == null ? -1L : read(scan.terms[0]), scan.terms[1] == null ? -1L : read(scan.terms[1]),
+							scan.terms[2] == null ? -1L : read(scan.terms[2]), scan.terms[3] == null ? -1L : read(scan.terms[3]));
+				}
+				@Override boolean advance() {
+					KernelRuntime.checkCancelled(cancel);
+					int count = cursor.fill(values, 1);
+					if (count == 0) return false;
+					if (count != 1) throw new IllegalStateException("scan cursor exceeded row demand");
+					for (int i = 0; i < 4; i++) if (scan.outCols[i] >= 0) v[scan.outCols[i]] = values[i];
+					return true;
+				}
+				@Override void release() {
+					KernelQuadCursor owned = cursor; cursor = null; KernelRuntime.closeScanCursor(owned, null);
+				}
+			};
+		}
+		if (node instanceof Union union) {
+			PullPipeline[] branches = new PullPipeline[union.branches.size()];
+			for (int i = 0; i < branches.length; i++) branches[i] = new PullPipeline(union.branches.get(i));
+			return new PullStage() {
+				int branch;
+				boolean opened;
+				@Override void reset() { branch = 0; opened = false; }
+				@Override boolean advance() {
+					while (branch < branches.length) {
+						if (!opened) {
+							for (int col : union.resetColumns()) v[col] = -1L;
+							branches[branch].reset(); opened = true;
+						}
+						if (branches[branch].next()) return true;
+						branches[branch].close();
+						System.arraycopy(saved, 0, v, 0, v.length);
+						branch++; opened = false;
+					}
+					return false;
+				}
+				@Override void release() { if (opened && branch < branches.length) branches[branch].close(); }
+			};
+		}
+		if (node instanceof LeftGroup left) {
+			PullPipeline arm = new PullPipeline(left.arm);
+			return new PullStage() {
+				boolean matched, nullSent;
+				@Override void reset() { matched = nullSent = false; arm.reset(); }
+				@Override boolean advance() {
+					if (arm.next()) { matched = true; return true; }
+					arm.close();
+					if (!matched && !nullSent) {
+						nullSent = true;
+						System.arraycopy(saved, 0, v, 0, v.length);
+						for (int col : left.resetColumns()) v[col] = -1L;
+						return true;
+					}
+					return false;
+				}
+				@Override void release() { arm.close(); }
+			};
+		}
+		if (node instanceof LexicalFrameLeftJoin lexical) {
+			PullPipeline left = new PullPipeline(lexical.left);
+			PullPipeline right = new PullPipeline(lexical.right);
+			return new PullStage() {
+				final long[] leftRow = new long[kernel.columnCount];
+				boolean rightActive, rightExists;
+				@Override void reset() {
+					rightActive = rightExists = false;
+					clearLexicalFrame(lexical.problemCols);
+					left.reset();
+				}
+				@Override boolean advance() {
+					while (true) {
+						if (rightActive) {
+							while (right.next()) {
+								rightExists = true; // incompatibility is not an empty right relation
+								boolean compatible = true;
+								for (int col : lexical.problemCols) {
+									long expected = saved[col], actual = v[col];
+									if (expected != -1L && actual != -1L && expected != actual) {
+										compatible = false;
+										break;
+									}
+								}
+								if (compatible) {
+									for (int col : lexical.problemCols) v[col] = saved[col];
+									return true;
+								}
+							}
+							right.close();
+							rightActive = false;
+							if (!rightExists) {
+								System.arraycopy(leftRow, 0, v, 0, v.length);
+								for (int col : lexical.resetColumns()) v[col] = -1L;
+								for (int col : lexical.problemCols) v[col] = saved[col];
+								return true;
+							}
+						}
+						clearLexicalFrame(lexical.problemCols);
+						if (!left.next()) return false;
+						System.arraycopy(v, 0, leftRow, 0, v.length);
+						clearLexicalFrame(lexical.problemCols);
+						right.reset();
+						rightActive = true;
+						rightExists = false;
+					}
+				}
+				@Override void release() {
+					Throwable failure = null;
+					try { right.close(); }
+					catch (RuntimeException | Error problem) { failure = problem; }
+					try { left.close(); }
+					catch (RuntimeException | Error problem) {
+						if (failure == null) failure = problem;
+						else if (failure != problem) failure.addSuppressed(problem);
+					}
+					KernelRuntime.rethrowCloseFailure(failure);
+				}
+			};
+		}
+
+		if (node instanceof HashProbe probe) {
+			return new PullStage() {
+				KernelRuntime.LongRowMap table;
+				int match;
+				@Override void reset() {
+					table = hashTables[probe.tableId];
+					long[] key = hashKeyScratch[probe.tableId];
+					for (int i = 0; i < probe.keys.length; i++) key[i] = read(probe.keys[i]);
+					match = table.lookup(key);
+				}
+				@Override boolean advance() {
+					if (match < 0) return false;
+					for (int i = 0; i < probe.dstCols.length; i++) v[probe.dstCols[i]] = table.payload(match, i);
+					match = table.next(match);
+					return true;
+				}
+			};
+		}
+		if (node instanceof EnumerateEntry || node instanceof BindAlias || node instanceof BindHook
+				|| node instanceof FilterResidual || LmdbNativeKernelIr.isFilter(node)
+				|| node instanceof FilterEntryCompatible || node instanceof Exists || node instanceof HashBuild) {
+			Op scalar = buildNode(node, () -> true, false);
+			return new PullStage() {
+				boolean done;
+				@Override void reset() { done = false; }
+				@Override boolean advance() { if (done) return false; done = true; return scalar.run(); }
+			};
+		}
+		// Pure native producers not yet equipped with a pull cursor retain their existing implementation.
+		// Materialize THIS node, never its downstream delegated continuation. Hash builds are already blocking.
+		// Unsafe lexical operators from slot lowering arrive as one PlanRows node, retaining evaluator semantics.
+		return new PullStage() {
+			final List<long[]> rows = new ArrayList<>();
+			final Op collect = buildNode(node, () -> { rows.add(v.clone()); return false; }, false);
+			int position;
+			@Override void reset() { position = 0; rows.clear(); collect.run(); }
+			@Override boolean advance() {
+				if (position == rows.size()) return false;
+				System.arraycopy(rows.get(position++), 0, v, 0, v.length);
+				return true;
+			}
+			@Override void release() { rows.clear(); }
+		};
 	}
 
 	int retainedRowCapacityForTest() {
@@ -2312,7 +2696,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	 * per-prefix-scoped residual set, or whole-row hash when alignedCount == 0), then append — with the unordered-limit
 	 * early cutoff expressed as a pipeline short-circuit ({@code true} unwinds every loop).
 	 */
-	private boolean emitRowTerminal() {
+	private boolean prepareEmitRow() {
 		for (int i = 0; i < emit.cols.length; i++) {
 			rowScratch[i] = v[emit.cols[i]];
 		}
@@ -2343,6 +2727,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				return false;
 			}
 		}
+		return true;
+	}
+
+	private boolean emitRowTerminal() {
+		if (!prepareEmitRow()) return false;
 		if (emitCutoffCap >= 0 && outCount >= emitCutoffCap) {
 			return true;
 		}

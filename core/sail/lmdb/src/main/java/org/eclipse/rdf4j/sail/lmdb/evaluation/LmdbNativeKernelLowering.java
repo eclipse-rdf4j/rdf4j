@@ -368,7 +368,7 @@ final class LmdbNativeKernelLowering {
 		List<SlotPlan> optionalArms = new ArrayList<>(0);
 		List<MaskedFilter> outerFilters = new ArrayList<>(0);
 		SlotPlan core = arg;
-		while (true) {
+		while (SlotPlan.encounterOrderReplaySafe(arg)) {
 			if (core instanceof LeftJoinPlan) {
 				LeftJoinPlan leftJoin = (LeftJoinPlan) core;
 				if (leftJoin.lexicalSharedSlots != null) {
@@ -419,7 +419,7 @@ final class LmdbNativeKernelLowering {
 			int[] distinctSlots, java.util.Set<Long> scanPredicates, boolean scanVariablePredicates) {
 		List<MaskedFilter> outerFilters = new ArrayList<>(0);
 		SlotPlan core = arg;
-		while (core instanceof FilterPlan) {
+		while (SlotPlan.encounterOrderReplaySafe(arg) && core instanceof FilterPlan) {
 			FilterPlan filterPlan = (FilterPlan) core;
 			outerFilters.add(new MaskedFilter(filterPlan.filter, filterPlan.filterMask));
 			core = filterPlan.arg;
@@ -938,7 +938,7 @@ final class LmdbNativeKernelLowering {
 		// around the producer. Peel the wrapper chain, collecting the conditions, then lower the core.
 		List<MaskedFilter> filters = new ArrayList<>();
 		SlotPlan core = arg;
-		while (true) {
+		while (SlotPlan.encounterOrderReplaySafe(arg)) {
 			if (core instanceof FilterPlan) {
 				FilterPlan filterPlan = (FilterPlan) core;
 				filters.add(new MaskedFilter(filterPlan.filter, filterPlan.filterMask));
@@ -1997,7 +1997,8 @@ final class LmdbNativeKernelLowering {
 		 * flatten (see {@code canFlatten}), so descending it is not an optimisation — it is the only way the kernel
 		 * tier sees such a plan at all. Left before right preserves the tree's own binding flow, and that is exactly
 		 * what the emitted pipeline is: a nested-loop chain. Filters are gathered rather than placed here because
-		 * {@code lowerFilterStrict} applies all of them after the last producer, which is always sound; their
+		 * {@code lowerFilterStrict} can place replay-safe guards after the last producer. Observable operands instead
+		 * use {@code lowerOrderedOperand}, which preserves filter scope and encounter order; their
 		 * {@code plannedDepth} is an interpreted-engine placement hint the kernel never reads, so splicing a nested
 		 * {@code MultiJoinPlan}'s filters in unadjusted is safe.
 		 */
@@ -2006,6 +2007,12 @@ final class LmdbNativeKernelLowering {
 		}
 
 		private boolean lowerJoinOperand(SlotPlan plan, List<MaskedFilter> filters, RowState row, boolean top) {
+			// A SERVICE, volatile expression, lexical subquery, or future unknown operator must not be
+			// flattened into the reorderable bag. Keep its evaluation boundary, not the whole query,
+			// on the semantic cursor. The same boundary is consumed by both kernel tiers.
+			if (!SlotPlan.encounterOrderReplaySafe(plan)) {
+				return lowerOrderedOperand(plan, row);
+			}
 			if (plan == EmptyPlan.INSTANCE) {
 				lowerPlanRows(plan, 0L);
 				return true;
@@ -2134,6 +2141,49 @@ final class LmdbNativeKernelLowering {
 			}
 			reason = reasonPrefix + (top ? "unsupported:" : "child:") + plan.getClass().getSimpleName();
 			return false;
+		}
+
+		/**
+		 * Lower an order/effect-sensitive tree without collecting a child's filters into its parent.
+		 * In particular FILTER(left) JOIN SERVICE must reject before opening the service, whereas
+		 * FILTER(left JOIN SERVICE) must not suppress the service's observable error by moving left.
+		 * Unknown leaves use the existing correlated PlanRows SPI; their IDs are imported by the
+		 * owning SlotPlan, never copied across remote dictionary authorities.
+		 */
+		private boolean lowerOrderedOperand(SlotPlan plan, RowState row) {
+			if (plan instanceof JoinPlan join) {
+				return lowerOrderedChild(join.left, row) && lowerOrderedChild(join.right, row);
+			}
+			if (plan instanceof FilterPlan filter) {
+				if (!lowerOrderedChild(filter.arg, row)) {
+					return false;
+				}
+				// Pin the filter to its original complete input mapping, including volatile expressions.
+				filterDepthFloor = Math.max(filterDepthFloor, depth());
+				return lowerFilterStrict(new MaskedFilter(filter.filter, filter.filterMask));
+			}
+			if (plan instanceof UnionPlan union) {
+				return lowerUnionOperand(union, row);
+			}
+			// OPTIONAL/MINUS/lexical frames keep the scope that decides null-extension, compatibility,
+			// and query-fatal effects. Their enclosing joins still compose with native IR producers.
+			boolean lowered = lowerNativeOperator(plan);
+			filterDepthFloor = Math.max(filterDepthFloor, depth());
+			return lowered;
+		}
+
+		/** Complete each ordered operand's filters before lowering the next operand. */
+		private boolean lowerOrderedChild(SlotPlan plan, RowState row) {
+			List<MaskedFilter> localFilters = new ArrayList<>();
+			if (!lowerJoinOperand(plan, localFilters, row, false)) {
+				return false;
+			}
+			for (MaskedFilter filter : localFilters) {
+				if (!lowerFilterStrict(filter)) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		/**
