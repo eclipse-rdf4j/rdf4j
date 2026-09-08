@@ -6,6 +6,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
 import java.util.Arrays;
 import java.util.Objects;
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 
@@ -150,44 +151,51 @@ public final class KernelExpansionCursors {
     }
 
     /**
-     * Sorted unsigned multiset intersection. Equal runs remain factorized as duplicate ranges. Row replay uses a
-     * mixed-radix counter, so the first LIMIT result does not require a potentially overflowing product. Consumers
-     * needing an exact signed-long group count can explicitly request {@link #groupMultiplicity()} instead.
+     * Sorted unsigned multiset intersection. A cached frontier retains the value already read at each source
+     * position. In particular, the first value after a duplicate group is not read again by the next group.
+     * Equal runs remain factorized as duplicate ranges; row replay never has to multiply those ranges.
      */
     public static final class Intersection extends Values {
         private NativeAdjacency[] views;
-        private long[] handles, positions, sizes, duplicates, digits, keys;
-        private boolean group;
+        private long[] handles, positions, sizes, heads, duplicates, digits, keys;
+        private boolean group, initialized, borrowedUnavailable;
+        private BorrowedPair borrowed;
+
         public Intersection(NativeAdjacency[] views, KernelCancellation cancellation) {
             super(cancellation);
             if (views.length < 1) throw new IllegalArgumentException("intersection arity");
             this.views = views.clone();
             int n = views.length;
-            handles = new long[n]; positions = new long[n]; sizes = new long[n]; duplicates = new long[n]; digits = new long[n]; keys = new long[n];
+            handles = new long[n]; positions = new long[n]; sizes = new long[n]; heads = new long[n];
+            duplicates = new long[n]; digits = new long[n]; keys = new long[n];
             for (NativeAdjacency view : this.views) Objects.requireNonNull(view);
             done = true;
         }
+
         public Intersection(NativeAdjacency[] views, long[] keys, KernelCancellation cancellation) {
             this(views, cancellation);
             bind(keys);
         }
-        /** Set one input key, then call bind(). For generated fixed-arity code this needs no temporary key array. */
+
+        /** Set one input key, then call bind(). Generated fixed-arity code needs no temporary key array. */
         public void key(int index, long key) {
             if (views == null) throw new IllegalStateException("closed intersection");
             keys[index] = key;
         }
+
         public void bind(long[] sourceKeys) {
             if (views == null) throw new IllegalStateException("closed intersection");
             if (sourceKeys.length != keys.length) throw new IllegalArgumentException("intersection arity");
             System.arraycopy(sourceKeys, 0, keys, 0, keys.length);
             bind();
         }
-        /** Rebind one non-reentrant operator activation, retaining only its reusable primitive scratch arrays. */
+
+        /** Rebind one non-reentrant activation, retaining primitive scratch but no previous frontier state. */
         public void bind() {
             if (views == null) throw new IllegalStateException("closed intersection");
-            done = true; group = false; tick = 0;
+            done = true; group = false; initialized = false; tick = 0;
             KernelRuntime.checkCancelled(cancellation);
-            for (int i=0; i<views.length; i++) {
+            for (int i = 0; i < views.length; i++) {
                 positions[i] = 0;
                 if (keys[i] == -1L) return;
                 handles[i] = views[i].find(keys[i]);
@@ -198,75 +206,290 @@ public final class KernelExpansionCursors {
             }
             done = false;
         }
+
         @Override public boolean next() {
             if (done) return false;
             poll();
             if (group) {
-                for (int i=digits.length-1; i>=0; i--) {
-                    if (digits[i] < duplicates[i]-1) { digits[i]++; return true; }
-                    digits[i]=0;
+                for (int i = digits.length - 1; i >= 0; i--) {
+                    if (digits[i] < duplicates[i] - 1) { digits[i]++; return true; }
+                    digits[i] = 0;
                 }
                 group = false;
             }
             return nextGroup();
         }
+
         /** Advances past the previous duplicate group without enumerating its remaining combinations. */
         public boolean nextGroup() {
             if (done) return false;
             KernelRuntime.checkCancelled(cancellation);
+            return advanceGroup();
+        }
+
+        private boolean advanceGroup() {
+            if (done) return false;
+            poll();
             group = false;
+            if (!initialized) {
+                for (int i = 0; i < views.length; i++) heads[i] = views[i].neighborAt(handles[i], 0L);
+                initialized = true;
+            }
+            return views.length == 2 ? nextPair() : nextMany();
+        }
+
+        /** Fixed two-input merge: advance only the smaller frontier, without scanning an arity loop. */
+        private boolean nextPair() {
+            while (positions[0] < sizes[0] && positions[1] < sizes[1]) {
+                poll();
+                long left = heads[0], right = heads[1];
+                if (left == right) {
+                    value = left;
+                    consumeGroup(0, left);
+                    consumeGroup(1, left);
+                    group = true;
+                    return true;
+                }
+                if (Long.compareUnsigned(left, right) < 0) advance(0, right, false);
+                else advance(1, left, false);
+            }
+            done = true;
+            return false;
+        }
+
+        private boolean nextMany() {
             while (true) {
-                poll(); long maximum = 0; boolean first = true, equal = true;
-                for (int i=0; i<views.length; i++) {
+                poll();
+                if (positions[0] >= sizes[0]) { done = true; return false; }
+                long maximum = heads[0];
+                boolean equal = true;
+                for (int i = 1; i < views.length; i++) {
                     if (positions[i] >= sizes[i]) { done = true; return false; }
-                    long current = views[i].neighborAt(handles[i], positions[i]);
-                    if (first) { maximum=current; first=false; }
-                    else if (current != maximum) { equal=false; if (Long.compareUnsigned(current, maximum)>0) maximum=current; }
+                    long current = heads[i];
+                    if (current != maximum) {
+                        equal = false;
+                        if (Long.compareUnsigned(current, maximum) > 0) maximum = current;
+                    }
                 }
                 if (equal) {
                     value = maximum;
-                    for (int i=0; i<views.length; i++) {
-                        long start = positions[i], limit = upperBound(i, start, maximum);
-                        duplicates[i] = limit-start; positions[i]=limit; digits[i]=0;
-                    }
-                    group = true; return true;
+                    for (int i = 0; i < views.length; i++) consumeGroup(i, maximum);
+                    group = true;
+                    return true;
                 }
-                for (int i=0; i<views.length; i++) positions[i] = lowerBound(i, positions[i], maximum);
+                for (int i = 0; i < views.length; i++) {
+                    if (Long.compareUnsigned(heads[i], maximum) < 0) advance(i, maximum, false);
+                }
             }
         }
+
+        private void consumeGroup(int index, long matched) {
+            long start = positions[index];
+            advance(index, matched, true);
+            duplicates[index] = positions[index] - start;
+            digits[index] = 0;
+        }
+
         public long groupMultiplicity() {
             if (!group || done) throw new IllegalStateException("no positioned group");
-            long count=1;
-            for (long duplicatesInRun : duplicates) count=Math.multiplyExact(count, duplicatesInRun);
+            if (duplicates.length == 2) return Math.multiplyExact(duplicates[0], duplicates[1]);
+            long count = 1;
+            for (long duplicatesInRun : duplicates) count = Math.multiplyExact(count, duplicatesInRun);
             return count;
         }
-        private long lowerBound(int i, long from, long target) { return seek(i, from, target, false); }
-        // The equality frontier already read and proved the first member. Do not load/decode it twice.
-        private long upperBound(int i, long from, long target) { return seek(i, from + 1L, target, true); }
-        // Exponential positioning followed by binary search. All increments are bounded by remaining run length,
-        // including runs near Long.MAX_VALUE. There is no signed doubling/addition overflow in galloping.
-        private long seek(int i, long from, long target, boolean upper) {
-            long end = sizes[i];
-            if (from == end || !before(i, from, target, upper)) return from;
-            long low=from+1, high=low, step=1;
-            while (high < end && before(i, high, target, upper)) {
-                poll(); low=high+1;
-                long remaining=end-high;
-                step=step>=remaining-step ? remaining : step+step;
-                high+=step;
+
+        /**
+         * Exact sum of subsequent groups. Immediately after bind this is the complete intersection cardinality.
+         * Like nextGroup(), it skips an already-positioned group (including any unreplayed duplicates in it).
+         * Suitable only when no per-value continuation, grouping key or expression needs the omitted members.
+         */
+        public long countRemainingGroups() {
+            if (done) return 0L;
+            KernelRuntime.checkCancelled(cancellation);
+            if (views.length == 1) {
+                long remaining = sizes[0] - positions[0];
+                done = true; group = false;
+                return remaining;
+            }
+            if (canStreamPair() && bindBorrowedPair()) {
+                done = true; group = false;
+                return borrowed.count();
+            }
+            long count = 0L;
+            while (advanceGroup()) count = Math.addExact(count, groupMultiplicity());
+            return count;
+        }
+
+        /** Sequential decode is local to balanced, sufficiently long count-only pairs; skew retains indexed seeks. */
+        private boolean canStreamPair() {
+            if (views.length != 2 || initialized || borrowedUnavailable) return false;
+            long shorter = Math.min(sizes[0], sizes[1]);
+            return shorter >= 256L && 1L + (Math.max(sizes[0], sizes[1]) - 1L) / shorter <= 8L;
+        }
+
+        private boolean bindBorrowedPair() {
+            if (borrowed == null) {
+                BorrowedFactorBatch.Source left = views[0].openFactorSource();
+                if (left == null) { borrowedUnavailable = true; return false; }
+                BorrowedFactorBatch.Source right;
+                try { right = views[1].openFactorSource(); }
+                catch (RuntimeException | Error failure) {
+                    KernelRuntime.closeCursor(left, failure); throw failure;
+                }
+                if (right == null) {
+                    borrowedUnavailable = true;
+                    left.close();
+                    return false;
+                }
+                try { borrowed = new BorrowedPair(left, right, cancellation); }
+                catch (RuntimeException | Error failure) {
+                    KernelRuntime.closeCursor(left, failure);
+                    KernelRuntime.closeCursor(right, failure);
+                    throw failure;
+                }
+            }
+            return borrowed.bind(views, handles, sizes);
+        }
+
+        /** Exact count over already stored weighted fibers; addresses stay behind their owning source readers. */
+        private static final class BorrowedPair implements AutoCloseable {
+            private final BorrowedFactorBatch.Source leftSource, rightSource;
+            private final BorrowedFactorBatch leftBatch, rightBatch;
+            private final KernelCancellation cancellation;
+            private FiberStream left, right;
+
+            BorrowedPair(BorrowedFactorBatch.Source left, BorrowedFactorBatch.Source right,
+                    KernelCancellation cancellation) {
+                this.leftSource = left; this.rightSource = right; this.cancellation = cancellation;
+                leftBatch = new BorrowedFactorBatch(left, 1); rightBatch = new BorrowedFactorBatch(right, 1);
+            }
+
+            boolean bind(NativeAdjacency[] views, long[] handles, long[] sizes) {
+                leftBatch.reset(1); rightBatch.reset(1);
+                if (!views[0].borrowRun(handles[0], leftBatch, 0)
+                        || !views[1].borrowRun(handles[1], rightBatch, 0)) return false;
+                if (leftBatch.count(0) != sizes[0] || rightBatch.count(0) != sizes[1])
+                    throw new IllegalStateException("borrowed intersection changed logical cardinality");
+                // Raw/heap long duplicate runs are cheaper to skip by indexed galloping than to scan into windows.
+                // Restrict this path to encoded fiber readers; do not impose a full scan on an existing raw view.
+                if (!encoded(leftBatch.kind(0)) || !encoded(rightBatch.kind(0))) return false;
+                if (left == null) left = new FiberStream(leftBatch, cancellation);
+                if (right == null) right = new FiberStream(rightBatch, cancellation);
+                left.bind(); right.bind();
+                return true;
+            }
+
+            private static boolean encoded(byte kind) {
+                return kind == BorrowedFactorBatch.CSF_PAGE || kind == BorrowedFactorBatch.ENCODED_RUN;
+            }
+
+            long count() {
+                boolean hasLeft = left.nextGroup(), hasRight = right.nextGroup();
+                long count = 0L;
+                while (hasLeft && hasRight) {
+                    int comparison = Long.compareUnsigned(left.value, right.value);
+                    if (comparison == 0) {
+                        count = Math.addExact(count, Math.multiplyExact(left.weight, right.weight));
+                        hasLeft = left.nextGroup();
+                        if (hasLeft) hasRight = right.nextGroup();
+                    } else if (comparison < 0) hasLeft = left.nextGroup();
+                    else hasRight = right.nextGroup();
+                }
+                return count;
+            }
+
+            @Override public void close() {
+                Throwable failure = KernelRuntime.closeResource(left, null);
+                failure = KernelRuntime.closeResource(right, failure);
+                failure = KernelRuntime.closeResource(leftSource, failure);
+                failure = KernelRuntime.closeResource(rightSource, failure);
+                KernelRuntime.rethrowCloseFailure(failure);
+            }
+        }
+
+        /** Coalesces fragments split by decode windows or page seams without flattening their weights. */
+        private static final class FiberStream implements AutoCloseable {
+            private final BorrowedFactorBatch.Cursor cursor;
+            private final KernelCancellation cancellation;
+            private final long[] values, weights;
+            private int index, end;
+            private long value, weight;
+            FiberStream(BorrowedFactorBatch batch, KernelCancellation cancellation) {
+                cursor = batch.cursor(256); this.cancellation = cancellation;
+                values = cursor.windowValues(); weights = cursor.windowWeights();
+            }
+            void bind() { cursor.bind(0); index = end = 0; }
+            private boolean available() {
+                if (index < end) return true;
+                KernelRuntime.checkCancelled(cancellation);
+                int size = cursor.nextWindow();
+                KernelRuntime.checkCancelled(cancellation);
+                index = cursor.windowStart(); end = index + size;
+                return size != 0;
+            }
+            boolean nextGroup() {
+                if (!available()) return false;
+                value = values[index]; weight = weights[index++];
+                while (available() && values[index] == value) weight = Math.addExact(weight, weights[index++]);
+                return true;
+            }
+            @Override public void close() { cursor.close(); }
+        }
+
+        /**
+         * Current head is already known to precede the requested bound. Read the following entry once, retaining
+         * the bounding value even when galloping is needed. Unique/aligned and adjacent merge steps take this first
+         * branch; long duplicate runs and skewed inputs use the bounded exponential/binary-search continuation.
+         */
+        private void advance(int index, long target, boolean upper) {
+            long end = sizes[index];
+            long next = positions[index] + 1L; // positioned index is strictly below size, including Long.MAX_VALUE
+            if (next == end) { positions[index] = end; return; }
+            long current = views[index].neighborAt(handles[index], next);
+            if (!before(current, target, upper)) {
+                positions[index] = next;
+                heads[index] = current;
+                return;
+            }
+            seekBeyond(index, next, target, upper);
+        }
+
+        // The entry at from was already read and precedes the bound. high is either the run end or a retained
+        // not-before candidate. Arithmetic is capped by the remaining run length; neither doubling nor addition wraps.
+        private void seekBeyond(int index, long from, long target, boolean upper) {
+            NativeAdjacency view = views[index];
+            long handle = handles[index], end = sizes[index];
+            long low = from + 1L, high = low, step = 1L, highValue = 0L;
+            while (high < end) {
+                poll();
+                long candidate = view.neighborAt(handle, high);
+                if (!before(candidate, target, upper)) { highValue = candidate; break; }
+                low = high + 1L;
+                long remaining = end - high;
+                step = step >= remaining - step ? remaining : step + step;
+                high += step;
             }
             while (low < high) {
-                poll(); long mid=low+((high-low)>>>1);
-                if (before(i,mid,target,upper)) low=mid+1; else high=mid;
+                poll();
+                long mid = low + ((high - low) >>> 1);
+                long candidate = view.neighborAt(handle, mid);
+                if (before(candidate, target, upper)) low = mid + 1L;
+                else { high = mid; highValue = candidate; }
             }
-            return low;
+            positions[index] = low;
+            if (low < end) heads[index] = highValue;
         }
-        private boolean before(int i,long at,long target,boolean upper) {
-            int comparison=Long.compareUnsigned(views[i].neighborAt(handles[i],at),target);
-            return upper ? comparison<=0 : comparison<0;
+
+        private static boolean before(long value, long target, boolean upper) {
+            int comparison = Long.compareUnsigned(value, target);
+            return upper ? comparison <= 0 : comparison < 0;
         }
+
         @Override public void close() {
-            super.close(); group=false; views=null; handles=positions=sizes=duplicates=digits=keys=null;
+            super.close(); group = initialized = false; views = null;
+            handles = positions = sizes = heads = duplicates = digits = keys = null;
+            BorrowedPair owned = borrowed; borrowed = null;
+            if (owned != null) owned.close();
         }
     }
 }

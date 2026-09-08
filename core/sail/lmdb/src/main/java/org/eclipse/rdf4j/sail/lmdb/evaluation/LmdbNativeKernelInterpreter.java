@@ -2248,11 +2248,14 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
         for(int i=0;i<views.length;i++) views[i]=context.adjacencies[intersect.adjacencies[i]];
         var cursor = new KernelExpansionCursors.Intersection(views, cancel);
         intersectionCursors.add(cursor);
+        final boolean totalCount = countGroups && LmdbNativeKernelIr.intersectionTotalCountTail(kernel);
         return () -> {
             for(int i=0;i<views.length;i++) cursor.key(i,read(intersect.keys[i]));
             cursor.bind();
             {
-                if(countGroups) {
+                if (totalCount) {
+                    updateTerminalBy(cursor.countRemainingGroups());
+                } else if(countGroups) {
                     while(cursor.nextGroup()) {
                         v[intersect.valueCol]=cursor.value();
                         boolean counted=false;

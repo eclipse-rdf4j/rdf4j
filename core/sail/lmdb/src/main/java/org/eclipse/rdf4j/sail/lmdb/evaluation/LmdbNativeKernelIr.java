@@ -62,6 +62,16 @@ final class LmdbNativeKernelIr {
         return true;
     }
 
+    /** No per-value continuation or grouping can observe the intersection members. */
+    static boolean intersectionTotalCountTail(Kernel kernel) {
+        if (!intersectionCountTail(kernel)) return false;
+        Aggregate aggregate = (Aggregate) kernel.terminal;
+        if (aggregate.groupCols.length != 0) return false;
+        for (AggregateOutput output : aggregate.outputs)
+            if (output.kind != AGG_COUNT_STAR || output.hookDistinct) return false;
+        return true;
+    }
+
 	static boolean weightedPlanCount(Kernel kernel) {
 		if (kernel.pipeline.size() != 1 || !(kernel.pipeline.get(0) instanceof PlanRows)
 				|| kernel.pipeline.get(0) instanceof PlanFactors

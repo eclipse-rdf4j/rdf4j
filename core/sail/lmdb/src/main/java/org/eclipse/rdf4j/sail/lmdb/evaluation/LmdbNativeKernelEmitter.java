@@ -7972,8 +7972,12 @@ final class LmdbNativeKernelEmitter {
                     .append(" = new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.Intersection(")
                     .append(views).append(", cancel);\n");
             for (int i=0; i<intersect.keys.length; i++) body.append(indent).append(cursor).append(".key(").append(i).append(", ").append(intersect.keys[i].token()).append(");\n");
-            body.append(indent).append(cursor).append(".bind();\n")
-                    .append(indent).append("while (").append(cursor).append(counted?".nextGroup()":".next()").append(") {\n")
+            body.append(indent).append(cursor).append(".bind();\n");
+            if (counted && LmdbNativeKernelIr.intersectionTotalCountTail(kernel)) {
+                body.append(indent).append("updateBy(").append(cursor).append(".countRemainingGroups());\n");
+                return;
+            }
+            body.append(indent).append("while (").append(cursor).append(counted?".nextGroup()":".next()").append(") {\n")
                     .append(indent).append("    v").append(intersect.valueCol).append(" = ").append(cursor).append(".value();\n");
             if(counted) {
                 StringBuilder needs=new StringBuilder();
