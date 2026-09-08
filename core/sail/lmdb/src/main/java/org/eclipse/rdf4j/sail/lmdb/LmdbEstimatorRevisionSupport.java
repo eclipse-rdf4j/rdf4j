@@ -25,8 +25,8 @@ final class LmdbEstimatorRevisionSupport {
 		return mixRevision(revision, frontierStatusRevision) & Long.MAX_VALUE;
 	}
 
-	static long frontierPlanningRevision(long legacyRevision, FrontierStatisticsStatus status) {
-		long revision = mixRevision(0x46524f4e54494552L, legacyRevision);
+	static long frontierPlanningRevision(FrontierStatisticsStatus status) {
+		long revision = 0x46524f4e54494552L;
 		revision = mixRevision(revision, status.availability().ordinal() + 1L);
 		revision = mixRevision(revision, status.fallbackReason().ordinal() + 1L);
 		revision = mixRevision(revision, status.generationId());

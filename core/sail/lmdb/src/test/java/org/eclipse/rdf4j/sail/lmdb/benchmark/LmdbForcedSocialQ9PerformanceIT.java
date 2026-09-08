@@ -57,7 +57,7 @@ class LmdbForcedSocialQ9PerformanceIT {
 		state.themeName = Theme.SOCIAL_MEDIA.name();
 		state.z_queryIndex = 9;
 		state.sketchEstimatorEnabled = true;
-		state.sketchEstimatorStrategy = "unified";
+
 		state.loadSelectedThemeOnly = true;
 		state.rebuildStoreBeforeSetup = false;
 		state.setup();

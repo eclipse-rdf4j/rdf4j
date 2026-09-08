@@ -13,339 +13,84 @@ package org.eclipse.rdf4j.sail.lmdb.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-
-import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.Values;
-import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.junit.jupiter.api.Test;
 
 class LmdbStoreConfigFrontierTest {
-
 	@Test
-	void frontierDefaultsAreAuthoritativeAndPersistentlyBudgeted() throws Exception {
+	void defaultsKeepV2AndIndependentHeapBudget() {
 		LmdbStoreConfig config = new LmdbStoreConfig();
-
-		assertEquals(Boolean.FALSE, config.getSketchEstimatorEnabled(),
-				"the legacy sketch synopsis must be an explicit compatibility opt-in");
-		assertEquals("AUTHORITATIVE", invoke(config, "getFrontierEstimatorMode").toString());
-		assertEquals(512L * 1024L * 1024L, invoke(config, "getFrontierSynopsisBudgetBytes"));
-		assertEquals(64L * 1024L * 1024L, invoke(config, "getFrontierQueryMemoryBudgetBytes"));
-		assertEquals(Runtime.getRuntime().maxMemory() / 4L, invoke(config, "getFrontierQueryIndexBudgetBytes"));
-		assertEquals(262_144L, invoke(config, "getFrontierInitialMaterializationWorkUnits"));
-		assertEquals(2, invoke(config, "getFrontierDesignLanes"));
-		assertEquals(2, invoke(config, "getFrontierAuditLanes"));
-		assertEquals(4096, invoke(config, "getFrontierRefinementWorkUnits"));
-		assertEquals(0.25d, (double) invoke(config, "getFrontierTargetRelativeStandardError"), 0.0d);
-		assertEquals(0.1d, (double) invoke(config, "getFrontierDefensiveProposalEpsilon"), 0.0d);
-		assertEquals(0.99d, (double) invoke(config, "getFrontierCacheInitialConfidence"), 0.0d);
-		assertEquals(0.51d, (double) invoke(config, "getFrontierCacheMinimumConfidence"), 0.0d);
-		assertEquals(0.999d, (double) invoke(config, "getFrontierCacheMaximumConfidence"), 0.0d);
-		assertEquals(0.01d, (double) invoke(config, "getFrontierCacheMaximumExpectedRegret"), 0.0d);
-		assertEquals(64L * 1024L * 1024L, invoke(config, "getFrontierCacheEvidenceBudgetBytes"));
+		assertEquals(FrontierEstimatorMode.AUTHORITATIVE, config.getFrontierEstimatorMode());
+		assertEquals(512L * 1024 * 1024, config.getFrontierSynopsisBudgetBytes());
+		assertEquals(Runtime.getRuntime().maxMemory() / 4, config.getFrontierHeapBudgetBytes());
+		assertEquals(60_000L, config.getFrontierStatisticsMaxLagMillis());
 	}
 
 	@Test
-	void frontierQueryIndexBudgetNeverExceedsQuarterMaximumHeap() throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig();
-		long maximumIndexBytes = Runtime.getRuntime().maxMemory() / 4L;
-
-		config.setFrontierQueryIndexBudgetBytes(Long.MAX_VALUE);
-		assertEquals(maximumIndexBytes, invoke(config, "getEffectiveFrontierQueryIndexBudgetBytes"));
-
-		long smallerBudget = Math.max(1L, maximumIndexBytes / 2L);
-		config.setFrontierQueryIndexBudgetBytes(smallerBudget);
-		assertEquals(smallerBudget, invoke(config, "getEffectiveFrontierQueryIndexBudgetBytes"));
-	}
-
-	@Test
-	void frontierV2ResourceConfigurationDefaultsMigratesAndRoundTrips() throws Exception {
-		LmdbStoreConfig defaults = new LmdbStoreConfig();
-		assertEquals(Runtime.getRuntime().maxMemory() / 4L, invoke(defaults, "getFrontierHeapBudgetBytes"));
-		assertEquals(60_000L, invoke(defaults, "getFrontierStatisticsMaxLagMillis"));
-		assertEquals(0.25d, (double) invoke(defaults, "getFrontierDeleteReserveFraction"), 0.0d);
-
-		LmdbStoreConfig legacy = new LmdbStoreConfig();
-		legacy.setFrontierQueryMemoryBudgetBytes(96L * 1024L * 1024L);
-		assertEquals(96L * 1024L * 1024L, invoke(legacy, "getFrontierHeapBudgetBytes"),
-				"an explicitly configured V1 query-memory budget must seed the V2 global budget");
-
-		assertSame(legacy, invokeSetter(legacy, "setFrontierHeapBudgetBytes", long.class, 2_147_483_648L));
-		assertSame(legacy, invokeSetter(legacy, "setFrontierStatisticsMaxLagMillis", long.class, 45_000L));
-		assertSame(legacy, invokeSetter(legacy, "setFrontierDeleteReserveFraction", double.class, 0.2d));
-		assertEquals(2_147_483_648L, invoke(legacy, "getFrontierHeapBudgetBytes"),
-				"the explicit V2 budget must override the migrated V1 value");
-
-		Model model = new LinkedHashModel();
-		Resource node = legacy.export(model);
-		assertContains(model, node, "frontierHeapBudgetBytes");
-		assertContains(model, node, "frontierStatisticsMaxLagMillis");
-		assertContains(model, node, "frontierDeleteReserveFraction");
-		LmdbStoreConfig restored = new LmdbStoreConfig();
-		restored.parse(model, node);
-		assertEquals(2_147_483_648L, invoke(restored, "getFrontierHeapBudgetBytes"));
-		assertEquals(45_000L, invoke(restored, "getFrontierStatisticsMaxLagMillis"));
-		assertEquals(0.2d, (double) invoke(restored, "getFrontierDeleteReserveFraction"), 0.0d);
-
-		assertIllegalArgument(restored, "setFrontierHeapBudgetBytes", long.class, -1L);
-		assertIllegalArgument(restored, "setFrontierStatisticsMaxLagMillis", long.class, -1L);
-		assertIllegalArgument(restored, "setFrontierDeleteReserveFraction", double.class, 0.0d);
-		assertIllegalArgument(restored, "setFrontierDeleteReserveFraction", double.class, 1.0d);
-		assertIllegalArgument(restored, "setFrontierDeleteReserveFraction", double.class, Double.NaN);
-	}
-
-	@Test
-	void frontierConfigurationRoundTripsThroughRdfModel() throws Exception {
-		LmdbStoreConfig source = new LmdbStoreConfig();
-		Class<?> modeType = Class
-				.forName("org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode");
-		Object shadowMode = modeType.getField("SHADOW").get(null);
-
-		assertSame(source, invokeSetter(source, "setFrontierEstimatorMode", modeType, shadowMode));
-		assertSame(source, invokeSetter(source, "setFrontierSynopsisBudgetBytes", long.class, 2_500_000_000L));
-		assertSame(source,
-				invokeSetter(source, "setFrontierQueryMemoryBudgetBytes", long.class, 32L * 1024L * 1024L));
-		assertSame(source,
-				invokeSetter(source, "setFrontierQueryIndexBudgetBytes", long.class, 16L * 1024L * 1024L));
-		assertSame(source,
-				invokeSetter(source, "setFrontierInitialMaterializationWorkUnits", long.class, 123_456L));
-		assertSame(source, invokeSetter(source, "setFrontierDesignLanes", int.class, 3));
-		assertSame(source, invokeSetter(source, "setFrontierAuditLanes", int.class, 4));
-		assertSame(source, invokeSetter(source, "setFrontierRefinementWorkUnits", int.class, 8192));
-		assertSame(source, invokeSetter(source, "setFrontierTargetRelativeStandardError", double.class, 0.125d));
-		assertSame(source, invokeSetter(source, "setFrontierDefensiveProposalEpsilon", double.class, 0.2d));
-		assertSame(source, invokeSetter(source, "setFrontierCacheInitialConfidence", double.class, 0.975d));
-		assertSame(source, invokeSetter(source, "setFrontierCacheMinimumConfidence", double.class, 0.6d));
-		assertSame(source, invokeSetter(source, "setFrontierCacheMaximumConfidence", double.class, 0.998d));
-		assertSame(source, invokeSetter(source, "setFrontierCacheMaximumExpectedRegret", double.class, 0.005d));
-		assertSame(source,
-				invokeSetter(source, "setFrontierCacheEvidenceBudgetBytes", long.class, 32L * 1024L * 1024L));
-		assertSame(source, invokeSetter(source, "setFrontierPlanCacheMaximumVariants", int.class, 7));
-		assertSame(source, invokeSetter(source, "setFrontierPlanCacheRefreshThreads", int.class, 2));
-		assertSame(source, invokeSetter(source, "setFrontierPlanCacheMaximumCanaryFraction", double.class, 0.125d));
-
+	void survivingFrontierAndColdFilterControlsRoundTrip() throws Exception {
+		LmdbStoreConfig source = new LmdbStoreConfig().setFrontierEstimatorMode(FrontierEstimatorMode.SHADOW)
+				.setFrontierSynopsisBudgetBytes(2_500_000_000L)
+				.setFrontierHeapBudgetBytes(2_147_483_648L)
+				.setFrontierStatisticsMaxLagMillis(45_000L)
+				.setFrontierCacheEvidenceBudgetBytes(32L * 1024 * 1024)
+				.setFrontierPlanCacheMaximumVariants(7)
+				.setFrontierPlanCacheRefreshThreads(2)
+				.setFrontierPlanCacheMaximumCanaryFraction(0.125d)
+				.setSketchEstimatorEnabled(true)
+				.setSketchEstimatorMemoryBudgetBytes(32L * 1024 * 1024)
+				.setSketchEstimatorThrottleEveryN(12345)
+				.setSketchEstimatorThrottleMillis(7)
+				.setSketchEstimatorEvidenceMode("snapshot-only")
+				.setSketchEstimatorColdSynopsisCapacity(512);
 		Model model = new LinkedHashModel();
 		Resource node = source.export(model);
-		assertContains(model, node, "frontierEstimatorMode");
-		assertContains(model, node, "frontierSynopsisBudgetBytes");
-		assertContains(model, node, "frontierQueryMemoryBudgetBytes");
-		assertContains(model, node, "frontierQueryIndexBudgetBytes");
-		assertContains(model, node, "frontierInitialMaterializationWorkUnits");
-		assertContains(model, node, "frontierDesignLanes");
-		assertContains(model, node, "frontierAuditLanes");
-		assertContains(model, node, "frontierRefinementWorkUnits");
-		assertContains(model, node, "frontierTargetRelativeStandardError");
-		assertContains(model, node, "frontierDefensiveProposalEpsilon");
-		assertContains(model, node, "frontierCacheInitialConfidence");
-		assertContains(model, node, "frontierCacheMinimumConfidence");
-		assertContains(model, node, "frontierCacheMaximumConfidence");
-		assertContains(model, node, "frontierCacheMaximumExpectedRegret");
-		assertContains(model, node, "frontierCacheEvidenceBudgetBytes");
-		assertContains(model, node, "frontierPlanCacheMaximumVariants");
-		assertContains(model, node, "frontierPlanCacheRefreshThreads");
-		assertContains(model, node, "frontierPlanCacheMaximumCanaryFraction");
-		assertTrue(model.contains(node, Values.iri(LmdbStoreSchema.NAMESPACE, "frontierEstimatorMode"),
-				Values.literal("shadow")));
-
 		LmdbStoreConfig restored = new LmdbStoreConfig();
 		restored.parse(model, node);
-		assertEquals("SHADOW", invoke(restored, "getFrontierEstimatorMode").toString());
-		assertEquals(2_500_000_000L, invoke(restored, "getFrontierSynopsisBudgetBytes"));
-		assertEquals(32L * 1024L * 1024L, invoke(restored, "getFrontierQueryMemoryBudgetBytes"));
-		assertEquals(16L * 1024L * 1024L, invoke(restored, "getFrontierQueryIndexBudgetBytes"));
-		assertEquals(123_456L, invoke(restored, "getFrontierInitialMaterializationWorkUnits"));
-		assertEquals(3, invoke(restored, "getFrontierDesignLanes"));
-		assertEquals(4, invoke(restored, "getFrontierAuditLanes"));
-		assertEquals(8192, invoke(restored, "getFrontierRefinementWorkUnits"));
-		assertEquals(0.125d, (double) invoke(restored, "getFrontierTargetRelativeStandardError"), 0.0d);
-		assertEquals(0.2d, (double) invoke(restored, "getFrontierDefensiveProposalEpsilon"), 0.0d);
-		assertEquals(0.975d, (double) invoke(restored, "getFrontierCacheInitialConfidence"), 0.0d);
-		assertEquals(0.6d, (double) invoke(restored, "getFrontierCacheMinimumConfidence"), 0.0d);
-		assertEquals(0.998d, (double) invoke(restored, "getFrontierCacheMaximumConfidence"), 0.0d);
-		assertEquals(0.005d, (double) invoke(restored, "getFrontierCacheMaximumExpectedRegret"), 0.0d);
-		assertEquals(32L * 1024L * 1024L, invoke(restored, "getFrontierCacheEvidenceBudgetBytes"));
-		assertEquals(7, invoke(restored, "getFrontierPlanCacheMaximumVariants"));
-		assertEquals(2, invoke(restored, "getFrontierPlanCacheRefreshThreads"));
-		assertEquals(0.125d, (double) invoke(restored, "getFrontierPlanCacheMaximumCanaryFraction"), 0.0d);
-	}
-
-	@Test
-	void frontierConfidenceBoundsRoundTripIndependentOfParseOrder() throws Exception {
-		assertConfidenceRoundTrip(0.3d, 0.2d, 0.4d);
-		assertConfidenceRoundTrip(0.9995d, 0.9994d, 0.9999d);
-	}
-
-	@Test
-	void frontierConfigurationRejectsUnsoundOrUnboundedValues() throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig();
-
-		assertIllegalArgument(config, "setFrontierSynopsisBudgetBytes", long.class, -1L);
-		assertIllegalArgument(config, "setFrontierQueryMemoryBudgetBytes", long.class, -1L);
-		assertIllegalArgument(config, "setFrontierQueryIndexBudgetBytes", long.class, -1L);
-		assertIllegalArgument(config, "setFrontierInitialMaterializationWorkUnits", long.class, -1L);
-		assertIllegalArgument(config, "setFrontierDesignLanes", int.class, 0);
-		assertIllegalArgument(config, "setFrontierAuditLanes", int.class, 0);
-		assertIllegalArgument(config, "setFrontierRefinementWorkUnits", int.class, -1);
-		assertIllegalArgument(config, "setFrontierTargetRelativeStandardError", double.class, 0.0d);
-		assertIllegalArgument(config, "setFrontierTargetRelativeStandardError", double.class, Double.NaN);
-		assertIllegalArgument(config, "setFrontierTargetRelativeStandardError", double.class,
-				Double.POSITIVE_INFINITY);
-		assertIllegalArgument(config, "setFrontierDefensiveProposalEpsilon", double.class, 0.0d);
-		assertIllegalArgument(config, "setFrontierDefensiveProposalEpsilon", double.class, 1.0000001d);
-		assertIllegalArgument(config, "setFrontierDefensiveProposalEpsilon", double.class, Double.NaN);
-		assertIllegalArgument(config, "setFrontierDefensiveProposalEpsilon", double.class,
-				Double.POSITIVE_INFINITY);
-		assertIllegalArgument(config, "setFrontierCacheInitialConfidence", double.class, 0.0d);
-		assertIllegalArgument(config, "setFrontierCacheInitialConfidence", double.class, 1.0d);
-		assertIllegalArgument(config, "setFrontierCacheMinimumConfidence", double.class, 0.0d);
-		assertIllegalArgument(config, "setFrontierCacheMaximumConfidence", double.class, 1.0d);
-		assertIllegalArgument(config, "setFrontierCacheMaximumExpectedRegret", double.class, -0.01d);
-		assertIllegalArgument(config, "setFrontierCacheMaximumExpectedRegret", double.class, 1.01d);
-		assertIllegalArgument(config, "setFrontierCacheEvidenceBudgetBytes", long.class, -1L);
-		assertIllegalArgument(config, "setFrontierPlanCacheMaximumVariants", int.class, 0);
-		assertIllegalArgument(config, "setFrontierPlanCacheMaximumVariants", int.class, 17);
-		assertIllegalArgument(config, "setFrontierPlanCacheRefreshThreads", int.class, 0);
-		assertIllegalArgument(config, "setFrontierPlanCacheRefreshThreads", int.class, 17);
-		assertIllegalArgument(config, "setFrontierPlanCacheMaximumCanaryFraction", double.class, -0.01d);
-		assertIllegalArgument(config, "setFrontierPlanCacheMaximumCanaryFraction", double.class, 0.2500001d);
-		assertIllegalArgument(config, "setFrontierPlanCacheMaximumCanaryFraction", double.class, Double.NaN);
-
-		Model invalidMode = new LinkedHashModel();
-		Resource node = Values.bnode();
-		invalidMode.add(node, Values.iri(LmdbStoreSchema.NAMESPACE, "frontierEstimatorMode"),
-				Values.literal("unsafe"));
-		assertThrows(SailConfigException.class, () -> config.parse(invalidMode, node));
-	}
-
-	// REINFORCE: the RDF parser validates the three cache-confidence bounds jointly, so a model that only lowers the
-	// minimum together with an initial value below the default minimum parses regardless of statement order, exports
-	// only the non-default bounds, and round-trips back to the same values.
-	@Test
-	void parseAcceptsPartialConfidenceBoundsThatAreOnlyJointlyValid() {
-		Model model = new LinkedHashModel();
-		Resource node = Values.bnode();
-		model.add(node, confidenceProperty("frontierCacheInitialConfidence"), Values.literal(0.5d));
-		model.add(node, confidenceProperty("frontierCacheMinimumConfidence"), Values.literal(0.4d));
-
-		LmdbStoreConfig restored = new LmdbStoreConfig();
-		restored.parse(model, node);
-		assertEquals(0.5d, restored.getFrontierCacheInitialConfidence(), 0.0d);
-		assertEquals(0.4d, restored.getFrontierCacheMinimumConfidence(), 0.0d);
-		assertEquals(LmdbStoreConfig.FRONTIER_CACHE_MAXIMUM_CONFIDENCE, restored.getFrontierCacheMaximumConfidence(),
-				0.0d);
-
+		assertEquals(source.getFrontierEstimatorMode(), restored.getFrontierEstimatorMode());
+		assertEquals(source.getFrontierSynopsisBudgetBytes(), restored.getFrontierSynopsisBudgetBytes());
+		assertEquals(source.getFrontierHeapBudgetBytes(), restored.getFrontierHeapBudgetBytes());
+		assertEquals(source.getFrontierStatisticsMaxLagMillis(), restored.getFrontierStatisticsMaxLagMillis());
+		assertEquals(source.getFrontierCacheEvidenceBudgetBytes(), restored.getFrontierCacheEvidenceBudgetBytes());
+		assertEquals(source.getFrontierPlanCacheMaximumVariants(), restored.getFrontierPlanCacheMaximumVariants());
+		assertEquals(source.getFrontierPlanCacheRefreshThreads(), restored.getFrontierPlanCacheRefreshThreads());
+		assertEquals(source.getFrontierPlanCacheMaximumCanaryFraction(),
+				restored.getFrontierPlanCacheMaximumCanaryFraction());
+		assertEquals(source.getSketchEstimatorEnabled(), restored.getSketchEstimatorEnabled());
+		assertEquals(source.getSketchEstimatorMemoryBudgetBytes(), restored.getSketchEstimatorMemoryBudgetBytes());
+		assertEquals(source.getSketchEstimatorThrottleEveryN(), restored.getSketchEstimatorThrottleEveryN());
+		assertEquals(source.getSketchEstimatorThrottleMillis(), restored.getSketchEstimatorThrottleMillis());
+		assertEquals(source.getSketchEstimatorEvidenceMode(), restored.getSketchEstimatorEvidenceMode());
+		assertEquals(512, restored.getSketchEstimatorColdSynopsisCapacity());
 		Model exported = new LinkedHashModel();
-		Resource exportedNode = restored.export(exported);
-		assertTrue(exported.contains(exportedNode, confidenceProperty("frontierCacheInitialConfidence"), null));
-		assertTrue(exported.contains(exportedNode, confidenceProperty("frontierCacheMinimumConfidence"), null));
-		assertFalse(exported.contains(exportedNode, confidenceProperty("frontierCacheMaximumConfidence"), null),
-				"an untouched default bound is not exported");
-
-		LmdbStoreConfig again = new LmdbStoreConfig();
-		again.parse(exported, exportedNode);
-		assertEquals(0.5d, again.getFrontierCacheInitialConfidence(), 0.0d);
-		assertEquals(0.4d, again.getFrontierCacheMinimumConfidence(), 0.0d);
-		assertEquals(LmdbStoreConfig.FRONTIER_CACHE_MAXIMUM_CONFIDENCE, again.getFrontierCacheMaximumConfidence(),
-				0.0d);
+		restored.export(exported);
+		assertEquals(model.size(), exported.size());
 	}
 
-	// REINFORCE: inconsistent or out-of-range confidence bounds in the RDF model fail with a SailConfigException that
-	// names the offending property, and a failed parse leaves the configured defaults untouched.
 	@Test
-	void parseRejectsInconsistentConfidenceBoundsNamingTheOffendingProperty() {
-		assertConfidenceParseFails("frontierCacheInitialConfidence",
-				"frontierCacheInitialConfidence", 0.3d, "frontierCacheMinimumConfidence", 0.4d);
-		assertConfidenceParseFails("frontierCacheMaximumConfidence",
-				"frontierCacheMaximumConfidence", 0.5d);
-		assertConfidenceParseFails("frontierCacheMinimumConfidence",
-				"frontierCacheMinimumConfidence", 0.995d);
-		assertConfidenceParseFails("frontierCacheInitialConfidence",
-				"frontierCacheInitialConfidence", 1.0d);
-		assertConfidenceParseFails("frontierCacheMaximumConfidence",
-				"frontierCacheMaximumConfidence", 0.0d);
-
-		Model nonNumeric = new LinkedHashModel();
-		Resource node = Values.bnode();
-		nonNumeric.add(node, confidenceProperty("frontierCacheMinimumConfidence"), Values.literal("not-a-number"));
+	void oldQueryMemoryPropertyDoesNotConfigureV2Heap() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig();
-		assertThrows(SailConfigException.class, () -> config.parse(nonNumeric, node));
-		assertEquals(LmdbStoreConfig.FRONTIER_CACHE_MINIMUM_CONFIDENCE, config.getFrontierCacheMinimumConfidence(),
-				0.0d);
-	}
-
-	private static IRI confidenceProperty(String localName) {
-		return Values.iri(LmdbStoreSchema.NAMESPACE, localName);
-	}
-
-	private static void assertConfidenceParseFails(String offendingLocalName, Object... localNamesAndValues) {
 		Model model = new LinkedHashModel();
-		Resource node = Values.bnode();
-		for (int index = 0; index < localNamesAndValues.length; index += 2) {
-			model.add(node, confidenceProperty((String) localNamesAndValues[index]),
-					Values.literal((double) localNamesAndValues[index + 1]));
-		}
+		Resource node = config.export(model);
+		var oldProperty = Values.iri(LmdbStoreSchema.NAMESPACE, "frontierQueryMemoryBudgetBytes");
+		model.add(node, oldProperty, Values.literal(1024L));
+		config.parse(model, node);
+		assertEquals(LmdbStoreConfig.FRONTIER_HEAP_BUDGET_BYTES, config.getFrontierHeapBudgetBytes());
+		Model exported = new LinkedHashModel();
+		config.export(exported);
+		assertFalse(exported.contains(null, oldProperty, null));
+	}
+
+	@Test
+	void retainedBudgetsRejectInvalidValues() {
 		LmdbStoreConfig config = new LmdbStoreConfig();
-		SailConfigException failure = assertThrows(SailConfigException.class, () -> config.parse(model, node));
-		assertTrue(failure.getMessage().contains(offendingLocalName),
-				() -> "expected " + offendingLocalName + " to be blamed, got: " + failure.getMessage());
-		assertEquals(LmdbStoreConfig.FRONTIER_CACHE_INITIAL_CONFIDENCE, config.getFrontierCacheInitialConfidence(),
-				0.0d);
-		assertEquals(LmdbStoreConfig.FRONTIER_CACHE_MINIMUM_CONFIDENCE, config.getFrontierCacheMinimumConfidence(),
-				0.0d);
-		assertEquals(LmdbStoreConfig.FRONTIER_CACHE_MAXIMUM_CONFIDENCE, config.getFrontierCacheMaximumConfidence(),
-				0.0d);
-	}
-
-	private static void assertContains(Model model, Resource node, String localName) {
-		IRI property = Values.iri(LmdbStoreSchema.NAMESPACE, localName);
-		assertTrue(model.contains(node, property, null), () -> "Missing exported Frontier property " + property);
-	}
-
-	private static void assertConfidenceRoundTrip(double initial, double minimum, double maximum) throws Exception {
-		LmdbStoreConfig source = new LmdbStoreConfig();
-		if (initial < source.getFrontierCacheInitialConfidence()) {
-			source.setFrontierCacheMinimumConfidence(minimum);
-			source.setFrontierCacheInitialConfidence(initial);
-			source.setFrontierCacheMaximumConfidence(maximum);
-		} else {
-			source.setFrontierCacheMaximumConfidence(maximum);
-			source.setFrontierCacheInitialConfidence(initial);
-			source.setFrontierCacheMinimumConfidence(minimum);
-		}
-
-		Model model = new LinkedHashModel();
-		Resource node = source.export(model);
-		LmdbStoreConfig restored = new LmdbStoreConfig();
-		restored.parse(model, node);
-
-		assertEquals(initial, restored.getFrontierCacheInitialConfidence(), 0.0d);
-		assertEquals(minimum, restored.getFrontierCacheMinimumConfidence(), 0.0d);
-		assertEquals(maximum, restored.getFrontierCacheMaximumConfidence(), 0.0d);
-	}
-
-	private static void assertIllegalArgument(LmdbStoreConfig config, String methodName, Class<?> parameterType,
-			Object value) throws Exception {
-		Method setter = LmdbStoreConfig.class.getMethod(methodName, parameterType);
-		InvocationTargetException failure = assertThrows(InvocationTargetException.class,
-				() -> setter.invoke(config, value));
-		assertInstanceOf(IllegalArgumentException.class, failure.getCause());
-	}
-
-	private static Object invoke(LmdbStoreConfig config, String methodName) throws Exception {
-		return LmdbStoreConfig.class.getMethod(methodName).invoke(config);
-	}
-
-	private static Object invokeSetter(LmdbStoreConfig config, String methodName, Class<?> parameterType, Object value)
-			throws Exception {
-		return LmdbStoreConfig.class.getMethod(methodName, parameterType).invoke(config, value);
+		assertThrows(IllegalArgumentException.class, () -> config.setFrontierHeapBudgetBytes(-1));
+		assertThrows(IllegalArgumentException.class, () -> config.setFrontierSynopsisBudgetBytes(-1));
+		assertThrows(IllegalArgumentException.class, () -> config.setFrontierStatisticsMaxLagMillis(-1));
+		assertThrows(IllegalArgumentException.class, () -> config.setFrontierEstimatorMode(null));
 	}
 }

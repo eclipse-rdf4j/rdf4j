@@ -89,25 +89,6 @@ class FrontierPayloadContractTest {
 	}
 
 	@Test
-	void laneFamiliesAndCounterBasedSeedStreamsAreAvailable() {
-		assertDoesNotThrow(() -> {
-			Class<?> laneFamily = Class.forName(
-					"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierLaneFamily");
-			Class<?> randomDomain = Class.forName(
-					"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierRandomDomain");
-			Class<?> seedSchedule = Class.forName(
-					"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierSeedSchedule");
-
-			FrontierStateKey.class.getMethod("laneFamily");
-			FrontierStateKey.class.getMethod("laneIndex");
-			FrontierStateKey.class.getMethod("maskStrata");
-			seedSchedule.getMethod("derive", long.class, randomDomain, long.class, long.class);
-			laneFamily.getEnumConstants();
-			randomDomain.getEnumConstants();
-		});
-	}
-
-	@Test
 	void learnedCalibrationHasAnExplicitComposableStateContract() {
 		assertDoesNotThrow(() -> {
 			EvidenceGuarantee guarantee = EvidenceGuarantee.valueOf("LEARNED_CALIBRATED");

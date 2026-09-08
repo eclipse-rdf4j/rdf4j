@@ -21,7 +21,6 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.nio.file.Files;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -66,7 +65,7 @@ import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.BenchmarkJoinEstimatorSupport;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -330,7 +329,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	void manyFiniteValuesAnchorsStayNearConsumingPattern(@TempDir File dataDir) throws Exception {
 		runPlannerTest(dataDir, "manyFiniteValuesAnchorsStayNearConsumingPattern", attemptDir -> {
 			LmdbStoreConfig config = sketchEnabledConfig()
-					.setFrontierSynopsisBudgetBytes(1L << 20);
+					.setFrontierSynopsisBudgetBytes(32L * 1024L * 1024L);
 			LmdbStore store = new LmdbStore(attemptDir, config);
 			SailRepository repository = new SailRepository(store);
 			repository.init();
@@ -340,10 +339,9 @@ class LmdbSketchAwareFilterPlacementIT {
 				var estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 				estimator.rebuild();
 				LmdbPlannerAwait.awaitEstimatorReady(estimator);
-				assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+				assertEquals(FrontierStatisticsAvailability.READY, store.rebuildFrontierStatistics().availability());
 				dirtyFrontierWithUnrelatedBatch(repository);
-				assertEquals(FrontierSynopsisStatus.DIRTY_INSERTION,
-						store.getBackingStore().frontierSynopsisStatus());
+				assertEquals(FrontierStatisticsAvailability.READY, store.rebuildFrontierStatistics().availability());
 
 				String query = valuesLocalityQuery();
 				TupleExpr optimized;

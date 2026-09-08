@@ -13,7 +13,6 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig.VALUE_CACHE_SIZE;
 
@@ -44,38 +43,11 @@ class LmdbStoreConfigTest {
 
 	private static final IRI INLINE_LITERALS = Values.iri(LmdbStoreSchema.NAMESPACE + "inlineLiterals");
 
-	private static final IRI SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT = Values
-			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorSubjectBucketCount");
-
-	private static final IRI SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT = Values
-			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorPredicateBucketCount");
-
-	private static final IRI SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT = Values
-			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorObjectBucketCount");
-
-	private static final IRI SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT = Values
-			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorContextBucketCount");
-
-	private static final IRI SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED = Values
-			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorContextPairSketchesEnabled");
-
 	private static final IRI SKETCH_ESTIMATOR_THROTTLE_EVERY_N = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorThrottleEveryN");
 
 	private static final IRI SKETCH_ESTIMATOR_THROTTLE_MILLIS = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorThrottleMillis");
-
-	private static final IRI SKETCH_ESTIMATOR_STRATEGY = Values
-			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorStrategy");
-
-	private static final IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT = Values
-			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorOmniWitnessCohortBucketCount");
-
-	private static final IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX = Values
-			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorOmniWitnessCohortBucketIndex");
-
-	private static final IRI SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES = Values
-			.iri(LmdbStoreSchema.NAMESPACE + "sketchEstimatorOmniWitnessCohortMaxEntries");
 
 	private static final IRI OPTIMIZER_SAMPLING_ENABLED = Values
 			.iri(LmdbStoreSchema.NAMESPACE + "optimizerSamplingEnabled");
@@ -138,22 +110,6 @@ class LmdbStoreConfigTest {
 
 		assertThat(invokeLongGetter(config, "getSketchEstimatorThrottleEveryN")).isEqualTo(1024L * 1024L);
 		assertThat(invokeLongGetter(config, "getSketchEstimatorThrottleMillis")).isEqualTo(2L);
-	}
-
-	@Test
-	void sketchEstimatorStrategyDefaultsToUnified() {
-		LmdbStoreConfig config = new LmdbStoreConfig();
-
-		assertThat(invokeStringGetter(config, "getSketchEstimatorStrategy")).isEqualTo("unified");
-	}
-
-	@Test
-	void sketchEstimatorOmniWitnessCohortDefaultsToSixteenBucketSeven() {
-		LmdbStoreConfig config = new LmdbStoreConfig();
-
-		assertThat(invokeIntGetter(config, "getSketchEstimatorOmniWitnessCohortBucketCount")).isEqualTo(16);
-		assertThat(invokeIntGetter(config, "getSketchEstimatorOmniWitnessCohortBucketIndex")).isEqualTo(7);
-		assertThat(invokeIntGetter(config, "getSketchEstimatorOmniWitnessCohortMaxEntries")).isEqualTo(1_000_000);
 	}
 
 	@Test
@@ -285,101 +241,6 @@ class LmdbStoreConfigTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(ints = { 4, 17, 1024 })
-	void testThatLmdbStoreConfigParseAndExportSketchEstimatorSubjectBucketCount(final int bucketCount) {
-		testParseAndExportReflectiveInt(
-				SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT,
-				Values.literal(bucketCount),
-				"getSketchEstimatorSubjectBucketCount",
-				bucketCount,
-				true
-		);
-	}
-
-	@ParameterizedTest
-	@ValueSource(ints = { 4, 17, 1024 })
-	void testThatLmdbStoreConfigParseAndExportSketchEstimatorPredicateBucketCount(final int bucketCount) {
-		testParseAndExportReflectiveInt(
-				SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT,
-				Values.literal(bucketCount),
-				"getSketchEstimatorPredicateBucketCount",
-				bucketCount,
-				true
-		);
-	}
-
-	@ParameterizedTest
-	@ValueSource(ints = { 4, 17, 1024 })
-	void testThatLmdbStoreConfigParseAndExportSketchEstimatorObjectBucketCount(final int bucketCount) {
-		testParseAndExportReflectiveInt(
-				SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT,
-				Values.literal(bucketCount),
-				"getSketchEstimatorObjectBucketCount",
-				bucketCount,
-				true
-		);
-	}
-
-	@ParameterizedTest
-	@ValueSource(ints = { 4, 17, 1024 })
-	void testThatLmdbStoreConfigParseAndExportSketchEstimatorContextBucketCount(final int bucketCount) {
-		testParseAndExportReflectiveInt(
-				SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT,
-				Values.literal(bucketCount),
-				"getSketchEstimatorContextBucketCount",
-				bucketCount,
-				true
-		);
-	}
-
-	@ParameterizedTest
-	@ValueSource(ints = { 0, 16, 64 })
-	void testThatLmdbStoreConfigParseAndExportSketchEstimatorOmniWitnessCohortBucketCount(final int bucketCount) {
-		testParseAndExportReflectiveInt(
-				SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_COUNT,
-				Values.literal(bucketCount),
-				"getSketchEstimatorOmniWitnessCohortBucketCount",
-				bucketCount,
-				true
-		);
-	}
-
-	@ParameterizedTest
-	@ValueSource(ints = { 0, 7, 41 })
-	void testThatLmdbStoreConfigParseAndExportSketchEstimatorOmniWitnessCohortBucketIndex(final int bucketIndex) {
-		testParseAndExportReflectiveInt(
-				SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_BUCKET_INDEX,
-				Values.literal(bucketIndex),
-				"getSketchEstimatorOmniWitnessCohortBucketIndex",
-				bucketIndex,
-				true
-		);
-	}
-
-	@ParameterizedTest
-	@ValueSource(ints = { 1, 1024, 1_000_000 })
-	void testThatLmdbStoreConfigParseAndExportSketchEstimatorOmniWitnessCohortMaxEntries(final int maxEntries) {
-		testParseAndExportReflectiveInt(
-				SKETCH_ESTIMATOR_OMNI_WITNESS_COHORT_MAX_ENTRIES,
-				Values.literal(maxEntries),
-				"getSketchEstimatorOmniWitnessCohortMaxEntries",
-				maxEntries,
-				true);
-	}
-
-	@ParameterizedTest
-	@ValueSource(booleans = { true, false })
-	void testThatLmdbStoreConfigParseAndExportSketchEstimatorContextPairSketchesEnabled(final boolean enabled) {
-		testParseAndExportReflective(
-				SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED,
-				Values.literal(enabled),
-				"getSketchEstimatorContextPairSketchesEnabled",
-				enabled,
-				enabled
-		);
-	}
-
-	@ParameterizedTest
 	@ValueSource(longs = { 0, 1, 2048 })
 	void testThatLmdbStoreConfigParseAndExportSketchEstimatorThrottleEveryN(final long throttleEveryN) {
 		testParseAndExportReflectiveLong(
@@ -401,37 +262,6 @@ class LmdbStoreConfigTest {
 				throttleMillis,
 				true
 		);
-	}
-
-	@ParameterizedTest
-	@ValueSource(strings = { "omni", "fastagms", "countmin", "countmin-dual", "tuple", "joinsketch" })
-	void testThatLmdbStoreConfigNormalizesLegacySketchEstimatorStrategy(final String strategy) {
-		final BNode implNode = bnode();
-		final LmdbStoreConfig lmdbStoreConfig = new LmdbStoreConfig();
-		final Model configModel = new ModelBuilder()
-				.add(implNode, SKETCH_ESTIMATOR_STRATEGY, Values.literal(strategy))
-				.build();
-
-		lmdbStoreConfig.parse(configModel, implNode);
-		assertThat(invokeStringGetter(lmdbStoreConfig, "getSketchEstimatorStrategy")).isEqualTo("unified");
-
-		final Model exportedModel = new LinkedHashModel();
-		final Resource exportImplNode = lmdbStoreConfig.export(exportedModel);
-
-		assertThat(exportedModel.contains(exportImplNode, SKETCH_ESTIMATOR_STRATEGY, null)).isFalse();
-	}
-
-	@Test
-	void invalidSketchEstimatorStrategyFailsClearly() {
-		final BNode implNode = bnode();
-		final LmdbStoreConfig lmdbStoreConfig = new LmdbStoreConfig();
-		final Model configModel = new ModelBuilder()
-				.add(implNode, SKETCH_ESTIMATOR_STRATEGY, Values.literal("bad-sketch"))
-				.build();
-
-		assertThatThrownBy(() -> lmdbStoreConfig.parse(configModel, implNode))
-				.hasMessageContaining("Sketch estimator strategy value required")
-				.hasMessageContaining("bad-sketch");
 	}
 
 	@ParameterizedTest

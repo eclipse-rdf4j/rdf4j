@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -120,7 +120,7 @@ class LmdbIndependentFiniteAnchorJoinPlanningTest {
 		try {
 			loadSyntheticMutualFollowData(repository);
 			LmdbPlannerAwait.rebuildSketchesIfEnabled(store);
-			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			assertEquals(FrontierStatisticsAvailability.READY, store.rebuildFrontierStatistics().availability());
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				TupleExpr optimized = (TupleExpr) connection.prepareTupleQuery(repeatedFollowsChainQuery())

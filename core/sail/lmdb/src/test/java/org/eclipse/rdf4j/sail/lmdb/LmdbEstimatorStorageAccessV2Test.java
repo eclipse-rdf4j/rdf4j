@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafEstimate;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
@@ -96,8 +97,9 @@ class LmdbEstimatorStorageAccessV2Test {
 				.thenReturn(new FrontierLeafEstimate(6_000.0d, 5_000.0d, 7_000.0d, 0.9d,
 						"frontier-v2-omni", FrontierFallbackReason.NONE));
 		LmdbEstimatorRuntime runtime = new LmdbEstimatorRuntime(valueStore, null, null, null, null, cardinalities,
-				null, null, LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.SHADOW, 0L, 0L, 0, 1.0d,
-						1.0d),
+				null,
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.SHADOW)),
 				() -> false, () -> true, statistics);
 
 		double rows = runtime.packedStatementPatternRows(null, PREDICATE, null, null, 0);

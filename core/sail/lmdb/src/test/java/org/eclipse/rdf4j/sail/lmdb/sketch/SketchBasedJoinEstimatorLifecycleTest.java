@@ -35,14 +35,6 @@ class SketchBasedJoinEstimatorLifecycleTest {
 	private static final IRI PREDICATE = VF.createIRI("urn:predicate");
 
 	@Test
-	void legacyStrategyNamesNormalizeToOneRuntimeStrategy() {
-		for (String name : List.of("omni", "fastagms", "countmin", "countmin-dual", "tuple", "joinsketch")) {
-			assertEquals(SketchBasedJoinEstimator.SketchStrategy.UNIFIED,
-					SketchBasedJoinEstimator.SketchStrategy.fromConfigValue(name, null));
-		}
-	}
-
-	@Test
 	void facadeDelegatesLifecycleToBoundedSynopsis() {
 		MutableStatementSource source = new MutableStatementSource();
 		Statement first = statement("s1", 1);

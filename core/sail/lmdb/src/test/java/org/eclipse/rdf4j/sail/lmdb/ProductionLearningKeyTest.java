@@ -218,11 +218,11 @@ class ProductionLearningKeyTest {
 		PackedCostEstimate learned = accessEstimate("lmdb-frontier+leo", 2, 0, 1);
 		PackedCostEstimate differentLookup = accessEstimate("lmdb-frontier+leo", 3, 0, 2);
 
-		assertEquals(LmdbFrontierPackedCostSession.learningAccessKernel(raw),
-				LmdbFrontierPackedCostSession.learningAccessKernel(learned),
+		assertEquals(LmdbMappedFrontierLearningSession.learningAccessKernel(raw),
+				LmdbMappedFrontierLearningSession.learningAccessKernel(learned),
 				"Applying feedback must not rename the physical access implementation");
-		assertNotEquals(LmdbFrontierPackedCostSession.learningAccessKernel(raw),
-				LmdbFrontierPackedCostSession.learningAccessKernel(differentLookup),
+		assertNotEquals(LmdbMappedFrontierLearningSession.learningAccessKernel(raw),
+				LmdbMappedFrontierLearningSession.learningAccessKernel(differentLookup),
 				"Different lookup shapes remain isolated physical kernels");
 	}
 

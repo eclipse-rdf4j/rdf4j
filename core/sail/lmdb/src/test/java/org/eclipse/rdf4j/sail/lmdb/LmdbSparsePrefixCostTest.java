@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -65,7 +65,7 @@ class LmdbSparsePrefixCostTest {
 
 		try {
 			assertTrue(store.forceFlushSketchEstimator(), "Expected sketch estimator to rebuild before planning");
-			assertTrue(store.rebuildFrontierSynopsis() == FrontierSynopsisStatus.READY,
+			assertTrue(store.rebuildFrontierStatistics().availability() == FrontierStatisticsAvailability.READY,
 					"Expected query-ready Frontier V2 statistics before accuracy assertions");
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -111,7 +111,7 @@ class LmdbSparsePrefixCostTest {
 
 		try {
 			assertTrue(store.forceFlushSketchEstimator(), "Expected sketch estimator to rebuild before planning");
-			assertTrue(store.rebuildFrontierSynopsis() == FrontierSynopsisStatus.READY,
+			assertTrue(store.rebuildFrontierStatistics().availability() == FrontierStatisticsAvailability.READY,
 					"Expected query-ready Frontier V2 statistics before accuracy assertions");
 
 			try (SailRepositoryConnection connection = repository.getConnection();
@@ -157,7 +157,7 @@ class LmdbSparsePrefixCostTest {
 			boolean ready = store.forceFlushSketchEstimator();
 			assertTrue(ready, "Expected stale snapshot reopen to force a rebuild, ready="
 					+ estimator.isReadyNonBlocking() + ", staleness=" + estimator.staleness());
-			assertTrue(store.rebuildFrontierSynopsis() == FrontierSynopsisStatus.READY,
+			assertTrue(store.rebuildFrontierStatistics().availability() == FrontierStatisticsAvailability.READY,
 					"Expected query-ready Frontier V2 statistics after stale snapshot rebuild");
 			try (SailRepositoryConnection connection = repository.getConnection();
 					LmdbBenchmarkQueryPlan plan = LmdbBenchmarkQueryPlan.prepare(store, connection,
@@ -181,13 +181,9 @@ class LmdbSparsePrefixCostTest {
 		config.setForceSync(false);
 		config.setValueDBSize(1_073_741_824L);
 		config.setTripleDBSize(config.getValueDBSize());
-		config.setSketchEstimatorSubjectBucketCount(4096);
-		config.setSketchEstimatorPredicateBucketCount(64);
-		config.setSketchEstimatorObjectBucketCount(4096);
-		config.setSketchEstimatorContextBucketCount(16);
-		config.setSketchEstimatorContextPairSketchesEnabled(false);
+
 		config.setSketchEstimatorEnabled(true);
-		config.setSketchEstimatorStrategy("omni");
+
 		config.setOptimizerSamplingMaxMillis(30_000L);
 		return config;
 	}

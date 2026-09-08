@@ -60,7 +60,6 @@ final class QueryPlanSnapshotCliOptions {
 	Path emitCsv;
 	Path lmdbDataDirectory;
 	Path lmdbStoreManifest;
-	Long lmdbFrontierQueryIndexBudgetBytes;
 	Path batchAuditCsv;
 	Path batchWorkerStatusFile;
 	Integer queryTimeoutSeconds;
@@ -108,7 +107,6 @@ final class QueryPlanSnapshotCliOptions {
 		copy.emitCsv = emitCsv;
 		copy.lmdbDataDirectory = lmdbDataDirectory;
 		copy.lmdbStoreManifest = lmdbStoreManifest;
-		copy.lmdbFrontierQueryIndexBudgetBytes = lmdbFrontierQueryIndexBudgetBytes;
 		copy.batchAuditCsv = batchAuditCsv;
 		copy.batchWorkerStatusFile = batchWorkerStatusFile;
 		copy.queryTimeoutSeconds = queryTimeoutSeconds;
@@ -254,9 +252,6 @@ final class QueryPlanSnapshotCliOptions {
 			case "--lmdb-store-manifest":
 				options.lmdbStoreManifest = Path.of(requireValue(args, ++i, arg));
 				break;
-			case "--lmdb-frontier-query-index-budget-bytes":
-				options.lmdbFrontierQueryIndexBudgetBytes = parseNonNegativeLong(requireValue(args, ++i, arg), arg);
-				break;
 			case "--lmdb-evidence-mode":
 				options.lmdbEvidenceMode = parseLmdbEvidenceMode(requireValue(args, ++i, arg), arg);
 				options.lmdbEvidenceModeExplicit = true;
@@ -312,10 +307,7 @@ final class QueryPlanSnapshotCliOptions {
 		if (options.lmdbStoreManifest != null && options.store != StoreType.LMDB) {
 			throw new IllegalArgumentException("--lmdb-store-manifest is only supported with --store lmdb.");
 		}
-		if (options.lmdbFrontierQueryIndexBudgetBytes != null && options.store != StoreType.LMDB) {
-			throw new IllegalArgumentException(
-					"--lmdb-frontier-query-index-budget-bytes is only supported with --store lmdb.");
-		}
+
 		if (options.writeLmdbStoreManifest) {
 			if (options.compareExisting || options.runAllThemeQueries || options.hasQueryInput()
 					|| options.batchDataPreflight || options.batchProcessIsolation) {
@@ -726,7 +718,6 @@ final class QueryPlanSnapshotCliOptions {
 		output.println("  --run-name <name>                    label a run / compare filter by run label");
 		output.println("  --lmdb-data-dir <path>               optional persistent LMDB directory");
 		output.println("  --lmdb-store-manifest <path>         immutable LMDB fixture identity");
-		output.println("  --lmdb-frontier-query-index-budget-bytes <long>=0");
 		output.println("                                       explicit reproducible Frontier query-index budget");
 		output.println("  --write-lmdb-store-manifest          record a closed LMDB fixture, then exit");
 		output.println("  --lmdb-evidence-mode <snapshot-only|adaptive>");

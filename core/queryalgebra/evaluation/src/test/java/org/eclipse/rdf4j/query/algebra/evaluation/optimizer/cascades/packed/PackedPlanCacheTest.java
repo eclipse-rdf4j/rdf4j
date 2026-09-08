@@ -26,7 +26,6 @@ import java.lang.reflect.Proxy;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.SplittableRandom;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -499,104 +498,6 @@ class PackedPlanCacheTest {
 		PackedPlanCache disabled = constructor.newInstance(8, 1, 0L);
 		PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), disabled, initial, frontierCostModel());
 		assertNull(findStructuralPlan.invoke(disabled, disabled.fingerprint(source), revised, source));
-	}
-
-	@Test
-	void adaptiveDecisionRiskControllerUsesAuditedLossInsteadOfRowThresholds() throws Exception {
-		Class<?> controllerType = Class.forName(
-				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.FrontierDecisionRiskController");
-		Constructor<?> constructor = controllerType.getDeclaredConstructor();
-		Method observe = controllerType.getDeclaredMethod(
-				"observeAudit", long.class, long.class, int.class, boolean.class, double.class);
-		Method select = controllerType.getDeclaredMethod(
-				"select", long.class, double.class, double.class, int.class);
-		Method confidence = Class.forName(controllerType.getName() + "$Decision").getDeclaredMethod("confidence");
-		Method expectedRegret = Class.forName(controllerType.getName() + "$Decision")
-				.getDeclaredMethod("expectedRegret");
-
-		Object initial = constructor.newInstance();
-		assertEquals(0.99d, confidence.invoke(select.invoke(initial, 7L, 100.0d, 5.0d, 4)));
-
-		assertEquals(0.51d, confidence.invoke(select.invoke(
-				controllerWithStableAudits(constructor, observe, 100), 7L, 100.0d, 5.0d, 4)));
-		assertEquals(0.75d, confidence.invoke(select.invoke(
-				controllerWithStableAudits(constructor, observe, 20), 7L, 100.0d, 5.0d, 4)));
-		assertEquals(0.95d, confidence.invoke(select.invoke(
-				controllerWithStableAudits(constructor, observe, 5), 7L, 100.0d, 5.0d, 4)));
-
-		Object observedFlip = constructor.newInstance();
-		observe.invoke(observedFlip, 7L, 1L, 0, false, 1.0d);
-		Object highConfidence = select.invoke(observedFlip, 7L, 100.0d, 5.0d, 4);
-		assertEquals(0.99d, confidence.invoke(highConfidence));
-		assertTrue((double) expectedRegret.invoke(highConfidence) <= 0.01d);
-
-		Object costlyFlip = constructor.newInstance();
-		observe.invoke(costlyFlip, 7L, 1L, 0, false, 5.0d);
-		Object maximumConfidence = select.invoke(costlyFlip, 7L, 100.0d, 5.0d, 4);
-		assertEquals(0.999d, confidence.invoke(maximumConfidence));
-		assertTrue((double) expectedRegret.invoke(maximumConfidence) <= 0.01d);
-
-		Object deduplicated = constructor.newInstance();
-		observe.invoke(deduplicated, 7L, 1L, 0, true, 0.0d);
-		observe.invoke(deduplicated, 7L, 1L, 0, false, 100.0d);
-		assertEquals(0.99d, confidence.invoke(select.invoke(deduplicated, 7L, 100.0d, 5.0d, 4)));
-	}
-
-	@Test
-	void pairedAnytimeSequencePreservesCovarianceAndExactZeroVariance() throws Exception {
-		Class<?> sequenceType = Class.forName(
-				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.FrontierPairedCostSequence");
-		Constructor<?> constructor = sequenceType.getDeclaredConstructor(double.class, int.class, double.class);
-		Method observe = sequenceType.getDeclaredMethod(
-				"observe", double.class, double.class, double.class, boolean.class);
-		Method observeAdjusted = sequenceType.getDeclaredMethod(
-				"observeAdjusted", double.class, double.class, boolean.class);
-		Method snapshot = sequenceType.getDeclaredMethod("snapshot");
-		Class<?> snapshotType = Class.forName(sequenceType.getName() + "$Snapshot");
-		Method upperBound = snapshotType.getDeclaredMethod("upperBound");
-		Method lowerBound = snapshotType.getDeclaredMethod("lowerBound");
-		Method independentUpperBound = snapshotType.getDeclaredMethod("independentUpperBound");
-		Method certifiesNegative = snapshotType.getDeclaredMethod("certifiesNegative");
-		Method covariance = snapshotType.getDeclaredMethod("covariance");
-
-		Object exact = constructor.newInstance(0.99d, 4, 10.0d);
-		observe.invoke(exact, 10.0d, 9.0d, 1.0d, true);
-		Object exactSnapshot = snapshot.invoke(exact);
-		assertEquals(-1.0d, upperBound.invoke(exactSnapshot));
-		assertTrue((boolean) certifiesNegative.invoke(exactSnapshot));
-
-		Object sampled = constructor.newInstance(0.99d, 4, 10.0d);
-		for (int index = 0; index < 2_000; index++) {
-			double oldCost = (index & 1) == 0 ? 100.0d : 200.0d;
-			observe.invoke(sampled, oldCost, oldCost - 1.0d, 0.5d, false);
-		}
-		Object firstLook = snapshot.invoke(sampled);
-		Object secondLook = snapshot.invoke(sampled);
-		assertTrue((double) covariance.invoke(firstLook) > 0.0d);
-		assertTrue((double) upperBound.invoke(firstLook) < (double) independentUpperBound.invoke(firstLook));
-		assertTrue((boolean) certifiesNegative.invoke(firstLook));
-		assertTrue((double) upperBound.invoke(secondLook) >= (double) upperBound.invoke(firstLook));
-
-		Object signedExact = constructor.newInstance(0.99d, 1, 10.0d);
-		observeAdjusted.invoke(signedExact, -1.0d, -0.5d, true);
-		Object signedSnapshot = snapshot.invoke(signedExact);
-		assertEquals(0.5d, lowerBound.invoke(signedSnapshot));
-		assertEquals(0.5d, upperBound.invoke(signedSnapshot));
-	}
-
-	@Test
-	void pairedConfidenceTiersMeetCoverageAndRegretAgainstExhaustiveOracle() {
-		for (double confidence : new double[] { 0.999d, 0.99d, 0.95d, 0.75d, 0.51d }) {
-			StatisticalFixtureResult result = assessConfidenceTier(confidence);
-			assertTrue(result.coverage() >= confidence,
-					() -> "tier " + confidence + " missed nominal anytime coverage: " + result);
-			assertTrue(result.falseReuseRate() <= 1.0d - confidence,
-					() -> "tier " + confidence + " exceeded its false-reuse budget: " + result);
-			assertTrue(result.expectedRegret() <= 0.01d,
-					() -> "tier " + confidence + " exceeded one-percent expected regret: " + result);
-			assertTrue(result.certifiedBeneficialPopulations() > 0,
-					() -> "tier " + confidence + " never certified a genuinely beneficial reuse: " + result);
-		}
 	}
 
 	@Test
@@ -1926,51 +1827,6 @@ class PackedPlanCacheTest {
 		return controller;
 	}
 
-	private static StatisticalFixtureResult assessConfidenceTier(double confidence) {
-		final int populations = 64;
-		final int populationSize = 4_096;
-		final double contributionBound = 4.0d;
-		int covered = 0;
-		int harmfulPopulations = 0;
-		int falseReuses = 0;
-		int beneficialCertifications = 0;
-		double regret = 0.0d;
-		for (int population = 0; population < populations; population++) {
-			double exhaustiveMeanDifference = (population & 1) == 0 ? 2.0d : -2.0d;
-			SplittableRandom random = new SplittableRandom(0x9e3779b97f4a7c15L ^ population);
-			FrontierPairedCostSequence sequence = new FrontierPairedCostSequence(
-					confidence, 4, contributionBound);
-			boolean populationCovered = true;
-			FrontierPairedCostSequence.Snapshot snapshot = null;
-			for (int observation = 1; observation <= populationSize; observation++) {
-				double centeredNoise = random.nextDouble(-1.5d, 1.5d);
-				sequence.observeAdjusted(0.0d, exhaustiveMeanDifference + centeredNoise, false);
-				if (observation >= 64 && Integer.bitCount(observation) == 1) {
-					snapshot = sequence.snapshot();
-					populationCovered &= snapshot.lowerBound() <= exhaustiveMeanDifference
-							&& snapshot.upperBound() >= exhaustiveMeanDifference;
-				}
-			}
-			if (populationCovered) {
-				covered++;
-			}
-			if (exhaustiveMeanDifference > 0.0d) {
-				harmfulPopulations++;
-				if (snapshot != null && snapshot.certifiesNegative()) {
-					falseReuses++;
-					regret += exhaustiveMeanDifference / 100.0d;
-				}
-			} else if (snapshot != null && snapshot.certifiesNegative()) {
-				beneficialCertifications++;
-			}
-		}
-		return new StatisticalFixtureResult(
-				covered / (double) populations,
-				falseReuses / (double) harmfulPopulations,
-				regret / populations,
-				beneficialCertifications);
-	}
-
 	private static TupleExpr connectedJoin(String leftObject, String rightObject) {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		return new Join(
@@ -2078,10 +1934,6 @@ class PackedPlanCacheTest {
 
 	private static BindingSet onlyRow(BindingSetAssignment assignment) {
 		return assignment.getBindingSets().iterator().next();
-	}
-
-	private record StatisticalFixtureResult(double coverage, double falseReuseRate, double expectedRegret,
-			int certifiedBeneficialPopulations) {
 	}
 
 	private static final class HashUnsafeValue implements Value {

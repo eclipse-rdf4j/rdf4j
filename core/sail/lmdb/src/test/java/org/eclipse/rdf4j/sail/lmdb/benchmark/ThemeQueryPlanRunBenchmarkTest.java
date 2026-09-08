@@ -80,7 +80,7 @@ class ThemeQueryPlanRunBenchmarkTest {
 	void createStoreConfigBudgetsOptimizerSamplingToHalfQueryTimeout() throws Exception {
 		ThemeQueryPlanRunBenchmark.BaseState state = new ThemeQueryPlanRunBenchmark.BaseState();
 		state.sketchEstimatorEnabled = true;
-		state.sketchEstimatorStrategy = "omni";
+
 		Method method = ThemeQueryPlanRunBenchmark.BaseState.class.getDeclaredMethod("createStoreConfig");
 		method.setAccessible(true);
 
@@ -90,17 +90,17 @@ class ThemeQueryPlanRunBenchmarkTest {
 	}
 
 	@Test
-	void createStoreConfigCarriesExplicitFrontierQueryMemoryBudget() throws Exception {
+	void createStoreConfigCarriesExplicitFrontierHeapBudget() throws Exception {
 		ThemeQueryPlanRunBenchmark.BaseState state = new ThemeQueryPlanRunBenchmark.BaseState();
 		long explicitBudget = 768L * 1024L * 1024L;
-		Field field = ThemeQueryPlanRunBenchmark.BaseState.class.getField("frontierQueryMemoryBudgetBytes");
+		Field field = ThemeQueryPlanRunBenchmark.BaseState.class.getField("frontierHeapBudgetBytes");
 		field.setLong(state, explicitBudget);
 		Method method = ThemeQueryPlanRunBenchmark.BaseState.class.getDeclaredMethod("createStoreConfig");
 		method.setAccessible(true);
 
 		LmdbStoreConfig config = (LmdbStoreConfig) method.invoke(state);
 
-		assertEquals(explicitBudget, config.getFrontierQueryMemoryBudgetBytes());
+		assertEquals(explicitBudget, config.getFrontierHeapBudgetBytes());
 	}
 
 	@Test
@@ -118,7 +118,7 @@ class ThemeQueryPlanRunBenchmarkTest {
 	void legacyEstimatorAliasKeepsCanonicalStoreDirectoryAcrossConfigInitialization() throws Exception {
 		ThemeQueryPlanRunBenchmark.BaseState state = new ThemeQueryPlanRunBenchmark.BaseState();
 		state.themeName = Theme.MEDICAL_RECORDS.name();
-		state.sketchEstimatorStrategy = "omni";
+
 		Method storeDirectoryMethod = ThemeQueryPlanRunBenchmark.BaseState.class.getDeclaredMethod("storeDirectory");
 		storeDirectoryMethod.setAccessible(true);
 		Method createConfigMethod = ThemeQueryPlanRunBenchmark.BaseState.class.getDeclaredMethod("createStoreConfig");
@@ -140,7 +140,7 @@ class ThemeQueryPlanRunBenchmarkTest {
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 0;
 		state.sketchEstimatorEnabled = false;
-		state.sketchEstimatorStrategy = "fastagms";
+
 		state.query = "SELECT * WHERE { ?s ?p ?o }";
 		setTheme(state, Theme.MEDICAL_RECORDS);
 
@@ -218,7 +218,7 @@ class ThemeQueryPlanRunBenchmarkTest {
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 2;
 		state.sketchEstimatorEnabled = false;
-		state.sketchEstimatorStrategy = "fastagms";
+
 		state.query = "SELECT * WHERE { ?s ?p ?o }";
 		setTheme(state, Theme.MEDICAL_RECORDS);
 
@@ -272,7 +272,7 @@ class ThemeQueryPlanRunBenchmarkTest {
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 0;
 		state.sketchEstimatorEnabled = false;
-		state.sketchEstimatorStrategy = "fastagms";
+
 		state.query = "SELECT * WHERE { ?s ?p ?o }";
 		setTheme(state, Theme.MEDICAL_RECORDS);
 		String lifecycleProperty = "rdf4j.benchmark.themeQueryPlanRun.planLifecycle";
@@ -343,7 +343,7 @@ class ThemeQueryPlanRunBenchmarkTest {
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 0;
 		state.sketchEstimatorEnabled = false;
-		state.sketchEstimatorStrategy = "fastagms";
+
 		state.query = "SELECT * WHERE { ?s ?p ?o }";
 		setTheme(state, Theme.MEDICAL_RECORDS);
 

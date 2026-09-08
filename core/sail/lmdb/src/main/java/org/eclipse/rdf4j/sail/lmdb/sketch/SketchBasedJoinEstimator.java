@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb.sketch;
 
 import java.nio.file.Path;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
@@ -37,20 +36,6 @@ public final class SketchBasedJoinEstimator implements AutoCloseable {
 		P,
 		O,
 		C
-	}
-
-	public enum SketchStrategy {
-		UNIFIED;
-
-		public static SketchStrategy fromConfigValue(String value, SketchStrategy fallback) {
-			if (value == null || value.isBlank()) {
-				return fallback == null ? UNIFIED : fallback;
-			}
-			return switch (value.trim().toLowerCase(Locale.ROOT).replace("-", "")) {
-			case "unified", "omni", "fastagms", "countmin", "countmindual", "tuple", "joinsketch" -> UNIFIED;
-			default -> fallback == null ? UNIFIED : fallback;
-			};
-		}
 	}
 
 	private final LmdbQuadSynopsisService service;
@@ -216,8 +201,5 @@ public final class SketchBasedJoinEstimator implements AutoCloseable {
 			return this;
 		}
 
-		public Config withSketchStrategy(SketchStrategy ignored) {
-			return this;
-		}
 	}
 }

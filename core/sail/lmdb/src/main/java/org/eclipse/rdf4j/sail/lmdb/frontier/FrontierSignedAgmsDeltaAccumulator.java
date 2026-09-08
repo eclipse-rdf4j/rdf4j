@@ -22,7 +22,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 final class FrontierSignedAgmsDeltaAccumulator {
 
 	private static final int PLANES = 2;
-	private static final int COMPONENTS = 4;
+	private static final int COMPONENTS = 3;
 
 	private final int lanes;
 	private final int width;
@@ -62,7 +62,6 @@ final class FrontierSignedAgmsDeltaAccumulator {
 		int plane = mutation.explicit() ? 0 : 1;
 		long direction = mutation.insertion() ? 1L : -1L;
 		addComponent(ordinal, plane, 0, mutation.subjectId(), direction);
-		addComponent(ordinal, plane, 1, mutation.predicateId(), direction);
 		addComponent(ordinal, plane, 2, mutation.objectId(), direction);
 		addComponent(ordinal, plane, 3, mutation.contextId(), direction);
 	}
@@ -104,12 +103,14 @@ final class FrontierSignedAgmsDeltaAccumulator {
 	}
 
 	static int coordinate(int plane, int component, int lane, int bucket, int lanes, int width) {
-		if (plane < 0 || plane >= PLANES || component < 0 || component >= COMPONENTS
+		if (plane < 0 || plane >= PLANES || component < 0 || component > 3 || component == 1
 				|| lane < 0 || lane >= lanes || bucket < 0 || bucket >= width) {
 			throw new IllegalArgumentException("Frontier signed Fast-AGMS coordinate is invalid");
 		}
 		return Math.addExact(
-				Math.multiplyExact(Math.addExact(Math.multiplyExact(plane, COMPONENTS), component), lanes * width),
+				Math.multiplyExact(
+						Math.addExact(Math.multiplyExact(plane, COMPONENTS), component == 0 ? 0 : component - 1),
+						lanes * width),
 				Math.addExact(Math.multiplyExact(lane, width), bucket));
 	}
 

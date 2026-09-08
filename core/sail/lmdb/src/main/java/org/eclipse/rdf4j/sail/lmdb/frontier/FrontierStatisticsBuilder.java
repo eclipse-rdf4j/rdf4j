@@ -716,7 +716,7 @@ public final class FrontierStatisticsBuilder {
 	}
 
 	private static long estimatedHeapBytes(FrontierStatisticsBuildConfig config, BuildPartitions partitions) {
-		long tableEntries = Math.multiplyExact(2L * 16L * config.countMinDepth(), config.countMinWidth());
+		long tableEntries = Math.multiplyExact(2L * 15L * config.countMinDepth(), config.countMinWidth());
 		long countMinBytes = Math.multiplyExact(tableEntries, Long.BYTES);
 		long heavyBytes = Math.multiplyExact(2L * config.heavyPredicateCapacity(), 72L);
 		/* Per plane: S/O/C all-context HLLs plus S/O default-context HLLs. P and default C are exact. */

@@ -134,19 +134,7 @@ public class TestConfigTemplate {
 					() -> assertFrontierTemplateProperty(template, rendered, "frontierEstimatorMode",
 							"Frontier estimator mode", "AUTHORITATIVE"),
 					() -> assertFrontierTemplateProperty(template, rendered, "frontierSynopsisBudgetBytes",
-							"Frontier synopsis budget bytes", "536870912"),
-					() -> assertFrontierTemplateProperty(template, rendered, "frontierQueryMemoryBudgetBytes",
-							"Frontier query memory budget bytes", "67108864"),
-					() -> assertFrontierTemplateProperty(template, rendered, "frontierDesignLanes",
-							"Frontier design lanes", "2"),
-					() -> assertFrontierTemplateProperty(template, rendered, "frontierAuditLanes",
-							"Frontier audit lanes", "2"),
-					() -> assertFrontierTemplateProperty(template, rendered, "frontierRefinementWorkUnits",
-							"Frontier refinement work units", "4096"),
-					() -> assertFrontierTemplateProperty(template, rendered, "frontierTargetRelativeStandardError",
-							"Frontier target relative standard error", "0.25"),
-					() -> assertFrontierTemplateProperty(template, rendered, "frontierDefensiveProposalEpsilon",
-							"Frontier defensive proposal epsilon", "0.1"));
+							"Frontier synopsis budget bytes", "536870912"));
 		}
 	}
 

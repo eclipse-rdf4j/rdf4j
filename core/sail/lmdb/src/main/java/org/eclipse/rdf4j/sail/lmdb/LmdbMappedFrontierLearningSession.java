@@ -223,13 +223,13 @@ final class LmdbMappedFrontierLearningSession {
 		String parameterDomain = normalized.contains("material") ? bucket : "none";
 		long layout = layoutFingerprint(relations, context);
 		PhysicalResidualKey physicalKey = PhysicalResidualKey.of(algorithm,
-				LmdbFrontierPackedCostSession.learningAccessKernel(output),
+				learningAccessKernel(output),
 				firstNonBlank(output.indexName(), "none") + ':' + firstNonBlank(output.accessMode(), "none"),
 				reopenMode, cacheMode, cacheCapacityClass, parameterDomain,
 				"layout:" + Long.toUnsignedString(layout, 16) + "|execution:" + EXECUTION_MODE);
 		FrontierLearningKey legacy = FrontierLearningKey.of(basis.operator(),
 				"MAPPED_V2@" + fixedHex(fnv(basis.canonicalExpression())), layout, correlationFingerprint,
-				LmdbFrontierPackedCostSession.learningAccessKernel(output), output.indexName(), output.accessMode());
+				learningAccessKernel(output), output.indexName(), output.accessMode());
 		return new Identity(legacy, logicalKey, applicability, physicalKey, logicalOrigin(relationId, relations),
 				features, basis.expression());
 	}
@@ -410,6 +410,18 @@ final class LmdbMappedFrontierLearningSession {
 				rawDependent, appliedDependent, lower, point, upper, regressionLimit, semantic, algorithm(output),
 				access(output), descriptor.physicalKey().hashCode(), dataEpoch, dataEpoch,
 				Math.max(0L, revisions.leoRevision()), flags);
+	}
+
+	static String learningAccessKernel(PackedCostEstimate output) {
+		String implementation = output.plannedStringMetric("plannedPhysicalImplementation");
+		if (implementation == null || implementation.isBlank()) {
+			implementation = "unspecified";
+		}
+		String kernel = "lookup=" + output.lookupComponentMask() + ":missing="
+				+ output.missingLookupComponentMask() + ":prefix=" + output.indexPrefixLength()
+				+ ":implementation=" + implementation;
+		String physicalJoin = output.plannedStringMetric("optimizer.physicalJoinImplementation");
+		return physicalJoin == null || physicalJoin.isBlank() ? kernel : kernel + ":physical-join=" + physicalJoin;
 	}
 
 	private static RuntimeFeedbackContract.PredictionVector predictionVector(

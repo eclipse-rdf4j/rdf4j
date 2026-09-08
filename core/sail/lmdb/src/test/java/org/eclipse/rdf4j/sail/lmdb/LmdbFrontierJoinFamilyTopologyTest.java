@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -56,7 +56,7 @@ class LmdbFrontierJoinFamilyTopologyTest {
 	@Test
 	void intermediateJoinLearningKeysIncludeTopology(@TempDir File dataDir) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
-		config.setFrontierSynopsisBudgetBytes(1024L * 1024L);
+		config.setFrontierSynopsisBudgetBytes(32L * 1024L * 1024L);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -76,7 +76,7 @@ class LmdbFrontierJoinFamilyTopologyTest {
 				}
 				connection.commit();
 			}
-			assertTrue(store.rebuildFrontierSynopsis() == FrontierSynopsisStatus.READY);
+			assertTrue(store.rebuildFrontierStatistics().availability() == FrontierStatisticsAvailability.READY);
 
 			List<String> starTransforms = intermediateJoinTransforms(repository, STAR_QUERY);
 			List<String> pathTransforms = intermediateJoinTransforms(repository, PATH_QUERY);

@@ -33,7 +33,7 @@ final class FrontierCountMinMatrix {
 		this.width = width;
 		widthMask = width - 1;
 		tableLength = Math.multiplyExact(depth, width);
-		counters = new long[Math.multiplyExact(Math.multiplyExact(PLANES, MASKS), tableLength)];
+		counters = new long[Math.multiplyExact(Math.multiplyExact(PLANES, MASKS - 1), tableLength)];
 		bucketScratch = new int[depth];
 	}
 
@@ -101,7 +101,7 @@ final class FrontierCountMinMatrix {
 		if (plane < 0 || plane >= PLANES || mask <= 0 || mask >= MASKS) {
 			throw new IllegalArgumentException("Frontier Count-Min plane or mask is invalid");
 		}
-		return (plane * MASKS + mask) * tableLength;
+		return (plane * (MASKS - 1) + mask - 1) * tableLength;
 	}
 
 	private static long saturatedIncrement(long value) {

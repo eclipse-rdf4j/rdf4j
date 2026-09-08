@@ -38,7 +38,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -261,7 +261,7 @@ class LmdbBenchmarkQueryPlanTest {
 							.withPractitionerCount(200),
 					new RDFInserter(connection));
 			connection.commit();
-			assertEquals(FrontierSynopsisStatus.READY, firstStore.rebuildFrontierSynopsis());
+			assertEquals(FrontierStatisticsAvailability.READY, firstStore.rebuildFrontierStatistics().availability());
 
 			try (LmdbBenchmarkPlanQualityAudit first = preparePlanQualityAudit(firstStore, connection, query, 120, 2,
 					512L * 1024L * 1024L)) {
@@ -285,7 +285,7 @@ class LmdbBenchmarkQueryPlanTest {
 		SailRepository secondRepository = new SailRepository(secondStore);
 		secondRepository.init();
 		try (var connection = secondRepository.getConnection()) {
-			assertEquals(FrontierSynopsisStatus.READY, secondStore.rebuildFrontierSynopsis());
+			assertEquals(FrontierStatisticsAvailability.READY, secondStore.rebuildFrontierStatistics().availability());
 			try (LmdbBenchmarkPlanQualityAudit second = preparePlanQualityAudit(secondStore, connection, query, 120, 2,
 					512L * 1024L * 1024L)) {
 				assertEquals(firstFingerprints, second.auditResult()
@@ -303,8 +303,7 @@ class LmdbBenchmarkQueryPlanTest {
 	private static LmdbStoreConfig sampledFrontierConfig() {
 		return new LmdbStoreConfig("spoc,posc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
-				.setFrontierSynopsisBudgetBytes(16L * 1024L)
-				.setFrontierRefinementWorkUnits(4096);
+				.setFrontierSynopsisBudgetBytes(32L * 1024L * 1024L);
 	}
 
 	@Test
@@ -312,8 +311,7 @@ class LmdbBenchmarkQueryPlanTest {
 	void planQualityAuditPreservesExactFrontierStateAcrossEquivalentJoinOrders(@TempDir File dataDir) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
-				.setFrontierSynopsisBudgetBytes(16L * 1024L)
-				.setFrontierRefinementWorkUnits(4096);
+				.setFrontierSynopsisBudgetBytes(32L * 1024L * 1024L);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -328,7 +326,7 @@ class LmdbBenchmarkQueryPlanTest {
 							.withTripsPerTrain(2),
 					new RDFInserter(connection));
 			connection.commit();
-			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			assertEquals(FrontierStatisticsAvailability.READY, store.rebuildFrontierStatistics().availability());
 
 			String query = ThemeQueryCatalog.queryFor(Theme.TRAIN, 8);
 			try (LmdbBenchmarkPlanQualityAudit audit = preparePlanQualityAudit(store, connection, query, 120, 2,

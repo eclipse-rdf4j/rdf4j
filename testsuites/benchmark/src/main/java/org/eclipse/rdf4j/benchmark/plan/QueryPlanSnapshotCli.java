@@ -378,7 +378,7 @@ public final class QueryPlanSnapshotCli {
 	}
 
 	private void runAllThemeQueriesIsolated(QueryPlanSnapshotCliOptions options) throws Exception {
-		pinIsolatedLmdbConfiguration(options);
+
 		Path outputDirectory = options.outputDirectory != null
 				? options.outputDirectory
 				: defaultOutputDirectory(options.store);
@@ -457,7 +457,7 @@ public final class QueryPlanSnapshotCli {
 		arguments.add("--lmdb-store-manifest");
 		arguments.add(options.lmdbStoreManifest.toAbsolutePath().normalize().toString());
 		addLmdbEvidenceModeArgument(arguments, options);
-		addLmdbFrontierQueryIndexBudgetArgument(arguments, options);
+
 		arguments.add("--batch-data-preflight");
 		addWorkerAssignments(arguments, options);
 		return new QueryPlanSnapshotBatchProcessRunner.WorkerTarget("lmdb-theme-data-preflight", "ALL", -1,
@@ -488,7 +488,7 @@ public final class QueryPlanSnapshotCli {
 			arguments.add("--batch-manifest-prevalidated");
 		}
 		addLmdbEvidenceModeArgument(arguments, options);
-		addLmdbFrontierQueryIndexBudgetArgument(arguments, options);
+
 		if (options.queryTimeoutSeconds != null) {
 			arguments.add("--query-timeout-seconds");
 			arguments.add(options.queryTimeoutSeconds.toString());
@@ -538,25 +538,6 @@ public final class QueryPlanSnapshotCli {
 		}
 		arguments.add("--lmdb-evidence-mode");
 		arguments.add(options.lmdbEvidenceMode);
-	}
-
-	private static void pinIsolatedLmdbConfiguration(QueryPlanSnapshotCliOptions options) {
-		if (options.store == QueryPlanSnapshotCliOptions.StoreType.LMDB
-				&& options.lmdbFrontierQueryIndexBudgetBytes == null) {
-			options.lmdbFrontierQueryIndexBudgetBytes = QueryPlanSnapshotStoreSupport
-					.createLmdbStoreConfig(options)
-					.getFrontierQueryIndexBudgetBytes();
-		}
-	}
-
-	private static void addLmdbFrontierQueryIndexBudgetArgument(List<String> arguments,
-			QueryPlanSnapshotCliOptions options) {
-		if (options.store != QueryPlanSnapshotCliOptions.StoreType.LMDB
-				|| options.lmdbFrontierQueryIndexBudgetBytes == null) {
-			return;
-		}
-		arguments.add("--lmdb-frontier-query-index-budget-bytes");
-		arguments.add(Long.toString(options.lmdbFrontierQueryIndexBudgetBytes));
 	}
 
 	private static void writeWorkerPhase(QueryPlanSnapshotCliOptions options, String phase) throws IOException {

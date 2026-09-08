@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -99,19 +99,16 @@ public class LmdbFrontierPlanningBenchmark {
 			storeDirectory = Files.createTempDirectory("rdf4j-frontier-planning-jmh-").toFile();
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc")
 					.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
-					.setFrontierSynopsisBudgetBytes(128L * 1024L)
-					.setFrontierQueryMemoryBudgetBytes(8L * 1024L * 1024L)
-					.setFrontierQueryIndexBudgetBytes(2L * 1024L * 1024L)
-					.setFrontierInitialMaterializationWorkUnits(1_024L)
-					.setFrontierRefinementWorkUnits(512);
+					.setFrontierSynopsisBudgetBytes(32L * 1024L * 1024L)
+					.setFrontierHeapBudgetBytes(32L * 1024L * 1024L);
 			config.setSketchEstimatorEnabled(false);
 			store = new LmdbStore(storeDirectory, config);
 			repository = new SailRepository(store);
 			repository.init();
 			try {
 				loadFixture();
-				if (store.rebuildFrontierSynopsis() != FrontierSynopsisStatus.READY) {
-					throw new IllegalStateException("Frontier synopsis did not become ready");
+				if (store.rebuildFrontierStatistics().availability() != FrontierStatisticsAvailability.READY) {
+					throw new IllegalStateException("Frontier statistics did not become ready");
 				}
 				connection = repository.getConnection();
 				assertMultiBridgeFrontierPlan();
@@ -198,7 +195,7 @@ public class LmdbFrontierPlanningBenchmark {
 								node.getDoubleMetricPlanned("plannedFrontierFactorCount"));
 						metrics.maximumStateId = Math.max(metrics.maximumStateId, stateId);
 						metrics.maximumRows = Math.max(metrics.maximumRows,
-								node.getDoubleMetricPlanned("plannedFrontierRows"));
+								node.getDoubleMetricPlanned("plannedCardinalityRows"));
 					}
 					node.visitChildren(this);
 				}

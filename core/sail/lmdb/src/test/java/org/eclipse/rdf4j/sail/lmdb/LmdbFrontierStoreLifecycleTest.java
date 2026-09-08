@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,13 +35,12 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsStatus;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsTier;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbFrontierStoreLifecycleTest {
 
-	private static final long POSITIVE_SYNOPSIS_BUDGET_BYTES = 1024L * 1024L;
+	private static final long POSITIVE_SYNOPSIS_BUDGET_BYTES = 32L * 1024L * 1024L;
 	private static final String FRONTIER_DIRECTORY_NAME = "frontier-synopsis";
 
 	@Test
@@ -52,8 +50,6 @@ class LmdbFrontierStoreLifecycleTest {
 				config(FrontierEstimatorMode.AUTHORITATIVE, 32L * 1024L * 1024L));
 		try {
 			store.init();
-			assertEquals(FrontierSynopsisStatus.MISSING, frontierSynopsisStatus(store),
-					"store construction must not synchronously scan LMDB to build V1 statistics");
 			assertFalse(Files.exists(dataDirectory.resolve(FRONTIER_DIRECTORY_NAME).resolve("manifest.bin")));
 
 			LmdbSailStore backingStore = store.getBackingStore();
@@ -277,7 +273,7 @@ class LmdbFrontierStoreLifecycleTest {
 	void offModeStartsAndRestartsWithoutCreatingFrontierDirectory(@TempDir Path dataDirectory) throws Exception {
 		assertStartsAndRestartsWithStatus(dataDirectory,
 				config(FrontierEstimatorMode.OFF, POSITIVE_SYNOPSIS_BUDGET_BYTES),
-				FrontierSynopsisStatus.DISABLED_MODE);
+				FrontierStatisticsAvailability.NO_GENERATION);
 
 		assertFalse(Files.exists(dataDirectory.resolve(FRONTIER_DIRECTORY_NAME)),
 				"OFF mode must not create a Frontier synopsis directory");
@@ -287,7 +283,7 @@ class LmdbFrontierStoreLifecycleTest {
 	void zeroBudgetStartsAndRestartsWithoutCreatingFrontierDirectory(@TempDir Path dataDirectory) throws Exception {
 		assertStartsAndRestartsWithStatus(dataDirectory,
 				config(FrontierEstimatorMode.AUTHORITATIVE, 0L),
-				FrontierSynopsisStatus.DISABLED_ZERO_BUDGET);
+				FrontierStatisticsAvailability.NO_GENERATION);
 
 		assertFalse(Files.exists(dataDirectory.resolve(FRONTIER_DIRECTORY_NAME)),
 				"zero persistent budget must not create a Frontier synopsis directory");
@@ -299,18 +295,10 @@ class LmdbFrontierStoreLifecycleTest {
 		LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
 		try {
 			store.init();
-			assertEquals(FrontierSynopsisStatus.MISSING, frontierSynopsisStatus(store),
-					"store construction must not synchronously rebuild the compatibility V1 synopsis");
-			Method rebuild;
-			try {
-				rebuild = LmdbStore.class.getMethod("rebuildFrontierSynopsis");
-			} catch (NoSuchMethodException e) {
-				fail("LmdbStore must expose an explicit Frontier base-generation rebuild", e);
-				return;
-			}
-			assertEquals(FrontierSynopsisStatus.READY, rebuild.invoke(store));
-			assertEquals(FrontierSynopsisStatus.READY, frontierSynopsisStatus(store));
-			assertFalse(Files.notExists(dataDirectory.resolve(FRONTIER_DIRECTORY_NAME).resolve("manifest.bin")));
+			assertEquals(FrontierStatisticsAvailability.READY, store.rebuildFrontierStatistics().availability());
+			assertEquals(FrontierStatisticsAvailability.READY, frontierAvailability(store));
+			assertTrue(Files.exists(dataDirectory.resolve("frontier-statistics-v2/CURRENT.fs2")));
+			assertFalse(Files.exists(dataDirectory.resolve(FRONTIER_DIRECTORY_NAME)));
 		} finally {
 			store.shutDown();
 		}
@@ -318,7 +306,7 @@ class LmdbFrontierStoreLifecycleTest {
 		LmdbStore restarted = new LmdbStore(dataDirectory.toFile(), config);
 		try {
 			restarted.init();
-			assertEquals(FrontierSynopsisStatus.READY, frontierSynopsisStatus(restarted));
+			assertEquals(FrontierStatisticsAvailability.READY, frontierAvailability(restarted));
 		} finally {
 			restarted.shutDown();
 		}
@@ -331,10 +319,8 @@ class LmdbFrontierStoreLifecycleTest {
 		try {
 			store.init();
 
-			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			assertEquals(FrontierStatisticsAvailability.READY, store.rebuildFrontierStatistics().availability());
 
-			assertEquals(FrontierSynopsisStatus.MISSING, frontierSynopsisStatus(store),
-					"the compatibility facade must not rebuild the superseded V1 payload/index pair");
 			assertEquals(FrontierStatisticsAvailability.READY,
 					frontierStatisticsStatus(store.getBackingStore()).availability());
 			assertTrue(Files.isRegularFile(dataDirectory.resolve("frontier-statistics-v2").resolve("CURRENT.fs2")));
@@ -354,7 +340,7 @@ class LmdbFrontierStoreLifecycleTest {
 			assertTrue(awaitStatisticsReady(backingStore, 10_000L));
 			FrontierStatisticsStatus original = frontierStatisticsStatus(backingStore);
 
-			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			assertEquals(FrontierStatisticsAvailability.READY, store.rebuildFrontierStatistics().availability());
 
 			FrontierStatisticsStatus unchanged = frontierStatisticsStatus(backingStore);
 			assertEquals(original.generationId(), unchanged.generationId(),
@@ -390,7 +376,7 @@ class LmdbFrontierStoreLifecycleTest {
 	}
 
 	private static void assertStartsAndRestartsWithStatus(Path dataDirectory, LmdbStoreConfig config,
-			FrontierSynopsisStatus expectedStatus) throws Exception {
+			FrontierStatisticsAvailability expectedStatus) throws Exception {
 		for (int attempt = 0; attempt < 2; attempt++) {
 			LmdbStore store = new LmdbStore(dataDirectory.toFile(), config);
 			boolean initialized = false;
@@ -398,7 +384,7 @@ class LmdbFrontierStoreLifecycleTest {
 				assertDoesNotThrow(store::init,
 						"Frontier availability must never prevent LMDB store startup");
 				initialized = true;
-				assertEquals(expectedStatus, frontierSynopsisStatus(store),
+				assertEquals(expectedStatus, frontierAvailability(store),
 						"the backing store must retain the bootstrap classification");
 			} finally {
 				if (initialized) {
@@ -409,24 +395,8 @@ class LmdbFrontierStoreLifecycleTest {
 		}
 	}
 
-	private static FrontierSynopsisStatus frontierSynopsisStatus(LmdbStore store) throws Exception {
-		LmdbSailStore backingStore = store.getBackingStore();
-		assertNotNull(backingStore);
-		Method accessor;
-		try {
-			accessor = LmdbSailStore.class.getDeclaredMethod("frontierSynopsisStatus");
-		} catch (NoSuchMethodException e) {
-			return fail("LmdbSailStore must own Frontier bootstrap state and expose a package-private "
-					+ "frontierSynopsisStatus() accessor", e);
-		}
-		assertFalse(java.lang.reflect.Modifier.isPublic(accessor.getModifiers()),
-				"Frontier lifecycle status is an internal LMDB implementation detail");
-		accessor.setAccessible(true);
-		try {
-			return assertInstanceOf(FrontierSynopsisStatus.class, accessor.invoke(backingStore));
-		} catch (InvocationTargetException e) {
-			return fail("reading Frontier lifecycle status must not fail", e.getCause());
-		}
+	private static FrontierStatisticsAvailability frontierAvailability(LmdbStore store) {
+		return store.getBackingStore().frontierStatisticsStatus().availability();
 	}
 
 	private static boolean awaitStatisticsReady(LmdbSailStore store, long timeoutMillis) throws Exception {

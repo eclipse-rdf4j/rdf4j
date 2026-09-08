@@ -17,8 +17,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -40,20 +38,18 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
-import org.eclipse.rdf4j.sail.lmdb.LmdbPlannerAwait;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.AASGenerator;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.BenchmarkJoinEstimatorSupport;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -260,232 +256,6 @@ class LmdbEstimateAuditHarnessTest {
 		}
 	}
 
-	@Test
-	void reportsBoundedFrontierCalibrationWithBackgroundConsolidation(@TempDir File dataDir) throws Exception {
-		long synopsisBudgetBytes = 128L * 1024L;
-		long queryMemoryBudgetBytes = 64L * 1024L * 1024L;
-		LmdbStoreConfig config = new LmdbStoreConfig()
-				.setTripleIndexes("spoc,posc")
-				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
-				.setFrontierSynopsisBudgetBytes(synopsisBudgetBytes)
-				.setFrontierQueryMemoryBudgetBytes(queryMemoryBudgetBytes);
-		LmdbStore store = new LmdbStore(dataDir, config);
-		SailRepository repository = new SailRepository(store);
-		repository.init();
-		try {
-			List<LmdbEstimateAuditQueryCorpus.AuditQuery> queries = LmdbEstimateAuditQueryCorpus.generatedQueries()
-					.stream()
-					.limit(30)
-					.toList();
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				loadMixedAuditData(connection);
-			}
-			long buildStarted = System.nanoTime();
-			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
-			double buildMillis = (System.nanoTime() - buildStarted) / 1_000_000.0d;
-
-			List<LmdbEstimateAuditHarness.AuditRow> rows;
-			double queryMemoryPeakBytes;
-			double preparationP95Millis;
-			double preparationMaximumMillis;
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				rows = queries.stream()
-						.flatMap(query -> LmdbEstimateAuditHarness
-								.auditQuery(connection, query.id(), query.sparql())
-								.stream())
-						.toList();
-				double[] maximumMemory = { 0.0d };
-				double[] preparationMillis = new double[queries.size()];
-				int queryIndex = 0;
-				for (LmdbEstimateAuditQueryCorpus.AuditQuery query : queries) {
-					Explanation explanation = connection.prepareTupleQuery(query.sparql())
-							.explain(Explanation.Level.Optimized);
-					double[] queryPreparationNanos = { 0.0d };
-					((QueryModelNode) explanation.tupleExpr())
-							.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-								@Override
-								protected void meetNode(QueryModelNode node) {
-									double memory = node.getDoubleMetricPlanned(
-											"plannedFrontierQueryMemoryPeakBytes");
-									if (Double.isFinite(memory)) {
-										maximumMemory[0] = Math.max(maximumMemory[0], memory);
-									}
-									double preparationNanos = node.getDoubleMetricPlanned(
-											"plannedFrontierPreparationNanos");
-									if (Double.isFinite(preparationNanos)) {
-										queryPreparationNanos[0] = Math.max(
-												queryPreparationNanos[0], preparationNanos);
-									}
-									super.meetNode(node);
-								}
-							});
-					preparationMillis[queryIndex++] = queryPreparationNanos[0] / 1_000_000.0d;
-				}
-				queryMemoryPeakBytes = maximumMemory[0];
-				java.util.Arrays.sort(preparationMillis);
-				preparationP95Millis = percentile(preparationMillis, 0.95d);
-				preparationMaximumMillis = preparationMillis[preparationMillis.length - 1];
-			}
-
-			List<LmdbEstimateAuditHarness.AuditRow> frontierRows = rows.stream()
-					.filter(row -> "lmdb-frontier".equals(row.plannedSource()))
-					.toList();
-			double[] qErrors = frontierRows.stream()
-					.mapToDouble(LmdbEstimateAuditHarness.AuditRow::qError)
-					.sorted()
-					.toArray();
-			double p95QError = percentile(qErrors, 0.95d);
-			double worstQError = qErrors.length == 0 ? 1.0d : qErrors[qErrors.length - 1];
-			List<LmdbEstimateAuditHarness.AuditRow> worstFrontierRows = frontierRows.stream()
-					.sorted(Comparator.comparingDouble(LmdbEstimateAuditHarness.AuditRow::qError).reversed())
-					.limit(20)
-					.toList();
-			List<LmdbEstimateAuditHarness.AuditRow> falseZeroRows = frontierRows.stream()
-					.filter(row -> row.plannedRows() == 0.0d && row.actualRows() > 0L)
-					.toList();
-			long falseZeros = falseZeroRows.size();
-
-			double[] insertionMillis = new double[16];
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				for (int index = 0; index < insertionMillis.length; index++) {
-					long started = System.nanoTime();
-					connection.begin();
-					connection.add(VF.createIRI("urn:frontier:calibration:subject:" + index),
-							VF.createIRI("urn:frontier:calibration:predicate"),
-							VF.createIRI("urn:frontier:calibration:object:" + index));
-					connection.commit();
-					insertionMillis[index] = (System.nanoTime() - started) / 1_000_000.0d;
-				}
-			}
-			java.util.Arrays.sort(insertionMillis);
-			double insertionP95Millis = percentile(insertionMillis, 0.95d);
-			Path insertionMarker = dataDir.toPath()
-					.resolve("frontier-synopsis")
-					.resolve("dirty-insertion.bin");
-			assertTrue(Files.exists(insertionMarker),
-					"the bounded exact insertion chain must leave a durable dirty marker for lazy consolidation");
-			Explanation dirtyExplanation;
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				dirtyExplanation = connection.prepareTupleQuery("""
-						SELECT ?subject
-						WHERE { ?subject <urn:frontier:calibration:predicate> ?object }
-						""")
-						.explain(Explanation.Level.Optimized);
-			}
-			List<StatementPattern> dirtyPatterns = StatementPatternCollector
-					.process((TupleExpr) dirtyExplanation.tupleExpr());
-			boolean dirtyFallback = dirtyPatterns.stream()
-					.anyMatch(pattern -> "query_index_unavailable"
-							.equals(pattern.getStringMetricPlanned("plannedFrontierFallbackReason")));
-			boolean currentExactGeneration = dirtyPatterns.stream()
-					.anyMatch(pattern -> "lmdb-frontier"
-							.equals(pattern.getStringMetricPlanned("plannedEstimateSource"))
-							&& "ready".equals(pattern.getStringMetricPlanned("plannedFrontierStatus"))
-							&& "database_exact"
-									.equals(pattern.getStringMetricPlanned("plannedFrontierGuarantee"))
-							&& Double.compare(16.0d,
-									pattern.getDoubleMetricPlanned("plannedFrontierRows")) == 0);
-			assertTrue(dirtyFallback || currentExactGeneration, dirtyExplanation::toString);
-			LmdbPlannerAwait.awaitPlannerAssertion("Frontier calibration background consolidation",
-					() -> assertTrue(!Files.exists(insertionMarker)));
-			LmdbPlannerAwait.awaitPlannerAssertion("Frontier calibration detached plan refresh", () -> {
-				try (SailRepositoryConnection connection = repository.getConnection()) {
-					Explanation recoveredExplanation = connection.prepareTupleQuery("""
-							SELECT ?subject
-							WHERE { ?subject <urn:frontier:calibration:predicate> ?object }
-							""")
-							.explain(Explanation.Level.Optimized);
-					assertTrue(StatementPatternCollector.process((TupleExpr) recoveredExplanation.tupleExpr())
-							.stream()
-							.anyMatch(pattern -> "lmdb-frontier"
-									.equals(pattern.getStringMetricPlanned("plannedEstimateSource"))),
-							recoveredExplanation::toString);
-				}
-			});
-			long durableBytes;
-			try (var paths = Files.walk(dataDir.toPath().resolve("frontier-synopsis"))) {
-				durableBytes = paths.filter(Files::isRegularFile)
-						.mapToLong(path -> {
-							try {
-								return Files.size(path);
-							} catch (java.io.IOException e) {
-								throw new java.io.UncheckedIOException(e);
-							}
-						})
-						.sum();
-			}
-
-			System.out.printf(
-					"[frontier-calibration] queries=%d auditedPieces=%d frontierPieces=%d "
-							+ "p95QError=%.6f worstQError=%.6f falseZeros=%d intervalCoverage=not-certified "
-							+ "optimizerRegret=not-measured buildMillis=%.3f durableBytes=%d "
-							+ "insertP95Millis=%.3f queryMemoryPeakBytes=%.0f "
-							+ "preparationP95Millis=%.3f preparationMaximumMillis=%.3f%n",
-					queries.size(), rows.size(), frontierRows.size(), p95QError, worstQError, falseZeros,
-					buildMillis, durableBytes, insertionP95Millis, queryMemoryPeakBytes,
-					preparationP95Millis, preparationMaximumMillis);
-			assertTrue(frontierRows.size() > 0, "the bounded calibration must exercise Frontier-authoritative pieces");
-			assertEquals(0L, falseZeros,
-					() -> "Frontier must not publish a sampled zero as authoritative: " + falseZeroRows);
-			assertTrue(Double.isFinite(p95QError) && p95QError < 5.0d,
-					() -> "Frontier generated-corpus p95 q-error exceeds the promotion gate: p95="
-							+ p95QError + ", worst=" + worstFrontierRows);
-			assertTrue(queryMemoryPeakBytes <= queryMemoryBudgetBytes);
-			assertTrue(preparationP95Millis <= 5.0d,
-					() -> "Frontier preparation p95 exceeds the promotion gate: " + preparationP95Millis);
-			assertTrue(preparationMaximumMillis <= 10.0d,
-					() -> "Frontier preparation maximum exceeds the promotion gate: "
-							+ preparationMaximumMillis);
-			assertTrue(!Files.exists(insertionMarker),
-					"the estimator executor must consolidate the insertion chain without query-thread work");
-		} finally {
-			repository.shutDown();
-			LmdbTestUtil.deleteDir(dataDir);
-		}
-	}
-
-	@Test
-	void exposesRawAndFinalFrontierStagesInAuditRows(@TempDir File dataDir) {
-		LmdbStoreConfig config = new LmdbStoreConfig()
-				.setTripleIndexes("spoc,posc")
-				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
-				.setFrontierSynopsisBudgetBytes(128L * 1024L);
-		LmdbStore store = new LmdbStore(dataDir, config);
-		SailRepository repository = new SailRepository(store);
-		repository.init();
-		try {
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				IRI predicate = VF.createIRI("urn:test:audit:frontier-stage");
-				connection.add(VF.createIRI("urn:test:audit:s1"), predicate, VF.createIRI("urn:test:audit:o1"));
-				connection.add(VF.createIRI("urn:test:audit:s2"), predicate, VF.createIRI("urn:test:audit:o2"));
-			}
-			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				LmdbEstimateAuditHarness.AuditRow fullRow = LmdbEstimateAuditHarness
-						.auditQuery(connection, "frontier-stages", """
-								SELECT ?subject
-								WHERE { ?subject <urn:test:audit:frontier-stage> ?object }
-								""")
-						.stream()
-						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FULL_QUERY)
-						.findFirst()
-						.orElseThrow();
-
-				assertEquals("lmdb-frontier", fullRow.plannedSource(), fullRow::toString);
-				assertEquals(fullRow.plannedRows(), auditStage(fullRow, "rawFrontierRows"), 0.0d,
-						fullRow::toString);
-				assertEquals(fullRow.plannedRows(), auditStage(fullRow, "finalFrontierRows"), 0.0d,
-						fullRow::toString);
-				assertTrue(Double.isNaN(auditStage(fullRow, "learnedFilterRows")), fullRow::toString);
-				assertTrue(Double.isNaN(auditStage(fullRow, "leoRows")), fullRow::toString);
-			}
-		} finally {
-			repository.shutDown();
-			LmdbTestUtil.deleteDir(dataDir);
-		}
-	}
-
 	private static double auditStage(LmdbEstimateAuditHarness.AuditRow row, String accessor) {
 		try {
 			return (double) row.getClass().getDeclaredMethod(accessor).invoke(row);
@@ -649,8 +419,8 @@ class LmdbEstimateAuditHarnessTest {
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setTripleIndexes("spoc,posc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
-				.setFrontierSynopsisBudgetBytes(128L * 1024L)
-				.setFrontierQueryMemoryBudgetBytes(64L * 1024L * 1024L);
+				.setFrontierSynopsisBudgetBytes(32L * 1024L * 1024L)
+				.setFrontierHeapBudgetBytes(64L * 1024L * 1024L);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -658,7 +428,7 @@ class LmdbEstimateAuditHarnessTest {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				loadMixedAuditData(connection);
 			}
-			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			assertEquals(FrontierStatisticsAvailability.READY, store.rebuildFrontierStatistics().availability());
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				LmdbEstimateAuditQueryCorpus.AuditQuery query = generatedQuery("audit-q23");
@@ -729,97 +499,6 @@ class LmdbEstimateAuditHarnessTest {
 
 				assertTrue(worstJoin.qError() <= 10.0d,
 						() -> "VALUES-conditioned path prefix exceeds the corpus q-error limit: " + rows);
-			}
-		} finally {
-			repository.shutDown();
-			LmdbTestUtil.deleteDir(dataDir);
-		}
-	}
-
-	@Test
-	void frontierFilterPublishesItsFinalStateRows(@TempDir File dataDir) {
-		LmdbStoreConfig config = new LmdbStoreConfig()
-				.setTripleIndexes("spoc,posc")
-				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
-				.setFrontierSynopsisBudgetBytes(128L * 1024L)
-				.setFrontierQueryMemoryBudgetBytes(64L * 1024L * 1024L);
-		LmdbStore store = new LmdbStore(dataDir, config);
-		SailRepository repository = new SailRepository(store);
-		repository.init();
-		try {
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				loadMixedAuditData(connection);
-			}
-			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				LmdbEstimateAuditQueryCorpus.AuditQuery query = generatedQuery("audit-q16");
-				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness
-						.auditQuery(connection, query.id(), query.sparql());
-				LmdbEstimateAuditHarness.AuditRow filter = rows
-						.stream()
-						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.FILTER
-								&& Double.isFinite(row.finalFrontierRows()))
-						.findFirst()
-						.orElseThrow(() -> new AssertionError(
-								"A Frontier-restricted filter must publish final-stage telemetry: " + rows));
-				assertEquals(filter.finalFrontierRows(), filter.plannedRows(), 0.0d,
-						() -> "A Frontier-restricted filter must publish the retained final mass: " + filter);
-			}
-		} finally {
-			repository.shutDown();
-			LmdbTestUtil.deleteDir(dataDir);
-		}
-	}
-
-	@Test
-	void localBoundaryAuditUsesItsOwnFrontierState(@TempDir File dataDir) {
-		LmdbStoreConfig config = new LmdbStoreConfig()
-				.setTripleIndexes("spoc,posc")
-				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
-				.setFrontierSynopsisBudgetBytes(128L * 1024L);
-		LmdbStore store = new LmdbStore(dataDir, config);
-		SailRepository repository = new SailRepository(store);
-		repository.init();
-		try {
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				IRI predicate = VF.createIRI("urn:test:audit:group-boundary");
-				connection.add(VF.createIRI("urn:test:audit:group-s1"), predicate, VF.createLiteral(1));
-				connection.add(VF.createIRI("urn:test:audit:group-s2"), predicate, VF.createLiteral(2));
-			}
-			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness
-						.auditQuery(connection, "group-boundary", """
-								SELECT (COUNT(?object) AS ?count)
-								WHERE { ?subject <urn:test:audit:group-boundary> ?object }
-								""");
-				LmdbEstimateAuditHarness.AuditRow group = rows.stream()
-						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.GROUP)
-						.findFirst()
-						.orElseThrow();
-
-				assertEquals("lmdb-frontier", group.plannedSource(), group::toString);
-				assertEquals(1.0d, group.plannedRows(), 0.0d,
-						() -> "GROUP must publish its own bounded aggregate state rather than the two-row child: "
-								+ group);
-				assertEquals(group.plannedRows(), group.rawFrontierRows(), 0.0d,
-						() -> "GROUP telemetry must originate in its own costing event: " + group);
-				assertTrue(rows.stream()
-						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.PROJECTION
-								|| row.kind() == LmdbEstimateAuditHarness.PieceKind.EXTENSION)
-						.allMatch(row -> ("lmdb-frontier".equals(row.plannedSource())
-								|| "lmdb-frontier+leo".equals(row.plannedSource()))
-								&& row.plannedRows() == 1.0d
-								&& row.rawFrontierRows() == 1.0d
-								&& row.finalFrontierRows() == 1.0d
-								&& row.runtimeContractPresent()
-								&& row.logicalKeyDigest() != null
-								&& ("lmdb-frontier".equals(row.plannedSource())
-										|| "exact-fact".equals(row.correctionSource()))),
-						() -> "Transparent wrappers must publish their own identity events over the GROUP state: "
-								+ rows);
 			}
 		} finally {
 			repository.shutDown();
@@ -1628,60 +1307,6 @@ class LmdbEstimateAuditHarnessTest {
 	}
 
 	@Test
-	void frontierMinusUsesIndependentLaneToProduceExactBooleanKernel(@TempDir File dataDir) {
-		LmdbStoreConfig config = new LmdbStoreConfig()
-				.setTripleIndexes("spoc,posc")
-				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
-				.setFrontierSynopsisBudgetBytes(128L * 1024L)
-				.setFrontierQueryMemoryBudgetBytes(64L * 1024L * 1024L);
-		LmdbStore store = new LmdbStore(dataDir, config);
-		SailRepository repository = new SailRepository(store);
-		repository.init();
-		try {
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				loadMixedAuditData(connection);
-				assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
-
-				LmdbEstimateAuditQueryCorpus.AuditQuery minusValuesQuery = LmdbEstimateAuditQueryCorpus
-						.generatedQueries()
-						.stream()
-						.filter(query -> query.id().equals("audit-q18"))
-						.findFirst()
-						.orElseThrow();
-				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness
-						.auditQuery(connection, minusValuesQuery.id(), minusValuesQuery.sparql());
-				LmdbEstimateAuditHarness.AuditRow difference = rows.stream()
-						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.DIFFERENCE)
-						.findFirst()
-						.orElseThrow();
-				LmdbEstimateAuditHarness.AuditRow leftInput = rows.stream()
-						.filter(row -> row.kind() == LmdbEstimateAuditHarness.PieceKind.JOIN)
-						.filter(row -> row.actualRows() == 18L)
-						.findFirst()
-						.orElseThrow();
-
-				assertEquals("lmdb-frontier", difference.plannedSource(),
-						() -> "A current-stamp database-exact MINUS transform must supersede learned calibration: "
-								+ difference);
-				assertEquals("database_exact", difference.frontierGuarantee(), difference::toString);
-				assertTrue(Double.isNaN(difference.leoRows()),
-						() -> "database-exact MINUS evidence must not carry a learned row correction: " + difference);
-				assertEquals(11L, difference.actualRows(), difference::toString);
-				assertTrue(difference.plannedRows() < leftInput.plannedRows(),
-						() -> "exact MINUS probes from independent lanes must remove sampled mass: " + rows);
-				double untransformedQError = Math.max(
-						leftInput.plannedRows() / difference.actualRows(),
-						difference.actualRows() / leftInput.plannedRows());
-				assertTrue(difference.qError() < untransformedQError,
-						() -> "independent-lane MINUS evidence must improve on its sampled left input: " + rows);
-			}
-		} finally {
-			repository.shutDown();
-			LmdbTestUtil.deleteDir(dataDir);
-		}
-	}
-
-	@Test
 	void relationshipPowerPathUsesPropertyPathEstimate(@TempDir File dataDir) {
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
 		repository.init();
@@ -2096,19 +1721,6 @@ class LmdbEstimateAuditHarnessTest {
 		}
 	}
 
-	private static List<String> normalEvaluationRuntimePipeline(SailRepository repository, String query) {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			SailTupleQuery tupleQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
-			try (var result = tupleQuery.evaluate()) {
-				while (result.hasNext()) {
-					result.next();
-				}
-			}
-			return runtimePipeline(tupleQuery.getParsedQuery()
-					.getTupleExpr());
-		}
-	}
-
 	private static void assertNormalEvaluationHasNoRuntimeTelemetry(SailRepository repository, String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			SailTupleQuery tupleQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
@@ -2196,13 +1808,6 @@ class LmdbEstimateAuditHarnessTest {
 					.explain(Explanation.Level.Optimized)
 					.toString();
 		}
-	}
-
-	private static List<String> joinAlgorithmHeaders(String plan) {
-		return plan.lines()
-				.filter(line -> line.contains("Join ("))
-				.map(LmdbEstimateAuditHarnessTest::canonicalJoinAlgorithmHeader)
-				.toList();
 	}
 
 	private static String canonicalJoinAlgorithmHeader(String line) {
@@ -2356,23 +1961,6 @@ class LmdbEstimateAuditHarnessTest {
 			}
 		}
 		return -1;
-	}
-
-	private static int firstChildIndex(List<String> lines, int parentIndex) {
-		if (parentIndex < 0 || parentIndex >= lines.size()) {
-			return -1;
-		}
-		for (int i = parentIndex + 1; i < lines.size(); i++) {
-			String line = lines.get(i);
-			if (line.contains("[left]")) {
-				return i;
-			}
-		}
-		return -1;
-	}
-
-	private static boolean firstChildWindowContains(List<String> lines, int start, String expected) {
-		return windowContains(lines, start, 8, expected);
 	}
 
 	private static boolean windowContains(List<String> lines, int start, int length, String expected) {

@@ -133,7 +133,7 @@ class FrontierStatisticsBuildConfigTest {
 				source.sortMemoryBytes(), source.designLaneCount(), source.auditLaneCount(), source.cellCount(),
 				source.omniDepth(), source.witnessFloorPerCell(), source.witnessCeilingPerCell(),
 				source.deleteReserveFraction(), source.countMinDepth(), source.countMinWidth(),
-				heavyPredicateCapacity, source.hllPrecision(), source.globalWitnessCapacity());
+				heavyPredicateCapacity, source.hllPrecision());
 	}
 
 	@Test

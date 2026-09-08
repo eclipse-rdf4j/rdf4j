@@ -49,7 +49,7 @@ import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsStatus;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
 import org.slf4j.Logger;
@@ -495,17 +495,17 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * @return the resulting persistent Frontier availability status
 	 * @throws SailException when the store is not initialized or a write transaction is active
 	 */
-	public FrontierSynopsisStatus rebuildFrontierSynopsis() {
+	public FrontierStatisticsStatus rebuildFrontierStatistics() {
 		LmdbSailStore backingStore = this.backingStore;
 		if (backingStore == null) {
 			throw new SailException("LMDB store is not initialized");
 		}
 		StopWatch started = StopWatch.createStarted();
 		try {
-			return backingStore.rebuildFrontierSynopsis();
+			return backingStore.rebuildFrontierStatistics();
 
 		} finally {
-			System.out.println(started.getTime(TimeUnit.MILLISECONDS) + " ms to rebuild Frontier synopsis");
+			System.out.println(started.getTime(TimeUnit.MILLISECONDS) + " ms to rebuild Frontier statistics");
 		}
 	}
 

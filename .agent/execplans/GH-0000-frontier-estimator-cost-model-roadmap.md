@@ -1,3 +1,5 @@
+> Historical implementation roadmap. Descriptions of retired synopsis, query-index, materialization, and migration paths below are historical evidence, not supported configuration or current behavior. See [the current LMDB estimation guide](../../core/sail/lmdb/README.md) for the surviving V2, quad, and cold-filter systems.
+
 # Build the complete Frontier and Cascades query optimizer
 
 This is the only optimizer ExecPlan. It is a living document and must be maintained according to `.agent/PLANS.md`.

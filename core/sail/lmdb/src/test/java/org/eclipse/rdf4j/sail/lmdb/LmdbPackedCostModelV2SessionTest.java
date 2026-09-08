@@ -35,7 +35,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -54,6 +53,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSu
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinEstimate;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinProbe;
@@ -76,14 +76,15 @@ class LmdbPackedCostModelV2SessionTest {
 		LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
 		when(runtime.statisticsService()).thenReturn(mock(LmdbStatisticsService.class));
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.OFF, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.OFF)));
 		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		Filter filter = new Filter(pattern,
 				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(true)));
 		PackedCostTestSupport.UnaryCostCall call = PackedCostTestSupport.unaryOperator(filter);
 
 		try (PackedCostSession session = new LmdbPackedCostModel(runtime).openSession(call.query())) {
-			assertFalse(session instanceof LmdbFrontierPackedCostSession,
+			assertEquals("ScalarPackedCostSession", session.getClass().getSimpleName(),
 					"V2 must not create the legacy payload/query-index session");
 		}
 	}
@@ -96,7 +97,8 @@ class LmdbPackedCostModelV2SessionTest {
 		FrontierStatisticsView view = mock(FrontierStatisticsView.class);
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
@@ -127,7 +129,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.capturePlanningRevisions())
 				.thenReturn(new LmdbEstimatorRuntime.PlanningRevisions(17L, 23L, 29L, 31L));
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
@@ -153,7 +156,7 @@ class LmdbPackedCostModelV2SessionTest {
 					"a query-ready V2 estimate must remain observable by the learned estimator");
 			assertTrue(leaf.runtimeFeedbackContract().descriptor() instanceof LmdbRuntimeFeedbackDescriptor,
 					"mapped estimates must publish the same typed contract as legacy Frontier estimates");
-			assertFalse(session instanceof LmdbFrontierPackedCostSession,
+			assertEquals(LmdbFrontierStatisticsCostSession.class, session.getClass(),
 					"typed feedback must not reopen the legacy payload/query-index session");
 		}
 	}
@@ -168,7 +171,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.valueStore()).thenReturn(valueStore);
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
@@ -217,7 +221,7 @@ class LmdbPackedCostModelV2SessionTest {
 				assertTrue(typedMinus.dependentSubqueriesCosted());
 			}
 			assertEquals(3, typedAlternatives, "streaming, memoized, and materialized alternatives must all be costed");
-			assertFalse(session instanceof LmdbFrontierPackedCostSession,
+			assertEquals(LmdbFrontierStatisticsCostSession.class, session.getClass(),
 					"mapped semi/anti costing must not reopen the legacy payload/query-index session");
 		}
 	}
@@ -277,7 +281,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.valueStore()).thenReturn(valueStore);
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
@@ -397,7 +402,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.valueStore()).thenReturn(valueStore);
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
@@ -507,7 +513,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.valueStore()).thenReturn(valueStore);
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
@@ -557,7 +564,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.valueStore()).thenReturn(valueStore);
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
@@ -690,7 +698,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.valueStore()).thenReturn(valueStore);
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
@@ -767,7 +776,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.valueStore()).thenReturn(valueStore);
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
@@ -824,7 +834,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.valueStore()).thenReturn(valueStore);
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
@@ -882,7 +893,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.valueStore()).thenReturn(valueStore);
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
@@ -931,7 +943,8 @@ class LmdbPackedCostModelV2SessionTest {
 		FrontierStatisticsView view = mock(FrontierStatisticsView.class);
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		when(statistics.status()).thenReturn(status);
 		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
@@ -958,7 +971,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.valueStore()).thenReturn(valueStore);
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		var leftPredicate = VF.createIRI("urn:test:packed-omni:left");
 		var rightPredicate = VF.createIRI("urn:test:packed-omni:right");
 		when(valueStore.getId(leftPredicate)).thenReturn(11L);
@@ -996,7 +1010,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.valueStore()).thenReturn(valueStore);
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		var firstPredicate = VF.createIRI("urn:test:packed-omni:first");
 		var secondPredicate = VF.createIRI("urn:test:packed-omni:second");
 		var thirdPredicate = VF.createIRI("urn:test:packed-omni:third");
@@ -1039,7 +1054,8 @@ class LmdbPackedCostModelV2SessionTest {
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.valueStore()).thenReturn(valueStore);
 		when(runtime.frontierSettings()).thenReturn(
-				LmdbFrontierPlannerSettings.defaults(FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d));
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
 		var reviewPredicate = VF.createIRI("urn:test:packed-omni:review");
 		var aboutPredicate = VF.createIRI("urn:test:packed-omni:about");
 		when(valueStore.getId(reviewPredicate)).thenReturn(41L);

@@ -59,10 +59,6 @@ final class QueryPlanSnapshotStoreSupport {
 			.enable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
 			.enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
 	private static final String THEME_BENCHMARK_TRIPLE_INDEXES = "spoc,ospc,psoc,posc";
-	private static final int THEME_SUBJECT_BUCKET_COUNT = 4096;
-	private static final int THEME_PREDICATE_BUCKET_COUNT = 64;
-	private static final int THEME_OBJECT_BUCKET_COUNT = 4096;
-	private static final int THEME_CONTEXT_BUCKET_COUNT = 16;
 
 	private QueryPlanSnapshotStoreSupport() {
 	}
@@ -112,14 +108,7 @@ final class QueryPlanSnapshotStoreSupport {
 		config.setSketchEstimatorEvidenceMode(options.lmdbEvidenceMode);
 		config.setValueDBSize(1_073_741_824L); // 1 GiB
 		config.setTripleDBSize(config.getValueDBSize());
-		config.setSketchEstimatorSubjectBucketCount(THEME_SUBJECT_BUCKET_COUNT);
-		config.setSketchEstimatorPredicateBucketCount(THEME_PREDICATE_BUCKET_COUNT);
-		config.setSketchEstimatorObjectBucketCount(THEME_OBJECT_BUCKET_COUNT);
-		config.setSketchEstimatorContextBucketCount(THEME_CONTEXT_BUCKET_COUNT);
-		config.setSketchEstimatorContextPairSketchesEnabled(false);
-		if (options.lmdbFrontierQueryIndexBudgetBytes != null) {
-			config.setFrontierQueryIndexBudgetBytes(options.lmdbFrontierQueryIndexBudgetBytes);
-		}
+
 		return config;
 	}
 
@@ -341,27 +330,10 @@ final class QueryPlanSnapshotStoreSupport {
 				Long.toString(config.getBackgroundRawSamplingMaxMillisPerCycle()));
 		values.put("bulkOperationSize", Integer.toString(config.getBulkOperationSize()));
 		values.put("forceSync", Boolean.toString(config.getForceSync()));
-		values.put("frontierAuditLanes", Integer.toString(config.getFrontierAuditLanes()));
 		values.put("frontierCacheEvidenceBudgetBytes", Long.toString(config.getFrontierCacheEvidenceBudgetBytes()));
-		values.put("frontierCacheInitialConfidence", Double.toString(config.getFrontierCacheInitialConfidence()));
-		values.put("frontierCacheMaximumConfidence", Double.toString(config.getFrontierCacheMaximumConfidence()));
-		values.put("frontierCacheMaximumExpectedRegret",
-				Double.toString(config.getFrontierCacheMaximumExpectedRegret()));
-		values.put("frontierCacheMinimumConfidence", Double.toString(config.getFrontierCacheMinimumConfidence()));
-		values.put("frontierDefensiveProposalEpsilon",
-				Double.toString(config.getFrontierDefensiveProposalEpsilon()));
-		values.put("frontierDesignLanes", Integer.toString(config.getFrontierDesignLanes()));
-		values.put("frontierEffectiveQueryIndexBudgetBytes",
-				Long.toString(config.getEffectiveFrontierQueryIndexBudgetBytes()));
 		values.put("frontierEstimatorMode", String.valueOf(config.getFrontierEstimatorMode()));
-		values.put("frontierInitialMaterializationWorkUnits",
-				Long.toString(config.getFrontierInitialMaterializationWorkUnits()));
-		values.put("frontierQueryIndexBudgetBytes", Long.toString(config.getFrontierQueryIndexBudgetBytes()));
-		values.put("frontierQueryMemoryBudgetBytes", Long.toString(config.getFrontierQueryMemoryBudgetBytes()));
-		values.put("frontierRefinementWorkUnits", Integer.toString(config.getFrontierRefinementWorkUnits()));
 		values.put("frontierSynopsisBudgetBytes", Long.toString(config.getFrontierSynopsisBudgetBytes()));
-		values.put("frontierTargetRelativeStandardError",
-				Double.toString(config.getFrontierTargetRelativeStandardError()));
+		values.put("frontierHeapBudgetBytes", Long.toString(config.getFrontierHeapBudgetBytes()));
 		values.put("inlineLiterals", Boolean.toString(config.getInlineLiterals()));
 		values.put("namespaceCacheSize", Integer.toString(config.getNamespaceCacheSize()));
 		values.put("namespaceIdCacheSize", Integer.toString(config.getNamespaceIDCacheSize()));
@@ -376,27 +348,10 @@ final class QueryPlanSnapshotStoreSupport {
 		values.put("predicateGuaranteeIndexEnabled", Boolean.toString(config.getPredicateGuaranteeIndexEnabled()));
 		values.put("sketchEstimatorColdSynopsisCapacity",
 				Integer.toString(config.getSketchEstimatorColdSynopsisCapacity()));
-		values.put("sketchEstimatorContextBucketCount",
-				Integer.toString(config.getSketchEstimatorContextBucketCount()));
-		values.put("sketchEstimatorContextPairSketchesEnabled",
-				Boolean.toString(config.getSketchEstimatorContextPairSketchesEnabled()));
 		values.put("sketchEstimatorEnabled", String.valueOf(config.getSketchEstimatorEnabled()));
 		values.put("sketchEstimatorEvidenceMode", config.getSketchEstimatorEvidenceMode());
 		values.put("sketchEstimatorMemoryBudgetBytes",
 				Long.toString(config.getSketchEstimatorMemoryBudgetBytes()));
-		values.put("sketchEstimatorObjectBucketCount",
-				Integer.toString(config.getSketchEstimatorObjectBucketCount()));
-		values.put("sketchEstimatorOmniWitnessCohortBucketCount",
-				Integer.toString(config.getSketchEstimatorOmniWitnessCohortBucketCount()));
-		values.put("sketchEstimatorOmniWitnessCohortBucketIndex",
-				Integer.toString(config.getSketchEstimatorOmniWitnessCohortBucketIndex()));
-		values.put("sketchEstimatorOmniWitnessCohortMaxEntries",
-				Integer.toString(config.getSketchEstimatorOmniWitnessCohortMaxEntries()));
-		values.put("sketchEstimatorPredicateBucketCount",
-				Integer.toString(config.getSketchEstimatorPredicateBucketCount()));
-		values.put("sketchEstimatorStrategy", config.getSketchEstimatorStrategy());
-		values.put("sketchEstimatorSubjectBucketCount",
-				Integer.toString(config.getSketchEstimatorSubjectBucketCount()));
 		values.put("sketchEstimatorThrottleEveryN", Long.toString(config.getSketchEstimatorThrottleEveryN()));
 		values.put("sketchEstimatorThrottleMillis", Long.toString(config.getSketchEstimatorThrottleMillis()));
 		values.put("tripleDbSize", Long.toString(config.getTripleDBSize()));

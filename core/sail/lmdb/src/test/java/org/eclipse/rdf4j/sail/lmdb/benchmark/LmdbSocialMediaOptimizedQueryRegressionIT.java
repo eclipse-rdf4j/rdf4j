@@ -47,7 +47,7 @@ class LmdbSocialMediaOptimizedQueryRegressionIT {
 		state.themeName = Theme.SOCIAL_MEDIA.name();
 		state.z_queryIndex = 9;
 		state.sketchEstimatorEnabled = true;
-		state.sketchEstimatorStrategy = "unified";
+
 		state.loadSelectedThemeOnly = true;
 		state.rebuildStoreBeforeSetup = true;
 
@@ -77,7 +77,7 @@ class LmdbSocialMediaOptimizedQueryRegressionIT {
 		state.themeName = Theme.SOCIAL_MEDIA.name();
 		state.z_queryIndex = 9;
 		state.sketchEstimatorEnabled = true;
-		state.sketchEstimatorStrategy = "unified";
+
 		state.loadSelectedThemeOnly = true;
 		state.rebuildStoreBeforeSetup = true;
 
@@ -123,7 +123,7 @@ class LmdbSocialMediaOptimizedQueryRegressionIT {
 		state.themeName = Theme.SOCIAL_MEDIA.name();
 		state.z_queryIndex = 10;
 		state.sketchEstimatorEnabled = true;
-		state.sketchEstimatorStrategy = "unified";
+
 		state.loadSelectedThemeOnly = true;
 		state.rebuildStoreBeforeSetup = true;
 

@@ -549,27 +549,6 @@ class FrontierPayloadStateTest {
 	}
 
 	@Test
-	void laneFamilyAndCounterDomainsAreIndependentIdentityDimensions() {
-		FrontierMaskStrata masks = FrontierMaskStrata.of(FrontierLayout.of("x"), 1, new long[] { 1L });
-		FrontierStateKey design = key(masks, FrontierLaneFamily.DESIGN, 0);
-		FrontierStateKey audit = key(masks, FrontierLaneFamily.AUDIT, 0);
-
-		assertNotEquals(design, audit);
-		assertNotEquals(design.stableHash(), audit.stableHash());
-		assertEquals(FrontierLaneFamily.DESIGN, design.laneFamily());
-		assertEquals(0, design.laneIndex());
-
-		long base = 17L;
-		long bridge = FrontierSeedSchedule.derive(base, FrontierRandomDomain.BRIDGE_NEIGHBOR, 2L, 3L);
-		assertEquals(bridge, FrontierSeedSchedule.derive(base, FrontierRandomDomain.BRIDGE_NEIGHBOR, 2L, 3L));
-		assertNotEquals(bridge, FrontierSeedSchedule.derive(base, FrontierRandomDomain.RESAMPLE, 2L, 3L));
-		assertNotEquals(bridge, FrontierSeedSchedule.derive(base, FrontierRandomDomain.BRIDGE_NEIGHBOR, 3L, 3L));
-		assertNotEquals(bridge, FrontierSeedSchedule.derive(base, FrontierRandomDomain.BRIDGE_NEIGHBOR, 2L, 4L));
-		assertThrows(IllegalArgumentException.class,
-				() -> FrontierSeedSchedule.derive(base, FrontierRandomDomain.RESAMPLE, -1L, 0L));
-	}
-
-	@Test
 	void exactAndResidualPayloadsRoundTripAcrossMaskStrataAndEviction() {
 		FrontierMaskStrata masks = FrontierMaskStrata.of(
 				FrontierLayout.of("x", "y"),
@@ -866,44 +845,6 @@ class FrontierPayloadStateTest {
 			EvidenceStateRef second = arena.deriveOpaqueBoundary(raw, boundarySummary, 2);
 
 			assertSame(first, second);
-		}
-	}
-
-	@Test
-	void learnedTransformWithoutSurvivorsProducesTypedBoundary() {
-		FrontierMaskStrata masks = FrontierMaskStrata.of(FrontierLayout.of("x"), 1, new long[] { 1L });
-		FrontierStateKey parentKey = key(masks, FrontierLaneFamily.DESIGN, 0);
-		FrontierStateKey outputKey = factorKey(masks, 0b11L, FrontierLaneFamily.DESIGN);
-
-		try (FrontierStateArena arena = new FrontierStateArena(128 * 1024L)) {
-			arena.declareCanonicalStates(parentKey, outputKey);
-			FrontierPayloadWriter writer = arena.newPayloadWriter(parentKey, new int[] { 0 }, new int[] { 1 });
-			writer.putResidual(0, 0, 5.0d, new long[] { 11L }, 0);
-			EvidenceStateRef raw = arena.internPayload(
-					parentKey,
-					unbiased(5.0d, 12.0d, 1.0d, 1.0d),
-					FrontierStateOperation.COORDINATED_STAR,
-					null,
-					null,
-					1,
-					writer);
-			EvidenceStateRef calibrated = calibrate(
-					arena,
-					raw,
-					new EvidenceCalibrationSummary(5.0d, 10.0d, 2.0d, "leo", 4L, 0.75d, "join:a-b", 9L),
-					2);
-
-			EvidenceStateRef boundary = FrontierLinearTransforms.restrict(
-					arena, calibrated, outputKey, 3, (payload, exact, stratum, index) -> false);
-
-			assertEquals(EvidenceGuarantee.UNRESOLVED, boundary.summary().guarantee());
-			assertEquals(EvidenceZeroStatus.UNRESOLVED, boundary.summary().zeroStatus());
-			assertEquals("learned-calibrated-transform-zero-support", boundary.summary().degradationReason());
-			assertEquals(FrontierStateOperation.UNRESOLVED, arena.operation(boundary));
-			assertEquals(calibrated, arena.parent(boundary, 0));
-			assertEquals(FrontierPayloadStatus.NONE, arena.payloadStatus(boundary));
-			assertEquals(null, arena.find(outputKey),
-					"a lineage-specific boundary must not occupy the raw canonical state slot");
 		}
 	}
 

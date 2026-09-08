@@ -110,11 +110,7 @@ class QueryPlanSnapshotCliTest {
 					.createStoreRuntime(options)) {
 				LmdbStoreConfig config = runtime.lmdbStoreConfig;
 				assertEquals("spoc,ospc,psoc,posc", config.getTripleIndexes());
-				assertEquals(4096, config.getSketchEstimatorSubjectBucketCount());
-				assertEquals(64, config.getSketchEstimatorPredicateBucketCount());
-				assertEquals(4096, config.getSketchEstimatorObjectBucketCount());
-				assertEquals(16, config.getSketchEstimatorContextBucketCount());
-				assertFalse(config.getSketchEstimatorContextPairSketchesEnabled());
+
 				assertEquals("adaptive", config.getSketchEstimatorEvidenceMode());
 			}
 		} finally {
@@ -563,13 +559,8 @@ class QueryPlanSnapshotCliTest {
 			assertEquals(ThemeQueryCatalog.QUERY_COUNT + 1, allLaunchedArguments.size());
 			assertTrue(allLaunchedArguments.get(0).contains("--batch-data-preflight"));
 			assertFalse(allLaunchedArguments.get(0).contains("--all-theme-queries"));
-			String parentQueryIndexBudget = Long.toString(QueryPlanSnapshotStoreSupport
-					.createLmdbStoreConfig(options)
-					.getFrontierQueryIndexBudgetBytes());
 			for (List<String> arguments : allLaunchedArguments) {
 				assertEquals("snapshot-only", valueFollowing(arguments, "--lmdb-evidence-mode"));
-				assertEquals(parentQueryIndexBudget,
-						valueFollowing(arguments, "--lmdb-frontier-query-index-budget-bytes"));
 			}
 			assertEquals(ThemeQueryCatalog.QUERY_COUNT, launchedArguments.size());
 			Duration executionWait = firstWorker.waitTimeouts.get(0);

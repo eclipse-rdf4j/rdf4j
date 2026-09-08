@@ -38,10 +38,9 @@ class LmdbFrontierMedicalLeafIT {
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 2;
 		state.sketchEstimatorEnabled = false;
-		state.sketchEstimatorStrategy = "unified";
 		state.loadSelectedThemeOnly = false;
 		state.rebuildStoreBeforeSetup = true;
-		state.frontierQueryMemoryBudgetBytes = 2L * 1024L * 1024L * 1024L;
+		state.frontierHeapBudgetBytes = 2L * 1024L * 1024L * 1024L;
 
 		try {
 			state.setup();

@@ -45,7 +45,7 @@ public final class ThemePlanQualityAuditCli {
 		state.z_queryIndex = options.queryIndex();
 		state.leoRolloutProfile = "safe-cardinality-correction";
 		state.dphypEnabled = true;
-		state.frontierQueryMemoryBudgetBytes = options.frontierQueryMemoryBytes();
+		state.frontierHeapBudgetBytes = options.frontierHeapBytes();
 		state.setup();
 		try (LmdbBenchmarkPlanQualityAudit audit = state.prepareAudit(options.timeoutSeconds(),
 				options.dominatedSamplesPerStratum(), options.maxRetainedBytes())) {
@@ -79,8 +79,8 @@ public final class ThemePlanQualityAuditCli {
 				.append("\n  \"maxRetainedBytes\": ")
 				.append(options.maxRetainedBytes())
 				.append(',')
-				.append("\n  \"frontierQueryMemoryBytes\": ")
-				.append(options.frontierQueryMemoryBytes())
+				.append("\n  \"frontierHeapBytes\": ")
+				.append(options.frontierHeapBytes())
 				.append(',')
 				.append("\n  \"retainedBytes\": ")
 				.append(audit.selectedPlanningResult().retainedBytes())
@@ -239,7 +239,7 @@ public final class ThemePlanQualityAuditCli {
 	}
 
 	private record Options(String theme, int queryIndex, int alternativeIndex, int dominatedSamplesPerStratum,
-			int warmups, int measurements, int timeoutSeconds, long maxRetainedBytes, long frontierQueryMemoryBytes,
+			int warmups, int measurements, int timeoutSeconds, long maxRetainedBytes, long frontierHeapBytes,
 			Path output) {
 
 		private static Options parse(String[] args) {
@@ -259,15 +259,15 @@ public final class ThemePlanQualityAuditCli {
 			int timeout = integer(values, "timeout", 60);
 			long maxRetainedBytes = longInteger(values, "max-retained-bytes",
 					PackedPlannerLimits.DEFAULT_MAX_RETAINED_BYTES);
-			long frontierQueryMemoryBytes = longInteger(values, "frontier-query-memory-bytes",
-					LmdbStoreConfig.FRONTIER_QUERY_MEMORY_BUDGET_BYTES);
+			long frontierHeapBytes = longInteger(values, "frontier-heap-bytes",
+					LmdbStoreConfig.FRONTIER_HEAP_BUDGET_BYTES);
 			Path output = Path.of(required(values, "output"));
 			if (queryIndex < 0 || queryIndex > 12 || alternativeIndex < -1 || samples < 0 || warmups < 0
-					|| measurements <= 0 || timeout <= 0 || maxRetainedBytes < 0L || frontierQueryMemoryBytes < 0L) {
+					|| measurements <= 0 || timeout <= 0 || maxRetainedBytes < 0L || frontierHeapBytes < 0L) {
 				throw usage();
 			}
 			return new Options(theme, queryIndex, alternativeIndex, samples, warmups, measurements, timeout,
-					maxRetainedBytes, frontierQueryMemoryBytes, output);
+					maxRetainedBytes, frontierHeapBytes, output);
 		}
 
 		private static String required(Map<String, String> values, String name) {
@@ -291,7 +291,7 @@ public final class ThemePlanQualityAuditCli {
 		private static IllegalArgumentException usage() {
 			return new IllegalArgumentException("Usage: --theme THEME --query 0..12 --output FILE "
 					+ "[--alternative -1|INDEX] [--samples N] [--warmups N] [--measurements N] [--timeout S] "
-					+ "[--max-retained-bytes N] [--frontier-query-memory-bytes N]");
+					+ "[--max-retained-bytes N] [--frontier-heap-bytes N]");
 		}
 	}
 }

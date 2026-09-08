@@ -33,8 +33,7 @@ final class FrontierStatisticsManifestStore {
 
 	private static final long MANIFEST_MAGIC = 0x524446344a4d5632L; // RDF4JMV2
 	private static final long POINTER_MAGIC = 0x524446344a435632L; // RDF4JCV2
-	private static final int LEGACY_MANIFEST_VERSION = 4;
-	private static final int MANIFEST_VERSION = 5;
+	private static final int MANIFEST_VERSION = 6;
 	private static final int POINTER_VERSION = 4;
 	private static final int MAXIMUM_MANIFEST_BYTES = 1024 * 1024;
 	private static final int MAXIMUM_SHARDS = 16_384;
@@ -310,7 +309,7 @@ final class FrontierStatisticsManifestStore {
 		long magic = header.getLong();
 		int version = header.getInt();
 		if (magic != MANIFEST_MAGIC
-				|| version != LEGACY_MANIFEST_VERSION && version != MANIFEST_VERSION) {
+				|| version != MANIFEST_VERSION) {
 			throw new IOException("Frontier statistics manifest is incompatible");
 		}
 		int bodyLength = header.getInt();
@@ -331,28 +330,16 @@ final class FrontierStatisticsManifestStore {
 			long coveredSequence = input.readLong();
 			long createdAtMillis = input.readLong();
 			long maximumTermId = input.readLong();
-			int formatRevision = 0;
-			long capabilityMask = 0L;
-			int hashSchemaId = 0;
-			int bucketSchemaId = 0;
-			int depth = 0;
-			int width = 0;
-			int designLaneCount = 0;
-			int auditLaneCount = 0;
-			int termBitWidth = 0;
-			int tupleOrdinalWidth = 0;
-			if (version == MANIFEST_VERSION) {
-				formatRevision = input.readInt();
-				capabilityMask = input.readLong();
-				hashSchemaId = input.readInt();
-				bucketSchemaId = input.readInt();
-				depth = input.readInt();
-				width = input.readInt();
-				designLaneCount = input.readInt();
-				auditLaneCount = input.readInt();
-				termBitWidth = input.readInt();
-				tupleOrdinalWidth = input.readInt();
-			}
+			int formatRevision = input.readInt();
+			long capabilityMask = input.readLong();
+			int hashSchemaId = input.readInt();
+			int bucketSchemaId = input.readInt();
+			int depth = input.readInt();
+			int width = input.readInt();
+			int designLaneCount = input.readInt();
+			int auditLaneCount = input.readInt();
+			int termBitWidth = input.readInt();
+			int tupleOrdinalWidth = input.readInt();
 			int shardCount = input.readInt();
 			if (shardCount <= 0 || shardCount > MAXIMUM_SHARDS) {
 				throw new IOException("Frontier statistics manifest shard count is invalid: " + shardCount);
@@ -389,13 +376,10 @@ final class FrontierStatisticsManifestStore {
 			if (input.read() != -1) {
 				throw new IOException("Frontier statistics manifest body has trailing bytes");
 			}
-			return version == MANIFEST_VERSION
-					? new FrontierStatisticsManifest(generationId, previousGenerationId, baseEpoch, coveredEpoch,
-							coveredSequence, createdAtMillis, maximumTermId, formatRevision, capabilityMask,
-							hashSchemaId, bucketSchemaId, depth, width, designLaneCount, auditLaneCount,
-							termBitWidth, tupleOrdinalWidth, shards)
-					: FrontierStatisticsManifest.legacyUnversioned(generationId, previousGenerationId,
-							baseEpoch, coveredEpoch, coveredSequence, createdAtMillis, maximumTermId, shards);
+			return new FrontierStatisticsManifest(generationId, previousGenerationId, baseEpoch, coveredEpoch,
+					coveredSequence, createdAtMillis, maximumTermId, formatRevision, capabilityMask,
+					hashSchemaId, bucketSchemaId, depth, width, designLaneCount, auditLaneCount,
+					termBitWidth, tupleOrdinalWidth, shards);
 		} catch (IllegalArgumentException failure) {
 			throw new IOException("Frontier statistics manifest metadata is invalid", failure);
 		}

@@ -193,8 +193,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void storeOwnedHeuristicFilterPassCacheReusesEquivalentQueriesAcrossStatisticsFacades() {
 		LmdbStatementPatternCardinalitySource cardinalities = mock(LmdbStatementPatternCardinalitySource.class);
 		when(cardinalities.estimateForPlanning(any(StatementPattern.class))).thenReturn(10.0d);
-		LmdbFrontierPlannerSettings settings = LmdbFrontierPlannerSettings.defaults(
-				FrontierEstimatorMode.OFF, 0L, 0L, 0, 1.0d, 1.0d);
+		LmdbFrontierPlannerSettings settings = LmdbFrontierPlannerSettings
+				.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.OFF));
 		LmdbEvaluationStatistics first = statistics(cardinalities, settings);
 		LmdbEvaluationStatistics second = statistics(cardinalities, settings);
 		Filter filter = new Filter(pattern("s", FIRST, "x"), new ValueConstant(VF.createLiteral(true)));
@@ -556,7 +557,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	private static LmdbEvaluationStatistics statistics(LmdbStatementPatternCardinalitySource cardinalities,
 			LmdbFrontierPlannerSettings settings) {
-		return new LmdbEvaluationStatistics(null, null, null, null, null, cardinalities, null, null, settings,
+		return new LmdbEvaluationStatistics(null, null, null, null, null, cardinalities, null, settings,
 				() -> false);
 	}
 

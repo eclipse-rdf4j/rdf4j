@@ -79,7 +79,6 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierInsertion;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierMutation;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsBuildConfig;
@@ -90,8 +89,6 @@ import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsException;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsHeapGovernor;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsManifest;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsStatus;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
-import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
@@ -163,14 +160,12 @@ class LmdbSailStore implements SailStore {
 	private PersistentSet<Long> unusedIds, nextUnusedIds;
 
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
-	private LmdbFrontierSynopsisService frontierSynopsisService;
 	private LmdbStatisticsService statisticsService;
 	private FrontierStatisticsBuildConfig statisticsBuildConfig;
 	private FrontierStatisticsHeapGovernor statisticsHeapGovernor;
 	private long frontierMutationTailSequence;
 	private final Object frontierMutationTailMonitor = new Object();
 	private final Object frontierStatisticsMonitor = new Object();
-	private FrontierSynopsisStatus lastFrontierInsertionWarningStatus;
 	private LmdbFilterSelectivityStats filterSelectivityStats;
 	private LmdbOperatorFeedbackStats operatorFeedbackStats;
 	private final LmdbStatementPatternCardinalitySource statementPatternCardinalitySource;
@@ -235,9 +230,7 @@ class LmdbSailStore implements SailStore {
 			}
 			boolean added = tripleStore.storeTriple(s, p, o, c, explicit);
 			if (added) {
-				if (frontierSynopsisService != null) {
-					frontierSynopsisService.recordInsertion(new FrontierInsertion(explicit, s, p, o, c));
-				}
+
 				tripleStore.recordRdfTermDomain(p, obj);
 				if (explicit && estimatorCallback != null) {
 					Statement st = valueStore.createStatement(subj, pred, obj, context);
@@ -315,10 +308,7 @@ class LmdbSailStore implements SailStore {
 					boolean added = tripleStore.storeTriple(subjects[i], predicates[i], objects[i], contexts[i],
 							explicit);
 					if (added) {
-						if (frontierSynopsisService != null) {
-							frontierSynopsisService.recordInsertion(new FrontierInsertion(
-									explicit, subjects[i], predicates[i], objects[i], contexts[i]));
-						}
+
 						tripleStore.recordRdfTermDomain(predicates[i], objectValues[i]);
 						if (addedStatements != null) {
 							addedStatements.add(statements[i]);
@@ -332,11 +322,7 @@ class LmdbSailStore implements SailStore {
 			}
 			tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit, statementIndex -> {
 				try {
-					if (frontierSynopsisService != null) {
-						frontierSynopsisService.recordInsertion(new FrontierInsertion(
-								explicit, subjects[statementIndex], predicates[statementIndex],
-								objects[statementIndex], contexts[statementIndex]));
-					}
+
 					tripleStore.recordRdfTermDomain(predicates[statementIndex], objectValues[statementIndex]);
 				} catch (IOException e) {
 					throw new UncheckedIOException(e);
@@ -435,15 +421,6 @@ class LmdbSailStore implements SailStore {
 					logger.warn("Frontier and learned evidence cannot use a durable LMDB store identity", e);
 				}
 			}
-			frontierSynopsisService = LmdbFrontierSynopsisService.open(
-					new File(dataDir, "frontier-synopsis").toPath(),
-					config.getFrontierEstimatorMode(),
-					durableStoreId,
-					config.getFrontierSynopsisBudgetBytes(),
-					config.getFrontierDesignLanes(),
-					config.getFrontierAuditLanes(),
-					() -> new LmdbFrontierSnapshotSource(tripleStore),
-					config.getEffectiveFrontierQueryIndexBudgetBytes());
 			if (frontierEnabled && config.getFrontierSynopsisBudgetBytes() >= 16L * 1024L * 1024L
 					&& config.getFrontierHeapBudgetBytes() >= 1024L) {
 				try {
@@ -648,28 +625,19 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	FrontierSynopsisStatus rebuildFrontierSynopsis() {
+	FrontierStatisticsStatus rebuildFrontierStatistics() {
 		sinkStoreAccessLock.lock();
 		try {
 			if (storeTxnStarted.get()) {
-				throw new SailException("Cannot rebuild Frontier synopsis while an LMDB write transaction is active");
+				throw new SailException("Cannot rebuild Frontier statistics while an LMDB write transaction is active");
 			}
 			if (statisticsService != null) {
-				boolean rebuilt = rebuildFrontierStatisticsV2();
+				rebuildFrontierStatisticsV2();
 				synchronized (frontierStatisticsMonitor) {
 					frontierStatisticsMonitor.notifyAll();
 				}
-				FrontierStatisticsStatus status = statisticsService.status();
-				if (rebuilt && status.availability() == FrontierStatisticsAvailability.READY) {
-					return FrontierSynopsisStatus.READY;
-				}
-				return switch (status.fallbackReason()) {
-				case MEMORY_PRESSURE -> FrontierSynopsisStatus.BUDGET_EXCEEDED;
-				case SHARD_CORRUPT -> FrontierSynopsisStatus.CORRUPT;
-				default -> FrontierSynopsisStatus.MISSING;
-				};
 			}
-			return frontierSynopsisService.rebuild();
+			return frontierStatisticsStatus();
 		} finally {
 			sinkStoreAccessLock.unlock();
 		}
@@ -697,9 +665,7 @@ class LmdbSailStore implements SailStore {
 				.withThrottleEveryN(config.getSketchEstimatorThrottleEveryN())
 				.withThrottleMillis(config.getSketchEstimatorThrottleMillis())
 				.withEvidenceMode(config.getSketchEstimatorEvidenceMode())
-				.withColdSynopsisCapacity(config.getSketchEstimatorColdSynopsisCapacity())
-				.withSketchStrategy(SketchBasedJoinEstimator.SketchStrategy.fromConfigValue(
-						config.getSketchEstimatorStrategy(), SketchBasedJoinEstimator.SketchStrategy.UNIFIED));
+				.withColdSynopsisCapacity(config.getSketchEstimatorColdSynopsisCapacity());
 	}
 
 	private StoreSnapshotCoordinates currentStoreSnapshotCoordinates() throws IOException {
@@ -855,9 +821,7 @@ class LmdbSailStore implements SailStore {
 		} finally {
 			tripleStoreException = null;
 			discardEstimatorStateTouchedByOpenTransaction();
-			if (frontierSynopsisService != null) {
-				frontierSynopsisService.discardInsertionTransaction();
-			}
+
 			storeTxnStarted.set(false);
 			sinkStoreAccessLock.unlock();
 		}
@@ -919,17 +883,11 @@ class LmdbSailStore implements SailStore {
 								} finally {
 									shutdownAndAwaitEstimatorPersistExecutor();
 									try {
-										if (frontierSynopsisService != null) {
-											frontierSynopsisService.close();
+										if (statisticsService != null) {
+											statisticsService.close();
 										}
 									} finally {
-										try {
-											if (statisticsService != null) {
-												statisticsService.close();
-											}
-										} finally {
-											tripleStore.close();
-										}
+										tripleStore.close();
 									}
 								}
 							}
@@ -946,10 +904,6 @@ class LmdbSailStore implements SailStore {
 			logger.warn("Failed to close store", e);
 			throw new SailException(e);
 		}
-	}
-
-	FrontierSynopsisStatus frontierSynopsisStatus() {
-		return frontierSynopsisService.status();
 	}
 
 	FrontierStatisticsStatus frontierStatisticsStatus() {
@@ -1176,7 +1130,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void ensureFrontierRebuildScheduled() {
-		if ((statisticsService == null && frontierSynopsisService == null) || closing
+		if (statisticsService == null || closing
 				|| !frontierRebuildScheduled.compareAndSet(false, true)) {
 			return;
 		}
@@ -1196,7 +1150,7 @@ class LmdbSailStore implements SailStore {
 		long requestAtStart = frontierRebuildRequestedNanos;
 		try {
 			if (statisticsService == null) {
-				retry = rebuildLegacyFrontierSynopsis();
+				return;
 			} else {
 				if (!statisticsService.rebuildRequired()) {
 					DeltaRefreshResult deltaResult = refreshFrontierStatisticsDelta();
@@ -1230,31 +1184,10 @@ class LmdbSailStore implements SailStore {
 					ensureFrontierRebuildScheduled();
 				} catch (RuntimeException failure) {
 					if (!estimatorPersistExec.isShutdown()) {
-						logger.warn("Failed to reschedule Frontier synopsis rebuild", failure);
+						logger.warn("Failed to reschedule Frontier statistics rebuild", failure);
 					}
 				}
 			}
-		}
-	}
-
-	private boolean rebuildLegacyFrontierSynopsis() {
-		if (!frontierRebuildQuietPeriodElapsed()) {
-			return true;
-		}
-		sinkStoreAccessLock.lock();
-		try {
-			if (storeTxnStarted.get() || !frontierRebuildQuietPeriodElapsed()) {
-				return true;
-			}
-			FrontierSynopsisStatus rebuilt = frontierSynopsisService.rebuild();
-			boolean retry = rebuilt == FrontierSynopsisStatus.DIRTY_INSERTION
-					|| rebuilt == FrontierSynopsisStatus.DIRTY_DELETION;
-			if (rebuilt != FrontierSynopsisStatus.READY && !retry) {
-				logger.warn("Legacy Frontier background rebuild is unavailable: {}", rebuilt);
-			}
-			return retry;
-		} finally {
-			sinkStoreAccessLock.unlock();
 		}
 	}
 
@@ -1496,12 +1429,6 @@ class LmdbSailStore implements SailStore {
 		return elapsedNanos >= TimeUnit.MILLISECONDS.toNanos(estimatorPersistDelayMillis);
 	}
 
-	private static boolean frontierSynopsisNeedsRebuild(FrontierSynopsisStatus status) {
-		return status == FrontierSynopsisStatus.DIRTY_INSERTION
-				|| status == FrontierSynopsisStatus.DIRTY_DELETION
-				|| status == FrontierSynopsisStatus.BUDGET_EXCEEDED;
-	}
-
 	SailException wrapTripleStoreException() {
 		return tripleStoreException instanceof SailException ? (SailException) tripleStoreException
 				: new SailException(tripleStoreException);
@@ -1545,7 +1472,7 @@ class LmdbSailStore implements SailStore {
 	public EvaluationStatistics getEvaluationStatistics() {
 		return new LmdbStoreEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator,
 				filterSelectivityStats,
-				operatorFeedbackStats, statementPatternCardinalitySource, cascadesPlanCache, frontierSynopsisService,
+				operatorFeedbackStats, statementPatternCardinalitySource, cascadesPlanCache,
 				frontierPlannerSettings, () -> mayHaveInferred, () -> adaptiveEvidenceAllowed, statisticsService,
 				this::openDetachedPlanningSnapshot);
 	}
@@ -2385,21 +2312,7 @@ class LmdbSailStore implements SailStore {
 						handleRemovedIdsInValueStore();
 						valueStore.commit();
 						flushPendingEstimatorAddsAfterCommit();
-						if (frontierSynopsisService != null) {
-							FrontierSynopsisStatus insertionStatus = frontierSynopsisService
-									.completeInsertionCommit();
-							if (insertionStatus == FrontierSynopsisStatus.DIRTY_INSERTION
-									|| insertionStatus == FrontierSynopsisStatus.BUDGET_EXCEEDED) {
-								if (insertionStatus != lastFrontierInsertionWarningStatus) {
-									logger.warn(
-											"Frontier exact insert generation was not published after LMDB commit: {}",
-											insertionStatus);
-									lastFrontierInsertionWarningStatus = insertionStatus;
-								}
-							} else {
-								lastFrontierInsertionWarningStatus = null;
-							}
-						}
+
 						// The triple/value stores are authoritative once both commits succeed.
 						storeTxnStarted.set(false);
 						StoreSnapshotCoordinates committedSnapshot = currentStoreSnapshotCoordinates();
@@ -2425,14 +2338,7 @@ class LmdbSailStore implements SailStore {
 								logger.warn("Failed to schedule Frontier Statistics V2 refresh after commit", e);
 							}
 						}
-						if (frontierSynopsisService != null
-								&& frontierSynopsisNeedsRebuild(frontierSynopsisService.status())) {
-							try {
-								requestFrontierRebuild();
-							} catch (RuntimeException e) {
-								logger.warn("Failed to schedule Frontier synopsis rebuild after commit", e);
-							}
-						}
+
 						if (sketchBasedJoinEstimator != null || filterSelectivityStats != null
 								|| operatorFeedbackStats != null) {
 							try {
@@ -3187,13 +3093,7 @@ class LmdbSailStore implements SailStore {
 			try {
 				for (long contextId : contexts) {
 					tripleStore.removeTriplesByContext(subj, pred, obj, contextId, explicit, quad -> {
-						if (removeCount[0] == 0L && frontierSynopsisService != null) {
-							try {
-								frontierSynopsisService.invalidateForDeletion();
-							} catch (IOException e) {
-								throw new UncheckedIOException(e);
-							}
-						}
+
 						removeCount[0]++;
 						recordLeoTouchedPredicate(quad[1]);
 						try {

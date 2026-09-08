@@ -40,7 +40,7 @@ import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -69,8 +69,8 @@ class LmdbFrontierThemeCoverageIT {
 		try {
 			loadBoundedThemeData(scalarRepository, themes);
 			loadBoundedThemeData(frontierRepository, themes);
-			assertEquals(FrontierSynopsisStatus.READY,
-					((LmdbStore) frontierRepository.getSail()).rebuildFrontierSynopsis(),
+			assertEquals(FrontierStatisticsAvailability.READY,
+					((LmdbStore) frontierRepository.getSail()).rebuildFrontierStatistics().availability(),
 					"The Theme coverage run must exercise an authoritative Frontier synopsis");
 			try (SailRepositoryConnection scalarConnection = scalarRepository.getConnection();
 					SailRepositoryConnection frontierConnection = frontierRepository.getConnection()) {
@@ -109,7 +109,7 @@ class LmdbFrontierThemeCoverageIT {
 	private static SailRepository repository(Path dataDirectory, FrontierEstimatorMode mode) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
 				.setFrontierEstimatorMode(mode)
-				.setFrontierSynopsisBudgetBytes(mode == FrontierEstimatorMode.OFF ? 0L : 256L * 1024L);
+				.setFrontierSynopsisBudgetBytes(mode == FrontierEstimatorMode.OFF ? 0L : 32L * 1024L * 1024L);
 		SailRepository repository = new SailRepository(new LmdbStore(dataDirectory.toFile(), config));
 		repository.init();
 		return repository;

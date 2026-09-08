@@ -34,12 +34,12 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinEstimate;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafEstimate;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
-import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.junit.jupiter.api.Test;
@@ -102,11 +102,12 @@ class LmdbFrontierV2EstimatorEvidenceTest {
 				.getDeclaredConstructor(ValueStore.class, TripleStore.class, SketchBasedJoinEstimator.class,
 						LmdbFilterSelectivityStats.class, LmdbOperatorFeedbackStats.class,
 						LmdbStatementPatternCardinalitySource.class, PackedPlanCache.class,
-						LmdbFrontierSynopsisService.class, LmdbFrontierPlannerSettings.class,
+						LmdbFrontierPlannerSettings.class,
 						BooleanSupplier.class, BooleanSupplier.class, LmdbStatisticsService.class);
 		LmdbEvaluationStatistics evaluation = constructor.newInstance(valueStore, null, null, null, null, null,
-				null, null, LmdbFrontierPlannerSettings.defaults(
-						FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d),
+				null,
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)),
 				(BooleanSupplier) () -> false,
 				(BooleanSupplier) () -> true, statistics);
 
@@ -143,11 +144,12 @@ class LmdbFrontierV2EstimatorEvidenceTest {
 				.getDeclaredConstructor(ValueStore.class, TripleStore.class, SketchBasedJoinEstimator.class,
 						LmdbFilterSelectivityStats.class, LmdbOperatorFeedbackStats.class,
 						LmdbStatementPatternCardinalitySource.class, PackedPlanCache.class,
-						LmdbFrontierSynopsisService.class, LmdbFrontierPlannerSettings.class,
+						LmdbFrontierPlannerSettings.class,
 						BooleanSupplier.class, BooleanSupplier.class, LmdbStatisticsService.class);
 		LmdbEvaluationStatistics evaluation = constructor.newInstance(valueStore, null, null, null, null, null,
-				null, null, LmdbFrontierPlannerSettings.defaults(
-						FrontierEstimatorMode.AUTHORITATIVE, 0L, 0L, 0, 1.0d, 1.0d),
+				null,
+				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)),
 				(BooleanSupplier) () -> false,
 				(BooleanSupplier) () -> true, statistics);
 

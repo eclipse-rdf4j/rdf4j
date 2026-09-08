@@ -99,7 +99,7 @@ class LmdbStatisticsServiceTest {
 	}
 
 	@Test
-	void revisionFourManifestRemainsReadableAsExplicitlyUnversionedMigrationState() throws Exception {
+	void revisionFourManifestIsUnavailableAndRebuilt() throws Exception {
 		service = openService();
 		FrontierStatisticsManifest generation = writeGeneration(
 				1L, -1L, 7L, FIRST_PROBE_SHARD, 41L, true);
@@ -109,11 +109,13 @@ class LmdbStatisticsServiceTest {
 
 		Path manifestPath = directory.resolve("manifest-%019d.fs2m".formatted(generation.generationId()));
 		downgradeManifestToRevisionFour(manifestPath);
-		FrontierStatisticsManifest legacy = new FrontierStatisticsManifestStore(
-				directory, NioFrontierFileOps.INSTANCE).loadCurrent();
-		assertEquals(0, legacy.formatRevision());
-
+		assertThrows(IOException.class, () -> new FrontierStatisticsManifestStore(
+				directory, NioFrontierFileOps.INSTANCE).loadCurrent());
 		service = openService();
+		assertFalse(service.status().availability() == FrontierStatisticsAvailability.READY);
+		assertTrue(service.rebuildRequired());
+		FrontierStatisticsManifest replacement = writeGeneration(2L, -1L, 7L, FIRST_PROBE_SHARD, 41L, true);
+		service.publish(replacement);
 		assertEquals(FrontierStatisticsAvailability.READY, service.status().availability());
 		try (FrontierStatisticsLease lease = service.acquire(7L)) {
 			assertEquals(41L, lease.shard(FIRST_PROBE_SHARD).column(0).value(0L));

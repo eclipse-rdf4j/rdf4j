@@ -38,7 +38,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
@@ -83,70 +82,42 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
 			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
 			PackedPlanCache cascadesPlanCache) {
-		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache, null,
-				FrontierEstimatorMode.OFF, 0L, 0L, 0, 1.0d, 1.0d, () -> false);
-	}
-
-	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
-			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
-			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
-			PackedPlanCache cascadesPlanCache, LmdbFrontierSynopsisService frontierSynopsis,
-			FrontierEstimatorMode frontierMode, long frontierQueryMemoryBudgetBytes,
-			int frontierRefinementWorkUnits, double frontierTargetRelativeStandardError,
-			double frontierDefensiveProposalEpsilon, BooleanSupplier mayHaveInferred) {
 		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
-				frontierSynopsis, frontierMode, frontierQueryMemoryBudgetBytes,
-				LmdbStoreConfig.FRONTIER_INITIAL_MATERIALIZATION_WORK_UNITS,
-				frontierRefinementWorkUnits, frontierTargetRelativeStandardError,
-				frontierDefensiveProposalEpsilon, mayHaveInferred);
+				LmdbFrontierPlannerSettings
+						.from(new LmdbStoreConfig().setFrontierEstimatorMode(FrontierEstimatorMode.OFF)),
+				() -> false);
 	}
 
 	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
 			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
-			PackedPlanCache cascadesPlanCache, LmdbFrontierSynopsisService frontierSynopsis,
-			FrontierEstimatorMode frontierMode, long frontierQueryMemoryBudgetBytes,
-			long frontierInitialMaterializationWorkUnits, int frontierRefinementWorkUnits,
-			double frontierTargetRelativeStandardError, double frontierDefensiveProposalEpsilon,
-			BooleanSupplier mayHaveInferred) {
-		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
-				frontierSynopsis, LmdbFrontierPlannerSettings.defaults(frontierMode,
-						frontierQueryMemoryBudgetBytes, frontierInitialMaterializationWorkUnits,
-						frontierRefinementWorkUnits, frontierTargetRelativeStandardError,
-						frontierDefensiveProposalEpsilon),
-				mayHaveInferred);
-	}
-
-	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
-			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
-			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
-			PackedPlanCache cascadesPlanCache, LmdbFrontierSynopsisService frontierSynopsis,
+			PackedPlanCache cascadesPlanCache,
 			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred) {
-		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache, frontierSynopsis,
+		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
 				frontierSettings, mayHaveInferred, () -> true);
 	}
 
 	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
 			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
-			PackedPlanCache cascadesPlanCache, LmdbFrontierSynopsisService frontierSynopsis,
+			PackedPlanCache cascadesPlanCache,
 			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier) {
-		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache, frontierSynopsis,
+		this(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
 				frontierSettings, mayHaveInferred, adaptiveEvidenceAllowedSupplier, null);
 	}
 
 	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
 			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
-			PackedPlanCache cascadesPlanCache, LmdbFrontierSynopsisService frontierSynopsis,
+			PackedPlanCache cascadesPlanCache,
 			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier, LmdbStatisticsService statistics) {
 		BooleanSupplier adaptiveEvidenceAllowed = adaptiveEvidenceAllowedSupplier == null ? () -> true
 				: adaptiveEvidenceAllowedSupplier;
 		runtime = new LmdbEstimatorRuntime(valueStore, tripleStore,
 				estimator == null ? null : estimator.synopsisService(), filters, feedback, cardinalities,
-				cascadesPlanCache, frontierSynopsis, frontierSettings, mayHaveInferred,
+				cascadesPlanCache, frontierSettings, mayHaveInferred,
 				adaptiveEvidenceAllowed, statistics);
 		filterServices = new LmdbEvaluationFilterServices(runtime, filters, estimator, adaptiveEvidenceAllowed);
 	}

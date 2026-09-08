@@ -160,7 +160,7 @@ class FrontierStatisticsBuilderTest {
 		FrontierStatisticsBuildConfig config = new FrontierStatisticsBuildConfig(
 				8L * mib, 1L * mib, 7L * mib, 0L, 0L, 0L,
 				64L * 1024L, 1, 1, 2, 1, 256, 8_192, 0.25d,
-				1, 2, 1, 4, 1);
+				1, 2, 1, 4);
 		FrontierStatisticsHeapGovernor governor = new FrontierStatisticsHeapGovernor(
 				64L * mib, 8L * mib, 16L * mib, 8L * mib);
 
@@ -179,7 +179,7 @@ class FrontierStatisticsBuilderTest {
 		FrontierStatisticsBuildConfig config = new FrontierStatisticsBuildConfig(
 				8L * mib, 1L * mib, 7L * mib, 0L, 0L, 0L,
 				64L * 1024L, 1, 1, 2, 1, 256, 256, 0.25d,
-				1, 2, 1, 4, 1);
+				1, 2, 1, 4);
 		FrontierStatisticsHeapGovernor governor = new FrontierStatisticsHeapGovernor(
 				64L * mib, 8L * mib, 16L * mib, 8L * mib);
 
@@ -320,7 +320,7 @@ class FrontierStatisticsBuilderTest {
 		}
 		assertTrue(manifest.shards()
 				.stream()
-				.noneMatch(shard -> shard.kind() == FrontierStatisticsShardKind.DISTINCT_HLL),
+				.noneMatch(shard -> shard.kind().name().equals("DISTINCT_HLL")),
 				"query-ready heavy scalars must replace duplicate per-plane HLL shards");
 		assertTrue(manifest.shards()
 				.stream()
@@ -1978,6 +1978,80 @@ class FrontierStatisticsBuilderTest {
 		}
 	}
 
+	@Test
+	void allConsumedAgmsProjectionsSurviveBothPlanesReopenAndCompaction(@TempDir Path directory) throws Exception {
+		for (boolean explicit : new boolean[] { true, false }) {
+			for (int component : new int[] { 0, 2, 3 }) {
+				Path generationDirectory = directory.resolve(explicit + "-" + component);
+				SyntheticSnapshot original = correlatedSnapshot();
+				List<long[]> joinedRows = original.explicit.stream()
+						.map(row -> rotateJoinComponent(row, component))
+						.toList();
+				List<long[]> otherRows = original.inferred.stream()
+						.map(row -> rotateJoinComponent(row, component))
+						.toList();
+				SyntheticSnapshot snapshot = new SyntheticSnapshot(77L,
+						explicit ? joinedRows : otherRows, explicit ? otherRows : joinedRows);
+				FrontierStatisticsBuildConfig config = FrontierStatisticsBuildConfig.testing(
+						32L * 1024 * 1024, 64, 32, 256, 2L * 1024 * 1024);
+				FrontierStatisticsHeapGovernor governor = new FrontierStatisticsHeapGovernor(
+						64L * 1024 * 1024, 8L * 1024 * 1024, 16L * 1024 * 1024, 8L * 1024 * 1024);
+				FrontierStatisticsManifest base = FrontierStatisticsBuilder.build(
+						generationDirectory, 1L, -1L, snapshot, governor, config);
+				FrontierLeafProbe left = new FrontierLeafProbe(
+						explicit ? FrontierLeafProbe.EXPLICIT : FrontierLeafProbe.INFERRED,
+						FrontierLeafProbe.PREDICATE, 0, 7, 0, 0);
+				FrontierLeafProbe right = new FrontierLeafProbe(left.planeMask(), FrontierLeafProbe.PREDICATE, 0, 8, 0,
+						0);
+				FrontierJoinProbe probe = new FrontierJoinProbe(left, component, right, component);
+				FrontierJoinEstimate beforeClose;
+				try (LmdbStatisticsService service = openPublished(generationDirectory, governor,
+						config.diskBudgetBytes(), 60_000L, base)) {
+					service.publishDelta(List.of(agmsMutation(78, 78, true, explicit, component, 1, 7, 90_001),
+							agmsMutation(79, 78, true, explicit, component, 1, 8, 90_002)), config);
+					service.publishDelta(List.of(agmsMutation(80, 79, false, explicit, component, 2, 7, 10_200)),
+							config);
+					FrontierStatisticsManifest compacted = service.publishDelta(List.of(
+							agmsMutation(81, 80, true, explicit, component, 1001, 9, 99_999)), config);
+					assertEquals(1,
+							compacted.shards()
+									.stream()
+									.filter(shard -> shard.kind() == FrontierStatisticsShardKind.SIGNED_DELTA)
+									.count());
+					beforeClose = service.estimateJoin(80L, probe);
+					assertEquals(FrontierFallbackReason.NONE, beforeClose.fallbackReason(), beforeClose::toString);
+					assertEquals("frontier-v2-fast-agms", beforeClose.source());
+					assertTrue(beforeClose.lowerRows() <= 240_061 && beforeClose.upperRows() >= 240_061,
+							beforeClose::toString);
+					assertTrue(beforeClose.pointRows() >= 60_015.25 && beforeClose.pointRows() <= 960_244,
+							beforeClose::toString);
+				}
+				try (LmdbStatisticsService reopened = LmdbStatisticsService.open(generationDirectory, governor,
+						config.diskBudgetBytes(), 60_000L)) {
+					assertEquals(beforeClose, reopened.estimateJoin(80L, probe));
+				}
+			}
+		}
+	}
+
+	private static long[] rotateJoinComponent(long[] source, int component) {
+		long[] row = source.clone();
+		// Context joins still need a valid positive subject after exchanging the two roles.
+		if (component == 3) {
+			row[3] = row[2] + 100_000;
+		}
+		long previous = row[component];
+		row[component] = row[0];
+		row[0] = previous;
+		return row;
+	}
+
+	private static FrontierMutation agmsMutation(long sequence, long epoch, boolean insertion, boolean explicit,
+			int component, long subject, long predicate, long object) {
+		long[] row = rotateJoinComponent(new long[] { subject, predicate, object, 0 }, component);
+		return new FrontierMutation(sequence, epoch, insertion, explicit, row[0], row[1], row[2], row[3]);
+	}
+
 	private static LmdbStatisticsService openPublished(Path directory,
 			FrontierStatisticsHeapGovernor governor, long mappedByteBudget, long cleanupWaitMillis,
 			FrontierStatisticsManifest manifest) throws IOException {
@@ -2071,8 +2145,7 @@ class FrontierStatisticsBuilderTest {
 				base.joinSampleBudgetBytes(), base.adaptiveBudgetBytes(), base.deltaAndManifestBudgetBytes(),
 				base.sortMemoryBytes(), designLanes, auditLanes, base.cellCount(), base.omniDepth(),
 				base.witnessFloorPerCell(), base.witnessCeilingPerCell(), base.deleteReserveFraction(),
-				base.countMinDepth(), base.countMinWidth(), base.heavyPredicateCapacity(), base.hllPrecision(),
-				base.globalWitnessCapacity());
+				base.countMinDepth(), base.countMinWidth(), base.heavyPredicateCapacity(), base.hllPrecision());
 	}
 
 	private static FrontierStatisticsHeapGovernor vectorBatchingGovernor() {

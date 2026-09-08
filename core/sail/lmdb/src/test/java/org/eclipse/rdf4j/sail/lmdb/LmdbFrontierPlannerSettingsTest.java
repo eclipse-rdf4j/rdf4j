@@ -22,7 +22,7 @@ import org.junit.jupiter.api.Test;
 class LmdbFrontierPlannerSettingsTest {
 
 	@Test
-	void packedAndLmdbPlannerCachesShareOneExactAggregateBudget() throws Exception {
+	void survivingCachesKeepTheirOriginalAllowances() throws Exception {
 		long configuredBudget = 1_000_003L;
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setFrontierCacheEvidenceBudgetBytes(configuredBudget);
@@ -32,7 +32,8 @@ class LmdbFrontierPlannerSettingsTest {
 				"allocatedPlannerCacheBudgetBytes");
 
 		assertTrue((long) packedBudget.invoke(settings) > 0L);
-		assertEquals(configuredBudget, aggregateBudget.invoke(settings));
+		assertEquals(configuredBudget / 16 + configuredBudget / 32 + configuredBudget / 16 + configuredBudget / 4,
+				aggregateBudget.invoke(settings));
 
 		settings.close();
 	}

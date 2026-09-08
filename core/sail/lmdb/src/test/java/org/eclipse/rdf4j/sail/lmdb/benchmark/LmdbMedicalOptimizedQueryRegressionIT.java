@@ -55,7 +55,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 1;
 		state.sketchEstimatorEnabled = true;
-		state.sketchEstimatorStrategy = "unified";
+
 		state.loadSelectedThemeOnly = true;
 		state.rebuildStoreBeforeSetup = true;
 
@@ -82,7 +82,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 2;
 		state.sketchEstimatorEnabled = false;
-		state.sketchEstimatorStrategy = "unified";
+
 		state.loadSelectedThemeOnly = false;
 		state.rebuildStoreBeforeSetup = true;
 
@@ -111,7 +111,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 2;
 		state.sketchEstimatorEnabled = false;
-		state.sketchEstimatorStrategy = "unified";
+
 		state.loadSelectedThemeOnly = false;
 		state.rebuildStoreBeforeSetup = true;
 
@@ -145,7 +145,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 5;
 		state.sketchEstimatorEnabled = true;
-		state.sketchEstimatorStrategy = "unified";
+
 		state.loadSelectedThemeOnly = true;
 		state.rebuildStoreBeforeSetup = true;
 
@@ -189,7 +189,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 4;
 		state.sketchEstimatorEnabled = true;
-		state.sketchEstimatorStrategy = "unified";
+
 		state.loadSelectedThemeOnly = true;
 		state.rebuildStoreBeforeSetup = true;
 
@@ -221,7 +221,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 4;
 		state.sketchEstimatorEnabled = true;
-		state.sketchEstimatorStrategy = "unified";
+
 		state.dphypEnabled = false;
 		state.loadSelectedThemeOnly = false;
 		state.rebuildStoreBeforeSetup = true;
@@ -253,7 +253,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 9;
 		state.sketchEstimatorEnabled = true;
-		state.sketchEstimatorStrategy = "unified";
+
 		state.dphypEnabled = false;
 		state.loadSelectedThemeOnly = true;
 		state.rebuildStoreBeforeSetup = true;
@@ -300,7 +300,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 9;
 		state.sketchEstimatorEnabled = true;
-		state.sketchEstimatorStrategy = "unified";
+
 		state.dphypEnabled = false;
 		state.leoRolloutProfile = "safe-cardinality-correction";
 		state.loadSelectedThemeOnly = false;

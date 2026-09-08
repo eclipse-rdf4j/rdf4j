@@ -25,7 +25,7 @@ import org.awaitility.core.ConditionTimeoutException;
 import org.awaitility.core.ThrowingRunnable;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
 public final class LmdbPlannerAwait {
@@ -103,8 +103,8 @@ public final class LmdbPlannerAwait {
 			estimator.rebuild();
 			legacyRebuilt = true;
 		}
-		FrontierSynopsisStatus frontierStatus = store.rebuildFrontierSynopsis();
-		return legacyRebuilt || frontierStatus == FrontierSynopsisStatus.READY;
+		FrontierStatisticsAvailability frontierStatus = store.rebuildFrontierStatistics().availability();
+		return legacyRebuilt || frontierStatus == FrontierStatisticsAvailability.READY;
 	}
 
 	public static void awaitEstimatorReady(SketchBasedJoinEstimator estimator) {

@@ -175,7 +175,7 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 		state.themeName = THEME.name();
 		state.z_queryIndex = 6;
 		state.sketchEstimatorEnabled = true;
-		state.sketchEstimatorStrategy = "unified";
+
 		state.rebuildStoreBeforeSetup = true;
 
 		state.setup();

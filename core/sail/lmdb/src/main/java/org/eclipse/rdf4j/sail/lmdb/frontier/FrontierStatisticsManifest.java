@@ -97,17 +97,6 @@ public record FrontierStatisticsManifest(
 		return bytes;
 	}
 
-	static FrontierStatisticsManifest legacyUnversioned(long generationId, long previousGenerationId,
-			long baseEpoch, long coveredEpoch, long coveredSequence, long createdAtMillis, long maximumTermId,
-			List<FrontierStatisticsShardDescriptor> shards) {
-		Metadata metadata = metadata(maximumTermId, shards);
-		return new FrontierStatisticsManifest(generationId, previousGenerationId, baseEpoch, coveredEpoch,
-				coveredSequence, createdAtMillis, maximumTermId, 0, metadata.capabilityMask,
-				metadata.hashSchemaId, metadata.bucketSchemaId, metadata.depth, metadata.width,
-				metadata.designLaneCount, metadata.auditLaneCount, metadata.termBitWidth,
-				metadata.tupleOrdinalWidth, shards);
-	}
-
 	private static Metadata metadata(long maximumTermId, List<FrontierStatisticsShardDescriptor> shards) {
 		Objects.requireNonNull(shards, "shards");
 		int depth = 0;

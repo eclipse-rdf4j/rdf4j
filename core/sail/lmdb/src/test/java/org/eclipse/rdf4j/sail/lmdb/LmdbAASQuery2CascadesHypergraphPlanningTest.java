@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.AASGenerator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -83,7 +83,7 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				new AASGenerator().generateAndAdd(connection, 100, 100, 100);
 			}
-			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis(),
+			assertEquals(FrontierStatisticsAvailability.READY, store.rebuildFrontierStatistics().availability(),
 					"authoritative planning fixtures must explicitly publish a query-ready V2 generation");
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -137,7 +137,7 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				new AASGenerator().generateAndAdd(connection, 100, 100, 100);
 			}
-			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis());
+			assertEquals(FrontierStatisticsAvailability.READY, store.rebuildFrontierStatistics().availability());
 
 			try (SailRepositoryConnection connection = repository.getConnection();
 					LmdbBenchmarkPlanQualityAudit audit = LmdbBenchmarkPlanQualityAudit.prepare(store, connection,
@@ -171,7 +171,7 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				new AASGenerator().generateAndAdd(connection, 100, 100, 100);
 			}
-			assertEquals(FrontierSynopsisStatus.READY, store.rebuildFrontierSynopsis(),
+			assertEquals(FrontierStatisticsAvailability.READY, store.rebuildFrontierStatistics().availability(),
 					"authoritative planning fixtures must explicitly publish a query-ready V2 generation");
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {

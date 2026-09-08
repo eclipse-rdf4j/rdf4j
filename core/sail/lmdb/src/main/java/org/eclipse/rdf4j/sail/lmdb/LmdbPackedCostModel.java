@@ -55,7 +55,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView.PrefixMaterialization;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRootCardinalityCertifier;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStalePlanAudit;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStalePlanValidation;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStalePlanValidator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
@@ -149,11 +148,7 @@ final class LmdbPackedCostModel
 	@Override
 	public PackedCostSession openSession(PackedQueryView query) {
 		if (!frontierPlanningAllowed || runtime.frontierSettings().mode() == FrontierEstimatorMode.OFF) {
-			/*
-			 * Frontier's exact join and outer-operator refinement probes the query snapshot. Under serializable
-			 * isolation those speculative planning reads would widen the transaction's observed-state set and can
-			 * create false write conflicts. Preserve the established scalar observation footprint atomically.
-			 */
+			/* Preserve the established scalar planning observation footprint for ineligible transactions. */
 			return PackedCostSession.scalar(this, query);
 		}
 		if (mappedStatisticsReady()) {
@@ -175,11 +170,7 @@ final class LmdbPackedCostModel
 		LmdbPackedCostModel conventional = new LmdbPackedCostModel(runtime, executionSnapshotEpoch,
 				datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
 				null, false);
-		LmdbFrontierPackedCostSession frontierSession = new LmdbFrontierPackedCostSession(conventional, query, runtime,
-				executionSnapshotEpoch, datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy);
-		return runtime.adaptiveEvidenceAllowed()
-				? new LmdbFrontierLearningCostSession(frontierSession)
-				: frontierSession;
+		return PackedCostSession.scalar(conventional, query);
 	}
 
 	private static int statementPatternCount(PackedQueryView query) {
@@ -198,22 +189,7 @@ final class LmdbPackedCostModel
 		if (!frontierPlanningAllowed) {
 			return PackedStalePlanValidation.replan(0.0d, 1.0d, 0L, "frontier-planning-disabled");
 		}
-		try (LmdbFrontierPackedCostSession session = new LmdbFrontierPackedCostSession(this, request.query(), runtime,
-				executionSnapshotEpoch, datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy)) {
-			return session.validateStalePlan(request);
-		} catch (RuntimeException validationFailure) {
-			String message = validationFailure.getMessage();
-			return PackedStalePlanValidation.replan(0.0d, 1.0d, 0L,
-					"frontier-validation-failed:" + validationFailure.getClass().getSimpleName()
-							+ (message == null || message.isBlank() ? "" : ":" + message));
-		}
-	}
-
-	@Override
-	public void recordStalePlanAudit(PackedStalePlanAudit audit) {
-		runtime.frontierSettings()
-				.recordAudit(audit.familyFingerprint(), audit.auditIdentity(), audit.auditLane(),
-						audit.stable(), audit.realizedRegret());
+		return PackedStalePlanValidation.replan(0.0d, 1.0d, 0L, "frontier-statistics-unavailable");
 	}
 
 	long providerVersion() {
@@ -222,15 +198,6 @@ final class LmdbPackedCostModel
 		version = mixVersion(version, frontier.mode().ordinal());
 		version = mixVersion(version, datasetUsesStoreDefaults ? 1L : 0L);
 		version = mixVersion(version, frontierPlanningAllowed ? 1L : 0L);
-		version = mixVersion(version, frontier.queryMemoryBudgetBytes());
-		version = mixVersion(version, frontier.initialMaterializationWorkUnits());
-		version = mixVersion(version, frontier.refinementWorkUnits());
-		version = mixVersion(version, Double.doubleToLongBits(frontier.targetRelativeStandardError()));
-		version = mixVersion(version, Double.doubleToLongBits(frontier.defensiveProposalEpsilon()));
-		version = mixVersion(version, Double.doubleToLongBits(frontier.initialConfidence()));
-		version = mixVersion(version, Double.doubleToLongBits(frontier.minimumConfidence()));
-		version = mixVersion(version, Double.doubleToLongBits(frontier.maximumConfidence()));
-		version = mixVersion(version, Double.doubleToLongBits(frontier.maximumExpectedRegret()));
 		return mixVersion(version, runtime.mayHaveInferred() ? 1L : 0L);
 	}
 

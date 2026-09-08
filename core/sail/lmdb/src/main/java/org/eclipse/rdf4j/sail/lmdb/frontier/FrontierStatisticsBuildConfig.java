@@ -30,8 +30,7 @@ public record FrontierStatisticsBuildConfig(
 		int countMinDepth,
 		int countMinWidth,
 		int heavyPredicateCapacity,
-		int hllPrecision,
-		int globalWitnessCapacity) {
+		int hllPrecision) {
 
 	private static final long GIB = 1024L * 1024L * 1024L;
 	private static final int OMNI_PLANE_COUNT = 2;
@@ -56,8 +55,7 @@ public record FrontierStatisticsBuildConfig(
 				|| !Double.isFinite(deleteReserveFraction) || deleteReserveFraction < 0.0d
 				|| deleteReserveFraction > 1.0d
 				|| countMinDepth < 1 || countMinDepth > 16 || !powerOfTwo(countMinWidth)
-				|| heavyPredicateCapacity < 1 || hllPrecision < 4 || hllPrecision > 16
-				|| globalWitnessCapacity < 1) {
+				|| heavyPredicateCapacity < 1 || hllPrecision < 4 || hllPrecision > 16) {
 			throw new IllegalArgumentException("Frontier statistics build dimensions are invalid");
 		}
 		long allocated = Math.addExact(exactAndLinearBudgetBytes,
@@ -95,7 +93,7 @@ public record FrontierStatisticsBuildConfig(
 		int precision = diskBudgetBytes >= GIB ? 10 : 8;
 		return new FrontierStatisticsBuildConfig(diskBudgetBytes, exact, leaf, joins, adaptive, delta,
 				sortMemory, designLanes, auditLanes, omniWidth, omniDepth, 256, 8192, deleteReserveFraction,
-				4, countMinWidth, heavyCapacity, precision, 1_000_000);
+				4, countMinWidth, heavyCapacity, precision);
 	}
 
 	/**
@@ -165,8 +163,7 @@ public record FrontierStatisticsBuildConfig(
 				source.joinSampleBudgetBytes(), source.adaptiveBudgetBytes(), source.deltaAndManifestBudgetBytes(),
 				sortMemoryBytes, source.designLaneCount(), source.auditLaneCount(), cellCount, source.omniDepth(),
 				source.witnessFloorPerCell(), witnessCeilingPerCell, source.deleteReserveFraction(),
-				source.countMinDepth(), countMinWidth, heavyPredicateCapacity, hllPrecision,
-				source.globalWitnessCapacity());
+				source.countMinDepth(), countMinWidth, heavyPredicateCapacity, hllPrecision);
 	}
 
 	/** Small deterministic profile used by exact-oracle and corruption tests. */
@@ -177,13 +174,10 @@ public record FrontierStatisticsBuildConfig(
 		long joins = diskBudgetBytes / 4L;
 		long adaptive = diskBudgetBytes * 5L / 16L;
 		long delta = diskBudgetBytes - exact - leaf - joins - adaptive;
-		long requestedWitnesses = Math.multiplyExact((long) cellCount, witnessesPerCell);
-		int sampleCapacity = Math.toIntExact(Math.max(1L,
-				Math.min(Math.min(requestedWitnesses, 1_000_000L), sortMemoryBytes / (6L * Long.BYTES))));
 		return new FrontierStatisticsBuildConfig(diskBudgetBytes, exact, leaf, joins, adaptive, delta,
 				sortMemoryBytes, 4, 2, cellCount, 3, Math.min(16, witnessesPerCell), witnessesPerCell, 0.25d,
 				4, countMinWidth,
-				Math.max(16, Math.min(512, cellCount * 2)), 8, sampleCapacity);
+				Math.max(16, Math.min(512, cellCount * 2)), 8);
 	}
 
 	private static boolean powerOfTwo(int value) {

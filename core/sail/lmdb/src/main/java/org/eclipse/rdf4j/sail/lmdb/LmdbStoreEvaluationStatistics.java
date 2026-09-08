@@ -15,7 +15,6 @@ import java.util.Objects;
 import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
-import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbFrontierSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
@@ -28,11 +27,11 @@ final class LmdbStoreEvaluationStatistics extends LmdbEvaluationStatistics
 	LmdbStoreEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
 			LmdbOperatorFeedbackStats feedback, LmdbStatementPatternCardinalitySource cardinalities,
-			PackedPlanCache cascadesPlanCache, LmdbFrontierSynopsisService frontierSynopsis,
+			PackedPlanCache cascadesPlanCache,
 			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier, LmdbStatisticsService statistics,
 			LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots) {
-		super(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache, frontierSynopsis,
+		super(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
 				frontierSettings, mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics);
 		this.detachedPlanningSnapshots = Objects.requireNonNull(detachedPlanningSnapshots,
 				"detachedPlanningSnapshots");

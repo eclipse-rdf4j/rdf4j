@@ -141,8 +141,6 @@ class LmdbHashJoinCostingTest {
 
 		assertThat(estimate.workRows()).isEqualTo(10.0d);
 		assertThat(new LmdbPhysicalCostObjective(null).score(estimate)).isEqualTo(17.0d);
-		assertThat(LmdbFrontierPackedCostSession.normalizedObjectiveScore(estimate, 6L))
-				.isEqualTo(Double.MAX_VALUE);
 	}
 
 	private static FrontierCorrelationDomain domain(double rows, double distinctKeys, EvidenceGuarantee guarantee,

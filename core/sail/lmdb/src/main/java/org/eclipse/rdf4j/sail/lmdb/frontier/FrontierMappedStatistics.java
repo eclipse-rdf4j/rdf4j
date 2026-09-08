@@ -25,7 +25,6 @@ final class FrontierMappedStatistics {
 	private final FrontierStatisticsShardDescriptor[][] countMin = new FrontierStatisticsShardDescriptor[2][16];
 	private final FrontierStatisticsShardDescriptor[] heavy = new FrontierStatisticsShardDescriptor[2];
 	private final FrontierStatisticsShardDescriptor[] heavyObjectCounts = new FrontierStatisticsShardDescriptor[2];
-	private final FrontierStatisticsShardDescriptor[][] hll = new FrontierStatisticsShardDescriptor[2][4];
 	private final FrontierStatisticsShardDescriptor[][] fastAgms = new FrontierStatisticsShardDescriptor[2][4];
 	private FrontierStatisticsShardDescriptor heavyProjectedDistinct;
 	private FrontierStatisticsShardDescriptor heavyDefaultProjectedDistinct;
@@ -72,13 +71,7 @@ final class FrontierMappedStatistics {
 					heavy[plane] = descriptor;
 				}
 			}
-			case DISTINCT_HLL -> {
-				int plane = logicalLeft(descriptor.logicalKey());
-				int component = logicalRight(descriptor.logicalKey());
-				if (validPlane(plane) && component >= 0 && component < 4) {
-					hll[plane][component] = descriptor;
-				}
-			}
+
 			case HEAVY_PROJECTED_DISTINCT -> {
 				if (heavyProjectedDistinct != null) {
 					throw new IOException("Frontier generation contains multiple heavy projected-distinct shards");
@@ -1001,51 +994,7 @@ final class FrontierMappedStatistics {
 	}
 
 	private double heavyProjectedDistinct(FrontierLeafProbe probe, int component) throws IOException {
-		if (heavyProjectedDistinct != null) {
-			return storedHeavyProjectedDistinct(heavyProjectedDistinct, probe, component);
-		}
-		double inverseSum = 0.0d;
-		int zeros = 0;
-		int precision = -1;
-		int registerCount = -1;
-		long[] offsets = { -1L, -1L };
-		FrontierStatisticsShard.ColumnReader[] sources = new FrontierStatisticsShard.ColumnReader[2];
-		for (int plane = 0; plane < 2; plane++) {
-			if ((probe.planeMask() & 1 << plane) == 0) {
-				continue;
-			}
-			FrontierStatisticsShardDescriptor heavyDescriptor = heavy[plane];
-			FrontierStatisticsShardDescriptor hllDescriptor = hll[plane][component];
-			if (heavyDescriptor == null || hllDescriptor == null) {
-				return Double.NaN;
-			}
-			long ordinal = binarySearch(shards.get(heavyDescriptor.shardId()).column(0), probe.predicateId());
-			if (ordinal < 0L) {
-				return Double.NaN;
-			}
-			if (precision < 0) {
-				precision = hllDescriptor.lane();
-				registerCount = 1 << precision;
-			} else if (precision != hllDescriptor.lane()) {
-				throw new IOException("Frontier projected-distinct HLL precisions disagree");
-			}
-			offsets[plane] = Math.multiplyExact(ordinal, registerCount);
-			sources[plane] = shards.get(hllDescriptor.shardId()).column(0);
-		}
-		if (precision < 0) {
-			return Double.NaN;
-		}
-		for (int register = 0; register < registerCount; register++) {
-			long rank = 0L;
-			for (int plane = 0; plane < 2; plane++) {
-				if (sources[plane] != null) {
-					rank = Math.max(rank, sources[plane].value(offsets[plane] + register));
-				}
-			}
-			inverseSum += Math.scalb(1.0d, -Math.toIntExact(rank));
-			zeros += rank == 0L ? 1 : 0;
-		}
-		return hllEstimate(registerCount, inverseSum, zeros);
+		return storedHeavyProjectedDistinct(heavyProjectedDistinct, probe, component);
 	}
 
 	private double storedHeavyProjectedDistinct(FrontierStatisticsShardDescriptor descriptor,
@@ -1099,19 +1048,6 @@ final class FrontierMappedStatistics {
 			}
 		}
 		return -1L;
-	}
-
-	private static double hllEstimate(int registerCount, double inverseSum, int zeros) {
-		double alpha = switch (registerCount) {
-		case 16 -> 0.673d;
-		case 32 -> 0.697d;
-		case 64 -> 0.709d;
-		default -> 0.7213d / (1.0d + 1.079d / registerCount);
-		};
-		double estimate = alpha * registerCount * registerCount / inverseSum;
-		return estimate <= 2.5d * registerCount && zeros > 0
-				? registerCount * Math.log((double) registerCount / zeros)
-				: estimate;
 	}
 
 	private static boolean validPlane(int plane) {

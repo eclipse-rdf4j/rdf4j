@@ -43,7 +43,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbBenchmarkQueryPlan.RuntimeTelemetryMode;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierSynopsisStatus;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -150,9 +150,6 @@ public class ThemeQueryPlanRunBenchmark {
 //		@Param({ "false" })
 		public boolean sketchEstimatorEnabled;
 
-//		@Param({ "unified" })
-		public String sketchEstimatorStrategy;
-
 //		@Param({ "true" })
 		public boolean dphypEnabled = true;
 
@@ -168,7 +165,7 @@ public class ThemeQueryPlanRunBenchmark {
 		public boolean rebuildStoreBeforeSetup;
 
 		/** Negative leaves the deprecated V1 query-memory setting absent so V2 uses its global heap default. */
-		public long frontierQueryMemoryBudgetBytes = -1L;
+		public long frontierHeapBudgetBytes = -1L;
 
 //		@Param({ QUERY_VARIANT_FILTER })
 		public String queryVariant;
@@ -290,8 +287,8 @@ public class ThemeQueryPlanRunBenchmark {
 		private void waitForSketchesIfEnabled() throws IOException {
 			repository.init();
 			if (storeConfig.getFrontierEstimatorMode() != FrontierEstimatorMode.OFF) {
-				FrontierSynopsisStatus frontierStatus = store.rebuildFrontierSynopsis();
-				if (frontierStatus != FrontierSynopsisStatus.READY) {
+				FrontierStatisticsAvailability frontierStatus = store.rebuildFrontierStatistics().availability();
+				if (frontierStatus != FrontierStatisticsAvailability.READY) {
 					throw new IOException("Frontier is not ready for Theme plan/run benchmark: " + frontierStatus);
 				}
 			}
@@ -344,11 +341,10 @@ public class ThemeQueryPlanRunBenchmark {
 		private LmdbStoreConfig createStoreConfig() {
 			LmdbStoreConfig config = ConfigUtil.createConfig();
 			config.setSketchEstimatorEnabled(sketchEstimatorEnabled);
-			config.setSketchEstimatorStrategy(sketchEstimatorStrategyOrDefault());
 			config.setSketchEstimatorEvidenceMode("snapshot-only");
 			config.setOptimizerSamplingMaxMillis(OPTIMIZATION_TIMEOUT_MILLIS);
-			if (frontierQueryMemoryBudgetBytes >= 0L) {
-				config.setFrontierQueryMemoryBudgetBytes(frontierQueryMemoryBudgetBytes);
+			if (frontierHeapBudgetBytes >= 0L) {
+				config.setFrontierHeapBudgetBytes(frontierHeapBudgetBytes);
 			}
 			return config;
 		}
@@ -444,24 +440,13 @@ public class ThemeQueryPlanRunBenchmark {
 				return resolvedStoreDirectory;
 			}
 			LmdbStoreConfig directoryConfig = storeConfig == null ? createStoreConfig() : storeConfig;
-			String strategy = directoryConfig.getSketchEstimatorStrategy();
-			if (strategy == null || strategy.isBlank()) {
-				strategy = "unified";
-			}
-			String directoryName = "complete-" + strategy.replaceAll("[^A-Za-z0-9._-]", "_");
+
+			String directoryName = "complete-unified";
 			if (loadSelectedThemeOnly) {
 				directoryName += "-" + themeName.replaceAll("[^A-Za-z0-9._-]", "_");
 			}
 			resolvedStoreDirectory = new File(STORE_DIRECTORY, directoryName);
 			return resolvedStoreDirectory;
-		}
-
-		private String sketchEstimatorStrategyOrDefault() {
-			String strategy = sketchEstimatorStrategy;
-			if (strategy == null || strategy.isBlank()) {
-				strategy = "unified";
-			}
-			return strategy;
 		}
 
 		protected LmdbBenchmarkQueryPlan preparePlan() {

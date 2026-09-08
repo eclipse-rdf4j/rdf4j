@@ -89,6 +89,7 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchSnapshotIdentity;
 
 final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
+	static final String FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY = "rdf4j.optimizer.lmdb.frontierExactCardinalityFacts";
 
 	private static final String ESTIMATE_TRACE_PROPERTY = "rdf4j.optimizer.lmdb.estimateTrace";
 	static final String COMPLETED_TREE_RESCUE_PROPERTY = "rdf4j.optimizer.lmdb.operatorFeedbackCompletedTreeRescue";
@@ -1676,7 +1677,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private static boolean exactCardinalityFactsEnabled() {
 		return !"false".equalsIgnoreCase(System.getProperty(
-				LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true"));
+				FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true"));
 	}
 
 	synchronized FrontierLearningModel.PosteriorSnapshot logicalPosterior(LogicalLearningKey key,

@@ -892,12 +892,12 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void exactCardinalityFactPinsGroupEstimateAtSameDataStamp(@TempDir Path tempDir) throws Exception {
 		String previous = System.getProperty(
-				LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
-		System.setProperty(LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true");
+				LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
+		System.setProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true");
 		try {
 			exactCardinalityFactRoundTrip(tempDir);
 		} finally {
-			restoreProperty(LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previous);
+			restoreProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previous);
 		}
 	}
 
@@ -938,12 +938,12 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void reinvokedObservationDoesNotMintExactCardinalityFact(@TempDir Path tempDir) throws Exception {
 		String previous = System.getProperty(
-				LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
-		System.setProperty(LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true");
+				LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
+		System.setProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true");
 		try {
 			reinvokedFactMintRejected(tempDir);
 		} finally {
-			restoreProperty(LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previous);
+			restoreProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previous);
 		}
 	}
 
@@ -1564,29 +1564,6 @@ class LmdbOperatorFeedbackStatsTest {
 				"join", "JOIN@abc123", 72L, 6L, "spoc-prefix", "spoc", "prefix");
 		assertTrue(model.correct(cold, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false).isEmpty(),
 				"A cold exact context receives no winner-affecting family correction");
-	}
-
-	@Test
-	void semiAntiFailoverClampsPhysicalMagnitude() throws Exception {
-		Method clamp = LmdbFrontierPackedCostSession.class.getDeclaredMethod("clampToRawFactor",
-				double.class, double.class, double.class, boolean[].class);
-		clamp.setAccessible(true);
-		boolean[] clamped = { false };
-		double maxFactor = Math.pow(4.0d, 3);
-
-		assertEquals(64_000.0d, (double) clamp.invoke(null, 1_000_000.0d, 1_000.0d, maxFactor, clamped), 1e-6,
-				"A learned surface replacement may shift a raw dimension at most 4^physicalObservations");
-		assertTrue(clamped[0]);
-
-		clamped[0] = false;
-		assertEquals(500.0d, (double) clamp.invoke(null, 500.0d, 1_000.0d, maxFactor, clamped), 0.0d,
-				"Replacements within the evidence bound pass through unchanged");
-		assertFalse(clamped[0]);
-
-		assertEquals(123.0d, (double) clamp.invoke(null, 123.0d, 0.0d, maxFactor, clamped), 0.0d,
-				"A raw value of zero accepts the learned value outright — streaming paths legitimately"
-						+ " introduce dimensions from zero");
-		assertFalse(clamped[0]);
 	}
 
 	@Test
@@ -2669,12 +2646,12 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void exactCardinalityFactFollowsTheLiveStatementMutationStamp(@TempDir Path tempDir) throws Exception {
 		String previous = System.getProperty(
-				LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
-		System.setProperty(LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true");
+				LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
+		System.setProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true");
 		try {
 			exactCardinalityFactFollowsLiveStamp(tempDir);
 		} finally {
-			restoreProperty(LmdbFrontierPackedCostSession.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previous);
+			restoreProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previous);
 		}
 	}
 

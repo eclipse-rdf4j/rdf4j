@@ -150,11 +150,7 @@ class QueryPlanSnapshotStoreSupportTest {
 		config.setSketchEstimatorEvidenceMode(evidenceMode);
 		config.setValueDBSize(1_073_741_824L);
 		config.setTripleDBSize(config.getValueDBSize());
-		config.setSketchEstimatorSubjectBucketCount(4096);
-		config.setSketchEstimatorPredicateBucketCount(64);
-		config.setSketchEstimatorObjectBucketCount(4096);
-		config.setSketchEstimatorContextBucketCount(16);
-		config.setSketchEstimatorContextPairSketchesEnabled(false);
+
 		return config;
 	}
 }
