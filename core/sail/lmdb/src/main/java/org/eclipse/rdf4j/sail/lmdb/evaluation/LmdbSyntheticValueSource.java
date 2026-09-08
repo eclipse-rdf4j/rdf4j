@@ -172,11 +172,7 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 					"compile-scoped synthetic source cannot intern computed values; use forEvaluation()");
 		}
 		value = context.authoritativeQueryScopedValue(value);
-		long existing = idOf(value);
-		if (existing != UNKNOWN) {
-			return existing;
-		}
-		return context.internValue(value);
+		return authority.valueResolver().intern(value);
 	}
 
 	/**
@@ -189,7 +185,7 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			throw new IllegalStateException(
 					"compile-scoped synthetic source cannot retain query-scoped values; use forEvaluation()");
 		}
-		context.retainQueryScopedValue(value, delegate.idOf(value));
+		context.retainQueryScopedValue(value, authority.valueResolver().storeId(value));
 	}
 
 	/**
@@ -224,11 +220,19 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	@Override
 	public long idOf(Value value) throws QueryEvaluationException {
+		if (authority != null && value != null && !context.isClosed()) {
+			return authority.valueResolver().lookup(value);
+		}
 		long id = delegate.idOf(value);
 		if (id != UNKNOWN) {
 			return id;
 		}
 		return catalog.idOf(value);
+	}
+
+	@Override
+	public Object valueLookupScope() {
+		return delegate.valueLookupScope();
 	}
 
 	@Override

@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
  * term-equal language-tag variants retain their authoritative values; semantic equality belongs to
  * {@link NativeTermAuthority}). Membership is answered by the map, never by a bare range check: an id allocated by the
  * counter could otherwise be observed by a concurrent reader before its value is published. Also owns the
+ * bounded per-source dictionary resolution caches (including read-view-scoped misses), as well as
  * per-evaluation generic preparation (M-A1a): one evaluation-local generic context carrying the query scope (NOW, BNODE
  * labels) and one prepared step per {@link GenericSubplanDescriptor} per evaluation.
  */
@@ -47,6 +48,7 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	/** Owner of query-wide state; nested synthetic catalogs retain separate runtime-id maps but share this owner. */
 	private final NativeExecutionContext queryScopeOwner;
+	final boolean valueResolutionCacheEnabled;
 	private final long executionId = NEXT_EXECUTION_ID.getAndIncrement();
 	private final ConcurrentHashMap<NativeValueKey, Long> idsByValue = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<Long, Value> valuesById = new ConcurrentHashMap<>();
@@ -74,10 +76,12 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	NativeExecutionContext() {
 		this.queryScopeOwner = this;
+		this.valueResolutionCacheEnabled = !"false".equalsIgnoreCase(System.getProperty(NativeValueResolver.PROPERTY));
 	}
 
 	NativeExecutionContext(NativeExecutionContext parent) {
 		this.queryScopeOwner = parent.queryScopeOwner;
+		this.valueResolutionCacheEnabled = parent.valueResolutionCacheEnabled;
 	}
 
 	void initializeQueryBase(BindingSet bindings) {
@@ -156,6 +160,12 @@ final class NativeExecutionContext implements AutoCloseable {
 		return (T) nativeStates.computeIfAbsent(plan, ignored -> factory.get());
 	}
 
+	/** One resolver per exact source/catalog pair, never shared with the compiled plan or another evaluation. */
+	NativeValueResolver valueResolver(NativeLmdbQuerySource store, PlanValueCatalog catalog) {
+		return nativeState(new NativeValueResolver.Scope(store, catalog),
+				() -> new NativeValueResolver(store, catalog, this));
+	}
+
 	/** Interns the value, returning a stable id within this evaluation; {@code UNKNOWN} for {@code null}. */
 	long internValue(Value value) {
 		if (value == null) {
@@ -164,7 +174,14 @@ final class NativeExecutionContext implements AutoCloseable {
 		if (closed) {
 			throw new IllegalStateException("execution context is closed");
 		}
-		NativeValueKey key = NativeValueKey.of(value);
+		return internValue(value, NativeValueKey.of(value));
+	}
+
+	/** Caller has already captured the exact spelling for dictionary resolution. */
+	long internValue(Value value, NativeValueKey key) {
+		if (closed) {
+			throw new IllegalStateException("execution context is closed");
+		}
 		Long existing = idsByValue.get(key);
 		if (existing != null) {
 			return existing;
@@ -238,6 +255,9 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	/** Returns the retained query-scoped representative equal to {@code value}, or {@code value} itself. */
 	Value authoritativeQueryScopedValue(Value value) {
+		if (queryScopeOwner.queryScopedValues.isEmpty()) {
+			return value;
+		}
 		Value representative = queryScopeOwner.queryScopedValues.get(NativeValueKey.of(value));
 		return representative != null ? representative : value;
 	}

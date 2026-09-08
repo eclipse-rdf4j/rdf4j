@@ -32,6 +32,7 @@ final class LmdbNativeTermAuthority implements NativeTermAuthority {
 	private final PlanValueCatalog catalog;
 	private final NativeExecutionContext context;
 	private final NativeCanonicalTermKeys canonicalKeys;
+	private volatile NativeValueResolver values;
 
 	LmdbNativeTermAuthority(NativeLmdbQuerySource store, PlanValueCatalog catalog, NativeExecutionContext context) {
 		this.store = store;
@@ -74,15 +75,20 @@ final class LmdbNativeTermAuthority implements NativeTermAuthority {
 		if (value == null) {
 			return NULL_CONTEXT_ID;
 		}
-		long storeId = store.idOf(value);
-		if (storeId != UNKNOWN) {
-			return storeId;
+		return valueResolver().intern(value);
+	}
+
+	NativeValueResolver valueResolver() {
+		NativeValueResolver resolver = values;
+		if (resolver == null) {
+			synchronized (this) {
+				resolver = values;
+				if (resolver == null) {
+					values = resolver = context.valueResolver(store, catalog);
+				}
+			}
 		}
-		long planId = catalog.idOf(value);
-		if (planId != UNKNOWN) {
-			return planId;
-		}
-		return context.internValue(value);
+		return resolver;
 	}
 
 	@Override

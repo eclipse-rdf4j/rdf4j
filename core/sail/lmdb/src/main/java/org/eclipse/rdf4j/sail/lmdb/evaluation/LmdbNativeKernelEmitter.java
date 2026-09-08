@@ -1085,11 +1085,13 @@ final class LmdbNativeKernelEmitter {
 					.append("];\n")
 					// A streaming kernel writes into the caller's buffer, so the intermediate one is never allocated.
 					.append("    private long[] out = new long[")
-					.append(kernel.resumable ? 0 : Math.max(stride * 64, 64))
+					.append(kernel.resumable || kernel.boundedOrder ? 0 : Math.max(stride * 64, 64))
 					.append("];\n")
 					.append("    private int outCount;\n")
 					.append("    private int outPos;\n")
 					.append("    private boolean ran;\n");
+			if (kernel.boundedOrder) source.append("    private org.eclipse.rdf4j.sail.lmdb.evaluation.KernelOrderSink orderedRows;\n");
+			if (kernel.boundedGroups) source.append("    private org.eclipse.rdf4j.sail.lmdb.evaluation.KernelGroupSink groupSink;\n    private long[] boundedGroupInput, boundedCountInput;\n");
 			if (kernel.resumable) {
 				source.append("    private long[] sink;\n")
 						.append("    private int sinkRows;\n")
@@ -1215,9 +1217,59 @@ final class LmdbNativeKernelEmitter {
 			}
 		}
 
+		private void emitBoundedGroupBind(StringBuilder source) {
+			Aggregate a = kernel.terminal instanceof Aggregate ? (Aggregate) kernel.terminal : null;
+			int width = a == null ? ((Emit) kernel.terminal).cols.length : a.groupCols.length;
+			OutputMods mods = kernel.terminal.mods;
+			String flags = a == null ? "new boolean[0]" : "new boolean[]{" + java.util.Arrays.stream(a.outputs)
+					.map(o -> Boolean.toString(o.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT))
+					.collect(java.util.stream.Collectors.joining(",")) + "}";
+			String keys = mods.orderKeys == null ? "null" : "new int[]{" + java.util.Arrays.stream(mods.orderKeys)
+					.mapToObj(Integer::toString).collect(java.util.stream.Collectors.joining(",")) + "}";
+			String reverse = mods.descending == null ? "null" : "new boolean[]{" + java.util.stream.IntStream.range(0, mods.descending.length)
+					.mapToObj(i -> Boolean.toString(mods.descending[i])).collect(java.util.stream.Collectors.joining(",")) + "}";
+			source.append("        groupSink = org.eclipse.rdf4j.sail.lmdb.evaluation.KernelGroupSink.tryCreate(context, ")
+					.append(width).append(", ").append(flags).append(", ").append(keys).append(", ").append(reverse).append(", ")
+					.append(mods.valueOrder).append(", ").append(mods.offset).append("L, ").append(mods.limit).append("L, ")
+					.append(a == null || a.having == null ? -1 : a.having.outputIndex).append(", ")
+					.append(a == null || a.having == null ? 0 : a.having.op).append(", ")
+					.append(a == null || a.having == null ? 0L : a.having.threshold).append("L);\n")
+					.append("        if (groupSink != null) { boundedGroupInput = new long[").append(width)
+					.append("]; boundedCountInput = new long[").append(a == null ? 0 : a.outputs.length).append("]; }\n");
+		}
+
+		private void emitBoundedCountUpdate(StringBuilder source, Aggregate aggregate, String weight) {
+			if (!kernel.boundedGroups) return;
+			if (aggregate.groupCols.length == 1 && aggregate.outputs.length == 1
+					&& aggregate.outputs[0].kind != LmdbNativeKernelIr.AGG_COUNT_DISTINCT) {
+				source.append("        if (groupSink != null) { groupSink.addSingleCount(v")
+						.append(aggregate.groupCols[0]).append(", ")
+						.append(aggregate.outputs[0].kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? "0L" : "v" + aggregate.outputs[0].col)
+						.append(", ").append(weight).append("); return; }\n");
+				return;
+			}
+			source.append("        if (groupSink != null) {\n");
+			for (int i = 0; i < aggregate.groupCols.length; i++) source.append("            boundedGroupInput[").append(i)
+					.append("] = v").append(aggregate.groupCols[i]).append(";\n");
+			for (int i = 0; i < aggregate.outputs.length; i++) source.append("            boundedCountInput[").append(i)
+					.append("] = ").append(aggregate.outputs[i].kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? "0L" : "v" + aggregate.outputs[i].col).append(";\n");
+			source.append("            groupSink.add(boundedGroupInput, boundedCountInput, ").append(weight).append("); return;\n        }\n");
+		}
+
 		private void emitBind(StringBuilder source) {
 			source.append("    public void bind(KernelContext context) {\n");
 			source.append("        cancel = context.cancellation;\n");
+			if (kernel.boundedGroups) emitBoundedGroupBind(source);
+			if (kernel.boundedOrder) {
+				OutputMods mods = kernel.terminal.mods;
+				String keys = "new int[]{" + java.util.Arrays.stream(mods.orderKeys).mapToObj(Integer::toString).collect(java.util.stream.Collectors.joining(",")) + "}";
+				String desc = mods.descending == null ? "null" : "new boolean[]{" + java.util.stream.IntStream.range(0, mods.descending.length).mapToObj(i -> Boolean.toString(mods.descending[i])).collect(java.util.stream.Collectors.joining(",")) + "}";
+				source.append("        orderedRows = new org.eclipse.rdf4j.sail.lmdb.evaluation.KernelOrderSink(")
+						.append(stride).append(", ").append(keys).append(", ").append(desc).append(", ")
+						.append(mods.valueOrder ? "context.hooks" : "null").append(", cancel, ")
+						.append(mods.offset).append("L, ").append(mods.limit).append("L);\n");
+			}
+
 			if (telemetryEnabled()) {
 				source.append(
 						"        org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedKernelRuntime.markNestedKernelFactorization();\n");
@@ -1394,6 +1446,7 @@ final class LmdbNativeKernelEmitter {
 			for (int i = 0; i < kernel.requirements.plans; i++) {
 				source.append("        p").append(i).append(" = context.plans[").append(i).append("];\n");
 			}
+			if (kernel.boundedGroups) source.append("        if (groupSink == null) {\n");
 			if (isDistinct()) {
 				Emit emit = (Emit) kernel.terminal;
 				int residual = emit.cols.length - emit.alignedCount;
@@ -1493,6 +1546,7 @@ final class LmdbNativeKernelEmitter {
 					}
 				}
 			}
+			if (kernel.boundedGroups) source.append("        }\n");
 			source.append("    }\n\n");
 		}
 
@@ -1596,6 +1650,8 @@ final class LmdbNativeKernelEmitter {
 			}
 			source.append("        } catch (RuntimeException failure) { closeFailure = failure; }\n")
 					.append("        catch (Error failure) { closeFailure = failure; }\n");
+			if (kernel.boundedOrder) emitCloseResource(source, "orderedRows");
+			if (kernel.boundedGroups) emitCloseResource(source, "groupSink");
 			for (int i = 0; i < kernel.requirements.scans; i++) emitCloseResource(source, "sc" + i);
             for (int i = 0; i < expansionCursorTypes.size(); i++) emitCloseResource(source, "xc" + i);
 			for (int i = 0; i < nextBoundRunCursorId; i++) {
@@ -1629,6 +1685,7 @@ final class LmdbNativeKernelEmitter {
 					.append("    }\n\n");
 			if (flatRootExistsShape != null) {
 				source.append("    private int fillOpen(long[] rowBuffer, int maxRows) {\n")
+					.append(kernel.boundedGroups ? "        if (groupSink != null) { if (closed || maxRows <= 0) return 0; if ((long)maxRows * " + stride + " > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\"); " + (kernel.terminal.mods.limit == 0 ? "return 0;" : "if (!ran) { ran = true; run(); flush(); } return groupSink.fill(rowBuffer, maxRows);") + " }\n" : "")
 						.append("        if (flatReturned || maxRows <= 0) {\n")
 						.append("            return 0;\n")
 						.append("        }\n")
@@ -1646,6 +1703,7 @@ final class LmdbNativeKernelEmitter {
 				// Streaming: run the pipeline directly into the caller's buffer, pausing when it fills. The pipeline
 				// resumes from its saved counters on the next call, so no row is ever produced twice or skipped.
 				source.append("    private int fillOpen(long[] rowBuffer, int maxRows) {\n")
+					.append(kernel.boundedGroups ? "        if (groupSink != null) { if (closed || maxRows <= 0) return 0; if ((long)maxRows * " + stride + " > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\"); " + (kernel.terminal.mods.limit == 0 ? "return 0;" : "if (!ran) { ran = true; run(); flush(); } return groupSink.fill(rowBuffer, maxRows);") + " }\n" : "")
 						.append("        if (done || maxRows <= 0) {\n")
 						.append("            return 0;\n")
 						.append("        }\n")
@@ -1663,7 +1721,17 @@ final class LmdbNativeKernelEmitter {
 						.append("    }\n\n");
 				return;
 			}
+			if (kernel.boundedOrder) {
+				source.append("    private int fillOpen(long[] rowBuffer, int maxRows) {\n")
+					.append(kernel.boundedGroups ? "        if (groupSink != null) { if (closed || maxRows <= 0) return 0; if ((long)maxRows * " + stride + " > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\"); " + (kernel.terminal.mods.limit == 0 ? "return 0;" : "if (!ran) { ran = true; run(); flush(); } return groupSink.fill(rowBuffer, maxRows);") + " }\n" : "")
+						.append("        if (closed || maxRows <= 0) return 0;\n")
+						.append("        if ((long)maxRows * ").append(stride).append(" > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\");\n")
+						.append(kernel.terminal.mods.limit == 0 ? "        return 0;\n" : "        if (!ran) { ran = true; run(); flush(); }\n        return orderedRows.fill(rowBuffer, maxRows);\n")
+						.append("    }\n\n");
+				return;
+			}
 			source.append("    private int fillOpen(long[] rowBuffer, int maxRows) {\n")
+					.append(kernel.boundedGroups ? "        if (groupSink != null) { if (closed || maxRows <= 0) return 0; if ((long)maxRows * " + stride + " > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\"); " + (kernel.terminal.mods.limit == 0 ? "return 0;" : "if (!ran) { ran = true; run(); flush(); } return groupSink.fill(rowBuffer, maxRows);") + " }\n" : "")
 					.append("        if (!ran) {\n")
 					.append("            ran = true;\n")
 					.append("            run();\n")
@@ -1686,6 +1754,7 @@ final class LmdbNativeKernelEmitter {
 
 		private void emitFlush(StringBuilder source) {
 			source.append("    private void flush() {\n");
+			if (kernel.boundedGroups) source.append("        if (groupSink != null) { groupSink.finish(); return; }\n");
 			if (kernel.terminal instanceof Aggregate) {
 				Aggregate aggregate = (Aggregate) kernel.terminal;
 				if (streamingGroups()) {
@@ -1708,6 +1777,10 @@ final class LmdbNativeKernelEmitter {
 							.append("            emitGroup(g);\n")
 							.append("        }\n");
 				}
+			}
+			if (kernel.boundedOrder) {
+				source.append("        orderedRows.finish();\n    }\n\n");
+				return;
 			}
 			OutputMods mods = kernel.terminal.mods;
 			if (mods.orderKeys != null) {
@@ -1824,6 +1897,7 @@ final class LmdbNativeKernelEmitter {
 				for (int i = 0; i < emit.cols.length; i++) {
 					source.append("        rowScratch[").append(i).append("] = v").append(emit.cols[i]).append(";\n");
 				}
+				if (kernel.boundedGroups) source.append("        if (groupSink != null) { groupSink.addDistinct(rowScratch); return; }\n");
 				if (emit.distinct) {
 					emitDistinctGuard(source, emit);
 				}
@@ -1837,6 +1911,10 @@ final class LmdbNativeKernelEmitter {
 				}
 				source.append("        appendRow();\n")
 						.append("    }\n\n");
+			}
+			if (kernel.boundedOrder) {
+				source.append("    private void appendRow() { orderedRows.add(rowScratch); }\n\n");
+				return;
 			}
 			source.append("    private void appendRow() {\n")
 					.append("        KernelRuntime.checkMaterializationCapacity(cancel, outCount);\n")
@@ -1957,6 +2035,7 @@ final class LmdbNativeKernelEmitter {
 			}
 
 			source.append("    private void update() {\n");
+			emitBoundedCountUpdate(source, aggregate, "1L");
 			if (aggregate.groupCols.length == 0) {
 				source.append("        int g = 0;\n");
 			} else if (aggregate.groupCols.length == 1) {
@@ -3242,6 +3321,7 @@ final class LmdbNativeKernelEmitter {
 		 */
 		private void emitBulkCountUpdate(StringBuilder source, Aggregate aggregate) {
 			source.append("    private void updateBy(long n) {\n");
+			emitBoundedCountUpdate(source, aggregate, "n");
 			if (aggregate.groupCols.length == 0) {
 				source.append("        int g = 0;\n");
 			} else if (aggregate.groupCols.length == 1) {

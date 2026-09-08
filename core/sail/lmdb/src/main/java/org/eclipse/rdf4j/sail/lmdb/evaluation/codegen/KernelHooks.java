@@ -45,6 +45,14 @@ public interface KernelHooks {
 		return rdfTermHash(id);
 	}
 
+	/** Exact canonical identity keys, stronger than the collision-permitting termHashKey contract. */
+	default boolean supportsCanonicalTermKeys() { return false; }
+
+	/** Stable for this evaluation; equal iff the bound RDF terms are identical. */
+	default long canonicalTermKey(long id) {
+		throw new UnsupportedOperationException("canonical term keys are not available");
+	}
+
 	/** Imports an id owned by another bound kernel before parallel DISTINCT sets are merged. */
 	default long importRdfTerm(KernelHooks source, long sourceId) {
 		return sourceId;

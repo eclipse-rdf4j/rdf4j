@@ -47,7 +47,11 @@ final class PlanValueCatalog {
 	}
 
 	long idOf(Value value) {
-		Long id = idsByValue.get(NativeValueKey.of(value));
+		return idOfKey(NativeValueKey.of(value));
+	}
+
+	long idOfKey(NativeValueKey key) {
+		Long id = idsByValue.get(key);
 		return id != null ? id : UNKNOWN;
 	}
 
@@ -125,4 +129,48 @@ record NativeValueKey(Value.Type type, String lexical, String language, String d
 		}
 		return new NativeValueKey(value.getType(), value.stringValue(), null, null, null, null, null, null);
 	}
+	/** Cache probe without allocating a temporary key. Every field tested here is also captured by of(Value). */
+	boolean matches(Value value) {
+		if (value instanceof Literal literal) {
+			return type == Value.Type.Literal && lexical.equals(literal.getLabel())
+					&& java.util.Objects.equals(language, literal.getLanguage().orElse(null))
+					&& datatype.equals(literal.getDatatype().stringValue()) && direction == literal.getBaseDirection();
+		}
+		if (value instanceof TripleTerm triple) {
+			return type == Value.Type.TripleTerm && subject.matches(triple.getSubject())
+					&& predicate.matches(triple.getPredicate()) && object.matches(triple.getObject());
+		}
+		return value != null && type == value.getType() && lexical.equals(value.stringValue());
+	}
+
+	static int spellingHash(Value value) {
+		if (value instanceof Literal literal) {
+			return literalHash(literal.getLabel(), literal.getLanguage().orElse(null),
+					literal.getDatatype().stringValue(), literal.getBaseDirection());
+		}
+		if (value instanceof TripleTerm triple) {
+			return 31 * (31 * (31 * Value.Type.TripleTerm.ordinal() + spellingHash(triple.getSubject()))
+					+ spellingHash(triple.getPredicate())) + spellingHash(triple.getObject());
+		}
+		return value == null ? 0 : 31 * value.getType().ordinal() + value.stringValue().hashCode();
+	}
+
+	int spellingHash() {
+		if (type == Value.Type.Literal) {
+			return literalHash(lexical, language, datatype, direction);
+		}
+		if (type == Value.Type.TripleTerm) {
+			return 31 * (31 * (31 * type.ordinal() + subject.spellingHash()) + predicate.spellingHash())
+					+ object.spellingHash();
+		}
+		return 31 * type.ordinal() + lexical.hashCode();
+	}
+
+	private static int literalHash(String lexical, String language, String datatype, Literal.BaseDirection direction) {
+		int hash = 31 * Value.Type.Literal.ordinal() + lexical.hashCode();
+		hash = 31 * hash + datatype.hashCode();
+		hash = 31 * hash + (language == null ? 0 : language.hashCode());
+		return 31 * hash + (direction == null ? 0 : direction.ordinal() + 1);
+	}
+
 }

@@ -191,6 +191,16 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	}
 
 	@Override
+	public boolean supportsCanonicalTermKeys() {
+		return scratch.termAuthority().supportsCanonicalTermKeys();
+	}
+
+	@Override
+	public long canonicalTermKey(long id) {
+		return scratch.termAuthority().canonicalTermKey(id);
+	}
+
+	@Override
 	public long termHashKey(long id) {
 		return scratch.termAuthority().termHashKey(id);
 	}

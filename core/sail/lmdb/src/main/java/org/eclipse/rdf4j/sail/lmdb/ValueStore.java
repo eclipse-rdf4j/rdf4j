@@ -500,6 +500,8 @@ public class ValueStore extends AbstractValueFactory {
 	private final RetiredValueIdStore retiredIdStore = new RetiredValueIdStore();
 	private boolean auxiliaryDatabasesInitialized;
 	private long writeTxn;
+	/** Null during dictionary mutation, including private-cache publication; fresh identity after commit/rollback. */
+	private volatile Object valueLookupGeneration = new Object();
 	private Thread writeTxnOwner;
 	private final boolean forceSync;
 	private final boolean noReadahead;
@@ -2270,6 +2272,7 @@ public class ValueStore extends AbstractValueFactory {
 				return transaction.exec(stack, writeTxn);
 			}
 		} else {
+			beginValueLookupMutation();
 			try {
 				return LmdbUtil.transaction(env, (stack, txn) -> {
 					T result = transaction.exec(stack, txn);
@@ -2277,7 +2280,11 @@ public class ValueStore extends AbstractValueFactory {
 					return result;
 				});
 			} finally {
-				txnManager.reset();
+				try {
+					txnManager.reset();
+				} finally {
+					endValueLookupMutation();
+				}
 			}
 		}
 	}
@@ -2312,6 +2319,33 @@ public class ValueStore extends AbstractValueFactory {
 	 */
 	public long getId(Value value) throws IOException {
 		return getId(value, false);
+	}
+
+	/**
+	 * Identity of the current dictionary lookup view: both the read transaction and dictionary mutation generation.
+	 * Calls during ANY active dictionary mutation decline caching, not only calls from its write owner. getId also
+	 * consults shared positive caches; those can change independently of an individual reader's native snapshot.
+	 * A completed mutation changes the generation even after rollback. Tokens retain no LMDB transaction or page.
+	 * A cache must observe the same non-null identity before and after loading a result, including UNKNOWN.
+	 */
+	@InternalUseOnly
+	public Object valueLookupScope() throws IOException {
+		Object generation = valueLookupGeneration;
+		if (generation == null) {
+			return null;
+		}
+		Object token = txnManager.getReadTxn().valueLookupScope(generation);
+		return valueLookupGeneration == generation ? token : null;
+	}
+
+	private void beginValueLookupMutation() {
+		valueLookupGeneration = null;
+	}
+
+	private void endValueLookupMutation() {
+		if (writeTxn == 0) {
+			valueLookupGeneration = new Object();
+		}
 	}
 
 	/**
@@ -3340,6 +3374,7 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	public void startTransaction(boolean resize) throws IOException {
+		beginValueLookupMutation();
 		clearTransactionValueCaches();
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
@@ -3428,6 +3463,7 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	public void commit() throws IOException {
+		beginValueLookupMutation();
 		endTransaction(true, false);
 		var lockManager = txnManager.lockManager();
 		long stamp = 0;
@@ -3440,6 +3476,7 @@ public class ValueStore extends AbstractValueFactory {
 			if (stamp != 0) {
 				lockManager.unlockWrite(stamp);
 			}
+			endValueLookupMutation();
 		}
 	}
 
@@ -3782,7 +3819,12 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	public void rollback() throws IOException {
-		endTransaction(false, false);
+		beginValueLookupMutation();
+		try {
+			endTransaction(false, false);
+		} finally {
+			endValueLookupMutation();
+		}
 	}
 
 	/**
@@ -3842,6 +3884,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public void close() throws IOException {
+		beginValueLookupMutation();
 		if (env != 0) {
 			if (writeTxn == 0) {
 				flushPendingHashUpdates();

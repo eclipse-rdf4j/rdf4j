@@ -37,6 +37,9 @@ public final class LmdbRuntimeProperties {
 			: !"false".equalsIgnoreCase(value);
 
 	private static final List<Property> PROPERTIES = List.of(
+			on("Native values", "rdf4j.lmdb.computedValueResolutionCache.enabled", "Computed value resolution cache",
+					"Cache positive and negative dictionary lookups within the evaluation and dictionary read view.",
+					UNLESS_FALSE_IGNORE_CASE),
 			on("Factorization", "rdf4j.lmdb.factor.transport.enabled", "Factor sidecar transport",
 					"Preserve borrowed groups through dependency-safe slot filters and inner joins.", UNLESS_FALSE),
 			on("Factorization", "rdf4j.lmdb.factor.borrowed.enabled", "Borrowed adjacency groups",

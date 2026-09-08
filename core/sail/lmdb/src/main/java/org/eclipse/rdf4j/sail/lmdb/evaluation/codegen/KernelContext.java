@@ -76,6 +76,26 @@ public final class KernelContext {
 	 */
 	public KernelCancellation cancellation;
 
+	/** Root-shared query ledger. The kernel closes only its reservations, never this shared ledger. */
+	public org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger memoryLedger;
+	private java.util.function.Supplier<org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger> memoryLedgerSupplier;
+
+	public KernelContext withMemoryLedgerSupplier(java.util.function.Supplier<org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger> supplier) {
+		this.memoryLedgerSupplier = java.util.Objects.requireNonNull(supplier, "supplier");
+		return this;
+	}
+
+	public org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger groupMemoryLedger() {
+		if (memoryLedger == null && memoryLedgerSupplier != null) memoryLedger = memoryLedgerSupplier.get();
+		return memoryLedger;
+	}
+
+
+	public KernelContext withMemoryLedger(org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger ledger) {
+		this.memoryLedger = java.util.Objects.requireNonNull(ledger, "ledger");
+		return this;
+	}
+
 	private static final FragmentBinding[] NO_FRAGMENT_BINDINGS = {};
 
 	private static final NativeLmdbQuerySource.NodePredicates[] NO_NODE_PREDICATES = {};

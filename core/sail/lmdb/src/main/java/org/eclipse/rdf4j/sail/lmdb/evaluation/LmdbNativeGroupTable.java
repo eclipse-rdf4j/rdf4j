@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.query.BindingSet;
  * aggregates, which the parallel gate refuses — see {@link AggState#mergeFrom(AggState)}).
  */
 @Experimental
-final class NativeGroupTable {
+final class NativeGroupTable implements AutoCloseable {
 
 	enum Mode {
 		/** No group keys: a single accumulator plus a saw-a-row flag. */
@@ -75,15 +75,35 @@ final class NativeGroupTable {
 	 * per row (dominant cost when a selective tail rejects almost every prefix row).
 	 */
 	AggState spareGroupState;
+	private boolean boundedAllowed, boundedChecked, unboundedReady, boundedConsumed, closed;
+	private NativeCountGroupStore boundedCounts;
+	private long[] boundedKeys, boundedInputs;
 
 	private NativeGroupTable(int[] groupSlots, AggregateSpec[] aggregates, AggContext ctx,
 			AggregateDistinctChannels channels, Mode mode, boolean rowMetrics) {
+		this(groupSlots, aggregates, ctx, channels, mode, rowMetrics, false);
+	}
+
+	private NativeGroupTable(int[] groupSlots, AggregateSpec[] aggregates, AggContext ctx,
+			AggregateDistinctChannels channels, Mode mode, boolean rowMetrics, boolean boundedAllowed) {
 		this.groupSlots = groupSlots;
 		this.aggregates = aggregates;
 		this.ctx = ctx;
 		this.channels = channels;
 		this.mode = mode;
 		this.rowMetrics = rowMetrics;
+		this.boundedAllowed = boundedAllowed;
+		if (!boundedAllowed) initializeUnbounded();
+	}
+
+	private void initializeUnbounded() {
+		checkOpen();
+		if (boundedCounts != null) throw new IllegalStateException("Cannot expose AggState after bounded input");
+		if (unboundedReady) return;
+		// Once a caller has exposed a native state/map (or merged a worker), subsequent direct adds must
+		// use that same representation. Switching later would silently discard the earlier groups.
+		boundedAllowed = false;
+		unboundedReady = true;
 		switch (mode) {
 		case ZERO:
 			this.single = new AggState(aggregates, 65_536, ctx, channels);
@@ -112,7 +132,12 @@ final class NativeGroupTable {
 		} else {
 			mode = allowCountFastPath && pureCounts(aggregates) ? Mode.TUPLE_COUNTS : Mode.TUPLE_STATES;
 		}
-		return new NativeGroupTable(groupSlots, aggregates, ctx, channels, mode, rowMetrics);
+		// Only direct-add consumers opt in. Factor tails and worker-state merges retain their contracts.
+		boolean bounded = allowCountFastPath && NativeCountGroupStore.enabled()
+				&& AggregateSpec.allCounts(aggregates) && !AggregateSpec.anyFullRowDistinct(aggregates)
+				&& !hasMonotonicDistinct(channels)
+				&& (groupSlots.length > 0 || java.util.Arrays.stream(aggregates).anyMatch(a -> a.distinct));
+		return new NativeGroupTable(groupSlots, aggregates, ctx, channels, mode, rowMetrics, bounded);
 	}
 
 	/**
@@ -122,6 +147,11 @@ final class NativeGroupTable {
 	static NativeGroupTable tailGrouped(AggregateSpec[] aggregates, AggContext ctx,
 			AggregateDistinctChannels channels) {
 		return new NativeGroupTable(null, aggregates, ctx, channels, Mode.SINGLE_SLOT, false);
+	}
+
+	private static boolean hasMonotonicDistinct(AggregateDistinctChannels channels) {
+		for (NativeDistinctChannelMode mode : channels.modes) if (mode == NativeDistinctChannelMode.MONOTONIC) return true;
+		return false;
 	}
 
 	static boolean pureCounts(AggregateSpec[] aggregates) {
@@ -143,6 +173,7 @@ final class NativeGroupTable {
 	}
 
 	LongAggStateMap longGroups() {
+		initializeUnbounded();
 		return longGroups;
 	}
 
@@ -152,10 +183,14 @@ final class NativeGroupTable {
 	 * group's aggregates through the checked weighted arithmetic.
 	 */
 	void add(RowState row, long weight) {
+		if (weight < 0L) throw new IllegalArgumentException("Negative aggregate multiplicity");
+		if (weight == 0L) return;
 		if (weight <= 1L) {
 			add(row);
 			return;
 		}
+		if (addBounded(row, weight)) return;
+		initializeUnbounded();
 		switch (mode) {
 		case ZERO:
 			sawRow = true;
@@ -209,6 +244,8 @@ final class NativeGroupTable {
 
 	/** Accumulates one fully-bound solution row into its group's state. */
 	void add(RowState row) {
+		if (addBounded(row, 1L)) return;
+		initializeUnbounded();
 		switch (mode) {
 		case ZERO:
 			sawRow = true;
@@ -265,6 +302,10 @@ final class NativeGroupTable {
 	 * produced at least one match, so zero-match prefix rows never create empty groups (inner-join semantics).
 	 */
 	void aggregateFactorized(RowState row, FactorizedTail tail) throws IOException {
+		if (boundedCounts != null) {
+			throw new IllegalStateException("Cannot mix an owned factor tail with bounded direct-add groups");
+		}
+		initializeUnbounded();
 		switch (mode) {
 		case ZERO:
 			sawRow |= tail.aggregate(row, single);
@@ -315,11 +356,55 @@ final class NativeGroupTable {
 		}
 	}
 
+	private boolean addBounded(RowState row, long weight) {
+		checkOpen();
+		if (!boundedAllowed) return false;
+		if (!boundedChecked) {
+			boundedChecked = true;
+			NativeTermAuthority authority = row.termAuthority();
+			if (!authority.supportsCanonicalTermKeys()) return false;
+			boolean[] distinct = new boolean[aggregates.length];
+			for (int i = 0; i < distinct.length; i++) distinct[i] = aggregates[i].distinct;
+			boundedCounts = new NativeCountGroupStore(groupSlots.length, distinct, authority::canonicalTermKey,
+					LmdbNativeProbeDeadline.currentKernelCancellation(row.cancellation::isCancellationRequested, null),
+					row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+			boundedKeys = new long[groupSlots.length]; boundedInputs = new long[aggregates.length];
+		}
+		if (boundedCounts == null) return false;
+		for (int i = 0; i < groupSlots.length; i++) boundedKeys[i] = row.slots[groupSlots[i]];
+		for (int i = 0; i < aggregates.length; i++) boundedInputs[i] = aggregates[i].hasInput(row)
+				? aggregates[i].value(row) : UNKNOWN;
+		if (groupSlots.length == 1 && aggregates.length == 1 && !aggregates[0].distinct) {
+			boundedCounts.addSingleCount(boundedKeys[0], boundedInputs[0], weight);
+		} else boundedCounts.add(boundedKeys, boundedInputs, weight);
+		if (rowMetrics) {
+			if (mode == Mode.TUPLE_COUNTS) primitiveCountRows++;
+			else if (mode == Mode.TUPLE_STATES) primitiveTupleRows++;
+		}
+		return true;
+	}
+
+	private void checkOpen() {
+		if (closed || boundedConsumed) throw new IllegalStateException("Grouping table is closed or already drained");
+	}
+
+	@Override public void close() {
+		if (closed) return;
+		closed = true;
+		NativeCountGroupStore store = boundedCounts;
+		boundedCounts = null;
+		if (store != null) store.close();
+	}
+
 	/**
 	 * Merges a parallel worker's table into this one. Each aggregate state owns merge semantics for its kind, including
 	 * union-only partials for deferred DISTINCT SUM/AVG; both tables must share the construction parameters.
 	 */
 	void mergeFrom(NativeGroupTable other) {
+		if (boundedCounts != null || other.boundedCounts != null) {
+			throw new IllegalStateException("Bounded groups must merge through their record stream, not AggState");
+		}
+		initializeUnbounded(); other.initializeUnbounded();
 		if (rowMetrics) {
 			primitiveCountRows += other.primitiveCountRows;
 			primitiveTupleRows += other.primitiveTupleRows;
@@ -397,6 +482,21 @@ final class NativeGroupTable {
 
 	/** Renders the accumulated groups as binding sets through the iteration's value materialization. */
 	List<BindingSet> results(NativeGroupIteration it, LmdbNativeAttemptMetrics metrics) {
+		checkOpen();
+		if (boundedAllowed && !boundedChecked && !unboundedReady) {
+			return groupSlots.length == 0 ? List.of(it.toCountBindingSet(new long[aggregates.length])) : List.of();
+		}
+		if (boundedCounts != null) {
+			try (NativeCountGroupStore store = boundedCounts) {
+				store.finish();
+				ArrayList<BindingSet> results = new ArrayList<>();
+				long[] result = new long[groupSlots.length + aggregates.length];
+				while (store.next(result)) results.add(it.toCountBindingSet(result));
+				commitRowMetrics(metrics);
+				return results;
+			} finally { boundedCounts = null; boundedConsumed = true; }
+		}
+		initializeUnbounded();
 		switch (mode) {
 		case ZERO:
 			return List.of(it.toBindingSet(null, single, sawRow));

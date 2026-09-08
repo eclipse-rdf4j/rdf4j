@@ -653,22 +653,24 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
 		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, aggContext,
 				sequentialDistinctChannels, true, true);
-		boolean surfacesMultiplicity = cursor instanceof FactorizedRowCursor;
-		try (cursor) {
-			int probePollTick0 = 0;
-			while (row.advance(cursor)) {
-				LmdbNativeProbeDeadline.poll(++probePollTick0);
-				// the leapfrog core surfaces each solution's duplicate count instead of replaying it (G6):
-				// consume the whole bag in one weighted accumulation rather than one next() per copy
-				table.add(row, surfacesMultiplicity ? ((FactorizedRowCursor) cursor).multiplicity() : 1L);
+		try (table) {
+			boolean surfacesMultiplicity = cursor instanceof FactorizedRowCursor;
+			try (cursor) {
+				int probePollTick0 = 0;
+				while (row.advance(cursor)) {
+					LmdbNativeProbeDeadline.poll(++probePollTick0);
+					// the leapfrog core surfaces each solution's duplicate count instead of replaying it (G6):
+					// consume the whole bag in one weighted accumulation rather than one next() per copy
+					table.add(row, surfacesMultiplicity ? ((FactorizedRowCursor) cursor).multiplicity() : 1L);
+				}
+			} catch (IOException e) {
+				throw new QueryEvaluationException(e);
 			}
-		} catch (IOException e) {
-			throw new QueryEvaluationException(e);
+			List<BindingSet> results = table.results(this, metrics);
+			metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_WCOJ);
+			metrics.commitToParent();
+			return results;
 		}
-		List<BindingSet> results = table.results(this, metrics);
-		metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_WCOJ);
-		metrics.commitToParent();
-		return results;
 	}
 
 	private NativeGroupIteration withArg(SlotPlan attemptArg) {
@@ -1109,50 +1111,54 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	List<BindingSet> evaluateSequential(RowState row, AggContext context, LmdbNativeAttemptMetrics metrics) {
 		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, context,
 				sequentialDistinctChannels, true, true);
-		try (RowCursor cursor = row.aggregateInput(arg.open(row))) {
-			int probePollTick1 = 0;
-			while (advance(cursor)) {
-				LmdbNativeProbeDeadline.poll(++probePollTick1);
-				table.add(row,
-						cursor instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L);
+		try (table) {
+			try (RowCursor cursor = row.aggregateInput(arg.open(row))) {
+				int probePollTick1 = 0;
+				while (advance(cursor)) {
+					LmdbNativeProbeDeadline.poll(++probePollTick1);
+					table.add(row,
+							cursor instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L);
+				}
+			} catch (IOException e) {
+				throw new QueryEvaluationException(e);
 			}
-		} catch (IOException e) {
-			throw new QueryEvaluationException(e);
+			List<BindingSet> results = table.results(this, metrics);
+			metrics.deferStrategy(explainTarget, table.strategyName());
+			return results;
 		}
-		List<BindingSet> results = table.results(this, metrics);
-		metrics.deferStrategy(explainTarget, table.strategyName());
-		return results;
 	}
 
 	private List<BindingSet> evaluateWildcardWeighted(RowState row, AggContext context,
 			LmdbNativeAttemptMetrics metrics) {
 		NativeGroupTable table = NativeGroupTable.create(groupSlots, aggregates, context,
 				sequentialDistinctChannels, true, true);
-		try {
-			RowCursor weighted = LmdbWildcardPredicateBatch.openWeightedAggregate(arg, row, groupSlots, aggregates,
-					NativeBatch.configuredRows());
-			if (weighted == null) {
-				return null;
-			}
-			try (RowCursor cursor = row.aggregateInput(weighted)) {
-				int probePollTick = 0;
-				while (advance(cursor)) {
-					LmdbNativeProbeDeadline.poll(++probePollTick);
-					table.add(row, ((FactorizedRowCursor) cursor).multiplicity());
+		try (table) {
+			try {
+				RowCursor weighted = LmdbWildcardPredicateBatch.openWeightedAggregate(arg, row, groupSlots, aggregates,
+						NativeBatch.configuredRows());
+				if (weighted == null) {
+					return null;
 				}
+				try (RowCursor cursor = row.aggregateInput(weighted)) {
+					int probePollTick = 0;
+					while (advance(cursor)) {
+						LmdbNativeProbeDeadline.poll(++probePollTick);
+						table.add(row, ((FactorizedRowCursor) cursor).multiplicity());
+					}
+				}
+			} catch (IOException e) {
+				throw new QueryEvaluationException(e);
 			}
-		} catch (IOException e) {
-			throw new QueryEvaluationException(e);
+			List<BindingSet> results = table.results(this, metrics);
+			metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED);
+			if (row.runtimePlan != null) {
+				SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
+						? ((MultiJoinPlan) arg).derivedPlan(row).order
+						: new SlotPlan[] { arg };
+				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED, actualOrder);
+			}
+			return results;
 		}
-		List<BindingSet> results = table.results(this, metrics);
-		metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED);
-		if (row.runtimePlan != null) {
-			SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
-					? ((MultiJoinPlan) arg).derivedPlan(row).order
-					: new SlotPlan[] { arg };
-			row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED, actualOrder);
-		}
-		return results;
 	}
 
 	private boolean advance(RowCursor cursor) throws IOException {
@@ -1883,6 +1889,20 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				}
 				break;
 			}
+		}
+		return result;
+	}
+
+	/** Render already-final COUNT channels; do not recreate DISTINCT sets to pass through AggState.count(). */
+	BindingSet toCountBindingSet(long[] row) {
+		QueryBindingSet result = new QueryBindingSet(groupSlots.length + aggregates.length);
+		for (int i = 0; i < groupSlots.length; i++) {
+			long id = row[i];
+			if (id != UNKNOWN && id != NULL_CONTEXT_ID) result.addBinding(slotNames[groupSlots[i]], source.lazyValue(id));
+		}
+		for (int i = 0; i < aggregates.length; i++) {
+			result.addBinding(aggregates[i].name,
+					SimpleValueFactory.getInstance().createLiteral(BigInteger.valueOf(row[groupSlots.length + i])));
 		}
 		return result;
 	}

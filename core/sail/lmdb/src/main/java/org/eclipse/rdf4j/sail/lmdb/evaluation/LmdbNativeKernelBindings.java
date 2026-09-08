@@ -892,6 +892,7 @@ final class LmdbNativeKernelBindings {
 				hooks, scanner, plans, distinctExpected,
 				variablePredicateViews.nodePredicates(), variablePredicateViews.dynamics(),
 				variablePredicateViews.wildcards())
+						.withMemoryLedgerSupplier(() -> row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()))
 						.withCancellation(LmdbNativeProbeDeadline
 								.currentKernelCancellation(row.cancellation::isCancellationRequested,
 										workerCancellation));

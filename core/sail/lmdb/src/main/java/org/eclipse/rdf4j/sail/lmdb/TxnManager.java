@@ -478,6 +478,12 @@ class TxnManager {
 		private long txn;
 		/** Bumped on every reset/renew transition; volatile so pinned-snapshot holders can detect invalidation. */
 		private volatile long version;
+		/** Identity of this active read view for optional value-lookup caches; null while inactive or closed. */
+		private volatile Object valueLookupScope = new Object();
+		private volatile ValueLookupScope dictionaryLookupScope;
+
+		private record ValueLookupScope(Object readerView, Object dictionaryGeneration) {
+		}
 		private boolean txnActive = true;
 		private boolean closed;
 		/** Data revision this transaction's LMDB snapshot corresponds to; −1 for unpinned transactions. */
@@ -548,6 +554,8 @@ class TxnManager {
 					return;
 				}
 				closed = true;
+				valueLookupScope = null;
+				dictionaryLookupScope = null;
 				synchronized (TxnManager.this.active) {
 					TxnManager.this.active.remove(this);
 				}
@@ -568,6 +576,7 @@ class TxnManager {
 			if (closed) {
 				return;
 			}
+			valueLookupScope = null;
 			if (txnActive) {
 				mdb_txn_reset(txn);
 				txnActive = false;
@@ -575,6 +584,9 @@ class TxnManager {
 				activate();
 			}
 			version++;
+			if (txnActive) {
+				valueLookupScope = new Object();
+			}
 		}
 
 		/**
@@ -584,6 +596,7 @@ class TxnManager {
 			if (closed) {
 				return;
 			}
+			valueLookupScope = null;
 			if (snapshotRevision >= 0) {
 				// parking (mdb_txn_reset) already abandons the pinned snapshot; the later renew binds a newer one
 				snapshotInvalidated = true;
@@ -591,6 +604,7 @@ class TxnManager {
 			if (active) {
 				activate();
 				version++;
+				valueLookupScope = new Object();
 			} else {
 				deactivate();
 			}
@@ -628,6 +642,34 @@ class TxnManager {
 
 		long version() {
 			return version;
+		}
+
+		Object valueLookupScope() {
+			return valueLookupScope;
+		}
+
+		/** Cached pair: no allocation on a hit; invalidated by either reader renewal or dictionary mutation. */
+		Object valueLookupScope(Object dictionaryGeneration) {
+			Object view = valueLookupScope;
+			if (view == null || dictionaryGeneration == null) {
+				return null;
+			}
+			ValueLookupScope cached = dictionaryLookupScope;
+			if (cached == null || cached.readerView != view || cached.dictionaryGeneration != dictionaryGeneration) {
+				synchronized (this) {
+					view = valueLookupScope;
+					if (view == null) {
+						return null;
+					}
+					cached = dictionaryLookupScope;
+					if (cached == null || cached.readerView != view
+							|| cached.dictionaryGeneration != dictionaryGeneration) {
+						cached = new ValueLookupScope(view, dictionaryGeneration);
+						dictionaryLookupScope = cached;
+					}
+				}
+			}
+			return cached;
 		}
 	}
 

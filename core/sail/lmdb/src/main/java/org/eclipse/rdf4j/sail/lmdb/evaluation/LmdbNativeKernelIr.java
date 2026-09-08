@@ -3112,6 +3112,9 @@ final class LmdbNativeKernelIr {
 		final FactorCountGuards factorCountGuards;
 		/** Emission choice is captured once and participates in the compiler cache identity. */
 		final boolean compiledCountSpecialization;
+		/** Shared native top-K/spill sink; capture admission in the generated shape. */
+		final boolean boundedOrder;
+		final boolean boundedGroups;
 		final TelemetryMode telemetryMode;
 		final AggregateStateMode aggregateStateMode;
 		final AggregateDistinctMode[] aggregateDistinctModes;
@@ -3131,6 +3134,21 @@ final class LmdbNativeKernelIr {
 		final boolean resumable;
 		private final String shapeKey;
 
+		private static boolean boundedGroupShape(Terminal terminal, AggregateStateMode mode, boolean boundedOrder) {
+			if (terminal instanceof Emit rows) {
+				// ORDER already blocks: do not turn demand-sensitive DISTINCT/LIMIT into a full source drain.
+				return boundedOrder && rows.distinct && rows.alignedCount == 0;
+			}
+			if (!(terminal instanceof Aggregate a) || mode != AggregateStateMode.HASHED) return false;
+			boolean needsState = a.groupCols.length > 0;
+			for (AggregateOutput output : a.outputs) {
+				if (output.hookDistinct || output.orderedDomain >= 0) return false;
+				if (output.kind == AGG_COUNT_DISTINCT) needsState = true;
+				else if (output.kind != AGG_COUNT && output.kind != AGG_COUNT_STAR) return false;
+			}
+			return needsState;
+		}
+
 		Kernel(int columnCount, List<Node> pipeline, Terminal terminal) {
 			this(columnCount, pipeline, terminal, TelemetryMode.NONE);
 		}
@@ -3147,6 +3165,9 @@ final class LmdbNativeKernelIr {
 			this.pipeline = factorizePlanCounts(optimized.pipeline, optimized.terminal);
 			this.columnCount = columnCount;
 			this.terminal = optimized.terminal;
+			this.boundedOrder = this.terminal.mods.orderKeys != null
+					&& !(this.terminal instanceof TypeMatrixAggregate)
+					&& !"false".equals(System.getProperty("rdf4j.lmdb.janinoCodegen.boundedOrder"));
 			this.requirements = new Requirements();
 			for (Node node : this.pipeline) {
 				node.requirements(requirements);
@@ -3159,6 +3180,9 @@ final class LmdbNativeKernelIr {
 					&& !"false".equals(System.getProperty(COUNT_SPECIALIZATION_PROPERTY));
 			AggregateProperties aggregateProperties = aggregateProperties(this.pipeline, this.terminal);
 			this.aggregateStateMode = aggregateProperties.stateMode;
+			this.boundedGroups = !"false".equals(System.getProperty("rdf4j.lmdb.janinoCodegen.boundedGroups"))
+					&& boundedGroupShape(this.terminal, this.aggregateStateMode, this.boundedOrder);
+
 			this.aggregateDistinctModes = aggregateProperties.distinctModes;
 			this.orderedInputsRequired = aggregateProperties.orderedInputsRequired;
 			this.uniqueDomainsRequired = (BitSet) aggregateProperties.uniqueDomainsRequired.clone();
@@ -3174,6 +3198,8 @@ final class LmdbNativeKernelIr {
 					? -1
 					: vectorTail;
 			StringBuilder key = new StringBuilder("ir1:");
+			if (boundedOrder) key.append("bo1;");
+			if (boundedGroups) key.append("bg1;");
 			if (factorCountGuards != null) key.append("fw1;");
 			if (compiledCountSpecialization) key.append("ff1;");
 			if (vectorTailIndex >= 0) {
@@ -3343,8 +3369,8 @@ final class LmdbNativeKernelIr {
 		 * therefore change only multiplicity, which the distinct-root consumer cannot observe.
 		 *
 		 * The other important canonicalization is OPTIONAL-plus-rejecting-filter. A multi-pattern OPTIONAL lowers to a
-		 * {@link LeftGroup}; when an immediately following filter reads one of the arm's columns, the null-extended arm
-		 * is necessarily rejected. In a set consumer that pair is an ordinary existential witness, and folding it
+		 * {@link LeftGroup}; only a filter with a proven null-rejecting contract permits removal of the null-extended arm.
+		 * Reading an arm column is NOT such a proof (for example !BOUND and COALESCE). In a set consumer that pair is an ordinary existential witness, and folding it
 		 * removes both null-arm bookkeeping and every row after the first passing match.
 		 */
 		private static OptimizedKernel optimizeDistinctRootExists(List<Node> original, Terminal originalTerminal) {
@@ -3396,7 +3422,8 @@ final class LmdbNativeKernelIr {
 				break;
 			}
 
-			// OPTIONAL arm + outside FILTER that reads an arm column: its null arm cannot survive, so it is an EXISTS.
+			// OPTIONAL may become a witness only when the null arm is provably rejected.
+			// Opaque value/residual hooks carry dependencies, not null-rejection guarantees.
 			if (!suffix.isEmpty() && suffix.get(0)instanceof LeftGroup group) {
 				BitSet armColumns = new BitSet();
 				group.produced(armColumns);
@@ -3404,7 +3431,11 @@ final class LmdbNativeKernelIr {
 				boolean rejectsNullArm = false;
 				while (1 + filters < suffix.size() && isFilter(suffix.get(1 + filters))) {
 					Node filter = suffix.get(1 + filters);
-					rejectsNullArm |= readsAny(filter, armColumns);
+					if (filter instanceof FilterValue || filter instanceof FilterResidual) {
+						// No effect/repeatability proof either: do not skip callback evaluation on the null arm.
+						rejectsNullArm = false; filters = 0; break;
+					}
+					rejectsNullArm |= rejectsNullExtension(filter, armColumns, rootCol);
 					filters++;
 				}
 				if (filters > 0 && rejectsNullArm) {
@@ -3448,6 +3479,29 @@ final class LmdbNativeKernelIr {
 			}
 			Aggregate terminal = new Aggregate(aggregate.groupCols, outputs, aggregate.having, aggregate.mods);
 			return new OptimizedKernel(List.copyOf(rewritten), terminal);
+		}
+
+		/** Sufficient, deliberately incomplete proof; constants/entries are runtime-bound and may be NULL. */
+		private static boolean rejectsNullExtension(Node node, BitSet nullColumns, int boundRoot) {
+			if (node instanceof FilterDateCompare filter) {
+				return filter.checkBound && nullColumn(filter.value, nullColumns);
+			}
+			if (node instanceof FilterFragmentCompare filter) return nullColumn(filter.value, nullColumns);
+			if (node instanceof FilterCompareId filter) {
+				boolean leftNull = nullColumn(filter.left, nullColumns), rightNull = nullColumn(filter.right, nullColumns);
+				if (filter.negated) return leftNull && rightNull;
+				// The leading distinct-key enumerator guarantees a bound root, unless overwritten by the arm.
+				boolean leftBound = filter.left.kind == Operand.COL && filter.left.index == boundRoot
+						&& !nullColumns.get(boundRoot);
+				boolean rightBound = filter.right.kind == Operand.COL && filter.right.index == boundRoot
+						&& !nullColumns.get(boundRoot);
+				return leftNull && rightBound || rightNull && leftBound;
+			}
+			return false;
+		}
+
+		private static boolean nullColumn(Operand value, BitSet nullColumns) {
+			return value.kind == Operand.COL && nullColumns.get(value.index);
 		}
 
 		private static boolean existentialSuffixNode(Node node) {

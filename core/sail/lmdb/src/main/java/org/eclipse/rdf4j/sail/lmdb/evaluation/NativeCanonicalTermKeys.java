@@ -69,7 +69,7 @@ final class NativeCanonicalTermKeys {
 			return known;
 		}
 		// This lookup is exceptional ingress normalization, not id->Value materialization during stored-key hashing.
-		long key = store.idOf(value);
+		long key = context.valueResolver(store, catalog).storeId(value);
 		if (key == UNKNOWN) {
 			Long representative = absentRepresentatives.get(value);
 			if (representative == null) {

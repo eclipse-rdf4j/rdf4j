@@ -44,6 +44,24 @@ public interface NativeLmdbQuerySource {
 
 	long idOf(Value value) throws QueryEvaluationException;
 
+	/**
+	 * Optional dictionary-lookup cache token. Identical non-null tokens certify the same visible value-to-id mapping,
+	 * including absence. Changed mappings must change the token; null declines caching. Never substitute idSpace(),
+	 * costModelIdentity(), or a statement snapshot: the value store can have a different read-transaction lifetime.
+	 * Non-ValueStore sources opt in explicitly. Caches must compare tokens by identity before AND after lookup.
+	 */
+	default Object valueLookupScope() {
+		Object space = idSpace();
+		if (!(space instanceof ValueStore)) {
+			return null;
+		}
+		try {
+			return ((ValueStore) space).valueLookupScope();
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+	}
+
 	Value lazyValue(long id) throws QueryEvaluationException;
 
 	/**

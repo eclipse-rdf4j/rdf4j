@@ -228,6 +228,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private int outCount;
 	private int outPos;
 	private long[] rowScratch;
+	private KernelOrderSink orderedRows;
 
 	// --- cursors and per-site scratch -----------------------------------------------------
 	/** BoundRunCursors opened in bind, one per Probe node (in op-construction order). */
@@ -249,6 +250,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private boolean[] leftGroupFlags;
 
 	// --- hashed aggregate state -----------------------------------------------------------
+	private KernelGroupSink groupSink;
+	private long[] boundedGroupInput, boundedCountInput;
 	private KernelRuntime.LongIntMap groups;
 	private KernelRuntime.RowSet groupKeys;
 	private long[] groupScratch;
@@ -329,7 +332,24 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		this.v = new long[kernel.columnCount];
 		Arrays.fill(v, LmdbNativeKernelIr.NULL_ID);
 		this.rowScratch = new long[stride];
-		this.out = new long[Math.max(stride * 64, 64)];
+		if (kernel.boundedGroups) {
+			int width = aggregate == null ? emit.cols.length : aggregate.groupCols.length;
+			boolean[] distinct = new boolean[aggregate == null ? 0 : aggregate.outputs.length];
+			for (int i = 0; i < distinct.length; i++) distinct[i] = aggregate.outputs[i].kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT;
+			OutputMods mods = kernel.terminal.mods;
+			groupSink = KernelGroupSink.tryCreate(context, width, distinct, mods.orderKeys, mods.descending,
+					mods.valueOrder, mods.offset, mods.limit, aggregate == null || aggregate.having == null ? -1 : aggregate.having.outputIndex,
+					aggregate == null || aggregate.having == null ? 0 : aggregate.having.op,
+					aggregate == null || aggregate.having == null ? 0L : aggregate.having.threshold);
+			if (groupSink != null) { boundedGroupInput = new long[width]; boundedCountInput = new long[distinct.length]; }
+		}
+
+		this.out = new long[kernel.boundedOrder ? 0 : Math.max(stride * 64, 64)];
+		if (kernel.boundedOrder) {
+			OutputMods mods = kernel.terminal.mods;
+			this.orderedRows = new KernelOrderSink(stride, mods.orderKeys, mods.descending,
+					mods.valueOrder ? hooks : null, cancel, mods.offset, mods.limit);
+		}
 		this.planCursors = new KernelPlan.Cursor[kernel.requirements.plans];
 		this.scanBuffers = new long[kernel.requirements.scans][];
 		this.planBuffers = new long[kernel.requirements.plans][];
@@ -363,6 +383,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private void allocateEmitState() {
+		if (groupSink != null) return;
 		if (emit.distinct) {
 			int residual = emit.cols.length - emit.alignedCount;
 			if (residual > 0) {
@@ -392,12 +413,15 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private int fillOpen(long[] rowBuffer, int maxRows) {
 		if (closed) return 0;
 		if ((long) maxRows * stride > rowBuffer.length) throw new IllegalArgumentException("row buffer too small");
+		if (kernel.terminal.mods.limit == 0) return 0;
 		if (pullRows != null) return fillPull(rowBuffer, maxRows);
 		if (!ran) {
 			ran = true;
 			root.run();
 			flush();
 		}
+		if (groupSink != null) return groupSink.fill(rowBuffer, maxRows);
+		if (orderedRows != null) return orderedRows.fill(rowBuffer, maxRows);
 		int remaining = outCount - outPos;
 		int rows = Math.min(remaining, maxRows);
 		if (rows <= 0) {
@@ -412,9 +436,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	public void close() {
 		if (closed) return;
 		closed = true;
-		Throwable failure = null;
+		Throwable failure = KernelRuntime.closeResource(groupSink, null);
+		groupSink = null;
 		try { fireCloseTelemetry(); }
-		catch (RuntimeException | Error problem) { failure = problem; }
+		catch (RuntimeException | Error problem) { if (failure == null) failure = problem; else failure.addSuppressed(problem); }
 		if (pullRows != null) {
 			failure = KernelRuntime.closeResource(pullRows, failure);
 			pullRows = null;
@@ -437,6 +462,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}
 		}
 		activeKeyCursors.clear();
+		failure = KernelRuntime.closeResource(orderedRows, failure);
+		orderedRows = null;
 		context = null;
 		hooks = null;
 		cancel = null;
@@ -2596,6 +2623,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private void allocateAggregateState() {
+		if (groupSink != null) return;
 		if (streamingGroups()) {
 			sgSeen = false;
 			sgKey = -1L;
@@ -2678,6 +2706,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		for (int i = 0; i < emit.cols.length; i++) {
 			rowScratch[i] = v[emit.cols[i]];
 		}
+		if (groupSink != null) { groupSink.addDistinct(rowScratch); return false; }
 		if (emit.distinct) {
 			int aligned = emit.alignedCount;
 			if (aligned > 0) {
@@ -2744,6 +2773,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (multiplicity <= 0L) {
 			return;
 		}
+		if (groupSink != null) { updateBoundedCounts(multiplicity); return; }
 		if (streamingGroups()) {
 			long key = v[aggregate.groupCols[0]];
 			if (!sgSeen) {
@@ -2794,7 +2824,23 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 	}
 
+	private void updateBoundedCounts(long weight) {
+		if (aggregate.groupCols.length == 1 && aggregate.outputs.length == 1
+				&& aggregate.outputs[0].kind != LmdbNativeKernelIr.AGG_COUNT_DISTINCT) {
+			groupSink.addSingleCount(v[aggregate.groupCols[0]],
+					aggregate.outputs[0].kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? 0L : v[aggregate.outputs[0].col], weight);
+			return;
+		}
+		for (int i = 0; i < aggregate.groupCols.length; i++) boundedGroupInput[i] = v[aggregate.groupCols[i]];
+		for (int i = 0; i < aggregate.outputs.length; i++) {
+			AggregateOutput output = aggregate.outputs[i];
+			boundedCountInput[i] = output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? 0L : v[output.col];
+		}
+		groupSink.add(boundedGroupInput, boundedCountInput, weight);
+	}
+
 	private void updateHashed() {
+		if (groupSink != null) { updateBoundedCounts(1L); return; }
 		int g;
 		if (aggregate.groupCols.length == 0) {
 			g = 0;
@@ -3054,6 +3100,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private void appendRow() {
+		if (orderedRows != null) { orderedRows.add(rowScratch); return; }
 		KernelRuntime.checkMaterializationCapacity(cancel, outCount);
 		if ((outCount + 1) * stride > out.length) {
 			out = Arrays.copyOf(out, out.length * 2);
@@ -3063,6 +3110,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private void flush() {
+		if (groupSink != null) { groupSink.finish(); return; }
 		if (aggregate == null) {
 			// Row kernels have no drain: rows were appended as the pipeline ran. Only OutputMods remain.
 			applyOutputMods(emit.mods);
@@ -3094,6 +3142,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private void applyOutputMods(OutputMods mods) {
+		if (orderedRows != null) { orderedRows.finish(); return; }
 		if (mods.orderKeys != null) {
 			KernelHooks order = mods.valueOrder ? hooks : null;
 			if (mods.limit >= 0) {
