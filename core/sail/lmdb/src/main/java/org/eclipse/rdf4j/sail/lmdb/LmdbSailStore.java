@@ -694,6 +694,10 @@ class LmdbSailStore implements SailStore {
 				statementPatternCardinalitySource);
 	}
 
+	LmdbStore.LmdbStats getLmdbStats() throws IOException {
+		return new LmdbStore.LmdbStats(valueStore.getLmdbStats(), tripleStore.getLmdbStats());
+	}
+
 	@Override
 	public SailSource getExplicitSailSource() {
 		return new LmdbSailSource(true);
