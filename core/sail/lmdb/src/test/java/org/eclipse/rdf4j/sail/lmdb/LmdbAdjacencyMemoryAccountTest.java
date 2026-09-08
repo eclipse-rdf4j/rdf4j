@@ -31,6 +31,25 @@ import ch.qos.logback.core.read.ListAppender;
 class LmdbAdjacencyMemoryAccountTest {
 
 	@Test
+	void childBudgetPreservesTheRepositoryCapAndTransfersItsCharges() {
+		LmdbAdjacencyMemoryAccount parent = new LmdbAdjacencyMemoryAccount(1000);
+		LmdbAdjacencyMemoryAccount child = parent.childBudget(600);
+		assertThat(parent.tryReserve(MemoryKind.BASE, 500)).isTrue();
+		assertThat(child.tryReserve(MemoryKind.PENDING, 400)).isTrue();
+		assertThat(child.tryReserve(MemoryKind.PENDING, 101)).isFalse();
+		assertThat(parent.totalChargedBytes()).isEqualTo(900);
+		assertThat(child.totalChargedBytes()).isEqualTo(400);
+		child.reclassify(MemoryKind.PENDING, MemoryKind.PREPARATION_OUTPUT, 400);
+		assertThat(parent.chargedBytes(MemoryKind.PENDING)).isZero();
+		assertThat(parent.chargedBytes(MemoryKind.PREPARATION_OUTPUT)).isEqualTo(400);
+		assertThat(parent.unpublishedHighWaterBytes()).isEqualTo(400);
+		child.release(MemoryKind.PREPARATION_OUTPUT, 400);
+		parent.release(MemoryKind.BASE, 500);
+		assertThat(parent.totalChargedBytes()).isZero();
+		assertThat(child.totalChargedBytes()).isZero();
+	}
+
+	@Test
 	void reservationsAccumulateAndReleaseByKind() {
 		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1000);
 

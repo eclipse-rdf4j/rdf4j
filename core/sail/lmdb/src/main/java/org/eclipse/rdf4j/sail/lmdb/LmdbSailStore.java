@@ -828,6 +828,8 @@ class LmdbSailStore implements SailStore {
 	 * Constructed from {@link LmdbStoreConfig} settings.
 	 */
 	private final LmdbDirectAdjacencyStore directAdjacency;
+	/** Owned by the current backing transaction, protected by sinkStoreAccessLock. */
+	private boolean adjacencyAdmissionHeld;
 	/** Test-only interleaving hook: runs after planner statistics verify the dataset is open. */
 	volatile Runnable afterPlannerStatsOpenCheckForTest;
 
@@ -1177,7 +1179,15 @@ class LmdbSailStore implements SailStore {
 		storeTxnDirty.set(false);
 		storeTxnStarted.set(false);
 		storeTxnOwner = null;
+		releaseAdjacencyAdmission();
 		storeTransactionFinished.signalAll();
+	}
+
+	private void releaseAdjacencyAdmission() {
+		if (adjacencyAdmissionHeld) {
+			adjacencyAdmissionHeld = false;
+			directAdjacency.endBackingWrite();
+		}
 	}
 
 	/** Waits for the asynchronous transaction fate before any caller can observe cleared transaction flags. */
@@ -1893,13 +1903,12 @@ class LmdbSailStore implements SailStore {
 			// Refresh reader transactions can remain open across write commits and must not
 			// participate in the active txn reset/renew cycle.
 			boolean trackActive = !isEstimatorRefresh;
-			// Native SNAPSHOT: pin the dataset's read transaction to one store snapshot (revision + B+tree state)
-			// for its whole lifetime. SERIALIZABLE bypasses derived adjacency entirely; SNAPSHOT_READ and below keep
-			// the reset-on-commit behavior unchanged. Pinning is an isolation guarantee and must stay independent of
-			// adjacency serving.
+			// Pin every snapshot read for its dataset lifetime. Commits can now flush while root observers remain
+			// open, so resetting SNAPSHOT_READ datasets would tear a query and allow premature value reclamation.
+			// SNAPSHOT and SERIALIZABLE branches additionally retain this dataset for the whole transaction.
+			// SERIALIZABLE continues to use branch conflict tracking and bypass derived adjacency.
 			boolean pinSnapshot = trackActive && level != null && snapshotPinningEnabled()
-					&& level.isCompatibleWith(IsolationLevels.SNAPSHOT)
-					&& !level.isCompatibleWith(IsolationLevels.SERIALIZABLE);
+					&& level.isCompatibleWith(IsolationLevels.SNAPSHOT_READ);
 			boolean adjacencyBypass = level != null && level.isCompatibleWith(IsolationLevels.SERIALIZABLE);
 			return new LmdbSailDataset(explicit, trackActive, pinSnapshot, adjacencyBypass);
 		}
@@ -2157,7 +2166,8 @@ class LmdbSailStore implements SailStore {
 				statementPatternCardinalitySource.recordCommittedMutations(additions, removals);
 				if (directAdjacency != null) {
 					// the pending marker is already published; the sealed delta now feeds the applier
-					directAdjacency.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta());
+					directAdjacency.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta(), false);
+					directAdjacency.captureBackingWritePublication();
 				}
 				estimatorTouchedInTransaction = false;
 				estimatorTouchedSinceStoreTxnStart.set(false);
@@ -2174,6 +2184,9 @@ class LmdbSailStore implements SailStore {
 				}
 				completeStoreTransaction();
 				backingTransactionGeneration = 0L;
+				if (directAdjacency != null) {
+					directAdjacency.awaitBackingWritePublication();
+				}
 			} catch (IOException e) {
 				rollbackBackingTransaction();
 				discardEstimatorUpdatesIfTouched();
@@ -2921,12 +2934,37 @@ class LmdbSailStore implements SailStore {
 
 		private long startTransaction(boolean preferThreading, PreparedStatementBatch prepared, Object transactionOwner)
 				throws SailException {
-			while (storeTxnStarted.get() && storeTxnOwner != transactionOwner) {
+			while (true) {
+				while (storeTxnStarted.get() && storeTxnOwner != transactionOwner) {
+					try {
+						storeTransactionFinished.await();
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new InterruptedSailException(e);
+					}
+				}
+				if (storeTxnStarted.get() || directAdjacency == null) {
+					break;
+				}
+				if (directAdjacency.tryBeginBackingWrite()) {
+					adjacencyAdmissionHeld = true;
+					break;
+				}
+				// The builder and existing writers must be able to make progress while admission is paused.
+				// Release every reentrant hold, then recheck transaction ownership after reacquiring them.
+				int holds = sinkStoreAccessLock.getHoldCount();
+				for (int i = 0; i < holds; i++) {
+					sinkStoreAccessLock.unlock();
+				}
 				try {
-					storeTransactionFinished.await();
+					directAdjacency.awaitWriteAdmission();
 				} catch (InterruptedException e) {
 					Thread.currentThread().interrupt();
 					throw new InterruptedSailException(e);
+				} finally {
+					for (int i = 0; i < holds; i++) {
+						sinkStoreAccessLock.lock();
+					}
 				}
 			}
 			synchronized (storeTxnStarted) {
@@ -3023,6 +3061,7 @@ class LmdbSailStore implements SailStore {
 						nextTransactionAsync = false;
 						storeTxnDirty.set(false);
 						storeTxnStarted.set(false);
+						releaseAdjacencyAdmission();
 						storeTransactionFinished.signalAll();
 						throw new SailException(e);
 					}

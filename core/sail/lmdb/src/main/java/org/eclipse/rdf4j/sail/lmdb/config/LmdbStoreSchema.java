@@ -171,6 +171,9 @@ public class LmdbStoreSchema {
 	 */
 	public final static IRI DIRECT_ADJACENCY_MAX_BYTES;
 
+	/** Unpublished-delta admission threshold in bytes; zero selects AUTO. */
+	public final static IRI DIRECT_ADJACENCY_BACKLOG_MAX_BYTES;
+
 	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#directAdjacencyBuildOnStart</tt>
 	 */
@@ -236,6 +239,7 @@ public class LmdbStoreSchema {
 		DIRECT_ADJACENCY_COVERAGE = factory.createIRI(NAMESPACE, "directAdjacencyCoverage");
 		DIRECT_ADJACENCY_PREDICATE = factory.createIRI(NAMESPACE, "directAdjacencyPredicate");
 		DIRECT_ADJACENCY_MAX_BYTES = factory.createIRI(NAMESPACE, "directAdjacencyMaxBytes");
+		DIRECT_ADJACENCY_BACKLOG_MAX_BYTES = factory.createIRI(NAMESPACE, "directAdjacencyBacklogMaxBytes");
 		DIRECT_ADJACENCY_BUILD_ON_START = factory.createIRI(NAMESPACE, "directAdjacencyBuildOnStart");
 	}
 }

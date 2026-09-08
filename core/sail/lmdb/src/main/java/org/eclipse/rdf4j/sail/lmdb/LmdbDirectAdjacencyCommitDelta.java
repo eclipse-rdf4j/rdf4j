@@ -13,7 +13,12 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 
@@ -54,6 +59,10 @@ final class LmdbDirectAdjacencyCommitDelta {
 	private static final int EVENT_ORDINAL_RADIX = 2;
 	private final LmdbAdjacencyMemoryAccount account;
 	private final AtomicBoolean transactionDirty;
+	private final ExecutorService captureExecutor;
+	private final Runnable beforeCapture;
+	private final Supplier<LmdbAdjacencyMemoryAccount> captureBudget;
+	private AsyncCapture asyncCapture;
 	private long commitMaxBytes;
 	private long startRevision;
 	private boolean begun;
@@ -67,6 +76,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 	private byte[] flags = new byte[0];
 	private int count;
 	private long chargedBytes;
+	private LmdbAdjacencyMemoryAccount.Charge pendingMetadata;
 
 	LmdbDirectAdjacencyCommitDelta(LmdbAdjacencyMemoryAccount account, long commitMaxBytes) {
 		this(account, commitMaxBytes, new AtomicBoolean());
@@ -74,9 +84,18 @@ final class LmdbDirectAdjacencyCommitDelta {
 
 	LmdbDirectAdjacencyCommitDelta(LmdbAdjacencyMemoryAccount account, long commitMaxBytes,
 			AtomicBoolean transactionDirty) {
+		this(account, commitMaxBytes, transactionDirty, null, null, () -> account);
+	}
+
+	LmdbDirectAdjacencyCommitDelta(LmdbAdjacencyMemoryAccount account, long commitMaxBytes,
+			AtomicBoolean transactionDirty, ExecutorService captureExecutor, Runnable beforeCapture,
+			Supplier<LmdbAdjacencyMemoryAccount> captureBudget) {
 		this.account = account;
 		this.commitMaxBytes = commitMaxBytes;
 		this.transactionDirty = transactionDirty;
+		this.captureExecutor = captureExecutor;
+		this.beforeCapture = beforeCapture;
+		this.captureBudget = captureBudget;
 	}
 
 	void begin(long startRevision) {
@@ -89,6 +108,9 @@ final class LmdbDirectAdjacencyCommitDelta {
 		this.count = 0;
 		this.resolvedSelectedPredicates = null;
 		this.transactionDirty.set(false);
+		if (captureExecutor != null) {
+			asyncCapture = new AsyncCapture(startRevision);
+		}
 	}
 
 	boolean begun() {
@@ -123,6 +145,11 @@ final class LmdbDirectAdjacencyCommitDelta {
 			throw new IllegalStateException("commit delta not begun");
 		}
 		transactionDirty.set(true);
+		if (asyncCapture != null) {
+			asyncCapture.record(subject, predicate, object, context, explicit, add);
+			count++;
+			return;
+		}
 		if (overflowed) {
 			return;
 		}
@@ -175,20 +202,24 @@ final class LmdbDirectAdjacencyCommitDelta {
 
 	/**
 	 * Seals this transaction's events into an immutable {@link SealedDirectDelta} with its sorted, deduplicated
-	 * pending-row table, and resets this collector for the next transaction. Called under writer exclusion before the
-	 * authoritative LMDB commit; record calls between seal and the next {@link #begin} fail fast.
+	 * pending-row table, and resets this collector for the next transaction. The asynchronous path seals a detached
+	 * accumulator on its worker while LMDB commits; record calls between seal and the next {@link #begin} fail fast.
 	 */
 	SealedDirectDelta seal(long committedRevision) {
+		if (asyncCapture != null) {
+			return awaitSealed(sealAsync(committedRevision));
+		}
 		if (!begun) {
 			throw new IllegalStateException("commit delta not begun");
 		}
 		begun = false;
 		if (overflowed) {
 			overflowed = false;
+			releaseMetadata();
 			return SealedDirectDelta.overflowed(committedRevision);
 		}
 		if (count == 0) {
-			return SealedDirectDelta.empty(committedRevision);
+			return transferMetadata(SealedDirectDelta.empty(committedRevision));
 		}
 		int sortStrategy = selectSortStrategy();
 		/*
@@ -199,6 +230,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 		long sealScratchBytes = Math.addExact(Math.multiplyExact((long) count, 64), histogramBytes);
 		if (!account.tryReserve(MemoryKind.PENDING, sealScratchBytes)) {
 			releaseArrays();
+			releaseMetadata();
 			return SealedDirectDelta.overflowed(committedRevision);
 		}
 		try {
@@ -214,12 +246,210 @@ final class LmdbDirectAdjacencyCommitDelta {
 			count = 0;
 			chargedBytes = 0;
 			resolvedSelectedPredicates = null;
-			return sealed;
+			return transferMetadata(sealed);
 		} catch (RuntimeException e) {
 			account.release(MemoryKind.PENDING, sealScratchBytes);
 			releaseArrays();
+			releaseMetadata();
 			throw e;
 		}
+	}
+
+	private SealedDirectDelta transferMetadata(SealedDirectDelta sealed) {
+		if (pendingMetadata == null) {
+			return sealed.accountMetadata(account);
+		}
+		sealed.metadataCharge = pendingMetadata;
+		pendingMetadata = null;
+		return sealed;
+	}
+
+	private void releaseMetadata() {
+		if (pendingMetadata != null) {
+			pendingMetadata.close();
+			pendingMetadata = null;
+		}
+	}
+
+	Future<SealedDirectDelta> sealAsync(long revision) {
+		if (asyncCapture == null) {
+			return CompletableFuture.completedFuture(seal(revision));
+		}
+		AsyncCapture capture = asyncCapture;
+		asyncCapture = null;
+		begun = false;
+		count = 0;
+		long[] coverage = resolvedSelectedPredicates;
+		resolvedSelectedPredicates = null;
+		try {
+			return capture.seal(revision, coverage);
+		} catch (RuntimeException | Error failure) {
+			capture.abort();
+			throw failure;
+		}
+	}
+
+	static SealedDirectDelta awaitSealed(Future<SealedDirectDelta> future) {
+		boolean interrupted = false;
+		try {
+			while (true) {
+				try {
+					return future.get();
+				} catch (InterruptedException e) {
+					interrupted = true;
+				} catch (ExecutionException e) {
+					if (e.getCause()instanceof Error error) {
+						throw error;
+					}
+					throw new IllegalStateException("asynchronous delta capture failed", e.getCause());
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	/**
+	 * One transaction's transport and accumulator share a child budget. Only the writer touches the open batch; after
+	 * submission only the capture worker touches that batch and the accumulator. Executor order preserves mutation
+	 * order, including an add/remove/re-add crossing batch boundaries.
+	 */
+	private final class AsyncCapture {
+		private static final long BATCH_BYTES = INITIAL_CAPACITY * 33L + 256L;
+		private final LmdbAdjacencyMemoryAccount budget = captureBudget.get().childBudget(commitMaxBytes);
+		private final LmdbDirectAdjacencyCommitDelta accumulator = new LmdbDirectAdjacencyCommitDelta(budget,
+				commitMaxBytes);
+		private long[][] batch;
+		private byte[] operations;
+		private int used;
+		private volatile boolean cancelled;
+		private volatile Throwable failure;
+		private final Object batchMonitor = new Object();
+		private int submittedBatches;
+
+		AsyncCapture(long revision) {
+			accumulator.begin(revision);
+			// Charge before queuing even an empty preparation; transfer this owner when the worker seals it.
+			accumulator.pendingMetadata = budget.tryCharge(MemoryKind.PENDING, 256);
+			cancelled = accumulator.pendingMetadata == null;
+		}
+
+		void record(long subject, long predicate, long object, long context, boolean explicit, boolean add) {
+			if (cancelled) {
+				return;
+			}
+			if (batch == null) {
+				if (!budget.tryReserve(MemoryKind.PENDING, BATCH_BYTES)) {
+					cancelled = true;
+					return;
+				}
+				batch = new long[4][INITIAL_CAPACITY];
+				operations = new byte[INITIAL_CAPACITY];
+			}
+			batch[0][used] = subject;
+			batch[1][used] = predicate;
+			batch[2][used] = object;
+			batch[3][used] = context;
+			operations[used++] = (byte) ((explicit ? 1 : 0) | (add ? 2 : 0));
+			if (used == INITIAL_CAPACITY) {
+				submitBatch(true);
+			}
+		}
+
+		private void submitBatch(boolean full) {
+			if (batch == null) {
+				return;
+			}
+			long[][] submitted = batch;
+			byte[] submittedOperations = operations;
+			int size = used;
+			batch = null;
+			operations = null;
+			used = 0;
+			synchronized (batchMonitor) {
+				submittedBatches++;
+			}
+			try {
+				captureExecutor.execute(() -> {
+					try {
+						if (full && beforeCapture != null && !cancelled) {
+							beforeCapture.run();
+						}
+						if (!cancelled) {
+							for (int i = 0; i < size; i++) {
+								accumulator.record(submitted[0][i], submitted[1][i], submitted[2][i], submitted[3][i],
+										(submittedOperations[i] & 1) != 0, (submittedOperations[i] & 2) != 0);
+							}
+						}
+					} catch (RuntimeException | Error e) {
+						failure = e;
+						cancelled = true;
+					} finally {
+						finishBatch();
+					}
+				});
+			} catch (RuntimeException e) {
+				finishBatch();
+				cancelled = true;
+				failure = e;
+			}
+		}
+
+		Future<SealedDirectDelta> seal(long revision, long[] coverage) {
+			submitBatch(false);
+			return captureExecutor.submit(() -> {
+				if (cancelled) {
+					accumulator.reset();
+					if (failure instanceof Error error) {
+						throw error;
+					}
+					if (failure != null) {
+						throw new IllegalStateException("delta batch capture failed", failure);
+					}
+					return SealedDirectDelta.overflowed(revision);
+				}
+				if (coverage != null) {
+					accumulator.captureResolvedSelectedPredicates(coverage);
+				}
+				return accumulator.seal(revision);
+			});
+		}
+
+		private void finishBatch() {
+			budget.release(MemoryKind.PENDING, BATCH_BYTES);
+			synchronized (batchMonitor) {
+				submittedBatches--;
+				batchMonitor.notifyAll();
+			}
+		}
+
+		void abort() {
+			cancelled = true;
+			if (batch != null) {
+				batch = null;
+				operations = null;
+				used = 0;
+				budget.release(MemoryKind.PENDING, BATCH_BYTES);
+			}
+			boolean interrupted = false;
+			synchronized (batchMonitor) {
+				while (submittedBatches != 0) {
+					try {
+						batchMonitor.wait();
+					} catch (InterruptedException e) {
+						interrupted = true;
+					}
+				}
+			}
+			// All worker accesses are finished; cleanup remains possible after executor shutdown.
+			accumulator.reset();
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+
 	}
 
 	/** Selects the sort from exact tuple order and the number of radix chunks that vary in the three event columns. */
@@ -944,11 +1174,17 @@ final class LmdbDirectAdjacencyCommitDelta {
 	 * Rollback/abort: drop this transaction's events and release their charge.
 	 */
 	void reset() {
+		if (asyncCapture != null) {
+			AsyncCapture capture = asyncCapture;
+			asyncCapture = null;
+			capture.abort();
+		}
 		begun = false;
 		overflowed = false;
 		transactionDirty.set(false);
 		resolvedSelectedPredicates = null;
 		releaseArrays();
+		releaseMetadata();
 	}
 
 	/**
@@ -1064,7 +1300,9 @@ final class LmdbDirectAdjacencyCommitDelta {
 	 * Immutable ownership transfer of one committed transaction's events and pending table. Closing releases the
 	 * complete charge exactly once.
 	 */
-	static final class SealedDirectDelta {
+	static final class SealedDirectDelta implements AutoCloseable {
+		final CompletableFuture<Void> publication = new CompletableFuture<>();
+		private LmdbAdjacencyMemoryAccount.Charge metadataCharge;
 		private final LmdbAdjacencyMemoryAccount account;
 		private final long revision;
 		final long[] subjects;
@@ -1121,6 +1359,33 @@ final class LmdbDirectAdjacencyCommitDelta {
 			return new SealedDirectDelta(revision, false);
 		}
 
+		private SealedDirectDelta accountMetadata(LmdbAdjacencyMemoryAccount memory) {
+			// Sealed owner, completion, queue entry and preparation task metadata, counted once until publication.
+			metadataCharge = memory.tryCharge(MemoryKind.PENDING, 256);
+			if (metadataCharge == null) {
+				close();
+				return overflowed(revision);
+			}
+			return this;
+		}
+
+		CompletableFuture<Void> retainPublication() {
+			LmdbAdjacencyMemoryAccount.Charge retained = metadataCharge;
+			metadataCharge = null;
+			if (retained != null) {
+				publication.whenComplete((ignored, failure) -> retained.close());
+			}
+			return publication;
+		}
+
+		/** Release event arrays after catch-up consumes them, retaining only completion ownership. */
+		void releasePayload() {
+			if (chargedBytes > 0) {
+				account.release(MemoryKind.PENDING, chargedBytes);
+				chargedBytes = 0;
+			}
+		}
+
 		long revision() {
 			return revision;
 		}
@@ -1153,11 +1418,13 @@ final class LmdbDirectAdjacencyCommitDelta {
 			return (flags[event] & 2) != 0;
 		}
 
-		void close() {
-			if (chargedBytes > 0) {
-				account.release(MemoryKind.PENDING, chargedBytes);
-				chargedBytes = 0;
+		@Override
+		public void close() {
+			releasePayload();
+			if (metadataCharge != null) {
+				metadataCharge.close();
 			}
 		}
+
 	}
 }

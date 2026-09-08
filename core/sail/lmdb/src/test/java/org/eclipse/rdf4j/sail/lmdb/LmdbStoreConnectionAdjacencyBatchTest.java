@@ -44,10 +44,12 @@ class LmdbStoreConnectionAdjacencyBatchTest {
 			assertThat(adjacency).isNotNull();
 			assertThat(adjacency.buildNowForTest()).isTrue();
 			long revisionBefore = adjacency.snapshotMetrics().currentDataRevision;
+			CountDownLatch physicalCommits = new CountDownLatch(2);
+			adjacency.beforePreparedFinalizeWaitForTest = physicalCommits::countDown;
 
 			CountDownLatch firstDrainReached = new CountDownLatch(1);
 			AtomicBoolean firstDrain = new AtomicBoolean(true);
-			adjacency.beforeApplyDrainForTest = () -> {
+			adjacency.beforePreparationForTest = () -> {
 				if (firstDrain.compareAndSet(true, false)) {
 					firstDrainReached.countDown();
 					try {
@@ -75,14 +77,7 @@ class LmdbStoreConnectionAdjacencyBatchTest {
 			assertThat(firstDrainReached.await(30, TimeUnit.SECONDS)).isTrue();
 			boolean bothLmdbBranchesCommitted;
 			try {
-				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
-				do {
-					bothLmdbBranchesCommitted = adjacency.snapshotMetrics().currentDataRevision >= revisionBefore + 2;
-					if (bothLmdbBranchesCommitted) {
-						break;
-					}
-					Thread.onSpinWait();
-				} while (System.nanoTime() < deadline);
+				bothLmdbBranchesCommitted = physicalCommits.await(2, TimeUnit.SECONDS);
 			} finally {
 				releaseDrain.countDown();
 			}

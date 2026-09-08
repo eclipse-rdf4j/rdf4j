@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.util.List;
@@ -27,10 +28,16 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
+import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -39,10 +46,281 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** End-to-end snapshot consistency while the startup adjacency build races transactional reads and writes. */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbAdjacencyStartupConcurrencyTest {
+
+	@Test
+	@Timeout(60)
+	void recoverableBuildFailureRetriesWithoutAnotherRepositoryOperation(@TempDir File dataDir) throws Exception {
+		String property = LmdbDirectAdjacencyOptions.BUILD_RETRY_MILLIS_PROPERTY;
+		String previous = System.setProperty(property, "1");
+		SailRepository repository = new SailRepository(
+				new LmdbStore(dataDir, new LmdbStoreConfig().setDirectAdjacencyBuildOnStart(false)));
+		try {
+			repository.init();
+			LmdbStore sail = (LmdbStore) repository.getSail();
+			LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
+			AtomicBoolean failFirstBuild = new AtomicBoolean(true);
+			CountDownLatch retried = new CountDownLatch(1);
+			adjacency.afterBuildScanForTest = () -> {
+				if (failFirstBuild.getAndSet(false)) {
+					throw new IllegalStateException("transient build failure");
+				}
+				retried.countDown();
+			};
+			adjacency.triggerBuild();
+			assertThat(sail.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS)).isTrue();
+			assertThat(retried.await(2, TimeUnit.SECONDS)).as("recoverable failures schedule their own retry")
+					.isTrue();
+			assertThat(adjacency.snapshotMetrics().buildsAborted).isEqualTo(1);
+			assertThat(adjacency.snapshotMetrics().buildsCompleted).isEqualTo(1);
+		} finally {
+			repository.shutDown();
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	@Test
+	@Timeout(10)
+	void shutdownCancelsDelayedBuildRetry(@TempDir File dataDir) throws Exception {
+		SailRepository repository = new SailRepository(
+				new LmdbStore(dataDir, new LmdbStoreConfig().setDirectAdjacencyBuildOnStart(false)));
+		repository.init();
+		LmdbDirectAdjacencyStore adjacency = ((LmdbStore) repository.getSail()).getBackingStore()
+				.directAdjacencyStore();
+		adjacency.afterBuildScanForTest = () -> {
+			throw new IllegalStateException("retry after shutdown must be cancelled");
+		};
+		try {
+			assertThat(adjacency.buildNowForTest()).isFalse();
+		} finally {
+			repository.shutDown();
+		}
+		assertThat(adjacency.memoryAccount().totalChargedBytes()).isZero();
+	}
+
+	@Test
+	@Timeout(60)
+	void asynchronousConnectionCommitRetainsUntouchedRowCoverage(@TempDir File dataDir) throws Exception {
+		String property = LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY;
+		String previous = System.setProperty(property, "false");
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir));
+		CountDownLatch pendingPublished = new CountDownLatch(1);
+		CountDownLatch releaseHandoff = new CountDownLatch(1);
+		try {
+			repository.init();
+			LmdbDirectAdjacencyStore adjacency = ((LmdbStore) repository.getSail()).getBackingStore()
+					.directAdjacencyStore();
+			try (var connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(Values.iri("urn:untouched"), Values.iri("urn:p"), Values.iri("urn:o"));
+				connection.commit();
+			}
+			assertThat(adjacency.buildNowForTest()).isTrue();
+			adjacency.beforeApplyQueueAdmissionForTest = () -> {
+				pendingPublished.countDown();
+				awaitLifecycleLatch(releaseHandoff);
+			};
+			try (var connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(Values.iri("urn:touched"), Values.iri("urn:p"), Values.iri("urn:o"));
+				connection.commit();
+			}
+			assertThat(pendingPublished.await(30, TimeUnit.SECONDS)).isTrue();
+			try (LmdbAdjacencyReadView view = adjacency.acquire(adjacency.snapshotMetrics().currentDataRevision)) {
+				assertThat(view.isExact()).as("pending evidence retains row-specific fallback").isTrue();
+			}
+		} finally {
+			releaseHandoff.countDown();
+			repository.shutDown();
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	@Test
+	@Timeout(60)
+	void emptyRepositoryCommitPublishesBothBackingBranchesBeforeReturning(@TempDir File dataDir) throws Exception {
+		LmdbStore sail = new LmdbStore(dataDir, new LmdbStoreConfig().setDirectAdjacencyBuildOnStart(false));
+		SailRepository repository = new SailRepository(sail);
+		repository.init();
+		LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
+		CountDownLatch scanned = new CountDownLatch(1);
+		CountDownLatch releaseScan = new CountDownLatch(1);
+		CountDownLatch deltasHandedOff = new CountDownLatch(2);
+		adjacency.afterBuildScanForTest = () -> {
+			scanned.countDown();
+			awaitLifecycleLatch(releaseScan);
+		};
+		adjacency.beforeApplyQueueAdmissionForTest = deltasHandedOff::countDown;
+		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			adjacency.triggerBuild();
+			assertThat(scanned.await(30, TimeUnit.SECONDS)).isTrue();
+			var writer = executor.submit(() -> {
+				try (var connection = repository.getConnection()) {
+					connection.begin();
+					connection.add(Values.iri("urn:explicit"), Values.iri("urn:p"), Values.iri("urn:o"));
+					((InferencerConnection) connection.getSailConnection()).addInferredStatement(
+							Values.iri("urn:inferred"), Values.iri("urn:p"), Values.iri("urn:o"));
+					connection.commit();
+				}
+			});
+			try {
+				assertThat(deltasHandedOff.await(30, TimeUnit.SECONDS)).isTrue();
+				assertThat(writer.isDone()).isFalse();
+			} finally {
+				releaseScan.countDown();
+			}
+			writer.get(30, TimeUnit.SECONDS);
+			assertThat(adjacency.backlogBytes()).isZero();
+			assertThat(adjacency.publishedStateForTest().appliedRevision())
+					.isEqualTo(adjacency.snapshotMetrics().currentDataRevision);
+			try (var connection = repository.getConnection()) {
+				assertThat(connection.size()).isEqualTo(1);
+				assertThat(connection.hasStatement(Values.iri("urn:inferred"), null, null, true)).isTrue();
+			}
+		} finally {
+			releaseScan.countDown();
+			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "cutover", "interruption", "build failure" })
+	@Timeout(60)
+	void backlogPausesBackingWritesWhileLmdbReadersRemainAvailable(String outcome, @TempDir File dataDir)
+			throws Exception {
+		LmdbStoreConfig seedConfig = new LmdbStoreConfig("spoc,posc,ospc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+		SailRepository seed = new SailRepository(new LmdbStore(dataDir, seedConfig));
+		seed.init();
+		try (var connection = seed.getConnection()) {
+			connection.add(Values.iri("urn:seed"), Values.iri("urn:p"), Values.iri("urn:o"));
+		} finally {
+			seed.shutDown();
+		}
+		LmdbStore sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+				.setDirectAdjacencyBuildOnStart(false)
+				.setDirectAdjacencyBacklogMaxBytes(1));
+		SailRepository repository = new SailRepository(sail);
+		repository.init();
+		CountDownLatch scanned = new CountDownLatch(1);
+		CountDownLatch releaseScan = new CountDownLatch(1);
+		CountDownLatch writerWaiting = new CountDownLatch(1);
+		LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
+		adjacency.afterBuildScanForTest = () -> {
+			scanned.countDown();
+			awaitLifecycleLatch(releaseScan);
+			if (outcome.equals("build failure")) {
+				throw new IllegalStateException("injected startup build failure");
+			}
+		};
+		adjacency.beforeWriteAdmissionWaitForTest = writerWaiting::countDown;
+		try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			adjacency.triggerBuild();
+			assertThat(scanned.await(30, TimeUnit.SECONDS)).isTrue();
+			try (var connection = repository.getConnection()) {
+				connection.add(Values.iri("urn:first"), Values.iri("urn:p"), Values.iri("urn:o"));
+			}
+			assertThat(adjacency.backlogBytes()).isPositive();
+			AtomicReference<Thread> writerThread = new AtomicReference<>();
+			var writer = executor.submit(() -> {
+				writerThread.set(Thread.currentThread());
+				try (var connection = repository.getConnection()) {
+					connection.add(Values.iri("urn:second"), Values.iri("urn:p"), Values.iri("urn:o"));
+				}
+			});
+			try {
+				assertThat(writerWaiting.await(30, TimeUnit.SECONDS)).isTrue();
+				var reader = executor.submit(() -> {
+					try (var connection = repository.getConnection()) {
+						return connection.size();
+					}
+				});
+				assertThat(reader.get(10, TimeUnit.SECONDS)).isEqualTo(2);
+				assertThat(writer.isDone()).isFalse();
+				if (outcome.equals("interruption")) {
+					writerThread.get().interrupt();
+					assertThatThrownBy(() -> writer.get(10, TimeUnit.SECONDS))
+							.isInstanceOf(java.util.concurrent.ExecutionException.class);
+				}
+			} finally {
+				releaseScan.countDown();
+			}
+			if (!outcome.equals("interruption")) {
+				writer.get(30, TimeUnit.SECONDS);
+			}
+			if (outcome.equals("build failure")) {
+				assertThat(adjacency.lastBuildFailureDescription()).contains("injected startup build failure");
+				adjacency.afterBuildScanForTest = null;
+				adjacency.triggerBuild();
+			}
+			assertThat(sail.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS)).isTrue();
+			assertThat(adjacency.backlogBytes()).isZero();
+			try (var connection = repository.getConnection()) {
+				assertThat(connection.size()).isEqualTo(outcome.equals("interruption") ? 2 : 3);
+			}
+		} finally {
+			releaseScan.countDown();
+			repository.shutDown();
+			assertThat(adjacency.memoryAccount().totalChargedBytes()).isZero();
+		}
+	}
+
+	@Test
+	@Timeout(60)
+	void repositoryManagerInitializesAnotherRepoWhileAnIndexBuildIsPaused(@TempDir File dataDir) throws Exception {
+		LocalRepositoryManager manager = new LocalRepositoryManager(dataDir);
+		manager.init();
+		CountDownLatch scanned = new CountDownLatch(1);
+		CountDownLatch releaseScan = new CountDownLatch(1);
+		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			manager.addRepositoryConfig(new RepositoryConfig("first", new SailRepositoryConfig(
+					new LmdbStoreConfig().setDirectAdjacencyBuildOnStart(false))));
+			manager.addRepositoryConfig(
+					new RepositoryConfig("second", new SailRepositoryConfig(new LmdbStoreConfig())));
+			SailRepository first = (SailRepository) manager.getRepository("first");
+			try (var connection = first.getConnection()) {
+				connection.add(Values.iri("urn:seed"), Values.iri("urn:p"), Values.iri("urn:o"));
+			}
+			LmdbDirectAdjacencyStore adjacency = ((LmdbStore) first.getSail()).getBackingStore().directAdjacencyStore();
+			adjacency.afterBuildScanForTest = () -> {
+				scanned.countDown();
+				awaitLifecycleLatch(releaseScan);
+			};
+			adjacency.triggerBuild();
+			assertThat(scanned.await(30, TimeUnit.SECONDS)).isTrue();
+			Repository second = executor.submit(() -> manager.getRepository("second")).get(10, TimeUnit.SECONDS);
+			assertThat(second.isInitialized()).isTrue();
+			LmdbStore secondSail = (LmdbStore) ((SailRepository) second).getSail();
+			assertThat(secondSail.awaitDirectAdjacencyReady(10, TimeUnit.SECONDS)).isTrue();
+		} finally {
+			releaseScan.countDown();
+			manager.shutDown();
+		}
+	}
+
+	private static void awaitLifecycleLatch(CountDownLatch latch) {
+		try {
+			if (!latch.await(30, TimeUnit.SECONDS)) {
+				throw new AssertionError("lifecycle interleaving was not released");
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError(e);
+		}
+	}
 
 	private static final String EX = "urn:adjacency-startup:";
 	private static final int MEMBERS = 8;

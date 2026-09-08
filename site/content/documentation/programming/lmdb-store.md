@@ -135,6 +135,54 @@ with `http://rdf4j.org/config/sail/lmdb#sketchEstimatorEnabled` set to `true`.
 [] lmdb:sketchEstimatorEnabled true .
 ```
 
+## Background adjacency indexes
+
+When direct adjacency and startup building are enabled, repository initialization schedules adjacency and the configured
+node-predicate projection on repository-owned workers and returns. Reads use LMDB until both construction and catch-up
+finish, preserving transaction snapshots and read-your-writes. Different repositories can initialize and build concurrently,
+including through `LocalRepositoryManager`.
+
+Writes made during a populated repository's startup accumulate committed deltas. The builder first consumes a fixed
+revision range while writes continue. It then fences new backing writes, lets admitted writes hand over their deltas,
+and publishes the fully caught-up generation. Readers continue to use LMDB during this transition.
+
+After publication, commits normally return only after their explicit and inferred index changes are published. This rule
+applies immediately when the repository is empty at initialization. Primitive mutation batches are prepared asynchronously
+while LMDB continues writing; commit waits only for remaining publication work. Uncommitted changes stay private.
+
+Configure the backlog admission threshold in bytes:
+
+```java
+config.setDirectAdjacencyBacklogMaxBytes(32L * 1024 * 1024);
+```
+
+The corresponding repository configuration is:
+
+```turtle
+@prefix lmdb: <http://rdf4j.org/config/sail/lmdb#> .
+
+[] lmdb:directAdjacencyBacklogMaxBytes 33554432 .
+```
+
+`0` (the default) selects AUTO: 1% of the effective adjacency memory budget, bounded between 8 MiB and 2 GiB.
+Negative values are rejected. Backlog accounting includes unpublished payloads and their queue and preparation metadata.
+At the threshold, new backing writes pause; an admitted transaction can finish within its bounded capture allowance.
+The overall adjacency memory cap still applies. Reservations are released before commit waits for publication.
+
+The system property `rdf4j.lmdb.directAdjacency.synchronousMaintenance=false` explicitly disables waiting
+for index publication. Existing mode, coverage, startup-build and incoming node-predicate settings remain effective.
+Transactions exceeding the capture allowance commit to LMDB, mark a revision gap, and schedule an asynchronous rebuild.
+Maintenance failures and memory refusal keep LMDB available, wake blocked writers, and report degraded readiness;
+recoverable failures use the existing retry policy. Failure of only the optional node-predicate projection preserves
+adjacency access for unaffected capabilities. These indexes are derived in memory, so this change requires no persisted
+index-format migration.
+
+For diagnostics, `LmdbStore.getDirectAdjacencyReadinessDescription()` includes backlog bytes and limit, peak backlog,
+admission block reason, catch-up target, publication revision, cumulative commit wait nanoseconds, and the latest cutover
+duration. `awaitDirectAdjacencyReady(timeout, unit)` provides an explicit bounded readiness wait. A backlog pause is resolved
+by consumption or degraded fallback; a catch-up pause lasts until admitted writes hand off and the final generation is
+published. Inspect `lastBuildFailure` and gap revisions when readiness is degraded.
+
 ## Statement-pattern cardinality cache
 
 Each LMDB store has its own thread-safe statement-pattern cardinality cache. The ordinary tier holds up to 8,192

@@ -56,12 +56,14 @@ final class LmdbAdjacencyMemoryAccount {
 	}
 
 	private final long maxBytes;
+	private final LmdbAdjacencyMemoryAccount parent;
 
 	private final Map<MemoryKind, Long> chargedByKind = new EnumMap<>(MemoryKind.class);
 
 	private long totalChargedBytes;
 
 	private long highWaterBytes;
+	private long unpublishedHighWaterBytes;
 
 	private long nextProgressLogBytes = PROGRESS_LOG_INTERVAL_BYTES;
 
@@ -184,13 +186,23 @@ final class LmdbAdjacencyMemoryAccount {
 	}
 
 	LmdbAdjacencyMemoryAccount(long maxBytes) {
+		this(maxBytes, null);
+	}
+
+	private LmdbAdjacencyMemoryAccount(long maxBytes, LmdbAdjacencyMemoryAccount parent) {
 		if (maxBytes < 0) {
 			throw new IllegalArgumentException("maxBytes must not be negative: " + maxBytes);
 		}
 		this.maxBytes = maxBytes;
+		this.parent = parent;
 		for (MemoryKind kind : MemoryKind.values()) {
 			chargedByKind.put(kind, 0L);
 		}
+	}
+
+	/** A bounded owner whose allocations are also charged to this repository's account. */
+	LmdbAdjacencyMemoryAccount childBudget(long bytes) {
+		return new LmdbAdjacencyMemoryAccount(bytes, this);
 	}
 
 	long maxBytes() {
@@ -253,8 +265,14 @@ final class LmdbAdjacencyMemoryAccount {
 			refusedCount++;
 			return false;
 		}
+		if (parent != null && !parent.tryReserve(kind, bytes)) {
+			refusedBytes = Math.addExact(refusedBytes, bytes);
+			refusedCount++;
+			return false;
+		}
 		totalChargedBytes = newTotal;
 		chargedByKind.merge(kind, bytes, Math::addExact);
+		observeUnpublishedBytes();
 		if (newTotal > highWaterBytes) {
 			highWaterBytes = newTotal;
 		}
@@ -271,6 +289,9 @@ final class LmdbAdjacencyMemoryAccount {
 		}
 		chargedByKind.put(kind, charged - bytes);
 		totalChargedBytes -= bytes;
+		if (parent != null) {
+			parent.release(kind, bytes);
+		}
 	}
 
 	/**
@@ -286,6 +307,10 @@ final class LmdbAdjacencyMemoryAccount {
 		}
 		chargedByKind.put(from, charged - bytes);
 		chargedByKind.merge(to, bytes, Math::addExact);
+		observeUnpublishedBytes();
+		if (parent != null) {
+			parent.reclassify(from, to, bytes);
+		}
 	}
 
 	synchronized long chargedBytes(MemoryKind kind) {
@@ -294,6 +319,15 @@ final class LmdbAdjacencyMemoryAccount {
 
 	synchronized long totalChargedBytes() {
 		return totalChargedBytes;
+	}
+
+	private void observeUnpublishedBytes() {
+		unpublishedHighWaterBytes = Math.max(unpublishedHighWaterBytes,
+				chargedByKind.get(MemoryKind.PENDING) + chargedByKind.get(MemoryKind.PREPARATION_OUTPUT));
+	}
+
+	synchronized long unpublishedHighWaterBytes() {
+		return unpublishedHighWaterBytes;
 	}
 
 	synchronized long highWaterBytes() {

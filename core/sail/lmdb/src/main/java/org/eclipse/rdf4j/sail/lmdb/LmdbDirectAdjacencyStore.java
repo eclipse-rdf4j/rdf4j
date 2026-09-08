@@ -22,11 +22,14 @@ import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -41,6 +44,7 @@ import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyDeltaApplier.OldRun;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyDeltaGeneration.SearchContext;
+import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyPublishedState.AdjacencyServingState;
 import org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyCommitDelta.PendingTable;
@@ -135,7 +139,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final ReentrantLock publicationLock = new ReentrantLock(true);
 	private final Condition noPreparationsInFlight = publicationLock.newCondition();
 
-	private final ExecutorService maintenanceExecutor;
+	private final ScheduledThreadPoolExecutor maintenanceExecutor;
+	private volatile Future<?> buildRetryFuture;
 	private final ExecutorService preparationExecutor;
 	private final ExecutorService compactionExecutor;
 	private final AtomicInteger preparationsInFlight = new AtomicInteger();
@@ -143,10 +148,21 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final AtomicBoolean compactionTaskScheduled = new AtomicBoolean();
 	private final LmdbAdjacencyTieredCompactionPolicy.Candidate compactionCandidate = new LmdbAdjacencyTieredCompactionPolicy.Candidate();
 	/**
-	 * Monotone activation bit. Configured synchronous maintenance activates under the transaction fence before the
-	 * initial build is submitted, then remains in force across later gaps and rebuilds.
+	 * Publication waiting activates under the transaction fence for empty startup and exact cutover. Unavailable
+	 * maintenance releases waiters and disables this barrier until a successful rebuild.
 	 */
 	private final AtomicBoolean synchronousUpdatesActivated = new AtomicBoolean();
+	private final Object admissionMonitor = new Object();
+	private volatile boolean connectionWriteAdmitted;
+	private volatile LmdbAdjacencyMemoryAccount connectionCaptureBudget;
+	private volatile CompletableFuture<Void> lastCommittedPublication;
+	private long lastPublicationRevision = -1;
+	private final AtomicLong asyncPublicationRevision = new AtomicLong(-1);
+	private final ConcurrentHashMap<Long, CompletableFuture<Void>> unpublishedRevisions = new ConcurrentHashMap<>();
+	private boolean cutoverAdmissionClosed;
+	private int admittedWrites;
+	private volatile long catchUpTargetRevision = -1;
+	private volatile boolean maintenanceUnavailable;
 	private volatile long lastCutoverNanos;
 	private volatile long lastCutoverRevisions;
 	private volatile int lastCutoverQueuedCommits;
@@ -159,6 +175,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	/** {@link #GAP_RECOVERY_NEVER_ATTEMPTED} until the read path has requested one gap recovery. */
 	private final AtomicLong lastGapRecoveryNanos = new AtomicLong(GAP_RECOVERY_NEVER_ATTEMPTED);
 	private volatile Thread maintenanceThread;
+	private volatile Thread preparationThread;
 	private volatile Thread compactionThread;
 	/**
 	 * Set once the projection has been proven inconsistent with the authoritative rows. It gates serving rather than
@@ -171,12 +188,19 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final ArrayDeque<SealedDirectDelta> applyQueue = new ArrayDeque<>();
 	/** Connection-owned nesting depth for inferred/explicit branch flushes in one logical commit. */
 	private final ThreadLocal<Integer> logicalCommitBatchDepth = ThreadLocal.withInitial(() -> 0);
+	private final ThreadLocal<CompletableFuture<Void>> commitPublication = new ThreadLocal<>();
+	private final AtomicLong publicationWaitNanos = new AtomicLong();
 
 	private volatile boolean applierPausedForTest;
 	/** Test-only interleaving hook: runs after the base scan completes and before online catch-up begins. */
 	volatile Runnable afterBuildScanForTest;
 	/** Test-only observation hook: runs before catch-up waits for a commit delta that has not arrived. */
 	volatile Runnable catchUpWaitForTest;
+	/** Runs after the online target is captured, before its deltas are consumed. */
+	volatile Runnable beforeOnlineCatchUpForTest;
+	/** Runs after final admission closes, before admitted writers are drained. */
+	volatile Runnable afterWriteAdmissionClosedForTest;
+	volatile Runnable beforeWriteAdmissionWaitForTest;
 	/** Test-only interleaving hook: runs after a candidate paged rewrite and before publication validation. */
 	volatile Runnable beforePagedCsfPublicationForTest;
 	/** Test-only interleaving hook: runs after a delta merge is built and before publication validation. */
@@ -226,15 +250,18 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		this.workspaceRegionBytes = Math.max(1L << 16, region >>> 3);
 		this.published = new AtomicReference<>(
 				new LmdbAdjacencyPublishedState(0, null, -1, Long.MAX_VALUE, AdjacencyServingState.UNAVAILABLE));
-		this.maintenanceExecutor = Executors.newSingleThreadExecutor(runnable -> {
+		this.maintenanceExecutor = new ScheduledThreadPoolExecutor(1, runnable -> {
 			Thread thread = new Thread(runnable, "lmdb-direct-adjacency-maintenance");
 			thread.setDaemon(true);
 			maintenanceThread = thread;
 			return thread;
 		});
+		maintenanceExecutor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+		maintenanceExecutor.setRemoveOnCancelPolicy(true);
 		this.preparationExecutor = Executors.newSingleThreadExecutor(runnable -> {
 			Thread thread = new Thread(runnable, "lmdb-direct-adjacency-preparation");
 			thread.setDaemon(true);
+			preparationThread = thread;
 			return thread;
 		});
 		this.compactionExecutor = Executors.newSingleThreadExecutor(runnable -> {
@@ -296,7 +323,16 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * snapshot is acquired (online catch-up requirement).
 	 */
 	LmdbDirectAdjacencyCommitDelta newCommitDelta() {
-		return new LmdbDirectAdjacencyCommitDelta(account, options.commitMaxBytes(), storeTxnDirty);
+		return new LmdbDirectAdjacencyCommitDelta(account, options.commitMaxBytes(), storeTxnDirty,
+				preparationExecutor, () -> {
+					Runnable hook = beforePreparationForTest;
+					if (hook != null) {
+						hook.run();
+					}
+				}, () -> {
+					LmdbAdjacencyMemoryAccount budget = connectionCaptureBudget;
+					return budget == null ? account : budget;
+				});
 	}
 
 	/**
@@ -318,7 +354,53 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 
 			@Override
+			public PreparedCommit prepareAsync(Future<SealedDirectDelta> sealed, long nextRevision) {
+				return prepareAsyncCommit(sealed, nextRevision);
+			}
+
+			@Override
 			public SealedDirectDelta finalizeCommit(PreparedCommit prepared) {
+				if (prepared instanceof AsyncPreparedCommit async) {
+					if (async.deferred) {
+						asyncPublicationRevision.accumulateAndGet(async.revision, Math::max);
+						recordPublication(async.revision, async.publication);
+					}
+					async.committed.complete(true);
+					Runnable hook = beforePreparedFinalizeWaitForTest;
+					if (hook != null) {
+						hook.run();
+					}
+					if (async.deferred) {
+						return null;
+					}
+					long waitStarted = async.result.isDone() ? 0L : System.nanoTime();
+					try {
+						SealedDirectDelta result = LmdbDirectAdjacencyCommitDelta.awaitSealed(async.result);
+						if (Thread.currentThread().isInterrupted()) {
+							if (result != null) {
+								releaseDelta(result);
+							}
+							RuntimeException reported = preparedCommitFailure(async.revision, "commit publication",
+									new InterruptedException("Interrupted while awaiting commit publication"));
+							if (reported != null) {
+								throw reported;
+							}
+							return null;
+						}
+						return result;
+					} catch (RuntimeException failure) {
+						RuntimeException reported = preparedCommitFailure(async.revision, "commit preparation",
+								failure);
+						if (reported != null) {
+							throw reported;
+						}
+						return null;
+					} finally {
+						if (waitStarted != 0) {
+							publicationWaitNanos.addAndGet(Math.max(0L, System.nanoTime() - waitStarted));
+						}
+					}
+				}
 				if (prepared instanceof PreparedAdjacencyCommit adjacencyCommit) {
 					return finalizeSynchronousCommit(adjacencyCommit);
 				}
@@ -327,7 +409,13 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 			@Override
 			public void abort(PreparedCommit prepared) {
-				if (prepared instanceof PreparedAdjacencyCommit adjacencyCommit) {
+				if (prepared instanceof AsyncPreparedCommit async) {
+					async.committed.complete(false);
+					SealedDirectDelta abandoned = LmdbDirectAdjacencyCommitDelta.awaitSealed(async.result);
+					if (abandoned != null) {
+						releaseDelta(abandoned);
+					}
+				} else if (prepared instanceof PreparedAdjacencyCommit adjacencyCommit) {
 					abortSynchronousCommit(adjacencyCommit);
 				} else {
 					TripleStore.DirectAdjacencyCommitListener.super.abort(prepared);
@@ -340,6 +428,127 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				markGapAndScheduleRecovery(nextRevision);
 			}
 		};
+	}
+
+	private static final class AsyncPreparedCommit implements TripleStore.DirectAdjacencyCommitListener.PreparedCommit {
+		final long revision;
+		final CompletableFuture<Boolean> committed = new CompletableFuture<>();
+		final CompletableFuture<Void> publication = new CompletableFuture<>();
+		final boolean deferred;
+		Future<SealedDirectDelta> result;
+
+		AsyncPreparedCommit(long revision, boolean deferred) {
+			this.revision = revision;
+			this.deferred = deferred;
+		}
+	}
+
+	private AsyncPreparedCommit prepareAsyncCommit(Future<SealedDirectDelta> sealing, long revision) {
+		AsyncPreparedCommit commit = new AsyncPreparedCommit(revision, connectionWriteAdmitted);
+		LmdbAdjacencyPublishedState predecessor = null;
+		publicationLock.lock();
+		try {
+			LmdbAdjacencyPublishedState current = published.get();
+			if (!closed && options.synchronousMaintenance() && synchronousUpdatesActivated.get()
+					&& current.base() != null && current.servingState() == AdjacencyServingState.ROW_EXACT
+					&& current.appliedRevision() + 1 == revision && current.gapFromRevision() > revision
+					&& emergencyGap.get().fromRevision() > revision && current.tryRetain()) {
+				predecessor = current;
+				preparationsInFlight.incrementAndGet();
+			}
+		} finally {
+			publicationLock.unlock();
+		}
+		LmdbAdjacencyPublishedState retained = predecessor;
+		try {
+			long[] capturedSelected = retained == null ? new long[0] : captureResolvedSelectedPredicates(retained);
+			commit.result = preparationExecutor.submit(() -> {
+				SealedDirectDelta sealed = null;
+				PreparedApply prepared = null;
+				boolean transferred = false;
+				try {
+					sealed = LmdbDirectAdjacencyCommitDelta.awaitSealed(sealing);
+					if (retained != null && !sealed.isOverflowed()) {
+						long started = System.nanoTime();
+						try {
+							Runnable hook = beforePreparationForTest;
+							if (hook != null) {
+								hook.run();
+							}
+							long[] selected = sealed.hasCapturedCoverage() ? sealed.resolvedSelectedPredicates()
+									: capturedSelected;
+							prepared = prepareApply(sealed, retained, selected, true);
+							hook = afterPreparationForTest;
+							if (hook != null) {
+								hook.run();
+							}
+						} finally {
+							metrics.recordPreparation(Math.max(0L, System.nanoTime() - started));
+						}
+					}
+					if (!commit.committed.join()) {
+						return null;
+					}
+					if (prepared != null) {
+						long started = System.nanoTime();
+						try {
+							publishPrepared(sealed, retained, prepared, true);
+							sealed.publication.complete(null);
+							commit.publication.complete(null);
+						} finally {
+							metrics.recordPublication(Math.max(0L, System.nanoTime() - started));
+						}
+						requestCompactionIfNeeded(published.get());
+						return null;
+					}
+					beforeRevisionBump(sealed, revision);
+					if (commit.deferred) {
+						sealed.publication.whenComplete((ignored, failure) -> {
+							if (failure == null) {
+								commit.publication.complete(null);
+							} else {
+								commit.publication.completeExceptionally(failure);
+							}
+						});
+						transferred = true;
+						applyCommitted(sealed, false);
+						return null;
+					}
+					transferred = true;
+					return sealed;
+				} catch (RuntimeException | Error failure) {
+					if (commit.deferred && commit.committed.join()) {
+						RuntimeException reported = preparedCommitFailure(revision, "commit preparation", failure);
+						if (reported == null) {
+							commit.publication.complete(null);
+						} else {
+							commit.publication.completeExceptionally(reported);
+						}
+					}
+					throw failure;
+				} finally {
+					if (prepared != null) {
+						prepared.close();
+					}
+					if (sealed != null && !transferred) {
+						releaseDelta(sealed);
+					}
+					if (retained != null) {
+						retained.release();
+						completePreparationReservation();
+					}
+				}
+			});
+			return commit;
+		} catch (RuntimeException failure) {
+			if (retained != null) {
+				retained.release();
+				completePreparationReservation();
+			}
+			SealedDirectDelta abandoned = LmdbDirectAdjacencyCommitDelta.awaitSealed(sealing);
+			releaseDelta(abandoned);
+			throw failure;
+		}
 	}
 
 	private final class PreparedAdjacencyCommit implements TripleStore.DirectAdjacencyCommitListener.PreparedCommit {
@@ -360,7 +569,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				return;
 			}
 			try {
-				sealed.close();
+				releaseDelta(sealed);
 			} finally {
 				try {
 					predecessor.release();
@@ -565,10 +774,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private RuntimeException preparedCommitFailure(long revision, String phase, Throwable cause) {
+		RuntimeException failure = unexpectedMaintenanceFailure(phase, cause);
 		markGap(revision);
 		maintenanceState = MaintenanceState.DEGRADED_GAP;
 		scheduleQuiescentRebuild();
-		RuntimeException failure = unexpectedMaintenanceFailure(phase, cause);
 		if (options.failOnMaintenanceError()) {
 			return failure;
 		}
@@ -582,12 +791,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return;
 		}
 		if (sealed.revision() != nextRevision) {
-			sealed.close();
+			releaseDelta(sealed);
 			markGapAndScheduleRecovery(nextRevision);
 			return;
 		}
 		if (closed) {
-			sealed.close();
+			releaseDelta(sealed);
 			return;
 		}
 		if (sealed.isOverflowed()) {
@@ -606,6 +815,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			try {
 				LmdbAdjacencyPublishedState current = published.get();
 				if (current.servingState() == AdjacencyServingState.CLOSED) {
+					return;
+				}
+				if (current.base() == null) {
+					// Initial reads already fall back wholesale. The byte-bounded delta queue proves continuity;
+					// per-row pending tables only add a count-based failure before a base can serve any row.
 					return;
 				}
 				PendingTable[] pending = current.pending();
@@ -657,17 +871,24 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * Hands one drained sealed commit to the applier queue after the complete authoritative sail-store commit.
 	 */
 	void applyCommitted(SealedDirectDelta sealed) {
+		applyCommitted(sealed, true);
+	}
+
+	void applyCommitted(SealedDirectDelta sealed, boolean awaitPublication) {
 		if (sealed == null) {
 			return;
 		}
+		commitPublication.set(sealed.publication);
+		recordPublication(sealed.revision(), sealed.publication);
 		try {
 			throwIfStrictMaintenanceFailed();
 		} catch (RuntimeException failure) {
-			sealed.close();
+			releaseDelta(sealed);
 			throw failure;
 		}
 		if (sealed.isOverflowed()) {
-			sealed.close();
+			sealed.publication.complete(null);
+			releaseDelta(sealed);
 			return;
 		}
 		Runnable admissionHook = beforeApplyQueueAdmissionForTest;
@@ -675,13 +896,13 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			try {
 				admissionHook.run();
 			} catch (RuntimeException | Error failure) {
-				sealed.close();
+				releaseDelta(sealed);
 				throw failure;
 			}
 		}
 		synchronized (applyQueue) {
 			if (closed) {
-				sealed.close();
+				releaseDelta(sealed);
 				return;
 			}
 			applyQueue.addLast(sealed);
@@ -696,12 +917,51 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				removed = applyQueue.removeLastOccurrence(sealed);
 			}
 			if (removed) {
-				sealed.close();
+				releaseDelta(sealed);
 			}
 			throw failure;
 		}
-		if (logicalCommitBatchDepth.get() == 0) {
-			awaitSynchronousMaintenance(drain, "commit drain");
+		if (awaitPublication && logicalCommitBatchDepth.get() == 0) {
+			awaitBackingWritePublication();
+		}
+	}
+
+	private void recordPublication(long revision, CompletableFuture<Void> completion) {
+		synchronized (admissionMonitor) {
+			if (revision >= lastPublicationRevision) {
+				lastPublicationRevision = revision;
+				lastCommittedPublication = completion;
+			}
+		}
+		unpublishedRevisions.put(revision, completion);
+		completion.whenComplete((ignored, failure) -> unpublishedRevisions.remove(revision, completion));
+	}
+
+	void captureBackingWritePublication() {
+		// The sink lock still excludes the next backing commit, including the ingest worker's handoff.
+		commitPublication.set(lastCommittedPublication);
+	}
+
+	void awaitBackingWritePublication() {
+		if (logicalCommitBatchDepth.get() == 0 && !connectionWriteAdmitted) {
+			CompletableFuture<Void> completion = commitPublication.get();
+			commitPublication.remove();
+			awaitPublication(completion);
+		}
+	}
+
+	private void awaitPublication(CompletableFuture<Void> completion) {
+		throwIfStrictMaintenanceFailed();
+		if (completion == null || completion.isDone() || maintenanceUnavailable || !options.synchronousMaintenance()
+				|| !synchronousUpdatesActivated.get()) {
+			return;
+		}
+		long started = System.nanoTime();
+		try {
+			awaitSynchronousMaintenance(completion, "revision publication");
+			throwIfStrictMaintenanceFailed();
+		} finally {
+			publicationWaitNanos.addAndGet(Math.max(0L, System.nanoTime() - started));
 		}
 	}
 
@@ -817,7 +1077,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return;
 		}
 		logicalCommitBatchDepth.remove();
-		awaitSynchronousMaintenance(submitDrain(), "logical commit drain");
+		awaitBackingWritePublication();
 	}
 
 	private RuntimeException unexpectedMaintenanceFailure(String operation, Throwable cause) {
@@ -861,27 +1121,31 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				return;
 			}
 			if (head.revision() <= state.appliedRevision()) {
-				removeHead(head).close();
+				head.publication.complete(null);
+				releaseDelta(removeHead(head));
 				continue;
 			}
 			if (head.revision() != state.appliedRevision() + 1) {
 				// a missing revision means capture evidence was lost: gap and rebuild (invariant I16)
 				markGap(state.appliedRevision() + 1);
 				maintenanceState = MaintenanceState.DEGRADED_GAP;
-				removeHead(head).close();
+				releaseDelta(removeHead(head));
 				scheduleQuiescentRebuild();
 				continue;
 			}
 			try {
 				applyOne(head);
-				removeHead(head).close();
+				head.publication.complete(null);
+				releaseDelta(removeHead(head));
 			} catch (LmdbAdjacencyMemoryRefusedException e) {
 				maintenanceState = MaintenanceState.APPLY_STALLED;
+				completeUnavailablePublications();
 				logger.warn("Direct adjacency delta apply refused by the memory account; touched rows fall back", e);
 				scheduleQuiescentRebuild();
 				return;
 			} catch (RuntimeException e) {
 				maintenanceState = MaintenanceState.APPLY_STALLED;
+				completeUnavailablePublications();
 				logger.warn("Direct adjacency delta apply failed; touched rows fall back until rebuild", e);
 				scheduleQuiescentRebuild();
 				if (options.failOnMaintenanceError()) {
@@ -899,6 +1163,149 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				throw new IllegalStateException("apply queue head changed under the single-threaded applier");
 			}
 			return removed;
+		}
+	}
+
+	private void releaseDelta(SealedDirectDelta sealed) {
+		sealed.close();
+		signalWriteAdmission();
+	}
+
+	long backlogBytes() {
+		return saturatingAdd(account.chargedBytes(MemoryKind.PENDING),
+				account.chargedBytes(MemoryKind.PREPARATION_OUTPUT));
+	}
+
+	String publicationDiagnostics() {
+		synchronized (admissionMonitor) {
+			String reason = closed ? "CLOSED"
+					: cutoverAdmissionClosed ? "CATCH_UP"
+							: writeAdmissionBlocked() ? "BACKLOG" : "NONE";
+			return ", backlogBytes=" + backlogBytes() + ", backlogLimitBytes=" + options.backlogMaxBytes()
+					+ ", peakBacklogBytes=" + account.unpublishedHighWaterBytes()
+					+ ", admissionBlockReason=" + reason + ", admittedWrites=" + admittedWrites
+					+ ", catchUpTargetRevision=" + catchUpTargetRevision
+					+ ", publicationRevision=" + published.get().appliedRevision()
+					+ ", commitWaitNanos=" + publicationWaitNanos.get();
+		}
+	}
+
+	/** Called with the sail-store sink lock held, but never waits while retaining it. */
+	boolean tryBeginBackingWrite() {
+		synchronized (admissionMonitor) {
+			if (closed) {
+				throw new IllegalStateException("direct adjacency store is closed");
+			}
+			if (!connectionWriteAdmitted && writeAdmissionBlocked()) {
+				return false;
+			}
+			admittedWrites++;
+			return true;
+		}
+	}
+
+	/** Reserve the commit before it takes shared Sail branch locks. Readers can help flush that same commit. */
+	void beginConnectionWrite() throws InterruptedException {
+		synchronized (admissionMonitor) {
+			while (!closed && (admittedWrites != 0 || writeAdmissionBlocked())) {
+				Runnable hook = beforeWriteAdmissionWaitForTest;
+				if (hook != null) {
+					hook.run();
+				}
+				admissionMonitor.wait();
+			}
+			if (closed) {
+				throw new IllegalStateException("direct adjacency store is closed");
+			}
+			connectionCaptureBudget = account.childBudget(options.commitMaxBytes());
+			connectionWriteAdmitted = true;
+			admittedWrites++;
+		}
+	}
+
+	void endConnectionWrite() {
+		synchronized (admissionMonitor) {
+			// A reader closing a root snapshot can have helped flush the admitted commit on its thread.
+			commitPublication.set(lastCommittedPublication);
+			connectionWriteAdmitted = false;
+			connectionCaptureBudget = null;
+			endBackingWrite();
+		}
+	}
+
+	void awaitWriteAdmission() throws InterruptedException {
+		synchronized (admissionMonitor) {
+			while (!closed && writeAdmissionBlocked()) {
+				Runnable hook = beforeWriteAdmissionWaitForTest;
+				if (hook != null) {
+					hook.run();
+				}
+				admissionMonitor.wait();
+			}
+			if (closed) {
+				throw new IllegalStateException("direct adjacency store is closed");
+			}
+		}
+	}
+
+	private boolean writeAdmissionBlocked() {
+		return cutoverAdmissionClosed || (!maintenanceUnavailable && !options.memoryRefused()
+				&& (rebuildPending.get() || maintenanceState == MaintenanceState.BUILDING
+						|| maintenanceState == MaintenanceState.CATCHING_UP
+						|| maintenanceState == MaintenanceState.ACTIVE
+						|| maintenanceState == MaintenanceState.CONSOLIDATING)
+				&& backlogBytes() >= options.backlogMaxBytes());
+	}
+
+	void endBackingWrite() {
+		synchronized (admissionMonitor) {
+			if (--admittedWrites < 0) {
+				throw new IllegalStateException("adjacency write admission underflow");
+			}
+			admissionMonitor.notifyAll();
+		}
+	}
+
+	private void completeUnavailablePublications() {
+		maintenanceUnavailable = true;
+		synchronousUpdatesActivated.set(false);
+		for (CompletableFuture<Void> completion : unpublishedRevisions.values()) {
+			completion.complete(null);
+		}
+		synchronized (applyQueue) {
+			for (SealedDirectDelta delta : applyQueue) {
+				delta.publication.complete(null);
+			}
+		}
+		signalWriteAdmission();
+	}
+
+	private void signalWriteAdmission() {
+		synchronized (admissionMonitor) {
+			admissionMonitor.notifyAll();
+		}
+	}
+
+	private boolean closeWriteAdmission() throws InterruptedException {
+		synchronized (admissionMonitor) {
+			cutoverAdmissionClosed = true;
+		}
+		Runnable hook = afterWriteAdmissionClosedForTest;
+		if (hook != null) {
+			hook.run();
+		}
+		synchronized (admissionMonitor) {
+			while (!closed && admittedWrites != 0) {
+				admissionMonitor.wait();
+			}
+			return !closed;
+		}
+	}
+
+	private void openWriteAdmission() {
+		synchronized (admissionMonitor) {
+			cutoverAdmissionClosed = false;
+			admissionMonitor.notifyAll();
 		}
 	}
 
@@ -1902,6 +2309,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			stepHook.run();
 		}
 		maintenanceState = MaintenanceState.QUIESCING_FOR_REBUILD;
+		completeUnavailablePublications();
 		publicationLock.lock();
 		try {
 			LmdbAdjacencyPublishedState current = published.get();
@@ -2172,8 +2580,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	// ------------------------------------------------------------------
 
 	/**
-	 * Schedules a serialized build/rebuild. Synchronous maintenance activates while physical commits are fenced and
-	 * waits for the submitted build; asynchronous maintenance returns after submission.
+	 * Schedules a repository-local background build. Empty bootstrap enables commit waiting immediately; populated
+	 * bootstrap enables it at exact cutover. Scheduling never waits for construction.
 	 */
 	void triggerBuild() {
 		throwIfStrictMaintenanceFailed();
@@ -2181,6 +2589,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		synchronized (rebuildSubmissionLock) {
 			if (closed || options.memoryRefused()) {
 				return;
+			}
+			Future<?> retry = buildRetryFuture;
+			buildRetryFuture = null;
+			if (retry != null) {
+				retry.cancel(false);
 			}
 			var lockManager = tripleStore.getTxnManager().lockManager();
 			Long bootstrapFence = null;
@@ -2194,7 +2607,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						throw new IllegalStateException(
 								"interrupted while checking direct adjacency bootstrap state", e);
 					}
-					synchronousUpdatesActivated.set(true);
+					try {
+						synchronousUpdatesActivated.set(tripleStore.isEmpty());
+					} catch (IOException e) {
+						throw new IllegalStateException("could not determine adjacency bootstrap emptiness", e);
+					}
 				}
 				if (rebuildPending.compareAndSet(false, true)) {
 					rebuildClaimed = true;
@@ -2222,7 +2639,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				}
 			}
 		}
-		awaitSynchronousMaintenance(future, "build");
 	}
 
 	/**
@@ -2247,9 +2663,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				return false;
 			}
 
-			Future<ReadinessProbe> barrier;
+			Future<?> barrier;
 			try {
-				barrier = maintenanceExecutor.submit(() -> {
+				Future<?> retry = buildRetryFuture;
+				barrier = retry != null && !retry.isDone() ? retry : maintenanceExecutor.submit(() -> {
 					if (servesCurrentRevisionExactly()) {
 						return ReadinessProbe.READY;
 					}
@@ -2260,7 +2677,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				return false;
 			}
 			try {
-				ReadinessProbe result = barrier.get(remainingNanos, TimeUnit.NANOSECONDS);
+				Object result = barrier.get(remainingNanos, TimeUnit.NANOSECONDS);
 				if (result == ReadinessProbe.READY) {
 					return true;
 				}
@@ -2271,6 +2688,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				}
 			} catch (TimeoutException e) {
 				return false;
+			} catch (CancellationException e) {
+				// An explicit build or shutdown superseded the delayed retry; inspect its current state again.
 			} catch (ExecutionException e) {
 				throw new IllegalStateException("direct adjacency readiness barrier failed", e.getCause());
 			}
@@ -2295,7 +2714,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				|| maintenanceState == MaintenanceState.FAILED_CORRUPT) {
 			return false;
 		}
-		if (rebuildPending.get() || quiescentRebuildPending.get()
+		Future<?> retry = buildRetryFuture;
+		if ((retry != null && !retry.isDone()) || rebuildPending.get() || quiescentRebuildPending.get()
 				|| maintenanceState == MaintenanceState.BUILDING
 				|| maintenanceState == MaintenanceState.CATCHING_UP
 				|| maintenanceState == MaintenanceState.CONSOLIDATING
@@ -2341,6 +2761,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			current = emergencyGap.get();
 			updated = new GapMarker(Math.min(current.fromRevision(), fromRevision), current.sequence() + 1);
 		} while (!emergencyGap.compareAndSet(current, updated));
+		completeUnavailablePublications();
 	}
 
 	/**
@@ -2386,7 +2807,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			return;
 		}
 		metrics.recordBuildStarted();
+		maintenanceUnavailable = false;
 		maintenanceState = MaintenanceState.BUILDING;
+		boolean retryAfterFailure = false;
 		try {
 			LmdbAdjacencyCoverage coverage = resolveCoverage();
 			LmdbInMemoryAdjacencyIndex index;
@@ -2404,12 +2827,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						valueStore == null ? ImmutablePagedQuadCsfIndex.LiteralDatatypeLookup.NONE
 								: valueStore::literalDatatypeIds);
 			}
-			Runnable interleave = afterBuildScanForTest;
-			if (interleave != null) {
-				interleave.run();
-			}
 			boolean published = false;
 			try {
+				Runnable interleave = afterBuildScanForTest;
+				if (interleave != null) {
+					interleave.run();
+				}
 				published = catchUpAndPublish(index, baseRevision, capturedGap);
 			} finally {
 				if (!published) {
@@ -2447,6 +2870,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				logger.info("Direct adjacency build is unavailable for this configuration: {}", e.getMessage());
 			}
 		} catch (IOException | RuntimeException e) {
+			retryAfterFailure = !options.failOnMaintenanceError();
 			lastBuildFailureDescription = describeFailure(e);
 			metrics.recordBuildAborted();
 			logger.info("Aborted in-memory adjacency structure build: {}", account.memoryUsageSummary());
@@ -2456,6 +2880,38 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 			if (options.failOnMaintenanceError()) {
 				throw unexpectedMaintenanceFailure("build", e);
+			}
+		} finally {
+			maintenanceUnavailable = maintenanceState != MaintenanceState.ACTIVE
+					&& maintenanceState != MaintenanceState.CONSOLIDATING;
+			if (maintenanceUnavailable) {
+				completeUnavailablePublications();
+			}
+			if (retryAfterFailure) {
+				scheduleBuildRetry();
+			}
+			signalWriteAdmission();
+		}
+	}
+
+	private void scheduleBuildRetry() {
+		synchronized (rebuildSubmissionLock) {
+			if (closed || (buildRetryFuture != null && !buildRetryFuture.isDone())) {
+				return;
+			}
+			try {
+				buildRetryFuture = maintenanceExecutor.schedule(() -> {
+					synchronized (rebuildSubmissionLock) {
+						buildRetryFuture = null;
+					}
+					if (!closed && maintenanceUnavailable) {
+						triggerBuild();
+					}
+				}, options.buildRetryMillis(), TimeUnit.MILLISECONDS);
+			} catch (RejectedExecutionException failure) {
+				if (!closed) {
+					throw failure;
+				}
 			}
 		}
 	}
@@ -2471,6 +2927,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * (plan's catch-up steps 1–6). Returns false when the build must abort (overflow gap or continuity failure).
 	 */
 	private boolean catchUpAndPublish(LmdbInMemoryAdjacencyIndex index, long baseRevision, GapMarker capturedGap) {
+		List<CompletableFuture<Void>> completions = new ArrayList<>();
 		maintenanceState = MaintenanceState.CATCHING_UP;
 		List<LmdbAdjacencyDeltaGeneration> generations = new ArrayList<>();
 		LmdbAdjacencyContextCatalog contextCatalog = index.contextCatalog();
@@ -2479,21 +2936,28 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		LmdbAdjacencyPlaneStatistics planeStatistics = index.planeStatistics();
 		long appliedRevision = baseRevision;
 		var lockManager = tripleStore.getTxnManager().lockManager();
-		long cutoverStamp;
+		long cutoverStamp = 0;
 		long cutoverStartedNanos = System.nanoTime();
-		try {
-			// The base scan is complete. Fence new physical commits before consuming its finite startup backlog;
-			// otherwise a writer faster than delta encoding can grow the queue without bound and starve readiness.
-			cutoverStamp = lockManager.readLock();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			return false;
-		}
+		long onlineTarget = tripleStore.getDataRevision();
+		catchUpTargetRevision = onlineTarget;
 		int cutoverQueuedCommits = queuedCommitCount();
-		long cutoverRevisions = Math.max(0L, tripleStore.getDataRevision() - baseRevision);
 		boolean success = false;
 		try {
+			Runnable onlineHook = beforeOnlineCatchUpForTest;
+			if (onlineHook != null) {
+				onlineHook.run();
+			}
 			while (true) {
+				if (cutoverStamp == 0 && appliedRevision >= onlineTarget) {
+					// Finish the online pass before closing admission. Wait for complete delta handoff without
+					// holding the physical-commit fence: admitted writers need it in order to finish.
+					if (!closeWriteAdmission()) {
+						return false;
+					}
+					cutoverStamp = lockManager.readLock();
+					catchUpTargetRevision = tripleStore.getDataRevision();
+				}
+
 				if (closed) {
 					return false;
 				}
@@ -2547,11 +3011,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 							if (emergencyGap.compareAndSet(capturedGap, clearedGap)) {
 								// This cutover happens while physical commits are fenced. A commit that acquires the
 								// write lock after release is therefore the first synchronous update.
-								if (synchronousUpdatesActivated.compareAndSet(false, true)) {
-									lastCutoverQueuedCommits = cutoverQueuedCommits;
-									lastCutoverRevisions = cutoverRevisions;
-									lastCutoverNanos = Math.max(0L, System.nanoTime() - cutoverStartedNanos);
-								}
+								synchronousUpdatesActivated.set(true);
+								lastCutoverQueuedCommits = cutoverQueuedCommits;
+								lastCutoverRevisions = Math.max(0L, appliedRevision - baseRevision);
+								lastCutoverNanos = Math.max(0L, System.nanoTime() - cutoverStartedNanos);
 								maintenanceState = MaintenanceState.ACTIVE;
 							} else {
 								maintenanceState = MaintenanceState.DEGRADED_GAP;
@@ -2572,13 +3035,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					continue;
 				}
 				if (head.revision() <= appliedRevision) {
-					removeHead(head).close();
+					completions.add(head.retainPublication());
+					releaseDelta(removeHead(head));
 					continue;
 				}
 				if (head.revision() != appliedRevision + 1 || head.isOverflowed()) {
 					// lost or overflowed capture: this build cannot reach continuity (invariant I16)
 					markGap(appliedRevision + 1);
-					removeHead(head).close();
+					completions.add(head.retainPublication());
+					releaseDelta(removeHead(head));
 					return false;
 				}
 				if (!head.isEmpty()) {
@@ -2603,10 +3068,20 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					planeStatistics = planeStatistics.with(result.planeStatisticsUpdate);
 				}
 				appliedRevision = head.revision();
-				removeHead(head).close();
+				completions.add(head.retainPublication());
+				releaseDelta(removeHead(head));
 			}
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			return false;
 		} finally {
-			lockManager.unlockRead(cutoverStamp);
+			if (cutoverStamp != 0) {
+				lockManager.unlockRead(cutoverStamp);
+			}
+			for (CompletableFuture<Void> completion : completions) {
+				completion.complete(null);
+			}
+			openWriteAdmission();
 			if (!success) {
 				for (LmdbAdjacencyDeltaGeneration generation : generations) {
 					generation.release();
@@ -2748,6 +3223,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		// An in-flight applier borrows the current base/catalog while it builds the replacement generation. Retiring
 		// that publication before the executor quiesces closes native arenas underneath the applier. Stop admission
 		// first, wait without holding publicationLock (applyOne needs it to finish), then release the publication.
+		completeUnavailablePublications();
+		openWriteAdmission();
 		synchronized (applyQueue) {
 			// Admission barrier: an enqueuer that observed the pre-close state is now either visible in the queue or
 			// done.
@@ -2755,6 +3232,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		maintenanceExecutor.shutdown();
 		preparationExecutor.shutdown();
+		// Interrupt blocked work but retain queued tasks: their finally blocks own batches and futures.
+		Thread preparer = preparationThread;
+		if (preparer != null) {
+			preparer.interrupt();
+		}
 		compactionExecutor.shutdownNow();
 		boolean interrupted = false;
 		while (!maintenanceExecutor.isTerminated()) {
@@ -2774,11 +3256,17 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				if (!preparationExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
 					logger.warn("Direct adjacency preparation executor did not terminate within 60 seconds; "
 							+ "interrupting prepared work before continuing close");
-					preparationExecutor.shutdownNow();
+					Thread preparerToInterrupt = preparationThread;
+					if (preparerToInterrupt != null) {
+						preparerToInterrupt.interrupt();
+					}
 				}
 			} catch (InterruptedException e) {
 				interrupted = true;
-				preparationExecutor.shutdownNow();
+				Thread preparerToInterrupt = preparationThread;
+				if (preparerToInterrupt != null) {
+					preparerToInterrupt.interrupt();
+				}
 			}
 		}
 		while (!compactionExecutor.isTerminated()) {
@@ -2811,7 +3299,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		synchronized (applyQueue) {
 			SealedDirectDelta sealed;
 			while ((sealed = applyQueue.pollFirst()) != null) {
-				sealed.close();
+				releaseDelta(sealed);
 			}
 		}
 		long waitedMillis = 0;
@@ -2864,6 +3352,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 							state.servingState() == AdjacencyServingState.CLOSED ? FallbackReason.DISABLED
 									: FallbackReason.BUILDING,
 							lifetimeId);
+				}
+				// Before preparation supplies pending-row evidence, every row at that revision must fall back.
+				// Afterwards the immutable state's horizon permits the existing row-specific pending checks.
+				if (snapshotRevision > state.horizonRevision() && snapshotRevision <= asyncPublicationRevision.get()) {
+					return fallback(snapshotRevision, FallbackReason.PENDING_ROW, lifetimeId);
 				}
 				if (!state.tryRetain()) {
 					continue;

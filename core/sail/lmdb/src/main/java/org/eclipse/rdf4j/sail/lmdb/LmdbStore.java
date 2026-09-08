@@ -625,7 +625,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				+ ", gapFromRevision=" + snapshot.gapFromRevision + ", emergencyGapFromRevision="
 				+ snapshot.emergencyGapFromRevision + ", buildsStarted=" + snapshot.buildsStarted
 				+ ", buildsCompleted=" + snapshot.buildsCompleted + ", buildsAborted=" + snapshot.buildsAborted
-				+ ", lastBuildFailure=" + adjacency.lastBuildFailureDescription();
+				+ ", lastBuildFailure=" + adjacency.lastBuildFailureDescription() + adjacency.publicationDiagnostics();
 	}
 
 	private boolean shouldUseSketchBasedJoinEstimator() {

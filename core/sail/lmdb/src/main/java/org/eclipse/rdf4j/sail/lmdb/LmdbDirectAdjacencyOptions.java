@@ -66,6 +66,7 @@ final class LmdbDirectAdjacencyOptions {
 	private final long steadyLimitBytes;
 	private final boolean memoryRefused;
 	private final long commitMaxBytes;
+	private final long backlogMaxBytes;
 	private final long sealWarnMillis;
 	private final int maxDeltaGenerations;
 	private final long supernodeEdges;
@@ -82,7 +83,8 @@ final class LmdbDirectAdjacencyOptions {
 
 	private LmdbDirectAdjacencyOptions(DirectAdjacencyMode mode, DirectAdjacencyCoverage coverage,
 			Set<IRI> selectedPredicates, boolean buildOnStart, long requestedMaxBytes, long memoryLimitBytes,
-			long effectiveMaxBytes, long commitMaxBytes, long sealWarnMillis, int maxDeltaGenerations,
+			long effectiveMaxBytes, long commitMaxBytes, long backlogMaxBytes, long sealWarnMillis,
+			int maxDeltaGenerations,
 			long supernodeEdges, long supernodeChunkEdges, long supernodeTargetBytes, int buildThreads,
 			long buildTargetMillis, long buildRetryMillis, long shadowSampleEvery,
 			boolean nodePredicateProjectionEnabled, boolean nodePredicateProjectionIncomingEnabled,
@@ -97,6 +99,7 @@ final class LmdbDirectAdjacencyOptions {
 		this.steadyLimitBytes = steadyLimitBytes(effectiveMaxBytes);
 		this.memoryRefused = mode != DirectAdjacencyMode.DISABLED && effectiveMaxBytes < MIN_EXPLICIT_BYTES;
 		this.commitMaxBytes = commitMaxBytes;
+		this.backlogMaxBytes = backlogMaxBytes;
 		this.sealWarnMillis = sealWarnMillis;
 		this.maxDeltaGenerations = maxDeltaGenerations;
 		this.supernodeEdges = supernodeEdges;
@@ -131,6 +134,9 @@ final class LmdbDirectAdjacencyOptions {
 		long effectiveMaxBytes = resolveEffectiveMaxBytes(requestedMaxBytes, memoryLimitBytes);
 
 		long commitMaxBytes = resolveCommitMaxBytes(properties.apply(COMMIT_MAX_BYTES_PROPERTY), effectiveMaxBytes);
+		long backlogMaxBytes = config.getDirectAdjacencyBacklogMaxBytes() == 0
+				? absoluteCommitMaxBytes(effectiveMaxBytes)
+				: config.getDirectAdjacencyBacklogMaxBytes();
 		long sealWarnMillis = positiveLongProperty(properties, SEAL_WARN_MILLIS_PROPERTY, 1000L);
 		int maxDeltaGenerations = boundedIntProperty(properties, MAX_DELTA_GENERATIONS_PROPERTY, 8, 1, 64);
 		long supernodeEdges = positiveLongProperty(properties, SUPERNODE_EDGES_PROPERTY, 4_096L);
@@ -150,7 +156,8 @@ final class LmdbDirectAdjacencyOptions {
 
 		return new LmdbDirectAdjacencyOptions(config.getDirectAdjacencyMode(), config.getDirectAdjacencyCoverage(),
 				config.getDirectAdjacencyPredicates(), config.getDirectAdjacencyBuildOnStart(), requestedMaxBytes,
-				memoryLimitBytes, effectiveMaxBytes, commitMaxBytes, sealWarnMillis, maxDeltaGenerations,
+				memoryLimitBytes, effectiveMaxBytes, commitMaxBytes, backlogMaxBytes, sealWarnMillis,
+				maxDeltaGenerations,
 				supernodeEdges,
 				supernodeChunkEdges, supernodeTargetBytes, buildThreads, buildTargetMillis, buildRetryMillis,
 				shadowSampleEvery, nodePredicateProjection, nodePredicateProjectionIncoming, synchronousMaintenance,
@@ -342,6 +349,10 @@ final class LmdbDirectAdjacencyOptions {
 
 	long commitMaxBytes() {
 		return commitMaxBytes;
+	}
+
+	long backlogMaxBytes() {
+		return backlogMaxBytes;
 	}
 
 	long sealWarnMillis() {

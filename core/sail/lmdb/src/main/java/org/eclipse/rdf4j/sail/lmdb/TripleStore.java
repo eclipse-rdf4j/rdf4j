@@ -3789,6 +3789,11 @@ class TripleStore implements Closeable {
 			return new DeferredPreparedCommit(delta, nextRevision);
 		}
 
+		default PreparedCommit prepareAsync(
+				Future<LmdbDirectAdjacencyCommitDelta.SealedDirectDelta> delta, long nextRevision) {
+			return prepare(LmdbDirectAdjacencyCommitDelta.awaitSealed(delta), nextRevision);
+		}
+
 		default LmdbDirectAdjacencyCommitDelta.SealedDirectDelta finalizeCommit(PreparedCommit prepared) {
 			DeferredPreparedCommit deferred = (DeferredPreparedCommit) prepared;
 			beforeRevisionBump(deferred.delta, deferred.revision);
@@ -4678,11 +4683,13 @@ class TripleStore implements Closeable {
 					LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealedDirect = null;
 					DirectAdjacencyCommitListener.PreparedCommit preparedDirect = null;
 					try {
-						// seal event pages and the touched-row table before the authoritative LMDB commit; later
-						// record calls (none exist: updateFromCache never records) would fail fast (plan 27)
+						// Hand immutable event batches to preparation before the authoritative commit. The worker can
+						// finish sealing while LMDB commits; updateFromCache does not record the same mutations again.
 						if (directAdjacencyCommitDelta != null && directAdjacencyCommitDelta.begun()) {
 							try {
-								sealedDirect = directAdjacencyCommitDelta.seal(commitProgress.nextRevision);
+								preparedDirect = directAdjacencyCommitListener.prepareAsync(
+										directAdjacencyCommitDelta.sealAsync(commitProgress.nextRevision),
+										commitProgress.nextRevision);
 							} catch (RuntimeException sealFailure) {
 								// derived-state best effort: the authoritative commit proceeds; the listener
 								// publishes the revision gap through the overflow marker (plan 27, invariant I16)
@@ -4726,9 +4733,9 @@ class TripleStore implements Closeable {
 							txnManager.reset();
 						}
 						if (directAdjacencyCommitListener != null && preparedDirect != null) {
-							// Publishes either the exact prepared generation or the legacy pending marker before
-							// readers can
-							// observe the revision. The returned delta is non-null only for the apply-queue path.
+							// Publish the exact state, pending proof, or asynchronous revision fence before readers can
+							// observe this revision. Deferred connection commits await publication at the logical
+							// boundary.
 							LmdbDirectAdjacencyCommitDelta.SealedDirectDelta drainable = directAdjacencyCommitListener
 									.finalizeCommit(preparedDirect);
 							preparedDirect = null;

@@ -88,6 +88,17 @@ class LmdbStoreConfigTest {
 			.iri(LmdbStoreSchema.NAMESPACE + "backgroundRawSamplingMaxMillisPerCycle");
 
 	@Test
+	void backlogDefaultsToAutoAndRejectsNegativeValues() {
+		assertThat(new LmdbStoreConfig().getDirectAdjacencyBacklogMaxBytes()).isZero();
+		assertThatThrownBy(() -> new LmdbStoreConfig().setDirectAdjacencyBacklogMaxBytes(-1))
+				.isInstanceOf(IllegalArgumentException.class);
+		Model model = new LinkedHashModel();
+		Resource node = Values.bnode();
+		model.add(node, LmdbStoreSchema.DIRECT_ADJACENCY_BACKLOG_MAX_BYTES, Values.literal(-1));
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, node)).isInstanceOf(SailConfigException.class);
+	}
+
+	@Test
 	void parsesAndExportsDirectAdjacencySettingsFromRawRdfProperties() {
 		final IRI modeIri = Values.iri(LmdbStoreSchema.NAMESPACE + "directAdjacencyMode");
 		final IRI coverageIri = Values.iri(LmdbStoreSchema.NAMESPACE + "directAdjacencyCoverage");
@@ -209,6 +220,19 @@ class LmdbStoreConfigTest {
 
 		assertThatThrownBy(() -> new LmdbStoreConfig().parse(configModel, implNode))
 				.isInstanceOf(SailConfigException.class);
+	}
+
+	@ParameterizedTest
+	@ValueSource(longs = { 1L, 8388608L, 2147483648L })
+	void parsesAndExportsDirectAdjacencyBacklogMaxBytes(long bytes) {
+		IRI property = Values.iri(LmdbStoreSchema.NAMESPACE, "directAdjacencyBacklogMaxBytes");
+		BNode implNode = bnode();
+		Model model = new ModelBuilder().add(implNode, property, Values.literal(bytes)).build();
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		config.parse(model, implNode);
+		Model exported = new LinkedHashModel();
+		Resource exportedNode = config.export(exported);
+		assertThat(exported.contains(exportedNode, property, Values.literal(bytes))).isTrue();
 	}
 
 	@Test

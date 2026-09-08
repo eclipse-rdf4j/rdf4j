@@ -203,7 +203,8 @@ class LmdbDirectAdjacencyOptionsTest {
 		assertThat(options.supernodeEdges()).isEqualTo(4_096L);
 		assertThat(options.supernodeChunkEdges()).isEqualTo(4_096L);
 		assertThat(options.supernodeTargetBytes()).isEqualTo(65_536L);
-		assertThat(options.supernodeTargetBytes()).isEqualTo(67_108_864L);
+		assertThat(options.backlogMaxBytes())
+				.isEqualTo(LmdbDirectAdjacencyOptions.absoluteCommitMaxBytes(options.effectiveMaxBytes()));
 		assertThat(options.buildTargetMillis()).isEqualTo(43_200_000L);
 		assertThat(options.buildRetryMillis()).isEqualTo(60_000L);
 		assertThat(options.shadowSampleEvery()).isEqualTo(10_000L);

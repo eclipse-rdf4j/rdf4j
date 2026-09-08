@@ -180,6 +180,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private Set<IRI> directAdjacencyPredicates = Set.of();
 
 	private long directAdjacencyMaxBytes = 0;
+	private long directAdjacencyBacklogMaxBytes;
 
 	// null means unset: resolves to (mode != DISABLED) and is not exported
 	private Boolean directAdjacencyBuildOnStart;
@@ -560,6 +561,24 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return directAdjacencyMaxBytes;
 	}
 
+	/** Returns the unpublished-delta admission threshold in bytes; zero selects AUTO. */
+	public long getDirectAdjacencyBacklogMaxBytes() {
+		return directAdjacencyBacklogMaxBytes;
+	}
+
+	/**
+	 * Sets the unpublished-delta admission threshold. An already admitted transaction may finish above this threshold,
+	 * subject to the separate transaction capture and overall adjacency memory limits.
+	 */
+	public LmdbStoreConfig setDirectAdjacencyBacklogMaxBytes(long bytes) {
+		if (bytes < 0) {
+			throw new IllegalArgumentException(
+					"directAdjacencyBacklogMaxBytes must be zero (AUTO) or positive: " + bytes);
+		}
+		directAdjacencyBacklogMaxBytes = bytes;
+		return this;
+	}
+
 	/**
 	 * Sets the direct adjacency memory limit in bytes. Zero means AUTO and resolves once, at store construction, to 50%
 	 * of the container-aware memory limit. A positive value below 256 MiB or a negative value is rejected.
@@ -831,6 +850,10 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		}
 		if (directAdjacencyMaxBytes > 0) {
 			m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_MAX_BYTES, vf.createLiteral(directAdjacencyMaxBytes));
+		}
+		if (directAdjacencyBacklogMaxBytes > 0) {
+			m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_BACKLOG_MAX_BYTES,
+					vf.createLiteral(directAdjacencyBacklogMaxBytes));
 		}
 		if (directAdjacencyBuildOnStart != null) {
 			m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_BUILD_ON_START,
@@ -1186,6 +1209,18 @@ public class LmdbStoreConfig extends BaseSailConfig {
 							setDirectAdjacencyMaxBytes(parsed);
 						} catch (IllegalArgumentException e) {
 							throw new SailConfigException(e.getMessage(), e);
+						}
+					});
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_BACKLOG_MAX_BYTES, null))
+					.ifPresent(lit -> {
+						try {
+							setDirectAdjacencyBacklogMaxBytes(lit.longValue());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Invalid " + LmdbStoreSchema.DIRECT_ADJACENCY_BACKLOG_MAX_BYTES
+											+ " value: " + lit,
+									e);
 						}
 					});
 
