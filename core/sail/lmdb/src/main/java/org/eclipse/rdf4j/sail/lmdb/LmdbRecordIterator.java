@@ -16,6 +16,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_GET_BOTH_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT_NODUP;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
@@ -144,6 +145,8 @@ class LmdbRecordIterator implements RecordIterator {
 
 		state.matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
 		state.matcher = null;
+		state.keyInput = new VarintTupleIO(index.getIndexSplitPosition());
+		state.valueInput = new VarintTupleIO(4 - index.getIndexSplitPosition());
 
 		var dbi = index.getDB(explicit);
 
@@ -227,10 +230,8 @@ class LmdbRecordIterator implements RecordIterator {
 						isDupValue = true;
 					}
 					if (lastResult == MDB_SUCCESS) {
-						state.keyInput = new VarintTupleIO(state.index.getIndexSplitPosition(),
-								state.keyData.mv_data());
-						state.valueInput = new VarintTupleIO(4 - state.index.getIndexSplitPosition(),
-								state.valueData.mv_data());
+						state.keyInput.setBuffer(state.keyData.mv_data());
+						state.valueInput.setBuffer(state.valueData.mv_data());
 					}
 				} else {
 					lastResult = MDB_SUCCESS;
@@ -254,17 +255,19 @@ class LmdbRecordIterator implements RecordIterator {
 							}
 						} else {
 							mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_PREV_DUP);
-							isDupValue = keyELementsFixed;
 						}
+						isDupValue = keyELementsFixed;
 					}
 				} else {
 					// set cursor to first item
 					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_FIRST);
 				}
 				if (lastResult == MDB_SUCCESS) {
-					state.keyInput = new VarintTupleIO(state.index.getIndexSplitPosition(), state.keyData.mv_data());
-					state.valueInput = new VarintTupleIO(4 - state.index.getIndexSplitPosition(),
-							state.valueData.mv_data());
+					state.keyInput.setBuffer(state.keyData.mv_data());
+					state.valueInput.setBuffer(state.valueData.mv_data());
+					if (state.indexScore > 0) {
+						state.valueInput.seek(state.minValueBuf);
+					}
 				}
 			}
 
@@ -280,10 +283,8 @@ class LmdbRecordIterator implements RecordIterator {
 						isDupValue = false;
 					}
 					if (lastResult == MDB_SUCCESS) {
-						state.keyInput = new VarintTupleIO(state.index.getIndexSplitPosition(),
-								state.keyData.mv_data());
-						state.valueInput = new VarintTupleIO(4 - state.index.getIndexSplitPosition(),
-								state.valueData.mv_data());
+						state.keyInput.setBuffer(state.keyData.mv_data());
+						state.valueInput.setBuffer(state.valueData.mv_data());
 					} else {
 						break;
 					}
@@ -302,12 +303,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 				if (notMatches(isDupValue, isDupValue ? null : state.keyInput, state.valueInput)) {
 					state.keyInput.resetTuple(); // key currently only has one tuple, so reset to prepare for next key
-					state.valueInput.resetTuple();
-					int skip = 4 - state.index.getIndexSplitPosition();
-					for (int i = 0; i < skip; i++) {
-						state.valueInput.skip();
-					}
-					state.valueInput.nextTuple();
+					state.valueInput.skipTuple();
 					continue;
 				}
 				state.keyInput.resetTuple();

@@ -234,26 +234,6 @@ class TripleIndex {
 		return indexSplitPosition;
 	}
 
-	private int getLength(long subj, long pred, long obj, long context) {
-		int length = 4;
-		if (subj > 240) {
-			length += 8;
-		}
-		if (pred > 240) {
-			length += 8;
-
-		}
-		if (obj > 240) {
-			length += 8;
-
-		}
-		if (context > 240) {
-			length += 8;
-
-		}
-		return length;
-	}
-
 	void toEntry(ByteBuffer key, ByteBuffer value, long subj, long pred, long obj, long context) {
 		entryWriter.write(key, value, indexSplitPosition, subj, pred, obj, context);
 	}

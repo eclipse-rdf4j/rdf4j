@@ -176,13 +176,43 @@ public final class VarintTupleIO {
 			lastTuplePosition = rawPosition;
 			input.nextTuple();
 		}
+
+		/**
+		 * Appends as many tuples as possible from the given input to the output buffer, without exceeding the specified
+		 * maximum buffer size.
+		 *
+		 * @param input         the input cursor providing tuples to append
+		 * @param maxBufferSize the maximum allowed size of the output buffer
+		 * @return {@code true} if all remaining tuples were appended; {@code false} if not all tuples could be appended without
+		 *         exceeding the maximum buffer size
+		 */
+		public boolean appendAllTuples(VarintTupleIO input, int maxBufferSize) {
+			if (out.position() < maxBufferSize && input.hasNext()) {
+				appendNextTuple(input);
+
+				int tailLength = input.getBuffer().limit() - input.getTupleStartPosition();
+				if (input.hasNext() && out.position() + tailLength < maxBufferSize) {
+					out.put(out.position(), input.getBuffer(), input.getTupleStartPosition(), tailLength);
+					out.position(out.position() + tailLength);
+					return true;
+				} else {
+					// TODO can be further optimized to avoid decoding and re-encoding
+					while (out.position() < maxBufferSize && input.hasNext()) {
+						appendNextTuple(input);
+					}
+				}
+			}
+			return !input.hasNext();
+		}
 	}
+
+	private static final ByteBuffer EMPTY_READ_ONLY_BUFFER = ByteBuffer.allocate(0).asReadOnlyBuffer();
 
 	/** Number of elements in each tuple. */
 	private final int elements;
 
 	/** Buffer containing the encoded tuple data. */
-	private final ByteBuffer buffer;
+	private ByteBuffer buffer;
 
 	/** Buffer positions of the most recently decoded values, indexed by element position within a tuple. */
 	private final int[] reusePositions;
@@ -193,10 +223,20 @@ public final class VarintTupleIO {
 	/**
 	 * Buffer position at which iteration continues.
 	 */
-	private int nextPosition = 0;
+	private int nextPosition;
 
 	/** Buffer position of the first byte of the current tuple. */
 	private int tupleStartPosition;
+
+	/**
+	 * Creates an empty tuple input cursor.
+	 *
+	 * @param elements the number of elements contained in each tuple, must be positive
+	 * @throws IllegalArgumentException if {@code elements} is not positive
+	 */
+	public VarintTupleIO(int elements) {
+		this(elements, EMPTY_READ_ONLY_BUFFER);
+	}
 
 	/**
 	 * Creates a tuple input cursor starting at the current position of the given buffer.
@@ -217,6 +257,7 @@ public final class VarintTupleIO {
 		this.buffer = buffer;
 		this.reusePositions = new int[elements];
 		this.tupleStartPosition = buffer.position();
+		this.nextPosition = this.tupleStartPosition;
 	}
 
 	/**
@@ -227,6 +268,22 @@ public final class VarintTupleIO {
 	 */
 	public ByteBuffer getBuffer() {
 		return buffer;
+	}
+
+	/**
+	 * Sets the underlying buffer and resets the cursor state to the beginning of the buffer.
+	 *
+	 * @param buffer the buffer containing varint-encoded tuple data
+	 * @throws NullPointerException if {@code buffer} is {@code null}
+	 */
+	public void setBuffer(ByteBuffer buffer) {
+		if (buffer == null) {
+			throw new NullPointerException("buffer must not be null");
+		}
+		this.buffer = buffer;
+		this.tupleStartPosition = buffer.position();
+		this.nextPosition = buffer.position();
+		this.index = -1;
 	}
 
 	/**
@@ -273,6 +330,78 @@ public final class VarintTupleIO {
 	}
 
 	/**
+	 * Seeks forward to the first tuple that is greater than or equal to {@code tuple}.
+	 * <p>
+	 * Tuples are compared lexicographically using the encoded unsigned-varint byte representation. The cursor only
+	 * moves forward: each tuple that compares smaller than {@code tuple} is consumed, and state is updated as if that
+	 * tuple had been iterated element-by-element. As soon as a tuple compares equal or greater, iteration stops with
+	 * the cursor positioned at the beginning of that tuple.
+	 * </p>
+	 *
+	 * @param tuple tuple to seek to (buffer positioned at the first element)
+	 * @return a negative value if all remaining tuples are smaller than {@code tuple}; otherwise zero or a positive
+	 *         value for the first non-smaller tuple found
+	 */
+	public int seek(ByteBuffer tuple) {
+		int diff = -1;
+		final int limit = buffer.limit();
+
+		while (nextPosition < limit) {
+			int otherValuePosition = tuple.position();
+			int rawPosition = tupleStartPosition;
+			for (int i = 0; i < elements; i++) {
+				final int currentValuePosition;
+				final byte first = buffer.get(rawPosition);
+				if (first == 0) {
+					currentValuePosition = reusePositions[i];
+					rawPosition++;
+				} else {
+					currentValuePosition = rawPosition;
+					rawPosition += Varint.firstToLength(first);
+				}
+
+				final byte currentFirst = buffer.get(currentValuePosition);
+				final byte otherFirst = tuple.get(otherValuePosition);
+				final int length;
+				if (currentFirst != otherFirst) {
+					length = Varint.firstToLength(otherFirst);
+					diff = (currentFirst & 0xff) - (otherFirst & 0xff);
+				} else {
+					length = Varint.firstToLength(currentFirst);
+					diff = length == 1 ? 0
+							: compareRegion(buffer, currentValuePosition + 1, tuple, otherValuePosition + 1,
+									length - 1);
+				}
+				if (diff != 0) {
+					break;
+				}
+				otherValuePosition += length;
+			}
+
+			if (diff >= 0) {
+				return diff;
+			}
+
+			// consume tuple and update reuse positions
+			rawPosition = tupleStartPosition;
+			for (int i = 0; i < elements; i++) {
+				final byte first = buffer.get(rawPosition);
+				if (first == 0) {
+					rawPosition++;
+				} else {
+					reusePositions[i] = rawPosition;
+					rawPosition += Varint.firstToLength(first);
+				}
+			}
+
+			nextPosition = rawPosition;
+			tupleStartPosition = rawPosition;
+			index = -1;
+		}
+		return -1;
+	}
+
+	/**
 	 * Decodes the element the cursor currently points at. Must be called after a successful {@link #next()} and at most
 	 * once per element.
 	 *
@@ -302,6 +431,28 @@ public final class VarintTupleIO {
 	}
 
 	/**
+	 * Skips the current tuple and positions the cursor at the beginning of the next tuple.
+	 * <p>
+	 * This method does not decode any values, but it updates the reuse positions for all elements in the current tuple.
+	 * </p>
+	 */
+	public void skipTuple() {
+		int rawPosition = nextPosition;
+		for (int i = index + 1; i < elements; i++) {
+			final byte first = buffer.get(rawPosition);
+			if (first == 0) {
+				rawPosition++;
+			} else {
+				reusePositions[i] = rawPosition;
+				rawPosition += Varint.firstToLength(first);
+			}
+		}
+		nextPosition = rawPosition;
+		tupleStartPosition = rawPosition;
+		index = -1;
+	}
+
+	/**
 	 * Rewinds the cursor to the beginning of the current tuple, so that its elements can be decoded again.
 	 */
 	public void resetTuple() {
@@ -322,6 +473,10 @@ public final class VarintTupleIO {
 		}
 		index = -1;
 		tupleStartPosition = nextPosition;
+	}
+
+	public int getTupleStartPosition() {
+		return tupleStartPosition;
 	}
 
 	/**

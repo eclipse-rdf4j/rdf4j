@@ -16,7 +16,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
-import static org.lwjgl.util.lmdb.LMDB.MDB_APPENDDUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_GET_BOTH_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST_DUP;
@@ -29,9 +28,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
-import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_txn;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
-import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
@@ -39,9 +36,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.IntBuffer;
-import java.util.Arrays;
 
 import org.eclipse.rdf4j.sail.lmdb.util.VarintTupleIO;
 import org.lwjgl.PointerBuffer;
@@ -267,7 +262,7 @@ final class LmdbUtil {
 
 	static int merge(long cursor, int elements, MDBVal keyVal, MDBVal dataVal,
 			ByteBuffer newValueBuf, ByteBuffer target) throws IOException {
-		final int maxChunkSize = 511 - TripleIndex.MAX_KEY_LENGTH;
+		final int maxChunkSize = 311 - TripleIndex.MAX_KEY_LENGTH;
 
 		dataVal.mv_data(newValueBuf);
 		int rc = E(mdb_cursor_put(cursor, keyVal, dataVal, MDB_NOOVERWRITE));
@@ -301,13 +296,7 @@ final class LmdbUtil {
 		// We are positioned at the first duplicate value < newValueBuf.
 		// Find the correct insertion point for newValueBuf in the selected chunk, and check if it already exists.
 		var existing = new VarintTupleIO(elements, dataVal.mv_data());
-		int diff = -1;
-		while (existing.hasNext() && (diff = existing.compareTuple(newValueBuf)) < 0) {
-			for (int i = 0; i < elements; i++) {
-				existing.skip();
-			}
-			existing.nextTuple();
-		}
+		int diff = existing.seek(newValueBuf);
 		if (diff == 0) {
 			return MDB_KEYEXIST;
 		}
@@ -320,12 +309,10 @@ final class LmdbUtil {
 		int firstPos = target.position();
 
 		boolean addValueToSecondChunk = false;
+		boolean addedAll = false;
 		if (firstPos < maxChunkSize) {
 			encoder.append(newValueBuf);
-
-			while (target.position() < maxChunkSize && existing.hasNext()) {
-				encoder.appendNextTuple(existing);
-			}
+			addedAll = encoder.appendAllTuples(existing, maxChunkSize);
 
 			firstPos = target.position();
 		} else {
@@ -333,15 +320,16 @@ final class LmdbUtil {
 			addValueToSecondChunk = true;
 		}
 
-		if (addValueToSecondChunk || existing.hasNext()) {
+		if (addValueToSecondChunk || !addedAll && existing.hasNext()) {
 			encoder.resetDeltaEncoding();
 
 			if (addValueToSecondChunk) {
 				encoder.append(newValueBuf);
 			}
 
-			while (existing.hasNext()) {
+			if (existing.hasNext()) {
 				encoder.appendNextTuple(existing);
+				encoder.appendAllTuples(existing, Integer.MAX_VALUE);
 			}
 		}
 

@@ -30,84 +30,14 @@ class VarintTupleIOTest {
 	private static final int ELEMENTS = 3;
 
 	@Test
-	void misc() {
-		final int maxChunkSize = 511 - TripleIndex.MAX_KEY_LENGTH;
-
-		var data = new byte[] { -6, 4, -68, 2, -6, 2, 99, -126, 2, -6, 4, -68, 2, -6, 2, 106, 2, 0, 0, -6, 8, 52, -126,
-				2, -6,
-				7, -25, -126, -6, 8, -103, -126, 2, -6, 7, -25, -126, -6, 8, -97, 2, 0, -6, 8, -115, -126, -6, 4, -59,
-				2, 0, 0, -6, 5,
-				113, -126, 0, 0, -6, 5, 121, -126, 0, 0, -6, 5, -62, 2, 0, 0, -6, 5, -54, 2, 0, 0, -6, 5, -46, 2, 0, 0,
-				-6, 5, -38, 2, 0,
-				0, -6, 5, -20, 2, 0, 0, -6, 6, 27, -126, 0, 0, -6, 6, 35, -126, 0, 0, -6, 6, 59, -126, 0, 0, -6, 6, 64,
-				-126, 0, 0, -6, 6,
-				69, -126, 0, 0, -6, 6, 103, -126, 0, 0, -6, 7, 103, -126, 0, 0, -6, 7, -103, -126, 0, 0, -6, 7, -71,
-				-126, 0, 0, -6, 7, -63,
-				-126, 0, 0, -6, 7, -1, 2, 0, 0, -6, 8, 1, -126, 0, 0, -6, 8, 5, -126, 0, 0, -6, 8, 8, 2, 0, 0, -6, 8,
-				15, -126, 0, 0, -6, 8,
-				30, 2, 0, 0, -6, 8, 31, 2, 0, 0, -6, 8, 37, -126, 0, 0, -6, 8, 38, -126, 0, 0, -6, 8, 40, 2, 0, 0, -6,
-				8, 40, -126, 0, 0, -6,
-				8, 41, 2, 0, 0, -6, 8, 41, -126, 0, 0, -6, 8, 42, 2, 0, 0, -6, 8, 43, 2, 0, 0, -6, 8, 43, -126, 0, 0,
-				-6, 8, 44, 2, 0, 0, -6,
-				8, 44, -126, 0, 0, -6, 8, 51, -126, 0, 0, -6, 8, 54, 2, 0, 0, -6, 8, 54, -126, 0, 0, -6, 8, 55, -126, 0,
-				0, -6, 8, 58, -126,
-				0, 0, -6, 8, 59, 2, 0, 0, -6, 8, 69, -126, 0, 0, -6, 8, 70, 2, 0, 0, -6, 8, 70, -126, 0, 0, -6, 8, 71,
-				2, 0, 0, -6, 8, 71, -126,
-				0, 0, -6, 8, 98, 2, 0, 0, -6, 8, 98, -126, 0, 0, -6, 8, 99, 2, 0, 0, -6, 8, 99, -126, 0, 0, -6, 8, 100,
-				2, 0, 0, -6, 8, 100,
-				-126, 0, 0, -6, 8, 101, 2, 0, 0, -6, 8, 101, -126, 0, 0, -6, 8, 102, 2, 0, 0, -6, 8, 102, -126, 0, 0,
-				-6, 8, 103, 2, 0, 0, -6,
-				8, 103, -126, 0, 0, -6, 8, 104, -126, 0, 0, -6, 8, 105, 2, 0, 0, -6, 8, 105, -126, 0, 0, -6, 8, 106, 2,
-				0, 0, -6, 8, 106, -126,
-				0, 0, -6, 8, 107, 2, 0, 0, -6, 8, 107, -126, 0, 0, -6, 8, 108, 2, 0, 0, -6, 8, 108, -126, 0, 0, -6, 8,
-				109, 2, 0 };
-
-		var tuple = new byte[] { -6, 7, -25, -126, -6, 8, -101, 2, 2 };
-
-		System.out.println("Data bytes: " + data.length);
-		System.out.println("Tuple bytes: " + tuple.length);
-
-		ByteBuffer dataBuffer = ByteBuffer.wrap(data);
-		ByteBuffer tupleBuffer = ByteBuffer.wrap(tuple);
-
-		var existing = new VarintTupleIO(3, dataBuffer);
-		while (existing.hasNext() && existing.compareTuple(tupleBuffer) < 0) {
-			for (int i = 0; i < 3; i++) {
-				existing.skip();
-			}
-			existing.nextTuple();
-		}
-
-		var target = ByteBuffer.allocate(600);
-
-		// Copy the already-consumed prefix of the selected chunk, then insert newValueBuf, then
-		// continue copying tuples from the selected chunk until the first output chunk is full.
-		var encoder = existing.createEncoder(target);
-		encoder.append(tupleBuffer);
-
-		while (target.position() < maxChunkSize && existing.hasNext()) {
-			encoder.appendNextTuple(existing);
-		}
-
-		if (existing.hasNext()) {
-			encoder.resetDeltaEncoding();
-			while (existing.hasNext()) {
-				encoder.appendNextTuple(existing);
-			}
-		}
-
-		System.out.println("Encoded bytes: " + target.position());
-	}
-
-	@Test
 	void nextDecodesTuplesWithReuseMarkers() {
 		ByteBuffer buffer = buildBuffer();
 		VarintTupleIO input = new VarintTupleIO(ELEMENTS, buffer);
 
 		long[] expected = {
-				10L, 3_000L, 1_000_000L,
 				10L, 42L, 1_000_000L,
-				11L, 42L, 2L
+				10L, 3_000L, 1_000_000L,
+				11L, 3_000L, 2L
 		};
 
 		for (long value : expected) {
@@ -145,7 +75,7 @@ class VarintTupleIOTest {
 
 		assertTrue(input.skip());
 		assertTrue(input.next());
-		assertEquals(3_000L, Varint.readUnsigned(buffer));
+		assertEquals(42L, Varint.readUnsigned(buffer));
 
 		assertTrue(input.skip());
 		assertTrue(input.next());
@@ -157,7 +87,7 @@ class VarintTupleIOTest {
 
 		assertTrue(input.skip());
 		assertTrue(input.next());
-		assertEquals(42L, Varint.readUnsigned(buffer));
+		assertEquals(3_000L, Varint.readUnsigned(buffer));
 
 		assertFalse(input.skip());
 	}
@@ -183,17 +113,68 @@ class VarintTupleIOTest {
 		assertFalse(input.next());
 	}
 
+	@Test
+	void seekFindsExactTuple() {
+		ByteBuffer buffer = buildBuffer();
+		VarintTupleIO input = new VarintTupleIO(ELEMENTS, buffer);
+
+		int diff = input.seek(tupleBuffer(10L, 3_000L, 1_000_000L));
+		assertEquals(0, diff);
+
+		assertTrue(input.next());
+		assertEquals(10L, input.readUnsigned());
+		assertTrue(input.next());
+		assertEquals(3_000L, input.readUnsigned());
+		assertTrue(input.next());
+		assertEquals(1_000_000L, input.readUnsigned());
+		input.nextTuple();
+
+		assertTrue(input.next());
+		assertEquals(11L, input.readUnsigned());
+	}
+
+	@Test
+	void seekFindsNextGreaterTuple() {
+		ByteBuffer buffer = buildBuffer();
+		VarintTupleIO input = new VarintTupleIO(ELEMENTS, buffer);
+
+		int diff = input.seek(tupleBuffer(10L, 52L, 1_000_000L));
+		assertTrue(diff > 0);
+
+		assertTrue(input.next());
+		assertEquals(10L, input.readUnsigned());
+		assertTrue(input.next());
+		assertEquals(3_000L, input.readUnsigned());
+		assertTrue(input.next());
+		assertEquals(1_000_000L, input.readUnsigned());
+		input.nextTuple();
+
+		assertTrue(input.next());
+		assertEquals(11L, input.readUnsigned());
+	}
+
+	@Test
+	void seekSkipsAll() {
+		ByteBuffer buffer = buildBuffer();
+		VarintTupleIO input = new VarintTupleIO(ELEMENTS, buffer);
+
+		int diff = input.seek(tupleBuffer(12L, 3_000L, 1_000_000L));
+		;
+		assertTrue(diff < 0);
+		assertFalse(input.hasNext());
+	}
+
 	private static ByteBuffer buildBuffer() {
 		ByteBuffer buffer = ByteBuffer.allocate(64).order(ByteOrder.nativeOrder());
 
 		// Tuple 1: all values are directly encoded.
 		Varint.writeUnsigned(buffer, 10L);
-		Varint.writeUnsigned(buffer, 3_000L);
+		Varint.writeUnsigned(buffer, 42L);
 		Varint.writeUnsigned(buffer, 1_000_000L);
 
 		// Tuple 2: element 0 and 2 reuse tuple 1 positions.
 		buffer.put((byte) 0);
-		Varint.writeUnsigned(buffer, 42L);
+		Varint.writeUnsigned(buffer, 3_000L);
 		buffer.put((byte) 0);
 
 		// Tuple 3: element 1 reuses tuple 2 position.
@@ -241,7 +222,7 @@ class VarintTupleIOTest {
 		ByteBuffer encoded = out.duplicate();
 		encoded.flip();
 		assertArrayEquals(
-				new long[] { 10L, 3_000L, 1_000_000L, 10L, 42L, 1_000_000L, 11L, 42L, 2L },
+				new long[] { 10L, 42L, 1_000_000L, 10L, 3_000L, 1_000_000L, 11L, 3_000L, 2L },
 				decodeAll(encoded, ELEMENTS));
 	}
 
@@ -253,7 +234,7 @@ class VarintTupleIOTest {
 		assertTrue(input.next());
 		assertEquals(10L, input.readUnsigned());
 		assertTrue(input.next());
-		assertEquals(3_000L, input.readUnsigned());
+		assertEquals(42L, input.readUnsigned());
 		assertTrue(input.next());
 		assertEquals(1_000_000L, input.readUnsigned());
 		input.nextTuple();
@@ -275,7 +256,7 @@ class VarintTupleIOTest {
 		ByteBuffer encoded = out.duplicate();
 		encoded.flip();
 		assertArrayEquals(
-				new long[] { 10L, 3_000L, 1_000_000L, 10L, 42L, 1_000_000L, 11L, 42L, 2L },
+				new long[] { 10L, 42L, 1_000_000L, 10L, 3_000L, 1_000_000L, 11L, 3_000L, 2L },
 				decodeAll(encoded, ELEMENTS));
 	}
 

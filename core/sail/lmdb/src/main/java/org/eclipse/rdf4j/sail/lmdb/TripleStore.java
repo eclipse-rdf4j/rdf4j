@@ -32,6 +32,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
+import static org.lwjgl.util.lmdb.LMDB.MDB_PREV_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
@@ -1040,16 +1041,14 @@ class TripleStore implements Closeable {
 		int rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_GET_BOTH_RANGE));
 		if (rc == MDB_SUCCESS) {
 			var existing = new VarintTupleIO(elements, dataVal.mv_data());
-			int diff = -1;
-			while (existing.hasNext() && (diff = existing.compareTuple(valueBuf)) < 0) {
-				for (int i = 0; i < elements; i++) {
-					existing.skip();
-				}
-				existing.nextTuple();
-			}
-			if (diff == 0) {
+			if (existing.compareTuple(valueBuf) == 0) {
 				return true;
 			}
+			if (mdb_cursor_get(cursor, keyVal, dataVal, MDB_PREV_DUP) != MDB_SUCCESS) {
+				return false;
+			}
+			existing.setBuffer(dataVal.mv_data());
+			return existing.compareTuple(valueBuf) == 0;
 		}
 		return false;
 	}
@@ -1133,8 +1132,7 @@ class TripleStore implements Closeable {
 				cursor = pCursor.get(0);
 				try {
 					foundImplicit = deleteFromMergedValue(cursor, 4 - mainIndex.getIndexSplitPosition(), keyVal,
-							dataVal,
-							valueBuf, mergedBuf);
+							dataVal, valueBuf, mergedBuf);
 				} finally {
 					mdb_cursor_close(cursor);
 				}
