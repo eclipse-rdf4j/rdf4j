@@ -52,6 +52,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.File;
 import java.io.IOException;
@@ -70,6 +71,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
+import java.util.function.BooleanSupplier;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.StampedLock;
@@ -93,6 +96,10 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.CompressedValueOverlay;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayCapacityException;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueOverlayRegistry;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordLayout;
 import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
@@ -502,6 +509,9 @@ public class ValueStore extends AbstractValueFactory {
 	private long writeTxn;
 	/** Null during dictionary mutation, including private-cache publication; fresh identity after commit/rollback. */
 	private volatile Object valueLookupGeneration = new Object();
+
+	// An optional exact-read-view accelerator. It owns compressed copies, not LMDB page addresses.
+	private final ValueOverlayRegistry compressedValues = new ValueOverlayRegistry();
 	private Thread writeTxnOwner;
 	private final boolean forceSync;
 	private final boolean noReadahead;
@@ -603,6 +613,16 @@ public class ValueStore extends AbstractValueFactory {
 
 		if (!deferAuxiliaryDatabases) {
 			initializeIdsAndTermIndexes(config);
+			try {
+				warmConfiguredValueOverlay();
+			} catch (IOException | RuntimeException | Error e) {
+				try {
+					close();
+				} catch (IOException | RuntimeException cleanup) {
+					e.addSuppressed(cleanup);
+				}
+				throw e;
+			}
 		}
 	}
 
@@ -794,6 +814,7 @@ public class ValueStore extends AbstractValueFactory {
 		if (!deferAuxiliaryDatabases) {
 			openAuxiliaryDatabases();
 		}
+		endValueLookupMutation();
 	}
 
 	private void openAuxiliaryDatabases() throws IOException {
@@ -1208,11 +1229,142 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	protected byte[] getData(long id) throws IOException {
-		return withData(id, (address, length) -> {
-			byte[] valueBytes = new byte[length];
-			LmdbUtil.copyMemoryToByteArray(address, valueBytes, length);
-			return valueBytes;
+		return readTransaction(env, (stack, txn) -> {
+			try (CompressedValueOverlay.Lease overlay = borrowValueOverlay(txn)) {
+				if (overlay != null) {
+					byte[] hit = overlay.get(id);
+					if (hit != null) {
+						return hit;
+					}
+				}
+			}
+			MDBVal key = MDBVal.calloc(stack);
+			LmdbUtil.setMDBValData(key, id2data(idBuffer(stack), id).flip());
+			MDBVal value = MDBVal.calloc(stack);
+			if (mdb_get(txn, dbi, key, value) != MDB_SUCCESS) {
+				return null;
+			}
+			byte[] bytes = new byte[Math.toIntExact(LmdbUtil.mdbValSize(value))];
+			LmdbUtil.copyMemoryToByteArray(LmdbUtil.mdbValDataAddress(value), bytes, bytes.length);
+			return bytes;
 		});
+	}
+
+	private CompressedValueOverlay.Lease borrowValueOverlay(long txn) {
+		// Avoid the native transaction-ID call entirely when the optional overlay is absent.
+		if (!compressedValues.isPopulated()) {
+			return null;
+		}
+		Object generation = valueLookupGeneration;
+		return generation == null ? null : compressedValues.acquire(generation, mdb_txn_id(txn));
+	}
+
+	/**
+	 * Builds an immutable compressed copy by scanning the current dictionary read view, then atomically publishes it.
+	 * This is explicit synchronous maintenance, not a first-lookup scan or a background task. It must run outside a
+	 * write transaction. A mutation, cancellation or capacity refusal prevents publication and releases the builder.
+	 * Existing dictionary IDs and on-disk record encodings are unchanged. Subsequent writes invalidate the overlay;
+	 * readers of any other view always fall back to LMDB.
+	 *
+	 * The optional reverse index verifies the live record-to-ID mapping in this same transaction. Retired ID payloads
+	 * can remain readable after reverse removal, so merely scanning ID records is not sufficient for that index.
+	 */
+	@InternalUseOnly
+	public CompressedValueOverlay.Stats warmCompressedValueOverlay(CompressedValueOverlay.Options options,
+			BooleanSupplier cancelled) throws IOException {
+		Objects.requireNonNull(options);
+		Objects.requireNonNull(cancelled);
+		return readTransaction(env, (stack, txn) -> {
+			Object generation = valueLookupGeneration;
+			if (generation == null || writeTxn != 0) {
+				throw new IllegalStateException("Cannot build a value overlay during dictionary mutation");
+			}
+			long transactionId = mdb_txn_id(txn);
+			try (CompressedValueOverlay.Builder builder = CompressedValueOverlay.builder(options)
+					.cancellation(() -> cancelled.getAsBoolean() || valueLookupGeneration != generation)) {
+				PointerBuffer handle = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, handle));
+				long cursor = handle.get(0);
+				try {
+					MDBVal key = MDBVal.malloc(stack);
+					MDBVal value = MDBVal.malloc(stack);
+					key.mv_data(stack.bytes(ID_KEY));
+					int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
+					while (rc == MDB_SUCCESS) {
+						ByteBuffer keyBytes = key.mv_data();
+						if (!keyBytes.hasRemaining() || keyBytes.get(keyBytes.position()) != ID_KEY) {
+							break;
+						}
+						long id = data2id(keyBytes);
+						long length = LmdbUtil.mdbValSize(value);
+						if (length > options.maxRecordBytes()) {
+							builder.skipLarge(id, length);
+						} else {
+							byte[] record = new byte[Math.toIntExact(length)];
+							LmdbUtil.copyMemoryToByteArray(LmdbUtil.mdbValDataAddress(value), record, record.length);
+							boolean reverseVisible = false;
+							if (builder.reverseHasCapacity()) {
+								// Reclaim scratch on every row instead of growing the outer native stack with the dataset.
+								try (MemoryStack scratch = stackPush()) {
+									Long liveId = findIdInTransaction(record, false, CoreDatatype.NONE, scratch, txn);
+									reverseVisible = liveId != null && liveId.longValue() == id;
+								}
+							}
+							builder.add(id, record, ValueStoreRecordLayout.family(id, record),
+									ValueStoreRecordLayout.affinity(record), reverseVisible);
+						}
+						rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+					}
+					if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+						E(rc);
+					}
+				} finally {
+					mdb_cursor_close(cursor);
+				}
+				CompressedValueOverlay overlay = builder.finish();
+				CompressedValueOverlay.Stats stats = overlay.stats();
+				if (!compressedValues.publish(generation, transactionId, overlay,
+						() -> valueLookupGeneration == generation && env != 0 && !cancelled.getAsBoolean())) {
+					throw new IOException("Dictionary view changed before value overlay publication");
+				}
+				return stats;
+			}
+		});
+	}
+
+	@InternalUseOnly
+	public CompressedValueOverlay.Stats warmCompressedValueOverlay(CompressedValueOverlay.Options options)
+			throws IOException {
+		return warmCompressedValueOverlay(options, () -> Thread.currentThread().isInterrupted());
+	}
+
+	/** Opt-in startup warming: never hidden in getId/getValue and never schedules a background rebuild. */
+	private void warmConfiguredValueOverlay() throws IOException {
+		String budgetText = System.getProperty("rdf4j.lmdb.valueOverlay.maxBytes", "0");
+		long budget = Long.parseLong(budgetText);
+		if (budget == 0) {
+			return;
+		}
+		int reverseSlots = Integer.parseInt(System.getProperty("rdf4j.lmdb.valueOverlay.reverseSlots", "1048576"));
+		CompressedValueOverlay.Options options = new CompressedValueOverlay.Options(budget, reverseSlots,
+				32, 64 << 10, 1 << 20, true, true);
+		try {
+			CompressedValueOverlay.Stats stats = warmCompressedValueOverlay(options);
+			logger.info("Compressed ValueStore overlay: {}", stats);
+		} catch (OverlayCapacityException e) {
+			// This optional accelerator must not prevent a larger authoritative store from opening.
+			logger.warn("Compressed ValueStore overlay did not fit its native budget; using LMDB", e);
+		}
+	}
+
+	@InternalUseOnly
+	public CompressedValueOverlay.Stats compressedValueOverlayStats() {
+		return compressedValues.stats();
+	}
+
+	@InternalUseOnly
+	public void clearCompressedValueOverlay() {
+		compressedValues.invalidate();
 	}
 
 	/**
@@ -1515,24 +1667,26 @@ public class ValueStore extends AbstractValueFactory {
 			int[] order, int count) {
 		try {
 			readTransaction(env, (stack, txn) -> {
-				MDBVal keyData = MDBVal.calloc(stack);
-				MDBVal valueData = MDBVal.calloc(stack);
-				ByteBuffer keyBuffer = idBuffer(stack);
-				LmdbValue.Resolver resolver = (id, value) -> {
-					try {
-						return resolveValueInTransaction(expectedRevision, resolvedRevision, id, value, txn,
-								keyData, valueData, keyBuffer);
-					} catch (IOException e) {
-						throw new SailException(e);
+				try (CompressedValueOverlay.Lease overlay = borrowValueOverlay(txn)) {
+					MDBVal keyData = MDBVal.calloc(stack);
+					MDBVal valueData = MDBVal.calloc(stack);
+					ByteBuffer keyBuffer = idBuffer(stack);
+					LmdbValue.Resolver resolver = (id, value) -> {
+						try {
+							return resolveValueInTransaction(expectedRevision, resolvedRevision, id, value, txn,
+									keyData, valueData, keyBuffer, overlay);
+						} catch (IOException e) {
+							throw new SailException(e);
+						}
+					};
+					for (int i = 0; i < count; i++) {
+						LmdbValue value = values[order[i]];
+						if (!value.isInitialized()) {
+							value.init(resolver);
+						}
 					}
-				};
-				for (int i = 0; i < count; i++) {
-					LmdbValue value = values[order[i]];
-					if (!value.isInitialized()) {
-						value.init(resolver);
-					}
+					return null;
 				}
-				return null;
 			});
 		} catch (IOException e) {
 			throw new SailException(e);
@@ -1541,7 +1695,7 @@ public class ValueStore extends AbstractValueFactory {
 
 	private boolean resolveValueInTransaction(ValueStoreRevision expectedRevision,
 			ValueStoreRevision resolvedRevision, long id, LmdbValue value, long txn, MDBVal keyData,
-			MDBVal valueData, ByteBuffer keyBuffer) throws IOException {
+			MDBVal valueData, ByteBuffer keyBuffer, CompressedValueOverlay.Lease overlay) throws IOException {
 		if (ValueIds.isInlined(id)) {
 			Literal unpacked = Values.unpackLiteral(id, this);
 			((LmdbLiteral) value).setLabel(unpacked.getLabel());
@@ -1566,14 +1720,17 @@ public class ValueStore extends AbstractValueFactory {
 			return resolved;
 		}
 
-		keyBuffer.clear();
-		LmdbUtil.setMDBValData(keyData, id2data(keyBuffer, id).flip());
-		if (mdb_get(txn, dbi, keyData, valueData) != MDB_SUCCESS) {
-			return false;
+		byte[] data = overlay == null ? null : overlay.get(id);
+		if (data == null) {
+			keyBuffer.clear();
+			LmdbUtil.setMDBValData(keyData, id2data(keyBuffer, id).flip());
+			if (mdb_get(txn, dbi, keyData, valueData) != MDB_SUCCESS) {
+				return false;
+			}
+			int length = Math.toIntExact(LmdbUtil.mdbValSize(valueData));
+			data = new byte[length];
+			LmdbUtil.copyMemoryToByteArray(LmdbUtil.mdbValDataAddress(valueData), data, length);
 		}
-		int length = Math.toIntExact(LmdbUtil.mdbValSize(valueData));
-		byte[] data = new byte[length];
-		LmdbUtil.copyMemoryToByteArray(LmdbUtil.mdbValDataAddress(valueData), data, length);
 		data2value(id, data, value);
 		setResolvedRevision(value, id, resolvedRevision);
 		cacheValue(id, value);
@@ -1770,140 +1927,86 @@ public class ValueStore extends AbstractValueFactory {
 
 	private long findId(byte[] data, boolean create, CoreDatatype coreDatatype) throws IOException {
 		Long id = readTransaction(env, (stack, txn) -> {
-			if (data.length <= MAX_KEY_SIZE) {
-				MDBVal dataVal = MDBVal.calloc(stack);
-				dataVal.mv_data(stack.bytes(data));
-				MDBVal idVal = MDBVal.calloc(stack);
-				if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
+			if (!create) {
+				try (CompressedValueOverlay.Lease overlay = borrowValueOverlay(txn)) {
+					if (overlay != null) {
+						OptionalLong hit = overlay.findId(data);
+						if (hit.isPresent()) {
+							return hit.getAsLong();
+						}
+					}
+				}
+			}
+			return findIdInTransaction(data, create, coreDatatype, stack, txn);
+		});
+		return id != null ? id : LmdbValue.UNKNOWN_ID;
+	}
+
+	private Long findIdInTransaction(byte[] data, boolean create, CoreDatatype coreDatatype,
+			MemoryStack stack, long txn) throws IOException {
+		if (data.length <= MAX_KEY_SIZE) {
+			MDBVal dataVal = MDBVal.calloc(stack);
+			dataVal.mv_data(stack.bytes(data));
+			MDBVal idVal = MDBVal.calloc(stack);
+			if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
+				return data2id(idVal.mv_data());
+			}
+			if (!create) {
+				return null;
+			}
+			// id was not found, create a new one
+			resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
+
+			long newId = nextId(data[0], coreDatatype);
+			writeTransaction((stack2, writeTxn) -> {
+				idVal.mv_data(id2data(idBuffer(stack), newId).flip());
+
+				E(mdb_put(writeTxn, dbi, dataVal, idVal, 0));
+				E(mdb_put(writeTxn, dbi, idVal, dataVal, 0));
+
+				// update ref count if necessary
+				incrementRefCount(stack2, writeTxn, data);
+				return null;
+			});
+			return newId;
+		} else {
+			MDBVal idVal = MDBVal.calloc(stack);
+
+			ByteBuffer dataBb = ByteBuffer.wrap(data);
+			long dataHash = hash(data);
+			int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
+			ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
+			hashBb.put(HASH_KEY);
+			Varint.writeUnsigned(hashBb, dataHash);
+			int hashLength = hashBb.position();
+			hashBb.flip();
+
+			MDBVal hashVal = MDBVal.calloc(stack);
+			hashVal.mv_data(hashBb);
+			MDBVal dataVal = MDBVal.calloc(stack);
+
+			// ID of first value is directly stored with hash as key
+			if (mdb_get(txn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
+				idVal.mv_data(dataVal.mv_data());
+				if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && dataVal.mv_data().compareTo(dataBb) == 0) {
 					return data2id(idVal.mv_data());
 				}
+			} else {
+				// no value for hash exists
 				if (!create) {
 					return null;
 				}
-				// id was not found, create a new one
+
 				resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
 
 				long newId = nextId(data[0], coreDatatype);
 				writeTransaction((stack2, writeTxn) -> {
-					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
-
-					E(mdb_put(writeTxn, dbi, dataVal, idVal, 0));
-					E(mdb_put(writeTxn, dbi, idVal, dataVal, 0));
-
-					// update ref count if necessary
-					incrementRefCount(stack2, writeTxn, data);
-					return null;
-				});
-				return newId;
-			} else {
-				MDBVal idVal = MDBVal.calloc(stack);
-
-				ByteBuffer dataBb = ByteBuffer.wrap(data);
-				long dataHash = hash(data);
-				int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
-				ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
-				hashBb.put(HASH_KEY);
-				Varint.writeUnsigned(hashBb, dataHash);
-				int hashLength = hashBb.position();
-				hashBb.flip();
-
-				MDBVal hashVal = MDBVal.calloc(stack);
-				hashVal.mv_data(hashBb);
-				MDBVal dataVal = MDBVal.calloc(stack);
-
-				// ID of first value is directly stored with hash as key
-				if (mdb_get(txn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
-					idVal.mv_data(dataVal.mv_data());
-					if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && dataVal.mv_data().compareTo(dataBb) == 0) {
-						return data2id(idVal.mv_data());
-					}
-				} else {
-					// no value for hash exists
-					if (!create) {
-						return null;
-					}
-
-					resizeMap(txn, 2L * data.length + 2L * (2L + Long.BYTES));
-
-					long newId = nextId(data[0], coreDatatype);
-					writeTransaction((stack2, writeTxn) -> {
-						dataVal.mv_size(data.length);
-						idVal.mv_data(id2data(idBuffer(stack), newId).flip());
-						// store mapping of hash -> ID
-						E(mdb_put(txn, dbi, hashVal, idVal, 0));
-						// store mapping of ID -> data
-						E(mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE));
-						dataVal.mv_data().put(data);
-
-						// update ref count if necessary
-						incrementRefCount(stack2, writeTxn, data);
-						return null;
-					});
-					return newId;
-				}
-
-				// test existing entries for hash key against given value
-				hashBb.put(0, HASHID_KEY);
-				hashVal.mv_data(hashBb);
-
-				long cursor = 0;
-				try {
-					PointerBuffer pp = stack.mallocPointer(1);
-					E(mdb_cursor_open(txn, dbi, pp));
-					cursor = pp.get(0);
-
-					// iterate all entries for hash value
-					if (mdb_cursor_get(cursor, hashVal, dataVal, MDB_SET_RANGE) == MDB_SUCCESS) {
-						do {
-							if (compareRegion(hashVal.mv_data(), 0, hashBb, 0, hashLength) != 0) {
-								break;
-							}
-
-							// use only ID part of key for lookup of data
-							ByteBuffer hashIdBb = hashVal.mv_data();
-							hashIdBb.position(hashLength);
-							idVal.mv_data(hashIdBb);
-							if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
-									&& dataVal.mv_data().compareTo(dataBb) == 0) {
-								// id was found if stored value is equal to requested value
-								return data2id(hashIdBb);
-							}
-						} while (mdb_cursor_get(cursor, hashVal, dataVal, MDB_NEXT) == MDB_SUCCESS);
-					}
-				} finally {
-					if (cursor != 0) {
-						mdb_cursor_close(cursor);
-					}
-				}
-
-				if (!create) {
-					return null;
-				}
-
-				// id was not found, create a new one
-				resizeMap(txn, 1 + Long.BYTES + maxHashKeyLength + 2L * data.length);
-
-				long newId = nextId(data[0], coreDatatype);
-				writeTransaction((stack2, writeTxn) -> {
-					// encode ID
-					ByteBuffer idBb = id2data(idBuffer(stack), newId).flip();
-					idVal.mv_data(idBb);
-
-					// encode hash and ID
-					hashBb.limit(hashBb.capacity());
-					hashBb.position(hashLength);
-					hashBb.put(idBb);
-					idBb.rewind();
-					hashBb.flip();
-					hashVal.mv_data(hashBb);
-
-					// store mapping of hash+ID -> []
-					dataVal.mv_data(stack.bytes());
-					E(mdb_put(txn, dbi, hashVal, dataVal, 0));
-
 					dataVal.mv_size(data.length);
+					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
+					// store mapping of hash -> ID
+					E(mdb_put(txn, dbi, hashVal, idVal, 0));
 					// store mapping of ID -> data
-					E(mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE));
+					E(mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE));
 					dataVal.mv_data().put(data);
 
 					// update ref count if necessary
@@ -1912,8 +2015,77 @@ public class ValueStore extends AbstractValueFactory {
 				});
 				return newId;
 			}
-		});
-		return id != null ? id : LmdbValue.UNKNOWN_ID;
+
+			// test existing entries for hash key against given value
+			hashBb.put(0, HASHID_KEY);
+			hashVal.mv_data(hashBb);
+
+			long cursor = 0;
+			try {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, dbi, pp));
+				cursor = pp.get(0);
+
+				// iterate all entries for hash value
+				if (mdb_cursor_get(cursor, hashVal, dataVal, MDB_SET_RANGE) == MDB_SUCCESS) {
+					do {
+						if (compareRegion(hashVal.mv_data(), 0, hashBb, 0, hashLength) != 0) {
+							break;
+						}
+
+						// use only ID part of key for lookup of data
+						ByteBuffer hashIdBb = hashVal.mv_data();
+						hashIdBb.position(hashLength);
+						idVal.mv_data(hashIdBb);
+						if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
+								&& dataVal.mv_data().compareTo(dataBb) == 0) {
+							// id was found if stored value is equal to requested value
+							return data2id(hashIdBb);
+						}
+					} while (mdb_cursor_get(cursor, hashVal, dataVal, MDB_NEXT) == MDB_SUCCESS);
+				}
+			} finally {
+				if (cursor != 0) {
+					mdb_cursor_close(cursor);
+				}
+			}
+
+			if (!create) {
+				return null;
+			}
+
+			// id was not found, create a new one
+			resizeMap(txn, 1 + Long.BYTES + maxHashKeyLength + 2L * data.length);
+
+			long newId = nextId(data[0], coreDatatype);
+			writeTransaction((stack2, writeTxn) -> {
+				// encode ID
+				ByteBuffer idBb = id2data(idBuffer(stack), newId).flip();
+				idVal.mv_data(idBb);
+
+				// encode hash and ID
+				hashBb.limit(hashBb.capacity());
+				hashBb.position(hashLength);
+				hashBb.put(idBb);
+				idBb.rewind();
+				hashBb.flip();
+				hashVal.mv_data(hashBb);
+
+				// store mapping of hash+ID -> []
+				dataVal.mv_data(stack.bytes());
+				E(mdb_put(txn, dbi, hashVal, dataVal, 0));
+
+				dataVal.mv_size(data.length);
+				// store mapping of ID -> data
+				E(mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE));
+				dataVal.mv_data().put(data);
+
+				// update ref count if necessary
+				incrementRefCount(stack2, writeTxn, data);
+				return null;
+			});
+			return newId;
+		}
 	}
 
 	private void findIds(byte[][] data, CoreDatatype[] coreDatatypes, int[] indexes, long[] ids, int count)
@@ -2340,6 +2512,7 @@ public class ValueStore extends AbstractValueFactory {
 
 	private void beginValueLookupMutation() {
 		valueLookupGeneration = null;
+		compressedValues.invalidate();
 	}
 
 	private void endValueLookupMutation() {
