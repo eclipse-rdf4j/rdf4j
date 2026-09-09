@@ -5,6 +5,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
 import java.util.Objects;
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorProductCursor;
 
@@ -27,6 +28,11 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 	private final long[] rowBuffer, rowWeights;
 	private final long[] masks;
 	private FactorProductCursor product;
+	private BorrowedFactorBatch.Cursor windowReader;
+	private BorrowedFactorBatch windowBatch;
+	private int windowCapacity, windowSlot = -1, windowOutput = -1, windowCount;
+	private boolean windowMode;
+	private final long[] requestedMasks;
 	private FactorEnvironment environment;
 	private long epoch, prefixWeight, hiddenWeight, currentWeight;
 	private int rowCount, rowIndex, active = -1, completed = -1, ticks;
@@ -77,9 +83,10 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 			KernelPlan.ProjectionCursor nativeCursor, KernelPlan.FactorCursor factors, KernelPlan.Cursor rows) {
 		this.width = width; this.exact = exact.clone(); this.cancellation = cancellation;
 		this.columns = new int[columns.length][];
+		requestedMasks = new long[columns.length];
 		for (int i = 0; i < columns.length; i++) {
 			this.columns[i] = columns[i].clone();
-			for (int column : columns[i]) unionColumns |= 1L << column;
+			for (int column : columns[i]) { unionColumns |= 1L << column; requestedMasks[i] |= 1L << column; }
 		}
 		this.nativeCursor = nativeCursor; this.factors = factors; this.rows = rows;
 		slots = factors == null ? null : new int[width];
@@ -98,7 +105,7 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 		try {
 			if (batch && completed != columns.length - 1) throw new IllegalStateException("unfinished projections");
 			KernelRuntime.checkCancelled(cancellation);
-			positioned = batch = false; flatCount = 0; active = completed = -1;
+			positioned = batch = false; flatCount = 0; active = completed = -1; windowMode = false; windowCount = 0;
 			boolean found;
 			if (nativeCursor != null) found = nativeCursor.nextBatch();
 			else if (rows != null) {
@@ -169,6 +176,107 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 		positioned = false;
 	}
 
+	/** Exact output IDs invariant across all projections of this batch. */
+	@Override public long constantColumns() {
+		if (closed || !batch) throw new IllegalStateException("no current relation batch");
+		if (nativeCursor != null) return nativeCursor.constantColumns();
+		if (factors == null) return 0L;
+		checkEpoch();
+		long constant = 0L;
+		for (long rest = unionColumns; rest != 0L; rest &= rest - 1L) {
+			int column = Long.numberOfTrailingZeros(rest);
+			if ((environment.mask() & (1L << slots[column])) == 0L) constant |= 1L << column;
+		}
+		return constant;
+	}
+
+	/**
+	 * Returns the sole varying unary output column, or -1 without advancing input. Native packed
+	 * projections and zipped/multi-factor requests retain their existing positioned traversal.
+	 * Admission is evaluated per batch: the same site may switch representation on the next batch.
+	 */
+	public int windowColumn(int projection) {
+		if (closed || !batch) throw new IllegalStateException("no current relation batch");
+		Objects.checkIndex(projection, columns.length);
+		if (factors == null) return -1;
+		checkEpoch();
+		long open = environment.expansionClosure(masks[projection]);
+		if (Long.bitCount(open) != 1) return -1;
+		int slot = Long.numberOfTrailingZeros(open);
+		if (environment.isTuple(slot)) return -1;
+		int output = -1;
+		for (int c : columns[projection]) if (slots[c] == slot) {
+			if (output != -1) return -1; // aliases can use the general projection contract
+			output = c;
+		}
+		return output;
+	}
+
+	/**
+	 * Consume a bounded decoder window, validating the complete environment at each boundary.
+	 * The returned arrays are read-only and valid only until the next cursor operation. No scalar
+	 * product is built; hidden weights remain lazy, including for all-unbound argument windows.
+	 */
+	public int nextWindow(int projection) {
+		if (closed || !batch) throw new IllegalStateException("no current relation batch");
+		Objects.checkIndex(projection, columns.length);
+		try {
+			KernelRuntime.checkCancelled(cancellation);
+			checkEpoch();
+			positioned = false;
+			if (projection == completed) return 0;
+			if (active != projection) {
+				if (projection != completed + 1 || active != completed)
+					throw new IllegalStateException("projection order or unfinished projection");
+				windowOutput = windowColumn(projection);
+				if (windowOutput < 0) throw new IllegalStateException("projection is not a unary window");
+				active = projection;
+				windowMode = true;
+				windowSlot = slots[windowOutput];
+				expanded = 1L << windowSlot;
+				hiddenWeight = 0L;
+				BorrowedFactorBatch sourceBatch = environment.batch(windowSlot);
+				int capacity = (int) Math.min(WINDOW, environment.count(windowSlot));
+				if (windowReader == null || windowBatch.source() != sourceBatch.source()
+						|| windowCapacity < capacity) {
+					BorrowedFactorBatch.Cursor old = windowReader;
+					windowReader = null;
+					windowBatch = null;
+					if (old != null) old.close();
+					windowReader = sourceBatch.cursor(capacity);
+					windowCapacity = capacity;
+				}
+				windowBatch = sourceBatch;
+				windowReader.bind(sourceBatch, environment.lane(windowSlot));
+			} else if (!windowMode) throw new IllegalStateException("cannot switch projection traversal mode");
+			windowCount = windowReader.nextWindow();
+			// A reader callback must not advance another mandatory factor while filling this window.
+			checkEpoch();
+			if (windowCount == 0) { completed = active; return 0; }
+			positioned = true;
+			return windowCount;
+		} catch (RuntimeException | Error failure) { fail(failure); return 0; }
+	}
+
+	public long[] windowValues() { checkWindow(); return windowReader.windowValues(); }
+	public long[] windowWeights() { checkWindow(); return windowReader.windowWeights(); }
+	public int windowStart() { checkWindow(); return windowReader.windowStart(); }
+
+	/** Multiplier outside the opened factor. Call only after a non-null argument needs its weight. */
+	public long windowScale() {
+		checkWindow();
+		if (!exact[active]) return 1L;
+		checkEpoch();
+		if (hiddenWeight == 0L)
+			hiddenWeight = environment.countProduct(environment.mask() & ~expanded, prefixWeight);
+		return hiddenWeight;
+	}
+
+	private void checkWindow() {
+		if (closed || !positioned || !windowMode || windowCount == 0)
+			throw new IllegalStateException("no current factor window");
+	}
+
 	@Override public boolean next(int projection) {
 		if (closed || !batch) throw new IllegalStateException("no current relation batch");
 		Objects.checkIndex(projection, columns.length);
@@ -180,7 +288,7 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 				KernelRuntime.checkCancelled(cancellation);
 				if (projection != completed + 1 || active != completed)
 					throw new IllegalStateException("projection order or unfinished projection");
-				active = projection; rowIndex = -1;
+				active = projection; rowIndex = -1; windowMode = false;
 				if (factors != null) {
 					checkEpoch();
 					expanded = environment.expansionClosure(masks[projection]);
@@ -193,6 +301,7 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 					}
 				}
 			}
+			if (windowMode) throw new IllegalStateException("cannot switch projection traversal mode");
 			boolean found;
 			if (nativeCursor != null) {
 				found = nativeCursor.next(projection);
@@ -215,16 +324,16 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 
 	@Override public long value(int column) {
 		if (closed || !positioned) throw new IllegalStateException("projection is not positioned");
-		boolean requested = false;
-		for (int c : columns[active]) if (c == column) { requested = true; break; }
-		if (!requested) throw new IllegalArgumentException("column not in current projection");
+		if (column < 0 || column >= width || (requestedMasks[active] & (1L << column)) == 0L) throw new IllegalArgumentException("column not in current projection");
 		if (nativeCursor != null) return nativeCursor.value(column);
 		if (rows != null) return rowBuffer[rowIndex * width + column];
 		checkEpoch();
+		if (windowMode && column == windowOutput) throw new IllegalStateException("read this column from the current window");
 		return (expanded & (1L << slots[column])) == 0L ? factors.scalar(column) : product.value(slots[column]);
 	}
 	@Override public long multiplicity() {
 		if (closed || !positioned) throw new IllegalStateException("projection is not positioned");
+		if (windowMode) throw new IllegalStateException("window weights are per member, not one scalar weight");
 		if (!exact[active]) return 1L;
 		if (factors != null) checkEpoch();
 		if (currentWeight == 0L) {
@@ -250,7 +359,9 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 	@Override public void close() {
 		if (closed) return;
 		closed = true;
-		Throwable failure = KernelRuntime.closeResource(product, null);
+		Throwable failure = KernelRuntime.closeResource(windowReader, null);
+		windowReader = null; windowBatch = null;
+		failure = KernelRuntime.closeResource(product, failure);
 		failure = KernelRuntime.closeResource(nativeCursor, failure);
 		failure = KernelRuntime.closeResource(factors, failure);
 		failure = KernelRuntime.closeResource(rows, failure);

@@ -2064,23 +2064,17 @@ final class LmdbNativeKernelEmitter {
 			}
 			body.append("                        updateMarginal").append(flatMethod).append("(flatWeights[row]);\n")
 					.append("                    }\n                    m.finishFlat();\n                    continue;\n                }\n");
+			long groupColumns = 0L;
+			for (int c = 0; c < plan.outCols.length; c++)
+				for (int group : aggregate.groupCols) if (plan.outCols[c] == group) groupColumns |= 1L << c;
+			body.append("                boolean constantGroups = (m.constantColumns() & ").append(groupColumns)
+					.append("L) == ").append(groupColumns).append("L;\n");
 			for (int request = 0; request < projections.length; request++) {
-				body.append("                while (m.next(").append(request).append(")) {\n");
-				for (int c : projections[request]) body.append("                    v").append(plan.outCols[c])
-						.append(" = m.value(").append(c).append(");\n");
-				String weight = "1L";
-				if (exact[request]) {
-					List<String> observed = new ArrayList<>();
-					for (int channel : spec.layout.channels(request)) {
-						AggregateOutput output = aggregate.outputs[channel];
-						observed.add(output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? "true" : "v" + output.col + " != -1L");
-					}
-					weight = "(" + String.join(" || ", observed) + ") ? m.multiplicity() : 1L";
-				}
-				body.append("                    updateMarginal").append(request).append("(")
-						.append(weight).append(");\n                }\n");
+				body.append("                runMarginal").append(request).append("(m, constantGroups);\n");
+				emitMarginalTraversal(spec, aggregate, request, groupColumns);
 				emitMarginalUpdate(aggregate, request, spec.layout.channels(request));
 			}
+			emitMarginalGroupResolver(aggregate);
 			body.append("            }\n        } catch (RuntimeException problem) { failure = problem; throw problem; }\n")
 					.append("        catch (Error problem) { failure = problem; throw problem; }\n        finally {\n")
 					.append("            Throwable closing = KernelRuntime.closeResource(m, failure);\n");
@@ -2090,8 +2084,77 @@ final class LmdbNativeKernelEmitter {
 			return "runMarginals";
 		}
 
+		/** Specialize the one varying argument; group bindings remain outside the member loop. */
+		private void emitMarginalTraversal(LmdbNativeKernelIr.AggregateProjections spec, Aggregate aggregate,
+				int request, long groupColumns) {
+			PlanRows plan = spec.input;
+			int[] projected = spec.layout.columns(request);
+			int[] channels = spec.layout.channels(request);
+			boolean exact = spec.layout.exactWeights()[request];
+			String observed = "false";
+			if (exact) {
+				List<String> terms = new ArrayList<>();
+				for (int channel : channels) {
+					AggregateOutput output = aggregate.outputs[channel];
+					terms.add(output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? "true" : "v" + output.col + " != -1L");
+				}
+				observed = "(" + String.join(" || ", terms) + ")";
+			}
+			int argument = -1;
+			for (int column : projected) if ((groupColumns & (1L << column)) == 0L) {
+				if (argument != -1) { argument = -1; break; }
+				argument = column;
+			}
+			StringBuilder code = new StringBuilder("    private void runMarginal" + request
+					+ "(org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor m, boolean constantGroups) {\n"
+					+ "        int group = -1;\n");
+			if (argument >= 0) {
+				code.append("        if (m.windowColumn(").append(request).append(") == ").append(argument).append(") {\n")
+						.append("            long scale = 0L;\n            int size;\n            while ((size = m.nextWindow(")
+						.append(request).append(")) != 0) {\n")
+						.append("                long[] ids = m.windowValues(), weights = m.windowWeights();\n")
+						.append("                int start = m.windowStart(), end = start + size;\n");
+				for (int column : projected) if (column != argument) code.append("                v")
+						.append(plan.outCols[column]).append(" = m.value(").append(column).append(");\n");
+				// All grouping columns are scalar on this path; no group handle survives the batch.
+				code.append("                if (group < 0) group = marginalGroup();\n")
+						.append("                for (int position = start; position < end; position++) {\n")
+						.append("                    v").append(plan.outCols[argument]).append(" = ids[position];\n");
+				if (exact) code.append("                    long weight = 1L;\n                    if (").append(observed).append(") {\n")
+						.append("                        if (scale == 0L) scale = m.windowScale();\n")
+						.append("                        weight = Math.multiplyExact(scale, weights[position]);\n                    }\n");
+				code.append("                    updateMarginal").append(request).append("(").append(exact ? "weight" : "1L")
+						.append(", group);\n                }\n            }\n            return;\n        }\n");
+			}
+			code.append("        while (m.next(").append(request).append(")) {\n");
+			for (int column : projected) code.append("            v").append(plan.outCols[column])
+					.append(" = m.value(").append(column).append(");\n");
+			code.append("            if (group < 0 || !constantGroups) group = marginalGroup();\n")
+					.append("            updateMarginal").append(request).append("(")
+					.append(exact ? observed + " ? m.multiplicity() : 1L" : "1L")
+					.append(", group);\n        }\n    }\n\n");
+			methods.add(code.toString());
+		}
+
+		private void emitMarginalGroupResolver(Aggregate aggregate) {
+			StringBuilder code = new StringBuilder("    private int marginalGroup() {\n");
+			if (kernel.boundedGroups) code.append("        if (groupSink != null) return -1;\n");
+			if (aggregate.groupCols.length == 0) code.append("        int g = 0;\n");
+			else if (aggregate.groupCols.length == 1) code.append("        int g = groups.getOrInsert(v")
+					.append(aggregate.groupCols[0]).append(");\n");
+			else {
+				for (int i = 0; i < aggregate.groupCols.length; i++) code.append("        groupScratch[").append(i)
+						.append("] = v").append(aggregate.groupCols[i]).append(";\n");
+				code.append("        int g = groupKeys.internOrGet(groupScratch, 0);\n");
+			}
+			code.append("        ensure(g);\n        return g;\n    }\n\n");
+			methods.add(code.toString());
+		}
+
 		private void emitMarginalUpdate(Aggregate aggregate, int request, int[] channels) {
-			StringBuilder source = new StringBuilder("    private void updateMarginal" + request + "(long n) {\n");
+			StringBuilder source = new StringBuilder("    private void updateMarginal" + request + "(long n) {\n"
+					+ "        updateMarginal" + request + "(n, -1);\n    }\n\n"
+					+ "    private void updateMarginal" + request + "(long n, int g) {\n");
 			if (kernel.boundedGroups) {
 				source.append("        if (groupSink != null) {\n");
 				for (int i = 0; i < aggregate.groupCols.length; i++) source.append("            boundedGroupInput[").append(i)
@@ -2102,15 +2165,7 @@ final class LmdbNativeKernelEmitter {
 								? "0L" : "v" + aggregate.outputs[channel].col).append(", n);\n");
 				source.append("            return;\n        }\n");
 			}
-			if (aggregate.groupCols.length == 0) source.append("        int g = 0;\n");
-			else if (aggregate.groupCols.length == 1) source.append("        int g = groups.getOrInsert(v")
-					.append(aggregate.groupCols[0]).append(");\n");
-			else {
-				for (int i = 0; i < aggregate.groupCols.length; i++) source.append("        groupScratch[").append(i)
-						.append("] = v").append(aggregate.groupCols[i]).append(";\n");
-				source.append("        int g = groupKeys.internOrGet(groupScratch, 0);\n");
-			}
-			source.append("        ensure(g);\n");
+			source.append("        if (g < 0) g = marginalGroup();\n");
 			for (int i : channels) {
 				AggregateOutput output = aggregate.outputs[i];
 				String value = "v" + output.col;

@@ -2161,6 +2161,18 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		long used = 0L;
 		for (int[] projection : columns) for (int column : projection) used |= 1L << column;
 		final long demanded = used;
+		long groupMask = 0L;
+		for (int c = 0; c < plan.outCols.length; c++)
+			for (int group : aggregate.groupCols) if (plan.outCols[c] == group) groupMask |= 1L << c;
+		final long groupedColumns = groupMask;
+		int[] arguments = new int[columns.length];
+		java.util.Arrays.fill(arguments, -1);
+		for (int p = 0; p < columns.length; p++) {
+			for (int c : columns[p]) if ((groupedColumns & (1L << c)) == 0L) {
+				if (arguments[p] != -1) { arguments[p] = -1; break; }
+				arguments[p] = c;
+			}
+		}
 		return () -> {
 			KernelPlan bound = context.plans[plan.plan];
 			for (int i = 0; i < plan.inputs.length; i++) bound.setInput(i, read(plan.inputs[i]));
@@ -2184,14 +2196,36 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						input.finishFlat();
 						continue;
 					}
-					for (int p = 0; p < columns.length; p++) while (input.next(p)) {
-					for (int column : columns[p]) v[plan.outCols[column]] = input.value(column);
-					boolean observed = false;
-					if (exact[p]) for (int c : channels[p]) {
-						AggregateOutput o = aggregate.outputs[c];
-						if (o.kind == LmdbNativeKernelIr.AGG_COUNT_STAR || v[o.col] != -1L) { observed = true; break; }
-					}
-					updateMarginal(channels[p], observed ? input.multiplicity() : 1L);
+					boolean constantGroups = (input.constantColumns() & groupedColumns) == groupedColumns;
+					for (int p = 0; p < columns.length; p++) {
+						int group = -1;
+						if (arguments[p] >= 0 && input.windowColumn(p) == arguments[p]) {
+							long scale = 0L;
+							int size;
+							while ((size = input.nextWindow(p)) != 0) {
+								long[] ids = input.windowValues(), weights = input.windowWeights();
+								int start = input.windowStart(), end = start + size;
+								for (int column : columns[p]) if (column != arguments[p])
+									v[plan.outCols[column]] = input.value(column);
+								if (group < 0) group = marginalGroup();
+								for (int i = start; i < end; i++) {
+									v[plan.outCols[arguments[p]]] = ids[i];
+									long weight = 1L;
+									if (exact[p] && marginalWeightObserved(channels[p])) {
+										if (scale == 0L) scale = input.windowScale();
+										weight = Math.multiplyExact(scale, weights[i]);
+									}
+									updateMarginal(channels[p], weight, group);
+								}
+							}
+							continue;
+						}
+						while (input.next(p)) {
+							for (int column : columns[p]) v[plan.outCols[column]] = input.value(column);
+							if (group < 0 || !constantGroups) group = marginalGroup();
+							updateMarginal(channels[p], exact[p] && marginalWeightObserved(channels[p])
+									? input.multiplicity() : 1L, group);
+						}
 					}
 				}
 			} catch (RuntimeException | Error problem) { failure = problem; throw problem; }
@@ -2204,7 +2238,32 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		};
 	}
 
+	private boolean marginalWeightObserved(int[] channels) {
+		for (int channel : channels) {
+			AggregateOutput output = aggregate.outputs[channel];
+			if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR || v[output.col] != -1L) return true;
+		}
+		return false;
+	}
+
+	private int marginalGroup() {
+		if (groupSink != null) return -1; // its groups may be invalidated by a spill
+		int group;
+		if (aggregate.groupCols.length == 0) group = 0;
+		else if (aggregate.groupCols.length == 1) group = groups.getOrInsert(v[aggregate.groupCols[0]]);
+		else {
+			for (int i = 0; i < aggregate.groupCols.length; i++) groupScratch[i] = v[aggregate.groupCols[i]];
+			group = groupKeys.internOrGet(groupScratch, 0);
+		}
+		ensure(group);
+		return group;
+	}
+
 	private void updateMarginal(int[] channels, long weight) {
+		updateMarginal(channels, weight, -1);
+	}
+
+	private void updateMarginal(int[] channels, long weight, int group) {
 		if (groupSink != null) {
 			for (int i = 0; i < aggregate.groupCols.length; i++) boundedGroupInput[i] = v[aggregate.groupCols[i]];
 			if (channels.length == 0) groupSink.addChannel(boundedGroupInput, -1, -1L, 1L);
@@ -2215,14 +2274,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}
 			return;
 		}
-		int group;
-		if (aggregate.groupCols.length == 0) group = 0;
-		else if (aggregate.groupCols.length == 1) group = groups.getOrInsert(v[aggregate.groupCols[0]]);
-		else {
-			for (int i = 0; i < aggregate.groupCols.length; i++) groupScratch[i] = v[aggregate.groupCols[i]];
-			group = groupKeys.internOrGet(groupScratch, 0);
-		}
-		ensure(group);
+		if (group < 0) group = marginalGroup();
 		for (int i : channels) {
 			AggregateOutput output = aggregate.outputs[i]; long value = output.col < 0 ? 0L : v[output.col];
 			switch (output.kind) {

@@ -181,7 +181,8 @@ public final class FactorProductCursor implements AutoCloseable {
 		}
 		BorrowedFactorBatch batch = environment.batch(slot);
 		int capacity = (int) Math.min(window, environment.count(slot));
-		if (boundBatches[slot] != batch || readerWindows[slot] < capacity) {
+		if (boundBatches[slot] == null || boundBatches[slot].source() != batch.source()
+				|| readerWindows[slot] < capacity) {
 			if (readers[slot] != null) readers[slot].close();
 			readers[slot] = null;
 			boundBatches[slot] = null;
@@ -189,7 +190,8 @@ public final class FactorProductCursor implements AutoCloseable {
 			readerWindows[slot] = capacity;
 			boundBatches[slot] = batch;
 		}
-		readers[slot].bind(environment.lane(slot));
+		boundBatches[slot] = batch;
+		readers[slot].bind(batch, environment.lane(slot));
 		if (!readers[slot].next()) return false;
 		capture(index);
 		return true;

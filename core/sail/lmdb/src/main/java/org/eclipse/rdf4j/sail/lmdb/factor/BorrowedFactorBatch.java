@@ -205,7 +205,7 @@ public final class BorrowedFactorBatch {
 	 * (and preserve the exact multiset). Consumers requiring uniqueness must coalesce them.
 	 */
 	public static final class Cursor implements AutoCloseable {
-		private final BorrowedFactorBatch batch;
+		private BorrowedFactorBatch batch;
 		private final Source source;
 		private final boolean extraValidation;
 		private final Reader reader;
@@ -235,6 +235,7 @@ public final class BorrowedFactorBatch {
 
 		public void bind(int lane) {
 			checkOpen();
+			bound = false;
 			end = batch.count(lane);
 			this.lane = lane;
 			generation = batch.generation;
@@ -243,6 +244,19 @@ public final class BorrowedFactorBatch {
 			value = weight = 0L;
 			if (end != 0L) reader.bind(batch, lane);
 			bound = true;
+		}
+
+		/**
+		 * Reuses this decoder and its bounded window for another descriptor batch owned by the
+		 * identical source. Snapshot equality alone is insufficient: the source owns the reader.
+		 * Rebinding ends the previous traversal, just like {@link #bind(int)}.
+		 */
+		public void bind(BorrowedFactorBatch nextBatch, int lane) {
+			checkOpen();
+			if (Objects.requireNonNull(nextBatch, "batch").source != source)
+				throw new IllegalArgumentException("cannot transfer a reader to another owner");
+			batch = nextBatch;
+			bind(lane);
 		}
 
 		public boolean next() {

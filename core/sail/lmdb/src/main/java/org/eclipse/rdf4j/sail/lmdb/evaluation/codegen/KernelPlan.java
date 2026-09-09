@@ -72,6 +72,12 @@ public interface KernelPlan extends AutoCloseable {
 
 	interface ProjectionCursor extends AutoCloseable {
 		boolean nextBatch();
+		/**
+		 * Output-column mask proven invariant throughout the current batch, across all projections.
+		 * Zero is the conservative default. A declaration concerns exact IDs, not merely equal hashes.
+		 * Consumers must not retain a group/table handle across batches or a spill-state replacement.
+		 */
+		default long constantColumns() { return 0L; }
 		/** Start/advance one projection of the current batch; finish it before selecting another. */
 		boolean next(int projection);
 		/** An ID for a requested output position, never an address or a deferred handle. */
