@@ -210,6 +210,7 @@ public final class BindingUniverse {
 	}
 
 	static boolean plannerName(String name) {
-		return name != null && !name.isBlank() && !name.startsWith("_const_");
+		// Constant identity is supplied by Var.isConstant(), never by the spelling of a binding name.
+		return name != null && !name.isBlank();
 	}
 }

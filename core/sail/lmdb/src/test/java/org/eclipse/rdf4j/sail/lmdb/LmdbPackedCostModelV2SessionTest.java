@@ -4,7 +4,7 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/documents/edl-v10.php.
+ * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
@@ -273,6 +273,20 @@ class LmdbPackedCostModelV2SessionTest {
 
 	@Test
 	void mappedV2SemiAntiUsesOmniCorrelationInsteadOfScalarPassThrough() throws Exception {
+		assertMappedSemiAntiConfidence(1.0d, 0.95d);
+	}
+
+	@Test
+	void mappedV2SemiAntiFallsBackForZeroConfidenceLeaf() throws Exception {
+		assertMappedSemiAntiConfidence(0.0d, 0.95d);
+	}
+
+	@Test
+	void mappedV2SemiAntiFallsBackForZeroConfidenceJoin() throws Exception {
+		assertMappedSemiAntiConfidence(1.0d, 0.0d);
+	}
+
+	private void assertMappedSemiAntiConfidence(double leafConfidence, double joinConfidence) throws Exception {
 		LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
 		LmdbStatisticsService statistics = mock(LmdbStatisticsService.class);
 		FrontierStatisticsStatus status = mock(FrontierStatisticsStatus.class);
@@ -296,11 +310,11 @@ class LmdbPackedCostModelV2SessionTest {
 			FrontierLeafProbe probe = invocation.getArgument(0);
 			double rows = probe.predicateId() == 502L ? 200.0d : 100.0d;
 			return new FrontierLeafEstimate(
-					rows, rows, rows, 1.0d, "frontier-v2-omni-leaf", FrontierFallbackReason.NONE);
+					rows, rows, rows, leafConfidence, "frontier-v2-omni-leaf", FrontierFallbackReason.NONE);
 		});
 		when(view.estimateProjectedDistinct(any(), anyInt())).thenReturn(100.0d);
 		when(view.estimateJoin(any())).thenReturn(new FrontierJoinEstimate(
-				180.0d, 170.0d, 190.0d, 0.95d,
+				180.0d, 170.0d, 190.0d, joinConfidence,
 				"frontier-v2-omni-center", FrontierFallbackReason.NONE));
 		StatementPattern outer = new StatementPattern(
 				Var.of("node"), Var.of("outerPredicate", outerPredicate), Var.of("value"));
@@ -325,6 +339,13 @@ class LmdbPackedCostModelV2SessionTest {
 				session.refineOperator(relationId,
 						call.operatorContext(outerEstimate.outputRows(), outerEstimate.evidenceStateId()), output);
 
+				if (leafConfidence == 0.0d || joinConfidence == 0.0d) {
+					assertEquals(outerEstimate.outputRows(), output.outputRows(), 0.0d,
+							"untrusted correlation estimates must preserve the structural fallback");
+					assertEquals(0.0d,
+							output.plannedDoubleMetric("plannedSemiAntiHitProbability", Double.NaN), 0.0d);
+					continue;
+				}
 				assertEquals(10.0d, output.outputRows(), 1.0e-9,
 						"180 joined rows over two blocker rows per key imply 90 matched outer rows");
 				assertEquals(0.9d,
@@ -464,6 +485,20 @@ class LmdbPackedCostModelV2SessionTest {
 
 	@Test
 	void mappedLearnedStateRemainsComposableWhenDetached() throws Exception {
+		assertDetachedStateGuarantee(EvidenceGuarantee.LEARNED_CALIBRATED, 25.0d);
+	}
+
+	@Test
+	void mappedScalarFallbackRetainsItsClassificationWhenDetached() throws Exception {
+		assertDetachedStateGuarantee(EvidenceGuarantee.SCALAR_FALLBACK, 25.0d);
+	}
+
+	@Test
+	void mappedScalarFallbackZeroDoesNotBecomeExactWhenDetached() throws Exception {
+		assertDetachedStateGuarantee(EvidenceGuarantee.SCALAR_FALLBACK, 0.0d);
+	}
+
+	private void assertDetachedStateGuarantee(EvidenceGuarantee guarantee, double rows) throws Exception {
 		LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
 		FrontierStatisticsView view = mock(FrontierStatisticsView.class);
 		when(view.generationId()).thenReturn(17L);
@@ -474,9 +509,9 @@ class LmdbPackedCostModelV2SessionTest {
 		PackedCostSession delegate = new PackedCostSession() {
 			@Override
 			public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
-				output.setRows(25.0d, 25.0d);
-				output.setEvidenceGuarantee(EvidenceGuarantee.LEARNED_CALIBRATED);
-				output.putPlannedDoubleMetric("plannedFrontierLowerRows", 10.0d);
+				output.setRows(rows, rows);
+				output.setEvidenceGuarantee(guarantee);
+				output.putPlannedDoubleMetric("plannedFrontierLowerRows", Math.min(rows, 10.0d));
 				output.putPlannedDoubleMetric("plannedFrontierUpperRows", 40.0d);
 				output.putPlannedDoubleMetric("plannedFrontierConfidence", 0.90d);
 			}
@@ -497,8 +532,8 @@ class LmdbPackedCostModelV2SessionTest {
 			FrontierEvidenceBundle detached = session.detachEvidence(new int[] { estimate.evidenceStateId() });
 			int stateOrdinal = detached.requestedStateOrdinal(0);
 
-			assertEquals(EvidenceGuarantee.LEARNED_CALIBRATED, detached.guarantee(stateOrdinal));
-			assertEquals(10.0d, detached.summary(stateOrdinal).lowerRows(), 0.0d);
+			assertEquals(guarantee, detached.guarantee(stateOrdinal));
+			assertEquals(Math.min(rows, 10.0d), detached.summary(stateOrdinal).lowerRows(), 0.0d);
 			assertEquals(40.0d, detached.summary(stateOrdinal).upperRows(), 0.0d);
 		}
 	}

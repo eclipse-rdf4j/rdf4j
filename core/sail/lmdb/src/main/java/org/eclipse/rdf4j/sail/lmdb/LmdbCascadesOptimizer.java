@@ -101,6 +101,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	private final LmdbEstimatorRuntime runtime;
 	private final EvaluationStrategy evaluationStrategy;
 	private final OptionalLong executionSnapshotEpoch;
+	private final boolean distinctCursorSkipAllowed;
 	private final SailDatasetTripleTermSource frontierStatementSource;
 	private final LmdbPackedPredicateRangeProvider rangeProvider;
 
@@ -126,6 +127,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		// through an uncommitted changeset overlay (or an unknown wrapper), where guarantee-seeded proof rewrites
 		// (filter drops, empty-set alternatives) would be unsound for the rows the query actually sees.
 		boolean committedSnapshotOnly = tripleSource == null || executionSnapshotEpoch.isPresent();
+		this.distinctCursorSkipAllowed = committedSnapshotOnly;
 		this.rangeProvider = runtime == null || !committedSnapshotOnly
 				? null
 				: new LmdbPackedPredicateRangeProvider(runtime);
@@ -141,6 +143,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		this.packedPlanCache = runtime.cascadesPlanCache();
 		this.frontierStatementSource = null;
 		this.executionSnapshotEpoch = OptionalLong.empty();
+		this.distinctCursorSkipAllowed = true;
 		this.rangeProvider = new LmdbPackedPredicateRangeProvider(runtime);
 	}
 
@@ -689,6 +692,21 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 	 */
 	private void annotateDistinctPhysicalRequirements(TupleExpr tupleExpr) {
 		if (tupleExpr == null) {
+			return;
+		}
+		// A changeset can delete the cursor's representative after the backing store has skipped the rest of
+		// its prefix. Re-prove this access path for the current source, including algebra reused from an
+		// earlier committed query; other physical metadata (in particular pushed ID filters) remains intact.
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				boolean cursorSkip = LmdbDistinctCursorSkipSupport.ACCESS_MODE.equals(
+						node.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
+				node.removeStringMetricsPlannedIf(name -> name.startsWith("plannedDistinct")
+						|| cursorSkip && TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE.equals(name));
+			}
+		});
+		if (!distinctCursorSkipAllowed) {
 			return;
 		}
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {

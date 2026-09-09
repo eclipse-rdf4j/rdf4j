@@ -56,8 +56,7 @@ class HashJoinBindingContractTest {
 	@Test
 	void excludesSyntheticConstantsAndUsesDeterministicOrdering() {
 		HashJoinBindingContract contract = HashJoinBindingContract.from(
-				new StreamBindingSchema(Set.of("z", "a", "_const_left"), Set.of("z", "a", "_const_left")),
-				new StreamBindingSchema(Set.of("a", "z", "_const_right"), Set.of("a", "z", "_const_right")));
+				pattern("z", "a"), pattern("a", "z"));
 
 		assertEquals(List.of("a", "z"), contract.lookupBindings());
 		assertEquals(List.of("a", "z"), contract.compatibilityBindings());
@@ -128,12 +127,12 @@ class HashJoinBindingContractTest {
 	}
 
 	@Test
-	void legacyContractDropsReservedNames() {
+	void legacyContractPreservesUserNamesResemblingConstants() {
 		HashJoinBindingContract contract = HashJoinBindingContract
 				.legacy(new String[] { "shared", "_const_type", "shared" });
 
-		assertEquals(List.of("shared"), contract.lookupBindings());
-		assertEquals(List.of("shared"), contract.compatibilityBindings());
+		assertEquals(List.of("_const_type", "shared"), contract.lookupBindings());
+		assertEquals(List.of("_const_type", "shared"), contract.compatibilityBindings());
 	}
 
 	private static BindingSetAssignment assignment(String suffix) {

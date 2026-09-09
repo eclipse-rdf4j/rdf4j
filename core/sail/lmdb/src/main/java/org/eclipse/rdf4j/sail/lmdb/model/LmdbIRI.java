@@ -34,7 +34,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 	private long internalID;
 
-	private boolean initialized = false;
+	private volatile boolean initialized = false;
 	/**
 	 * The IRI string.
 	 */

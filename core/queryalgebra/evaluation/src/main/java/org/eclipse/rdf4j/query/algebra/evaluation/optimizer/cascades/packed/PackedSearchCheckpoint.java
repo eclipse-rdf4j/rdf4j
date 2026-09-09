@@ -4,7 +4,7 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/documents/edl-v10.php.
+ * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
@@ -39,7 +39,6 @@ final class PackedSearchCheckpoint {
 	private final long[] costPruningEvidenceGenerations;
 	private final double[] costPruningMargins;
 	private final long cumulativeWorkUnits;
-	private final long retainedBytes;
 
 	private PackedSearchCheckpoint(PackedQueryFamilyIdentity familyIdentity, Phase phase,
 			PackedSearchCompletionStatus completionStatus, PackedPlanRecipe continuationRecipe, int[] phaseCursors,
@@ -67,7 +66,6 @@ final class PackedSearchCheckpoint {
 			throw new IllegalArgumentException("checkpoint generations and work must be nonnegative");
 		}
 		this.cumulativeWorkUnits = cumulativeWorkUnits;
-		retainedBytes = retainedBytes();
 	}
 
 	static PackedSearchCheckpoint incomplete(PackedQueryFamilyIdentity familyIdentity,

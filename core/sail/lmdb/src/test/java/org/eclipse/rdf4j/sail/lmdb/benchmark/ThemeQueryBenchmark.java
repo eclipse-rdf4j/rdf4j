@@ -176,25 +176,37 @@ public class ThemeQueryBenchmark {
 		storeConfig = createStoreConfig();
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
-		ensureDataLoadedAndValidated();
-		waitForSketchesIfEnabled();
-		recordInitializedDbFileSizes();
-		if (QueryPlanCapture.isCaptureEnabled()) {
-			captureQueryPlanSnapshot();
-		}
-
-		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				System.out.println("\n### Optimized Query - Before running the query ###");
-				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-				System.out.println(explain);
-				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-				System.out.println();
+		try {
+			ensureDataLoadedAndValidated();
+			waitForSketchesIfEnabled();
+			recordInitializedDbFileSizes();
+			if (QueryPlanCapture.isCaptureEnabled()) {
+				captureQueryPlanSnapshot();
 			}
 
-		}
+			if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					System.out.println("\n### Optimized Query - Before running the query ###");
+					Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+					System.out.println(explain);
+					TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+					System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+					System.out.println();
+				}
 
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				repository.shutDown();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			} finally {
+				repository = null;
+				store = null;
+				storeConfig = null;
+			}
+			throw failure;
+		}
 	}
 
 	@TearDown(Level.Trial)

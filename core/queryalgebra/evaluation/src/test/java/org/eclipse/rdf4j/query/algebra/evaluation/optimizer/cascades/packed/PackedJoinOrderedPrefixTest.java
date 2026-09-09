@@ -560,7 +560,8 @@ class PackedJoinOrderedPrefixTest {
 			}
 		};
 
-		runIncumbentSearch(leftDeepJoin(factors), Long.MAX_VALUE, costs);
+		// Exercise retained prefix continuations without exhaustively enumerating every 17-factor tree.
+		runIncumbentSearch(leftDeepJoin(factors), 10_000L, costs);
 
 		List<List<String>> distinctPrefixes = prefixesSeenByThirdFactor.stream().distinct().toList();
 		assertTrue(distinctPrefixes.contains(List.of("urn:f1", "urn:f0")),

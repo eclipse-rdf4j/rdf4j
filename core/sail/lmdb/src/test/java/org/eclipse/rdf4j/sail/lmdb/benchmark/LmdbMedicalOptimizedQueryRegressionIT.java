@@ -261,20 +261,12 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		try {
 			state.setup();
 			ExplainedPlanSnapshot snapshot = state.explainedPlanSnapshot();
-			String rendered = snapshot.renderedQuery();
 			String plan = snapshot.plan();
 			assertAll(
 					() -> assertEquals("COMPLETE", snapshot.completeness(),
 							"MEDICAL q9 must produce a complete Cascades winner\n"
 									+ snapshot.diagnostics() + "\n" + plan),
-					() -> assertExactFiniteDomain(snapshot.optimized(), "condCode",
-							Set.of("DX-200", "DX-201", "DX-202")),
-					() -> assertBefore(rendered, FINITE_CONDITION_CODE_RELATION,
-							"?cond <http://example.com/theme/medical/code> ?condCode",
-							"The exact condition-code domain must restrict the broad condition access"),
-					() -> assertFalse(
-							rendered.contains("FILTER (?condCode IN (\"DX-200\", \"DX-201\", \"DX-202\"))"),
-							"The condition-code filter must be satisfied by the finite relation\n" + rendered),
+					() -> assertConditionCodeAlternativeOrCheaperBoundLookup(snapshot),
 					() -> assertTrue(plan.contains("optimizer.semiAntiAlgorithm=materialized-hash")
 							&& plan.contains("plannedPhysicalImplementation=materialized-minus-compatibility"),
 							"The originating anti-join event must remain materialized instead of reopening its RHS\n"
@@ -315,7 +307,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 			assertEquals("COMPLETE", snapshot.completeness(),
 					"MEDICAL q9 must produce a complete all-theme Cascades winner\n"
 							+ snapshot.diagnostics() + "\n" + plan);
-			assertExactFiniteDomain(snapshot.optimized(), "condCode", Set.of("DX-200", "DX-201", "DX-202"));
+			assertConditionCodeAlternativeOrCheaperBoundLookup(snapshot);
 			assertEquals(1, semiAntiNodes.size(),
 					"MEDICAL q9 must expose one selected semi/anti implementation\n" + plan);
 			TupleExpr semiAnti = semiAntiNodes.getFirst();
@@ -459,17 +451,28 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 				"Expected one exact finite domain for ?" + variable + " in the optimized algebra\n" + optimized);
 	}
 
+	private static void assertConditionCodeAlternativeOrCheaperBoundLookup(ExplainedPlanSnapshot snapshot) {
+		assertFiniteCodeAlternativeOrCheaperBoundLookup(snapshot, "condCode", Set.of("DX-200", "DX-201", "DX-202"),
+				FINITE_CONDITION_CODE_RELATION, "FILTER (?condCode IN (\"DX-200\", \"DX-201\", \"DX-202\"))");
+	}
+
 	private static void assertFiniteCodeAlternativeOrCheaperBoundLookup(ExplainedPlanSnapshot snapshot) {
+		assertFiniteCodeAlternativeOrCheaperBoundLookup(snapshot, "code", Set.of("DX-200", "DX-201"),
+				FINITE_CODE_RELATION, "FILTER ((?code = \"DX-200\") || (?code = \"DX-201\"))");
+	}
+
+	private static void assertFiniteCodeAlternativeOrCheaperBoundLookup(ExplainedPlanSnapshot snapshot,
+			String variable, Set<String> expectedValues, Pattern finiteRelation, String scalarPredicate) {
 		TupleExpr optimized = snapshot.optimized();
 		String rendered = snapshot.renderedQuery();
 		String plan = snapshot.plan();
-		if (containsFiniteBinding(optimized, "code")) {
+		if (containsFiniteBinding(optimized, variable)) {
 			assertAll(
-					() -> assertExactFiniteDomain(optimized, "code", Set.of("DX-200", "DX-201")),
-					() -> assertBefore(rendered, FINITE_CODE_RELATION,
-							"?cond <http://example.com/theme/medical/code> ?code",
+					() -> assertExactFiniteDomain(optimized, variable, expectedValues),
+					() -> assertBefore(rendered, finiteRelation,
+							"?cond <http://example.com/theme/medical/code> ?" + variable,
 							"The selected exact code relation must restrict the condition-code access"),
-					() -> assertFiniteCodeLookupJoin(optimized, plan));
+					() -> assertFiniteCodeLookupJoin(optimized, plan, variable, expectedValues.size()));
 			return;
 		}
 
@@ -487,7 +490,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		StatementPattern codePattern = codePatterns.getFirst();
 		String estimateSource = codePattern.getStringMetricPlanned("plannedEstimateSource");
 		assertAll(
-				() -> assertTrue(rendered.contains("FILTER ((?code = \"DX-200\") || (?code = \"DX-201\"))"),
+				() -> assertTrue(rendered.contains(scalarPredicate),
 						"The original scalar predicate must remain executable when its lookup wins\n" + rendered),
 				() -> assertTrue(plan.contains("rule=packed-finite-filter-values"),
 						"The exact finite alternative must still be generated and costed\n" + plan),
@@ -503,15 +506,15 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 								+ estimateSource + "\n" + plan));
 	}
 
-	private static void assertFiniteCodeLookupJoin(TupleExpr optimized, String plan) {
+	private static void assertFiniteCodeLookupJoin(TupleExpr optimized, String plan, String variable, int valueCount) {
 		List<Join> matchingJoins = new ArrayList<>();
 		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Join node) {
-				boolean finiteThenCode = isFiniteCodeRelation(node.getLeftArg())
+				boolean finiteThenCode = isFiniteCodeRelation(node.getLeftArg(), variable)
 						&& isMedicalCodePattern(node.getRightArg());
 				boolean codeThenFinite = isMedicalCodePattern(node.getLeftArg())
-						&& isFiniteCodeRelation(node.getRightArg());
+						&& isFiniteCodeRelation(node.getRightArg(), variable);
 				if (finiteThenCode || codeThenFinite) {
 					matchingJoins.add(node);
 				}
@@ -527,7 +530,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 				: (StatementPattern) join.getRightArg();
 		String estimateSource = codePattern.getStringMetricPlanned("plannedEstimateSource");
 		assertAll(
-				() -> assertTrue(isFiniteCodeRelation(join.getLeftArg()),
+				() -> assertTrue(isFiniteCodeRelation(join.getLeftArg(), variable),
 						"The finite code relation must be the selected-prefix input\n" + plan),
 				() -> assertTrue(isMedicalCodePattern(join.getRightArg()),
 						"The condition-code access must be the bound lookup input\n" + plan),
@@ -538,14 +541,16 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 						.contains(estimateSource),
 						"The code access must retain finite bound-lookup provenance, but was " + estimateSource
 								+ "\n" + plan),
-				() -> assertEquals(2.0d, codePattern.getDoubleMetricPlanned("plannedDistinctLookupBindings"), 0.0d,
-						"The two exact code values must produce two distinct lookups\n" + plan),
-				() -> assertEquals(2.0d, codePattern.getDoubleMetricPlanned("plannedRepeatedInvocations"), 0.0d,
+				() -> assertEquals((double) valueCount,
+						codePattern.getDoubleMetricPlanned("plannedDistinctLookupBindings"), 0.0d,
+						"Each exact code value must produce a distinct lookup\n" + plan),
+				() -> assertEquals((double) valueCount,
+						codePattern.getDoubleMetricPlanned("plannedRepeatedInvocations"), 0.0d,
 						"The code access must open once for each exact code value\n" + plan));
 	}
 
-	private static boolean isFiniteCodeRelation(TupleExpr tupleExpr) {
-		return tupleExpr instanceof BindingSetAssignment assignment && assignment.getBindingNames().contains("code");
+	private static boolean isFiniteCodeRelation(TupleExpr tupleExpr, String variable) {
+		return tupleExpr instanceof BindingSetAssignment assignment && assignment.getBindingNames().contains(variable);
 	}
 
 	private static boolean isMedicalCodePattern(TupleExpr tupleExpr) {

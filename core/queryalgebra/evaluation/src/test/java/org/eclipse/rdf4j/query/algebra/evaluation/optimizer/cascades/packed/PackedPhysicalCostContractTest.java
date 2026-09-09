@@ -829,6 +829,20 @@ class PackedPhysicalCostContractTest {
 
 	@Test
 	void contextualCompositeWinnerRetainsWholePrefixInvocationDomain() {
+		assertContextualInvocationDomain(false, false);
+	}
+
+	@Test
+	void contextualFilterOverJoinRetainsWholePrefixInvocationDomain() {
+		assertContextualInvocationDomain(true, false);
+	}
+
+	@Test
+	void contextualFilterOverLeafRetainsWholePrefixInvocationDomain() {
+		assertContextualInvocationDomain(true, true);
+	}
+
+	private void assertContextualInvocationDomain(boolean filtered, boolean singleLeaf) {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern outer = new StatementPattern(Var.of("subject"),
 				Var.of("outerPredicate", values.createIRI("urn:outer")), Var.of("outerValue"));
@@ -836,8 +850,9 @@ class PackedPhysicalCostContractTest {
 				Var.of("firstPredicate", values.createIRI("urn:first")), Var.of("joinKey"));
 		StatementPattern second = new StatementPattern(Var.of("joinKey"),
 				Var.of("secondPredicate", values.createIRI("urn:second")), Var.of("result"));
-		Extension nested = new Extension(new Join(first, second),
-				new ExtensionElem(Var.of("result"), "alias"));
+		TupleExpr input = singleLeaf ? first : new Join(first, second);
+		TupleExpr nested = filtered ? new Filter(input, new ValueConstant(values.createLiteral(true)))
+				: new Extension(input, new ExtensionElem(Var.of("result"), "alias"));
 		Union source = new Union(outer, nested);
 		PackedCostModel model = new PackedCostModel() {
 
@@ -880,7 +895,8 @@ class PackedPhysicalCostContractTest {
 			@Override
 			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
 					PackedCostEstimate output) {
-				if (query.materializeRelation(relationId) instanceof Extension) {
+				if (query.materializeRelation(relationId) instanceof Extension
+						|| query.isFilter(relationId)) {
 					output.setLocalPhysicalCost(0.0d, 0.0d, 0.0d, context.leftInputRows(), 0.0d, 0.0d,
 							0.0d, context.leftInputRows(), 0.0d, 0.0d);
 				}

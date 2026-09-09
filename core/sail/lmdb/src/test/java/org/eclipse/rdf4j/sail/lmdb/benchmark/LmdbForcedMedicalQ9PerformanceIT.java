@@ -82,12 +82,20 @@ class LmdbForcedMedicalQ9PerformanceIT {
 				assertEquals("ok", comparison.forced().status(), report);
 				assertFalse(catalogSnapshot.plan().contains("plannerId=lmdb-sketch"), report);
 				assertFalse(forcedSnapshot.plan().contains("plannerId=lmdb-sketch"), report);
-				assertTrue(catalogSnapshot.plan().contains("HashJoinIteration"), report);
-				assertTrue(forcedSnapshot.plan().contains("HashJoinIteration"), report);
+				assertEquals(expectedCount, comparison.catalog().count(), report);
+				assertEquals(expectedCount, comparison.forced().count(), report);
+				assertSelectedMinus(catalogSnapshot.plan(), report);
+				assertSelectedMinus(forcedSnapshot.plan(), report);
 			} finally {
 				benchmark.tearDown();
 			}
 		}
+	}
+
+	private static void assertSelectedMinus(String plan, String report) {
+		// Indexed joins may beat a hash join; the semantic anti-join must still be planned and executed.
+		assertTrue(plan.contains("Difference") || plan.contains("optimizer.semiAntiKind=minus-assured-shared"),
+				report);
 	}
 
 	private static ThemeQueryBenchmark newBenchmark() {

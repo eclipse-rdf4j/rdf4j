@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -54,6 +55,7 @@ final class LmdbMappedFrontierLearningSession {
 	private final String[] relationTopologies;
 	private final LmdbRuntimeFeedbackDescriptor.LogicalGroupOrigin[] relationOrigins;
 	private final int[] contextualCanonicalGroups;
+	private final BitSet[] operatorRelationGroups;
 	private final HashMap<String, Object> pinnedPosteriors = new HashMap<>();
 
 	LmdbMappedFrontierLearningSession(LmdbEstimatorRuntime runtime, PackedQueryView query,
@@ -70,6 +72,7 @@ final class LmdbMappedFrontierLearningSession {
 		this.relationTopologies = new String[query.relationCount() + 1];
 		this.relationOrigins = new LmdbRuntimeFeedbackDescriptor.LogicalGroupOrigin[query.relationCount() + 1];
 		this.contextualCanonicalGroups = buildContextualCanonicalGroups();
+		this.operatorRelationGroups = new BitSet[query.relationCount() + 1];
 	}
 
 	void applyLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
@@ -86,7 +89,42 @@ final class LmdbMappedFrontierLearningSession {
 	}
 
 	void applyOperator(int relationId, int[] relations, PackedCostContext context, PackedCostEstimate output) {
-		apply(relationId, relations, context, output, true, true, true);
+		boolean ownInput = operatorContainsPrefix(contextualCanonicalGroup(relationId), context);
+		// A contextual operator carries the entire inherited prefix in its row field. Its one-invocation
+		// logical posterior is not that cardinality; retain physical feedback without replacing those rows.
+		apply(relationId, relations, context, output, ownInput, ownInput, ownInput);
+	}
+
+	private boolean operatorContainsPrefix(int relationId, PackedCostContext context) {
+		if (context == null || context.prefixRelationCount() == 0) {
+			return true;
+		}
+		if (relationId <= 0 || relationId > query.relationCount()) {
+			return false;
+		}
+		BitSet groups = operatorRelationGroups[relationId];
+		if (groups == null) {
+			groups = new BitSet();
+			collectOperatorGroups(relationId, groups, new BitSet());
+			operatorRelationGroups[relationId] = groups;
+		}
+		for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+			if (!groups.get(memberGroup(context.prefixRelationId(ordinal)))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void collectOperatorGroups(int relationId, BitSet groups, BitSet visited) {
+		if (visited.get(relationId)) {
+			return;
+		}
+		visited.set(relationId);
+		groups.set(memberGroup(relationId));
+		for (int ordinal = 0; ordinal < query.childCount(relationId); ordinal++) {
+			collectOperatorGroups(query.childRelationId(relationId, ordinal), groups, visited);
+		}
 	}
 
 	void applyIntermediateJoin(int[] relations, PackedCostContext context, PackedCostEstimate output) {

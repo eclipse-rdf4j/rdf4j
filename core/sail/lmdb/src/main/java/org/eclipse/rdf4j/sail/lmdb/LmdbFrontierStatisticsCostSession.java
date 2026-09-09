@@ -394,6 +394,13 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 			return EvidenceStateSummary.certifiedBounds(pointRows, lowerRows, upperRows,
 					"mapped_statistics_bound");
 		}
+		if (guarantee == EvidenceGuarantee.SCALAR_FALLBACK || guarantee == null) {
+			return new EvidenceStateSummary(pointRows, lowerRows, upperRows, 0.0d,
+					EvidenceIntervalKind.HEURISTIC, Double.POSITIVE_INFINITY, 0.0d, 0.0d, 0.0d,
+					pointRows == 0.0d ? 0.0d : 1.0d, upperRows, EvidenceGuarantee.SCALAR_FALLBACK,
+					pointRows == 0.0d ? EvidenceZeroStatus.UNRESOLVED : EvidenceZeroStatus.POSITIVE,
+					"mapped_statistics_scalar_fallback");
+		}
 		return EvidenceStateSummary.unresolved(pointRows, upperRows, upperRows, "mapped_statistics_summary");
 	}
 

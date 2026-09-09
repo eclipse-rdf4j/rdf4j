@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -31,17 +33,22 @@ import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteAssumption;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCertificate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -53,30 +60,51 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		Objects.requireNonNull(tupleExpr, "tupleExpr must not be null");
-		tupleExpr.visit(new SetSemanticsVisitor());
+		tupleExpr.visit(new SetSemanticsVisitor(tupleExpr));
 	}
 
 	private static final class SetSemanticsVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private boolean setContext;
 
-		private boolean askRootSliceContext;
+		private Slice askRootSlice;
 
 		private String setContextName;
+
+		private final Set<QueryModelNode> nonRepeatableSubtrees = Collections.newSetFromMap(new IdentityHashMap<>());
+
+		private SetSemanticsVisitor(TupleExpr root) {
+			// A volatile expression on either join branch can observe duplicates in the other
+			// branch. Prove repeatability for the whole set context before removing any rows.
+			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				protected void meetNode(QueryModelNode node) {
+					if (node instanceof ValueExpr expression && !(node.getParentNode() instanceof ValueExpr)
+							&& !ScalarEvaluationEffects.reorderingIsSafe(expression)
+							|| node instanceof Service || node instanceof TupleFunctionCall) {
+						for (QueryModelNode ancestor = node; ancestor != null
+								&& nonRepeatableSubtrees.add(ancestor); ancestor = ancestor.getParentNode()) {
+							// Each ancestor needs to be marked only once.
+						}
+					}
+					super.meetNode(node);
+				}
+			});
+		}
 
 		@Override
 		public void meet(QueryRoot queryRoot) {
 			boolean previousSetContext = setContext;
-			boolean previousAskRootSliceContext = askRootSliceContext;
+			Slice previousAskRootSlice = askRootSlice;
 			String previousSetContextName = setContextName;
-			if (isAskRootSlice(queryRoot.getArg())) {
+			if (isAskRootSlice(queryRoot.getArg()) && !nonRepeatableSubtrees.contains(queryRoot.getArg())) {
 				setContext = true;
-				askRootSliceContext = true;
+				askRootSlice = (Slice) queryRoot.getArg();
 				setContextName = "ask-slice";
 			}
 			super.meet(queryRoot);
 			setContext = previousSetContext;
-			askRootSliceContext = previousAskRootSliceContext;
+			askRootSlice = previousAskRootSlice;
 			setContextName = previousSetContextName;
 		}
 
@@ -84,7 +112,7 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 		public void meet(Distinct distinct) {
 			boolean previousSetContext = setContext;
 			String previousSetContextName = setContextName;
-			setContext = true;
+			setContext = !nonRepeatableSubtrees.contains(distinct.getArg());
 			setContextName = "distinct";
 			super.meet(distinct);
 			setContext = previousSetContext;
@@ -109,21 +137,23 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Group group) {
 			boolean previousSetContext = setContext;
-			boolean previousAskRootSliceContext = askRootSliceContext;
+			Slice previousAskRootSlice = askRootSlice;
 			String previousSetContextName = setContextName;
+			boolean repeatableInput = !nonRepeatableSubtrees.contains(group.getArg());
 			setContext = false;
-			askRootSliceContext = false;
+			askRootSlice = null;
 			setContextName = null;
 			try {
 				super.meet(group);
 			} finally {
 				setContext = previousSetContext;
-				askRootSliceContext = previousAskRootSliceContext;
+				askRootSlice = previousAskRootSlice;
 				setContextName = previousSetContextName;
 			}
 			Set<String> distinctCountVars = duplicateInsensitiveDistinctCountVars(group);
-			if (!distinctCountVars.isEmpty()) {
-				TupleExpr replacement = rewriteFiniteMembershipAsSemiFilter(group.getArg(), distinctCountVars);
+			if (repeatableInput && !distinctCountVars.isEmpty()) {
+				TupleExpr replacement = rewriteFiniteMembershipAsSemiFilter(group.getArg(), distinctCountVars,
+						Set.of());
 				if (replacement != group.getArg()) {
 					group.setArg(replacement);
 				}
@@ -132,8 +162,24 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Slice slice) {
-			super.meet(slice);
-			if (askRootSliceContext && isAskRootSlice(slice) && slice.getArg()instanceof LeftJoin leftJoin
+			boolean rootExistenceSlice = slice == askRootSlice;
+			boolean previousSetContext = setContext;
+			Slice previousAskRootSlice = askRootSlice;
+			String previousSetContextName = setContextName;
+			if (!rootExistenceSlice) {
+				// OFFSET and LIMIT consume bag positions before any enclosing DISTINCT.
+				setContext = false;
+				askRootSlice = null;
+				setContextName = null;
+			}
+			try {
+				super.meet(slice);
+			} finally {
+				setContext = previousSetContext;
+				askRootSlice = previousAskRootSlice;
+				setContextName = previousSetContextName;
+			}
+			if (rootExistenceSlice && slice.getArg()instanceof LeftJoin leftJoin
 					&& canRemoveTopLevelAskOptional(leftJoin)) {
 				TupleExpr replacement = leftJoin.getLeftArg();
 				annotateProof(replacement, LmdbRewriteProof.RewriteKind.ASK_TOP_LEVEL_OPTIONAL,
@@ -199,12 +245,16 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 			}
 		}
 
-		private TupleExpr rewriteFiniteMembershipAsSemiFilter(TupleExpr tupleExpr, Set<String> duplicateKeyVars) {
+		private TupleExpr rewriteFiniteMembershipAsSemiFilter(TupleExpr tupleExpr, Set<String> duplicateKeyVars,
+				Set<String> enclosingFilterBindings) {
 			if (tupleExpr == null || duplicateKeyVars.isEmpty()) {
 				return tupleExpr;
 			}
 			if (tupleExpr instanceof Filter filter) {
-				TupleExpr rewrittenArg = rewriteFiniteMembershipAsSemiFilter(filter.getArg(), duplicateKeyVars);
+				Set<String> requiredBindings = new LinkedHashSet<>(enclosingFilterBindings);
+				requiredBindings.addAll(VarNameCollector.process(filter.getCondition()));
+				TupleExpr rewrittenArg = rewriteFiniteMembershipAsSemiFilter(filter.getArg(), duplicateKeyVars,
+						requiredBindings);
 				if (rewrittenArg != filter.getArg()) {
 					Filter replacement = new Filter(rewrittenArg, filter.getCondition().clone());
 					annotateDistinctMembershipSemiFilter(replacement, duplicateKeyVars);
@@ -235,7 +285,7 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 						continue;
 					}
 					TupleExpr replacement = rewriteFiniteMembershipPair(factors, anchorIndex, anchor, patternIndex,
-							pattern, anchorBindings, duplicateKeyVars);
+							pattern, anchorBindings, duplicateKeyVars, enclosingFilterBindings);
 					if (replacement != null) {
 						return replacement;
 					}
@@ -246,7 +296,7 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 
 		private TupleExpr rewriteFiniteMembershipPair(List<TupleExpr> factors, int anchorIndex,
 				BindingSetAssignment anchor, int patternIndex, StatementPattern pattern, Set<String> anchorBindings,
-				Set<String> duplicateKeyVars) {
+				Set<String> duplicateKeyVars, Set<String> enclosingFilterBindings) {
 			Set<String> patternBindings = new LinkedHashSet<>(pattern.getBindingNames());
 			Set<String> finitePatternBindings = new LinkedHashSet<>(patternBindings);
 			finitePatternBindings.retainAll(anchorBindings);
@@ -283,10 +333,14 @@ final class LmdbSetSemanticsOptimizer implements QueryOptimizer {
 			Join membershipProbe = new Join(anchor.clone(), pattern.clone());
 			boolean directJoinSafe = duplicateKeyVars.containsAll(correlationBindings);
 			if (!directJoinSafe) {
-				Set<String> probeOnlyDuplicateKeyVars = new LinkedHashSet<>(duplicateKeyVars);
-				probeOnlyDuplicateKeyVars.retainAll(patternBindings);
-				probeOnlyDuplicateKeyVars.removeAll(remainingBindings);
-				if (!probeOnlyDuplicateKeyVars.isEmpty()) {
+				// EXISTS cannot supply values to the outer row. Every observed probe binding
+				// must therefore already be assured by the remaining factors; possible names
+				// from OPTIONAL, UNION or an EXISTS body do not guarantee a bound value.
+				Set<String> probeSuppliedBindings = new LinkedHashSet<>(anchorBindings);
+				probeSuppliedBindings.addAll(patternBindings);
+				probeSuppliedBindings.removeAll(remaining.getAssuredBindingNames());
+				if (!Collections.disjoint(probeSuppliedBindings, duplicateKeyVars)
+						|| !Collections.disjoint(probeSuppliedBindings, enclosingFilterBindings)) {
 					return null;
 				}
 			}

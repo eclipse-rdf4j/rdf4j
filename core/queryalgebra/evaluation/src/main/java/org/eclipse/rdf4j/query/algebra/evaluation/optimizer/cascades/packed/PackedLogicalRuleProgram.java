@@ -82,6 +82,7 @@ final class PackedLogicalRuleProgram {
 	private boolean optionalRemoved;
 	private boolean finiteFilterRewritten;
 	private int factorCount;
+	private int generatedBindingNameOrdinal;
 	private int comparisonCodeNameId;
 	private int comparisonTargetNameId;
 	private int comparisonLiteralValueId;
@@ -711,7 +712,7 @@ final class PackedLogicalRuleProgram {
 		long[] live = new long[maskWordCount()];
 		addObject(live, entityNameId);
 		optionalRemoved = false;
-		int inputId = pruneUnusedOptionals(relations.childGroupId(groupExpressionId, 0), live);
+		int inputId = pruneUnusedOptionalsWhenRepeatable(relations.childGroupId(groupExpressionId, 0), live);
 		if (relations.operatorTag(inputId) != PackedRelOp.UNION
 				|| (metadata.relationFlags(inputId) & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0
 				|| !analyzeCodeTypeBranch(relations.childGroupId(inputId, 0), entityNameId, 0)
@@ -723,6 +724,11 @@ final class PackedLogicalRuleProgram {
 		int codeAssignmentId = bindingAssignment(branchCodeNameIds[0], branchCodeValueIds,
 				branchCodeValueCounts[0]);
 		int typeNameId = objects.intern("type");
+		// The new domain is local to this rewrite. Reusing any existing symbol can
+		// constrain the counted entity, code, or an enclosing correlated binding.
+		while (symbols.symbolId(typeNameId) != 0) {
+			typeNameId = objects.intern("type_" + ++generatedBindingNameOrdinal);
+		}
 		symbols.intern(typeNameId);
 		int[] typeValues = { branchTypeValueIds[0], branchTypeValueIds[1] };
 		int typeAssignmentId = bindingAssignment(typeNameId, typeValues, typeValues.length);
@@ -830,9 +836,18 @@ final class PackedLogicalRuleProgram {
 		return branchCodeNameIds[0] == branchCodeNameIds[1]
 				&& branchTypePredicateValueIds[0] == branchTypePredicateValueIds[1]
 				&& branchCodePredicateValueIds[0] == branchCodePredicateValueIds[1]
+				&& sameStatementGraph(branchTypePatternIds[0], branchTypePatternIds[1])
+				&& sameStatementGraph(branchCodePatternIds[0], branchCodePatternIds[1])
 				&& branchTypeValueIds[0] != branchTypeValueIds[1]
 				&& branchCodeValueCounts[0] >= 2
 				&& sameBranchCodeValues();
+	}
+
+	private boolean sameStatementGraph(int firstPatternId, int secondPatternId) {
+		int firstPayloadId = relations.payloadId(firstPatternId);
+		int secondPayloadId = relations.payloadId(secondPatternId);
+		return payloads.payloadId(firstPayloadId) == payloads.payloadId(secondPayloadId)
+				&& payloads.childGroupId(firstPayloadId, 3) == payloads.childGroupId(secondPayloadId, 3);
 	}
 
 	private boolean sameBranchCodeValues() {
@@ -1101,7 +1116,7 @@ final class PackedLogicalRuleProgram {
 			return;
 		}
 		optionalRemoved = false;
-		int rewrittenId = pruneUnusedOptionals(groupInputId, live);
+		int rewrittenId = pruneUnusedOptionalsWhenRepeatable(groupInputId, live);
 		if (!optionalRemoved) {
 			return;
 		}
@@ -1165,6 +1180,7 @@ final class PackedLogicalRuleProgram {
 				relations.payloadId(outerExtensionId), rewrittenGroupPayloadId, eligibilityLeftId, eligibilityRightId);
 		long[] baseOutputs = relationOutputs(baseId);
 		if (!duplicateInsensitiveGroupUsesOnly(rewrittenGroupPayloadId, baseOutputs)
+				|| !safeCorrelatedMinusProbe(baseId)
 				|| !eligibilitySafe(eligibilityLeftId) || !eligibilitySafe(eligibilityRightId)) {
 			return;
 		}
@@ -1185,14 +1201,43 @@ final class PackedLogicalRuleProgram {
 		int eligibilityUnionId = canonicalRelation(PackedRelOp.UNION, 0, binary, 2, groupInputId);
 		int existsId = existsScalar(eligibilityUnionId);
 
-		unary[0] = relations.groupId(baseId);
-		int rewrittenGroupId = canonicalRelation(PackedRelOp.GROUP, rewrittenGroupPayloadId, unary, 1, groupId);
-		unary[0] = relations.groupId(rewrittenGroupId);
-		int rewrittenId = canonicalRelation(PackedRelOp.FILTER, existsId, unary, 1, havingFilterId);
-		if (payloads.childCount(rewrittenHavingExtensionPayloadId) != 0) {
+		long[] groupKeys = new long[maskWordCount()];
+		addNameSet(payloads.payloadId(rewrittenGroupPayloadId), groupKeys);
+		boolean retainHaving = empty(groupKeys);
+		boolean liftAboveGroup = containsAll(groupKeys, correlation);
+		int effectiveGroupPayloadId = rewrittenGroupPayloadId;
+		int effectiveHavingExtensionPayloadId = rewrittenHavingExtensionPayloadId;
+		if (retainHaving) {
+			// The assured COUNT operand can belong only to eligibility. COUNT(*) preserves the positive
+			// nonempty-input check after EXISTS removes those bindings and their duplicate matches.
+			int nonemptyCountId = internScalarCopy(groupAggregateId, 0, NO_CHILDREN, 0, 0);
+			effectiveGroupPayloadId = payloadWithNamedScalar(relations.payloadId(groupId), havingNameId,
+					nonemptyCountId);
+			effectiveHavingExtensionPayloadId = payloadWithNamedScalar(relations.payloadId(havingExtensionId),
+					havingNameId, nonemptyCountId);
+		}
+		int rewrittenInputId = baseId;
+		if (!liftAboveGroup) {
+			// Row-level eligibility must filter aggregate inputs before their correlation bindings disappear.
+			unary[0] = relations.groupId(rewrittenInputId);
+			rewrittenInputId = canonicalRelation(PackedRelOp.FILTER, existsId, unary, 1, havingFilterId);
+		}
+		unary[0] = relations.groupId(rewrittenInputId);
+		int rewrittenId = canonicalRelation(PackedRelOp.GROUP, effectiveGroupPayloadId, unary, 1, groupId);
+		if (liftAboveGroup) {
 			unary[0] = relations.groupId(rewrittenId);
-			rewrittenId = canonicalRelation(PackedRelOp.EXTENSION, rewrittenHavingExtensionPayloadId, unary, 1,
+			rewrittenId = canonicalRelation(PackedRelOp.FILTER, existsId, unary, 1, havingFilterId);
+		}
+		if (payloads.childCount(effectiveHavingExtensionPayloadId) != 0) {
+			unary[0] = relations.groupId(rewrittenId);
+			rewrittenId = canonicalRelation(PackedRelOp.EXTENSION, effectiveHavingExtensionPayloadId, unary, 1,
 					havingExtensionId);
+		}
+		if (retainHaving) {
+			// A global aggregate emits a row even for empty input; its positive HAVING is not tautological.
+			unary[0] = relations.groupId(rewrittenId);
+			rewrittenId = canonicalRelation(PackedRelOp.FILTER, relations.payloadId(havingFilterId), unary, 1,
+					havingFilterId);
 		}
 		unary[0] = relations.groupId(rewrittenId);
 		rewrittenId = canonicalRelation(PackedRelOp.EXTENSION, relations.payloadId(outerExtensionId), unary, 1,
@@ -1200,8 +1245,13 @@ final class PackedLogicalRuleProgram {
 		unary[0] = relations.groupId(rewrittenId);
 		int alternativeId = addAlternative(projectionExpressionId, PackedRelOp.PROJECTION, projectionPayloadId, unary,
 				1);
-		long ruleMask = PackedRuleProofs.TAUTOLOGICAL_POSITIVE_HAVING
-				| PackedRuleProofs.ELIGIBILITY_UNION_EXISTS | PackedRuleProofs.GROUP_KEY_EXISTS_LIFT;
+		long ruleMask = PackedRuleProofs.ELIGIBILITY_UNION_EXISTS;
+		if (!retainHaving) {
+			ruleMask |= PackedRuleProofs.TAUTOLOGICAL_POSITIVE_HAVING;
+		}
+		if (liftAboveGroup) {
+			ruleMask |= PackedRuleProofs.GROUP_KEY_EXISTS_LIFT;
+		}
 		if (aliasRewritten) {
 			ruleMask |= PackedRuleProofs.TRIVIAL_BIND_ALIAS;
 		}
@@ -1246,6 +1296,24 @@ final class PackedLogicalRuleProgram {
 						payloads.semanticScopeId(payloadId), payloads.executionDomainId(payloadId), rewriteScratch,
 						start, retained)
 				: 0;
+		releaseRewriteScratch(start);
+		return result;
+	}
+
+	private int payloadWithNamedScalar(int payloadId, int nameId, int scalarId) {
+		int count = payloads.childCount(payloadId);
+		int start = reserveRewriteScratch(count);
+		for (int ordinal = 0; ordinal < count; ordinal++) {
+			int elementId = payloads.childGroupId(payloadId, ordinal);
+			if (payloads.payloadId(elementId) == nameId) {
+				elementId = payloads.internCanonical(payloads.operatorTag(elementId), nameId, scalarId,
+						payloads.executionDomainId(elementId), NO_CHILDREN, 0, 0);
+			}
+			rewriteScratch[start + ordinal] = elementId;
+		}
+		int result = payloads.internCanonical(payloads.operatorTag(payloadId), payloads.payloadId(payloadId),
+				payloads.semanticScopeId(payloadId), payloads.executionDomainId(payloadId), rewriteScratch, start,
+				count);
 		releaseRewriteScratch(start);
 		return result;
 	}
@@ -1433,6 +1501,9 @@ final class PackedLogicalRuleProgram {
 		for (int ordinal = 0; ordinal < payloads.childCount(groupPayloadId); ordinal++) {
 			int elementId = payloads.childGroupId(groupPayloadId, ordinal);
 			int aggregateId = payloads.semanticScopeId(elementId);
+			if (!repeatableAggregateArguments(aggregateId)) {
+				return false;
+			}
 			int operator = scalars.operatorTag(aggregateId);
 			if (operator == PackedScalarOp.COUNT) {
 				if (scalars.payloadId(aggregateId) == 0 || scalars.childCount(aggregateId) != 1) {
@@ -1456,7 +1527,8 @@ final class PackedLogicalRuleProgram {
 		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.SINGLETON_SET -> true;
 		case PackedRelOp.JOIN, PackedRelOp.UNION -> eligibilitySafe(relations.childGroupId(expressionId, 0))
 				&& eligibilitySafe(relations.childGroupId(expressionId, 1));
-		case PackedRelOp.FILTER -> !scalarHasEmbeddedRelationOrTerm(relations.payloadId(expressionId))
+		case PackedRelOp.FILTER -> safeRepeatedScalar(relations.payloadId(expressionId))
+				&& !scalarHasEmbeddedRelationOrTerm(relations.payloadId(expressionId))
 				&& relationAssuresScalarDependencies(relations.childGroupId(expressionId, 0),
 						relations.payloadId(expressionId))
 				&& eligibilitySafe(relations.childGroupId(expressionId, 0));
@@ -1775,6 +1847,9 @@ final class PackedLogicalRuleProgram {
 		for (int ordinal = 0; ordinal < payloads.childCount(groupPayloadId); ordinal++) {
 			int elementId = payloads.childGroupId(groupPayloadId, ordinal);
 			int aggregateId = payloads.semanticScopeId(elementId);
+			if (!repeatableAggregateArguments(aggregateId)) {
+				return false;
+			}
 			int operator = scalars.operatorTag(aggregateId);
 			if (payloads.payloadId(elementId) != havingNameId) {
 				if (operator == PackedScalarOp.COUNT) {
@@ -2894,7 +2969,7 @@ final class PackedLogicalRuleProgram {
 		optionalRemoved = false;
 		finiteFilterRewritten = false;
 		int inputExpressionId = relations.childGroupId(observerExpressionId, 0);
-		int rewrittenInputId = pruneUnusedOptionals(inputExpressionId, live);
+		int rewrittenInputId = pruneUnusedOptionalsWhenRepeatable(inputExpressionId, live);
 		if (optionalRemoved && operator == PackedRelOp.GROUP && containsExistsPredicate(rewrittenInputId)) {
 			rewrittenInputId = rewriteFiniteFilters(rewrittenInputId);
 		}
@@ -2979,6 +3054,11 @@ final class PackedLogicalRuleProgram {
 		return false;
 	}
 
+	private int pruneUnusedOptionalsWhenRepeatable(int expressionId, long[] live) {
+		// A volatile sibling or enclosing scalar can observe the number of rows an OPTIONAL produces.
+		return safeCorrelatedMinusProbe(expressionId) ? pruneUnusedOptionals(expressionId, live) : expressionId;
+	}
+
 	private int pruneUnusedOptionals(int expressionId, long[] live) {
 		if ((metadata.relationFlags(expressionId) & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0) {
 			return expressionId;
@@ -3010,7 +3090,7 @@ final class PackedLogicalRuleProgram {
 			return rebuildUnaryIfChanged(expressionId,
 					pruneUnusedOptionals(relations.childGroupId(expressionId, 0), childLive));
 		}
-		if (operator == PackedRelOp.DISTINCT || operator == PackedRelOp.REDUCED || operator == PackedRelOp.SLICE) {
+		if (operator == PackedRelOp.DISTINCT || operator == PackedRelOp.REDUCED) {
 			return rebuildUnaryIfChanged(expressionId,
 					pruneUnusedOptionals(relations.childGroupId(expressionId, 0), live));
 		}
@@ -3042,9 +3122,9 @@ final class PackedLogicalRuleProgram {
 			int rightId = relations.childGroupId(expressionId, 1);
 			long[] leftOutputs = relationOutputs(leftId);
 			long[] rightOutputs = relationOutputs(rightId);
-			long[] rightOnly = copyMask(rightOutputs);
-			andNotInto(rightOnly, leftOutputs);
-			if (!intersects(rightOnly, live)) {
+			long[] observedRightBindings = copyMask(rightOutputs);
+			andInto(observedRightBindings, live);
+			if (relationAssuresAll(leftId, observedRightBindings)) {
 				optionalRemoved = true;
 				return pruneUnusedOptionals(leftId, live);
 			}
@@ -3277,6 +3357,9 @@ final class PackedLogicalRuleProgram {
 		for (int ordinal = 0; ordinal < payloads.childCount(groupPayloadId); ordinal++) {
 			int elementId = payloads.childGroupId(groupPayloadId, ordinal);
 			int aggregateId = payloads.semanticScopeId(elementId);
+			if (!repeatableAggregateArguments(aggregateId)) {
+				return false;
+			}
 			int operator = scalars.operatorTag(aggregateId);
 			if (operator == PackedScalarOp.COUNT) {
 				if (scalars.payloadId(aggregateId) == 0 || scalars.childCount(aggregateId) == 0) {
@@ -3286,6 +3369,15 @@ final class PackedLogicalRuleProgram {
 				return false;
 			}
 			addScalarDependencies(aggregateId, live);
+		}
+		return true;
+	}
+
+	private boolean repeatableAggregateArguments(int aggregateId) {
+		for (int ordinal = 0; ordinal < scalars.childCount(aggregateId); ordinal++) {
+			if (!safeRepeatedScalar(scalars.childGroupId(aggregateId, ordinal))) {
+				return false;
+			}
 		}
 		return true;
 	}

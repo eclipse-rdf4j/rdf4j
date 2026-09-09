@@ -75,7 +75,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
-import java.util.StringTokenizer;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
@@ -959,34 +958,6 @@ class TripleStore implements Closeable {
 		boolean rebuildRequested() {
 			return (flags & PREDICATE_OBJECT_DOMAIN_REBUILD_REQUESTED) != 0L;
 		}
-	}
-
-	/**
-	 * Parses a comma/whitespace-separated list of index specifications. Index specifications are required to consists
-	 * of 4 characters: 's', 'p', 'o' and 'c'.
-	 *
-	 * @param indexSpecStr A string like "spoc, pocs, cosp".
-	 * @return A Set containing the parsed index specifications.
-	 */
-	private Set<String> parseIndexSpecList(String indexSpecStr) throws SailException {
-		Set<String> indexes = new LinkedHashSet<>();
-
-		if (indexSpecStr != null) {
-			StringTokenizer tok = new StringTokenizer(indexSpecStr, ", \t");
-			while (tok.hasMoreTokens()) {
-				String index = tok.nextToken().toLowerCase();
-
-				// sanity checks
-				if (index.length() != 4 || index.indexOf('s') == -1 || index.indexOf('p') == -1
-						|| index.indexOf('o') == -1 || index.indexOf('c') == -1) {
-					throw new SailException("invalid value '" + index + "' in index specification: " + indexSpecStr);
-				}
-
-				indexes.add(index);
-			}
-		}
-
-		return indexes;
 	}
 
 	private void initIndexes(Set<String> indexSpecs) throws IOException {

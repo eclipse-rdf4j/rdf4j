@@ -551,7 +551,8 @@ final class LmdbPackedCostModel
 		}
 		MappedRowsEstimate outerBase = mappedCorrelatedLineageEstimate(outerFactors);
 		MappedRowsEstimate joined = mappedCorrelatedLineageEstimate(joinedFactors);
-		if (outerBase == null || joined == null || !(outerBase.pointRows() > 0.0d)) {
+		if (outerBase == null || joined == null || !(outerBase.pointRows() > 0.0d)
+				|| !(outerBase.confidence() > 0.0d) || !(joined.confidence() > 0.0d)) {
 			return null;
 		}
 		double rhsMultiplicity = Math.max(1.0d, rhsRows / Math.max(1.0d, rhsDistinctKeys));

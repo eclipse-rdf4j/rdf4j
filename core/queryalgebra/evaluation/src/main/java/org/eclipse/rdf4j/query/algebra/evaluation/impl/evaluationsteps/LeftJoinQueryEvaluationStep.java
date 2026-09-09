@@ -18,6 +18,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -294,6 +295,9 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		private BindingSet currentLeft;
 		private Iterator<BindingSet> currentDeltas;
 		private CloseableIteration<BindingSet> streamingRight;
+		private final Object lifecycleLock = new Object();
+		private CloseableIteration<BindingSet> activeRight;
+		private volatile boolean closing;
 
 		private MemoizedLeftJoinIteration(QueryEvaluationStep left, QueryEvaluationStep right, BindingSet bindings,
 				List<String> correlationNames, LeftJoin leftJoin, long maxKeys, long maxRows) {
@@ -308,14 +312,17 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 		@Override
 		protected BindingSet getNextElement() {
-			while (true) {
+			while (!closing) {
 				if (streamingRight != null) {
 					if (streamingRight.hasNext()) {
-						return streamingRight.next();
+						return closing ? null : streamingRight.next();
 					}
-					streamingRight.close();
+					closeRight(streamingRight);
 					streamingRight = null;
 					currentLeft = null;
+				}
+				if (closing) {
+					return null;
 				}
 				if (currentDeltas != null) {
 					if (currentDeltas.hasNext()) {
@@ -326,21 +333,30 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 					currentDeltas = null;
 					currentLeft = null;
 				}
-				if (!leftIter.hasNext()) {
+				if (!leftIter.hasNext() || closing) {
 					return null;
 				}
 
 				BindingSet leftBindings = leftIter.next();
 				QueryBindingSet key = correlationKey(leftBindings);
-				List<BindingSet> deltas = cache.get(key);
+				List<BindingSet> deltas;
+				synchronized (lifecycleLock) {
+					deltas = closing ? null : cache.get(key);
+				}
 				if (deltas == null) {
 					deltas = materializeDeltas(leftBindings);
+					if (closing) {
+						return null;
+					}
 					if (deltas == null) {
 						currentLeft = leftBindings;
-						streamingRight = right.evaluate(leftBindings);
+						streamingRight = openRight(leftBindings);
 						continue;
 					}
 					cache(key, deltas);
+				}
+				if (closing) {
+					return null;
 				}
 				if (deltas.isEmpty()) {
 					return leftBindings;
@@ -348,6 +364,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 				currentLeft = leftBindings;
 				currentDeltas = deltas.iterator();
 			}
+			return null;
 		}
 
 		private QueryBindingSet correlationKey(BindingSet bindings) {
@@ -362,8 +379,15 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 		private List<BindingSet> materializeDeltas(BindingSet leftBindings) {
 			List<BindingSet> deltas = new ArrayList<>();
-			try (CloseableIteration<BindingSet> iteration = right.evaluate(leftBindings)) {
-				while (iteration.hasNext()) {
+			CloseableIteration<BindingSet> iteration = openRight(leftBindings);
+			if (iteration == null) {
+				return List.of();
+			}
+			try {
+				while (!closing && iteration.hasNext()) {
+					if (closing) {
+						return List.of();
+					}
 					if (deltas.size() >= maxRows) {
 						return null;
 					}
@@ -371,30 +395,76 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 					delta.removeAll(leftBindings.getBindingNames());
 					deltas.add(delta);
 				}
+			} catch (RuntimeException | Error failure) {
+				try {
+					closeRight(iteration);
+				} catch (RuntimeException | Error closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+				throw failure;
+			} finally {
+				closeRight(iteration);
 			}
 			return List.copyOf(deltas);
 		}
 
+		private CloseableIteration<BindingSet> openRight(BindingSet bindings) {
+			if (closing) {
+				return null;
+			}
+			CloseableIteration<BindingSet> iteration = right.evaluate(bindings);
+			synchronized (lifecycleLock) {
+				if (!closing) {
+					activeRight = iteration;
+					return iteration;
+				}
+			}
+			// Evaluation can finish opening a scan after cancellation has already closed this OPTIONAL.
+			iteration.close();
+			return null;
+		}
+
+		private void closeRight(CloseableIteration<BindingSet> iteration) {
+			synchronized (lifecycleLock) {
+				if (activeRight != iteration) {
+					return;
+				}
+				activeRight = null;
+			}
+			iteration.close();
+		}
+
 		private void cache(BindingSet key, List<BindingSet> deltas) {
-			cache.put(key, deltas);
-			cachedRows += deltas.size();
-			Iterator<Map.Entry<BindingSet, List<BindingSet>>> entries = cache.entrySet().iterator();
-			while ((cache.size() > maxKeys || cachedRows > maxRows) && entries.hasNext()) {
-				Map.Entry<BindingSet, List<BindingSet>> eldest = entries.next();
-				cachedRows -= eldest.getValue().size();
-				entries.remove();
+			synchronized (lifecycleLock) {
+				if (closing) {
+					return;
+				}
+				cache.put(key, deltas);
+				cachedRows += deltas.size();
+				Iterator<Map.Entry<BindingSet, List<BindingSet>>> entries = cache.entrySet().iterator();
+				while ((cache.size() > maxKeys || cachedRows > maxRows) && entries.hasNext()) {
+					Map.Entry<BindingSet, List<BindingSet>> eldest = entries.next();
+					cachedRows -= eldest.getValue().size();
+					entries.remove();
+				}
 			}
 		}
 
 		@Override
 		protected void handleClose() {
+			CloseableIteration<BindingSet> rightToClose;
+			synchronized (lifecycleLock) {
+				closing = true;
+				rightToClose = activeRight;
+				activeRight = null;
+				cache.clear();
+			}
 			try {
 				leftIter.close();
 			} finally {
-				if (streamingRight != null) {
-					streamingRight.close();
+				if (rightToClose != null) {
+					rightToClose.close();
 				}
-				cache.clear();
 			}
 		}
 	}
@@ -412,7 +482,11 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		private final QueryEvaluationContext context;
 		private final LeftJoin leftJoin;
 		private final long maxMaterializedRightRows;
+		private final Object lifecycleLock = new Object();
+		private volatile boolean closing;
 		private CloseableIteration<BindingSet> delegate;
+		private ActiveInput activeLeft;
+		private ActiveInput activeRight;
 		private boolean initialized;
 
 		private AdaptiveHashLeftJoinIteration(QueryEvaluationStep left, QueryEvaluationStep right,
@@ -429,48 +503,161 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 		@Override
 		protected BindingSet getNextElement() {
-			initialize();
 			try {
-				return delegate.hasNext() ? delegate.next() : null;
-			} catch (MaterializationLimitExceededException ignored) {
-				delegate.close();
-				leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
-				delegate = LeftJoinIterator.getInstance(left, bindings, right);
-				return delegate.hasNext() ? delegate.next() : null;
-			}
-		}
-
-		private void initialize() {
-			if (initialized) {
-				return;
-			}
-			initialized = true;
-			CloseableIteration<BindingSet> leftIter = left.evaluate(bindings);
-			if (!leftIter.hasNext()) {
-				delegate = leftIter;
-				return;
-			}
-			try {
-				QueryEvaluationStep openLeft = ignored -> leftIter;
-				delegate = new BoundedHashJoinIteration(
-						openLeft,
-						right,
-						bindings,
-						contract,
-						context,
-						leftJoin,
-						maxMaterializedRightRows);
-				leftJoin.setAlgorithm(HashJoinIteration.class.getSimpleName());
-			} catch (RuntimeException failure) {
-				leftIter.close();
+				CloseableIteration<BindingSet> current = initialize();
+				if (closing || current == null) {
+					return null;
+				}
+				try {
+					return next(current);
+				} catch (MaterializationLimitExceededException ignored) {
+					current.close();
+					if (closing) {
+						return null;
+					}
+					leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
+					current = publishDelegate(LeftJoinIterator.getInstance(
+							input -> openInput(left, input, true), bindings,
+							input -> openInput(right, input, false)));
+					return current == null ? null : next(current);
+				}
+			} catch (RuntimeException | Error failure) {
+				try {
+					close();
+				} catch (RuntimeException | Error closeFailure) {
+					if (closeFailure != failure) {
+						failure.addSuppressed(closeFailure);
+					}
+				}
 				throw failure;
 			}
 		}
 
+		private BindingSet next(CloseableIteration<BindingSet> current) {
+			if (closing || !current.hasNext() || closing) {
+				return null;
+			}
+			BindingSet row = current.next();
+			return closing ? null : row;
+		}
+
+		private CloseableIteration<BindingSet> initialize() {
+			if (initialized) {
+				return delegate;
+			}
+			initialized = true;
+			CloseableIteration<BindingSet> leftIter = openInput(left, bindings, true);
+			if (closing) {
+				return null;
+			}
+			if (!leftIter.hasNext()) {
+				return publishDelegate(leftIter);
+			}
+			if (closing) {
+				return null;
+			}
+			CloseableIteration<BindingSet> hash = new BoundedHashJoinIteration(
+					ignored -> leftIter,
+					input -> openInput(right, input, false),
+					bindings, contract, context, leftJoin, maxMaterializedRightRows);
+			leftJoin.setAlgorithm(HashJoinIteration.class.getSimpleName());
+			return publishDelegate(hash);
+		}
+
+		private CloseableIteration<BindingSet> publishDelegate(CloseableIteration<BindingSet> iteration) {
+			synchronized (lifecycleLock) {
+				if (!closing) {
+					delegate = iteration;
+					return iteration;
+				}
+			}
+			iteration.close();
+			return null;
+		}
+
+		private CloseableIteration<BindingSet> openInput(QueryEvaluationStep step, BindingSet input,
+				boolean leftInput) {
+			if (closing) {
+				return QueryEvaluationStep.EMPTY_ITERATION;
+			}
+			ActiveInput iteration = new ActiveInput(step.evaluate(input));
+			synchronized (lifecycleLock) {
+				if (!closing) {
+					if (leftInput) {
+						activeLeft = iteration;
+					} else {
+						activeRight = iteration;
+					}
+					return iteration;
+				}
+			}
+			iteration.close();
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		}
+
 		@Override
 		protected void handleClose() {
-			if (delegate != null) {
-				delegate.close();
+			CloseableIteration<BindingSet> current;
+			ActiveInput leftInput;
+			ActiveInput rightInput;
+			synchronized (lifecycleLock) {
+				if (closing) {
+					return;
+				}
+				closing = true;
+				current = delegate;
+				leftInput = activeLeft;
+				rightInput = activeRight;
+				delegate = null;
+				activeLeft = null;
+				activeRight = null;
+			}
+			try (leftInput; rightInput; current) {
+				// Inputs stay owned while a delegate is opening or being replaced by the streaming fallback.
+			}
+		}
+
+		private final class ActiveInput implements CloseableIteration<BindingSet> {
+			private final CloseableIteration<BindingSet> iteration;
+			private volatile boolean closed;
+
+			private ActiveInput(CloseableIteration<BindingSet> iteration) {
+				this.iteration = iteration;
+			}
+
+			@Override
+			public boolean hasNext() {
+				return !closed && iteration.hasNext() && !closed;
+			}
+
+			@Override
+			public BindingSet next() {
+				if (closed) {
+					throw new NoSuchElementException("The iteration has been closed.");
+				}
+				return iteration.next();
+			}
+
+			@Override
+			public void remove() {
+				iteration.remove();
+			}
+
+			@Override
+			public void close() {
+				synchronized (lifecycleLock) {
+					if (closed) {
+						return;
+					}
+					closed = true;
+					if (activeLeft == this) {
+						activeLeft = null;
+					}
+					if (activeRight == this) {
+						activeRight = null;
+					}
+				}
+				iteration.close();
 			}
 		}
 	}

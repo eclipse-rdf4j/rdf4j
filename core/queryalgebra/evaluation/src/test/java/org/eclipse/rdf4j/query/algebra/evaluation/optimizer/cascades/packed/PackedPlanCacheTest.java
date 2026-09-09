@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -58,6 +59,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateAr
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.junit.jupiter.api.Test;
 
 class PackedPlanCacheTest {
@@ -671,6 +673,41 @@ class PackedPlanCacheTest {
 			assertTrue(structured.contains("\"finalPolicy\""));
 		}
 		assertTrue(hot.metrics().planCacheHit());
+	}
+
+	@Test
+	void coldMaterializationPublishesExactEvidenceGuarantee() {
+		assertMaterializedGuarantee(false);
+	}
+
+	@Test
+	void cachedMaterializationPublishesExactEvidenceGuarantee() {
+		assertMaterializedGuarantee(true);
+	}
+
+	private void assertMaterializedGuarantee(boolean warm) {
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		TupleExpr source = connectedJoin("left", "right");
+		PackedPlanCache.Context context = context(11L);
+		if (warm) {
+			PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, context, frontierCostModel());
+		}
+		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache,
+				context, frontierCostModel());
+		assertEquals(warm, result.metrics().planCacheHit());
+		AtomicInteger evidenceNodes = new AtomicInteger();
+		result.selectedPlan().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node.getDoubleMetricPlanned("plannedFrontierStateId") > 0.0d) {
+					evidenceNodes.incrementAndGet();
+					assertEquals("database_exact", node.getStringMetricPlanned("plannedFrontierGuarantee"),
+							"materialized exact evidence must retain the guard used by runtime learning");
+				}
+				node.visitChildren(this);
+			}
+		});
+		assertTrue(evidenceNodes.get() > 0);
 	}
 
 	@Test

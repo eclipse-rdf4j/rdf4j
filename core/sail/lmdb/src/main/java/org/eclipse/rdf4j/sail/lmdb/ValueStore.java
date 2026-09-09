@@ -140,16 +140,13 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	private static final int MAX_KEY_SIZE = 16;
 
-	private static final int STRING_DECODE_SCRATCH_BYTES = 4096;
-
 	private static final int BATCH_CURSOR_SEQUENTIAL_SCAN_LIMIT = 16;
 
 	private static final long UNKNOWN_REF_COUNT = Long.MIN_VALUE;
 
-	private static final ThreadLocal<byte[]> STRING_DECODE_SCRATCH = ThreadLocal
-			.withInitial(() -> new byte[STRING_DECODE_SCRATCH_BYTES]);
-
 	private static final VarHandle PREVIOUS_NAMESPACE_HANDLE;
+	private static final VarHandle VALUE_CACHE_HANDLE = MethodHandles.arrayElementVarHandle(LmdbValue[].class);
+	private static final VarHandle PREDICATE_CACHE_HANDLE = MethodHandles.arrayElementVarHandle(LmdbIRI[].class);
 
 	static {
 		try {
@@ -190,9 +187,7 @@ class ValueStore extends AbstractValueFactory {
 	private final LmdbIRI[] predicateCache;
 	private final long[] predicateCacheId;
 	private final int predicateCacheMask;
-	private final LmdbIRI[] datatypeCache;
-	private final long[] datatypeCacheId;
-	private final CoreDatatype[] datatypeCoreDatatypeCache;
+	private final DatatypeCacheEntry[] datatypeCache;
 	private final int datatypeCacheMask;
 	/**
 	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
@@ -297,9 +292,7 @@ class ValueStore extends AbstractValueFactory {
 		predicateCache = new LmdbIRI[cacheSize];
 		predicateCacheId = new long[cacheSize];
 		predicateCacheMask = cacheSize - 1;
-		datatypeCache = new LmdbIRI[1024];
-		datatypeCacheId = new long[1024];
-		datatypeCoreDatatypeCache = new CoreDatatype[1024];
+		datatypeCache = new DatatypeCacheEntry[1024];
 		datatypeCacheMask = 1024 - 1;
 		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
 		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
@@ -387,39 +380,6 @@ class ValueStore extends AbstractValueFactory {
 				string.startsWith("http://purl.org/") ||
 				string.startsWith("http://publications.europa.eu/resource/authority") ||
 				string.startsWith("http://xmlns.com/");
-	}
-
-	@SuppressWarnings("unused")
-	private void logValues() throws IOException {
-		readTransaction(env, (stack, txn) -> {
-			long cursor = 0;
-			PointerBuffer pp = stack.mallocPointer(1);
-
-			try {
-				E(mdb_cursor_open(txn, dbi, pp));
-				cursor = pp.get(0);
-
-				MDBVal keyData = MDBVal.calloc(stack);
-				// set cursor to min key
-				keyData.mv_data(stack.bytes(new byte[] { ID_KEY }));
-				MDBVal valueData = MDBVal.calloc(stack);
-				int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-				while (rc == MDB_SUCCESS && keyData.mv_data().get(0) == ID_KEY) {
-					long id = data2id(keyData.mv_data());
-					try {
-						logger.debug("id {} has value {}", id, getValue(id));
-					} catch (IllegalArgumentException e) {
-						logger.debug("id {} has namespace value {}", id, getNamespace(id));
-					}
-					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-				}
-			} finally {
-				if (cursor != 0) {
-					mdb_cursor_close(cursor);
-				}
-			}
-			return null;
-		});
 	}
 
 	private void open() throws IOException {
@@ -801,7 +761,7 @@ class ValueStore extends AbstractValueFactory {
 	/**
 	 * Get value from cache by ID.
 	 * <p>
-	 * Thread-safety with synchronized is not required here.
+	 * Acquire the cached reference so readers see the decoded fields published by the writer.
 	 *
 	 * @param id ID of a value object
 	 * @return the value object or <code>null</code> if not found
@@ -816,7 +776,7 @@ class ValueStore extends AbstractValueFactory {
 			return null;
 		}
 
-		LmdbValue value = valueCache[idx];
+		LmdbValue value = (LmdbValue) VALUE_CACHE_HANDLE.getAcquire(valueCache, idx);
 		if (value != null && value.getInternalID() == id) {
 			return value;
 		}
@@ -826,7 +786,7 @@ class ValueStore extends AbstractValueFactory {
 	/**
 	 * Cache value by ID.
 	 * <p>
-	 * Thread-safety with synchronized is not required here.
+	 * Publish decoded fields before making the cached reference available to other threads.
 	 *
 	 * @param id    ID of a value object
 	 * @param value ID of a value object
@@ -834,7 +794,7 @@ class ValueStore extends AbstractValueFactory {
 	void cacheValue(long id, LmdbValue value) {
 		int idx = (int) (id & valueCacheMask);
 		valueCacheId[idx] = id;
-		valueCache[idx] = value;
+		VALUE_CACHE_HANDLE.setRelease(valueCache, idx, value);
 	}
 
 	LmdbIRI cachedPredicate(long id) {
@@ -843,7 +803,7 @@ class ValueStore extends AbstractValueFactory {
 			return null;
 		}
 
-		LmdbIRI value = predicateCache[idx];
+		LmdbIRI value = (LmdbIRI) PREDICATE_CACHE_HANDLE.getAcquire(predicateCache, idx);
 		if (value != null && value.getInternalID() == id) {
 			return value;
 		}
@@ -853,40 +813,35 @@ class ValueStore extends AbstractValueFactory {
 	void cachePredicate(long id, LmdbIRI value) {
 		int idx = (int) (id & predicateCacheMask);
 		predicateCacheId[idx] = id;
-		predicateCache[idx] = value;
+		PREDICATE_CACHE_HANDLE.setRelease(predicateCache, idx, value);
 	}
 
 	LmdbIRI cachedDatatype(long id) {
-		int idx = datatypeCacheIndex(id);
-		if (datatypeCacheId[idx] != id) {
-			return null;
-		}
-
-		LmdbIRI value = datatypeCache[idx];
-		if (value != null && value.getInternalID() == id) {
-			return value;
-		}
-		return null;
+		DatatypeCacheEntry entry = cachedDatatypeEntry(id);
+		return entry == null ? null : entry.value();
 	}
 
 	CoreDatatype cachedDatatypeCoreDatatype(long id) {
-		int idx = datatypeCacheIndex(id);
-		if (datatypeCacheId[idx] != id) {
-			return null;
-		}
-
-		return datatypeCoreDatatypeCache[idx];
+		DatatypeCacheEntry entry = cachedDatatypeEntry(id);
+		return entry == null ? null : entry.coreDatatype();
 	}
 
 	void cacheDatatype(long id, LmdbIRI value) {
-		int idx = datatypeCacheIndex(id);
-		datatypeCache[idx] = value;
-		datatypeCoreDatatypeCache[idx] = CoreDatatype.from(value);
-		datatypeCacheId[idx] = id;
+		// Readers may race with a colliding replacement. Publish the ID, value and
+		// core datatype together so a reader can only observe one complete entry.
+		datatypeCache[datatypeCacheIndex(id)] = new DatatypeCacheEntry(id, value, CoreDatatype.from(value));
+	}
+
+	private DatatypeCacheEntry cachedDatatypeEntry(long id) {
+		DatatypeCacheEntry entry = datatypeCache[datatypeCacheIndex(id)];
+		return entry != null && entry.id() == id && entry.value().getInternalID() == id ? entry : null;
 	}
 
 	private int datatypeCacheIndex(long id) {
 		return (int) (ValueIds.getValue(id) & datatypeCacheMask);
+	}
+
+	private record DatatypeCacheEntry(long id, LmdbIRI value, CoreDatatype coreDatatype) {
 	}
 
 	private static int nextPowerOfTwo(int n) {
@@ -2605,8 +2560,6 @@ class ValueStore extends AbstractValueFactory {
 		Arrays.fill(predicateCache, null);
 		Arrays.fill(predicateCacheId, 0);
 		Arrays.fill(datatypeCache, null);
-		Arrays.fill(datatypeCacheId, 0);
-		Arrays.fill(datatypeCoreDatatypeCache, null);
 		valueIDCache.clear();
 		namespaceCache.clear();
 		namespaceIDCache.clear();
@@ -2841,17 +2794,6 @@ class ValueStore extends AbstractValueFactory {
 		};
 	}
 
-	private LmdbValue data2value(long id, ByteBuffer data, LmdbValue value) throws IOException {
-		ByteBuffer bb = data.slice();
-		byte type = bb.get(0);
-		return switch (type) {
-		case URI_VALUE -> data2uri(id, bb, (LmdbIRI) value);
-		case BNODE_VALUE -> data2bnode(id, bb, (LmdbBNode) value);
-		case LITERAL_VALUE -> data2literal(id, bb, (LmdbLiteral) value);
-		default -> throw new IllegalArgumentException("Invalid type " + type + " for value with id " + id);
-		};
-	}
-
 	private LmdbValue data2value(long id, long dataAddress, int dataLength, LmdbValue value) throws IOException {
 		byte type = memGetByte(dataAddress);
 		return switch (type) {
@@ -2869,23 +2811,6 @@ class ValueStore extends AbstractValueFactory {
 		long nsID = Varint.readUnsignedHeap(bb);
 		String namespace = getNamespace(nsID);
 		String localName = new String(data, bb.position(), bb.remaining(), StandardCharsets.UTF_8);
-
-		if (value == null) {
-			return new LmdbIRI(revision, namespace, localName, id);
-		} else {
-			value.setNamespaceAndIri(namespace, localName);
-//			value.setIRIString(namespace + localName);
-			return value;
-		}
-	}
-
-	private LmdbIRI data2uri(long id, ByteBuffer data, LmdbIRI value) throws IOException {
-		ByteBuffer bb = data.slice();
-		// skip type marker
-		bb.get();
-		long nsID = Varint.readUnsigned(bb);
-		String namespace = getNamespace(nsID);
-		String localName = stringFromBuffer(bb, bb.position(), bb.remaining());
 
 		if (value == null) {
 			return new LmdbIRI(revision, namespace, localName, id);
@@ -2914,18 +2839,6 @@ class ValueStore extends AbstractValueFactory {
 
 	private LmdbBNode data2bnode(long id, byte[] data, LmdbBNode value) {
 		String nodeID = new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
-		if (value == null) {
-			return new LmdbBNode(revision, nodeID, id);
-		} else {
-			value.setID(nodeID);
-			return value;
-		}
-	}
-
-	private LmdbBNode data2bnode(long id, ByteBuffer data, LmdbBNode value) {
-		ByteBuffer bb = data.slice();
-		bb.get();
-		String nodeID = stringFromBuffer(bb, bb.position(), bb.remaining());
 		if (value == null) {
 			return new LmdbBNode(revision, nodeID, id);
 		} else {
@@ -3059,83 +2972,12 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private LmdbLiteral data2literal(long id, ByteBuffer data, LmdbLiteral value) throws IOException {
-		ByteBuffer bb = data.slice();
-		// skip type marker
-		bb.get();
-		// Get datatype
-		long datatypeID = Varint.readUnsigned(bb);
-		IRI datatype = null;
-		CoreDatatype coreDatatype = null;
-		// literal without a datatype
-		if (datatypeID > 0) {
-			datatype = getDatatype(datatypeID);
-			coreDatatype = cachedDatatypeCoreDatatype(datatypeID);
-			if (datatype != null && coreDatatype == null) {
-				coreDatatype = CoreDatatype.from(datatype);
-			}
-		}
-
-		int directionAndLangLength = bb.get() & 0xFF;
-		int langLength = directionAndLangLength & 0x3F;
-		Literal.BaseDirection baseDirection = baseDirection(directionAndLangLength);
-
-		// Get language tag
-		String lang = null;
-		int langPosition = bb.position();
-		if (langLength > 0) {
-			lang = stringFromBuffer(bb, langPosition, langLength);
-		}
-
-		// Get label
-		int labelPosition = langPosition + langLength;
-		String label = stringFromBuffer(bb, labelPosition, bb.limit() - labelPosition);
-
-		if (value == null) {
-			if (lang != null) {
-				return new LmdbLiteral(revision, label, lang, baseDirection, id);
-			} else if (datatype != null) {
-				return new LmdbLiteral(revision, label, datatype, coreDatatype, id);
-			} else {
-				return new LmdbLiteral(revision, label, org.eclipse.rdf4j.model.vocabulary.XSD.STRING, id);
-			}
-		} else {
-			value.setLabel(label);
-			if (lang != null) {
-				value.setLanguage(lang);
-				value.setBaseDirection(baseDirection);
-				value.setDatatype(baseDirection == Literal.BaseDirection.NONE
-						? CoreDatatype.RDF.LANGSTRING
-						: CoreDatatype.RDF.DIRLANGSTRING);
-			} else if (datatype != null) {
-				value.setDatatype(datatype, coreDatatype);
-			} else {
-				value.setDatatype(CoreDatatype.XSD.STRING);
-			}
-			return value;
-		}
-	}
-
 	private static Literal.BaseDirection baseDirection(int directionAndLangLength) {
 		return switch (directionAndLangLength >> 6) {
 		case 1 -> Literal.BaseDirection.LTR;
 		case 2 -> Literal.BaseDirection.RTL;
 		default -> Literal.BaseDirection.NONE;
 		};
-	}
-
-	private String stringFromBuffer(ByteBuffer data, int position, int length) {
-		if (length == 0) {
-			return "";
-		}
-		if (data.hasArray()) {
-			return new String(data.array(), data.arrayOffset() + position, length, StandardCharsets.UTF_8);
-		}
-		byte[] bytes = length <= STRING_DECODE_SCRATCH_BYTES ? STRING_DECODE_SCRATCH.get() : new byte[length];
-		ByteBuffer copy = data.duplicate();
-		copy.position(position);
-		copy.get(bytes, 0, length);
-		return new String(bytes, 0, length, StandardCharsets.UTF_8);
 	}
 
 	private String stringFromMemory(long address, int position, int length) {

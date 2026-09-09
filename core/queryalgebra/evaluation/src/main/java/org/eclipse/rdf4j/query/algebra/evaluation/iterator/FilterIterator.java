@@ -174,7 +174,7 @@ public class FilterIterator extends FilterIteration<BindingSet>
 				|| left.getName() == null
 				|| right.getName() == null
 				|| left.getName().equals(right.getName())
-				|| !isPositiveBindingSubtree(filter.getArg())) {
+				|| !isResourceEqualityPrebindingSafe(filter.getArg())) {
 			return Function.identity();
 		}
 		String leftName = left.getName();
@@ -204,21 +204,21 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		return augmented;
 	}
 
-	private static boolean isPositiveBindingSubtree(TupleExpr expression) {
+	private static boolean isResourceEqualityPrebindingSafe(TupleExpr expression) {
+		// OPTIONAL can preserve a left row when the prebinding turns a successful RHS match into a miss. An
+		// ancestor assuring the equality variable does not make that substitution safe, so only allow operators
+		// for which prebinding selects compatible results without introducing new ones.
 		if (expression instanceof StatementPattern || expression instanceof SingletonSet
 				|| expression instanceof EmptySet || expression instanceof BindingSetAssignment) {
 			return true;
 		}
 		if (expression instanceof Join join) {
-			return isPositiveBindingSubtree(join.getLeftArg()) && isPositiveBindingSubtree(join.getRightArg());
-		}
-		if (expression instanceof LeftJoin optional) {
-			return !optional.hasCondition()
-					&& isPositiveBindingSubtree(optional.getLeftArg())
-					&& isPositiveBindingSubtree(optional.getRightArg());
+			return isResourceEqualityPrebindingSafe(join.getLeftArg())
+					&& isResourceEqualityPrebindingSafe(join.getRightArg());
 		}
 		if (expression instanceof Union union) {
-			return isPositiveBindingSubtree(union.getLeftArg()) && isPositiveBindingSubtree(union.getRightArg());
+			return isResourceEqualityPrebindingSafe(union.getLeftArg())
+					&& isResourceEqualityPrebindingSafe(union.getRightArg());
 		}
 		return false;
 	}

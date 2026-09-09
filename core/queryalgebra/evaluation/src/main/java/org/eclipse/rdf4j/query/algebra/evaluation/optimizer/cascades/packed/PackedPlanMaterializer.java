@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -110,6 +111,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MaterializeTupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -875,13 +877,22 @@ final class PackedPlanMaterializer {
 		setFiniteMetric(node, "optimizer.costEventAccessRows", trace.accessRows(eventId));
 		setFiniteMetric(node, "optimizer.costEventInvocations", trace.invocations(eventId));
 		int stateOrdinal = recipe.evidenceStateOrdinal(recipeId);
+		EvidenceGuarantee guarantee = trace.guarantee(eventId);
 		if (stateOrdinal > 0) {
 			FrontierEvidenceBundle bundle = recipe.frontierEvidenceBundle();
+			if (guarantee == null) {
+				guarantee = bundle.guarantee(stateOrdinal);
+			}
 			node.setDoubleMetricPlanned("plannedFrontierStateId", stateOrdinal);
 			node.setDoubleMetricPlanned("optimizer.frontierBundleOrdinal", stateOrdinal);
 			node.setStringMetricPlanned("optimizer.frontierBundleDigest",
 					PackedCostingTraceArena.digestString(
 							bundle.digestHigh(stateOrdinal), bundle.digestLow(stateOrdinal)));
+		}
+		// Runtime learning uses this guarantee to keep database-exact cardinalities immutable.
+		node.removeStringMetricsPlannedIf("plannedFrontierGuarantee"::equals);
+		if (guarantee != null) {
+			node.setStringMetricPlanned("plannedFrontierGuarantee", guarantee.name().toLowerCase(Locale.ROOT));
 		}
 	}
 

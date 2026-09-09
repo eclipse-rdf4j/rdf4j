@@ -452,13 +452,6 @@ public final class PackedCascadesPlanner {
 		return computation;
 	}
 
-	private static Computation optimize(PackedQuery query, long workLimit, long deadlineNanos,
-			boolean exploreReorderings, PackedCostModel costModel, long encodeNanos, long cacheNanos,
-			boolean queryTemplateCacheHit) {
-		return optimize(query, new PackedPlannerLimits(workLimit, deadlineNanos), exploreReorderings, costModel,
-				encodeNanos, cacheNanos, queryTemplateCacheHit);
-	}
-
 	private static Computation optimize(PackedQuery query, PackedPlannerLimits limits,
 			boolean exploreReorderings, PackedCostModel costModel, long encodeNanos, long cacheNanos,
 			boolean queryTemplateCacheHit) {

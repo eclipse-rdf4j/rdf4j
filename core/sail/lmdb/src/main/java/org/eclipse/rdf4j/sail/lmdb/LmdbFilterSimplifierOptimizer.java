@@ -34,11 +34,13 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Coalesce;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
 import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -54,11 +56,15 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -70,6 +76,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationSco
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteAssumption;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteCertificate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RewriteSafety;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -259,26 +266,35 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		}
 
 		Set<String> conditionVars = LmdbJoinPlanSupport.conditionBindingNames(rightFilter.getCondition());
-		if (!rightPattern.getBindingNames().containsAll(conditionVars)
-				|| !difference.getLeftArg().getAssuredBindingNames().containsAll(conditionVars)
-				|| !isSafeTotalMinusLocalCondition(rightFilter.getCondition(), conditionVars)
+		Set<String> leftAssuredBindings = difference.getLeftArg().getAssuredBindingNames();
+		boolean sharedBindingAssured = rightPattern.getVarList()
+				.stream()
+				.anyMatch(var -> !var.hasValue() && leftAssuredBindings.contains(var.getName()));
+		if (!sharedBindingAssured || !rightPattern.getBindingNames().containsAll(conditionVars)
+				|| !leftAssuredBindings.containsAll(conditionVars)
+				|| !isSafeMinusLocalCondition(rightFilter.getCondition(), conditionVars)
 				|| !LmdbJoinPlanSupport.containsEquivalentRequiredPattern(difference.getLeftArg(), rightPattern)) {
 			return null;
 		}
 
-		Filter replacement = new Filter(difference.getLeftArg().clone(), new Not(rightFilter.getCondition().clone()));
+		// An error rejects the RHS row, so MINUS must retain its matching left row. In
+		// particular STR() can fail for a bound blank node; NOT(error) alone would drop it.
+		Coalesce rightMatches = new Coalesce(List.of(rightFilter.getCondition().clone(),
+				new ValueConstant(VF.createLiteral(false))));
+		Filter replacement = new Filter(difference.getLeftArg().clone(), new Not(rightMatches));
 		replacement.setStringMetricPlanned("optimizer.rewriteProof",
 				new LmdbRewriteProof(LmdbRewriteProof.RewriteKind.MINUS_REDUNDANT_PATTERN_FILTER,
 						LmdbRewriteProof.EquivalenceScope.LOGICAL_BAG_EQUIVALENT,
-						Set.of("rhsPatternRequiredOnLeft", "conditionVarsAssuredByLeft", "totalStringFilter"),
+						Set.of("rhsPatternRequiredOnLeft", "conditionVarsAssuredByLeft", "sharedBindingAssured",
+								"rhsFilterErrorsPreserved"),
 						"minus-rhs-required-pattern-filter-is-left-negated-filter").metricFragment());
 		return replacement;
 	}
 
-	private static boolean isSafeTotalMinusLocalCondition(ValueExpr condition, Set<String> assuredConditionVars) {
+	private static boolean isSafeMinusLocalCondition(ValueExpr condition, Set<String> assuredConditionVars) {
 		if (condition instanceof And and) {
-			return isSafeTotalMinusLocalCondition(and.getLeftArg(), assuredConditionVars)
-					&& isSafeTotalMinusLocalCondition(and.getRightArg(), assuredConditionVars);
+			return isSafeMinusLocalCondition(and.getLeftArg(), assuredConditionVars)
+					&& isSafeMinusLocalCondition(and.getRightArg(), assuredConditionVars);
 		}
 		if (condition instanceof FunctionCall functionCall) {
 			return FN.CONTAINS.stringValue().equals(functionCall.getURI()) && functionCall.getArgs().size() == 2
@@ -1629,7 +1645,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			if (candidate == null) {
 				continue;
 			}
-			StatementPattern pattern = localStatementPattern(filter, condition, candidate.bindingName());
+			StatementPattern pattern = idFilterStatementPattern(filter, candidate.bindingName());
 			if (pattern == null) {
 				continue;
 			}
@@ -1707,6 +1723,56 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			}
 		});
 		return matches.size() == 1 ? matches.getFirst() : null;
+	}
+
+	private static StatementPattern idFilterStatementPattern(Filter filter, String bindingName) {
+		List<StatementPattern> matches = new ArrayList<>(1);
+		collectIdFilterPatterns(filter.getArg(), bindingName, matches);
+		return matches.size() == 1 ? matches.getFirst() : null;
+	}
+
+	private static void collectIdFilterPatterns(TupleExpr expression, String bindingName,
+			List<StatementPattern> matches) {
+		if (!expression.getBindingNames().contains(bindingName)) {
+			return;
+		}
+		if (expression instanceof StatementPattern pattern) {
+			if (localPatternComponent(pattern, bindingName) != null) {
+				matches.add(pattern);
+			}
+		} else if (expression instanceof Filter filter) {
+			if (ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())) {
+				collectIdFilterPatterns(filter.getArg(), bindingName, matches);
+			}
+		} else if (expression instanceof Join join) {
+			collectIdFilterPatterns(join.getLeftArg(), bindingName, matches);
+			collectIdFilterPatterns(join.getRightArg(), bindingName, matches);
+		} else if (expression instanceof Union union) {
+			collectIdFilterPatterns(union.getLeftArg(), bindingName, matches);
+			collectIdFilterPatterns(union.getRightArg(), bindingName, matches);
+		} else if (expression instanceof LeftJoin leftJoin) {
+			collectIdFilterPatterns(leftJoin.getLeftArg(), bindingName, matches);
+		} else if (expression instanceof Difference difference) {
+			collectIdFilterPatterns(difference.getLeftArg(), bindingName, matches);
+		} else if (expression instanceof Extension extension) {
+			for (ExtensionElem element : extension.getElements()) {
+				if (bindingName.equals(element.getName())
+						|| !ScalarEvaluationEffects.reorderingIsSafe(element.getExpr())) {
+					return;
+				}
+			}
+			collectIdFilterPatterns(extension.getArg(), bindingName, matches);
+		} else if (expression instanceof Order order) {
+			if (order.getElements()
+					.stream()
+					.allMatch(element -> ScalarEvaluationEffects.reorderingIsSafe(element.getExpr()))) {
+				collectIdFilterPatterns(order.getArg(), bindingName, matches);
+			}
+		} else if (expression instanceof QueryRoot || expression instanceof Distinct || expression instanceof Reduced) {
+			collectIdFilterPatterns(((UnaryTupleOperator) expression).getArg(), bindingName, matches);
+		}
+		// Projections establish a separate binding scope; GROUP and Slice consume rows
+		// before the outer condition. Other operators need their own pushdown proof.
 	}
 
 	private static String localPatternComponent(StatementPattern pattern, String bindingName) {

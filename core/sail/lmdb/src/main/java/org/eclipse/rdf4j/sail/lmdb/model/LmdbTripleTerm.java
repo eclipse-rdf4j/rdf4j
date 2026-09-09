@@ -30,7 +30,7 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 	private Resource subject;
 	private IRI predicate;
 	private Value object;
-	private boolean initialized = false;
+	private volatile boolean initialized = false;
 
 	public LmdbTripleTerm(ValueStoreRevision revision, long internalID) {
 		setInternalID(internalID, revision);

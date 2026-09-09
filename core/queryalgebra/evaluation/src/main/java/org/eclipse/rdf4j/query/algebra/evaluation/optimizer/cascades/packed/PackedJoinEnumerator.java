@@ -10427,6 +10427,7 @@ final class PackedJoinEnumerator {
 		} else {
 			costEstimate.setContextualRows(outputRows, totalWork);
 		}
+		certifyCompleteContextualInvocationDomain(costEstimate, prefixRows);
 		childGroups[0] = inputGroupId;
 		int filterGroupId = memo.logicalGroupId(filterRelationId);
 		int physicalExpressionId = memo.addPhysicalAlternative(filterGroupId, PackedRelOp.FILTER,

@@ -32,7 +32,7 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 
 	private long internalID;
 
-	private boolean initialized = false;
+	private volatile boolean initialized = false;
 
 	/*--------------*
 	 * Constructors *

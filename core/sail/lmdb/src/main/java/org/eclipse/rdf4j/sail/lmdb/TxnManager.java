@@ -281,10 +281,14 @@ class TxnManager {
 	}
 
 	void close() {
+		// Txn.close() acquires the transaction monitor before the registry monitor.
+		// Release the registry snapshot lock before waiting for individual transactions.
+		for (Txn txn : activeTransactions()) {
+			txn.close();
+		}
 		synchronized (active) {
-			for (Txn txn : new ArrayList<>(active.keySet())) {
-				txn.close();
-			}
+			// A concurrent close removes its transaction and returns its handle to the
+			// pool under this same lock, so the final drain includes those handles.
 			closePooledReaders();
 		}
 	}

@@ -46,13 +46,14 @@ class BindingMaskTest {
 	}
 
 	@Test
-	void universeFiltersNonPlannerNamesAtMaskBoundary() {
+	void universeFiltersBlankNamesAndPreservesUserVariables() {
 		BindingUniverse universe = BindingUniverse.create();
 
 		BindingMask mask = universe.maskOf(new LinkedHashSet<>(Set.of("s", "_const_x", "", "   ", "o")));
 
-		assertEquals(Set.of("s", "o"), universe.names(mask));
-		assertFalse(universe.containsName("_const_x"));
+		assertEquals(Set.of("s", "o", "_const_x"), universe.names(mask));
+		assertTrue(universe.containsName("_const_x"));
 		assertFalse(universe.containsName(""));
+		assertFalse(universe.containsName("   "));
 	}
 }

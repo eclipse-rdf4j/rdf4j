@@ -75,6 +75,9 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 	private final int strategyMode;
 	private final boolean negated;
 	private final boolean sharedAndCorrelationProjectionMatch;
+	private final Object lifecycleLock = new Object();
+	private CloseableIteration<BindingSet> activeRhs;
+	private volatile boolean closing;
 	private boolean initialized;
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
@@ -148,7 +151,10 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
-		while (leftIter.hasNext()) {
+		while (!closing && leftIter.hasNext()) {
+			if (closing) {
+				return null;
+			}
 			BindingSet left = leftIter.next();
 			sourceRowsScannedActual++;
 			long sharedFingerprint = sharedAndCorrelationProjectionMatch
@@ -166,6 +172,9 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 			} else {
 				exists = adaptiveDecision(left);
 			}
+			if (closing) {
+				return null;
+			}
 			recordCorrelationOutcome(left, exists, sharedFingerprint, sharedAndCorrelationProjectionMatch);
 			boolean accepted = negated ? !exists : exists;
 			if (accepted) {
@@ -177,13 +186,17 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 				return left;
 			}
 		}
-		inputExhausted = true;
+		inputExhausted = !closing;
 		return null;
 	}
 
 	private boolean probe(BindingSet left) {
 		iteratorOpens++;
-		try (CloseableIteration<BindingSet> probeIter = existsProbeFunction.apply(left)) {
+		try (ActiveRhs scan = openRhs(existsProbeFunction, left)) {
+			if (scan == null) {
+				return false;
+			}
+			CloseableIteration<BindingSet> probeIter = scan.iteration;
 			boolean exists = probeIter.hasNext();
 			long work = probeWork(probeIter, exists);
 			rhsRowsExamined = saturatedAdd(rhsRowsExamined, work);
@@ -248,20 +261,25 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 	}
 
 	private boolean cacheProbeResult(BindingSetHashKey key, boolean exists) {
-		int entries = sharedProbeCacheEntries.get();
-		while (entries < sharedProbeCacheCapacity) {
-			if (sharedProbeCacheEntries.compareAndSet(entries, entries + 1)) {
-				Boolean raced = sharedProbeCache.putIfAbsent(key, exists);
-				if (raced != null) {
-					sharedProbeCacheEntries.decrementAndGet();
-					return raced;
-				}
-				return exists;
+		synchronized (lifecycleLock) {
+			if (closing) {
+				return false;
 			}
-			entries = sharedProbeCacheEntries.get();
+			int entries = sharedProbeCacheEntries.get();
+			while (entries < sharedProbeCacheCapacity) {
+				if (sharedProbeCacheEntries.compareAndSet(entries, entries + 1)) {
+					Boolean raced = sharedProbeCache.putIfAbsent(key, exists);
+					if (raced != null) {
+						sharedProbeCacheEntries.decrementAndGet();
+						return raced;
+					}
+					return exists;
+				}
+				entries = sharedProbeCacheEntries.get();
+			}
+			cacheEvictions++;
+			return exists;
 		}
-		cacheEvictions++;
-		return exists;
 	}
 
 	private MaterializedPartition materializedPartition(BindingSet left) {
@@ -269,54 +287,98 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 	}
 
 	private MaterializedPartition materializedPartition(BindingSetHashKey parameterKey, BindingSet left) {
-		synchronized (materializationCache) {
-			MaterializedPartition existing = materializationCache.getUnsynchronized(parameterKey);
-			if (existing != null) {
-				initialized = true;
-				return existing;
-			}
+		MaterializedPartition existing = materializationCache.get(parameterKey);
+		if (existing != null) {
 			initialized = true;
-			materializationBuilds++;
-			iteratorOpens++;
-			QueryBindingSet materializationBindings = new QueryBindingSet(materializationParameterBindingNames.length);
-			for (String bindingName : materializationParameterBindingNames) {
-				Value value = left.getValue(bindingName);
-				if (value != null) {
-					materializationBindings.setBinding(bindingName, value);
-				}
+			return existing;
+		}
+		initialized = true;
+		materializationBuilds++;
+		iteratorOpens++;
+		QueryBindingSet materializationBindings = new QueryBindingSet(materializationParameterBindingNames.length);
+		for (String bindingName : materializationParameterBindingNames) {
+			Value value = left.getValue(bindingName);
+			if (value != null) {
+				materializationBindings.setBinding(bindingName, value);
 			}
-			MaterializedPartition built;
-			try (CloseableIteration<BindingSet> existsIter = existsMaterializationFunction
-					.apply(materializationBindings)) {
-				if (sharedBindingNames.length == 0) {
-					boolean existsNonEmpty = existsIter.hasNext();
-					if (existsNonEmpty) {
-						rhsRowsExamined++;
-						hashBuildRows++;
-					}
-					built = new MaterializedPartition(existsNonEmpty, null, List.of(), List.of());
-				} else {
-					ArrayList<BindingSet> nextAllRows = new ArrayList<>();
-					ArrayList<BindingSet> nextWildcardRows = new ArrayList<>();
-					while (existsIter.hasNext()) {
-						BindingSet row = existsIter.next();
-						rhsRowsExamined++;
-						hashBuildRows++;
-						nextAllRows.add(row);
-						if (!hasAllSharedBindings(row)) {
-							nextWildcardRows.add(row);
-						}
-					}
-					MaterializedKeyIndex nextExactKeys = MaterializedKeyIndex.build(sharedBindingNames, nextAllRows);
-					built = new MaterializedPartition(
-							!nextAllRows.isEmpty(),
-							nextExactKeys,
-							nextAllRows.isEmpty() ? List.of() : nextAllRows,
-							nextWildcardRows.isEmpty() ? List.of() : nextWildcardRows);
-				}
+		}
+		MaterializedPartition built;
+		// Never hold the shared cache monitor while opening or consuming a potentially blocking scan.
+		try (ActiveRhs scan = openRhs(existsMaterializationFunction, materializationBindings)) {
+			if (scan == null) {
+				return null;
 			}
-			materializationCache.putUnsynchronized(parameterKey, built);
-			return built;
+			CloseableIteration<BindingSet> existsIter = scan.iteration;
+			if (sharedBindingNames.length == 0) {
+				boolean existsNonEmpty = existsIter.hasNext();
+				if (existsNonEmpty) {
+					rhsRowsExamined++;
+					hashBuildRows++;
+				}
+				built = new MaterializedPartition(existsNonEmpty, null, List.of(), List.of());
+			} else {
+				ArrayList<BindingSet> nextAllRows = new ArrayList<>();
+				ArrayList<BindingSet> nextWildcardRows = new ArrayList<>();
+				while (!closing && existsIter.hasNext()) {
+					if (closing) {
+						return null;
+					}
+					BindingSet row = existsIter.next();
+					rhsRowsExamined++;
+					hashBuildRows++;
+					nextAllRows.add(row);
+					if (!hasAllSharedBindings(row)) {
+						nextWildcardRows.add(row);
+					}
+				}
+				if (closing) {
+					return null;
+				}
+				MaterializedKeyIndex nextExactKeys = MaterializedKeyIndex.build(sharedBindingNames, nextAllRows);
+				built = new MaterializedPartition(
+						!nextAllRows.isEmpty(), nextExactKeys,
+						nextAllRows.isEmpty() ? List.of() : nextAllRows,
+						nextWildcardRows.isEmpty() ? List.of() : nextWildcardRows);
+			}
+		}
+		synchronized (lifecycleLock) {
+			// A cancelled scan may look exhausted: never publish its partial result to dependent reopens.
+			return closing ? null : materializationCache.putIfAbsent(parameterKey, built);
+		}
+	}
+
+	private ActiveRhs openRhs(Function<BindingSet, CloseableIteration<BindingSet>> evaluation,
+			BindingSet bindings) {
+		if (closing) {
+			return null;
+		}
+		CloseableIteration<BindingSet> iteration = evaluation.apply(bindings);
+		synchronized (lifecycleLock) {
+			if (!closing) {
+				activeRhs = iteration;
+				return new ActiveRhs(iteration);
+			}
+		}
+		iteration.close();
+		return null;
+	}
+
+	private final class ActiveRhs implements AutoCloseable {
+		private final CloseableIteration<BindingSet> iteration;
+
+		private ActiveRhs(CloseableIteration<BindingSet> iteration) {
+			this.iteration = iteration;
+		}
+
+		@Override
+		public void close() {
+			synchronized (lifecycleLock) {
+				if (activeRhs != iteration) {
+					return;
+				}
+				activeRhs = null;
+			}
+			iteration.close();
 		}
 	}
 
@@ -330,7 +392,7 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 
 	private boolean matches(MaterializedPartition partition, BindingSet left, long fingerprint,
 			boolean fingerprintAvailable) {
-		if (!partition.existsNonEmpty()) {
+		if (partition == null || !partition.existsNonEmpty()) {
 			return false;
 		}
 		if (sharedBindingNames.length == 0) {
@@ -394,8 +456,17 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 
 	@Override
 	protected void handleClose() {
-		try {
-			leftIter.close();
+		CloseableIteration<BindingSet> right;
+		synchronized (lifecycleLock) {
+			if (closing) {
+				return;
+			}
+			closing = true;
+			right = activeRhs;
+			activeRhs = null;
+		}
+		try (leftIter; right) {
+			// Close the active scan first, retaining both failures if closing either input fails.
 		} finally {
 			distinctBindingFeedback = distinctBindings == null
 					? DistinctBindingFeedback.unavailable()
@@ -841,16 +912,16 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 		private long residentRows;
 
 		synchronized MaterializedPartition get(BindingSetHashKey key) {
-			return getUnsynchronized(key);
-		}
-
-		private MaterializedPartition getUnsynchronized(BindingSetHashKey key) {
 			return partitions.get(key);
 		}
 
-		private void putUnsynchronized(BindingSetHashKey key, MaterializedPartition partition) {
-			partitions.put(key, partition);
+		synchronized MaterializedPartition putIfAbsent(BindingSetHashKey key, MaterializedPartition partition) {
+			MaterializedPartition existing = partitions.putIfAbsent(key, partition);
+			if (existing != null) {
+				return existing;
+			}
 			residentRows = saturatedAdd(residentRows, partition.memoryRows());
+			return partition;
 		}
 
 		synchronized long residentRows() {

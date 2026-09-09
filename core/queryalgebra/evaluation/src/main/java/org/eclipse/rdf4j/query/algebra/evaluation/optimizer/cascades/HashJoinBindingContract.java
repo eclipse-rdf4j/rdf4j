@@ -65,8 +65,8 @@ public final class HashJoinBindingContract {
 	}
 
 	/**
-	 * Adapts the historical one-array API. Reserved planner names are discarded, and every remaining binding is used
-	 * for both lookup and compatibility to preserve the old caller contract.
+	 * Adapts the historical one-array API. Every supplied binding name is used for both lookup and compatibility to
+	 * preserve the old caller contract.
 	 */
 	public static HashJoinBindingContract legacy(String[] joinBindings) {
 		if (joinBindings == null || joinBindings.length == 0) {
