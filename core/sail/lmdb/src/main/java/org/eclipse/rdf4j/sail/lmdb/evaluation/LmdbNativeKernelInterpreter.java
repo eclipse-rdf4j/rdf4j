@@ -362,7 +362,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (emit != null && emit.mods.orderKeys == null && hasPlanRows(kernel.pipeline)) {
 			this.pullRows = new PullPipeline(kernel.pipeline);
 		} else {
-			this.root = build(kernel.pipeline, 0, aggregate != null ? this::updateTerminal : this::emitRowTerminal, false);
+			this.root = kernel.aggregateProjections != null
+					&& (!kernel.aggregateProjections.weightedNumeric || hooks.supportsWeightedNumericAggregates())
+					? buildAggregateProjections()
+					: build(kernel.pipeline, 0, aggregate != null ? this::updateTerminal : this::emitRowTerminal, false);
 		}
 
 		this.rfTest = new long[filterSites.size()];
@@ -2145,6 +2148,100 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 			}
 		};
+	}
+
+	private Op buildAggregateProjections() {
+		LmdbNativeKernelIr.AggregateProjections spec = kernel.aggregateProjections;
+		PlanRows plan = spec.input;
+		int[][] columns = spec.layout.columns(); boolean[] exact = spec.layout.exactWeights();
+		int[][] channels = new int[columns.length][];
+		for (int i = 0; i < channels.length; i++) channels[i] = spec.layout.channels(i);
+		int[] allChannels = new int[aggregate.outputs.length];
+		for (int i = 0; i < allChannels.length; i++) allChannels[i] = i;
+		long used = 0L;
+		for (int[] projection : columns) for (int column : projection) used |= 1L << column;
+		final long demanded = used;
+		return () -> {
+			KernelPlan bound = context.plans[plan.plan];
+			for (int i = 0; i < plan.inputs.length; i++) bound.setInput(i, read(plan.inputs[i]));
+			org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor input =
+					org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor.open(bound, plan.outCols.length,
+							columns, exact, cancel);
+			Throwable failure = null;
+			try {
+				while (input.nextBatch()) {
+					int flatCount = input.flatRowCount();
+					if (flatCount != 0) {
+						long[] flatValues = input.flatValues(), flatWeights = input.flatWeights();
+						for (int row = 0; row < flatCount; row++) {
+							int base = row * plan.outCols.length;
+							for (long rest = demanded; rest != 0L; rest &= rest - 1L) {
+								int column = Long.numberOfTrailingZeros(rest);
+								v[plan.outCols[column]] = flatValues[base + column];
+							}
+							updateMarginal(allChannels, flatWeights[row]);
+						}
+						input.finishFlat();
+						continue;
+					}
+					for (int p = 0; p < columns.length; p++) while (input.next(p)) {
+					for (int column : columns[p]) v[plan.outCols[column]] = input.value(column);
+					boolean observed = false;
+					if (exact[p]) for (int c : channels[p]) {
+						AggregateOutput o = aggregate.outputs[c];
+						if (o.kind == LmdbNativeKernelIr.AGG_COUNT_STAR || v[o.col] != -1L) { observed = true; break; }
+					}
+					updateMarginal(channels[p], observed ? input.multiplicity() : 1L);
+					}
+				}
+			} catch (RuntimeException | Error problem) { failure = problem; throw problem; }
+			finally {
+				Throwable closing = KernelRuntime.closeResource(input, failure);
+				for (int col : plan.outCols) { int i = plan.inputForColumn(col); v[col] = i < 0 ? -1L : bound.input(i); }
+				if (failure == null) KernelRuntime.rethrowCloseFailure(closing);
+			}
+			return false;
+		};
+	}
+
+	private void updateMarginal(int[] channels, long weight) {
+		if (groupSink != null) {
+			for (int i = 0; i < aggregate.groupCols.length; i++) boundedGroupInput[i] = v[aggregate.groupCols[i]];
+			if (channels.length == 0) groupSink.addChannel(boundedGroupInput, -1, -1L, 1L);
+			for (int channel : channels) {
+				AggregateOutput output = aggregate.outputs[channel];
+				groupSink.addChannel(boundedGroupInput, channel,
+						output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? 0L : v[output.col], weight);
+			}
+			return;
+		}
+		int group;
+		if (aggregate.groupCols.length == 0) group = 0;
+		else if (aggregate.groupCols.length == 1) group = groups.getOrInsert(v[aggregate.groupCols[0]]);
+		else {
+			for (int i = 0; i < aggregate.groupCols.length; i++) groupScratch[i] = v[aggregate.groupCols[i]];
+			group = groupKeys.internOrGet(groupScratch, 0);
+		}
+		ensure(group);
+		for (int i : channels) {
+			AggregateOutput output = aggregate.outputs[i]; long value = output.col < 0 ? 0L : v[output.col];
+			switch (output.kind) {
+			case LmdbNativeKernelIr.AGG_COUNT_STAR: agC[i][group] = Math.addExact(agC[i][group], weight); break;
+			case LmdbNativeKernelIr.AGG_COUNT:
+				if (value != -1L) agC[i][group] = Math.addExact(agC[i][group], weight); break;
+			case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
+				if (value != -1L) agD[i][group].add(value); break;
+			case LmdbNativeKernelIr.AGG_SUM: case LmdbNativeKernelIr.AGG_AVG:
+				if (value != -1L) hooks.accumulateNumericWeighted(i, group, value, weight); break;
+			case LmdbNativeKernelIr.AGG_SUM_DISTINCT: case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
+				if (value != -1L && agD[i][group].add(value)) hooks.accumulateNumeric(i, group, value); break;
+			case LmdbNativeKernelIr.AGG_MIN_ID: case LmdbNativeKernelIr.AGG_MAX_ID:
+				if (value != -1L && (!agB[i][group] || hooks.replacesWinner(value, agW[i][group],
+						output.kind == LmdbNativeKernelIr.AGG_MIN_ID))) { agW[i][group] = value; agB[i][group] = true; }
+				break;
+			default: throw new IllegalStateException("unsupported marginal channel");
+			}
+		}
 	}
 
 	private Op buildPlanFactors(PlanFactors plan, Op next) {

@@ -259,6 +259,35 @@ class LmdbNativePackedFtreeTest {
 		assertEquals(0L, row.boundMask());
 	}
 
+	@Test
+	void onePackedChunkServesIndependentAggregateProjections() throws Exception {
+		TestGraph graph = pathGraph();
+		graph.borrow = true;
+		RowState row = row(graph.source(), "a", "b", "c", "d", "e");
+		MultiJoinPlan join = join(pattern(0, P1, 1), pattern(1, P2, 2), pattern(2, P3, 3), pattern(3, P4, 4));
+		try (NativeFactorProjections cursor = join.openProjections(row,
+				new int[][] { { 2 }, { 2, 0 }, { 2, 4 } }, new boolean[] { true, true, false })) {
+			assertNotNull(cursor);
+			assertTrue(cursor.nextBatch());
+			assertTrue(cursor.next(0));
+			assertEquals(20L, cursor.value(2));
+			assertEquals(15L, cursor.multiplicity());
+			assertEquals(15L, cursor.multiplicity(), "stable, not consume-on-read");
+			assertFalse(cursor.next(0));
+			java.util.Map<Long, Long> left = new java.util.HashMap<>();
+			while (cursor.next(1)) left.merge(cursor.value(0), cursor.multiplicity(), Math::addExact);
+			assertEquals(java.util.Map.of(1L, 5L, 2L, 5L, 3L, 5L), left);
+			java.util.Set<Long> right = new java.util.HashSet<>();
+			while (cursor.next(2)) {
+				right.add(cursor.value(4));
+				assertEquals(1L, cursor.multiplicity());
+			}
+			assertEquals(java.util.Set.of(41L, 42L, 43L, 44L, 45L), right);
+			assertFalse(cursor.nextBatch());
+		}
+		assertEquals(0L, row.boundMask(), "marginal readers must not publish intermediate scalar bindings");
+	}
+
 	private static void assertNode(LmdbNativePackedFtree.NodeData data, long... expected) {
 		assertEquals(expected.length, data.size);
 		for (int i = 0; i < expected.length; i++) {

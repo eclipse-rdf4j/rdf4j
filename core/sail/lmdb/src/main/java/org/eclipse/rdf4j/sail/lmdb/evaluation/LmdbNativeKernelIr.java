@@ -82,6 +82,54 @@ final class LmdbNativeKernelIr {
 		return true;
 	}
 
+	static final String FACTOR_MARGINALS_PROPERTY = "rdf4j.lmdb.janinoCodegen.factorMarginals";
+
+	/** Shared demand plan; physical producers decide whether its bounded batch view is available. */
+	static final class AggregateProjections {
+		final PlanRows input;
+		final org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout layout;
+		final boolean weightedNumeric;
+		AggregateProjections(PlanRows input, org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout layout,
+				boolean weightedNumeric) { this.input = input; this.layout = layout; this.weightedNumeric = weightedNumeric; }
+		static AggregateProjections create(List<Node> pipeline, Terminal terminal, Kernel.AggregateStateMode mode) {
+			if ("false".equals(System.getProperty(FACTOR_MARGINALS_PROPERTY)) || pipeline.size() != 1
+					|| !(pipeline.get(0) instanceof PlanRows input) || input instanceof PlanFactors
+					|| !(terminal instanceof Aggregate aggregate) || mode != Kernel.AggregateStateMode.HASHED
+					|| aggregate.outputs.length == 0) return null;
+			int[] groups = new int[aggregate.groupCols.length];
+			for (int i = 0; i < groups.length; i++) {
+				groups[i] = position(input.outCols, aggregate.groupCols[i]); if (groups[i] < 0) return null;
+			}
+			int[] args = new int[aggregate.outputs.length];
+			boolean[] exact = new boolean[args.length];
+			boolean numeric = false, useful = false;
+			long argumentDomains = 0L;
+			for (int i = 0; i < args.length; i++) {
+				AggregateOutput output = aggregate.outputs[i];
+				if (output.hookDistinct || output.orderedDomain >= 0 || output.kind == AGG_ROW_STATE) return null;
+				// Only the same order-insensitive families admitted by native weighted accumulation.
+				switch (output.kind) {
+				case AGG_COUNT_STAR: case AGG_COUNT: exact[i] = true; break;
+				case AGG_SUM: case AGG_AVG: exact[i] = true; numeric = true; useful = true; break;
+				case AGG_COUNT_DISTINCT: case AGG_SUM_DISTINCT: case AGG_AVG_DISTINCT:
+				case AGG_MIN_ID: case AGG_MAX_ID: useful = true; break;
+				default: return null; // untyped floating extrema and custom/order-sensitive channels stay exact-row
+				}
+				args[i] = output.kind == AGG_COUNT_STAR ? -1 : position(input.outCols, output.col);
+				if (output.kind != AGG_COUNT_STAR && args[i] < 0) return null;
+				if (args[i] >= 0) argumentDomains |= 1L << args[i];
+			}
+			// Keep a sufficient existing one-projection COUNT shortcut, with no new setup overhead.
+			if (!useful && Long.bitCount(argumentDomains) <= 1) return null;
+			return new AggregateProjections(input,
+					new org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout(groups, args, exact), numeric);
+		}
+		private static int position(int[] columns, int requested) {
+			for (int i = 0; i < columns.length; i++) if (columns[i] == requested) return i;
+			return -1;
+		}
+	}
+
 	private LmdbNativeKernelIr() {
 	}
 
@@ -3110,6 +3158,7 @@ final class LmdbNativeKernelIr {
 		final Terminal terminal;
 		final Requirements requirements;
 		final FactorCountGuards factorCountGuards;
+		final AggregateProjections aggregateProjections;
 		/** Emission choice is captured once and participates in the compiler cache identity. */
 		final boolean compiledCountSpecialization;
 		/** Shared native top-K/spill sink; capture admission in the generated shape. */
@@ -3180,6 +3229,7 @@ final class LmdbNativeKernelIr {
 					&& !"false".equals(System.getProperty(COUNT_SPECIALIZATION_PROPERTY));
 			AggregateProperties aggregateProperties = aggregateProperties(this.pipeline, this.terminal);
 			this.aggregateStateMode = aggregateProperties.stateMode;
+			this.aggregateProjections = AggregateProjections.create(this.pipeline, this.terminal, this.aggregateStateMode);
 			this.boundedGroups = !"false".equals(System.getProperty("rdf4j.lmdb.janinoCodegen.boundedGroups"))
 					&& boundedGroupShape(this.terminal, this.aggregateStateMode, this.boundedOrder);
 
@@ -3198,6 +3248,7 @@ final class LmdbNativeKernelIr {
 					? -1
 					: vectorTail;
 			StringBuilder key = new StringBuilder("ir1:");
+			if (aggregateProjections != null) key.append("marginals1;");
 			if (boundedOrder) key.append("bo1;");
 			if (boundedGroups) key.append("bg1;");
 			if (factorCountGuards != null) key.append("fw1;");

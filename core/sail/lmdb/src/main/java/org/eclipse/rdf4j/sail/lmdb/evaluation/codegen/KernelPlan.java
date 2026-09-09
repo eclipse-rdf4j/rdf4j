@@ -33,6 +33,13 @@ public interface KernelPlan extends AutoCloseable {
 	Cursor open();
 
 	/**
+	 * Opens exact weighted output when the consumer can account for multiplicities. This is a
+	 * demand hint, not permission to compress volatile or effectful producers. The default
+	 * preserves ordinary evaluation; engine bindings may select a replay-safe weighted producer.
+	 */
+	default Cursor openWeighted() { return open(); }
+
+	/**
 	 * Optional native grouped-relation bridge. Unlike fillWeighted, this retains actual child
 	 * relations. Null means unsupported, not empty. The caller owns the returned cursor and must
 	 * consume its current sidecar before advancing. Existing scalar kernels remain unchanged.
@@ -52,6 +59,24 @@ public interface KernelPlan extends AutoCloseable {
 		long multiplicity();
 		/** Engine-slot namespace. Backing sources and descriptors remain owned by this cursor. */
 		FactorEnvironment factors();
+		@Override void close();
+	}
+
+	/**
+	 * Opens a reusable relation in bounded batches. Every requested projection is an exact marginal of
+	 * the SAME batch, not another evaluation of the input. Projection positions use this plan's output
+	 * namespace. A false exactWeights entry requests presence rather than bag multiplicity; its cursor
+	 * must never calculate an unobserved Cartesian cardinality. Null declines before reading any input.
+	 */
+	default ProjectionCursor openProjections(int[][] outputColumns, boolean[] exactWeights) { return null; }
+
+	interface ProjectionCursor extends AutoCloseable {
+		boolean nextBatch();
+		/** Start/advance one projection of the current batch; finish it before selecting another. */
+		boolean next(int projection);
+		/** An ID for a requested output position, never an address or a deferred handle. */
+		long value(int outputColumn);
+		long multiplicity();
 		@Override void close();
 	}
 

@@ -119,6 +119,15 @@ public interface KernelHooks {
 	 */
 	void accumulateNumeric(int aggregateId, int groupId, long valueId);
 
+	/** True only when weighted numeric updates preserve this authority's promotion/error/order contract. */
+	default boolean supportsWeightedNumericAggregates() { return false; }
+
+	/** Exact repeated-value update; unsupported hooks retain ordinary row execution before consuming input. */
+	default void accumulateNumericWeighted(int aggregateId, int groupId, long valueId, long weight) {
+		if (weight != 1L) throw new UnsupportedOperationException("weighted numeric aggregate");
+		accumulateNumeric(aggregateId, groupId, valueId);
+	}
+
 	/** Installs one kernel column for an exact row-valued aggregate. */
 	default void setAggregateInput(int column, long value) {
 		throw new UnsupportedOperationException("row aggregate inputs are not supported");

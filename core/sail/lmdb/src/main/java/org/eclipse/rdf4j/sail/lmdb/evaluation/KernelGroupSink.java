@@ -47,6 +47,9 @@ public final class KernelGroupSink implements AutoCloseable {
 	}
 
 	public void add(long[] groupIds, long[] inputs, long weight) { store.add(groupIds, inputs, weight); }
+	public void addChannel(long[] groupIds, int channel, long argument, long weight) {
+		store.addChannel(groupIds, channel, argument, weight);
+	}
 	public void addSingleCount(long group, long argument, long weight) { store.addSingleCount(group, argument, weight); }
 	public void addDistinct(long[] ids) { store.add(ids, NO_VALUES, 1L); }
 

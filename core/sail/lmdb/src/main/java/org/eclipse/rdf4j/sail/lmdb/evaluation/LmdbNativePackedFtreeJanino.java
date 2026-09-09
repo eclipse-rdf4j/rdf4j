@@ -50,7 +50,7 @@ final class LmdbNativePackedFtreeJanino {
 		String hash = Integer.toUnsignedString(topology.hashCode(), 36);
 		String simpleName = "PackedFtreeKernel_" + hash;
 		String className = "org.eclipse.rdf4j.sail.lmdb.evaluation.codegen." + simpleName;
-		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel("packed-ftree-v3:" + topology,
+		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel("packed-ftree-v4:" + topology,
 				className, () -> source(plan, simpleName), observedRows);
 		if (!(kernel instanceof PackedFtreeKernel)) {
 			if (kernel != null) {
@@ -63,7 +63,7 @@ final class LmdbNativePackedFtreeJanino {
 		packed.needOutsideCounts = outsideNeeded;
 		KernelContext context = new KernelContext(NO_ADJACENCY, NO_LONGS, NO_LONGS, NO_DOMAINS)
 				.withPackedFtree(packed)
-				.withCancellation(LmdbNativeProbeDeadline.currentKernelCancellation());
+				.withCancellation(LmdbNativeProbeDeadline.currentKernelCancellation(row.cancellation::isCancellationRequested));
 		try {
 			LmdbNativeJaninoCodegen.bind(kernel, context, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
 			LmdbNativeJaninoCodegen.fill(kernel, NO_ROWS, 0,

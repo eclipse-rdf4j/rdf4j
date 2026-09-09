@@ -15,6 +15,8 @@ public final class FactorProductCursor implements AutoCloseable {
 	private final BorrowedFactorBatch[] boundBatches;
 	private final BorrowedFactorBatch.Cursor[] readers;
 	private final int[] order;
+	private final int[] readerWindows;
+	private int[] tupleWindows;
 	private BorrowedTupleBatch[] boundTuples;
 	private BorrowedTupleBatch.Cursor[] tupleReaders;
 	private int[] tupleColumns;
@@ -30,18 +32,28 @@ public final class FactorProductCursor implements AutoCloseable {
 	private boolean first;
 	private boolean exhausted;
 	private boolean closed;
+	private boolean exactWeights = true;
+	private long bindingWeight;
 
 	public FactorProductCursor(int slots, int window) {
 		if (slots < 0 || slots > Long.SIZE || window <= 0) throw new IllegalArgumentException("invalid cursor size");
 		boundBatches = new BorrowedFactorBatch[slots];
 		readers = new BorrowedFactorBatch.Cursor[slots];
 		order = new int[slots];
+		readerWindows = new int[slots];
 		values = new long[slots];
 		prefixWeights = new long[slots + 1];
 		this.window = window;
 	}
 
 	public void bind(FactorEnvironment environment, long demandedSlots, long multiplicity) {
+		bind(environment, demandedSlots, multiplicity, true);
+	}
+
+	/** Presence projection ignores positive bag weights without multiplying unobserved products. */
+	public void bind(FactorEnvironment environment, long demandedSlots, long multiplicity, boolean exactWeights) {
+		this.exactWeights = exactWeights;
+		this.bindingWeight = multiplicity;
 		checkOpen();
 		Objects.requireNonNull(environment, "environment").checkValid();
 		if (environment.slots() > readers.length || multiplicity < 0)
@@ -69,7 +81,7 @@ public final class FactorProductCursor implements AutoCloseable {
 				}
 			}
 		}
-		prefixWeights[0] = multiplicity;
+		prefixWeights[0] = exactWeights ? multiplicity : 1L;
 		first = true;
 	}
 
@@ -81,6 +93,21 @@ public final class FactorProductCursor implements AutoCloseable {
 	}
 	/** Multiplicity of the emitted scalar prefix; excludes all unopened factors. */
 	public long multiplicity() { return prefixWeights[width]; }
+
+	/** Exact weight is optional: DISTINCT and null aggregate arguments need only presence. */
+	public long exactMultiplicity() {
+		checkOpen();
+		if (environment == null || first || exhausted || environment.epoch() != epoch)
+			throw new IllegalStateException("no current factor product");
+		if (exactWeights) return multiplicity();
+		long weight = bindingWeight;
+		for (int i = 0; i < width; i++) {
+			int slot = order[i];
+			weight = Math.multiplyExact(weight, (tupleLeaders & (1L << slot)) == 0L
+					? readers[slot].weight() : tupleReaders[slot].weight());
+		}
+		return weight;
+	}
 
 	public boolean next() {
 		checkOpen();
@@ -115,7 +142,7 @@ public final class FactorProductCursor implements AutoCloseable {
 			BorrowedFactorBatch.Cursor reader = readers[slot];
 			if (!reader.next()) continue;
 			values[slot] = reader.value();
-			prefixWeights[i + 1] = Math.multiplyExact(prefixWeights[i], reader.weight());
+			prefixWeights[i + 1] = exactWeights ? Math.multiplyExact(prefixWeights[i], reader.weight()) : 1L;
 			for (int j = i + 1; j < width; j++)
 				if (!restart(j)) throw new IllegalStateException("exact immutable factor changed during replay");
 			return true;
@@ -130,6 +157,7 @@ public final class FactorProductCursor implements AutoCloseable {
 			tupleReaders = new BorrowedTupleBatch.Cursor[readers.length];
 			tupleColumns = new int[readers.length];
 			tupleGroups = new long[readers.length];
+			tupleWindows = new int[readers.length];
 		}
 	}
 
@@ -137,11 +165,13 @@ public final class FactorProductCursor implements AutoCloseable {
 		int slot = order[index];
 		if ((tupleLeaders & (1L << slot)) != 0L) {
 			BorrowedTupleBatch batch = environment.tupleBatch(slot);
-			if (boundTuples[slot] != batch) {
+			int capacity = (int) Math.min(window, environment.count(slot));
+			if (boundTuples[slot] != batch || tupleWindows[slot] < capacity) {
 				if (tupleReaders[slot] != null) tupleReaders[slot].close();
 				tupleReaders[slot] = null;
 				boundTuples[slot] = null;
-				tupleReaders[slot] = batch.cursor(window);
+				tupleReaders[slot] = batch.cursor(capacity);
+				tupleWindows[slot] = capacity;
 				boundTuples[slot] = batch;
 			}
 			tupleReaders[slot].bind(environment.lane(slot));
@@ -150,11 +180,13 @@ public final class FactorProductCursor implements AutoCloseable {
 			return true;
 		}
 		BorrowedFactorBatch batch = environment.batch(slot);
-		if (boundBatches[slot] != batch) {
+		int capacity = (int) Math.min(window, environment.count(slot));
+		if (boundBatches[slot] != batch || readerWindows[slot] < capacity) {
 			if (readers[slot] != null) readers[slot].close();
 			readers[slot] = null;
 			boundBatches[slot] = null;
-			readers[slot] = batch.cursor(window);
+			readers[slot] = batch.cursor(capacity);
+			readerWindows[slot] = capacity;
 			boundBatches[slot] = batch;
 		}
 		readers[slot].bind(environment.lane(slot));
@@ -177,7 +209,7 @@ public final class FactorProductCursor implements AutoCloseable {
 			}
 			weight = reader.weight();
 		}
-		prefixWeights[index + 1] = Math.multiplyExact(prefixWeights[index], weight);
+		prefixWeights[index + 1] = exactWeights ? Math.multiplyExact(prefixWeights[index], weight) : 1L;
 	}
 	private void checkOpen() { if (closed) throw new IllegalStateException("factor product cursor closed"); }
 

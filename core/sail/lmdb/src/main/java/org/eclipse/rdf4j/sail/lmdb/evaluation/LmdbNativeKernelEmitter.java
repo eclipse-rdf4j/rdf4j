@@ -428,6 +428,8 @@ final class LmdbNativeKernelEmitter {
 					? emitPipeline(kernel.pipeline, terminalCall, false)
 					: emitFlatRootExists(flatRootExists);
 
+			if (kernel.aggregateProjections != null) firstMethod = emitAggregateProjections(firstMethod);
+
 			StringBuilder source = new StringBuilder(8192);
 			source.append("package org.eclipse.rdf4j.sail.lmdb.gen;\n\n");
 			if (flatRootExists != null || !sipBatchProbeSites.isEmpty()) {
@@ -2025,6 +2027,116 @@ final class LmdbNativeKernelEmitter {
 						.append(");\n");
 			}
 			source.append("        }\n");
+		}
+
+		/** Compile the same physical marginal requests as the interpreter, with channel dispatch removed. */
+		private String emitAggregateProjections(String fallback) {
+			LmdbNativeKernelIr.AggregateProjections spec = kernel.aggregateProjections;
+			Aggregate aggregate = (Aggregate) kernel.terminal;
+			PlanRows plan = spec.input;
+			int[][] projections = spec.layout.columns();
+			boolean[] exact = spec.layout.exactWeights();
+			StringBuilder body = new StringBuilder("    private void runMarginals() {\n");
+			if (spec.weightedNumeric) body.append("        if (!hooks.supportsWeightedNumericAggregates()) { ")
+					.append(fallback).append("(); return; }\n");
+			emitPlanInputs(body, "        ", plan);
+			body.append("        org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor m = ")
+					.append("org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor.open(p")
+					.append(plan.plan).append(", ").append(plan.outCols.length).append(", new int[][] {");
+			for (int[] projection : projections) {
+				body.append("new int[] {"); for (int c : projection) body.append(c).append(','); body.append("},");
+			}
+			body.append("}, new boolean[] {"); for (boolean e : exact) body.append(e).append(',');
+			body.append("}, cancel);\n        Throwable failure = null;\n        try {\n            while (m.nextBatch()) {\n");
+			int[] allChannels = new int[aggregate.outputs.length];
+			for (int i = 0; i < allChannels.length; i++) allChannels[i] = i;
+			int flatMethod = projections.length;
+			emitMarginalUpdate(aggregate, flatMethod, allChannels);
+			body.append("                int flatCount = m.flatRowCount();\n                if (flatCount != 0) {\n")
+					.append("                    long[] flatValues = m.flatValues(), flatWeights = m.flatWeights();\n")
+					.append("                    for (int row = 0; row < flatCount; row++) {\n")
+					.append("                        int base = row * ").append(plan.outCols.length).append(";\n");
+			long demanded = 0L;
+			for (int[] projection : projections) for (int c : projection) demanded |= 1L << c;
+			for (long rest = demanded; rest != 0L; rest &= rest - 1L) {
+				int c = Long.numberOfTrailingZeros(rest);
+				body.append("                        v").append(plan.outCols[c]).append(" = flatValues[base + ").append(c).append("];\n");
+			}
+			body.append("                        updateMarginal").append(flatMethod).append("(flatWeights[row]);\n")
+					.append("                    }\n                    m.finishFlat();\n                    continue;\n                }\n");
+			for (int request = 0; request < projections.length; request++) {
+				body.append("                while (m.next(").append(request).append(")) {\n");
+				for (int c : projections[request]) body.append("                    v").append(plan.outCols[c])
+						.append(" = m.value(").append(c).append(");\n");
+				String weight = "1L";
+				if (exact[request]) {
+					List<String> observed = new ArrayList<>();
+					for (int channel : spec.layout.channels(request)) {
+						AggregateOutput output = aggregate.outputs[channel];
+						observed.add(output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? "true" : "v" + output.col + " != -1L");
+					}
+					weight = "(" + String.join(" || ", observed) + ") ? m.multiplicity() : 1L";
+				}
+				body.append("                    updateMarginal").append(request).append("(")
+						.append(weight).append(");\n                }\n");
+				emitMarginalUpdate(aggregate, request, spec.layout.channels(request));
+			}
+			body.append("            }\n        } catch (RuntimeException problem) { failure = problem; throw problem; }\n")
+					.append("        catch (Error problem) { failure = problem; throw problem; }\n        finally {\n")
+					.append("            Throwable closing = KernelRuntime.closeResource(m, failure);\n");
+			emitPlanRestore(body, "            ", plan);
+			body.append("            if (failure == null) KernelRuntime.rethrowCloseFailure(closing);\n        }\n    }\n\n");
+			methods.add(body.toString());
+			return "runMarginals";
+		}
+
+		private void emitMarginalUpdate(Aggregate aggregate, int request, int[] channels) {
+			StringBuilder source = new StringBuilder("    private void updateMarginal" + request + "(long n) {\n");
+			if (kernel.boundedGroups) {
+				source.append("        if (groupSink != null) {\n");
+				for (int i = 0; i < aggregate.groupCols.length; i++) source.append("            boundedGroupInput[").append(i)
+						.append("] = v").append(aggregate.groupCols[i]).append(";\n");
+				if (channels.length == 0) source.append("            groupSink.addChannel(boundedGroupInput, -1, -1L, 1L);\n");
+				for (int channel : channels) source.append("            groupSink.addChannel(boundedGroupInput, ")
+						.append(channel).append(", ").append(aggregate.outputs[channel].kind == LmdbNativeKernelIr.AGG_COUNT_STAR
+								? "0L" : "v" + aggregate.outputs[channel].col).append(", n);\n");
+				source.append("            return;\n        }\n");
+			}
+			if (aggregate.groupCols.length == 0) source.append("        int g = 0;\n");
+			else if (aggregate.groupCols.length == 1) source.append("        int g = groups.getOrInsert(v")
+					.append(aggregate.groupCols[0]).append(");\n");
+			else {
+				for (int i = 0; i < aggregate.groupCols.length; i++) source.append("        groupScratch[").append(i)
+						.append("] = v").append(aggregate.groupCols[i]).append(";\n");
+				source.append("        int g = groupKeys.internOrGet(groupScratch, 0);\n");
+			}
+			source.append("        ensure(g);\n");
+			for (int i : channels) {
+				AggregateOutput output = aggregate.outputs[i];
+				String value = "v" + output.col;
+				switch (output.kind) {
+				case LmdbNativeKernelIr.AGG_COUNT_STAR:
+					source.append("        agC").append(i).append("[g] = Math.addExact(agC").append(i).append("[g], n);\n"); break;
+				case LmdbNativeKernelIr.AGG_COUNT:
+					source.append("        if (").append(value).append(" != -1L) agC").append(i)
+							.append("[g] = Math.addExact(agC").append(i).append("[g], n);\n"); break;
+				case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
+					emitCountDistinctUpdate(source, output, i, value); break;
+				case LmdbNativeKernelIr.AGG_SUM: case LmdbNativeKernelIr.AGG_AVG:
+					source.append("        if (").append(value).append(" != -1L) hooks.accumulateNumericWeighted(")
+							.append(i).append(", g, ").append(value).append(", n);\n"); break;
+				case LmdbNativeKernelIr.AGG_SUM_DISTINCT: case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
+					source.append("        if (").append(value).append(" != -1L && agD").append(i).append("[g].add(")
+							.append(value).append(")) hooks.accumulateNumeric(").append(i).append(", g, ").append(value).append(");\n"); break;
+				case LmdbNativeKernelIr.AGG_MIN_ID: case LmdbNativeKernelIr.AGG_MAX_ID:
+					source.append("        if (").append(value).append(" != -1L && (!agB").append(i)
+							.append("[g] || hooks.replacesWinner(").append(value).append(", agW").append(i).append("[g], ")
+							.append(output.kind == LmdbNativeKernelIr.AGG_MIN_ID).append("))) { agW").append(i).append("[g] = ")
+							.append(value).append("; agB").append(i).append("[g] = true; }\n"); break;
+				default: throw new IllegalStateException("unsupported marginal aggregate");
+				}
+			}
+			source.append("    }\n\n"); methods.add(source.toString());
 		}
 
 		private void emitAggregateSupport(StringBuilder source) {

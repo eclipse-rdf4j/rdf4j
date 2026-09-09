@@ -122,6 +122,41 @@ class LmdbNativeKernelLoweringTest {
 		assertTrue(lowered.kernel.terminal instanceof LmdbNativeKernelIr.Aggregate);
 	}
 
+	@Test void branchingAggregateKeepsOnePhysicalProducerAcrossBothIrTiers() {
+		String key = LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY;
+		String previous = System.getProperty(key);
+		try {
+			System.setProperty(key, "true");
+			RowState row = freshRow();
+			MultiJoinPlan tree = new MultiJoinPlan(new SlotPlan[] {
+					pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(0), Term.slot(2)),
+					pattern(Term.slot(0), Term.slot(3)) }, new MaskedFilter[0]);
+			AggregateSpec[] aggregates = {
+					AggregateSpec.slot("count", 1, false, AggKind.COUNT),
+					AggregateSpec.slot("a", 2, true, AggKind.COUNT),
+					AggregateSpec.slot("b", 3, true, AggKind.COUNT) };
+			var lowered = LmdbNativeKernelLowering.lowerAggregate(tree, row, new int[] { 0 }, aggregates, null);
+			assertNotNull(lowered);
+			assertNotNull(lowered.kernel.aggregateProjections);
+			assertEquals(1, lowered.bindings.planRequests.length);
+			assertEquals(tree, lowered.bindings.planRequests[0].plan);
+			assertFalse(java.util.Arrays.stream(lowered.bindings.planRequests[0].outputSlots)
+					.anyMatch(slot -> slot == 1), "assured-bound COUNT does not demand leaf values");
+			assertEquals(LmdbNativeKernelIr.AGG_COUNT_STAR,
+					((LmdbNativeKernelIr.Aggregate) lowered.kernel.terminal).outputs[0].kind);
+		} finally {
+			if (previous == null) System.clearProperty(key); else System.setProperty(key, previous);
+		}
+	}
+
+	@Test void singleGlobalDistinctRetainsExistingWitnessLoweringPreference() {
+		MultiJoinPlan tree = new MultiJoinPlan(new SlotPlan[] {
+				pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(0), Term.slot(2)),
+				pattern(Term.slot(0), Term.slot(3)) }, new MaskedFilter[0]);
+		assertFalse(LmdbNativePackedFtree.projectionAggregateCandidate(tree, freshRow(), new int[0],
+				new AggregateSpec[] { AggregateSpec.slot("count", 0, true, AggKind.COUNT) }));
+	}
+
 	/** Medical-query regression: DISTINCT + numeric IN + NOT EXISTS is not a factor-guard peeling candidate. */
 	@Test
 	void distinctNumericMembershipAndNotExistsAreInvariantUnderGuardPeeling() {

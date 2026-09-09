@@ -904,6 +904,7 @@ final class LmdbNativeKernelBindings {
 		private final RowState parent;
 		private BoundCursor active;
 		private BoundFactorCursor activeFactors;
+		private BoundProjectionCursor activeProjections;
 		private final long[] inputs;
 
 		private BoundPlan(PlanRequest request, RowState parent) {
@@ -923,7 +924,12 @@ final class LmdbNativeKernelBindings {
 		}
 
 		@Override
-		public Cursor open() {
+		public Cursor open() { return openRows(request.factorProjection); }
+
+		@Override
+		public Cursor openWeighted() { return openRows(request.batchSafe); }
+
+		private Cursor openRows(boolean weighted) {
 			close();
 			RowState scratch = parent.fork();
 			for (int i = 0; i < inputs.length; i++) {
@@ -932,7 +938,7 @@ final class LmdbNativeKernelBindings {
 			scratch.recomputeBoundMask();
 			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 			try {
-				RowCursor producer = request.factorProjection
+				RowCursor producer = weighted
 						? request.plan.openProjected(scratch, request.outputSlots) : null;
 				if (producer == null) producer = request.plan.open(scratch);
 				active = new BoundCursor(producer, scratch, request.outputSlots, this);
@@ -976,15 +982,81 @@ final class LmdbNativeKernelBindings {
 		}
 
 		@Override
+		public ProjectionCursor openProjections(int[][] outputColumns, boolean[] exactWeights) {
+			if (!request.batchSafe) return null;
+			if (outputColumns.length != exactWeights.length || outputColumns.length == 0)
+				throw new IllegalArgumentException("invalid marginal requests");
+			int[][] slots = new int[outputColumns.length][];
+			for (int p = 0; p < slots.length; p++) {
+				slots[p] = new int[outputColumns[p].length];
+				for (int i = 0; i < slots[p].length; i++)
+					slots[p][i] = request.outputSlots[java.util.Objects.checkIndex(outputColumns[p][i], request.outputSlots.length)];
+			}
+			close();
+			RowState scratch = parent.fork();
+			for (int i = 0; i < inputs.length; i++) scratch.slots[request.inputSlots[i]] = inputs[i];
+			scratch.recomputeBoundMask();
+			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
+			try {
+				NativeFactorProjections producer = request.plan.openProjections(scratch, slots, exactWeights);
+				if (producer == null) return null;
+				activeProjections = new BoundProjectionCursor(producer, request.outputSlots, this);
+				return activeProjections;
+			} catch (java.io.IOException failure) { throw new PlanFailure(failure); }
+			finally { LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested); }
+		}
+
+		@Override
 		public void close() {
-			try { if (active != null) active.close(); }
-			finally { if (activeFactors != null) activeFactors.close(); }
+			Throwable failure = null;
+			try { if (active != null) active.close(); } catch (RuntimeException | Error problem) { failure = problem; }
+			try { if (activeFactors != null) activeFactors.close(); } catch (RuntimeException | Error problem) {
+				if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
+			}
+			try { if (activeProjections != null) activeProjections.close(); } catch (RuntimeException | Error problem) {
+				if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
+			}
+			if (failure instanceof RuntimeException problem) throw problem;
+			if (failure instanceof Error problem) throw problem;
 		}
 
 		private void released(BoundCursor cursor) {
 			if (active == cursor) {
 				active = null;
 			}
+		}
+	}
+
+	private static final class BoundProjectionCursor implements KernelPlan.ProjectionCursor {
+		final NativeFactorProjections producer;
+		final int[] slots;
+		final BoundPlan owner;
+		boolean closed;
+		BoundProjectionCursor(NativeFactorProjections producer, int[] slots, BoundPlan owner) {
+			this.producer = producer; this.slots = slots; this.owner = owner;
+		}
+		@Override public boolean nextBatch() { return advance(-1); }
+		@Override public boolean next(int projection) { return advance(projection); }
+		private boolean advance(int projection) {
+			if (closed) return false;
+			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
+			try {
+				boolean next = projection < 0 ? producer.nextBatch() : producer.next(projection);
+				if (!next && projection < 0) close();
+				return next;
+			} catch (java.io.IOException failure) {
+				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				throw new PlanFailure(failure);
+			} catch (RuntimeException | Error failure) {
+				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				throw failure;
+			} finally { LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested); }
+		}
+		@Override public long value(int outputColumn) { return producer.value(slots[outputColumn]); }
+		@Override public long multiplicity() { return producer.multiplicity(); }
+		@Override public void close() {
+			if (closed) return; closed = true;
+			try { producer.close(); } finally { if (owner.activeProjections == this) owner.activeProjections = null; }
 		}
 	}
 

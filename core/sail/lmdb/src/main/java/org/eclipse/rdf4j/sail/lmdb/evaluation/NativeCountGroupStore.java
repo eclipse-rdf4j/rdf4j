@@ -161,6 +161,37 @@ public final class NativeCountGroupStore implements AutoCloseable {
 		catch (RuntimeException | Error failure) { fail(failure); }
 	}
 
+	/**
+	 * One exact marginal contribution. channel==-1 establishes a group with no count update.
+	 * Independent projections must never increment other channels or sum local DISTINCT counts.
+	 */
+	public void addChannel(long[] groupIds, int channel, long value, long weight) {
+		if (groupIds == null || groupIds.length != groups || channel < -1 || channel >= outputs)
+			throw new IllegalArgumentException("invalid marginal update");
+		if (closed || finished) throw new IllegalStateException("Grouping input is closed");
+		if (weight < 0L) throw new IllegalArgumentException("negative marginal weight");
+		if (weight == 0L) return;
+		try {
+			poll(); checkCancelled();
+			ensureRoom(channel >= 0 && distinct[channel] && value != -1L ? 2 : 1);
+			scratch[groups] = scratch[groups + 1] = 0L;
+			for (int i = 0; i < groups; i++) {
+				long id = groupIds[i]; scratch[i] = id == -1L ? -1L : canonicalKey.applyAsLong(id);
+				scratch[originalOffset + i] = id;
+			}
+			scratch[ordinalOffset] = rowsSeen; rowsSeen = Math.addExact(rowsSeen, 1L);
+			int marker = intern();
+			if (channel < 0 || value == -1L) return;
+			int cell = marker * recordWidth + countsOffset + channel;
+			if (distinct[channel]) {
+				scratch[groups] = channel + 1L; scratch[groups + 1] = canonicalKey.applyAsLong(value);
+				int before = size; intern();
+				if (size != before) records[cell] = Math.addExact(records[cell], 1L);
+			} else records[cell] = Math.addExact(records[cell], weight);
+		} catch (IOException failure) { fail(new UncheckedIOException(failure)); }
+		catch (RuntimeException | Error failure) { fail(failure); }
+	}
+
 	/** Scalar specialization of the same arena for one group column and one ordinary COUNT channel. */
 	public void addSingleCount(long groupId, long argument, long weight) {
 		if (groups != 1 || outputs != 1 || distinctChannels != 0) {

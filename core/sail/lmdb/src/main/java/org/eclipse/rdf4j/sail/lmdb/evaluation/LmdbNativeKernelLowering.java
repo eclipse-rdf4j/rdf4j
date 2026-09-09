@@ -944,6 +944,16 @@ final class LmdbNativeKernelLowering {
 				return new Lowered(weighted.kernel, weighted.bindings, "agg:weighted-computed-wildcard");
 			}
 		}
+		// The physical grouped producer is independent of execution tier. Preserve its
+		// hierarchy for branching BGPs instead of replacing it with scalar IR probes. Other
+		// shortcuts above retain precedence; unsupported/effectful shapes keep their old path.
+		if (!preferScans && !scanVariablePredicates && arg instanceof MultiJoinPlan multi
+				&& LmdbNativePackedFtree.projectionAggregateCandidate(multi, row, groupSlots, aggregates)) {
+			Lowered projected = lowerAggregateWithPlanProducer(arg, row, groupSlots, aggregates, having);
+			if (projected != null && (projected.kernel.aggregateProjections != null
+					|| LmdbNativeKernelIr.weightedPlanCount(projected.kernel)))
+				return new Lowered(projected.kernel, projected.bindings, "agg:shared-factor-projections");
+		}
 		// Sticky (EXISTS-bearing) filters never flatten into a MultiJoinPlan — they arrive as FilterPlan wrappers
 		// around the producer. Peel the wrapper chain, collecting the conditions, then lower the core.
 		List<MaskedFilter> filters = new ArrayList<>();
@@ -1260,7 +1270,8 @@ final class LmdbNativeKernelLowering {
 			}
 		}
 		for (AggregateSpec aggregate : aggregates) {
-			if (aggregate.slot >= 0) {
+			if (aggregate.slot >= 0 && !(aggregate.kind == AggKind.COUNT && !aggregate.distinct
+					&& (bridge.aggregateInputAssuredMask & (1L << aggregate.slot)) != 0L)) {
 				requiredMask |= 1L << aggregate.slot;
 			}
 		}
@@ -5311,8 +5322,9 @@ final class LmdbNativeKernelLowering {
 				// rather than on it being UNKNOWN: `AggregateSpec.star` deliberately carries NULL_CONTEXT_ID for this
 				// purpose ("only needs a constant that is never UNKNOWN"), so the previous equality matched no spec
 				// production ever builds and every real COUNT(*) fell through to `agg:input-unavailable`.
-				if (spec.kind == AggKind.COUNT && spec.slot < 0 && !spec.distinct
-						&& spec.constant != LmdbNativeAggregateCompiler.UNKNOWN) {
+				if (spec.kind == AggKind.COUNT && !spec.distinct
+						&& (spec.slot < 0 && spec.constant != LmdbNativeAggregateCompiler.UNKNOWN
+								|| spec.slot >= 0 && (aggregateInputAssuredMask & (1L << spec.slot)) != 0L)) {
 					outputs[i] = LmdbNativeKernelIr.AggregateOutput.countStar();
 					outs[i] = new LmdbNativeKernelBindings.AggOut(spec, LmdbNativeKernelBindings.ENC_LONG_COUNT);
 					continue;

@@ -53,6 +53,10 @@ interface SlotPlan {
 		return openFactors(row);
 	}
 
+	/** Shared chunk-owned aggregate marginals. Null declines before advancing the source. */
+	default NativeFactorProjections openProjections(RowState row, int[][] outputSlots, boolean[] exactWeights)
+			throws IOException { return null; }
+
 	long producedMask();
 
 	default double estimate(RowState row) {

@@ -36,6 +36,7 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
+import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -216,6 +217,57 @@ final class LmdbNativePackedFtree {
 			if (runtime != null) {
 				try { runtime.close(); } catch (Throwable closeFailure) { failure.addSuppressed(closeFailure); }
 			}
+			throw failure;
+		}
+	}
+
+	/** Structural admission shared with IR lowering; does not open storage or inspect user values. */
+	static boolean projectionAggregateCandidate(MultiJoinPlan join, RowState row, int[] groups,
+			AggregateSpec[] aggregates) {
+		if (!enabled() || row.encounterOrderRequired || !SlotPlan.encounterOrderReplaySafe(join)
+				|| "false".equals(System.getProperty(LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY))) return false;
+		if (groups.length == 0 && aggregates.length == 1
+				&& aggregates[0].kind == AggKind.COUNT && aggregates[0].distinct) return false;
+		for (AggregateSpec spec : aggregates) switch (spec.kind) {
+		case COUNT: case SUM: case AVG: case MIN: case MAX: break;
+		default: return false;
+		}
+		Plan plan = Planner.plan(join, row, aggregateDemandedSlots(groups, aggregates));
+		if (plan == null) return false;
+		// Compare dependency topology, not surface SPARQL syntax: even a path can be rooted
+		// in its middle and expose independent branches. Singleton DISTINCT witness plans
+		// are kept above; unsupported plans still retain their existing lowering.
+		for (NodePlan node : plan.nodes) if (node.children.length > 1) return true;
+		return false;
+	}
+
+	/** A physical f-tree chunk is shared by every aggregate marginal, in every execution tier. */
+	static NativeFactorProjections openProjections(MultiJoinPlan join, RowState row, int[][] outputs,
+			boolean[] exactWeights) throws IOException {
+		if (!enabled() || row.encounterOrderRequired || join == null
+				|| !SlotPlan.encounterOrderReplaySafe(join)) return null;
+		if (outputs.length != exactWeights.length || outputs.length == 0)
+			throw new IllegalArgumentException("projection schema mismatch");
+		long demand = 0L;
+		for (int[] output : outputs) for (int slot : output) {
+			java.util.Objects.checkIndex(slot, row.slots.length); demand |= 1L << slot;
+		}
+		int[] slots = new int[Long.bitCount(demand)];
+		int n = 0;
+		for (long rest = demand; rest != 0L; rest &= rest - 1L) slots[n++] = Long.numberOfTrailingZeros(rest);
+		Plan plan = Planner.plan(join, row, slots);
+		if (plan == null || (plan.variableMask & row.boundMask()) != 0L) return null;
+		for (int slot : slots) if (!slotAvailable(plan, row, slot)) return null;
+		Runtime runtime = null;
+		try {
+			runtime = Runtime.open(plan, row);
+			return runtime == null ? null : new ChunkProjectionCursor(plan, row, runtime, outputs, exactWeights);
+		} catch (PackedDecline decline) {
+			if (runtime != null) runtime.close();
+			return null;
+		} catch (IOException | RuntimeException | Error failure) {
+			if (runtime != null) try { runtime.close(); }
+			catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
 			throw failure;
 		}
 	}
@@ -547,6 +599,8 @@ final class LmdbNativePackedFtree {
 				return collectGroupsStructured(runtime, plan, row, layout, groupSlots, aggregates, context);
 			}
 		}
+		if (!"false".equals(System.getProperty(LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY)))
+			return collectMarginalGroups(runtime, plan, row, groupSlots, aggregates, context);
 		HashMap<GroupKey, AggState> groups = new HashMap<>();
 		long demandedMask = localDemandedMask(plan, aggregateDemandedSlots(groupSlots, aggregates));
 		Chunk chunk;
@@ -565,6 +619,46 @@ final class LmdbNativePackedFtree {
 				long weight = projected.weight();
 				if (weight != 0L) {
 					addProjectedGroup(groups, plan, row, chunk, projected, weight, groupSlots, aggregates, context);
+				}
+			}
+		}
+		return groups;
+	}
+
+	/** Generic grouped fallback shares the exact same marginal layout as IR consumers. */
+	private static HashMap<GroupKey, AggState> collectMarginalGroups(Runtime runtime, Plan plan, RowState row,
+			int[] groupSlots, AggregateSpec[] aggregates, AggContext context) throws IOException {
+		int[] arguments = new int[aggregates.length]; boolean[] exact = new boolean[aggregates.length];
+		for (int i = 0; i < aggregates.length; i++) {
+			AggregateSpec spec = aggregates[i];
+			arguments[i] = spec.kind == AggKind.COUNT && !spec.distinct && spec.slot >= 0
+					&& plan.bySlot.containsKey(spec.slot) ? -1 : spec.slot;
+			exact[i] = !spec.distinct && spec.kind != AggKind.MIN && spec.kind != AggKind.MAX;
+		}
+		FactorProjectionLayout layout = new FactorProjectionLayout(groupSlots, arguments, exact);
+		int[][] outputs = layout.columns();
+		HashMap<GroupKey, AggState> groups = new HashMap<>();
+		// The calling aggregate owns runtime. This cursor borrows its lifecycle and only its
+		// current chunk; cancellation/failure still unwinds through the caller's existing scope.
+		ChunkProjectionCursor input = new ChunkProjectionCursor(plan, row, runtime, outputs,
+				layout.exactWeights(), false);
+		while (input.nextBatch()) for (int p = 0; p < layout.size(); p++) {
+			int[] channels = layout.channels(p);
+			while (input.next(p)) {
+				long[] ids = new long[groupSlots.length];
+				for (int i = 0; i < ids.length; i++) ids[i] = input.value(groupSlots[i]);
+				GroupKey key = new GroupKey(ids); AggState state = groups.get(key);
+				if (state == null) {
+					state = new AggState(aggregates, 64, context, AggregateDistinctChannels.allHash(aggregates));
+					groups.put(key, state);
+				}
+				for (int channel : channels) {
+					AggregateSpec spec = aggregates[channel];
+					long id = arguments[channel] >= 0 ? input.value(arguments[channel])
+							: spec.slot >= 0 ? 0L : spec.constant;
+					if (id == UNKNOWN) continue;
+					if (spec.distinct) addDistinctWeighted(state, channel, id, 1L);
+					else state.addWeighted(channel, id, exact[channel] ? input.multiplicity() : 1L);
 				}
 			}
 		}
@@ -4370,12 +4464,17 @@ final class LmdbNativePackedFtree {
 
 		long computeSubtreeCounts(RowState row, boolean outsideNeeded) {
 			if (LmdbNativePackedFtreeJanino.compute(plan, this, row, outsideNeeded)) return totalRows;
-			return computeSubtreeCountsInterpreted(outsideNeeded);
+			return computeSubtreeCountsInterpreted(outsideNeeded, row);
 		}
 
 		long computeSubtreeCountsInterpreted() { return computeSubtreeCountsInterpreted(true); }
 
 		long computeSubtreeCountsInterpreted(boolean outsideNeeded) {
+			return computeSubtreeCountsInterpreted(outsideNeeded, null);
+		}
+
+		long computeSubtreeCountsInterpreted(boolean outsideNeeded, RowState row) {
+			int countTicks = 0;
 			prepareCountArrays(outsideNeeded);
 			for (int i = plan.nodes.length - 1; i >= 0; i--) {
 				NodePlan node = plan.nodes[i];
@@ -4386,6 +4485,7 @@ final class LmdbNativePackedFtree {
 				Arrays.fill(d.subtreeCounts, 0, d.size, 0L);
 				for (int lane = d.state.nextSetBit(d.startLane()); lane >= 0
 						&& lane < d.endLane(); lane = d.state.nextSetBit(lane + 1)) {
+					pollCount(row, ++countTicks);
 					long count = d.weight(lane);
 					for (NodePlan childPlan : node.children) {
 						NodeData child = data[childPlan.ordinal];
@@ -4401,6 +4501,7 @@ final class LmdbNativePackedFtree {
 							int to = child.offsets[lane + 1];
 							for (int c = child.state.nextSetBit(from); c >= 0
 									&& c < to; c = child.state.nextSetBit(c + 1)) {
+								pollCount(row, ++countTicks);
 								sum = FactorizedTail.addCounts(sum, child.subtreeCounts[c]);
 							}
 						}
@@ -4417,11 +4518,19 @@ final class LmdbNativePackedFtree {
 			long total = 0L;
 			for (int lane = root.state.nextSetBit(root.startLane()); lane >= 0
 					&& lane < root.endLane(); lane = root.state.nextSetBit(lane + 1)) {
+				pollCount(row, ++countTicks);
 				total = FactorizedTail.addCounts(total, root.subtreeCounts[lane]);
 			}
 			totalRows = total;
 			if (outsideNeeded) computeOutsideCounts();
 			return total;
+		}
+
+		private static void pollCount(RowState row, int ticks) {
+			if ((ticks & 1023) != 0) return;
+			LmdbNativeProbeDeadline.poll(ticks);
+			if (row != null && row.cancellation.isCancellationRequested())
+				throw new java.util.concurrent.CancellationException("factor cardinality cancelled");
 		}
 
 		void prepareCountArrays() { prepareCountArrays(true); }
@@ -4547,6 +4656,7 @@ final class LmdbNativePackedFtree {
 	static final class PackedProjectionCursor {
 		final Chunk chunk;
 		final boolean summarizeHidden;
+		final boolean exactWeights;
 		final boolean[] included;
 		final int[] lanes;
 		boolean initialized;
@@ -4557,6 +4667,11 @@ final class LmdbNativePackedFtree {
 		}
 
 		PackedProjectionCursor(Chunk chunk, long demandedMask, boolean summarizeHidden) {
+			this(chunk, demandedMask, summarizeHidden, true);
+		}
+
+		PackedProjectionCursor(Chunk chunk, long demandedMask, boolean summarizeHidden, boolean exactWeights) {
+			this.exactWeights = exactWeights;
 			this.chunk = chunk;
 			this.summarizeHidden = summarizeHidden;
 			this.included = new boolean[chunk.plan.nodes.length];
@@ -4578,7 +4693,7 @@ final class LmdbNativePackedFtree {
 			if (!present) {
 				return false;
 			}
-			currentWeight = calculateWeight();
+			currentWeight = exactWeights ? calculateWeight() : 1L;
 			return true;
 		}
 
@@ -4634,7 +4749,8 @@ final class LmdbNativePackedFtree {
 		private int firstLane(NodePlan node) {
 			NodeData data = chunk.data[node.ordinal];
 			if (node.parent == null) {
-				return data.state.nextSetBit(data.startLane());
+				int lane = data.state.nextSetBit(data.startLane());
+				return lane >= 0 && lane < data.endLane() ? lane : -1;
 			}
 			int parentLane = lanes[node.parent.ordinal];
 			if (data.sharedWithParent) {
@@ -4802,6 +4918,180 @@ final class LmdbNativePackedFtree {
 		}
 	}
 
+	/** Demand-local cardinalities: never forms a total for a group that only needs presence. */
+	static final class ProjectionCounts {
+		final Chunk chunk;
+		final long[][] memo;
+		final RowState row;
+		int ticks;
+		boolean complete;
+		ProjectionCounts(Chunk chunk, RowState row) {
+			this.chunk = chunk; this.row = row; this.memo = new long[chunk.data.length][];
+		}
+		private void poll() {
+			LmdbNativeProbeDeadline.poll(++ticks);
+			if ((ticks & 255) == 0 && row.cancellation.isCancellationRequested())
+				throw new java.util.concurrent.CancellationException("factor projection cancelled");
+		}
+		long child(NodePlan node, int parentLane) {
+			NodeData d = chunk.data[node.ordinal];
+			if (d.borrowed != null) return d.borrowed.count(parentLane);
+			if (d.sharedWithParent) return d.state.isSet(parentLane) ? lane(node, parentLane) : 0L;
+			long sum = 0L;
+			int to = d.offsets[parentLane + 1];
+			for (int at = d.state.nextSetBit(d.offsets[parentLane]); at >= 0 && at < to;
+					at = d.state.nextSetBit(at + 1)) sum = FactorizedTail.addCounts(sum, lane(node, at));
+			return sum;
+		}
+		long lane(NodePlan node, int at) {
+			poll();
+			NodeData d = chunk.data[node.ordinal];
+			long[] counts = memo[node.ordinal];
+			if (counts == null) memo[node.ordinal] = counts = new long[d.size];
+			long result = counts[at];
+			if (result != 0L) return result;
+			result = d.weight(at);
+			for (NodePlan child : node.children) result = FactorizedTail.multiplyCounts(result, child(child, at));
+			counts[at] = result;
+			return result;
+		}
+		long total() {
+			if (!complete) {
+				// This consumer actually observes the whole chunk's exact cardinality. Reuse
+				// the existing topology-specialized kernel (or its interpreter) rather than
+				// implementing another full-tree reduction. Group-only/DISTINCT requests
+				// never take this path, so irrelevant whole-chunk overflow remains avoided.
+				chunk.computeSubtreeCounts(row, false);
+				for (int i = 0; i < memo.length; i++) memo[i] = chunk.data[i].subtreeCounts;
+				complete = true;
+			}
+			return chunk.totalRows;
+		}
+		long weight(PackedProjectionCursor projection) {
+			if (projection == null) return total();
+			long result = 1L;
+			for (NodePlan node : chunk.plan.nodes) if (projection.included[node.ordinal]) {
+				int at = projection.lanes[node.ordinal];
+				result = FactorizedTail.multiplyCounts(result, chunk.data[node.ordinal].weight(at));
+				for (NodePlan child : node.children) if (!projection.included[child.ordinal])
+					result = FactorizedTail.multiplyCounts(result, child(child, at));
+			}
+			return result;
+		}
+	}
+
+	/** Frozen per-chunk projections. Opening another marginal never reruns a scan or a filter. */
+	static final class ChunkProjectionCursor implements NativeFactorProjections {
+		final Plan plan;
+		final RowState row;
+		final Runtime runtime;
+		final boolean ownsRuntime;
+		final int[][] outputs;
+		final boolean[] exact;
+		final long[] demands;
+		final long unionDemand;
+		Chunk chunk;
+		PackedProjectionCursor projection;
+		int active = -1, completed = -1, tick;
+		boolean scalarPending, positioned, closed;
+		ProjectionCounts counts;
+		long weight;
+
+		ChunkProjectionCursor(Plan plan, RowState row, Runtime runtime, int[][] outputs, boolean[] exact) {
+			this(plan, row, runtime, outputs, exact, true);
+		}
+		ChunkProjectionCursor(Plan plan, RowState row, Runtime runtime, int[][] outputs, boolean[] exact,
+				boolean ownsRuntime) {
+			this.plan = plan; this.row = row; this.runtime = runtime; this.ownsRuntime = ownsRuntime;
+			this.outputs = new int[outputs.length][]; this.exact = exact.clone();
+			demands = new long[outputs.length];
+			long all = 0L;
+			for (int i = 0; i < outputs.length; i++) {
+				this.outputs[i] = outputs[i].clone();
+				demands[i] = localDemandedMask(plan, outputs[i]); all |= demands[i];
+			}
+			unionDemand = all;
+		}
+		@Override public boolean nextBatch() throws IOException {
+			if (closed) return false;
+			if (chunk != null && completed != outputs.length - 1)
+				throw new IllegalStateException("unfinished chunk projection");
+			try {
+				if (row.cancellation.isCancellationRequested()) { close(); return false; }
+				for (;;) {
+					chunk = runtime.nextChunk();
+					if (chunk == null) { close(); return false; }
+					NodeData root = chunk.data[plan.root.ordinal];
+					int first = root.state.nextSetBit(root.startLane());
+					if (first >= 0 && first < root.endLane()) break;
+					if (row.cancellation.isCancellationRequested()) { close(); return false; }
+				}
+				// Freeze all demanded payload before publication. Undemanded leaves remain borrowed.
+				chunk.materializeBorrowed(unionDemand);
+				active = completed = -1; positioned = false; projection = null;
+				counts = new ProjectionCounts(chunk, row);
+				return true;
+			} catch (PackedDecline decline) {
+				close(); throw new QueryEvaluationException("factor marginal lost adjacency coverage", decline);
+			} catch (IOException | RuntimeException | Error failure) {
+				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				throw failure;
+			}
+		}
+		@Override public boolean next(int request) {
+			if (closed || chunk == null) throw new IllegalStateException("no projection chunk");
+			java.util.Objects.checkIndex(request, outputs.length);
+			try {
+				LmdbNativeProbeDeadline.poll(++tick);
+				if ((tick & 255) == 0) if (row.cancellation.isCancellationRequested()) { close(); return false; }
+				positioned = false;
+				if (request == completed) return false;
+				if (active != request) {
+					if (request != completed + 1 || active != completed)
+						throw new IllegalStateException("unfinished marginal");
+					active = request;
+					projection = demands[request] == 0L ? null
+							: new PackedProjectionCursor(chunk, demands[request], false, false);
+					scalarPending = true;
+				}
+				boolean found;
+				if (projection == null) {
+					found = scalarPending; scalarPending = false;
+					weight = 0L;
+				} else { found = projection.next(); weight = 0L; }
+				if (!found) { completed = active; return false; }
+				positioned = true; return true;
+			} catch (RuntimeException | Error failure) {
+				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				throw failure;
+			}
+		}
+		@Override public long value(int slot) {
+			if (!positioned || closed) throw new IllegalStateException("unpositioned marginal");
+			boolean included = false;
+			for (int output : outputs[active]) if (output == slot) { included = true; break; }
+			if (!included) throw new IllegalArgumentException("unrequested projection slot");
+			return projectedValue(plan, row, chunk, projection, slot);
+		}
+		@Override public long multiplicity() {
+			if (!positioned || closed) throw new IllegalStateException("unpositioned marginal");
+			if (!exact[active]) return 1L;
+			try {
+				if (row.cancellation.isCancellationRequested())
+					throw new java.util.concurrent.CancellationException("factor projection cancelled");
+				if (weight == 0L) weight = counts.weight(projection);
+				return weight;
+			} catch (RuntimeException | Error failure) {
+				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				throw failure;
+			}
+		}
+		@Override public void close() {
+			if (closed) return; closed = true;
+			chunk = null; projection = null; counts = null; if (ownsRuntime) runtime.close();
+		}
+	}
+
 	/**
 	 * A materialized binding prefix with independent borrowed terminal factors. Packed internal
 	 * dependencies remain aligned; this does not pretend unrelated child ordinals are interchangeable.
@@ -4874,87 +5164,46 @@ final class LmdbNativePackedFtree {
 	 * Eligibility and placement must establish that per-solution expressions and ordering are not observable here.
 	 */
 	static final class ProjectedRowCursor implements FactorizedRowCursor {
-		final Plan plan;
 		final RowState row;
-		final Runtime runtime;
 		final int[] outputSlots;
 		final int baseMark;
-		final long demandedMask;
-		Chunk chunk;
-		PackedProjectionCursor projection;
+		final NativeFactorProjections input;
 		long repeatRemaining;
-		boolean emittedEmptyProjection;
-		boolean closed;
-		int cancellationTick;
+		boolean batch, closed;
+		int ticks;
 
 		ProjectedRowCursor(Plan plan, RowState row, Runtime runtime, int[] outputSlots) {
-			this.plan = plan;
-			this.row = row;
-			this.runtime = runtime;
-			this.outputSlots = outputSlots.clone();
-			this.baseMark = row.mark();
-			this.demandedMask = localDemandedMask(plan, outputSlots);
+			this.row = row; this.outputSlots = outputSlots.clone(); this.baseMark = row.mark();
+			input = new ChunkProjectionCursor(plan, row, runtime, new int[][] {outputSlots}, new boolean[] {true});
 		}
-
-		@Override
-		public long multiplicity() {
-			long result = repeatRemaining + 1L;
-			repeatRemaining = 0L;
-			return result;
+		@Override public long multiplicity() {
+			long weight = repeatRemaining + 1L; repeatRemaining = 0L; return weight;
 		}
-
-		@Override
-		public boolean next() throws IOException {
-			LmdbNativeProbeDeadline.poll(++cancellationTick);
+		@Override public boolean next() throws IOException {
 			if (closed) return false;
-			if (repeatRemaining > 0L) {
-				repeatRemaining--;
-				install();
-				return true;
-			}
-			while (true) {
-				if (chunk == null) {
-					row.rollback(baseMark);
-					try { chunk = runtime.nextChunk(); }
-					catch (PackedDecline problem) {
-						throw new QueryEvaluationException("factor projection lost complete adjacency coverage", problem);
-					}
-					if (chunk == null) { close(); return false; }
-					chunk.materializeBorrowed(demandedMask);
-					if (chunk.computeSubtreeCounts(row, false) == 0L) { chunk = null; continue; }
-					projection = demandedMask == 0L ? null : new PackedProjectionCursor(chunk, demandedMask);
-					emittedEmptyProjection = false;
+			try {
+				if (repeatRemaining > 0L) {
+					LmdbNativeProbeDeadline.poll(++ticks);
+					if ((ticks & 255) == 0 && row.cancellation.isCancellationRequested()) { close(); return false; }
+					repeatRemaining--; install(); return true;
 				}
-				long weight;
-				if (projection == null) {
-					if (emittedEmptyProjection) { chunk = null; continue; }
-					emittedEmptyProjection = true;
-					weight = chunk.totalRows;
-				} else {
-					if (!projection.next()) { chunk = null; continue; }
-					weight = projection.weight();
+				for (;;) {
+					if (!batch) { batch = input.nextBatch(); if (!batch) { close(); return false; } }
+					if (!input.next(0)) { batch = false; continue; }
+					repeatRemaining = input.multiplicity() - 1L; install(); return true;
 				}
-				if (weight == 0L) continue;
-				repeatRemaining = weight - 1L;
-				install();
-				return true;
+			} catch (IOException | RuntimeException | Error failure) {
+				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				throw failure;
 			}
 		}
-
 		private void install() {
 			row.rollback(baseMark);
-			for (int slot : outputSlots) {
-				long value = projectedValue(plan, row, chunk, projection, slot);
-				if (value != UNKNOWN) row.bind(slot, value);
-			}
+			for (int slot : outputSlots) { long id = input.value(slot); if (id != UNKNOWN) row.bind(slot, id); }
 		}
-
-		@Override
-		public void close() {
-			if (!closed) {
-				closed = true;
-				try { runtime.close(); } finally { row.rollback(baseMark); }
-			}
+		@Override public void close() {
+			if (closed) return; closed = true;
+			try { input.close(); } finally { row.rollback(baseMark); }
 		}
 	}
 

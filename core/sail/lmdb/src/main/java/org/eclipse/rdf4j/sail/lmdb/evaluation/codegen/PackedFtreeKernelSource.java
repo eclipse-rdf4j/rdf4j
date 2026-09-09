@@ -38,12 +38,14 @@ public final class PackedFtreeKernelSource {
 				.append("public final class ")
 				.append(simpleName)
 				.append(" implements PackedFtreeKernel {\n")
-				.append("  private PackedFtreeContext p; private boolean done;\n")
-				.append("  public void bind(KernelContext c){ p=c.packedFtree; done=false; }\n")
-				.append("  private static int next(long[] b,int from,int end){ if(from>=end)return -1; int w=from>>>6; long x=b[w]&(-1L<<(from&63)); for(;;){ if(x!=0){int v=(w<<6)+Long.numberOfTrailingZeros(x); return v<end?v:-1;} if(((++w)<<6)>=end)return -1; x=b[w]; }}\n")
+				.append("  private PackedFtreeContext p; private KernelCancellation cancel; private boolean done; private int ticks;\n")
+				.append("  public void bind(KernelContext c){ p=c.packedFtree; cancel=c.cancellation; done=false; ticks=0; }\n"
+				+ "  private void poll(){ if((++ticks&1023)==0)KernelRuntime.checkCancelled(cancel); }\n"
+				+ "  private void clear(long[] a,int end){ for(int from=0;from<end;){ KernelRuntime.checkCancelled(cancel); int to=from+Math.min(16384,end-from); java.util.Arrays.fill(a,from,to,0L); from=to; }}\n")
+				.append("  private int next(long[] b,int from,int end){ poll(); if(from>=end)return -1; int w=from>>>6; long x=b[w]&(-1L<<(from&63)); for(;;){ if(x!=0){int v=(w<<6)+Long.numberOfTrailingZeros(x); return v<end?v:-1;} if(((++w)<<6)>=end)return -1; poll(); x=b[w]; }}\n")
 				.append("  private static boolean set(long[] b,int i){ return (b[i>>>6]&(1L<<(i&63)))!=0; }\n")
 				.append("  private static long w(long[] a,int i){ return a==null?1L:(a[i]==0L?1L:a[i]); }\n")
-				.append("  public int fill(long[] ignored,int maxRows){ if(done)return 0; done=true;\n");
+				.append("  public int fill(long[] ignored,int maxRows){ if(done)return 0; KernelRuntime.checkCancelled(cancel); done=true;\n");
 
 		for (int ordinal = children.length - 1; ordinal >= 0; ordinal--) {
 			emitSubtree(s, ordinal, children);
@@ -58,11 +60,11 @@ public final class PackedFtreeKernelSource {
 				.append(root)
 				.append("],end);i>=0;i=next(sel,i+1,end)) total=PackedFtreeMath.add(total,sub[i]); } p.totalRows=total; if(!p.needOutsideCounts)return 0;\n");
 		for (int i = 0; i < children.length; i++) {
-			s.append("    java.util.Arrays.fill(p.outsideCounts[")
+			s.append("    clear(p.outsideCounts[")
 					.append(i)
-					.append("],0,p.sizes[")
+					.append("],p.sizes[")
 					.append(i)
-					.append("],0L);\n");
+					.append("]);\n");
 		}
 		s.append("    { long[] sel=p.selectors[")
 				.append(root)
@@ -78,7 +80,7 @@ public final class PackedFtreeKernelSource {
 				emitOutside(s, node, children);
 			}
 		}
-		s.append("    return 0; }\n}");
+		s.append("    return 0; }\n  public void close(){ done=true; p=null; cancel=null; }\n}");
 		return s.toString();
 	}
 
@@ -92,9 +94,9 @@ public final class PackedFtreeKernelSource {
 				.append(n)
 				.append("]; int end=p.ends[")
 				.append(n)
-				.append("]; java.util.Arrays.fill(sub,0,p.sizes[")
+				.append("]; clear(sub,p.sizes[")
 				.append(n)
-				.append("],0L); for(int i=next(sel,p.starts[")
+				.append("]); for(int i=next(sel,p.starts[")
 				.append(n)
 				.append("],end);i>=0;i=next(sel,i+1,end)){ long c=w(wt,i);\n");
 		for (int c : children[node]) {

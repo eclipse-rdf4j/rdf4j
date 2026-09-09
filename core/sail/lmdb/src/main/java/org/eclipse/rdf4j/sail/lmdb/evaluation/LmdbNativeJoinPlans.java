@@ -71,6 +71,12 @@ final class MultiJoinPlan implements SlotPlan {
 	}
 
 	@Override
+	public NativeFactorProjections openProjections(RowState row, int[][] slots, boolean[] exactWeights)
+			throws IOException {
+		return LmdbNativePackedFtree.openProjections(this, row, slots, exactWeights);
+	}
+
+	@Override
 	public FactorizedRowCursor openProjected(RowState row, int[] outputSlots) throws IOException {
 		// Preserve the exact summary-only shortcut before the more general factor-row bridge.
 		FactorizedRowCursor result = LmdbNativePackedFtree.openProjected(this, row, outputSlots);

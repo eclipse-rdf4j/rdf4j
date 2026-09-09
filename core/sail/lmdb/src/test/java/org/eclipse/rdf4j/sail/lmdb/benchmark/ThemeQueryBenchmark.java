@@ -131,8 +131,8 @@ public class ThemeQueryBenchmark {
 	 * Auto trials use the engine defaults, including normal Janino thresholds and asynchronous compilation. Each trial
 	 * restores the caller's properties, including when running both modes in the same JVM via {@link #main}.
 	 */
-	@Param({  "auto" })
-//	@Param({  "auto","disabled" })
+//	@Param({  "auto" })
+	@Param({  "auto","disabled" })
 	public String z_z_irMode;
 
 	@Param({

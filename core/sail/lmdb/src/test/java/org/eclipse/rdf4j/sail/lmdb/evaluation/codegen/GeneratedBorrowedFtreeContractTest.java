@@ -95,4 +95,35 @@ public class GeneratedBorrowedFtreeContractTest {
    try{PackedFtreeKernelSource.source(bad,0,"Bad");throw new AssertionError("invalid tree admitted");}catch(IllegalArgumentException expected){}
   }
  }
+ @Test public void topologyKernelObservesCancellationInsideDenseAndSparseTraversal()throws Exception {
+  Path dir=Files.createTempDirectory("ftree-cancel-");
+  try {
+   JaninoKernel kernel=compile("org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.TestTopologyCancel",
+     PackedFtreeKernelSource.source(new int[][]{{}},0,"TestTopologyCancel"),dir);
+   for(boolean dense:new boolean[]{true,false}) {
+    int n=dense?8192:1<<19;long[] bits=new long[(n+63)/64];if(dense)Arrays.fill(bits,-1L);
+    PackedFtreeContext p=new PackedFtreeContext(new long[][]{bits},new long[1][],new long[][]{new long[n]},
+      new long[1][],new int[1][],new int[]{n},new int[1],new int[]{n},new boolean[1]);p.needOutsideCounts=false;
+    int[] polls={0};int threshold=dense?3:35;
+    KernelCancellation cancellation=new KernelCancellation(System.nanoTime()+1_000_000_000_000L,null,()->++polls[0]>=threshold);
+    KernelContext context=new KernelContext(null,new long[0],new long[0],null).withPackedFtree(p);context.cancellation=cancellation;kernel.bind(context);
+    try{kernel.fill(new long[0],0);throw new AssertionError("cancelled topology completed");}catch(KernelQueryCancelledException expected){}
+    equal(threshold,polls[0]);equal(0,p.totalRows);
+   }
+   kernel.close();var field=kernel.getClass().getDeclaredField("p");field.setAccessible(true);if(field.get(kernel)!=null)throw new AssertionError("retained closed chunk");
+  }finally{remove(dir);}
+ }
+ @Test public void topologyKernelChecksCancellationBeforeAnyWork()throws Exception {
+  Path dir=Files.createTempDirectory("ftree-cancel-first-");
+  try {
+   JaninoKernel kernel=compile("org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.TestTopologyAlreadyCancelled",
+     PackedFtreeKernelSource.source(new int[][]{{}},0,"TestTopologyAlreadyCancelled"),dir);
+   KernelCancellation cancellation=new KernelCancellation(System.nanoTime()+1_000_000_000_000L);cancellation.cancel();
+   // Null packed data is intentional: cancellation must precede reading it.
+   KernelContext context=new KernelContext(null,new long[0],new long[0],null);context.cancellation=cancellation;kernel.bind(context);
+   try{kernel.fill(new long[0],0);throw new AssertionError("cancelled topology ran");}catch(KernelCancelledException expected){}
+   kernel.close();
+  }finally{remove(dir);}
+ }
+
 }
