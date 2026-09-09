@@ -255,6 +255,12 @@ public final class LmdbNativeAttemptMetrics {
 
 	static void recordDecline(TupleExpr target, String strategy, String reason) {
 		Map<String, String> capture = DECLINE_CAPTURE.get();
+		if (LmdbNativeStrategyPreview.active()) {
+			if (capture != null && strategy != null && reason != null) {
+				capture.put(LmdbNativeStrategyPreference.baseTag(strategy), reason);
+			}
+			return;
+		}
 		if (capture != null && strategy != null && reason != null) {
 			capture.put(LmdbNativeStrategyPreference.baseTag(strategy), reason);
 			if (logger.isInfoEnabled()) {
@@ -270,6 +276,14 @@ public final class LmdbNativeAttemptMetrics {
 			// adjacency-unavailable, or unsupported:/child:<PlanKind> (the plan shape cannot be lowered).
 			logger.info("Janino codegen not picked ({}) for {}: {}", strategy,
 					target == null ? "?" : target.getClass().getSimpleName(), reason);
+		}
+	}
+
+	/** Diagnostic assessment only; ordinary evaluation does not create a decline catalog or change telemetry. */
+	static void captureDecline(String strategy, String reason) {
+		Map<String, String> capture = DECLINE_CAPTURE.get();
+		if (capture != null) {
+			capture.put(LmdbNativeStrategyPreference.baseTag(strategy), reason);
 		}
 	}
 

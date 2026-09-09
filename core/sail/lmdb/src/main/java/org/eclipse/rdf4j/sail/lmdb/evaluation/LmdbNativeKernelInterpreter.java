@@ -2205,8 +2205,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							while ((size = input.nextWindow(p)) != 0) {
 								long[] ids = input.windowValues(), weights = input.windowWeights();
 								int start = input.windowStart(), end = start + size;
-								for (int column : columns[p]) if (column != arguments[p])
-									v[plan.outCols[column]] = input.value(column);
+								if (input.windowPrefixChanged()) {
+									group = -1; scale = 0L;
+									for (int column : columns[p]) if (column != arguments[p])
+										v[plan.outCols[column]] = input.value(column);
+								}
 								if (group < 0) group = marginalGroup();
 								for (int i = start; i < end; i++) {
 									v[plan.outCols[arguments[p]]] = ids[i];

@@ -2114,9 +2114,11 @@ final class LmdbNativeKernelEmitter {
 						.append(request).append(")) != 0) {\n")
 						.append("                long[] ids = m.windowValues(), weights = m.windowWeights();\n")
 						.append("                int start = m.windowStart(), end = start + size;\n");
-				for (int column : projected) if (column != argument) code.append("                v")
+				code.append("                if (m.windowPrefixChanged()) {\n                    group = -1; scale = 0L;\n");
+				for (int column : projected) if (column != argument) code.append("                    v")
 						.append(plan.outCols[column]).append(" = m.value(").append(column).append(");\n");
-				// All grouping columns are scalar on this path; no group handle survives the batch.
+				code.append("                }\n");
+				// Other requested bindings are invariant only within the current window prefix.
 				code.append("                if (group < 0) group = marginalGroup();\n")
 						.append("                for (int position = start; position < end; position++) {\n")
 						.append("                    v").append(plan.outCols[argument]).append(" = ids[position];\n");

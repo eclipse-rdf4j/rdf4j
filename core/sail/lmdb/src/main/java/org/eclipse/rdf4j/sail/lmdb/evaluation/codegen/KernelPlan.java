@@ -78,6 +78,24 @@ public interface KernelPlan extends AutoCloseable {
 		 * Consumers must not retain a group/table handle across batches or a spill-state replacement.
 		 */
 		default long constantColumns() { return 0L; }
+
+		/** Sole varying output in a bounded projection window, or -1 to decline without advancing. */
+		default int windowColumn(int projection) { return -1; }
+		/** Advance a window, at most 256 fragments. Zero completes the current projection. */
+		default int nextWindow(int projection) { throw new UnsupportedOperationException("projection windows"); }
+		/** Read-only arrays, valid until the next cursor operation. Non-window columns are scalar. */
+		default long[] windowValues() { throw new UnsupportedOperationException("projection windows"); }
+		default long[] windowWeights() { throw new UnsupportedOperationException("projection windows"); }
+		default int windowStart() { return 0; }
+		/**
+		 * True when invariant bindings OR the outside multiplier may differ from the previous window.
+		 * The first window of a projection must return true. Do not cache group handles or scales across
+		 * a true result. This is independent of constantColumns(), which describes the entire batch.
+		 */
+		default boolean windowPrefixChanged() { return true; }
+		/** Exact outside multiplier; call only when a consumer actually observes the member's weight. */
+		default long windowScale() { throw new UnsupportedOperationException("projection windows"); }
+
 		/** Start/advance one projection of the current batch; finish it before selecting another. */
 		boolean next(int projection);
 		/** An ID for a requested output position, never an address or a deferred handle. */

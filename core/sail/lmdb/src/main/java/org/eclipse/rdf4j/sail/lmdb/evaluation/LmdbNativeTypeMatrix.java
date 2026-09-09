@@ -145,8 +145,14 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	private static final int ROOT_MORSEL_ROWS = 8_192;
 	private static final int FIBER_MORSEL_ROWS = 65_536;
 	private static final int PAGE_MORSEL_PAGES = 8;
-	private static final String SIDEWAYS_MORSEL_CANDIDATE = "typeMatrix(sidewaysTypeMorsels)";
-	private static final String PAGE_MORSEL_CANDIDATE = "typeMatrix(pageMorsels)";
+	static final String SIDEWAYS_MORSEL_CANDIDATE = "typeMatrix(sidewaysTypeMorsels)";
+	static final String PAGE_MORSEL_CANDIDATE = "typeMatrix(pageMorsels)";
+
+	void explainMorselStrategies() {
+		LmdbNativeStrategyPreview.runtime("type-matrix morsel dispatch",
+				List.of(SIDEWAYS_MORSEL_CANDIDATE, PAGE_MORSEL_CANDIDATE),
+				"The type-matrix strategy must bind first; predicate roots, linkage direction, page statistics and worker admission are determined during execution");
+	}
 
 	private final NativeLmdbQuerySource source;
 	/** Constant predicate id of the subject-side type pattern. */
@@ -489,11 +495,15 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				return selected;
 			}
 		} else {
+			LmdbNativeStrategyArbiter.logDirect(originalExpr, "type-matrix morsel dispatch", SIDEWAYS_MORSEL_CANDIDATE,
+					"Sideways traversal precedes page traversal when complete linkage page statistics are unavailable");
 			List<BindingSet> sidewaysMorsels = tryParallelSidewaysTypeMorselAdjacencyScan(eligiblePredicates,
 					predicateCatalog, sidewaysRoots, reverseLinkage, optimization);
 			if (sidewaysMorsels != null) {
 				return sidewaysMorsels;
 			}
+			LmdbNativeStrategyArbiter.logDirect(originalExpr, "type-matrix morsel fallback", PAGE_MORSEL_CANDIDATE,
+					"Sideways traversal could not bind");
 			List<BindingSet> pageMorsels = tryParallelPageMorselAdjacencyScan(probe, eligiblePredicates,
 					predicateCatalog, acceptedRoots, optimization);
 			if (pageMorsels != null) {
@@ -708,7 +718,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		LmdbNativeWork pageWork = morselWork(pageWorkRows(pageAdmission));
 		String winner;
 		List<BindingSet> selected;
-		try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter.forExpr(originalExpr)) {
+		try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
+				.<List<BindingSet>>forExpr(originalExpr)
+				.forcing(null, "type-matrix morsel dispatch")) {
 			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(
 					() -> tryParallelSidewaysTypeMorselAdjacencyScan(eligiblePredicates, predicateCatalog,
 							sidewaysRoots, reverseLinkage, optimization),

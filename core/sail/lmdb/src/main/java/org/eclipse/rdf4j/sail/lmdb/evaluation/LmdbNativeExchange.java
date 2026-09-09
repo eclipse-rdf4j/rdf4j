@@ -149,7 +149,9 @@ final class LmdbNativeExchange {
 		long started = System.nanoTime();
 		LmdbRootScanPartition[] partitions = source.planRootScanPartitions(quad[0], quad[1], quad[2], quad[3],
 				targetPartitions);
-		LmdbNativeParallelPipelines.RANGE_SPLIT_PLANNING_NANOS.addAndGet(System.nanoTime() - started);
+		if (!LmdbNativeStrategyPreview.active()) {
+			LmdbNativeParallelPipelines.RANGE_SPLIT_PLANNING_NANOS.addAndGet(System.nanoTime() - started);
+		}
 		if (partitions == null) {
 			LmdbNativeParallelPipelines.rejectRangePartitioning("planner-unsupported");
 			return null;

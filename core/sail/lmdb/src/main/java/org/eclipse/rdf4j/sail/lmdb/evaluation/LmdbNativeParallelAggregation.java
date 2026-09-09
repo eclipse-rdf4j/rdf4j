@@ -136,7 +136,7 @@ final class LmdbNativeParallelAggregation {
 		}
 		boolean morselMode = partitions == null;
 		LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
-				.tryReserveTasks(morselMode, desiredWorkers);
+				.quoteTasks(morselMode, desiredWorkers);
 		if (reservation == null) {
 			return reject(it, "task-budget");
 		}
@@ -162,6 +162,9 @@ final class LmdbNativeParallelAggregation {
 		long preflightAggregateSlots = candidate.preflightAggregateSlots;
 		LmdbRootScanPartition[] partitions = candidate.partitions;
 		LmdbNativeParallelPipelines.TaskReservation reservation = candidate.reservation;
+		if (!reservation.admit()) {
+			return reject(it, "task-budget-changed");
+		}
 		int threads = candidate.threads;
 		int sourceCount = candidate.sourceCount;
 		PreparedRootScan preparedRoot = null;

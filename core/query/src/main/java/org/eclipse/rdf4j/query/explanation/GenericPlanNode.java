@@ -149,6 +149,15 @@ public class GenericPlanNode {
 	private Map<String, Double> doubleMetricsPlanned = new LinkedHashMap<>();
 	private Map<String, String> stringMetricsPlanned = new LinkedHashMap<>();
 	private String physicalPlanPrelude;
+	private List<StrategyDecision> strategyDecisions;
+
+	public List<StrategyDecision> getStrategyDecisions() {
+		return strategyDecisions;
+	}
+
+	public void setStrategyDecisions(List<StrategyDecision> decisions) {
+		strategyDecisions = decisions == null || decisions.isEmpty() ? null : List.copyOf(decisions);
+	}
 
 	// true if this node introduces a new scope
 	private Boolean newScope;
@@ -428,6 +437,9 @@ public class GenericPlanNode {
 		if (level == null) {
 			return;
 		}
+		if (level != Explanation.Level.Optimized) {
+			strategyDecisions = null;
+		}
 
 		setRuntimeTelemetryEnabled(level.includesRuntimeTelemetry());
 		setExecutionSummaryEnabled(level == Explanation.Level.Executed
@@ -706,6 +718,11 @@ public class GenericPlanNode {
 		}
 		appendCostAnnotation(sb);
 		sb.append(newLine);
+		if (strategyDecisions != null) {
+			for (StrategyDecision decision : strategyDecisions) {
+				sb.append(decision.toText());
+			}
+		}
 
 		// we use box-drawing characters to "group" nodes in the plan visually when there are exactly two child plans
 		// and
@@ -1604,6 +1621,12 @@ public class GenericPlanNode {
 		rows.add("<tr><td COLSPAN=\"2\" BGCOLOR=\"" + totalTimeColor + "\"><U>"
 				+ StringEscapeUtils.escapeHtml4(type) + "</U></td></tr>");
 		rows.add("<tr><td>Algorithm</td><td>" + (algorithm != null ? algorithm : UNKNOWN) + "</td></tr>");
+		if (strategyDecisions != null) {
+			for (StrategyDecision decision : strategyDecisions) {
+				rows.add("<tr><td>" + StringEscapeUtils.escapeHtml4(decision.decisionPoint()) + "</td><td>"
+						+ StringEscapeUtils.escapeHtml4(decision.summary()) + "</td></tr>");
+			}
+		}
 		rows.add("<tr><td><B>New scope</B></td><td>" + (newScope != null && newScope ? "<B>true</B>" : UNKNOWN)
 				+ "</td></tr>");
 		rows.add("<tr><td>Cost estimate</td><td>" + toHumanReadableNumber(getCostEstimate()) + "</td></tr>");

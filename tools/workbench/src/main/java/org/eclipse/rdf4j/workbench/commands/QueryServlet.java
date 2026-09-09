@@ -512,6 +512,7 @@ public class QueryServlet extends TransformationServlet {
 		ObjectNode jsonObject = mapper.createObjectNode();
 		jsonObject.put("format", explainQueryResult.getFormat());
 		jsonObject.put("content", explainQueryResult.getContent());
+		jsonObject.set("strategyDecisions", mapper.valueToTree(explainQueryResult.getStrategyDecisions()));
 		writeExplainJsonResponse(resp, HttpServletResponse.SC_OK, jsonObject);
 	}
 

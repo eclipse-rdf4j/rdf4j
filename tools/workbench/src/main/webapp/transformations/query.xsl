@@ -28,6 +28,7 @@
         <xsl:param name="explanationFormat"/>
         <xsl:param name="explanationLevel"/>
         <xsl:param name="explanationValue"/>
+        <xsl:param name="strategyDecisions"/>
         <xsl:param name="dotViewId"/>
         <xsl:param name="jsonViewId"/>
         <xsl:param name="copyButtonId"/>
@@ -78,7 +79,8 @@
                             </svg>
                         </button>
                         <div id="{$overlayId}" class="query-explanation-overlay" aria-hidden="true"></div>
-                        <pre id="{$explanationId}" data-format="{$explanationFormat}">
+                        <div id="{$explanationId}-strategies"></div>
+                        <pre id="{$explanationId}" data-format="{$explanationFormat}" data-strategy-decisions="{$strategyDecisions}">
                             <xsl:value-of select="$explanationValue"/>
                         </pre>
                         <div id="{$dotViewId}"></div>
@@ -187,6 +189,8 @@
                       select="sparql:results/sparql:result/sparql:binding[@name='explanation-format']/sparql:literal"/>
         <xsl:variable name="explanationLevel"
                       select="sparql:results/sparql:result/sparql:binding[@name='explanation-level']/sparql:literal"/>
+        <xsl:variable name="strategyDecisions"
+                      select="sparql:results/sparql:result/sparql:binding[@name='strategy-decisions']/sparql:literal"/>
         <link rel="stylesheet" type="text/css" href="../../styles/query.css"/>
         <form action="query" method="post" onsubmit="return workbench.query.doSubmit()">
             <input type="hidden" name="action" id="action"/>
@@ -253,6 +257,7 @@
                         <xsl:with-param name="explanationFormat" select="normalize-space($explanationFormat)"/>
                         <xsl:with-param name="explanationLevel" select="$explanationLevel"/>
                         <xsl:with-param name="explanationValue" select="$explanation"/>
+                        <xsl:with-param name="strategyDecisions" select="$strategyDecisions"/>
                         <xsl:with-param name="dotViewId">query-explanation-dot-view</xsl:with-param>
                         <xsl:with-param name="jsonViewId">query-explanation-json-view</xsl:with-param>
                         <xsl:with-param name="copyButtonId">copy-explanation</xsl:with-param>

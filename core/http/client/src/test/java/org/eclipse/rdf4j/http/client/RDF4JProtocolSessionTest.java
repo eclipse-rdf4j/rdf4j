@@ -371,13 +371,22 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 				Times.once())
 				.respond(
 						response()
-								.withBody("{\"type\":\"Projection\"}")
+								.withBody("""
+										{"type":"Projection","strategyDecisions":[{
+										"decisionPoint":"row/join dispatch","capturedAtMillis":123,
+										"mode":"normal","wouldSelect":"batch","reason":"current costs",
+										"candidates":[{"strategy":"batch","priority":1,"canAttempt":true,
+										"decision":"Would select now"}]}]}
+										""")
 								.withContentType(MediaType.APPLICATION_JSON)
 				);
 
 		Explanation explanation = getRDF4JSession().sendQueryExplanation(QueryLanguage.SPARQL,
 				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0, Explanation.Level.Optimized);
 		assertThat(explanation.toGenericPlanNode().getType()).isEqualTo("Projection");
+		assertThat(explanation.toGenericPlanNode().getStrategyDecisions()).hasSize(1);
+		assertThat(explanation.toGenericPlanNode().getStrategyDecisions().get(0).wouldSelect()).isEqualTo("batch");
+		assertThat(explanation.toString()).contains("Would select now");
 
 		client.verify(
 				request()

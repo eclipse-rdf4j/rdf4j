@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
@@ -394,6 +395,9 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			NativeEntryBindingVariant variant = NativeEntryBindingVariant.tryCreate(source, layout, bindings,
 					optionalOnlyNames);
 			if (variant == null) {
+				LmdbNativeStrategyArbiter.logDirect(originalExpr, "optional entry binding dispatch",
+						LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK,
+						"An optional-only binding cannot be represented in the native ID space");
 				LmdbNativeExplain.recordExecutionPath(originalExpr,
 						LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK + "(optionalOnlyBinding)");
 				return genericStep().evaluate(bindings);
@@ -598,26 +602,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 					.<List<BindingSet>>forExpr(originalExpr, row.source)
 					.probeHarness(LmdbNativeProbeHarness.blocking())
 					.forcingWhereApplicable(strategy.forcedExecutionStrategyName(), "ORDER BY dispatch")) {
-				LmdbNativeWork work = arg.estimateWork(row, row.boundMask());
-				String factorizedTag = emitCap == Long.MAX_VALUE
-						? LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT
-						: LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K;
-				arbiter.offer(() -> new LmdbNativeStrategyProposal<>(
-						() -> tryEvaluateOrderedFactorized(base, values, comparator, emitCap), work,
-						factorizedTag, () -> {
-						}));
-				// Exactly ONE of the two IR-kernel tags (kernel-interpreter plan, D1/M4): compiled when janino is
-				// enabled, interpreted when only the interpreter tier is available, neither when both are off.
-				String orderedKernelTag = LmdbNativeJaninoCodegen.enabled()
-						? LmdbNativeAttemptMetrics.PATH_IR_KERNEL
-						: LmdbNativeKernelInterpreter.enabled()
-								? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED
-								: null;
-				if (orderedKernelTag != null) {
-					arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> tryEvaluateOrderedKernel(row, values),
-							work, orderedKernelTag, () -> {
-							}));
-				}
+				offerOrderedStrategies(row, base, values, comparator, emitCap, arbiter);
 				List<BindingSet> ordered = arbiter.select();
 				if (ordered != null) {
 					return ordered;
@@ -635,6 +620,9 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		// the best-sorted one.
 		long topK = safeTopKCapacity(emitCap, sortLayout.liveToPlan.length) && topKDistinctSafe() ? emitCap : -1L;
 		if (topK >= 0) {
+			LmdbNativeStrategyArbiter.logDirect(originalExpr, "ORDER BY dispatch",
+					LmdbNativeAttemptMetrics.PATH_ORDERED_TOP_K,
+					"Bounded top-K capacity and DISTINCT ordering are safe");
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_ORDERED_TOP_K);
 			LmdbNativeAttemptMetrics sortMetrics = explainSortMetrics();
 			return NativeTopKBuffer.fitsMemoBudget(sortLayout.liveToPlan.length, (int) topK)
@@ -642,6 +630,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 					: evaluateReducingTopK(row, values, comparator, (int) topK, emitCap, sortMetrics);
 		}
 
+		LmdbNativeStrategyArbiter.logDirect(originalExpr, "ORDER BY dispatch",
+				LmdbNativeAttemptMetrics.PATH_ORDERED_FULL_SORT, "The complete input must be sorted");
 		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_ORDERED_FULL_SORT);
 		LmdbNativeAttemptMetrics sortMetrics = explainSortMetrics();
 		try (NativeSpillSort snapshots = sortMetrics == null
@@ -1143,6 +1133,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			LmdbNativeStrategyProposal<NativeUnorderedInput> wildcardExists = proposeBatch(row, null, false);
 			if (wildcardExists != null) {
 				try {
+					LmdbNativeStrategyArbiter.logDirect(originalExpr, "row/join dispatch", wildcardExists.tag,
+							"Wildcard existence owns the parallel round");
 					NativeUnorderedInput opened = wildcardExists.open();
 					if (opened != null) {
 						return opened;
@@ -1161,6 +1153,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			LmdbNativeStrategyProposal<NativeUnorderedInput> wildcard = proposeBatch(row, wildcardJoin, false);
 			if (wildcard != null) {
 				try {
+					LmdbNativeStrategyArbiter.logDirect(originalExpr, "row/join dispatch", wildcard.tag,
+							"Wildcard predicate owns the parallel round");
 					NativeUnorderedInput opened = wildcard.open();
 					if (opened != null) {
 						return opened;
@@ -1174,64 +1168,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				.<NativeUnorderedInput>forSlice(originalExpr, consumableRows(), row.source)
 				.probeHarness(new NativeProbeBufferHarness())
 				.forcing(forcedStrategy, "row/join dispatch")) {
-			if (orderSlots.length == 0) {
-				// Emission strategy, never a sort input (the ORDER BY materializer callers all carry orderSlots).
-				arbiter.offer(() -> proposePrefixRun(row));
-			}
-			if (distinctPlan != null && distinct && orderSlots.length == 0
-					&& distinctPlan.strategy != NativeDistinctStrategy.GLOBAL_HASH) {
-				// The ordered-distinct plan competes instead of short-circuiting the ladder; its accepter marks the
-				// input ORDERED so the caller builds the order-relying tracker only for this winner.
-				arbiter.offer(() -> inputProposal(() -> acceptOrderedDistinct(row, distinctPlan.arg.open(row)),
-						LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT,
-						distinctPlan.arg.estimateWork(row, row.boundMask()), estimatedRows(row)));
-			}
-			if (LmdbNativeLeapfrogJoin.canOpen(arg, row.boundMask())) {
-				arbiter.offer(() -> inputProposal(
-						() -> acceptWcoj(row, LmdbNativeLeapfrogJoin.tryOpen(arg, row), multiJoin),
-						LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN,
-						estimatedRows(row)));
-			}
-			arbiter.offer(
-					() -> LmdbNativePackedFtree.proposeRows(multiJoin, row, retainedSlots, distinct, originalExpr));
-			arbiter.offer(() -> proposeFactorized(row, multiJoin, correlatedEntry, retainedSlots));
-			arbiter.offer(() -> proposeBatch(row, multiJoin, correlatedEntry));
-			arbiter.offer(() -> wrapCursorProposal(row, LmdbNativeParallelPipelines.propose(this, row),
-					this::acceptParallel));
-			arbiter.offer(() -> wrapCursorProposal(row,
-					LmdbNativeKernelExecution.proposeParallelRows(arg, row, originalExpr, false), this::acceptKernel));
-			arbiter.offer(() -> wrapCursorProposal(row,
-					LmdbNativeKernelExecution.proposeParallelRows(arg, row, originalExpr, true), this::acceptKernel));
-			arbiter.offer(() -> wrapCursorProposal(row,
-					LmdbNativeKernelExecution.proposeRows(arg, row, originalExpr, false), this::acceptKernel));
-			arbiter.offer(() -> wrapCursorProposal(row,
-					LmdbNativeKernelExecution.proposeRows(arg, row, originalExpr, true), this::acceptKernel));
-			if (distinct && orderSlots.length == 0) {
-				// The DISTINCT-sinking kernel replaces input AND dedup in one cursor; it competes here instead of
-				// capturing by ladder position (which starved factorized/batch and generated no cost evidence). The
-				// ORDER BY materializer callers need non-distinct sort slots, hence the orderSlots gate.
-				arbiter.offer(() -> wrapCursorProposal(row,
-						LmdbNativeKernelExecution.proposeParallelDistinctRows(arg, row, originalExpr, sourceSlots,
-								false),
-						this::acceptDistinctKernel));
-				arbiter.offer(() -> wrapCursorProposal(row,
-						LmdbNativeKernelExecution.proposeParallelDistinctRows(arg, row, originalExpr, sourceSlots,
-								true),
-						this::acceptDistinctKernel));
-				arbiter.offer(() -> wrapCursorProposal(row,
-						LmdbNativeKernelExecution.proposeDistinctRows(arg, row, originalExpr, sourceSlots, false),
-						this::acceptDistinctKernel));
-				arbiter.offer(() -> wrapCursorProposal(row,
-						LmdbNativeKernelExecution.proposeDistinctRows(arg, row, originalExpr, sourceSlots, true),
-						this::acceptDistinctKernel));
-			}
-			arbiter.offer(() -> inputProposal(
-					() -> acceptAdaptive(row, LmdbNativeAdaptiveFilterPlacement.tryOpen(this, row), multiJoin),
-					LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT,
-					arg.estimateWork(row, row.boundMask()), estimatedRows(row)));
-			arbiter.offer(() -> inputProposal(() -> acceptNested(row, arg.open(row), multiJoin),
-					LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, arg.estimateWork(row, row.boundMask()),
-					estimatedRows(row)));
+			offerUnorderedStrategies(row, distinctPlan, multiJoin, correlatedEntry, retainedSlots, arbiter);
 
 			long startedNanos = System.nanoTime();
 			LmdbNativeStrategySelection<NativeUnorderedInput> selection = arbiter.selectWithObservation();
@@ -1243,6 +1180,186 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			selected.calibrateOnClose(arbiter.winningTag(), arbiter.winningPredictedWork(), startedNanos);
 			return selected;
 		}
+	}
+
+	private void offerOrderedStrategies(RowState row, BindingSet base, AggContext values,
+			PackedRowComparator comparator, long emitCap, LmdbNativeStrategyArbiter<List<BindingSet>> arbiter)
+			throws IOException {
+		LmdbNativeWork work = arg.estimateWork(row, row.boundMask());
+		String factorizedTag = emitCap == Long.MAX_VALUE
+				? LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT
+				: LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K;
+		arbiter.offer(() -> new LmdbNativeStrategyProposal<>(
+				() -> tryEvaluateOrderedFactorized(base, values, comparator, emitCap), work,
+				factorizedTag, () -> {
+				}));
+		// Exactly ONE of the two IR-kernel tags (kernel-interpreter plan, D1/M4): compiled when janino is
+		// enabled, interpreted when only the interpreter tier is available, neither when both are off.
+		String orderedKernelTag = LmdbNativeJaninoCodegen.enabled()
+				? LmdbNativeAttemptMetrics.PATH_IR_KERNEL
+				: LmdbNativeKernelInterpreter.enabled()
+						? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED
+						: null;
+		if (orderedKernelTag != null) {
+			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> tryEvaluateOrderedKernel(row, values),
+					work, orderedKernelTag, () -> {
+					}));
+		}
+	}
+
+	private void offerUnorderedStrategies(RowState row, NativeTupleDistinctPlan distinctPlan, MultiJoinPlan multiJoin,
+			boolean correlatedEntry, int[] retainedSlots, LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter)
+			throws IOException {
+		if (orderSlots.length == 0) {
+			// Emission strategy, never a sort input (the ORDER BY materializer callers all carry orderSlots).
+			arbiter.offer(() -> proposePrefixRun(row));
+		}
+		if (distinctPlan != null && distinct && orderSlots.length == 0
+				&& distinctPlan.strategy != NativeDistinctStrategy.GLOBAL_HASH) {
+			// The ordered-distinct plan competes instead of short-circuiting the ladder; its accepter marks the
+			// input ORDERED so the caller builds the order-relying tracker only for this winner.
+			arbiter.offer(() -> inputProposal(() -> acceptOrderedDistinct(row, distinctPlan.arg.open(row)),
+					LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT,
+					distinctPlan.arg.estimateWork(row, row.boundMask()), estimatedRows(row)));
+		}
+		if (LmdbNativeLeapfrogJoin.canOpen(arg, row.boundMask())) {
+			arbiter.offer(() -> inputProposal(
+					() -> acceptWcoj(row, LmdbNativeLeapfrogJoin.tryOpen(arg, row), multiJoin),
+					LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN,
+					estimatedRows(row)));
+		}
+		arbiter.offer(
+				() -> LmdbNativePackedFtree.proposeRows(multiJoin, row, retainedSlots, distinct, originalExpr));
+		arbiter.offer(() -> proposeFactorized(row, multiJoin, correlatedEntry, retainedSlots));
+		arbiter.offer(() -> proposeBatch(row, multiJoin, correlatedEntry));
+		arbiter.offer(() -> wrapCursorProposal(row, LmdbNativeParallelPipelines.propose(this, row),
+				this::acceptParallel));
+		arbiter.offer(() -> wrapCursorProposal(row,
+				LmdbNativeKernelExecution.proposeParallelRows(arg, row, originalExpr, false), this::acceptKernel));
+		arbiter.offer(() -> wrapCursorProposal(row,
+				LmdbNativeKernelExecution.proposeParallelRows(arg, row, originalExpr, true), this::acceptKernel));
+		arbiter.offer(() -> wrapCursorProposal(row,
+				LmdbNativeKernelExecution.proposeRows(arg, row, originalExpr, false), this::acceptKernel));
+		arbiter.offer(() -> wrapCursorProposal(row,
+				LmdbNativeKernelExecution.proposeRows(arg, row, originalExpr, true), this::acceptKernel));
+		if (distinct && orderSlots.length == 0) {
+			// The DISTINCT-sinking kernel replaces input AND dedup in one cursor; it competes here instead of
+			// capturing by ladder position (which starved factorized/batch and generated no cost evidence). The
+			// ORDER BY materializer callers need non-distinct sort slots, hence the orderSlots gate.
+			arbiter.offer(() -> wrapCursorProposal(row,
+					LmdbNativeKernelExecution.proposeParallelDistinctRows(arg, row, originalExpr, sourceSlots,
+							false),
+					this::acceptDistinctKernel));
+			arbiter.offer(() -> wrapCursorProposal(row,
+					LmdbNativeKernelExecution.proposeParallelDistinctRows(arg, row, originalExpr, sourceSlots,
+							true),
+					this::acceptDistinctKernel));
+			arbiter.offer(() -> wrapCursorProposal(row,
+					LmdbNativeKernelExecution.proposeDistinctRows(arg, row, originalExpr, sourceSlots, false),
+					this::acceptDistinctKernel));
+			arbiter.offer(() -> wrapCursorProposal(row,
+					LmdbNativeKernelExecution.proposeDistinctRows(arg, row, originalExpr, sourceSlots, true),
+					this::acceptDistinctKernel));
+		}
+		arbiter.offer(() -> !LmdbNativeAdaptiveFilterPlacement.canAttempt(this, row) ? null
+				: inputProposal(
+						() -> acceptAdaptive(row, LmdbNativeAdaptiveFilterPlacement.tryOpen(this, row), multiJoin),
+						LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT,
+						arg.estimateWork(row, row.boundMask()), estimatedRows(row)));
+		arbiter.offer(() -> inputProposal(() -> acceptNested(row, arg.open(row), multiJoin),
+				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, arg.estimateWork(row, row.boundMask()),
+				estimatedRows(row)));
+
+	}
+
+	@Override
+	public void explainStrategies() {
+		explainStrategies(QueryExplanationContext.bindings());
+	}
+
+	private void explainStrategies(BindingSet bindings) {
+		if (hasOptionalOnlyBinding(bindings)) {
+			NativeEntryBindingVariant variant = NativeEntryBindingVariant.tryCreate(source, layout, bindings,
+					optionalOnlyNames);
+			if (variant == null) {
+				LmdbNativeStrategyPreview.direct("optional entry binding dispatch",
+						LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK,
+						"An optional-only binding cannot be represented in the native ID space", null);
+			} else {
+				withEntryBindingVariant(variant).explainStrategies(variant.filteredBase);
+			}
+			return;
+		}
+		RowState row = new RowState(source, layout, bindings, originalExpr);
+		if (limit == 0L) {
+			LmdbNativeStrategyPreview.empty("row/join dispatch", "LIMIT 0 requires no execution strategy");
+			return;
+		}
+		if (!initializeRow(row, row.base, source, layout)) {
+			LmdbNativeStrategyPreview.empty("row/join dispatch", "Incoming bindings have no matching stored values");
+			return;
+		}
+		if (constantFalseFor(bindings)) {
+			LmdbNativeStrategyPreview.empty("row/join dispatch", "A filter requires an entry binding that is absent");
+			return;
+		}
+		if (orderSlots.length != 0 && !distinct && !NativeGroupIteration.containsComputedValueCopy(arg)) {
+			try (LmdbNativeStrategyArbiter<List<BindingSet>> ordered = LmdbNativeStrategyArbiter
+					.<List<BindingSet>>forExpr(originalExpr, row.source)
+					.probeHarness(LmdbNativeProbeHarness.blocking())
+					.forcingWhereApplicable(strategy.forcedExecutionStrategyName(), "ORDER BY dispatch")) {
+				offerOrderedStrategies(row, row.base, null, null,
+						NativeSliceMath.limitPlusOffset(limit, Math.max(0L, offset)), ordered);
+				ordered.preview("ORDER BY dispatch");
+			} catch (IOException e) {
+				throw new QueryEvaluationException(e);
+			}
+		}
+		if (orderSlots.length != 0) {
+			long emitCap = NativeSliceMath.limitPlusOffset(limit, Math.max(0L, offset));
+			boolean topK = safeTopKCapacity(emitCap, sortLayout.liveToPlan.length) && topKDistinctSafe();
+			LmdbNativeStrategyPreview.direct("ORDER BY general fallback",
+					topK ? LmdbNativeAttemptMetrics.PATH_ORDERED_TOP_K
+							: LmdbNativeAttemptMetrics.PATH_ORDERED_FULL_SORT,
+					"Reached if ordered specialists cannot bind; "
+							+ (topK ? "bounded top-K capacity and DISTINCT ordering are safe"
+									: "the complete input must be sorted"),
+					null);
+		}
+		MultiJoinPlan multiJoin = arg instanceof MultiJoinPlan join && join.children.length > 0 ? join : null;
+		try (LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter = LmdbNativeStrategyArbiter
+				.<NativeUnorderedInput>forSlice(originalExpr, consumableRows(), source)
+				.probeHarness(new NativeProbeBufferHarness())
+				.forcing(strategy == null ? null : strategy.forcedExecutionStrategyName(), "row/join dispatch")) {
+			NativeTupleDistinctPlan distinctPlan = distinct ? LmdbNativeOrderPlanner.tuple(arg, sourceSlots, row)
+					: null;
+			offerUnorderedStrategies(row, distinctPlan, multiJoin, (arg.producedMask() & row.boundMask()) != 0L,
+					orderSlots.length == 0 ? sourceSlots : sortLayout.liveToPlan, arbiter);
+			String directTag = null;
+			String directReason = null;
+			if (strategy.forcedExecutionStrategyName() == null && (arg.producedMask() & row.boundMask()) == 0L) {
+				MultiJoinPlan wildcardJoin = multiJoin;
+				if (wildcardJoin == null && distinct && arg instanceof PatternPlan pattern) {
+					wildcardJoin = new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]);
+				}
+				boolean existence = LmdbWildcardPredicateBatch.ownsExistenceParallelRound(arg, row);
+				if (existence || LmdbWildcardPredicateBatch.ownsParallelRound(wildcardJoin, row, distinct,
+						sourceSlots, orderSlots)) {
+					try (var proposal = proposeBatch(row, existence ? null : wildcardJoin, false)) {
+						if (proposal != null) {
+							directTag = proposal.tag;
+							directReason = "Wildcard predicate owns the parallel round";
+						}
+					}
+				}
+			}
+			arbiter.preview(
+					orderSlots.length == 0 ? "row/join dispatch" : "row/join dispatch (ORDER BY fallback input)",
+					directTag, directReason);
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+		LmdbNativeStrategyPreview.inspect(arg);
 	}
 
 	private LmdbNativeStrategyProposal<NativeUnorderedInput> proposeFactorized(RowState row,
@@ -1266,7 +1383,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				row.boundMask(), retainedSlots, distinct, 0L, metrics);
 		if (factorized == null) {
 			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
-					"not-applicable");
+					"No factorized split preserves the retained variables and join filters");
 			return null;
 		}
 		double cost = factorized.proposalCost(row);
@@ -1386,7 +1503,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	private LmdbNativeStrategyProposal<NativeUnorderedInput> proposePrefixRun(RowState row) {
 		if (prefixRunPlan == null || prefixPattern == null || prefixPattern.hasRuntimeBoundSlot(row)) {
 			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
-					"not-applicable");
+					prefixRunPlan == null || prefixPattern == null ? "No prefix-run plan over a leading pattern"
+							: "The leading pattern has incoming bound slots");
 			return null;
 		}
 		if (LmdbNativeParallelPipelines.enabled() && LmdbNativeParallelPipelines.configuredThreads() > 0
@@ -1650,6 +1768,24 @@ final class NativeBareRowsStep implements QueryEvaluationStep, LmdbNativePhysica
 	}
 
 	@Override
+	public void explainStrategies() {
+		BindingSet bindings = QueryExplanationContext.bindings();
+		if (bindings.isEmpty() || bulk.hasOptionalOnlyBinding(bindings)) {
+			LmdbNativeStrategyPreview.inspect(bulk);
+		} else {
+			RowState row = new RowState(source, layout, bindings, originalExpr);
+			if (initializeRow(row, bindings, source, layout)) {
+				LmdbNativeStrategyPreview.direct("bound BGP dispatch", LmdbNativeAttemptMetrics.PATH_BARE_DIRECT,
+						"Incoming bindings select the direct basic graph pattern cursor", null);
+			} else {
+				LmdbNativeStrategyPreview.empty("bound BGP dispatch",
+						"Incoming bindings have no matching stored values");
+			}
+			LmdbNativeStrategyPreview.inspect(arg);
+		}
+	}
+
+	@Override
 	public String nativePhysicalPlan() {
 		return bulk.nativePhysicalPlan();
 	}
@@ -1678,6 +1814,15 @@ final class NativeExistsValueStep implements QueryValueEvaluationStep {
 		this.existsPlan = existsPlan;
 	}
 
+	void explainStrategies() {
+		if (!QueryExplanationContext.inspectOnce(this)) {
+			return;
+		}
+		LmdbNativeStrategyPreview.direct("EXISTS dispatch", LmdbNativeAttemptMetrics.PATH_BARE_EXISTS,
+				"Boolean existence probe; outer-row bindings are applied when the expression is evaluated", null);
+		LmdbNativeStrategyPreview.inspect(step.arg);
+	}
+
 	@Override
 	public Value evaluate(BindingSet bindings) {
 		RowState row = new RowState(step.source, step.layout, bindings, step.originalExpr);
@@ -1688,6 +1833,8 @@ final class NativeExistsValueStep implements QueryValueEvaluationStep {
 		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, step.layout,
 				row.boundMask());
 		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
+		LmdbNativeStrategyArbiter.logDirect(step.originalExpr, "EXISTS dispatch",
+				LmdbNativeAttemptMetrics.PATH_BARE_EXISTS, "Boolean existence probe");
 		LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_BARE_EXISTS);
 		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
 		boolean ownsSession = inherited == null;
@@ -2028,6 +2175,8 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 			// usually a single scan every rival structurally declines. The aggregated nanos/rows evidence recorded
 			// at close keeps the route auditable for a future memoized arbitration.
 			startedNanos = System.nanoTime();
+			LmdbNativeStrategyArbiter.logDirect(step.originalExpr, "bound BGP dispatch",
+					LmdbNativeAttemptMetrics.PATH_BARE_DIRECT, "Direct cursor for a bound basic graph pattern");
 			cursor = step.arg.open(row);
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_BARE_DIRECT);
 			if (row.runtimePlan != null) {

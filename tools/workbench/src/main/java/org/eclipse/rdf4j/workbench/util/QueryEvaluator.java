@@ -34,6 +34,8 @@ import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -41,6 +43,8 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -68,6 +72,8 @@ public final class QueryEvaluator {
 	private static final String EXPLANATION_FORMAT = "explanation-format";
 
 	private static final String EXPLANATION_LEVEL = "explanation-level";
+	private static final String STRATEGY_DECISIONS = "strategy-decisions";
+	private static final ObjectMapper EXPLANATION_MAPPER = new ObjectMapper();
 
 	private static final String METADATA_QUERY_TEXT = "query-text";
 
@@ -89,11 +95,18 @@ public final class QueryEvaluator {
 		private final String content;
 		private final String format;
 		private final String level;
+		private final List<StrategyDecision> strategyDecisions;
 
-		private ExplainQueryResult(String content, String format, String level) {
+		private ExplainQueryResult(String content, String format, String level,
+				List<StrategyDecision> strategyDecisions) {
 			this.content = content;
 			this.format = format;
 			this.level = level;
+			this.strategyDecisions = List.copyOf(strategyDecisions);
+		}
+
+		public List<StrategyDecision> getStrategyDecisions() {
+			return strategyDecisions;
 		}
 
 		public String getContent() {
@@ -347,16 +360,33 @@ public final class QueryEvaluator {
 		} catch (UnsupportedOperationException e) {
 			throw new BadRequestException("Explain is not supported for this query or repository.", e);
 		}
+		List<StrategyDecision> decisions = new ArrayList<>();
+		collectStrategyDecisions(explanation.toGenericPlanNode(), decisions);
 		return new ExplainQueryResult(formatExplanation(explanation, req.getExplainFormat()),
-				req.getExplainFormatValue(), req.getExplainLevelName());
+				req.getExplainFormatValue(), req.getExplainLevelName(), decisions);
+	}
+
+	private static void collectStrategyDecisions(GenericPlanNode node, List<StrategyDecision> decisions) {
+		if (node == null) {
+			return;
+		}
+		if (node.getStrategyDecisions() != null) {
+			decisions.addAll(node.getStrategyDecisions());
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				collectStrategyDecisions(child, decisions);
+			}
+		}
 	}
 
 	private void explainQuery(final TupleResultBuilder builder, final String xslPath,
 			final ExplainQueryResult explainQueryResult) throws QueryResultHandlerException {
 		builder.transform(xslPath, "query.xsl");
-		builder.start(EXPLANATION, EXPLANATION_FORMAT, EXPLANATION_LEVEL);
+		builder.start(EXPLANATION, EXPLANATION_FORMAT, EXPLANATION_LEVEL, STRATEGY_DECISIONS);
 		builder.link(List.of(INFO, "namespaces"));
-		builder.result(explainQueryResult.getContent(), explainQueryResult.getFormat(), explainQueryResult.getLevel());
+		builder.result(explainQueryResult.getContent(), explainQueryResult.getFormat(), explainQueryResult.getLevel(),
+				EXPLANATION_MAPPER.valueToTree(explainQueryResult.getStrategyDecisions()).toString());
 		builder.end();
 	}
 

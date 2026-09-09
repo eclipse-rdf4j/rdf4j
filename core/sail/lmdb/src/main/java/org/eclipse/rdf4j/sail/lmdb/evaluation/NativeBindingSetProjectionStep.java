@@ -54,6 +54,11 @@ final class NativeBindingSetProjectionStep implements QueryEvaluationStep, LmdbN
 				includeAllParentBindings);
 	}
 
+	@Override
+	public void explainStrategies() {
+		LmdbNativeStrategyPreview.inspect(arg);
+	}
+
 	private static boolean isOuterProjection(QueryModelNode node) {
 		QueryModelNode ancestor = node;
 		while (ancestor.getParentNode() != null) {

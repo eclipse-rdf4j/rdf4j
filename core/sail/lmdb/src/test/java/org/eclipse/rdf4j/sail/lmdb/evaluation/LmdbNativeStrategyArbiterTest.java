@@ -22,8 +22,16 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 
 /**
  * Unit spec for {@link LmdbNativeStrategyArbiter}: how a winner is chosen among candidate strategies, and what happens
@@ -35,6 +43,108 @@ import org.junit.jupiter.api.Test;
  * nothing rather than changing everything.
  */
 public class LmdbNativeStrategyArbiterTest {
+
+	@Test
+	public void workerQuotesDoNotReserveCapacityUntilTheOpenerIsAdmitted() {
+		try (var first = LmdbNativeParallelPipelines.quoteTasks(false, Integer.MAX_VALUE);
+				var second = LmdbNativeParallelPipelines.quoteTasks(false, Integer.MAX_VALUE)) {
+			assertThat(first).isNotNull();
+			assertThat(second.grantedWorkers()).isEqualTo(first.grantedWorkers());
+			try (var scope = QueryExplanationContext.enter(Explanation.Level.Optimized)) {
+				assertThatThrownBy(first::admit).isInstanceOf(IllegalStateException.class);
+			}
+			assertThat(first.admit()).isTrue();
+			assertThat(second.admit()).isFalse();
+			first.close();
+			assertThat(second.admit()).isTrue();
+		}
+	}
+
+	@Test
+	public void previewPriorityIsInvariantUnderOfferPermutation() throws IOException {
+		List<String> expected = null;
+		for (var tags : List.of(List.of("batch", "nestedLoop", "prefixRun"),
+				List.of("prefixRun", "nestedLoop", "batch"), List.of("nestedLoop", "batch", "prefixRun"))) {
+			try (var scope = QueryExplanationContext.enter(Explanation.Level.Optimized);
+					LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
+				for (String tag : tags) {
+					arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> tag,
+							LmdbNativeWork.exact(tag.equals("prefixRun") ? 100 : 1), tag, () -> {
+							}));
+				}
+				List<String> actual = arbiter.preview("row/join dispatch")
+						.candidates()
+						.stream()
+						.map(candidate -> candidate.strategy())
+						.toList();
+				if (expected == null) {
+					expected = actual;
+				} else {
+					assertThat(actual).isEqualTo(expected);
+				}
+			}
+		}
+	}
+
+	@Test
+	public void previewRanksAllCandidatesWithoutOpeningThem() throws IOException {
+		AtomicInteger opens = new AtomicInteger();
+		try (QueryExplanationContext scope = QueryExplanationContext.enter(Explanation.Level.Optimized);
+				LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
+			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+				opens.incrementAndGet();
+				return "batch";
+			}, LmdbNativeWork.exact(100), "batch", () -> {
+			}));
+			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+				opens.incrementAndGet();
+				return "nestedLoop";
+			}, LmdbNativeWork.exact(1), "nestedLoop", () -> {
+			}));
+			var report = arbiter.preview("row/join dispatch");
+			assertThat(report.wouldSelect()).isEqualTo("nestedLoop");
+			assertThat(report.candidates().get(0).strategy()).isEqualTo("nestedLoop");
+			assertThat(report.candidates().get(1).strategy()).isEqualTo("batch");
+			assertThat(report.candidates()).hasSize(LmdbNativeStrategyCatalog.names().size());
+			assertThat(report.candidates().get(1).canAttempt()).isTrue();
+			assertThat(report.candidates().get(1).declineReason()).isNull();
+			assertThat(opens).hasValue(0);
+			assertThat(arbiter.candidateCount()).isEqualTo(2);
+			assertThatThrownBy(arbiter::select).isInstanceOf(IllegalStateException.class);
+		}
+		assertThat(QueryExplanationContext.isPreview()).isFalse();
+	}
+
+	@Test
+	public void selectionIsLoggedBeforeBlockingOpenerAndEveryRetry() throws IOException {
+		Logger logger = (Logger) LoggerFactory.getLogger(LmdbNativeStrategyArbiter.class);
+		Level previous = logger.getLevel();
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		logger.setLevel(Level.INFO);
+		logger.addAppender(appender);
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
+			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+				assertThat(appender.list).anySatisfy(event -> {
+					assertThat(event.getLevel()).isEqualTo(Level.INFO);
+					assertThat(event.getFormattedMessage()).contains("LMDB strategy selected", "strategy=batch");
+				});
+				return null;
+			}, LmdbNativeWork.exact(1), "batch", () -> {
+			}));
+			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+				assertThat(appender.list).anySatisfy(event -> assertThat(event.getFormattedMessage())
+						.contains("LMDB strategy selected", "strategy=nestedLoop", "role=retry"));
+				return "answer";
+			}, LmdbNativeWork.exact(100), "nestedLoop", () -> {
+			}));
+			assertThat(arbiter.select()).isEqualTo("answer");
+		} finally {
+			logger.detachAppender(appender);
+			logger.setLevel(previous);
+			appender.stop();
+		}
+	}
 
 	@Test
 	public void probeBufferClosesTheInputWhenRowProductionFails() {

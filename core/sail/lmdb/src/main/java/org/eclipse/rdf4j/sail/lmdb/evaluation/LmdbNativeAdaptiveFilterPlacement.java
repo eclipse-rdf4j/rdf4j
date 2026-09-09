@@ -49,6 +49,24 @@ final class LmdbNativeAdaptiveFilterPlacement {
 		return tryOpenWrapped(step, step.arg, row);
 	}
 
+	/** Shared structural admission, before costing or opening a cursor. */
+	static boolean canAttempt(NativeRowsStep step, RowState row) {
+		SlotPlan plan = step.arg;
+		while (plan instanceof ExtensionPlan extension) {
+			if (!SlotPlan.encounterOrderReplaySafe(extension)) {
+				decline(step.originalExpr, "UNSAFE_EXTENSION", true);
+				return false;
+			}
+			plan = extension.arg;
+		}
+		if (!(plan instanceof MultiJoinPlan multiJoin) || multiJoin.children.length == 0) {
+			decline(step.originalExpr, "NOT_MULTI_JOIN", false);
+			return false;
+		}
+		return selectTargetIndex(step.originalExpr, step.orderSlots.length != 0, step.offset, step.limit,
+				multiJoin, row, false, true) >= 0;
+	}
+
 	/**
 	 * Whether this step has an expensive adaptive placement that can actually be admitted. Dispatch uses this
 	 * side-effect-free preflight to keep a whole-stage kernel from shadowing costly value/composite-filter movement

@@ -44,6 +44,11 @@ final class NativeBindingSetMultiProjectionStep implements QueryEvaluationStep, 
 	}
 
 	@Override
+	public void explainStrategies() {
+		LmdbNativeStrategyPreview.inspect(arg);
+	}
+
+	@Override
 	public String nativePhysicalPlan() {
 		String inner = arg instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
 				: arg.getClass().getSimpleName();

@@ -1052,6 +1052,33 @@ final class LmdbNativeKernelBindings {
 				throw failure;
 			} finally { LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested); }
 		}
+
+		@Override public int windowColumn(int projection) {
+			int slot = producer.windowColumn(projection), result = -1;
+			if (slot < 0) return -1;
+			for (int i = 0; i < slots.length; i++) if (slots[i] == slot) {
+				if (result >= 0) return -1; // aliases require the general correlated projection
+				result = i;
+			}
+			return result;
+		}
+		@Override public int nextWindow(int projection) {
+			if (closed) return 0;
+			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
+			try { return producer.nextWindow(projection); }
+			catch (java.io.IOException failure) {
+				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				throw new PlanFailure(failure);
+			} catch (RuntimeException | Error failure) {
+				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				throw failure;
+			} finally { LmdbNativeEvaluationStrategy.leaveKernelSubplan(nested); }
+		}
+		@Override public long[] windowValues() { return producer.windowValues(); }
+		@Override public long[] windowWeights() { return producer.windowWeights(); }
+		@Override public int windowStart() { return producer.windowStart(); }
+		@Override public boolean windowPrefixChanged() { return producer.windowPrefixChanged(); }
+		@Override public long windowScale() { return producer.windowScale(); }
 		@Override public long value(int outputColumn) { return producer.value(slots[outputColumn]); }
 		@Override public long multiplicity() { return producer.multiplicity(); }
 		@Override public void close() {

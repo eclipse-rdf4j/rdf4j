@@ -16,11 +16,14 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -28,6 +31,8 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -41,6 +46,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class LmdbNativeQueryExplanationTest {
 	// This class asserts interpreted-strategy internals; the IR kernel rung must stay off so it cannot absorb the
@@ -120,6 +127,102 @@ public class LmdbNativeQueryExplanationTest {
 		Explanation explanation = explain(Explanation.Level.Unoptimized, rowQuery());
 
 		assertNoNativeMarker(explanation);
+	}
+
+	@Test
+	public void optimizedExplanationListsCurrentStrategyDecision() {
+		Explanation explanation = explain(Explanation.Level.Optimized, rowQuery());
+		assertThat(explanation.toJson()).contains("\"strategyDecisions\"", "\"candidates\"",
+				"\"wouldSelect\"", "irKernel", "nestedLoop", "\"declineReason\"");
+		assertThat(explanation.toString()).contains("Would select now", "Can attempt?");
+		assertThat(explanation.toDot()).contains("Would select now");
+		assertThat(explanation.toString()).doesNotContain("nativeExecutionPath=");
+	}
+
+	@Test
+	public void optimizedDisabledStrategiesCannotBeAttempted() throws Exception {
+		String query = "PREFIX ex: <" + EX + "> SELECT ?type (COUNT(?s) AS ?n) WHERE { "
+				+ "?s a ?type; ex:price ?price } GROUP BY ?type";
+		var tree = new ObjectMapper().readTree(explain(Explanation.Level.Optimized, query).toJson());
+		for (var report : tree.findValues("strategyDecisions")) {
+			for (var decision : report) {
+				for (var candidate : decision.path("candidates")) {
+					String tag = candidate.path("strategy").asText();
+					if (tag.startsWith("ir") || tag.startsWith("packedFtree") || tag.equals("janinoAggregate")) {
+						assertThat(candidate.path("canAttempt").asBoolean()).as(tag).isFalse();
+						assertThat(candidate.path("declineReason").asText()).as(tag).isNotEmpty();
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	public void optimizedReportsOrderedAndNestedDecisions() {
+		String query = "PREFIX ex: <" + EX + "> SELECT ?s ?n WHERE { "
+				+ "{ SELECT ?s (COUNT(?p) AS ?n) WHERE { ?s ?p ?o } GROUP BY ?s } "
+				+ "OPTIONAL { ?s ex:price ?price } } ORDER BY ?n LIMIT 2";
+		String json = explain(Explanation.Level.Optimized, query).toJson();
+		assertThat(json).contains("GROUP BY dispatch", "ORDER BY dispatch");
+	}
+
+	@Test
+	public void optimizedReportRoundTripsAndRefreshes() throws Exception {
+		Explanation first = explain(Explanation.Level.Optimized, rowQuery());
+		GenericPlanNode restored = new ObjectMapper()
+				.readValue(first.toJson(), GenericPlanNode.class);
+		assertThat(restored.toString()).contains("Would select now");
+		assertThat(explain(Explanation.Level.Optimized, rowQuery()).toJson()).contains("strategyDecisions");
+	}
+
+	@Test
+	public void optimizedDoesNotEvaluateExpressionsOrConsumeRows() {
+		AtomicInteger evaluations = new AtomicInteger();
+		Function sentinel = new Function() {
+			@Override
+			public String getURI() {
+				return "urn:rdf4j:test:strategy-preview-sentinel";
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory vf, Value... args) {
+				evaluations.incrementAndGet();
+				return vf.createLiteral(1);
+			}
+		};
+		FunctionRegistry.getInstance().add(sentinel);
+		try (var connection = repository.getConnection()) {
+			var query = connection.prepareTupleQuery("SELECT ?s ?n WHERE { ?s a <" + EX + "Item> . "
+					+ "BIND(<" + sentinel.getURI() + ">() AS ?n) } ORDER BY ?n");
+			assertThat(query.explain(Explanation.Level.Optimized).toJson()).contains("strategyDecisions");
+			assertThat(evaluations).hasValue(0);
+			try (var rows = query.evaluate()) {
+				assertThat(QueryResults.asList(rows)).hasSize(4);
+			}
+			assertThat(evaluations.get()).isGreaterThan(0);
+		} finally {
+			FunctionRegistry.getInstance().remove(sentinel);
+		}
+	}
+
+	@Test
+	public void optimizedReportsSurviveNestedOperatorCombinations() {
+		String nested = "{ SELECT ?s (COUNT(?o) AS ?n) WHERE { ?s ?p ?o } GROUP BY ?s }";
+		for (String body : List.of(nested + " UNION " + nested,
+				"?s a ex:Item OPTIONAL " + nested,
+				"?s a ex:Item MINUS " + nested,
+				"?s a ex:Item FILTER EXISTS { " + nested + " FILTER(?n > 0) }",
+				"?s a ex:Item FILTER NOT EXISTS { " + nested + " FILTER(?n < 0) }",
+				"?s a ex:Item OPTIONAL { " + nested + " MINUS { ?s ex:missing ?x } }")) {
+			String text = "PREFIX ex: <" + EX + "> SELECT DISTINCT ?s WHERE { " + body + " } LIMIT 3";
+			assertThat(explain(Explanation.Level.Optimized, text).toJson()).as(text)
+					.contains("strategyDecisions", "GROUP BY", "capturedAtMillis");
+		}
 	}
 
 	@Test

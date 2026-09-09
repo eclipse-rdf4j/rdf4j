@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -52,6 +53,8 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
+import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
+import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -292,7 +295,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 			logger.trace("Optimized query model:\n{}", tupleExpr);
 			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
-			iteration = qes.evaluate(EmptyBindingSet.getInstance());
+			iteration = QueryExplanationContext.isPreview() ? new EmptyIteration<>()
+					: qes.evaluate(EmptyBindingSet.getInstance());
 			iteration = interlock(iteration, rdfDataset, branch);
 			if (slowQueryLogInfo != null) {
 				iteration = new SlowQueryLoggingIteration<>(iteration, getSailBase(), slowQueryLogInfo,
@@ -332,7 +336,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		setRuntimeTelemetryEnabled(tupleExpr, false);
 		setExecutionSummaryEnabled(tupleExpr, false);
 
-		try {
+		try (var explanationContext = QueryExplanationContext.enter(level, bindings)) {
 
 			switch (level) {
 			case Telemetry:
@@ -380,6 +384,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 			}
 
+			if (level == Explanation.Level.Optimized) {
+				TupleExpr reportTarget = tupleExpr instanceof QueryRoot root ? root.getArg() : tupleExpr;
+				reportTarget.setQueryModelMetadata(StrategyDecision.METADATA_KEY, explanationContext.decisions());
+			}
 			Set<String> incomingBindings = bindings == null ? Collections.emptySet() : bindings.getBindingNames();
 			QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr,
 					incomingBindings, level);
@@ -388,6 +396,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut, tupleExpr);
 
 		} finally {
+			TupleExpr reportTarget = tupleExpr instanceof QueryRoot root ? root.getArg() : tupleExpr;
+			reportTarget.setQueryModelMetadata(StrategyDecision.METADATA_KEY, null);
 			setRuntimeTelemetryEnabled(tupleExpr, false);
 			setExecutionSummaryEnabled(tupleExpr, false);
 			this.cloneTupleExpression = true;
@@ -404,6 +414,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			@Override
 			protected void meetNode(QueryModelNode node) {
 				node.clearMetricsActual();
+				node.setQueryModelMetadata(StrategyDecision.METADATA_KEY, null);
 				super.meetNode(node);
 			}
 		});

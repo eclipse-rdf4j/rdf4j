@@ -169,6 +169,11 @@ final class NativeRootPipeline {
 		}
 
 		@Override
+		public void explainStrategies() {
+			LmdbNativeStrategyPreview.inspect(staged);
+		}
+
+		@Override
 		public String nativePhysicalPlan() {
 			return physicalPlan;
 		}
@@ -188,6 +193,11 @@ final class NativeRootPipeline {
 		@Override
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 			return new SliceIteration(arg.evaluate(bindings), offset, limit);
+		}
+
+		@Override
+		public void explainStrategies() {
+			LmdbNativeStrategyPreview.inspect(arg);
 		}
 
 		@Override
@@ -268,6 +278,11 @@ final class NativeRootPipeline {
 		}
 
 		@Override
+		public void explainStrategies() {
+			LmdbNativeStrategyPreview.inspect(arg);
+		}
+
+		@Override
 		public String nativePhysicalPlan() {
 			return "NativeDistinct";
 		}
@@ -339,7 +354,16 @@ final class NativeRootPipeline {
 
 		@Override
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+			LmdbNativeStrategyArbiter.logDirect(null, "ORDER BY dispatch",
+					LmdbNativeAttemptMetrics.PATH_ORDERED_FULL_SORT, "Sort the complete staged input");
 			return new OrderIteration(arg.evaluate(bindings), keys, strict);
+		}
+
+		@Override
+		public void explainStrategies() {
+			LmdbNativeStrategyPreview.direct("ORDER BY dispatch",
+					LmdbNativeAttemptMetrics.PATH_ORDERED_FULL_SORT, "Sort the complete staged input", null);
+			LmdbNativeStrategyPreview.inspect(arg);
 		}
 
 		@Override

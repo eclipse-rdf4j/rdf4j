@@ -95,6 +95,11 @@ final class NativeDescribeStep implements QueryEvaluationStep, LmdbNativePhysica
 	}
 
 	@Override
+	public void explainStrategies() {
+		LmdbNativeStrategyPreview.inspect(child);
+	}
+
+	@Override
 	public String nativePhysicalPlan() {
 		String childPlan = child instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
 				: child.getClass().getSimpleName();

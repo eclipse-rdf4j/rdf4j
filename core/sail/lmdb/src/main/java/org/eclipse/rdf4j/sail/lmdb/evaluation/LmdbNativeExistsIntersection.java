@@ -139,6 +139,9 @@ final class LmdbNativeExistsIntersection {
 
 	/** Physical set work for the structural IR proposal, independent of statement cardinality. */
 	LmdbNativeWork nodeDomainIrWork(NativeLmdbQuerySource source, RowState row) {
+		if (LmdbNativeStrategyPreview.active()) {
+			return LmdbNativeWork.UNKNOWN;
+		}
 		if (outerPattern.hasRuntimeBoundSlot(row)) {
 			return LmdbNativeWork.UNKNOWN;
 		}

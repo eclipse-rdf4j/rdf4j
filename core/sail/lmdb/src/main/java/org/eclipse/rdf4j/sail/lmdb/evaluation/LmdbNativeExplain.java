@@ -495,4 +495,7 @@ final class LmdbNativeExplain {
 @Experimental
 interface LmdbNativePhysicalPlan {
 	String nativePhysicalPlan();
+
+	default void explainStrategies() {
+	}
 }

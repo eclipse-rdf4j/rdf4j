@@ -31,7 +31,7 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 	private BorrowedFactorBatch.Cursor windowReader;
 	private BorrowedFactorBatch windowBatch;
 	private int windowCapacity, windowSlot = -1, windowOutput = -1, windowCount;
-	private boolean windowMode;
+	private boolean windowMode, prefixChanged;
 	private final long[] requestedMasks;
 	private FactorEnvironment environment;
 	private long epoch, prefixWeight, hiddenWeight, currentWeight;
@@ -192,12 +192,13 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 
 	/**
 	 * Returns the sole varying unary output column, or -1 without advancing input. Native packed
-	 * projections and zipped/multi-factor requests retain their existing positioned traversal.
+	 * projections can supply the same capability; zipped/multi-factor requests may decline.
 	 * Admission is evaluated per batch: the same site may switch representation on the next batch.
 	 */
 	public int windowColumn(int projection) {
 		if (closed || !batch) throw new IllegalStateException("no current relation batch");
 		Objects.checkIndex(projection, columns.length);
+		if (nativeCursor != null) return nativeCursor.windowColumn(projection);
 		if (factors == null) return -1;
 		checkEpoch();
 		long open = environment.expansionClosure(masks[projection]);
@@ -222,7 +223,26 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 		Objects.checkIndex(projection, columns.length);
 		try {
 			KernelRuntime.checkCancelled(cancellation);
+			if (nativeCursor != null) {
+				positioned = false;
+				if (projection == completed) return 0;
+				if (active != projection) {
+					if (projection != completed + 1 || active != completed)
+						throw new IllegalStateException("projection order or unfinished projection");
+					windowOutput = windowColumn(projection);
+					if (windowOutput < 0) throw new IllegalStateException("projection is not a native window");
+					active = projection; windowMode = true;
+				} else if (!windowMode) throw new IllegalStateException("cannot switch projection traversal mode");
+				windowCount = nativeCursor.nextWindow(projection);
+				if (windowCount < 0 || windowCount > WINDOW) throw new IllegalStateException("invalid native window");
+				KernelRuntime.checkCancelled(cancellation);
+				if (windowCount == 0) { completed = active; return 0; }
+				prefixChanged = nativeCursor.windowPrefixChanged();
+				positioned = true;
+				return windowCount;
+			}
 			checkEpoch();
+			prefixChanged = active != projection;
 			positioned = false;
 			if (projection == completed) return 0;
 			if (active != projection) {
@@ -258,14 +278,17 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 		} catch (RuntimeException | Error failure) { fail(failure); return 0; }
 	}
 
-	public long[] windowValues() { checkWindow(); return windowReader.windowValues(); }
-	public long[] windowWeights() { checkWindow(); return windowReader.windowWeights(); }
-	public int windowStart() { checkWindow(); return windowReader.windowStart(); }
+	public long[] windowValues() { checkWindow(); return nativeCursor != null ? nativeCursor.windowValues() : windowReader.windowValues(); }
+	public long[] windowWeights() { checkWindow(); return nativeCursor != null ? nativeCursor.windowWeights() : windowReader.windowWeights(); }
+	public int windowStart() { checkWindow(); return nativeCursor != null ? nativeCursor.windowStart() : windowReader.windowStart(); }
+
+	@Override public boolean windowPrefixChanged() { checkWindow(); return prefixChanged; }
 
 	/** Multiplier outside the opened factor. Call only after a non-null argument needs its weight. */
 	public long windowScale() {
 		checkWindow();
 		if (!exact[active]) return 1L;
+		if (nativeCursor != null) return nativeCursor.windowScale();
 		checkEpoch();
 		if (hiddenWeight == 0L)
 			hiddenWeight = environment.countProduct(environment.mask() & ~expanded, prefixWeight);
@@ -325,6 +348,7 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 	@Override public long value(int column) {
 		if (closed || !positioned) throw new IllegalStateException("projection is not positioned");
 		if (column < 0 || column >= width || (requestedMasks[active] & (1L << column)) == 0L) throw new IllegalArgumentException("column not in current projection");
+		if (windowMode && column == windowOutput) throw new IllegalStateException("read this column from the current window");
 		if (nativeCursor != null) return nativeCursor.value(column);
 		if (rows != null) return rowBuffer[rowIndex * width + column];
 		checkEpoch();

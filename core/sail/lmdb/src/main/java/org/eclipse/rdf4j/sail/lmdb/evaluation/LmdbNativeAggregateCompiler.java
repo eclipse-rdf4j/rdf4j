@@ -132,6 +132,7 @@ final class LmdbNativeAggregateCompiler {
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
 		CompileResult result = compile(expr, context, strategy, source, false);
 		if (result.step != null) {
+			LmdbNativeStrategyPreview.inspect(result.step);
 			if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
 				LmdbNativeExplain.mark(expr, result.kind, physicalPlan(result.step));
 			}
@@ -185,6 +186,9 @@ final class LmdbNativeAggregateCompiler {
 			return null;
 		}
 		QueryValueEvaluationStep existsStep = ((NativeBareRowsStep) rows).existsStep();
+		if (LmdbNativeStrategyPreview.active() && existsStep instanceof NativeExistsValueStep nativeExists) {
+			nativeExists.explainStrategies();
+		}
 		if (existsStep != null && LmdbNativeExplain.recordsExecutionPaths(expr)) {
 			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_BGP, physicalPlan(rows));
 		}
@@ -212,6 +216,7 @@ final class LmdbNativeAggregateCompiler {
 		if (!LmdbNativeExplain.KIND_BGP.equals(result.kind)) {
 			COMPILED.incrementAndGet();
 		}
+		LmdbNativeStrategyPreview.inspect(result.step);
 		return CompileOutcome.supported(result.step, result.kind);
 	}
 

@@ -419,7 +419,8 @@ var workbench;
                 forcedLmdbExecutionStrategy: explanation.forcedLmdbExecutionStrategy,
                 responseFormat: explanation.responseFormat,
                 view: explanation.view,
-                rawContent: explanation.rawContent
+                rawContent: explanation.rawContent,
+                strategyDecisions: cloneStrategyDecisions(explanation.strategyDecisions)
             };
         }
         function getStableExplanationKey(explanation) {
@@ -433,7 +434,8 @@ var workbench;
                 explanation.forcedLmdbExecutionStrategy,
                 explanation.responseFormat,
                 explanation.view,
-                explanation.rawContent
+                explanation.rawContent,
+                JSON.stringify(explanation.strategyDecisions || [])
             ].join('||');
         }
         function getStableExplanationContentKey(explanation) {
@@ -446,7 +448,8 @@ var workbench;
                 explanation.requestedFormat,
                 explanation.forcedLmdbExecutionStrategy,
                 explanation.responseFormat,
-                explanation.rawContent
+                explanation.rawContent,
+                JSON.stringify(explanation.strategyDecisions || [])
             ].join('||');
         }
         function getPaneSnapshot(paneState) {
@@ -1601,6 +1604,67 @@ var workbench;
             }
             restoreExplainButtonViewportTopIfNeeded(paneKey);
         }
+        function cloneStrategyDecisions(reports) {
+            return Array.isArray(reports) ? JSON.parse(JSON.stringify(reports)) : undefined;
+        }
+        function createStrategyDecisionTables(reports) {
+            var surface = document.createElement('div');
+            surface.className = 'query-strategy-decisions';
+            (reports || []).forEach(function (report) {
+                var section = document.createElement('section');
+                var heading = document.createElement('h3');
+                heading.textContent = report.decisionPoint;
+                section.appendChild(heading);
+                var summary = document.createElement('p');
+                summary.className = 'query-strategy-decisions__selection';
+                var selected = report.wouldSelect || (report.mode === 'runtime dependent' ? 'Runtime dependent'
+                    : report.mode === 'no dispatch' ? 'No strategy required' : 'No eligible strategy');
+                summary.textContent = 'Would select now: ' + selected
+                    + ' (' + report.mode + ')' + (report.fallback ? '; fallback: ' + report.fallback : '');
+                section.appendChild(summary);
+                var reason = document.createElement('p');
+                reason.textContent = report.reason || '';
+                section.appendChild(reason);
+                var table = document.createElement('table');
+                var head = document.createElement('thead');
+                var headers = document.createElement('tr');
+                ['Priority', 'Strategy', 'Can attempt?', 'Decision', 'Reason'].forEach(function (label) {
+                    var cell = document.createElement('th');
+                    cell.setAttribute('scope', 'col');
+                    cell.textContent = label;
+                    headers.appendChild(cell);
+                });
+                head.appendChild(headers);
+                table.appendChild(head);
+                var body = document.createElement('tbody');
+                (report.candidates || []).forEach(function (candidate) {
+                    var row = document.createElement('tr');
+                    if (candidate.strategy === report.wouldSelect)
+                        row.className = 'query-strategy-decisions__selected';
+                    var eligibility = candidate.canAttempt === true ? 'Yes'
+                        : candidate.canAttempt === false ? 'No' : 'Runtime dependent';
+                    [candidate.priority == null ? '—' : String(candidate.priority), candidate.strategy, eligibility,
+                        candidate.decision, candidate.declineReason || candidate.condition || ''].forEach(function (value) {
+                        var cell = document.createElement('td');
+                        cell.textContent = value;
+                        row.appendChild(cell);
+                    });
+                    body.appendChild(row);
+                });
+                table.appendChild(body);
+                section.appendChild(table);
+                surface.appendChild(section);
+            });
+            return surface;
+        }
+        function renderStrategyDecisions(paneKey, explanation) {
+            var pane = getPaneState(paneKey);
+            var surface = $('#' + pane.explanationId + '-strategies');
+            surface.empty();
+            if (explanation && explanation.strategyDecisions && explanation.strategyDecisions.length) {
+                surface.append(createStrategyDecisionTables(explanation.strategyDecisions));
+            }
+        }
         function renderExplanation(paneKey, explanationText, format) {
             var paneState = getPaneState(paneKey);
             var normalizedFormat = (format || 'text').toLowerCase();
@@ -1639,6 +1703,9 @@ var workbench;
             var paneOverlayMessage = getPaneOverlayMessage(paneMachineState);
             var rowVisible = paneMachineState.kind !== 'inactive' && paneMachineState.kind !== 'empty';
             var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation);
+            if (lastRenderedExplanationKeys[paneKey] !== renderContentKey || !paneDisplayExplanation) {
+                renderStrategyDecisions(paneKey, paneDisplayExplanation);
+            }
             $('#' + paneState.explanationRowId).toggle(rowVisible);
             $('#' + paneState.copyButtonId).prop('disabled', !paneDisplayExplanation);
             if (!rowVisible) {
@@ -1858,7 +1925,8 @@ var workbench;
                 forcedLmdbExecutionStrategy: signature.forcedLmdbExecutionStrategy,
                 responseFormat: responseFormat,
                 view: explanationView,
-                rawContent: explanationText
+                rawContent: explanationText,
+                strategyDecisions: cloneStrategyDecisions(response.strategyDecisions)
             };
         }
         function applyExplainResponseToPane(paneKey, signature, response, fallbackFormat) {
@@ -1990,6 +2058,11 @@ var workbench;
             refreshVisibleQueryEditors();
         }
         function handleQueryPageInputChange(eventType) {
+            // Editor initialization emits changes before the server response has been hydrated.
+            // Its initial content must remain in the DOM until initializeExplanationView reads it.
+            if (queryPageState && queryPageState.lifecycle === 'bootstrapping') {
+                return;
+            }
             if (activeComparePendingRequests > 0) {
                 cancelCompareExplain();
             }
@@ -2499,6 +2572,16 @@ var workbench;
         query_1.copyExplanation = copyExplanation;
         function initializeExplanationView() {
             var initialExplanation = $('#query-explanation').text();
+            var initialStrategies;
+            var serializedStrategies = $('#query-explanation').attr('data-strategy-decisions');
+            if (serializedStrategies) {
+                try {
+                    initialStrategies = cloneStrategyDecisions(JSON.parse(serializedStrategies));
+                }
+                catch (parseError) {
+                    initialStrategies = undefined;
+                }
+            }
             var initialFormat = getNormalizedExplainFormat($('#query-explanation').attr('data-format') || $('#explain-format').val() || 'text');
             var hydratedExplanation = null;
             if (initialExplanation) {
@@ -2513,6 +2596,7 @@ var workbench;
                     forcedLmdbExecutionStrategy: $('#lmdb-forced-strategy').val() || ''
                 }, {
                     content: initialExplanation,
+                    strategyDecisions: initialStrategies,
                     format: initialFormat,
                     error: ''
                 }, initialFormat);
@@ -2841,6 +2925,7 @@ var workbench;
             createFallbackExplainServerRequestId: createFallbackExplainServerRequestId,
             createInitialQueryPageState: createInitialQueryPageState,
             createJsonScalarElement: createJsonScalarElement,
+            createStrategyDecisionTables: createStrategyDecisionTables,
             createJsonTreeNode: createJsonTreeNode,
             createReadyPaneState: createReadyPaneState,
             createRequestSignature: createRequestSignature,

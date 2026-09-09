@@ -323,11 +323,12 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		// this strategy and preserves the interior native fragment claims.
 		LmdbNativeEvaluationStrategy hostCompiler = forceRootGeneric ? genericOnlyView() : this;
 		GenericRootPlan hosted = new GenericRootPlan(hostCompiler.genericPrecompile(expr, context),
-				outcome.hostReason());
+				outcome.hostReason(), expr);
 		LmdbNativeAggregateCompiler.HOSTED_GENERIC.incrementAndGet();
 		if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
 			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_GENERIC_HOSTED, hosted.nativePhysicalPlan());
 		}
+		LmdbNativeStrategyPreview.inspect(hosted);
 		return hosted;
 	}
 

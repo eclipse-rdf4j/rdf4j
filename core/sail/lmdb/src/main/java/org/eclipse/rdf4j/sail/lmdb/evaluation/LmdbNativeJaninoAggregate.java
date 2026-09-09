@@ -59,6 +59,10 @@ final class LmdbNativeJaninoAggregate {
 	static volatile String lastDeclineReason;
 
 	private static <T> T decline(String reason) {
+		if (LmdbNativeStrategyPreview.active()) {
+			LmdbNativeAttemptMetrics.recordDecline(null, LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE, reason);
+			return null;
+		}
 		lastDeclineReason = reason;
 		if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 			System.err.println("[janino-aggregate] decline: " + reason);
@@ -94,10 +98,14 @@ final class LmdbNativeJaninoAggregate {
 		}
 		Recognized shape = recognize(multiJoin, groupSlots[0], spec.slot, row);
 		if (shape == null) {
-			DECLINED.incrementAndGet();
+			if (!LmdbNativeStrategyPreview.active()) {
+				DECLINED.incrementAndGet();
+			}
 			return null;
 		}
-		PLANNED.incrementAndGet();
+		if (!LmdbNativeStrategyPreview.active()) {
+			PLANNED.incrementAndGet();
+		}
 		return new LmdbNativeStrategyProposal<>(() -> {
 			List<BindingSet> result = evaluate(shape, row, emitter);
 			if (result != null) {

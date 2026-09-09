@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
@@ -140,6 +141,14 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 
 	private GenericPlanNode buildPlanNode(QueryModelNode node, Set<String> incomingBindings) {
 		GenericPlanNode genericPlanNode = new GenericPlanNode(node.getSignature());
+		if (level == Explanation.Level.Optimized) {
+			Object report = node.getQueryModelMetadata(StrategyDecision.METADATA_KEY);
+			if (report instanceof List<?> decisions) {
+				genericPlanNode.setStrategyDecisions(decisions.stream()
+						.map(StrategyDecision.class::cast)
+						.toList());
+			}
+		}
 		genericPlanNode.setCostEstimate(node.getCostEstimate());
 		genericPlanNode.setResultSizeEstimate(node.getResultSizeEstimate());
 		genericPlanNode.setResultSizeActual(node.getResultSizeActual());

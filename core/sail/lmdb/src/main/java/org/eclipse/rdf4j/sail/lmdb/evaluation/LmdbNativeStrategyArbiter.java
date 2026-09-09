@@ -14,14 +14,19 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,14 +48,17 @@ import org.slf4j.LoggerFactory;
  * <p>
  * <b>Resource discipline.</b> Candidates are offered as {@link Proposer} lambdas rather than as ready-made proposals so
  * that the arbiter owns each proposal once it is returned. A proposer that reserves admission and throws before
- * returning must release its own unpublished reservation. Losing proposals are released as soon as a winner opens rather than at {@link #close()}, because a
- * streaming winner's cursor lives for the whole query and a loser holding a worker reservation for that long would
- * starve concurrent queries. When the winner's {@link LmdbNativeStrategyProposal#open()} declines by returning null,
- * the arbiter re-ranks what is left and tries again.
+ * returning must release its own unpublished reservation. Losing proposals are released as soon as a winner opens
+ * rather than at {@link #close()}, because a streaming winner's cursor lives for the whole query and a loser holding a
+ * worker reservation for that long would starve concurrent queries. When the winner's
+ * {@link LmdbNativeStrategyProposal#open()} declines by returning null, the arbiter re-ranks what is left and tries
+ * again.
  */
 @Experimental
 final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	private static final Logger logger = LoggerFactory.getLogger(LmdbNativeStrategyArbiter.class);
+	private static final AtomicLong DECISIONS = new AtomicLong();
+	private final long decisionId = LmdbNativeStrategyPreview.active() ? 0 : DECISIONS.incrementAndGet();
 
 	@FunctionalInterface
 	interface Proposer<T> {
@@ -80,6 +88,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		this.explainTarget = explainTarget;
 		this.sliceRows = sliceRows;
 		this.adaptiveModel = adaptiveModel;
+		if (LmdbNativeStrategyPreview.active()) {
+			forcedDeclineCapture = new HashMap<>();
+			previousDeclineCapture = LmdbNativeAttemptMetrics.installDeclineCapture(forcedDeclineCapture);
+		}
 	}
 
 	static <T> LmdbNativeStrategyArbiter<T> forExpr(TupleExpr explainTarget) {
@@ -190,7 +202,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		this.forcedTag = tag;
 		this.forcedDecisionPoint = decisionPoint;
 		this.forcedMandatory = mandatory;
-		if (tag != null) {
+		if (tag != null && forcedDeclineCapture == null) {
 			forcedDeclineCapture = new HashMap<>();
 			previousDeclineCapture = LmdbNativeAttemptMetrics.installDeclineCapture(forcedDeclineCapture);
 		}
@@ -212,6 +224,138 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 
 	int candidateCount() {
 		return candidates.size();
+	}
+
+	static void logDirect(TupleExpr target, String point, String tag, String reason) {
+		if (!LmdbNativeStrategyPreview.active()) {
+			logSelected(target, DECISIONS.incrementAndGet(), point, tag, "direct", reason);
+		}
+	}
+
+	static void logSelected(TupleExpr target, long decisionId, String point, String tag, String role, String reason) {
+		if (!LmdbNativeStrategyPreview.active() && logger.isInfoEnabled()) {
+			QueryModelNode root = target;
+			while (root != null && root.getParentNode() != null) {
+				root = root.getParentNode();
+			}
+			logger.info("LMDB strategy selected: evaluation={}, decision={}, point={}, strategy={}, role={}, reason={}",
+					root == null ? decisionId : System.identityHashCode(root), decisionId,
+					point == null ? "native dispatch" : point, tag, role, reason);
+		}
+	}
+
+	/** Explain the next dispatch without invoking an opener, reserving admission, or learning from a trial. */
+	StrategyDecision preview(String decisionPoint) {
+		return preview(decisionPoint, null, null);
+	}
+
+	StrategyDecision preview(String decisionPoint, String directTag, String directReason) {
+		if (!LmdbNativeStrategyPreview.active()) {
+			throw new IllegalStateException("strategy preview requires an Optimized explanation scope");
+		}
+		List<LmdbNativeStrategyProposal<T>> remaining = new ArrayList<>(candidates);
+		if (forcedTag != null) {
+			remaining.removeIf(candidate -> !forcedTag.equals(LmdbNativeStrategyPreference.baseTag(candidate.tag)));
+		}
+		Map<LmdbNativeStrategyProposal<T>, LmdbNativeWork> capturedWork = new IdentityHashMap<>();
+		LmdbNativeWork[] initialWork = comparableCosts(remaining, sliceRows);
+		for (int i = 0; i < remaining.size(); i++) {
+			capturedWork.put(remaining.get(i), initialWork[i]);
+		}
+		PreviewQuotes<T> quotes = null;
+		if (adaptiveModel != null && !remaining.isEmpty()) {
+			List<LmdbNativeCostEstimate> estimates = new ArrayList<>();
+			for (var candidate : remaining) {
+				var estimate = candidate.adaptiveEstimate(sliceRows);
+				estimates.add(estimate == null ? candidate.directTimingEstimate() : estimate);
+			}
+			var batch = adaptiveModel.predictAll(estimates);
+			Map<LmdbNativeStrategyProposal<T>, LmdbNativeCostPrediction> predictions = new IdentityHashMap<>();
+			Map<LmdbNativeStrategyProposal<T>, LmdbNativeWork> costs = new IdentityHashMap<>();
+			LmdbNativeWork[] work = initialWork;
+			for (int i = 0; i < remaining.size(); i++) {
+				predictions.put(remaining.get(i), batch.predictions().get(i));
+				costs.put(remaining.get(i), work[i]);
+			}
+			quotes = new PreviewQuotes<>(batch, predictions, costs);
+		}
+		List<StrategyDecision.Candidate> entries = new ArrayList<>();
+		String selected = null;
+		String fallback = null;
+		String mode = forcedTag == null ? "normal" : "forced";
+		String reason = "No strategy was offered at this decision point";
+		while (!remaining.isEmpty()) {
+			boolean first = entries.isEmpty();
+			AdaptiveDecision<T> decision = adaptiveModel == null
+					? new AdaptiveDecision<>(rankLegacy(remaining, remaining.stream()
+							.map(capturedWork::get)
+							.toArray(LmdbNativeWork[]::new)), null, -1, "legacy ranking")
+					: adaptiveDecision(remaining, sliceRows, adaptiveModel,
+							first && directTag == null
+									? new LmdbNativeAdaptiveArbitration.ProbeContext(probeConfig, probeBudget,
+											probeHarness != null)
+									: LmdbNativeAdaptiveArbitration.ProbeContext.disabled(),
+							first && directTag == null ? hedgeContextForSite()
+									: LmdbNativeAdaptiveArbitration.HedgeContext.disabled(),
+							quotes);
+			if (first && directTag != null) {
+				for (int i = 0; i < remaining.size(); i++) {
+					if (directTag.equals(remaining.get(i).tag)) {
+						decision = new AdaptiveDecision<>(i, null, -1, directReason);
+						mode = "direct";
+						break;
+					}
+				}
+			}
+			LmdbNativeStrategyProposal<T> chosen = remaining.get(decision.index);
+			LmdbNativeStrategyProposal<T> backup = decision.fallbackIndex < 0 ? null
+					: remaining.get(decision.fallbackIndex);
+			if (first) {
+				selected = chosen.tag;
+				reason = decision.reason;
+				fallback = backup == null ? null : backup.tag;
+				if (decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<?>) {
+					mode = "trial";
+				}
+				if (decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Hedge<?>) {
+					mode = "hedged trial";
+				}
+				if (decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Guarded<?>) {
+					mode = "guarded";
+				}
+			}
+			entries.add(new StrategyDecision.Candidate(chosen.tag, entries.size() + 1, true,
+					first ? "Would select now" : "Eligible", null,
+					first ? "Execution-time binding and admission must still succeed" : decision.reason));
+			remaining.remove(chosen);
+			if (backup != null) {
+				entries.add(new StrategyDecision.Candidate(backup.tag, entries.size() + 1, true,
+						"Fallback", null, "Used if the initial strategy declines or its trial cannot publish"));
+				remaining.remove(backup);
+			}
+		}
+		List<String> names = new ArrayList<>(LmdbNativeStrategyCatalog.names());
+		names.sort(Comparator.comparingInt(LmdbNativeStrategyPreference::rank).thenComparing(String::compareTo));
+		for (String tag : names) {
+			if (entries.stream()
+					.anyMatch(entry -> tag.equals(entry.strategy()) || !tag.contains("(")
+							&& tag.equals(LmdbNativeStrategyPreference.baseTag(entry.strategy())))) {
+				continue;
+			}
+			boolean offered = candidates.stream()
+					.anyMatch(candidate -> tag.equals(LmdbNativeStrategyPreference.baseTag(candidate.tag)));
+			String decline = forcedDeclineCapture == null ? null : forcedDeclineCapture.get(tag);
+			if (decline == null) {
+				decline = LmdbNativeStrategyPreview.unavailableReason(tag, decisionPoint);
+			}
+			entries.add(new StrategyDecision.Candidate(tag, null, offered, offered ? "Not selected" : "Declined",
+					offered ? null : decline, offered ? "Another strategy is forced for this request" : null));
+		}
+		StrategyDecision report = new StrategyDecision(decisionPoint,
+				quotes == null ? System.currentTimeMillis() : quotes.batch().nowMillis(), mode, selected, fallback,
+				reason, entries);
+		LmdbNativeStrategyPreview.record(explainTarget, report);
+		return report;
 	}
 
 	/**
@@ -239,7 +383,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		if (candidates.isEmpty()) {
 			return -1;
 		}
-		LmdbNativeWork[] costs = comparableCosts(candidates, sliceRows);
+		return rankLegacy(candidates, comparableCosts(candidates, sliceRows));
+	}
+
+	private static <T> int rankLegacy(List<LmdbNativeStrategyProposal<T>> candidates, LmdbNativeWork[] costs) {
 		int best = -1;
 		for (int i = 0; i < candidates.size(); i++) {
 			if (isDominated(costs, i)) {
@@ -318,16 +465,31 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			double sliceRows, LmdbNativeAdaptiveCostModel model,
 			LmdbNativeAdaptiveArbitration.ProbeContext probeContext,
 			LmdbNativeAdaptiveArbitration.HedgeContext hedgeContext) {
+		return adaptiveDecision(candidates, sliceRows, model, probeContext, hedgeContext, null);
+	}
+
+	private record PreviewQuotes<T> (LmdbNativeAdaptiveCostModel.PricingBatch batch,
+			Map<LmdbNativeStrategyProposal<T>, LmdbNativeCostPrediction> predictions,
+			Map<LmdbNativeStrategyProposal<T>, LmdbNativeWork> costs) {
+	}
+
+	private static <T> AdaptiveDecision<T> adaptiveDecision(List<LmdbNativeStrategyProposal<T>> candidates,
+			double sliceRows, LmdbNativeAdaptiveCostModel model,
+			LmdbNativeAdaptiveArbitration.ProbeContext probeContext,
+			LmdbNativeAdaptiveArbitration.HedgeContext hedgeContext, PreviewQuotes<T> quotes) {
 		if (candidates.isEmpty()) {
 			return AdaptiveDecision.empty();
 		}
-		LmdbNativeWork[] costs = comparableCosts(candidates, sliceRows);
+		LmdbNativeWork[] costs = quotes == null ? comparableCosts(candidates, sliceRows)
+				: candidates.stream().map(quotes.costs()::get).toArray(LmdbNativeWork[]::new);
 		List<LmdbNativeCostEstimate> estimates = new ArrayList<>(candidates.size());
 		for (LmdbNativeStrategyProposal<T> proposal : candidates) {
 			LmdbNativeCostEstimate estimate = proposal.adaptiveEstimate(sliceRows);
 			estimates.add(estimate == null ? proposal.directTimingEstimate() : estimate);
 		}
-		LmdbNativeAdaptiveCostModel.PricingBatch captured = model.predictAll(estimates);
+		LmdbNativeAdaptiveCostModel.PricingBatch captured = quotes == null ? model.predictAll(estimates)
+				: new LmdbNativeAdaptiveCostModel.PricingBatch(quotes.batch().regime(), quotes.batch().epoch(),
+						quotes.batch().nowMillis(), candidates.stream().map(quotes.predictions()::get).toList());
 		List<AdaptiveCandidate<T>> converted = new ArrayList<>(candidates.size());
 		List<LmdbNativeAdaptiveArbitration.Priced<T>> priced = new ArrayList<>(candidates.size());
 		for (int i = 0; i < candidates.size(); i++) {
@@ -405,10 +567,13 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		return LmdbNativeCostCalibration.toTimes(tags, work);
 	}
 
-	private static int stablePreference(LmdbNativeStrategyProposal<?> candidate, LmdbNativeStrategyProposal<?> incumbent) {
+	private static int stablePreference(LmdbNativeStrategyProposal<?> candidate,
+			LmdbNativeStrategyProposal<?> incumbent) {
 		int rank = Integer.compare(LmdbNativeStrategyPreference.rank(candidate.tag),
 				LmdbNativeStrategyPreference.rank(incumbent.tag));
-		if (rank != 0) return rank;
+		if (rank != 0) {
+			return rank;
+		}
 		return java.util.Comparator.nullsLast(String::compareTo).compare(candidate.tag, incumbent.tag);
 	}
 
@@ -421,7 +586,9 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	private static boolean isDominated(LmdbNativeWork[] costs, int candidateIndex) {
 		LmdbNativeWork candidateCost = costs[candidateIndex];
 		for (int i = 0; i < costs.length; i++) {
-			if (i != candidateIndex && costs[i].beats(candidateCost)) return true;
+			if (i != candidateIndex && costs[i].beats(candidateCost)) {
+				return true;
+			}
 		}
 		return false;
 	}
@@ -446,6 +613,9 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	 * the returned selection until exhaustion or early close; fully materializing consumers can use {@link #select()}.
 	 */
 	LmdbNativeStrategySelection<T> selectWithObservation() throws IOException {
+		if (LmdbNativeStrategyPreview.active()) {
+			throw new IllegalStateException("Optimized preview cannot execute a strategy");
+		}
 		if (forcedTag != null) {
 			if (!applyForcedFilter()) {
 				// no offered candidate matches: a mandatory site is authoritative and must explain why; an
@@ -533,6 +703,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 
 	private LmdbNativeStrategySelection<T> dispatch() throws IOException {
 		recordProposalCosts();
+		boolean retry = false;
 		while (!candidates.isEmpty()) {
 			AdaptiveDecision<T> decision;
 			if (adaptiveModel != null) {
@@ -543,6 +714,13 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			} else {
 				decision = new AdaptiveDecision<>(rankLegacy(candidates, sliceRows), null, -1, "legacy ranking");
 			}
+			String role = decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<?>
+					|| decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Hedge<?> ? "trial"
+							: decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Guarded<?> ? "guarded"
+									: forcedTag != null ? "forced" : "normal";
+			logSelected(explainTarget, decisionId, forcedDecisionPoint, candidates.get(decision.index).tag,
+					retry ? "retry " + role : role, decision.reason);
+			retry = true;
 			if (decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Guarded<T> guarded) {
 				LmdbNativeStrategySelection<T> selection = executeGuarded(guarded, decision.index,
 						decision.fallbackIndex);
@@ -695,6 +873,8 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				}
 				launchNanos = System.nanoTime();
 				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(backupDeadline)) {
+					logSelected(explainTarget, decisionId, forcedDecisionPoint, backupTag, "guard backup",
+							"watchdog fired");
 					T produced = hedgeSupport.produceBackup(shadowForTask, backupTag, backupObservation);
 					long backupElapsed = System.nanoTime() - launchNanos;
 					if (produced == null) {
@@ -988,6 +1168,8 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 					return;
 				}
 				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(backupDeadline)) {
+					logSelected(explainTarget, decisionId, forcedDecisionPoint, fallbackTag, "hedge backup",
+							"hedge launched");
 					T produced = hedgeSupport.produceBackup(shadowForTask, fallbackTag, backupObservation);
 					if (produced == null) {
 						backupObservation.declined();
@@ -1301,7 +1483,9 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 					try {
 						probeHarness.discard(value);
 					} catch (Throwable closeFailure) {
-						if (closeFailure != cancelled) cancelled.addSuppressed(closeFailure);
+						if (closeFailure != cancelled) {
+							cancelled.addSuppressed(closeFailure);
+						}
 					}
 				}
 				throw cancelled;
@@ -1423,8 +1607,11 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		}
 		if (failure != null) {
 			if (observation != null) {
-				try { observation.failed(failure); }
-				catch (RuntimeException | Error problem) { failure = appendFailure(failure, problem); }
+				try {
+					observation.failed(failure);
+				} catch (RuntimeException | Error problem) {
+					failure = appendFailure(failure, problem);
+				}
 			}
 			discardUnpublished(value, failure);
 			throwCleanup(failure);
@@ -1433,31 +1620,47 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 
 	/** Opaque resource-owning values need the site's explicit disposer; cursors normally implement AutoCloseable. */
 	private void discardUnpublished(T value, Throwable failure) {
-		if (value == null) return;
+		if (value == null) {
+			return;
+		}
 		try {
-			if (probeHarness != null) probeHarness.discard(value);
-			else if (value instanceof AutoCloseable resource) resource.close();
+			if (probeHarness != null) {
+				probeHarness.discard(value);
+			} else if (value instanceof AutoCloseable resource) {
+				resource.close();
+			}
 		} catch (Throwable problem) {
 			appendFailure(failure, problem);
 		}
 	}
 
 	private static Throwable appendFailure(Throwable first, Throwable next) {
-		if (first == null) return next;
-		if (first != next) first.addSuppressed(next);
+		if (first == null) {
+			return next;
+		}
+		if (first != next) {
+			first.addSuppressed(next);
+		}
 		return first;
 	}
 
 	private static void throwCleanup(Throwable failure) {
-		if (failure instanceof RuntimeException problem) throw problem;
-		if (failure instanceof Error problem) throw problem;
+		if (failure instanceof RuntimeException problem) {
+			throw problem;
+		}
+		if (failure instanceof Error problem) {
+			throw problem;
+		}
 	}
 
 	private static void closeAll(List<? extends LmdbNativeStrategyProposal<?>> proposals) {
 		Throwable failure = null;
 		for (LmdbNativeStrategyProposal<?> candidate : proposals) {
-			try { candidate.close(); }
-			catch (RuntimeException | Error problem) { failure = appendFailure(failure, problem); }
+			try {
+				candidate.close();
+			} catch (RuntimeException | Error problem) {
+				failure = appendFailure(failure, problem);
+			}
 		}
 		throwCleanup(failure);
 	}
@@ -1474,9 +1677,14 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 							adaptiveReason != null ? adaptiveReason
 									: winner.work.known() && loser.work.known() ? "higher-cost" : "outranked");
 				}
-			} catch (RuntimeException | Error problem) { failure = appendFailure(failure, problem); }
-			try { loser.close(); }
-			catch (RuntimeException | Error problem) { failure = appendFailure(failure, problem); }
+			} catch (RuntimeException | Error problem) {
+				failure = appendFailure(failure, problem);
+			}
+			try {
+				loser.close();
+			} catch (RuntimeException | Error problem) {
+				failure = appendFailure(failure, problem);
+			}
 		}
 		throwCleanup(failure);
 	}
@@ -1542,8 +1750,11 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				try {
 					candidate.close();
 				} catch (RuntimeException | Error problem) {
-					if (failure == null) failure = problem;
-					else if (failure != problem) failure.addSuppressed(problem);
+					if (failure == null) {
+						failure = problem;
+					} else if (failure != problem) {
+						failure.addSuppressed(problem);
+					}
 				}
 			}
 		} finally {
@@ -1554,8 +1765,12 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				previousDeclineCapture = null;
 			}
 		}
-		if (failure instanceof RuntimeException problem) throw problem;
-		if (failure instanceof Error problem) throw problem;
+		if (failure instanceof RuntimeException problem) {
+			throw problem;
+		}
+		if (failure instanceof Error problem) {
+			throw problem;
+		}
 	}
 
 	private record AdaptiveCandidate<T> (int index, LmdbNativeAdaptiveArbitration.Candidate<T> candidate) {

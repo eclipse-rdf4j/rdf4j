@@ -42,6 +42,9 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 interface NativeBooleanFilter {
 	boolean accept(RowState row);
 
+	default void explainStrategies() {
+	}
+
 	/** Whether batch selection can dispatch a variable-predicate wildcard existence round. */
 	default boolean variablePredicateExists() {
 		return false;
@@ -328,6 +331,11 @@ final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
 
 	CloseOnceNativeBooleanFilter(NativeBooleanFilter delegate) {
 		this.delegate = delegate;
+	}
+
+	@Override
+	public void explainStrategies() {
+		LmdbNativeStrategyPreview.inspect(delegate);
 	}
 
 	@Override
@@ -1326,6 +1334,7 @@ final class CachedCompareFilter implements NativeBooleanFilter {
  * AND/OR of two compiled boolean filters. A named class rather than a lambda so fork-, close- and read-mask behavior
  * compose from the children: a conjunction of forkable comparisons stays forkable for parallel workers.
  */
+
 /**
  * Named negation wrapper (NOT over an error-free operand, e.g. NOT EXISTS). Semantically identical to the anonymous
  * {@code row -> !delegate.accept(row)} it replaces, but introspectable: the kernel lowering recognizes negated

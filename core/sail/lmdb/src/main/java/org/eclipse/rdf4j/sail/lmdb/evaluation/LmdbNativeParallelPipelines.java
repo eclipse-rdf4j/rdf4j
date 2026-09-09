@@ -130,10 +130,18 @@ final class LmdbNativeParallelPipelines {
 			if (grantedWorkers < minimumWorkers) {
 				return null;
 			}
+
 			if (RESERVED_TASKS.compareAndSet(reserved, reserved + grantedWorkers)) {
 				return new TaskReservation(grantedWorkers);
 			}
 		}
+	}
+
+	/** Quote capacity without holding tasks while other strategies are being assessed. */
+	static TaskReservation quoteTasks(boolean morselMode, int desiredWorkers) {
+		int minimum = morselMode ? 2 : 1;
+		int granted = Math.min(desiredWorkers, configuredMaxTasks() - RESERVED_TASKS.get());
+		return granted < minimum ? null : new TaskReservation(granted, false);
 	}
 
 	static boolean enabled() {
@@ -150,7 +158,9 @@ final class LmdbNativeParallelPipelines {
 	}
 
 	static void rejectRangePartitioning(String reason) {
-		LAST_RANGE_REJECTION.set(reason);
+		if (!LmdbNativeStrategyPreview.active()) {
+			LAST_RANGE_REJECTION.set(reason);
+		}
 	}
 
 	/**
@@ -233,7 +243,7 @@ final class LmdbNativeParallelPipelines {
 			rejectRangePartitioning("flag-off");
 		}
 		boolean morselMode = partitions == null;
-		TaskReservation reservation = tryReserveTasks(morselMode, desiredWorkers);
+		TaskReservation reservation = quoteTasks(morselMode, desiredWorkers);
 		if (reservation == null) {
 			return reject(step, "task-budget");
 		}
@@ -261,6 +271,9 @@ final class LmdbNativeParallelPipelines {
 		PatternPlan root = candidate.root;
 		LmdbRootScanPartition[] partitions = candidate.partitions;
 		TaskReservation reservation = candidate.reservation;
+		if (!reservation.admit()) {
+			return reject(step, "task-budget-changed");
+		}
 		int workers = candidate.workers;
 		int sourceCount = candidate.sourceCount;
 		MultiJoinPlan[] workerPlans = null;
@@ -502,10 +515,33 @@ final class LmdbNativeParallelPipelines {
 
 	static final class TaskReservation implements AutoCloseable {
 		final int tasks;
-		final AtomicBoolean released = new AtomicBoolean();
+		private boolean admitted;
+		private boolean closed;
 
 		TaskReservation(int tasks) {
+			this(tasks, true);
+		}
+
+		private TaskReservation(int tasks, boolean admitted) {
 			this.tasks = tasks;
+			this.admitted = admitted;
+		}
+
+		synchronized boolean admit() {
+			if (LmdbNativeStrategyPreview.active()) {
+				throw new IllegalStateException("Optimized preview cannot reserve workers");
+			}
+			if (closed) {
+				return false;
+			}
+			while (!admitted) {
+				int reserved = RESERVED_TASKS.get();
+				if (tasks > configuredMaxTasks() - reserved) {
+					return false;
+				}
+				admitted = RESERVED_TASKS.compareAndSet(reserved, reserved + tasks);
+			}
+			return true;
 		}
 
 		int grantedWorkers() {
@@ -513,9 +549,12 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		@Override
-		public void close() {
-			if (released.compareAndSet(false, true)) {
-				RESERVED_TASKS.addAndGet(-tasks);
+		public synchronized void close() {
+			if (!closed) {
+				closed = true;
+				if (admitted) {
+					RESERVED_TASKS.addAndGet(-tasks);
+				}
 			}
 		}
 	}

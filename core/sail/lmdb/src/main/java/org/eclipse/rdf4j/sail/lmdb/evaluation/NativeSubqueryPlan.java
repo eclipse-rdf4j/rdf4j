@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 
 /**
  * Evaluation-scoped native lexical boundary. Ordinary subqueries and non-correlated variable-scope-changing graph
@@ -65,6 +66,15 @@ final class NativeSubqueryPlan implements SlotPlan {
 		String nested = step instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
 				: step.getClass().getSimpleName();
 		return "NativeSubquery(frameInputs=" + java.util.Arrays.toString(frameInputNames) + ", step=" + nested + ")";
+	}
+
+	void explainStrategies() {
+		if (frameInputNames.length == 0) {
+			LmdbNativeStrategyPreview.inspect(step);
+		} else {
+			QueryExplanationContext.withRuntimeCondition("Outer-row values required for "
+					+ String.join(", ", frameInputNames), () -> LmdbNativeStrategyPreview.inspect(step));
+		}
 	}
 
 	@Override

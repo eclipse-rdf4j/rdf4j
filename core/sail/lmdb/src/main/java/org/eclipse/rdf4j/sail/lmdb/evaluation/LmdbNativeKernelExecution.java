@@ -603,6 +603,8 @@ final class LmdbNativeKernelExecution {
 	static LmdbNativeStrategyProposal<RowCursor> proposeParallelRows(SlotPlan arg, RowState row,
 			TupleExpr originalExpr, boolean interpreted) {
 		if (!rowParallelProposalEnabled()) {
+			LmdbNativeAttemptMetrics.captureDecline(parallelRowRoute(interpreted, false),
+					"Parallel row kernels require enabled pipelines and at least two configured workers");
 			return null;
 		}
 		return proposeRows(arg, row, originalExpr, ParallelExecution.REQUIRE,
@@ -611,15 +613,20 @@ final class LmdbNativeKernelExecution {
 
 	private static LmdbNativeStrategyProposal<RowCursor> proposeRows(SlotPlan arg, RowState row,
 			TupleExpr originalExpr, ParallelExecution parallelExecution, KernelTier requestedTier) {
+		boolean wildcard = wildcardIrCandidate(arg);
+		boolean interpretedTier = requestedTier == KernelTier.INTERPRETED;
+		String tag = parallelExecution == ParallelExecution.REQUIRE ? parallelRowRoute(interpretedTier, false)
+				: rowRoute(interpretedTier, false, wildcard);
 		if (!hasFusionOpportunity(arg)) {
+			LmdbNativeAttemptMetrics.captureDecline(tag, "The compiled input has no operator fusion opportunity");
 			LmdbNativeAttemptMetrics.recordDecline(originalExpr, LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
 					"no-fusion-opportunity");
 			return null;
 		}
-		boolean wildcard = wildcardIrCandidate(arg);
-		boolean interpretedTier = requestedTier == KernelTier.INTERPRETED;
 		boolean tierAvailable = interpretedTier ? LmdbNativeKernelInterpreter.enabled() : janinoAdmitted(arg);
 		if (!tierAvailable) {
+			LmdbNativeAttemptMetrics.captureDecline(tag, interpretedTier ? "Interpreted kernels are disabled"
+					: "Compiled kernels are disabled or not admitted for the compiled terminal");
 			if (requestedTier == KernelTier.COMPILED && !LmdbNativeKernelInterpreter.enabled()) {
 				if (row.runtimePlan != null) {
 					row.runtimePlan.janinoDeclined("FEATURE_DISABLED[" + LmdbNativeJaninoCodegen.ENABLED_PROPERTY
@@ -630,10 +637,6 @@ final class LmdbNativeKernelExecution {
 			}
 			return null;
 		}
-		String tag = parallelExecution == ParallelExecution.REQUIRE
-				? interpretedTier ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED
-						: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL
-				: rowRoute(interpretedTier, false, wildcard);
 		long boundMask = row.boundMask();
 		LmdbNativeWork serialWork = arg.estimateWork(row, boundMask);
 		LmdbNativeWork work = parallelExecution == ParallelExecution.REQUIRE

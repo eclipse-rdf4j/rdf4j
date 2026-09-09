@@ -644,6 +644,40 @@ final class LmdbNativePackedFtree {
 				layout.exactWeights(), false);
 		while (input.nextBatch()) for (int p = 0; p < layout.size(); p++) {
 			int[] channels = layout.channels(p);
+			int windowSlot = input.windowColumn(p);
+			for (int slot : groupSlots) if (slot == windowSlot) windowSlot = -1;
+			if (windowSlot >= 0) {
+				AggState state = null; long scale = 0L; int size;
+				while ((size = input.nextWindow(p)) != 0) {
+					if (state == null || input.windowPrefixChanged()) {
+						long[] ids = new long[groupSlots.length];
+						for (int i = 0; i < ids.length; i++) ids[i] = input.value(groupSlots[i]);
+						GroupKey key = new GroupKey(ids); state = groups.get(key);
+						if (state == null) {
+							state = new AggState(aggregates, 64, context, AggregateDistinctChannels.allHash(aggregates));
+							groups.put(key, state);
+						}
+						scale = 0L;
+					}
+					long[] ids = input.windowValues(), weights = input.windowWeights();
+					int start = input.windowStart(), end = start + size;
+					for (int at = start; at < end; at++) for (int channel : channels) {
+						AggregateSpec spec = aggregates[channel];
+						long id = arguments[channel] >= 0 ? ids[at] : spec.slot >= 0 ? 0L : spec.constant;
+						if (id == UNKNOWN) continue;
+						if (spec.distinct) addDistinctWeighted(state, channel, id, 1L);
+						else {
+							long contribution = 1L;
+							if (exact[channel]) {
+								if (scale == 0L) scale = input.windowScale();
+								contribution = FactorizedTail.multiplyCounts(scale, weights[at]);
+							}
+							state.addWeighted(channel, id, contribution);
+						}
+					}
+				}
+				continue;
+			}
 			while (input.next(p)) {
 				long[] ids = new long[groupSlots.length];
 				for (int i = 0; i < ids.length; i++) ids[i] = input.value(groupSlots[i]);
@@ -4922,11 +4956,13 @@ final class LmdbNativePackedFtree {
 	static final class ProjectionCounts {
 		final Chunk chunk;
 		final long[][] memo;
+		final long[][] childMemo;
 		final RowState row;
 		int ticks;
 		boolean complete;
 		ProjectionCounts(Chunk chunk, RowState row) {
 			this.chunk = chunk; this.row = row; this.memo = new long[chunk.data.length][];
+			this.childMemo = new long[chunk.data.length][];
 		}
 		private void poll() {
 			LmdbNativeProbeDeadline.poll(++ticks);
@@ -4937,10 +4973,17 @@ final class LmdbNativePackedFtree {
 			NodeData d = chunk.data[node.ordinal];
 			if (d.borrowed != null) return d.borrowed.count(parentLane);
 			if (d.sharedWithParent) return d.state.isSet(parentLane) ? lane(node, parentLane) : 0L;
+			// A frozen child relation has one exact sum per parent, not per projected leaf.
+			// Keep source-backed descriptors on their validating count() path above.
+			long[] sums = childMemo[node.ordinal];
+			if (sums == null) childMemo[node.ordinal] = sums = new long[chunk.data[node.parent.ordinal].size];
+			long cached = sums[parentLane];
+			if (cached != 0L) return cached < 0L ? 0L : cached;
 			long sum = 0L;
 			int to = d.offsets[parentLane + 1];
 			for (int at = d.state.nextSetBit(d.offsets[parentLane]); at >= 0 && at < to;
 					at = d.state.nextSetBit(at + 1)) sum = FactorizedTail.addCounts(sum, lane(node, at));
+			sums[parentLane] = sum == 0L ? -1L : sum; // zero-filled storage denotes unknown
 			return sum;
 		}
 		long lane(NodePlan node, int at) {
@@ -4969,11 +5012,16 @@ final class LmdbNativePackedFtree {
 		}
 		long weight(PackedProjectionCursor projection) {
 			if (projection == null) return total();
+			return weightWithout(projection, null);
+		}
+		long weightWithout(PackedProjectionCursor projection, NodePlan excluded) {
+			if (projection == null) return 1L; // the varying node is the root
 			long result = 1L;
 			for (NodePlan node : chunk.plan.nodes) if (projection.included[node.ordinal]) {
+				poll();
 				int at = projection.lanes[node.ordinal];
 				result = FactorizedTail.multiplyCounts(result, chunk.data[node.ordinal].weight(at));
-				for (NodePlan child : node.children) if (!projection.included[child.ordinal])
+				for (NodePlan child : node.children) if ((excluded == null || child.ordinal != excluded.ordinal) && !projection.included[child.ordinal])
 					result = FactorizedTail.multiplyCounts(result, child(child, at));
 			}
 			return result;
@@ -4990,6 +5038,15 @@ final class LmdbNativePackedFtree {
 		final boolean[] exact;
 		final long[] demands;
 		final long unionDemand;
+		static final int PROJECTION_WINDOW = 256;
+		final boolean windowsEnabled = Boolean.parseBoolean(System.getProperty(
+				"rdf4j.lmdb.packedProjectionWindows.enabled", "true"));
+		final NodePlan[] windowNodes;
+		final long[] windowPrefixes;
+		NodePlan windowNode;
+		long[] windowIds, windowWeights;
+		int windowLane, windowEnd, windowSize;
+		boolean windowMode, changedPrefix;
 		Chunk chunk;
 		PackedProjectionCursor projection;
 		int active = -1, completed = -1, tick;
@@ -5011,6 +5068,17 @@ final class LmdbNativePackedFtree {
 				demands[i] = localDemandedMask(plan, outputs[i]); all |= demands[i];
 			}
 			unionDemand = all;
+			windowNodes = new NodePlan[outputs.length]; windowPrefixes = new long[outputs.length];
+			for (int i = 0; i < outputs.length; i++) {
+				NodePlan candidate = null;
+				for (NodePlan node : plan.nodes) if ((demands[i] & (1L << node.slot)) != 0L) candidate = node;
+				if (candidate == null || candidate.children.length != 0) continue;
+				long path = 0L;
+				for (NodePlan parent = candidate.parent; parent != null; parent = parent.parent) path |= 1L << parent.slot;
+				// One ancestor chain, never an independent sibling or correlated tuple product.
+				if ((demands[i] & ~(path | (1L << candidate.slot))) != 0L) continue;
+				windowNodes[i] = candidate; windowPrefixes[i] = path;
+			}
 		}
 		@Override public boolean nextBatch() throws IOException {
 			if (closed) return false;
@@ -5028,7 +5096,7 @@ final class LmdbNativePackedFtree {
 				}
 				// Freeze all demanded payload before publication. Undemanded leaves remain borrowed.
 				chunk.materializeBorrowed(unionDemand);
-				active = completed = -1; positioned = false; projection = null;
+				active = completed = -1; positioned = false; projection = null; windowMode = false; windowSize = 0;
 				counts = new ProjectionCounts(chunk, row);
 				return true;
 			} catch (PackedDecline decline) {
@@ -5049,11 +5117,12 @@ final class LmdbNativePackedFtree {
 				if (active != request) {
 					if (request != completed + 1 || active != completed)
 						throw new IllegalStateException("unfinished marginal");
-					active = request;
+					active = request; windowMode = false;
 					projection = demands[request] == 0L ? null
 							: new PackedProjectionCursor(chunk, demands[request], false, false);
 					scalarPending = true;
 				}
+				if (windowMode) throw new IllegalStateException("cannot switch projection traversal mode");
 				boolean found;
 				if (projection == null) {
 					found = scalarPending; scalarPending = false;
@@ -5066,15 +5135,101 @@ final class LmdbNativePackedFtree {
 				throw failure;
 			}
 		}
+		@Override public int windowColumn(int request) {
+			if (closed || chunk == null) throw new IllegalStateException("no projection chunk");
+			java.util.Objects.checkIndex(request, outputs.length);
+			NodePlan node = windowNodes[request];
+			if (!windowsEnabled || node == null || chunk.data[node.ordinal].sharedWithParent) return -1;
+			return node.slot;
+		}
+
+		/** A window never crosses its parent binding: all other requested columns remain scalar. */
+		@Override public int nextWindow(int request) {
+			if (closed || chunk == null) throw new IllegalStateException("no projection chunk");
+			java.util.Objects.checkIndex(request, outputs.length);
+			try {
+				pollWindow();
+				positioned = false; windowSize = 0; changedPrefix = false;
+				if (request == completed) return 0;
+				if (active != request) {
+					if (request != completed + 1 || active != completed)
+						throw new IllegalStateException("unfinished marginal");
+					if (windowColumn(request) < 0) throw new IllegalStateException("no packed window capability");
+					active = request; windowMode = true; windowNode = windowNodes[request];
+					projection = windowPrefixes[request] == 0L ? null
+							: new PackedProjectionCursor(chunk, windowPrefixes[request], false, false);
+					scalarPending = true; windowLane = -1; windowEnd = 0;
+					if (windowIds == null) { windowIds = new long[PROJECTION_WINDOW]; windowWeights = new long[PROJECTION_WINDOW]; }
+				} else if (!windowMode) throw new IllegalStateException("cannot switch projection traversal mode");
+				NodeData data = chunk.data[windowNode.ordinal];
+				while (windowLane < 0 || windowLane >= windowEnd) {
+					pollWindow();
+					boolean present;
+					if (projection == null) { present = scalarPending; scalarPending = false; }
+					else present = projection.next();
+					if (!present) { completed = active; return 0; }
+					changedPrefix = true; weight = 0L;
+					int from;
+					if (windowNode.parent == null) { from = data.startLane(); windowEnd = data.endLane(); }
+					else {
+						int parent = projection.lanes[windowNode.parent.ordinal];
+						from = data.offsets[parent]; windowEnd = data.offsets[parent + 1];
+					}
+					windowLane = data.state.nextSetBit(from);
+				}
+				int count = 0;
+				while (count < PROJECTION_WINDOW && windowLane >= 0 && windowLane < windowEnd) {
+					windowIds[count] = data.value(windowLane);
+					windowWeights[count] = exact[active] ? data.weight(windowLane) : 1L;
+					if (windowWeights[count] <= 0L) throw new IllegalStateException("nonpositive packed member weight");
+					count++;
+					windowLane = data.state.nextSetBit(windowLane + 1);
+				}
+				pollWindow();
+				windowSize = count; positioned = true;
+				return count;
+			} catch (RuntimeException | Error failure) {
+				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				throw failure;
+			}
+		}
+		private void pollWindow() {
+			LmdbNativeProbeDeadline.poll(++tick);
+			if (row.cancellation.isCancellationRequested())
+				throw new java.util.concurrent.CancellationException("packed projection window cancelled");
+		}
+		private void checkWindow() {
+			if (closed || !positioned || !windowMode || windowSize == 0)
+				throw new IllegalStateException("no packed projection window");
+		}
+		@Override public long[] windowValues() { checkWindow(); return windowIds; }
+		@Override public long[] windowWeights() { checkWindow(); return windowWeights; }
+		@Override public int windowStart() { checkWindow(); return 0; }
+		@Override public boolean windowPrefixChanged() { checkWindow(); return changedPrefix; }
+		@Override public long windowScale() {
+			checkWindow();
+			if (!exact[active]) return 1L;
+			try {
+				pollWindow();
+				if (weight == 0L) weight = counts.weightWithout(projection, windowNode);
+				return weight;
+			} catch (RuntimeException | Error failure) {
+				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				throw failure;
+			}
+		}
+
 		@Override public long value(int slot) {
 			if (!positioned || closed) throw new IllegalStateException("unpositioned marginal");
 			boolean included = false;
 			for (int output : outputs[active]) if (output == slot) { included = true; break; }
 			if (!included) throw new IllegalArgumentException("unrequested projection slot");
+			if (windowMode && slot == windowNode.slot) throw new IllegalStateException("read varying slot from window");
 			return projectedValue(plan, row, chunk, projection, slot);
 		}
 		@Override public long multiplicity() {
 			if (!positioned || closed) throw new IllegalStateException("unpositioned marginal");
+			if (windowMode) throw new IllegalStateException("window weight belongs to each member");
 			if (!exact[active]) return 1L;
 			try {
 				if (row.cancellation.isCancellationRequested())
@@ -5088,7 +5243,7 @@ final class LmdbNativePackedFtree {
 		}
 		@Override public void close() {
 			if (closed) return; closed = true;
-			chunk = null; projection = null; counts = null; if (ownsRuntime) runtime.close();
+			chunk = null; projection = null; counts = null; windowNode = null; windowIds = windowWeights = null; if (ownsRuntime) runtime.close();
 		}
 	}
 

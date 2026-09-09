@@ -14,7 +14,7 @@ function appendOption(registerElement, select, value, text, selected) {
     return option;
 }
 
-function createYasqeStub(registerElement) {
+function createYasqeStub(registerElement, harnessOptions) {
     const state = {
         instances: {},
         storeQueryCalls: []
@@ -66,6 +66,9 @@ function createYasqeStub(registerElement) {
                     },
                     setValue(value) {
                         textarea.value = value;
+                        if (harnessOptions.emitProgrammaticEditorChanges && instance.changeHandler) {
+                            instance.changeHandler();
+                        }
                     },
                     toTextArea() {
                         instance.closed = true;
@@ -114,7 +117,7 @@ function createQueryBrowserHarness(options = {}) {
         }
     }));
     const { $, context, document, registerElement } = harness;
-    const yasqe = createYasqeStub(registerElement);
+    const yasqe = createYasqeStub(registerElement, options);
     context.YASQE = yasqe.api;
     context.sparqlNamespaces = Object.assign({
         ex: 'http://example.com/'
@@ -173,6 +176,7 @@ function createQueryBrowserHarness(options = {}) {
     const actionInput = registerElement('input', { id: 'action', name: 'action', value: '' });
     const explainInput = registerElement('input', { id: 'explain', name: 'explain', value: '' });
     const explainLevel = registerElement('select', { id: 'explain-level', name: 'explain-level', value: 'Optimized' });
+    const forcedStrategy = registerElement('select', { id: 'lmdb-forced-strategy', name: 'lmdb-forced-strategy', value: '' });
     appendOption(registerElement, explainLevel, 'Optimized', 'Optimized', true);
     appendOption(registerElement, explainLevel, 'Unoptimized');
     appendOption(registerElement, explainLevel, 'Executed');
@@ -274,9 +278,11 @@ function createQueryBrowserHarness(options = {}) {
     const queryExplanation = registerElement('pre', {
         id: 'query-explanation',
         textContent: options.initialExplanation || '',
-        attributes: { 'data-format': options.initialExplanationFormat || 'text' }
+        attributes: { 'data-format': options.initialExplanationFormat || 'text',
+            'data-strategy-decisions': options.initialStrategyDecisions ? JSON.stringify(options.initialStrategyDecisions) : '' }
     });
     const queryExplanationDotView = registerElement('div', { id: 'query-explanation-dot-view' });
+    const strategyTables = registerElement('div', { id: 'query-explanation-strategies' });
     const queryExplanationJsonView = registerElement('div', { id: 'query-explanation-json-view' });
     const queryErrors = registerElement('div', { id: 'queryString.errors' });
     const queryErrorsCompare = registerElement('div', { id: 'queryString.errors-compare' });
@@ -293,6 +299,7 @@ function createQueryBrowserHarness(options = {}) {
     const copyExplanationCompare = registerElement('button', { id: 'copy-explanation-compare', type: 'button' });
     const queryExplanationCompare = registerElement('pre', { id: 'query-explanation-compare' });
     const queryExplanationDotViewCompare = registerElement('div', { id: 'query-explanation-dot-view-compare' });
+    const comparisonStrategyTables = registerElement('div', { id: 'query-explanation-compare-strategies' });
     const queryExplanationJsonViewCompare = registerElement('div', { id: 'query-explanation-json-view-compare' });
     const queryDiffModal = registerElement('div', {
         id: 'query-diff-modal',
@@ -347,6 +354,8 @@ function createQueryBrowserHarness(options = {}) {
         queryExplanationOverlay,
         copyExplanation,
         queryExplanation,
+        strategyTables,
+        comparisonStrategyTables,
         queryExplanationDotView,
         queryExplanationJsonView,
         queryErrors,

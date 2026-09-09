@@ -18,8 +18,8 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Deterministic ranking over captured quotes followed by stateful, bounded probe admission.
- * Repeatability requires the same candidate identities, quote values, configuration and admission event trace.
+ * Deterministic ranking over captured quotes followed by stateful, bounded probe admission. Repeatability requires the
+ * same candidate identities, quote values, configuration and admission event trace.
  */
 final class LmdbNativeAdaptiveArbitration {
 
@@ -37,8 +37,9 @@ final class LmdbNativeAdaptiveArbitration {
 
 	/**
 	 * The outcome of one dispatch decision: run the selected arm normally, or run one bounded experimental probe of a
-	 * rival with the incumbent retained as fallback. A {@link Probe} always carries a live safety-ledger reservation —
-	 * {@code maybeProbe} only returns one after credit, spacing, scheduler state and deadline usefulness all cleared.
+	 * rival with the incumbent retained as fallback. Execution probes carry a live safety-ledger reservation and
+	 * scheduler flight. Optimized preview returns only the decision intent, with neither resource owned; the arbiter
+	 * rejects opening any strategy in that scope.
 	 */
 	sealed interface DispatchPlan<T> {
 
@@ -122,7 +123,8 @@ final class LmdbNativeAdaptiveArbitration {
 					.append(arm.candidate.estimate.variantKey().strategyFamily())
 					.append(":src=")
 					.append(p.evidenceSource())
-					.append(",lane=").append(p.components() == null ? "NONE" : p.components().lane())
+					.append(",lane=")
+					.append(p.components() == null ? "NONE" : p.components().lane())
 					.append(",done=")
 					.append(p.exactCompletedCount())
 					.append(",expMs=")
@@ -163,11 +165,13 @@ final class LmdbNativeAdaptiveArbitration {
 		java.util.HashSet<LmdbNativePhysicalVariantKey> identities = new java.util.HashSet<>();
 		for (Candidate<T> candidate : candidates) {
 			if (!identities.add(candidate.estimate.variantKey())) {
-				throw new IllegalArgumentException("duplicate physical candidate identity: " + candidate.estimate.variantKey());
+				throw new IllegalArgumentException(
+						"duplicate physical candidate identity: " + candidate.estimate.variantKey());
 			}
 		}
 		List<LmdbNativeCostEstimate> estimates = new ArrayList<>(candidates.size());
-		for (Candidate<T> candidate : candidates) estimates.add(candidate.estimate);
+		for (Candidate<T> candidate : candidates)
+			estimates.add(candidate.estimate);
 		LmdbNativeAdaptiveCostModel.PricingBatch captured = model.predictAll(estimates);
 		List<Priced<T>> priced = new ArrayList<>(candidates.size());
 		for (int index = 0; index < candidates.size(); index++) {
@@ -180,7 +184,8 @@ final class LmdbNativeAdaptiveArbitration {
 	static <T> DispatchPlan<T> chooseCaptured(List<Priced<T>> offered,
 			LmdbNativeAdaptiveCostModel.PricingBatch captured, LmdbNativeAdaptiveCostModel model,
 			ProbeContext probeContext, HedgeContext hedgeContext) {
-		if (offered.isEmpty()) throw new IllegalArgumentException("at least one physical candidate is required");
+		if (offered.isEmpty())
+			throw new IllegalArgumentException("at least one physical candidate is required");
 		List<Priced<T>> priced = new ArrayList<>(offered);
 		priced.sort((left, right) -> STATIC_ORDER.compare(left.candidate, right.candidate));
 		for (int i = 0; i < priced.size(); i++) {
@@ -195,8 +200,10 @@ final class LmdbNativeAdaptiveArbitration {
 		if (!model.configuration().enabled()) {
 			return new DispatchPlan.Normal<>(incumbent, incumbentPrediction, "adaptive dispatch disabled");
 		}
-		if (LmdbNativeStrategyPreference.answersWholeQueryStructurally(incumbent.estimate.variantKey().strategyFamily())) {
-			return new DispatchPlan.Normal<>(incumbent, incumbentPrediction, "authoritative whole-query structural answer");
+		if (LmdbNativeStrategyPreference
+				.answersWholeQueryStructurally(incumbent.estimate.variantKey().strategyFamily())) {
+			return new DispatchPlan.Normal<>(incumbent, incumbentPrediction,
+					"authoritative whole-query structural answer");
 		}
 		LmdbNativePosteriorConfig posteriorConfig = model.store().posteriorConfig();
 		Priced<T> rescued = coldStartRescue(priced, posteriorConfig.displacementLogGamma(),
@@ -213,12 +220,14 @@ final class LmdbNativeAdaptiveArbitration {
 		if (selected.candidate != incumbent) {
 			traceDecision("displacement", priced, selected);
 			return dispatchWithExploration(priced, selected,
-					"99% latent displacement with shared-component cancellation", model, probeContext, hedgeContext, captured);
+					"99% latent displacement with shared-component cancellation", model, probeContext, hedgeContext,
+					captured);
 		}
 
 		traceDecision("retained", priced, new Priced<>(incumbent, incumbentPrediction));
 		return dispatchWithExploration(priced, new Priced<>(incumbent, incumbentPrediction),
-				"latent intervals overlap; retained stable strategy preference", model, probeContext, hedgeContext, captured);
+				"latent intervals overlap; retained stable strategy preference", model, probeContext, hedgeContext,
+				captured);
 	}
 
 	/**
@@ -379,7 +388,8 @@ final class LmdbNativeAdaptiveArbitration {
 		}
 		LmdbNativeRegimeTracker.Snapshot live = model.store().regimeTracker().snapshot();
 		if (captured != null && (!captured.regime().equals(live.regime()) || captured.epoch() != live.epoch())) {
-			return null; // never explore against quotes from a different lifecycle; normal ranking remains a snapshot decision
+			return null; // never explore against quotes from a different lifecycle; normal ranking remains a snapshot
+							// decision
 		}
 		LmdbNativeRegimeKey regime = live.regime();
 		long epoch = live.epoch();
@@ -479,12 +489,30 @@ final class LmdbNativeAdaptiveArbitration {
 		if (best == null) {
 			return null;
 		}
+		// Read-only decision phase: both execution and explanation see the same eligibility and intent.
+		if (context.queryBudget().consumed() >= config.maxPerQuery()
+				|| !scheduler.mayProbe(best.candidate.estimate.variantKey(), regime, epoch)
+				|| !ledger.canReserveProbe(reservationNanos, bestMustTry)) {
+			return null;
+		}
+		DispatchPlan.Probe<T> intent = new DispatchPlan.Probe<>(best.candidate, best.prediction, incumbent.candidate,
+				anchor, deadline, null, regime, epoch, "bounded probe of " + best.candidate.estimate.variantKey()
+						+ (belowOptionalFloor ? " (preferred recovery below optional deadline floor)" : ""),
+				null);
+		return LmdbNativeStrategyPreview.active() ? intent
+				: admitProbe(intent, context, ledger, scheduler, reservationNanos, bestMustTry);
+	}
+
+	/** Execution-only admission. Concurrent changes can refuse the intent, leaving normal arbitration intact. */
+	private static <T> DispatchPlan.Probe<T> admitProbe(DispatchPlan.Probe<T> intent, ProbeContext context,
+			LmdbNativeSafetyLedger ledger, LmdbNativeProbeScheduler scheduler, long reservationNanos, boolean mustTry) {
+		LmdbNativeProbeConfig config = context.config();
 		if (!context.queryBudget().tryConsume(config.maxPerQuery())) {
 			traceProbe("skipped: query budget");
 			return null;
 		}
-		LmdbNativePhysicalVariantKey bestKey = best.candidate.estimate.variantKey();
-		LmdbNativeProbeScheduler.Flight flight = scheduler.tryBeginProbe(bestKey, regime, epoch);
+		LmdbNativePhysicalVariantKey bestKey = intent.trial().estimate().variantKey();
+		LmdbNativeProbeScheduler.Flight flight = scheduler.tryBeginProbe(bestKey, intent.regime(), intent.epoch());
 		if (flight == null) {
 			// single-flight: a concurrent query is already probing this arm — its evidence will arrive shortly
 			context.queryBudget().release();
@@ -494,19 +522,19 @@ final class LmdbNativeAdaptiveArbitration {
 		// future normal completions before any value-optional probe runs): credit accrues at ~5% of normal execution
 		// while a reservation costs a multiple of the incumbent's runtime, so waiting for credit delayed the first
 		// kernel trial by dozens of dispatches — long enough for a mispriced rival to keep the rescue (HC:8).
-		LmdbNativeSafetyLedger.Reservation reservation = ledger.tryReserveProbe(reservationNanos, bestMustTry);
+		LmdbNativeSafetyLedger.Reservation reservation = ledger.tryReserveProbe(reservationNanos, mustTry);
 		if (reservation == null) {
 			scheduler.probeAbandoned(flight);
 			context.queryBudget().release();
 			return null;
 		}
 		if (TRACE) {
-			traceProbe("admitted " + bestKey.strategyFamily() + ",deadline=" + deadline
-					+ ",epoch=" + epoch + ",preferredRecoveryBelowFloor=" + belowOptionalFloor);
+			traceProbe("admitted " + bestKey.strategyFamily() + ",deadline=" + intent.deadlineNanos()
+					+ ",epoch=" + intent.epoch());
 		}
-		return new DispatchPlan.Probe<>(best.candidate, best.prediction, incumbent.candidate, anchor, deadline,
-				reservation, regime, epoch, "bounded probe of " + best.candidate.estimate.variantKey()
-						+ (belowOptionalFloor ? " (preferred recovery below optional deadline floor)" : ""), flight);
+		return new DispatchPlan.Probe<>(intent.trial(), intent.trialPrediction(), intent.fallback(),
+				intent.fallbackPrediction(), intent.deadlineNanos(), reservation, intent.regime(), intent.epoch(),
+				intent.reason(), flight);
 	}
 
 	private static long saturatingAdd(long a, long b) {
@@ -551,7 +579,8 @@ final class LmdbNativeAdaptiveArbitration {
 		}
 		Priced<T> incumbent = priced.get(0);
 		for (Priced<T> candidate : priced) {
-			if (STATIC_ORDER.compare(candidate.candidate, incumbent.candidate) < 0) incumbent = candidate;
+			if (STATIC_ORDER.compare(candidate.candidate, incumbent.candidate) < 0)
+				incumbent = candidate;
 		}
 		// A quarantined incumbent (e.g. it just lost a guarded race — its price is untrusted for the TTL) yields
 		// exactly like an unmeasured one: the dispatch after a guard loss picks the measured runner-up outright

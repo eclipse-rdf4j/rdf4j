@@ -83,6 +83,11 @@ final class NativeBindingSetExtensionStep implements QueryEvaluationStep, LmdbNa
 	}
 
 	@Override
+	public void explainStrategies() {
+		LmdbNativeStrategyPreview.inspect(arg);
+	}
+
+	@Override
 	public String nativePhysicalPlan() {
 		String inner = arg instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
 				: arg.getClass().getSimpleName();
