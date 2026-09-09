@@ -45,6 +45,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /** Differential and lifecycle coverage for same-snapshot parallel row pipelines. */
 @Execution(ExecutionMode.SAME_THREAD)
@@ -653,6 +655,33 @@ public class LmdbNativeParallelPipelinesTest {
 			}
 		} finally {
 			restoreProperty(WORK_THRESHOLD_FLAG, previousWorkThreshold);
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ ", 2047, false", ", 2048, true", ", 3072, true", ", 4096, true",
+			"invalid, 2048, true", "NaN, 2048, true", "Infinity, 2048, true", "-1, 2048, true",
+			"4096, 3072, false", "4096, 4096, true", "0, 1, true" })
+	void parallelAdmissionUsesHalvedDefaultAndHonorsOverrides(String configured, double work, boolean admitted)
+			throws Exception {
+		String previous = System.getProperty(WORK_THRESHOLD_FLAG);
+		try {
+			restoreProperty(WORK_THRESHOLD_FLAG, configured);
+			NativeSlotLayout layout = twoSlotLayout();
+			RepeatedSlotSource source = new RepeatedSlotSource(new long[0][], Map.of(9L, 1D));
+			MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] {
+					pattern(Term.slot(0), 7L, Term.constant(8L), work),
+					pattern(Term.slot(0), 9L, Term.slot(1), 1D) }, new MaskedFilter[0]);
+			RowState row = emptyNativeRow(source, layout);
+			assertThat(plan.estimate(row)).isEqualTo(work);
+			try (var proposal = LmdbNativeParallelPipelines.propose(nativeStep(source, plan, layout), row)) {
+				assertThat(proposal != null).isEqualTo(admitted);
+				if (!admitted) {
+					assertThat(LmdbNativeParallelPipelines.LAST_REJECTION.get()).isEqualTo("below-threshold");
+				}
+			}
+		} finally {
+			restoreProperty(WORK_THRESHOLD_FLAG, previous);
 		}
 	}
 

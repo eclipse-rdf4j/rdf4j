@@ -1798,7 +1798,7 @@ final class LmdbNativeLeapfrogJoin {
 	 * that need order sort afterwards, exactly as with the other unordered strategies.
 	 */
 	private static final class ParallelLeapfrog implements AutoCloseable {
-		private static final int DEFAULT_PARALLEL_MIN_CANDIDATES = 1024;
+		private static final int DEFAULT_PARALLEL_MIN_CANDIDATES = 512;
 		private static final boolean DEBUG = Boolean.getBoolean("rdf4j.lmdb.wcoj.debugParallel");
 		private static final int RANGES_PER_WORKER = 4;
 		private static final int PAGE_ROWS = 512;

@@ -70,7 +70,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 20000)
+@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 5000)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
 		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true"
@@ -131,8 +131,8 @@ public class ThemeQueryBenchmark {
 	 * Auto trials use the engine defaults, including normal Janino thresholds and asynchronous compilation. Each trial
 	 * restores the caller's properties, including when running both modes in the same JVM via {@link #main}.
 	 */
-//	@Param({  "auto" })
-	@Param({  "auto","disabled" })
+	@Param({ "auto" })
+//	@Param({  "auto","disabled" })
 	public String z_z_irMode;
 
 	@Param({

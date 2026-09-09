@@ -21,11 +21,12 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	/**
-	 * Initial fixed cost of scheduling a parallel group, in native work-row units. Recalibrate by running
+	 * Initial scheduling cost used to select a parallel group, in native work-row units. The default biases admission
+	 * toward parallel execution; it is not a measured startup latency. Recalibrate by running
 	 * {@code ParallelismBenchmark.serialHashBatch} and {@code parallelOverlap} at several input sizes and fitting the
-	 * parallel intercept at the serial/parallel crossover; update this constant only with the paired JMH result.
+	 * parallel intercept at the serial/parallel crossover.
 	 */
-	static final double PARALLEL_STARTUP_COST = 25_000D;
+	static final double PARALLEL_STARTUP_COST = 12_500D;
 	static final String PARALLEL_STARTUP_COST_PROPERTY = "rdf4j.lmdb.parallel.startupWork";
 
 	@FunctionalInterface

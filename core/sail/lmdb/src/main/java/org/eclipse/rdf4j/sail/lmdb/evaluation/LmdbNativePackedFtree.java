@@ -129,7 +129,7 @@ final class LmdbNativePackedFtree {
 
 	static long parallelMinRootsPerPartition() {
 		Long configured = Long.getLong("rdf4j.lmdb.packedFtree.parallel.minRootsPerPartition");
-		return configured != null && configured > 0L ? configured : 2048L;
+		return configured != null && configured > 0L ? configured : 1024L;
 	}
 
 	/** Oversplit factor: more partitions than workers so the claim loop absorbs per-partition work skew. */
@@ -2162,16 +2162,18 @@ final class LmdbNativePackedFtree {
 	}
 
 	/**
-	 * Splits one mandatory nonterminal branch into additive prefix partitions. Used only by
-	 * consumers explicitly permitting repeated prefixes (currently COUNT channels). All other
-	 * branches are exact borrowed terminals. This bounds constructed intermediate lanes, not
-	 * retained source storage or an unsupported storage fallback's materialization.
+	 * Splits a mandatory nonterminal spine into additive prefix partitions. Used only by consumers explicitly
+	 * permitting repeated prefixes (currently COUNT channels). All other branches are exact borrowed terminals. This
+	 * bounds constructed intermediate lanes, not retained source storage or an unsupported storage fallback's
+	 * materialization.
 	 */
 	static final class ProjectionChunkBuilder implements AutoCloseable {
 		static final String ENABLED = "rdf4j.lmdb.packedProjectionBuild.enabled";
 		static final String MAX_LANES = "rdf4j.lmdb.packedProjectionBuild.maxLanes";
 		static final int WINDOW = 256;
 		final Runtime runtime;
+		final NestedContinuation nested;
+		static final String NESTED = "rdf4j.lmdb.packedProjectionBuild.nested.enabled";
 		final NodePlan split;
 		final int maximum;
 		final Chunk stagedRoots;
@@ -2190,31 +2192,52 @@ final class LmdbNativePackedFtree {
 		boolean borrowedInput;
 
 		static ProjectionChunkBuilder open(Runtime runtime) {
-			if (!runtime.borrowEnabled || !Boolean.parseBoolean(System.getProperty(ENABLED, "true"))) return null;
-			NodePlan split = null;
-			for (NodePlan node : runtime.plan.nodes) if (node.parent != null && node.children.length != 0) {
-				if (split != null || node.parent != runtime.plan.root) return null;
-				split = node;
+			if (!runtime.borrowEnabled || !Boolean.parseBoolean(System.getProperty(ENABLED, "true")))
+				return null;
+			// Admit a single nonterminal spine. Independent nonterminal siblings require
+			// a nested-product continuation; do not silently enumerate their cross-product here.
+			ArrayList<NodePlan> chain = new ArrayList<>();
+			NodePlan node = runtime.plan.root;
+			while (node != null) {
+				chain.add(node);
+				NodePlan next = null;
+				for (NodePlan child : node.children) {
+					if (child.children.length != 0) {
+						if (next != null || child.filters.length != 0 || !contextFree(child.primary.pattern))
+							return null;
+						next = child;
+					} else if (!runtime.borrowableTerminal(child)
+							|| runtime.primaryEdges[child.ordinal].factorSource() == null)
+						return null;
+				}
+				node = next;
 			}
-			if (split == null || split.filters.length != 0 || !contextFree(split.primary.pattern)) return null;
-			for (NodePlan node : runtime.plan.nodes) if (node.parent != null && node != split) {
-				if (!runtime.borrowableTerminal(node) || runtime.primaryEdges[node.ordinal].factorSource() == null)
-					return null;
-			}
+			if (chain.size() < 2)
+				return null;
+			if (chain.size() > 2 && !Boolean.parseBoolean(System.getProperty(NESTED, "true")))
+				return null;
 			int maximum = Integer.getInteger(MAX_LANES, 2048);
-			if (maximum < 1 || maximum > 65536) throw new IllegalArgumentException("invalid projection lane bound");
-			return new ProjectionChunkBuilder(runtime, split, maximum);
+			if (maximum < 1 || maximum > 65536)
+				throw new IllegalArgumentException("invalid projection lane bound");
+			return new ProjectionChunkBuilder(runtime, chain.toArray(NodePlan[]::new), maximum);
 		}
 
-		ProjectionChunkBuilder(Runtime runtime, NodePlan split, int maximum) {
-			this.runtime = runtime; this.split = split; this.maximum = maximum;
+		ProjectionChunkBuilder(Runtime runtime, NodePlan[] spine, int maximum) {
+			this.runtime = runtime;
+			this.split = spine[1];
+			this.maximum = maximum;
 			stagedRoots = new Chunk(runtime.plan, runtime.constantMultiplicity);
 			siblings = new BorrowedFactorBatch[runtime.plan.nodes.length];
+			nested = spine.length > 2 ? new NestedContinuation(spine) : null;
 		}
 
 		Chunk next() throws IOException {
-			if (closed) throw new IllegalStateException("closed projection builder");
-			if (runtime.exhausted && !activeRoot) return null;
+			if (closed)
+				throw new IllegalStateException("closed projection builder");
+			if (nested != null)
+				return nested.next();
+			if (runtime.exhausted && !activeRoot)
+				return null;
 			runtime.chunksStarted = true;
 			runtime.row.rollback(runtime.entryMark);
 			Chunk chunk = runtime.reusableChunk;
@@ -2366,7 +2389,6 @@ final class LmdbNativePackedFtree {
 			activeRoot = fallbackRoot = false;
 			return chunk;
 		}
-
 		private void poll() {
 			LmdbNativeProbeDeadline.poll(++ticks);
 			if (runtime.row.cancellation.isCancellationRequested())
@@ -2376,20 +2398,490 @@ final class LmdbNativePackedFtree {
 		@Override public void close() {
 			if (closed) return; closed = true;
 			Throwable failure = null;
-			try { if (storeCursor != null) storeCursor.close(); }
-			catch (RuntimeException | Error problem) { failure = problem; }
-			finally { storeCursor = null; }
-			try { if (inputReader != null) inputReader.close(); }
-			catch (RuntimeException | Error problem) {
-				if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
-			} finally { inputReader = null; }
-			try { if (storeProbe != null) storeProbe.close(); }
-			catch (RuntimeException | Error problem) {
-				if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
-			} finally { storeProbe = null; }
-			if (failure instanceof RuntimeException problem) throw problem;
-			if (failure instanceof Error problem) throw problem;
+			try {
+				if (nested != null)
+					nested.close();
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+			}
+			try {
+				if (storeCursor != null)
+					storeCursor.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null)
+					failure = problem;
+				else if (failure != problem)
+					failure.addSuppressed(problem);
+			} finally {
+				storeCursor = null;
+			}
+			try {
+				if (inputReader != null)
+					inputReader.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null)
+					failure = problem;
+				else if (failure != problem)
+					failure.addSuppressed(problem);
+			} finally {
+				inputReader = null;
+			}
+			try {
+				if (storeProbe != null)
+					storeProbe.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null)
+					failure = problem;
+				else if (failure != problem)
+					failure.addSuppressed(problem);
+			} finally {
+				storeProbe = null;
+			}
+			if (failure instanceof RuntimeException problem)
+				throw problem;
+			if (failure instanceof Error problem)
+				throw problem;
 		}
+
+		/**
+		 * Retained prefix stack for a chain of nonterminal nodes, with independent exact terminal siblings at every
+		 * level. Only the deepest prefix population is partitioned; ancestor occurrences and their local weights are
+		 * copied once per published path. Equal IDs do not identify equal prefixes. Input readers and terminal
+		 * descriptors live across chunk resets.
+		 */
+		final class NestedContinuation implements AutoCloseable {
+			final NodePlan[] spine;
+			final NodePlan[][] terminals;
+			final MemberInput[] inputs;
+			final Chunk path;
+			final int[] published;
+			int depth, pendingFallback = -1;
+			boolean ended;
+
+			NestedContinuation(NodePlan[] spine) {
+				this.spine = spine;
+				terminals = new NodePlan[spine.length][];
+				inputs = new MemberInput[spine.length];
+				published = new int[spine.length];
+				path = new Chunk(runtime.plan, runtime.constantMultiplicity);
+				for (int i = 0; i < spine.length; i++) {
+					NodePlan next = i + 1 < spine.length ? spine[i + 1] : null;
+					int n = 0;
+					for (NodePlan child : spine[i].children)
+						if (child != next)
+							n++;
+					terminals[i] = new NodePlan[n];
+					int at = 0;
+					for (NodePlan child : spine[i].children)
+						if (child != next)
+							terminals[i][at++] = child;
+					if (i != 0)
+						inputs[i] = new MemberInput(spine[i]);
+				}
+			}
+
+			Chunk next() throws IOException {
+				if (ended)
+					return null;
+				for (int i = 1; i < inputs.length; i++)
+					inputs[i].validateRetained();
+				runtime.chunksStarted = true;
+				runtime.row.rollback(runtime.entryMark);
+				Chunk chunk = runtime.reusableChunk;
+				if (chunk == null)
+					runtime.reusableChunk = chunk = new Chunk(runtime.plan, runtime.constantMultiplicity);
+				else
+					chunk.reset();
+				Arrays.fill(published, -1);
+				if (pendingFallback >= 0)
+					return fallbackPrefix(chunk);
+				int examined = 0;
+				while (examined < maximum) {
+					poll();
+					NodePlan node = spine[depth];
+					NodeData current = path.data[node.ordinal];
+					if (depth + 1 == spine.length) {
+						MemberInput input = inputs[depth];
+						if (!input.opened)
+							input.open(path.data[spine[depth - 1].ordinal].value(0));
+						if (!input.next()) {
+							input.finishRun();
+							depth--;
+							continue;
+						}
+						examined++;
+						publishPath(chunk);
+						NodeData out = chunk.data[node.ordinal];
+						int parent = published[depth - 1];
+						out.ensureOffsets(parent + 2);
+						if (parent == 0 && out.size == 0)
+							out.offsets[0] = 0;
+						runtime.appendScannedValue(chunk, node, parent, runtime.constraintEdges[node.ordinal],
+								runtime.unaryRuntimes[node.ordinal], input.value, input.weight);
+						out.offsets[parent + 1] = out.size;
+						out.sliceValuesDistinct = false;
+						continue;
+					}
+					if (depth == 0) {
+						if (!readRoot()) {
+							ended = true;
+							break;
+						}
+						examined++;
+					} else {
+						MemberInput input = inputs[depth];
+						if (!input.opened)
+							input.open(path.data[spine[depth - 1].ordinal].value(0));
+						if (!input.next()) {
+							input.finishRun();
+							depth--;
+							continue;
+						}
+						examined++;
+						current.resetForBuild();
+						if (runtime.appendScannedValue(path, node, 0, runtime.constraintEdges[node.ordinal],
+								runtime.unaryRuntimes[node.ordinal], input.value, input.weight) == 0)
+							continue;
+						current.state.reset(1);
+					}
+					Arrays.fill(published, depth, published.length, -1);
+					int ready = prepareTerminals(depth);
+					if (ready == 0)
+						continue;
+					if (ready < 0) {
+						// This occurrence has not descended yet. Fallback is restricted to this prefix,
+						// never the entire root whose preceding partitions may already be visible.
+						pendingFallback = depth;
+						if (chunk.data[spine[0].ordinal].size == 0)
+							return fallbackPrefix(chunk);
+						break;
+					}
+					if (depth + 1 < spine.length) {
+						depth++;
+						if (inputs[depth].opened)
+							throw new IllegalStateException("undrained nested prefix");
+					} else {
+						publishPath(chunk);
+					}
+				}
+				if (ended && chunk.data[spine[0].ordinal].size == 0)
+					return null;
+				for (NodeData data : chunk.data)
+					data.state.reset(data.size);
+
+				NodePlan bottomPlan = spine[spine.length - 1];
+				NodeData bottom = chunk.data[bottomPlan.ordinal];
+				NodeData parents = chunk.data[bottomPlan.parent.ordinal];
+				// Cascade is delta-driven: an initially empty slice has no removed child lane.
+				// Seed that parent invalidation explicitly before ordinary reduction propagation.
+				for (int p = 0; p < parents.size; p++)
+					if (bottom.offsets[p] == bottom.offsets[p + 1])
+						parents.state.clear(p);
+				chunk.cascade.propagateFrom(bottomPlan.parent);
+				// At the bottom there is no deeper work to suppress. Bind terminal columns in
+				// batches using the existing producer, not one descriptor matrix per candidate.
+				for (NodePlan leaf : terminals[spine.length - 1]) {
+					runtime.buildSubtree(chunk, leaf);
+					chunk.cascade.propagateFrom(leaf);
+				}
+				for (int i = spine.length - 1; i >= 0; i--)
+					chunk.cascade.propagateFrom(spine[i]);
+				chunk.releaseBuildParents();
+				return chunk;
+			}
+
+			private boolean readRoot() throws IOException {
+				for (;;) {
+					poll();
+					NodeData staged = stagedRoots.data[runtime.plan.root.ordinal];
+					rootLane = staged.state.nextSetBit(rootLane + 1);
+					if (rootLane >= 0 && rootLane < stagedCount) {
+						NodeData out = path.data[spine[0].ordinal];
+						out.resetForBuild();
+						Runtime.appendLane(out, -1, staged.value(rootLane), staged.weight(rootLane));
+						out.state.reset(1);
+						return true;
+					}
+					if (rootsEnded)
+						return false;
+					stagedRoots.reset();
+					staged.ensureCapacity(ROOT_BATCH_SIZE);
+					stagedCount = runtime.roots.fill(staged, ROOT_BATCH_SIZE);
+					if (stagedCount == 0) {
+						rootsEnded = runtime.exhausted = true;
+						return false;
+					}
+					staged.size = stagedCount;
+					staged.state.reset(stagedCount);
+					if (runtime.constantMultiplicity != 1L)
+						for (int i = 0; i < stagedCount; i++)
+							staged.setWeight(i,
+									FactorizedTail.multiplyCounts(staged.weight(i), runtime.constantMultiplicity));
+					runtime.applyNodeRestrictions(stagedRoots, runtime.plan.root);
+					rootLane = -1;
+				}
+			}
+
+			/** 1 = exact nonempty siblings; 0 = rejected; -1 = descriptor capability refused. */
+			private int prepareTerminals(int level) {
+				NodeData parent = path.data[spine[level].ordinal];
+				for (NodePlan leaf : terminals[level]) {
+					poll();
+					NodeData out = path.data[leaf.ordinal];
+					out.resetForBuild();
+					if (!runtime.tryBorrowTerminal(path, leaf))
+						return -1;
+					if (!parent.state.isSet(0))
+						return 0;
+				}
+				return 1;
+			}
+
+			private void publishPath(Chunk chunk) {
+				int parent = -1;
+				for (int i = 0; i + 1 < spine.length; i++) {
+					if (published[i] < 0) {
+						NodeData from = path.data[spine[i].ordinal], out = chunk.data[spine[i].ordinal];
+						int lane = Runtime.appendLane(out, parent, from.value(0), from.weight(0));
+						out.sliceValuesDistinct = false;
+						if (i != 0) {
+							out.ensureOffsets(parent + 2);
+							// DFS publishes each parent's children contiguously. For a new parent,
+							// offsets[parent] is the previous parent's end (zero for the first).
+							if (parent == 0 && lane == 0)
+								out.offsets[0] = 0;
+							out.offsets[parent + 1] = lane + 1;
+						}
+						published[i] = lane;
+						for (NodePlan leaf : terminals[i]) {
+							NodeData target = chunk.data[leaf.ordinal];
+							BorrowedFactorBatch original = path.data[leaf.ordinal].borrowed;
+							if (target.borrowed == null) {
+								target.borrowed = Runtime.ensureBorrowed(target, original.source(), maximum);
+								target.borrowed.reset(maximum);
+							}
+							target.borrowed.copyLaneFrom(lane, original, 0);
+						}
+					}
+					parent = published[i];
+				}
+			}
+
+			private Chunk fallbackPrefix(Chunk chunk) throws IOException {
+				int level = pendingFallback;
+				pendingFallback = -1;
+				chunk.reset();
+				// Copy the already accepted ancestor path and its exact independent siblings.
+				for (int i = 0; i <= level; i++) {
+					NodeData from = path.data[spine[i].ordinal], out = chunk.data[spine[i].ordinal];
+					Runtime.appendLane(out, i == 0 ? -1 : 0, from.value(0), from.weight(0));
+					out.state.reset(1);
+					out.sliceValuesDistinct = false;
+					if (i != 0) {
+						out.ensureOffsets(2);
+						out.offsets[0] = 0;
+						out.offsets[1] = 1;
+					}
+					if (i < level)
+						for (NodePlan leaf : terminals[i]) {
+							NodeData target = chunk.data[leaf.ordinal];
+							target.borrowed = Runtime.ensureBorrowed(target, path.data[leaf.ordinal].borrowed.source(),
+									1);
+							target.borrowed.reset(1);
+							target.borrowed.copyLaneFrom(0, path.data[leaf.ordinal].borrowed, 0);
+						}
+				}
+				for (NodePlan child : spine[level].children) {
+					runtime.buildSubtree(chunk, child);
+					chunk.cascade.propagateFrom(child);
+				}
+				for (int i = level; i >= 0; i--)
+					chunk.cascade.propagateFrom(spine[i]);
+				chunk.releaseBuildParents();
+				// Keep the incoming reader after the rejected export's occurrence. No ancestor replay.
+				depth = level;
+				return chunk;
+			}
+
+			@Override
+			public void close() {
+				Throwable failure = null;
+				for (int i = inputs.length - 1; i > 0; i--)
+					try {
+						inputs[i].close();
+					} catch (RuntimeException | Error problem) {
+						if (failure == null)
+							failure = problem;
+						else if (failure != problem)
+							failure.addSuppressed(problem);
+					}
+				if (failure instanceof RuntimeException problem)
+					throw problem;
+				if (failure instanceof Error problem)
+					throw problem;
+			}
+
+			/** One independently positioned input per nonterminal edge, reusable across its parents. */
+			final class MemberInput implements AutoCloseable {
+				final NodePlan node;
+				final EdgeRuntime edge;
+				BorrowedFactorBatch group;
+				BorrowedFactorBatch.Cursor reader;
+				BorrowedFactorBatch.Source source;
+				NativeLmdbQuerySource.NativeProbe probe;
+				PatternCursor store;
+				long[] ids, weights, raw;
+				int at, end;
+				long remaining, offset, value, weight, generation;
+				boolean opened, borrowed;
+
+				MemberInput(NodePlan node) {
+					this.node = node;
+					edge = runtime.primaryEdges[node.ordinal];
+				}
+
+				void open(long parent) throws IOException {
+					if (opened)
+						throw new IllegalStateException("nested input already positioned");
+					poll();
+					opened = true;
+					at = end = 0;
+					offset = 0L;
+					borrowed = false;
+					remaining = edge.bind(parent);
+					if (remaining == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
+						if (probe == null)
+							probe = runtime.row.source.newProbe();
+						store = edge.openStore(runtime, parent, UNKNOWN, probe);
+						return;
+					}
+					if (remaining <= 0L) {
+						remaining = 0L;
+						return;
+					}
+					BorrowedFactorBatch.Source nextSource = edge.factorSource();
+					if (nextSource == null)
+						return;
+					if (group == null || group.source() != nextSource)
+						group = new BorrowedFactorBatch(nextSource, 1);
+					group.reset(1);
+					if (!edge.cursor.borrow(group, 0))
+						return;
+					if (reader == null || source != nextSource) {
+						BorrowedFactorBatch.Cursor previous = reader;
+						reader = null;
+						source = null;
+						if (previous != null)
+							previous.close();
+						reader = group.cursor(WINDOW);
+						source = nextSource;
+					}
+					reader.bind(group, 0);
+					remaining = group.count(0);
+					generation = group.generation();
+					borrowed = true;
+				}
+
+				void validateRetained() {
+					if (opened && borrowed) {
+						if (group.generation() != generation)
+							throw new IllegalStateException("stale nested input");
+						group.count(0); // ownership and derived-view validity, once per publication boundary
+					}
+				}
+
+				boolean next() throws IOException {
+					poll();
+					if (store != null) {
+						long[] quad = store.next();
+						if (quad == null)
+							return false;
+						value = quad[node.primary.keyIsSubject ? 2 : 0];
+						weight = 1L;
+						return true;
+					}
+					if (remaining == 0L)
+						return false;
+					if (at == end) {
+						if (borrowed) {
+							int n = reader.nextWindow();
+							if (n == 0)
+								throw new IllegalStateException("short nested borrowed relation");
+							at = reader.windowStart();
+							end = at + n;
+							ids = reader.windowValues();
+							weights = reader.windowWeights();
+						} else {
+							if (raw == null)
+								raw = new long[WINDOW];
+							int n = (int) Math.min(WINDOW, remaining);
+							if (edge.copyNeighbors(offset, n, raw, 0) != n)
+								throw new IllegalStateException("short nested adjacency window");
+							offset += n;
+							at = 0;
+							end = n;
+							ids = raw;
+							weights = null;
+						}
+					}
+					value = ids[at];
+					weight = weights == null ? 1L : weights[at];
+					at++;
+					if (weight <= 0L || weight > remaining)
+						throw new IllegalStateException("invalid nested weight");
+					remaining -= weight;
+					return true;
+				}
+
+				void finishRun() {
+					opened = false;
+					remaining = 0L;
+					at = end = 0;
+					PatternCursor previous = store;
+					store = null;
+					if (previous != null)
+						previous.close();
+				}
+
+				@Override
+				public void close() {
+					Throwable failure = null;
+					try {
+						finishRun();
+					} catch (RuntimeException | Error problem) {
+						failure = problem;
+					}
+					BorrowedFactorBatch.Cursor previous = reader;
+					reader = null;
+					source = null;
+					try {
+						if (previous != null)
+							previous.close();
+					} catch (RuntimeException | Error problem) {
+						if (failure == null)
+							failure = problem;
+						else if (failure != problem)
+							failure.addSuppressed(problem);
+					}
+					NativeLmdbQuerySource.NativeProbe previousProbe = probe;
+					probe = null;
+					try {
+						if (previousProbe != null)
+							previousProbe.close();
+					} catch (RuntimeException | Error problem) {
+						if (failure == null)
+							failure = problem;
+						else if (failure != problem)
+							failure.addSuppressed(problem);
+					}
+					if (failure instanceof RuntimeException problem)
+						throw problem;
+					if (failure instanceof Error problem)
+						throw problem;
+				}
+			}
+		}
+
 	}
 
 	/** Runtime owns one retained LMDB probe and all adjacency views for the physical plan. */

@@ -46,7 +46,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 final class LmdbNativeParallelPrefixRuns {
 
 	static final String PARALLEL_MIN_ESTIMATE_PROPERTY = "rdf4j.lmdb.prefixRun.parallelMinEstimate";
-	static final long DEFAULT_PARALLEL_MIN_ESTIMATE = 1_000_000L;
+	static final long DEFAULT_PARALLEL_MIN_ESTIMATE = 500_000L;
 	/** Ranges planned per granted worker; over-partitioning lets the queue balance skewed ranges. */
 	static final int RANGES_PER_WORKER = 4;
 

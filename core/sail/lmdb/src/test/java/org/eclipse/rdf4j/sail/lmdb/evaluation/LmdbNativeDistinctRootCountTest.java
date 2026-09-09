@@ -120,6 +120,22 @@ class LmdbNativeDistinctRootCountTest {
 	}
 
 	@Test
+	void halvedPartitionFloorPreservesCountsAndReleasesWorkers() throws Exception {
+		System.clearProperty("rdf4j.lmdb.parallel.minWorkEstimate");
+		for (int entries : new int[] { 8191, 8192, 12288 }) {
+			Source source = new Source(new Domain[] {
+					DistinctRootCountCandidates.generated(entries / 2, i -> i * 128),
+					DistinctRootCountCandidates.generated(entries - entries / 2, i -> i * 128) });
+			var result = count(source, new NativeCancellationToken());
+			assertThat(result.count()).isEqualTo((entries + 1) / 2);
+			assertThat(result.workers()).as("entries %s", entries).isEqualTo(entries / 4096);
+			assertThat(source.openedSiblings.get()).isEqualTo(entries < 8192 ? 0 : result.workers());
+			assertThat(source.closedSiblings.get()).isEqualTo(source.openedSiblings.get());
+			assertThat(source.openCursors.get()).isZero();
+		}
+	}
+
+	@Test
 	void parallelRangesCrossUnsignedHalvesAndShareBoundaryKeys() throws Exception {
 		Domain[] domains = {
 				DistinctRootCountCandidates.generated(40000, i -> i * 128),

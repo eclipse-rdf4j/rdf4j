@@ -91,7 +91,7 @@ final class PathPlan implements SlotPlan {
 	static final String ADJACENCY_SEEDS_ENABLED_PROPERTY = "rdf4j.lmdb.nativePath.adjacencySeeds.enabled";
 	static final String BIDIRECTIONAL_ENABLED_PROPERTY = "rdf4j.lmdb.nativePath.bidirectional.enabled";
 	static final String FRONTIER_PARALLEL_MIN_PROPERTY = "rdf4j.lmdb.nativePath.frontier.parallelMin";
-	static final int DEFAULT_FRONTIER_PARALLEL_MIN = 1024;
+	static final int DEFAULT_FRONTIER_PARALLEL_MIN = 512;
 	static final int ESTIMATE_DEPTH_CAP = 4;
 
 	static final int BATCH_ROWS = 256;

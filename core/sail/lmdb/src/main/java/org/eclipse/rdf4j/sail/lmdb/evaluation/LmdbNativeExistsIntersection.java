@@ -47,7 +47,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 final class LmdbNativeExistsIntersection {
 
 	static final String PARALLEL_MIN_ESTIMATE_PROPERTY = "rdf4j.lmdb.existsIntersection.parallelMinEstimate";
-	static final long DEFAULT_PARALLEL_MIN_ESTIMATE = 1_000_000L;
+	static final long DEFAULT_PARALLEL_MIN_ESTIMATE = 500_000L;
 
 	static final AtomicLong PLANNED = new AtomicLong();
 	static final AtomicLong OPENED = new AtomicLong();

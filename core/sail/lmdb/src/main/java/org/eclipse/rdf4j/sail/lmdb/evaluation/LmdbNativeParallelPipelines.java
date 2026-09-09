@@ -60,10 +60,10 @@ final class LmdbNativeParallelPipelines {
 	 */
 	static final AtomicReference<String> LAST_RANGE_REJECTION = new AtomicReference<>();
 
-	/** Smallest worthwhile partition; below ~8 morsels the per-partition open cost dominates. */
-	static final long MIN_PARTITION_ROWS = 8192;
+	/** Minimum estimated rows per partition, shared with parallel distinct-root counting. */
+	static final long MIN_PARTITION_ROWS = 4096;
 	static final String MIN_WORK_ESTIMATE_PROPERTY = "rdf4j.lmdb.parallel.minWorkEstimate";
-	static final double DEFAULT_MIN_WORK_ESTIMATE = 4_096D;
+	static final double DEFAULT_MIN_WORK_ESTIMATE = 2_048D;
 
 	private static final AtomicInteger THREAD_IDS = new AtomicInteger();
 	private static final AtomicInteger RESERVED_TASKS = new AtomicInteger();
