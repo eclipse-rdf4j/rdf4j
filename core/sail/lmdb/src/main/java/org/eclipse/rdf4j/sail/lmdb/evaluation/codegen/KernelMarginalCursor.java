@@ -41,7 +41,7 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 	private int flatCount;
 	private long[] singletonValues, singletonWeights;
 	private long unionColumns;
-	private boolean scalarPending, batch, positioned, closed;
+	private boolean scalarPending, batch, positioned, closed, started;
 
 	public static KernelMarginalCursor open(KernelPlan plan, int width, int[][] columns, boolean[] exact,
 			KernelCancellation cancellation) {
@@ -100,8 +100,14 @@ public final class KernelMarginalCursor implements KernelPlan.ProjectionCursor {
 		rowWeights = rows == null ? null : new long[WINDOW];
 	}
 
+	@Override public void permitPrefixPartitions() {
+		if (started || closed) throw new IllegalStateException("partition permission must precede input");
+		if (nativeCursor != null) nativeCursor.permitPrefixPartitions();
+	}
+
 	@Override public boolean nextBatch() {
 		if (closed) return false;
+		started = true;
 		try {
 			if (batch && completed != columns.length - 1) throw new IllegalStateException("unfinished projections");
 			KernelRuntime.checkCancelled(cancellation);

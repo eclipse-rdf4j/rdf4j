@@ -640,59 +640,63 @@ final class LmdbNativePackedFtree {
 		HashMap<GroupKey, AggState> groups = new HashMap<>();
 		// The calling aggregate owns runtime. This cursor borrows its lifecycle and only its
 		// current chunk; cancellation/failure still unwinds through the caller's existing scope.
-		ChunkProjectionCursor input = new ChunkProjectionCursor(plan, row, runtime, outputs,
-				layout.exactWeights(), false);
-		while (input.nextBatch()) for (int p = 0; p < layout.size(); p++) {
-			int[] channels = layout.channels(p);
-			int windowSlot = input.windowColumn(p);
-			for (int slot : groupSlots) if (slot == windowSlot) windowSlot = -1;
-			if (windowSlot >= 0) {
-				AggState state = null; long scale = 0L; int size;
-				while ((size = input.nextWindow(p)) != 0) {
-					if (state == null || input.windowPrefixChanged()) {
-						long[] ids = new long[groupSlots.length];
-						for (int i = 0; i < ids.length; i++) ids[i] = input.value(groupSlots[i]);
-						GroupKey key = new GroupKey(ids); state = groups.get(key);
-						if (state == null) {
-							state = new AggState(aggregates, 64, context, AggregateDistinctChannels.allHash(aggregates));
-							groups.put(key, state);
+		try (ChunkProjectionCursor input = new ChunkProjectionCursor(plan, row, runtime, outputs,
+				layout.exactWeights(), false)) {
+			boolean countOnly = true;
+			for (AggregateSpec spec : aggregates) countOnly &= spec.kind == AggKind.COUNT;
+			if (countOnly) input.permitPrefixPartitions();
+			while (input.nextBatch()) for (int p = 0; p < layout.size(); p++) {
+				int[] channels = layout.channels(p);
+				int windowSlot = input.windowColumn(p);
+				for (int slot : groupSlots) if (slot == windowSlot) windowSlot = -1;
+				if (windowSlot >= 0) {
+					AggState state = null; long scale = 0L; int size;
+					while ((size = input.nextWindow(p)) != 0) {
+						if (state == null || input.windowPrefixChanged()) {
+							long[] ids = new long[groupSlots.length];
+							for (int i = 0; i < ids.length; i++) ids[i] = input.value(groupSlots[i]);
+							GroupKey key = new GroupKey(ids); state = groups.get(key);
+							if (state == null) {
+								state = new AggState(aggregates, 64, context, AggregateDistinctChannels.allHash(aggregates));
+								groups.put(key, state);
+							}
+							scale = 0L;
 						}
-						scale = 0L;
+						long[] ids = input.windowValues(), weights = input.windowWeights();
+						int start = input.windowStart(), end = start + size;
+						for (int at = start; at < end; at++) for (int channel : channels) {
+							AggregateSpec spec = aggregates[channel];
+							long id = arguments[channel] >= 0 ? ids[at] : spec.slot >= 0 ? 0L : spec.constant;
+							if (id == UNKNOWN) continue;
+							if (spec.distinct) addDistinctWeighted(state, channel, id, 1L);
+							else {
+								long contribution = 1L;
+								if (exact[channel]) {
+									if (scale == 0L) scale = input.windowScale();
+									contribution = FactorizedTail.multiplyCounts(scale, weights[at]);
+								}
+								state.addWeighted(channel, id, contribution);
+							}
+						}
 					}
-					long[] ids = input.windowValues(), weights = input.windowWeights();
-					int start = input.windowStart(), end = start + size;
-					for (int at = start; at < end; at++) for (int channel : channels) {
+					continue;
+				}
+				while (input.next(p)) {
+					long[] ids = new long[groupSlots.length];
+					for (int i = 0; i < ids.length; i++) ids[i] = input.value(groupSlots[i]);
+					GroupKey key = new GroupKey(ids); AggState state = groups.get(key);
+					if (state == null) {
+						state = new AggState(aggregates, 64, context, AggregateDistinctChannels.allHash(aggregates));
+						groups.put(key, state);
+					}
+					for (int channel : channels) {
 						AggregateSpec spec = aggregates[channel];
-						long id = arguments[channel] >= 0 ? ids[at] : spec.slot >= 0 ? 0L : spec.constant;
+						long id = arguments[channel] >= 0 ? input.value(arguments[channel])
+								: spec.slot >= 0 ? 0L : spec.constant;
 						if (id == UNKNOWN) continue;
 						if (spec.distinct) addDistinctWeighted(state, channel, id, 1L);
-						else {
-							long contribution = 1L;
-							if (exact[channel]) {
-								if (scale == 0L) scale = input.windowScale();
-								contribution = FactorizedTail.multiplyCounts(scale, weights[at]);
-							}
-							state.addWeighted(channel, id, contribution);
-						}
+						else state.addWeighted(channel, id, exact[channel] ? input.multiplicity() : 1L);
 					}
-				}
-				continue;
-			}
-			while (input.next(p)) {
-				long[] ids = new long[groupSlots.length];
-				for (int i = 0; i < ids.length; i++) ids[i] = input.value(groupSlots[i]);
-				GroupKey key = new GroupKey(ids); AggState state = groups.get(key);
-				if (state == null) {
-					state = new AggState(aggregates, 64, context, AggregateDistinctChannels.allHash(aggregates));
-					groups.put(key, state);
-				}
-				for (int channel : channels) {
-					AggregateSpec spec = aggregates[channel];
-					long id = arguments[channel] >= 0 ? input.value(arguments[channel])
-							: spec.slot >= 0 ? 0L : spec.constant;
-					if (id == UNKNOWN) continue;
-					if (spec.distinct) addDistinctWeighted(state, channel, id, 1L);
-					else state.addWeighted(channel, id, exact[channel] ? input.multiplicity() : 1L);
 				}
 			}
 		}
@@ -2157,6 +2161,237 @@ final class LmdbNativePackedFtree {
 		}
 	}
 
+	/**
+	 * Splits one mandatory nonterminal branch into additive prefix partitions. Used only by
+	 * consumers explicitly permitting repeated prefixes (currently COUNT channels). All other
+	 * branches are exact borrowed terminals. This bounds constructed intermediate lanes, not
+	 * retained source storage or an unsupported storage fallback's materialization.
+	 */
+	static final class ProjectionChunkBuilder implements AutoCloseable {
+		static final String ENABLED = "rdf4j.lmdb.packedProjectionBuild.enabled";
+		static final String MAX_LANES = "rdf4j.lmdb.packedProjectionBuild.maxLanes";
+		static final int WINDOW = 256;
+		final Runtime runtime;
+		final NodePlan split;
+		final int maximum;
+		final Chunk stagedRoots;
+		final BorrowedFactorBatch[] siblings;
+		int rootLane = -1, stagedCount, ticks;
+		boolean activeRoot, fallbackRoot, rootsEnded, closed;
+		long rootId, rootWeight, remaining;
+		BorrowedFactorBatch inputGroup;
+		BorrowedFactorBatch.Cursor inputReader;
+		BorrowedFactorBatch.Source inputSource;
+		NativeLmdbQuerySource.NativeProbe storeProbe;
+		PatternCursor storeCursor;
+		long[] inputIds, inputWeights, rawIds;
+		int inputAt, inputEnd;
+		long rawOffset, value, weight;
+		boolean borrowedInput;
+
+		static ProjectionChunkBuilder open(Runtime runtime) {
+			if (!runtime.borrowEnabled || !Boolean.parseBoolean(System.getProperty(ENABLED, "true"))) return null;
+			NodePlan split = null;
+			for (NodePlan node : runtime.plan.nodes) if (node.parent != null && node.children.length != 0) {
+				if (split != null || node.parent != runtime.plan.root) return null;
+				split = node;
+			}
+			if (split == null || split.filters.length != 0 || !contextFree(split.primary.pattern)) return null;
+			for (NodePlan node : runtime.plan.nodes) if (node.parent != null && node != split) {
+				if (!runtime.borrowableTerminal(node) || runtime.primaryEdges[node.ordinal].factorSource() == null)
+					return null;
+			}
+			int maximum = Integer.getInteger(MAX_LANES, 2048);
+			if (maximum < 1 || maximum > 65536) throw new IllegalArgumentException("invalid projection lane bound");
+			return new ProjectionChunkBuilder(runtime, split, maximum);
+		}
+
+		ProjectionChunkBuilder(Runtime runtime, NodePlan split, int maximum) {
+			this.runtime = runtime; this.split = split; this.maximum = maximum;
+			stagedRoots = new Chunk(runtime.plan, runtime.constantMultiplicity);
+			siblings = new BorrowedFactorBatch[runtime.plan.nodes.length];
+		}
+
+		Chunk next() throws IOException {
+			if (closed) throw new IllegalStateException("closed projection builder");
+			if (runtime.exhausted && !activeRoot) return null;
+			runtime.chunksStarted = true;
+			runtime.row.rollback(runtime.entryMark);
+			Chunk chunk = runtime.reusableChunk;
+			if (chunk == null) runtime.reusableChunk = chunk = new Chunk(runtime.plan, runtime.constantMultiplicity);
+			else chunk.reset();
+			NodeData root = chunk.data[runtime.plan.root.ordinal], child = chunk.data[split.ordinal];
+			root.ensureCapacity(ROOT_BATCH_SIZE); child.ensureOffsets(ROOT_BATCH_SIZE + 1); child.offsets[0] = 0;
+			// Equal values can straddle partitions/windows; never advertise global/slice uniqueness.
+			root.sliceValuesDistinct = child.sliceValuesDistinct = false;
+			for (NodePlan sibling : runtime.plan.root.children) if (sibling != split) {
+				NodeData data = chunk.data[sibling.ordinal];
+				data.borrowed = Runtime.ensureBorrowed(data, runtime.primaryEdges[sibling.ordinal].factorSource(), ROOT_BATCH_SIZE);
+				data.borrowed.reset(ROOT_BATCH_SIZE);
+			}
+			int examined = 0;
+			while (examined < maximum && root.size < ROOT_BATCH_SIZE) {
+				poll();
+				if (!activeRoot && !openNextRoot()) break;
+				if (fallbackRoot) {
+					if (root.size != 0) break; // do not replay completed prefixes when a later source declines
+					return fallback(chunk);
+				}
+				int parent = root.size, start = child.size;
+				root.setValue(parent, rootId); root.setWeight(parent, rootWeight);
+				child.offsets[parent] = start;
+				while (examined < maximum && nextMember()) {
+					examined++;
+					runtime.appendScannedValue(chunk, split, parent, runtime.constraintEdges[split.ordinal],
+							runtime.unaryRuntimes[split.ordinal], value, weight);
+				}
+				if (child.size != start) {
+					root.size++;
+					child.offsets[root.size] = child.size;
+					for (NodePlan sibling : runtime.plan.root.children) if (sibling != split)
+						chunk.data[sibling.ordinal].borrowed.copyLaneFrom(parent, siblings[sibling.ordinal], 0);
+				}
+				// An exhausted raw/borrowed relation needs no extra payload lookahead.
+				if (storeCursor == null && remaining == 0L) activeRoot = false;
+			}
+			if (root.size == 0 && rootsEnded && !activeRoot) return null;
+			root.state.reset(root.size); child.state.reset(child.size);
+			for (NodePlan leaf : split.children) {
+				runtime.buildSubtree(chunk, leaf);
+				chunk.cascade.propagateFrom(leaf);
+			}
+			chunk.cascade.propagateFrom(split);
+			chunk.cascade.propagateFrom(runtime.plan.root);
+			chunk.releaseBuildParents();
+			return chunk;
+		}
+
+		private boolean openNextRoot() throws IOException {
+			for (;;) {
+				poll();
+				NodeData roots = stagedRoots.data[runtime.plan.root.ordinal];
+				rootLane = roots.state.nextSetBit(rootLane + 1);
+				if (rootLane < 0 || rootLane >= stagedCount) {
+					if (rootsEnded) return false;
+					stagedRoots.reset(); roots.ensureCapacity(ROOT_BATCH_SIZE);
+					stagedCount = runtime.roots.fill(roots, ROOT_BATCH_SIZE);
+					if (stagedCount == 0) { rootsEnded = runtime.exhausted = true; return false; }
+					roots.size = stagedCount; roots.state.reset(stagedCount);
+					if (runtime.constantMultiplicity != 1L) for (int i = 0; i < stagedCount; i++)
+						roots.setWeight(i, FactorizedTail.multiplyCounts(roots.weight(i), runtime.constantMultiplicity));
+					runtime.applyNodeRestrictions(stagedRoots, runtime.plan.root);
+					rootLane = -1;
+					continue;
+				}
+				rootId = roots.value(rootLane); rootWeight = roots.weight(rootLane);
+				activeRoot = true; fallbackRoot = false;
+				boolean rejected = false;
+				for (NodePlan sibling : runtime.plan.root.children) if (sibling != split) {
+					EdgeRuntime edge = runtime.primaryEdges[sibling.ordinal];
+					long count = edge.bind(rootId);
+					if (count == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) { fallbackRoot = true; break; }
+					if (count <= 0L) { rejected = true; break; }
+					BorrowedFactorBatch group = siblings[sibling.ordinal];
+					if (group == null) siblings[sibling.ordinal] = group = new BorrowedFactorBatch(edge.factorSource(), 1);
+					group.reset(1);
+					if (!edge.cursor.borrow(group, 0)) { fallbackRoot = true; break; }
+				}
+				if (rejected) { activeRoot = false; continue; }
+				if (fallbackRoot) return true;
+				EdgeRuntime edge = runtime.primaryEdges[split.ordinal];
+				remaining = edge.bind(rootId); rawOffset = 0; inputAt = inputEnd = 0; borrowedInput = false;
+				if (remaining == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
+					if (storeProbe == null) storeProbe = runtime.row.source.newProbe();
+					storeCursor = edge.openStore(runtime, rootId, UNKNOWN, storeProbe);
+					return true;
+				}
+				if (remaining <= 0L) { activeRoot = false; continue; }
+				BorrowedFactorBatch.Source source = edge.factorSource();
+				if (source != null) {
+					if (inputGroup == null || inputGroup.source() != source) inputGroup = new BorrowedFactorBatch(source, 1);
+					inputGroup.reset(1);
+					if (edge.cursor.borrow(inputGroup, 0)) {
+						if (source != inputSource) {
+							BorrowedFactorBatch.Cursor previous = inputReader; inputReader = null; inputSource = null;
+							if (previous != null) previous.close();
+							inputReader = inputGroup.cursor(WINDOW); inputSource = source;
+						}
+						inputReader.bind(inputGroup, 0); remaining = inputGroup.count(0); borrowedInput = true;
+					}
+				}
+				return true;
+			}
+		}
+
+		private boolean nextMember() throws IOException {
+			poll();
+			if (storeCursor != null) {
+				long[] quad = storeCursor.next();
+				if (quad == null) {
+					PatternCursor previous = storeCursor; storeCursor = null; activeRoot = false; remaining = 0L;
+					previous.close(); return false;
+				}
+				value = quad[split.primary.keyIsSubject ? 2 : 0]; weight = 1L; return true;
+			}
+			if (remaining == 0L) { activeRoot = false; return false; }
+			if (inputAt == inputEnd) {
+				if (borrowedInput) {
+					int count = inputReader.nextWindow();
+					if (count == 0) throw new IllegalStateException("short borrowed nonterminal relation");
+					inputAt = inputReader.windowStart(); inputEnd = inputAt + count;
+					inputIds = inputReader.windowValues(); inputWeights = inputReader.windowWeights();
+				} else {
+					if (rawIds == null) rawIds = new long[WINDOW];
+					int count = (int) Math.min(WINDOW, remaining);
+					if (runtime.primaryEdges[split.ordinal].copyNeighbors(rawOffset, count, rawIds, 0) != count)
+						throw new IllegalStateException("short nonterminal adjacency window");
+					rawOffset += count; inputAt = 0; inputEnd = count; inputIds = rawIds; inputWeights = null;
+				}
+			}
+			value = inputIds[inputAt]; weight = inputWeights == null ? 1L : inputWeights[inputAt]; inputAt++;
+			if (weight <= 0L || weight > remaining) throw new IllegalStateException("invalid nonterminal weight");
+			remaining -= weight;
+			return true;
+		}
+
+		/** Preserve correctness when an exact terminal descriptor cannot be exported for this root. */
+		private Chunk fallback(Chunk chunk) throws IOException {
+			chunk.reset();
+			NodeData root = chunk.data[runtime.plan.root.ordinal]; root.ensureCapacity(1);
+			root.setValue(0, rootId); root.setWeight(0, rootWeight); root.size = 1; root.state.reset(1);
+			for (NodePlan child : runtime.plan.root.children) {
+				runtime.buildSubtree(chunk, child); chunk.cascade.propagateFrom(child);
+			}
+			chunk.cascade.propagateFrom(runtime.plan.root); chunk.releaseBuildParents();
+			activeRoot = fallbackRoot = false;
+			return chunk;
+		}
+
+		private void poll() {
+			LmdbNativeProbeDeadline.poll(++ticks);
+			if (runtime.row.cancellation.isCancellationRequested())
+				throw new java.util.concurrent.CancellationException("projection construction cancelled");
+		}
+
+		@Override public void close() {
+			if (closed) return; closed = true;
+			Throwable failure = null;
+			try { if (storeCursor != null) storeCursor.close(); }
+			catch (RuntimeException | Error problem) { failure = problem; }
+			finally { storeCursor = null; }
+			try { if (inputReader != null) inputReader.close(); }
+			catch (RuntimeException | Error problem) {
+				if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
+			} finally { inputReader = null; }
+			try { if (storeProbe != null) storeProbe.close(); }
+			catch (RuntimeException | Error problem) {
+				if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
+			} finally { storeProbe = null; }
+			if (failure instanceof RuntimeException problem) throw problem;
+			if (failure instanceof Error problem) throw problem;
+		}
+	}
+
 	/** Runtime owns one retained LMDB probe and all adjacency views for the physical plan. */
 	static final class Runtime implements AutoCloseable {
 		final Plan plan;
@@ -2192,6 +2427,16 @@ final class LmdbNativePackedFtree {
 		boolean constantsExhausted;
 		/** True once the first chunk was pulled; root partitions may only be planned on an unconsumed producer. */
 		boolean chunksStarted;
+		ProjectionChunkBuilder projectionBuilder;
+		boolean projectionBuilderChecked;
+
+		Chunk nextProjectionChunk() throws IOException {
+			if (!projectionBuilderChecked) {
+				projectionBuilderChecked = true;
+				projectionBuilder = ProjectionChunkBuilder.open(this);
+			}
+			return projectionBuilder == null ? nextChunk() : projectionBuilder.next();
+		}
 
 		private Runtime(Plan plan, RowState row, NativeLmdbQuerySource.NativeProbe probe, RootProducer roots,
 				PatternRuntime[] constantPatterns) {
@@ -2291,6 +2536,8 @@ final class LmdbNativePackedFtree {
 
 		/** Installs a worker's next bounded partition producer, closing the previous one. */
 		void resetRoots(RootProducer next) {
+			if (projectionBuilder != null) projectionBuilder.close();
+			projectionBuilder = null; projectionBuilderChecked = false;
 			RootProducer previous = roots;
 			roots = next;
 			exhausted = constantsExhausted;
@@ -3005,6 +3252,8 @@ final class LmdbNativePackedFtree {
 			closed = true;
 			try {
 				Throwable failure = null;
+				if (projectionBuilder != null) try { projectionBuilder.close(); }
+				catch (RuntimeException | Error problem) { failure = problem; }
 				for (EdgeRuntime edge : primaryEdges) failure = closeEdge(edge, failure);
 				for (EdgeRuntime[] edges : constraintEdges) {
 					if (edges != null) {
@@ -5045,12 +5294,19 @@ final class LmdbNativePackedFtree {
 		final long[] windowPrefixes;
 		NodePlan windowNode;
 		long[] windowIds, windowWeights;
+		long[] packedWindowIds, packedWindowWeights, presenceWeights;
+		BorrowedFactorBatch.Cursor borrowedWindow;
+		BorrowedFactorBatch.Source borrowedWindowSource;
+		BorrowedFactorBatch borrowedWindowBatch;
+		long borrowedWindowGeneration;
+		int borrowedWindowParent, windowOffset, scalarWindowAt;
+		boolean scalarWindow, borrowedParent;
 		int windowLane, windowEnd, windowSize;
 		boolean windowMode, changedPrefix;
 		Chunk chunk;
 		PackedProjectionCursor projection;
 		int active = -1, completed = -1, tick;
-		boolean scalarPending, positioned, closed;
+		boolean scalarPending, positioned, closed, started, prefixPartitions;
 		ProjectionCounts counts;
 		long weight;
 
@@ -5080,23 +5336,29 @@ final class LmdbNativePackedFtree {
 				windowNodes[i] = candidate; windowPrefixes[i] = path;
 			}
 		}
+		@Override public void permitPrefixPartitions() {
+			if (started || closed) throw new IllegalStateException("partition permission must precede input");
+			prefixPartitions = true;
+		}
 		@Override public boolean nextBatch() throws IOException {
 			if (closed) return false;
 			if (chunk != null && completed != outputs.length - 1)
 				throw new IllegalStateException("unfinished chunk projection");
+			started = true;
 			try {
 				if (row.cancellation.isCancellationRequested()) { close(); return false; }
 				for (;;) {
-					chunk = runtime.nextChunk();
+					chunk = prefixPartitions ? runtime.nextProjectionChunk() : runtime.nextChunk();
 					if (chunk == null) { close(); return false; }
 					NodeData root = chunk.data[plan.root.ordinal];
 					int first = root.state.nextSetBit(root.startLane());
 					if (first >= 0 && first < root.endLane()) break;
 					if (row.cancellation.isCancellationRequested()) { close(); return false; }
 				}
-				// Freeze all demanded payload before publication. Undemanded leaves remain borrowed.
-				chunk.materializeBorrowed(unionDemand);
+				// The relations are immutable, not necessarily decoded. Materialize only when
+				// a requested traversal cannot consume a borrowed window, never at publication.
 				active = completed = -1; positioned = false; projection = null; windowMode = false; windowSize = 0;
+				scalarWindow = borrowedParent = false; borrowedWindowBatch = null;
 				counts = new ProjectionCounts(chunk, row);
 				return true;
 			} catch (PackedDecline decline) {
@@ -5114,10 +5376,15 @@ final class LmdbNativePackedFtree {
 				if ((tick & 255) == 0) if (row.cancellation.isCancellationRequested()) { close(); return false; }
 				positioned = false;
 				if (request == completed) return false;
+				NodePlan candidate = windowNodes[request];
+				if ((active == request && scalarWindow) || (active != request && windowsEnabled
+						&& candidate != null && chunk.data[candidate.ordinal].borrowed != null))
+					return nextBorrowedScalar(request);
 				if (active != request) {
 					if (request != completed + 1 || active != completed)
 						throw new IllegalStateException("unfinished marginal");
-					active = request; windowMode = false;
+					materializeForScalar(demands[request]);
+					active = request; windowMode = scalarWindow = false;
 					projection = demands[request] == 0L ? null
 							: new PackedProjectionCursor(chunk, demands[request], false, false);
 					scalarPending = true;
@@ -5143,8 +5410,35 @@ final class LmdbNativePackedFtree {
 			return node.slot;
 		}
 
+		/** A scalar-only consumer still pulls at most one borrowed decode window at a time. */
+		private boolean nextBorrowedScalar(int request) {
+			if (active == request && scalarWindow && scalarWindowAt + 1 < windowOffset + windowSize) {
+				validateBorrowedWindow();
+				scalarWindowAt++;
+				positioned = true;
+				return true;
+			}
+			if (advanceWindow(request, true) == 0) return false;
+			scalarWindowAt = windowOffset;
+			return true;
+		}
+
+		private void materializeForScalar(long demand) {
+			boolean changed = false;
+			for (NodePlan node : plan.nodes)
+				changed |= chunk.data[node.ordinal].borrowed != null && (demand & (1L << node.slot)) != 0L;
+			if (changed) {
+				chunk.materializeBorrowed(demand);
+				// Cached lane arrays describe the previous representation; relation semantics
+				// did not change, but newly packed lanes require a fresh positional cache.
+				counts = new ProjectionCounts(chunk, row);
+			}
+		}
+
 		/** A window never crosses its parent binding: all other requested columns remain scalar. */
-		@Override public int nextWindow(int request) {
+		@Override public int nextWindow(int request) { return advanceWindow(request, false); }
+
+		private int advanceWindow(int request, boolean scalar) {
 			if (closed || chunk == null) throw new IllegalStateException("no projection chunk");
 			java.util.Objects.checkIndex(request, outputs.length);
 			try {
@@ -5155,20 +5449,18 @@ final class LmdbNativePackedFtree {
 					if (request != completed + 1 || active != completed)
 						throw new IllegalStateException("unfinished marginal");
 					if (windowColumn(request) < 0) throw new IllegalStateException("no packed window capability");
-					active = request; windowMode = true; windowNode = windowNodes[request];
+					active = request; windowMode = true; scalarWindow = scalar; windowNode = windowNodes[request];
 					projection = windowPrefixes[request] == 0L ? null
 							: new PackedProjectionCursor(chunk, windowPrefixes[request], false, false);
-					scalarPending = true; windowLane = -1; windowEnd = 0;
-					if (windowIds == null) { windowIds = new long[PROJECTION_WINDOW]; windowWeights = new long[PROJECTION_WINDOW]; }
-				} else if (!windowMode) throw new IllegalStateException("cannot switch projection traversal mode");
+					scalarPending = true; windowLane = -1; windowEnd = 0; borrowedParent = false;
+					borrowedWindowBatch = null;
+				} else if (!windowMode || scalarWindow != scalar)
+					throw new IllegalStateException("cannot switch projection traversal mode");
 				NodeData data = chunk.data[windowNode.ordinal];
+				if (data.borrowed != null) return advanceBorrowedWindow(data);
 				while (windowLane < 0 || windowLane >= windowEnd) {
 					pollWindow();
-					boolean present;
-					if (projection == null) { present = scalarPending; scalarPending = false; }
-					else present = projection.next();
-					if (!present) { completed = active; return 0; }
-					changedPrefix = true; weight = 0L;
+					if (!nextWindowParent()) { completed = active; return 0; }
 					int from;
 					if (windowNode.parent == null) { from = data.startLane(); windowEnd = data.endLane(); }
 					else {
@@ -5177,6 +5469,10 @@ final class LmdbNativePackedFtree {
 					}
 					windowLane = data.state.nextSetBit(from);
 				}
+				if (packedWindowIds == null) {
+					packedWindowIds = new long[PROJECTION_WINDOW]; packedWindowWeights = new long[PROJECTION_WINDOW];
+				}
+				windowIds = packedWindowIds; windowWeights = packedWindowWeights; windowOffset = 0;
 				int count = 0;
 				while (count < PROJECTION_WINDOW && windowLane >= 0 && windowLane < windowEnd) {
 					windowIds[count] = data.value(windowLane);
@@ -5193,6 +5489,54 @@ final class LmdbNativePackedFtree {
 				throw failure;
 			}
 		}
+
+		private boolean nextWindowParent() {
+			boolean present;
+			if (projection == null) { present = scalarPending; scalarPending = false; }
+			else present = projection.next();
+			if (present) { changedPrefix = true; weight = 0L; }
+			return present;
+		}
+
+		/** Keep the leaf in its source, including context-weighted fragments split across pages. */
+		private int advanceBorrowedWindow(NodeData data) {
+			for (;;) {
+				pollWindow();
+				if (!borrowedParent) {
+					if (!nextWindowParent()) { completed = active; return 0; }
+					BorrowedFactorBatch groups = data.borrowed;
+					int parent = projection.lanes[windowNode.parent.ordinal];
+					if (borrowedWindowSource != groups.source()) {
+						BorrowedFactorBatch.Cursor previous = borrowedWindow;
+						borrowedWindow = null; borrowedWindowSource = null;
+						if (previous != null) previous.close();
+						borrowedWindow = groups.cursor(PROJECTION_WINDOW); borrowedWindowSource = groups.source();
+					}
+					borrowedWindow.bind(groups, parent);
+					borrowedWindowBatch = groups; borrowedWindowGeneration = groups.generation();
+					borrowedWindowParent = parent; borrowedParent = true;
+				}
+				int count = borrowedWindow.nextWindow();
+				if (count == 0) { borrowedParent = false; continue; }
+				windowOffset = borrowedWindow.windowStart(); windowIds = borrowedWindow.windowValues();
+				if (exact[active]) windowWeights = borrowedWindow.windowWeights();
+				else {
+					if (presenceWeights == null) { presenceWeights = new long[PROJECTION_WINDOW]; Arrays.fill(presenceWeights, 1L); }
+					windowWeights = presenceWeights;
+				}
+				pollWindow(); windowSize = count; positioned = true;
+				return count;
+			}
+		}
+
+		private void validateBorrowedWindow() {
+			if (borrowedWindowBatch != null) {
+				if (borrowedWindowBatch.generation() != borrowedWindowGeneration)
+					throw new IllegalStateException("borrowed projection source was reset");
+				borrowedWindowBatch.count(borrowedWindowParent);
+			}
+		}
+
 		private void pollWindow() {
 			LmdbNativeProbeDeadline.poll(++tick);
 			if (row.cancellation.isCancellationRequested())
@@ -5201,10 +5545,11 @@ final class LmdbNativePackedFtree {
 		private void checkWindow() {
 			if (closed || !positioned || !windowMode || windowSize == 0)
 				throw new IllegalStateException("no packed projection window");
+			validateBorrowedWindow();
 		}
 		@Override public long[] windowValues() { checkWindow(); return windowIds; }
 		@Override public long[] windowWeights() { checkWindow(); return windowWeights; }
-		@Override public int windowStart() { checkWindow(); return 0; }
+		@Override public int windowStart() { checkWindow(); return windowOffset; }
 		@Override public boolean windowPrefixChanged() { checkWindow(); return changedPrefix; }
 		@Override public long windowScale() {
 			checkWindow();
@@ -5224,14 +5569,22 @@ final class LmdbNativePackedFtree {
 			boolean included = false;
 			for (int output : outputs[active]) if (output == slot) { included = true; break; }
 			if (!included) throw new IllegalArgumentException("unrequested projection slot");
-			if (windowMode && slot == windowNode.slot) throw new IllegalStateException("read varying slot from window");
+			if (windowMode && slot == windowNode.slot) {
+				if (!scalarWindow) throw new IllegalStateException("read varying slot from window");
+				validateBorrowedWindow();
+				return windowIds[scalarWindowAt];
+			}
 			return projectedValue(plan, row, chunk, projection, slot);
 		}
 		@Override public long multiplicity() {
 			if (!positioned || closed) throw new IllegalStateException("unpositioned marginal");
-			if (windowMode) throw new IllegalStateException("window weight belongs to each member");
-			if (!exact[active]) return 1L;
 			try {
+				if (windowMode) {
+					if (!scalarWindow) throw new IllegalStateException("window weight belongs to each member");
+					return exact[active]
+							? FactorizedTail.multiplyCounts(windowWeights[scalarWindowAt], windowScale()) : 1L;
+				}
+				if (!exact[active]) return 1L;
 				if (row.cancellation.isCancellationRequested())
 					throw new java.util.concurrent.CancellationException("factor projection cancelled");
 				if (weight == 0L) weight = counts.weight(projection);
@@ -5243,7 +5596,19 @@ final class LmdbNativePackedFtree {
 		}
 		@Override public void close() {
 			if (closed) return; closed = true;
-			chunk = null; projection = null; counts = null; windowNode = null; windowIds = windowWeights = null; if (ownsRuntime) runtime.close();
+			chunk = null; projection = null; counts = null; windowNode = null;
+			windowIds = windowWeights = packedWindowIds = packedWindowWeights = presenceWeights = null;
+			borrowedWindowBatch = null;
+			Throwable failure = null;
+			try { if (borrowedWindow != null) borrowedWindow.close(); }
+			catch (RuntimeException | Error closing) { failure = closing; }
+			finally { borrowedWindow = null; borrowedWindowSource = null; }
+			try { if (ownsRuntime) runtime.close(); }
+			catch (RuntimeException | Error closing) {
+				if (failure == null) failure = closing; else if (failure != closing) failure.addSuppressed(closing);
+			}
+			if (failure instanceof RuntimeException problem) throw problem;
+			if (failure instanceof Error problem) throw problem;
 		}
 	}
 

@@ -1035,6 +1035,7 @@ final class LmdbNativeKernelBindings {
 		BoundProjectionCursor(NativeFactorProjections producer, int[] slots, BoundPlan owner) {
 			this.producer = producer; this.slots = slots; this.owner = owner;
 		}
+		@Override public void permitPrefixPartitions() { producer.permitPrefixPartitions(); }
 		@Override public boolean nextBatch() { return advance(-1); }
 		@Override public boolean next(int projection) { return advance(projection); }
 		private boolean advance(int projection) {

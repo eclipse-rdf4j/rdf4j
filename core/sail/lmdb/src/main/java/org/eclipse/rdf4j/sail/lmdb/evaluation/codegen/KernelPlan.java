@@ -71,6 +71,14 @@ public interface KernelPlan extends AutoCloseable {
 	default ProjectionCursor openProjections(int[][] outputColumns, boolean[] exactWeights) { return null; }
 
 	interface ProjectionCursor extends AutoCloseable {
+		/**
+		 * Permit repeated binding prefixes in disjoint additive relation partitions. Call before
+		 * reading input, only when all consumers merge partitions without changing semantics.
+		 * Presence channels must deduplicate identities across partitions; COUNT channels add
+		 * exact contributions. This does not authorize replaying effectful expressions, numeric
+		 * reassociation or using partition counts as distinct-prefix counts. Producers may ignore it.
+		 */
+		default void permitPrefixPartitions() { }
 		boolean nextBatch();
 		/**
 		 * Output-column mask proven invariant throughout the current batch, across all projections.

@@ -2181,6 +2181,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							columns, exact, cancel);
 			Throwable failure = null;
 			try {
+				boolean countPartitions = LmdbNativeKernelIr.permitsPrefixPartitions(aggregate);
+				if (countPartitions) input.permitPrefixPartitions();
 				while (input.nextBatch()) {
 					int flatCount = input.flatRowCount();
 					if (flatCount != 0) {

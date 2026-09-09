@@ -2047,7 +2047,10 @@ final class LmdbNativeKernelEmitter {
 				body.append("new int[] {"); for (int c : projection) body.append(c).append(','); body.append("},");
 			}
 			body.append("}, new boolean[] {"); for (boolean e : exact) body.append(e).append(',');
-			body.append("}, cancel);\n        Throwable failure = null;\n        try {\n            while (m.nextBatch()) {\n");
+			body.append("}, cancel);\n        Throwable failure = null;\n        try {\n");
+			boolean countPartitions = LmdbNativeKernelIr.permitsPrefixPartitions(aggregate);
+			if (countPartitions) body.append("            m.permitPrefixPartitions();\n");
+			body.append("            while (m.nextBatch()) {\n");
 			int[] allChannels = new int[aggregate.outputs.length];
 			for (int i = 0; i < allChannels.length; i++) allChannels[i] = i;
 			int flatMethod = projections.length;

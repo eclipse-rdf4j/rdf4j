@@ -8,6 +8,14 @@ import java.io.IOException;
 
 /** A single owned, bounded physical relation with independent demand-projected readers per batch. */
 interface NativeFactorProjections extends AutoCloseable {
+	/**
+	 * Permit repeated binding prefixes in disjoint additive relation partitions. Call before
+	 * reading input, only when all consumers merge partitions without changing semantics.
+	 * Presence channels must deduplicate identities across partitions; COUNT channels add
+	 * exact contributions. This does not authorize replaying effectful expressions, numeric
+	 * reassociation or using partition counts as distinct-prefix counts. Producers may ignore it.
+	 */
+	default void permitPrefixPartitions() { }
 	boolean nextBatch() throws IOException;
 
 	/** Sole varying output in a bounded projection window, or -1 to decline without advancing. */

@@ -33,6 +33,16 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  */
 @Experimental
 final class LmdbNativeKernelIr {
+	/** Only order-insensitive identity/count channels may merge repeated prefix partitions. */
+	static boolean permitsPrefixPartitions(Aggregate aggregate) {
+		for (AggregateOutput output : aggregate.outputs) {
+			if (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT && output.kind != AGG_COUNT_DISTINCT)
+				return false;
+			if (output.kind == AGG_COUNT_DISTINCT && output.orderedDomain >= 0) return false;
+		}
+		return true;
+	}
+
 
 	static final long NULL_ID = -1L;
 
