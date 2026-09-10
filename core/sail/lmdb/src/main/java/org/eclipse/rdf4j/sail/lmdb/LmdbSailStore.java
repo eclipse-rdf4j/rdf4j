@@ -66,6 +66,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
 
 /**
  * A disk based {@link SailStore} implementation that keeps committed statements in a {@link TripleStore}.
@@ -74,6 +75,8 @@ class LmdbSailStore implements SailStore {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
 	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
+
+	private final File dataDir;
 
 	private final TripleStore tripleStore;
 
@@ -301,6 +304,7 @@ class LmdbSailStore implements SailStore {
 	public LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 			boolean sketchBasedJoinEstimatorEnabled)
 			throws IOException, SailException {
+		this.dataDir = dataDir;
 		this.setFactory = new PersistentSetFactory<>(dataDir);
 		this.bulkOperationSize = config.getBulkOperationSize();
 		this.backgroundRawSamplingMaxMillisPerCycle = config.getBackgroundRawSamplingMaxMillisPerCycle();
@@ -346,6 +350,7 @@ class LmdbSailStore implements SailStore {
 				close();
 			}
 		}
+		logLmdbStats(Level.INFO, "on startup");
 	}
 
 	private final class GuardedEstimatorStatementSource implements SketchStatementSource {
@@ -503,6 +508,9 @@ class LmdbSailStore implements SailStore {
 				}
 				if (filterSelectivityStats != null) {
 					filterSelectivityStats.persistIfDirty();
+				}
+				if (valueStore != null && tripleStore != null) {
+					logLmdbStats(Level.INFO, "on shutdown");
 				}
 			} finally {
 				try {
@@ -692,6 +700,21 @@ class LmdbSailStore implements SailStore {
 	public EvaluationStatistics getEvaluationStatistics() {
 		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
 				statementPatternCardinalitySource);
+	}
+
+	LmdbStore.LmdbStats getLmdbStats() throws IOException {
+		return new LmdbStore.LmdbStats(valueStore.getLmdbStats(), tripleStore.getLmdbStats());
+	}
+
+	private void logLmdbStats(Level level, String phase) {
+		if (logger.isEnabledForLevel(level)) {
+			try {
+				logger.atLevel(level).log("Native LMDB statistics {} for {}: {}", phase, dataDir, getLmdbStats());
+			} catch (IOException | SailException e) {
+				// Diagnostic failures must not change the outcome of a transaction or prevent cleanup.
+				logger.warn("Unable to read native LMDB statistics {} for {}", phase, dataDir, e);
+			}
+		}
 	}
 
 	@Override
@@ -1029,6 +1052,7 @@ class LmdbSailStore implements SailStore {
 						valueStore.commit();
 						// The triple/value stores are authoritative once both commits succeed.
 						storeTxnStarted.set(false);
+						logLmdbStats(Level.TRACE, "after commit");
 						estimatorTouchedInTransaction = false;
 						estimatorTouchedSinceStoreTxnStart.set(false);
 						if (filterSelectivityStats != null) {
@@ -1317,6 +1341,8 @@ class LmdbSailStore implements SailStore {
 		private void startTransaction(boolean preferThreading) throws SailException {
 			synchronized (storeTxnStarted) {
 				if (storeTxnStarted.compareAndSet(false, true)) {
+					// Capture committed data before starting either writer or queuing any native writes.
+					logLmdbStats(Level.TRACE, "before writes");
 					multiThreadingActive = preferThreading && enableMultiThreading;
 					nextTransactionAsync = multiThreadingActive;
 					asyncTransactionFinished = false;

@@ -59,6 +59,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -1295,6 +1296,27 @@ class ValueStore extends AbstractValueFactory {
 
 	TxnManager getTxnManager() {
 		return txnManager;
+	}
+
+	Map<String, LmdbStore.LmdbDatabaseStats> getLmdbStats() throws IOException {
+		return readTransaction(env, (stack, txn) -> {
+			Map<String, LmdbStore.LmdbDatabaseStats> stats = new LinkedHashMap<>();
+			MDBStat stat = MDBStat.malloc(stack);
+			addLmdbStats(stats, "main", txn, dbi, stat);
+			addLmdbStats(stats, "unused_ids", txn, unusedDbi, stat);
+			addLmdbStats(stats, "free_ids", txn, freeDbi, stat);
+			addLmdbStats(stats, "ref_counts", txn, refCountsDbi, stat);
+			for (TripleIndex index : tripleTermIndexes) {
+				addLmdbStats(stats, index.getName(true), txn, index.getDB(true), stat);
+			}
+			return stats;
+		});
+	}
+
+	private static void addLmdbStats(Map<String, LmdbStore.LmdbDatabaseStats> stats, String name, long txn, int dbi,
+			MDBStat stat) throws IOException {
+		E(mdb_stat(txn, dbi, stat));
+		stats.put(name, LmdbStore.LmdbDatabaseStats.from(stat));
 	}
 
 	<T> T readTransaction(long env, Transaction<T> transaction) throws IOException {
