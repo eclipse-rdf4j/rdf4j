@@ -557,7 +557,7 @@ public class ValueStoreTest {
 		long writeStamp = 0;
 		try {
 			// Leave exactly one permit for the constructor that will be interrupted.
-			for (int i = 0; i < TxnManager.POOL_SIZE - 1; i++) {
+			for (int i = 0; i < TxnManager.POOL_SIZE - 2; i++) {
 				heldReaders.add(txnManager.createReadTxn());
 			}
 			writeStamp = lockManager.writeLock();
