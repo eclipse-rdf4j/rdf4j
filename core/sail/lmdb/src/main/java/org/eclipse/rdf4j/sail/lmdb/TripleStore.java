@@ -723,7 +723,8 @@ class TripleStore implements Closeable {
 		final String explicitDbName = index.getName(true);
 		final String inferredDbName = index.getName(false);
 
-		return txnManager.doWith((stack, txn) -> {
+		// Query optimization already holds the dataset's read transaction.
+		return txnManager.doWithPriority((stack, txn) -> {
 			long txnId = mdb_txn_id(txn);
 			if (bindingMask == 0) {
 				double exact = (double) estimator.totalEntries(txnId, explicitDbName)
@@ -791,7 +792,7 @@ class TripleStore implements Closeable {
 		int relevantParts = index.getPatternScore(subj, pred, obj, context);
 		if (relevantParts == 0) {
 			// it's worthless to use the index, just retrieve all entries in the db
-			return txnManager.doWith((stack, txn) -> {
+			return txnManager.doWithPriority((stack, txn) -> {
 				double cardinality = 0;
 				for (boolean explicit : new boolean[] { true, false }) {
 					int dbi = index.getDB(explicit);
@@ -803,7 +804,8 @@ class TripleStore implements Closeable {
 			});
 		}
 
-		return txnManager.doWith((stack, txn) -> {
+		// The legacy fallback runs under the same dataset transaction as the page estimator.
+		return txnManager.doWithPriority((stack, txn) -> {
 			final Statistics s = new Statistics();
 			MDBVal maxKey = MDBVal.malloc(stack);
 			ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
