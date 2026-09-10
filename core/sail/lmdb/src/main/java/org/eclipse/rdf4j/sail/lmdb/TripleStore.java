@@ -453,6 +453,8 @@ class TripleStore implements Closeable {
 				}
 			}
 
+			txnManager.close();
+
 			mdb_env_close(env);
 			env = 0;
 
