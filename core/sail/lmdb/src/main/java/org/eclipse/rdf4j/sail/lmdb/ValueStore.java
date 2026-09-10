@@ -1302,7 +1302,7 @@ class ValueStore extends AbstractValueFactory {
 					}
 				}
 			};
-		} catch (IOException e) {
+		} catch (Throwable e) {
 			txn.close();
 			throw e;
 		}
