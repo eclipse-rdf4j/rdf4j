@@ -291,8 +291,7 @@ class ValueStore extends AbstractValueFactory {
 						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
 					}
 					if (rc == MDB_SUCCESS && keyData.mv_data().get(0) == ID_KEY) {
-						// remove lower 2 type bits
-						nextId = Math.max(nextId, (data2id(keyData.mv_data()) >> 2) + 1);
+						nextId = Math.max(nextId, ValueIds.getValue(data2id(keyData.mv_data())) + 1);
 					}
 				} finally {
 					if (cursor != 0) {

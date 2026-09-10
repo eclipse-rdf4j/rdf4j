@@ -527,6 +527,23 @@ public class ValueStoreTest {
 		assertEquals(tripleTerm, lazyValue);
 	}
 
+	@Test
+	public void testNextIdCorrectlyIncrements() throws Exception {
+		valueStore.startTransaction(true);
+		long lastId = 0;
+		for (int i = 0; i < 10; i++) {
+			lastId = valueStore.storeValue(Values.iri("some:iri" + i));
+		}
+		valueStore.commit();
+
+		valueStore.close();
+		valueStore = createValueStore();
+
+		long id = valueStore.storeValue(Values.iri("some:iri-xyz"));
+		// value of the next ID should be one greater than the last ID stored before closing the store
+		assertEquals(ValueIds.getValue(lastId) + 1, ValueIds.getValue(id));
+	}
+
 	private long storeValueAndReopen(Value value, LmdbStoreConfig config) throws Exception {
 		valueStore.close();
 		valueStore = createValueStore(config);
