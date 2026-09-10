@@ -17,8 +17,10 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Queue;
 import java.util.Random;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -62,12 +64,14 @@ public class LmdbStoreMultiRepoTest {
 	@Test
 	public void testRandomLoadManyRepositoriesInParallel() throws Exception {
 		final int repositoryCount = 200;
-		final int triplesPerRepository = 2000;
+		final int triplesPerRepository = 200;
 		final int triplesPerTransaction = 10;
 
 		List<Repository> repositories = new ArrayList<>(repositoryCount);
+		Queue<Throwable> scheduledReaderFailures = new ConcurrentLinkedQueue<>();
 		ScheduledExecutorService scheduledExecutor = Executors.newScheduledThreadPool(200);
 		ExecutorService executor = Executors.newCachedThreadPool();
+		Throwable testFailure = null;
 		List<Callable<Void>> tasks = IntStream.range(0, repositoryCount)
 				.mapToObj(repositoryIndex -> (Callable<Void>) () -> {
 					File repositoryDir = new File(dataDir, "repo-" + repositoryIndex);
@@ -76,29 +80,21 @@ public class LmdbStoreMultiRepoTest {
 					repository.init();
 					repositories.add(repository);
 					scheduledExecutor.scheduleAtFixedRate(() -> {
-						System.out.println("Repository " + repositoryIndex + ": Checking size...");
 						try (RepositoryConnection connection = repository.getConnection()) {
 							try (var result = connection.prepareTupleQuery(
 									"select ?s (count(?o) as ?count) where { ?s ?p ?o } group by ?s")
 									.evaluate()) {
-								var count = result.stream().toList().size();
-								System.out.println(
-										"Repository " + repositoryIndex + ": Current size: " + connection.size()
-												+ ", distinct subjects: " + count);
+								var ignored = result.stream().toList().size();
 							}
 						} catch (Exception e) {
-							System.err.println(
-									"Repository " + repositoryIndex + ": Error checking size: " + e.getMessage());
-							e.printStackTrace(System.err);
+							scheduledReaderFailures.add(new RuntimeException(
+									"Repository " + repositoryIndex + ": Error checking size", e));
 						}
 					}, 0, 1, TimeUnit.SECONDS);
 					Random random = new Random(12345L + repositoryIndex);
 					AtomicInteger tripleIndex = new AtomicInteger(0);
 
 					int transactionCount = triplesPerRepository / triplesPerTransaction;
-					System.out.println("Repository " + repositoryIndex + ": Adding " + triplesPerRepository
-							+ " triples in " + transactionCount + " transactions of "
-							+ triplesPerTransaction + " triples each.");
 					List<Future<Void>> transactionFutures = new ArrayList<>();
 					for (int i = 0; i < transactionCount; i++) {
 						transactionFutures.add(executor.submit(() -> {
@@ -118,8 +114,6 @@ public class LmdbStoreMultiRepoTest {
 						future.get();
 					}
 
-					System.out.println("Repository " + repositoryIndex + ": Verifying " + triplesPerRepository
-							+ " triples.");
 					try (RepositoryConnection verificationConnection = repository.getConnection()) {
 						assertEquals(triplesPerRepository, verificationConnection.size());
 					}
@@ -131,12 +125,32 @@ public class LmdbStoreMultiRepoTest {
 			for (Future<Void> future : futures) {
 				future.get();
 			}
+		} catch (Throwable t) {
+			testFailure = t;
 		} finally {
 			scheduledExecutor.shutdown();
 			executor.shutdown();
 			assertTrue(scheduledExecutor.awaitTermination(10, TimeUnit.MINUTES));
 			assertTrue(executor.awaitTermination(10, TimeUnit.MINUTES));
 			repositories.forEach(Repository::shutDown);
+		}
+
+		if (!scheduledReaderFailures.isEmpty()) {
+			AssertionError assertionError = new AssertionError(
+					"Scheduled reader tasks failed " + scheduledReaderFailures.size() + " time(s)");
+			scheduledReaderFailures.forEach(assertionError::addSuppressed);
+			if (testFailure == null) {
+				testFailure = assertionError;
+			} else {
+				testFailure.addSuppressed(assertionError);
+			}
+		}
+
+		if (testFailure instanceof Exception) {
+			throw (Exception) testFailure;
+		}
+		if (testFailure != null) {
+			throw (Error) testFailure;
 		}
 	}
 

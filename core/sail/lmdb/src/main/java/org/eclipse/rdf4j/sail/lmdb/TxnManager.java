@@ -88,7 +88,7 @@ final class TxnManager {
 
 	private static final int CACHED_POOLS = 1 << 4;
 	/** Maximum number of read transactions this manager hands out concurrently. */
-	static final int POOL_SIZE = 1 << 7;
+	static final int POOL_SIZE = 1 << 7; // 128
 
 	/** Round-robin distribution of value pools across transactions. */
 	private static final AtomicInteger POOL_ROTATION = new AtomicInteger();
@@ -650,7 +650,7 @@ final class TxnManager {
 			}
 		}
 
-		private void abortAndMarkClosed() {
+		private synchronized void abortAndMarkClosed() {
 			if (!closed) {
 				mdb_txn_abort(txn);
 			}
