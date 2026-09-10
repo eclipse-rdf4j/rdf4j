@@ -80,16 +80,17 @@ public final class KernelContext {
 	public org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger memoryLedger;
 	private java.util.function.Supplier<org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger> memoryLedgerSupplier;
 
-	public KernelContext withMemoryLedgerSupplier(java.util.function.Supplier<org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger> supplier) {
+	public KernelContext withMemoryLedgerSupplier(
+			java.util.function.Supplier<org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger> supplier) {
 		this.memoryLedgerSupplier = java.util.Objects.requireNonNull(supplier, "supplier");
 		return this;
 	}
 
 	public org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger groupMemoryLedger() {
-		if (memoryLedger == null && memoryLedgerSupplier != null) memoryLedger = memoryLedgerSupplier.get();
+		if (memoryLedger == null && memoryLedgerSupplier != null)
+			memoryLedger = memoryLedgerSupplier.get();
 		return memoryLedger;
 	}
-
 
 	public KernelContext withMemoryLedger(org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger ledger) {
 		this.memoryLedger = java.util.Objects.requireNonNull(ledger, "ledger");

@@ -84,7 +84,7 @@ class ThemeQueryBenchmarkSmokeIT {
 		properties.setProperty(ThemeQueryBenchmark.DATASET_REVISION_PROPERTY, "theme-data-v1-default-graph");
 		assertFalse(ThemeQueryBenchmark.hasCurrentDatasetRevision(properties));
 
-		properties.setProperty(ThemeQueryBenchmark.DATASET_REVISION_PROPERTY, "theme-data-v2-named-graphs");
+		properties.setProperty(ThemeQueryBenchmark.DATASET_REVISION_PROPERTY, "theme-data-v3-data-transformation");
 		assertTrue(ThemeQueryBenchmark.hasCurrentDatasetRevision(properties));
 	}
 

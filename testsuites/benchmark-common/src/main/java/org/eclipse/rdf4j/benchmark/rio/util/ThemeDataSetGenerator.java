@@ -50,6 +50,7 @@ public final class ThemeDataSetGenerator {
 		PHARMA,
 		ADAPTIVE_FILTER_PLACEMENT,
 		REAL_ESTATE,
+		DATA_TRANSFORMATION,
 		ANALYTICS,
 		EXPLORATION
 	}
@@ -65,6 +66,7 @@ public final class ThemeDataSetGenerator {
 	private static final String PHARMA_NS = BASE + "pharma/";
 	private static final String ADAPTIVE_FILTER_NS = BASE + "adaptive-filter/";
 	private static final String REALESTATE_NS = BASE + "realestate/";
+	private static final String DATA_TRANSFORMATION_NS = BASE + "data-transformation/";
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
@@ -118,6 +120,10 @@ public final class ThemeDataSetGenerator {
 		return new RealEstateConfig();
 	}
 
+	public static DataTransformationConfig dataTransformationConfig() {
+		return new DataTransformationConfig();
+	}
+
 	public static Model generate(Theme theme) {
 		return generateModel(handler -> generate(theme, handler));
 	}
@@ -160,6 +166,9 @@ public final class ThemeDataSetGenerator {
 			break;
 		case REAL_ESTATE:
 			generateRealEstate(realEstateConfig(), handler);
+			break;
+		case DATA_TRANSFORMATION:
+			generateDataTransformation(dataTransformationConfig(), handler);
 			break;
 		case ANALYTICS:
 			// The ANALYTICS theme runs cross-theme analytical queries against the union of all other theme
@@ -1216,8 +1225,111 @@ public final class ThemeDataSetGenerator {
 		handler.endRDF();
 	}
 
+	public static Model generateDataTransformation(DataTransformationConfig config) {
+		return generateModel(handler -> generateDataTransformation(config, handler));
+	}
+
+	public static void generateDataTransformation(DataTransformationConfig config, RDFHandler handler) {
+		Objects.requireNonNull(config, "config");
+		Objects.requireNonNull(handler, "handler");
+		config.validate();
+
+		Random contentRandom = new Random(config.seed);
+
+		IRI recordType = iri(DATA_TRANSFORMATION_NS, "Record");
+		IRI sourceText = iri(DATA_TRANSFORMATION_NS, "sourceText");
+		IRI partOne = iri(DATA_TRANSFORMATION_NS, "partOne");
+		IRI partTwo = iri(DATA_TRANSFORMATION_NS, "partTwo");
+		IRI partThree = iri(DATA_TRANSFORMATION_NS, "partThree");
+		IRI partFour = iri(DATA_TRANSFORMATION_NS, "partFour");
+		IRI partFive = iri(DATA_TRANSFORMATION_NS, "partFive");
+		IRI identifier = iri(DATA_TRANSFORMATION_NS, "identifier");
+		IRI iriBase = iri(DATA_TRANSFORMATION_NS, "iriBase");
+		IRI score = iri(DATA_TRANSFORMATION_NS, "score");
+		IRI category = iri(DATA_TRANSFORMATION_NS, "category");
+		IRI region = iri(DATA_TRANSFORMATION_NS, "region");
+		IRI optionalText = iri(DATA_TRANSFORMATION_NS, "optionalText");
+		IRI optionalCode = iri(DATA_TRANSFORMATION_NS, "optionalCode");
+		IRI optionalRegion = iri(DATA_TRANSFORMATION_NS, "optionalRegion");
+		IRI optionalLabel = iri(DATA_TRANSFORMATION_NS, "optionalLabel");
+		IRI optionalNote = iri(DATA_TRANSFORMATION_NS, "optionalNote");
+
+		String[] searchPhrases = new String[] {
+				"Alpha vector graph",
+				"Beta network system",
+				"Gamma dataset record",
+				"Delta signal profile",
+				"Omega node route",
+				"Alpha graph network"
+		};
+		String[] categories = new String[] { "alpha", "beta", "gamma", "delta", "omega" };
+		String[] regions = new String[] { "north", "south", "east", "west" };
+		String baseIri = DATA_TRANSFORMATION_NS + "item/";
+
+		handler.startRDF();
+		handler.handleNamespace("dt", DATA_TRANSFORMATION_NS);
+
+		for (int i = 0; i < config.recordCount; i++) {
+			IRI record = entity(DATA_TRANSFORMATION_NS, "record", i);
+			add(handler, record, RDF.TYPE, recordType);
+
+			String sourceTextValue = searchPhrases[i % searchPhrases.length]
+					+ " transformation value " + (i % 2_500);
+			if (i % 29 == 0) {
+				sourceTextValue = "tiny" + i;
+			} else if (i % 31 == 0) {
+				sourceTextValue += " extra-long-literal-for-range-filtering";
+			} else if ((i & 1) == 0) {
+				sourceTextValue = sourceTextValue.toLowerCase(Locale.ROOT);
+			} else {
+				sourceTextValue = sourceTextValue.toUpperCase(Locale.ROOT);
+			}
+			add(handler, record, sourceText, literal(sourceTextValue));
+
+			add(handler, record, partOne,
+					literal(randomWord(contentRandom) + "-one-" + (i % 1_000)));
+			add(handler, record, partTwo,
+					literal(randomWord(contentRandom) + "-two-" + (i % 1_000)));
+			add(handler, record, partThree,
+					literal(randomWord(contentRandom) + "-three-" + (i % 1_000)));
+			add(handler, record, partFour,
+					literal(randomWord(contentRandom) + "-four-" + (i % 1_000)));
+			add(handler, record, partFive,
+					literal(randomWord(contentRandom) + "-five-" + (i % 1_000)));
+
+			add(handler, record, identifier, literal("record-" + i));
+			add(handler, record, iriBase, literal(baseIri));
+			add(handler, record, score, VF.createLiteral(i % 1_000));
+			add(handler, record, category, literal(categories[i % categories.length]));
+			add(handler, record, region, literal(regions[i % regions.length]));
+
+			if (presentAtProbability(i, 0, config.optionalValueProbability, config.seed)) {
+				add(handler, record, optionalText, literal(sourceTextValue + " optional"));
+			}
+			if (presentAtProbability(i, 1, config.optionalValueProbability, config.seed)) {
+				add(handler, record, optionalCode, literal("code-" + (i % 1_000)));
+			}
+			if (presentAtProbability(i, 2, config.optionalValueProbability, config.seed)) {
+				add(handler, record, optionalRegion, literal(regions[(i + 1) % regions.length]));
+			}
+			if (presentAtProbability(i, 3, config.optionalValueProbability, config.seed)) {
+				add(handler, record, optionalLabel, literal("label for " + sourceTextValue));
+			}
+			if (presentAtProbability(i, 4, config.optionalValueProbability, config.seed)) {
+				add(handler, record, optionalNote, literal("note " + randomWord(contentRandom) + " " + i));
+			}
+		}
+
+		handler.endRDF();
+	}
+
 	private static Random jitterRandom(long seed) {
 		return new Random(seed ^ JITTER_SEED_XOR);
+	}
+
+	private static boolean presentAtProbability(int index, int offset, double probability, long seed) {
+		long sample = Math.floorMod(index * 997L + offset * 101L + seed, 1_000L);
+		return sample < Math.round(probability * 1_000.0d);
 	}
 
 	private static int jitterInt(Random random, int base) {
@@ -2016,6 +2128,32 @@ public final class ThemeDataSetGenerator {
 			requireProbability(offerProbability, "offerProbability");
 			requireProbability(madeOnProbability, "madeOnProbability");
 			requireProbability(acceptedProbability, "acceptedProbability");
+		}
+	}
+
+	public static final class DataTransformationConfig {
+		private int recordCount = 50_000;
+		private double optionalValueProbability = 0.61;
+		private long seed = 42L;
+
+		public DataTransformationConfig withRecordCount(int recordCount) {
+			this.recordCount = requirePositive(recordCount, "recordCount");
+			return this;
+		}
+
+		public DataTransformationConfig withOptionalValueProbability(double optionalValueProbability) {
+			this.optionalValueProbability = requireProbability(optionalValueProbability, "optionalValueProbability");
+			return this;
+		}
+
+		public DataTransformationConfig withSeed(long seed) {
+			this.seed = seed;
+			return this;
+		}
+
+		private void validate() {
+			requirePositive(recordCount, "recordCount");
+			requireProbability(optionalValueProbability, "optionalValueProbability");
 		}
 	}
 

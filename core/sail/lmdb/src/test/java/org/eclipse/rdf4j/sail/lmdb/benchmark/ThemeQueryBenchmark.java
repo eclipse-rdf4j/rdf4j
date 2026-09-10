@@ -70,13 +70,18 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 5000)
+@Warmup(iterations = 4, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 5000)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
-		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true"
-		, "-Drdf4j.lmdb.janinoCodegen.factorGuardPeeling=true"
+		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true",
+		"-Drdf4j.lmdb.janinoCodegen.factorGuardPeeling=true"
+
+		, "-Drdf4j.lmdb.valueOverlay.maxBytes=1073741824", "-Drdf4j.lmdb.valueOverlay.reverseSlots=1048576"
+
+		, "-Drdf4j.lmdb.valueOverlay.delta.maxBytes=67108864", "-Drdf4j.lmdb.valueOverlay.delta.maxChangedIds=65536",
+		"-Drdf4j.lmdb.valueOverlay.delta.retainedSnapshots=4", "-Drdf4j.lmdb.valueOverlay.delta.maxLevels=20"
 })
-@Measurement(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
+@Measurement(iterations = 4, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -104,7 +109,7 @@ public class ThemeQueryBenchmark {
 	private static final String TRIPLE_INDEXES_PROPERTY = "triple.indexes";
 	static final String DATASET_REVISION_PROPERTY = "dataset.revision";
 	// Bump whenever the generated statements, contexts, or default generator configuration changes.
-	static final String DATASET_REVISION = "theme-data-v2-named-graphs";
+	static final String DATASET_REVISION = "theme-data-v3-data-transformation";
 	private static final String PROFILING_PROPERTY = "rdf4j.benchmark.profiling";
 	private static final String TYPE_MATRIX_METRICS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.typeMatrixMetrics";
 	private static final String JANINO_CODEGEN_THRESHOLD_ROWS_PROPERTY = "rdf4j.lmdb.janinoCodegen.thresholdRows";
@@ -153,7 +158,7 @@ public class ThemeQueryBenchmark {
 	public int z_queryIndex;
 
 	@Param({
-			"MEDICAL_RECORDS",
+//			"MEDICAL_RECORDS",
 //			"SOCIAL_MEDIA",
 //			"LIBRARY",
 //			"ENGINEERING",
@@ -163,7 +168,8 @@ public class ThemeQueryBenchmark {
 //			"PHARMA",
 //			"ADAPTIVE_FILTER_PLACEMENT",
 //			"ANALYTICS",
-//			"EXPLORATION"
+//			"EXPLORATION",
+"DATA_TRANSFORMATION"
 	})
 	public String themeName;
 
@@ -352,7 +358,7 @@ public class ThemeQueryBenchmark {
 			configureIrProperty(property, "disabled".equals(z_z_irMode) ? "false" : null);
 		}
 		configureIrProperty(JANINO_CODEGEN_THRESHOLD_ROWS_PROPERTY, "0");
-		if("disabled".equals(z_z_irMode)) {
+		if ("disabled".equals(z_z_irMode)) {
 			configureIrProperty(JANINO_CODEGEN_SYNCHRONOUS_PROPERTY, "false");
 		} else {
 			configureIrProperty(JANINO_CODEGEN_SYNCHRONOUS_PROPERTY, "true");

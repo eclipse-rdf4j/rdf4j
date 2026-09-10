@@ -71,7 +71,8 @@ final class NativeSortBuffer {
 	}
 
 	NativeSortBuffer(int slotCount, int expectedRows, LmdbNativeAttemptMetrics metrics, int maximumRows) {
-		if (slotCount < 0 || maximumRows < 1) throw new IllegalArgumentException("Invalid sort arena dimensions");
+		if (slotCount < 0 || maximumRows < 1)
+			throw new IllegalArgumentException("Invalid sort arena dimensions");
 		this.slotCount = slotCount;
 		this.maximumRows = Math.min(maximumRows, MAX_ARRAY_SIZE / Math.max(1, slotCount));
 		int capacity = Math.min(this.maximumRows, Math.max(1, expectedRows));
@@ -182,7 +183,8 @@ final class NativeSortBuffer {
 			int[] swap = order;
 			order = scratch;
 			scratch = swap;
-			if (width >= (size + 1L) / 2L) break;
+			if (width >= (size + 1L) / 2L)
+				break;
 			width *= 2;
 		}
 		return order;
@@ -756,7 +758,8 @@ final class NativeSpillSort implements AutoCloseable {
 
 	NativeSpillSort(int slotCount, int keyCount, PackedRowComparator comparator, int retainRows,
 			LmdbNativeAttemptMetrics metrics, long configured, Runnable cancellationPoll, int ioBufferBytes) {
-		if (ioBufferBytes < 512 || ioBufferBytes > 64 * 1024) throw new IllegalArgumentException("Invalid spill I/O buffer");
+		if (ioBufferBytes < 512 || ioBufferBytes > 64 * 1024)
+			throw new IllegalArgumentException("Invalid spill I/O buffer");
 		this.ioBufferBytes = ioBufferBytes;
 		this.cancellationPoll = cancellationPoll;
 		if (slotCount < 0 || configured < 1 || retainRows < -1) {
@@ -782,8 +785,10 @@ final class NativeSpillSort implements AutoCloseable {
 	}
 
 	void add(long[] row, long ordinal) throws IOException {
-		if (closed || finished) throw new IllegalStateException("Native sort is not accepting rows");
-		if (retainRows == 0) return;
+		if (closed || finished)
+			throw new IllegalStateException("Native sort is not accepting rows");
+		if (retainRows == 0)
+			return;
 		if (buffer.size >= maxRows) {
 			spillRun();
 		}
@@ -808,7 +813,8 @@ final class NativeSpillSort implements AutoCloseable {
 			spillRun();
 		}
 		// Leveled compaction bounds path metadata logarithmically. Bound final live readers as well.
-		while (runs.size() > MERGE_FAN_IN) mergeRuns(runs.size() - MERGE_FAN_IN, MERGE_FAN_IN, 64);
+		while (runs.size() > MERGE_FAN_IN)
+			mergeRuns(runs.size() - MERGE_FAN_IN, MERGE_FAN_IN, 64);
 		buffer.close();
 		return new MergedRunRows(slotCount, keyCount, comparator, List.copyOf(runs), ioBufferBytes);
 	}
@@ -823,7 +829,7 @@ final class NativeSpillSort implements AutoCloseable {
 		boolean complete = false;
 		try {
 			try (DataOutputStream out = new DataOutputStream(
-				new BufferedOutputStream(Files.newOutputStream(path), ioBufferBytes))) {
+					new BufferedOutputStream(Files.newOutputStream(path), ioBufferBytes))) {
 				out.writeInt(slotCount);
 				out.writeInt(keyCount);
 				out.writeInt(writtenRows);
@@ -866,9 +872,13 @@ final class NativeSpillSort implements AutoCloseable {
 			int level = runLevels.get(end - 1);
 			boolean sameLevel = true;
 			for (int i = end - MERGE_FAN_IN; i < end - 1; i++) {
-				if (runLevels.get(i) != level) { sameLevel = false; break; }
+				if (runLevels.get(i) != level) {
+					sameLevel = false;
+					break;
+				}
 			}
-			if (!sameLevel) break;
+			if (!sameLevel)
+				break;
 			mergeRuns(end - MERGE_FAN_IN, MERGE_FAN_IN, level + 1);
 		}
 	}
@@ -876,37 +886,48 @@ final class NativeSpillSort implements AutoCloseable {
 	/** Merge only bounded input runs; completed compacted runs use a long-count row-major header. */
 	private void mergeRuns(int from, int count, int level) throws IOException {
 		long rows = 0;
-		for (int i = from; i < from + count; i++) rows = Math.addExact(rows, runCounts.get(i));
-		if (retainRows >= 0) rows = Math.min(rows, (long) retainRows);
+		for (int i = from; i < from + count; i++)
+			rows = Math.addExact(rows, runCounts.get(i));
+		if (retainRows >= 0)
+			rows = Math.min(rows, (long) retainRows);
 		List<Path> inputs = List.copyOf(runs.subList(from, from + count));
 		Path output = Files.createTempFile("rdf4j-lmdb-native-sort-", ".run");
 		boolean complete = false;
 		try {
 			try (MergedRunRows merge = new MergedRunRows(slotCount, keyCount, comparator, inputs, ioBufferBytes);
-				DataOutputStream out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(output), ioBufferBytes))) {
+					DataOutputStream out = new DataOutputStream(
+							new BufferedOutputStream(Files.newOutputStream(output), ioBufferBytes))) {
 				out.writeInt(RunReader.ROW_MAJOR_MAGIC);
-				out.writeInt(slotCount); out.writeInt(keyCount); out.writeLong(rows);
+				out.writeInt(slotCount);
+				out.writeInt(keyCount);
+				out.writeLong(rows);
 				long[] row = new long[slotCount];
 				for (long i = 0; i < rows; i++) {
 					poll(i);
-					if (!merge.next(row)) throw new java.io.EOFException("Short native sort merge");
+					if (!merge.next(row))
+						throw new java.io.EOFException("Short native sort merge");
 					out.writeLong(merge.lastOrdinal);
-					for (int column = 0; column < slotCount; column++) out.writeLong(row[column]);
+					for (int column = 0; column < slotCount; column++)
+						out.writeLong(row[column]);
 				}
 			}
 			complete = true;
 		} finally {
-			if (!complete) Files.deleteIfExists(output);
+			if (!complete)
+				Files.deleteIfExists(output);
 		}
 		runs.subList(from, from + count).clear();
 		runLevels.subList(from, from + count).clear();
 		runCounts.subList(from, from + count).clear();
-		runs.add(from, output); runLevels.add(from, level); runCounts.add(from, rows);
+		runs.add(from, output);
+		runLevels.add(from, level);
+		runCounts.add(from, rows);
 		MERGED_RUNS.incrementAndGet();
 	}
 
 	private void poll(long position) {
-		if (cancellationPoll != null && (position & 1023L) == 0L) cancellationPoll.run();
+		if (cancellationPoll != null && (position & 1023L) == 0L)
+			cancellationPoll.run();
 	}
 
 	private boolean isOutsideBoundary(long[] row, long ordinal) {
@@ -933,7 +954,8 @@ final class NativeSpillSort implements AutoCloseable {
 
 	@Override
 	public void close() {
-		if (closed) return;
+		if (closed)
+			return;
 		closed = true;
 		buffer.close();
 		for (int i = 0; i < runs.size(); i++) {
@@ -945,7 +967,10 @@ final class NativeSpillSort implements AutoCloseable {
 				// A merge reader may still own the path; its close performs the same idempotent cleanup.
 			}
 		}
-		runs.clear(); runLevels.clear(); runCounts.clear(); boundary = null;
+		runs.clear();
+		runLevels.clear();
+		runCounts.clear();
+		boundary = null;
 	}
 
 	static long configuredMaxBytes() {
@@ -1056,7 +1081,8 @@ final class RunReader implements AutoCloseable {
 						"Native sort run key count changed from " + expectedKeyCount + " to " + keyCount);
 			}
 			this.remaining = rowMajor ? openedKeys.readLong() : openedKeys.readInt();
-			if (remaining < 0) throw new IOException("Negative native sort run length");
+			if (remaining < 0)
+				throw new IOException("Negative native sort run length");
 			this.slotCount = slotCount;
 			this.keyCount = keyCount;
 			this.keys = new long[rowMajor ? slotCount : keyCount];
@@ -1098,7 +1124,10 @@ final class RunReader implements AutoCloseable {
 	}
 
 	void copyCurrent(long[] target) throws IOException {
-		if (rowMajor) { System.arraycopy(keys, 0, target, 0, slotCount); return; }
+		if (rowMajor) {
+			System.arraycopy(keys, 0, target, 0, slotCount);
+			return;
+		}
 		System.arraycopy(keys, 0, target, 0, keyCount);
 		for (int slot = keyCount; slot < slotCount; slot++) {
 			target[slot] = payloadInput.readLong();
@@ -1116,7 +1145,8 @@ final class RunReader implements AutoCloseable {
 		} catch (IOException ignored) {
 		}
 		try {
-			if (payloadInput != null) payloadInput.close();
+			if (payloadInput != null)
+				payloadInput.close();
 		} catch (IOException ignored) {
 		} finally {
 			try {

@@ -17,7 +17,6 @@ import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 
-import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -30,6 +29,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 
 /**
  * LMDB-local bridge used by the native query compilers. This internal interface lets the root LMDB store integrate with
@@ -1451,7 +1451,9 @@ public interface NativeLmdbQuerySource {
 		interface BoundRunCursor extends AutoCloseable {
 
 			/** Exports stable, exact context-unrestricted relation coordinates, not this cursor's mutable state. */
-			default boolean borrow(BorrowedFactorBatch target, int lane) { return false; }
+			default boolean borrow(BorrowedFactorBatch target, int lane) {
+				return false;
+			}
 
 			/** Binds {@code key} and returns its run size, or a non-positive missing/not-covered sentinel. */
 			long bind(long key);
@@ -1484,7 +1486,9 @@ public interface NativeLmdbQuerySource {
 		 */
 		interface KeyRunCursor extends AutoCloseable {
 			/** Exports the positioned row without discarding/relooking up its physical coordinate. */
-			default boolean borrow(BorrowedFactorBatch target, int lane) { return false; }
+			default boolean borrow(BorrowedFactorBatch target, int lane) {
+				return false;
+			}
 
 			/** Metadata is unavailable from this cursor without decoding the run. */
 			long DISTINCT_NEIGHBOR_COUNT_UNKNOWN = -1L;
@@ -1650,10 +1654,14 @@ public interface NativeLmdbQuerySource {
 		long find(long key);
 
 		/** Opens one retained physical factor source, or null when borrowing is unavailable. */
-		default BorrowedFactorBatch.Source openFactorSource() { return null; }
+		default BorrowedFactorBatch.Source openFactorSource() {
+			return null;
+		}
 
 		/** Exports a previously resolved handle; false means unsupported, NEVER an empty relation. */
-		default boolean borrowRun(long handle, BorrowedFactorBatch target, int lane) { return false; }
+		default boolean borrowRun(long handle, BorrowedFactorBatch target, int lane) {
+			return false;
+		}
 
 		/** Attempts to expose the key's neighbor run as a borrowed immutable array slice. */
 		default boolean borrowNeighbors(long key, NeighborSlice target) {

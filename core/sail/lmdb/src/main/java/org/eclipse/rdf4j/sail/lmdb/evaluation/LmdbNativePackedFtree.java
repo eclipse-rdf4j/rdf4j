@@ -34,24 +34,24 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
-import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
-import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
-import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeContext;
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
+import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
+import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
 
 /**
  * Packed arbitrary-f-tree execution for LMDB basic graph-pattern joins.
  * <p>
  * This is deliberately a physical representation, not another tail rewrite. An unrestricted terminal can retain a
  * snapshot-owned borrowed group and exact summary per parent; a materialized variable owns a packed vector. A
- * materialized fanout child has offsets mapping parents to contiguous slices, while a non-expanding child may
- * share its parent's selector state. Branches are therefore represented independently and their Cartesian product is
- * only implied until a flat consumer asks for rows. Reductions are propagated through a delta-driven AGG/SCATTER
- * cascade before stale states are consumed.
+ * materialized fanout child has offsets mapping parents to contiguous slices, while a non-expanding child may share its
+ * parent's selector state. Branches are therefore represented independently and their Cartesian product is only implied
+ * until a flat consumer asks for rows. Reductions are propagated through a delta-driven AGG/SCATTER cascade before
+ * stale states are consumed.
  * <p>
  * The specialization is conservative about SPARQL shapes. It accepts connected fixed-predicate subject/object BGPs
  * (including constant endpoint restrictions, named/default graph restrictions, duplicate statement multiplicity and
@@ -78,6 +78,7 @@ final class LmdbNativePackedFtree {
 	private static final long[] EMPTY_LONG_ARRAY = new long[0];
 	/** Lane count staged per bulk run copy; bounds scratch memory while amortizing the CSF page decode. */
 	static final int RUN_COPY_WINDOW = 4096;
+
 	static boolean borrowedFactorsEnabled() {
 		return !"false".equals(System.getProperty("rdf4j.lmdb.factor.borrowed.enabled"));
 	}
@@ -194,28 +195,40 @@ final class LmdbNativePackedFtree {
 	/** Export the existing f-tree's borrowed leaves without collapsing them to scalar weights. */
 	static LmdbNativeFactorCursor openFactors(MultiJoinPlan join, RowState row) throws IOException {
 		if (!enabled() || !borrowedFactorsEnabled() || !LmdbNativeFactorRows.enabled()
-				|| row.encounterOrderRequired || join == null) return null;
+				|| row.encounterOrderRequired || join == null)
+			return null;
 		Plan plan = Planner.plan(join, row, LmdbNativeAggregateCompiler.slotsOf(join.producedMask()));
-		if (plan == null || (plan.variableMask & row.boundMask()) != 0L) return null;
+		if (plan == null || (plan.variableMask & row.boundMask()) != 0L)
+			return null;
 		Runtime runtime = null;
 		try {
 			runtime = Runtime.open(plan, row);
-			if (runtime == null) return null;
+			if (runtime == null)
+				return null;
 			boolean capable = false;
 			for (NodePlan node : plan.nodes) {
 				if (node.parent != null && runtime.borrowableTerminal(node)
 						&& runtime.primaryEdges[node.ordinal].factorSource() != null) {
-					capable = true; break;
+					capable = true;
+					break;
 				}
 			}
-			if (!capable) { runtime.close(); return null; }
+			if (!capable) {
+				runtime.close();
+				return null;
+			}
 			return new GroupedRowCursor(plan, row, runtime);
 		} catch (PackedDecline unsupported) {
-			if (runtime != null) runtime.close();
+			if (runtime != null)
+				runtime.close();
 			return null;
 		} catch (IOException | RuntimeException | Error failure) {
 			if (runtime != null) {
-				try { runtime.close(); } catch (Throwable closeFailure) { failure.addSuppressed(closeFailure); }
+				try {
+					runtime.close();
+				} catch (Throwable closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
 			}
 			throw failure;
 		}
@@ -225,19 +238,31 @@ final class LmdbNativePackedFtree {
 	static boolean projectionAggregateCandidate(MultiJoinPlan join, RowState row, int[] groups,
 			AggregateSpec[] aggregates) {
 		if (!enabled() || row.encounterOrderRequired || !SlotPlan.encounterOrderReplaySafe(join)
-				|| "false".equals(System.getProperty(LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY))) return false;
+				|| "false".equals(System.getProperty(LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY)))
+			return false;
 		if (groups.length == 0 && aggregates.length == 1
-				&& aggregates[0].kind == AggKind.COUNT && aggregates[0].distinct) return false;
-		for (AggregateSpec spec : aggregates) switch (spec.kind) {
-		case COUNT: case SUM: case AVG: case MIN: case MAX: break;
-		default: return false;
-		}
+				&& aggregates[0].kind == AggKind.COUNT && aggregates[0].distinct)
+			return false;
+		for (AggregateSpec spec : aggregates)
+			switch (spec.kind) {
+			case COUNT:
+			case SUM:
+			case AVG:
+			case MIN:
+			case MAX:
+				break;
+			default:
+				return false;
+			}
 		Plan plan = Planner.plan(join, row, aggregateDemandedSlots(groups, aggregates));
-		if (plan == null) return false;
+		if (plan == null)
+			return false;
 		// Compare dependency topology, not surface SPARQL syntax: even a path can be rooted
 		// in its middle and expose independent branches. Singleton DISTINCT witness plans
 		// are kept above; unsupported plans still retain their existing lowering.
-		for (NodePlan node : plan.nodes) if (node.children.length > 1) return true;
+		for (NodePlan node : plan.nodes)
+			if (node.children.length > 1)
+				return true;
 		return false;
 	}
 
@@ -245,42 +270,61 @@ final class LmdbNativePackedFtree {
 	static NativeFactorProjections openProjections(MultiJoinPlan join, RowState row, int[][] outputs,
 			boolean[] exactWeights) throws IOException {
 		if (!enabled() || row.encounterOrderRequired || join == null
-				|| !SlotPlan.encounterOrderReplaySafe(join)) return null;
+				|| !SlotPlan.encounterOrderReplaySafe(join))
+			return null;
 		if (outputs.length != exactWeights.length || outputs.length == 0)
 			throw new IllegalArgumentException("projection schema mismatch");
 		long demand = 0L;
-		for (int[] output : outputs) for (int slot : output) {
-			java.util.Objects.checkIndex(slot, row.slots.length); demand |= 1L << slot;
-		}
+		for (int[] output : outputs)
+			for (int slot : output) {
+				java.util.Objects.checkIndex(slot, row.slots.length);
+				demand |= 1L << slot;
+			}
 		int[] slots = new int[Long.bitCount(demand)];
 		int n = 0;
-		for (long rest = demand; rest != 0L; rest &= rest - 1L) slots[n++] = Long.numberOfTrailingZeros(rest);
+		for (long rest = demand; rest != 0L; rest &= rest - 1L)
+			slots[n++] = Long.numberOfTrailingZeros(rest);
 		Plan plan = Planner.plan(join, row, slots);
-		if (plan == null || (plan.variableMask & row.boundMask()) != 0L) return null;
-		for (int slot : slots) if (!slotAvailable(plan, row, slot)) return null;
+		if (plan == null || (plan.variableMask & row.boundMask()) != 0L)
+			return null;
+		for (int slot : slots)
+			if (!slotAvailable(plan, row, slot))
+				return null;
 		Runtime runtime = null;
 		try {
 			runtime = Runtime.open(plan, row);
 			return runtime == null ? null : new ChunkProjectionCursor(plan, row, runtime, outputs, exactWeights);
 		} catch (PackedDecline decline) {
-			if (runtime != null) runtime.close();
+			if (runtime != null)
+				runtime.close();
 			return null;
 		} catch (IOException | RuntimeException | Error failure) {
-			if (runtime != null) try { runtime.close(); }
-			catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+			if (runtime != null)
+				try {
+					runtime.close();
+				} catch (Throwable closing) {
+					if (closing != failure)
+						failure.addSuppressed(closing);
+				}
 			throw failure;
 		}
 	}
 
 	/** Shared slot/IR projection entry: reuse the production f-tree, not a second join executor. */
 	static FactorizedRowCursor openProjected(MultiJoinPlan join, RowState row, int[] outputSlots) throws IOException {
-		if (!enabled() || !borrowedFactorsEnabled() || join == null) return null;
+		if (!enabled() || !borrowedFactorsEnabled() || join == null)
+			return null;
 		long observed = 0L;
-		for (int slot : outputSlots) observed |= 1L << slot;
-		if ((join.producedMask() & ~observed) == 0L) return null;
+		for (int slot : outputSlots)
+			observed |= 1L << slot;
+		if ((join.producedMask() & ~observed) == 0L)
+			return null;
 		Plan plan = Planner.plan(join, row, outputSlots);
-		if (plan == null || (plan.variableMask & row.boundMask()) != 0L) return null;
-		for (int slot : outputSlots) if (!slotAvailable(plan, row, slot)) return null;
+		if (plan == null || (plan.variableMask & row.boundMask()) != 0L)
+			return null;
+		for (int slot : outputSlots)
+			if (!slotAvailable(plan, row, slot))
+				return null;
 		try {
 			Runtime runtime = Runtime.open(plan, row);
 			return runtime == null ? null : new ProjectedRowCursor(plan, row, runtime, outputSlots);
@@ -628,7 +672,8 @@ final class LmdbNativePackedFtree {
 	/** Generic grouped fallback shares the exact same marginal layout as IR consumers. */
 	private static HashMap<GroupKey, AggState> collectMarginalGroups(Runtime runtime, Plan plan, RowState row,
 			int[] groupSlots, AggregateSpec[] aggregates, AggContext context) throws IOException {
-		int[] arguments = new int[aggregates.length]; boolean[] exact = new boolean[aggregates.length];
+		int[] arguments = new int[aggregates.length];
+		boolean[] exact = new boolean[aggregates.length];
 		for (int i = 0; i < aggregates.length; i++) {
 			AggregateSpec spec = aggregates[i];
 			arguments[i] = spec.kind == AggKind.COUNT && !spec.distinct && spec.slot >= 0
@@ -643,62 +688,82 @@ final class LmdbNativePackedFtree {
 		try (ChunkProjectionCursor input = new ChunkProjectionCursor(plan, row, runtime, outputs,
 				layout.exactWeights(), false)) {
 			boolean countOnly = true;
-			for (AggregateSpec spec : aggregates) countOnly &= spec.kind == AggKind.COUNT;
-			if (countOnly) input.permitPrefixPartitions();
-			while (input.nextBatch()) for (int p = 0; p < layout.size(); p++) {
-				int[] channels = layout.channels(p);
-				int windowSlot = input.windowColumn(p);
-				for (int slot : groupSlots) if (slot == windowSlot) windowSlot = -1;
-				if (windowSlot >= 0) {
-					AggState state = null; long scale = 0L; int size;
-					while ((size = input.nextWindow(p)) != 0) {
-						if (state == null || input.windowPrefixChanged()) {
-							long[] ids = new long[groupSlots.length];
-							for (int i = 0; i < ids.length; i++) ids[i] = input.value(groupSlots[i]);
-							GroupKey key = new GroupKey(ids); state = groups.get(key);
-							if (state == null) {
-								state = new AggState(aggregates, 64, context, AggregateDistinctChannels.allHash(aggregates));
-								groups.put(key, state);
-							}
-							scale = 0L;
-						}
-						long[] ids = input.windowValues(), weights = input.windowWeights();
-						int start = input.windowStart(), end = start + size;
-						for (int at = start; at < end; at++) for (int channel : channels) {
-							AggregateSpec spec = aggregates[channel];
-							long id = arguments[channel] >= 0 ? ids[at] : spec.slot >= 0 ? 0L : spec.constant;
-							if (id == UNKNOWN) continue;
-							if (spec.distinct) addDistinctWeighted(state, channel, id, 1L);
-							else {
-								long contribution = 1L;
-								if (exact[channel]) {
-									if (scale == 0L) scale = input.windowScale();
-									contribution = FactorizedTail.multiplyCounts(scale, weights[at]);
+			for (AggregateSpec spec : aggregates)
+				countOnly &= spec.kind == AggKind.COUNT;
+			if (countOnly)
+				input.permitPrefixPartitions();
+			while (input.nextBatch())
+				for (int p = 0; p < layout.size(); p++) {
+					int[] channels = layout.channels(p);
+					int windowSlot = input.windowColumn(p);
+					for (int slot : groupSlots)
+						if (slot == windowSlot)
+							windowSlot = -1;
+					if (windowSlot >= 0) {
+						AggState state = null;
+						long scale = 0L;
+						int size;
+						while ((size = input.nextWindow(p)) != 0) {
+							if (state == null || input.windowPrefixChanged()) {
+								long[] ids = new long[groupSlots.length];
+								for (int i = 0; i < ids.length; i++)
+									ids[i] = input.value(groupSlots[i]);
+								GroupKey key = new GroupKey(ids);
+								state = groups.get(key);
+								if (state == null) {
+									state = new AggState(aggregates, 64, context,
+											AggregateDistinctChannels.allHash(aggregates));
+									groups.put(key, state);
 								}
-								state.addWeighted(channel, id, contribution);
+								scale = 0L;
 							}
+							long[] ids = input.windowValues(), weights = input.windowWeights();
+							int start = input.windowStart(), end = start + size;
+							for (int at = start; at < end; at++)
+								for (int channel : channels) {
+									AggregateSpec spec = aggregates[channel];
+									long id = arguments[channel] >= 0 ? ids[at] : spec.slot >= 0 ? 0L : spec.constant;
+									if (id == UNKNOWN)
+										continue;
+									if (spec.distinct)
+										addDistinctWeighted(state, channel, id, 1L);
+									else {
+										long contribution = 1L;
+										if (exact[channel]) {
+											if (scale == 0L)
+												scale = input.windowScale();
+											contribution = FactorizedTail.multiplyCounts(scale, weights[at]);
+										}
+										state.addWeighted(channel, id, contribution);
+									}
+								}
+						}
+						continue;
+					}
+					while (input.next(p)) {
+						long[] ids = new long[groupSlots.length];
+						for (int i = 0; i < ids.length; i++)
+							ids[i] = input.value(groupSlots[i]);
+						GroupKey key = new GroupKey(ids);
+						AggState state = groups.get(key);
+						if (state == null) {
+							state = new AggState(aggregates, 64, context,
+									AggregateDistinctChannels.allHash(aggregates));
+							groups.put(key, state);
+						}
+						for (int channel : channels) {
+							AggregateSpec spec = aggregates[channel];
+							long id = arguments[channel] >= 0 ? input.value(arguments[channel])
+									: spec.slot >= 0 ? 0L : spec.constant;
+							if (id == UNKNOWN)
+								continue;
+							if (spec.distinct)
+								addDistinctWeighted(state, channel, id, 1L);
+							else
+								state.addWeighted(channel, id, exact[channel] ? input.multiplicity() : 1L);
 						}
 					}
-					continue;
 				}
-				while (input.next(p)) {
-					long[] ids = new long[groupSlots.length];
-					for (int i = 0; i < ids.length; i++) ids[i] = input.value(groupSlots[i]);
-					GroupKey key = new GroupKey(ids); AggState state = groups.get(key);
-					if (state == null) {
-						state = new AggState(aggregates, 64, context, AggregateDistinctChannels.allHash(aggregates));
-						groups.put(key, state);
-					}
-					for (int channel : channels) {
-						AggregateSpec spec = aggregates[channel];
-						long id = arguments[channel] >= 0 ? input.value(arguments[channel])
-								: spec.slot >= 0 ? 0L : spec.constant;
-						if (id == UNKNOWN) continue;
-						if (spec.distinct) addDistinctWeighted(state, channel, id, 1L);
-						else state.addWeighted(channel, id, exact[channel] ? input.multiplicity() : 1L);
-					}
-				}
-			}
 		}
 		return groups;
 	}
@@ -1213,7 +1278,8 @@ final class LmdbNativePackedFtree {
 			this.childOrdinals = new int[nodes.length][];
 			for (NodePlan node : nodes) {
 				int[] children = new int[node.children.length];
-				for (int i = 0; i < children.length; i++) children[i] = node.children[i].ordinal;
+				for (int i = 0; i < children.length; i++)
+					children[i] = node.children[i].ordinal;
 				childOrdinals[node.ordinal] = children;
 			}
 			this.constants = constants;
@@ -2241,27 +2307,36 @@ final class LmdbNativePackedFtree {
 			runtime.chunksStarted = true;
 			runtime.row.rollback(runtime.entryMark);
 			Chunk chunk = runtime.reusableChunk;
-			if (chunk == null) runtime.reusableChunk = chunk = new Chunk(runtime.plan, runtime.constantMultiplicity);
-			else chunk.reset();
+			if (chunk == null)
+				runtime.reusableChunk = chunk = new Chunk(runtime.plan, runtime.constantMultiplicity);
+			else
+				chunk.reset();
 			NodeData root = chunk.data[runtime.plan.root.ordinal], child = chunk.data[split.ordinal];
-			root.ensureCapacity(ROOT_BATCH_SIZE); child.ensureOffsets(ROOT_BATCH_SIZE + 1); child.offsets[0] = 0;
+			root.ensureCapacity(ROOT_BATCH_SIZE);
+			child.ensureOffsets(ROOT_BATCH_SIZE + 1);
+			child.offsets[0] = 0;
 			// Equal values can straddle partitions/windows; never advertise global/slice uniqueness.
 			root.sliceValuesDistinct = child.sliceValuesDistinct = false;
-			for (NodePlan sibling : runtime.plan.root.children) if (sibling != split) {
-				NodeData data = chunk.data[sibling.ordinal];
-				data.borrowed = Runtime.ensureBorrowed(data, runtime.primaryEdges[sibling.ordinal].factorSource(), ROOT_BATCH_SIZE);
-				data.borrowed.reset(ROOT_BATCH_SIZE);
-			}
+			for (NodePlan sibling : runtime.plan.root.children)
+				if (sibling != split) {
+					NodeData data = chunk.data[sibling.ordinal];
+					data.borrowed = Runtime.ensureBorrowed(data, runtime.primaryEdges[sibling.ordinal].factorSource(),
+							ROOT_BATCH_SIZE);
+					data.borrowed.reset(ROOT_BATCH_SIZE);
+				}
 			int examined = 0;
 			while (examined < maximum && root.size < ROOT_BATCH_SIZE) {
 				poll();
-				if (!activeRoot && !openNextRoot()) break;
+				if (!activeRoot && !openNextRoot())
+					break;
 				if (fallbackRoot) {
-					if (root.size != 0) break; // do not replay completed prefixes when a later source declines
+					if (root.size != 0)
+						break; // do not replay completed prefixes when a later source declines
 					return fallback(chunk);
 				}
 				int parent = root.size, start = child.size;
-				root.setValue(parent, rootId); root.setWeight(parent, rootWeight);
+				root.setValue(parent, rootId);
+				root.setWeight(parent, rootWeight);
 				child.offsets[parent] = start;
 				while (examined < maximum && nextMember()) {
 					examined++;
@@ -2271,14 +2346,18 @@ final class LmdbNativePackedFtree {
 				if (child.size != start) {
 					root.size++;
 					child.offsets[root.size] = child.size;
-					for (NodePlan sibling : runtime.plan.root.children) if (sibling != split)
-						chunk.data[sibling.ordinal].borrowed.copyLaneFrom(parent, siblings[sibling.ordinal], 0);
+					for (NodePlan sibling : runtime.plan.root.children)
+						if (sibling != split)
+							chunk.data[sibling.ordinal].borrowed.copyLaneFrom(parent, siblings[sibling.ordinal], 0);
 				}
 				// An exhausted raw/borrowed relation needs no extra payload lookahead.
-				if (storeCursor == null && remaining == 0L) activeRoot = false;
+				if (storeCursor == null && remaining == 0L)
+					activeRoot = false;
 			}
-			if (root.size == 0 && rootsEnded && !activeRoot) return null;
-			root.state.reset(root.size); child.state.reset(child.size);
+			if (root.size == 0 && rootsEnded && !activeRoot)
+				return null;
+			root.state.reset(root.size);
+			child.state.reset(child.size);
 			for (NodePlan leaf : split.children) {
 				runtime.buildSubtree(chunk, leaf);
 				chunk.cascade.propagateFrom(leaf);
@@ -2295,51 +2374,90 @@ final class LmdbNativePackedFtree {
 				NodeData roots = stagedRoots.data[runtime.plan.root.ordinal];
 				rootLane = roots.state.nextSetBit(rootLane + 1);
 				if (rootLane < 0 || rootLane >= stagedCount) {
-					if (rootsEnded) return false;
-					stagedRoots.reset(); roots.ensureCapacity(ROOT_BATCH_SIZE);
+					if (rootsEnded)
+						return false;
+					stagedRoots.reset();
+					roots.ensureCapacity(ROOT_BATCH_SIZE);
 					stagedCount = runtime.roots.fill(roots, ROOT_BATCH_SIZE);
-					if (stagedCount == 0) { rootsEnded = runtime.exhausted = true; return false; }
-					roots.size = stagedCount; roots.state.reset(stagedCount);
-					if (runtime.constantMultiplicity != 1L) for (int i = 0; i < stagedCount; i++)
-						roots.setWeight(i, FactorizedTail.multiplyCounts(roots.weight(i), runtime.constantMultiplicity));
+					if (stagedCount == 0) {
+						rootsEnded = runtime.exhausted = true;
+						return false;
+					}
+					roots.size = stagedCount;
+					roots.state.reset(stagedCount);
+					if (runtime.constantMultiplicity != 1L)
+						for (int i = 0; i < stagedCount; i++)
+							roots.setWeight(i,
+									FactorizedTail.multiplyCounts(roots.weight(i), runtime.constantMultiplicity));
 					runtime.applyNodeRestrictions(stagedRoots, runtime.plan.root);
 					rootLane = -1;
 					continue;
 				}
-				rootId = roots.value(rootLane); rootWeight = roots.weight(rootLane);
-				activeRoot = true; fallbackRoot = false;
+				rootId = roots.value(rootLane);
+				rootWeight = roots.weight(rootLane);
+				activeRoot = true;
+				fallbackRoot = false;
 				boolean rejected = false;
-				for (NodePlan sibling : runtime.plan.root.children) if (sibling != split) {
-					EdgeRuntime edge = runtime.primaryEdges[sibling.ordinal];
-					long count = edge.bind(rootId);
-					if (count == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) { fallbackRoot = true; break; }
-					if (count <= 0L) { rejected = true; break; }
-					BorrowedFactorBatch group = siblings[sibling.ordinal];
-					if (group == null) siblings[sibling.ordinal] = group = new BorrowedFactorBatch(edge.factorSource(), 1);
-					group.reset(1);
-					if (!edge.cursor.borrow(group, 0)) { fallbackRoot = true; break; }
+				for (NodePlan sibling : runtime.plan.root.children)
+					if (sibling != split) {
+						EdgeRuntime edge = runtime.primaryEdges[sibling.ordinal];
+						long count = edge.bind(rootId);
+						if (count == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
+							fallbackRoot = true;
+							break;
+						}
+						if (count <= 0L) {
+							rejected = true;
+							break;
+						}
+						BorrowedFactorBatch group = siblings[sibling.ordinal];
+						if (group == null)
+							siblings[sibling.ordinal] = group = new BorrowedFactorBatch(edge.factorSource(), 1);
+						group.reset(1);
+						if (!edge.cursor.borrow(group, 0)) {
+							fallbackRoot = true;
+							break;
+						}
+					}
+				if (rejected) {
+					activeRoot = false;
+					continue;
 				}
-				if (rejected) { activeRoot = false; continue; }
-				if (fallbackRoot) return true;
+				if (fallbackRoot)
+					return true;
 				EdgeRuntime edge = runtime.primaryEdges[split.ordinal];
-				remaining = edge.bind(rootId); rawOffset = 0; inputAt = inputEnd = 0; borrowedInput = false;
+				remaining = edge.bind(rootId);
+				rawOffset = 0;
+				inputAt = inputEnd = 0;
+				borrowedInput = false;
 				if (remaining == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
-					if (storeProbe == null) storeProbe = runtime.row.source.newProbe();
+					if (storeProbe == null)
+						storeProbe = runtime.row.source.newProbe();
 					storeCursor = edge.openStore(runtime, rootId, UNKNOWN, storeProbe);
 					return true;
 				}
-				if (remaining <= 0L) { activeRoot = false; continue; }
+				if (remaining <= 0L) {
+					activeRoot = false;
+					continue;
+				}
 				BorrowedFactorBatch.Source source = edge.factorSource();
 				if (source != null) {
-					if (inputGroup == null || inputGroup.source() != source) inputGroup = new BorrowedFactorBatch(source, 1);
+					if (inputGroup == null || inputGroup.source() != source)
+						inputGroup = new BorrowedFactorBatch(source, 1);
 					inputGroup.reset(1);
 					if (edge.cursor.borrow(inputGroup, 0)) {
 						if (source != inputSource) {
-							BorrowedFactorBatch.Cursor previous = inputReader; inputReader = null; inputSource = null;
-							if (previous != null) previous.close();
-							inputReader = inputGroup.cursor(WINDOW); inputSource = source;
+							BorrowedFactorBatch.Cursor previous = inputReader;
+							inputReader = null;
+							inputSource = null;
+							if (previous != null)
+								previous.close();
+							inputReader = inputGroup.cursor(WINDOW);
+							inputSource = source;
 						}
-						inputReader.bind(inputGroup, 0); remaining = inputGroup.count(0); borrowedInput = true;
+						inputReader.bind(inputGroup, 0);
+						remaining = inputGroup.count(0);
+						borrowedInput = true;
 					}
 				}
 				return true;
@@ -2351,28 +2469,48 @@ final class LmdbNativePackedFtree {
 			if (storeCursor != null) {
 				long[] quad = storeCursor.next();
 				if (quad == null) {
-					PatternCursor previous = storeCursor; storeCursor = null; activeRoot = false; remaining = 0L;
-					previous.close(); return false;
+					PatternCursor previous = storeCursor;
+					storeCursor = null;
+					activeRoot = false;
+					remaining = 0L;
+					previous.close();
+					return false;
 				}
-				value = quad[split.primary.keyIsSubject ? 2 : 0]; weight = 1L; return true;
+				value = quad[split.primary.keyIsSubject ? 2 : 0];
+				weight = 1L;
+				return true;
 			}
-			if (remaining == 0L) { activeRoot = false; return false; }
+			if (remaining == 0L) {
+				activeRoot = false;
+				return false;
+			}
 			if (inputAt == inputEnd) {
 				if (borrowedInput) {
 					int count = inputReader.nextWindow();
-					if (count == 0) throw new IllegalStateException("short borrowed nonterminal relation");
-					inputAt = inputReader.windowStart(); inputEnd = inputAt + count;
-					inputIds = inputReader.windowValues(); inputWeights = inputReader.windowWeights();
+					if (count == 0)
+						throw new IllegalStateException("short borrowed nonterminal relation");
+					inputAt = inputReader.windowStart();
+					inputEnd = inputAt + count;
+					inputIds = inputReader.windowValues();
+					inputWeights = inputReader.windowWeights();
 				} else {
-					if (rawIds == null) rawIds = new long[WINDOW];
+					if (rawIds == null)
+						rawIds = new long[WINDOW];
 					int count = (int) Math.min(WINDOW, remaining);
 					if (runtime.primaryEdges[split.ordinal].copyNeighbors(rawOffset, count, rawIds, 0) != count)
 						throw new IllegalStateException("short nonterminal adjacency window");
-					rawOffset += count; inputAt = 0; inputEnd = count; inputIds = rawIds; inputWeights = null;
+					rawOffset += count;
+					inputAt = 0;
+					inputEnd = count;
+					inputIds = rawIds;
+					inputWeights = null;
 				}
 			}
-			value = inputIds[inputAt]; weight = inputWeights == null ? 1L : inputWeights[inputAt]; inputAt++;
-			if (weight <= 0L || weight > remaining) throw new IllegalStateException("invalid nonterminal weight");
+			value = inputIds[inputAt];
+			weight = inputWeights == null ? 1L : inputWeights[inputAt];
+			inputAt++;
+			if (weight <= 0L || weight > remaining)
+				throw new IllegalStateException("invalid nonterminal weight");
 			remaining -= weight;
 			return true;
 		}
@@ -2380,23 +2518,33 @@ final class LmdbNativePackedFtree {
 		/** Preserve correctness when an exact terminal descriptor cannot be exported for this root. */
 		private Chunk fallback(Chunk chunk) throws IOException {
 			chunk.reset();
-			NodeData root = chunk.data[runtime.plan.root.ordinal]; root.ensureCapacity(1);
-			root.setValue(0, rootId); root.setWeight(0, rootWeight); root.size = 1; root.state.reset(1);
+			NodeData root = chunk.data[runtime.plan.root.ordinal];
+			root.ensureCapacity(1);
+			root.setValue(0, rootId);
+			root.setWeight(0, rootWeight);
+			root.size = 1;
+			root.state.reset(1);
 			for (NodePlan child : runtime.plan.root.children) {
-				runtime.buildSubtree(chunk, child); chunk.cascade.propagateFrom(child);
+				runtime.buildSubtree(chunk, child);
+				chunk.cascade.propagateFrom(child);
 			}
-			chunk.cascade.propagateFrom(runtime.plan.root); chunk.releaseBuildParents();
+			chunk.cascade.propagateFrom(runtime.plan.root);
+			chunk.releaseBuildParents();
 			activeRoot = fallbackRoot = false;
 			return chunk;
 		}
+
 		private void poll() {
 			LmdbNativeProbeDeadline.poll(++ticks);
 			if (runtime.row.cancellation.isCancellationRequested())
 				throw new java.util.concurrent.CancellationException("projection construction cancelled");
 		}
 
-		@Override public void close() {
-			if (closed) return; closed = true;
+		@Override
+		public void close() {
+			if (closed)
+				return;
+			closed = true;
 			Throwable failure = null;
 			try {
 				if (nested != null)
@@ -3028,8 +3176,10 @@ final class LmdbNativePackedFtree {
 
 		/** Installs a worker's next bounded partition producer, closing the previous one. */
 		void resetRoots(RootProducer next) {
-			if (projectionBuilder != null) projectionBuilder.close();
-			projectionBuilder = null; projectionBuilderChecked = false;
+			if (projectionBuilder != null)
+				projectionBuilder.close();
+			projectionBuilder = null;
+			projectionBuilderChecked = false;
 			RootProducer previous = roots;
 			roots = next;
 			exhausted = constantsExhausted;
@@ -3199,11 +3349,13 @@ final class LmdbNativePackedFtree {
 			rootData.ensureCapacity(ROOT_BATCH_SIZE);
 			NodeData seedGroup = prepareSeedBorrowing(chunk);
 			int n;
-			if (seedGroup == null) n = roots.fill(rootData, ROOT_BATCH_SIZE);
+			if (seedGroup == null)
+				n = roots.fill(rootData, ROOT_BATCH_SIZE);
 			else {
 				KeyRootProducer producer = (KeyRootProducer) roots;
 				n = producer.fillBorrowed(rootData, ROOT_BATCH_SIZE, seedGroup.retainedBorrowed);
-				if (!producer.borrowUnsupported) seedGroup.borrowed = seedGroup.retainedBorrowed;
+				if (!producer.borrowUnsupported)
+					seedGroup.borrowed = seedGroup.retainedBorrowed;
 			}
 			if (n == 0) {
 				exhausted = true;
@@ -3240,7 +3392,8 @@ final class LmdbNativePackedFtree {
 		}
 
 		private void buildNode(Chunk chunk, NodePlan node) throws IOException {
-			if (tryBorrowTerminal(chunk, node)) return;
+			if (tryBorrowTerminal(chunk, node))
+				return;
 			NodePlan parentPlan = node.parent;
 			NodeData parent = chunk.data[parentPlan.ordinal];
 			NodeData out = chunk.data[node.ordinal];
@@ -3290,12 +3443,15 @@ final class LmdbNativePackedFtree {
 		/** Retain the seed row while its key cursor is positioned; do not look it up again for the child. */
 		private NodeData prepareSeedBorrowing(Chunk chunk) {
 			if (!borrowEnabled || !(roots instanceof KeyRootProducer producer) || producer.borrowUnsupported
-					|| rootSeed == null || !rootSeed.variableIsKey) return null;
+					|| rootSeed == null || !rootSeed.variableIsKey)
+				return null;
 			for (NodePlan child : plan.root.children) {
-				if (child.primary.pattern != rootSeed.pattern || !borrowableTerminal(child)) continue;
+				if (child.primary.pattern != rootSeed.pattern || !borrowableTerminal(child))
+					continue;
 				EdgeRuntime edge = primaryEdges[child.ordinal];
 				BorrowedFactorBatch.Source source = edge.factorSource();
-				if (source == null) return null;
+				if (source == null)
+					return null;
 				NodeData data = chunk.data[child.ordinal];
 				ensureBorrowed(data, source, ROOT_BATCH_SIZE).reset(ROOT_BATCH_SIZE);
 				return data;
@@ -3318,31 +3474,36 @@ final class LmdbNativePackedFtree {
 
 		/** Leaves without member-dependent restrictions stay as exact groups in the existing f-tree. */
 		private boolean tryBorrowTerminal(Chunk chunk, NodePlan node) {
-			if (!borrowableTerminal(node)) return false;
+			if (!borrowableTerminal(node))
+				return false;
 			EdgeRuntime primary = primaryEdges[node.ordinal];
 			BorrowedFactorBatch.Source source = primary.factorSource();
-			if (source == null) return false;
+			if (source == null)
+				return false;
 			NodeData parent = chunk.data[node.parent.ordinal];
 			NodeData out = chunk.data[node.ordinal];
 			BorrowedFactorBatch groups = out.borrowed;
 			if (groups == null) {
 				groups = ensureBorrowed(out, source, parent.size);
 				groups.reset(parent.size);
-				for (int lane = parent.state.nextSetBit(parent.startLane()); lane >= 0 && lane < parent.endLane();
-						lane = parent.state.nextSetBit(lane + 1)) {
+				for (int lane = parent.state.nextSetBit(parent.startLane()); lane >= 0
+						&& lane < parent.endLane(); lane = parent.state.nextSetBit(lane + 1)) {
 					LmdbNativeProbeDeadline.poll(lane);
 					long count = primary.bind(parent.value(lane));
-					if (count == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) return false;
-					if (count > 0L && !primary.cursor.borrow(groups, lane)) return false;
+					if (count == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED)
+						return false;
+					if (count > 0L && !primary.cursor.borrow(groups, lane))
+						return false;
 				}
 			}
 			// Publish only after every descriptor is exact. Failed capability export is never logical absence.
 			out.borrowed = groups;
 			out.size = 0;
 			out.offsets = null;
-			for (int lane = parent.state.nextSetBit(parent.startLane()); lane >= 0 && lane < parent.endLane();
-					lane = parent.state.nextSetBit(lane + 1)) {
-				if (groups.count(lane) == 0L) parent.state.clear(lane);
+			for (int lane = parent.state.nextSetBit(parent.startLane()); lane >= 0
+					&& lane < parent.endLane(); lane = parent.state.nextSetBit(lane + 1)) {
+				if (groups.count(lane) == 0L)
+					parent.state.clear(lane);
 			}
 			return true;
 		}
@@ -3740,23 +3901,33 @@ final class LmdbNativePackedFtree {
 
 		@Override
 		public void close() {
-			if (closed) return;
+			if (closed)
+				return;
 			closed = true;
 			try {
 				Throwable failure = null;
-				if (projectionBuilder != null) try { projectionBuilder.close(); }
-				catch (RuntimeException | Error problem) { failure = problem; }
-				for (EdgeRuntime edge : primaryEdges) failure = closeEdge(edge, failure);
+				if (projectionBuilder != null)
+					try {
+						projectionBuilder.close();
+					} catch (RuntimeException | Error problem) {
+						failure = problem;
+					}
+				for (EdgeRuntime edge : primaryEdges)
+					failure = closeEdge(edge, failure);
 				for (EdgeRuntime[] edges : constraintEdges) {
 					if (edges != null) {
-						for (EdgeRuntime edge : edges) failure = closeEdge(edge, failure);
+						for (EdgeRuntime edge : edges)
+							failure = closeEdge(edge, failure);
 					}
 				}
-				if (failure instanceof RuntimeException problem) throw problem;
-				if (failure instanceof Error problem) throw problem;
+				if (failure instanceof RuntimeException problem)
+					throw problem;
+				if (failure instanceof Error problem)
+					throw problem;
 			} finally {
 				try {
-					if (roots != null) roots.close();
+					if (roots != null)
+						roots.close();
 				} finally {
 					try {
 						probe.close();
@@ -3774,13 +3945,15 @@ final class LmdbNativePackedFtree {
 			}
 		}
 
-
 		private static Throwable closeEdge(EdgeRuntime edge, Throwable failure) {
 			if (edge != null) {
-				try { edge.close(); }
-				catch (RuntimeException | Error problem) {
-					if (failure == null) return problem;
-					if (failure != problem) failure.addSuppressed(problem);
+				try {
+					edge.close();
+				} catch (RuntimeException | Error problem) {
+					if (failure == null)
+						return problem;
+					if (failure != problem)
+						failure.addSuppressed(problem);
 				}
 			}
 			return failure;
@@ -3888,7 +4061,8 @@ final class LmdbNativePackedFtree {
 			while (count < limit && cursor.advance()) {
 				LmdbNativeProbeDeadline.poll(count);
 				scratch[count] = cursor.key();
-				if (!borrowUnsupported && !cursor.borrow(groups, count)) borrowUnsupported = true;
+				if (!borrowUnsupported && !cursor.borrow(groups, count))
+					borrowUnsupported = true;
 				count++;
 			}
 			target.copyValues(scratch, 0, 0, count);
@@ -4468,11 +4642,15 @@ final class LmdbNativePackedFtree {
 
 		BorrowedFactorBatch.Cursor packedFibers() {
 			BorrowedFactorBatch.Source source = factorSource();
-			if (source == null) return null;
-			if (packedGroups == null) packedGroups = new BorrowedFactorBatch(source, 1);
+			if (source == null)
+				return null;
+			if (packedGroups == null)
+				packedGroups = new BorrowedFactorBatch(source, 1);
 			packedGroups.reset(1);
-			if (!cursor.borrow(packedGroups, 0)) return null;
-			if (packedReader == null) packedReader = packedGroups.cursor(RUN_COPY_WINDOW);
+			if (!cursor.borrow(packedGroups, 0))
+				return null;
+			if (packedReader == null)
+				packedReader = packedGroups.cursor(RUN_COPY_WINDOW);
 			packedReader.bind(0);
 			return packedReader;
 		}
@@ -4556,10 +4734,17 @@ final class LmdbNativePackedFtree {
 		}
 
 		void close() {
-			try { if (cursor != null) cursor.close(); }
-			finally {
-				try { if (packedReader != null) packedReader.close(); }
-				finally { if (borrowedSource != null) borrowedSource.close(); }
+			try {
+				if (cursor != null)
+					cursor.close();
+			} finally {
+				try {
+					if (packedReader != null)
+						packedReader.close();
+				} finally {
+					if (borrowedSource != null)
+						borrowedSource.close();
+				}
 			}
 		}
 	}
@@ -5197,7 +5382,8 @@ final class LmdbNativePackedFtree {
 		/** Opens only value-demanded leaves; untouched sibling relations remain borrowed. */
 		void materializeBorrowed(long demandedMask) {
 			for (NodeData d : data) {
-				if (d.borrowed == null || (demandedMask & (1L << d.plan.slot)) == 0L) continue;
+				if (d.borrowed == null || (demandedMask & (1L << d.plan.slot)) == 0L)
+					continue;
 				NodeData parent = data[d.plan.parent.ordinal];
 				BorrowedFactorBatch groups = d.borrowed;
 				d.ensureOffsets(parent.size + 1);
@@ -5218,7 +5404,8 @@ final class LmdbNativePackedFtree {
 									LmdbNativeProbeDeadline.poll(++tick);
 									long value = values[i];
 									if (d.size > start && d.value(d.size - 1) == value) {
-										d.setWeight(d.size - 1, FactorizedTail.addCounts(d.weight(d.size - 1), weights[i]));
+										d.setWeight(d.size - 1,
+												FactorizedTail.addCounts(d.weight(d.size - 1), weights[i]));
 									} else {
 										d.setValue(d.size, value);
 										d.setWeight(d.size, weights[i]);
@@ -5235,14 +5422,19 @@ final class LmdbNativePackedFtree {
 			}
 		}
 
-		long computeSubtreeCounts(RowState row) { return computeSubtreeCounts(row, true); }
+		long computeSubtreeCounts(RowState row) {
+			return computeSubtreeCounts(row, true);
+		}
 
 		long computeSubtreeCounts(RowState row, boolean outsideNeeded) {
-			if (LmdbNativePackedFtreeJanino.compute(plan, this, row, outsideNeeded)) return totalRows;
+			if (LmdbNativePackedFtreeJanino.compute(plan, this, row, outsideNeeded))
+				return totalRows;
 			return computeSubtreeCountsInterpreted(outsideNeeded, row);
 		}
 
-		long computeSubtreeCountsInterpreted() { return computeSubtreeCountsInterpreted(true); }
+		long computeSubtreeCountsInterpreted() {
+			return computeSubtreeCountsInterpreted(true);
+		}
 
 		long computeSubtreeCountsInterpreted(boolean outsideNeeded) {
 			return computeSubtreeCountsInterpreted(outsideNeeded, null);
@@ -5297,18 +5489,22 @@ final class LmdbNativePackedFtree {
 				total = FactorizedTail.addCounts(total, root.subtreeCounts[lane]);
 			}
 			totalRows = total;
-			if (outsideNeeded) computeOutsideCounts();
+			if (outsideNeeded)
+				computeOutsideCounts();
 			return total;
 		}
 
 		private static void pollCount(RowState row, int ticks) {
-			if ((ticks & 1023) != 0) return;
+			if ((ticks & 1023) != 0)
+				return;
 			LmdbNativeProbeDeadline.poll(ticks);
 			if (row != null && row.cancellation.isCancellationRequested())
 				throw new java.util.concurrent.CancellationException("factor cardinality cancelled");
 		}
 
-		void prepareCountArrays() { prepareCountArrays(true); }
+		void prepareCountArrays() {
+			prepareCountArrays(true);
+		}
 
 		void prepareCountArrays(boolean outsideNeeded) {
 			for (NodeData d : data) {
@@ -5387,7 +5583,8 @@ final class LmdbNativePackedFtree {
 						long outside = FactorizedTail.multiplyCounts(base,
 								FactorizedTail.multiplyCounts(prefix[i], suffix[i]));
 						NodeData child = data[node.children[i].ordinal];
-						if (child.borrowed != null) continue;
+						if (child.borrowed != null)
+							continue;
 						if (child.sharedWithParent) {
 							if (child.state.isSet(p)) {
 								child.outsideCounts[p] = outside;
@@ -5406,7 +5603,8 @@ final class LmdbNativePackedFtree {
 		}
 
 		long childSum(NodeData child, int parentLane) {
-			if (child.borrowed != null) return child.borrowed.count(parentLane);
+			if (child.borrowed != null)
+				return child.borrowed.count(parentLane);
 			if (child.sharedWithParent) {
 				return child.state.isSet(parentLane) ? child.subtreeCounts[parentLane] : 0L;
 			}
@@ -5701,44 +5899,59 @@ final class LmdbNativePackedFtree {
 		final RowState row;
 		int ticks;
 		boolean complete;
+
 		ProjectionCounts(Chunk chunk, RowState row) {
-			this.chunk = chunk; this.row = row; this.memo = new long[chunk.data.length][];
+			this.chunk = chunk;
+			this.row = row;
+			this.memo = new long[chunk.data.length][];
 			this.childMemo = new long[chunk.data.length][];
 		}
+
 		private void poll() {
 			LmdbNativeProbeDeadline.poll(++ticks);
 			if ((ticks & 255) == 0 && row.cancellation.isCancellationRequested())
 				throw new java.util.concurrent.CancellationException("factor projection cancelled");
 		}
+
 		long child(NodePlan node, int parentLane) {
 			NodeData d = chunk.data[node.ordinal];
-			if (d.borrowed != null) return d.borrowed.count(parentLane);
-			if (d.sharedWithParent) return d.state.isSet(parentLane) ? lane(node, parentLane) : 0L;
+			if (d.borrowed != null)
+				return d.borrowed.count(parentLane);
+			if (d.sharedWithParent)
+				return d.state.isSet(parentLane) ? lane(node, parentLane) : 0L;
 			// A frozen child relation has one exact sum per parent, not per projected leaf.
 			// Keep source-backed descriptors on their validating count() path above.
 			long[] sums = childMemo[node.ordinal];
-			if (sums == null) childMemo[node.ordinal] = sums = new long[chunk.data[node.parent.ordinal].size];
+			if (sums == null)
+				childMemo[node.ordinal] = sums = new long[chunk.data[node.parent.ordinal].size];
 			long cached = sums[parentLane];
-			if (cached != 0L) return cached < 0L ? 0L : cached;
+			if (cached != 0L)
+				return cached < 0L ? 0L : cached;
 			long sum = 0L;
 			int to = d.offsets[parentLane + 1];
-			for (int at = d.state.nextSetBit(d.offsets[parentLane]); at >= 0 && at < to;
-					at = d.state.nextSetBit(at + 1)) sum = FactorizedTail.addCounts(sum, lane(node, at));
+			for (int at = d.state.nextSetBit(d.offsets[parentLane]); at >= 0
+					&& at < to; at = d.state.nextSetBit(at + 1))
+				sum = FactorizedTail.addCounts(sum, lane(node, at));
 			sums[parentLane] = sum == 0L ? -1L : sum; // zero-filled storage denotes unknown
 			return sum;
 		}
+
 		long lane(NodePlan node, int at) {
 			poll();
 			NodeData d = chunk.data[node.ordinal];
 			long[] counts = memo[node.ordinal];
-			if (counts == null) memo[node.ordinal] = counts = new long[d.size];
+			if (counts == null)
+				memo[node.ordinal] = counts = new long[d.size];
 			long result = counts[at];
-			if (result != 0L) return result;
+			if (result != 0L)
+				return result;
 			result = d.weight(at);
-			for (NodePlan child : node.children) result = FactorizedTail.multiplyCounts(result, child(child, at));
+			for (NodePlan child : node.children)
+				result = FactorizedTail.multiplyCounts(result, child(child, at));
 			counts[at] = result;
 			return result;
 		}
+
 		long total() {
 			if (!complete) {
 				// This consumer actually observes the whole chunk's exact cardinality. Reuse
@@ -5746,25 +5959,33 @@ final class LmdbNativePackedFtree {
 				// implementing another full-tree reduction. Group-only/DISTINCT requests
 				// never take this path, so irrelevant whole-chunk overflow remains avoided.
 				chunk.computeSubtreeCounts(row, false);
-				for (int i = 0; i < memo.length; i++) memo[i] = chunk.data[i].subtreeCounts;
+				for (int i = 0; i < memo.length; i++)
+					memo[i] = chunk.data[i].subtreeCounts;
 				complete = true;
 			}
 			return chunk.totalRows;
 		}
+
 		long weight(PackedProjectionCursor projection) {
-			if (projection == null) return total();
+			if (projection == null)
+				return total();
 			return weightWithout(projection, null);
 		}
+
 		long weightWithout(PackedProjectionCursor projection, NodePlan excluded) {
-			if (projection == null) return 1L; // the varying node is the root
+			if (projection == null)
+				return 1L; // the varying node is the root
 			long result = 1L;
-			for (NodePlan node : chunk.plan.nodes) if (projection.included[node.ordinal]) {
-				poll();
-				int at = projection.lanes[node.ordinal];
-				result = FactorizedTail.multiplyCounts(result, chunk.data[node.ordinal].weight(at));
-				for (NodePlan child : node.children) if ((excluded == null || child.ordinal != excluded.ordinal) && !projection.included[child.ordinal])
-					result = FactorizedTail.multiplyCounts(result, child(child, at));
-			}
+			for (NodePlan node : chunk.plan.nodes)
+				if (projection.included[node.ordinal]) {
+					poll();
+					int at = projection.lanes[node.ordinal];
+					result = FactorizedTail.multiplyCounts(result, chunk.data[node.ordinal].weight(at));
+					for (NodePlan child : node.children)
+						if ((excluded == null || child.ordinal != excluded.ordinal)
+								&& !projection.included[child.ordinal])
+							result = FactorizedTail.multiplyCounts(result, child(child, at));
+				}
 			return result;
 		}
 	}
@@ -5805,69 +6026,117 @@ final class LmdbNativePackedFtree {
 		ChunkProjectionCursor(Plan plan, RowState row, Runtime runtime, int[][] outputs, boolean[] exact) {
 			this(plan, row, runtime, outputs, exact, true);
 		}
+
 		ChunkProjectionCursor(Plan plan, RowState row, Runtime runtime, int[][] outputs, boolean[] exact,
 				boolean ownsRuntime) {
-			this.plan = plan; this.row = row; this.runtime = runtime; this.ownsRuntime = ownsRuntime;
-			this.outputs = new int[outputs.length][]; this.exact = exact.clone();
+			this.plan = plan;
+			this.row = row;
+			this.runtime = runtime;
+			this.ownsRuntime = ownsRuntime;
+			this.outputs = new int[outputs.length][];
+			this.exact = exact.clone();
 			demands = new long[outputs.length];
 			long all = 0L;
 			for (int i = 0; i < outputs.length; i++) {
 				this.outputs[i] = outputs[i].clone();
-				demands[i] = localDemandedMask(plan, outputs[i]); all |= demands[i];
+				demands[i] = localDemandedMask(plan, outputs[i]);
+				all |= demands[i];
 			}
 			unionDemand = all;
-			windowNodes = new NodePlan[outputs.length]; windowPrefixes = new long[outputs.length];
+			windowNodes = new NodePlan[outputs.length];
+			windowPrefixes = new long[outputs.length];
 			for (int i = 0; i < outputs.length; i++) {
 				NodePlan candidate = null;
-				for (NodePlan node : plan.nodes) if ((demands[i] & (1L << node.slot)) != 0L) candidate = node;
-				if (candidate == null || candidate.children.length != 0) continue;
+				for (NodePlan node : plan.nodes)
+					if ((demands[i] & (1L << node.slot)) != 0L)
+						candidate = node;
+				if (candidate == null || candidate.children.length != 0)
+					continue;
 				long path = 0L;
-				for (NodePlan parent = candidate.parent; parent != null; parent = parent.parent) path |= 1L << parent.slot;
+				for (NodePlan parent = candidate.parent; parent != null; parent = parent.parent)
+					path |= 1L << parent.slot;
 				// One ancestor chain, never an independent sibling or correlated tuple product.
-				if ((demands[i] & ~(path | (1L << candidate.slot))) != 0L) continue;
-				windowNodes[i] = candidate; windowPrefixes[i] = path;
+				if ((demands[i] & ~(path | (1L << candidate.slot))) != 0L)
+					continue;
+				windowNodes[i] = candidate;
+				windowPrefixes[i] = path;
 			}
 		}
-		@Override public void permitPrefixPartitions() {
-			if (started || closed) throw new IllegalStateException("partition permission must precede input");
+
+		@Override
+		public void permitPrefixPartitions() {
+			if (started || closed)
+				throw new IllegalStateException("partition permission must precede input");
 			prefixPartitions = true;
 		}
-		@Override public boolean nextBatch() throws IOException {
-			if (closed) return false;
+
+		@Override
+		public boolean nextBatch() throws IOException {
+			if (closed)
+				return false;
 			if (chunk != null && completed != outputs.length - 1)
 				throw new IllegalStateException("unfinished chunk projection");
 			started = true;
 			try {
-				if (row.cancellation.isCancellationRequested()) { close(); return false; }
+				if (row.cancellation.isCancellationRequested()) {
+					close();
+					return false;
+				}
 				for (;;) {
 					chunk = prefixPartitions ? runtime.nextProjectionChunk() : runtime.nextChunk();
-					if (chunk == null) { close(); return false; }
+					if (chunk == null) {
+						close();
+						return false;
+					}
 					NodeData root = chunk.data[plan.root.ordinal];
 					int first = root.state.nextSetBit(root.startLane());
-					if (first >= 0 && first < root.endLane()) break;
-					if (row.cancellation.isCancellationRequested()) { close(); return false; }
+					if (first >= 0 && first < root.endLane())
+						break;
+					if (row.cancellation.isCancellationRequested()) {
+						close();
+						return false;
+					}
 				}
 				// The relations are immutable, not necessarily decoded. Materialize only when
 				// a requested traversal cannot consume a borrowed window, never at publication.
-				active = completed = -1; positioned = false; projection = null; windowMode = false; windowSize = 0;
-				scalarWindow = borrowedParent = false; borrowedWindowBatch = null;
+				active = completed = -1;
+				positioned = false;
+				projection = null;
+				windowMode = false;
+				windowSize = 0;
+				scalarWindow = borrowedParent = false;
+				borrowedWindowBatch = null;
 				counts = new ProjectionCounts(chunk, row);
 				return true;
 			} catch (PackedDecline decline) {
-				close(); throw new QueryEvaluationException("factor marginal lost adjacency coverage", decline);
+				close();
+				throw new QueryEvaluationException("factor marginal lost adjacency coverage", decline);
 			} catch (IOException | RuntimeException | Error failure) {
-				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				try {
+					close();
+				} catch (Throwable closing) {
+					if (closing != failure)
+						failure.addSuppressed(closing);
+				}
 				throw failure;
 			}
 		}
-		@Override public boolean next(int request) {
-			if (closed || chunk == null) throw new IllegalStateException("no projection chunk");
+
+		@Override
+		public boolean next(int request) {
+			if (closed || chunk == null)
+				throw new IllegalStateException("no projection chunk");
 			java.util.Objects.checkIndex(request, outputs.length);
 			try {
 				LmdbNativeProbeDeadline.poll(++tick);
-				if ((tick & 255) == 0) if (row.cancellation.isCancellationRequested()) { close(); return false; }
+				if ((tick & 255) == 0)
+					if (row.cancellation.isCancellationRequested()) {
+						close();
+						return false;
+					}
 				positioned = false;
-				if (request == completed) return false;
+				if (request == completed)
+					return false;
 				NodePlan candidate = windowNodes[request];
 				if ((active == request && scalarWindow) || (active != request && windowsEnabled
 						&& candidate != null && chunk.data[candidate.ordinal].borrowed != null))
@@ -5876,29 +6145,48 @@ final class LmdbNativePackedFtree {
 					if (request != completed + 1 || active != completed)
 						throw new IllegalStateException("unfinished marginal");
 					materializeForScalar(demands[request]);
-					active = request; windowMode = scalarWindow = false;
+					active = request;
+					windowMode = scalarWindow = false;
 					projection = demands[request] == 0L ? null
 							: new PackedProjectionCursor(chunk, demands[request], false, false);
 					scalarPending = true;
 				}
-				if (windowMode) throw new IllegalStateException("cannot switch projection traversal mode");
+				if (windowMode)
+					throw new IllegalStateException("cannot switch projection traversal mode");
 				boolean found;
 				if (projection == null) {
-					found = scalarPending; scalarPending = false;
+					found = scalarPending;
+					scalarPending = false;
 					weight = 0L;
-				} else { found = projection.next(); weight = 0L; }
-				if (!found) { completed = active; return false; }
-				positioned = true; return true;
+				} else {
+					found = projection.next();
+					weight = 0L;
+				}
+				if (!found) {
+					completed = active;
+					return false;
+				}
+				positioned = true;
+				return true;
 			} catch (RuntimeException | Error failure) {
-				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				try {
+					close();
+				} catch (Throwable closing) {
+					if (closing != failure)
+						failure.addSuppressed(closing);
+				}
 				throw failure;
 			}
 		}
-		@Override public int windowColumn(int request) {
-			if (closed || chunk == null) throw new IllegalStateException("no projection chunk");
+
+		@Override
+		public int windowColumn(int request) {
+			if (closed || chunk == null)
+				throw new IllegalStateException("no projection chunk");
 			java.util.Objects.checkIndex(request, outputs.length);
 			NodePlan node = windowNodes[request];
-			if (!windowsEnabled || node == null || chunk.data[node.ordinal].sharedWithParent) return -1;
+			if (!windowsEnabled || node == null || chunk.data[node.ordinal].sharedWithParent)
+				return -1;
 			return node.slot;
 		}
 
@@ -5910,7 +6198,8 @@ final class LmdbNativePackedFtree {
 				positioned = true;
 				return true;
 			}
-			if (advanceWindow(request, true) == 0) return false;
+			if (advanceWindow(request, true) == 0)
+				return false;
 			scalarWindowAt = windowOffset;
 			return true;
 		}
@@ -5928,65 +6217,102 @@ final class LmdbNativePackedFtree {
 		}
 
 		/** A window never crosses its parent binding: all other requested columns remain scalar. */
-		@Override public int nextWindow(int request) { return advanceWindow(request, false); }
+		@Override
+		public int nextWindow(int request) {
+			return advanceWindow(request, false);
+		}
 
 		private int advanceWindow(int request, boolean scalar) {
-			if (closed || chunk == null) throw new IllegalStateException("no projection chunk");
+			if (closed || chunk == null)
+				throw new IllegalStateException("no projection chunk");
 			java.util.Objects.checkIndex(request, outputs.length);
 			try {
 				pollWindow();
-				positioned = false; windowSize = 0; changedPrefix = false;
-				if (request == completed) return 0;
+				positioned = false;
+				windowSize = 0;
+				changedPrefix = false;
+				if (request == completed)
+					return 0;
 				if (active != request) {
 					if (request != completed + 1 || active != completed)
 						throw new IllegalStateException("unfinished marginal");
-					if (windowColumn(request) < 0) throw new IllegalStateException("no packed window capability");
-					active = request; windowMode = true; scalarWindow = scalar; windowNode = windowNodes[request];
+					if (windowColumn(request) < 0)
+						throw new IllegalStateException("no packed window capability");
+					active = request;
+					windowMode = true;
+					scalarWindow = scalar;
+					windowNode = windowNodes[request];
 					projection = windowPrefixes[request] == 0L ? null
 							: new PackedProjectionCursor(chunk, windowPrefixes[request], false, false);
-					scalarPending = true; windowLane = -1; windowEnd = 0; borrowedParent = false;
+					scalarPending = true;
+					windowLane = -1;
+					windowEnd = 0;
+					borrowedParent = false;
 					borrowedWindowBatch = null;
 				} else if (!windowMode || scalarWindow != scalar)
 					throw new IllegalStateException("cannot switch projection traversal mode");
 				NodeData data = chunk.data[windowNode.ordinal];
-				if (data.borrowed != null) return advanceBorrowedWindow(data);
+				if (data.borrowed != null)
+					return advanceBorrowedWindow(data);
 				while (windowLane < 0 || windowLane >= windowEnd) {
 					pollWindow();
-					if (!nextWindowParent()) { completed = active; return 0; }
+					if (!nextWindowParent()) {
+						completed = active;
+						return 0;
+					}
 					int from;
-					if (windowNode.parent == null) { from = data.startLane(); windowEnd = data.endLane(); }
-					else {
+					if (windowNode.parent == null) {
+						from = data.startLane();
+						windowEnd = data.endLane();
+					} else {
 						int parent = projection.lanes[windowNode.parent.ordinal];
-						from = data.offsets[parent]; windowEnd = data.offsets[parent + 1];
+						from = data.offsets[parent];
+						windowEnd = data.offsets[parent + 1];
 					}
 					windowLane = data.state.nextSetBit(from);
 				}
 				if (packedWindowIds == null) {
-					packedWindowIds = new long[PROJECTION_WINDOW]; packedWindowWeights = new long[PROJECTION_WINDOW];
+					packedWindowIds = new long[PROJECTION_WINDOW];
+					packedWindowWeights = new long[PROJECTION_WINDOW];
 				}
-				windowIds = packedWindowIds; windowWeights = packedWindowWeights; windowOffset = 0;
+				windowIds = packedWindowIds;
+				windowWeights = packedWindowWeights;
+				windowOffset = 0;
 				int count = 0;
 				while (count < PROJECTION_WINDOW && windowLane >= 0 && windowLane < windowEnd) {
 					windowIds[count] = data.value(windowLane);
 					windowWeights[count] = exact[active] ? data.weight(windowLane) : 1L;
-					if (windowWeights[count] <= 0L) throw new IllegalStateException("nonpositive packed member weight");
+					if (windowWeights[count] <= 0L)
+						throw new IllegalStateException("nonpositive packed member weight");
 					count++;
 					windowLane = data.state.nextSetBit(windowLane + 1);
 				}
 				pollWindow();
-				windowSize = count; positioned = true;
+				windowSize = count;
+				positioned = true;
 				return count;
 			} catch (RuntimeException | Error failure) {
-				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				try {
+					close();
+				} catch (Throwable closing) {
+					if (closing != failure)
+						failure.addSuppressed(closing);
+				}
 				throw failure;
 			}
 		}
 
 		private boolean nextWindowParent() {
 			boolean present;
-			if (projection == null) { present = scalarPending; scalarPending = false; }
-			else present = projection.next();
-			if (present) { changedPrefix = true; weight = 0L; }
+			if (projection == null) {
+				present = scalarPending;
+				scalarPending = false;
+			} else
+				present = projection.next();
+			if (present) {
+				changedPrefix = true;
+				weight = 0L;
+			}
 			return present;
 		}
 
@@ -5995,28 +6321,46 @@ final class LmdbNativePackedFtree {
 			for (;;) {
 				pollWindow();
 				if (!borrowedParent) {
-					if (!nextWindowParent()) { completed = active; return 0; }
+					if (!nextWindowParent()) {
+						completed = active;
+						return 0;
+					}
 					BorrowedFactorBatch groups = data.borrowed;
 					int parent = projection.lanes[windowNode.parent.ordinal];
 					if (borrowedWindowSource != groups.source()) {
 						BorrowedFactorBatch.Cursor previous = borrowedWindow;
-						borrowedWindow = null; borrowedWindowSource = null;
-						if (previous != null) previous.close();
-						borrowedWindow = groups.cursor(PROJECTION_WINDOW); borrowedWindowSource = groups.source();
+						borrowedWindow = null;
+						borrowedWindowSource = null;
+						if (previous != null)
+							previous.close();
+						borrowedWindow = groups.cursor(PROJECTION_WINDOW);
+						borrowedWindowSource = groups.source();
 					}
 					borrowedWindow.bind(groups, parent);
-					borrowedWindowBatch = groups; borrowedWindowGeneration = groups.generation();
-					borrowedWindowParent = parent; borrowedParent = true;
+					borrowedWindowBatch = groups;
+					borrowedWindowGeneration = groups.generation();
+					borrowedWindowParent = parent;
+					borrowedParent = true;
 				}
 				int count = borrowedWindow.nextWindow();
-				if (count == 0) { borrowedParent = false; continue; }
-				windowOffset = borrowedWindow.windowStart(); windowIds = borrowedWindow.windowValues();
-				if (exact[active]) windowWeights = borrowedWindow.windowWeights();
+				if (count == 0) {
+					borrowedParent = false;
+					continue;
+				}
+				windowOffset = borrowedWindow.windowStart();
+				windowIds = borrowedWindow.windowValues();
+				if (exact[active])
+					windowWeights = borrowedWindow.windowWeights();
 				else {
-					if (presenceWeights == null) { presenceWeights = new long[PROJECTION_WINDOW]; Arrays.fill(presenceWeights, 1L); }
+					if (presenceWeights == null) {
+						presenceWeights = new long[PROJECTION_WINDOW];
+						Arrays.fill(presenceWeights, 1L);
+					}
 					windowWeights = presenceWeights;
 				}
-				pollWindow(); windowSize = count; positioned = true;
+				pollWindow();
+				windowSize = count;
+				positioned = true;
 				return count;
 			}
 		}
@@ -6034,80 +6378,150 @@ final class LmdbNativePackedFtree {
 			if (row.cancellation.isCancellationRequested())
 				throw new java.util.concurrent.CancellationException("packed projection window cancelled");
 		}
+
 		private void checkWindow() {
 			if (closed || !positioned || !windowMode || windowSize == 0)
 				throw new IllegalStateException("no packed projection window");
 			validateBorrowedWindow();
 		}
-		@Override public long[] windowValues() { checkWindow(); return windowIds; }
-		@Override public long[] windowWeights() { checkWindow(); return windowWeights; }
-		@Override public int windowStart() { checkWindow(); return windowOffset; }
-		@Override public boolean windowPrefixChanged() { checkWindow(); return changedPrefix; }
-		@Override public long windowScale() {
+
+		@Override
+		public long[] windowValues() {
 			checkWindow();
-			if (!exact[active]) return 1L;
+			return windowIds;
+		}
+
+		@Override
+		public long[] windowWeights() {
+			checkWindow();
+			return windowWeights;
+		}
+
+		@Override
+		public int windowStart() {
+			checkWindow();
+			return windowOffset;
+		}
+
+		@Override
+		public boolean windowPrefixChanged() {
+			checkWindow();
+			return changedPrefix;
+		}
+
+		@Override
+		public long windowScale() {
+			checkWindow();
+			if (!exact[active])
+				return 1L;
 			try {
 				pollWindow();
-				if (weight == 0L) weight = counts.weightWithout(projection, windowNode);
+				if (weight == 0L)
+					weight = counts.weightWithout(projection, windowNode);
 				return weight;
 			} catch (RuntimeException | Error failure) {
-				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				try {
+					close();
+				} catch (Throwable closing) {
+					if (closing != failure)
+						failure.addSuppressed(closing);
+				}
 				throw failure;
 			}
 		}
 
-		@Override public long value(int slot) {
-			if (!positioned || closed) throw new IllegalStateException("unpositioned marginal");
+		@Override
+		public long value(int slot) {
+			if (!positioned || closed)
+				throw new IllegalStateException("unpositioned marginal");
 			boolean included = false;
-			for (int output : outputs[active]) if (output == slot) { included = true; break; }
-			if (!included) throw new IllegalArgumentException("unrequested projection slot");
+			for (int output : outputs[active])
+				if (output == slot) {
+					included = true;
+					break;
+				}
+			if (!included)
+				throw new IllegalArgumentException("unrequested projection slot");
 			if (windowMode && slot == windowNode.slot) {
-				if (!scalarWindow) throw new IllegalStateException("read varying slot from window");
+				if (!scalarWindow)
+					throw new IllegalStateException("read varying slot from window");
 				validateBorrowedWindow();
 				return windowIds[scalarWindowAt];
 			}
 			return projectedValue(plan, row, chunk, projection, slot);
 		}
-		@Override public long multiplicity() {
-			if (!positioned || closed) throw new IllegalStateException("unpositioned marginal");
+
+		@Override
+		public long multiplicity() {
+			if (!positioned || closed)
+				throw new IllegalStateException("unpositioned marginal");
 			try {
 				if (windowMode) {
-					if (!scalarWindow) throw new IllegalStateException("window weight belongs to each member");
+					if (!scalarWindow)
+						throw new IllegalStateException("window weight belongs to each member");
 					return exact[active]
-							? FactorizedTail.multiplyCounts(windowWeights[scalarWindowAt], windowScale()) : 1L;
+							? FactorizedTail.multiplyCounts(windowWeights[scalarWindowAt], windowScale())
+							: 1L;
 				}
-				if (!exact[active]) return 1L;
+				if (!exact[active])
+					return 1L;
 				if (row.cancellation.isCancellationRequested())
 					throw new java.util.concurrent.CancellationException("factor projection cancelled");
-				if (weight == 0L) weight = counts.weight(projection);
+				if (weight == 0L)
+					weight = counts.weight(projection);
 				return weight;
 			} catch (RuntimeException | Error failure) {
-				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				try {
+					close();
+				} catch (Throwable closing) {
+					if (closing != failure)
+						failure.addSuppressed(closing);
+				}
 				throw failure;
 			}
 		}
-		@Override public void close() {
-			if (closed) return; closed = true;
-			chunk = null; projection = null; counts = null; windowNode = null;
+
+		@Override
+		public void close() {
+			if (closed)
+				return;
+			closed = true;
+			chunk = null;
+			projection = null;
+			counts = null;
+			windowNode = null;
 			windowIds = windowWeights = packedWindowIds = packedWindowWeights = presenceWeights = null;
 			borrowedWindowBatch = null;
 			Throwable failure = null;
-			try { if (borrowedWindow != null) borrowedWindow.close(); }
-			catch (RuntimeException | Error closing) { failure = closing; }
-			finally { borrowedWindow = null; borrowedWindowSource = null; }
-			try { if (ownsRuntime) runtime.close(); }
-			catch (RuntimeException | Error closing) {
-				if (failure == null) failure = closing; else if (failure != closing) failure.addSuppressed(closing);
+			try {
+				if (borrowedWindow != null)
+					borrowedWindow.close();
+			} catch (RuntimeException | Error closing) {
+				failure = closing;
+			} finally {
+				borrowedWindow = null;
+				borrowedWindowSource = null;
 			}
-			if (failure instanceof RuntimeException problem) throw problem;
-			if (failure instanceof Error problem) throw problem;
+			try {
+				if (ownsRuntime)
+					runtime.close();
+			} catch (RuntimeException | Error closing) {
+				if (failure == null)
+					failure = closing;
+				else if (failure != closing)
+					failure.addSuppressed(closing);
+			}
+			if (failure instanceof RuntimeException problem)
+				throw problem;
+			if (failure instanceof Error problem)
+				throw problem;
 		}
 	}
 
 	/**
-	 * A materialized binding prefix with independent borrowed terminal factors. Packed internal
-	 * dependencies remain aligned; this does not pretend unrelated child ordinals are interchangeable.
-	 * No total-product or outside-count arrays are constructed merely to transport a group.
+	 * A materialized binding prefix with independent borrowed terminal factors. Packed internal dependencies remain
+	 * aligned; this does not pretend unrelated child ordinals are interchangeable. No total-product or outside-count
+	 * arrays are constructed merely to transport a group.
 	 */
 	static final class GroupedRowCursor implements LmdbNativeFactorCursor {
 		final Plan plan;
@@ -6121,27 +6535,41 @@ final class LmdbNativePackedFtree {
 		int tick;
 
 		GroupedRowCursor(Plan plan, RowState row, Runtime runtime) {
-			this.plan = plan; this.row = row; this.runtime = runtime;
+			this.plan = plan;
+			this.row = row;
+			this.runtime = runtime;
 			factors = new FactorEnvironment(row.slots.length);
 			mark = row.mark();
 		}
 
-		@Override public boolean next() throws IOException {
-			if (closed) return false;
+		@Override
+		public boolean next() throws IOException {
+			if (closed)
+				return false;
 			try {
 				while (true) {
-					if (LmdbNativeFactorRows.cancelled(row, ++tick)) { close(); return false; }
+					if (LmdbNativeFactorRows.cancelled(row, ++tick)) {
+						close();
+						return false;
+					}
 					factors.clear();
 					row.rollback(mark);
 					if (chunk == null) {
 						chunk = runtime.nextChunk();
-						if (chunk == null) { close(); return false; }
+						if (chunk == null) {
+							close();
+							return false;
+						}
 						long scalarMask = 0L;
 						for (NodeData node : chunk.data)
-							if (node.borrowed == null) scalarMask |= 1L << node.plan.slot;
+							if (node.borrowed == null)
+								scalarMask |= 1L << node.plan.slot;
 						prefix = new PackedProjectionCursor(chunk, scalarMask, false);
 					}
-					if (!prefix.next()) { chunk = null; continue; }
+					if (!prefix.next()) {
+						chunk = null;
+						continue;
+					}
 					for (int i = 0; i < plan.fixedSlots.length; i++)
 						row.bind(plan.fixedSlots[i], plan.fixedValues[i]);
 					for (NodeData node : chunk.data) {
@@ -6157,22 +6585,42 @@ final class LmdbNativePackedFtree {
 				close();
 				throw new QueryEvaluationException("factor transport lost adjacency coverage", lostCoverage);
 			} catch (IOException | RuntimeException | Error failure) {
-				try { close(); } catch (Throwable closeFailure) { failure.addSuppressed(closeFailure); }
+				try {
+					close();
+				} catch (Throwable closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
 				throw failure;
 			}
 		}
-		@Override public long multiplicity() { return prefix.weight(); }
-		@Override public FactorEnvironment factors() { return factors; }
-		@Override public void close() {
-			if (closed) return; closed = true;
+
+		@Override
+		public long multiplicity() {
+			return prefix.weight();
+		}
+
+		@Override
+		public FactorEnvironment factors() {
+			return factors;
+		}
+
+		@Override
+		public void close() {
+			if (closed)
+				return;
+			closed = true;
 			factors.clear();
-			try { runtime.close(); } finally { row.rollback(mark); }
+			try {
+				runtime.close();
+			} finally {
+				row.rollback(mark);
+			}
 		}
 	}
 
 	/**
-	 * Streams only the observable projection. Hidden branches supply subtree weights; no factor pointer is placed in
-	 * a scalar slot. Multiplicity-aware consumers take a bag in one call, ordinary consumers see its exact replay.
+	 * Streams only the observable projection. Hidden branches supply subtree weights; no factor pointer is placed in a
+	 * scalar slot. Multiplicity-aware consumers take a bag in one call, ordinary consumers see its exact replay.
 	 * Eligibility and placement must establish that per-solution expressions and ordering are not observable here.
 	 */
 	static final class ProjectedRowCursor implements FactorizedRowCursor {
@@ -6185,37 +6633,80 @@ final class LmdbNativePackedFtree {
 		int ticks;
 
 		ProjectedRowCursor(Plan plan, RowState row, Runtime runtime, int[] outputSlots) {
-			this.row = row; this.outputSlots = outputSlots.clone(); this.baseMark = row.mark();
-			input = new ChunkProjectionCursor(plan, row, runtime, new int[][] {outputSlots}, new boolean[] {true});
+			this.row = row;
+			this.outputSlots = outputSlots.clone();
+			this.baseMark = row.mark();
+			input = new ChunkProjectionCursor(plan, row, runtime, new int[][] { outputSlots }, new boolean[] { true });
 		}
-		@Override public long multiplicity() {
-			long weight = repeatRemaining + 1L; repeatRemaining = 0L; return weight;
+
+		@Override
+		public long multiplicity() {
+			long weight = repeatRemaining + 1L;
+			repeatRemaining = 0L;
+			return weight;
 		}
-		@Override public boolean next() throws IOException {
-			if (closed) return false;
+
+		@Override
+		public boolean next() throws IOException {
+			if (closed)
+				return false;
 			try {
 				if (repeatRemaining > 0L) {
 					LmdbNativeProbeDeadline.poll(++ticks);
-					if ((ticks & 255) == 0 && row.cancellation.isCancellationRequested()) { close(); return false; }
-					repeatRemaining--; install(); return true;
+					if ((ticks & 255) == 0 && row.cancellation.isCancellationRequested()) {
+						close();
+						return false;
+					}
+					repeatRemaining--;
+					install();
+					return true;
 				}
 				for (;;) {
-					if (!batch) { batch = input.nextBatch(); if (!batch) { close(); return false; } }
-					if (!input.next(0)) { batch = false; continue; }
-					repeatRemaining = input.multiplicity() - 1L; install(); return true;
+					if (!batch) {
+						batch = input.nextBatch();
+						if (!batch) {
+							close();
+							return false;
+						}
+					}
+					if (!input.next(0)) {
+						batch = false;
+						continue;
+					}
+					repeatRemaining = input.multiplicity() - 1L;
+					install();
+					return true;
 				}
 			} catch (IOException | RuntimeException | Error failure) {
-				try { close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+				try {
+					close();
+				} catch (Throwable closing) {
+					if (closing != failure)
+						failure.addSuppressed(closing);
+				}
 				throw failure;
 			}
 		}
+
 		private void install() {
 			row.rollback(baseMark);
-			for (int slot : outputSlots) { long id = input.value(slot); if (id != UNKNOWN) row.bind(slot, id); }
+			for (int slot : outputSlots) {
+				long id = input.value(slot);
+				if (id != UNKNOWN)
+					row.bind(slot, id);
+			}
 		}
-		@Override public void close() {
-			if (closed) return; closed = true;
-			try { input.close(); } finally { row.rollback(baseMark); }
+
+		@Override
+		public void close() {
+			if (closed)
+				return;
+			closed = true;
+			try {
+				input.close();
+			} finally {
+				row.rollback(baseMark);
+			}
 		}
 	}
 
@@ -6379,7 +6870,8 @@ final class LmdbNativePackedFtree {
 				int lane = d.state.nextSetBit(from);
 				return lane >= 0 && lane < d.endLane() ? lane : -1;
 			}
-			if (d.borrowed != null) return borrowedReaders[node.ordinal].next() ? 0 : -1;
+			if (d.borrowed != null)
+				return borrowedReaders[node.ordinal].next() ? 0 : -1;
 			if (d.sharedWithParent) {
 				return -1;
 			}
@@ -6419,8 +6911,12 @@ final class LmdbNativePackedFtree {
 			closed = true;
 			row.rollback(baseMark);
 			try {
-				for (BorrowedFactorBatch.Cursor reader : borrowedReaders) if (reader != null) reader.close();
-			} finally { runtime.close(); }
+				for (BorrowedFactorBatch.Cursor reader : borrowedReaders)
+					if (reader != null)
+						reader.close();
+			} finally {
+				runtime.close();
+			}
 		}
 	}
 

@@ -36,10 +36,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
  * Currently owns the runtime value interner (ids from {@code RUNTIME_INTERN_BASE}, keyed by exact RDF spelling so
  * term-equal language-tag variants retain their authoritative values; semantic equality belongs to
  * {@link NativeTermAuthority}). Membership is answered by the map, never by a bare range check: an id allocated by the
- * counter could otherwise be observed by a concurrent reader before its value is published. Also owns the
- * bounded per-source dictionary resolution caches (including read-view-scoped misses), as well as
- * per-evaluation generic preparation (M-A1a): one evaluation-local generic context carrying the query scope (NOW, BNODE
- * labels) and one prepared step per {@link GenericSubplanDescriptor} per evaluation.
+ * counter could otherwise be observed by a concurrent reader before its value is published. Also owns the bounded
+ * per-source dictionary resolution caches (including read-view-scoped misses), as well as per-evaluation generic
+ * preparation (M-A1a): one evaluation-local generic context carrying the query scope (NOW, BNODE labels) and one
+ * prepared step per {@link GenericSubplanDescriptor} per evaluation.
  */
 @Experimental
 final class NativeExecutionContext implements AutoCloseable {
@@ -211,9 +211,9 @@ final class NativeExecutionContext implements AutoCloseable {
 	}
 
 	/**
-	 * Only an actually published runtime-interner value, never a retained representative of a store id.
-	 * The allocation interval is a negative gate; map membership remains the positive proof. In particular,
-	 * arbitrary high-bit store ids are not classified by their sign or by an allocated-but-unpublished number.
+	 * Only an actually published runtime-interner value, never a retained representative of a store id. The allocation
+	 * interval is a negative gate; map membership remains the positive proof. In particular, arbitrary high-bit store
+	 * ids are not classified by their sign or by an allocated-but-unpublished number.
 	 */
 	Value internedValueOf(long id) {
 		if (!hasInternedValues

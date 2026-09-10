@@ -32,14 +32,14 @@ import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 
-import org.eclipse.rdf4j.sail.lmdb.factor.HeapFactorSource;
-import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.codehaus.janino.SimpleCompiler;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeKernel;
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
+import org.eclipse.rdf4j.sail.lmdb.factor.HeapFactorSource;
 import org.junit.jupiter.api.Test;
 
 class LmdbNativePackedFtreeTest {
@@ -158,7 +158,8 @@ class LmdbNativePackedFtreeTest {
 			assertNotNull(chunk.data[plan.bySlot.get(4).ordinal].borrowed);
 			assertEquals(5, physicalValues(chunk), "only root and nonterminal branches are packed");
 			assertEquals(15, chunk.computeSubtreeCountsInterpreted(false));
-			for (LmdbNativePackedFtree.NodeData data : chunk.data) assertNull(data.outsideCounts);
+			for (LmdbNativePackedFtree.NodeData data : chunk.data)
+				assertNull(data.outsideCounts);
 			chunk.materializeBorrowed(1L << 0);
 			assertNull(chunk.data[plan.bySlot.get(0).ordinal].borrowed);
 			assertNotNull(chunk.data[plan.bySlot.get(4).ordinal].borrowed);
@@ -176,7 +177,8 @@ class LmdbNativePackedFtreeTest {
 		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join, row, new int[] { 0, 1, 2, 3, 4 });
 		long expanded = 0L;
 		try (FactorizedRowCursor cursor = LmdbNativePackedFtree.PackedRowCursor.open(plan, row)) {
-			while (cursor.next()) expanded = Math.addExact(expanded, cursor.multiplicity());
+			while (cursor.next())
+				expanded = Math.addExact(expanded, cursor.multiplicity());
 		}
 		assertEquals(15, expanded);
 		try (FactorizedRowCursor cursor = join.openProjected(row, new int[] { 2 })) {
@@ -275,7 +277,8 @@ class LmdbNativePackedFtreeTest {
 			assertEquals(15L, cursor.multiplicity(), "stable, not consume-on-read");
 			assertFalse(cursor.next(0));
 			java.util.Map<Long, Long> left = new java.util.HashMap<>();
-			while (cursor.next(1)) left.merge(cursor.value(0), cursor.multiplicity(), Math::addExact);
+			while (cursor.next(1))
+				left.merge(cursor.value(0), cursor.multiplicity(), Math::addExact);
 			assertEquals(java.util.Map.of(1L, 5L, 2L, 5L, 3L, 5L), left);
 			java.util.Set<Long> right = new java.util.HashSet<>();
 			while (cursor.next(2)) {
@@ -799,7 +802,8 @@ class LmdbNativePackedFtreeTest {
 		@Override
 		public boolean borrowRun(long handle, BorrowedFactorBatch target, int lane) {
 			int row = index(handle);
-			if (!owner.borrow || keys[row] == owner.failExportKey) return false;
+			if (!owner.borrow || keys[row] == owner.failExportKey)
+				return false;
 			target.bindHeap(lane, neighbors[row], 0, neighbors[row].length);
 			return true;
 		}

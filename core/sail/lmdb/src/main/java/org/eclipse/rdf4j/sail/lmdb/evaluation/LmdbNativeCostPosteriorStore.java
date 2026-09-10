@@ -25,10 +25,10 @@ import java.util.function.BiConsumer;
  * model cannot price). Every map is keyed by {@link LmdbNativeRegimeKey}, which makes regime isolation structural: an
  * observation taken while the adjacency view is building cannot touch the steady-state nodes.
  *
- * The store monitor linearizes reads, three-node updates, and admission. Nodes remain immutable; reads decay
- * copies without writing back. A concurrent map alone does not make a read/modify/put sequence atomic: the former
- * implementation lost completed observations and could publish mixed hierarchy generations. Learning is performed
- * at execution boundaries, never in a row loop.
+ * The store monitor linearizes reads, three-node updates, and admission. Nodes remain immutable; reads decay copies
+ * without writing back. A concurrent map alone does not make a read/modify/put sequence atomic: the former
+ * implementation lost completed observations and could publish mixed hierarchy generations. Learning is performed at
+ * execution boundaries, never in a row loop.
  */
 final class LmdbNativeCostPosteriorStore {
 
@@ -304,7 +304,8 @@ final class LmdbNativeCostPosteriorStore {
 		double newMean = node.meanLog + gain * meanShift;
 		double newVariance = Math.max(floor, v * (1.0 - gain * delta));
 		return new LmdbNativePosteriorNode(newMean, newVariance, node.noiseVariance, node.weightSum + weight,
-				node.squaredWeightSum + weight * weight, node.completedCount, increment(node.censoredCount), epoch, nowMillis);
+				node.squaredWeightSum + weight * weight, node.completedCount, increment(node.censoredCount), epoch,
+				nowMillis);
 	}
 
 	private void storeExact(ExactKey key, LmdbNativePosteriorNode updated) {

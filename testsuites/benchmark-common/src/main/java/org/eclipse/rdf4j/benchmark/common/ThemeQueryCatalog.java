@@ -1866,6 +1866,182 @@ public final class ThemeQueryCatalog {
 								"}"),
 						108771L)));
 
+		String dataTransformationPrefix = String.join("\n",
+				"PREFIX dt: <http://example.com/theme/data-transformation/>",
+				"");
+		QUERIES.put(Theme.DATA_TRANSFORMATION, List.of(
+				dataTransformationQuery(dataTransformationPrefix, "distinct lowercase literals in a length range", """
+						SELECT (COUNT(DISTINCT ?normalized) AS ?count) WHERE {
+						  VALUES (?minimumLength ?maximumLength) { (10 50) }
+						  ?record a dt:Record ;
+						          dt:sourceText ?sourceText .
+						  BIND(LCASE(STR(?sourceText)) AS ?normalized)
+						  FILTER((STRLEN(?normalized) >= ?minimumLength && STRLEN(?normalized) <= ?maximumLength)
+						      || ?record = <http://example.com/theme/data-transformation/never>)
+						}
+						"""),
+				dataTransformationQuery(dataTransformationPrefix, "concatenate five literals", """
+						SELECT (COUNT(DISTINCT ?combined) AS ?count) WHERE {
+						  VALUES ?separator { " " }
+						  ?record a dt:Record ;
+						          dt:partOne ?partOne ;
+						          dt:partTwo ?partTwo ;
+						          dt:partThree ?partThree ;
+						          dt:partFour ?partFour ;
+						          dt:partFive ?partFive .
+						  BIND(CONCAT(STR(?partOne), ?separator, STR(?partTwo), ?separator, STR(?partThree), ?separator,
+						      STR(?partFour), ?separator, STR(?partFive)) AS ?combined)
+						  FILTER(STRLEN(?combined) >= 30
+						      || ?record = <http://example.com/theme/data-transformation/never>)
+						}
+						"""),
+				dataTransformationQuery(dataTransformationPrefix, "compose an IRI from literal pieces", """
+						SELECT (COUNT(DISTINCT ?composedIri) AS ?count) WHERE {
+						  VALUES ?baseSuffix { "" }
+						  ?record a dt:Record ;
+						          dt:iriBase ?iriBase ;
+						          dt:identifier ?identifier .
+						  BIND(IRI(CONCAT(STR(?iriBase), STR(?identifier), STR(?baseSuffix))) AS ?composedIri)
+						  FILTER(isIRI(?composedIri)
+						      || ?record = <http://example.com/theme/data-transformation/never>)
+						}
+						"""),
+				dataTransformationQuery(dataTransformationPrefix, "numeric range after scaling", """
+						SELECT (COUNT(DISTINCT ?record) AS ?count) WHERE {
+						  VALUES ?minimumScaledScore { 2500 }
+						  ?record a dt:Record ;
+						          dt:score ?score .
+						  BIND(?score * 10 AS ?scaledScore)
+						  FILTER((?scaledScore >= ?minimumScaledScore && ?scaledScore <= 7490) || ?score = -1)
+						}
+						"""),
+				dataTransformationQuery(dataTransformationPrefix, "regular expression over normalized text", """
+						SELECT (COUNT(DISTINCT ?record) AS ?count) WHERE {
+						  VALUES ?pattern { "^(alpha|beta|gamma|delta)" }
+						  ?record a dt:Record ;
+						          dt:sourceText ?sourceText .
+						  BIND(LCASE(STR(?sourceText)) AS ?normalized)
+						  FILTER(REGEX(?normalized, ?pattern)
+						      || ?record = <http://example.com/theme/data-transformation/never>)
+						}
+						"""),
+				dataTransformationQuery(dataTransformationPrefix, "lowercase substring search", """
+						SELECT (COUNT(DISTINCT ?record) AS ?count) WHERE {
+						  VALUES ?term { "vector" "signal" }
+						  ?record a dt:Record ;
+						          dt:sourceText ?sourceText .
+						  BIND(LCASE(STR(?sourceText)) AS ?normalized)
+						  FILTER(CONTAINS(?normalized, ?term)
+						      || ?record = <http://example.com/theme/data-transformation/never>)
+						}
+						"""),
+				dataTransformationQuery(dataTransformationPrefix, "uppercase substring search", """
+						SELECT (COUNT(DISTINCT ?record) AS ?count) WHERE {
+						  VALUES ?term { "NETWORK" "PROFILE" }
+						  ?record a dt:Record ;
+						          dt:sourceText ?sourceText .
+						  BIND(UCASE(STR(?sourceText)) AS ?uppercase)
+						  FILTER(CONTAINS(?uppercase, ?term)
+						      || ?record = <http://example.com/theme/data-transformation/never>)
+						}
+						"""),
+				dataTransformationQuery(dataTransformationPrefix, "combined substring search", """
+						SELECT (COUNT(DISTINCT ?record) AS ?count) WHERE {
+						  VALUES ?firstTerm { "alpha" }
+						  ?record a dt:Record ;
+						          dt:sourceText ?sourceText .
+						  BIND(LCASE(STR(?sourceText)) AS ?normalized)
+						  FILTER((CONTAINS(?normalized, ?firstTerm) && CONTAINS(?normalized, "graph"))
+						      || ?record = <http://example.com/theme/data-transformation/never>)
+						}
+						"""),
+				dataTransformationQuery(dataTransformationPrefix, "coalesce one optional literal", """
+						SELECT (COUNT(DISTINCT ?display) AS ?count) WHERE {
+						  ?record a dt:Record .
+						  OPTIONAL { ?record dt:optionalText ?optionalText . }
+						  BIND(COALESCE(?optionalText, "standard literal") AS ?display)
+						  FILTER(STRLEN(STR(?display)) >= 10
+						      || ?record = <http://example.com/theme/data-transformation/never>)
+						}
+						"""),
+				dataTransformationQuery(dataTransformationPrefix, "coalesce five optional literals", """
+						SELECT (COUNT(DISTINCT ?combined) AS ?count) WHERE {
+						  ?record a dt:Record .
+						  OPTIONAL { ?record dt:optionalText ?optionalText . }
+						  OPTIONAL { ?record dt:optionalCode ?optionalCode . }
+						  OPTIONAL { ?record dt:optionalRegion ?optionalRegion . }
+						  OPTIONAL { ?record dt:optionalLabel ?optionalLabel . }
+						  OPTIONAL { ?record dt:optionalNote ?optionalNote . }
+						  BIND(COALESCE(?optionalText, "standard text") AS ?text)
+						  BIND(COALESCE(?optionalCode, "standard code") AS ?code)
+						  BIND(COALESCE(?optionalRegion, "standard region") AS ?coalescedRegion)
+						  BIND(COALESCE(?optionalLabel, "standard label") AS ?label)
+						  BIND(COALESCE(?optionalNote, "standard note") AS ?note)
+						  BIND(CONCAT(STR(?text), " | ", STR(?code), " | ", STR(?coalescedRegion),
+						      " | ", STR(?label), " | ", STR(?note)) AS ?combined)
+						  FILTER(STRLEN(?combined) > 0
+						      || ?record = <http://example.com/theme/data-transformation/never>)
+						}
+						"""),
+				dataTransformationQuery(dataTransformationPrefix, "uppercase coalesced code search", """
+						SELECT (COUNT(DISTINCT ?record) AS ?count) WHERE {
+						  ?record a dt:Record .
+						  OPTIONAL { ?record dt:optionalCode ?optionalCode . }
+						  BIND(COALESCE(?optionalCode, "standard-code") AS ?code)
+						  BIND(UCASE(STR(?code)) AS ?uppercaseCode)
+						  FILTER(CONTAINS(?uppercaseCode, "CODE") || CONTAINS(?uppercaseCode, "STANDARD"))
+						}
+						"""),
+				dataTransformationQuery(dataTransformationPrefix, "coalesced region in a composed IRI", """
+						SELECT (COUNT(DISTINCT ?composedIri) AS ?count) WHERE {
+						  ?record a dt:Record ;
+						          dt:iriBase ?iriBase ;
+						          dt:identifier ?identifier .
+						  OPTIONAL { ?record dt:optionalRegion ?optionalRegion . }
+						  BIND(COALESCE(?optionalRegion, "standard-region") AS ?coalescedRegion)
+						  BIND(IRI(CONCAT(STR(?iriBase), STR(?identifier), "/", STR(?coalescedRegion)))
+						      AS ?composedIri)
+						  FILTER(REGEX(STR(?composedIri),
+						      "data-transformation/item/record-[0-9]+/(north|south|east|west|standard-region)")
+						      || ?record = <http://example.com/theme/data-transformation/never>)
+						}
+						"""),
+				dataTransformationQuery(dataTransformationPrefix, "full literal transformation pipeline", """
+						SELECT (COUNT(DISTINCT ?transformed) AS ?count) WHERE {
+						  ?record a dt:Record ;
+						          dt:sourceText ?sourceText ;
+						          dt:partOne ?partOne ;
+						          dt:partTwo ?partTwo ;
+						          dt:partThree ?partThree ;
+						          dt:partFour ?partFour ;
+						          dt:partFive ?partFive ;
+						          dt:score ?score ;
+						          dt:iriBase ?iriBase ;
+						          dt:identifier ?identifier ;
+						          dt:category ?category .
+						  OPTIONAL { ?record dt:optionalText ?optionalText . }
+						  OPTIONAL { ?record dt:optionalCode ?optionalCode . }
+						  OPTIONAL { ?record dt:optionalRegion ?optionalRegion . }
+						  OPTIONAL { ?record dt:optionalLabel ?optionalLabel . }
+						  OPTIONAL { ?record dt:optionalNote ?optionalNote . }
+						  BIND(LCASE(STR(?sourceText)) AS ?normalized)
+						  BIND(COALESCE(?optionalText, "standard text") AS ?text)
+						  BIND(COALESCE(?optionalCode, "standard code") AS ?code)
+						  BIND(COALESCE(?optionalRegion, "standard region") AS ?coalescedRegion)
+						  BIND(COALESCE(?optionalLabel, "standard label") AS ?label)
+						  BIND(COALESCE(?optionalNote, "standard note") AS ?note)
+						  BIND(CONCAT(STR(?partOne), "|", STR(?partTwo), "|", STR(?partThree), "|",
+						      STR(?partFour), "|", STR(?partFive), "|", STR(?normalized), "|", STR(?text),
+						      "|", STR(?code), "|", STR(?coalescedRegion), "|", STR(?label), "|", STR(?note))
+						      AS ?transformed)
+						  BIND(IRI(CONCAT(STR(?iriBase), STR(?identifier), "/", STR(?category))) AS ?composedIri)
+						  FILTER(((STRLEN(?normalized) >= 10 && STRLEN(?normalized) <= 50)
+						      && ?score >= 100 && ?score <= 900
+						      && (CONTAINS(?normalized, "alpha") || CONTAINS(?normalized, "beta")))
+						      || ?record = <http://example.com/theme/data-transformation/never>)
+						}
+						""")));
+
 		String analyticsPrefix = String.join("\n",
 				"PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>",
 				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
@@ -1890,7 +2066,7 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?p",
 								"ORDER BY DESC(?statements) ?p"),
-						100L),
+						116L),
 				query("Analytics: distinct subjects per class",
 						analyticsPrefix + String.join("\n",
 								"SELECT ?type (COUNT(DISTINCT ?instance) AS ?instances) WHERE {",
@@ -1898,7 +2074,7 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?type",
 								"ORDER BY DESC(?instances) ?type"),
-						53L),
+						54L),
 				query("Analytics: distinct objects per predicate",
 						analyticsPrefix + String.join("\n",
 								"SELECT ?p (COUNT(DISTINCT ?o) AS ?distinctObjects) WHERE {",
@@ -1906,7 +2082,7 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?p",
 								"ORDER BY DESC(?distinctObjects) ?p"),
-						100L),
+						116L),
 				query("Analytics: literal datatype histogram",
 						analyticsPrefix + String.join("\n",
 								"SELECT ?datatype (COUNT(*) AS ?literals) WHERE {",
@@ -1939,7 +2115,7 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?type ?p",
 								"ORDER BY DESC(?statements) ?type ?p"),
-						125L),
+						141L),
 				query("Analytics: class linkage matrix",
 						analyticsPrefix + String.join("\n",
 								"SELECT ?sourceType ?targetType (COUNT(*) AS ?links) WHERE {",
@@ -1960,7 +2136,7 @@ public final class ThemeQueryCatalog {
 								"GROUP BY ?object",
 								"HAVING(COUNT(?s) >= 1000)",
 								"ORDER BY DESC(?inDegree) ?object"),
-						113L),
+						114L),
 				query("Analytics: subjects that are also objects",
 						analyticsPrefix + String.join("\n",
 								"SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {",
@@ -1976,7 +2152,7 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?p",
 								"ORDER BY DESC(?statements) ?p"),
-						100L),
+						116L),
 				query("Analytics: namespace statement share",
 						analyticsPrefix + String.join("\n",
 								"SELECT ?ns (COUNT(*) AS ?statements) (COUNT(DISTINCT ?p) AS ?predicates) WHERE {",
@@ -1985,7 +2161,7 @@ public final class ThemeQueryCatalog {
 								"}",
 								"GROUP BY ?ns",
 								"ORDER BY DESC(?statements) ?ns"),
-						11L)));
+						12L)));
 
 		QUERIES.put(Theme.EXPLORATION, List.of(
 				query("Exploration: global dataset census",
@@ -2010,178 +2186,178 @@ public final class ThemeQueryCatalog {
 						1L),
 				query("Exploration: per-graph census",
 						"""
-								SELECT
-								  ?g
-								  (COUNT(*) AS ?quads)
-								  (COUNT(DISTINCT ?s) AS ?subjects)
-								  (COUNT(DISTINCT ?p) AS ?predicates)
-								  (COUNT(DISTINCT ?o) AS ?objects)
-								  (SUM(IF(isIRI(?o), 1, 0)) AS ?iriObjectQuads)
-								  (SUM(IF(isLiteral(?o), 1, 0)) AS ?literalObjectQuads)
-								  (SUM(IF(isBlank(?o), 1, 0)) AS ?blankObjectQuads)
-								WHERE {
-								  GRAPH ?g {
-								    ?s ?p ?o
-								  }
-								}
+										SELECT
+										  ?g
+										  (COUNT(*) AS ?quads)
+										  (COUNT(DISTINCT ?s) AS ?subjects)
+										  (COUNT(DISTINCT ?p) AS ?predicates)
+										  (COUNT(DISTINCT ?o) AS ?objects)
+										  (SUM(IF(isIRI(?o), 1, 0)) AS ?iriObjectQuads)
+										  (SUM(IF(isLiteral(?o), 1, 0)) AS ?literalObjectQuads)
+										  (SUM(IF(isBlank(?o), 1, 0)) AS ?blankObjectQuads)
+										WHERE {
+										  GRAPH ?g {
+										    ?s ?p ?o
+										  }
+										}
 								GROUP BY ?g
 								ORDER BY DESC(?quads)
 								""",
-						10L),
+						11L),
 				query("Exploration: predicate inventory and value kinds",
 						"""
-								SELECT
-								  ?p
-								  (COUNT(*) AS ?quads)
-								  (COUNT(DISTINCT ?g) AS ?graphs)
-								  (COUNT(DISTINCT ?s) AS ?subjects)
-								  (COUNT(DISTINCT ?o) AS ?objects)
-								  (SUM(IF(isIRI(?o), 1, 0)) AS ?iriObjectQuads)
-								  (SUM(IF(isLiteral(?o), 1, 0)) AS ?literalObjectQuads)
-								  (SUM(IF(isBlank(?o), 1, 0)) AS ?blankObjectQuads)
-								  (SUM(IF(!isIRI(?o) && !isLiteral(?o) && !isBlank(?o), 1, 0)) AS ?otherObjectQuads)
-								WHERE {
-								  GRAPH ?g {
-								    ?s ?p ?o
-								  }
-								}
+										SELECT
+										  ?p
+										  (COUNT(*) AS ?quads)
+										  (COUNT(DISTINCT ?g) AS ?graphs)
+										  (COUNT(DISTINCT ?s) AS ?subjects)
+										  (COUNT(DISTINCT ?o) AS ?objects)
+										  (SUM(IF(isIRI(?o), 1, 0)) AS ?iriObjectQuads)
+										  (SUM(IF(isLiteral(?o), 1, 0)) AS ?literalObjectQuads)
+										  (SUM(IF(isBlank(?o), 1, 0)) AS ?blankObjectQuads)
+										  (SUM(IF(!isIRI(?o) && !isLiteral(?o) && !isBlank(?o), 1, 0)) AS ?otherObjectQuads)
+										WHERE {
+										  GRAPH ?g {
+										    ?s ?p ?o
+										  }
+										}
 								GROUP BY ?p
 								ORDER BY DESC(?quads)
 								""",
-						100L),
+						116L),
 				query("Exploration: graph-predicate matrix",
 						"""
-								SELECT
-								  ?g
-								  ?p
-								  (COUNT(*) AS ?quads)
-								  (COUNT(DISTINCT ?s) AS ?subjects)
-								  (COUNT(DISTINCT ?o) AS ?objects)
-								  (SUM(IF(isIRI(?o), 1, 0)) AS ?iriObjectQuads)
-								  (SUM(IF(isLiteral(?o), 1, 0)) AS ?literalObjectQuads)
-								  (SUM(IF(isBlank(?o), 1, 0)) AS ?blankObjectQuads)
-								WHERE {
-								  GRAPH ?g {
-								    ?s ?p ?o
-								  }
-								}
+										SELECT
+										  ?g
+										  ?p
+										  (COUNT(*) AS ?quads)
+										  (COUNT(DISTINCT ?s) AS ?subjects)
+										  (COUNT(DISTINCT ?o) AS ?objects)
+										  (SUM(IF(isIRI(?o), 1, 0)) AS ?iriObjectQuads)
+										  (SUM(IF(isLiteral(?o), 1, 0)) AS ?literalObjectQuads)
+										  (SUM(IF(isBlank(?o), 1, 0)) AS ?blankObjectQuads)
+										WHERE {
+										  GRAPH ?g {
+										    ?s ?p ?o
+										  }
+										}
 								GROUP BY ?g ?p
 								ORDER BY ?g DESC(?quads)
 								""",
-						109L),
+						126L),
 				query("Exploration: class inventory",
 						"""
-								PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+										PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 
-								SELECT
-								  ?class
-								  ?classKind
-								  (COUNT(*) AS ?typeQuads)
-								  (COUNT(DISTINCT ?instance) AS ?instances)
-								  (COUNT(DISTINCT ?g) AS ?graphs)
-								WHERE {
-								  GRAPH ?g {
-								    ?instance rdf:type ?class
-								  }
-								  BIND(
-								    IF(isIRI(?class), "IRI",
-								      IF(isBlank(?class), "BNODE",
-								        IF(isLiteral(?class), "LITERAL", "OTHER")
-								      )
-								    )
-								    AS ?classKind
-								  )
-								}
+										SELECT
+										  ?class
+										  ?classKind
+										  (COUNT(*) AS ?typeQuads)
+										  (COUNT(DISTINCT ?instance) AS ?instances)
+										  (COUNT(DISTINCT ?g) AS ?graphs)
+										WHERE {
+										  GRAPH ?g {
+										    ?instance rdf:type ?class
+										  }
+										  BIND(
+										    IF(isIRI(?class), "IRI",
+										      IF(isBlank(?class), "BNODE",
+										        IF(isLiteral(?class), "LITERAL", "OTHER")
+										      )
+										    )
+										    AS ?classKind
+										  )
+										}
 								GROUP BY ?class ?classKind
 								ORDER BY DESC(?instances)
 								""",
-						53L),
+						54L),
 				query("Exploration: literal datatype language and lexical size",
 						"""
-								SELECT
-								  ?p
-								  ?datatype
-								  ?language
-								  (COUNT(*) AS ?literalQuads)
-								  (COUNT(DISTINCT ?s) AS ?subjects)
-								  (COUNT(DISTINCT ?o) AS ?distinctValues)
-								  (MIN(STRLEN(STR(?o))) AS ?minimumLexicalLength)
-								  (AVG(STRLEN(STR(?o))) AS ?averageLexicalLength)
-								  (MAX(STRLEN(STR(?o))) AS ?maximumLexicalLength)
-								WHERE {
-								  GRAPH ?g {
-								    ?s ?p ?o
-								  }
-								  FILTER(isLiteral(?o))
-								  BIND(DATATYPE(?o) AS ?datatype)
-								  BIND(LCASE(LANG(?o)) AS ?language)
-								}
+										SELECT
+										  ?p
+										  ?datatype
+										  ?language
+										  (COUNT(*) AS ?literalQuads)
+										  (COUNT(DISTINCT ?s) AS ?subjects)
+										  (COUNT(DISTINCT ?o) AS ?distinctValues)
+										  (MIN(STRLEN(STR(?o))) AS ?minimumLexicalLength)
+										  (AVG(STRLEN(STR(?o))) AS ?averageLexicalLength)
+										  (MAX(STRLEN(STR(?o))) AS ?maximumLexicalLength)
+										WHERE {
+										  GRAPH ?g {
+										    ?s ?p ?o
+										  }
+										  FILTER(isLiteral(?o))
+										  BIND(DATATYPE(?o) AS ?datatype)
+										  BIND(LCASE(LANG(?o)) AS ?language)
+										}
 								GROUP BY ?p ?datatype ?language
 								ORDER BY DESC(?literalQuads)
 								""",
-						45L),
+						61L),
 				query("Exploration: properties by class with coverage",
 						"""
-								PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-								PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+										PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+										PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
-								SELECT
-								  ?class
-								  ?p
-								  ?classInstances
-								  ?instancesUsingProperty
-								  ?coverage
-								  ?propertyQuads
-								  ?distinctValues
-								  ?iriValueQuads
-								  ?literalValueQuads
-								  ?blankValueQuads
-								WHERE {
-								  {
-								    SELECT ?class (COUNT(*) AS ?classInstances)
-								    WHERE {
-								      {
-								        SELECT DISTINCT ?class ?s
-								        WHERE {
-								          GRAPH ?typeGraph {
-								            ?s rdf:type ?class
-								          }
-								        }
-								      }
-								    }
-								    GROUP BY ?class
-								  }
-								  {
-								    SELECT
-								      ?class
-								      ?p
-								      (COUNT(DISTINCT ?s) AS ?instancesUsingProperty)
-								      (COUNT(*) AS ?propertyQuads)
-								      (COUNT(DISTINCT ?o) AS ?distinctValues)
-								      (SUM(IF(isIRI(?o), 1, 0)) AS ?iriValueQuads)
-								      (SUM(IF(isLiteral(?o), 1, 0)) AS ?literalValueQuads)
-								      (SUM(IF(isBlank(?o), 1, 0)) AS ?blankValueQuads)
-								    WHERE {
-								      {
-								        SELECT DISTINCT ?s ?class
-								        WHERE {
-								          GRAPH ?typeGraph {
-								            ?s rdf:type ?class
-								          }
-								        }
-								      }
-								      GRAPH ?dataGraph {
-								        ?s ?p ?o
-								      }
-								      FILTER(?p != rdf:type)
-								    }
-								    GROUP BY ?class ?p
-								  }
-								  BIND(xsd:decimal(?instancesUsingProperty) / xsd:decimal(?classInstances) AS ?coverage)
+										SELECT
+										  ?class
+										  ?p
+										  ?classInstances
+										  ?instancesUsingProperty
+										  ?coverage
+										  ?propertyQuads
+										  ?distinctValues
+										  ?iriValueQuads
+										  ?literalValueQuads
+										  ?blankValueQuads
+										WHERE {
+										  {
+										    SELECT ?class (COUNT(*) AS ?classInstances)
+										    WHERE {
+										      {
+										        SELECT DISTINCT ?class ?s
+										        WHERE {
+										          GRAPH ?typeGraph {
+										            ?s rdf:type ?class
+										          }
+										        }
+										      }
+										    }
+										    GROUP BY ?class
+										  }
+										  {
+										    SELECT
+										      ?class
+										      ?p
+										      (COUNT(DISTINCT ?s) AS ?instancesUsingProperty)
+										      (COUNT(*) AS ?propertyQuads)
+										      (COUNT(DISTINCT ?o) AS ?distinctValues)
+										      (SUM(IF(isIRI(?o), 1, 0)) AS ?iriValueQuads)
+										      (SUM(IF(isLiteral(?o), 1, 0)) AS ?literalValueQuads)
+										      (SUM(IF(isBlank(?o), 1, 0)) AS ?blankValueQuads)
+										    WHERE {
+										      {
+										        SELECT DISTINCT ?s ?class
+										        WHERE {
+										          GRAPH ?typeGraph {
+										            ?s rdf:type ?class
+										          }
+										        }
+										      }
+										      GRAPH ?dataGraph {
+										        ?s ?p ?o
+										      }
+										      FILTER(?p != rdf:type)
+										    }
+										    GROUP BY ?class ?p
+										  }
+										  BIND(xsd:decimal(?instancesUsingProperty) / xsd:decimal(?classInstances) AS ?coverage)
 								}
 								ORDER BY DESC(?classInstances) ?class DESC(?coverage) DESC(?propertyQuads)
 								""",
-						125L),
+						141L),
 				query("Exploration: object classes by predicate",
 						"""
 								PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -2255,7 +2431,7 @@ public final class ThemeQueryCatalog {
 								GROUP BY ?direction ?p
 								ORDER BY ?direction DESC(?nodes)
 								""",
-						200L),
+						232L),
 				query("Exploration: predicate co-occurrence",
 						"""
 								SELECT ?p1 ?p2 (COUNT(*) AS ?subjectsWithBoth)
@@ -2281,7 +2457,7 @@ public final class ThemeQueryCatalog {
 								GROUP BY ?p1 ?p2
 								ORDER BY DESC(?subjectsWithBoth)
 								""",
-						272L),
+						408L),
 				query("Exploration: recurring structural signatures",
 						"""
 								SELECT ?shape (COUNT(*) AS ?subjects) (SAMPLE(?s) AS ?exampleSubject)
@@ -2394,7 +2570,7 @@ public final class ThemeQueryCatalog {
 								GROUP BY ?direction ?degree
 								ORDER BY ?direction ?degree
 								""",
-						362L)));
+						363L)));
 
 		registerExpectedCountBindingValues();
 		validateQueries();
@@ -2495,8 +2671,10 @@ public final class ThemeQueryCatalog {
 				-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.REAL_ESTATE, expectedCountBindingValues(
 				-1, -1, -1, -1, 39314, -1, 333, 18524, 519, -1, -1, -1, -1));
+		EXPECTED_COUNT_BINDING_VALUES.put(Theme.DATA_TRANSFORMATION, expectedCountBindingValues(
+				7500, 50000, 50000, 25000, 40230, 16092, 24138, 16091, 9505, 37632, 50000, 50000, 18705));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.ANALYTICS, expectedCountBindingValues(
-				53, 100, -1, -1, -1, -1, -1, -1, -1, -1, 2364850, -1, -1));
+				54, 116, -1, -1, -1, -1, -1, -1, -1, -1, 2364850, -1, -1));
 		EXPECTED_COUNT_BINDING_VALUES.put(Theme.EXPLORATION, expectedCountBindingValues(
 				-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1));
 	}
@@ -2536,6 +2714,10 @@ public final class ThemeQueryCatalog {
 						"STRBEFORE(STR(?payload), \"-\") = \"accepted\""),
 				adaptiveFilterPlacementQuery(prefix, "suffix after prefix",
 						"STRAFTER(STR(?payload), \"accepted-\") != \"\""));
+	}
+
+	private static BenchmarkQuery dataTransformationQuery(String prefix, String name, String body) {
+		return query("Data transformation: " + name, prefix + body, 1L);
 	}
 
 	private static BenchmarkQuery adaptiveFilterPlacementQuery(String prefix, String name, String condition) {

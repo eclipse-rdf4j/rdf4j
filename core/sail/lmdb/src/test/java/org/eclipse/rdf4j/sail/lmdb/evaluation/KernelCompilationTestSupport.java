@@ -11,21 +11,27 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
+
 import javax.tools.ToolProvider;
+
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 
 /**
  * Strict compiler harness: the default backend is the actual Janino SimpleCompiler. The explicitly selected
- * {@code javac} backend supports offline structural/semantic tests and is never described as Janino validation.
- * Neither backend can execute the interpreter in place of generated code. Compilation failures retain the source.
+ * {@code javac} backend supports offline structural/semantic tests and is never described as Janino validation. Neither
+ * backend can execute the interpreter in place of generated code. Compilation failures retain the source.
  */
 public final class KernelCompilationTestSupport {
 	public static final String BACKEND_PROPERTY = "rdf4j.test.kernel.compiler";
-	private record Key(String name, String source, String backend) { }
+
+	private record Key(String name, String source, String backend) {
+	}
+
 	private static final Map<Key, Constructor<? extends JaninoKernel>> CACHE = new HashMap<>();
 	private static int compilations;
 
-	private KernelCompilationTestSupport() { }
+	private KernelCompilationTestSupport() {
+	}
 
 	public static String backend() {
 		String value = System.getProperty(BACKEND_PROPERTY, "janino");
@@ -47,7 +53,9 @@ public final class KernelCompilationTestSupport {
 		}
 	}
 
-	public static synchronized int compilationCount() { return compilations; }
+	public static synchronized int compilationCount() {
+		return compilations;
+	}
 
 	public static JaninoKernel compile(LmdbNativeKernelIr.Kernel ir) throws Exception {
 		return compile(ir.className(), LmdbNativeKernelEmitter.emit(ir));
@@ -83,21 +91,26 @@ public final class KernelCompilationTestSupport {
 						Map<String, byte[]> classes = new HashMap<>();
 						try (var files = Files.walk(output)) {
 							for (Path filePath : files.filter(f -> f.toString().endsWith(".class")).toList()) {
-								String binary = output.relativize(filePath).toString().replace(java.io.File.separatorChar, '.');
+								String binary = output.relativize(filePath)
+										.toString()
+										.replace(java.io.File.separatorChar, '.');
 								classes.put(binary.substring(0, binary.length() - 6), Files.readAllBytes(filePath));
 							}
 						}
 						ClassLoader loader = new ClassLoader(JaninoKernel.class.getClassLoader()) {
-							@Override protected Class<?> findClass(String binary) throws ClassNotFoundException {
+							@Override
+							protected Class<?> findClass(String binary) throws ClassNotFoundException {
 								byte[] bytes = classes.get(binary);
-								if (bytes == null) throw new ClassNotFoundException(binary);
+								if (bytes == null)
+									throw new ClassNotFoundException(binary);
 								return defineClass(binary, bytes, 0, bytes.length);
 							}
 						};
 						generated = loader.loadClass(name);
 					} finally {
 						try (var files = Files.walk(output)) {
-							for (Path p : files.sorted(Comparator.reverseOrder()).toList()) Files.delete(p);
+							for (Path p : files.sorted(Comparator.reverseOrder()).toList())
+								Files.delete(p);
 						}
 					}
 				}

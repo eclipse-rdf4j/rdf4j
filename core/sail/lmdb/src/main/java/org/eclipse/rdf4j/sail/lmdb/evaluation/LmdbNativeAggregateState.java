@@ -1183,7 +1183,8 @@ final class LongHashSet {
 		if (other.containsEmptySentinel) {
 			long value = other.emptyRepresentative;
 			add(authority != null && other.authority != null && authority.token() != other.authority.token()
-					? authority.importId(other.authority, value) : value);
+					? authority.importId(other.authority, value)
+					: value);
 		}
 		for (long value : other.table) {
 			if (value != EMPTY) {
@@ -1217,7 +1218,6 @@ final class LongHashSet {
 		NativeTermRef term = authority.termRef(value);
 		return term == null || term.canonicalId().isEmpty();
 	}
-
 
 	private boolean sameKey(long left, long right) {
 		return left == right || canonicalKeys && authority.sameRdfTerm(left, right);

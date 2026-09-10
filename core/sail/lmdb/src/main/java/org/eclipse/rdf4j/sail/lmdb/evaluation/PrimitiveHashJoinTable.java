@@ -6,6 +6,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.Arrays;
 import java.util.function.IntUnaryOperator;
+
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
 @Experimental
@@ -73,8 +74,13 @@ final class PrimitiveHashJoinTable {
 	}
 
 	/** Group views are published only after the existing build has completed. */
-	void seal() { sealed = true; }
-	boolean isSealed() { return sealed; }
+	void seal() {
+		sealed = true;
+	}
+
+	boolean isSealed() {
+		return sealed;
+	}
 
 	/** Positioned lookup: retain the bucket so consumers can select count, payload or tuple-group demand. */
 	int lookupBucket(long[] row, int[] keySlots) {
@@ -87,14 +93,16 @@ final class PrimitiveHashJoinTable {
 		byte fingerprint = fingerprint(hash);
 		while (occupied[bucket] != 0) {
 			if (fingerprints[bucket] == fingerprint && fullHashes[bucket] == hash
-					&& matches(batch, row, keySlots, bucket)) return bucket;
+					&& matches(batch, row, keySlots, bucket))
+				return bucket;
 			bucket = (bucket + 1) & mask;
 		}
 		return -1;
 	}
 
 	void add(long[] row, int[] keySlots, int[] payloadSlots) {
-		if (sealed) throw new IllegalStateException("hash table is borrowed and immutable");
+		if (sealed)
+			throw new IllegalStateException("hash table is borrowed and immutable");
 		if ((distinctKeys + 1) * 4 > occupied.length * 3) {
 			growBuckets();
 		}

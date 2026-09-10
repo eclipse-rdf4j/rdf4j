@@ -8,14 +8,20 @@ package org.eclipse.rdf4j.sail.lmdb.factor;
 
 /** Immutable heap-array borrowing; the source keeps the snapshot owner strongly reachable. */
 public final class HeapFactorSource extends BorrowedFactorBatch.Source {
-	public HeapFactorSource(Object owner) { super(owner); }
-	@Override public BorrowedFactorBatch.Reader openReader() {
+	public HeapFactorSource(Object owner) {
+		super(owner);
+	}
+
+	@Override
+	public BorrowedFactorBatch.Reader openReader() {
 		checkOpen();
 		return new BorrowedFactorBatch.Reader() {
 			private long[] values;
 			private int start;
 			private int count;
-			@Override public void bind(BorrowedFactorBatch batch, int lane) {
+
+			@Override
+			public void bind(BorrowedFactorBatch batch, int lane) {
 				checkOpen();
 				if (batch.source() != HeapFactorSource.this || batch.kind(lane) != BorrowedFactorBatch.HEAP)
 					throw new IllegalArgumentException("incompatible heap factor");
@@ -23,7 +29,9 @@ public final class HeapFactorSource extends BorrowedFactorBatch.Source {
 				start = batch.coordinate(lane);
 				count = Math.toIntExact(batch.count(lane));
 			}
-			@Override public int copyFibers(long offset, int maximum, long[] out, long[] weights) {
+
+			@Override
+			public int copyFibers(long offset, int maximum, long[] out, long[] weights) {
 				checkOpen();
 				int at = Math.toIntExact(offset);
 				if (at < 0 || at > count || maximum < 0 || maximum > out.length || maximum > weights.length)
@@ -33,7 +41,8 @@ public final class HeapFactorSource extends BorrowedFactorBatch.Source {
 				while (at < end && copied < maximum) {
 					long value = values[start + at];
 					int from = at++;
-					while (at < end && values[start + at] == value) at++;
+					while (at < end && values[start + at] == value)
+						at++;
 					out[copied] = value;
 					weights[copied++] = at - from;
 				}

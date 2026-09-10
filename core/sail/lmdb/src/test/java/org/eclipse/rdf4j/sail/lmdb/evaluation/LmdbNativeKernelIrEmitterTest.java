@@ -1247,7 +1247,8 @@ class LmdbNativeKernelIrEmitterTest {
 				assertRows(drain(kernel, context().adjacencies(adjacency,
 						new FixtureAdjacency(new long[][] { { 10, 1, 2, 9 } }))
 						.domains(producer == 2 ? new long[] { 10 } : new long[] { 1, 2, 9 })
-						.constants(2, length - 1).hooks(hooks), maxRows), expected.toArray(long[][]::new),
+						.constants(2, length - 1)
+						.hooks(hooks), maxRows), expected.toArray(long[][]::new),
 						"producer=" + producer + ", filterKind=" + filterKind + ", maxRows=" + maxRows);
 				assertEquals(filterKind == 1 ? 0 : candidates, calls[0], "value filter runs once per candidate");
 				assertEquals(filterKind == 0 ? 0 : candidates, calls[1], "residual filter runs once per candidate");

@@ -54,17 +54,20 @@ import org.junit.jupiter.params.provider.MethodSource;
 class LmdbNativeServiceQueryCompletenessTest {
 	private static final String NATIVE = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String CORPUS = "/org/eclipse/rdf4j/sail/lmdb/evaluation/service-query-corpus/";
-	@TempDir File directory;
+	@TempDir
+	File directory;
 	private final Map<String, String> previous = new HashMap<>();
 	private final List<FederatedService> services = new ArrayList<>();
 	private SailRepository local, remote;
 
 	private void set(String key, String value) {
-		if (!previous.containsKey(key)) previous.put(key, System.getProperty(key));
+		if (!previous.containsKey(key))
+			previous.put(key, System.getProperty(key));
 		System.setProperty(key, value);
 	}
 
-	@BeforeEach void open() throws Exception {
+	@BeforeEach
+	void open() throws Exception {
 		set(NATIVE, "true");
 		set("rdf4j.lmdb.janinoCodegen.enabled", "true");
 		set("rdf4j.lmdb.janinoCodegen.synchronous", "true");
@@ -79,7 +82,8 @@ class LmdbNativeServiceQueryCompletenessTest {
 		Map<String, FederatedService> endpoints = new HashMap<>();
 		FederatedServiceResolver resolver = url -> {
 			FederatedService service = endpoints.get(url);
-			if (service == null) throw new QueryEvaluationException("Unknown fixture endpoint: " + url);
+			if (service == null)
+				throw new QueryEvaluationException("Unknown fixture endpoint: " + url);
 			return service;
 		};
 		LmdbStore remoteStore = new LmdbStore(new File(directory, "remote"),
@@ -87,15 +91,16 @@ class LmdbNativeServiceQueryCompletenessTest {
 		remoteStore.setEvaluationStrategyFactory(new StrictEvaluationStrategyFactory(resolver));
 		remote = new SailRepository(remoteStore);
 		load(remote, """
-			@prefix : <urn:query-boundary:> .
-			@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-			:k1 :q 10, 20; :tag "first"; :next :k2; :numeric "01"^^xsd:integer, "1"^^xsd:integer .
-			:k2 :q 20; :tag "second"; :next :k3 .
-			:g1 { :kg :q 30; :tag "same graph" . }
-			:g2 { :kg :q 40 . }
-			""");
+				@prefix : <urn:query-boundary:> .
+				@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+				:k1 :q 10, 20; :tag "first"; :next :k2; :numeric "01"^^xsd:integer, "1"^^xsd:integer .
+				:k2 :q 20; :tag "second"; :next :k3 .
+				:g1 { :kg :q 30; :tag "same graph" . }
+				:g2 { :kg :q 40 . }
+				""");
 		FederatedService remoteService = new RepositoryFederatedService(remote, false);
-		remoteService.initialize(); services.add(remoteService);
+		remoteService.initialize();
+		services.add(remoteService);
 		endpoints.put("urn:query-boundary:remote", remoteService);
 		endpoints.put("urn:query-boundary:remoteAlias", remoteService);
 		Repository broken = (Repository) Proxy.newProxyInstance(getClass().getClassLoader(),
@@ -110,51 +115,68 @@ class LmdbNativeServiceQueryCompletenessTest {
 				default -> throw new AssertionError("unexpected repository operation " + method);
 				});
 		FederatedService brokenService = new RepositoryFederatedService(broken, false);
-		brokenService.initialize(); services.add(brokenService);
+		brokenService.initialize();
+		services.add(brokenService);
 		endpoints.put("urn:query-boundary:broken", brokenService);
 		LmdbStore localStore = new LmdbStore(new File(directory, "local"),
 				new LmdbStoreConfig("spoc,posc,ospc").setDirectAdjacencyBuildOnStart(false));
 		localStore.setEvaluationStrategyFactory(new LmdbNativeEvaluationStrategyFactory(resolver));
 		local = new SailRepository(localStore);
 		load(local, """
-			@prefix : <urn:query-boundary:> .
-			:a :p :k1; :edge :b . :b :p :k2; :edge :c . :c :p :k3 .
-			""");
+				@prefix : <urn:query-boundary:> .
+				:a :p :k1; :edge :b . :b :p :k2; :edge :c . :c :p :k3 .
+				""");
 	}
 
 	private static void load(SailRepository repository, String data) throws Exception {
 		try (var connection = repository.getConnection()) {
-			connection.begin(); connection.add(new StringReader(data), "", RDFFormat.TRIG); connection.commit();
+			connection.begin();
+			connection.add(new StringReader(data), "", RDFFormat.TRIG);
+			connection.commit();
 		}
 	}
 
-	@AfterEach void close() {
+	@AfterEach
+	void close() {
 		try {
-			for (FederatedService service : services) service.shutdown();
+			for (FederatedService service : services)
+				service.shutdown();
 		} finally {
-			try { if (local != null) local.shutDown(); }
-			finally {
-				try { if (remote != null) remote.shutDown(); }
-				finally { previous.forEach((key, value) -> {
-					if (value == null) System.clearProperty(key); else System.setProperty(key, value);
-				}); }
+			try {
+				if (local != null)
+					local.shutDown();
+			} finally {
+				try {
+					if (remote != null)
+						remote.shutDown();
+				} finally {
+					previous.forEach((key, value) -> {
+						if (value == null)
+							System.clearProperty(key);
+						else
+							System.setProperty(key, value);
+					});
+				}
 			}
 		}
 	}
 
 	private static String resource(String name) throws IOException {
 		try (var stream = LmdbNativeServiceQueryCompletenessTest.class.getResourceAsStream(CORPUS + name)) {
-			if (stream == null) throw new IOException("missing query corpus resource " + name);
+			if (stream == null)
+				throw new IOException("missing query corpus resource " + name);
 			return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
 		}
 	}
 
 	static Stream<Arguments> queries() throws IOException {
-		return resource("manifest.tsv").lines().filter(line -> !line.isBlank() && !line.startsWith("#"))
+		return resource("manifest.tsv").lines()
+				.filter(line -> !line.isBlank() && !line.startsWith("#"))
 				.flatMap(line -> {
 					String[] fields = line.split("\t");
-					return Stream.of(false, true).map(compiled -> Arguments.of(fields[0],
-							Boolean.parseBoolean(fields[1]), fields[2], compiled));
+					return Stream.of(false, true)
+							.map(compiled -> Arguments.of(fields[0],
+									Boolean.parseBoolean(fields[1]), fields[2], compiled));
 				});
 	}
 
@@ -170,8 +192,10 @@ class LmdbNativeServiceQueryCompletenessTest {
 		}
 		long before = binds(compiled, aggregate);
 		String route = aggregate ? "irAggregate" : "irKernel";
-		if (!aggregate && name.equals("rows-distinct")) route = "irKernelDistinct";
-		if (!compiled) route += "Interpreted";
+		if (!aggregate && name.equals("rows-distinct"))
+			route = "irKernelDistinct";
+		if (!compiled)
+			route += "Interpreted";
 		assertEquals(bag(oracle), bag(evaluate(text, true, route)), name);
 		// LIMIT 0 is deliberately allowed to avoid binding/opening the producer at all.
 		if (!name.equals("rows-limit-zero")) {
@@ -180,7 +204,8 @@ class LmdbNativeServiceQueryCompletenessTest {
 		}
 	}
 
-	@Test void nonSilentServiceFailureRemainsFatal() {
+	@Test
+	void nonSilentServiceFailureRemainsFatal() {
 		String query = "PREFIX : <urn:query-boundary:> SELECT (COUNT(*) AS ?n) WHERE { "
 				+ "?s :p ?k . SERVICE :broken { ?k :q ?v } }";
 		for (String route : Arrays.asList(null, "irAggregateInterpreted", "irAggregate")) {
@@ -199,7 +224,8 @@ class LmdbNativeServiceQueryCompletenessTest {
 		set(NATIVE, Boolean.toString(nativeEnabled));
 		try (var connection = local.getConnection()) {
 			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(text);
-			if (route != null) query.setForcedLmdbExecutionStrategy(route);
+			if (route != null)
+				query.setForcedLmdbExecutionStrategy(route);
 			query.setMaxExecutionTime(15);
 			return QueryResults.asList(query.evaluate());
 		}
@@ -209,8 +235,10 @@ class LmdbNativeServiceQueryCompletenessTest {
 		List<String> bag = new ArrayList<>();
 		for (BindingSet row : results) {
 			List<String> values = new ArrayList<>();
-			for (String name : row.getBindingNames()) values.add(name + "=" + row.getValue(name));
-			values.sort(String::compareTo); bag.add(String.join(";", values));
+			for (String name : row.getBindingNames())
+				values.add(name + "=" + row.getValue(name));
+			values.sort(String::compareTo);
+			bag.add(String.join(";", values));
 		}
 		bag.sort(String::compareTo); // sort for comparison only; preserve duplicate rows
 		return bag;

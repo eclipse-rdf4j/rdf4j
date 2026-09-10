@@ -263,12 +263,12 @@ final class LmdbWildcardPredicateBatch {
 	}
 
 	/**
-	 * Exact weighted projection shared with the slot-to-IR bridge. This does not perform DISTINCT:
-	 * every omitted dimension still contributes its complete multiplicity. Runtime-interned group
-	 * keys remain in this evaluation's authority; only their primitive IDs cross the bridge.
+	 * Exact weighted projection shared with the slot-to-IR bridge. This does not perform DISTINCT: every omitted
+	 * dimension still contributes its complete multiplicity. Runtime-interned group keys remain in this evaluation's
+	 * authority; only their primitive IDs cross the bridge.
 	 *
-	 * A declined attempt must precede evaluation of any input row. The recursive weighted opener
-	 * only constructs cursors, and order-sensitive or opaque inputs are rejected before opening.
+	 * A declined attempt must precede evaluation of any input row. The recursive weighted opener only constructs
+	 * cursors, and order-sensitive or opaque inputs are rejected before opening.
 	 */
 	static RowCursor openWeightedProjection(SlotPlan plan, RowState row, int[] outputSlots, int capacity)
 			throws IOException {
@@ -285,7 +285,8 @@ final class LmdbWildcardPredicateBatch {
 			liveMask |= 1L << slot;
 		}
 		SlotPlan weightedPlan = plan instanceof PatternPlan
-				? new MultiJoinPlan(new SlotPlan[] { plan }, new MaskedFilter[0]) : plan;
+				? new MultiJoinPlan(new SlotPlan[] { plan }, new MaskedFilter[0])
+				: plan;
 		return openWeighted(weightedPlan, row, liveMask, capacity);
 	}
 
@@ -296,11 +297,10 @@ final class LmdbWildcardPredicateBatch {
 	}
 
 	/**
-	 * Reverse transfer across sequential BINDs. All copies execute (including unprojected ones),
-	 * so every expression's input must survive until its evaluation. A target produced by the
-	 * child also stays live for ExtensionCursor's bind/conflict check. Merely adding the read
-	 * masks of projected copies loses inputs of intermediate aliases and unused computed copies.
-	 * Returns -1 for an opaque or non-repeatable expression instead of compressing its input.
+	 * Reverse transfer across sequential BINDs. All copies execute (including unprojected ones), so every expression's
+	 * input must survive until its evaluation. A target produced by the child also stays live for ExtensionCursor's
+	 * bind/conflict check. Merely adding the read masks of projected copies loses inputs of intermediate aliases and
+	 * unused computed copies. Returns -1 for an opaque or non-repeatable expression instead of compressing its input.
 	 */
 	static long extensionInputMask(ExtensionPlan extension, long liveMask) {
 		long required = liveMask;

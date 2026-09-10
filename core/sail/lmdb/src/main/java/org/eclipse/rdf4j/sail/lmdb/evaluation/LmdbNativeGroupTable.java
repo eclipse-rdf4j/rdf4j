@@ -93,13 +93,16 @@ final class NativeGroupTable implements AutoCloseable {
 		this.mode = mode;
 		this.rowMetrics = rowMetrics;
 		this.boundedAllowed = boundedAllowed;
-		if (!boundedAllowed) initializeUnbounded();
+		if (!boundedAllowed)
+			initializeUnbounded();
 	}
 
 	private void initializeUnbounded() {
 		checkOpen();
-		if (boundedCounts != null) throw new IllegalStateException("Cannot expose AggState after bounded input");
-		if (unboundedReady) return;
+		if (boundedCounts != null)
+			throw new IllegalStateException("Cannot expose AggState after bounded input");
+		if (unboundedReady)
+			return;
 		// Once a caller has exposed a native state/map (or merged a worker), subsequent direct adds must
 		// use that same representation. Switching later would silently discard the earlier groups.
 		boundedAllowed = false;
@@ -150,7 +153,9 @@ final class NativeGroupTable implements AutoCloseable {
 	}
 
 	private static boolean hasMonotonicDistinct(AggregateDistinctChannels channels) {
-		for (NativeDistinctChannelMode mode : channels.modes) if (mode == NativeDistinctChannelMode.MONOTONIC) return true;
+		for (NativeDistinctChannelMode mode : channels.modes)
+			if (mode == NativeDistinctChannelMode.MONOTONIC)
+				return true;
 		return false;
 	}
 
@@ -183,13 +188,16 @@ final class NativeGroupTable implements AutoCloseable {
 	 * group's aggregates through the checked weighted arithmetic.
 	 */
 	void add(RowState row, long weight) {
-		if (weight < 0L) throw new IllegalArgumentException("Negative aggregate multiplicity");
-		if (weight == 0L) return;
+		if (weight < 0L)
+			throw new IllegalArgumentException("Negative aggregate multiplicity");
+		if (weight == 0L)
+			return;
 		if (weight <= 1L) {
 			add(row);
 			return;
 		}
-		if (addBounded(row, weight)) return;
+		if (addBounded(row, weight))
+			return;
 		initializeUnbounded();
 		switch (mode) {
 		case ZERO:
@@ -244,7 +252,8 @@ final class NativeGroupTable implements AutoCloseable {
 
 	/** Accumulates one fully-bound solution row into its group's state. */
 	void add(RowState row) {
-		if (addBounded(row, 1L)) return;
+		if (addBounded(row, 1L))
+			return;
 		initializeUnbounded();
 		switch (mode) {
 		case ZERO:
@@ -358,42 +367,57 @@ final class NativeGroupTable implements AutoCloseable {
 
 	private boolean addBounded(RowState row, long weight) {
 		checkOpen();
-		if (!boundedAllowed) return false;
+		if (!boundedAllowed)
+			return false;
 		if (!boundedChecked) {
 			boundedChecked = true;
 			NativeTermAuthority authority = row.termAuthority();
-			if (!authority.supportsCanonicalTermKeys()) return false;
+			if (!authority.supportsCanonicalTermKeys())
+				return false;
 			boolean[] distinct = new boolean[aggregates.length];
-			for (int i = 0; i < distinct.length; i++) distinct[i] = aggregates[i].distinct;
+			for (int i = 0; i < distinct.length; i++)
+				distinct[i] = aggregates[i].distinct;
 			boundedCounts = new NativeCountGroupStore(groupSlots.length, distinct, authority::canonicalTermKey,
 					LmdbNativeProbeDeadline.currentKernelCancellation(row.cancellation::isCancellationRequested, null),
 					row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
-			boundedKeys = new long[groupSlots.length]; boundedInputs = new long[aggregates.length];
+			boundedKeys = new long[groupSlots.length];
+			boundedInputs = new long[aggregates.length];
 		}
-		if (boundedCounts == null) return false;
-		for (int i = 0; i < groupSlots.length; i++) boundedKeys[i] = row.slots[groupSlots[i]];
-		for (int i = 0; i < aggregates.length; i++) boundedInputs[i] = aggregates[i].hasInput(row)
-				? aggregates[i].value(row) : UNKNOWN;
+		if (boundedCounts == null)
+			return false;
+		for (int i = 0; i < groupSlots.length; i++)
+			boundedKeys[i] = row.slots[groupSlots[i]];
+		for (int i = 0; i < aggregates.length; i++)
+			boundedInputs[i] = aggregates[i].hasInput(row)
+					? aggregates[i].value(row)
+					: UNKNOWN;
 		if (groupSlots.length == 1 && aggregates.length == 1 && !aggregates[0].distinct) {
 			boundedCounts.addSingleCount(boundedKeys[0], boundedInputs[0], weight);
-		} else boundedCounts.add(boundedKeys, boundedInputs, weight);
+		} else
+			boundedCounts.add(boundedKeys, boundedInputs, weight);
 		if (rowMetrics) {
-			if (mode == Mode.TUPLE_COUNTS) primitiveCountRows++;
-			else if (mode == Mode.TUPLE_STATES) primitiveTupleRows++;
+			if (mode == Mode.TUPLE_COUNTS)
+				primitiveCountRows++;
+			else if (mode == Mode.TUPLE_STATES)
+				primitiveTupleRows++;
 		}
 		return true;
 	}
 
 	private void checkOpen() {
-		if (closed || boundedConsumed) throw new IllegalStateException("Grouping table is closed or already drained");
+		if (closed || boundedConsumed)
+			throw new IllegalStateException("Grouping table is closed or already drained");
 	}
 
-	@Override public void close() {
-		if (closed) return;
+	@Override
+	public void close() {
+		if (closed)
+			return;
 		closed = true;
 		NativeCountGroupStore store = boundedCounts;
 		boundedCounts = null;
-		if (store != null) store.close();
+		if (store != null)
+			store.close();
 	}
 
 	/**
@@ -404,7 +428,8 @@ final class NativeGroupTable implements AutoCloseable {
 		if (boundedCounts != null || other.boundedCounts != null) {
 			throw new IllegalStateException("Bounded groups must merge through their record stream, not AggState");
 		}
-		initializeUnbounded(); other.initializeUnbounded();
+		initializeUnbounded();
+		other.initializeUnbounded();
 		if (rowMetrics) {
 			primitiveCountRows += other.primitiveCountRows;
 			primitiveTupleRows += other.primitiveTupleRows;
@@ -491,10 +516,14 @@ final class NativeGroupTable implements AutoCloseable {
 				store.finish();
 				ArrayList<BindingSet> results = new ArrayList<>();
 				long[] result = new long[groupSlots.length + aggregates.length];
-				while (store.next(result)) results.add(it.toCountBindingSet(result));
+				while (store.next(result))
+					results.add(it.toCountBindingSet(result));
 				commitRowMetrics(metrics);
 				return results;
-			} finally { boundedCounts = null; boundedConsumed = true; }
+			} finally {
+				boundedCounts = null;
+				boundedConsumed = true;
+			}
 		}
 		initializeUnbounded();
 		switch (mode) {

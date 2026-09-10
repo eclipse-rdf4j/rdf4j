@@ -12,11 +12,11 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Objects;
-import org.eclipse.rdf4j.sail.lmdb.factor.HeapFactorSource;
-import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
+import org.eclipse.rdf4j.sail.lmdb.factor.HeapFactorSource;
 
 /**
  * Minimal base-only adjacency view over an immutable partition whose keys and neighbors have already been promoted into
@@ -106,7 +106,9 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 	}
 
 	@Override
-	public BorrowedFactorBatch.Source openFactorSource() { return new HeapFactorSource(lookup); }
+	public BorrowedFactorBatch.Source openFactorSource() {
+		return new HeapFactorSource(lookup);
+	}
 
 	@Override
 	public boolean supportsBorrowedNeighbors() {
@@ -274,7 +276,8 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 
 		@Override
 		public boolean borrow(BorrowedFactorBatch target, int lane) {
-			if (token <= 0L) return false;
+			if (token <= 0L)
+				return false;
 			target.bindHeap(lane, decoded.neighborArray(), decoded.neighborOffset(),
 					Math.toIntExact(lookup.decodedEdgeCount(token)));
 			return true;

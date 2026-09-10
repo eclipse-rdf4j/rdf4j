@@ -187,12 +187,14 @@ final class LmdbNativeCostCalibration {
 
 	/** One calibration revision for a complete candidate comparison; no record can interleave halfway through it. */
 	static synchronized LmdbNativeWork[] toTimes(String[] tags, LmdbNativeWork[] work) {
-		if (tags.length != work.length) throw new IllegalArgumentException("mismatched cost columns");
+		if (tags.length != work.length)
+			throw new IllegalArgumentException("mismatched cost columns");
 		boolean consume = enabled();
 		LmdbNativeWork[] result = new LmdbNativeWork[work.length];
 		for (int i = 0; i < work.length; i++) {
 			result[i] = consume && tags[i] != null && work[i].known()
-					? applyFactor(work[i], FACTORS.get(tags[i])) : work[i];
+					? applyFactor(work[i], FACTORS.get(tags[i]))
+					: work[i];
 		}
 		return result;
 	}

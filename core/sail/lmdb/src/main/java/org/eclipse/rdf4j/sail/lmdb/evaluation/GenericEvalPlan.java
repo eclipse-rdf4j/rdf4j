@@ -326,7 +326,8 @@ final class IslandCursor implements RowCursor {
 
 	@Override
 	public boolean next() throws IOException {
-		if (closed) return false;
+		if (closed)
+			return false;
 		release();
 		try {
 			while (!row.cancellation.isCancellationRequested() && advance()) {
@@ -345,14 +346,19 @@ final class IslandCursor implements RowCursor {
 						break;
 					}
 				}
-				if (ok) return true;
+				if (ok)
+					return true;
 				release();
 			}
 			close();
 			return false;
 		} catch (RuntimeException | Error problem) {
-			try { close(); }
-			catch (Throwable cleanup) { if (cleanup != problem) problem.addSuppressed(cleanup); }
+			try {
+				close();
+			} catch (Throwable cleanup) {
+				if (cleanup != problem)
+					problem.addSuppressed(cleanup);
+			}
 			throw problem;
 		}
 	}
@@ -385,8 +391,12 @@ final class IslandCursor implements RowCursor {
 		}
 		closed = true;
 		pending = null;
-		try { release(); }
-		finally { if (generic != null) generic.close(); }
+		try {
+			release();
+		} finally {
+			if (generic != null)
+				generic.close();
+		}
 	}
 
 	void release() {

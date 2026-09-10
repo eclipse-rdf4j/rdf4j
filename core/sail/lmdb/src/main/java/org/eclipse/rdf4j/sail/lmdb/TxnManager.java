@@ -484,6 +484,7 @@ class TxnManager {
 
 		private record ValueLookupScope(Object readerView, Object dictionaryGeneration) {
 		}
+
 		private boolean txnActive = true;
 		private boolean closed;
 		/** Data revision this transaction's LMDB snapshot corresponds to; −1 for unpinned transactions. */

@@ -31,9 +31,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * <b>Staleness.</b> Entries are qualified by regime epoch. The {@link LmdbNativeCostPosteriorStore.ExactKey} already
  * carries the {@link LmdbNativeRegimeKey}; only its regime and quantized physical variant identify a measurement.
  * DIRECT versus RESIDUAL is deliberately excluded: changing the machine model's readiness does not undo a completed
- * execution. The epoch additionally covers within-regime shifts the tracker detects
- * (adjacency store publishing, a data-generation bump, drift). A time recorded under an older epoch reads as absent, so
- * a time measured against different data can never pin a price against the new data.
+ * execution. The epoch additionally covers within-regime shifts the tracker detects (adjacency store publishing, a
+ * data-generation bump, drift). A time recorded under an older epoch reads as absent, so a time measured against
+ * different data can never pin a price against the new data.
  * <p>
  * This state is in-memory only and is deliberately not persisted with the posteriors: a current time is cheap to
  * re-earn, while a value restored from a sidecar could describe different hardware or load.
@@ -82,8 +82,8 @@ final class LmdbNativeLatestObservedLedger {
 	}
 
 	/**
-	 * Offers one full, non-probe execution. Within one epoch the last completion callback wins; a newer epoch is never replaced by an older one. A value is never
-	 * compared with a previous epoch.
+	 * Offers one full, non-probe execution. Within one epoch the last completion callback wins; a newer epoch is never
+	 * replaced by an older one. A value is never compared with a previous epoch.
 	 */
 	synchronized void observe(LmdbNativeCostPosteriorStore.ExactKey key, long nanos, long epoch) {
 		if (!enabled || nanos <= 0L) {

@@ -12,11 +12,11 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.function.LongSupplier;
 
 /**
@@ -312,7 +312,8 @@ final class LmdbNativeProbeScheduler {
 
 	private long deadline(long multiplier) {
 		long duration = cooldownBaseMillis > Long.MAX_VALUE / multiplier
-				? Long.MAX_VALUE : cooldownBaseMillis * multiplier;
+				? Long.MAX_VALUE
+				: cooldownBaseMillis * multiplier;
 		long now = wallMillis.getAsLong();
 		return now > Long.MAX_VALUE - duration ? Long.MAX_VALUE : now + duration;
 	}

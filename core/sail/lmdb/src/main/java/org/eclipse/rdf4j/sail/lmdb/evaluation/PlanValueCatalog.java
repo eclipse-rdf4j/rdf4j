@@ -129,6 +129,7 @@ record NativeValueKey(Value.Type type, String lexical, String language, String d
 		}
 		return new NativeValueKey(value.getType(), value.stringValue(), null, null, null, null, null, null);
 	}
+
 	/** Cache probe without allocating a temporary key. Every field tested here is also captured by of(Value). */
 	boolean matches(Value value) {
 		if (value instanceof Literal literal) {

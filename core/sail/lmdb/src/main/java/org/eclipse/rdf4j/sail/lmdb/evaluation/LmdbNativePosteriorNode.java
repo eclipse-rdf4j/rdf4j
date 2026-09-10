@@ -108,7 +108,8 @@ final class LmdbNativePosteriorNode {
 				|| !Double.isFinite(node.noiseVariance) || node.noiseVariance < 0
 				|| !Double.isFinite(node.weightSum) || node.weightSum < 0
 				|| !Double.isFinite(node.squaredWeightSum) || node.squaredWeightSum < 0
-				|| !Double.isFinite(node.nEff()) || node.completedCount < 0 || node.censoredCount < 0 || node.epoch < 0) {
+				|| !Double.isFinite(node.nEff()) || node.completedCount < 0 || node.censoredCount < 0
+				|| node.epoch < 0) {
 			throw new IOException("invalid posterior node");
 		}
 		return node;

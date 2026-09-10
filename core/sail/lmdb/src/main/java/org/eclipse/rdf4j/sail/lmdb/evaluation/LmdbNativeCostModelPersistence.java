@@ -20,11 +20,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.LinkedHashMap;
 import java.util.TreeMap;
-import java.util.Comparator;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.CRC32C;
@@ -133,21 +133,21 @@ final class LmdbNativeCostModelPersistence {
 					LmdbNativeCostPosteriorStore.GlobalKey key = new LmdbNativeCostPosteriorStore.GlobalKey(
 							readRegime(in), readLane(in));
 					putUnique(stagedGlobals, key, decay(LmdbNativePosteriorNode.readFrom(in), staleness,
-									config.priorVariance(LmdbNativeCostPosteriorStore.Level.GLOBAL), config, now));
+							config.priorVariance(LmdbNativeCostPosteriorStore.Level.GLOBAL), config, now));
 				}
 				int familyCount = readCount(in);
 				for (int i = 0; i < familyCount; i++) {
 					LmdbNativeCostPosteriorStore.FamilyKey key = new LmdbNativeCostPosteriorStore.FamilyKey(
 							readRegime(in), readLane(in), readFamilyShape(in));
 					putUnique(stagedFamilies, key, decay(LmdbNativePosteriorNode.readFrom(in), staleness,
-									config.priorVariance(LmdbNativeCostPosteriorStore.Level.FAMILY), config, now));
+							config.priorVariance(LmdbNativeCostPosteriorStore.Level.FAMILY), config, now));
 				}
 				int exactCount = readCount(in);
 				for (int i = 0; i < exactCount; i++) {
 					LmdbNativeCostPosteriorStore.ExactKey key = LmdbNativeCostPosteriorStore.ExactKey.of(
 							readRegime(in), readLane(in), readVariantKey(in));
 					putUnique(stagedExacts, key, decay(LmdbNativePosteriorNode.readFrom(in), staleness,
-									config.priorVariance(LmdbNativeCostPosteriorStore.Level.EXACT), config, now));
+							config.priorVariance(LmdbNativeCostPosteriorStore.Level.EXACT), config, now));
 				}
 				int cooldowns = readCount(in);
 				List<LmdbNativeProbeScheduler.CooldownEntry> restored = new ArrayList<>(cooldowns);
@@ -156,7 +156,8 @@ final class LmdbNativeCostModelPersistence {
 							LmdbNativeProbeScheduler.State.values()[in.readByte()], in.readLong(), in.readInt(),
 							in.readLong()));
 				}
-				if (in.available() != 0) throw new IOException("trailing checkpoint payload");
+				if (in.available() != 0)
+					throw new IOException("trailing checkpoint payload");
 				for (LmdbNativeProbeScheduler.CooldownEntry entry : restored) {
 					if ((entry.state() != LmdbNativeProbeScheduler.State.COOLDOWN
 							&& entry.state() != LmdbNativeProbeScheduler.State.DORMANT_UNTIL_EPOCH
@@ -183,19 +184,22 @@ final class LmdbNativeCostModelPersistence {
 
 	private static int readCount(DataInputStream in) throws IOException {
 		int count = in.readInt();
-		if (count < 0 || count > in.available()) throw new IOException("invalid checkpoint section size");
+		if (count < 0 || count > in.available())
+			throw new IOException("invalid checkpoint section size");
 		return count;
 	}
 
 	private static <K, V> void putUnique(Map<K, V> values, K key, V value) throws IOException {
-		if (values.putIfAbsent(key, value) != null) throw new IOException("duplicate checkpoint key");
+		if (values.putIfAbsent(key, value) != null)
+			throw new IOException("duplicate checkpoint key");
 	}
 
 	/** Captures all persisted sections together, then releases learner locks BEFORE encoding or file I/O. */
 	private record Checkpoint(Map<LmdbNativeCostPosteriorStore.GlobalKey, LmdbNativePosteriorNode> globals,
 			Map<LmdbNativeCostPosteriorStore.FamilyKey, LmdbNativePosteriorNode> families,
 			Map<LmdbNativeCostPosteriorStore.ExactKey, LmdbNativePosteriorNode> exacts,
-			List<LmdbNativeProbeScheduler.CooldownEntry> cooldowns) { }
+			List<LmdbNativeProbeScheduler.CooldownEntry> cooldowns) {
+	}
 
 	private Checkpoint checkpoint() {
 		Comparator<LmdbNativeRegimeKey> regimes = Comparator.comparing(LmdbNativeRegimeKey::phase)

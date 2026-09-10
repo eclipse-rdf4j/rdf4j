@@ -12,8 +12,8 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 
 /**
  * Streaming bridge from a generated kernel to an engine-owned physical sub-plan. The generated class sees only packed
@@ -33,83 +33,126 @@ public interface KernelPlan extends AutoCloseable {
 	Cursor open();
 
 	/**
-	 * Opens exact weighted output when the consumer can account for multiplicities. This is a
-	 * demand hint, not permission to compress volatile or effectful producers. The default
-	 * preserves ordinary evaluation; engine bindings may select a replay-safe weighted producer.
+	 * Opens exact weighted output when the consumer can account for multiplicities. This is a demand hint, not
+	 * permission to compress volatile or effectful producers. The default preserves ordinary evaluation; engine
+	 * bindings may select a replay-safe weighted producer.
 	 */
-	default Cursor openWeighted() { return open(); }
-
-	/**
-	 * Optional native grouped-relation bridge. Unlike fillWeighted, this retains actual child
-	 * relations. Null means unsupported, not empty. The caller owns the returned cursor and must
-	 * consume its current sidecar before advancing. Existing scalar kernels remain unchanged.
-	 */
-	default FactorCursor openFactors() { return null; }
-
-	/** Scalar demand in this plan's registered output-column namespace, not the engine slot namespace. */
-	default FactorCursor openFactors(int[] scalarOutputColumns) { return openFactors(); }
-
-	interface FactorCursor extends AutoCloseable {
-		boolean next();
-		/** Engine slot corresponding to one registered output column. Hoist this mapping outside loops. */
-		int slot(int outputColumn);
-		/** A scalar ID only; throws if that column is still a deferred factor. */
-		long scalar(int outputColumn);
-		/** Stable exact prefix weight, excluding the independent relations in factors(). */
-		long multiplicity();
-		/** Engine-slot namespace. Backing sources and descriptors remain owned by this cursor. */
-		FactorEnvironment factors();
-		@Override void close();
+	default Cursor openWeighted() {
+		return open();
 	}
 
 	/**
-	 * Opens a reusable relation in bounded batches. Every requested projection is an exact marginal of
-	 * the SAME batch, not another evaluation of the input. Projection positions use this plan's output
-	 * namespace. A false exactWeights entry requests presence rather than bag multiplicity; its cursor
-	 * must never calculate an unobserved Cartesian cardinality. Null declines before reading any input.
+	 * Optional native grouped-relation bridge. Unlike fillWeighted, this retains actual child relations. Null means
+	 * unsupported, not empty. The caller owns the returned cursor and must consume its current sidecar before
+	 * advancing. Existing scalar kernels remain unchanged.
 	 */
-	default ProjectionCursor openProjections(int[][] outputColumns, boolean[] exactWeights) { return null; }
+	default FactorCursor openFactors() {
+		return null;
+	}
+
+	/** Scalar demand in this plan's registered output-column namespace, not the engine slot namespace. */
+	default FactorCursor openFactors(int[] scalarOutputColumns) {
+		return openFactors();
+	}
+
+	interface FactorCursor extends AutoCloseable {
+		boolean next();
+
+		/** Engine slot corresponding to one registered output column. Hoist this mapping outside loops. */
+		int slot(int outputColumn);
+
+		/** A scalar ID only; throws if that column is still a deferred factor. */
+		long scalar(int outputColumn);
+
+		/** Stable exact prefix weight, excluding the independent relations in factors(). */
+		long multiplicity();
+
+		/** Engine-slot namespace. Backing sources and descriptors remain owned by this cursor. */
+		FactorEnvironment factors();
+
+		@Override
+		void close();
+	}
+
+	/**
+	 * Opens a reusable relation in bounded batches. Every requested projection is an exact marginal of the SAME batch,
+	 * not another evaluation of the input. Projection positions use this plan's output namespace. A false exactWeights
+	 * entry requests presence rather than bag multiplicity; its cursor must never calculate an unobserved Cartesian
+	 * cardinality. Null declines before reading any input.
+	 */
+	default ProjectionCursor openProjections(int[][] outputColumns, boolean[] exactWeights) {
+		return null;
+	}
 
 	interface ProjectionCursor extends AutoCloseable {
 		/**
-		 * Permit repeated binding prefixes in disjoint additive relation partitions. Call before
-		 * reading input, only when all consumers merge partitions without changing semantics.
-		 * Presence channels must deduplicate identities across partitions; COUNT channels add
-		 * exact contributions. This does not authorize replaying effectful expressions, numeric
-		 * reassociation or using partition counts as distinct-prefix counts. Producers may ignore it.
+		 * Permit repeated binding prefixes in disjoint additive relation partitions. Call before reading input, only
+		 * when all consumers merge partitions without changing semantics. Presence channels must deduplicate identities
+		 * across partitions; COUNT channels add exact contributions. This does not authorize replaying effectful
+		 * expressions, numeric reassociation or using partition counts as distinct-prefix counts. Producers may ignore
+		 * it.
 		 */
-		default void permitPrefixPartitions() { }
+		default void permitPrefixPartitions() {
+		}
+
 		boolean nextBatch();
+
 		/**
-		 * Output-column mask proven invariant throughout the current batch, across all projections.
-		 * Zero is the conservative default. A declaration concerns exact IDs, not merely equal hashes.
-		 * Consumers must not retain a group/table handle across batches or a spill-state replacement.
+		 * Output-column mask proven invariant throughout the current batch, across all projections. Zero is the
+		 * conservative default. A declaration concerns exact IDs, not merely equal hashes. Consumers must not retain a
+		 * group/table handle across batches or a spill-state replacement.
 		 */
-		default long constantColumns() { return 0L; }
+		default long constantColumns() {
+			return 0L;
+		}
 
 		/** Sole varying output in a bounded projection window, or -1 to decline without advancing. */
-		default int windowColumn(int projection) { return -1; }
+		default int windowColumn(int projection) {
+			return -1;
+		}
+
 		/** Advance a window, at most 256 fragments. Zero completes the current projection. */
-		default int nextWindow(int projection) { throw new UnsupportedOperationException("projection windows"); }
+		default int nextWindow(int projection) {
+			throw new UnsupportedOperationException("projection windows");
+		}
+
 		/** Read-only arrays, valid until the next cursor operation. Non-window columns are scalar. */
-		default long[] windowValues() { throw new UnsupportedOperationException("projection windows"); }
-		default long[] windowWeights() { throw new UnsupportedOperationException("projection windows"); }
-		default int windowStart() { return 0; }
+		default long[] windowValues() {
+			throw new UnsupportedOperationException("projection windows");
+		}
+
+		default long[] windowWeights() {
+			throw new UnsupportedOperationException("projection windows");
+		}
+
+		default int windowStart() {
+			return 0;
+		}
+
 		/**
-		 * True when invariant bindings OR the outside multiplier may differ from the previous window.
-		 * The first window of a projection must return true. Do not cache group handles or scales across
-		 * a true result. This is independent of constantColumns(), which describes the entire batch.
+		 * True when invariant bindings OR the outside multiplier may differ from the previous window. The first window
+		 * of a projection must return true. Do not cache group handles or scales across a true result. This is
+		 * independent of constantColumns(), which describes the entire batch.
 		 */
-		default boolean windowPrefixChanged() { return true; }
+		default boolean windowPrefixChanged() {
+			return true;
+		}
+
 		/** Exact outside multiplier; call only when a consumer actually observes the member's weight. */
-		default long windowScale() { throw new UnsupportedOperationException("projection windows"); }
+		default long windowScale() {
+			throw new UnsupportedOperationException("projection windows");
+		}
 
 		/** Start/advance one projection of the current batch; finish it before selecting another. */
 		boolean next(int projection);
+
 		/** An ID for a requested output position, never an address or a deferred handle. */
 		long value(int outputColumn);
+
 		long multiplicity();
-		@Override void close();
+
+		@Override
+		void close();
 	}
 
 	/** Installs a correlated input before opening this operator. */
@@ -138,7 +181,8 @@ public interface KernelPlan extends AutoCloseable {
 		 * per-mapping expressions, DISTINCT and arbitrary intervening operators must not be silently bypassed.
 		 */
 		default int fillWeighted(long[] rowBuffer, long[] weights, int maxRows) {
-			if (maxRows < 0 || maxRows > weights.length) throw new IllegalArgumentException("weight buffer capacity");
+			if (maxRows < 0 || maxRows > weights.length)
+				throw new IllegalArgumentException("weight buffer capacity");
 			int count = fill(rowBuffer, maxRows);
 			java.util.Arrays.fill(weights, 0, count, 1L);
 			return count;

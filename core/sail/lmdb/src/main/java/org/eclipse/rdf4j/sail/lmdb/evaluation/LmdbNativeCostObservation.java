@@ -262,7 +262,8 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 			trainedFeatures = actual;
 			double weight = (result == Completion.EXPECTED_EARLY_CLOSE ? Math.max(0.25, fraction) : 1.0)
 					* contendedWeightFactor;
-			trainingResult = model.recordCompleted(consumedEstimate, actual, elapsed, weight, regimeAtDispatch, epochAtDispatch);
+			trainingResult = model.recordCompleted(consumedEstimate, actual, elapsed, weight, regimeAtDispatch,
+					epochAtDispatch);
 			if (role != Role.PROBE) {
 				model.earnSafetyCredit(elapsed);
 				if (result == Completion.EXHAUSTED) {
@@ -277,7 +278,8 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 			}
 		} else if (result == Completion.BUDGET_CENSORED) {
 			trainedFeatures = actual;
-			censorResult = model.recordCensored(estimate, censorDeadlineNanos, actual, regimeAtDispatch, epochAtDispatch);
+			censorResult = model.recordCensored(estimate, censorDeadlineNanos, actual, regimeAtDispatch,
+					epochAtDispatch);
 			trainingResult = new LmdbNativeAdaptiveCostModel.TrainingResult(false,
 					"budget censored: " + censorResult.reason(), false, censorResult.severeMiss());
 		} else {

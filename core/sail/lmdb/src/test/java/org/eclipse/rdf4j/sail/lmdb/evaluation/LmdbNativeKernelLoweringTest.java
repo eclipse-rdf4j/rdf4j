@@ -71,14 +71,20 @@ class LmdbNativeKernelLoweringTest {
 
 	private static SlotPlan opaqueEndpoint() {
 		return new SlotPlan() {
-			@Override public long producedMask() { return 1L << 1; }
-			@Override public RowCursor open(RowState row) {
+			@Override
+			public long producedMask() {
+				return 1L << 1;
+			}
+
+			@Override
+			public RowCursor open(RowState row) {
 				throw new AssertionError("lowering must never execute the endpoint");
 			}
 		};
 	}
 
-	@Test void opaqueProducerKeepsNativeNeighborsInsideTheSameKernel() {
+	@Test
+	void opaqueProducerKeepsNativeNeighborsInsideTheSameKernel() {
 		SlotPlan endpoint = opaqueEndpoint();
 		SlotPlan local = pattern(Term.slot(0), Term.constant(PRED + 128));
 		var lowered = lowerWithScans(new JoinPlan(local, endpoint));
@@ -91,7 +97,8 @@ class LmdbNativeKernelLoweringTest {
 		assertTrue(lowered.kernel.pipeline.stream().anyMatch(LmdbNativeKernelIr.PlanRows.class::isInstance));
 	}
 
-	@Test void filtersDoNotCrossAnObservableProducerBoundary() {
+	@Test
+	void filtersDoNotCrossAnObservableProducerBoundary() {
 		SlotPlan local = pattern(Term.slot(0), Term.constant(PRED + 128));
 		for (boolean before : new boolean[] { true, false }) {
 			SlotPlan endpoint = opaqueEndpoint();
@@ -103,15 +110,18 @@ class LmdbNativeKernelLoweringTest {
 			int boundary = -1, guard = -1;
 			for (int i = 0; i < lowered.kernel.pipeline.size(); i++) {
 				var node = lowered.kernel.pipeline.get(i);
-				if (node instanceof LmdbNativeKernelIr.PlanRows) boundary = i;
-				if (LmdbNativeKernelIr.isFilter(node)) guard = i;
+				if (node instanceof LmdbNativeKernelIr.PlanRows)
+					boundary = i;
+				if (LmdbNativeKernelIr.isFilter(node))
+					guard = i;
 			}
 			assertTrue(boundary >= 0 && guard >= 0, lowered.kernel.shapeKey());
 			assertEquals(before, guard < boundary, "FILTER position relative to SERVICE is observable");
 		}
 	}
 
-	@Test void aggregateAlsoKeepsOpaqueProducerAsLocalBoundary() {
+	@Test
+	void aggregateAlsoKeepsOpaqueProducerAsLocalBoundary() {
 		SlotPlan endpoint = opaqueEndpoint();
 		SlotPlan plan = new JoinPlan(pattern(Term.slot(0), Term.constant(PRED + 128)), endpoint);
 		var lowered = LmdbNativeKernelLowering.lowerAggregate(plan, freshRow(), new int[0],
@@ -122,7 +132,8 @@ class LmdbNativeKernelLoweringTest {
 		assertTrue(lowered.kernel.terminal instanceof LmdbNativeKernelIr.Aggregate);
 	}
 
-	@Test void branchingAggregateKeepsOnePhysicalProducerAcrossBothIrTiers() {
+	@Test
+	void branchingAggregateKeepsOnePhysicalProducerAcrossBothIrTiers() {
 		String key = LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY;
 		String previous = System.getProperty(key);
 		try {
@@ -145,11 +156,15 @@ class LmdbNativeKernelLoweringTest {
 			assertEquals(LmdbNativeKernelIr.AGG_COUNT_STAR,
 					((LmdbNativeKernelIr.Aggregate) lowered.kernel.terminal).outputs[0].kind);
 		} finally {
-			if (previous == null) System.clearProperty(key); else System.setProperty(key, previous);
+			if (previous == null)
+				System.clearProperty(key);
+			else
+				System.setProperty(key, previous);
 		}
 	}
 
-	@Test void singleGlobalDistinctRetainsExistingWitnessLoweringPreference() {
+	@Test
+	void singleGlobalDistinctRetainsExistingWitnessLoweringPreference() {
 		MultiJoinPlan tree = new MultiJoinPlan(new SlotPlan[] {
 				pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(0), Term.slot(2)),
 				pattern(Term.slot(0), Term.slot(3)) }, new MaskedFilter[0]);
@@ -182,9 +197,12 @@ class LmdbNativeKernelLoweringTest {
 				var lowered = LmdbNativeKernelLowering.lowerAggregate(filtered, freshRow(source), new int[0],
 						new AggregateSpec[] { AggregateSpec.slot("count", 0, true, AggKind.COUNT) }, null);
 				assertNotNull(lowered, "numeric membership/witness must remain lowerable");
-				assertNull(LmdbNativeKernelIr.factorPlan(lowered.kernel), "DISTINCT must not enter the count-only peel");
-				if (shape == null) shape = lowered.kernel.shapeKey();
-				else assertEquals(shape, lowered.kernel.shapeKey(), "an ineligible flag must not change this IR");
+				assertNull(LmdbNativeKernelIr.factorPlan(lowered.kernel),
+						"DISTINCT must not enter the count-only peel");
+				if (shape == null)
+					shape = lowered.kernel.shapeKey();
+				else
+					assertEquals(shape, lowered.kernel.shapeKey(), "an ineligible flag must not change this IR");
 			}
 		} finally {
 			restoreProperty(property, previous);

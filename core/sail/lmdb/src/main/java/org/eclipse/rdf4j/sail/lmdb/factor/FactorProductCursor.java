@@ -7,9 +7,9 @@ package org.eclipse.rdf4j.sail.lmdb.factor;
 import java.util.Objects;
 
 /**
- * Opens only a requested subset of independent factors. Unopened siblings remain relations.
- * Bounded readers are reused between prefixes; no allocation depends on degree. Each cursor owns
- * its own iterator state, so another consumer can traverse the same environment independently.
+ * Opens only a requested subset of independent factors. Unopened siblings remain relations. Bounded readers are reused
+ * between prefixes; no allocation depends on degree. Each cursor owns its own iterator state, so another consumer can
+ * traverse the same environment independently.
  */
 public final class FactorProductCursor implements AutoCloseable {
 	private final BorrowedFactorBatch[] boundBatches;
@@ -36,7 +36,8 @@ public final class FactorProductCursor implements AutoCloseable {
 	private long bindingWeight;
 
 	public FactorProductCursor(int slots, int window) {
-		if (slots < 0 || slots > Long.SIZE || window <= 0) throw new IllegalArgumentException("invalid cursor size");
+		if (slots < 0 || slots > Long.SIZE || window <= 0)
+			throw new IllegalArgumentException("invalid cursor size");
 		boundBatches = new BorrowedFactorBatch[slots];
 		readers = new BorrowedFactorBatch.Cursor[slots];
 		order = new int[slots];
@@ -66,7 +67,8 @@ public final class FactorProductCursor implements AutoCloseable {
 		exhausted = multiplicity == 0;
 		for (long rest = environment.groupLeaders(); rest != 0L; rest &= rest - 1L) {
 			int slot = Long.numberOfTrailingZeros(rest);
-			if (environment.count(slot) == 0L) exhausted = true;
+			if (environment.count(slot) == 0L)
+				exhausted = true;
 			if ((selected & (1L << slot)) != 0L) {
 				order[width++] = slot;
 				if (environment.isTuple(slot)) {
@@ -85,51 +87,69 @@ public final class FactorProductCursor implements AutoCloseable {
 		first = true;
 	}
 
-	public long expandedMask() { return selected; }
+	public long expandedMask() {
+		return selected;
+	}
+
 	public long value(int slot) {
 		Objects.checkIndex(slot, values.length);
-		if ((selected & (1L << slot)) == 0L) throw new IllegalArgumentException("slot not expanded");
+		if ((selected & (1L << slot)) == 0L)
+			throw new IllegalArgumentException("slot not expanded");
 		return values[slot];
 	}
+
 	/** Multiplicity of the emitted scalar prefix; excludes all unopened factors. */
-	public long multiplicity() { return prefixWeights[width]; }
+	public long multiplicity() {
+		return prefixWeights[width];
+	}
 
 	/** Exact weight is optional: DISTINCT and null aggregate arguments need only presence. */
 	public long exactMultiplicity() {
 		checkOpen();
 		if (environment == null || first || exhausted || environment.epoch() != epoch)
 			throw new IllegalStateException("no current factor product");
-		if (exactWeights) return multiplicity();
+		if (exactWeights)
+			return multiplicity();
 		long weight = bindingWeight;
 		for (int i = 0; i < width; i++) {
 			int slot = order[i];
 			weight = Math.multiplyExact(weight, (tupleLeaders & (1L << slot)) == 0L
-					? readers[slot].weight() : tupleReaders[slot].weight());
+					? readers[slot].weight()
+					: tupleReaders[slot].weight());
 		}
 		return weight;
 	}
 
 	public boolean next() {
 		checkOpen();
-		if (environment == null) throw new IllegalStateException("cursor not bound");
-		if (environment.epoch() != epoch) throw new IllegalStateException("factor environment changed during expansion");
-		if (exhausted) return false;
+		if (environment == null)
+			throw new IllegalStateException("cursor not bound");
+		if (environment.epoch() != epoch)
+			throw new IllegalStateException("factor environment changed during expansion");
+		if (exhausted)
+			return false;
 		if (first) {
 			environment.checkValid(); // includes zero-width consumers that never open a reader
 			first = false;
 			for (int i = 0; i < width; i++) {
-				if (!restart(i)) { exhausted = true; return false; }
+				if (!restart(i)) {
+					exhausted = true;
+					return false;
+				}
 			}
 			return true;
 		}
 		// The common adjacency-only path never needs tuple tags or correlated-column traversal.
-		if (tupleLeaders == 0L) return nextUnary();
+		if (tupleLeaders == 0L)
+			return nextUnary();
 		for (int i = width - 1; i >= 0; i--) {
 			int slot = order[i];
-			if (!((tupleLeaders & (1L << slot)) == 0L ? readers[slot].next() : tupleReaders[slot].next())) continue;
+			if (!((tupleLeaders & (1L << slot)) == 0L ? readers[slot].next() : tupleReaders[slot].next()))
+				continue;
 			capture(i);
 			for (int j = i + 1; j < width; j++)
-				if (!restart(j)) throw new IllegalStateException("exact immutable factor changed during replay");
+				if (!restart(j))
+					throw new IllegalStateException("exact immutable factor changed during replay");
 			return true;
 		}
 		exhausted = true;
@@ -140,11 +160,13 @@ public final class FactorProductCursor implements AutoCloseable {
 		for (int i = width - 1; i >= 0; i--) {
 			int slot = order[i];
 			BorrowedFactorBatch.Cursor reader = readers[slot];
-			if (!reader.next()) continue;
+			if (!reader.next())
+				continue;
 			values[slot] = reader.value();
 			prefixWeights[i + 1] = exactWeights ? Math.multiplyExact(prefixWeights[i], reader.weight()) : 1L;
 			for (int j = i + 1; j < width; j++)
-				if (!restart(j)) throw new IllegalStateException("exact immutable factor changed during replay");
+				if (!restart(j))
+					throw new IllegalStateException("exact immutable factor changed during replay");
 			return true;
 		}
 		exhausted = true;
@@ -167,7 +189,8 @@ public final class FactorProductCursor implements AutoCloseable {
 			BorrowedTupleBatch batch = environment.tupleBatch(slot);
 			int capacity = (int) Math.min(window, environment.count(slot));
 			if (boundTuples[slot] != batch || tupleWindows[slot] < capacity) {
-				if (tupleReaders[slot] != null) tupleReaders[slot].close();
+				if (tupleReaders[slot] != null)
+					tupleReaders[slot].close();
 				tupleReaders[slot] = null;
 				boundTuples[slot] = null;
 				tupleReaders[slot] = batch.cursor(capacity);
@@ -175,7 +198,8 @@ public final class FactorProductCursor implements AutoCloseable {
 				boundTuples[slot] = batch;
 			}
 			tupleReaders[slot].bind(environment.lane(slot));
-			if (!tupleReaders[slot].next()) return false;
+			if (!tupleReaders[slot].next())
+				return false;
 			capture(index);
 			return true;
 		}
@@ -183,7 +207,8 @@ public final class FactorProductCursor implements AutoCloseable {
 		int capacity = (int) Math.min(window, environment.count(slot));
 		if (boundBatches[slot] == null || boundBatches[slot].source() != batch.source()
 				|| readerWindows[slot] < capacity) {
-			if (readers[slot] != null) readers[slot].close();
+			if (readers[slot] != null)
+				readers[slot].close();
 			readers[slot] = null;
 			boundBatches[slot] = null;
 			readers[slot] = batch.cursor(capacity);
@@ -192,7 +217,8 @@ public final class FactorProductCursor implements AutoCloseable {
 		}
 		boundBatches[slot] = batch;
 		readers[slot].bind(batch, environment.lane(slot));
-		if (!readers[slot].next()) return false;
+		if (!readers[slot].next())
+			return false;
 		capture(index);
 		return true;
 	}
@@ -213,32 +239,50 @@ public final class FactorProductCursor implements AutoCloseable {
 		}
 		prefixWeights[index + 1] = exactWeights ? Math.multiplyExact(prefixWeights[index], weight) : 1L;
 	}
-	private void checkOpen() { if (closed) throw new IllegalStateException("factor product cursor closed"); }
 
-	@Override public void close() {
-		if (closed) return;
+	private void checkOpen() {
+		if (closed)
+			throw new IllegalStateException("factor product cursor closed");
+	}
+
+	@Override
+	public void close() {
+		if (closed)
+			return;
 		closed = true;
 		Throwable failure = null;
-		for (BorrowedFactorBatch.Cursor reader : readers) if (reader != null) {
-			try { reader.close(); }
-			catch (RuntimeException | Error problem) {
-				if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
-			}
-		}
-		if (tupleReaders != null) {
-			for (BorrowedTupleBatch.Cursor reader : tupleReaders) if (reader != null) {
-				try { reader.close(); }
-				catch (RuntimeException | Error problem) {
-					if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
+		for (BorrowedFactorBatch.Cursor reader : readers)
+			if (reader != null) {
+				try {
+					reader.close();
+				} catch (RuntimeException | Error problem) {
+					if (failure == null)
+						failure = problem;
+					else if (failure != problem)
+						failure.addSuppressed(problem);
 				}
 			}
+		if (tupleReaders != null) {
+			for (BorrowedTupleBatch.Cursor reader : tupleReaders)
+				if (reader != null) {
+					try {
+						reader.close();
+					} catch (RuntimeException | Error problem) {
+						if (failure == null)
+							failure = problem;
+						else if (failure != problem)
+							failure.addSuppressed(problem);
+					}
+				}
 			java.util.Arrays.fill(boundTuples, null);
 			java.util.Arrays.fill(tupleReaders, null);
 		}
 		environment = null;
 		java.util.Arrays.fill(boundBatches, null);
 		java.util.Arrays.fill(readers, null);
-		if (failure instanceof RuntimeException problem) throw problem;
-		if (failure instanceof Error problem) throw problem;
+		if (failure instanceof RuntimeException problem)
+			throw problem;
+		if (failure instanceof Error problem)
+			throw problem;
 	}
 }

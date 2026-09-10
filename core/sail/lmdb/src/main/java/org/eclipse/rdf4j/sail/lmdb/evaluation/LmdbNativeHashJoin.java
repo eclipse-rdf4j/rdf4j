@@ -103,14 +103,17 @@ final class LmdbNativeHashJoin {
 	}
 
 	static LmdbNativeFactorCursor tryOpenFactors(MultiJoinPlan plan, RowState row, int capacity, long scalarDemand) {
-		if (!LmdbNativeFactorRows.enabled() || row.encounterOrderRequired) return null;
+		if (!LmdbNativeFactorRows.enabled() || row.encounterOrderRequired)
+			return null;
 		for (MaskedFilter filter : plan.filters) {
-			if (filter.mask < 0L) return null;
+			if (filter.mask < 0L)
+				return null;
 			// Tuple selections are not yet represented; an embedded payload filter consumes that tuple now.
 			scalarDemand |= filter.mask;
 		}
 		Candidate candidate = tryPlan(plan, row);
-		if (candidate == null) return null;
+		if (candidate == null)
+			return null;
 		long payloadMask = candidate.build.producedMask() & ~HashJoinBatchCursor.maskOf(candidate.keySlots);
 		// Tuple transport currently requires assured-bound columns, not per-tuple nullable binding masks.
 		if ((payloadMask & ~SlotPlan.assuredMask(candidate.build)) != 0L || (payloadMask & row.boundMask()) != 0L)
@@ -124,7 +127,12 @@ final class LmdbNativeHashJoin {
 				grouped = LmdbNativeFactorRows.restrict(grouped, filter.filter, row, filter.mask);
 			return grouped;
 		} catch (RuntimeException | Error failure) {
-			try { grouped.close(); } catch (Throwable closing) { if (closing != failure) failure.addSuppressed(closing); }
+			try {
+				grouped.close();
+			} catch (Throwable closing) {
+				if (closing != failure)
+					failure.addSuppressed(closing);
+			}
 			throw failure;
 		}
 	}
@@ -487,7 +495,10 @@ final class HashJoinBatchCursor implements BatchCursor {
 		if (!initialized) {
 			initialized = true;
 			if (!build()) {
-				if (buildCancelled) { close(); return 0; }
+				if (buildCancelled) {
+					close();
+					return 0;
+				}
 				// The specific refusal counter (row cap, preflight, late, sweep abort) was recorded inside build().
 				fallback = new RowBatchCursor(fallbackPlan.open(row), row);
 			}
@@ -632,7 +643,8 @@ final class HashJoinBatchCursor implements BatchCursor {
 	/** Same batched hash/probe work as scalar emission; retain the resolved bucket for grouped consumers. */
 	int nextProbeBucket() throws IOException {
 		while (probeIndex >= probeCount) {
-			if (probeCursor.fill(probeBatch) == 0) return END_OF_PROBE;
+			if (probeCursor.fill(probeBatch) == 0)
+				return END_OF_PROBE;
 			probeCount = probeBatch.selectedCount;
 			probeIndex = 0;
 			table.hashBatch(probeBatch, probeBatch.selection, probeCount, keySlots, probeHashState, probeHashes);
@@ -828,21 +840,42 @@ final class HashJoinBatchCursor implements BatchCursor {
 
 	@Override
 	public void close() {
-		if (closed) return;
+		if (closed)
+			return;
 		closed = true;
 		Throwable failure = null;
-		try { if (fallback != null) fallback.close(); }
-		catch (RuntimeException | Error problem) { failure = problem; }
-		finally { fallback = null; }
-		try { if (probeCursor != null) probeCursor.close(); }
-		catch (RuntimeException | Error problem) {
-			if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
-		} finally { probeCursor = null; table = null; probeBatch = null; }
-		try { releaseLedger(); }
-		catch (RuntimeException | Error problem) {
-			if (failure == null) failure = problem; else if (failure != problem) failure.addSuppressed(problem);
+		try {
+			if (fallback != null)
+				fallback.close();
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+		} finally {
+			fallback = null;
 		}
-		if (failure instanceof RuntimeException problem) throw problem;
-		if (failure instanceof Error problem) throw problem;
+		try {
+			if (probeCursor != null)
+				probeCursor.close();
+		} catch (RuntimeException | Error problem) {
+			if (failure == null)
+				failure = problem;
+			else if (failure != problem)
+				failure.addSuppressed(problem);
+		} finally {
+			probeCursor = null;
+			table = null;
+			probeBatch = null;
+		}
+		try {
+			releaseLedger();
+		} catch (RuntimeException | Error problem) {
+			if (failure == null)
+				failure = problem;
+			else if (failure != problem)
+				failure.addSuppressed(problem);
+		}
+		if (failure instanceof RuntimeException problem)
+			throw problem;
+		if (failure instanceof Error problem)
+			throw problem;
 	}
 }

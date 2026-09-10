@@ -3787,9 +3787,9 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 	}
 
 	/**
-	 * Hot reader for an already-positioned, immutable single-page row. Binding takes a real page
-	 * address, not a page-directory token. The exporter is responsible for retaining the page owner.
-	 * No lookup or page-directory resolution occurs while reading its fibers.
+	 * Hot reader for an already-positioned, immutable single-page row. Binding takes a real page address, not a
+	 * page-directory token. The exporter is responsible for retaining the page owner. No lookup or page-directory
+	 * resolution occurs while reading its fibers.
 	 */
 	public static final class BorrowedPageReader extends CompactCsfPageReader {
 		private int row;
@@ -3816,7 +3816,8 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			if (!bound || fromQuad < 0L || fromQuad > edgeCount || maximum < 0
 					|| maximum > values.length || maximum > weights.length)
 				throw new IllegalArgumentException("invalid borrowed page fiber range");
-			if (maximum == 0 || fromQuad == edgeCount) return 0;
+			if (maximum == 0 || fromQuad == edgeCount)
+				return 0;
 			if (fromQuad != nextQuad) {
 				boolean forward = fromQuad > nextQuad;
 				int fromFiber = forward ? nextFiber : 0;
@@ -3832,7 +3833,8 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			if (copied > 0) {
 				weights[0] -= skipContexts;
 				skipContexts = 0;
-				for (int i = 0; i < copied; i++) nextQuad = Math.addExact(nextQuad, weights[i]);
+				for (int i = 0; i < copied; i++)
+					nextQuad = Math.addExact(nextQuad, weights[i]);
 				nextFiber += copied;
 				previousNeighbor = values[copied - 1];
 			}
@@ -3886,21 +3888,30 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return nativeAddress();
 		}
 
-		public int firstLocalRow() { ensureResolved(); return firstLocalRow; }
-		public boolean singlePageRow() { ensureResolved(); return singlePageRow; }
+		public int firstLocalRow() {
+			ensureResolved();
+			return firstLocalRow;
+		}
+
+		public boolean singlePageRow() {
+			ensureResolved();
+			return singlePageRow;
+		}
 
 		/**
-		 * Bounded fiber decoding from a retained row. At extent seams a logical neighbor may be
-		 * returned in consecutive weighted fragments; their weight sum is exact. This avoids
-		 * scanning the continuation chain from its start for every output window.
+		 * Bounded fiber decoding from a retained row. At extent seams a logical neighbor may be returned in consecutive
+		 * weighted fragments; their weight sum is exact. This avoids scanning the continuation chain from its start for
+		 * every output window.
 		 */
 		public int copyFibers(long fromOrdinal, int maximum, long[] values, long[] weights) {
 			ensureResolved();
 			if (fromOrdinal < 0L || fromOrdinal > edgeCount || maximum < 0
 					|| maximum > values.length || maximum > weights.length)
 				throw new IllegalArgumentException("invalid borrowed row fiber range");
-			if (maximum == 0 || fromOrdinal == edgeCount) return 0;
-			if (fromOrdinal != borrowedNextQuad) positionBorrowed(fromOrdinal);
+			if (maximum == 0 || fromOrdinal == edgeCount)
+				return 0;
+			if (fromOrdinal != borrowedNextQuad)
+				positionBorrowed(fromOrdinal);
 			int copied = 0;
 			while (copied < maximum && borrowedNextQuad < edgeCount) {
 				loadPage(singlePageRow ? firstPageId : extentPageIds[borrowedExtent]);
@@ -3910,7 +3921,8 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 				if (got > 0) {
 					weights[copied] -= borrowedSkipContexts;
 					borrowedSkipContexts = 0;
-					for (int i = copied; i < copied + got; i++) borrowedNextQuad += weights[i];
+					for (int i = copied; i < copied + got; i++)
+						borrowedNextQuad += weights[i];
 					borrowedPreviousNeighbor = values[copied + got - 1];
 					borrowedFiber += got;
 					copied += got;
@@ -3919,7 +3931,8 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 					borrowedExtent++;
 					borrowedFiber = 0;
 					borrowedPreviousNeighbor = 0L;
-				} else if (got == 0) throw new IllegalStateException("CSF borrowed reader made no progress");
+				} else if (got == 0)
+					throw new IllegalStateException("CSF borrowed reader made no progress");
 			}
 			return copied;
 		}
@@ -4621,8 +4634,16 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		}
 
 		/** First physical page address for a retained descriptor; this reader remains positioned there. */
-		public long firstPageAddress() { ensureRunReady(); return nativeAddress(); }
-		public int firstLocalRow() { ensureRunReady(); return firstLocalRow; }
+		public long firstPageAddress() {
+			ensureRunReady();
+			return nativeAddress();
+		}
+
+		public int firstLocalRow() {
+			ensureRunReady();
+			return firstLocalRow;
+		}
+
 		public boolean singlePageRow() {
 			ensureRunReady();
 			return nextExtentPageId(firstPageId, this) == CompactCsfPageFormat.NO_PAGE;

@@ -26,8 +26,8 @@ import org.eclipse.rdf4j.model.Value;
  *
  * Plan/runtime ids preserve spelling for output and cannot just be assumed canonical. Only these exceptional ids use
  * the normalization maps. Their Values are already held by the catalog/interner. On first use we re-resolve them
- * store-first (a compiled constant may since have entered the store), then coalesce store-absent RDF-equal aliases.
- * The representative is stable for the lifetime of the evaluation's fixed dictionary view.
+ * store-first (a compiled constant may since have entered the store), then coalesce store-absent RDF-equal aliases. The
+ * representative is stable for the lifetime of the evaluation's fixed dictionary view.
  *
  * Mutable maps contain synthetic ids only. The common store path takes no lock; concurrent normalization serializes
  * misses so equal aliases cannot acquire different representatives. These keys are not globally portable hashes.

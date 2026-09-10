@@ -47,8 +47,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PathExpand;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanRows;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanFactors;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanRows;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Probe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeVariable;
@@ -58,15 +58,15 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainWildca
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorPredicate;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelIdMasks;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
@@ -79,8 +79,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
  *
  * The node semantics mirrored here are specified in {@code .agent/kernel-ir-node-semantics.md}; the three
  * specializations for pure native pipelines remain independent of delegated row execution. Pipelines containing
- * PlanRows use a pull interpreter when the terminal is nonblocking, so remote errors and volatile evaluation
- * cannot be advanced past downstream demand.
+ * PlanRows use a pull interpreter when the terminal is nonblocking, so remote errors and volatile evaluation cannot be
+ * advanced past downstream demand.
  */
 @Experimental
 final class LmdbNativeKernelInterpreter implements JaninoKernel {
@@ -335,13 +335,18 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (kernel.boundedGroups) {
 			int width = aggregate == null ? emit.cols.length : aggregate.groupCols.length;
 			boolean[] distinct = new boolean[aggregate == null ? 0 : aggregate.outputs.length];
-			for (int i = 0; i < distinct.length; i++) distinct[i] = aggregate.outputs[i].kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT;
+			for (int i = 0; i < distinct.length; i++)
+				distinct[i] = aggregate.outputs[i].kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT;
 			OutputMods mods = kernel.terminal.mods;
 			groupSink = KernelGroupSink.tryCreate(context, width, distinct, mods.orderKeys, mods.descending,
-					mods.valueOrder, mods.offset, mods.limit, aggregate == null || aggregate.having == null ? -1 : aggregate.having.outputIndex,
+					mods.valueOrder, mods.offset, mods.limit,
+					aggregate == null || aggregate.having == null ? -1 : aggregate.having.outputIndex,
 					aggregate == null || aggregate.having == null ? 0 : aggregate.having.op,
 					aggregate == null || aggregate.having == null ? 0L : aggregate.having.threshold);
-			if (groupSink != null) { boundedGroupInput = new long[width]; boundedCountInput = new long[distinct.length]; }
+			if (groupSink != null) {
+				boundedGroupInput = new long[width];
+				boundedCountInput = new long[distinct.length];
+			}
 		}
 
 		this.out = new long[kernel.boundedOrder ? 0 : Math.max(stride * 64, 64)];
@@ -364,8 +369,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		} else {
 			this.root = kernel.aggregateProjections != null
 					&& (!kernel.aggregateProjections.weightedNumeric || hooks.supportsWeightedNumericAggregates())
-					? buildAggregateProjections()
-					: build(kernel.pipeline, 0, aggregate != null ? this::updateTerminal : this::emitRowTerminal, false);
+							? buildAggregateProjections()
+							: build(kernel.pipeline, 0,
+									aggregate != null ? this::updateTerminal : this::emitRowTerminal, false);
 		}
 
 		this.rfTest = new long[filterSites.size()];
@@ -386,7 +392,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private void allocateEmitState() {
-		if (groupSink != null) return;
+		if (groupSink != null)
+			return;
 		if (emit.distinct) {
 			int residual = emit.cols.length - emit.alignedCount;
 			if (residual > 0) {
@@ -405,26 +412,34 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	@Override
 	public int fill(long[] rowBuffer, int maxRows) {
-		if (maxRows <= 0) return 0;
-		try { return fillOpen(rowBuffer, maxRows); }
-		catch (RuntimeException | Error failure) {
+		if (maxRows <= 0)
+			return 0;
+		try {
+			return fillOpen(rowBuffer, maxRows);
+		} catch (RuntimeException | Error failure) {
 			KernelRuntime.closeAfterFailure(this, failure);
 			throw failure;
 		}
 	}
 
 	private int fillOpen(long[] rowBuffer, int maxRows) {
-		if (closed) return 0;
-		if ((long) maxRows * stride > rowBuffer.length) throw new IllegalArgumentException("row buffer too small");
-		if (kernel.terminal.mods.limit == 0) return 0;
-		if (pullRows != null) return fillPull(rowBuffer, maxRows);
+		if (closed)
+			return 0;
+		if ((long) maxRows * stride > rowBuffer.length)
+			throw new IllegalArgumentException("row buffer too small");
+		if (kernel.terminal.mods.limit == 0)
+			return 0;
+		if (pullRows != null)
+			return fillPull(rowBuffer, maxRows);
 		if (!ran) {
 			ran = true;
 			root.run();
 			flush();
 		}
-		if (groupSink != null) return groupSink.fill(rowBuffer, maxRows);
-		if (orderedRows != null) return orderedRows.fill(rowBuffer, maxRows);
+		if (groupSink != null)
+			return groupSink.fill(rowBuffer, maxRows);
+		if (orderedRows != null)
+			return orderedRows.fill(rowBuffer, maxRows);
 		int remaining = outCount - outPos;
 		int rows = Math.min(remaining, maxRows);
 		if (rows <= 0) {
@@ -437,12 +452,19 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	@Override
 	public void close() {
-		if (closed) return;
+		if (closed)
+			return;
 		closed = true;
 		Throwable failure = KernelRuntime.closeResource(groupSink, null);
 		groupSink = null;
-		try { fireCloseTelemetry(); }
-		catch (RuntimeException | Error problem) { if (failure == null) failure = problem; else failure.addSuppressed(problem); }
+		try {
+			fireCloseTelemetry();
+		} catch (RuntimeException | Error problem) {
+			if (failure == null)
+				failure = problem;
+			else
+				failure.addSuppressed(problem);
+		}
 		if (pullRows != null) {
 			failure = KernelRuntime.closeResource(pullRows, failure);
 			pullRows = null;
@@ -451,7 +473,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			failure = KernelRuntime.closeResource(cursor, failure);
 		}
 		boundCursors.clear();
-		for (KernelExpansionCursors.Intersection cursor : intersectionCursors) failure = KernelRuntime.closeResource(cursor, failure);
+		for (KernelExpansionCursors.Intersection cursor : intersectionCursors)
+			failure = KernelRuntime.closeResource(cursor, failure);
 		intersectionCursors.clear();
 		for (NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[] slot : activeKeyCursors) {
 			failure = KernelRuntime.closeResource(slot[0], failure);
@@ -461,7 +484,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			for (int i = 0; i < planCursors.length; i++) {
 				failure = KernelRuntime.closeResource(planCursors[i], failure);
 				planCursors[i] = null;
-				if (context != null) failure = KernelRuntime.closeResource(context.plans[i], failure);
+				if (context != null)
+					failure = KernelRuntime.closeResource(context.plans[i], failure);
 			}
 		}
 		activeKeyCursors.clear();
@@ -516,20 +540,28 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	private static boolean hasPlanRows(List<Node> nodes) {
 		for (Node node : nodes) {
-			if (node instanceof PlanRows) return true;
+			if (node instanceof PlanRows)
+				return true;
 			if (node instanceof Union union) {
-				for (List<Node> branch : union.branches) if (hasPlanRows(branch)) return true;
-			} else if (node instanceof LeftGroup left && hasPlanRows(left.arm)) return true;
-			else if (node instanceof Exists exists && hasPlanRows(exists.pipeline)) return true;
+				for (List<Node> branch : union.branches)
+					if (hasPlanRows(branch))
+						return true;
+			} else if (node instanceof LeftGroup left && hasPlanRows(left.arm))
+				return true;
+			else if (node instanceof Exists exists && hasPlanRows(exists.pipeline))
+				return true;
 			else if (node instanceof LexicalFrameLeftJoin left
-					&& (hasPlanRows(left.left) || hasPlanRows(left.right))) return true;
-			else if (node instanceof HashBuild build && hasPlanRows(build.pipeline)) return true;
+					&& (hasPlanRows(left.left) || hasPlanRows(left.right)))
+				return true;
+			else if (node instanceof HashBuild build && hasPlanRows(build.pipeline))
+				return true;
 		}
 		return false;
 	}
 
 	private int fillPull(long[] target, int maximum) {
-		if (pullDone) return 0;
+		if (pullDone)
+			return 0;
 		if (emit.mods.limit == 0L) {
 			pullDone = true;
 			pullRows.close();
@@ -543,9 +575,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				pullRows.close();
 				break;
 			}
-			if (!prepareEmitRow()) continue;
+			if (!prepareEmitRow())
+				continue;
 			long position = pullAccepted++;
-			if (position < emit.mods.offset) continue;
+			if (position < emit.mods.offset)
+				continue;
 			System.arraycopy(rowScratch, 0, target, count * stride, stride);
 			count++;
 		}
@@ -562,20 +596,31 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			active = true; // publish ownership before activation, so failures are swept as well
 			reset();
 		}
+
 		final boolean next() {
 			System.arraycopy(saved, 0, v, 0, v.length);
 			poll();
 			return advance();
 		}
+
 		final void close() {
-			if (!active) return;
+			if (!active)
+				return;
 			active = false;
-			try { release(); }
-			finally { System.arraycopy(saved, 0, v, 0, v.length); }
+			try {
+				release();
+			} finally {
+				System.arraycopy(saved, 0, v, 0, v.length);
+			}
 		}
-		void reset() { }
+
+		void reset() {
+		}
+
 		abstract boolean advance();
-		void release() { }
+
+		void release() {
+		}
 	}
 
 	private final class PullPipeline implements AutoCloseable {
@@ -585,30 +630,54 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 		PullPipeline(List<Node> nodes) {
 			stages = new PullStage[nodes.size()];
-			for (int i = 0; i < stages.length; i++) stages[i] = pullStage(nodes.get(i));
+			for (int i = 0; i < stages.length; i++)
+				stages[i] = pullStage(nodes.get(i));
 		}
-		void reset() { depth = 0; output = false; done = false; }
+
+		void reset() {
+			depth = 0;
+			output = false;
+			done = false;
+		}
+
 		boolean next() {
-			if (done) return false;
-			if (output) { output = false; depth--; }
+			if (done)
+				return false;
+			if (output) {
+				output = false;
+				depth--;
+			}
 			while (depth >= 0) {
-				if (depth == stages.length) { output = true; return true; }
+				if (depth == stages.length) {
+					output = true;
+					return true;
+				}
 				PullStage stage = stages[depth];
-				if (!stage.active) stage.open();
-				if (stage.next()) depth++;
-				else { stage.close(); depth--; }
+				if (!stage.active)
+					stage.open();
+				if (stage.next())
+					depth++;
+				else {
+					stage.close();
+					depth--;
+				}
 			}
 			done = true;
 			return false;
 		}
-		@Override public void close() {
+
+		@Override
+		public void close() {
 			done = true;
 			Throwable failure = null;
 			for (int i = stages.length - 1; i >= 0; i--) {
-				try { stages[i].close(); }
-				catch (RuntimeException | Error problem) {
-					if (failure == null) failure = problem;
-					else if (problem != failure) failure.addSuppressed(problem);
+				try {
+					stages[i].close();
+				} catch (RuntimeException | Error problem) {
+					if (failure == null)
+						failure = problem;
+					else if (problem != failure)
+						failure.addSuppressed(problem);
 				}
 			}
 			KernelRuntime.rethrowCloseFailure(failure);
@@ -620,117 +689,181 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return new PullStage() {
 				final long[] values = new long[Math.max(1, plan.outCols.length)];
 				KernelPlan.Cursor cursor;
-				@Override void reset() {
+
+				@Override
+				void reset() {
 					KernelPlan owner = context.plans[plan.plan];
-					for (int i = 0; i < plan.inputs.length; i++) owner.setInput(i, read(plan.inputs[i]));
+					for (int i = 0; i < plan.inputs.length; i++)
+						owner.setInput(i, read(plan.inputs[i]));
 					cursor = owner.open();
 				}
-				@Override boolean advance() {
+
+				@Override
+				boolean advance() {
 					KernelRuntime.checkCancelled(cancel);
 					// Pull one result, not an arbitrary batch: this is an observable/effectful boundary.
 					int count = cursor.fill(values, 1);
-					if (count == 0) return false;
-					if (count != 1) throw new IllegalStateException("plan cursor exceeded row demand");
-					for (int i = 0; i < plan.outCols.length; i++) v[plan.outCols[i]] = values[i];
+					if (count == 0)
+						return false;
+					if (count != 1)
+						throw new IllegalStateException("plan cursor exceeded row demand");
+					for (int i = 0; i < plan.outCols.length; i++)
+						v[plan.outCols[i]] = values[i];
 					return true;
 				}
-				@Override void release() {
+
+				@Override
+				void release() {
 					KernelPlan.Cursor owned = cursor;
 					cursor = null;
 					KernelRuntime.closePlanCursor(owned, null);
 				}
 			};
 		}
-        if (node instanceof EnumerateNodeDomainIntersection domain) {
-            return expansionStage(() -> new KernelExpansionCursors.Domains(
-                    context.nodeDomainIntersections[domain.view], cancel), domain.col);
-        }
-        if (node instanceof EnumerateTerms terms) {
-            return expansionStage(() -> new KernelExpansionCursors.Terms(
-                    context.scanner, terms.scan, cancel), terms.col);
-        }
-        if (node instanceof PathExpand path) {
-            return expansionStage(() -> {
-                long[] contexts = new long[path.contexts.length];
-                for (int i=0; i<contexts.length; i++) contexts[i]=read(path.contexts[i]);
-                return new KernelExpansionCursors.Path(
-                        context.adjacencies[path.adjacency], read(path.source), path.minHops, contexts, cancel);
-            }, path.dstCol);
-        }
-        if (node instanceof Intersect intersect) {
-            return expansionStage(() -> {
-                NativeLmdbQuerySource.NativeAdjacency[] views=new NativeLmdbQuerySource.NativeAdjacency[intersect.adjacencies.length];
-                long[] keys=new long[views.length];
-                for (int i=0; i<views.length; i++) { views[i]=context.adjacencies[intersect.adjacencies[i]]; keys[i]=read(intersect.keys[i]); }
-                return new KernelExpansionCursors.Intersection(views, keys, cancel);
-            }, intersect.valueCol);
-        }
-        if (node instanceof ProbeVariable probe) {
-            var view = context.dynamicAdjacencies[probe.view];
-            return new PullStage() {
-                long handle, position, end;
-                @Override void reset() {
-                    position=end=0; long key=read(probe.key), predicate=read(probe.predicate);
-                    if(key == -1L || predicate == -1L) return;
-                    handle=view.runFor(key,predicate);
-                    if(handle==NativeLmdbQuerySource.DynamicAdjacency.NOT_COVERED)
-                        throw new IllegalStateException("dynamic adjacency refused a runtime predicate after kernel bind");
-                    if(handle>0) end=view.size(handle);
-                }
-                @Override boolean advance() {
-                    while(position<end) {
-                        poll(); long at=position++;
-                        if(probe.ctxActive()) {
-                            long ctx=view.contextAt(handle,at);
-                            if(!ctxAccepted(ctx,probe.ctxMatch,probe.ctxExcludeDefault)) continue;
-                            if(probe.ctxCol>=0) v[probe.ctxCol]=ctx;
-                        }
-                        v[probe.valueCol]=view.neighborAt(handle,at); return true;
-                    }
-                    return false;
-                }
-            };
-        }
-        if (node instanceof LeftProbe probe) {
-            var cursor=context.adjacencies[probe.adjacency].openBoundRunCursor(); boundCursors.add(cursor);
-            return new PullStage() {
-                long position,end; boolean nullSent;
-                @Override void reset() { position=0;nullSent=false;long key=read(probe.key);end=key == -1L ? 0 : cursor.bind(key); }
-                @Override boolean advance() {
-                    if(position<end) { v[probe.valueCol]=cursor.neighborAt(position++); return true; }
-                    if(end<=0 && !nullSent) { nullSent=true;v[probe.valueCol]=-1L;return true; }
-                    return false;
-                }
-            };
-        }
+		if (node instanceof EnumerateNodeDomainIntersection domain) {
+			return expansionStage(() -> new KernelExpansionCursors.Domains(
+					context.nodeDomainIntersections[domain.view], cancel), domain.col);
+		}
+		if (node instanceof EnumerateTerms terms) {
+			return expansionStage(() -> new KernelExpansionCursors.Terms(
+					context.scanner, terms.scan, cancel), terms.col);
+		}
+		if (node instanceof PathExpand path) {
+			return expansionStage(() -> {
+				long[] contexts = new long[path.contexts.length];
+				for (int i = 0; i < contexts.length; i++)
+					contexts[i] = read(path.contexts[i]);
+				return new KernelExpansionCursors.Path(
+						context.adjacencies[path.adjacency], read(path.source), path.minHops, contexts, cancel);
+			}, path.dstCol);
+		}
+		if (node instanceof Intersect intersect) {
+			return expansionStage(() -> {
+				NativeLmdbQuerySource.NativeAdjacency[] views = new NativeLmdbQuerySource.NativeAdjacency[intersect.adjacencies.length];
+				long[] keys = new long[views.length];
+				for (int i = 0; i < views.length; i++) {
+					views[i] = context.adjacencies[intersect.adjacencies[i]];
+					keys[i] = read(intersect.keys[i]);
+				}
+				return new KernelExpansionCursors.Intersection(views, keys, cancel);
+			}, intersect.valueCol);
+		}
+		if (node instanceof ProbeVariable probe) {
+			var view = context.dynamicAdjacencies[probe.view];
+			return new PullStage() {
+				long handle, position, end;
+
+				@Override
+				void reset() {
+					position = end = 0;
+					long key = read(probe.key), predicate = read(probe.predicate);
+					if (key == -1L || predicate == -1L)
+						return;
+					handle = view.runFor(key, predicate);
+					if (handle == NativeLmdbQuerySource.DynamicAdjacency.NOT_COVERED)
+						throw new IllegalStateException(
+								"dynamic adjacency refused a runtime predicate after kernel bind");
+					if (handle > 0)
+						end = view.size(handle);
+				}
+
+				@Override
+				boolean advance() {
+					while (position < end) {
+						poll();
+						long at = position++;
+						if (probe.ctxActive()) {
+							long ctx = view.contextAt(handle, at);
+							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault))
+								continue;
+							if (probe.ctxCol >= 0)
+								v[probe.ctxCol] = ctx;
+						}
+						v[probe.valueCol] = view.neighborAt(handle, at);
+						return true;
+					}
+					return false;
+				}
+			};
+		}
+		if (node instanceof LeftProbe probe) {
+			var cursor = context.adjacencies[probe.adjacency].openBoundRunCursor();
+			boundCursors.add(cursor);
+			return new PullStage() {
+				long position, end;
+				boolean nullSent;
+
+				@Override
+				void reset() {
+					position = 0;
+					nullSent = false;
+					long key = read(probe.key);
+					end = key == -1L ? 0 : cursor.bind(key);
+				}
+
+				@Override
+				boolean advance() {
+					if (position < end) {
+						v[probe.valueCol] = cursor.neighborAt(position++);
+						return true;
+					}
+					if (end <= 0 && !nullSent) {
+						nullSent = true;
+						v[probe.valueCol] = -1L;
+						return true;
+					}
+					return false;
+				}
+			};
+		}
 
 		if (node instanceof EnumerateDomain domain) {
 			int site = telemetry && domain.sipDriven ? registerSipDriven(domain) : -1;
 			return new PullStage() {
 				int position;
-				@Override void reset() { position = 0; }
-				@Override boolean advance() {
-					if (position >= context.keyDomainLengths[domain.domain]) return false;
-					v[domain.col] = context.keyDomains[domain.domain][context.keyDomainOffsets[domain.domain] + position++];
-					if (site >= 0) sipDriven[site]++;
+
+				@Override
+				void reset() {
+					position = 0;
+				}
+
+				@Override
+				boolean advance() {
+					if (position >= context.keyDomainLengths[domain.domain])
+						return false;
+					v[domain.col] = context.keyDomains[domain.domain][context.keyDomainOffsets[domain.domain]
+							+ position++];
+					if (site >= 0)
+						sipDriven[site]++;
 					return true;
 				}
 			};
 		}
 		if (node instanceof Probe probe) {
-			NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor cursor = context.adjacencies[probe.adjacency].openBoundRunCursor();
+			NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor cursor = context.adjacencies[probe.adjacency]
+					.openBoundRunCursor();
 			boundCursors.add(cursor);
 			return new PullStage() {
 				long position, end;
-				@Override void reset() { position = 0; long key = read(probe.key); end = key == -1L ? 0 : cursor.bind(key); }
-				@Override boolean advance() {
+
+				@Override
+				void reset() {
+					position = 0;
+					long key = read(probe.key);
+					end = key == -1L ? 0 : cursor.bind(key);
+				}
+
+				@Override
+				boolean advance() {
 					while (position < end) {
 						poll();
 						long at = position++;
 						if (probe.ctxActive()) {
 							long ctx = cursor.contextAt(at);
-							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) continue;
-							if (probe.ctxCol >= 0) v[probe.ctxCol] = ctx;
+							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault))
+								continue;
+							if (probe.ctxCol >= 0)
+								v[probe.ctxCol] = ctx;
 						}
 						v[probe.valueCol] = cursor.neighborAt(at);
 						return true;
@@ -744,42 +877,66 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return new PullStage() {
 				NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor;
 				long key, position, end;
-				@Override void reset() {
-                    position = end = 0;
-                    if (!keys.wildcard) cursor = context.adjacencies[keys.adjacency].openKeyRunCursor();
-                    else {
-                        var view=context.wildcardAdjacencies[keys.adjacency]; long predicate=read(keys.runtimePredicate);
-                        int ordinal=predicate == -1L ? -1 : view.predicateOrdinal(predicate);
-                        if(ordinal<0) { cursor=null;return; }
-                        view.bind(ordinal);cursor=view.openKeyRunCursor();
-                        if(cursor==null) throw new IllegalStateException("wildcard plane refused key enumeration after bind");
-                    }
-                }
-				@Override boolean advance() {
-					if (cursor == null) return false;
+
+				@Override
+				void reset() {
+					position = end = 0;
+					if (!keys.wildcard)
+						cursor = context.adjacencies[keys.adjacency].openKeyRunCursor();
+					else {
+						var view = context.wildcardAdjacencies[keys.adjacency];
+						long predicate = read(keys.runtimePredicate);
+						int ordinal = predicate == -1L ? -1 : view.predicateOrdinal(predicate);
+						if (ordinal < 0) {
+							cursor = null;
+							return;
+						}
+						view.bind(ordinal);
+						cursor = view.openKeyRunCursor();
+						if (cursor == null)
+							throw new IllegalStateException("wildcard plane refused key enumeration after bind");
+					}
+				}
+
+				@Override
+				boolean advance() {
+					if (cursor == null)
+						return false;
 					while (true) {
 						while (position < end) {
 							poll();
 							long at = position++;
 							if (keys.ctxActive()) {
 								long ctx = cursor.contextAt(at);
-								if (!ctxAccepted(ctx, keys.ctxMatch, keys.ctxExcludeDefault)) continue;
-								if (keys.ctxCol >= 0) v[keys.ctxCol] = ctx;
+								if (!ctxAccepted(ctx, keys.ctxMatch, keys.ctxExcludeDefault))
+									continue;
+								if (keys.ctxCol >= 0)
+									v[keys.ctxCol] = ctx;
 							}
 							v[keys.keyCol] = key;
 							v[keys.valueCol] = cursor.neighborAt(at);
 							return true;
 						}
 						poll();
-						if (!cursor.advance()) return false;
+						if (!cursor.advance())
+							return false;
 						key = cursor.key();
-						if (site >= 0) implicitSipDriven[site]++;
-						if (keys.valueCol < 0) { v[keys.keyCol] = key; return true; }
-						position = 0; end = cursor.runSize();
+						if (site >= 0)
+							implicitSipDriven[site]++;
+						if (keys.valueCol < 0) {
+							v[keys.keyCol] = key;
+							return true;
+						}
+						position = 0;
+						end = cursor.runSize();
 					}
 				}
-				@Override void release() {
-					var owned = cursor; cursor = null; KernelRuntime.closeCursor(owned, null);
+
+				@Override
+				void release() {
+					var owned = cursor;
+					cursor = null;
+					KernelRuntime.closeCursor(owned, null);
 				}
 			};
 		}
@@ -787,64 +944,110 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return new PullStage() {
 				final long[] values = new long[4];
 				KernelQuadCursor cursor;
-				@Override void reset() {
+
+				@Override
+				void reset() {
 					cursor = context.scanner.open(scan.scan,
-							scan.terms[0] == null ? -1L : read(scan.terms[0]), scan.terms[1] == null ? -1L : read(scan.terms[1]),
-							scan.terms[2] == null ? -1L : read(scan.terms[2]), scan.terms[3] == null ? -1L : read(scan.terms[3]));
+							scan.terms[0] == null ? -1L : read(scan.terms[0]),
+							scan.terms[1] == null ? -1L : read(scan.terms[1]),
+							scan.terms[2] == null ? -1L : read(scan.terms[2]),
+							scan.terms[3] == null ? -1L : read(scan.terms[3]));
 				}
-				@Override boolean advance() {
+
+				@Override
+				boolean advance() {
 					KernelRuntime.checkCancelled(cancel);
 					int count = cursor.fill(values, 1);
-					if (count == 0) return false;
-					if (count != 1) throw new IllegalStateException("scan cursor exceeded row demand");
-					for (int i = 0; i < 4; i++) if (scan.outCols[i] >= 0) v[scan.outCols[i]] = values[i];
+					if (count == 0)
+						return false;
+					if (count != 1)
+						throw new IllegalStateException("scan cursor exceeded row demand");
+					for (int i = 0; i < 4; i++)
+						if (scan.outCols[i] >= 0)
+							v[scan.outCols[i]] = values[i];
 					return true;
 				}
-				@Override void release() {
-					KernelQuadCursor owned = cursor; cursor = null; KernelRuntime.closeScanCursor(owned, null);
+
+				@Override
+				void release() {
+					KernelQuadCursor owned = cursor;
+					cursor = null;
+					KernelRuntime.closeScanCursor(owned, null);
 				}
 			};
 		}
 		if (node instanceof Union union) {
 			PullPipeline[] branches = new PullPipeline[union.branches.size()];
-			for (int i = 0; i < branches.length; i++) branches[i] = new PullPipeline(union.branches.get(i));
+			for (int i = 0; i < branches.length; i++)
+				branches[i] = new PullPipeline(union.branches.get(i));
 			return new PullStage() {
 				int branch;
 				boolean opened;
-				@Override void reset() { branch = 0; opened = false; }
-				@Override boolean advance() {
+
+				@Override
+				void reset() {
+					branch = 0;
+					opened = false;
+				}
+
+				@Override
+				boolean advance() {
 					while (branch < branches.length) {
 						if (!opened) {
-							for (int col : union.resetColumns()) v[col] = -1L;
-							branches[branch].reset(); opened = true;
+							for (int col : union.resetColumns())
+								v[col] = -1L;
+							branches[branch].reset();
+							opened = true;
 						}
-						if (branches[branch].next()) return true;
+						if (branches[branch].next())
+							return true;
 						branches[branch].close();
 						System.arraycopy(saved, 0, v, 0, v.length);
-						branch++; opened = false;
+						branch++;
+						opened = false;
 					}
 					return false;
 				}
-				@Override void release() { if (opened && branch < branches.length) branches[branch].close(); }
+
+				@Override
+				void release() {
+					if (opened && branch < branches.length)
+						branches[branch].close();
+				}
 			};
 		}
 		if (node instanceof LeftGroup left) {
 			PullPipeline arm = new PullPipeline(left.arm);
 			return new PullStage() {
 				boolean matched, nullSent;
-				@Override void reset() { matched = nullSent = false; arm.reset(); }
-				@Override boolean advance() {
-					if (arm.next()) { matched = true; return true; }
+
+				@Override
+				void reset() {
+					matched = nullSent = false;
+					arm.reset();
+				}
+
+				@Override
+				boolean advance() {
+					if (arm.next()) {
+						matched = true;
+						return true;
+					}
 					arm.close();
 					if (!matched && !nullSent) {
 						nullSent = true;
 						System.arraycopy(saved, 0, v, 0, v.length);
-						for (int col : left.resetColumns()) v[col] = -1L;
+						for (int col : left.resetColumns())
+							v[col] = -1L;
 						return true;
 					}
 					return false;
 				}
-				@Override void release() { arm.close(); }
+
+				@Override
+				void release() {
+					arm.close();
+				}
 			};
 		}
 		if (node instanceof LexicalFrameLeftJoin lexical) {
@@ -853,12 +1056,16 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return new PullStage() {
 				final long[] leftRow = new long[kernel.columnCount];
 				boolean rightActive, rightExists;
-				@Override void reset() {
+
+				@Override
+				void reset() {
 					rightActive = rightExists = false;
 					clearLexicalFrame(lexical.problemCols);
 					left.reset();
 				}
-				@Override boolean advance() {
+
+				@Override
+				boolean advance() {
 					while (true) {
 						if (rightActive) {
 							while (right.next()) {
@@ -872,7 +1079,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 									}
 								}
 								if (compatible) {
-									for (int col : lexical.problemCols) v[col] = saved[col];
+									for (int col : lexical.problemCols)
+										v[col] = saved[col];
 									return true;
 								}
 							}
@@ -880,13 +1088,16 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							rightActive = false;
 							if (!rightExists) {
 								System.arraycopy(leftRow, 0, v, 0, v.length);
-								for (int col : lexical.resetColumns()) v[col] = -1L;
-								for (int col : lexical.problemCols) v[col] = saved[col];
+								for (int col : lexical.resetColumns())
+									v[col] = -1L;
+								for (int col : lexical.problemCols)
+									v[col] = saved[col];
 								return true;
 							}
 						}
 						clearLexicalFrame(lexical.problemCols);
-						if (!left.next()) return false;
+						if (!left.next())
+							return false;
 						System.arraycopy(v, 0, leftRow, 0, v.length);
 						clearLexicalFrame(lexical.problemCols);
 						right.reset();
@@ -894,14 +1105,22 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						rightExists = false;
 					}
 				}
-				@Override void release() {
+
+				@Override
+				void release() {
 					Throwable failure = null;
-					try { right.close(); }
-					catch (RuntimeException | Error problem) { failure = problem; }
-					try { left.close(); }
-					catch (RuntimeException | Error problem) {
-						if (failure == null) failure = problem;
-						else if (failure != problem) failure.addSuppressed(problem);
+					try {
+						right.close();
+					} catch (RuntimeException | Error problem) {
+						failure = problem;
+					}
+					try {
+						left.close();
+					} catch (RuntimeException | Error problem) {
+						if (failure == null)
+							failure = problem;
+						else if (failure != problem)
+							failure.addSuppressed(problem);
 					}
 					KernelRuntime.rethrowCloseFailure(failure);
 				}
@@ -912,15 +1131,22 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return new PullStage() {
 				KernelRuntime.LongRowMap table;
 				int match;
-				@Override void reset() {
+
+				@Override
+				void reset() {
 					table = hashTables[probe.tableId];
 					long[] key = hashKeyScratch[probe.tableId];
-					for (int i = 0; i < probe.keys.length; i++) key[i] = read(probe.keys[i]);
+					for (int i = 0; i < probe.keys.length; i++)
+						key[i] = read(probe.keys[i]);
 					match = table.lookup(key);
 				}
-				@Override boolean advance() {
-					if (match < 0) return false;
-					for (int i = 0; i < probe.dstCols.length; i++) v[probe.dstCols[i]] = table.payload(match, i);
+
+				@Override
+				boolean advance() {
+					if (match < 0)
+						return false;
+					for (int i = 0; i < probe.dstCols.length; i++)
+						v[probe.dstCols[i]] = table.payload(match, i);
 					match = table.next(match);
 					return true;
 				}
@@ -932,8 +1158,19 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			Op scalar = buildNode(node, () -> true, false);
 			return new PullStage() {
 				boolean done;
-				@Override void reset() { done = false; }
-				@Override boolean advance() { if (done) return false; done = true; return scalar.run(); }
+
+				@Override
+				void reset() {
+					done = false;
+				}
+
+				@Override
+				boolean advance() {
+					if (done)
+						return false;
+					done = true;
+					return scalar.run();
+				}
 			};
 		}
 		// Pure native producers not yet equipped with a pull cursor retain their existing implementation.
@@ -941,26 +1178,59 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		// Unsafe lexical operators from slot lowering arrive as one PlanRows node, retaining evaluator semantics.
 		return new PullStage() {
 			final List<long[]> rows = new ArrayList<>();
-			final Op collect = buildNode(node, () -> { rows.add(v.clone()); return false; }, false);
+			final Op collect = buildNode(node, () -> {
+				rows.add(v.clone());
+				return false;
+			}, false);
 			int position;
-			@Override void reset() { position = 0; rows.clear(); collect.run(); }
-			@Override boolean advance() {
-				if (position == rows.size()) return false;
+
+			@Override
+			void reset() {
+				position = 0;
+				rows.clear();
+				collect.run();
+			}
+
+			@Override
+			boolean advance() {
+				if (position == rows.size())
+					return false;
 				System.arraycopy(rows.get(position++), 0, v, 0, v.length);
 				return true;
 			}
-			@Override void release() { rows.clear(); }
+
+			@Override
+			void release() {
+				rows.clear();
+			}
 		};
 	}
 
-    private PullStage expansionStage(java.util.function.Supplier<KernelExpansionCursors.Values> factory, int column) {
-        return new PullStage() {
-            KernelExpansionCursors.Values cursor;
-            @Override void reset() { cursor=factory.get(); }
-            @Override boolean advance() { if(!cursor.next()) return false; v[column]=cursor.value(); return true; }
-            @Override void release() { var owned=cursor;cursor=null;KernelRuntime.closeCursor(owned,null); }
-        };
-    }
+	private PullStage expansionStage(java.util.function.Supplier<KernelExpansionCursors.Values> factory, int column) {
+		return new PullStage() {
+			KernelExpansionCursors.Values cursor;
+
+			@Override
+			void reset() {
+				cursor = factory.get();
+			}
+
+			@Override
+			boolean advance() {
+				if (!cursor.next())
+					return false;
+				v[column] = cursor.value();
+				return true;
+			}
+
+			@Override
+			void release() {
+				var owned = cursor;
+				cursor = null;
+				KernelRuntime.closeCursor(owned, null);
+			}
+		};
+	}
 
 	int retainedRowCapacityForTest() {
 		return out == null ? 0 : out.length;
@@ -1025,10 +1295,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return terminal;
 		}
 		Op next = build(nodes, idx + 1, terminal, booleanMode);
-        if (!booleanMode && nodes == kernel.pipeline && idx == nodes.size()-1
-                && nodes.get(idx) instanceof Intersect intersection && LmdbNativeKernelIr.intersectionCountTail(kernel))
-            return buildIntersect(intersection, next, true);
-        return buildNode(nodes.get(idx), next, booleanMode);
+		if (!booleanMode && nodes == kernel.pipeline && idx == nodes.size() - 1
+				&& nodes.get(idx)instanceof Intersect intersection && LmdbNativeKernelIr.intersectionCountTail(kernel))
+			return buildIntersect(intersection, next, true);
+		return buildNode(nodes.get(idx), next, booleanMode);
 	}
 
 	private Op buildNode(Node node, Op next, boolean booleanMode) {
@@ -1077,7 +1347,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (node instanceof ScanQuad) {
 			return buildScanQuad((ScanQuad) node, next);
 		}
-		if (node instanceof PlanFactors factors) return buildPlanFactors(factors, next);
+		if (node instanceof PlanFactors factors)
+			return buildPlanFactors(factors, next);
 		if (node instanceof PlanRows) {
 			return buildPlanRows((PlanRows) node, next);
 		}
@@ -1260,7 +1531,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					poll();
 					v[enumerate.keyCol] = cursor.key();
 					if (enumerate.valueCol < 0) {
-						if (next.run()) return true;
+						if (next.run())
+							return true;
 						continue;
 					}
 					long end = cursor.runSize();
@@ -2106,9 +2378,18 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	/** Dispatch per guard/window, sharing the exact primitive masks with generated code. */
 	private KernelFactorPredicate countPredicate(LmdbNativeKernelIr.FactorCountGuards spec) {
 		return new KernelFactorPredicate() {
-			@Override public int guardCount() { return spec.guards.length; }
-			@Override public long dependencies(int guard) { return spec.dependencies[guard]; }
-			@Override public boolean test(int guard, long[] prefix) {
+			@Override
+			public int guardCount() {
+				return spec.guards.length;
+			}
+
+			@Override
+			public long dependencies(int guard) {
+				return spec.dependencies[guard];
+			}
+
+			@Override
+			public boolean test(int guard, long[] prefix) {
 				Node node = spec.guards[guard];
 				if (node instanceof FilterCompareId filter) {
 					long a = guardScalar(filter.left, prefix, spec), b = guardScalar(filter.right, prefix, spec);
@@ -2125,26 +2406,36 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 				FilterInConstants filter = (FilterInConstants) node;
 				long value = guardScalar(filter.value, prefix, spec);
-				for (int constant : filter.constantIndices) if (value == context.constants[constant]) return true;
+				for (int constant : filter.constantIndices)
+					if (value == context.constants[constant])
+						return true;
 				return false;
 			}
-			@Override public void filter(int guard, long[][] columns, long[] prefix, long[] selected, int size) {
+
+			@Override
+			public void filter(int guard, long[][] columns, long[] prefix, long[] selected, int size) {
 				Node node = spec.guards[guard];
 				if (node instanceof FilterCompareId filter) {
-					KernelIdMasks.compare(guardColumn(filter.left, columns, spec), guardScalar(filter.left, prefix, spec),
-							guardColumn(filter.right, columns, spec), guardScalar(filter.right, prefix, spec), filter.negated, selected, size);
+					KernelIdMasks.compare(guardColumn(filter.left, columns, spec),
+							guardScalar(filter.left, prefix, spec),
+							guardColumn(filter.right, columns, spec), guardScalar(filter.right, prefix, spec),
+							filter.negated, selected, size);
 				} else if (node instanceof FilterEntryCompatible filter) {
-					KernelIdMasks.compatible(guardColumn(filter.value, columns, spec), guardScalar(filter.value, prefix, spec),
+					KernelIdMasks.compatible(guardColumn(filter.value, columns, spec),
+							guardScalar(filter.value, prefix, spec),
 							context.constants[filter.constant], selected, size);
 				} else if (node instanceof FilterRangeUnsigned filter) {
-					KernelIdMasks.range(guardColumn(filter.value, columns, spec), guardScalar(filter.value, prefix, spec),
-							context.constants[filter.lowConstant], context.constants[filter.highConstant], selected, size);
+					KernelIdMasks.range(guardColumn(filter.value, columns, spec),
+							guardScalar(filter.value, prefix, spec),
+							context.constants[filter.lowConstant], context.constants[filter.highConstant], selected,
+							size);
 				} else {
 					FilterInConstants filter = (FilterInConstants) node;
 					int[] indices = filter.constantIndices;
 					KernelIdMasks.in4(guardColumn(filter.value, columns, spec), guardScalar(filter.value, prefix, spec),
 							context.constants[indices[0]], context.constants[indices[indices.length > 1 ? 1 : 0]],
-							context.constants[indices[indices.length > 2 ? 2 : 0]], context.constants[indices[indices.length > 3 ? 3 : 0]], selected, size);
+							context.constants[indices[indices.length > 2 ? 2 : 0]],
+							context.constants[indices[indices.length > 3 ? 3 : 0]], selected, size);
 				}
 			}
 		};
@@ -2153,36 +2444,49 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private Op buildAggregateProjections() {
 		LmdbNativeKernelIr.AggregateProjections spec = kernel.aggregateProjections;
 		PlanRows plan = spec.input;
-		int[][] columns = spec.layout.columns(); boolean[] exact = spec.layout.exactWeights();
+		int[][] columns = spec.layout.columns();
+		boolean[] exact = spec.layout.exactWeights();
 		int[][] channels = new int[columns.length][];
-		for (int i = 0; i < channels.length; i++) channels[i] = spec.layout.channels(i);
+		for (int i = 0; i < channels.length; i++)
+			channels[i] = spec.layout.channels(i);
 		int[] allChannels = new int[aggregate.outputs.length];
-		for (int i = 0; i < allChannels.length; i++) allChannels[i] = i;
+		for (int i = 0; i < allChannels.length; i++)
+			allChannels[i] = i;
 		long used = 0L;
-		for (int[] projection : columns) for (int column : projection) used |= 1L << column;
+		for (int[] projection : columns)
+			for (int column : projection)
+				used |= 1L << column;
 		final long demanded = used;
 		long groupMask = 0L;
 		for (int c = 0; c < plan.outCols.length; c++)
-			for (int group : aggregate.groupCols) if (plan.outCols[c] == group) groupMask |= 1L << c;
+			for (int group : aggregate.groupCols)
+				if (plan.outCols[c] == group)
+					groupMask |= 1L << c;
 		final long groupedColumns = groupMask;
 		int[] arguments = new int[columns.length];
 		java.util.Arrays.fill(arguments, -1);
 		for (int p = 0; p < columns.length; p++) {
-			for (int c : columns[p]) if ((groupedColumns & (1L << c)) == 0L) {
-				if (arguments[p] != -1) { arguments[p] = -1; break; }
-				arguments[p] = c;
-			}
+			for (int c : columns[p])
+				if ((groupedColumns & (1L << c)) == 0L) {
+					if (arguments[p] != -1) {
+						arguments[p] = -1;
+						break;
+					}
+					arguments[p] = c;
+				}
 		}
 		return () -> {
 			KernelPlan bound = context.plans[plan.plan];
-			for (int i = 0; i < plan.inputs.length; i++) bound.setInput(i, read(plan.inputs[i]));
-			org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor input =
-					org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor.open(bound, plan.outCols.length,
+			for (int i = 0; i < plan.inputs.length; i++)
+				bound.setInput(i, read(plan.inputs[i]));
+			org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor input = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor
+					.open(bound, plan.outCols.length,
 							columns, exact, cancel);
 			Throwable failure = null;
 			try {
 				boolean countPartitions = LmdbNativeKernelIr.permitsPrefixPartitions(aggregate);
-				if (countPartitions) input.permitPrefixPartitions();
+				if (countPartitions)
+					input.permitPrefixPartitions();
 				while (input.nextBatch()) {
 					int flatCount = input.flatRowCount();
 					if (flatCount != 0) {
@@ -2208,16 +2512,20 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 								long[] ids = input.windowValues(), weights = input.windowWeights();
 								int start = input.windowStart(), end = start + size;
 								if (input.windowPrefixChanged()) {
-									group = -1; scale = 0L;
-									for (int column : columns[p]) if (column != arguments[p])
-										v[plan.outCols[column]] = input.value(column);
+									group = -1;
+									scale = 0L;
+									for (int column : columns[p])
+										if (column != arguments[p])
+											v[plan.outCols[column]] = input.value(column);
 								}
-								if (group < 0) group = marginalGroup();
+								if (group < 0)
+									group = marginalGroup();
 								for (int i = start; i < end; i++) {
 									v[plan.outCols[arguments[p]]] = ids[i];
 									long weight = 1L;
 									if (exact[p] && marginalWeightObserved(channels[p])) {
-										if (scale == 0L) scale = input.windowScale();
+										if (scale == 0L)
+											scale = input.windowScale();
 										weight = Math.multiplyExact(scale, weights[i]);
 									}
 									updateMarginal(channels[p], weight, group);
@@ -2226,18 +2534,27 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							continue;
 						}
 						while (input.next(p)) {
-							for (int column : columns[p]) v[plan.outCols[column]] = input.value(column);
-							if (group < 0 || !constantGroups) group = marginalGroup();
+							for (int column : columns[p])
+								v[plan.outCols[column]] = input.value(column);
+							if (group < 0 || !constantGroups)
+								group = marginalGroup();
 							updateMarginal(channels[p], exact[p] && marginalWeightObserved(channels[p])
-									? input.multiplicity() : 1L, group);
+									? input.multiplicity()
+									: 1L, group);
 						}
 					}
 				}
-			} catch (RuntimeException | Error problem) { failure = problem; throw problem; }
-			finally {
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+				throw problem;
+			} finally {
 				Throwable closing = KernelRuntime.closeResource(input, failure);
-				for (int col : plan.outCols) { int i = plan.inputForColumn(col); v[col] = i < 0 ? -1L : bound.input(i); }
-				if (failure == null) KernelRuntime.rethrowCloseFailure(closing);
+				for (int col : plan.outCols) {
+					int i = plan.inputForColumn(col);
+					v[col] = i < 0 ? -1L : bound.input(i);
+				}
+				if (failure == null)
+					KernelRuntime.rethrowCloseFailure(closing);
 			}
 			return false;
 		};
@@ -2246,18 +2563,23 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private boolean marginalWeightObserved(int[] channels) {
 		for (int channel : channels) {
 			AggregateOutput output = aggregate.outputs[channel];
-			if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR || v[output.col] != -1L) return true;
+			if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR || v[output.col] != -1L)
+				return true;
 		}
 		return false;
 	}
 
 	private int marginalGroup() {
-		if (groupSink != null) return -1; // its groups may be invalidated by a spill
+		if (groupSink != null)
+			return -1; // its groups may be invalidated by a spill
 		int group;
-		if (aggregate.groupCols.length == 0) group = 0;
-		else if (aggregate.groupCols.length == 1) group = groups.getOrInsert(v[aggregate.groupCols[0]]);
+		if (aggregate.groupCols.length == 0)
+			group = 0;
+		else if (aggregate.groupCols.length == 1)
+			group = groups.getOrInsert(v[aggregate.groupCols[0]]);
 		else {
-			for (int i = 0; i < aggregate.groupCols.length; i++) groupScratch[i] = v[aggregate.groupCols[i]];
+			for (int i = 0; i < aggregate.groupCols.length; i++)
+				groupScratch[i] = v[aggregate.groupCols[i]];
 			group = groupKeys.internOrGet(groupScratch, 0);
 		}
 		ensure(group);
@@ -2270,8 +2592,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	private void updateMarginal(int[] channels, long weight, int group) {
 		if (groupSink != null) {
-			for (int i = 0; i < aggregate.groupCols.length; i++) boundedGroupInput[i] = v[aggregate.groupCols[i]];
-			if (channels.length == 0) groupSink.addChannel(boundedGroupInput, -1, -1L, 1L);
+			for (int i = 0; i < aggregate.groupCols.length; i++)
+				boundedGroupInput[i] = v[aggregate.groupCols[i]];
+			if (channels.length == 0)
+				groupSink.addChannel(boundedGroupInput, -1, -1L, 1L);
 			for (int channel : channels) {
 				AggregateOutput output = aggregate.outputs[channel];
 				groupSink.addChannel(boundedGroupInput, channel,
@@ -2279,24 +2603,43 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}
 			return;
 		}
-		if (group < 0) group = marginalGroup();
+		if (group < 0)
+			group = marginalGroup();
 		for (int i : channels) {
-			AggregateOutput output = aggregate.outputs[i]; long value = output.col < 0 ? 0L : v[output.col];
+			AggregateOutput output = aggregate.outputs[i];
+			long value = output.col < 0 ? 0L : v[output.col];
 			switch (output.kind) {
-			case LmdbNativeKernelIr.AGG_COUNT_STAR: agC[i][group] = Math.addExact(agC[i][group], weight); break;
-			case LmdbNativeKernelIr.AGG_COUNT:
-				if (value != -1L) agC[i][group] = Math.addExact(agC[i][group], weight); break;
-			case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
-				if (value != -1L) agD[i][group].add(value); break;
-			case LmdbNativeKernelIr.AGG_SUM: case LmdbNativeKernelIr.AGG_AVG:
-				if (value != -1L) hooks.accumulateNumericWeighted(i, group, value, weight); break;
-			case LmdbNativeKernelIr.AGG_SUM_DISTINCT: case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
-				if (value != -1L && agD[i][group].add(value)) hooks.accumulateNumeric(i, group, value); break;
-			case LmdbNativeKernelIr.AGG_MIN_ID: case LmdbNativeKernelIr.AGG_MAX_ID:
-				if (value != -1L && (!agB[i][group] || hooks.replacesWinner(value, agW[i][group],
-						output.kind == LmdbNativeKernelIr.AGG_MIN_ID))) { agW[i][group] = value; agB[i][group] = true; }
+			case LmdbNativeKernelIr.AGG_COUNT_STAR:
+				agC[i][group] = Math.addExact(agC[i][group], weight);
 				break;
-			default: throw new IllegalStateException("unsupported marginal channel");
+			case LmdbNativeKernelIr.AGG_COUNT:
+				if (value != -1L)
+					agC[i][group] = Math.addExact(agC[i][group], weight);
+				break;
+			case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
+				if (value != -1L)
+					agD[i][group].add(value);
+				break;
+			case LmdbNativeKernelIr.AGG_SUM:
+			case LmdbNativeKernelIr.AGG_AVG:
+				if (value != -1L)
+					hooks.accumulateNumericWeighted(i, group, value, weight);
+				break;
+			case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
+			case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
+				if (value != -1L && agD[i][group].add(value))
+					hooks.accumulateNumeric(i, group, value);
+				break;
+			case LmdbNativeKernelIr.AGG_MIN_ID:
+			case LmdbNativeKernelIr.AGG_MAX_ID:
+				if (value != -1L && (!agB[i][group] || hooks.replacesWinner(value, agW[i][group],
+						output.kind == LmdbNativeKernelIr.AGG_MIN_ID))) {
+					agW[i][group] = value;
+					agB[i][group] = true;
+				}
+				break;
+			default:
+				throw new IllegalStateException("unsupported marginal channel");
 			}
 		}
 	}
@@ -2307,7 +2650,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		long[] terminalValues = spec == null ? null : new long[spec.terminalCols.length];
 		return () -> {
 			KernelPlan bound = context.plans[plan.plan];
-			for (int i = 0; i < plan.inputs.length; i++) bound.setInput(i, read(plan.inputs[i]));
+			for (int i = 0; i < plan.inputs.length; i++)
+				bound.setInput(i, read(plan.inputs[i]));
 			KernelFactorCursor cursor = KernelFactorCursor.open(bound, plan.outCols.length, plan.scalarOutputs, cancel);
 			factorCursor = cursor;
 			long[] values = cursor.values();
@@ -2317,29 +2661,41 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						if (predicate != null) {
 							boolean exact = false;
 							for (AggregateOutput output : ((Aggregate) kernel.terminal).outputs) {
-								if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) { exact = true; break; }
+								if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) {
+									exact = true;
+									break;
+								}
 								int index = java.util.Arrays.binarySearch(spec.terminalCols, output.col);
-								if (guardScalar(spec.terminalValues[index], values, spec) != -1L) exact = true;
+								if (guardScalar(spec.terminalValues[index], values, spec) != -1L)
+									exact = true;
 							}
 							long reduced = cursor.reduceIndependent(predicate, spec.terminalDependencies, exact);
 							if (reduced >= 0L) {
-								for (int i = 0; i < terminalValues.length; i++) terminalValues[i] = guardScalar(spec.terminalValues[i], values, spec);
-								for (int i = 0; i < terminalValues.length; i++) v[spec.terminalCols[i]] = terminalValues[i];
-								if (reduced != 0L) updateTerminalBy(reduced);
+								for (int i = 0; i < terminalValues.length; i++)
+									terminalValues[i] = guardScalar(spec.terminalValues[i], values, spec);
+								for (int i = 0; i < terminalValues.length; i++)
+									v[spec.terminalCols[i]] = terminalValues[i];
+								if (reduced != 0L)
+									updateTerminalBy(reduced);
 								continue;
 							}
 						}
 						factorAccepted = 0L;
 						while (cursor.nextBinding()) {
-							for (int i = 0; i < plan.scalarOutputs.length; i++) v[plan.outCols[plan.scalarOutputs[i]]] = values[i];
-							if (next.run()) return true;
+							for (int i = 0; i < plan.scalarOutputs.length; i++)
+								v[plan.outCols[plan.scalarOutputs[i]]] = values[i];
+							if (next.run())
+								return true;
 						}
-						if (factorCountFold && factorAccepted != 0L) updateTerminalBy(Math.multiplyExact(factorAccepted, cursor.remainderMultiplicity()));
+						if (factorCountFold && factorAccepted != 0L)
+							updateTerminalBy(Math.multiplyExact(factorAccepted, cursor.remainderMultiplicity()));
 					}
 				} else if (cursor.grouped()) {
 					while (cursor.next()) {
-						for (int i = 0; i < plan.scalarOutputs.length; i++) v[plan.outCols[plan.scalarOutputs[i]]] = values[i];
-						if (next.run()) return true;
+						for (int i = 0; i < plan.scalarOutputs.length; i++)
+							v[plan.outCols[plan.scalarOutputs[i]]] = values[i];
+						if (next.run())
+							return true;
 					}
 				} else {
 					long[] rows = cursor.rowValues();
@@ -2348,9 +2704,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					while ((n = cursor.nextRowWindow()) != 0) {
 						for (int i = 0; i < n; i++) {
 							int base = i * plan.outCols.length;
-							for (int output : plan.scalarOutputs) v[plan.outCols[output]] = rows[base + output];
+							for (int output : plan.scalarOutputs)
+								v[plan.outCols[output]] = rows[base + output];
 							factorFallbackWeight = weights[i];
-							if (next.run()) return true;
+							if (next.run())
+								return true;
 						}
 					}
 				}
@@ -2358,8 +2716,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				cursor.closeOnFailure(failure);
 				throw failure;
 			} finally {
-				try { cursor.close(); }
-				finally {
+				try {
+					cursor.close();
+				} finally {
 					factorCursor = null;
 					for (int col : plan.outCols) {
 						int input = plan.inputForColumn(col);
@@ -2399,59 +2758,71 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							v[plan.outCols[j]] = buffer[i * width + j];
 						}
 						if (weighted) {
-							if (bagWeights[i] <= 0L) throw new IllegalStateException("nonpositive plan multiplicity");
+							if (bagWeights[i] <= 0L)
+								throw new IllegalStateException("nonpositive plan multiplicity");
 							updateTerminalBy(bagWeights[i]);
 						} else if (next.run()) {
 							return true;
 						}
 					}
 				}
-			 } catch (RuntimeException | Error problem) {
-                failure = problem;
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
 				throw problem;
-            } finally {
-                planCursors[plan.plan] = null;
-                try { KernelRuntime.closePlanCursor(cursor, failure); } finally {
-				for (int col : plan.outCols) {
-					int input = plan.inputForColumn(col);
-					v[col] = input < 0 ? -1L : bound.input(input);
+			} finally {
+				planCursors[plan.plan] = null;
+				try {
+					KernelRuntime.closePlanCursor(cursor, failure);
+				} finally {
+					for (int col : plan.outCols) {
+						int input = plan.inputForColumn(col);
+						v[col] = input < 0 ? -1L : bound.input(input);
+					}
 				}
-                }
 			}
 			return false;
 		};
 	}
 
-    private Op buildIntersect(Intersect intersect, Op next) { return buildIntersect(intersect, next, false); }
+	private Op buildIntersect(Intersect intersect, Op next) {
+		return buildIntersect(intersect, next, false);
+	}
 
-    private Op buildIntersect(Intersect intersect, Op next, boolean countGroups) {
-        var views=new NativeLmdbQuerySource.NativeAdjacency[intersect.adjacencies.length];
-        for(int i=0;i<views.length;i++) views[i]=context.adjacencies[intersect.adjacencies[i]];
-        var cursor = new KernelExpansionCursors.Intersection(views, cancel);
-        intersectionCursors.add(cursor);
-        final boolean totalCount = countGroups && LmdbNativeKernelIr.intersectionTotalCountTail(kernel);
-        return () -> {
-            for(int i=0;i<views.length;i++) cursor.key(i,read(intersect.keys[i]));
-            cursor.bind();
-            {
-                if (totalCount) {
-                    updateTerminalBy(cursor.countRemainingGroups());
-                } else if(countGroups) {
-                    while(cursor.nextGroup()) {
-                        v[intersect.valueCol]=cursor.value();
-                        boolean counted=false;
-                        for(AggregateOutput output:aggregate.outputs)
-                            if(output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR || v[output.col] != -1L) { counted=true;break; }
-                        updateTerminalBy(counted ? cursor.groupMultiplicity() : 1L);
-                    }
-                } else while(cursor.next()) {
-                    v[intersect.valueCol]=cursor.value();
-                    if(next.run()) return true;
-                }
-            }
-            return false;
-        };
-    }
+	private Op buildIntersect(Intersect intersect, Op next, boolean countGroups) {
+		var views = new NativeLmdbQuerySource.NativeAdjacency[intersect.adjacencies.length];
+		for (int i = 0; i < views.length; i++)
+			views[i] = context.adjacencies[intersect.adjacencies[i]];
+		var cursor = new KernelExpansionCursors.Intersection(views, cancel);
+		intersectionCursors.add(cursor);
+		final boolean totalCount = countGroups && LmdbNativeKernelIr.intersectionTotalCountTail(kernel);
+		return () -> {
+			for (int i = 0; i < views.length; i++)
+				cursor.key(i, read(intersect.keys[i]));
+			cursor.bind();
+			{
+				if (totalCount) {
+					updateTerminalBy(cursor.countRemainingGroups());
+				} else if (countGroups) {
+					while (cursor.nextGroup()) {
+						v[intersect.valueCol] = cursor.value();
+						boolean counted = false;
+						for (AggregateOutput output : aggregate.outputs)
+							if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR || v[output.col] != -1L) {
+								counted = true;
+								break;
+							}
+						updateTerminalBy(counted ? cursor.groupMultiplicity() : 1L);
+					}
+				} else
+					while (cursor.next()) {
+						v[intersect.valueCol] = cursor.value();
+						if (next.run())
+							return true;
+					}
+			}
+			return false;
+		};
+	}
 
 	private Op buildLeftProbe(LeftProbe probe, Op next) {
 		NativeLmdbQuerySource.NativeAdjacency adjacency = context.adjacencies[probe.adjacency];
@@ -2481,20 +2852,22 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		};
 	}
 
-    private Op buildPathExpand(PathExpand path, Op next) {
-        return () -> {
-            long[] contexts=new long[path.contexts.length];
-            for(int i=0;i<contexts.length;i++) contexts[i]=read(path.contexts[i]);
-            try(var cursor=new KernelExpansionCursors.Path(
-                    context.adjacencies[path.adjacency],read(path.source),path.minHops,contexts,cancel)) {
-                while(cursor.next()) {
-                    v[path.dstCol]=cursor.value();
-                    if(next.run()) return true;
-                }
-            }
-            return false;
-        };
-    }
+	private Op buildPathExpand(PathExpand path, Op next) {
+		return () -> {
+			long[] contexts = new long[path.contexts.length];
+			for (int i = 0; i < contexts.length; i++)
+				contexts[i] = read(path.contexts[i]);
+			try (var cursor = new KernelExpansionCursors.Path(
+					context.adjacencies[path.adjacency], read(path.source), path.minHops, contexts, cancel)) {
+				while (cursor.next()) {
+					v[path.dstCol] = cursor.value();
+					if (next.run())
+						return true;
+				}
+			}
+			return false;
+		};
+	}
 
 	// --- containers ------------------------------------------------------------------------
 
@@ -2777,7 +3150,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private void allocateAggregateState() {
-		if (groupSink != null) return;
+		if (groupSink != null)
+			return;
 		if (streamingGroups()) {
 			sgSeen = false;
 			sgKey = -1L;
@@ -2860,7 +3234,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		for (int i = 0; i < emit.cols.length; i++) {
 			rowScratch[i] = v[emit.cols[i]];
 		}
-		if (groupSink != null) { groupSink.addDistinct(rowScratch); return false; }
+		if (groupSink != null) {
+			groupSink.addDistinct(rowScratch);
+			return false;
+		}
 		if (emit.distinct) {
 			int aligned = emit.alignedCount;
 			if (aligned > 0) {
@@ -2892,7 +3269,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private boolean emitRowTerminal() {
-		if (!prepareEmitRow()) return false;
+		if (!prepareEmitRow())
+			return false;
 		if (emitCutoffCap >= 0 && outCount >= emitCutoffCap) {
 			return true;
 		}
@@ -2913,7 +3291,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 			}
 			// An all-unbound COUNT projection still creates its zero-count group.
-			updateTerminalBy(needsWeight ? (factorCursor.grouped() ? factorCursor.multiplicity() : factorFallbackWeight) : 1L);
+			updateTerminalBy(
+					needsWeight ? (factorCursor.grouped() ? factorCursor.multiplicity() : factorFallbackWeight) : 1L);
 		} else if (streamingGroups()) {
 			updateStreaming();
 		} else {
@@ -2927,7 +3306,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (multiplicity <= 0L) {
 			return;
 		}
-		if (groupSink != null) { updateBoundedCounts(multiplicity); return; }
+		if (groupSink != null) {
+			updateBoundedCounts(multiplicity);
+			return;
+		}
 		if (streamingGroups()) {
 			long key = v[aggregate.groupCols[0]];
 			if (!sgSeen) {
@@ -2982,10 +3364,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (aggregate.groupCols.length == 1 && aggregate.outputs.length == 1
 				&& aggregate.outputs[0].kind != LmdbNativeKernelIr.AGG_COUNT_DISTINCT) {
 			groupSink.addSingleCount(v[aggregate.groupCols[0]],
-					aggregate.outputs[0].kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? 0L : v[aggregate.outputs[0].col], weight);
+					aggregate.outputs[0].kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? 0L : v[aggregate.outputs[0].col],
+					weight);
 			return;
 		}
-		for (int i = 0; i < aggregate.groupCols.length; i++) boundedGroupInput[i] = v[aggregate.groupCols[i]];
+		for (int i = 0; i < aggregate.groupCols.length; i++)
+			boundedGroupInput[i] = v[aggregate.groupCols[i]];
 		for (int i = 0; i < aggregate.outputs.length; i++) {
 			AggregateOutput output = aggregate.outputs[i];
 			boundedCountInput[i] = output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? 0L : v[output.col];
@@ -2994,7 +3378,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private void updateHashed() {
-		if (groupSink != null) { updateBoundedCounts(1L); return; }
+		if (groupSink != null) {
+			updateBoundedCounts(1L);
+			return;
+		}
 		int g;
 		if (aggregate.groupCols.length == 0) {
 			g = 0;
@@ -3254,7 +3641,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private void appendRow() {
-		if (orderedRows != null) { orderedRows.add(rowScratch); return; }
+		if (orderedRows != null) {
+			orderedRows.add(rowScratch);
+			return;
+		}
 		KernelRuntime.checkMaterializationCapacity(cancel, outCount);
 		if ((outCount + 1) * stride > out.length) {
 			out = Arrays.copyOf(out, out.length * 2);
@@ -3264,7 +3654,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private void flush() {
-		if (groupSink != null) { groupSink.finish(); return; }
+		if (groupSink != null) {
+			groupSink.finish();
+			return;
+		}
 		if (aggregate == null) {
 			// Row kernels have no drain: rows were appended as the pipeline ran. Only OutputMods remain.
 			applyOutputMods(emit.mods);
@@ -3296,7 +3689,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private void applyOutputMods(OutputMods mods) {
-		if (orderedRows != null) { orderedRows.finish(); return; }
+		if (orderedRows != null) {
+			orderedRows.finish();
+			return;
+		}
 		if (mods.orderKeys != null) {
 			KernelHooks order = mods.valueOrder ? hooks : null;
 			if (mods.limit >= 0) {

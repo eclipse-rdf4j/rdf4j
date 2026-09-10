@@ -552,18 +552,28 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		}
 	}
 
-	@Override public boolean supportsWeightedNumericAggregates() { return true; }
+	@Override
+	public boolean supportsWeightedNumericAggregates() {
+		return true;
+	}
 
-	@Override public void accumulateNumericWeighted(int aggregateId, int groupId, long valueId, long weight) {
-		if (weight <= 0L) throw new IllegalArgumentException("nonpositive aggregate weight");
+	@Override
+	public void accumulateNumericWeighted(int aggregateId, int groupId, long valueId, long weight) {
+		if (weight <= 0L)
+			throw new IllegalArgumentException("nonpositive aggregate weight");
 		requireNumericAccumulator(aggregateId, groupId);
 		ensureNumericCapacity(aggregateId, groupId);
-		if (numericErrors[aggregateId][groupId]) return;
+		if (numericErrors[aggregateId][groupId])
+			return;
 		// Same null/type/promotion and floating encounter-order gate as ordinary native/IR arithmetic.
 		Literal literal = AggState.numericLiteral(numericContext, valueId);
-		if (literal == null) { numericErrors[aggregateId][groupId] = true; return; }
-		Literal term = weight == 1L ? literal : MathUtil.compute(literal, AggContext.integerLiteral(weight),
-				MathExpr.MathOp.MULTIPLY);
+		if (literal == null) {
+			numericErrors[aggregateId][groupId] = true;
+			return;
+		}
+		Literal term = weight == 1L ? literal
+				: MathUtil.compute(literal, AggContext.integerLiteral(weight),
+						MathExpr.MathOp.MULTIPLY);
 		numericSums[aggregateId][groupId] = AggState.addNumeric(numericSums[aggregateId][groupId], term);
 		if (numericKinds[aggregateId] == AggKind.AVG)
 			numericCounts[aggregateId][groupId] = Math.addExact(numericCounts[aggregateId][groupId], weight);

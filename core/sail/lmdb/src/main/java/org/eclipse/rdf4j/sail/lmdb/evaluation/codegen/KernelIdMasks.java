@@ -8,20 +8,23 @@ import java.util.Arrays;
 import java.util.Objects;
 
 /**
- * Bounded primitive-ID selection kernels. Selection words are -1 (accept) or 0 (reject).
- * A null input is a broadcast scalar. Representation dispatch and spatial checks are outside
- * element loops. No RDF value semantics or dictionary access are implied by these operations.
+ * Bounded primitive-ID selection kernels. Selection words are -1 (accept) or 0 (reject). A null input is a broadcast
+ * scalar. Representation dispatch and spatial checks are outside element loops. No RDF value semantics or dictionary
+ * access are implied by these operations.
  *
- * <p>The arithmetic forms of equality and unsigned comparison avoid per-lane control flow and
- * allow C2 to vectorize the mask loops without an incubator-module dependency. This is not a
- * promise of SIMD on every JDK/CPU; the ordinary scalar semantics are exact on all targets.
+ * <p>
+ * The arithmetic forms of equality and unsigned comparison avoid per-lane control flow and allow C2 to vectorize the
+ * mask loops without an incubator-module dependency. This is not a promise of SIMD on every JDK/CPU; the ordinary
+ * scalar semantics are exact on all targets.
  */
 public final class KernelIdMasks {
-	private KernelIdMasks() { }
+	private KernelIdMasks() {
+	}
 
 	private static void bounds(long[] values, long[] selected, int size) {
 		Objects.checkFromIndexSize(0, size, selected.length);
-		if (values != null) Objects.checkFromIndexSize(0, size, values.length);
+		if (values != null)
+			Objects.checkFromIndexSize(0, size, values.length);
 	}
 
 	/** All ones iff equal, including high-bit IDs and the unbound sentinel. */
@@ -37,16 +40,21 @@ public final class KernelIdMasks {
 
 	public static void compare(long[] a, long scalarA, long[] b, long scalarB,
 			boolean negated, long[] selected, int size) {
-		bounds(a, selected, size); bounds(b, selected, size);
+		bounds(a, selected, size);
+		bounds(b, selected, size);
 		long flip = negated ? -1L : 0L;
 		if (a == null && b == null) {
-			if ((scalarA == scalarB) == negated) Arrays.fill(selected, 0, size, 0L);
+			if ((scalarA == scalarB) == negated)
+				Arrays.fill(selected, 0, size, 0L);
 		} else if (a == null) {
-			for (int i = 0; i < size; i++) selected[i] &= equalMask(b[i], scalarA) ^ flip;
+			for (int i = 0; i < size; i++)
+				selected[i] &= equalMask(b[i], scalarA) ^ flip;
 		} else if (b == null) {
-			for (int i = 0; i < size; i++) selected[i] &= equalMask(a[i], scalarB) ^ flip;
+			for (int i = 0; i < size; i++)
+				selected[i] &= equalMask(a[i], scalarB) ^ flip;
 		} else {
-			for (int i = 0; i < size; i++) selected[i] &= equalMask(a[i], b[i]) ^ flip;
+			for (int i = 0; i < size; i++)
+				selected[i] &= equalMask(a[i], b[i]) ^ flip;
 		}
 	}
 
@@ -67,9 +75,11 @@ public final class KernelIdMasks {
 	public static void compatible(long[] values, long scalar, long constant, long[] selected, int size) {
 		bounds(values, selected, size);
 		if (values == null) {
-			if (scalar != -1L && scalar != constant) Arrays.fill(selected, 0, size, 0L);
+			if (scalar != -1L && scalar != constant)
+				Arrays.fill(selected, 0, size, 0L);
 		} else {
-			for (int i = 0; i < size; i++) selected[i] &= equalMask(values[i], -1L) | equalMask(values[i], constant);
+			for (int i = 0; i < size; i++)
+				selected[i] &= equalMask(values[i], -1L) | equalMask(values[i], constant);
 		}
 	}
 
@@ -83,21 +93,23 @@ public final class KernelIdMasks {
 		} else {
 			for (int i = 0; i < size; i++) {
 				long value = values[i];
-				selected[i] &= equalMask(value, k0) | equalMask(value, k1) | equalMask(value, k2) | equalMask(value, k3);
+				selected[i] &= equalMask(value, k0) | equalMask(value, k1) | equalMask(value, k2)
+						| equalMask(value, k3);
 			}
 		}
 	}
 
 	/**
-	 * Sum a selection of one exact relation window. The reader has proved all weights positive and
-	 * their sum at most the relation's exact long cardinality. Consequently neither this reduction
-	 * nor accumulation of disjoint windows of that same relation can overflow. This proof does NOT
-	 * cover products of relations or global totals; callers must use checked arithmetic there.
+	 * Sum a selection of one exact relation window. The reader has proved all weights positive and their sum at most
+	 * the relation's exact long cardinality. Consequently neither this reduction nor accumulation of disjoint windows
+	 * of that same relation can overflow. This proof does NOT cover products of relations or global totals; callers
+	 * must use checked arithmetic there.
 	 */
 	public static long sumBounded(long[] weights, long[] selected, int size) {
 		bounds(weights, selected, size);
 		long sum = 0L;
-		for (int i = 0; i < size; i++) sum += weights[i] & selected[i];
+		for (int i = 0; i < size; i++)
+			sum += weights[i] & selected[i];
 		return sum;
 	}
 }

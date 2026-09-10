@@ -72,10 +72,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
-import java.util.function.BooleanSupplier;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.StampedLock;
+import java.util.function.BooleanSupplier;
 
 import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap;
@@ -96,10 +96,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.valueoverlay.CompressedValueOverlay;
-import org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayCapacityException;
-import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueOverlayRegistry;
-import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordLayout;
 import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
@@ -107,6 +103,10 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbResource;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.CompressedValueOverlay;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayCapacityException;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueOverlayRegistry;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordLayout;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
@@ -511,7 +511,8 @@ public class ValueStore extends AbstractValueFactory {
 	private volatile Object valueLookupGeneration = new Object();
 
 	// An optional exact-read-view accelerator. It owns compressed copies, not LMDB page addresses.
-	private final ValueOverlayRegistry compressedValues = new ValueOverlayRegistry();
+	private volatile ValueOverlayRegistry compressedValues = ValueOverlayRegistry.configured();
+	private ValueOverlayRegistry.Mutation compressedValueMutation;
 	private Thread writeTxnOwner;
 	private final boolean forceSync;
 	private final boolean noReadahead;
@@ -1230,7 +1231,7 @@ public class ValueStore extends AbstractValueFactory {
 
 	protected byte[] getData(long id) throws IOException {
 		return readTransaction(env, (stack, txn) -> {
-			try (CompressedValueOverlay.Lease overlay = borrowValueOverlay(txn)) {
+			try (ValueOverlayRegistry.SnapshotLease overlay = borrowValueOverlay(txn)) {
 				if (overlay != null) {
 					byte[] hit = overlay.get(id);
 					if (hit != null) {
@@ -1250,21 +1251,63 @@ public class ValueStore extends AbstractValueFactory {
 		});
 	}
 
-	private CompressedValueOverlay.Lease borrowValueOverlay(long txn) {
+	/**
+	 * Returns an owned lexical byte view of a current dictionary record without constructing RDF Values or Strings. IRI
+	 * payload bytes are the local name, not a complete IRI; the namespace ID is exposed separately.
+	 * Inline/triple/unknown formats return null. Compressed records are still decoded into one record array.
+	 */
+	@InternalUseOnly
+	public org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordView getRecordView(long id) throws IOException {
+		byte[] record = getData(id);
+		return record == null ? null
+				: org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordView.takeOwnership(record);
+	}
+
+	/**
+	 * Callback-scoped typed/UTF-8 access. Covered records are decoded selectively from their compressed pages. The
+	 * callback must not retain its record. Unsupported/missing overlay records use this same native transaction; that
+	 * fallback reconstructs the dictionary record, but never constructs an RDF Value or Java String.
+	 */
+	@InternalUseOnly
+	public boolean visitRecord(long id,
+			org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordVisitor.Visitor visitor) throws IOException {
+		Objects.requireNonNull(visitor);
+		return readTransaction(env, (stack, txn) -> {
+			try (ValueOverlayRegistry.SnapshotLease overlay = borrowValueOverlay(txn)) {
+				if (overlay != null && overlay.visitRecord(id, visitor))
+					return true;
+			}
+			MDBVal key = MDBVal.calloc(stack);
+			LmdbUtil.setMDBValData(key, id2data(idBuffer(stack), id).flip());
+			MDBVal value = MDBVal.calloc(stack);
+			int rc = mdb_get(txn, dbi, key, value);
+			if (rc == MDB_NOTFOUND)
+				return false;
+			E(rc);
+			byte[] bytes = new byte[Math.toIntExact(LmdbUtil.mdbValSize(value))];
+			LmdbUtil.copyMemoryToByteArray(LmdbUtil.mdbValDataAddress(value), bytes, bytes.length);
+			return org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordVisitor.visitOwnedBytes(bytes, visitor);
+		});
+	}
+
+	private ValueOverlayRegistry.SnapshotLease borrowValueOverlay(long txn) {
 		// Avoid the native transaction-ID call entirely when the optional overlay is absent.
 		if (!compressedValues.isPopulated()) {
 			return null;
 		}
-		Object generation = valueLookupGeneration;
-		return generation == null ? null : compressedValues.acquire(generation, mdb_txn_id(txn));
+		// A writer must see its own uncommitted changes through LMDB. Other readers may keep using the exact old view.
+		if (writeTxn != 0 && writeTxnOwner == Thread.currentThread() && txn == writeTxn) {
+			return null;
+		}
+		return compressedValues.acquireSnapshot(mdb_txn_id(txn));
 	}
 
 	/**
 	 * Builds an immutable compressed copy by scanning the current dictionary read view, then atomically publishes it.
 	 * This is explicit synchronous maintenance, not a first-lookup scan or a background task. It must run outside a
 	 * write transaction. A mutation, cancellation or capacity refusal prevents publication and releases the builder.
-	 * Existing dictionary IDs and on-disk record encodings are unchanged. Subsequent writes invalidate the overlay;
-	 * readers of any other view always fall back to LMDB.
+	 * Existing dictionary IDs and on-disk record encodings are unchanged. Captured commits add compressed changed-ID
+	 * runs without rebuilding the base. Unobserved, oversized or unsupported changes fail closed to LMDB.
 	 *
 	 * The optional reverse index verifies the live record-to-ID mapping in this same transaction. Retired ID payloads
 	 * can remain readable after reverse removal, so merely scanning ID records is not sufficient for that index.
@@ -1280,7 +1323,7 @@ public class ValueStore extends AbstractValueFactory {
 				throw new IllegalStateException("Cannot build a value overlay during dictionary mutation");
 			}
 			long transactionId = mdb_txn_id(txn);
-			try (CompressedValueOverlay.Builder builder = CompressedValueOverlay.builder(options)
+			try (CompressedValueOverlay.Builder builder = compressedValues.newBaseBuilder(options)
 					.cancellation(() -> cancelled.getAsBoolean() || valueLookupGeneration != generation)) {
 				PointerBuffer handle = stack.mallocPointer(1);
 				E(mdb_cursor_open(txn, dbi, handle));
@@ -1304,7 +1347,8 @@ public class ValueStore extends AbstractValueFactory {
 							LmdbUtil.copyMemoryToByteArray(LmdbUtil.mdbValDataAddress(value), record, record.length);
 							boolean reverseVisible = false;
 							if (builder.reverseHasCapacity()) {
-								// Reclaim scratch on every row instead of growing the outer native stack with the dataset.
+								// Reclaim scratch on every row instead of growing the outer native stack with the
+								// dataset.
 								try (MemoryStack scratch = stackPush()) {
 									Long liveId = findIdInTransaction(record, false, CoreDatatype.NONE, scratch, txn);
 									reverseVisible = liveId != null && liveId.longValue() == id;
@@ -1374,19 +1418,37 @@ public class ValueStore extends AbstractValueFactory {
 	 * not resolve to a literal record.
 	 */
 	long literalDatatypeId(long id) throws IOException {
-		if (ValueIds.getIdType(id) != ValueIds.T_LITERAL) {
+		if (ValueIds.getIdType(id) != ValueIds.T_LITERAL)
 			return -1L;
-		}
-		Long datatypeId = withData(id, (address, length) -> {
-			if (length < 2 || org.lwjgl.system.MemoryUtil.memGetByte(address) != LITERAL_VALUE) {
-				return -1L;
+		return readTransaction(env, (stack, txn) -> {
+			try (ValueOverlayRegistry.SnapshotLease overlay = borrowValueOverlay(txn)) {
+				if (overlay != null) {
+					var header = new org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordVisitor.HeaderReader();
+					if (overlay.visitRecord(id, header)) {
+						return header
+								.kind() == org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordView.Kind.LITERAL
+										? header.referenceId()
+										: -1L;
+					}
+				}
 			}
-			return Varint.readUnsigned(address + 1);
+			MDBVal key = MDBVal.calloc(stack);
+			LmdbUtil.setMDBValData(key, id2data(idBuffer(stack), id).flip());
+			MDBVal value = MDBVal.calloc(stack);
+			int rc = mdb_get(txn, dbi, key, value);
+			if (rc == MDB_NOTFOUND)
+				return -1L;
+			E(rc);
+			long address = LmdbUtil.mdbValDataAddress(value), length = LmdbUtil.mdbValSize(value);
+			return length < 2 || org.lwjgl.system.MemoryUtil.memGetByte(address) != LITERAL_VALUE
+					? -1L
+					: Varint.readUnsigned(address + 1);
 		});
-		return datatypeId == null ? -1L : datatypeId;
 	}
 
-	/** Reads a sorted or unsorted literal-id batch under one read transaction and one native key/value pair. */
+	/**
+	 * One pinned overlay and one metadata visitor for the complete batch; uncovered IDs retain header-only LMDB access.
+	 */
 	int literalDatatypeIds(long[] ids, int offset, int length, long[] target, int targetOffset) throws IOException {
 		Objects.checkFromIndexSize(offset, length, ids.length);
 		Objects.checkFromIndexSize(targetOffset, length, target.length);
@@ -1394,21 +1456,34 @@ public class ValueStore extends AbstractValueFactory {
 			ByteBuffer idBytes = idBuffer(stack);
 			MDBVal keyData = MDBVal.calloc(stack);
 			MDBVal valueData = MDBVal.calloc(stack);
-			for (int i = 0; i < length; i++) {
-				long id = ids[offset + i];
-				long datatypeId = -1L;
-				if (ValueIds.getIdType(id) == ValueIds.T_LITERAL) {
-					idBytes.clear();
-					LmdbUtil.setMDBValData(keyData, id2data(idBytes, id).flip());
-					if (mdb_get(txn, dbi, keyData, valueData) == MDB_SUCCESS) {
-						long address = LmdbUtil.mdbValDataAddress(valueData);
-						long valueLength = LmdbUtil.mdbValSize(valueData);
-						if (valueLength >= 2 && org.lwjgl.system.MemoryUtil.memGetByte(address) == LITERAL_VALUE) {
-							datatypeId = Varint.readUnsigned(address + 1);
+			try (ValueOverlayRegistry.SnapshotLease overlay = borrowValueOverlay(txn)) {
+				var header = overlay == null ? null
+						: new org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordVisitor.HeaderReader();
+				for (int i = 0; i < length; i++) {
+					long id = ids[offset + i];
+					long datatypeId = -1L;
+					if (ValueIds.getIdType(id) == ValueIds.T_LITERAL) {
+						if (overlay != null && overlay.visitRecord(id, header)) {
+							datatypeId = header
+									.kind() == org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordView.Kind.LITERAL
+											? header.referenceId()
+											: -1L;
+						} else {
+							idBytes.clear();
+							LmdbUtil.setMDBValData(keyData, id2data(idBytes, id).flip());
+							int rc = mdb_get(txn, dbi, keyData, valueData);
+							if (rc != MDB_NOTFOUND) {
+								E(rc);
+								long address = LmdbUtil.mdbValDataAddress(valueData);
+								long valueLength = LmdbUtil.mdbValSize(valueData);
+								if (valueLength >= 2
+										&& org.lwjgl.system.MemoryUtil.memGetByte(address) == LITERAL_VALUE)
+									datatypeId = Varint.readUnsigned(address + 1);
+							}
 						}
 					}
+					target[targetOffset + i] = datatypeId;
 				}
-				target[targetOffset + i] = datatypeId;
 			}
 			return length;
 		});
@@ -1667,7 +1742,7 @@ public class ValueStore extends AbstractValueFactory {
 			int[] order, int count) {
 		try {
 			readTransaction(env, (stack, txn) -> {
-				try (CompressedValueOverlay.Lease overlay = borrowValueOverlay(txn)) {
+				try (ValueOverlayRegistry.SnapshotLease overlay = borrowValueOverlay(txn)) {
 					MDBVal keyData = MDBVal.calloc(stack);
 					MDBVal valueData = MDBVal.calloc(stack);
 					ByteBuffer keyBuffer = idBuffer(stack);
@@ -1695,7 +1770,7 @@ public class ValueStore extends AbstractValueFactory {
 
 	private boolean resolveValueInTransaction(ValueStoreRevision expectedRevision,
 			ValueStoreRevision resolvedRevision, long id, LmdbValue value, long txn, MDBVal keyData,
-			MDBVal valueData, ByteBuffer keyBuffer, CompressedValueOverlay.Lease overlay) throws IOException {
+			MDBVal valueData, ByteBuffer keyBuffer, ValueOverlayRegistry.SnapshotLease overlay) throws IOException {
 		if (ValueIds.isInlined(id)) {
 			Literal unpacked = Values.unpackLiteral(id, this);
 			((LmdbLiteral) value).setLabel(unpacked.getLabel());
@@ -1928,7 +2003,7 @@ public class ValueStore extends AbstractValueFactory {
 	private long findId(byte[] data, boolean create, CoreDatatype coreDatatype) throws IOException {
 		Long id = readTransaction(env, (stack, txn) -> {
 			if (!create) {
-				try (CompressedValueOverlay.Lease overlay = borrowValueOverlay(txn)) {
+				try (ValueOverlayRegistry.SnapshotLease overlay = borrowValueOverlay(txn)) {
 					if (overlay != null) {
 						OptionalLong hit = overlay.findId(data);
 						if (hit.isPresent()) {
@@ -1963,6 +2038,7 @@ public class ValueStore extends AbstractValueFactory {
 
 				E(mdb_put(writeTxn, dbi, dataVal, idVal, 0));
 				E(mdb_put(writeTxn, dbi, idVal, dataVal, 0));
+				recordCompressedValueChange(newId);
 
 				// update ref count if necessary
 				incrementRefCount(stack2, writeTxn, data);
@@ -2004,10 +2080,11 @@ public class ValueStore extends AbstractValueFactory {
 					dataVal.mv_size(data.length);
 					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
 					// store mapping of hash -> ID
-					E(mdb_put(txn, dbi, hashVal, idVal, 0));
+					E(mdb_put(writeTxn, dbi, hashVal, idVal, 0));
 					// store mapping of ID -> data
 					E(mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE));
 					dataVal.mv_data().put(data);
+					recordCompressedValueChange(newId);
 
 					// update ref count if necessary
 					incrementRefCount(stack2, writeTxn, data);
@@ -2073,12 +2150,13 @@ public class ValueStore extends AbstractValueFactory {
 
 				// store mapping of hash+ID -> []
 				dataVal.mv_data(stack.bytes());
-				E(mdb_put(txn, dbi, hashVal, dataVal, 0));
+				E(mdb_put(writeTxn, dbi, hashVal, dataVal, 0));
 
 				dataVal.mv_size(data.length);
 				// store mapping of ID -> data
-				E(mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE));
+				E(mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE));
 				dataVal.mv_data().put(data);
+				recordCompressedValueChange(newId);
 
 				// update ref count if necessary
 				incrementRefCount(stack2, writeTxn, data);
@@ -2207,6 +2285,7 @@ public class ValueStore extends AbstractValueFactory {
 			long activeWriteTxn = currentWriteTxn(txn);
 			E(mdb_put(activeWriteTxn, dbi, dataVal, idVal, 0));
 			E(mdb_put(activeWriteTxn, dbi, idVal, dataVal, 0));
+			recordCompressedValueChange(newId);
 			incrementRefCount(stack, activeWriteTxn, data);
 			return newId;
 		}
@@ -2273,6 +2352,7 @@ public class ValueStore extends AbstractValueFactory {
 			E(mdb_put(activeWriteTxn, dbi, hashVal, idVal, 0));
 			E(mdb_put(activeWriteTxn, dbi, idVal, dataVal, MDB_RESERVE));
 			dataVal.mv_data().put(data);
+			recordCompressedValueChange(newId);
 			incrementRefCount(stack, activeWriteTxn, data);
 			return newId;
 		}
@@ -2299,6 +2379,7 @@ public class ValueStore extends AbstractValueFactory {
 			dataVal.mv_size(data.length);
 			E(mdb_put(activeWriteTxn, dbi, idVal, dataVal, MDB_RESERVE));
 			dataVal.mv_data().put(data);
+			recordCompressedValueChange(newId);
 			incrementRefCount(stack, activeWriteTxn, data);
 			return newId;
 		}
@@ -2445,13 +2526,22 @@ public class ValueStore extends AbstractValueFactory {
 			}
 		} else {
 			beginValueLookupMutation();
+			ValueOverlayRegistry.Prepared[] publication = new ValueOverlayRegistry.Prepared[1];
 			try {
-				return LmdbUtil.transaction(env, (stack, txn) -> {
-					T result = transaction.exec(stack, txn);
+				T result = LmdbUtil.transaction(env, (stack, txn) -> {
+					beginCompressedValueMutation(txn);
+					T out = transaction.exec(stack, txn);
 					persistNextId(stack, txn);
-					return result;
+					publication[0] = prepareCompressedValueMutation(txn);
+					return out;
 				});
+				// The utility returns only after successful native commit. Never publish from inside its callback.
+				completeCompressedValueMutation(publication[0]);
+				return result;
 			} finally {
+				if (publication[0] != null)
+					publication[0].close();
+				discardCompressedValueMutation();
 				try {
 					txnManager.reset();
 				} finally {
@@ -2496,9 +2586,9 @@ public class ValueStore extends AbstractValueFactory {
 	/**
 	 * Identity of the current dictionary lookup view: both the read transaction and dictionary mutation generation.
 	 * Calls during ANY active dictionary mutation decline caching, not only calls from its write owner. getId also
-	 * consults shared positive caches; those can change independently of an individual reader's native snapshot.
-	 * A completed mutation changes the generation even after rollback. Tokens retain no LMDB transaction or page.
-	 * A cache must observe the same non-null identity before and after loading a result, including UNKNOWN.
+	 * consults shared positive caches; those can change independently of an individual reader's native snapshot. A
+	 * completed mutation changes the generation even after rollback. Tokens retain no LMDB transaction or page. A cache
+	 * must observe the same non-null identity before and after loading a result, including UNKNOWN.
 	 */
 	@InternalUseOnly
 	public Object valueLookupScope() throws IOException {
@@ -2510,9 +2600,116 @@ public class ValueStore extends AbstractValueFactory {
 		return valueLookupGeneration == generation ? token : null;
 	}
 
+	/** Current-view delta accounting; use retained stats for base/history/compaction reservations. */
+	@InternalUseOnly
+	public ValueOverlayRegistry.ViewStats compressedValueOverlayViewStats() {
+		return compressedValues.viewStats();
+	}
+
+	/** Shared across configured stores, including physical memory pinned by retired snapshots. */
+	@InternalUseOnly
+	public org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayMemoryBudget.Stats compressedValueOverlayRetainedMemoryStats() {
+		return compressedValues.retainedMemoryStats();
+	}
+
+	/** Bounded maintenance scheduling and refusal diagnostics; ordinary reads do not update these counters. */
+	@InternalUseOnly
+	public ValueOverlayRegistry.MaintenanceStats compressedValueOverlayMaintenanceStats() {
+		return compressedValues.maintenanceStats();
+	}
+
+	/** Explicit caller-scheduled maintenance; do not invoke from a dictionary write transaction. */
+	@InternalUseOnly
+	public int compactCompressedValueOverlay() {
+		if (writeTxn != 0 && writeTxnOwner == Thread.currentThread()) {
+			throw new IllegalStateException("Overlay compaction must run outside the dictionary writer");
+		}
+		return compressedValues.compact();
+	}
+
+	private void beginCompressedValueMutation(long txn) {
+		discardCompressedValueMutation();
+		if (compressedValues.isPopulated()) {
+			compressedValueMutation = compressedValues.begin(mdb_txn_id(txn));
+		}
+	}
+
+	private void recordCompressedValueChange(long id) {
+		if (compressedValueMutation != null)
+			compressedValueMutation.touch(id);
+	}
+
+	private void discardCompressedValueMutation() {
+		if (compressedValueMutation != null) {
+			compressedValueMutation.close();
+			compressedValueMutation = null;
+		}
+	}
+
+	/** Seal FINAL write-transaction state, never transient bytes from an MDB_RESERVE buffer. */
+	private ValueOverlayRegistry.Prepared prepareCompressedValueMutation(long txn) {
+		ValueOverlayRegistry.Mutation mutation = compressedValueMutation;
+		if (mutation == null)
+			return null;
+		try {
+			if (mutation.transactionId() != mdb_txn_id(txn)) {
+				return mutation.refused("native write transaction changed before capture");
+			}
+			return mutation.prepare(id -> {
+				try (MemoryStack scratch = stackPush()) {
+					MDBVal key = MDBVal.calloc(scratch);
+					LmdbUtil.setMDBValData(key, id2data(idBuffer(scratch), id).flip());
+					MDBVal value = MDBVal.calloc(scratch);
+					int rc = mdb_get(txn, dbi, key, value);
+					if (rc == MDB_NOTFOUND)
+						return new ValueOverlayRegistry.Record(null, false);
+					E(rc);
+					long length = LmdbUtil.mdbValSize(value);
+					if (length > mutation.maxRecordBytes())
+						return new ValueOverlayRegistry.Record(null, false);
+					byte[] record = new byte[Math.toIntExact(length)];
+					LmdbUtil.copyMemoryToByteArray(LmdbUtil.mdbValDataAddress(value), record, record.length);
+					Long live = mutation.requiresReverseMapping()
+							? findIdInTransaction(record, false, CoreDatatype.NONE, scratch, txn)
+							: null;
+					return new ValueOverlayRegistry.Record(record, live != null && live.longValue() == id);
+				}
+			});
+		} catch (IOException | RuntimeException failedOverlay) {
+			// Optional acceleration must not turn a committed dictionary change into a half-published cache.
+			logger.warn("Cannot prepare compressed ValueStore delta; commit will retire overlay", failedOverlay);
+			return mutation.refused("delta preparation failed: " + failedOverlay.getClass().getSimpleName());
+		}
+	}
+
+	private void completeCompressedValueMutation(ValueOverlayRegistry.Prepared publication) {
+		if (publication == null)
+			return;
+		try (MemoryStack stack = stackPush()) {
+			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+			E(mdb_env_info(env, info));
+			// LMDB may discard an empty write transaction. Check native metadata instead of inventing txn+1.
+			compressedValues.complete(publication, info.me_last_txnid());
+		} catch (IOException | RuntimeException failedOverlay) {
+			compressedValues.invalidate();
+			logger.warn("Cannot publish compressed ValueStore delta; using LMDB", failedOverlay);
+		} finally {
+			publication.close();
+		}
+	}
+
+	private void commitCompressedValueTransaction(ValueOverlayRegistry.Prepared publication) throws IOException {
+		long txn = writeTxn;
+		int rc = mdb_txn_commit(txn);
+		// Native commit consumes the transaction even on failure. Never leave a freed handle for rollback.
+		writeTxn = 0;
+		writeTxnOwner = null;
+		E(rc);
+		completeCompressedValueMutation(publication);
+	}
+
 	private void beginValueLookupMutation() {
 		valueLookupGeneration = null;
-		compressedValues.invalidate();
 	}
 
 	private void endValueLookupMutation() {
@@ -3380,6 +3577,7 @@ public class ValueStore extends AbstractValueFactory {
 				Long refCount = refCountsTxCache.get(id);
 				if (((refCount != null && refCount <= 0) || mdb_get(writeTxn, refCountsDbi, idVal, ignoreVal) != 0) &&
 						mdb_get(writeTxn, dbi, idVal, dataVal) == 0) {
+					recordCompressedValueChange(id);
 					ByteBuffer dataBuffer = dataVal.mv_data();
 
 					// update ref count if literal or URI namespace is removed
@@ -3522,6 +3720,7 @@ public class ValueStore extends AbstractValueFactory {
 							} else {
 								// delete id -> value association
 								E(mdb_del(txn, dbi, idVal, null));
+								recordCompressedValueChange(id);
 							}
 
 							clearStoredHash(id);
@@ -3547,6 +3746,8 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	public void startTransaction(boolean resize) throws IOException {
+		if (writeTxn != 0)
+			throw new IllegalStateException("Dictionary write transaction already active");
 		beginValueLookupMutation();
 		clearTransactionValueCaches();
 		try (MemoryStack stack = stackPush()) {
@@ -3555,6 +3756,7 @@ public class ValueStore extends AbstractValueFactory {
 			E(mdb_txn_begin(env, NULL, 0, pp));
 			writeTxn = pp.get(0);
 			writeTxnOwner = Thread.currentThread();
+			beginCompressedValueMutation(writeTxn);
 
 			// delete unused IDs if required on a regular basis
 			// this is also run after opening the database
@@ -3575,6 +3777,10 @@ public class ValueStore extends AbstractValueFactory {
 				}
 				nextValueEvictionTime = -1;
 			}
+		} catch (IOException | RuntimeException failure) {
+			if (writeTxn == 0)
+				endValueLookupMutation();
+			throw failure;
 		}
 	}
 
@@ -3601,32 +3807,40 @@ public class ValueStore extends AbstractValueFactory {
 					}
 					refCountsTxCache.clear();
 				}
-				if (invalidateRevisionOnCommit) {
-					long stamp = revisionLock.writeLock();
-					try {
-						E(mdb_txn_commit(writeTxn));
+				try (ValueOverlayRegistry.Prepared publication = prepareCompressedValueMutation(writeTxn)) {
+					if (invalidateRevisionOnCommit) {
+						long stamp = revisionLock.writeLock();
+						try {
+							commitCompressedValueTransaction(publication);
+							flushPendingHashUpdates();
+							long revisionId = lazyRevision.getRevisionId();
+							cleaner.register(lazyRevision, () -> {
+								synchronized (unusedRevisionIds) {
+									unusedRevisionIds.add(revisionId);
+								}
+								if (nextValueEvictionTime < 0) {
+									nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
+								}
+							});
+							setNewRevision();
+							clearCaches();
+						} finally {
+							revisionLock.unlockWrite(stamp);
+						}
+					} else {
+						commitCompressedValueTransaction(publication);
 						flushPendingHashUpdates();
-						long revisionId = lazyRevision.getRevisionId();
-						cleaner.register(lazyRevision, () -> {
-							synchronized (unusedRevisionIds) {
-								unusedRevisionIds.add(revisionId);
-							}
-							if (nextValueEvictionTime < 0) {
-								nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
-							}
-						});
-						setNewRevision();
-						clearCaches();
-					} finally {
-						revisionLock.unlockWrite(stamp);
 					}
-				} else {
-					E(mdb_txn_commit(writeTxn));
-					flushPendingHashUpdates();
+				} finally {
+					if (writeTxn == 0) {
+						discardCompressedValueMutation();
+						invalidateRevisionOnCommit = false;
+					}
 				}
 			} else {
 				refCountsTxCache.clear();
 				mdb_txn_abort(writeTxn);
+				discardCompressedValueMutation();
 				clearPendingHashUpdates();
 			}
 			writeTxn = 0;
@@ -3637,10 +3851,10 @@ public class ValueStore extends AbstractValueFactory {
 
 	public void commit() throws IOException {
 		beginValueLookupMutation();
-		endTransaction(true, false);
 		var lockManager = txnManager.lockManager();
 		long stamp = 0;
 		try {
+			endTransaction(true, false);
 			stamp = lockManager.writeLock();
 			txnManager.reset();
 		} catch (InterruptedException e) {
@@ -3720,6 +3934,9 @@ public class ValueStore extends AbstractValueFactory {
 		for (int attempt = 0; attempt < 8; attempt++) {
 			reserveWriteCapacity(reservation);
 			startTransaction(false);
+			if (targetDbi == dbi && compressedValueMutation != null) {
+				compressedValueMutation.invalidate("raw dictionary bulk append");
+			}
 			boolean mapFull = false;
 			try (MemoryStack stack = stackPush()) {
 				PointerBuffer cursorHandle = stack.mallocPointer(1);
@@ -4035,6 +4252,9 @@ public class ValueStore extends AbstractValueFactory {
 		ValueStoreHashFile.deleteIfPresent(dir);
 
 		clearCaches();
+		// clear() reopens the native environment. The closed registry/worker must not be reused;
+		// old leased publications remain charged to the same process-wide budget until released.
+		compressedValues = ValueOverlayRegistry.configured();
 		open();
 		setNewRevision();
 	}
@@ -4058,6 +4278,7 @@ public class ValueStore extends AbstractValueFactory {
 	 */
 	public void close() throws IOException {
 		beginValueLookupMutation();
+		compressedValues.close();
 		if (env != 0) {
 			if (writeTxn == 0) {
 				flushPendingHashUpdates();

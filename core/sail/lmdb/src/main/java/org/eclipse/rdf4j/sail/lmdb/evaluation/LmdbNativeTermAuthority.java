@@ -41,7 +41,8 @@ final class LmdbNativeTermAuthority implements NativeTermAuthority {
 		// The proof belongs to the complete backing source. A nested spelling-preserving synthetic source is not
 		// a canonical dictionary, even if its underlying physical store is; retain semantic fallback there.
 		this.canonicalKeys = store.hasCanonicalIds() && !(store instanceof SyntheticValueSource)
-				? new NativeCanonicalTermKeys(store, catalog, context) : null;
+				? new NativeCanonicalTermKeys(store, catalog, context)
+				: null;
 	}
 
 	NativeExecutionContext executionContext() {

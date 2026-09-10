@@ -25,10 +25,10 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.BindHook;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Emit;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateAdjKeys;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateTerms;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateEntry;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateNodeDomainIntersection;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumeratePredicates;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateTerms;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Exists;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterCompareId;
@@ -47,8 +47,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PathExpand;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanRows;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanFactors;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.PlanRows;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Probe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeVariable;
@@ -403,14 +403,18 @@ final class LmdbNativeKernelEmitter {
 				BitSet counted = new BitSet();
 				boolean countStar = false;
 				for (AggregateOutput output : counts.outputs) {
-					if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) countStar = true;
-					else counted.set(output.col);
+					if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR)
+						countStar = true;
+					else
+						counted.set(output.col);
 				}
-				String weight = "(fc" + factorPlan.plan + ".grouped() ? fc" + factorPlan.plan + ".multiplicity() : fw" + factorPlan.plan + ")";
+				String weight = "(fc" + factorPlan.plan + ".grouped() ? fc" + factorPlan.plan + ".multiplicity() : fw"
+						+ factorPlan.plan + ")";
 				if (!countStar) {
 					StringBuilder bound = new StringBuilder();
 					for (int col = counted.nextSetBit(0); col >= 0; col = counted.nextSetBit(col + 1)) {
-						if (!bound.isEmpty()) bound.append(" || ");
+						if (!bound.isEmpty())
+							bound.append(" || ");
 						bound.append("v").append(col).append(" != -1L");
 					}
 					// Still create zero-count groups, but do not multiply an unobserved product.
@@ -418,7 +422,8 @@ final class LmdbNativeKernelEmitter {
 				}
 				terminalCall = LmdbNativeKernelIr.foldFactorCounts(kernel)
 						? "if (fc" + factorPlan.plan + ".grouped()) { fa" + factorPlan.plan + " = Math.addExact(fa"
-								+ factorPlan.plan + ", fc" + factorPlan.plan + ".openedMultiplicity()); } else { updateBy(fw"
+								+ factorPlan.plan + ", fc" + factorPlan.plan
+								+ ".openedMultiplicity()); } else { updateBy(fw"
 								+ factorPlan.plan + "); }"
 						: "updateBy(" + weight + ");";
 			}
@@ -428,7 +433,8 @@ final class LmdbNativeKernelEmitter {
 					? emitPipeline(kernel.pipeline, terminalCall, false)
 					: emitFlatRootExists(flatRootExists);
 
-			if (kernel.aggregateProjections != null) firstMethod = emitAggregateProjections(firstMethod);
+			if (kernel.aggregateProjections != null)
+				firstMethod = emitAggregateProjections(firstMethod);
 
 			StringBuilder source = new StringBuilder(8192);
 			source.append("package org.eclipse.rdf4j.sail.lmdb.gen;\n\n");
@@ -476,7 +482,8 @@ final class LmdbNativeKernelEmitter {
 			}
 			if (kernel.factorCountGuards != null) {
 				emitFactorPredicate(source);
-				if (kernel.compiledCountSpecialization) emitFusedFactorSums(source);
+				if (kernel.compiledCountSpecialization)
+					emitFusedFactorSums(source);
 			}
 			source.append("}\n");
 			return LmdbNativeGeneratedSourceOptimizer.optimize(source.toString(), telemetryEnabled());
@@ -879,8 +886,12 @@ final class LmdbNativeKernelEmitter {
 		// ------------------------------------------------------------------
 
 		private void emitFields(StringBuilder source) {
-            for (int i=0;i<expansionCursorTypes.size();i++) source.append("    private org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.")
-                    .append(expansionCursorTypes.get(i)).append(" xc").append(i).append(";\n");
+			for (int i = 0; i < expansionCursorTypes.size(); i++)
+				source.append("    private org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.")
+						.append(expansionCursorTypes.get(i))
+						.append(" xc")
+						.append(i)
+						.append(";\n");
 			for (int i = 0; i < kernel.requirements.adjacencies; i++) {
 				source.append("    private NativeLmdbQuerySource.NativeAdjacency a").append(i).append(";\n");
 			}
@@ -1053,9 +1064,14 @@ final class LmdbNativeKernelEmitter {
 				}
 			}
 			PlanFactors factors = LmdbNativeKernelIr.factorPlan(kernel);
-			if (factors != null) source.append("    private KernelFactorCursor fc").append(factors.plan)
-					.append(";\n    private long fw").append(factors.plan)
-					.append(";\n    private long fa").append(factors.plan).append(";\n");
+			if (factors != null)
+				source.append("    private KernelFactorCursor fc")
+						.append(factors.plan)
+						.append(";\n    private long fw")
+						.append(factors.plan)
+						.append(";\n    private long fa")
+						.append(factors.plan)
+						.append(";\n");
 			if (kernel.vectorTailIndex >= 0) {
 				// Vector-tail scratch: one run slice and its selection, allocated once in bind and reused per run.
 				source.append("    private long[] tvec;\n");
@@ -1066,10 +1082,19 @@ final class LmdbNativeKernelEmitter {
 				}
 			}
 			for (var entry : LmdbNativeKernelIr.hashScratchLayouts(kernel.pipeline).entrySet()) {
-				int table = entry.getKey(); int[] layout = entry.getValue();
+				int table = entry.getKey();
+				int[] layout = entry.getValue();
 				source.append("    private KernelRuntime.LongRowMap t").append(table).append(";\n");
-				source.append("    private long[] tk").append(table).append(" = new long[").append(layout[0]).append("];\n");
-				source.append("    private long[] tp").append(table).append(" = new long[").append(layout[1]).append("];\n");
+				source.append("    private long[] tk")
+						.append(table)
+						.append(" = new long[")
+						.append(layout[0])
+						.append("];\n");
+				source.append("    private long[] tp")
+						.append(table)
+						.append(" = new long[")
+						.append(layout[1])
+						.append("];\n");
 			}
 			source.append("    private boolean closed;\n");
 
@@ -1092,8 +1117,11 @@ final class LmdbNativeKernelEmitter {
 					.append("    private int outCount;\n")
 					.append("    private int outPos;\n")
 					.append("    private boolean ran;\n");
-			if (kernel.boundedOrder) source.append("    private org.eclipse.rdf4j.sail.lmdb.evaluation.KernelOrderSink orderedRows;\n");
-			if (kernel.boundedGroups) source.append("    private org.eclipse.rdf4j.sail.lmdb.evaluation.KernelGroupSink groupSink;\n    private long[] boundedGroupInput, boundedCountInput;\n");
+			if (kernel.boundedOrder)
+				source.append("    private org.eclipse.rdf4j.sail.lmdb.evaluation.KernelOrderSink orderedRows;\n");
+			if (kernel.boundedGroups)
+				source.append(
+						"    private org.eclipse.rdf4j.sail.lmdb.evaluation.KernelGroupSink groupSink;\n    private long[] boundedGroupInput, boundedCountInput;\n");
 			if (kernel.resumable) {
 				source.append("    private long[] sink;\n")
 						.append("    private int sinkRows;\n")
@@ -1223,53 +1251,108 @@ final class LmdbNativeKernelEmitter {
 			Aggregate a = kernel.terminal instanceof Aggregate ? (Aggregate) kernel.terminal : null;
 			int width = a == null ? ((Emit) kernel.terminal).cols.length : a.groupCols.length;
 			OutputMods mods = kernel.terminal.mods;
-			String flags = a == null ? "new boolean[0]" : "new boolean[]{" + java.util.Arrays.stream(a.outputs)
-					.map(o -> Boolean.toString(o.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT))
-					.collect(java.util.stream.Collectors.joining(",")) + "}";
-			String keys = mods.orderKeys == null ? "null" : "new int[]{" + java.util.Arrays.stream(mods.orderKeys)
-					.mapToObj(Integer::toString).collect(java.util.stream.Collectors.joining(",")) + "}";
-			String reverse = mods.descending == null ? "null" : "new boolean[]{" + java.util.stream.IntStream.range(0, mods.descending.length)
-					.mapToObj(i -> Boolean.toString(mods.descending[i])).collect(java.util.stream.Collectors.joining(",")) + "}";
-			source.append("        groupSink = org.eclipse.rdf4j.sail.lmdb.evaluation.KernelGroupSink.tryCreate(context, ")
-					.append(width).append(", ").append(flags).append(", ").append(keys).append(", ").append(reverse).append(", ")
-					.append(mods.valueOrder).append(", ").append(mods.offset).append("L, ").append(mods.limit).append("L, ")
-					.append(a == null || a.having == null ? -1 : a.having.outputIndex).append(", ")
-					.append(a == null || a.having == null ? 0 : a.having.op).append(", ")
-					.append(a == null || a.having == null ? 0L : a.having.threshold).append("L);\n")
-					.append("        if (groupSink != null) { boundedGroupInput = new long[").append(width)
-					.append("]; boundedCountInput = new long[").append(a == null ? 0 : a.outputs.length).append("]; }\n");
+			String flags = a == null ? "new boolean[0]"
+					: "new boolean[]{" + java.util.Arrays.stream(a.outputs)
+							.map(o -> Boolean.toString(o.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT))
+							.collect(java.util.stream.Collectors.joining(",")) + "}";
+			String keys = mods.orderKeys == null ? "null"
+					: "new int[]{" + java.util.Arrays.stream(mods.orderKeys)
+							.mapToObj(Integer::toString)
+							.collect(java.util.stream.Collectors.joining(",")) + "}";
+			String reverse = mods.descending == null ? "null"
+					: "new boolean[]{" + java.util.stream.IntStream.range(0, mods.descending.length)
+							.mapToObj(i -> Boolean.toString(mods.descending[i]))
+							.collect(java.util.stream.Collectors.joining(",")) + "}";
+			source.append(
+					"        groupSink = org.eclipse.rdf4j.sail.lmdb.evaluation.KernelGroupSink.tryCreate(context, ")
+					.append(width)
+					.append(", ")
+					.append(flags)
+					.append(", ")
+					.append(keys)
+					.append(", ")
+					.append(reverse)
+					.append(", ")
+					.append(mods.valueOrder)
+					.append(", ")
+					.append(mods.offset)
+					.append("L, ")
+					.append(mods.limit)
+					.append("L, ")
+					.append(a == null || a.having == null ? -1 : a.having.outputIndex)
+					.append(", ")
+					.append(a == null || a.having == null ? 0 : a.having.op)
+					.append(", ")
+					.append(a == null || a.having == null ? 0L : a.having.threshold)
+					.append("L);\n")
+					.append("        if (groupSink != null) { boundedGroupInput = new long[")
+					.append(width)
+					.append("]; boundedCountInput = new long[")
+					.append(a == null ? 0 : a.outputs.length)
+					.append("]; }\n");
 		}
 
 		private void emitBoundedCountUpdate(StringBuilder source, Aggregate aggregate, String weight) {
-			if (!kernel.boundedGroups) return;
+			if (!kernel.boundedGroups)
+				return;
 			if (aggregate.groupCols.length == 1 && aggregate.outputs.length == 1
 					&& aggregate.outputs[0].kind != LmdbNativeKernelIr.AGG_COUNT_DISTINCT) {
 				source.append("        if (groupSink != null) { groupSink.addSingleCount(v")
-						.append(aggregate.groupCols[0]).append(", ")
-						.append(aggregate.outputs[0].kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? "0L" : "v" + aggregate.outputs[0].col)
-						.append(", ").append(weight).append("); return; }\n");
+						.append(aggregate.groupCols[0])
+						.append(", ")
+						.append(aggregate.outputs[0].kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? "0L"
+								: "v" + aggregate.outputs[0].col)
+						.append(", ")
+						.append(weight)
+						.append("); return; }\n");
 				return;
 			}
 			source.append("        if (groupSink != null) {\n");
-			for (int i = 0; i < aggregate.groupCols.length; i++) source.append("            boundedGroupInput[").append(i)
-					.append("] = v").append(aggregate.groupCols[i]).append(";\n");
-			for (int i = 0; i < aggregate.outputs.length; i++) source.append("            boundedCountInput[").append(i)
-					.append("] = ").append(aggregate.outputs[i].kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? "0L" : "v" + aggregate.outputs[i].col).append(";\n");
-			source.append("            groupSink.add(boundedGroupInput, boundedCountInput, ").append(weight).append("); return;\n        }\n");
+			for (int i = 0; i < aggregate.groupCols.length; i++)
+				source.append("            boundedGroupInput[")
+						.append(i)
+						.append("] = v")
+						.append(aggregate.groupCols[i])
+						.append(";\n");
+			for (int i = 0; i < aggregate.outputs.length; i++)
+				source.append("            boundedCountInput[")
+						.append(i)
+						.append("] = ")
+						.append(aggregate.outputs[i].kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? "0L"
+								: "v" + aggregate.outputs[i].col)
+						.append(";\n");
+			source.append("            groupSink.add(boundedGroupInput, boundedCountInput, ")
+					.append(weight)
+					.append("); return;\n        }\n");
 		}
 
 		private void emitBind(StringBuilder source) {
 			source.append("    public void bind(KernelContext context) {\n");
 			source.append("        cancel = context.cancellation;\n");
-			if (kernel.boundedGroups) emitBoundedGroupBind(source);
+			if (kernel.boundedGroups)
+				emitBoundedGroupBind(source);
 			if (kernel.boundedOrder) {
 				OutputMods mods = kernel.terminal.mods;
-				String keys = "new int[]{" + java.util.Arrays.stream(mods.orderKeys).mapToObj(Integer::toString).collect(java.util.stream.Collectors.joining(",")) + "}";
-				String desc = mods.descending == null ? "null" : "new boolean[]{" + java.util.stream.IntStream.range(0, mods.descending.length).mapToObj(i -> Boolean.toString(mods.descending[i])).collect(java.util.stream.Collectors.joining(",")) + "}";
+				String keys = "new int[]{" + java.util.Arrays.stream(mods.orderKeys)
+						.mapToObj(Integer::toString)
+						.collect(java.util.stream.Collectors.joining(",")) + "}";
+				String desc = mods.descending == null ? "null"
+						: "new boolean[]{" + java.util.stream.IntStream.range(0, mods.descending.length)
+								.mapToObj(i -> Boolean.toString(mods.descending[i]))
+								.collect(java.util.stream.Collectors.joining(",")) + "}";
 				source.append("        orderedRows = new org.eclipse.rdf4j.sail.lmdb.evaluation.KernelOrderSink(")
-						.append(stride).append(", ").append(keys).append(", ").append(desc).append(", ")
-						.append(mods.valueOrder ? "context.hooks" : "null").append(", cancel, ")
-						.append(mods.offset).append("L, ").append(mods.limit).append("L);\n");
+						.append(stride)
+						.append(", ")
+						.append(keys)
+						.append(", ")
+						.append(desc)
+						.append(", ")
+						.append(mods.valueOrder ? "context.hooks" : "null")
+						.append(", cancel, ")
+						.append(mods.offset)
+						.append("L, ")
+						.append(mods.limit)
+						.append("L);\n");
 			}
 
 			if (telemetryEnabled()) {
@@ -1448,7 +1531,8 @@ final class LmdbNativeKernelEmitter {
 			for (int i = 0; i < kernel.requirements.plans; i++) {
 				source.append("        p").append(i).append(" = context.plans[").append(i).append("];\n");
 			}
-			if (kernel.boundedGroups) source.append("        if (groupSink == null) {\n");
+			if (kernel.boundedGroups)
+				source.append("        if (groupSink == null) {\n");
 			if (isDistinct()) {
 				Emit emit = (Emit) kernel.terminal;
 				int residual = emit.cols.length - emit.alignedCount;
@@ -1548,7 +1632,8 @@ final class LmdbNativeKernelEmitter {
 					}
 				}
 			}
-			if (kernel.boundedGroups) source.append("        }\n");
+			if (kernel.boundedGroups)
+				source.append("        }\n");
 			source.append("    }\n\n");
 		}
 
@@ -1652,30 +1737,44 @@ final class LmdbNativeKernelEmitter {
 			}
 			source.append("        } catch (RuntimeException failure) { closeFailure = failure; }\n")
 					.append("        catch (Error failure) { closeFailure = failure; }\n");
-			if (kernel.boundedOrder) emitCloseResource(source, "orderedRows");
-			if (kernel.boundedGroups) emitCloseResource(source, "groupSink");
-			for (int i = 0; i < kernel.requirements.scans; i++) emitCloseResource(source, "sc" + i);
-            for (int i = 0; i < expansionCursorTypes.size(); i++) emitCloseResource(source, "xc" + i);
+			if (kernel.boundedOrder)
+				emitCloseResource(source, "orderedRows");
+			if (kernel.boundedGroups)
+				emitCloseResource(source, "groupSink");
+			for (int i = 0; i < kernel.requirements.scans; i++)
+				emitCloseResource(source, "sc" + i);
+			for (int i = 0; i < expansionCursorTypes.size(); i++)
+				emitCloseResource(source, "xc" + i);
 			for (int i = 0; i < nextBoundRunCursorId; i++) {
 				emitCloseResource(source, "ar" + i);
-				if (flatRootExistsShape != null) emitCloseResource(source, "dr" + i);
+				if (flatRootExistsShape != null)
+					emitCloseResource(source, "dr" + i);
 			}
-			for (int i = 0; i < nextKeyRunCursorId; i++) emitCloseResource(source, "ak" + i);
+			for (int i = 0; i < nextKeyRunCursorId; i++)
+				emitCloseResource(source, "ak" + i);
 			for (int i = 0; i < sipBatchProbeSites.size(); i++) {
-				emitCloseResource(source, "sipC" + i); emitCloseResource(source, "sipDR" + i);
+				emitCloseResource(source, "sipC" + i);
+				emitCloseResource(source, "sipDR" + i);
 			}
-			if (kernel.resumable) for (int i = 0; i < nextPredicateEnumId; i++) emitCloseResource(source, "epC" + i);
+			if (kernel.resumable)
+				for (int i = 0; i < nextPredicateEnumId; i++)
+					emitCloseResource(source, "epC" + i);
 			PlanFactors factors = LmdbNativeKernelIr.factorPlan(kernel);
-			if (factors != null) emitCloseResource(source, "fc" + factors.plan);
+			if (factors != null)
+				emitCloseResource(source, "fc" + factors.plan);
 			for (int i = 0; i < kernel.requirements.plans; i++) {
-				emitCloseResource(source, "pc" + i); emitCloseResource(source, "p" + i);
+				emitCloseResource(source, "pc" + i);
+				emitCloseResource(source, "p" + i);
 			}
 			source.append("        KernelRuntime.rethrowCloseFailure(closeFailure);\n    }\n\n");
 		}
 
 		private static void emitCloseResource(StringBuilder source, String field) {
-			source.append("        closeFailure = KernelRuntime.closeResource(").append(field)
-					.append(", closeFailure); ").append(field).append(" = null;\n");
+			source.append("        closeFailure = KernelRuntime.closeResource(")
+					.append(field)
+					.append(", closeFailure); ")
+					.append(field)
+					.append(" = null;\n");
 		}
 
 		private void emitFill(StringBuilder source) {
@@ -1687,7 +1786,14 @@ final class LmdbNativeKernelEmitter {
 					.append("    }\n\n");
 			if (flatRootExistsShape != null) {
 				source.append("    private int fillOpen(long[] rowBuffer, int maxRows) {\n")
-					.append(kernel.boundedGroups ? "        if (groupSink != null) { if (closed || maxRows <= 0) return 0; if ((long)maxRows * " + stride + " > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\"); " + (kernel.terminal.mods.limit == 0 ? "return 0;" : "if (!ran) { ran = true; run(); flush(); } return groupSink.fill(rowBuffer, maxRows);") + " }\n" : "")
+						.append(kernel.boundedGroups
+								? "        if (groupSink != null) { if (closed || maxRows <= 0) return 0; if ((long)maxRows * "
+										+ stride
+										+ " > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\"); "
+										+ (kernel.terminal.mods.limit == 0 ? "return 0;"
+												: "if (!ran) { ran = true; run(); flush(); } return groupSink.fill(rowBuffer, maxRows);")
+										+ " }\n"
+								: "")
 						.append("        if (flatReturned || maxRows <= 0) {\n")
 						.append("            return 0;\n")
 						.append("        }\n")
@@ -1705,11 +1811,20 @@ final class LmdbNativeKernelEmitter {
 				// Streaming: run the pipeline directly into the caller's buffer, pausing when it fills. The pipeline
 				// resumes from its saved counters on the next call, so no row is ever produced twice or skipped.
 				source.append("    private int fillOpen(long[] rowBuffer, int maxRows) {\n")
-					.append(kernel.boundedGroups ? "        if (groupSink != null) { if (closed || maxRows <= 0) return 0; if ((long)maxRows * " + stride + " > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\"); " + (kernel.terminal.mods.limit == 0 ? "return 0;" : "if (!ran) { ran = true; run(); flush(); } return groupSink.fill(rowBuffer, maxRows);") + " }\n" : "")
+						.append(kernel.boundedGroups
+								? "        if (groupSink != null) { if (closed || maxRows <= 0) return 0; if ((long)maxRows * "
+										+ stride
+										+ " > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\"); "
+										+ (kernel.terminal.mods.limit == 0 ? "return 0;"
+												: "if (!ran) { ran = true; run(); flush(); } return groupSink.fill(rowBuffer, maxRows);")
+										+ " }\n"
+								: "")
 						.append("        if (done || maxRows <= 0) {\n")
 						.append("            return 0;\n")
 						.append("        }\n")
-						.append("        if ((long)maxRows * ").append(stride).append(" > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\");\n")
+						.append("        if ((long)maxRows * ")
+						.append(stride)
+						.append(" > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\");\n")
 						.append(kernel.terminal.mods.limit == 0 ? "        done = true; if (done) return 0;\n" : "")
 						.append("        sink = rowBuffer;\n")
 						.append("        cap = maxRows;\n")
@@ -1725,15 +1840,32 @@ final class LmdbNativeKernelEmitter {
 			}
 			if (kernel.boundedOrder) {
 				source.append("    private int fillOpen(long[] rowBuffer, int maxRows) {\n")
-					.append(kernel.boundedGroups ? "        if (groupSink != null) { if (closed || maxRows <= 0) return 0; if ((long)maxRows * " + stride + " > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\"); " + (kernel.terminal.mods.limit == 0 ? "return 0;" : "if (!ran) { ran = true; run(); flush(); } return groupSink.fill(rowBuffer, maxRows);") + " }\n" : "")
+						.append(kernel.boundedGroups
+								? "        if (groupSink != null) { if (closed || maxRows <= 0) return 0; if ((long)maxRows * "
+										+ stride
+										+ " > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\"); "
+										+ (kernel.terminal.mods.limit == 0 ? "return 0;"
+												: "if (!ran) { ran = true; run(); flush(); } return groupSink.fill(rowBuffer, maxRows);")
+										+ " }\n"
+								: "")
 						.append("        if (closed || maxRows <= 0) return 0;\n")
-						.append("        if ((long)maxRows * ").append(stride).append(" > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\");\n")
-						.append(kernel.terminal.mods.limit == 0 ? "        return 0;\n" : "        if (!ran) { ran = true; run(); flush(); }\n        return orderedRows.fill(rowBuffer, maxRows);\n")
+						.append("        if ((long)maxRows * ")
+						.append(stride)
+						.append(" > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\");\n")
+						.append(kernel.terminal.mods.limit == 0 ? "        return 0;\n"
+								: "        if (!ran) { ran = true; run(); flush(); }\n        return orderedRows.fill(rowBuffer, maxRows);\n")
 						.append("    }\n\n");
 				return;
 			}
 			source.append("    private int fillOpen(long[] rowBuffer, int maxRows) {\n")
-					.append(kernel.boundedGroups ? "        if (groupSink != null) { if (closed || maxRows <= 0) return 0; if ((long)maxRows * " + stride + " > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\"); " + (kernel.terminal.mods.limit == 0 ? "return 0;" : "if (!ran) { ran = true; run(); flush(); } return groupSink.fill(rowBuffer, maxRows);") + " }\n" : "")
+					.append(kernel.boundedGroups
+							? "        if (groupSink != null) { if (closed || maxRows <= 0) return 0; if ((long)maxRows * "
+									+ stride
+									+ " > rowBuffer.length) throw new IllegalArgumentException(\"row buffer too small\"); "
+									+ (kernel.terminal.mods.limit == 0 ? "return 0;"
+											: "if (!ran) { ran = true; run(); flush(); } return groupSink.fill(rowBuffer, maxRows);")
+									+ " }\n"
+							: "")
 					.append("        if (!ran) {\n")
 					.append("            ran = true;\n")
 					.append("            run();\n")
@@ -1756,7 +1888,8 @@ final class LmdbNativeKernelEmitter {
 
 		private void emitFlush(StringBuilder source) {
 			source.append("    private void flush() {\n");
-			if (kernel.boundedGroups) source.append("        if (groupSink != null) { groupSink.finish(); return; }\n");
+			if (kernel.boundedGroups)
+				source.append("        if (groupSink != null) { groupSink.finish(); return; }\n");
 			if (kernel.terminal instanceof Aggregate) {
 				Aggregate aggregate = (Aggregate) kernel.terminal;
 				if (streamingGroups()) {
@@ -1871,11 +2004,13 @@ final class LmdbNativeKernelEmitter {
 					emitDistinctGuard(source, emit);
 				}
 				if (emit.mods.offset > 0) {
-					source.append("        if (streamSkipped < ").append(emit.mods.offset)
+					source.append("        if (streamSkipped < ")
+							.append(emit.mods.offset)
 							.append("L) { streamSkipped++; return; }\n");
 				}
 				if (emit.mods.limit >= 0) {
-					source.append("        if (streamReturned >= ").append(emit.mods.limit)
+					source.append("        if (streamReturned >= ")
+							.append(emit.mods.limit)
 							.append("L) { done = full = true; return; }\n");
 				}
 				source.append("        int base = sinkRows * ").append(stride).append(";\n");
@@ -1883,7 +2018,8 @@ final class LmdbNativeKernelEmitter {
 					source.append("        sink[base + ").append(i).append("] = v").append(emit.cols[i]).append(";\n");
 				}
 				if (emit.mods.limit >= 0) {
-					source.append("        if (++streamReturned >= ").append(emit.mods.limit)
+					source.append("        if (++streamReturned >= ")
+							.append(emit.mods.limit)
 							.append("L) { done = full = true; }\n");
 				}
 				source.append("        sinkRows++;\n")
@@ -1899,7 +2035,8 @@ final class LmdbNativeKernelEmitter {
 				for (int i = 0; i < emit.cols.length; i++) {
 					source.append("        rowScratch[").append(i).append("] = v").append(emit.cols[i]).append(";\n");
 				}
-				if (kernel.boundedGroups) source.append("        if (groupSink != null) { groupSink.addDistinct(rowScratch); return; }\n");
+				if (kernel.boundedGroups)
+					source.append("        if (groupSink != null) { groupSink.addDistinct(rowScratch); return; }\n");
 				if (emit.distinct) {
 					emitDistinctGuard(source, emit);
 				}
@@ -2037,52 +2174,81 @@ final class LmdbNativeKernelEmitter {
 			int[][] projections = spec.layout.columns();
 			boolean[] exact = spec.layout.exactWeights();
 			StringBuilder body = new StringBuilder("    private void runMarginals() {\n");
-			if (spec.weightedNumeric) body.append("        if (!hooks.supportsWeightedNumericAggregates()) { ")
-					.append(fallback).append("(); return; }\n");
+			if (spec.weightedNumeric)
+				body.append("        if (!hooks.supportsWeightedNumericAggregates()) { ")
+						.append(fallback)
+						.append("(); return; }\n");
 			emitPlanInputs(body, "        ", plan);
 			body.append("        org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor m = ")
 					.append("org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor.open(p")
-					.append(plan.plan).append(", ").append(plan.outCols.length).append(", new int[][] {");
+					.append(plan.plan)
+					.append(", ")
+					.append(plan.outCols.length)
+					.append(", new int[][] {");
 			for (int[] projection : projections) {
-				body.append("new int[] {"); for (int c : projection) body.append(c).append(','); body.append("},");
+				body.append("new int[] {");
+				for (int c : projection)
+					body.append(c).append(',');
+				body.append("},");
 			}
-			body.append("}, new boolean[] {"); for (boolean e : exact) body.append(e).append(',');
+			body.append("}, new boolean[] {");
+			for (boolean e : exact)
+				body.append(e).append(',');
 			body.append("}, cancel);\n        Throwable failure = null;\n        try {\n");
 			boolean countPartitions = LmdbNativeKernelIr.permitsPrefixPartitions(aggregate);
-			if (countPartitions) body.append("            m.permitPrefixPartitions();\n");
+			if (countPartitions)
+				body.append("            m.permitPrefixPartitions();\n");
 			body.append("            while (m.nextBatch()) {\n");
 			int[] allChannels = new int[aggregate.outputs.length];
-			for (int i = 0; i < allChannels.length; i++) allChannels[i] = i;
+			for (int i = 0; i < allChannels.length; i++)
+				allChannels[i] = i;
 			int flatMethod = projections.length;
 			emitMarginalUpdate(aggregate, flatMethod, allChannels);
 			body.append("                int flatCount = m.flatRowCount();\n                if (flatCount != 0) {\n")
 					.append("                    long[] flatValues = m.flatValues(), flatWeights = m.flatWeights();\n")
 					.append("                    for (int row = 0; row < flatCount; row++) {\n")
-					.append("                        int base = row * ").append(plan.outCols.length).append(";\n");
+					.append("                        int base = row * ")
+					.append(plan.outCols.length)
+					.append(";\n");
 			long demanded = 0L;
-			for (int[] projection : projections) for (int c : projection) demanded |= 1L << c;
+			for (int[] projection : projections)
+				for (int c : projection)
+					demanded |= 1L << c;
 			for (long rest = demanded; rest != 0L; rest &= rest - 1L) {
 				int c = Long.numberOfTrailingZeros(rest);
-				body.append("                        v").append(plan.outCols[c]).append(" = flatValues[base + ").append(c).append("];\n");
+				body.append("                        v")
+						.append(plan.outCols[c])
+						.append(" = flatValues[base + ")
+						.append(c)
+						.append("];\n");
 			}
-			body.append("                        updateMarginal").append(flatMethod).append("(flatWeights[row]);\n")
+			body.append("                        updateMarginal")
+					.append(flatMethod)
+					.append("(flatWeights[row]);\n")
 					.append("                    }\n                    m.finishFlat();\n                    continue;\n                }\n");
 			long groupColumns = 0L;
 			for (int c = 0; c < plan.outCols.length; c++)
-				for (int group : aggregate.groupCols) if (plan.outCols[c] == group) groupColumns |= 1L << c;
-			body.append("                boolean constantGroups = (m.constantColumns() & ").append(groupColumns)
-					.append("L) == ").append(groupColumns).append("L;\n");
+				for (int group : aggregate.groupCols)
+					if (plan.outCols[c] == group)
+						groupColumns |= 1L << c;
+			body.append("                boolean constantGroups = (m.constantColumns() & ")
+					.append(groupColumns)
+					.append("L) == ")
+					.append(groupColumns)
+					.append("L;\n");
 			for (int request = 0; request < projections.length; request++) {
 				body.append("                runMarginal").append(request).append("(m, constantGroups);\n");
 				emitMarginalTraversal(spec, aggregate, request, groupColumns);
 				emitMarginalUpdate(aggregate, request, spec.layout.channels(request));
 			}
 			emitMarginalGroupResolver(aggregate);
-			body.append("            }\n        } catch (RuntimeException problem) { failure = problem; throw problem; }\n")
+			body.append(
+					"            }\n        } catch (RuntimeException problem) { failure = problem; throw problem; }\n")
 					.append("        catch (Error problem) { failure = problem; throw problem; }\n        finally {\n")
 					.append("            Throwable closing = KernelRuntime.closeResource(m, failure);\n");
 			emitPlanRestore(body, "            ", plan);
-			body.append("            if (failure == null) KernelRuntime.rethrowCloseFailure(closing);\n        }\n    }\n\n");
+			body.append(
+					"            if (failure == null) KernelRuntime.rethrowCloseFailure(closing);\n        }\n    }\n\n");
 			methods.add(body.toString());
 			return "runMarginals";
 		}
@@ -2104,38 +2270,67 @@ final class LmdbNativeKernelEmitter {
 				observed = "(" + String.join(" || ", terms) + ")";
 			}
 			int argument = -1;
-			for (int column : projected) if ((groupColumns & (1L << column)) == 0L) {
-				if (argument != -1) { argument = -1; break; }
-				argument = column;
-			}
+			for (int column : projected)
+				if ((groupColumns & (1L << column)) == 0L) {
+					if (argument != -1) {
+						argument = -1;
+						break;
+					}
+					argument = column;
+				}
 			StringBuilder code = new StringBuilder("    private void runMarginal" + request
 					+ "(org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelMarginalCursor m, boolean constantGroups) {\n"
 					+ "        int group = -1;\n");
 			if (argument >= 0) {
-				code.append("        if (m.windowColumn(").append(request).append(") == ").append(argument).append(") {\n")
+				code.append("        if (m.windowColumn(")
+						.append(request)
+						.append(") == ")
+						.append(argument)
+						.append(") {\n")
 						.append("            long scale = 0L;\n            int size;\n            while ((size = m.nextWindow(")
-						.append(request).append(")) != 0) {\n")
+						.append(request)
+						.append(")) != 0) {\n")
 						.append("                long[] ids = m.windowValues(), weights = m.windowWeights();\n")
 						.append("                int start = m.windowStart(), end = start + size;\n");
-				code.append("                if (m.windowPrefixChanged()) {\n                    group = -1; scale = 0L;\n");
-				for (int column : projected) if (column != argument) code.append("                    v")
-						.append(plan.outCols[column]).append(" = m.value(").append(column).append(");\n");
+				code.append(
+						"                if (m.windowPrefixChanged()) {\n                    group = -1; scale = 0L;\n");
+				for (int column : projected)
+					if (column != argument)
+						code.append("                    v")
+								.append(plan.outCols[column])
+								.append(" = m.value(")
+								.append(column)
+								.append(");\n");
 				code.append("                }\n");
 				// Other requested bindings are invariant only within the current window prefix.
 				code.append("                if (group < 0) group = marginalGroup();\n")
 						.append("                for (int position = start; position < end; position++) {\n")
-						.append("                    v").append(plan.outCols[argument]).append(" = ids[position];\n");
-				if (exact) code.append("                    long weight = 1L;\n                    if (").append(observed).append(") {\n")
-						.append("                        if (scale == 0L) scale = m.windowScale();\n")
-						.append("                        weight = Math.multiplyExact(scale, weights[position]);\n                    }\n");
-				code.append("                    updateMarginal").append(request).append("(").append(exact ? "weight" : "1L")
+						.append("                    v")
+						.append(plan.outCols[argument])
+						.append(" = ids[position];\n");
+				if (exact)
+					code.append("                    long weight = 1L;\n                    if (")
+							.append(observed)
+							.append(") {\n")
+							.append("                        if (scale == 0L) scale = m.windowScale();\n")
+							.append("                        weight = Math.multiplyExact(scale, weights[position]);\n                    }\n");
+				code.append("                    updateMarginal")
+						.append(request)
+						.append("(")
+						.append(exact ? "weight" : "1L")
 						.append(", group);\n                }\n            }\n            return;\n        }\n");
 			}
 			code.append("        while (m.next(").append(request).append(")) {\n");
-			for (int column : projected) code.append("            v").append(plan.outCols[column])
-					.append(" = m.value(").append(column).append(");\n");
+			for (int column : projected)
+				code.append("            v")
+						.append(plan.outCols[column])
+						.append(" = m.value(")
+						.append(column)
+						.append(");\n");
 			code.append("            if (group < 0 || !constantGroups) group = marginalGroup();\n")
-					.append("            updateMarginal").append(request).append("(")
+					.append("            updateMarginal")
+					.append(request)
+					.append("(")
 					.append(exact ? observed + " ? m.multiplicity() : 1L" : "1L")
 					.append(", group);\n        }\n    }\n\n");
 			methods.add(code.toString());
@@ -2143,13 +2338,21 @@ final class LmdbNativeKernelEmitter {
 
 		private void emitMarginalGroupResolver(Aggregate aggregate) {
 			StringBuilder code = new StringBuilder("    private int marginalGroup() {\n");
-			if (kernel.boundedGroups) code.append("        if (groupSink != null) return -1;\n");
-			if (aggregate.groupCols.length == 0) code.append("        int g = 0;\n");
-			else if (aggregate.groupCols.length == 1) code.append("        int g = groups.getOrInsert(v")
-					.append(aggregate.groupCols[0]).append(");\n");
+			if (kernel.boundedGroups)
+				code.append("        if (groupSink != null) return -1;\n");
+			if (aggregate.groupCols.length == 0)
+				code.append("        int g = 0;\n");
+			else if (aggregate.groupCols.length == 1)
+				code.append("        int g = groups.getOrInsert(v")
+						.append(aggregate.groupCols[0])
+						.append(");\n");
 			else {
-				for (int i = 0; i < aggregate.groupCols.length; i++) code.append("        groupScratch[").append(i)
-						.append("] = v").append(aggregate.groupCols[i]).append(";\n");
+				for (int i = 0; i < aggregate.groupCols.length; i++)
+					code.append("        groupScratch[")
+							.append(i)
+							.append("] = v")
+							.append(aggregate.groupCols[i])
+							.append(";\n");
 				code.append("        int g = groupKeys.internOrGet(groupScratch, 0);\n");
 			}
 			code.append("        ensure(g);\n        return g;\n    }\n\n");
@@ -2162,12 +2365,22 @@ final class LmdbNativeKernelEmitter {
 					+ "    private void updateMarginal" + request + "(long n, int g) {\n");
 			if (kernel.boundedGroups) {
 				source.append("        if (groupSink != null) {\n");
-				for (int i = 0; i < aggregate.groupCols.length; i++) source.append("            boundedGroupInput[").append(i)
-						.append("] = v").append(aggregate.groupCols[i]).append(";\n");
-				if (channels.length == 0) source.append("            groupSink.addChannel(boundedGroupInput, -1, -1L, 1L);\n");
-				for (int channel : channels) source.append("            groupSink.addChannel(boundedGroupInput, ")
-						.append(channel).append(", ").append(aggregate.outputs[channel].kind == LmdbNativeKernelIr.AGG_COUNT_STAR
-								? "0L" : "v" + aggregate.outputs[channel].col).append(", n);\n");
+				for (int i = 0; i < aggregate.groupCols.length; i++)
+					source.append("            boundedGroupInput[")
+							.append(i)
+							.append("] = v")
+							.append(aggregate.groupCols[i])
+							.append(";\n");
+				if (channels.length == 0)
+					source.append("            groupSink.addChannel(boundedGroupInput, -1, -1L, 1L);\n");
+				for (int channel : channels)
+					source.append("            groupSink.addChannel(boundedGroupInput, ")
+							.append(channel)
+							.append(", ")
+							.append(aggregate.outputs[channel].kind == LmdbNativeKernelIr.AGG_COUNT_STAR
+									? "0L"
+									: "v" + aggregate.outputs[channel].col)
+							.append(", n);\n");
 				source.append("            return;\n        }\n");
 			}
 			source.append("        if (g < 0) g = marginalGroup();\n");
@@ -2176,27 +2389,74 @@ final class LmdbNativeKernelEmitter {
 				String value = "v" + output.col;
 				switch (output.kind) {
 				case LmdbNativeKernelIr.AGG_COUNT_STAR:
-					source.append("        agC").append(i).append("[g] = Math.addExact(agC").append(i).append("[g], n);\n"); break;
+					source.append("        agC")
+							.append(i)
+							.append("[g] = Math.addExact(agC")
+							.append(i)
+							.append("[g], n);\n");
+					break;
 				case LmdbNativeKernelIr.AGG_COUNT:
-					source.append("        if (").append(value).append(" != -1L) agC").append(i)
-							.append("[g] = Math.addExact(agC").append(i).append("[g], n);\n"); break;
+					source.append("        if (")
+							.append(value)
+							.append(" != -1L) agC")
+							.append(i)
+							.append("[g] = Math.addExact(agC")
+							.append(i)
+							.append("[g], n);\n");
+					break;
 				case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
-					emitCountDistinctUpdate(source, output, i, value); break;
-				case LmdbNativeKernelIr.AGG_SUM: case LmdbNativeKernelIr.AGG_AVG:
-					source.append("        if (").append(value).append(" != -1L) hooks.accumulateNumericWeighted(")
-							.append(i).append(", g, ").append(value).append(", n);\n"); break;
-				case LmdbNativeKernelIr.AGG_SUM_DISTINCT: case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
-					source.append("        if (").append(value).append(" != -1L && agD").append(i).append("[g].add(")
-							.append(value).append(")) hooks.accumulateNumeric(").append(i).append(", g, ").append(value).append(");\n"); break;
-				case LmdbNativeKernelIr.AGG_MIN_ID: case LmdbNativeKernelIr.AGG_MAX_ID:
-					source.append("        if (").append(value).append(" != -1L && (!agB").append(i)
-							.append("[g] || hooks.replacesWinner(").append(value).append(", agW").append(i).append("[g], ")
-							.append(output.kind == LmdbNativeKernelIr.AGG_MIN_ID).append("))) { agW").append(i).append("[g] = ")
-							.append(value).append("; agB").append(i).append("[g] = true; }\n"); break;
-				default: throw new IllegalStateException("unsupported marginal aggregate");
+					emitCountDistinctUpdate(source, output, i, value);
+					break;
+				case LmdbNativeKernelIr.AGG_SUM:
+				case LmdbNativeKernelIr.AGG_AVG:
+					source.append("        if (")
+							.append(value)
+							.append(" != -1L) hooks.accumulateNumericWeighted(")
+							.append(i)
+							.append(", g, ")
+							.append(value)
+							.append(", n);\n");
+					break;
+				case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
+				case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
+					source.append("        if (")
+							.append(value)
+							.append(" != -1L && agD")
+							.append(i)
+							.append("[g].add(")
+							.append(value)
+							.append(")) hooks.accumulateNumeric(")
+							.append(i)
+							.append(", g, ")
+							.append(value)
+							.append(");\n");
+					break;
+				case LmdbNativeKernelIr.AGG_MIN_ID:
+				case LmdbNativeKernelIr.AGG_MAX_ID:
+					source.append("        if (")
+							.append(value)
+							.append(" != -1L && (!agB")
+							.append(i)
+							.append("[g] || hooks.replacesWinner(")
+							.append(value)
+							.append(", agW")
+							.append(i)
+							.append("[g], ")
+							.append(output.kind == LmdbNativeKernelIr.AGG_MIN_ID)
+							.append("))) { agW")
+							.append(i)
+							.append("[g] = ")
+							.append(value)
+							.append("; agB")
+							.append(i)
+							.append("[g] = true; }\n");
+					break;
+				default:
+					throw new IllegalStateException("unsupported marginal aggregate");
 				}
 			}
-			source.append("    }\n\n"); methods.add(source.toString());
+			source.append("    }\n\n");
+			methods.add(source.toString());
 		}
 
 		private void emitAggregateSupport(StringBuilder source) {
@@ -2609,7 +2869,9 @@ final class LmdbNativeKernelEmitter {
 				String value = "v" + output.col;
 				switch (output.kind) {
 				case LmdbNativeKernelIr.AGG_COUNT_STAR:
-					source.append("        agC").append(i).append(weighted ? " = Math.addExact(agC" + i + ", n);\n" : "++;\n");
+					source.append("        agC")
+							.append(i)
+							.append(weighted ? " = Math.addExact(agC" + i + ", n);\n" : "++;\n");
 					break;
 				case LmdbNativeKernelIr.AGG_COUNT:
 					source.append("        if (")
@@ -3514,7 +3776,11 @@ final class LmdbNativeKernelEmitter {
 				String value = "v" + output.col;
 				switch (output.kind) {
 				case LmdbNativeKernelIr.AGG_COUNT_STAR:
-					source.append("        agC").append(i).append("[g] = Math.addExact(agC").append(i).append("[g], n);\n");
+					source.append("        agC")
+							.append(i)
+							.append("[g] = Math.addExact(agC")
+							.append(i)
+							.append("[g], n);\n");
 					break;
 				case LmdbNativeKernelIr.AGG_COUNT:
 					source.append("        if (")
@@ -3522,7 +3788,9 @@ final class LmdbNativeKernelEmitter {
 							.append(" != -1L) {\n")
 							.append("            agC")
 							.append(i)
-							.append("[g] = Math.addExact(agC").append(i).append("[g], n);\n")
+							.append("[g] = Math.addExact(agC")
+							.append(i)
+							.append("[g], n);\n")
 							.append("        }\n");
 					break;
 				default: // AGG_COUNT_DISTINCT over a column constant across the slice
@@ -4744,50 +5012,89 @@ final class LmdbNativeKernelEmitter {
 					.append(" = -1L;\n");
 		}
 
-        /** Concrete cursor type per site: source algorithms are shared, not a runtime opcode interpreter. */
-        private boolean emitExpansionCursor(StringBuilder body, Node node, String nextTemplate, int stateIndex) {
-            String type, arguments; int column;
-            if (node instanceof EnumerateTerms terms) {
-                type="Terms"; arguments="scanner, "+terms.scan+", cancel"; column=terms.col;
-            } else if (node instanceof EnumerateNodeDomainIntersection domain) {
-                type="Domains"; arguments="ndi"+domain.view+", cancel"; column=domain.col;
-            } else if (node instanceof PathExpand path) {
-                type="Path"; column=path.dstCol;
-                StringBuilder contexts=new StringBuilder("new long[]{");
-                for(int i=0;i<path.contexts.length;i++) contexts.append(i==0?"":", ").append(path.contexts[i].token());
-                contexts.append('}');
-                arguments="a"+path.adjacency+", "+path.source.token()+", "+path.minHops+", "+contexts+", cancel";
-            } else if (node instanceof Intersect intersection) {
-                type="Intersection"; column=intersection.valueCol;
-                StringBuilder views=new StringBuilder("new NativeLmdbQuerySource.NativeAdjacency[]{");
-                StringBuilder keys=new StringBuilder("new long[]{");
-                for(int i=0;i<intersection.adjacencies.length;i++) {
-                    views.append(i==0?"":", ").append("a").append(intersection.adjacencies[i]);
-                    keys.append(i==0?"":", ").append(intersection.keys[i].token());
-                }
-                arguments=views.append('}').toString()+", "+keys.append('}')+", cancel";
-            } else return false;
-            String cursor="xc"+expansionCursorTypes.size(); expansionCursorTypes.add(type);
-            String state="stA"+stateIndex;
-            body.append("        if (").append(cursor).append(" == null) {\n")
-                    .append("            ").append(cursor).append(" = new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.")
-                    .append(type).append('(').append(arguments).append(");\n")
-                    .append("            ").append(state).append(" = 0L;\n        }\n")
-                    .append("        while (true) {\n")
-                    .append("            if ((++pollTick & 1023) == 0) KernelRuntime.checkCancelled(cancel);\n")
-                    .append("            if (").append(state).append(" == 0L) {\n")
-                    .append("                if (!").append(cursor).append(".next()) break;\n")
-                    .append("                ").append(state).append(" = 1L;\n            }\n")
-                    .append("            v").append(column).append(" = ").append(cursor).append(".value();\n")
-                    .append(next(nextTemplate,"            "))
-                    .append("            if (full) {\n");
-            if(tailmostStateIds.get(stateIndex)) body.append("                ").append(state).append(" = 0L;\n");
-            body.append("                return;\n            }\n")
-                    .append("            ").append(state).append(" = 0L;\n        }\n")
-                    .append("        ").append(cursor).append(".close();\n        ").append(cursor).append(" = null;\n")
-                    .append("        ").append(state).append(" = -1L;\n");
-            return true;
-        }
+		/** Concrete cursor type per site: source algorithms are shared, not a runtime opcode interpreter. */
+		private boolean emitExpansionCursor(StringBuilder body, Node node, String nextTemplate, int stateIndex) {
+			String type, arguments;
+			int column;
+			if (node instanceof EnumerateTerms terms) {
+				type = "Terms";
+				arguments = "scanner, " + terms.scan + ", cancel";
+				column = terms.col;
+			} else if (node instanceof EnumerateNodeDomainIntersection domain) {
+				type = "Domains";
+				arguments = "ndi" + domain.view + ", cancel";
+				column = domain.col;
+			} else if (node instanceof PathExpand path) {
+				type = "Path";
+				column = path.dstCol;
+				StringBuilder contexts = new StringBuilder("new long[]{");
+				for (int i = 0; i < path.contexts.length; i++)
+					contexts.append(i == 0 ? "" : ", ").append(path.contexts[i].token());
+				contexts.append('}');
+				arguments = "a" + path.adjacency + ", " + path.source.token() + ", " + path.minHops + ", " + contexts
+						+ ", cancel";
+			} else if (node instanceof Intersect intersection) {
+				type = "Intersection";
+				column = intersection.valueCol;
+				StringBuilder views = new StringBuilder("new NativeLmdbQuerySource.NativeAdjacency[]{");
+				StringBuilder keys = new StringBuilder("new long[]{");
+				for (int i = 0; i < intersection.adjacencies.length; i++) {
+					views.append(i == 0 ? "" : ", ").append("a").append(intersection.adjacencies[i]);
+					keys.append(i == 0 ? "" : ", ").append(intersection.keys[i].token());
+				}
+				arguments = views.append('}').toString() + ", " + keys.append('}') + ", cancel";
+			} else
+				return false;
+			String cursor = "xc" + expansionCursorTypes.size();
+			expansionCursorTypes.add(type);
+			String state = "stA" + stateIndex;
+			body.append("        if (")
+					.append(cursor)
+					.append(" == null) {\n")
+					.append("            ")
+					.append(cursor)
+					.append(" = new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.")
+					.append(type)
+					.append('(')
+					.append(arguments)
+					.append(");\n")
+					.append("            ")
+					.append(state)
+					.append(" = 0L;\n        }\n")
+					.append("        while (true) {\n")
+					.append("            if ((++pollTick & 1023) == 0) KernelRuntime.checkCancelled(cancel);\n")
+					.append("            if (")
+					.append(state)
+					.append(" == 0L) {\n")
+					.append("                if (!")
+					.append(cursor)
+					.append(".next()) break;\n")
+					.append("                ")
+					.append(state)
+					.append(" = 1L;\n            }\n")
+					.append("            v")
+					.append(column)
+					.append(" = ")
+					.append(cursor)
+					.append(".value();\n")
+					.append(next(nextTemplate, "            "))
+					.append("            if (full) {\n");
+			if (tailmostStateIds.get(stateIndex))
+				body.append("                ").append(state).append(" = 0L;\n");
+			body.append("                return;\n            }\n")
+					.append("            ")
+					.append(state)
+					.append(" = 0L;\n        }\n")
+					.append("        ")
+					.append(cursor)
+					.append(".close();\n        ")
+					.append(cursor)
+					.append(" = null;\n")
+					.append("        ")
+					.append(state)
+					.append(" = -1L;\n");
+			return true;
+		}
 
 		private boolean emitResumableProducer(StringBuilder body, Node node, String nextTemplate, int stateIndex) {
 			String indent = "        ";
@@ -4796,32 +5103,87 @@ final class LmdbNativeKernelEmitter {
 			String c = "stC" + stateIndex;
 			String d = "stD" + stateIndex;
 			boolean tailmost = tailmostStateIds.get(stateIndex);
-            if (emitExpansionCursor(body, node, nextTemplate, stateIndex)) return true;
-            if (node instanceof ProbeVariable probe) {
-                String view="dy"+probe.view;
-                body.append(indent).append("if (").append(a).append(" < 0L) {\n")
-                        .append(indent).append("    long key = ").append(probe.key.token()).append(";\n")
-                        .append(indent).append("    long predicate = ").append(probe.predicate.token()).append(";\n")
-                        .append(indent).append("    ").append(c).append(" = key == -1L || predicate == -1L ? 0L : ")
-                        .append(view).append(".runFor(key, predicate);\n")
-                        .append(indent).append("    if (").append(c).append(" == NativeLmdbQuerySource.DynamicAdjacency.NOT_COVERED) ")
-                        .append("throw new IllegalStateException(\"dynamic adjacency refused a runtime predicate after kernel bind\");\n")
-                        .append(indent).append("    ").append(b).append(" = ").append(c).append(" > 0L ? ").append(view).append(".size(").append(c).append(") : 0L;\n")
-                        .append(indent).append("    ").append(a).append(" = 0L;\n").append(indent).append("}\n")
-                        .append(indent).append("long rh = ").append(c).append(";\n")
-                        .append(indent).append("for (; ").append(a).append(" < ").append(b).append("; ").append(a).append("++) {\n")
-                        .append(indent).append("    if ((++pollTick & 1023) == 0) KernelRuntime.checkCancelled(cancel);\n");
-                String inner=emitCtxEntry(body,indent+"    ",probe,view,a);
-                body.append(inner).append("v").append(probe.valueCol).append(" = ").append(view).append(".neighborAt(rh, ").append(a).append(");\n")
-                        .append(next(nextTemplate,inner));
-                closeCtxEntry(body,indent+"    ",probe);
-                emitPause(body,indent+"    ",a,tailmost);
-                body.append(indent).append("}\n").append(indent).append(a).append(" = -1L;\n");
-                return true;
-            }
-            if (LmdbNativeKernelIr.isSingleActivationNode(node)) {
-				body.append(indent).append("if (").append(a).append(" < 0L) {\n")
-						.append(indent).append("    ").append(a).append(" = 1L;\n");
+			if (emitExpansionCursor(body, node, nextTemplate, stateIndex))
+				return true;
+			if (node instanceof ProbeVariable probe) {
+				String view = "dy" + probe.view;
+				body.append(indent)
+						.append("if (")
+						.append(a)
+						.append(" < 0L) {\n")
+						.append(indent)
+						.append("    long key = ")
+						.append(probe.key.token())
+						.append(";\n")
+						.append(indent)
+						.append("    long predicate = ")
+						.append(probe.predicate.token())
+						.append(";\n")
+						.append(indent)
+						.append("    ")
+						.append(c)
+						.append(" = key == -1L || predicate == -1L ? 0L : ")
+						.append(view)
+						.append(".runFor(key, predicate);\n")
+						.append(indent)
+						.append("    if (")
+						.append(c)
+						.append(" == NativeLmdbQuerySource.DynamicAdjacency.NOT_COVERED) ")
+						.append("throw new IllegalStateException(\"dynamic adjacency refused a runtime predicate after kernel bind\");\n")
+						.append(indent)
+						.append("    ")
+						.append(b)
+						.append(" = ")
+						.append(c)
+						.append(" > 0L ? ")
+						.append(view)
+						.append(".size(")
+						.append(c)
+						.append(") : 0L;\n")
+						.append(indent)
+						.append("    ")
+						.append(a)
+						.append(" = 0L;\n")
+						.append(indent)
+						.append("}\n")
+						.append(indent)
+						.append("long rh = ")
+						.append(c)
+						.append(";\n")
+						.append(indent)
+						.append("for (; ")
+						.append(a)
+						.append(" < ")
+						.append(b)
+						.append("; ")
+						.append(a)
+						.append("++) {\n")
+						.append(indent)
+						.append("    if ((++pollTick & 1023) == 0) KernelRuntime.checkCancelled(cancel);\n");
+				String inner = emitCtxEntry(body, indent + "    ", probe, view, a);
+				body.append(inner)
+						.append("v")
+						.append(probe.valueCol)
+						.append(" = ")
+						.append(view)
+						.append(".neighborAt(rh, ")
+						.append(a)
+						.append(");\n")
+						.append(next(nextTemplate, inner));
+				closeCtxEntry(body, indent + "    ", probe);
+				emitPause(body, indent + "    ", a, tailmost);
+				body.append(indent).append("}\n").append(indent).append(a).append(" = -1L;\n");
+				return true;
+			}
+			if (LmdbNativeKernelIr.isSingleActivationNode(node)) {
+				body.append(indent)
+						.append("if (")
+						.append(a)
+						.append(" < 0L) {\n")
+						.append(indent)
+						.append("    ")
+						.append(a)
+						.append(" = 1L;\n");
 				// Delegate semantics to the existing emitter, but invoke them once per input activation.
 				emitNode(body, node, a + " = 0L;", false, -1);
 				body.append(indent).append("}\n").append(indent).append("if (").append(a).append(" == 0L) {\n");
@@ -4833,20 +5195,67 @@ final class LmdbNativeKernelEmitter {
 			if (node instanceof HashProbe probe) {
 				String table = "t" + probe.tableId;
 				body.append(indent).append("if (").append(a).append(" < 0L) {\n");
-				for (int i = 0; i < probe.keys.length; i++) body.append(indent).append("    tk")
-						.append(probe.tableId).append('[').append(i).append("] = ").append(probe.keys[i].token()).append(";\n");
-				body.append(indent).append("    ").append(a).append(" = (long)").append(table)
-						.append(".lookup(tk").append(probe.tableId).append(") + 1L;\n")
-						.append(indent).append("}\n").append(indent).append("while (").append(a).append(" > 0L) {\n")
-						.append(indent).append("    if ((++pollTick & 1023) == 0) KernelRuntime.checkCancelled(cancel);\n")
-						.append(indent).append("    int match = (int)(").append(a).append(" - 1L);\n");
-				for (int i = 0; i < probe.dstCols.length; i++) body.append(indent).append("    v").append(probe.dstCols[i])
-						.append(" = ").append(table).append(".payload(match, ").append(i).append(");\n");
+				for (int i = 0; i < probe.keys.length; i++)
+					body.append(indent)
+							.append("    tk")
+							.append(probe.tableId)
+							.append('[')
+							.append(i)
+							.append("] = ")
+							.append(probe.keys[i].token())
+							.append(";\n");
+				body.append(indent)
+						.append("    ")
+						.append(a)
+						.append(" = (long)")
+						.append(table)
+						.append(".lookup(tk")
+						.append(probe.tableId)
+						.append(") + 1L;\n")
+						.append(indent)
+						.append("}\n")
+						.append(indent)
+						.append("while (")
+						.append(a)
+						.append(" > 0L) {\n")
+						.append(indent)
+						.append("    if ((++pollTick & 1023) == 0) KernelRuntime.checkCancelled(cancel);\n")
+						.append(indent)
+						.append("    int match = (int)(")
+						.append(a)
+						.append(" - 1L);\n");
+				for (int i = 0; i < probe.dstCols.length; i++)
+					body.append(indent)
+							.append("    v")
+							.append(probe.dstCols[i])
+							.append(" = ")
+							.append(table)
+							.append(".payload(match, ")
+							.append(i)
+							.append(");\n");
 				body.append(next(nextTemplate, indent + "    ")).append(indent).append("    if (full) {\n");
-				if (tailmost) body.append(indent).append("        ").append(a).append(" = (long)").append(table).append(".next(match) + 1L;\n");
-				body.append(indent).append("        return;\n").append(indent).append("    }\n")
-						.append(indent).append("    ").append(a).append(" = (long)").append(table).append(".next(match) + 1L;\n")
-						.append(indent).append("}\n").append(indent).append(a).append(" = -1L;\n");
+				if (tailmost)
+					body.append(indent)
+							.append("        ")
+							.append(a)
+							.append(" = (long)")
+							.append(table)
+							.append(".next(match) + 1L;\n");
+				body.append(indent)
+						.append("        return;\n")
+						.append(indent)
+						.append("    }\n")
+						.append(indent)
+						.append("    ")
+						.append(a)
+						.append(" = (long)")
+						.append(table)
+						.append(".next(match) + 1L;\n")
+						.append(indent)
+						.append("}\n")
+						.append(indent)
+						.append(a)
+						.append(" = -1L;\n");
 				return true;
 			}
 			if (node instanceof SipDomainProbe probe) {
@@ -4910,13 +5319,14 @@ final class LmdbNativeKernelEmitter {
 				emitPause(body, indent + "        ", a, tailmost);
 				body.append(indent).append("    }\n");
 				body.append(indent).append("    ").append(c).append(" = 1;\n");
-                body.append(indent).append("}\n");
-                body.append(indent).append("if (").append(c).append(" == 1) {\n");
-                body.append(indent).append("    if (!").append(matched).append(") {\n");
+				body.append(indent).append("}\n");
+				body.append(indent).append("if (").append(c).append(" == 1) {\n");
+				body.append(indent).append("    if (!").append(matched).append(") {\n");
 				body.append(indent).append("        v").append(probe.valueCol).append(" = -1L;\n");
 				body.append(next(nextTemplate, indent + "        "));
 				body.append(indent).append("        if (full) {\n");
-				if (tailmost) body.append(indent).append("            ").append(c).append(" = 2;\n");
+				if (tailmost)
+					body.append(indent).append("            ").append(c).append(" = 2;\n");
 				body.append(indent).append("            return;\n");
 				body.append(indent).append("        }\n");
 				body.append(indent).append("    }\n");
@@ -4934,42 +5344,99 @@ final class LmdbNativeKernelEmitter {
 				StringBuilder clear = new StringBuilder(), restore = new StringBuilder();
 				for (int i = 0; i < lexical.problemCols.length; i++) {
 					int col = lexical.problemCols[i];
-					if (i != 0) compatible.append(" && ");
-					compatible.append('(').append(prefix).append('s').append(i)
-							.append(" == -1L || v").append(col).append(" == -1L || v").append(col)
-							.append(" == ").append(prefix).append('s').append(i).append(')');
+					if (i != 0)
+						compatible.append(" && ");
+					compatible.append('(')
+							.append(prefix)
+							.append('s')
+							.append(i)
+							.append(" == -1L || v")
+							.append(col)
+							.append(" == -1L || v")
+							.append(col)
+							.append(" == ")
+							.append(prefix)
+							.append('s')
+							.append(i)
+							.append(')');
 					clear.append("v").append(col).append(" = -1L;\n%I%");
-					restore.append("v").append(col).append(" = ").append(prefix).append('s').append(i)
+					restore.append("v")
+							.append(col)
+							.append(" = ")
+							.append(prefix)
+							.append('s')
+							.append(i)
 							.append(";\n%I%");
 				}
 				String rightTerminal = prefix + "Exists = true;\n%I%if (" + compatible + ") {\n%I%"
 						+ restore + nextTemplate + "\n%I%}";
 				String rightFirst = emitPipeline(lexical.right, rightTerminal, false, !tailmost);
-				StringBuilder leftTerminal = new StringBuilder("if (").append(b).append(" < 0) { ")
-						.append(b).append(" = 0; ").append(prefix).append("Exists = false; }\n%I%")
-						.append(clear).append("if (").append(b).append(" == 0) {\n%I%    ")
-						.append(rightFirst).append("();\n%I%    if (full) { ");
-				if (tailmost && !hasResumableState(lexical.right)) leftTerminal.append(b).append(" = 1; ");
-				leftTerminal.append("return; }\n%I%    ").append(b).append(" = 1;\n%I%}\n%I%")
-						.append("if (").append(b).append(" == 1 && !").append(prefix).append("Exists) {\n%I%");
-				for (int col : lexical.resetColumns()) leftTerminal.append("v").append(col).append(" = -1L;\n%I%");
+				StringBuilder leftTerminal = new StringBuilder("if (").append(b)
+						.append(" < 0) { ")
+						.append(b)
+						.append(" = 0; ")
+						.append(prefix)
+						.append("Exists = false; }\n%I%")
+						.append(clear)
+						.append("if (")
+						.append(b)
+						.append(" == 0) {\n%I%    ")
+						.append(rightFirst)
+						.append("();\n%I%    if (full) { ");
+				if (tailmost && !hasResumableState(lexical.right))
+					leftTerminal.append(b).append(" = 1; ");
+				leftTerminal.append("return; }\n%I%    ")
+						.append(b)
+						.append(" = 1;\n%I%}\n%I%")
+						.append("if (")
+						.append(b)
+						.append(" == 1 && !")
+						.append(prefix)
+						.append("Exists) {\n%I%");
+				for (int col : lexical.resetColumns())
+					leftTerminal.append("v").append(col).append(" = -1L;\n%I%");
 				leftTerminal.append(restore).append(nextTemplate).append("\n%I%if (full) { ");
-				if (tailmost) leftTerminal.append(b).append(" = 2; ");
+				if (tailmost)
+					leftTerminal.append(b).append(" = 2; ");
 				leftTerminal.append("return; }\n%I%}\n%I%").append(b).append(" = -1;");
 				// The right activation, including a pending null extension, belongs to the current left mapping.
 				String leftFirst = emitPipeline(lexical.left, leftTerminal.toString(), false, true);
 				body.append(indent).append("if (").append(a).append(" < 0) {\n");
 				for (int i = 0; i < lexical.problemCols.length; i++) {
-					body.append(indent).append("    ").append(prefix).append('s').append(i)
-							.append(" = v").append(lexical.problemCols[i]).append(";\n");
+					body.append(indent)
+							.append("    ")
+							.append(prefix)
+							.append('s')
+							.append(i)
+							.append(" = v")
+							.append(lexical.problemCols[i])
+							.append(";\n");
 				}
-				body.append(indent).append("    ").append(a).append(" = 0; ").append(b).append(" = -1;\n")
-						.append(indent).append("}\n");
+				body.append(indent)
+						.append("    ")
+						.append(a)
+						.append(" = 0; ")
+						.append(b)
+						.append(" = -1;\n")
+						.append(indent)
+						.append("}\n");
 				body.append(next(clear.toString(), indent));
-				body.append(indent).append("try {\n").append(indent).append("    ").append(leftFirst).append("();\n")
-						.append(indent).append("    if (full) return;\n")
-						.append(indent).append("    ").append(a).append(" = -1; ").append(b).append(" = -1;\n")
-						.append(indent).append("} finally {\n");
+				body.append(indent)
+						.append("try {\n")
+						.append(indent)
+						.append("    ")
+						.append(leftFirst)
+						.append("();\n")
+						.append(indent)
+						.append("    if (full) return;\n")
+						.append(indent)
+						.append("    ")
+						.append(a)
+						.append(" = -1; ")
+						.append(b)
+						.append(" = -1;\n")
+						.append(indent)
+						.append("} finally {\n");
 				body.append(next(restore.toString(), indent + "    "));
 				body.append(indent).append("}\n");
 				return true;
@@ -5036,7 +5503,8 @@ final class LmdbNativeKernelEmitter {
 				}
 				body.append(next(nextTemplate, indent + "    "));
 				body.append(indent).append("    if (full) {\n");
-				if (tailmost) body.append(indent).append("        ").append(a).append(" = 2;\n");
+				if (tailmost)
+					body.append(indent).append("        ").append(a).append(" = 2;\n");
 				body.append(indent).append("        return;\n");
 				body.append(indent).append("    }\n");
 				body.append(indent).append("}\n");
@@ -5777,7 +6245,7 @@ final class LmdbNativeKernelEmitter {
 			}
 			if (LmdbNativeKernelIr.factorPlan(kernel) != null
 					|| LmdbNativeKernelIr.weightedPlanCount(kernel) || nodeDomainIntersectionBulkCount()
-                    || LmdbNativeKernelIr.intersectionCountTail(kernel)) {
+					|| LmdbNativeKernelIr.intersectionCountTail(kernel)) {
 				return true;
 			}
 			if (wildcardMultiplicityTail()) {
@@ -6762,7 +7230,6 @@ final class LmdbNativeKernelEmitter {
 			body.append(indent).append("}\n");
 		}
 
-
 		private String factorScalar(Operand operand) {
 			int position = kernel.factorCountGuards.position(operand);
 			return position < 0 ? operand.token() : "prefix[" + position + "]";
@@ -6777,14 +7244,17 @@ final class LmdbNativeKernelEmitter {
 			if (node instanceof FilterCompareId filter)
 				return factorScalar(filter.left) + (filter.negated ? " != " : " == ") + factorScalar(filter.right);
 			if (node instanceof FilterEntryCompatible filter)
-				return factorScalar(filter.value) + " == -1L || " + factorScalar(filter.value) + " == c" + filter.constant;
+				return factorScalar(filter.value) + " == -1L || " + factorScalar(filter.value) + " == c"
+						+ filter.constant;
 			if (node instanceof FilterRangeUnsigned filter)
 				return "Long.compareUnsigned(" + factorScalar(filter.value) + ", c" + filter.lowConstant
-						+ ") >= 0 && Long.compareUnsigned(" + factorScalar(filter.value) + ", c" + filter.highConstant + ") <= 0";
+						+ ") >= 0 && Long.compareUnsigned(" + factorScalar(filter.value) + ", c" + filter.highConstant
+						+ ") <= 0";
 			FilterInConstants filter = (FilterInConstants) node;
 			StringBuilder result = new StringBuilder();
 			for (int constant : filter.constantIndices) {
-				if (!result.isEmpty()) result.append(" || ");
+				if (!result.isEmpty())
+					result.append(" || ");
 				result.append(factorScalar(filter.value)).append(" == c").append(constant);
 			}
 			return result.toString();
@@ -6795,9 +7265,11 @@ final class LmdbNativeKernelEmitter {
 			LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
 			StringBuilder needed = new StringBuilder();
 			for (AggregateOutput output : aggregate.outputs) {
-				if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) return "true";
+				if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR)
+					return "true";
 				int index = java.util.Arrays.binarySearch(spec.terminalCols, output.col);
-				if (!needed.isEmpty()) needed.append(" || ");
+				if (!needed.isEmpty())
+					needed.append(" || ");
 				needed.append(factorScalar(spec.terminalValues[index])).append(" != -1L");
 			}
 			return needed.isEmpty() ? "false" : "(" + needed + ")";
@@ -6806,46 +7278,79 @@ final class LmdbNativeKernelEmitter {
 		/** Shape-specialized mask dispatch, once per bounded window rather than per binding. */
 		private void emitFactorPredicate(StringBuilder source) {
 			LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
-			source.append("    public int guardCount() { return ").append(spec.guards.length).append("; }\n")
+			source.append("    public int guardCount() { return ")
+					.append(spec.guards.length)
+					.append("; }\n")
 					.append("    public long dependencies(int guard) {\n        switch (guard) {\n");
-			for (int i = 0; i < spec.guards.length; i++) source.append("        case ").append(i)
-					.append(": return 0x").append(Long.toUnsignedString(spec.dependencies[i], 16)).append("L;\n");
-			source.append("        default: throw new IllegalArgumentException(\"unknown factor guard\");\n        }\n    }\n")
+			for (int i = 0; i < spec.guards.length; i++)
+				source.append("        case ")
+						.append(i)
+						.append(": return 0x")
+						.append(Long.toUnsignedString(spec.dependencies[i], 16))
+						.append("L;\n");
+			source.append(
+					"        default: throw new IllegalArgumentException(\"unknown factor guard\");\n        }\n    }\n")
 					.append("    public boolean test(int guard, long[] prefix) {\n        switch (guard) {\n");
-			for (int i = 0; i < spec.guards.length; i++) source.append("        case ").append(i)
-					.append(": return ").append(factorCondition(spec.guards[i])).append(";\n");
-			source.append("        default: throw new IllegalArgumentException(\"unknown factor guard\");\n        }\n    }\n")
+			for (int i = 0; i < spec.guards.length; i++)
+				source.append("        case ")
+						.append(i)
+						.append(": return ")
+						.append(factorCondition(spec.guards[i]))
+						.append(";\n");
+			source.append(
+					"        default: throw new IllegalArgumentException(\"unknown factor guard\");\n        }\n    }\n")
 					.append("    public void filter(int guard, long[][] columns, long[] prefix, long[] selected, int size) {\n")
 					.append("        switch (guard) {\n");
 			for (int i = 0; i < spec.guards.length; i++) {
 				source.append("        case ").append(i).append(": ");
 				Node node = spec.guards[i];
 				if (node instanceof FilterCompareId filter) {
-					source.append("KernelIdMasks.compare(").append(factorColumn(filter.left)).append(", ")
-							.append(factorScalar(filter.left)).append(", ").append(factorColumn(filter.right)).append(", ")
-							.append(factorScalar(filter.right)).append(", ").append(filter.negated);
+					source.append("KernelIdMasks.compare(")
+							.append(factorColumn(filter.left))
+							.append(", ")
+							.append(factorScalar(filter.left))
+							.append(", ")
+							.append(factorColumn(filter.right))
+							.append(", ")
+							.append(factorScalar(filter.right))
+							.append(", ")
+							.append(filter.negated);
 				} else if (node instanceof FilterEntryCompatible filter) {
-					source.append("KernelIdMasks.compatible(").append(factorColumn(filter.value)).append(", ")
-							.append(factorScalar(filter.value)).append(", c").append(filter.constant);
+					source.append("KernelIdMasks.compatible(")
+							.append(factorColumn(filter.value))
+							.append(", ")
+							.append(factorScalar(filter.value))
+							.append(", c")
+							.append(filter.constant);
 				} else if (node instanceof FilterRangeUnsigned filter) {
-					source.append("KernelIdMasks.range(").append(factorColumn(filter.value)).append(", ")
-							.append(factorScalar(filter.value)).append(", c").append(filter.lowConstant)
-							.append(", c").append(filter.highConstant);
+					source.append("KernelIdMasks.range(")
+							.append(factorColumn(filter.value))
+							.append(", ")
+							.append(factorScalar(filter.value))
+							.append(", c")
+							.append(filter.lowConstant)
+							.append(", c")
+							.append(filter.highConstant);
 				} else {
 					FilterInConstants filter = (FilterInConstants) node;
-					source.append("KernelIdMasks.in4(").append(factorColumn(filter.value)).append(", ").append(factorScalar(filter.value));
-					for (int k = 0; k < 4; k++) source.append(", c").append(filter.constantIndices[k < filter.constantIndices.length ? k : 0]);
+					source.append("KernelIdMasks.in4(")
+							.append(factorColumn(filter.value))
+							.append(", ")
+							.append(factorScalar(filter.value));
+					for (int k = 0; k < 4; k++)
+						source.append(", c").append(filter.constantIndices[k < filter.constantIndices.length ? k : 0]);
 				}
 				source.append(", selected, size); return;\n");
 			}
-			source.append("        default: throw new IllegalArgumentException(\"unknown factor guard\");\n        }\n    }\n");
+			source.append(
+					"        default: throw new IllegalArgumentException(\"unknown factor guard\");\n        }\n    }\n");
 		}
 
 		/**
-		 * Partially evaluate the guard graph, not the snapshot. At most four guards and two
-		 * dependent columns are fused per region; arbitrary grouping falls back to vector masks.
-		 * Single-guard regions plus equal-dependency regions and the complete graph cover common
-		 * independent unary and zipped-pair cases without enumerating the power set of guards.
+		 * Partially evaluate the guard graph, not the snapshot. At most four guards and two dependent columns are fused
+		 * per region; arbitrary grouping falls back to vector masks. Single-guard regions plus equal-dependency regions
+		 * and the complete graph cover common independent unary and zipped-pair cases without enumerating the power set
+		 * of guards.
 		 */
 		private void emitFusedFactorSums(StringBuilder source) {
 			LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
@@ -6854,19 +7359,22 @@ final class LmdbNativeKernelEmitter {
 			for (int i = 0; i < spec.guards.length; i++) {
 				long region = 0L;
 				for (int j = 0; j < spec.guards.length; j++)
-					if (spec.dependencies[i] == spec.dependencies[j]) region |= 1L << j;
+					if (spec.dependencies[i] == spec.dependencies[j])
+						region |= 1L << j;
 				regions.add(region);
 				regions.add(1L << i);
 			}
 			StringBuilder helpers = new StringBuilder();
-			source.append("    public long sum(long guards, long[][] columns, long[] prefix, long[] weights, long[] selected, int size) {\n");
+			source.append(
+					"    public long sum(long guards, long[][] columns, long[] prefix, long[] weights, long[] selected, int size) {\n");
 			int regionId = 0;
 			for (long region : regions) {
 				long dependencies = 0L;
 				for (long rest = region; rest != 0L; rest &= rest - 1L)
 					dependencies |= spec.dependencies[Long.numberOfTrailingZeros(rest)];
 				// A null column broadcasts a scalar. Partial tuple layouts with >2 columns stay generic.
-				if (dependencies == 0L || Long.bitCount(dependencies) > 2) continue;
+				if (dependencies == 0L || Long.bitCount(dependencies) > 2)
+					continue;
 				int[] positions = new int[Long.bitCount(dependencies)];
 				int n = 0;
 				for (long rest = dependencies; rest != 0L; rest &= rest - 1L)
@@ -6879,57 +7387,91 @@ final class LmdbNativeKernelEmitter {
 					if (Integer.bitCount(layout) == 1 && Long.bitCount(region) > 1
 							&& hasCrossColumnInequality(region)
 							&& finiteFactorDomain(region, positions[Integer.numberOfTrailingZeros(layout)],
-									new java.util.LinkedHashMap<>()) == null) continue;
+									new java.util.LinkedHashMap<>()) == null)
+						continue;
 					source.append("            if (");
 					for (int i = 0; i < positions.length; i++) {
-						if (i != 0) source.append(" && ");
-						source.append("columns[").append(positions[i]).append("] ")
+						if (i != 0)
+							source.append(" && ");
+						source.append("columns[")
+								.append(positions[i])
+								.append("] ")
 								.append((layout & (1 << i)) != 0 ? "!= null" : "== null");
 					}
-					source.append(") return factorSum").append(regionId).append('_').append(layout)
+					source.append(") return factorSum")
+							.append(regionId)
+							.append('_')
+							.append(layout)
 							.append("(columns, prefix, weights, size);\n");
 					emitFusedFactorSum(helpers, regionId, region, positions, layout);
 				}
 				source.append("        }\n");
 				regionId++;
 			}
-			source.append("        return KernelFactorPredicate.sumGeneric(this, guards, columns, prefix, weights, selected, size);\n    }\n");
+			source.append(
+					"        return KernelFactorPredicate.sumGeneric(this, guards, columns, prefix, weights, selected, size);\n    }\n");
 			source.append(helpers);
 		}
 
 		private void emitFusedFactorSum(StringBuilder source, int id, long region, int[] positions, int layout) {
 			LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
-			source.append("    private long factorSum").append(id).append('_').append(layout)
+			source.append("    private long factorSum")
+					.append(id)
+					.append('_')
+					.append(layout)
 					.append("(long[][] columns, long[] prefix, long[] weights, int size) {\n")
 					.append("        java.util.Objects.checkFromIndexSize(0, size, weights.length);\n");
 			for (int i = 0; i < positions.length; i++) {
 				int pos = positions[i];
 				if ((layout & (1 << i)) != 0) {
-					source.append("        long[] a").append(pos).append(" = columns[").append(pos).append("];\n")
-							.append("        java.util.Objects.checkFromIndexSize(0, size, a").append(pos).append(".length);\n");
-				} else source.append("        long x").append(pos).append(" = prefix[").append(pos).append("];\n");
+					source.append("        long[] a")
+							.append(pos)
+							.append(" = columns[")
+							.append(pos)
+							.append("];\n")
+							.append("        java.util.Objects.checkFromIndexSize(0, size, a")
+							.append(pos)
+							.append(".length);\n");
+				} else
+					source.append("        long x").append(pos).append(" = prefix[").append(pos).append("];\n");
 			}
 			// Constants are bind-local fields, hoisted once. No runtime ID enters the shape key.
 			java.util.LinkedHashMap<String, String> constants = new java.util.LinkedHashMap<>();
 			java.util.LinkedHashMap<String, String[]> ranges = new java.util.LinkedHashMap<>();
 			StringBuilder mask = new StringBuilder();
 			for (long rest = region; rest != 0L; rest &= rest - 1L) {
-				if (!mask.isEmpty()) mask.append(" & ");
-				mask.append('(').append(fusedFactorMask(spec.guards[Long.numberOfTrailingZeros(rest)], constants, ranges)).append(')');
+				if (!mask.isEmpty())
+					mask.append(" & ");
+				mask.append('(')
+						.append(fusedFactorMask(spec.guards[Long.numberOfTrailingZeros(rest)], constants, ranges))
+						.append(')');
 			}
 			// A finite equality/IN domain bounds all accepted values of one varying column.
 			// Evaluate the complete guard graph on its <=4 candidates once per window, not per ID.
 			int varyingPosition = Integer.bitCount(layout) == 1
-					? positions[Integer.numberOfTrailingZeros(layout)] : -1;
+					? positions[Integer.numberOfTrailingZeros(layout)]
+					: -1;
 			String[] candidates = varyingPosition < 0 ? null : finiteFactorDomain(region, varyingPosition, constants);
 			for (java.util.Map.Entry<String, String> entry : constants.entrySet())
-				source.append("        long ").append(entry.getValue()).append(" = ").append(entry.getKey()).append(";\n");
+				source.append("        long ")
+						.append(entry.getValue())
+						.append(" = ")
+						.append(entry.getKey())
+						.append(";\n");
 			for (java.util.Map.Entry<String, String[]> range : ranges.entrySet()) {
 				String low = range.getValue()[0], high = range.getValue()[1];
-				source.append("        if (Long.compareUnsigned(").append(low).append(", ").append(high)
+				source.append("        if (Long.compareUnsigned(")
+						.append(low)
+						.append(", ")
+						.append(high)
 						.append(") > 0) return 0L;\n")
-						.append("        long ").append(range.getKey()).append(" = ").append(high).append(" - ")
-						.append(low).append(";\n");
+						.append("        long ")
+						.append(range.getKey())
+						.append(" = ")
+						.append(high)
+						.append(" - ")
+						.append(low)
+						.append(";\n");
 			}
 			if (candidates != null) {
 				String original = mask.toString();
@@ -6937,16 +7479,30 @@ final class LmdbNativeKernelEmitter {
 				for (int candidate = 0; candidate < candidates.length; candidate++) {
 					String accepted = original.replaceAll("\\bx" + varyingPosition + "\\b", candidates[candidate]);
 					source.append("        long pick").append(candidate).append(" = ").append(accepted).append(";\n");
-					if (!mask.isEmpty()) mask.append(" | ");
-					mask.append("(KernelIdMasks.equalMask(x").append(varyingPosition).append(", ")
-							.append(candidates[candidate]).append(") & pick").append(candidate).append(')');
+					if (!mask.isEmpty())
+						mask.append(" | ");
+					mask.append("(KernelIdMasks.equalMask(x")
+							.append(varyingPosition)
+							.append(", ")
+							.append(candidates[candidate])
+							.append(") & pick")
+							.append(candidate)
+							.append(')');
 				}
-				if (mask.isEmpty()) mask.append("0L");
+				if (mask.isEmpty())
+					mask.append("0L");
 			}
 			source.append("        long total = 0L;\n        for (int i = 0; i < size; i++) {\n");
-			for (int i = 0; i < positions.length; i++) if ((layout & (1 << i)) != 0)
-				source.append("            long x").append(positions[i]).append(" = a").append(positions[i]).append("[i];\n");
-			source.append("            total += weights[i] & (").append(mask).append(");\n")
+			for (int i = 0; i < positions.length; i++)
+				if ((layout & (1 << i)) != 0)
+					source.append("            long x")
+							.append(positions[i])
+							.append(" = a")
+							.append(positions[i])
+							.append("[i];\n");
+			source.append("            total += weights[i] & (")
+					.append(mask)
+					.append(");\n")
 					.append("        }\n        return total;\n    }\n");
 		}
 
@@ -6954,8 +7510,9 @@ final class LmdbNativeKernelEmitter {
 			LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
 			for (long rest = region; rest != 0L; rest &= rest - 1L) {
 				int guard = Long.numberOfTrailingZeros(rest);
-				if (spec.guards[guard] instanceof FilterCompareId filter && filter.negated
-						&& Long.bitCount(spec.dependencies[guard]) == 2) return true;
+				if (spec.guards[guard]instanceof FilterCompareId filter && filter.negated
+						&& Long.bitCount(spec.dependencies[guard]) == 2)
+					return true;
 			}
 			return false;
 		}
@@ -6972,15 +7529,18 @@ final class LmdbNativeKernelEmitter {
 					domain = new String[filter.constantIndices.length];
 					for (int i = 0; i < domain.length; i++)
 						domain[i] = fusedFactorConstant("c" + filter.constantIndices[i], constants);
-				} else if (node instanceof FilterEntryCompatible filter && spec.position(filter.value) == varyingPosition) {
-					domain = new String[] {"-1L", fusedFactorConstant("c" + filter.constant, constants)};
+				} else if (node instanceof FilterEntryCompatible filter
+						&& spec.position(filter.value) == varyingPosition) {
+					domain = new String[] { "-1L", fusedFactorConstant("c" + filter.constant, constants) };
 				} else if (node instanceof FilterCompareId filter && !filter.negated) {
 					if (spec.position(filter.left) == varyingPosition && spec.position(filter.right) != varyingPosition)
-						domain = new String[] {fusedFactorOperand(filter.right, constants)};
-					else if (spec.position(filter.right) == varyingPosition && spec.position(filter.left) != varyingPosition)
-						domain = new String[] {fusedFactorOperand(filter.left, constants)};
+						domain = new String[] { fusedFactorOperand(filter.right, constants) };
+					else if (spec.position(filter.right) == varyingPosition
+							&& spec.position(filter.left) != varyingPosition)
+						domain = new String[] { fusedFactorOperand(filter.left, constants) };
 				}
-				if (domain != null && (best == null || domain.length < best.length)) best = domain;
+				if (domain != null && (best == null || domain.length < best.length))
+					best = domain;
 			}
 			return best;
 		}
@@ -6990,7 +7550,8 @@ final class LmdbNativeKernelEmitter {
 			return position >= 0 ? "x" + position : fusedFactorConstant(operand.token(), constants);
 		}
 
-		private static String fusedFactorConstant(String expression, java.util.LinkedHashMap<String, String> constants) {
+		private static String fusedFactorConstant(String expression,
+				java.util.LinkedHashMap<String, String> constants) {
 			return constants.computeIfAbsent(expression, ignored -> "k" + constants.size());
 		}
 
@@ -7011,7 +7572,7 @@ final class LmdbNativeKernelEmitter {
 				String low = fusedFactorConstant("c" + filter.lowConstant, constants);
 				String high = fusedFactorConstant("c" + filter.highConstant, constants);
 				String width = "r" + ranges.size();
-				ranges.put(width, new String[] {low, high});
+				ranges.put(width, new String[] { low, high });
 				// For a non-wrapping unsigned interval, x is inside iff (x-low) <= (high-low).
 				// Subtractions are intentionally modulo 2^64; this is ID ordering, not RDF arithmetic.
 				return "~KernelIdMasks.belowMask(" + width + ", " + value + " - " + low + ")";
@@ -7020,56 +7581,81 @@ final class LmdbNativeKernelEmitter {
 			String value = fusedFactorOperand(filter.value, constants);
 			StringBuilder mask = new StringBuilder();
 			for (int constant : filter.constantIndices) {
-				if (!mask.isEmpty()) mask.append(" | ");
-				mask.append("KernelIdMasks.equalMask(").append(value).append(", ")
-						.append(fusedFactorConstant("c" + constant, constants)).append(')');
+				if (!mask.isEmpty())
+					mask.append(" | ");
+				mask.append("KernelIdMasks.equalMask(")
+						.append(value)
+						.append(", ")
+						.append(fusedFactorConstant("c" + constant, constants))
+						.append(')');
 			}
 			return mask.isEmpty() ? "0L" : mask.toString();
 		}
 
-
 		private boolean specializedScalarCount() {
 			if (!kernel.compiledCountSpecialization || !(kernel.terminal instanceof Aggregate aggregate)
-					|| aggregate.groupCols.length != 0) return false;
+					|| aggregate.groupCols.length != 0)
+				return false;
 			for (AggregateOutput output : aggregate.outputs)
-				if (output.kind != LmdbNativeKernelIr.AGG_COUNT_STAR || output.hookDistinct) return false;
+				if (output.kind != LmdbNativeKernelIr.AGG_COUNT_STAR || output.hookDistinct)
+					return false;
 			return true;
 		}
 
 		/**
-		 * A physical scalar fallback is already flat. Fuse its pure guards and global COUNT(*)
-		 * into one batch loop instead of writing virtual registers and updating aggregate arrays
-		 * per accepted row. Unlike a bounded relation, arbitrary row weights need checked sums.
+		 * A physical scalar fallback is already flat. Fuse its pure guards and global COUNT(*) into one batch loop
+		 * instead of writing virtual registers and updating aggregate arrays per accepted row. Unlike a bounded
+		 * relation, arbitrary row weights need checked sums.
 		 */
 		private void emitScalarCountWindow(StringBuilder body, PlanFactors plan, String indent) {
-			body.append(indent).append("long acceptedWeight = 0L;\n")
-					.append(indent).append("for (int i = 0; i < n; i++) {\n")
-					.append(indent).append("    int base = i * ").append(plan.outCols.length).append(";\n");
+			body.append(indent)
+					.append("long acceptedWeight = 0L;\n")
+					.append(indent)
+					.append("for (int i = 0; i < n; i++) {\n")
+					.append(indent)
+					.append("    int base = i * ")
+					.append(plan.outCols.length)
+					.append(";\n");
 			for (int i = 0; i < plan.scalarOutputs.length; i++)
-				body.append(indent).append("    long s").append(i).append(" = rows[base + ")
-						.append(plan.scalarOutputs[i]).append("];\n");
+				body.append(indent)
+						.append("    long s")
+						.append(i)
+						.append(" = rows[base + ")
+						.append(plan.scalarOutputs[i])
+						.append("];\n");
 			StringBuilder condition = new StringBuilder();
 			for (Node guard : kernel.factorCountGuards.guards) {
-				if (!condition.isEmpty()) condition.append(" && ");
+				if (!condition.isEmpty())
+					condition.append(" && ");
 				String expression = factorCondition(guard);
-				for (int i = 0; i < plan.scalarOutputs.length; i++) expression = expression.replace("prefix[" + i + "]", "s" + i);
+				for (int i = 0; i < plan.scalarOutputs.length; i++)
+					expression = expression.replace("prefix[" + i + "]", "s" + i);
 				condition.append('(').append(expression).append(')');
 			}
-			body.append(indent).append("    if (").append(condition.isEmpty() ? "true" : condition)
+			body.append(indent)
+					.append("    if (")
+					.append(condition.isEmpty() ? "true" : condition)
 					.append(") acceptedWeight = Math.addExact(acceptedWeight, weights[i]);\n")
-					.append(indent).append("}\n")
-					.append(indent).append("if (acceptedWeight != 0L) updateBy(acceptedWeight);\n");
+					.append(indent)
+					.append("}\n")
+					.append(indent)
+					.append("if (acceptedWeight != 0L) updateBy(acceptedWeight);\n");
 		}
-
 
 		private void emitPlanFactors(StringBuilder body, PlanFactors plan, String nextTemplate) {
 			String indent = "        ";
 			String cursor = "fc" + plan.plan;
 			emitPlanInputs(body, indent, plan);
-			body.append(indent).append(cursor).append(" = KernelFactorCursor.open(p").append(plan.plan)
-					.append(", ").append(plan.outCols.length).append(", new int[] {");
+			body.append(indent)
+					.append(cursor)
+					.append(" = KernelFactorCursor.open(p")
+					.append(plan.plan)
+					.append(", ")
+					.append(plan.outCols.length)
+					.append(", new int[] {");
 			for (int i = 0; i < plan.scalarOutputs.length; i++) {
-				if (i != 0) body.append(", ");
+				if (i != 0)
+					body.append(", ");
 				body.append(plan.scalarOutputs[i]);
 			}
 			body.append("}, cancel);\n");
@@ -7082,57 +7668,123 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("        while (").append(cursor).append(".nextPrefix()) {\n");
 				if (kernel.factorCountGuards != null) {
 					LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
-					body.append(indent).append("            long reduced = ").append(cursor)
-							.append(".reduceIndependent(this, 0x").append(Long.toUnsignedString(spec.terminalDependencies, 16))
-							.append("L, ").append(factorMultiplicityObserved().replace("prefix[", "fv[")).append(");\n")
-							.append(indent).append("            if (reduced >= 0L) {\n");
+					body.append(indent)
+							.append("            long reduced = ")
+							.append(cursor)
+							.append(".reduceIndependent(this, 0x")
+							.append(Long.toUnsignedString(spec.terminalDependencies, 16))
+							.append("L, ")
+							.append(factorMultiplicityObserved().replace("prefix[", "fv["))
+							.append(");\n")
+							.append(indent)
+							.append("            if (reduced >= 0L) {\n");
 					// Snapshot all alias sources before writing potentially overlapping result registers.
-					for (int i = 0; i < spec.terminalCols.length; i++) body.append(indent).append("                long ft")
-							.append(i).append(" = ").append(factorScalar(spec.terminalValues[i]).replace("prefix[", "fv[")).append(";\n");
-					for (int i = 0; i < spec.terminalCols.length; i++) body.append(indent).append("                v")
-							.append(spec.terminalCols[i]).append(" = ft").append(i).append(";\n");
-					body.append(indent).append("                if (reduced != 0L) updateBy(reduced);\n")
-							.append(indent).append("                continue;\n").append(indent).append("            }\n");
+					for (int i = 0; i < spec.terminalCols.length; i++)
+						body.append(indent)
+								.append("                long ft")
+								.append(i)
+								.append(" = ")
+								.append(factorScalar(spec.terminalValues[i]).replace("prefix[", "fv["))
+								.append(";\n");
+					for (int i = 0; i < spec.terminalCols.length; i++)
+						body.append(indent)
+								.append("                v")
+								.append(spec.terminalCols[i])
+								.append(" = ft")
+								.append(i)
+								.append(";\n");
+					body.append(indent)
+							.append("                if (reduced != 0L) updateBy(reduced);\n")
+							.append(indent)
+							.append("                continue;\n")
+							.append(indent)
+							.append("            }\n");
 				}
-				if (fold) body.append(indent).append("            fa").append(plan.plan).append(" = 0L;\n");
+				if (fold)
+					body.append(indent).append("            fa").append(plan.plan).append(" = 0L;\n");
 				body.append(indent).append("            while (").append(cursor).append(".nextBinding()) {\n");
-			} else body.append(indent).append("        while (").append(cursor).append(".next()) {\n");
+			} else
+				body.append(indent).append("        while (").append(cursor).append(".next()) {\n");
 			String inner = indent + (structured ? "                " : "            ");
 			for (int i = 0; i < plan.scalarOutputs.length; i++)
-				body.append(inner).append("v").append(plan.outCols[plan.scalarOutputs[i]])
-						.append(" = fv[").append(i).append("];\n");
+				body.append(inner)
+						.append("v")
+						.append(plan.outCols[plan.scalarOutputs[i]])
+						.append(" = fv[")
+						.append(i)
+						.append("];\n");
 			body.append(next(nextTemplate, inner));
 			if (structured) {
 				body.append(indent).append("            }\n");
-				if (fold) body.append(indent).append("            if (fa").append(plan.plan).append(" != 0L) updateBy(Math.multiplyExact(fa")
-						.append(plan.plan).append(", ").append(cursor).append(".remainderMultiplicity()));\n");
+				if (fold)
+					body.append(indent)
+							.append("            if (fa")
+							.append(plan.plan)
+							.append(" != 0L) updateBy(Math.multiplyExact(fa")
+							.append(plan.plan)
+							.append(", ")
+							.append(cursor)
+							.append(".remainderMultiplicity()));\n");
 			}
 			body.append(indent).append("        }\n");
 			body.append(indent).append("    } else {\n");
-			body.append(indent).append("        long[] rows = ").append(cursor).append(".rowValues();\n")
-					.append(indent).append("        long[] weights = ").append(cursor).append(".rowWeights();\n")
-					.append(indent).append("        int n;\n")
-					.append(indent).append("        while ((n = ").append(cursor).append(".nextRowWindow()) != 0) {\n");
+			body.append(indent)
+					.append("        long[] rows = ")
+					.append(cursor)
+					.append(".rowValues();\n")
+					.append(indent)
+					.append("        long[] weights = ")
+					.append(cursor)
+					.append(".rowWeights();\n")
+					.append(indent)
+					.append("        int n;\n")
+					.append(indent)
+					.append("        while ((n = ")
+					.append(cursor)
+					.append(".nextRowWindow()) != 0) {\n");
 			if (specializedScalarCount()) {
 				emitScalarCountWindow(body, plan, indent + "            ");
 			} else {
-				body.append(indent).append("            for (int i = 0; i < n; i++) {\n")
-						.append(indent).append("                int base = i * ").append(plan.outCols.length).append(";\n");
+				body.append(indent)
+						.append("            for (int i = 0; i < n; i++) {\n")
+						.append(indent)
+						.append("                int base = i * ")
+						.append(plan.outCols.length)
+						.append(";\n");
 				for (int output : plan.scalarOutputs)
-					body.append(indent).append("                v").append(plan.outCols[output])
-							.append(" = rows[base + ").append(output).append("];\n");
+					body.append(indent)
+							.append("                v")
+							.append(plan.outCols[output])
+							.append(" = rows[base + ")
+							.append(output)
+							.append("];\n");
 				body.append(indent).append("                fw").append(plan.plan).append(" = weights[i];\n");
 				body.append(next(nextTemplate, indent + "                "));
 				body.append(indent).append("            }\n");
 			}
 			body.append(indent).append("        }\n").append(indent).append("    }\n");
-			body.append(indent).append("} catch (RuntimeException failure) {\n")
-					.append(indent).append("    ").append(cursor).append(".closeOnFailure(failure); throw failure;\n")
-					.append(indent).append("} catch (Error failure) {\n")
-					.append(indent).append("    ").append(cursor).append(".closeOnFailure(failure); throw failure;\n")
-					.append(indent).append("} finally {\n")
-					.append(indent).append("    try { ").append(cursor).append(".close(); } finally {\n")
-					.append(indent).append("        ").append(cursor).append(" = null;\n");
+			body.append(indent)
+					.append("} catch (RuntimeException failure) {\n")
+					.append(indent)
+					.append("    ")
+					.append(cursor)
+					.append(".closeOnFailure(failure); throw failure;\n")
+					.append(indent)
+					.append("} catch (Error failure) {\n")
+					.append(indent)
+					.append("    ")
+					.append(cursor)
+					.append(".closeOnFailure(failure); throw failure;\n")
+					.append(indent)
+					.append("} finally {\n")
+					.append(indent)
+					.append("    try { ")
+					.append(cursor)
+					.append(".close(); } finally {\n")
+					.append(indent)
+					.append("        ")
+					.append(cursor)
+					.append(" = null;\n");
 			emitPlanRestore(body, indent + "        ", plan);
 			body.append(indent).append("    }\n").append(indent).append("}\n");
 		}
@@ -7143,18 +7795,29 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		private static void beginCursorScope(StringBuilder body, String indent) {
-			body.append(indent).append("Throwable cursorFailure = null;\n")
-					.append(indent).append("try {\n");
+			body.append(indent)
+					.append("Throwable cursorFailure = null;\n")
+					.append(indent)
+					.append("try {\n");
 		}
 
 		private static void endCursorScope(StringBuilder body, String indent, String close) {
-			body.append(indent).append("} catch (RuntimeException failure) {\n")
-					.append(indent).append("    cursorFailure = failure; throw failure;\n")
-					.append(indent).append("} catch (Error failure) {\n")
-					.append(indent).append("    cursorFailure = failure; throw failure;\n")
-					.append(indent).append("} finally {\n")
-					.append(indent).append("    ").append(close).append("\n")
-					.append(indent).append("}\n");
+			body.append(indent)
+					.append("} catch (RuntimeException failure) {\n")
+					.append(indent)
+					.append("    cursorFailure = failure; throw failure;\n")
+					.append(indent)
+					.append("} catch (Error failure) {\n")
+					.append(indent)
+					.append("    cursorFailure = failure; throw failure;\n")
+					.append(indent)
+					.append("} finally {\n")
+					.append(indent)
+					.append("    ")
+					.append(close)
+					.append("\n")
+					.append(indent)
+					.append("}\n");
 		}
 
 		private void emitNode(StringBuilder body, Node node, String nextTemplate, boolean booleanMode, int stateIndex) {
@@ -7202,8 +7865,11 @@ final class LmdbNativeKernelEmitter {
 				boolean weighted = LmdbNativeKernelIr.weightedPlanCount(kernel);
 				String bagWeights = "pw" + plan.plan;
 				String read = weighted ? ".fillWeighted(" + buffer + ", " + bagWeights : ".fill(" + buffer;
-				if (weighted) body.append(indent).append("long[] ").append(bagWeights)
-						.append(" = new long[KernelRuntime.SCAN_BATCH_ROWS];\n");
+				if (weighted)
+					body.append(indent)
+							.append("long[] ")
+							.append(bagWeights)
+							.append(" = new long[KernelRuntime.SCAN_BATCH_ROWS];\n");
 				emitPlanInputs(body, indent, plan);
 				body.append(indent).append(cursor).append(" = p").append(plan.plan).append(".open();\n");
 				beginCursorScope(body, indent);
@@ -7218,10 +7884,13 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("    for (int i = 0; i < n; i++) {\n");
 				emitPlanColumns(body, indent + "        ", plan, buffer, "i");
 				if (weighted) {
-					body.append(indent).append("        if (").append(bagWeights)
+					body.append(indent)
+							.append("        if (")
+							.append(bagWeights)
 							.append("[i] <= 0L) throw new IllegalStateException(\"nonpositive plan multiplicity\");\n");
 					body.append(indent).append("        updateBy(").append(bagWeights).append("[i]);\n");
-				} else body.append(next(nextTemplate, indent + "        "));
+				} else
+					body.append(next(nextTemplate, indent + "        "));
 				body.append(indent).append("    }\n");
 				body.append(indent)
 						.append("    n = ")
@@ -7230,8 +7899,11 @@ final class LmdbNativeKernelEmitter {
 						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
 				body.append(indent).append("}\n");
 				StringBuilder cleanup = new StringBuilder();
-				cleanup.append("KernelPlan.Cursor closing = ").append(cursor).append("; ")
-						.append(cursor).append(" = null;\n")
+				cleanup.append("KernelPlan.Cursor closing = ")
+						.append(cursor)
+						.append("; ")
+						.append(cursor)
+						.append(" = null;\n")
 						.append("try { KernelRuntime.closePlanCursor(closing, cursorFailure); } finally {\n");
 				emitPlanRestore(cleanup, indent + "        ", plan);
 				cleanup.append(indent).append("    }");
@@ -7270,7 +7942,8 @@ final class LmdbNativeKernelEmitter {
 						.append(".cursor(partition);\n")
 						.append(indent)
 						.append("    while (ndiCursor.next()) {\n")
-						.append(indent).append("        if ((++pollTick & 1023) == 0) KernelRuntime.checkCancelled(cancel);\n")
+						.append(indent)
+						.append("        if ((++pollTick & 1023) == 0) KernelRuntime.checkCancelled(cancel);\n")
 						.append(indent)
 						.append("        v")
 						.append(enumerate.col)
@@ -7311,7 +7984,7 @@ final class LmdbNativeKernelEmitter {
 					String keyBuffer = "akb" + keyRunCursorId(enumerate);
 					emitOpenKeyCursor(body, indent, enumerate, adjacency, cursor);
 					body.append(indent).append("if (").append(cursor).append(" != null) {\n");
-				beginCursorScope(body, indent + "    ");
+					beginCursorScope(body, indent + "    ");
 					body.append(indent).append("    int kn;\n");
 					body.append(indent)
 							.append("    while ((kn = ")
@@ -8081,8 +8754,11 @@ final class LmdbNativeKernelEmitter {
 						.append(");");
 				String first;
 				synchronousPipelineDepth++;
-				try { first = emitPipeline(build.pipeline, insert.toString(), false); }
-				finally { synchronousPipelineDepth--; }
+				try {
+					first = emitPipeline(build.pipeline, insert.toString(), false);
+				} finally {
+					synchronousPipelineDepth--;
+				}
 				body.append(indent)
 						.append('t')
 						.append(build.tableId)
@@ -8211,49 +8887,97 @@ final class LmdbNativeKernelEmitter {
 			}
 		}
 
-        private void emitIntersect(StringBuilder body, Intersect intersect, String nextTemplate, String indent) {
-            StringBuilder views=new StringBuilder("new NativeLmdbQuerySource.NativeAdjacency[]{");
-            String cursor="xc"+expansionCursorTypes.size(); expansionCursorTypes.add("Intersection");
-            for(int i=0;i<intersect.adjacencies.length;i++) {
-                views.append(i==0?"":", ").append("a").append(intersect.adjacencies[i]);
-            }
-            views.append('}');
-            boolean counted=LmdbNativeKernelIr.intersectionCountTail(kernel)
-                    && kernel.pipeline.get(kernel.pipeline.size()-1)==intersect && nextTemplate.equals("update();");
-            body.append(indent).append("if (").append(cursor).append(" == null) ").append(cursor)
-                    .append(" = new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.Intersection(")
-                    .append(views).append(", cancel);\n");
-            for (int i=0; i<intersect.keys.length; i++) body.append(indent).append(cursor).append(".key(").append(i).append(", ").append(intersect.keys[i].token()).append(");\n");
-            body.append(indent).append(cursor).append(".bind();\n");
-            if (counted && LmdbNativeKernelIr.intersectionTotalCountTail(kernel)) {
-                body.append(indent).append("updateBy(").append(cursor).append(".countRemainingGroups());\n");
-                return;
-            }
-            body.append(indent).append("while (").append(cursor).append(counted?".nextGroup()":".next()").append(") {\n")
-                    .append(indent).append("    v").append(intersect.valueCol).append(" = ").append(cursor).append(".value();\n");
-            if(counted) {
-                StringBuilder needs=new StringBuilder();
-                for(AggregateOutput output:((Aggregate)kernel.terminal).outputs) {
-                    if(output.kind==LmdbNativeKernelIr.AGG_COUNT_STAR) { needs=new StringBuilder("true");break; }
-                    if(!needs.isEmpty()) needs.append(" || ");
-                    needs.append("v").append(output.col).append(" != -1L");
-                }
-                body.append(indent).append("        updateBy((").append(needs).append(") ? ").append(cursor).append(".groupMultiplicity() : 1L);\n");
-            } else body.append(next(nextTemplate,indent+"        "));
-            body.append(indent).append("}\n");
-        }
+		private void emitIntersect(StringBuilder body, Intersect intersect, String nextTemplate, String indent) {
+			StringBuilder views = new StringBuilder("new NativeLmdbQuerySource.NativeAdjacency[]{");
+			String cursor = "xc" + expansionCursorTypes.size();
+			expansionCursorTypes.add("Intersection");
+			for (int i = 0; i < intersect.adjacencies.length; i++) {
+				views.append(i == 0 ? "" : ", ").append("a").append(intersect.adjacencies[i]);
+			}
+			views.append('}');
+			boolean counted = LmdbNativeKernelIr.intersectionCountTail(kernel)
+					&& kernel.pipeline.get(kernel.pipeline.size() - 1) == intersect && nextTemplate.equals("update();");
+			body.append(indent)
+					.append("if (")
+					.append(cursor)
+					.append(" == null) ")
+					.append(cursor)
+					.append(" = new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.Intersection(")
+					.append(views)
+					.append(", cancel);\n");
+			for (int i = 0; i < intersect.keys.length; i++)
+				body.append(indent)
+						.append(cursor)
+						.append(".key(")
+						.append(i)
+						.append(", ")
+						.append(intersect.keys[i].token())
+						.append(");\n");
+			body.append(indent).append(cursor).append(".bind();\n");
+			if (counted && LmdbNativeKernelIr.intersectionTotalCountTail(kernel)) {
+				body.append(indent).append("updateBy(").append(cursor).append(".countRemainingGroups());\n");
+				return;
+			}
+			body.append(indent)
+					.append("while (")
+					.append(cursor)
+					.append(counted ? ".nextGroup()" : ".next()")
+					.append(") {\n")
+					.append(indent)
+					.append("    v")
+					.append(intersect.valueCol)
+					.append(" = ")
+					.append(cursor)
+					.append(".value();\n");
+			if (counted) {
+				StringBuilder needs = new StringBuilder();
+				for (AggregateOutput output : ((Aggregate) kernel.terminal).outputs) {
+					if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) {
+						needs = new StringBuilder("true");
+						break;
+					}
+					if (!needs.isEmpty())
+						needs.append(" || ");
+					needs.append("v").append(output.col).append(" != -1L");
+				}
+				body.append(indent)
+						.append("        updateBy((")
+						.append(needs)
+						.append(") ? ")
+						.append(cursor)
+						.append(".groupMultiplicity() : 1L);\n");
+			} else
+				body.append(next(nextTemplate, indent + "        "));
+			body.append(indent).append("}\n");
+		}
 
-        private void emitPathExpand(StringBuilder body, PathExpand path, String nextTemplate, String indent) {
-            StringBuilder contexts=new StringBuilder("new long[]{");
-            for(int i=0;i<path.contexts.length;i++) contexts.append(i==0?"":", ").append(path.contexts[i].token());
-            contexts.append('}');
-            body.append(indent).append("try (org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.Path xc = new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.Path(a")
-                    .append(path.adjacency).append(", ").append(path.source.token()).append(", ").append(path.minHops).append(", ").append(contexts).append(", cancel)) {\n")
-                    .append(indent).append("    while (xc.next()) {\n")
-                    .append(indent).append("        v").append(path.dstCol).append(" = xc.value();\n")
-                    .append(next(nextTemplate,indent+"        "))
-                    .append(indent).append("    }\n").append(indent).append("}\n");
-        }
+		private void emitPathExpand(StringBuilder body, PathExpand path, String nextTemplate, String indent) {
+			StringBuilder contexts = new StringBuilder("new long[]{");
+			for (int i = 0; i < path.contexts.length; i++)
+				contexts.append(i == 0 ? "" : ", ").append(path.contexts[i].token());
+			contexts.append('}');
+			body.append(indent)
+					.append("try (org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.Path xc = new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.Path(a")
+					.append(path.adjacency)
+					.append(", ")
+					.append(path.source.token())
+					.append(", ")
+					.append(path.minHops)
+					.append(", ")
+					.append(contexts)
+					.append(", cancel)) {\n")
+					.append(indent)
+					.append("    while (xc.next()) {\n")
+					.append(indent)
+					.append("        v")
+					.append(path.dstCol)
+					.append(" = xc.value();\n")
+					.append(next(nextTemplate, indent + "        "))
+					.append(indent)
+					.append("    }\n")
+					.append(indent)
+					.append("}\n");
+		}
 
 	}
 }

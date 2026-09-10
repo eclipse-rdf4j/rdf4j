@@ -15,10 +15,10 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
  * Numeric tuning for bounded experimental probes, read from plain system properties under
  * {@code rdf4j.lmdb.adaptiveProbe.*} (the workbench registry is boolean-only; only the {@code enabled} gate is
  * registered there). {@code alpha} is the allowed throughput-loss fraction: every normal incumbent execution of
- * {@code b} nanoseconds earns {@code alpha/(1-alpha) * b} of probe credit, which finances optional probes. Mandatory trials and actual deadline overshoots can create debt;
- * this is not an unconditional alpha bound on charged runtime. {@code gamma} is the displacement speed margin the probe deadline is
- * derived from: a rival only deserves a deadline of {@code incumbentExpected / gamma} — running longer could not
- * justify a switch anyway.
+ * {@code b} nanoseconds earns {@code alpha/(1-alpha) * b} of probe credit, which finances optional probes. Mandatory
+ * trials and actual deadline overshoots can create debt; this is not an unconditional alpha bound on charged runtime.
+ * {@code gamma} is the displacement speed margin the probe deadline is derived from: a rival only deserves a deadline
+ * of {@code incumbentExpected / gamma} — running longer could not justify a switch anyway.
  */
 record LmdbNativeProbeConfig(
 		boolean enabled,

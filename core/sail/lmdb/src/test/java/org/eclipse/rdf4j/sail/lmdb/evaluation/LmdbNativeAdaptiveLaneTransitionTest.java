@@ -20,7 +20,8 @@ public class LmdbNativeAdaptiveLaneTransitionTest {
 	public void fullRunPriceSurvivesMachineReadinessTransition() {
 		Fixture f = new Fixture();
 		var packed = estimate("packedFtreeAggregate");
-		for (int i = 0; i < 6; i++) f.complete(packed, PACKED_NANOS);
+		for (int i = 0; i < 6; i++)
+			f.complete(packed, PACKED_NANOS);
 		check(f.model.predict(packed).latestObservedNanos() == PACKED_NANOS, "initial full-run price missing");
 		f.trainMachine(packed);
 		var after = f.model.predict(packed);
@@ -36,9 +37,11 @@ public class LmdbNativeAdaptiveLaneTransitionTest {
 		Fixture f = new Fixture();
 		var packed = estimate("packedFtreeAggregate");
 		var tail = estimate("factorizedTail");
-		for (int i = 0; i < 6; i++) f.complete(packed, PACKED_NANOS);
+		for (int i = 0; i < 6; i++)
+			f.complete(packed, PACKED_NANOS);
 		f.trainMachine(packed);
-		for (int i = 0; i < 6; i++) f.complete(tail, TAIL_NANOS);
+		for (int i = 0; i < 6; i++)
+			f.complete(tail, TAIL_NANOS);
 		// No harness: isolate selection from exploration. Both arms really completed; neither is cold.
 		var result = LmdbNativeAdaptiveArbitration.choose(List.of(
 				new LmdbNativeAdaptiveArbitration.Candidate<String>(packed, 0, o -> "packed"),
@@ -52,7 +55,8 @@ public class LmdbNativeAdaptiveLaneTransitionTest {
 	public void exactDirectPosteriorSurvivesWithoutFullRunLedger() {
 		Fixture f = new Fixture();
 		var packed = estimate("packedFtreeAggregate");
-		for (int i = 0; i < 6; i++) f.model.record(packed, packed.total(), PACKED_NANOS, true);
+		for (int i = 0; i < 6; i++)
+			f.model.record(packed, packed.total(), PACKED_NANOS, true);
 		check(f.model.predict(packed).latestObservedNanos() == 0L, "test must not use the full-run ledger");
 		f.trainMachine(packed);
 		var price = f.model.predict(packed);
@@ -67,11 +71,14 @@ public class LmdbNativeAdaptiveLaneTransitionTest {
 	public void predictionFallbackDoesNotPreventResidualTraining() {
 		Fixture f = new Fixture();
 		var arm = estimate("packedFtreeAggregate");
-		for (int i = 0; i < 6; i++) f.model.record(arm, arm.total(), PACKED_NANOS, true);
+		for (int i = 0; i < 6; i++)
+			f.model.record(arm, arm.total(), PACKED_NANOS, true);
 		f.trainMachine(arm);
-		for (int i = 0; i < 3; i++) f.model.record(arm, arm.total(), PACKED_NANOS, true);
-		var residual = f.store.posteriors().read(key(arm, LmdbNativeCostPosteriorStore.Lane.RESIDUAL),
-				f.store.regimeTracker().epoch(), f.wall.get());
+		for (int i = 0; i < 3; i++)
+			f.model.record(arm, arm.total(), PACKED_NANOS, true);
+		var residual = f.store.posteriors()
+				.read(key(arm, LmdbNativeCostPosteriorStore.Lane.RESIDUAL),
+						f.store.regimeTracker().epoch(), f.wall.get());
 		check(residual.exact().completedCount == 3L, "prediction fallback accidentally pins updates to DIRECT");
 		var prediction = f.model.predict(arm);
 		check(prediction.components().lane() == LmdbNativeCostPosteriorStore.Lane.RESIDUAL,
@@ -96,7 +103,8 @@ public class LmdbNativeAdaptiveLaneTransitionTest {
 	public void residualCensorIsNotHiddenByOldDirectEvidence() {
 		Fixture f = new Fixture();
 		var arm = estimate("packedFtreeAggregate");
-		for (int i = 0; i < 6; i++) f.model.record(arm, arm.total(), PACKED_NANOS, true);
+		for (int i = 0; i < 6; i++)
+			f.model.record(arm, arm.total(), PACKED_NANOS, true);
 		f.trainMachine(arm);
 		f.model.recordCensored(arm, 4_000_000L, arm.total(), LmdbNativeRegimeKey.STEADY);
 		var prediction = f.model.predict(arm);
@@ -145,15 +153,18 @@ public class LmdbNativeAdaptiveLaneTransitionTest {
 					LmdbNativeProbeConfig.defaults(), wall::get, () -> 0L);
 			var arm = estimate("packedFtreeAggregate");
 			var direct = key(arm, LmdbNativeCostPosteriorStore.Lane.DIRECT);
-			for (int i = 0; i < 6; i++) original.posteriors().updateCompleted(direct,
-					Math.log(PACKED_NANOS), 1.0, 0L, wall.get());
+			for (int i = 0; i < 6; i++)
+				original.posteriors()
+						.updateCompleted(direct,
+								Math.log(PACKED_NANOS), 1.0, 0L, wall.get());
 			original.persistence().persistIfDue(true);
 			check(java.nio.file.Files.isRegularFile(directory.resolve(LmdbNativeCostModelPersistence.FILE_NAME)),
 					"real posterior sidecar was not written");
 			var restored = new LmdbNativeStoreCostModel(context, LmdbNativePosteriorConfig.defaults(),
 					LmdbNativeProbeConfig.defaults(), wall::get, () -> 0L);
 			var machine = new LmdbNativeMachineCostModel();
-			for (int i = 0; i < 32; i++) machine.update(arm.total(), PACKED_NANOS);
+			for (int i = 0; i < 32; i++)
+				machine.update(arm.total(), PACKED_NANOS);
 			var model = new LmdbNativeAdaptiveCostModel(machine, restored,
 					new LmdbNativeAdaptiveCostModel.Configuration(true, true));
 			var prediction = model.predict(arm);
@@ -162,8 +173,10 @@ public class LmdbNativeAdaptiveLaneTransitionTest {
 					&& prediction.exactCompletedCount() == 6L,
 					"a compatible persisted DIRECT arm became unmeasured on a warm machine");
 		} finally {
-			if (previous == null) System.clearProperty("rdf4j.lmdb.costModel.persist.enabled");
-			else System.setProperty("rdf4j.lmdb.costModel.persist.enabled", previous);
+			if (previous == null)
+				System.clearProperty("rdf4j.lmdb.costModel.persist.enabled");
+			else
+				System.setProperty("rdf4j.lmdb.costModel.persist.enabled", previous);
 			try (var paths = java.nio.file.Files.walk(directory)) {
 				for (var path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
 					java.nio.file.Files.deleteIfExists(path);
@@ -176,14 +189,17 @@ public class LmdbNativeAdaptiveLaneTransitionTest {
 	public void directHistoryDoesNotLeakToNewShapesOrRegimes() {
 		Fixture f = new Fixture();
 		var arm = estimate("packedFtreeAggregate");
-		for (int i = 0; i < 6; i++) f.complete(arm, PACKED_NANOS);
+		for (int i = 0; i < 6; i++)
+			f.complete(arm, PACKED_NANOS);
 		f.trainMachine(arm);
 		var other = new LmdbNativeCostEstimate(arm.variantKey().toBuilder().cardinalityBucket(31).build(),
 				LmdbNativeCostVector.zero(), arm.total(), arm.estimatedOutputRows(), arm.structuralUncertainty());
 		check(f.model.predict(other).exactCompletedCount() == 0L, "different variant inherited exact evidence");
 		var building = new LmdbNativeRegimeKey(LmdbNativeRegimeKey.Phase.BUILDING, 0L, false, 0L);
-		check(!f.store.posteriors().read(LmdbNativeCostPosteriorStore.ExactKey.of(building,
-				LmdbNativeCostPosteriorStore.Lane.DIRECT, arm.variantKey()), 0L, f.wall.get()).exactPresent(),
+		check(!f.store.posteriors()
+				.read(LmdbNativeCostPosteriorStore.ExactKey.of(building,
+						LmdbNativeCostPosteriorStore.Lane.DIRECT, arm.variantKey()), 0L, f.wall.get())
+				.exactPresent(),
 				"different regime inherited evidence");
 	}
 
@@ -194,12 +210,14 @@ public class LmdbNativeAdaptiveLaneTransitionTest {
 
 	private static LmdbNativeCostEstimate estimate(String family) {
 		return new LmdbNativeCostEstimate(LmdbNativePhysicalVariantKey.builder(family)
-				.physicalOrderAndProperties(family).build(), LmdbNativeCostVector.zero(),
+				.physicalOrderAndProperties(family)
+				.build(), LmdbNativeCostVector.zero(),
 				LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 100), 100, 0.1);
 	}
 
 	private static void check(boolean condition, String message) {
-		if (!condition) throw new AssertionError(message);
+		if (!condition)
+			throw new AssertionError(message);
 	}
 
 	private static final class Fixture {
@@ -224,7 +242,8 @@ public class LmdbNativeAdaptiveLaneTransitionTest {
 		void trainMachine(LmdbNativeCostEstimate arm) {
 			// Other arms/stores share the machine model: they can cross its readiness threshold without
 			// executing this particular arm again. No sleep or wall-clock warmup is needed.
-			while (machine.snapshot().sampleCount() < 32L) machine.update(arm.total(), PACKED_NANOS);
+			while (machine.snapshot().sampleCount() < 32L)
+				machine.update(arm.total(), PACKED_NANOS);
 			check(machine.predict(arm.total()).adaptiveReady(), "fixture did not cross the real readiness threshold");
 		}
 	}

@@ -1,0 +1,107 @@
+/* SPDX-License-Identifier: EPL-2.0 */
+package org.eclipse.rdf4j.sail.lmdb.valueoverlay;
+
+import java.util.Arrays;
+
+/** Writer-confined, bounded set of complete IDs. Stores neither Values nor transaction-owned byte buffers. */
+final class ValueOverlayChanges implements AutoCloseable {
+	private final int limit;
+	private long[] keys;
+	private final OverlayMemoryBudget.Reservation memory;
+	private boolean zero;
+	private int size;
+
+	ValueOverlayChanges(int limit) {
+		this(limit, OverlayMemoryBudget.unbounded());
+	}
+
+	ValueOverlayChanges(int limit, OverlayMemoryBudget budget) {
+		this.limit = limit;
+		memory = budget.reserve(OverlayMemoryBudget.Kind.WORKSPACE, OverlayMemoryBudget.arrayBytes(32, 8));
+		try {
+			keys = new long[32];
+		} catch (RuntimeException | Error failed) {
+			memory.close();
+			throw failed;
+		}
+	}
+
+	@Override
+	public void close() {
+		keys = null;
+		memory.close();
+	}
+
+	int size() {
+		return size;
+	}
+
+	boolean add(long key) {
+		if (key == 0) {
+			if (zero)
+				return true;
+			if (size == limit)
+				return false;
+			zero = true;
+			size++;
+			return true;
+		}
+		int slot = slot(key, keys.length - 1);
+		while (keys[slot] != 0) {
+			if (keys[slot] == key)
+				return true;
+			slot = (slot + 1) & (keys.length - 1);
+		}
+		if (size == limit)
+			return false;
+		if ((size + 1L) * 2 > keys.length) {
+			long[] old = keys;
+			int capacity = Math.multiplyExact(old.length, 2);
+			long charge = OverlayMemoryBudget.arrayBytes(capacity, 8);
+			memory.grow(charge);
+			try {
+				keys = new long[capacity];
+			} catch (RuntimeException | Error failed) {
+				memory.shrink(charge);
+				throw failed;
+			}
+			for (long k : old)
+				if (k != 0) {
+					int p = slot(k, keys.length - 1);
+					while (keys[p] != 0)
+						p = (p + 1) & (keys.length - 1);
+					keys[p] = k;
+				}
+			memory.shrink(OverlayMemoryBudget.arrayBytes(old.length, 8));
+			slot = slot(key, keys.length - 1);
+			while (keys[slot] != 0)
+				slot = (slot + 1) & (keys.length - 1);
+		}
+		keys[slot] = key;
+		size++;
+		return true;
+	}
+
+	long[] sorted() {
+		long[] out = new long[size];
+		int n = 0;
+		if (zero)
+			out[n++] = Long.MIN_VALUE;
+		for (long k : keys)
+			if (k != 0)
+				out[n++] = k ^ Long.MIN_VALUE;
+		Arrays.sort(out);
+		for (int i = 0; i < out.length; i++)
+			out[i] ^= Long.MIN_VALUE;
+		return out;
+	}
+
+	private static int slot(long k, int mask) {
+		k ^= k >>> 33;
+		k *= 0xff51afd7ed558ccdL;
+		k ^= k >>> 33;
+		k *= 0xc4ceb9fe1a85ec53L;
+		k ^= k >>> 33;
+		return (int) k & mask;
+	}
+}

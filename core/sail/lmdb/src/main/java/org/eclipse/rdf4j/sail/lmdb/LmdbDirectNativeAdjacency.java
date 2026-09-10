@@ -17,10 +17,10 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 
-import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.OrderedIntegerDomain;
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 
 /**
  * Long-handle {@link NativeLmdbQuerySource.NativeAdjacency} over the direct index for one
@@ -504,10 +504,11 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	@Override
 	public boolean borrowRun(long runHandle, BorrowedFactorBatch target, int lane) {
 		ensureOpen();
-		if (!(target.source() instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
+		if (!(target.source()instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
 			throw new IllegalArgumentException("factor source belongs to another snapshot");
 		owner.checkOpen();
-		if (runHandle <= 0L) return false;
+		if (runHandle <= 0L)
+			return false;
 		resolve(runHandle);
 		runCursor.borrow(runHandle, target, lane);
 		return true;
@@ -1026,10 +1027,11 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 		@Override
 		public boolean borrow(BorrowedFactorBatch target, int lane) {
-			if (!(target.source() instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
+			if (!(target.source()instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
 				throw new IllegalArgumentException("factor source belongs to another snapshot");
 			owner.checkOpen();
-			if (!directBaseRun) return borrowRun(run, target, lane);
+			if (!directBaseRun)
+				return borrowRun(run, target, lane);
 			target.bindNative(lane, baseCursor.singlePageRow() ? BorrowedFactorBatch.CSF_PAGE
 					: BorrowedFactorBatch.ENCODED_RUN, baseCursor.firstPageAddress(), run,
 					baseCursor.firstLocalRow(), runSize());

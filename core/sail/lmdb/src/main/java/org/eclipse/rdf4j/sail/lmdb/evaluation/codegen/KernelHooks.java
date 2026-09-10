@@ -37,16 +37,18 @@ public interface KernelHooks {
 	}
 
 	/**
-	 * Authority-local input to the integer hash mixer used by native hash tables. Canonical dictionaries return
-	 * the id (or a canonical synthetic-alias representative), without resolving a Value. The default preserves
-	 * existing semantic hooks. This is not a globally portable hash and must agree with sameRdfTerm for all inputs.
+	 * Authority-local input to the integer hash mixer used by native hash tables. Canonical dictionaries return the id
+	 * (or a canonical synthetic-alias representative), without resolving a Value. The default preserves existing
+	 * semantic hooks. This is not a globally portable hash and must agree with sameRdfTerm for all inputs.
 	 */
 	default long termHashKey(long id) {
 		return rdfTermHash(id);
 	}
 
 	/** Exact canonical identity keys, stronger than the collision-permitting termHashKey contract. */
-	default boolean supportsCanonicalTermKeys() { return false; }
+	default boolean supportsCanonicalTermKeys() {
+		return false;
+	}
 
 	/** Stable for this evaluation; equal iff the bound RDF terms are identical. */
 	default long canonicalTermKey(long id) {
@@ -120,11 +122,14 @@ public interface KernelHooks {
 	void accumulateNumeric(int aggregateId, int groupId, long valueId);
 
 	/** True only when weighted numeric updates preserve this authority's promotion/error/order contract. */
-	default boolean supportsWeightedNumericAggregates() { return false; }
+	default boolean supportsWeightedNumericAggregates() {
+		return false;
+	}
 
 	/** Exact repeated-value update; unsupported hooks retain ordinary row execution before consuming input. */
 	default void accumulateNumericWeighted(int aggregateId, int groupId, long valueId, long weight) {
-		if (weight != 1L) throw new UnsupportedOperationException("weighted numeric aggregate");
+		if (weight != 1L)
+			throw new UnsupportedOperationException("weighted numeric aggregate");
 		accumulateNumeric(aggregateId, groupId, valueId);
 	}
 

@@ -5,12 +5,13 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
 /**
- * Pure-shape source generation over the shared packed/borrowed f-tree column contract.
- * No storage owner, native address, query constant, or engine slot enters the compiled shape.
- * Parent ordinals precede their children. This is also usable by non-IR topology consumers.
+ * Pure-shape source generation over the shared packed/borrowed f-tree column contract. No storage owner, native
+ * address, query constant, or engine slot enters the compiled shape. Parent ordinals precede their children. This is
+ * also usable by non-IR topology consumers.
  */
 public final class PackedFtreeKernelSource {
-	private PackedFtreeKernelSource() { }
+	private PackedFtreeKernelSource() {
+	}
 
 	private static void validate(int[][] children, int root, String name) {
 		if (children == null || children.length == 0 || root != 0)
@@ -18,11 +19,14 @@ public final class PackedFtreeKernelSource {
 		if (name == null || name.isEmpty() || !Character.isJavaIdentifierStart(name.charAt(0)))
 			throw new IllegalArgumentException("invalid generated class name");
 		for (int i = 1; i < name.length(); i++) {
-			if (!Character.isJavaIdentifierPart(name.charAt(i))) throw new IllegalArgumentException("invalid generated class name");
+			if (!Character.isJavaIdentifierPart(name.charAt(i)))
+				throw new IllegalArgumentException("invalid generated class name");
 		}
-		boolean[] seen = new boolean[children.length]; seen[root] = true;
+		boolean[] seen = new boolean[children.length];
+		seen[root] = true;
 		for (int parent = 0; parent < children.length; parent++) {
-			if (!seen[parent] || children[parent] == null) throw new IllegalArgumentException("disconnected tree");
+			if (!seen[parent] || children[parent] == null)
+				throw new IllegalArgumentException("disconnected tree");
 			for (int child : children[parent]) {
 				if (child <= parent || child >= children.length || seen[child])
 					throw new IllegalArgumentException("non-tree or non-topological edge");
@@ -40,8 +44,8 @@ public final class PackedFtreeKernelSource {
 				.append(" implements PackedFtreeKernel {\n")
 				.append("  private PackedFtreeContext p; private KernelCancellation cancel; private boolean done; private int ticks;\n")
 				.append("  public void bind(KernelContext c){ p=c.packedFtree; cancel=c.cancellation; done=false; ticks=0; }\n"
-				+ "  private void poll(){ if((++ticks&1023)==0)KernelRuntime.checkCancelled(cancel); }\n"
-				+ "  private void clear(long[] a,int end){ for(int from=0;from<end;){ KernelRuntime.checkCancelled(cancel); int to=from+Math.min(16384,end-from); java.util.Arrays.fill(a,from,to,0L); from=to; }}\n")
+						+ "  private void poll(){ if((++ticks&1023)==0)KernelRuntime.checkCancelled(cancel); }\n"
+						+ "  private void clear(long[] a,int end){ for(int from=0;from<end;){ KernelRuntime.checkCancelled(cancel); int to=from+Math.min(16384,end-from); java.util.Arrays.fill(a,from,to,0L); from=to; }}\n")
 				.append("  private int next(long[] b,int from,int end){ poll(); if(from>=end)return -1; int w=from>>>6; long x=b[w]&(-1L<<(from&63)); for(;;){ if(x!=0){int v=(w<<6)+Long.numberOfTrailingZeros(x); return v<end?v:-1;} if(((++w)<<6)>=end)return -1; poll(); x=b[w]; }}\n")
 				.append("  private static boolean set(long[] b,int i){ return (b[i>>>6]&(1L<<(i&63)))!=0; }\n")
 				.append("  private static long w(long[] a,int i){ return a==null?1L:(a[i]==0L?1L:a[i]); }\n")

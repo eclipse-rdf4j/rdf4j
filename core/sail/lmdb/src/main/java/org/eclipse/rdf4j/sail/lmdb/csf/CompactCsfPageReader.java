@@ -22,7 +22,10 @@ class CompactCsfPageReader {
 	private long address;
 
 	/** Valid only while the immutable page owner is retained. */
-	final long nativeAddress() { return address; }
+	final long nativeAddress() {
+		return address;
+	}
+
 	private int flags;
 	private int usedBytes;
 	private int rowCount;
@@ -453,9 +456,9 @@ class CompactCsfPageReader {
 	}
 
 	/**
-	 * Position relative to an already-known fiber boundary. The result packs the local fiber in
-	 * the high word and the skipped contexts in its low word. Skipping single-context rows is
-	 * constant time; other rows visit only intervening context counts, never their neighbor IDs.
+	 * Position relative to an already-known fiber boundary. The result packs the local fiber in the high word and the
+	 * skipped contexts in its low word. Skipping single-context rows is constant time; other rows visit only
+	 * intervening context counts, never their neighbor IDs.
 	 */
 	long seekFollowingFiber(int rowIndex, int fromFiber, int skipQuads) {
 		checkRow(rowIndex);
@@ -465,24 +468,29 @@ class CompactCsfPageReader {
 			throw new IllegalArgumentException("invalid positioned fiber seek");
 		if (flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE)) {
 			int target = Math.addExact(fromFiber, skipQuads);
-			if (target > count) throw new IllegalArgumentException("fiber seek beyond row");
+			if (target > count)
+				throw new IllegalArgumentException("fiber seek beyond row");
 			return (long) target << Integer.SIZE;
 		}
 		int fiber = fromFiber;
 		while (skipQuads > 0 && fiber < count) {
 			int contexts = fiberContextCount(start + fiber);
-			if (skipQuads < contexts) break;
+			if (skipQuads < contexts)
+				break;
 			skipQuads -= contexts;
 			fiber++;
 		}
-		if (fiber == count && skipQuads != 0) throw new IllegalArgumentException("fiber seek beyond row");
+		if (fiber == count && skipQuads != 0)
+			throw new IllegalArgumentException("fiber seek beyond row");
 		return ((long) fiber << Integer.SIZE) | Integer.toUnsignedLong(skipQuads);
 	}
 
 	/** Continue a decoded prefix across a gap without walking it again from the start of the row. */
 	long neighborBeforeFollowingFiber(int rowIndex, int fromFiber, int toFiber, long previousNeighbor) {
-		if (toFiber == fromFiber) return previousNeighbor;
-		if (fromFiber == 0) return neighborAtFiber(rowIndex, toFiber - 1);
+		if (toFiber == fromFiber)
+			return previousNeighbor;
+		if (fromFiber == 0)
+			return neighborAtFiber(rowIndex, toFiber - 1);
 		int tail = rowFiberStart(rowIndex) - rowIndex + fromFiber - 1;
 		return previousNeighbor + neighborRangeSum(tail, toFiber - fromFiber);
 	}
@@ -490,20 +498,26 @@ class CompactCsfPageReader {
 	/** Sequential continuation using the preceding decoded neighbor, never a repeated row-prefix walk. */
 	int copyFollowingFibers(int rowIndex, int fromFiber, int maximum, long previousNeighbor,
 			long[] neighbors, int neighborOffset, long[] weights, int weightOffset) {
-		if (fromFiber == 0) return copyFibers(rowIndex, 0, maximum, neighbors, neighborOffset, weights, weightOffset);
+		if (fromFiber == 0)
+			return copyFibers(rowIndex, 0, maximum, neighbors, neighborOffset, weights, weightOffset);
 		checkRow(rowIndex);
 		int start = rowFiberOffset(rowIndex);
 		int count = rowFiberOffset(rowIndex + 1) - start;
-		if (fromFiber < 0 || fromFiber > count || maximum < 0) throw new IllegalArgumentException("invalid fiber range");
+		if (fromFiber < 0 || fromFiber > count || maximum < 0)
+			throw new IllegalArgumentException("invalid fiber range");
 		int copied = Math.min(maximum, count - fromFiber);
 		if (neighborOffset < 0 || neighborOffset > neighbors.length - copied
 				|| weightOffset < 0 || weightOffset > weights.length - copied)
 			throw new IllegalArgumentException("invalid fiber targets");
-		if (copied == 0) return 0;
+		if (copied == 0)
+			return 0;
 		PackedLongVector.nativeCopyCumulative(neighborTailsAddress(), fiberCount - rowCount,
 				start - rowIndex + fromFiber - 1, 1, copied, previousNeighbor, neighbors, neighborOffset);
-		if (flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE)) Arrays.fill(weights, weightOffset, weightOffset + copied, 1L);
-		else PackedLongVector.nativeCopy(contextCountsAddress(), fiberCount, start + fromFiber, copied, weights, weightOffset);
+		if (flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE))
+			Arrays.fill(weights, weightOffset, weightOffset + copied, 1L);
+		else
+			PackedLongVector.nativeCopy(contextCountsAddress(), fiberCount, start + fromFiber, copied, weights,
+					weightOffset);
 		return copied;
 	}
 

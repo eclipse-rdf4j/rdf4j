@@ -1308,7 +1308,8 @@ final class LmdbNativeKernelLowering {
 				if (admitted) {
 					Lowered lowered = factored.buildAggregate(groupSlots, aggregates, having,
 							distinctExpected(arg, row, groupSlots.length > 0));
-					if (lowered != null && LmdbNativeKernelIr.factorPlan(lowered.kernel) != null) return lowered;
+					if (lowered != null && LmdbNativeKernelIr.factorPlan(lowered.kernel) != null)
+						return lowered;
 				}
 			}
 		}
@@ -2037,9 +2038,9 @@ final class LmdbNativeKernelLowering {
 		 * tier sees such a plan at all. Left before right preserves the tree's own binding flow, and that is exactly
 		 * what the emitted pipeline is: a nested-loop chain. Filters are gathered rather than placed here because
 		 * {@code lowerFilterStrict} can place replay-safe guards after the last producer. Observable operands instead
-		 * use {@code lowerOrderedOperand}, which preserves filter scope and encounter order; their
-		 * {@code plannedDepth} is an interpreted-engine placement hint the kernel never reads, so splicing a nested
-		 * {@code MultiJoinPlan}'s filters in unadjusted is safe.
+		 * use {@code lowerOrderedOperand}, which preserves filter scope and encounter order; their {@code plannedDepth}
+		 * is an interpreted-engine placement hint the kernel never reads, so splicing a nested {@code MultiJoinPlan}'s
+		 * filters in unadjusted is safe.
 		 */
 		boolean lowerJoinOperand(SlotPlan plan, List<MaskedFilter> filters, RowState row) {
 			return lowerJoinOperand(plan, filters, row, true);
@@ -2183,11 +2184,10 @@ final class LmdbNativeKernelLowering {
 		}
 
 		/**
-		 * Lower an order/effect-sensitive tree without collecting a child's filters into its parent.
-		 * In particular FILTER(left) JOIN SERVICE must reject before opening the service, whereas
-		 * FILTER(left JOIN SERVICE) must not suppress the service's observable error by moving left.
-		 * Unknown leaves use the existing correlated PlanRows SPI; their IDs are imported by the
-		 * owning SlotPlan, never copied across remote dictionary authorities.
+		 * Lower an order/effect-sensitive tree without collecting a child's filters into its parent. In particular
+		 * FILTER(left) JOIN SERVICE must reject before opening the service, whereas FILTER(left JOIN SERVICE) must not
+		 * suppress the service's observable error by moving left. Unknown leaves use the existing correlated PlanRows
+		 * SPI; their IDs are imported by the owning SlotPlan, never copied across remote dictionary authorities.
 		 */
 		private boolean lowerOrderedOperand(SlotPlan plan, RowState row) {
 			if (plan instanceof JoinPlan join) {

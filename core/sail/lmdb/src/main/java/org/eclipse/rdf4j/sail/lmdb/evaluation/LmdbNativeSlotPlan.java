@@ -29,25 +29,25 @@ interface SlotPlan {
 
 	/**
 	 * Exact bag projection that may leave unobserved groups unexpanded. Only outputSlots are installed in the scalar
-	 * row; this never marks a deferred factor as a bound dictionary id. Null means use the ordinary cursor. The
-	 * default is deliberately conservative: expression side effects and ordering are not inferred from projection.
+	 * row; this never marks a deferred factor as a bound dictionary id. Null means use the ordinary cursor. The default
+	 * is deliberately conservative: expression side effects and ordering are not inferred from projection.
 	 */
 	default FactorizedRowCursor openProjected(RowState row, int[] outputSlots) throws IOException {
 		return LmdbNativeFactorRows.openProjected(this, row, outputSlots);
 	}
 
 	/**
-	 * Optional grouped-relation transport. Scalar slots contain only installed IDs; the returned sidecar
-	 * owns the currently deferred variable bindings. Null declines before advancing the plan or changing
-	 * the entry row. Consumers must expand their complete dependency set before invoking scalar code.
+	 * Optional grouped-relation transport. Scalar slots contain only installed IDs; the returned sidecar owns the
+	 * currently deferred variable bindings. Null declines before advancing the plan or changing the entry row.
+	 * Consumers must expand their complete dependency set before invoking scalar code.
 	 */
 	default LmdbNativeFactorCursor openFactors(RowState row) throws IOException {
 		return null;
 	}
 
 	/**
-	 * Same relation, with an immediate scalar-demand hint. Producers may fuse lookup with expansion
-	 * when those bindings are needed now; this never authorizes dropping unrequested multiplicities.
+	 * Same relation, with an immediate scalar-demand hint. Producers may fuse lookup with expansion when those bindings
+	 * are needed now; this never authorizes dropping unrequested multiplicities.
 	 */
 	default LmdbNativeFactorCursor openFactors(RowState row, long scalarDemand) throws IOException {
 		return openFactors(row);
@@ -55,7 +55,9 @@ interface SlotPlan {
 
 	/** Shared chunk-owned aggregate marginals. Null declines before advancing the source. */
 	default NativeFactorProjections openProjections(RowState row, int[][] outputSlots, boolean[] exactWeights)
-			throws IOException { return null; }
+			throws IOException {
+		return null;
+	}
 
 	long producedMask();
 

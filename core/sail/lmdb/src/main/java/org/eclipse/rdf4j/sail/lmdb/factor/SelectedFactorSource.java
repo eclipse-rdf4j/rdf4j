@@ -7,15 +7,16 @@ package org.eclipse.rdf4j.sail.lmdb.factor;
 import java.util.Objects;
 
 /**
- * Query-local, exact selected view of a borrowed relation. Values remain in the original source;
- * selection runs use logical quad positions and therefore preserve weights, including split
- * fibers. Repeated selections are composed into ultimate-source coordinates, not stacked readers.
+ * Query-local, exact selected view of a borrowed relation. Values remain in the original source; selection runs use
+ * logical quad positions and therefore preserve weights, including split fibers. Repeated selections are composed into
+ * ultimate-source coordinates, not stacked readers.
  *
- * <p>One producer owns this reusable one-lane descriptor. Its selection may be a bounded part of
- * a much larger relation. Publishing successive disjoint parts preserves the bag, but does not
- * assert that the parent keys of those parts are distinct. All consumers must finish with a part
- * before select/clear or the upstream producer advances. This source borrows upstream ownership;
- * closing it never closes the upstream source. Readers and the upstream lease must outlive reads.
+ * <p>
+ * One producer owns this reusable one-lane descriptor. Its selection may be a bounded part of a much larger relation.
+ * Publishing successive disjoint parts preserves the bag, but does not assert that the parent keys of those parts are
+ * distinct. All consumers must finish with a part before select/clear or the upstream producer advances. This source
+ * borrows upstream ownership; closing it never closes the upstream source. Readers and the upstream lease must outlive
+ * reads.
  */
 public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 	private final BorrowedFactorBatch batch = new BorrowedFactorBatch(this, 1);
@@ -29,7 +30,9 @@ public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 	private long baseGeneration;
 
 	/** Use bounded dense read-ahead by default only for encoded physical sources. */
-	public SelectedFactorSource(int initialRanges) { this(initialRanges, (byte) 2); }
+	public SelectedFactorSource(int initialRanges) {
+		this(initialRanges, (byte) 2);
+	}
 
 	/** Dense selections may read ahead within a bounded window; false retains interval-only fills. */
 	public SelectedFactorSource(int initialRanges, boolean denseReadAhead) {
@@ -43,9 +46,19 @@ public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 		batch.reset(1);
 	}
 
-	public BorrowedFactorBatch batch() { checkOpen(); return batch; }
-	public int ranges() { checkOpen(); return ranges.ranges(); }
-	public long retainedSelectionBytes() { return ranges.retainedBytes(); }
+	public BorrowedFactorBatch batch() {
+		checkOpen();
+		return batch;
+	}
+
+	public int ranges() {
+		checkOpen();
+		return ranges.ranges();
+	}
+
+	public long retainedSelectionBytes() {
+		return ranges.retainedBytes();
+	}
 
 	/** Invalidates published descriptors, but can be called after the upstream producer advances. */
 	public void clear() {
@@ -60,14 +73,17 @@ public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 		checkNotClosed();
 		Objects.requireNonNull(input, "input");
 		Objects.requireNonNull(selection, "selection");
-		for (BorrowedFactorBatch.Source dependency = input.source(); dependency instanceof SelectedFactorSource selected;
-				dependency = selected.original == null ? null : selected.original.source()) {
-			if (dependency == this) throw new IllegalArgumentException("cyclic selection dependency");
+		for (BorrowedFactorBatch.Source dependency = input
+				.source(); dependency instanceof SelectedFactorSource selected; dependency = selected.original == null
+						? null
+						: selected.original.source()) {
+			if (dependency == this)
+				throw new IllegalArgumentException("cyclic selection dependency");
 		}
 		long sourceCount = input.count(lane);
 		selection.validateBounds(sourceCount);
 		clear();
-		if (input.source() instanceof SelectedFactorSource selected) {
+		if (input.source()instanceof SelectedFactorSource selected) {
 			// Empty selections can have no base relation. Their count is still exactly zero.
 			ranges.compose(selected.ranges, selection);
 			base = selected.base;
@@ -86,7 +102,8 @@ public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 		return batch;
 	}
 
-	@Override protected void validate() {
+	@Override
+	protected void validate() {
 		if (original != null) {
 			if (original.generation() != originalGeneration)
 				throw new IllegalStateException("selection producer advanced while a selected view was live");
@@ -98,13 +115,15 @@ public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 		}
 	}
 
-	@Override protected void validateDescriptor(byte kind, long reference, int coordinate) {
+	@Override
+	protected void validateDescriptor(byte kind, long reference, int coordinate) {
 		if ((kind == BorrowedFactorBatch.SELECTED || (kind == BorrowedFactorBatch.EMPTY && reference != 0L))
 				&& reference != batch.generation())
 			throw new IllegalStateException("copied selected descriptor was invalidated by its producer");
 	}
 
-	@Override public BorrowedFactorBatch.Reader openReader() {
+	@Override
+	public BorrowedFactorBatch.Reader openReader() {
 		checkOpen();
 		return new SelectionReader();
 	}
@@ -124,14 +143,17 @@ public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 		private boolean bound;
 		private boolean closed;
 
-		@Override public void bind(BorrowedFactorBatch input, int lane) {
+		@Override
+		public void bind(BorrowedFactorBatch input, int lane) {
 			checkReaderOpen();
 			if (input.source() != SelectedFactorSource.this || input.kind(lane) != BorrowedFactorBatch.SELECTED)
 				throw new IllegalArgumentException("incompatible selected factor");
 			bound = false;
-			if (base == null) throw new IllegalStateException("nonempty selection without a source");
+			if (base == null)
+				throw new IllegalStateException("nonempty selection without a source");
 			if (boundSource != base.source()) {
-				if (reader != null) reader.close();
+				if (reader != null)
+					reader.close();
 				reader = null;
 				boundSource = null;
 				reader = base.source().openReader();
@@ -152,13 +174,15 @@ public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 			bound = true;
 		}
 
-		@Override public int copyFibers(long offset, int maximum, long[] values, long[] weights) {
+		@Override
+		public int copyFibers(long offset, int maximum, long[] values, long[] weights) {
 			checkReaderOpen();
 			if (!bound || generation != batch.generation())
 				throw new IllegalStateException("selected reader is unbound or invalidated");
 			if (offset < 0L || offset > count || maximum < 0 || maximum > values.length || maximum > weights.length)
 				throw new IllegalArgumentException("invalid selected read");
-			if (offset == count || maximum == 0) return 0;
+			if (offset == count || maximum == 0)
+				return 0;
 			if (range == ranges.ranges() || offset < ranges.prefixStart(range) || offset >= ranges.prefixEnd(range))
 				range = ranges.rangeAt(offset);
 			int written = 0;
@@ -172,14 +196,17 @@ public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 						long span = ranges.end(ranges.ranges() - 1) - physical;
 						// Half-dense suffixes amortize decoding across gaps. The source and overall
 						// density gate are resolved at bind, so sparse/native defaults skip this work.
-						if (count - at >= (span >>> 1) + (span & 1L)) readSpan = span;
+						if (count - at >= (span >>> 1) + (span & 1L))
+							readSpan = span;
 					}
 					int request = (int) Math.min(maximum - written, readSpan);
 					if (decodedValues.length < request) {
-						decodedValues = new long[maximum]; decodedWeights = new long[maximum];
+						decodedValues = new long[maximum];
+						decodedWeights = new long[maximum];
 					}
 					int n = reader.copyFibers(physical, request, decodedValues, decodedWeights);
-					if (n <= 0 || n > request) throw new IllegalStateException("selected source made no progress");
+					if (n <= 0 || n > request)
+						throw new IllegalStateException("selected source made no progress");
 					bufferStart = bufferPosition = physical;
 					bufferAt = 0;
 					long end = physical;
@@ -191,7 +218,8 @@ public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 					}
 					bufferEnd = end;
 				} else if (physical < bufferPosition) {
-					bufferPosition = bufferStart; bufferAt = 0;
+					bufferPosition = bufferStart;
+					bufferAt = 0;
 				}
 				while (bufferPosition + decodedWeights[bufferAt] <= physical)
 					bufferPosition += decodedWeights[bufferAt++];
@@ -201,23 +229,36 @@ public final class SelectedFactorSource extends BorrowedFactorBatch.Source {
 				values[written] = decodedValues[bufferAt];
 				weights[written++] = take;
 				at += take;
-				if (take == remaining) range++;
+				if (take == remaining)
+					range++;
 			}
 			return written;
 		}
 
 		private void checkReaderOpen() {
-			if (closed) throw new IllegalStateException("selected reader closed");
+			if (closed)
+				throw new IllegalStateException("selected reader closed");
 			SelectedFactorSource.this.checkOpen();
 		}
 
-		@Override public void close() {
-			if (closed) return;
+		@Override
+		public void close() {
+			if (closed)
+				return;
 			closed = true;
-			try { if (reader != null) reader.close(); }
-			finally { reader = null; boundSource = null; }
+			try {
+				if (reader != null)
+					reader.close();
+			} finally {
+				reader = null;
+				boundSource = null;
+			}
 		}
 	}
 
-	@Override protected void release() { original = base = null; ranges.clear(); }
+	@Override
+	protected void release() {
+		original = base = null;
+		ranges.clear();
+	}
 }

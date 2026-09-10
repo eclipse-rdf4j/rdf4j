@@ -720,13 +720,20 @@ class LmdbNativeWildcardPredicateBatchTest {
 			System.setProperty(KERNEL_INTERPRETER_PROPERTY, Boolean.toString(strategy != null));
 			long folded = LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded();
 			try (RepositoryConnection connection = repository.getConnection()) {
-				org.eclipse.rdf4j.repository.sail.SailTupleQuery prepared =
-						(org.eclipse.rdf4j.repository.sail.SailTupleQuery) connection.prepareTupleQuery(query);
-				if (strategy != null) prepared.setForcedLmdbExecutionStrategy(strategy);
+				org.eclipse.rdf4j.repository.sail.SailTupleQuery prepared = (org.eclipse.rdf4j.repository.sail.SailTupleQuery) connection
+						.prepareTupleQuery(query);
+				if (strategy != null)
+					prepared.setForcedLmdbExecutionStrategy(strategy);
 				List<BindingSet> result = QueryResults.asList(prepared.evaluate());
-				List<String> actual = result.stream().map(bindings -> bindings.getBindingNames().stream().sorted()
-						.map(name -> name + '=' + bindings.getValue(name).stringValue())
-						.reduce((left, right) -> left + '|' + right).orElse("")).sorted().toList();
+				List<String> actual = result.stream()
+						.map(bindings -> bindings.getBindingNames()
+								.stream()
+								.sorted()
+								.map(name -> name + '=' + bindings.getValue(name).stringValue())
+								.reduce((left, right) -> left + '|' + right)
+								.orElse(""))
+						.sorted()
+						.toList();
 				assertThat(actual).containsExactlyElementsOf(generic);
 				long previous = Long.MAX_VALUE;
 				for (BindingSet bindings : result) {
@@ -739,10 +746,14 @@ class LmdbNativeWildcardPredicateBatchTest {
 					.as("computed grouping must execute the weighted wildcard path, not only a native fallback")
 					.isGreaterThan(folded);
 		} finally {
-			if (synchronous == null) System.clearProperty("rdf4j.lmdb.janinoCodegen.synchronous");
-			else System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", synchronous);
-			if (projection == null) System.clearProperty("rdf4j.lmdb.janinoCodegen.weightedComputedGroups");
-			else System.setProperty("rdf4j.lmdb.janinoCodegen.weightedComputedGroups", projection);
+			if (synchronous == null)
+				System.clearProperty("rdf4j.lmdb.janinoCodegen.synchronous");
+			else
+				System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", synchronous);
+			if (projection == null)
+				System.clearProperty("rdf4j.lmdb.janinoCodegen.weightedComputedGroups");
+			else
+				System.setProperty("rdf4j.lmdb.janinoCodegen.weightedComputedGroups", projection);
 		}
 	}
 

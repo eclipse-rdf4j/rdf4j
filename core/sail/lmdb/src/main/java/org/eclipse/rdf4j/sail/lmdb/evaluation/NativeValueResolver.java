@@ -24,11 +24,11 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
  * normalization use the same instance; none can turn a cached miss into a globally valid absence assertion.
  *
  * Keys preserve exact RDF spelling (language case, datatype, base direction and nested triples), as do the existing
- * catalog and runtime interner. Dictionary and catalog entries are immutable and published atomically; the runtime result is published once.
- * Hits are lock-free; admitted misses for one
- * bucket serialize, preventing a parallel miss storm for the same value. Eviction changes work, never identity.
- * Dictionary/catalog lookup results are kept separate from the interned result, so idOf never starts returning a
- * runtime-only id. The context owns this resolver and releases retained spellings when evaluation ends.
+ * catalog and runtime interner. Dictionary and catalog entries are immutable and published atomically; the runtime
+ * result is published once. Hits are lock-free; admitted misses for one bucket serialize, preventing a parallel miss
+ * storm for the same value. Eviction changes work, never identity. Dictionary/catalog lookup results are kept separate
+ * from the interned result, so idOf never starts returning a runtime-only id. The context owns this resolver and
+ * releases retained spellings when evaluation ends.
  */
 final class NativeValueResolver implements AutoCloseable {
 	static final String PROPERTY = "rdf4j.lmdb.computedValueResolutionCache.enabled";
@@ -252,9 +252,9 @@ final class NativeValueResolver implements AutoCloseable {
 		private volatile int bypassRemaining;
 
 		/**
-		 * Saturated, repeatedly evicting sets admit one new miss in 33. Existing hits always bypass this test.
-		 * The approximate countdown is a work heuristic only: racing decrements can change admission, never
-		 * the returned identity. Periodic admission allows a later repeating value to become hot again.
+		 * Saturated, repeatedly evicting sets admit one new miss in 33. Existing hits always bypass this test. The
+		 * approximate countdown is a work heuristic only: racing decrements can change admission, never the returned
+		 * identity. Periodic admission allows a later repeating value to become hot again.
 		 */
 		boolean skipAdmission(Object scope) {
 			int remaining = bypassRemaining;
@@ -301,10 +301,18 @@ final class NativeValueResolver implements AutoCloseable {
 				d = entry;
 			} else {
 				switch (victim++ & (WAYS - 1)) {
-				case 0: a = entry; break;
-				case 1: b = entry; break;
-				case 2: c = entry; break;
-				default: d = entry; break;
+				case 0:
+					a = entry;
+					break;
+				case 1:
+					b = entry;
+					break;
+				case 2:
+					c = entry;
+					break;
+				default:
+					d = entry;
+					break;
 				}
 				if (evictions < 8) {
 					evictions++;

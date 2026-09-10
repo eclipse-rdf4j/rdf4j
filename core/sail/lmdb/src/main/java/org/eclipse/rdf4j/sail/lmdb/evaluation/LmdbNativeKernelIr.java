@@ -38,11 +38,11 @@ final class LmdbNativeKernelIr {
 		for (AggregateOutput output : aggregate.outputs) {
 			if (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT && output.kind != AGG_COUNT_DISTINCT)
 				return false;
-			if (output.kind == AGG_COUNT_DISTINCT && output.orderedDomain >= 0) return false;
+			if (output.kind == AGG_COUNT_DISTINCT && output.orderedDomain >= 0)
+				return false;
 		}
 		return true;
 	}
-
 
 	static final long NULL_ID = -1L;
 
@@ -63,31 +63,39 @@ final class LmdbNativeKernelIr {
 	}
 
 	/** Exact weighted transfer is legal only with no intervening per-mapping work or distinct channel. */
-    /** A complete tail duplicate group has one binding; only bag counts may consume its exact multiplicity. */
-    static boolean intersectionCountTail(Kernel kernel) {
-        if (!(kernel.terminal instanceof Aggregate aggregate) || kernel.pipeline.isEmpty()
-                || !(kernel.pipeline.get(kernel.pipeline.size()-1) instanceof Intersect) || aggregate.outputs.length==0) return false;
-        for (AggregateOutput output : aggregate.outputs)
-            if (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT) return false;
-        return true;
-    }
+	/** A complete tail duplicate group has one binding; only bag counts may consume its exact multiplicity. */
+	static boolean intersectionCountTail(Kernel kernel) {
+		if (!(kernel.terminal instanceof Aggregate aggregate) || kernel.pipeline.isEmpty()
+				|| !(kernel.pipeline.get(kernel.pipeline.size() - 1) instanceof Intersect)
+				|| aggregate.outputs.length == 0)
+			return false;
+		for (AggregateOutput output : aggregate.outputs)
+			if (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT)
+				return false;
+		return true;
+	}
 
-    /** No per-value continuation or grouping can observe the intersection members. */
-    static boolean intersectionTotalCountTail(Kernel kernel) {
-        if (!intersectionCountTail(kernel)) return false;
-        Aggregate aggregate = (Aggregate) kernel.terminal;
-        if (aggregate.groupCols.length != 0) return false;
-        for (AggregateOutput output : aggregate.outputs)
-            if (output.kind != AGG_COUNT_STAR || output.hookDistinct) return false;
-        return true;
-    }
+	/** No per-value continuation or grouping can observe the intersection members. */
+	static boolean intersectionTotalCountTail(Kernel kernel) {
+		if (!intersectionCountTail(kernel))
+			return false;
+		Aggregate aggregate = (Aggregate) kernel.terminal;
+		if (aggregate.groupCols.length != 0)
+			return false;
+		for (AggregateOutput output : aggregate.outputs)
+			if (output.kind != AGG_COUNT_STAR || output.hookDistinct)
+				return false;
+		return true;
+	}
 
 	static boolean weightedPlanCount(Kernel kernel) {
 		if (kernel.pipeline.size() != 1 || !(kernel.pipeline.get(0) instanceof PlanRows)
 				|| kernel.pipeline.get(0) instanceof PlanFactors
-				|| !(kernel.terminal instanceof Aggregate aggregate) || aggregate.outputs.length == 0) return false;
+				|| !(kernel.terminal instanceof Aggregate aggregate) || aggregate.outputs.length == 0)
+			return false;
 		for (AggregateOutput output : aggregate.outputs) {
-			if (output.hookDistinct || (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT)) return false;
+			if (output.hookDistinct || (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT))
+				return false;
 		}
 		return true;
 	}
@@ -99,16 +107,25 @@ final class LmdbNativeKernelIr {
 		final PlanRows input;
 		final org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout layout;
 		final boolean weightedNumeric;
+
 		AggregateProjections(PlanRows input, org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout layout,
-				boolean weightedNumeric) { this.input = input; this.layout = layout; this.weightedNumeric = weightedNumeric; }
+				boolean weightedNumeric) {
+			this.input = input;
+			this.layout = layout;
+			this.weightedNumeric = weightedNumeric;
+		}
+
 		static AggregateProjections create(List<Node> pipeline, Terminal terminal, Kernel.AggregateStateMode mode) {
 			if ("false".equals(System.getProperty(FACTOR_MARGINALS_PROPERTY)) || pipeline.size() != 1
-					|| !(pipeline.get(0) instanceof PlanRows input) || input instanceof PlanFactors
+					|| !(pipeline.get(0)instanceof PlanRows input) || input instanceof PlanFactors
 					|| !(terminal instanceof Aggregate aggregate) || mode != Kernel.AggregateStateMode.HASHED
-					|| aggregate.outputs.length == 0) return null;
+					|| aggregate.outputs.length == 0)
+				return null;
 			int[] groups = new int[aggregate.groupCols.length];
 			for (int i = 0; i < groups.length; i++) {
-				groups[i] = position(input.outCols, aggregate.groupCols[i]); if (groups[i] < 0) return null;
+				groups[i] = position(input.outCols, aggregate.groupCols[i]);
+				if (groups[i] < 0)
+					return null;
 			}
 			int[] args = new int[aggregate.outputs.length];
 			boolean[] exact = new boolean[args.length];
@@ -116,26 +133,47 @@ final class LmdbNativeKernelIr {
 			long argumentDomains = 0L;
 			for (int i = 0; i < args.length; i++) {
 				AggregateOutput output = aggregate.outputs[i];
-				if (output.hookDistinct || output.orderedDomain >= 0 || output.kind == AGG_ROW_STATE) return null;
+				if (output.hookDistinct || output.orderedDomain >= 0 || output.kind == AGG_ROW_STATE)
+					return null;
 				// Only the same order-insensitive families admitted by native weighted accumulation.
 				switch (output.kind) {
-				case AGG_COUNT_STAR: case AGG_COUNT: exact[i] = true; break;
-				case AGG_SUM: case AGG_AVG: exact[i] = true; numeric = true; useful = true; break;
-				case AGG_COUNT_DISTINCT: case AGG_SUM_DISTINCT: case AGG_AVG_DISTINCT:
-				case AGG_MIN_ID: case AGG_MAX_ID: useful = true; break;
-				default: return null; // untyped floating extrema and custom/order-sensitive channels stay exact-row
+				case AGG_COUNT_STAR:
+				case AGG_COUNT:
+					exact[i] = true;
+					break;
+				case AGG_SUM:
+				case AGG_AVG:
+					exact[i] = true;
+					numeric = true;
+					useful = true;
+					break;
+				case AGG_COUNT_DISTINCT:
+				case AGG_SUM_DISTINCT:
+				case AGG_AVG_DISTINCT:
+				case AGG_MIN_ID:
+				case AGG_MAX_ID:
+					useful = true;
+					break;
+				default:
+					return null; // untyped floating extrema and custom/order-sensitive channels stay exact-row
 				}
 				args[i] = output.kind == AGG_COUNT_STAR ? -1 : position(input.outCols, output.col);
-				if (output.kind != AGG_COUNT_STAR && args[i] < 0) return null;
-				if (args[i] >= 0) argumentDomains |= 1L << args[i];
+				if (output.kind != AGG_COUNT_STAR && args[i] < 0)
+					return null;
+				if (args[i] >= 0)
+					argumentDomains |= 1L << args[i];
 			}
 			// Keep a sufficient existing one-projection COUNT shortcut, with no new setup overhead.
-			if (!useful && Long.bitCount(argumentDomains) <= 1) return null;
+			if (!useful && Long.bitCount(argumentDomains) <= 1)
+				return null;
 			return new AggregateProjections(input,
 					new org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout(groups, args, exact), numeric);
 		}
+
 		private static int position(int[] columns, int requested) {
-			for (int i = 0; i < columns.length; i++) if (columns[i] == requested) return i;
+			for (int i = 0; i < columns.length; i++)
+				if (columns[i] == requested)
+					return i;
 			return -1;
 		}
 	}
@@ -295,13 +333,18 @@ final class LmdbNativeKernelIr {
 	static void visitNodes(List<Node> pipeline, java.util.function.Consumer<Node> visitor) {
 		for (Node node : pipeline) {
 			visitor.accept(node);
-			if (node instanceof Exists exists) visitNodes(exists.pipeline, visitor);
-			else if (node instanceof HashBuild build) visitNodes(build.pipeline, visitor);
-			else if (node instanceof LeftGroup group) visitNodes(group.arm, visitor);
+			if (node instanceof Exists exists)
+				visitNodes(exists.pipeline, visitor);
+			else if (node instanceof HashBuild build)
+				visitNodes(build.pipeline, visitor);
+			else if (node instanceof LeftGroup group)
+				visitNodes(group.arm, visitor);
 			else if (node instanceof LexicalFrameLeftJoin join) {
-				visitNodes(join.left, visitor); visitNodes(join.right, visitor);
+				visitNodes(join.left, visitor);
+				visitNodes(join.right, visitor);
 			} else if (node instanceof Union union) {
-				for (List<Node> branch : union.branches) visitNodes(branch, visitor);
+				for (List<Node> branch : union.branches)
+					visitNodes(branch, visitor);
 			}
 		}
 	}
@@ -315,13 +358,20 @@ final class LmdbNativeKernelIr {
 		visitNodes(pipeline, node -> {
 			int table, keys, payload;
 			if (node instanceof HashBuild build) {
-				table = build.tableId; keys = build.keyCols.length; payload = build.payloadCols.length;
+				table = build.tableId;
+				keys = build.keyCols.length;
+				payload = build.payloadCols.length;
 			} else if (node instanceof HashProbe probe) {
-				table = probe.tableId; keys = probe.keys.length; payload = probe.dstCols.length;
-			} else return;
-			if (table < 0) throw new IllegalArgumentException("negative hash table ID");
+				table = probe.tableId;
+				keys = probe.keys.length;
+				payload = probe.dstCols.length;
+			} else
+				return;
+			if (table < 0)
+				throw new IllegalArgumentException("negative hash table ID");
 			int[] layout = layouts.computeIfAbsent(table, ignored -> new int[2]);
-			layout[0] = Math.max(layout[0], keys); layout[1] = Math.max(layout[1], payload);
+			layout[0] = Math.max(layout[0], keys);
+			layout[1] = Math.max(layout[1], payload);
 		});
 		return layouts;
 	}
@@ -573,22 +623,24 @@ final class LmdbNativeKernelIr {
 	}
 
 	/**
-	 * Grouped physical producer: only scalarOutputs are opened and made available as ID registers.
-	 * Remaining groups stay borrowed until a COUNT terminal requests their exact product, after
-	 * the scalar guards accept. Output positions, IR registers, and engine slots are distinct
-	 * namespaces. Shape fields contain neither addresses nor snapshot-specific descriptors.
+	 * Grouped physical producer: only scalarOutputs are opened and made available as ID registers. Remaining groups
+	 * stay borrowed until a COUNT terminal requests their exact product, after the scalar guards accept. Output
+	 * positions, IR registers, and engine slots are distinct namespaces. Shape fields contain neither addresses nor
+	 * snapshot-specific descriptors.
 	 *
-	 * The first admitted continuation is deterministic ID guards/aliases followed by COUNT
-	 * channels. Unknown effects and expanding continuations remain explicit admission barriers.
+	 * The first admitted continuation is deterministic ID guards/aliases followed by COUNT channels. Unknown effects
+	 * and expanding continuations remain explicit admission barriers.
 	 */
 	static final class PlanFactors extends PlanRows {
 		final int[] scalarOutputs;
 
 		PlanFactors(int plan, int[] outCols, Operand[] inputs, int[] scalarOutputs) {
 			super(plan, outCols, inputs);
-			if (plan < 0) throw new IllegalArgumentException("negative plan resource");
-			for (int col : outCols) if (col < 0 || col >= Long.SIZE)
-				throw new IllegalArgumentException("invalid factor output register");
+			if (plan < 0)
+				throw new IllegalArgumentException("negative plan resource");
+			for (int col : outCols)
+				if (col < 0 || col >= Long.SIZE)
+					throw new IllegalArgumentException("invalid factor output register");
 			this.scalarOutputs = scalarOutputs.clone();
 			BitSet seen = new BitSet();
 			for (int output : this.scalarOutputs) {
@@ -598,17 +650,21 @@ final class LmdbNativeKernelIr {
 			}
 		}
 
-		@Override void key(StringBuilder key) {
+		@Override
+		void key(StringBuilder key) {
 			key.append("PF[");
-			for (int output : scalarOutputs) key.append(output).append(',');
+			for (int output : scalarOutputs)
+				key.append(output).append(',');
 			key.append("]");
 			super.key(key);
 		}
 
-		@Override void produced(BitSet columns) {
+		@Override
+		void produced(BitSet columns) {
 			for (int output : scalarOutputs) {
 				int col = outCols[output];
-				if (inputForColumn(col) < 0) columns.set(col);
+				if (inputForColumn(col) < 0)
+					columns.set(col);
 			}
 		}
 	}
@@ -618,15 +674,17 @@ final class LmdbNativeKernelIr {
 	static final String FACTOR_GUARD_PEELING_PROPERTY = "rdf4j.lmdb.janinoCodegen.factorGuardPeeling";
 
 	static PlanFactors factorPlan(Kernel kernel) {
-		return !kernel.pipeline.isEmpty() && kernel.pipeline.get(0) instanceof PlanFactors factors ? factors : null;
+		return !kernel.pipeline.isEmpty() && kernel.pipeline.get(0)instanceof PlanFactors factors ? factors : null;
 	}
 
 	/** Linear COUNT(*) channels can be folded per prefix before multiplying independent siblings. */
 	static boolean foldFactorCounts(Kernel kernel) {
 		if (factorPlan(kernel) == null || !(kernel.terminal instanceof Aggregate aggregate)
-				|| aggregate.groupCols.length != 0 || aggregate.outputs.length == 0) return false;
+				|| aggregate.groupCols.length != 0 || aggregate.outputs.length == 0)
+			return false;
 		for (AggregateOutput output : aggregate.outputs)
-			if (output.kind != AGG_COUNT_STAR || output.hookDistinct) return false;
+			if (output.kind != AGG_COUNT_STAR || output.hookDistinct)
+				return false;
 		return true;
 	}
 
@@ -634,9 +692,9 @@ final class LmdbNativeKernelIr {
 	static final String COUNT_SPECIALIZATION_PROPERTY = "rdf4j.lmdb.janinoCodegen.countSpecialization";
 
 	/**
-	 * Pure guard graph for prefix-local count elimination. Aliases are substituted structurally;
-	 * dependencies are compact scalar-output positions, independent of physical factor grouping.
-	 * Runtime grouping decides whether a guard is scalar, local to one zipped group, or a join.
+	 * Pure guard graph for prefix-local count elimination. Aliases are substituted structurally; dependencies are
+	 * compact scalar-output positions, independent of physical factor grouping. Runtime grouping decides whether a
+	 * guard is scalar, local to one zipped group, or a join.
 	 */
 	static final class FactorCountGuards {
 		final Node[] guards;
@@ -648,31 +706,43 @@ final class LmdbNativeKernelIr {
 
 		FactorCountGuards(Node[] guards, long[] dependencies, int[] positions, int[] terminalCols,
 				Operand[] terminalValues, long terminalDependencies) {
-			this.guards = guards; this.dependencies = dependencies; this.positions = positions;
-			this.terminalCols = terminalCols; this.terminalValues = terminalValues;
+			this.guards = guards;
+			this.dependencies = dependencies;
+			this.positions = positions;
+			this.terminalCols = terminalCols;
+			this.terminalValues = terminalValues;
 			this.terminalDependencies = terminalDependencies;
 		}
-		int position(Operand operand) { return operand.kind == Operand.COL ? positions[operand.index] : -1; }
+
+		int position(Operand operand) {
+			return operand.kind == Operand.COL ? positions[operand.index] : -1;
+		}
 	}
 
 	private static FactorCountGuards factorCountGuards(Kernel kernel) {
 		if (factorPlan(kernel) == null || !(kernel.terminal instanceof Aggregate aggregate)
 				|| aggregate.outputs.length == 0 || kernel.telemetryMode != Kernel.TelemetryMode.NONE
-				|| "false".equals(System.getProperty(FACTOR_WINDOWS_PROPERTY))) return null;
+				|| "false".equals(System.getProperty(FACTOR_WINDOWS_PROPERTY)))
+			return null;
 		for (AggregateOutput output : aggregate.outputs)
-			if (output.hookDistinct || (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT)) return null;
+			if (output.hookDistinct || (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT))
+				return null;
 		PlanFactors plan = factorPlan(kernel);
 		Operand[] aliases = new Operand[Long.SIZE];
-		int[] positions = new int[Long.SIZE]; java.util.Arrays.fill(positions, -1);
-		for (int i = 0; i < Long.SIZE; i++) aliases[i] = Operand.col(i);
-		for (int i = 0; i < plan.scalarOutputs.length; i++) positions[plan.outCols[plan.scalarOutputs[i]]] = i;
+		int[] positions = new int[Long.SIZE];
+		java.util.Arrays.fill(positions, -1);
+		for (int i = 0; i < Long.SIZE; i++)
+			aliases[i] = Operand.col(i);
+		for (int i = 0; i < plan.scalarOutputs.length; i++)
+			positions[plan.outCols[plan.scalarOutputs[i]]] = i;
 		List<Node> guards = new ArrayList<>();
 		List<Long> dependencies = new ArrayList<>();
 		for (int i = 1; i < kernel.pipeline.size(); i++) {
 			Node node = kernel.pipeline.get(i);
 			if (node instanceof BindAlias alias) {
 				Operand value = resolveAlias(alias.source, aliases);
-				if (!prefixOperand(value, positions)) return null;
+				if (!prefixOperand(value, positions))
+					return null;
 				aliases[alias.dstCol] = value;
 				continue;
 			}
@@ -680,54 +750,70 @@ final class LmdbNativeKernelIr {
 			long dependency;
 			if (node instanceof FilterCompareId filter) {
 				Operand left = resolveAlias(filter.left, aliases), right = resolveAlias(filter.right, aliases);
-				if (!prefixOperand(left, positions) || !prefixOperand(right, positions)) return null;
+				if (!prefixOperand(left, positions) || !prefixOperand(right, positions))
+					return null;
 				guard = new FilterCompareId(filter.negated, left, right);
 				dependency = guardDependency(left, positions) | guardDependency(right, positions);
 			} else if (node instanceof FilterEntryCompatible filter) {
 				Operand value = resolveAlias(filter.value, aliases);
-				if (!prefixOperand(value, positions)) return null;
+				if (!prefixOperand(value, positions))
+					return null;
 				guard = new FilterEntryCompatible(value, filter.constant);
 				dependency = guardDependency(value, positions);
 			} else if (node instanceof FilterInConstants filter) {
 				// Preserve SIP observations and existing large-domain membership algorithms.
-				if (filter.domain >= 0 || filter.constantIndices.length > 4) return null;
+				if (filter.domain >= 0 || filter.constantIndices.length > 4)
+					return null;
 				Operand value = resolveAlias(filter.value, aliases);
-				if (!prefixOperand(value, positions)) return null;
+				if (!prefixOperand(value, positions))
+					return null;
 				guard = new FilterInConstants(value, filter.constantIndices.clone());
 				dependency = guardDependency(value, positions);
 			} else if (node instanceof FilterRangeUnsigned filter) {
 				Operand value = resolveAlias(filter.value, aliases);
-				if (!prefixOperand(value, positions)) return null;
+				if (!prefixOperand(value, positions))
+					return null;
 				guard = new FilterRangeUnsigned(value, filter.lowConstant, filter.highConstant);
 				dependency = guardDependency(value, positions);
-			} else return null;
-			guards.add(guard); dependencies.add(dependency);
-			if (guards.size() > Long.SIZE) return null;
+			} else
+				return null;
+			guards.add(guard);
+			dependencies.add(dependency);
+			if (guards.size() > Long.SIZE)
+				return null;
 		}
 		long[] masks = new long[guards.size()];
-		for (int i = 0; i < masks.length; i++) masks[i] = dependencies.get(i);
+		for (int i = 0; i < masks.length; i++)
+			masks[i] = dependencies.get(i);
 		BitSet terminals = new BitSet();
-		for (int col : aggregate.groupCols) terminals.set(col);
-		for (AggregateOutput output : aggregate.outputs) if (output.kind == AGG_COUNT) terminals.set(output.col);
+		for (int col : aggregate.groupCols)
+			terminals.set(col);
+		for (AggregateOutput output : aggregate.outputs)
+			if (output.kind == AGG_COUNT)
+				terminals.set(output.col);
 		int[] terminalCols = terminals.stream().toArray();
 		Operand[] terminalValues = new Operand[terminalCols.length];
 		long terminalDependencies = 0L;
 		for (int i = 0; i < terminalCols.length; i++) {
 			terminalValues[i] = aliases[terminalCols[i]];
-			if (!prefixOperand(terminalValues[i], positions)) return null;
+			if (!prefixOperand(terminalValues[i], positions))
+				return null;
 			terminalDependencies |= guardDependency(terminalValues[i], positions);
 		}
-		return new FactorCountGuards(guards.toArray(Node[]::new), masks, positions, terminalCols, terminalValues, terminalDependencies);
+		return new FactorCountGuards(guards.toArray(Node[]::new), masks, positions, terminalCols, terminalValues,
+				terminalDependencies);
 	}
 
 	private static Operand resolveAlias(Operand operand, Operand[] aliases) {
 		return operand.kind == Operand.COL && operand.index < aliases.length ? aliases[operand.index] : operand;
 	}
+
 	private static boolean prefixOperand(Operand operand, int[] positions) {
 		// Reject loop-carried or uninitialized scratch registers: alias substitution is only sound
 		// for a closed current-prefix expression, not an arbitrary imperative register program.
 		return operand.kind != Operand.COL || (operand.index < positions.length && positions[operand.index] >= 0);
 	}
+
 	private static long guardDependency(Operand operand, int[] positions) {
 		int position = operand.kind == Operand.COL ? positions[operand.index] : -1;
 		return position < 0 ? 0L : 1L << position;
@@ -735,18 +821,23 @@ final class LmdbNativeKernelIr {
 
 	/** Shared by both execution tiers. Unknown or per-mapping effects conservatively reject the rewrite. */
 	private static int[] factorScalarOutputs(List<Node> pipeline, Terminal terminal) {
-		if (pipeline.isEmpty() || !(pipeline.get(0) instanceof PlanRows plan)
-				|| !(terminal instanceof Aggregate aggregate) || aggregate.outputs.length == 0) return null;
+		if (pipeline.isEmpty() || !(pipeline.get(0)instanceof PlanRows plan)
+				|| !(terminal instanceof Aggregate aggregate) || aggregate.outputs.length == 0)
+			return null;
 		BitSet required = new BitSet();
-		for (int col : aggregate.groupCols) required.set(col);
+		for (int col : aggregate.groupCols)
+			required.set(col);
 		for (AggregateOutput output : aggregate.outputs) {
-			if (output.hookDistinct || (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT)) return null;
-			if (output.kind == AGG_COUNT) required.set(output.col);
+			if (output.hookDistinct || (output.kind != AGG_COUNT_STAR && output.kind != AGG_COUNT))
+				return null;
+			if (output.kind == AGG_COUNT)
+				required.set(output.col);
 		}
 		for (int i = pipeline.size() - 1; i > 0; i--) {
 			Node node = pipeline.get(i);
 			if (node instanceof FilterCompareId filter) {
-				demand(required, filter.left); demand(required, filter.right);
+				demand(required, filter.left);
+				demand(required, filter.right);
 			} else if (node instanceof FilterEntryCompatible filter) {
 				demand(required, filter.value);
 			} else if (node instanceof FilterInConstants filter) {
@@ -756,17 +847,20 @@ final class LmdbNativeKernelIr {
 			} else if (node instanceof BindAlias alias) {
 				required.clear(alias.dstCol);
 				demand(required, alias.source); // the alias still executes when its result is unused
-			} else return null;
+			} else
+				return null;
 		}
 		int[] result = new int[plan.outCols.length];
 		int size = 0;
 		for (int i = 0; i < plan.outCols.length; i++)
-			if (required.get(plan.outCols[i])) result[size++] = i;
+			if (required.get(plan.outCols[i]))
+				result[size++] = i;
 		return java.util.Arrays.copyOf(result, size);
 	}
 
 	private static void demand(BitSet required, Operand operand) {
-		if (operand.kind == Operand.COL) required.set(operand.index);
+		if (operand.kind == Operand.COL)
+			required.set(operand.index);
 	}
 
 	/** Grouped continuations are not silently accepted inside unsupported algebra containers. */
@@ -775,11 +869,15 @@ final class LmdbNativeKernelIr {
 			Node node = pipeline.get(i);
 			if (node instanceof PlanFactors && (!topLevel || i != 0))
 				throw new IllegalArgumentException("unsupported nested grouped producer");
-			if (node instanceof Exists exists) validateFactorPlacement(exists.pipeline, false);
-			else if (node instanceof HashBuild build) validateFactorPlacement(build.pipeline, false);
+			if (node instanceof Exists exists)
+				validateFactorPlacement(exists.pipeline, false);
+			else if (node instanceof HashBuild build)
+				validateFactorPlacement(build.pipeline, false);
 			else if (node instanceof Union union) {
-				for (List<Node> branch : union.branches) validateFactorPlacement(branch, false);
-			} else if (node instanceof LeftGroup group) validateFactorPlacement(group.arm, false);
+				for (List<Node> branch : union.branches)
+					validateFactorPlacement(branch, false);
+			} else if (node instanceof LeftGroup group)
+				validateFactorPlacement(group.arm, false);
 			else if (node instanceof LexicalFrameLeftJoin join) {
 				validateFactorPlacement(join.left, false);
 				validateFactorPlacement(join.right, false);
@@ -789,16 +887,20 @@ final class LmdbNativeKernelIr {
 
 	private static List<Node> factorizePlanCounts(List<Node> pipeline, Terminal terminal) {
 		int[] demanded = factorScalarOutputs(pipeline, terminal);
-		if (!pipeline.isEmpty() && pipeline.get(0) instanceof PlanFactors factors) {
-			if (demanded == null) throw new IllegalArgumentException("unsupported factor continuation");
+		if (!pipeline.isEmpty() && pipeline.get(0)instanceof PlanFactors factors) {
+			if (demanded == null)
+				throw new IllegalArgumentException("unsupported factor continuation");
 			BitSet supplied = new BitSet();
-			for (int output : factors.scalarOutputs) supplied.set(output);
-			for (int output : demanded) if (!supplied.get(output))
-				throw new IllegalArgumentException("factor continuation reads a deferred scalar");
+			for (int output : factors.scalarOutputs)
+				supplied.set(output);
+			for (int output : demanded)
+				if (!supplied.get(output))
+					throw new IllegalArgumentException("factor continuation reads a deferred scalar");
 			return pipeline;
 		}
-		for (Node node : pipeline) if (node instanceof PlanFactors)
-			throw new IllegalArgumentException("grouped producer must be the first instruction");
+		for (Node node : pipeline)
+			if (node instanceof PlanFactors)
+				throw new IllegalArgumentException("grouped producer must be the first instruction");
 		// Do not replace a sufficient existing compact projection/count shortcut.
 		if (demanded == null || pipeline.size() == 1 || "false".equals(System.getProperty(FACTOR_PLAN_PROPERTY)))
 			return pipeline;
@@ -1685,8 +1787,8 @@ final class LmdbNativeKernelIr {
 
 	/**
 	 * Sorted k-way intersection (the worst-case-optimal building block): emits each id present in every key's neighbor
-	 * run in unsigned order. Matching duplicate ranges are a product under bag semantics; each matched tuple
-     * group can be counted without replaying that product.
+	 * run in unsigned order. Matching duplicate ranges are a product under bag semantics; each matched tuple group can
+	 * be counted without replaying that product.
 	 */
 	static final class Intersect extends Node {
 		final int[] adjacencies;
@@ -3034,9 +3136,9 @@ final class LmdbNativeKernelIr {
 	}
 
 	/**
-	 * Admits projection-free wildcard-predicate IR to Janino. Default-on, like other supported IR producers.
-	 * When explicitly false, the same IR remains available through the
-	 * interpreter; this is a code-generation kill switch, not a semantic lowering switch.
+	 * Admits projection-free wildcard-predicate IR to Janino. Default-on, like other supported IR producers. When
+	 * explicitly false, the same IR remains available through the interpreter; this is a code-generation kill switch,
+	 * not a semantic lowering switch.
 	 */
 	static final String WILDCARD_PREDICATES_PROPERTY = "rdf4j.lmdb.janinoCodegen.wildcardPredicates";
 
@@ -3046,10 +3148,10 @@ final class LmdbNativeKernelIr {
 
 	/**
 	 * A pipeline can stream when its terminal writes plain rows with no post-pass over the whole result — ordering
-	 * needs every row in hand before the first can be served; LIMIT/OFFSET are streaming counters — and when every node either carries no state across
-	 * a pause (straight-line guards and aliases) or carries state the emitter knows how to save and restore (the
-	 * looping producers). Single-activation nodes have a saved completion flag so expressions and SERVICE witnesses are not
-	 * re-evaluated when a downstream producer resumes.
+	 * needs every row in hand before the first can be served; LIMIT/OFFSET are streaming counters — and when every node
+	 * either carries no state across a pause (straight-line guards and aliases) or carries state the emitter knows how
+	 * to save and restore (the looping producers). Single-activation nodes have a saved completion flag so expressions
+	 * and SERVICE witnesses are not re-evaluated when a downstream producer resumes.
 	 * <p>
 	 * {@code ProbeClose} is admitted even though it produces no column, because its state is a single repetition
 	 * counter and its repetition count is recomputable from the adjacency view: it re-emits the continuation once per
@@ -3107,8 +3209,8 @@ final class LmdbNativeKernelIr {
 	private static boolean isResumableProducer(Node node) {
 		return isStatelessRowNode(node) || isSingleActivationNode(node) || node instanceof HashProbe
 				|| node instanceof EnumerateDomain || node instanceof Probe
-                || node instanceof EnumerateTerms || node instanceof EnumerateNodeDomainIntersection
-                || node instanceof Intersect || node instanceof PathExpand
+				|| node instanceof EnumerateTerms || node instanceof EnumerateNodeDomainIntersection
+				|| node instanceof Intersect || node instanceof PathExpand
 				|| node instanceof SipDomainProbe || node instanceof SipKeyProbe
 				|| node instanceof ScanQuad || node instanceof PlanRows || node instanceof ProbeClose
 				|| node instanceof ProbeVariable
@@ -3198,12 +3300,16 @@ final class LmdbNativeKernelIr {
 				// ORDER already blocks: do not turn demand-sensitive DISTINCT/LIMIT into a full source drain.
 				return boundedOrder && rows.distinct && rows.alignedCount == 0;
 			}
-			if (!(terminal instanceof Aggregate a) || mode != AggregateStateMode.HASHED) return false;
+			if (!(terminal instanceof Aggregate a) || mode != AggregateStateMode.HASHED)
+				return false;
 			boolean needsState = a.groupCols.length > 0;
 			for (AggregateOutput output : a.outputs) {
-				if (output.hookDistinct || output.orderedDomain >= 0) return false;
-				if (output.kind == AGG_COUNT_DISTINCT) needsState = true;
-				else if (output.kind != AGG_COUNT && output.kind != AGG_COUNT_STAR) return false;
+				if (output.hookDistinct || output.orderedDomain >= 0)
+					return false;
+				if (output.kind == AGG_COUNT_DISTINCT)
+					needsState = true;
+				else if (output.kind != AGG_COUNT && output.kind != AGG_COUNT_STAR)
+					return false;
 			}
 			return needsState;
 		}
@@ -3239,7 +3345,8 @@ final class LmdbNativeKernelIr {
 					&& !"false".equals(System.getProperty(COUNT_SPECIALIZATION_PROPERTY));
 			AggregateProperties aggregateProperties = aggregateProperties(this.pipeline, this.terminal);
 			this.aggregateStateMode = aggregateProperties.stateMode;
-			this.aggregateProjections = AggregateProjections.create(this.pipeline, this.terminal, this.aggregateStateMode);
+			this.aggregateProjections = AggregateProjections.create(this.pipeline, this.terminal,
+					this.aggregateStateMode);
 			this.boundedGroups = !"false".equals(System.getProperty("rdf4j.lmdb.janinoCodegen.boundedGroups"))
 					&& boundedGroupShape(this.terminal, this.aggregateStateMode, this.boundedOrder);
 
@@ -3249,7 +3356,8 @@ final class LmdbNativeKernelIr {
 			int vectorTail = vectorTailEnabled() ? findVectorTail(this.pipeline) : -1;
 			// Keep the established vectorized OPTIONAL tail for pure native pipelines. A delegated plan needs
 			// the resumable null-arm state instead, even when that costs a scalar tail.
-			boolean nativeOptionalTail = requirements.plans == 0 && vectorTail >= 0 && vectorTail < this.pipeline.size() - 1
+			boolean nativeOptionalTail = requirements.plans == 0 && vectorTail >= 0
+					&& vectorTail < this.pipeline.size() - 1
 					&& this.pipeline.get(vectorTail) instanceof LeftProbe;
 			this.resumable = resumableEnabled() && isResumable(this.pipeline, this.terminal) && !nativeOptionalTail;
 			// LeftProbe's null-extension phase has its own resumable state machine. Keep that terminal scalar when
@@ -3258,11 +3366,16 @@ final class LmdbNativeKernelIr {
 					? -1
 					: vectorTail;
 			StringBuilder key = new StringBuilder("ir1:");
-			if (aggregateProjections != null) key.append("marginals1;");
-			if (boundedOrder) key.append("bo1;");
-			if (boundedGroups) key.append("bg1;");
-			if (factorCountGuards != null) key.append("fw1;");
-			if (compiledCountSpecialization) key.append("ff1;");
+			if (aggregateProjections != null)
+				key.append("marginals1;");
+			if (boundedOrder)
+				key.append("bo1;");
+			if (boundedGroups)
+				key.append("bg1;");
+			if (factorCountGuards != null)
+				key.append("fw1;");
+			if (compiledCountSpecialization)
+				key.append("ff1;");
 			if (vectorTailIndex >= 0) {
 				key.append("vt").append(vectorTailIndex).append(';');
 			}
@@ -3430,9 +3543,10 @@ final class LmdbNativeKernelIr {
 		 * therefore change only multiplicity, which the distinct-root consumer cannot observe.
 		 *
 		 * The other important canonicalization is OPTIONAL-plus-rejecting-filter. A multi-pattern OPTIONAL lowers to a
-		 * {@link LeftGroup}; only a filter with a proven null-rejecting contract permits removal of the null-extended arm.
-		 * Reading an arm column is NOT such a proof (for example !BOUND and COALESCE). In a set consumer that pair is an ordinary existential witness, and folding it
-		 * removes both null-arm bookkeeping and every row after the first passing match.
+		 * {@link LeftGroup}; only a filter with a proven null-rejecting contract permits removal of the null-extended
+		 * arm. Reading an arm column is NOT such a proof (for example !BOUND and COALESCE). In a set consumer that pair
+		 * is an ordinary existential witness, and folding it removes both null-arm bookkeeping and every row after the
+		 * first passing match.
 		 */
 		private static OptimizedKernel optimizeDistinctRootExists(List<Node> original, Terminal originalTerminal) {
 			if (!(originalTerminal instanceof Aggregate aggregate) || aggregate.groupCols.length != 0
@@ -3494,7 +3608,9 @@ final class LmdbNativeKernelIr {
 					Node filter = suffix.get(1 + filters);
 					if (filter instanceof FilterValue || filter instanceof FilterResidual) {
 						// No effect/repeatability proof either: do not skip callback evaluation on the null arm.
-						rejectsNullArm = false; filters = 0; break;
+						rejectsNullArm = false;
+						filters = 0;
+						break;
 					}
 					rejectsNullArm |= rejectsNullExtension(filter, armColumns, rootCol);
 					filters++;
@@ -3547,10 +3663,13 @@ final class LmdbNativeKernelIr {
 			if (node instanceof FilterDateCompare filter) {
 				return filter.checkBound && nullColumn(filter.value, nullColumns);
 			}
-			if (node instanceof FilterFragmentCompare filter) return nullColumn(filter.value, nullColumns);
+			if (node instanceof FilterFragmentCompare filter)
+				return nullColumn(filter.value, nullColumns);
 			if (node instanceof FilterCompareId filter) {
-				boolean leftNull = nullColumn(filter.left, nullColumns), rightNull = nullColumn(filter.right, nullColumns);
-				if (filter.negated) return leftNull && rightNull;
+				boolean leftNull = nullColumn(filter.left, nullColumns),
+						rightNull = nullColumn(filter.right, nullColumns);
+				if (filter.negated)
+					return leftNull && rightNull;
 				// The leading distinct-key enumerator guarantees a bound root, unless overwritten by the arm.
 				boolean leftBound = filter.left.kind == Operand.COL && filter.left.index == boundRoot
 						&& !nullColumns.get(boundRoot);
