@@ -19,7 +19,7 @@ import java.nio.ByteBuffer;
  *
  * <p>
  * The offsets and flags exposed here are LMDB's on-disk values; higher-level tree-walking code should use these
- * accessors instead of duplicating layout arithmetic. A page can be backed directly by LMDB's native mapping, so its
+ * accessors instead of duplicating layout arithmetic. A page can be backed by LMDB's existing mapping, so its
  * {@link ByteBuffer} and any values read from it must not escape the estimator snapshot that loaded it. In particular,
  * do not retain an {@code LmdbPage} across transactions or map resizes.
  *
