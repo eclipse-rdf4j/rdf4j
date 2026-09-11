@@ -40,6 +40,17 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
+	void toStringUsesLocaleIndependentDecimalFormatting() {
+		Locale.setDefault(Locale.GERMANY);
+		GenericPlanNode node = new GenericPlanNode("StatementPattern");
+		node.setCostEstimate(2.675);
+
+		String actual = node.toString();
+
+		assertTrue(actual.contains("costEstimate=2.68"), actual);
+	}
+
+	@Test
 	void toStringIncludesPopulatedTelemetryFields() {
 		GenericPlanNode node = new GenericPlanNode("Join");
 		node.setCostEstimate(1.0);
@@ -230,6 +241,46 @@ class GenericPlanNodeTest {
 
 		assertTrue(actual.indexOf("ProjectionElem \"a\"") < actual.indexOf("ProjectionElem \"code\""), actual);
 		assertTrue(actual.indexOf("ProjectionElem \"code\"") < actual.indexOf("ProjectionElem \"d\""), actual);
+	}
+
+	@Test
+	void toJsonPreservesProjectionElementOrderForMultiProjectionFormatting() {
+		GenericPlanNode projectionElemList = new GenericPlanNode("ProjectionElemList");
+		projectionElemList.addPlans(
+				new GenericPlanNode("ProjectionElem \"subject\""),
+				new GenericPlanNode("ProjectionElem \"predicate\""),
+				new GenericPlanNode("ProjectionElem \"object\""));
+		GenericPlanNode multiProjection = new GenericPlanNode("MultiProjection");
+		multiProjection.addPlans(projectionElemList);
+
+		String json = new ExplanationImpl(multiProjection, false, null).toJson();
+
+		assertTrue(json.indexOf("ProjectionElem \\\"subject\\\"") < json.indexOf("ProjectionElem \\\"predicate\\\""),
+				json);
+		assertTrue(json.indexOf("ProjectionElem \\\"predicate\\\"") < json.indexOf("ProjectionElem \\\"object\\\""),
+				json);
+	}
+
+	@Test
+	void toJsonIncludesPlanningEstimatesNeededForTextReconstruction() {
+		GenericPlanNode node = new GenericPlanNode("StatementPattern");
+		node.setCostEstimate(12.5);
+		node.setResultSizeEstimate(3.0);
+
+		String json = new ExplanationImpl(node, false, null).toJson();
+
+		assertTrue(json.contains("\"costEstimate\" : 12.5"), json);
+		assertTrue(json.contains("\"resultSizeEstimate\" : 3.0"), json);
+	}
+
+	@Test
+	void toJsonSerializesInfinitePlanningEstimateForTextReconstruction() {
+		GenericPlanNode node = new GenericPlanNode("StatementPattern");
+		node.setCostEstimate(Double.POSITIVE_INFINITY);
+
+		String json = new ExplanationImpl(node, false, null).toJson();
+
+		assertTrue(json.contains("\"costEstimate\" : \"Infinity\""), json);
 	}
 
 	@Test

@@ -81,7 +81,8 @@ test('query explain flow covers success, error, download, and legacy change noti
     });
 
     harness.runPageLoad();
-    harness.context.workbench.query.runExplain('json', 'explain-trigger');
+    harness.setValue('explain-format', 'json');
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
     const explainRequest = harness.pendingExplainRequests[0];
     explainRequest.resolve({
         content: '{"plans":[{"selfTimeActual":2,"totalTimeActual":4}]}',
@@ -139,6 +140,352 @@ test('query explanation copy writes the current pane explanation to the clipboar
 
     await harness.context.workbench.query.copyExplanation('compare');
     assert.deepEqual(clipboardWrites, ['Primary plan', 'Compare plan']);
+});
+
+test('interactive Text explanation requests JSON and toggles cached highlighting', async () => {
+    const clipboardWrites = [];
+    const harness = createQueryBrowserHarness({
+        window: {
+            navigator: {
+                clipboard: {
+                    writeText(text) {
+                        clipboardWrites.push(text);
+                        return Promise.resolve();
+                    }
+                }
+            }
+        }
+    });
+    const plan = {
+        type: 'StatementPattern',
+        costEstimate: 1250,
+        plans: [
+            { type: 'Var (name=s)' },
+            { type: 'Var (name=p)' },
+            { type: 'Var (name=o)' }
+        ]
+    };
+    const expectedText = 'StatementPattern (costEstimate=1.3K)\r\n'
+        + '   s: Var (name=s)\r\n'
+        + '   p: Var (name=p)\r\n'
+        + '   o: Var (name=o)\r\n';
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    const request = harness.pendingExplainRequests[0];
+    assert.equal(request.params.get('explain-format'), 'json');
+    request.resolve({
+        content: JSON.stringify(plan),
+        format: 'json',
+        error: '',
+        lineSeparator: '\r\n'
+    });
+
+    assert.equal(harness.getText('query-explanation'), expectedText);
+    assert.equal(harness.getAttribute('query-explanation', 'data-format'), 'text');
+    assert.equal(harness.document.getElementById('query-explanation').getElementsByTagName('span').length > 0, true);
+    assert.equal(harness.document.getElementById('query-explanation-json-view').children.length, 0);
+
+    const requestCount = harness.pendingExplainRequests.length;
+    harness.click('explanation-highlight-hotspot');
+    assert.equal(harness.pendingExplainRequests.length, requestCount);
+    assert.equal(harness.getProperty('explanation-highlight-hotspot', 'checked'), true);
+    assert.equal(harness.getProperty('explanation-highlight-syntax', 'checked'), false);
+    assert.equal(harness.getText('query-explanation'), expectedText);
+    assert.equal(
+        harness.document.getElementById('query-explanation').getElementsByTagName('span')
+            .some((element) => element.classList.contains('query-explanation-line--hotspot')),
+        true
+    );
+    assert.equal(harness.getText('explanation-hotspot-legend'), 'Heat: Cost estimate');
+
+    await harness.context.workbench.query.copyExplanation('primary');
+    assert.deepEqual(clipboardWrites, [expectedText]);
+    harness.context.workbench.query.downloadExplanation();
+    assert.deepEqual(Array.from(harness.createdBlobs[0].parts), [expectedText]);
+    assert.equal(harness.createdBlobs[0].options.type, 'text/plain;charset=utf-8');
+});
+
+test('property config filters both plans and persists hidden properties', () => {
+    const storedValues = new Map();
+    const localStorage = {
+        getItem(key) {
+            return storedValues.has(key) ? storedValues.get(key) : null;
+        },
+        removeItem(key) {
+            storedValues.delete(key);
+        },
+        setItem(key, value) {
+            storedValues.set(key, String(value));
+        }
+    };
+    const harness = createQueryBrowserHarness({ window: { localStorage } });
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({
+            type: 'Join',
+            costEstimate: 10,
+            resultSizeEstimate: 4,
+            stringMetricsActual: { bindingState: 'bound' }
+        }),
+        format: 'json',
+        error: ''
+    });
+
+    const costToggle = harness.document.querySelectorAll(
+        '#explanation-property-options input[data-property-name="costEstimate"]'
+    )[0];
+    assert.ok(costToggle);
+    assert.equal(costToggle.checked, true);
+    assert.equal(harness.getText('explanation-property-count'), 'All 3');
+
+    costToggle.checked = false;
+    costToggle.trigger('change');
+    assert.equal(
+        harness.document.querySelectorAll(
+            '#explanation-property-options input[data-property-name="costEstimate"]'
+        )[0] === costToggle,
+        true
+    );
+    assert.doesNotMatch(harness.getText('query-explanation'), /costEstimate/);
+    assert.match(harness.getText('query-explanation'), /resultSizeEstimate=4\.00/);
+    assert.equal(harness.getText('explanation-property-count'), '2 of 3');
+    assert.equal(
+        storedValues.get('rdf4j.workbench.query.explanation.hiddenProperties'),
+        '["costEstimate"]'
+    );
+
+    harness.context.workbench.query.toggleCompareMode();
+    harness.pendingExplainRequests[1].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 20, resultSizeActual: 8 }),
+        format: 'json',
+        error: ''
+    });
+    assert.doesNotMatch(harness.getText('query-explanation'), /costEstimate/);
+    assert.doesNotMatch(harness.getText('query-explanation-compare'), /costEstimate/);
+    assert.match(harness.getText('query-explanation-compare'), /resultSizeActual=8/);
+    assert.equal(harness.getText('explanation-property-count'), '3 of 4');
+
+    harness.click('explanation-properties-none');
+    assert.equal(harness.getText('query-explanation'), 'Join\n');
+    assert.equal(harness.getText('query-explanation-compare'), 'StatementPattern\n');
+    assert.equal(harness.getText('explanation-property-count'), '0 of 4');
+
+    harness.click('explanation-properties-all');
+    assert.match(harness.getText('query-explanation'), /costEstimate=10/);
+    assert.match(harness.getText('query-explanation-compare'), /costEstimate=20/);
+    assert.equal(harness.getText('explanation-property-count'), 'All 4');
+
+    const restoredCostToggle = harness.document.querySelectorAll(
+        '#explanation-property-options input[data-property-name="costEstimate"]'
+    )[0];
+    restoredCostToggle.checked = false;
+    restoredCostToggle.trigger('change');
+    const reloadedHarness = createQueryBrowserHarness({ window: { localStorage } });
+    reloadedHarness.runPageLoad();
+    reloadedHarness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    reloadedHarness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({ type: 'Join', costEstimate: 10, resultSizeEstimate: 4 }),
+        format: 'json',
+        error: ''
+    });
+    assert.doesNotMatch(reloadedHarness.getText('query-explanation'), /costEstimate/);
+    assert.equal(
+        reloadedHarness.document.querySelectorAll(
+            '#explanation-property-options input[data-property-name="costEstimate"]'
+        )[0].checked,
+        false
+    );
+});
+
+test('Config uses radio controls and closes its panel on an outside click', () => {
+    const harness = createQueryBrowserHarness();
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 10, resultSizeEstimate: 4 }),
+        format: 'json',
+        error: ''
+    });
+
+    const panel = harness.document.getElementById('explanation-settings-panel');
+    const configToggle = harness.document.getElementById('explanation-settings-toggle');
+    const syntaxRadio = harness.document.getElementById('explanation-highlight-syntax');
+    const heatmapRadio = harness.document.getElementById('explanation-highlight-hotspot');
+    assert.equal(configToggle.tagName, 'BUTTON');
+    assert.equal(configToggle.textContent, 'Config');
+    assert.equal(syntaxRadio.tagName, 'INPUT');
+    assert.equal(syntaxRadio.type, 'radio');
+    assert.equal(syntaxRadio.name, 'explanation-highlight-mode');
+    assert.equal(syntaxRadio.checked, true);
+    assert.equal(heatmapRadio.tagName, 'INPUT');
+    assert.equal(heatmapRadio.type, 'radio');
+    assert.equal(heatmapRadio.name, 'explanation-highlight-mode');
+    assert.equal(heatmapRadio.checked, false);
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'false');
+    assert.equal(panel.hidden, true);
+    assert.equal(harness.document.getElementById('explanation-highlight-mode').parentNode, panel);
+    assert.equal(harness.document.getElementById('explanation-property-config').parentNode, panel);
+
+    harness.click('explanation-settings-toggle');
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'true');
+    assert.equal(panel.hidden, false);
+
+    harness.click('explanation-highlight-hotspot');
+    assert.equal(syntaxRadio.checked, false);
+    assert.equal(heatmapRadio.checked, true);
+    assert.equal(harness.getText('explanation-property-count'), 'All 2');
+
+    harness.document.trigger('click', { target: heatmapRadio });
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'true');
+    assert.equal(panel.hidden, false);
+
+    harness.document.trigger('click', {
+        target: harness.document.getElementById('query-explanation')
+    });
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'false');
+    assert.equal(panel.hidden, true);
+
+    harness.click('explanation-settings-toggle');
+    harness.document.trigger('keydown', { key: 'Escape' });
+    assert.equal(harness.getAttribute('explanation-settings-toggle', 'aria-expanded'), 'false');
+    assert.equal(panel.hidden, true);
+    assert.equal(harness.document.activeElement.id, 'explanation-settings-toggle');
+    assert.equal(heatmapRadio.checked, true);
+});
+
+test('hotspot mode shares one scale across comparison panes', () => {
+    const harness = createQueryBrowserHarness();
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 10 }),
+        format: 'json',
+        error: ''
+    });
+    harness.click('explanation-highlight-hotspot');
+
+    const primaryLine = () => harness.document.getElementById('query-explanation')
+        .getElementsByTagName('span')
+        .find((element) => element.classList.contains('query-explanation-line--hotspot'));
+    assert.equal(primaryLine().getAttribute('data-heat'), '1.000');
+
+    harness.context.workbench.query.toggleCompareMode();
+    assert.equal(harness.pendingExplainRequests[1].params.get('explain-format'), 'json');
+    harness.pendingExplainRequests[1].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 20 }),
+        format: 'json',
+        error: ''
+    });
+
+    const compareLine = harness.document.getElementById('query-explanation-compare')
+        .getElementsByTagName('span')
+        .find((element) => element.classList.contains('query-explanation-line--hotspot'));
+    assert.equal(primaryLine().getAttribute('data-heat'), '0.500');
+    assert.equal(compareLine.getAttribute('data-heat'), '1.000');
+
+    harness.context.workbench.query.openDiffModal();
+    assert.match(harness.getText('query-diff-explanation'), /StatementPattern \(costEstimate=10\)/);
+    assert.doesNotMatch(harness.getText('query-diff-explanation'), /"costEstimate"/);
+});
+
+test('hotspot mode does not mix metrics while comparison responses are staggered', () => {
+    const harness = createQueryBrowserHarness();
+    const hotspotLine = (elementId) => harness.document.getElementById(elementId)
+        .getElementsByTagName('span')
+        .find((element) => element.classList.contains('query-explanation-line--hotspot'));
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 10 }),
+        format: 'json',
+        error: ''
+    });
+    harness.click('explanation-highlight-hotspot');
+    harness.context.workbench.query.toggleCompareMode();
+    harness.pendingExplainRequests[1].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 20 }),
+        format: 'json',
+        error: ''
+    });
+
+    harness.setValue('explain-level', 'Timed');
+    harness.context.workbench.query.runCompareExplain('explain-compare-trigger');
+    harness.pendingExplainRequests[2].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', selfTimeActual: 5 }),
+        format: 'json',
+        error: ''
+    });
+
+    assert.equal(hotspotLine('query-explanation').getAttribute('data-heat'), '1.000');
+    assert.equal(hotspotLine('query-explanation-compare').getAttribute('data-heat'), '1.000');
+
+    harness.pendingExplainRequests[3].resolve({
+        content: JSON.stringify({ type: 'StatementPattern', selfTimeActual: 10 }),
+        format: 'json',
+        error: ''
+    });
+    assert.equal(hotspotLine('query-explanation').getAttribute('data-heat'), '0.500');
+    assert.equal(hotspotLine('query-explanation-compare').getAttribute('data-heat'), '1.000');
+});
+
+test('invalid Text JSON falls back to inert plain content', () => {
+    const harness = createQueryBrowserHarness();
+
+    harness.runPageLoad();
+    harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({
+        content: '<script>not json</script>',
+        format: 'json',
+        error: ''
+    });
+
+    assert.equal(harness.getText('query-explanation'), '<script>not json</script>');
+    assert.equal(harness.getAttribute('query-explanation', 'data-format'), 'text');
+    assert.equal(harness.document.getElementById('query-explanation').getElementsByTagName('script').length, 0);
+    assert.equal(harness.document.getElementById('query-explanation-json-view').children.length, 0);
+});
+
+test('highlight rendering failure falls back to generated inert plaintext', () => {
+    const harness = createQueryBrowserHarness();
+    const plan = { type: 'Var (value=<script>still inert</script>)' };
+    const displayContent = 'Var (value=<script>still inert</script>)\n';
+
+    harness.runPageLoad();
+    harness.context.workbench.queryExplanationHighlighter.render = () => {
+        throw new Error('render failed');
+    };
+    harness.context.workbench.query.testing.renderStableExplanation('primary', {
+        queryHash: 'query',
+        level: 'Optimized',
+        requestedFormat: 'text',
+        responseFormat: 'json',
+        view: 'highlightedText',
+        rawContent: JSON.stringify(plan),
+        displayContent,
+        plan
+    }, null);
+
+    assert.equal(harness.getText('query-explanation'), displayContent);
+    assert.equal(harness.document.getElementById('query-explanation').getElementsByTagName('script').length, 0);
+});
+
+test('highlight radios use native selection and hide outside Text format', () => {
+    const harness = createQueryBrowserHarness({ initialExplanation: 'Legacy plan' });
+
+    harness.runPageLoad();
+    harness.click('explanation-highlight-hotspot');
+    assert.equal(harness.getProperty('explanation-highlight-hotspot', 'checked'), true);
+    assert.equal(harness.getProperty('explanation-highlight-syntax', 'checked'), false);
+    assert.equal(harness.document.activeElement.id, 'explanation-highlight-hotspot');
+
+    harness.setValue('explain-format', 'json');
+    assert.equal(harness.getProperty('explanation-highlight-mode', 'visible'), false);
 });
 
 test('large primary query edits preserve existing hash-backed cookie state', () => {

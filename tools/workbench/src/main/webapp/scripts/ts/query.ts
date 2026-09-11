@@ -1,6 +1,7 @@
 /// <reference path="template.ts" />
 /// <reference path="jquery.d.ts" />
 /// <reference path="queryCancelPolicy.ts" />
+/// <reference path="queryExplanationHighlighter.ts" />
 /// <reference path="yasqe.d.ts" />
 /// <reference path="yasqeHelper.ts" />
 
@@ -44,11 +45,17 @@ module workbench {
         var compareQuerySeeded = false;
         var diffNotReadyLabel = '';
         var lastDiffTriggerElement: HTMLElement = null;
+        var explanationHighlightMode: queryExplanationHighlighter.HighlightMode = 'syntax';
+        var EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY =
+            'rdf4j.workbench.query.explanation.hiddenProperties';
+        var explanationHiddenProperties: string[] = loadExplanationHiddenProperties();
+        var explanationPropertyOptionsKey = '';
 
         type ExplainLevel = 'Unoptimized' | 'Optimized' | 'Executed' | 'Telemetry' | 'Timed';
         type ExplainFormat = 'text' | 'dot' | 'json';
         type StaleReason = 'query' | 'level' | 'format';
-        type ExplanationView = 'text' | 'jsonTree' | 'jsonRawFallback' | 'dotRendering' | 'dotReady' | 'dotRenderError';
+        type ExplanationView = 'text' | 'highlightedText' | 'jsonTree' | 'jsonRawFallback'
+            | 'dotRendering' | 'dotReady' | 'dotRenderError';
         type PaneKey = 'primary' | 'compare';
         type ExplainRequestControllerKey = 'primary' | 'compare';
 
@@ -63,6 +70,9 @@ module workbench {
             responseFormat: 'text' | 'json' | 'dot';
             view: ExplanationView;
             rawContent: string;
+            displayContent: string;
+            lineSeparator: string;
+            plan?: queryExplanationHighlighter.QueryPlanNode;
         }
 
         interface RequestSignature {
@@ -624,8 +634,21 @@ module workbench {
                 requestedFormat: explanation.requestedFormat,
                 responseFormat: explanation.responseFormat,
                 view: explanation.view,
-                rawContent: explanation.rawContent
+                rawContent: explanation.rawContent,
+                displayContent: explanation.displayContent,
+                lineSeparator: explanation.lineSeparator,
+                plan: explanation.plan
             };
+        }
+
+        function getExplanationDisplayContent(explanation: StableExplanation): string {
+            if (!explanation) {
+                return '';
+            }
+            return explanation.requestedFormat === 'text'
+                ? (typeof explanation.displayContent === 'string'
+                    ? explanation.displayContent : explanation.rawContent)
+                : explanation.rawContent;
         }
 
         function getStableExplanationKey(explanation: StableExplanation): string {
@@ -638,7 +661,9 @@ module workbench {
                 explanation.requestedFormat,
                 explanation.responseFormat,
                 explanation.view,
-                explanation.rawContent
+                explanation.rawContent,
+                explanation.lineSeparator,
+                getExplanationDisplayContent(explanation)
             ].join('||');
         }
 
@@ -651,7 +676,9 @@ module workbench {
                 explanation.level,
                 explanation.requestedFormat,
                 explanation.responseFormat,
-                explanation.rawContent
+                explanation.rawContent,
+                explanation.lineSeparator,
+                getExplanationDisplayContent(explanation)
             ].join('||');
         }
 
@@ -930,8 +957,8 @@ module workbench {
         function syncLegacyExplanationCache(paneKey: PaneKey) {
             var paneState = getPaneState(paneKey);
             var paneSnapshot = getPaneSnapshot(getPaneMachineState(paneKey));
-            paneState.latestExplanation = paneSnapshot ? paneSnapshot.rawContent : '';
-            paneState.latestExplanationFormat = paneSnapshot ? paneSnapshot.responseFormat : 'text';
+            paneState.latestExplanation = getExplanationDisplayContent(paneSnapshot);
+            paneState.latestExplanationFormat = paneSnapshot ? paneSnapshot.requestedFormat : 'text';
         }
 
         function dispatchQueryPageEvent(event: QueryPageEvent) {
@@ -1092,6 +1119,7 @@ module workbench {
             content: string;
             format: string;
             error: string;
+            lineSeparator?: string;
         }
 
         interface DiffRow {
@@ -1381,6 +1409,7 @@ module workbench {
             $('#compare-toggle').toggle(compareModeEnabled || primaryPaneMachineState.kind !== 'empty');
             $('#rerun-explanation').prop('disabled', primaryActionsDisabled);
             $('#explain-trigger').prop('disabled', primaryActionsDisabled);
+            syncExplanationHighlightControls();
         }
 
         function syncCompareSidebarState() {
@@ -1656,7 +1685,7 @@ module workbench {
             var paneState = getPaneState(paneKey);
             lockExplanationDimensions(paneKey);
             var explanation = $('#' + paneState.explanationId);
-            explanation.text('');
+            explanation.removeClass('query-explanation--highlighted').text('');
             var normalizedFormat = (pendingFormat || paneState.latestExplanationFormat || 'text').toLowerCase();
             explanation.attr('data-format', normalizedFormat);
             paneState.latestExplanation = '';
@@ -1997,6 +2026,271 @@ module workbench {
             restoreExplainButtonViewportTopIfNeeded(paneKey);
         }
 
+        function getSharedHotspotSummary(): queryExplanationHighlighter.HotspotSummary {
+            if (explanationHighlightMode !== 'hotspot') {
+                return null;
+            }
+            var result: queryExplanationHighlighter.HotspotSummary = null;
+            var paneKeys: PaneKey[] = ['primary', 'compare'];
+            for (var i = 0; i < paneKeys.length; i++) {
+                var explanation = getPaneDisplayExplanation(getPaneMachineState(paneKeys[i]));
+                if (!explanation || explanation.requestedFormat !== 'text' || !explanation.plan) {
+                    continue;
+                }
+                var paneHotspot = queryExplanationHighlighter.getHotspot(explanation.plan, explanation.level);
+                if (!paneHotspot) {
+                    continue;
+                }
+                if (result && result.metric !== paneHotspot.metric) {
+                    return null;
+                }
+                if (!result || paneHotspot.maximum > result.maximum) {
+                    result = {
+                        metric: paneHotspot.metric,
+                        label: paneHotspot.label,
+                        maximum: paneHotspot.maximum
+                    };
+                }
+            }
+            return result;
+        }
+
+        function normalizeExplanationHiddenProperties(value: any): string[] {
+            if (!Array.isArray(value)) {
+                return [];
+            }
+            var result: string[] = [];
+            for (var i = 0; i < value.length; i++) {
+                if (typeof value[i] === 'string' && value[i].length && result.indexOf(value[i]) < 0) {
+                    result.push(value[i]);
+                }
+            }
+            return result;
+        }
+
+        function loadExplanationHiddenProperties(): string[] {
+            try {
+                var stored = window.localStorage.getItem(EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY);
+                return stored ? normalizeExplanationHiddenProperties(JSON.parse(stored)) : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function persistExplanationHiddenProperties(): void {
+            try {
+                if (explanationHiddenProperties.length) {
+                    window.localStorage.setItem(
+                        EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY,
+                        JSON.stringify(explanationHiddenProperties)
+                    );
+                } else {
+                    window.localStorage.removeItem(EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY);
+                }
+            } catch (e) {
+                // Ignore browsers where storage access is unavailable.
+            }
+        }
+
+        function getAvailableExplanationProperties(): string[] {
+            var result: string[] = [];
+            var paneKeys: PaneKey[] = ['primary', 'compare'];
+            for (var paneIndex = 0; paneIndex < paneKeys.length; paneIndex++) {
+                var explanation = getPaneDisplayExplanation(getPaneMachineState(paneKeys[paneIndex]));
+                if (!explanation || explanation.requestedFormat !== 'text' || !explanation.plan) {
+                    continue;
+                }
+                var paneProperties = queryExplanationHighlighter.getProperties(
+                    explanation.plan, explanation.level
+                );
+                for (var propertyIndex = 0; propertyIndex < paneProperties.length; propertyIndex++) {
+                    if (result.indexOf(paneProperties[propertyIndex]) < 0) {
+                        result.push(paneProperties[propertyIndex]);
+                    }
+                }
+            }
+            return result;
+        }
+
+        function renderExplanationPropertyOptions(properties: string[]): void {
+            var optionsElement = document.getElementById('explanation-property-options');
+            if (!optionsElement) {
+                return;
+            }
+            optionsElement.textContent = '';
+            for (var i = 0; i < properties.length; i++) {
+                var property = properties[i];
+                var option = document.createElement('label');
+                option.className = 'query-explanation-property-option';
+                option.title = property;
+                var checkbox = <HTMLInputElement>document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = explanationHiddenProperties.indexOf(property) < 0;
+                checkbox.setAttribute('data-property-name', property);
+                checkbox.addEventListener('change', function(event: Event): void {
+                    var target = <HTMLInputElement>event.currentTarget;
+                    setExplanationPropertyVisible(target.getAttribute('data-property-name'), target.checked);
+                });
+                option.appendChild(checkbox);
+                option.appendChild(document.createTextNode(property));
+                optionsElement.appendChild(option);
+            }
+        }
+
+        function syncExplanationPropertyCheckboxes(): void {
+            var optionsElement = document.getElementById('explanation-property-options');
+            if (!optionsElement) {
+                return;
+            }
+            var checkboxes = optionsElement.getElementsByTagName('input');
+            for (var i = 0; i < checkboxes.length; i++) {
+                var checkbox = <HTMLInputElement>checkboxes[i];
+                checkbox.checked = explanationHiddenProperties.indexOf(
+                    checkbox.getAttribute('data-property-name')
+                ) < 0;
+            }
+        }
+
+        function syncExplanationPropertyControls(): void {
+            var properties = getAvailableExplanationProperties();
+            var config = $('#explanation-property-config');
+            var visible = properties.length > 0;
+            config.toggle(visible).attr('aria-hidden', visible ? 'false' : 'true');
+            if (!visible) {
+                $('#explanation-property-count').text('');
+                $('#explanation-property-options').empty();
+                explanationPropertyOptionsKey = '';
+                return;
+            }
+            var visibleCount = 0;
+            for (var i = 0; i < properties.length; i++) {
+                if (explanationHiddenProperties.indexOf(properties[i]) < 0) {
+                    visibleCount += 1;
+                }
+            }
+            $('#explanation-property-count').text(
+                visibleCount === properties.length
+                    ? 'All ' + properties.length
+                    : visibleCount + ' of ' + properties.length
+            );
+            var propertiesKey = JSON.stringify(properties);
+            if (propertiesKey !== explanationPropertyOptionsKey) {
+                renderExplanationPropertyOptions(properties);
+                explanationPropertyOptionsKey = propertiesKey;
+            } else {
+                syncExplanationPropertyCheckboxes();
+            }
+        }
+
+        export function setExplanationPropertyVisible(property: string, visible: boolean): void {
+            if (!property) {
+                return;
+            }
+            var index = explanationHiddenProperties.indexOf(property);
+            if (visible && index >= 0) {
+                explanationHiddenProperties.splice(index, 1);
+            } else if (!visible && index < 0) {
+                explanationHiddenProperties.push(property);
+            } else {
+                syncExplanationPropertyControls();
+                return;
+            }
+            persistExplanationHiddenProperties();
+            lastRenderedExplanationKeys = {};
+            renderQueryPageState();
+        }
+
+        export function setAllExplanationPropertiesVisible(visible: boolean): void {
+            if (visible) {
+                explanationHiddenProperties = [];
+            } else {
+                var properties = getAvailableExplanationProperties();
+                for (var i = 0; i < properties.length; i++) {
+                    if (explanationHiddenProperties.indexOf(properties[i]) < 0) {
+                        explanationHiddenProperties.push(properties[i]);
+                    }
+                }
+            }
+            persistExplanationHiddenProperties();
+            lastRenderedExplanationKeys = {};
+            renderQueryPageState();
+        }
+
+        export function setExplanationSettingsOpen(open: boolean): void {
+            $('#explanation-settings-toggle').attr('aria-expanded', open ? 'true' : 'false');
+            $('#explanation-settings-panel').prop('hidden', !open);
+        }
+
+        export function toggleExplanationSettings(): void {
+            setExplanationSettingsOpen($('#explanation-settings-toggle').attr('aria-expanded') !== 'true');
+        }
+
+        function syncExplanationHighlightControls() {
+            var controlsVisible = !!queryPageState
+                && queryPageState.inputs.explainFormat === 'text'
+                && (compareModeEnabled || queryPageState.primaryPane.kind !== 'empty');
+            $('#explanation-settings')
+                .toggle(controlsVisible)
+                .attr('aria-hidden', controlsVisible ? 'false' : 'true');
+            if (!controlsVisible) {
+                setExplanationSettingsOpen(false);
+            }
+            $('#explanation-highlight-mode')
+                .toggle(controlsVisible)
+                .attr('aria-hidden', controlsVisible ? 'false' : 'true');
+            $('#explanation-highlight-syntax').prop('checked', explanationHighlightMode === 'syntax');
+            $('#explanation-highlight-hotspot').prop('checked', explanationHighlightMode === 'hotspot');
+            var hotspot = controlsVisible ? getSharedHotspotSummary() : null;
+            $('#explanation-hotspot-legend')
+                .toggle(!!hotspot)
+                .text(hotspot ? 'Heat: ' + hotspot.label : '');
+            syncExplanationPropertyControls();
+        }
+
+        export function setExplanationHighlightMode(mode: string) {
+            if (mode !== 'syntax' && mode !== 'hotspot') {
+                return;
+            }
+            if (explanationHighlightMode === mode) {
+                syncExplanationHighlightControls();
+                return;
+            }
+            explanationHighlightMode = <queryExplanationHighlighter.HighlightMode>mode;
+            lastRenderedExplanationKeys = {};
+            renderQueryPageState();
+        }
+
+        function renderHighlightedText(paneKey: string, explanation: StableExplanation, sharedMaximum: number) {
+            var paneState = getPaneState(paneKey);
+            var explanationElement = <HTMLElement>document.getElementById(paneState.explanationId);
+            var rendered = queryExplanationHighlighter.render(explanation.plan, {
+                level: explanation.level,
+                mode: explanationHighlightMode,
+                sharedMaximum: sharedMaximum,
+                lineSeparator: explanation.lineSeparator,
+                hiddenProperties: explanationHiddenProperties,
+                namespaces: sparqlNamespaces
+            });
+            $('#' + paneState.explanationRowId).show();
+            if (paneState.explanationControlsRowId) {
+                $('#' + paneState.explanationControlsRowId).show();
+            }
+            $('#' + paneState.explanationId)
+                .empty()
+                .addClass('query-explanation--highlighted')
+                .attr('data-format', 'text');
+            explanationElement.appendChild(rendered.fragment);
+            setExplanationDisplayMode(paneKey, 'text');
+            paneState.latestExplanation = rendered.text;
+            paneState.latestExplanationFormat = 'text';
+            if (paneKey !== 'compare') {
+                updateDownloadButtonState();
+                syncPrimaryExplanationControls();
+            }
+            restoreExplainButtonViewportTopIfNeeded(paneKey);
+            clearExplanationDimensionLock(paneKey);
+        }
+
         function renderExplanation(paneKey: string, explanationText: string, format: string) {
             var paneState = getPaneState(paneKey);
             var normalizedFormat = (format || 'text').toLowerCase();
@@ -2005,9 +2299,15 @@ module workbench {
                 $('#' + paneState.explanationControlsRowId).show();
             }
             if (normalizedFormat === 'dot' || normalizedFormat === 'json') {
-                $('#' + paneState.explanationId).text('').attr('data-format', normalizedFormat);
+                $('#' + paneState.explanationId)
+                    .removeClass('query-explanation--highlighted')
+                    .text('')
+                    .attr('data-format', normalizedFormat);
             } else {
-                $('#' + paneState.explanationId).text(explanationText).attr('data-format', normalizedFormat);
+                $('#' + paneState.explanationId)
+                    .removeClass('query-explanation--highlighted')
+                    .text(explanationText)
+                    .attr('data-format', normalizedFormat);
             }
             setExplanationDisplayMode(paneKey, normalizedFormat);
             paneState.latestExplanation = explanationText;
@@ -2024,6 +2324,24 @@ module workbench {
             clearExplanationDimensionLock(paneKey);
         }
 
+        function renderStableExplanation(paneKey: PaneKey, explanation: StableExplanation,
+                                         sharedMaximum: number) {
+            if (explanation.requestedFormat === 'text') {
+                if (explanation.view === 'highlightedText' && explanation.plan) {
+                    try {
+                        renderHighlightedText(paneKey, explanation, sharedMaximum);
+                        return;
+                    } catch (renderError) {
+                        renderExplanation(paneKey, getExplanationDisplayContent(explanation), 'text');
+                        return;
+                    }
+                }
+                renderExplanation(paneKey, getExplanationDisplayContent(explanation), 'text');
+                return;
+            }
+            renderExplanation(paneKey, explanation.rawContent, explanation.requestedFormat);
+        }
+
         function renderPanePresentation(paneKey: PaneKey) {
             var paneMachineState = getPaneMachineState(paneKey);
             var paneState = getPaneState(paneKey);
@@ -2034,7 +2352,11 @@ module workbench {
             var paneStatusClassName = getPaneStatusClassName(paneMachineState);
             var paneOverlayMessage = getPaneOverlayMessage(paneMachineState);
             var rowVisible = paneMachineState.kind !== 'inactive' && paneMachineState.kind !== 'empty';
-            var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation);
+            var sharedHotspot = getSharedHotspotSummary();
+            var sharedMaximum = sharedHotspot ? sharedHotspot.maximum : null;
+            var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation)
+                + '||' + explanationHighlightMode + '||' + String(sharedMaximum)
+                + '||' + JSON.stringify(explanationHiddenProperties);
 
             $('#' + paneState.explanationRowId).toggle(rowVisible);
             $('#' + paneState.copyButtonId).prop('disabled', !paneDisplayExplanation);
@@ -2103,7 +2425,7 @@ module workbench {
 
             if (lastRenderedExplanationKeys[paneKey] !== renderContentKey) {
                 lastRenderedExplanationKeys[paneKey] = renderContentKey;
-                renderExplanation(paneKey, paneDisplayExplanation.rawContent, paneDisplayExplanation.responseFormat);
+                renderStableExplanation(paneKey, paneDisplayExplanation, sharedMaximum);
             }
         }
 
@@ -2135,8 +2457,8 @@ module workbench {
                         && queryPageState.comparePane.kind === 'ready') {
                     renderDiffView(
                         '#query-diff-explanation',
-                        queryPageState.primaryPane.explanation.rawContent,
-                        queryPageState.comparePane.explanation.rawContent,
+                        getExplanationDisplayContent(queryPageState.primaryPane.explanation),
+                        getExplanationDisplayContent(queryPageState.comparePane.explanation),
                         diffNotReadyLabel
                     );
                 } else {
@@ -2173,6 +2495,7 @@ module workbench {
 
         function serializeExplainFormData(queryValue: string, level: string, format: string, serverRequestId: string): string {
             var serializedForm: any[] = <any[]>$('form[action="query"]').serializeArray();
+            var transportFormat = getNormalizedExplainFormat(format) === 'text' ? 'json' : format;
             var seenAction = false;
             var seenExplain = false;
             var seenFormat = false;
@@ -2187,7 +2510,7 @@ module workbench {
                     serializedForm[i].value = level;
                     seenExplain = true;
                 } else if (serializedForm[i].name === 'explain-format') {
-                    serializedForm[i].value = format;
+                    serializedForm[i].value = transportFormat;
                     seenFormat = true;
                 } else if (serializedForm[i].name === 'infer') {
                     seenInfer = true;
@@ -2206,7 +2529,7 @@ module workbench {
                 serializedForm.push({ name: 'explain', value: level });
             }
             if (!seenFormat) {
-                serializedForm.push({ name: 'explain-format', value: format });
+                serializedForm.push({ name: 'explain-format', value: transportFormat });
             }
             if (!seenInfer) {
                 serializedForm.push({ name: 'infer', value: 'false' });
@@ -2246,7 +2569,28 @@ module workbench {
             var responseFormat = getNormalizedExplainFormat(response.format || fallbackFormat || 'text');
             var explanationText = response.content || '';
             var explanationView: ExplanationView = 'text';
-            if (responseFormat === 'json') {
+            var displayContent = explanationText;
+            var parsedPlan: queryExplanationHighlighter.QueryPlanNode = null;
+            var lineSeparator = typeof response.lineSeparator === 'string' && response.lineSeparator.length > 0
+                ? response.lineSeparator : '\n';
+            if (signature.format === 'text' && responseFormat === 'json') {
+                if (explanationText) {
+                    try {
+                        var parsedResponse = JSON.parse(explanationText);
+                        if (!parsedResponse || typeof parsedResponse !== 'object'
+                                || Array.isArray(parsedResponse) || typeof parsedResponse.type !== 'string') {
+                            throw new Error('JSON explanation does not contain a plan root.');
+                        }
+                        parsedPlan = <queryExplanationHighlighter.QueryPlanNode>parsedResponse;
+                        displayContent = queryExplanationHighlighter.format(
+                            parsedPlan, signature.level, lineSeparator
+                        ).text;
+                        explanationView = 'highlightedText';
+                    } catch (parseError) {
+                        explanationView = 'text';
+                    }
+                }
+            } else if (signature.format === 'json' && responseFormat === 'json') {
                 explanationView = 'jsonTree';
                 if (explanationText) {
                     try {
@@ -2264,7 +2608,10 @@ module workbench {
                 requestedFormat: signature.format,
                 responseFormat: responseFormat,
                 view: explanationView,
-                rawContent: explanationText
+                rawContent: explanationText,
+                displayContent: displayContent,
+                lineSeparator: lineSeparator,
+                plan: parsedPlan
             };
         }
 
@@ -2942,10 +3289,11 @@ module workbench {
                 return;
             }
             var primaryExplanation = queryPageState.primaryPane.explanation;
-            var format = primaryExplanation.responseFormat || <string>$('#explain-format').val() || 'text';
+            var format = primaryExplanation.requestedFormat || <string>$('#explain-format').val() || 'text';
             var extension = getExplanationDownloadExtension(format);
             var mimeType = getExplanationDownloadMimeType(format);
-            var blob = new Blob([primaryExplanation.rawContent], { type: mimeType + ';charset=utf-8' });
+            var blob = new Blob([getExplanationDisplayContent(primaryExplanation)],
+                { type: mimeType + ';charset=utf-8' });
             var link = document.createElement('a');
             var selectedLevel = <string>$('#explain-level').val() || 'query';
             link.download = 'query-explanation-' + selectedLevel.toLowerCase() + '.' + extension;
@@ -2959,7 +3307,8 @@ module workbench {
         export function copyExplanation(paneKey?: string) {
             var normalizedPaneKey: PaneKey = paneKey === 'compare' ? 'compare' : 'primary';
             var paneDisplayExplanation = getPaneDisplayExplanation(getPaneMachineState(normalizedPaneKey));
-            if (!paneDisplayExplanation || !paneDisplayExplanation.rawContent) {
+            var displayContent = getExplanationDisplayContent(paneDisplayExplanation);
+            if (!paneDisplayExplanation || !displayContent) {
                 return false;
             }
             if (!window.navigator
@@ -2967,7 +3316,7 @@ module workbench {
                     || typeof window.navigator.clipboard.writeText !== 'function') {
                 return false;
             }
-            return window.navigator.clipboard.writeText(paneDisplayExplanation.rawContent);
+            return window.navigator.clipboard.writeText(displayContent);
         }
 
         export function initializeExplanationView() {
@@ -3200,6 +3549,7 @@ module workbench {
             getExplainTriggerButtonElement: getExplainTriggerButtonElement,
             getExplanationDownloadExtension: getExplanationDownloadExtension,
             getExplanationDownloadMimeType: getExplanationDownloadMimeType,
+            getExplanationDisplayContent: getExplanationDisplayContent,
             getJsonSummary: getJsonSummary,
             getNormalizedExplainFormat: getNormalizedExplainFormat,
             getNormalizedExplainLevel: getNormalizedExplainLevel,
@@ -3241,6 +3591,7 @@ module workbench {
             renderJsonExplanationTree: renderJsonExplanationTree,
             renderJsonView: renderJsonView,
             renderQueryPageState: renderQueryPageState,
+            renderStableExplanation: renderStableExplanation,
             resetComparePaneState: resetComparePaneState,
             restorePaneStateFromPrevious: restorePaneStateFromPrevious,
             restoreExplainButtonViewportTopIfNeeded: restoreExplainButtonViewportTopIfNeeded,
@@ -3281,6 +3632,8 @@ module workbench {
                     currentQueryLn: currentQueryLn,
                     diffNotReadyLabel: diffNotReadyLabel,
                     explainServerRequestIdCounter: explainServerRequestIdCounter,
+                    explanationHighlightMode: explanationHighlightMode,
+                    explanationHiddenProperties: explanationHiddenProperties,
                     lastRenderedExplanationKeys: lastRenderedExplanationKeys,
                     pendingDotRenderKeys: pendingDotRenderKeys,
                     primaryPaneState: primaryPaneState,
@@ -3311,6 +3664,9 @@ module workbench {
                 compareQuerySeeded = false;
                 diffNotReadyLabel = '';
                 lastDiffTriggerElement = null;
+                explanationHighlightMode = 'syntax';
+                explanationHiddenProperties = loadExplanationHiddenProperties();
+                explanationPropertyOptionsKey = '';
                 primaryPaneState.latestExplanation = '';
                 primaryPaneState.latestExplanationFormat = 'text';
                 primaryPaneState.dotPanZoomInstance = null;
@@ -3352,6 +3708,11 @@ module workbench {
                 }
                 if ('explainServerRequestIdCounter' in state) {
                     explainServerRequestIdCounter = state.explainServerRequestIdCounter;
+                }
+                if ('explanationHiddenProperties' in state) {
+                    explanationHiddenProperties = normalizeExplanationHiddenProperties(
+                        state.explanationHiddenProperties
+                    );
                 }
                 if ('lastRenderedExplanationKeys' in state) {
                     lastRenderedExplanationKeys = state.lastRenderedExplanationKeys;
@@ -3496,6 +3857,27 @@ workbench.addLoad(function queryPageLoaded() {
         workbench.query.copyExplanation('compare');
     });
     $('#download-explanation').click(workbench.query.downloadExplanation);
+    $('#explanation-highlight-syntax').click(function() {
+        workbench.query.setExplanationHighlightMode('syntax');
+    });
+    $('#explanation-highlight-hotspot').click(function() {
+        workbench.query.setExplanationHighlightMode('hotspot');
+    });
+    $('#explanation-settings-toggle').click(function() {
+        workbench.query.toggleExplanationSettings();
+    });
+    $(document).click(function(event) {
+        if ($('#explanation-settings-toggle').attr('aria-expanded') === 'true'
+            && $(event.target).closest('#explanation-settings').length === 0) {
+            workbench.query.setExplanationSettingsOpen(false);
+        }
+    });
+    $('#explanation-properties-all').click(function() {
+        workbench.query.setAllExplanationPropertiesVisible(true);
+    });
+    $('#explanation-properties-none').click(function() {
+        workbench.query.setAllExplanationPropertiesVisible(false);
+    });
     // Add event handlers to the save name field to react to changes in it.
     $('#query-name').bind('keydown cut paste', workbench.query.handleNameChange);
 
@@ -3525,6 +3907,15 @@ workbench.addLoad(function queryPageLoaded() {
         }
     });
     $(document).keydown(function(event) {
+        if (event.key === 'Escape'
+            && $('#explanation-settings-toggle').attr('aria-expanded') === 'true') {
+            workbench.query.setExplanationSettingsOpen(false);
+            var settingsToggle = <HTMLElement>document.getElementById('explanation-settings-toggle');
+            if (settingsToggle) {
+                settingsToggle.focus();
+            }
+            return;
+        }
         if (event.key === 'Escape' && $('#query-diff-modal').hasClass('query-diff-modal--open')) {
             workbench.query.closeDiffModal();
         }

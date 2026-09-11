@@ -1,0 +1,3 @@
+Union (resultSizeActual=1.2M)
+   StatementPattern (resultSizeActual=1.2K)
+   StatementPattern (resultSizeActual=1.0K)

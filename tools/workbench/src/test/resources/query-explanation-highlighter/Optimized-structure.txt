@@ -1,0 +1,10 @@
+Join (new scope) (HashJoinIteration) (costEstimate=1.3K, resultSizeEstimate=2.50, plannedWorkRows=2.5K, joinType=cross join)
+╠══ StatementPattern (resultSizeEstimate=3.00) [left]
+║     s: Var (name=s)
+║     p: Var (name=p)
+║     o: Var (name=o)
+╚══ MultiProjection [right]
+      ProjectionElemList
+         ProjectionElem "subject"
+         ProjectionElem "predicate"
+         ProjectionElem "object"

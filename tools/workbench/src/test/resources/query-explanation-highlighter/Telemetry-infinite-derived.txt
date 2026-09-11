@@ -1,0 +1,2 @@
+Projection (costEstimate=∞, resultSizeActual=10, totalTimeActual=5.0ms, selfTimeActual=5.0ms, throughputRowsPerSecActual=2.0K, sampleCountActual=1, costErrorRatio=0)
+   StatementPattern (resultSizeEstimate=∞, resultSizeActual=10)

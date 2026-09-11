@@ -1,0 +1,37 @@
+{
+  "type": "Join",
+  "newScope": true,
+  "algorithm": "HashJoinIteration",
+  "costEstimate": 1250.0,
+  "resultSizeEstimate": 2.5,
+  "longMetricsPlanned": {
+    "plannedWorkRows": 2500
+  },
+  "stringMetricsActual": {
+    "joinType": "cross join"
+  },
+  "plans": [
+    {
+      "type": "StatementPattern",
+      "resultSizeEstimate": 3.0,
+      "plans": [
+        { "type": "Var (name=s)" },
+        { "type": "Var (name=p)" },
+        { "type": "Var (name=o)" }
+      ]
+    },
+    {
+      "type": "MultiProjection",
+      "plans": [
+        {
+          "type": "ProjectionElemList",
+          "plans": [
+            { "type": "ProjectionElem \"subject\"" },
+            { "type": "ProjectionElem \"predicate\"" },
+            { "type": "ProjectionElem \"object\"" }
+          ]
+        }
+      ]
+    }
+  ]
+}
