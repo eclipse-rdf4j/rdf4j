@@ -411,6 +411,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements CharSink {
 		final Collection<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
 		result.add(BasicWriterSettings.PRETTY_PRINT);
 		result.add(BasicWriterSettings.BASE_DIRECTIVE);
+		result.add(BasicWriterSettings.RDF_OUTPUT_VERSION);
 		result.add(JSONLDSettings.COMPACT_ARRAYS);
 		result.add(JSONLDSettings.JSONLD_MODE);
 		result.add(JSONLDSettings.USE_RDF_TYPE);

@@ -12,17 +12,23 @@
 package org.eclipse.rdf4j.rio.jsonld;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+import org.eclipse.rdf4j.model.util.VersionLabel;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.rio.ParserConfig;
@@ -110,11 +116,69 @@ public class JSONLDWriterBackgroundTest extends RDFWriterTest {
 		}
 	}
 
+	/**
+	 * Overrides the base test for the JSON-LD writer.
+	 *
+	 * Unlike the other RDF formats, the JSON-LD parser automatically interprets i18n datatype IRIs
+	 * (https://www.w3.org/ns/i18n#...) as directional language literals when reading JSON-LD. The base test method uses
+	 * parsers to verify the behaviour, but we're interested in the correct serialization by the writer, so we need to
+	 * verify it from the output directly.
+	 *
+	 */
+	@Override
+	@Test
+	public void testRDF12FullTo11Conversion() {
+		Model model = new LinkedHashModel();
+
+		BNode triple1Reifier = vf.createBNode();
+		BNode triple2Reifier = vf.createBNode();
+		BNode triple3Reifier = vf.createBNode();
+		BNode triple5Reifier = vf.createBNode();
+		BNode triple6Reifier = vf.createBNode();
+		Literal rtlLiteral = vf.createLiteral("שלום", "he", Literal.BaseDirection.RTL);
+
+		TripleTerm tripleTerm6 = vf.createTripleTerm(triple2Reifier, uri4, rtlLiteral);
+
+		model.add(vf.createStatement(triple1Reifier, RDF.REIFIES, tripleTerm1, uri4));
+		model.add(vf.createStatement(triple2Reifier, RDF.REIFIES, tripleTerm2, uri4));
+		model.add(vf.createStatement(triple3Reifier, RDF.REIFIES, tripleTerm3, uri4));
+		model.add(vf.createStatement(triple5Reifier, RDF.REIFIES, tripleTerm1, uri4));
+		model.add(vf.createStatement(triple6Reifier, RDF.REIFIES, tripleTerm6, uri4));
+
+		model.add(vf.createStatement(triple3Reifier, uri1, triple6Reifier, uri4));
+		model.add(vf.createStatement(uri1, uri2, uri3, uri5));
+
+		ByteArrayOutputStream outputWriter = new ByteArrayOutputStream();
+		RDFWriter rdfWriter = rdfWriterFactory.getWriter(outputWriter);
+		setupWriterConfig(rdfWriter.getWriterConfig());
+		rdfWriter.getWriterConfig().set(BasicWriterSettings.RDF_OUTPUT_VERSION, VersionLabel.RDF_1_1);
+
+		rdfWriter.startRDF();
+		model.forEach(rdfWriter::handleStatement);
+		rdfWriter.endRDF();
+
+		String output = outputWriter.toString(StandardCharsets.UTF_8);
+
+		// The writer should serialize the directed language literal as an i18n datatype.
+		assertTrue(output.contains("\"@value\": \"שלום\""));
+		assertTrue(output.contains("\"@type\": \"https://www.w3.org/ns/i18n#he_rtl\""));
+
+		// It should not serialize it using JSON-LD 1.1 language direction syntax.
+		assertFalse(output.contains("\"@language\": \"he\""));
+		assertFalse(output.contains("\"@direction\": \"rtl\""));
+
+		// The proposition form should still be present.
+		assertTrue(output.contains(RDF.PROPOSITION_FORM.stringValue()));
+		assertTrue(output.contains(RDF.PROPOSITION_FORM_OBJECT.stringValue()));
+		assertTrue(output.contains(RDF.REIFIES.stringValue()));
+	}
+
 	@Override
 	protected RioSetting<?>[] getExpectedSupportedSettings() {
 		return new RioSetting[] {
 				BasicWriterSettings.BASE_DIRECTIVE,
 				BasicWriterSettings.PRETTY_PRINT,
+				BasicWriterSettings.RDF_OUTPUT_VERSION,
 				org.eclipse.rdf4j.rio.jsonld.JSONLDSettings.COMPACT_ARRAYS,
 				org.eclipse.rdf4j.rio.jsonld.JSONLDSettings.JSONLD_MODE,
 				org.eclipse.rdf4j.rio.jsonld.JSONLDSettings.USE_RDF_TYPE,

@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfxml.util;
 
+import static org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLConstants.ITS_NAMESPACE;
+
 import java.io.Closeable;
 import java.io.Flushable;
 import java.io.IOException;
@@ -499,6 +501,15 @@ public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flush
 			// language attribute
 			if (Literals.isLanguageLiteral(objLit)) {
 				writeXmlLangAttribute(objLit.getLanguage().get());
+
+				if (datatype == CoreDatatype.RDF.DIRLANGSTRING) {
+					writeAttribute(RDF.NAMESPACE, "version", "1.2");
+					writeAttribute(ITS_NAMESPACE, "version", "2.0");
+
+					String dir = String.valueOf(objLit.getBaseDirection());
+					writeAttribute(ITS_NAMESPACE, "dir",
+							XMLUtil.sanitizeLiteralDirection(dir));
+				}
 			} else {
 				if (isXmlLiteral) {
 					writeAttribute(RDF.NAMESPACE, "parseType", "Literal");
