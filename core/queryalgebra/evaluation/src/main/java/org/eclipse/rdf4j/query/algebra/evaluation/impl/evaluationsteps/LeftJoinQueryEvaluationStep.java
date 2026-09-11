@@ -16,6 +16,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -24,6 +25,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.Sc
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MaterializedReplayJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -50,21 +53,65 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			String[] joinAttributes = leftBindingNames.stream()
 					.filter(rightBindingNames::contains)
 					.toArray(String[]::new);
-			return bs -> new HashJoinIteration(left, right, bs, true, joinAttributes, context);
+			if (QueryEvaluationUtility.canDiscardWithoutEvaluation(leftJoin.getRightArg(), leftJoin.getLeftArg())) {
+				return bs -> new HashJoinIteration(left, right, bs, true, joinAttributes, context);
+			}
+			return bs -> JoinQueryEvaluationStep.withGuaranteedRightEvaluation(right, bs,
+					trackedRight -> new HashJoinIteration(left, trackedRight, bs, true, joinAttributes, context));
+		}
+
+		// The usual evaluation below re-evaluates the right operand once per left solution with the left
+		// solution's bindings pushed in (a bind join). That is only an as-if optimization: the algebra
+		// evaluates each operand independently, so the bind join is permitted only when re-evaluation is
+		// observationally equivalent (replay-stable — no fresh UUID/BNODE identities or other volatile
+		// outcomes) AND pushing the left bindings in cannot be observed (the binding-injection contract).
+		// Otherwise the right operand is evaluated exactly once and replayed. Mapping-parameterized operands
+		// (property paths, SERVICE, extension operators) are exempt: correlated per-input evaluation is their
+		// defined semantics (GH-3053), so they always keep the bind-join path.
+		TupleExpr rightArg = leftJoin.getRightArg();
+		boolean safeForBoundEvaluation = QueryEvaluationUtility.usesMappingParameterizedEvaluation(rightArg)
+				|| (QueryEvaluationUtility.isRepeatable(rightArg)
+						&& QueryEvaluationUtility.permitsBindingInjection(rightArg,
+								leftJoin.getLeftArg().getBindingNames()));
+		if (!safeForBoundEvaluation) {
+			QueryValueEvaluationStep scopedCondition = leftJoin.hasCondition()
+					? new ScopedQueryValueEvaluationStep(leftJoin.getBindingNames(),
+							strategy.precompile(leftJoin.getCondition(), context))
+					: null;
+			// Entry bindings for variables that only the optional operand binds (a "badly designed" left join,
+			// Pérez et al. 2006 section 4.2) must not be pushed into the independent evaluation; the iterator strips
+			// them and re-imposes them by compatibility filtering, as BadlyDesignedLeftJoinIterator does.
+			Set<String> optionalOnlyVars = new HashSet<>(rightArg.getBindingNames());
+			if (leftJoin.hasCondition()) {
+				optionalOnlyVars.addAll(VarNameCollector.process(leftJoin.getCondition()));
+			}
+			optionalOnlyVars.removeAll(leftJoin.getLeftArg().getBindingNames());
+			leftJoin.setAlgorithm(MaterializedReplayJoinIterator.class.getSimpleName());
+			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(leftJoin);
+			return bs -> new MaterializedReplayJoinIterator(left, right, scopedCondition, bs, true,
+					optionalOnlyVars, joinAttributes);
 		}
 
 		// Check whether optional join is "well designed" as defined in section
 		// 4.2 of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
 		VarNameCollector optionalVarCollector = new VarNameCollector();
 		leftJoin.getRightArg().visit(optionalVarCollector);
-		QueryValueEvaluationStep condition;
+		final QueryValueEvaluationStep condition;
 		if (leftJoin.hasCondition()) {
 			leftJoin.getCondition().visit(optionalVarCollector);
 			condition = strategy.precompile(leftJoin.getCondition(), context);
 		} else {
 			condition = null;
 		}
-		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames());
+		Set<String> optionalVars = optionalVarCollector.getVarNames();
+		if (QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg, leftJoin.getLeftArg())) {
+			return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVars);
+		}
+		// The bind join never opens the optional operand when the left operand is empty, which may not suppress the
+		// operand's observable query-fatal error (for example a failed non-silent SERVICE).
+		return bs -> JoinQueryEvaluationStep.withGuaranteedRightEvaluation(right, bs,
+				trackedRight -> new LeftJoinQueryEvaluationStep(trackedRight, condition, left, leftJoin, optionalVars)
+						.evaluate(bs));
 	}
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
@@ -176,7 +223,10 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			Set<String> scopeBindingNames) {
 		if (joinCondition == null) {
 			return prepareRightArg;
-		} else if (canEvaluateConditionBasedOnLeftHandSide(join)) {
+		} else if (canEvaluateConditionBasedOnLeftHandSide(join)
+				&& QueryEvaluationUtility.canDiscardWithoutEvaluation(join.getRightArg(), join.getLeftArg())) {
+			// pre-filtering skips right-hand evaluation for rejected left solutions, which is only permitted
+			// when the skipped operand cannot raise an observable query-fatal error
 			return new PreFilterQueryEvaluationStep(
 					prepareRightArg,
 					new ScopedQueryValueEvaluationStep(join.getAssuredBindingNames(), joinCondition),

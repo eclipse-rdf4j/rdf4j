@@ -111,7 +111,6 @@ import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -376,34 +375,37 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 * <li>If the supplied ValueExpr is a {@link Var}, the object itself is returned.</li>
 	 * <li>If it is a {@link ValueConstant}, a constant variable is created via
 	 * {@link TupleExprs#createConstVar(Value)}.</li>
-	 * <li>If it is a {@link UnaryValueOperator} (e.g. {@link Str}, {@link Lang}, {@link Datatype}), an anonymous
-	 * variable is created and the expression is registered as an {@link ExtensionElem} on the current graph pattern, so
-	 * that the expression is evaluated at runtime and its result bound to the returned var.</li>
+	 * <li>Otherwise, an anonymous variable is created and the expression is registered as a pending
+	 * {@link ExtensionElem} on the current graph pattern, so that the expression is evaluated at runtime over the group
+	 * (or, inside a BIND, over the patterns preceding the BIND) and its result bound to the returned var.</li>
 	 * </ul>
 	 *
 	 * @param expr the ValueExpr to map to a Var
 	 * @return a Var representing the given expression
-	 * @throws IllegalArgumentException if the supplied ValueExpr is null or of an unexpected type
+	 * @throws IllegalArgumentException if the supplied ValueExpr is null
+	 * @throws VisitorException         if the expression is not a variable or constant and the current group graph
+	 *                                  pattern has already been built (SELECT, GROUP BY, HAVING and ORDER BY
+	 *                                  expressions), where the component could not be bound
 	 */
-	private Var toVar(ValueExpr expr) {
+	private Var toVar(ValueExpr expr) throws VisitorException {
 		if (expr instanceof Var) {
 			return (Var) expr;
 		} else if (expr instanceof ValueConstant) {
 			return TupleExprs.createConstVar(((ValueConstant) expr).getValue());
-		} else if (expr instanceof UnaryValueOperator) {
-			Var var = createAnonVar();
-			// Add to the current graph pattern's extension elements list,
-			// not as a new isolated Extension node
-			graphPattern.addRequiredTE(
-					new Extension(
-							graphPattern.buildTupleExpr(), // wrap the EXISTING pattern, not SingletonSet
-							new ExtensionElem(expr, var.getName())
-					)
-			);
-			return var;
-		} else {
-			throw new IllegalArgumentException("Unexpected expression type: " + expr.getClass().getName());
+		} else if (expr == null) {
+			throw new IllegalArgumentException("expr is null");
 		}
+		if (graphPattern.isBuilt()) {
+			// the WHERE group has already been turned into algebra; an extension registered now would never be
+			// applied and the component variable would silently stay unbound
+			throw new VisitorException(
+					"Expression-valued triple term components are only supported inside a group graph pattern (use BIND): "
+							+ expr);
+		}
+
+		Var var = createAnonVar();
+		graphPattern.addPendingExtensionElem(new ExtensionElem(expr, var.getName()));
+		return var;
 	}
 
 	/**
@@ -2388,27 +2390,27 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public LangDir visit(ASTLangDirFunc node, Object data) throws VisitorException {
-		ValueExpr arg = mapValueExprToVar(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new LangDir(arg);
 	}
 
 	@Override
 	public StrLangDir visit(ASTStrLangDirFunc node, Object data) throws VisitorException {
-		ValueExpr lexicalFormArg = mapValueExprToVar(node.jjtGetChild(0).jjtAccept(this, null));
-		ValueExpr langArg = mapValueExprToVar(node.jjtGetChild(1).jjtAccept(this, null));
-		ValueExpr dirArg = mapValueExprToVar(node.jjtGetChild(2).jjtAccept(this, null));
+		ValueExpr lexicalFormArg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr langArg = castToValueExpr(node.jjtGetChild(1).jjtAccept(this, null));
+		ValueExpr dirArg = castToValueExpr(node.jjtGetChild(2).jjtAccept(this, null));
 		return new StrLangDir(lexicalFormArg, langArg, dirArg);
 	}
 
 	@Override
 	public HasLang visit(ASTHasLangFunc node, Object data) throws VisitorException {
-		ValueExpr arg = mapValueExprToVar(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new HasLang(arg);
 	}
 
 	@Override
 	public HasLangDir visit(ASTHasLangDirFunc node, Object data) throws VisitorException {
-		ValueExpr arg = mapValueExprToVar(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new HasLangDir(arg);
 	}
 
@@ -2738,6 +2740,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Object visit(ASTBind node, Object data) throws VisitorException {
+		// triple term component expressions registered while parsing THIS bind expression are bound by the bind
+		// itself (over the preceding patterns), like the bind's own expression
+		int pendingExtensionElemsBefore = graphPattern.getPendingExtensionElemCount();
 		// bind expression
 		Object child0 = node.jjtGetChild(0).jjtAccept(this, data);
 		ValueExpr ve;
@@ -2779,6 +2784,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		TupleExpr arg = graphPattern.buildJoinFromRequiredTEs();
 		// apply optionals, if any
 		arg = graphPattern.buildOptionalTE(arg);
+		arg = graphPattern.applyPendingExtensionElems(arg, pendingExtensionElemsBefore);
 
 		// check if alias is not previously used in the BGP
 		if (arg.getBindingNames().contains(alias)) {
@@ -3147,15 +3153,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public ValueExprTripleRef visit(ASTTripleFunc node, Object data) throws VisitorException {
-		// Visit the 3 child expressions
-		ValueExpr subjectExpr = castToValueExpr(node.getSubj().jjtAccept(this, data));
-		ValueExpr predicateExpr = castToValueExpr(node.getPred().jjtAccept(this, data));
-		ValueExpr objectExpr = castToValueExpr(node.getObj().jjtAccept(this, data));
-
-		// Map each ValueExpr to a Var (same as how triple terms are built in the AST visitor)
-		Var s = toVar(subjectExpr);
-		Var p = toVar(predicateExpr);
-		Var o = toVar(objectExpr);
+		// Bind arbitrary component expressions in SPARQL's left-to-right argument order.
+		Var s = toVar(castToValueExpr(node.getSubj().jjtAccept(this, data)));
+		Var p = toVar(castToValueExpr(node.getPred().jjtAccept(this, data)));
+		Var o = toVar(castToValueExpr(node.getObj().jjtAccept(this, data)));
 
 		// Create a fresh anonymous variable to hold the result triple term
 		Var exprVar = createAnonVar();

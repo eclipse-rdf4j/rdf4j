@@ -74,6 +74,17 @@ public interface TripleSource extends AvailableStatementOrder {
 	}
 
 	/**
+	 * Checks whether at least one statement matches the supplied pattern without requiring callers to materialize
+	 * converted bindings. Implementations with native indexes should override this to stop at the first record.
+	 */
+	default boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
+			throws QueryEvaluationException {
+		try (CloseableIteration<? extends Statement> statements = getStatements(subj, pred, obj, contexts)) {
+			return statements.hasNext();
+		}
+	}
+
+	/**
 	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to
 	 * indicate wildcards. Optionally a (set of) context(s) may be specified in which case the result will be restricted
 	 * to statements matching one or more of the specified contexts.

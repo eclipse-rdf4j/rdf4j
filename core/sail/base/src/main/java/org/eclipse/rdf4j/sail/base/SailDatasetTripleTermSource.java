@@ -83,6 +83,16 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 	}
 
 	@Override
+	public boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
+			throws QueryEvaluationException {
+		try {
+			return dataset.hasStatements(subj, pred, obj, contexts);
+		} catch (SailException e) {
+			throw new QueryEvaluationException(e);
+		}
+	}
+
+	@Override
 	public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException {
 		CloseableIteration<? extends Statement> statements = null;

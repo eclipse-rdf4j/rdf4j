@@ -2350,7 +2350,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			for (int i = 0; i < joinArgs.size(); i++) {
 				TupleExpr joinArg = joinArgs.get(i);
 				if (!(joinArg instanceof BindingSetAssignment assignment)
-						|| assignment.getAssuredBindingNames().size() < 2) {
+						|| assignment.getBindingNames().size() < 2) {
 					continue;
 				}
 				List<BindingSetAssignment> split = splitCartesianAssignment(assignment);
@@ -2364,7 +2364,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private List<BindingSetAssignment> splitCartesianAssignment(BindingSetAssignment assignment) {
-			List<String> bindingNames = new ArrayList<>(assignment.getAssuredBindingNames());
+			// every column takes part in the split; a column with an UNDEF row (a non-assured name) is caught by
+			// the null check below and prevents the split
+			List<String> bindingNames = new ArrayList<>(assignment.getBindingNames());
 			List<BindingSet> rows = new ArrayList<>();
 			Map<String, LinkedHashSet<Value>> valuesByName = new LinkedHashMap<>();
 			for (String bindingName : bindingNames) {

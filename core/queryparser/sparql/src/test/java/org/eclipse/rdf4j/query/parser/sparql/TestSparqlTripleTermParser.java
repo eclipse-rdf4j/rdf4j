@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.query.algebra.ReifiedTripleRef;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
@@ -132,6 +133,38 @@ public class TestSparqlTripleTermParser {
 		assertNotNull(ref.getObjectVar().getValue(), "expect not null object");
 		assertInstanceOf(Literal.class, ref.getObjectVar().getValue(), "expect Literal object");
 		assertEquals(1, ((Literal) ref.getObjectVar().getValue()).intValue(), "object should match");
+	}
+
+	@Test
+	public void testTripleFunctionAcceptsNestedComponentExpressionsLeftToRight() {
+		String query = "PREFIX ex: <http://example.org/>\n"
+				+ "SELECT ?u WHERE {\n"
+				+ "  ?x ex:says ?t .\n"
+				+ "  BIND(TRIPLE(SUBJECT(?t), PREDICATE(?t), OBJECT(?t)) AS ?u)\n"
+				+ "}";
+
+		Projection projection = (Projection) ((QueryRoot) parser.parseQuery(query, null).getTupleExpr()).getArg();
+		Extension resultExtension = assertInstanceOf(Extension.class, projection.getArg());
+		ValueExprTripleRef triple = assertInstanceOf(ValueExprTripleRef.class,
+				resultExtension.getElements().get(0).getExpr());
+
+		Extension objectExtension = assertInstanceOf(Extension.class, resultExtension.getArg());
+		Extension predicateExtension = assertInstanceOf(Extension.class, objectExtension.getArg());
+		Extension subjectExtension = assertInstanceOf(Extension.class, predicateExtension.getArg());
+		assertInstanceOf(StatementPattern.class, subjectExtension.getArg());
+
+		assertTripleComponent(subjectExtension, TripleComponent.Role.SUBJECT, triple.getSubjectVar());
+		assertTripleComponent(predicateExtension, TripleComponent.Role.PREDICATE, triple.getPredicateVar());
+		assertTripleComponent(objectExtension, TripleComponent.Role.OBJECT, triple.getObjectVar());
+	}
+
+	private static void assertTripleComponent(Extension extension, TripleComponent.Role expectedRole,
+			Var expectedTarget) {
+		assertEquals(1, extension.getElements().size());
+		ExtensionElem element = extension.getElements().get(0);
+		TripleComponent component = assertInstanceOf(TripleComponent.class, element.getExpr());
+		assertEquals(expectedRole, component.getRole());
+		assertEquals(expectedTarget.getName(), element.getName());
 	}
 
 	/*-

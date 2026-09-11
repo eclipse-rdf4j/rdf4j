@@ -30,10 +30,22 @@ public class ServiceJoinConversionIteration extends ConvertingIteration<BindingS
 
 	protected final List<BindingSet> bindings;
 
+	private final String rowIdxVar;
+
 	public ServiceJoinConversionIteration(CloseableIteration<BindingSet> iter,
 			List<BindingSet> bindings) {
+		this(iter, bindings, "__rowIdx");
+	}
+
+	/**
+	 * @param rowIdxVar the name of the synthetic row-index variable used to correlate remote solutions with the
+	 *                  original input bindings. Must not collide with any user-visible variable.
+	 */
+	public ServiceJoinConversionIteration(CloseableIteration<BindingSet> iter,
+			List<BindingSet> bindings, String rowIdxVar) {
 		super(iter);
 		this.bindings = bindings;
+		this.rowIdxVar = rowIdxVar;
 	}
 
 	@Override
@@ -47,7 +59,7 @@ public class ServiceJoinConversionIteration extends ConvertingIteration<BindingS
 		while (bIter.hasNext()) {
 			Binding b = bIter.next();
 			String name = b.getName();
-			if (name.equals("__rowIdx")) {
+			if (name.equals(rowIdxVar)) {
 				bIndex = Integer.parseInt(b.getValue().stringValue());
 				continue;
 			}
@@ -62,7 +74,14 @@ public class ServiceJoinConversionIteration extends ConvertingIteration<BindingS
 							+ "Please report to the developers.");
 		}
 
-		res.addAll(bindings.get(bIndex));
+		// compatible-mapping merge: for a subselect service pattern the remote solution legitimately
+		// contains the correlated variables (they are pinned by the injected VALUES clause), so shared
+		// names are identical by construction and only absent bindings are added
+		for (Binding binding : bindings.get(bIndex)) {
+			if (!res.hasBinding(binding.getName())) {
+				res.addBinding(binding);
+			}
+		}
 		return res;
 	}
 }

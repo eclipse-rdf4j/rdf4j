@@ -13,7 +13,10 @@ package org.eclipse.rdf4j.tools.serverboot;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.web.servlet.DispatcherServlet;
+import org.springframework.web.servlet.ModelAndView;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -37,6 +40,65 @@ class LoggingDispatcherServlet extends DispatcherServlet {
 				request.getServletPath(),
 				request.getContextPath(),
 				request.getPathInfo());
-		super.doDispatch(request, response);
+		try {
+			super.doDispatch(request, response);
+		} catch (Exception | OutOfMemoryError throwable) {
+			OutOfMemoryError outOfMemoryError = findOutOfMemoryError(throwable);
+			if (outOfMemoryError == null) {
+				throw throwable;
+			}
+			try {
+				shutdownServer(outOfMemoryError);
+			} catch (RuntimeException | Error shutdownFailure) {
+				outOfMemoryError.addSuppressed(shutdownFailure);
+			}
+			throw outOfMemoryError;
+		}
+	}
+
+	@Override
+	protected ModelAndView processHandlerException(HttpServletRequest request, HttpServletResponse response,
+			Object handler, Exception exception) throws Exception {
+		if (findOutOfMemoryError(exception) != null) {
+			throw exception;
+		}
+		return super.processHandlerException(request, response, handler, exception);
+	}
+
+	private static OutOfMemoryError findOutOfMemoryError(Throwable throwable) {
+		Throwable cause = throwable;
+		for (int depth = 0; cause != null && depth < 100; depth++) {
+			if (cause instanceof OutOfMemoryError outOfMemoryError) {
+				return outOfMemoryError;
+			}
+			cause = cause.getCause();
+		}
+		return null;
+	}
+
+	private void shutdownServer(OutOfMemoryError outOfMemoryError) {
+		logger.error("OutOfMemoryError while dispatching a request; shutting down the server", outOfMemoryError);
+		ApplicationContext context = getWebApplicationContext();
+		while (context != null && context.getParent() != null) {
+			context = context.getParent();
+		}
+		ConfigurableApplicationContext rootContext = context instanceof ConfigurableApplicationContext configurable
+				? configurable
+				: null;
+		// Shut down on a dedicated thread: this request thread still holds the servlet allocation, which the
+		// container's graceful shutdown would otherwise wait for, and the JVM must exit with a failure status
+		// (forced after a delay) even if closing the context hangs under memory pressure.
+		Thread thread = new Thread(
+				() -> SignalShutdownHandler.shutdownAndExit(rootContext, "OutOfMemoryError", 1, this::exitJvm),
+				"rdf4j-oom-shutdown");
+		thread.setDaemon(true);
+		thread.start();
+	}
+
+	/**
+	 * Exits the JVM with the given status. Overridable for tests.
+	 */
+	protected void exitJvm(int status) {
+		System.exit(status);
 	}
 }

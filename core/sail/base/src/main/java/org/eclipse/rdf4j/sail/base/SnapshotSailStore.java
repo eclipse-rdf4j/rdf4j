@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -79,6 +80,18 @@ public class SnapshotSailStore implements SailStore {
 	@Override
 	public SailSource getExplicitSailSource() {
 		return explicitAutoFlush;
+	}
+
+	/**
+	 * Whether committed changes are still buffered in the auto-flush branch(es) — because a dataset derived from a
+	 * branch is still open — and have not yet reached the backing store. A read that bypasses the branches and goes to
+	 * the backing store directly is stale while this is {@code true}.
+	 *
+	 * @param includeInferred whether to also consider the inferred branch
+	 */
+	@InternalUseOnly
+	public boolean hasUnflushedChanges(boolean includeInferred) {
+		return explicitAutoFlush.isChanged() || (includeInferred && inferredAutoFlush.isChanged());
 	}
 
 	@Override

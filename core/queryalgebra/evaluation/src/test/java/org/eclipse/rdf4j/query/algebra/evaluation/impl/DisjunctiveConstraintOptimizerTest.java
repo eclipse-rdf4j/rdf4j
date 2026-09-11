@@ -10,17 +10,64 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.junit.jupiter.api.Test;
 
 /**
  * @author jeen
  */
 public class DisjunctiveConstraintOptimizerTest extends QueryOptimizerTest {
 
+	/**
+	 * The disjunctive split is only algebra-preserving when the disjuncts are mutually exclusive: a solution satisfying
+	 * more than one disjunct must appear once in the filter result but would appear once per satisfied branch in the
+	 * rewritten union. The optimizer has no disjointness proof, so it must not split.
+	 */
+	@Test
+	public void doesNotSplitNonDisjointDisjunction() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Or condition = new Or(
+				new SameTerm(Var.of("o"),
+						new ValueConstant(SimpleValueFactory.getInstance().createIRI("urn:test:a"))),
+				new Bound(Var.of("o")));
+		Filter filter = new Filter(pattern, condition);
+		QueryRoot root = new QueryRoot(filter);
+
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(root.getArg()).isSameAs(filter);
+		assertThat(filter.getArg()).isSameAs(pattern);
+		assertThat(filter.getCondition()).isSameAs(condition);
+		assertThat(findUnion(root)).isNull();
+	}
+
 	@Override
 	public DisjunctiveConstraintOptimizer getOptimizer() {
 		return new DisjunctiveConstraintOptimizer();
+	}
+
+	private static Union findUnion(QueryRoot root) {
+		if (root.getArg()instanceof Union union) {
+			return union;
+		}
+		if (root.getArg()instanceof Filter filter && filter.getArg()instanceof Union union) {
+			return union;
+		}
+		return null;
 	}
 
 }

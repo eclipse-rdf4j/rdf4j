@@ -19,6 +19,8 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -63,6 +65,16 @@ public class GraphPattern {
 	 * The boolean constraints in this graph pattern.
 	 */
 	private List<ValueExpr> constraints = new ArrayList<>();
+
+	/**
+	 * Extension elements that must be bound before this group's constraints are evaluated but that are not tied to a
+	 * position within the group: expression-valued components of a triple term used in a FILTER. They are applied over
+	 * the group's tuple expression when it is built (or, for the ones registered while parsing a BIND expression, by
+	 * the BIND itself).
+	 */
+	private final List<ExtensionElem> pendingExtensionElems = new ArrayList<>();
+
+	private boolean built;
 
 	/**
 	 * Creates a new graph pattern.
@@ -151,6 +163,43 @@ public class GraphPattern {
 		return Collections.unmodifiableList(constraints);
 	}
 
+	/**
+	 * Registers an expression whose value must be bound to a (fresh) variable before this group's constraints are
+	 * evaluated; see {@link #applyPendingExtensionElems(TupleExpr, int)}.
+	 */
+	public void addPendingExtensionElem(ExtensionElem elem) {
+		pendingExtensionElems.add(elem);
+	}
+
+	public int getPendingExtensionElemCount() {
+		return pendingExtensionElems.size();
+	}
+
+	/**
+	 * Wraps {@code result} in one {@link Extension} per pending extension element registered at or after
+	 * {@code fromIndex}, nested in registration order (the first registered element innermost, so later components may
+	 * refer to earlier ones), and removes them from the pending list.
+	 */
+	public TupleExpr applyPendingExtensionElems(TupleExpr result, int fromIndex) {
+		if (fromIndex >= pendingExtensionElems.size()) {
+			return result;
+		}
+		List<ExtensionElem> elems = pendingExtensionElems.subList(fromIndex, pendingExtensionElems.size());
+		for (ExtensionElem elem : elems) {
+			result = new Extension(result, elem);
+		}
+		elems.clear();
+		return result;
+	}
+
+	/**
+	 * Whether {@link #buildTupleExpr()} has been called: expressions processed afterwards (SELECT, GROUP BY, HAVING,
+	 * ORDER BY) can no longer contribute pending extension elements to this group.
+	 */
+	public boolean isBuilt() {
+		return built;
+	}
+
 	public List<ValueExpr> removeAllConstraints() {
 		List<ValueExpr> constraints = this.constraints;
 		this.constraints = new ArrayList<>();
@@ -164,6 +213,8 @@ public class GraphPattern {
 		requiredTEs.clear();
 		optionalTEs.clear();
 		constraints.clear();
+		pendingExtensionElems.clear();
+		built = false;
 	}
 
 	/**
@@ -176,9 +227,14 @@ public class GraphPattern {
 
 		result = buildOptionalTE(result);
 
+		// filters are position-independent within the group, so their triple-term component expressions are
+		// bound over the complete group
+		result = applyPendingExtensionElems(result, 0);
+
 		for (ValueExpr constraint : constraints) {
 			result = new Filter(result, constraint);
 		}
+		built = true;
 		return result;
 	}
 
