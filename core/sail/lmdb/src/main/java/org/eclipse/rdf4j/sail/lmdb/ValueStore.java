@@ -268,20 +268,24 @@ class ValueStore extends AbstractValueFactory {
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
 		setNewRevision();
 
+		startTransaction(true);
+		initTermIndexes(config);
+		commit();
+
 		// read maximum id from store
 		readTransaction(env, (stack, txn) -> {
 			long cursor = 0;
 			PointerBuffer pp = stack.mallocPointer(1);
 
+			MDBVal keyData = MDBVal.calloc(stack);
+			MDBVal valueData = MDBVal.calloc(stack);
 			for (int lookupDbi : new int[] { dbi, freeDbi }) {
 				try {
 					E(mdb_cursor_open(txn, lookupDbi, pp));
 					cursor = pp.get(0);
 
-					MDBVal keyData = MDBVal.calloc(stack);
 					// set cursor after max ID
 					keyData.mv_data(stack.bytes(new byte[] { ID_KEY, (byte) 0xFF }));
-					MDBVal valueData = MDBVal.calloc(stack);
 					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 					if (rc != MDB_SUCCESS) {
 						// directly go to last value
@@ -299,12 +303,20 @@ class ValueStore extends AbstractValueFactory {
 					}
 				}
 			}
+			try {
+				cursor = 0;
+				E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), pp));
+				cursor = pp.get(0);
+				if (mdb_cursor_get(cursor, keyData, valueData, MDB_LAST) == MDB_SUCCESS) {
+					nextId = Math.max(nextId, ValueIds.getValue(Varint.readUnsigned(keyData.mv_data())) + 1);
+				}
+			} finally {
+				if (cursor != 0) {
+					mdb_cursor_close(cursor);
+				}
+			}
 			return null;
 		});
-
-		startTransaction(true);
-		initTermIndexes(config);
-		commit();
 	}
 
 	private void openHashFileQuietly() {
@@ -1121,7 +1133,7 @@ class ValueStore extends AbstractValueFactory {
 						dataVal.mv_size(data.length);
 						idVal.mv_data(id2data(idBuffer(stack), newId).flip());
 						// store mapping of hash -> ID
-						E(mdb_put(txn, dbi, hashVal, idVal, 0));
+						E(mdb_put(writeTxn, dbi, hashVal, idVal, 0));
 						// store mapping of ID -> data
 						E(mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE));
 						dataVal.mv_data().put(data);
@@ -1267,23 +1279,25 @@ class ValueStore extends AbstractValueFactory {
 				return LmdbValue.UNKNOWN_ID;
 			}
 
-			incrementRefCount(stack, writeTxn, subj);
-			incrementRefCount(stack, writeTxn, pred);
-			incrementRefCount(stack, writeTxn, obj);
+			return writeTransaction((stack2, writeTxn) -> {
+				incrementRefCount(stack2, writeTxn, subj);
+				incrementRefCount(stack2, writeTxn, pred);
+				incrementRefCount(stack2, writeTxn, obj);
 
-			long id = nextId(TRIPLE_VALUE);
-			for (TripleIndex index : tripleTermIndexes) {
-				keyBuf.clear();
-				index.toKey(keyBuf, subj, pred, obj, id);
-				keyBuf.flip();
+				long id = nextId(TRIPLE_VALUE);
+				for (TripleIndex index : tripleTermIndexes) {
+					keyBuf.clear();
+					index.toKey(keyBuf, subj, pred, obj, id);
+					keyBuf.flip();
 
-				// update buffer positions in MDBVal
-				keyVal.mv_data(keyBuf);
+					// update buffer positions in MDBVal
+					keyVal.mv_data(keyBuf);
 
-				resizeMap(writeTxn, 0L);
-				E(mdb_put(writeTxn, index.getDB(true), keyVal, dataVal, 0));
-			}
-			return id;
+					resizeMap(writeTxn, 0L);
+					E(mdb_put(writeTxn, index.getDB(true), keyVal, dataVal, 0));
+				}
+				return id;
+			});
 		});
 	}
 
