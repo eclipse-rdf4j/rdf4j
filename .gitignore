@@ -70,3 +70,14 @@ e2e/test-results
 /core/sail/lmdb/persistent-lmdb-theme-store/
 /persistent-lmdb-theme-store/
 papers/
+
+worktrees/
+*.hprof
+*.bundle
+/GH-*.zip
+/GH-*.zip.sha256
+/GH-*.md
+/GH-*.txt
+/initial-evidence-*.txt
+/baseline-failing-tests.txt
+/final-evidence.txt

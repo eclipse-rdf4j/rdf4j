@@ -1,0 +1,51 @@
+id,category,rows,ordered,title,query,result
+q01,boundness,5,false,"OPTIONAL introduces a possibly unbound variable",queries/q01.rq,results/q01.srx
+q02,union,5,false,"UNION branch-only bindings",queries/q02.rq,results/q02.srx
+q03,values,2,false,"VALUES UNDEF can be supplied by a later join",queries/q03.rq,results/q03.srx
+q04,values,2,false,"VALUES binding constrains OPTIONAL compatibility",queries/q04.rq,results/q04.srx
+q05,bind,5,false,"BIND error preserves the input mapping",queries/q05.rq,results/q05.srx
+q06,bind,5,false,"Sequential BIND targets are immediately available",queries/q06.rq,results/q06.srx
+q07,filter,2,false,"FILTER textual position within one group",queries/q07.rq,results/q07.srx
+q08,group-scope,0,false,"Nested ordinary group is not lateral",queries/q08.rq,results/q08.srx
+q09,group-scope,1,false,"Same-group FILTER sees preceding VALUES",queries/q09.rq,results/q09.srx
+q10,bind,6,false,"BIND before producer is not retroactive",queries/q10.rq,results/q10.srx
+q11,filter-union,2,false,"FILTER outside UNION on branch-only binding",queries/q11.rq,results/q11.srx
+q12,property-path,2,false,"Property-path intermediate variable remains hidden",queries/q12.rq,results/q12.srx
+q13,filter-join,1,false,"FILTER depends on a variable supplied by crossed JOIN operand",queries/q13.rq,results/q13.srx
+q14,filter-optional,1,false,"BOUND after OPTIONAL must not move before OPTIONAL",queries/q14.rq,results/q14.srx
+q15,filter-bag,3,false,"OR filter is not bag-union of its disjuncts",queries/q15.rq,results/q15.srx
+q16,filter-errors,2,false,"Short-circuit conjunction with possibly unbound operand",queries/q16.rq,results/q16.srx
+q17,bind-errors,5,false,"COALESCE observes OPTIONAL boundness",queries/q17.rq,results/q17.srx
+q18,minus-filter,2,false,"FILTER over MINUS must not be cloned into RHS",queries/q18.rq,results/q18.srx
+q19,minus-filter,1,false,"Second MINUS filter regression with fallback row",queries/q19.rq,results/q19.srx
+q20,filter-union,4,false,"FILTER/UNION distribution preserves duplicate multiplicity",queries/q20.rq,results/q20.srx
+q21,optional-filter,5,false,"Filter inside OPTIONAL condition preserves fallback",queries/q21.rq,results/q21.srx
+q22,optional-filter,2,false,"Same filter outside OPTIONAL removes fallback",queries/q22.rq,results/q22.srx
+q23,optional-bag,3,false,"OPTIONAL multiple witnesses and fallback multiplicity",queries/q23.rq,results/q23.srx
+q24,optional-union,1,false,"OPTIONAL does not distribute over right UNION",queries/q24.rq,results/q24.srx
+q25,optional-union,2,false,"OPTIONAL distributes over left UNION",queries/q25.rq,results/q25.srx
+q26,optional-correlation,4,false,"OPTIONAL condition sees left and right bindings",queries/q26.rq,results/q26.srx
+q27,optional-fallback,1,false,"All OPTIONAL candidates fail condition: one fallback",queries/q27.rq,results/q27.srx
+q28,optional-compatibility,1,false,"OPTIONAL compatibility conflict retains left binding",queries/q28.rq,results/q28.srx
+q29,optional-bind,1,false,"Later JOIN and BIND after OPTIONAL fallback",queries/q29.rq,results/q29.srx
+q30,optional-projection,3,false,"Dead-looking OPTIONAL is multiplicity-live",queries/q30.rq,results/q30.srx
+q31,minus,5,false,"MINUS with disjoint domains is a no-op",queries/q31.rq,results/q31.srx
+q32,minus-scope,3,false,"MINUS RHS variables do not escape SELECT star",queries/q32.rq,results/q32.srx
+q33,minus-empty-domain,5,false,"MINUS empty mapping does not remove rows",queries/q33.rq,results/q33.srx
+q34,minus-union,2,false,"MINUS right UNION is existential across both branches",queries/q34.rq,results/q34.srx
+q35,minus-optional,3,false,"MINUS RHS OPTIONAL mappings remain witnesses",queries/q35.rq,results/q35.srx
+q36,minus-correlation,6,false,"MINUS RHS FILTER is not correlated",queries/q36.rq,results/q36.srx
+q37,exists-correlation,5,false,"NOT EXISTS is correlated unlike MINUS",queries/q37.rq,results/q37.srx
+q38,minus-values,1,false,"MINUS overlap depends on actual VALUES domains",queries/q38.rq,results/q38.srx
+q39,exists,1,false,"EXISTS sees current outer mapping",queries/q39.rq,results/q39.srx
+q40,exists-scope,3,false,"EXISTS-local variables do not escape SELECT star",queries/q40.rq,results/q40.srx
+q41,exists,2,false,"NOT EXISTS over missing property",queries/q41.rq,results/q41.srx
+q42,exists-bag,4,false,"EXISTS correlation varies per duplicate outer row",queries/q42.rq,results/q42.srx
+q43,subquery-scope,4,false,"Subselect hidden variable is independent outside",queries/q43.rq,results/q43.srx
+q44,subquery-capture,2,false,"Subselect flattening must not capture hidden same-name variable",queries/q44.rq,results/q44.srx
+q45,subquery-distinct,5,false,"Subselect DISTINCT is cardinality-visible outside",queries/q45.rq,results/q45.srx
+q46,subquery-bag,6,false,"Subselect without DISTINCT preserves projected duplicates",queries/q46.rq,results/q46.srx
+q47,subquery-alias,5,false,"Subselect alias is the exported interface",queries/q47.rq,results/q47.srx
+q48,grouping,3,false,"Grouping creates a query-level interface",queries/q48.rq,results/q48.srx
+q49,subquery-sequence,2,true,"Subselect ORDER BY and LIMIT remain local",queries/q49.rq,results/q49.srx
+q50,graph-scope,2,false,"GRAPH variable is exported from named-graph matching",queries/q50.rq,results/q50.srx

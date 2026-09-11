@@ -1,0 +1,4 @@
+SELECT * WHERE {
+  VALUES ?x { "1" "2" "3" }
+  MINUS { VALUES ?rhsOnly { "hidden" } }
+}

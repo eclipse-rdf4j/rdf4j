@@ -1,0 +1,65 @@
+{
+  "format": "rdf4j-tuple-expr",
+  "version": 1,
+  "expression": {
+    "type": "Filter",
+    "arg": {
+      "type": "LeftJoin",
+      "leftArg": {
+        "type": "StatementPattern",
+        "subjectVar": {
+          "type": "Var",
+          "name": "s"
+        },
+        "predicateVar": {
+          "type": "Var",
+          "name": "probePredicate",
+          "value": {
+            "type": "IRI",
+            "value": "urn:counterexample:probe"
+          },
+          "constant": true
+        },
+        "objectVar": {
+          "type": "Var",
+          "name": "x"
+        }
+      },
+      "rightArg": {
+        "type": "Extension",
+        "arg": {
+          "type": "SingletonSet"
+        },
+        "elements": [
+          {
+            "name": "x",
+            "expr": {
+              "type": "ValueConstant",
+              "value": {
+                "type": "Literal",
+                "label": "1",
+                "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "condition": {
+      "type": "Compare",
+      "operator": ">",
+      "leftArg": {
+        "type": "Var",
+        "name": "x"
+      },
+      "rightArg": {
+        "type": "ValueConstant",
+        "value": {
+          "type": "Literal",
+          "label": "5",
+          "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+        }
+      }
+    }
+  }
+}

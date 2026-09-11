@@ -1,0 +1,56 @@
+{
+  "format": "rdf4j-tuple-expr",
+  "version": 1,
+  "expression": {
+    "type": "Join",
+    "leftArg": {
+      "type": "StatementPattern",
+      "subjectVar": {
+        "type": "Var",
+        "name": "s"
+      },
+      "predicateVar": {
+        "type": "Var",
+        "name": "leftPredicate",
+        "value": {
+          "type": "IRI",
+          "value": "urn:counterexample:left-predicate"
+        },
+        "constant": true
+      },
+      "objectVar": {
+        "type": "Var",
+        "name": "o"
+      }
+    },
+    "rightArg": {
+      "type": "Projection",
+      "arg": {
+        "type": "StatementPattern",
+        "subjectVar": {
+          "type": "Var",
+          "name": "hiddenSubject"
+        },
+        "predicateVar": {
+          "type": "Var",
+          "name": "rightPredicate",
+          "value": {
+            "type": "IRI",
+            "value": "urn:counterexample:right-predicate"
+          },
+          "constant": true
+        },
+        "objectVar": {
+          "type": "Var",
+          "name": "label"
+        }
+      },
+      "projectionElements": [
+        {
+          "name": "label"
+        }
+      ],
+      "subquery": false
+    }
+  }
+}

@@ -15,7 +15,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -110,6 +116,113 @@ public class AbstractQueryModelNodeTest {
 		assertNull(metadata(clone, key));
 	}
 
+	@Test
+	public void optimizationTagClonePreservesOriginAndClearsNodeId() throws Exception {
+		StatementPattern original = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		setOptimizationTag(original, 0x123456789abcdef0L);
+
+		StatementPattern clone = original.clone();
+
+		assertEquals(0x123456789abcdef0L, optimizationTag(original));
+		assertEquals(0x1234567800000000L, optimizationTag(clone));
+		assertEquals(original, clone);
+	}
+
+	@Test
+	public void optimizationTagIsTransient() throws Exception {
+		StatementPattern original = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		setOptimizationTag(original, 0x123456789abcdef0L);
+
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(original);
+		}
+
+		StatementPattern restored;
+		try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+			restored = (StatementPattern) input.readObject();
+		}
+
+		assertEquals(0L, optimizationTag(restored));
+		assertEquals(original, restored);
+	}
+
+	@Test
+	public void optimizationTagCompatibilityHooksDefaultToNoOp() throws Exception {
+		QueryModelNode compatibilityNode = (QueryModelNode) Proxy.newProxyInstance(
+				QueryModelNode.class.getClassLoader(), new Class<?>[] { QueryModelNode.class },
+				(proxy, method, args) -> {
+					if (method.isDefault()) {
+						return InvocationHandler.invokeDefault(proxy, method, args);
+					}
+					return null;
+				});
+
+		setOptimizationTag(compatibilityNode, 0x123456789abcdef0L);
+
+		assertEquals(0L, optimizationTag(compatibilityNode));
+	}
+
+	@Test
+	public void queryRootSharesImmutableSeedAcrossClonesButDoesNotSerializeIt() throws Exception {
+		Class<?> seedType = Class.forName("org.eclipse.rdf4j.query.algebra.QueryScopeSeed");
+		Object seed = seedType.getMethod("empty").invoke(null);
+		Method setter = QueryRoot.class.getMethod("setQueryScopeSeed", seedType);
+		Method getter = QueryRoot.class.getMethod("getQueryScopeSeed");
+
+		QueryRoot original = new QueryRoot(new SingletonSet());
+		setter.invoke(original, seed);
+		QueryRoot clone = original.clone();
+
+		assertSame(seed, getter.invoke(original));
+		assertSame(seed, getter.invoke(clone));
+		assertEquals(original, clone);
+
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(original);
+		}
+
+		QueryRoot restored;
+		try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+			restored = (QueryRoot) input.readObject();
+		}
+
+		assertNull(getter.invoke(restored));
+		assertEquals(original, restored);
+	}
+
+	@Test
+	public void queryScopeSeedBuildsDenseDefensiveTables() {
+		QueryScopeSeed.Builder builder = QueryScopeSeed.builder();
+		int childFrame = builder.addFrame(QueryScopeSeed.ROOT_FRAME_ID);
+		int correlatedRegion = builder.addRegion(QueryScopeSeed.ROOT_REGION_ID,
+				QueryScopeSeed.RegionKind.CORRELATED);
+		int graphEnvironment = builder.addEnvironment(QueryScopeSeed.ROOT_ENVIRONMENT_ID,
+				QueryScopeSeed.EnvironmentKind.GRAPH);
+		int outer = builder.addSymbol("outer", QueryScopeSeed.ROOT_FRAME_ID);
+		int projected = builder.addSymbol("projected", childFrame);
+		int origin = builder.addOrigin(childFrame, correlatedRegion, graphEnvironment);
+		builder.addOccurrence(origin, projected);
+		builder.addOccurrence(origin, outer);
+
+		QueryScopeSeed seed = builder.build();
+		builder.addSymbol("later", childFrame);
+
+		assertEquals(2, seed.getFrameCount());
+		assertEquals(QueryScopeSeed.ROOT_FRAME_ID, seed.getFrameParent(childFrame));
+		assertEquals(QueryScopeSeed.RegionKind.CORRELATED, seed.getRegionKind(correlatedRegion));
+		assertEquals(QueryScopeSeed.EnvironmentKind.GRAPH, seed.getEnvironmentKind(graphEnvironment));
+		assertEquals(2, seed.getSymbolCount());
+		assertEquals("projected", seed.getSymbolName(projected));
+		assertEquals(childFrame, seed.getSymbolFrame(projected));
+		assertEquals(1, seed.getOriginCount());
+		assertEquals(2, seed.getOccurrenceCount());
+		assertEquals(projected, seed.getOccurrenceSymbol(seed.getOriginOccurrenceStart(origin)));
+		assertEquals(2, seed.getOriginOccurrenceEnd(origin) - seed.getOriginOccurrenceStart(origin));
+		assertEquals(origin, QueryScopeSeed.originId(QueryScopeSeed.originTag(origin)));
+	}
+
 	private static Object metadata(QueryModelNode node, Object key) throws Exception {
 		Method method = QueryModelNode.class.getMethod("getQueryModelMetadata", Object.class);
 		return method.invoke(node, key);
@@ -128,5 +241,15 @@ public class AbstractQueryModelNodeTest {
 	private static void clearMetadata(QueryModelNode node) throws Exception {
 		Method method = QueryModelNode.class.getMethod("clearQueryModelMetadata");
 		method.invoke(node);
+	}
+
+	private static long optimizationTag(QueryModelNode node) throws Exception {
+		Method method = QueryModelNode.class.getMethod("getOptimizationTag");
+		return (long) method.invoke(node);
+	}
+
+	private static void setOptimizationTag(QueryModelNode node, long tag) throws Exception {
+		Method method = QueryModelNode.class.getMethod("setOptimizationTag", long.class);
+		method.invoke(node, tag);
 	}
 }

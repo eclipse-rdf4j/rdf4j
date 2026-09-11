@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sparql xmlns="http://www.w3.org/2005/sparql-results#">
+  <head>
+    <variable name="s"/>
+    <variable name="next"/>
+    <variable name="status"/>
+  </head>
+  <results>
+    <result>
+      <binding name="s"><uri>urn:a</uri></binding>
+      <binding name="next"><uri>urn:b</uri></binding>
+      <binding name="status"><literal>hidden</literal></binding>
+    </result>
+  </results>
+</sparql>

@@ -1,0 +1,7 @@
+# Exporting ?local as ?x creates the overlap that a04 deliberately lacks.
+SELECT ?x WHERE {
+  VALUES ?x { "a" "b" }
+  MINUS {
+    { SELECT (?local AS ?x) WHERE { VALUES ?local { "a" } } }
+  }
+}

@@ -1,0 +1,12 @@
+# LATERAL reads ?s while a nested projection keeps ?local hidden.
+SELECT ?s ?next ?status WHERE {
+  VALUES ?s { <urn:a> <urn:c> }
+  LATERAL {
+    ?s <urn:next> ?next .
+    { SELECT ?marker WHERE {
+        BIND("not-exported" AS ?local)
+        BIND("marker" AS ?marker)
+      } }
+  }
+  BIND(COALESCE(?local, "hidden") AS ?status)
+}

@@ -1,0 +1,7 @@
+# The MINUS RHS hides its same-spelled ?x, leaving disjoint visible domains.
+SELECT ?x WHERE {
+  VALUES ?x { "outer" }
+  MINUS {
+    { SELECT ?witness WHERE { VALUES (?x ?witness) { ("outer" "rhs") } } }
+  }
+}

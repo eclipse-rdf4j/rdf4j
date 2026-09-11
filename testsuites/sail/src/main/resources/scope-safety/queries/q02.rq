@@ -1,0 +1,5 @@
+SELECT * WHERE {
+  { VALUES (?id ?left) { ("1" "a") ("2" "b") ("3" "c") } }
+  UNION
+  { VALUES (?id ?right) { ("4" "d") ("5" "e") } }
+}

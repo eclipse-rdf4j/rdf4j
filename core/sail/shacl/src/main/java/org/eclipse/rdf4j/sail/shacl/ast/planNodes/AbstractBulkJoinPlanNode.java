@@ -102,7 +102,9 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 				.visit(new AbstractSimpleQueryModelVisitor<>(false) {
 					@Override
 					public void meet(BindingSetAssignment node) {
-						Set<String> bindingNames = node.getBindingNames();
+						// The placeholder is a zero-row 'VALUES (?a) {}': its derived binding
+						// names are empty, so the header must be matched via the DECLARED names.
+						Set<String> bindingNames = node.getDeclaredBindingNames();
 						if (bindingNames.size() == 1 && bindingNames.contains(BINDING_NAME)) {
 							node.setBindingSets(newBindindingSet);
 						}

@@ -487,13 +487,14 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 			@Override
 			public void meet(BindingSetAssignment node) throws QueryEvaluationException {
-				Set<String> bindingNames = node.getBindingNames();
-
-				Set<String> collect = bindingNames.stream()
-						.map(varName -> varNames.computeIfAbsent(varName, k -> k))
-						.collect(Collectors.toSet());
-
-				node.setBindingNames(collect);
+				// Intern the names for the array context; do NOT write them back to the node:
+				// setBindingNames now sets the DECLARED VALUES header, so a write-back would let
+				// precompile silently rewrite the query model (dropping all-UNDEF declared
+				// columns). ArrayBindingSet.getIndex has an equals() fallback, so interning is a
+				// fast-path optimization only.
+				for (String varName : node.getBindingNames()) {
+					varNames.computeIfAbsent(varName, k -> k);
+				}
 
 				super.meet(node);
 			}
