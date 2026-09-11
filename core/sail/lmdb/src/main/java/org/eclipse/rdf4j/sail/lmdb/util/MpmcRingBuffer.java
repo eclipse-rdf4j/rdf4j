@@ -67,7 +67,7 @@ public final class MpmcRingBuffer<E> {
 	private final Sequence dequeuePos = new Sequence();
 
 	public MpmcRingBuffer(int capacity) {
-		if (Integer.bitCount(capacity) != 1) {
+		if (capacity <= 1 || Integer.bitCount(capacity) != 1) {
 			throw new IllegalArgumentException("Capacity must be a power of two: " + capacity);
 		}
 		this.mask = capacity - 1;

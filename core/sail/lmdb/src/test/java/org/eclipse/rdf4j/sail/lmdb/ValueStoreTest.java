@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.util.Values;
@@ -604,7 +605,21 @@ public class ValueStoreTest {
 		valueStore.close();
 		valueStore = createValueStore();
 
-		long id = valueStore.storeValue(Values.iri("some:iri-xyz"));
+		long id = valueStore.storeValue(Values.iri("some:new"));
+		// value of the next ID should be one greater than the last ID stored before closing the store
+		assertEquals(ValueIds.getValue(lastId) + 1, ValueIds.getValue(id));
+
+		lastId = id;
+		id = valueStore.storeValue(SimpleValueFactory.getInstance()
+				.createTripleTerm(Values.iri("some:new"),
+						Values.iri("some:new1"), Values.iri("some:new2")));
+		assertEquals(ValueIds.getValue(lastId) + 3, ValueIds.getValue(id));
+
+		lastId = id;
+		valueStore.close();
+		valueStore = createValueStore();
+
+		id = valueStore.storeValue(Values.iri("some:new3"));
 		// value of the next ID should be one greater than the last ID stored before closing the store
 		assertEquals(ValueIds.getValue(lastId) + 1, ValueIds.getValue(id));
 	}
