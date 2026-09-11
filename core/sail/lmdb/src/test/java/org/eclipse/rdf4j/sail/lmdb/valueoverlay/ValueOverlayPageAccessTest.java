@@ -164,6 +164,38 @@ class ValueOverlayPageAccessTest {
 		}
 	}
 
+	@ParameterizedTest
+	@EnumSource(value = PageCodec.Mode.class, names = { "RAW", "FRONT", "TOKEN" })
+	void largeRecordsUseThePageCodecForSelectiveReads(PageCodec.Mode mode) {
+		PhysicalRecord[] records = records(mode);
+		for (int slot : new int[] { 0, 3, 16, records.length - 1 }) {
+			byte[] bytes = records[slot].bytes();
+			records[slot] = new PhysicalRecord(bytes, true, bytes.length);
+		}
+		try (NativeSlabAllocator allocator = new NativeSlabAllocator(1 << 20)) {
+			allocator.copy(new byte[97]);
+			long handle = allocator.copy(page(mode, records));
+			for (int slot = 0; slot < records.length; slot++) {
+				byte[] expected = records[slot].bytes();
+				assertArrayEquals(expected, PageCodec.read(allocator, handle, slot).bytes());
+				RecordByteAccess source = PageCodec.openRecord(allocator, handle, slot);
+				assertEquals(expected.length, source.length(), "record length at slot " + slot);
+				byte[] actual = new byte[expected.length];
+				source.copy(0, actual, 0, actual.length);
+				assertArrayEquals(expected, actual);
+				for (int i = expected.length - 1; i >= 0; i--) {
+					assertEquals(expected[i] & 255, source.byteAt(i));
+				}
+				int from = expected.length / 3;
+				int length = expected.length / 2;
+				source.copy(from, actual, 1, length);
+				assertArrayEquals(Arrays.copyOfRange(expected, from, from + length),
+						Arrays.copyOfRange(actual, 1, length + 1));
+				assertThrows(IndexOutOfBoundsException.class, () -> source.byteAt(expected.length));
+			}
+		}
+	}
+
 	private static void assertCorrupt(byte[] page, boolean readLength) {
 		try (NativeSlabAllocator allocator = new NativeSlabAllocator(1 << 20)) {
 			allocator.copy(new byte[97]);

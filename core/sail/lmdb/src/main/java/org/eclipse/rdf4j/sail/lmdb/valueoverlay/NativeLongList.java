@@ -5,11 +5,14 @@ import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 import java.util.Objects;
 
-/** Segmented native directory; only one Java long per 8,192 directory entries. Builder-confined until publication. */
+/**
+ * Segmented native directory; only one segment reference per 8,192 directory entries. Builder-confined until
+ * publication.
+ */
 final class NativeLongList {
 	private final int shift, mask;
 	private final NativeSlabAllocator allocator;
-	private long[] segments = new long[4];
+	private MemorySegment[] segments = new MemorySegment[4];
 	private int size;
 
 	NativeLongList(NativeSlabAllocator allocator) {
@@ -38,23 +41,25 @@ final class NativeLongList {
 			allocator.retainHeap(OverlayMemoryBudget.arrayBytes(capacity, 8));
 			segments = Arrays.copyOf(segments, capacity);
 		}
-		if (segments[seg] == 0)
-			segments[seg] = allocator.allocate((1L << shift) * 8, 8);
-		long h = segments[seg];
-		allocator.segment(h).set(FfmAccess.LONG_LE, NativeSlabAllocator.offset(h) + (size & mask) * 8L, value);
+		if (segments[seg] == null) {
+			// Resolve the slab handle once, not on every directory probe. Keep the original arena's
+			// temporal checks: this is a bounded slice, not an unscoped native pointer.
+			allocator.retainHeap(64);
+			long bytes = (1L << shift) * Long.BYTES;
+			long handle = allocator.allocate(bytes, Long.BYTES);
+			segments[seg] = allocator.segment(handle).asSlice(NativeSlabAllocator.offset(handle), bytes);
+		}
+		segments[seg].set(FfmAccess.LONG_LE, (size & mask) * 8L, value);
 		size++;
 	}
 
 	void set(int index, long value) {
 		Objects.checkIndex(index, size);
-		long h = segments[index >>> shift];
-		allocator.segment(h).set(FfmAccess.LONG_LE, NativeSlabAllocator.offset(h) + (index & mask) * 8L, value);
+		segments[index >>> shift].set(FfmAccess.LONG_LE, (index & mask) * 8L, value);
 	}
 
 	long get(int index) {
 		Objects.checkIndex(index, size);
-		long h = segments[index >>> shift];
-		MemorySegment s = allocator.segment(h);
-		return s.get(FfmAccess.LONG_LE, NativeSlabAllocator.offset(h) + (index & mask) * 8L);
+		return segments[index >>> shift].get(FfmAccess.LONG_LE, (index & mask) * 8L);
 	}
 }

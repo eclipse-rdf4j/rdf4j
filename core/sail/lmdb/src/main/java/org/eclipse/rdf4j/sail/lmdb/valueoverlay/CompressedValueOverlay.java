@@ -63,7 +63,12 @@ public final class CompressedValueOverlay implements AutoCloseable {
 	private final NativeSlabAllocator allocator;
 	private final NativeLongList pages, blockFirst, blockIds, blockRoutes;
 	private final long count;
-	private final long firstId, stride;
+	private final long firstId, lastId, stride;
+	private final int affineShift, blockShift;
+	// At most 256 KiB; one 32-bit fence per approximately 256 records before the cap.
+	// Fences only narrow an exact unsigned search. They never establish membership.
+	private final int[] rankStarts;
+	private final int rankShift;
 	private final boolean affine;
 	private final MemorySegment reverse;
 	private final int reverseSlots;
@@ -81,8 +86,29 @@ public final class CompressedValueOverlay implements AutoCloseable {
 		blockRoutes = b.blockRoutes;
 		count = b.count;
 		firstId = b.firstId;
+		lastId = b.lastAccepted;
 		stride = b.stride;
 		affine = b.affine;
+		affineShift = stride != 0 && (stride & (stride - 1)) == 0 ? Long.numberOfTrailingZeros(stride) : -1;
+		int blocks = blockFirst.size();
+		blockShift = affine ? -1 : denseBlockShift(blockFirst);
+		if (!affine && blockShift < 0 && blocks >= 16) {
+			int directoryBits = Math.min(16, 32 - Integer.numberOfLeadingZeros(blocks - 1));
+			rankShift = Math.max(0, 64 - Long.numberOfLeadingZeros(lastId - firstId) - directoryBits);
+			int buckets = (int) ((lastId - firstId) >>> rankShift) + 1;
+			allocator.retainHeap(OverlayMemoryBudget.arrayBytes(buckets + 1L, Integer.BYTES));
+			rankStarts = new int[buckets + 1];
+			int next = 0;
+			for (int block = 0; block < blocks; block++) {
+				int bucket = (int) ((blockFirst.get(block) - firstId) >>> rankShift);
+				while (next <= bucket)
+					rankStarts[next++] = block;
+			}
+			Arrays.fill(rankStarts, next, rankStarts.length, blocks);
+		} else {
+			rankShift = 0;
+			rankStarts = null;
+		}
 		reverse = b.reverse;
 		reverseSlots = b.options.reverseSlots;
 		long pageBytes = b.pageBytes;
@@ -90,6 +116,29 @@ public final class CompressedValueOverlay implements AutoCloseable {
 				allocator.usedBytes(), allocator.reservedBytes(), pages.size(), b.modeCounts[0], b.modeCounts[1],
 				b.modeCounts[2], b.modeCounts[3], b.reverseCount, reverseSlots, b.peakStagedBytes,
 				b.tokenTrials, b.tokenTrialsSkipped, b.coalescedCount(), b.modeCounts[4]);
+	}
+
+	/** A verified one-fence-per-high-bits-bin model; prediction needs at most one predecessor correction. */
+	private static int denseBlockShift(NativeLongList first) {
+		int n = first.size();
+		if (n < 3)
+			return -1;
+		long base = first.get(0), max = first.get(n - 1);
+		long average = Long.divideUnsigned(max - base, n - 1);
+		if (average == 0)
+			return -1;
+		int candidate = 63 - Long.numberOfLeadingZeros(average);
+		for (int shift = candidate; shift <= candidate + 1 && shift < 64; shift++) {
+			long origin = base >>> shift;
+			if ((max >>> shift) - origin != n - 1L)
+				continue;
+			int i = 1;
+			while (i < n && (first.get(i) >>> shift) - origin == i)
+				i++;
+			if (i == n)
+				return shift;
+		}
+		return -1;
 	}
 
 	public static Builder builder(Options options) {
@@ -252,32 +301,45 @@ public final class CompressedValueOverlay implements AutoCloseable {
 	}
 
 	private long rank(long id) {
-		if (count == 0 || Long.compareUnsigned(id, firstId) < 0)
+		if (count == 0 || Long.compareUnsigned(id, firstId) < 0 || Long.compareUnsigned(id, lastId) > 0)
 			return -1;
+		long delta = id - firstId;
 		if (affine) {
 			if (count == 1)
-				return id == firstId ? 0 : -1;
-			long delta = id - firstId;
+				return 0; // Both endpoints were checked above.
+			if (affineShift >= 0)
+				return (delta & (stride - 1)) == 0 ? delta >>> affineShift : -1;
 			long rank = Long.divideUnsigned(delta, stride);
-			return Long.compareUnsigned(rank, count) < 0 && Long.remainderUnsigned(delta, stride) == 0 ? rank : -1;
+			return rank * stride == delta ? rank : -1;
 		}
-		int lo = 0, hi = blockFirst.size();
-		while (lo < hi) {
-			int mid = (lo + hi) >>> 1;
-			if (Long.compareUnsigned(blockFirst.get(mid), id) <= 0)
-				lo = mid + 1;
-			else
-				hi = mid;
+		int block;
+		if (blockShift >= 0) {
+			long predicted = (id >>> blockShift) - (firstId >>> blockShift);
+			int last = blockFirst.size() - 1;
+			block = Long.compareUnsigned(predicted, last) < 0 ? (int) predicted : last;
+			// Bin membership is not fence membership: an ID can precede this bin's first ID.
+			// Values beyond the model's last bin still belong to the last block (which may contain outliers).
+			if (Long.compareUnsigned(id, blockFirst.get(block)) < 0)
+				block--;
+		} else {
+			int lo = 0, hi = blockFirst.size();
+			if (rankStarts != null) {
+				int bucket = (int) (delta >>> rankShift);
+				lo = rankStarts[bucket];
+				hi = rankStarts[bucket + 1];
+			}
+			// Upper bound: an empty bin still belongs to its predecessor block.
+			while (lo < hi) {
+				int mid = (lo + hi) >>> 1;
+				if (Long.compareUnsigned(blockFirst.get(mid), id) <= 0)
+					lo = mid + 1;
+				else
+					hi = mid;
+			}
+			block = lo - 1;
 		}
-		if (lo == 0)
-			return -1;
-		int block = lo - 1;
-		long handle = blockIds.get(block);
-		int slot = PackedVector.lowerBound(allocator, handle, id);
-		long rank = ((long) block << PAGE_SHIFT) + slot;
-		if (slot >= PAGE_ENTRIES || rank >= count || PackedVector.get(allocator, handle, slot) != id)
-			return -1;
-		return rank;
+		int slot = PackedVector.indexOf(allocator, blockIds.get(block), id);
+		return slot < 0 ? -1 : ((long) block << PAGE_SHIFT) + slot;
 	}
 
 	private long idAt(long rank) {

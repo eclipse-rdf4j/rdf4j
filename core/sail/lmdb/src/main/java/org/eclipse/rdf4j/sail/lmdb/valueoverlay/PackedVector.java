@@ -35,11 +35,41 @@ final class PackedVector {
 		int bytes = HEADER + (bits <= 0 ? 0 : Math.toIntExact(((long) bits * count + 7) >>> 3)) + 8;
 		byte[] encoded = new byte[bytes];
 		ByteBuffer b = ByteBuffer.wrap(encoded).order(ByteOrder.LITTLE_ENDIAN);
-		b.putInt(count).putInt(bits).putLong(base).putLong(step);
+		// Non-affine vectors previously left an unused first difference in this word. Keep the
+		// 24-byte layout, but use it for a builder-verified dense-high-bits lookup hint. The packed
+		// values are still complete IDs, including every low tag bit; readers never trust the hint
+		// as membership. These vectors are private to the rebuilt in-memory overlay, not LMDB data.
+		b.putInt(count)
+				.putInt(bits)
+				.putLong(base)
+				.putLong(sequence ? step : affine ? denseHighBits(values, count, base, max) : 0);
 		if (bits > 0)
 			for (int i = 0; i < count; i++)
 				put(encoded, HEADER, (long) i * bits, bits, values[i] - base);
 		return encoded;
+	}
+
+	/** Zero means no hint; shift+1 means (value[i] >>> shift) == (base >>> shift)+i for every i. */
+	private static int denseHighBits(long[] values, int count, long base, long max) {
+		if (count < 3 || values[0] != base)
+			return 0;
+		long average = Long.divideUnsigned(max - base, count - 1);
+		if (average == 0)
+			return 0;
+		int first = 63 - Long.numberOfLeadingZeros(average);
+		// For three or more dense ordinals, the average full-ID gap is strictly between
+		// half and twice the ordinal stride. At most these two shifts can fit.
+		for (int shift = first; shift <= first + 1 && shift < 64; shift++) {
+			long origin = base >>> shift;
+			if ((max >>> shift) - origin != count - 1L)
+				continue;
+			int i = 1;
+			while (i < count && (values[i] >>> shift) - origin == i)
+				i++;
+			if (i == count)
+				return shift + 1;
+		}
+		return 0;
 	}
 
 	static long get(NativeSlabAllocator allocator, long handle, int index) {
@@ -54,6 +84,63 @@ final class PackedVector {
 		if (bits < 0 || bits > 64)
 			throw new IllegalStateException("corrupt vector width");
 		return base + getBits(s, p + HEADER, (long) index * bits, bits);
+	}
+
+	/** Exact lookup in an unsigned-sorted ID vector; bind/decode the header only once. */
+	static int indexOf(NativeSlabAllocator allocator, long handle, long value) {
+		MemorySegment s = allocator.segment(handle);
+		long p = NativeSlabAllocator.offset(handle);
+		int n = s.get(FfmAccess.INT_LE, p);
+		int bits = s.get(FfmAccess.INT_LE, p + 4);
+		long base = s.get(FfmAccess.LONG_LE, p + 8);
+		if (n <= 0 || bits < -1 || bits > 64)
+			throw new IllegalStateException("corrupt ID vector header");
+		if (value == base)
+			return 0;
+		if (Long.compareUnsigned(value, base) < 0)
+			return -1;
+		long delta = value - base;
+		if (bits == -1) {
+			long step = s.get(FfmAccess.LONG_LE, p + 16);
+			if (step == 0)
+				return -1;
+			long rank;
+			if ((step & (step - 1)) == 0) {
+				if ((delta & (step - 1)) != 0)
+					return -1;
+				rank = delta >>> Long.numberOfTrailingZeros(step);
+			} else {
+				rank = Long.divideUnsigned(delta, step);
+				if (rank * step != delta)
+					return -1;
+			}
+			return Long.compareUnsigned(rank, n) < 0 ? (int) rank : -1;
+		}
+		if (bits == 0 || bits < 64 && (delta >>> bits) != 0)
+			return -1;
+		int hint = (int) s.get(FfmAccess.LONG_LE, p + 16);
+		if (hint != 0) {
+			if (hint < 1 || hint > 64)
+				throw new IllegalStateException("corrupt ID vector hint");
+			int shift = hint - 1;
+			long rank = (value >>> shift) - (base >>> shift);
+			if (Long.compareUnsigned(rank, n) >= 0)
+				return -1;
+			// A mismatching low tag is a miss, not an alias for the same ordinal.
+			return getBits(s, p + HEADER, rank * bits, bits) == delta ? (int) rank : -1;
+		}
+		int lo = 0, hi = n;
+		while (lo < hi) {
+			int mid = (lo + hi) >>> 1;
+			long candidate = getBits(s, p + HEADER, (long) mid * bits, bits);
+			if (candidate == delta)
+				return mid;
+			if (Long.compareUnsigned(candidate, delta) < 0)
+				lo = mid + 1;
+			else
+				hi = mid;
+		}
+		return -1;
 	}
 
 	static int lowerBound(NativeSlabAllocator allocator, long handle, long value) {
@@ -94,7 +181,7 @@ final class PackedVector {
 		int shift = (int) bit & 7;
 		long address = base + (bit >>> 3);
 		long low = s.get(FfmAccess.LONG_LE, address) >>> shift;
-		// Only 64-bit widths need the next byte; the producer owns a bounded safe tail.
+		// Wide, unaligned values can spill into a ninth byte; the producer owns a bounded safe tail.
 		if (shift != 0 && width > 64 - shift) {
 			low |= (long) Byte.toUnsignedInt(s.get(java.lang.foreign.ValueLayout.JAVA_BYTE, address + 8)) << (64
 					- shift);

@@ -4,12 +4,13 @@ package org.eclipse.rdf4j.sail.lmdb.valueoverlay;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
 /** Immutable native page builder and bounded-random-access decoder. */
@@ -224,12 +225,14 @@ public final class PageCodec {
 		Mode mode = Mode.fromCode(flags & CODEC_MASK);
 		validateHeader(count, bits, flags, mode, restart, dictBytes, checkpoints, packed, payload,
 				payloadBytes, total, segment.byteSize() - base);
-		if (mode == Mode.FRONT && !((flags & FLAG_LOB) != 0 && bitmapBit(segment, base, checkpoints, slot)))
+		// LOB marks the physical record's interpretation, not a raw-codec override. FRONT still
+		// front-codes these bytes; TOKEN writes literal commands for them. Match read()'s decoding.
+		if (mode == Mode.FRONT)
 			return new FrontAccess(segment, base, slot, restart, bits, packed, payload, payloadBytes);
 		long range = encodedRange(segment, base, slot, bits, packed, payload, payloadBytes);
 		long encodedOffset = base + (range >>> 32);
 		int encodedBytes = (int) range;
-		if (mode == Mode.RAW || (flags & FLAG_LOB) != 0 && bitmapBit(segment, base, checkpoints, slot))
+		if (mode == Mode.RAW)
 			return RecordByteAccess.raw(segment, encodedOffset, encodedBytes);
 		if (mode == Mode.PREFIX) {
 			return new PrefixAccess(segment, base + HEADER_BYTES + checkpoints * 4L, dictBytes,
@@ -591,8 +594,9 @@ public final class PageCodec {
 	private static List<Token> learnUncoveredTokens(byte[][] raw, boolean[] large, int candidateLimit, int tokenLimit) {
 		List<Token> selected = new ArrayList<>();
 		int samples = Math.min(16, raw.length);
+		CandidateCollector candidates = new CandidateCollector(candidateLimit);
 		for (int round = 0; round < Math.min(tokenLimit, 16); round++) {
-			CandidateCollector candidates = new CandidateCollector(candidateLimit);
+			candidates.clear();
 			for (int sample = 0; sample < samples; sample++) {
 				int index = (int) ((long) sample * raw.length / samples);
 				if (large[index])
@@ -611,13 +615,13 @@ public final class PageCodec {
 						position++;
 					else {
 						if (position - start >= 3)
-							candidates.addRecord(Arrays.copyOfRange(bytes, start, position));
+							candidates.addRecord(bytes, start, position - start);
 						position += match.bytes.length;
 						start = position;
 					}
 				}
 				if (position - start >= 3)
-					candidates.addRecord(Arrays.copyOfRange(bytes, start, position));
+					candidates.addRecord(bytes, start, position - start);
 			}
 			List<Token> best = candidates.best(1);
 			if (best.isEmpty())
@@ -951,82 +955,178 @@ public final class PageCodec {
 		}
 	}
 
+	/**
+	 * Bounded exact symbol counting. A candidate is at most 24 bytes: three words are its complete key, not a
+	 * fingerprint. No boxed hash, collision-list, byte-array or candidate-object allocation on a probe. Keep the
+	 * original visitation order, occurrence counts and tie-breaks so that training selects identical dictionaries.
+	 */
 	private static final class CandidateCollector {
 		private static final int[] LENGTHS = { 4, 6, 8, 12, 16, 24 };
-		private final int limit;
+		private static final VarHandle LONG = MethodHandles.byteArrayViewVarHandle(long[].class,
+				ByteOrder.LITTLE_ENDIAN);
+		private static final VarHandle INT = MethodHandles.byteArrayViewVarHandle(int[].class, ByteOrder.LITTLE_ENDIAN);
+		private final int limit, mask;
+		// Three little-endian, zero-padded key words followed by (frequency << 32) | length. Zero means empty.
+		private final long[] table;
+		private final int[] occupied;
 		private int count;
-		private final Map<Long, List<MutableCandidate>> candidates = new HashMap<>();
 
 		CandidateCollector(int limit) {
+			if (limit < 0 || limit > (1 << 26))
+				throw new IllegalArgumentException("invalid token candidate limit");
 			this.limit = limit;
+			int slots = 2;
+			while (slots < limit * 2)
+				slots <<= 1;
+			table = new long[slots * 4];
+			occupied = new int[limit];
+			mask = table.length - 4;
+		}
+
+		void clear() {
+			for (int i = 0; i < count; i++)
+				table[occupied[i] + 3] = 0;
+			count = 0;
 		}
 
 		void addRecord(byte[] record) {
-			int step = Math.max(1, record.length / 96);
-			for (int position = 0; position < record.length - 3; position += step) {
-				for (int length : LENGTHS) {
-					if (position + length <= record.length)
-						add(record, position, length);
+			addRecord(record, 0, record.length);
+		}
+
+		void addRecord(byte[] record, int from, int length) {
+			int end = from + length;
+			int step = Math.max(1, length / 96);
+			for (int position = from; position < end - 3; position += step) {
+				if (end - position >= 24) {
+					// Load each input word once for all six sampled prefix lengths. Every load is inside this span.
+					long first = (long) LONG.get(record, position);
+					long second = (long) LONG.get(record, position + 8);
+					long third = (long) LONG.get(record, position + 16);
+					add(first & 0xffffffffL, 0, 0, 4);
+					add(first & 0xffffffffffffL, 0, 0, 6);
+					add(first, 0, 0, 8);
+					add(first, second & 0xffffffffL, 0, 12);
+					add(first, second, 0, 16);
+					add(first, second, third, 24);
+				} else {
+					for (int candidateLength : LENGTHS)
+						if (candidateLength <= end - position)
+							add(record, position, candidateLength);
 				}
 			}
-			int start = 0;
-			for (int i = 0; i <= record.length; i++) {
-				if (i == record.length || isDelimiter(record[i])) {
-					int length = i - start;
-					if (length >= 3)
-						add(record, start, Math.min(24, length));
+			int start = from;
+			for (int i = from; i <= end; i++) {
+				if (i == end || isDelimiter(record[i])) {
+					int candidateLength = i - start;
+					if (candidateLength >= 3)
+						add(record, start, Math.min(24, candidateLength));
 					start = i + 1;
 				}
 			}
 		}
 
 		private void add(byte[] source, int offset, int length) {
-			long hash = hash(source, offset, length);
-			List<MutableCandidate> bucket = candidates.get(hash);
-			if (bucket != null) {
-				for (MutableCandidate candidate : bucket) {
-					if (candidate.bytes.length == length && regionEquals(source, offset, candidate.bytes)) {
-						candidate.frequency++;
-						return;
+			long first = word(source, offset, Math.min(8, length));
+			long second = length > 8 ? word(source, offset + 8, Math.min(8, length - 8)) : 0;
+			long third = length > 16 ? word(source, offset + 16, length - 16) : 0;
+			add(first, second, third, length);
+		}
+
+		private static long word(byte[] source, int offset, int length) {
+			if (length == 8)
+				return (long) LONG.get(source, offset);
+			long word = 0;
+			int i = 0;
+			if (length >= 4) {
+				word = Integer.toUnsignedLong((int) INT.get(source, offset));
+				i = 4;
+			}
+			for (; i < length; i++)
+				word |= (source[offset + i] & 255L) << (i * 8);
+			return word;
+		}
+
+		private void add(long first, long second, long third, int length) {
+			long hash = first ^ Long.rotateLeft(second, 21) ^ Long.rotateLeft(third, 42)
+					^ length * 0x9e3779b97f4a7c15L;
+			hash = (hash ^ (hash >>> 30)) * 0xbf58476d1ce4e5b9L;
+			hash = (hash ^ (hash >>> 27)) * 0x94d049bb133111ebL;
+			int slot = (int) (hash ^ (hash >>> 31)) << 2 & mask;
+			for (;;) {
+				long metadata = table[slot + 3];
+				if (metadata == 0) {
+					if (count < limit) {
+						table[slot] = first;
+						table[slot + 1] = second;
+						table[slot + 2] = third;
+						table[slot + 3] = (1L << 32) | length;
+						occupied[count++] = slot;
 					}
+					return;
 				}
+				if ((int) metadata == length && table[slot] == first
+						&& table[slot + 1] == second && table[slot + 2] == third) {
+					if ((metadata >>> 32) < Integer.MAX_VALUE)
+						table[slot + 3] = metadata + (1L << 32);
+					return;
+				}
+				slot = (slot + 4) & mask;
 			}
-			if (count >= limit)
-				return;
-			byte[] bytes = Arrays.copyOfRange(source, offset, offset + length);
-			if (bucket == null) {
-				bucket = new ArrayList<>(1);
-				candidates.put(hash, bucket);
-			}
-			bucket.add(new MutableCandidate(bytes));
-			count++;
 		}
 
 		List<Token> best(int maximum) {
-			List<Token> result = new ArrayList<>();
-			for (List<MutableCandidate> bucket : candidates.values()) {
-				for (MutableCandidate c : bucket) {
-					Token token = new Token(c.bytes, c.frequency, -1);
-					if (token.gain > 0 && c.frequency >= 2)
-						result.add(token);
+			int capacity = Math.min(maximum, count);
+			if (capacity <= 0)
+				return new ArrayList<>();
+			// Keep just the winners, not an object and sort entry for every candidate (usually best(1)).
+			int[] winners = new int[capacity];
+			int size = 0;
+			for (int i = 0; i < count; i++) {
+				int slot = occupied[i];
+				long metadata = table[slot + 3];
+				if ((metadata >>> 32) < 2 || gain(metadata) <= 0)
+					continue;
+				int lo = 0, hi = size;
+				while (lo < hi) {
+					int mid = (lo + hi) >>> 1;
+					if (compare(slot, winners[mid]) < 0)
+						hi = mid;
+					else
+						lo = mid + 1;
+				}
+				if (lo < capacity) {
+					int moved = Math.min(size, capacity - 1) - lo;
+					System.arraycopy(winners, lo, winners, lo + 1, moved);
+					winners[lo] = slot;
+					size = Math.min(size + 1, capacity);
 				}
 			}
-			result.sort(Comparator.<Token>comparingLong(t -> t.gain)
-					.reversed()
-					.thenComparing(Comparator.comparingInt((Token t) -> t.bytes.length).reversed())
-					.thenComparing((a, b) -> Arrays.compareUnsigned(a.bytes, b.bytes)));
-			if (result.size() > maximum)
-				result.subList(maximum, result.size()).clear();
+			List<Token> result = new ArrayList<>(size);
+			for (int i = 0; i < size; i++) {
+				int slot = winners[i];
+				long metadata = table[slot + 3];
+				byte[] bytes = new byte[(int) metadata];
+				for (int j = 0; j < bytes.length; j++)
+					bytes[j] = (byte) (table[slot + (j >>> 3)] >>> ((j & 7) * 8));
+				result.add(new Token(bytes, (int) (metadata >>> 32), -1));
+			}
 			return result;
 		}
 
-		private static long hash(byte[] source, int offset, int length) {
-			long hash = 0xcbf29ce484222325L ^ length;
-			for (int i = 0; i < length; i++) {
-				hash ^= source[offset + i] & 0xffL;
-				hash *= 0x100000001b3L;
-			}
-			return hash;
+		private static long gain(long metadata) {
+			int length = (int) metadata;
+			return (metadata >>> 32) * (length - 1) - length - 2;
+		}
+
+		private int compare(int a, int b) {
+			long left = table[a + 3], right = table[b + 3];
+			int comparison = Long.compare(gain(right), gain(left));
+			if (comparison == 0)
+				comparison = Integer.compare((int) right, (int) left);
+			for (int word = 0; comparison == 0 && word < 3; word++)
+				comparison = Long.compareUnsigned(Long.reverseBytes(table[a + word]),
+						Long.reverseBytes(table[b + word]));
+			return comparison;
 		}
 
 		private static boolean isDelimiter(byte value) {
@@ -1034,15 +1134,6 @@ public final class PageCodec {
 			case '/', '#', ':', '?', '&', '=', '-', '_', '.', ' ', '\t', '\n', '\r' -> true;
 			default -> false;
 			};
-		}
-	}
-
-	private static final class MutableCandidate {
-		final byte[] bytes;
-		int frequency = 1;
-
-		MutableCandidate(byte[] bytes) {
-			this.bytes = bytes;
 		}
 	}
 }
