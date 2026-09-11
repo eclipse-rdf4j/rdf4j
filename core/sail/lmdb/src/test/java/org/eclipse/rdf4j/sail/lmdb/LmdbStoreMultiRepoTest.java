@@ -78,7 +78,9 @@ public class LmdbStoreMultiRepoTest {
 					Repository repository = new SailRepository(
 							new LmdbStore(repositoryDir, new LmdbStoreConfig("spoc,posc")));
 					repository.init();
-					repositories.add(repository);
+					synchronized (repositories) {
+						repositories.add(repository);
+					}
 					scheduledExecutor.scheduleAtFixedRate(() -> {
 						try (RepositoryConnection connection = repository.getConnection()) {
 							try (var result = connection.prepareTupleQuery(
