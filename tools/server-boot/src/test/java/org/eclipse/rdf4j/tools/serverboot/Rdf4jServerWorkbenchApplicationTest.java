@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.apache.coyote.AbstractProtocol;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.eclipse.rdf4j.common.platform.Platform;
 import org.eclipse.rdf4j.http.client.shacl.RemoteShaclValidationException;
@@ -59,6 +60,8 @@ import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.tomcat.TomcatWebServer;
+import org.springframework.boot.web.server.servlet.context.ServletWebServerApplicationContext;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.ApplicationContextInitializer;
@@ -87,6 +90,9 @@ class Rdf4jServerWorkbenchApplicationTest {
 
 	@Autowired
 	private TestRestTemplate restTemplate;
+
+	@Autowired
+	private ServletWebServerApplicationContext webServerContext;
 
 	@Autowired
 	private ServletRegistrationBean<WorkbenchGateway> rdf4jWorkbenchServlet;
@@ -133,6 +139,15 @@ class Rdf4jServerWorkbenchApplicationTest {
 			loggingAppender.stop();
 		}
 		cleanupRepositories();
+	}
+
+	@Test
+	void serverAndWorkbenchBindToIpv4LoopbackByDefault() {
+		TomcatWebServer webServer = (TomcatWebServer) webServerContext.getWebServer();
+		AbstractProtocol<?> protocol = (AbstractProtocol<?>) webServer.getTomcat().getConnector().getProtocolHandler();
+		assertThat(protocol.getLocalPort()).isEqualTo(port).isPositive();
+		assertThat(protocol.getAddress()).as("shared Server and Workbench listener address").isNotNull();
+		assertThat(protocol.getAddress().getHostAddress()).isEqualTo("127.0.0.1");
 	}
 
 	@Test
