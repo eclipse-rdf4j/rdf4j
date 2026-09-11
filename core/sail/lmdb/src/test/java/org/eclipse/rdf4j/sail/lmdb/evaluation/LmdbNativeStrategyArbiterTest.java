@@ -383,9 +383,9 @@ public class LmdbNativeStrategyArbiterTest {
 						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED);
 	}
 
-	/** The DISTINCT-sinking tiers retain compiled/interpreted ordering inside the IR-first family. */
+	/** All DISTINCT-sinking variants precede the next IR strategy when cost does not separate them. */
 	@Test
-	public void distinctKernelRungsFollowTheIrFirstTiering() {
+	public void distinctKernelVariantsStayTogetherAheadOfThePlainKernel() {
 		assertThat(LmdbNativeStrategyPreference.prefers(
 				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL,
 				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT)).isTrue();
@@ -398,8 +398,8 @@ public class LmdbNativeStrategyArbiterTest {
 				LmdbNativeAttemptMetrics.PATH_BATCH)).isTrue();
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
 				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED)).isTrue();
-		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL)).isTrue();
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
 				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)).isTrue();
 		assertThat(LmdbNativeAttemptMetrics.EXECUTION_PATH_VOCABULARY)
@@ -439,7 +439,7 @@ public class LmdbNativeStrategyArbiterTest {
 
 	@Test
 	public void parallelWorkAdmissionDefaultsWellBelowTheSchedulingIntercept() {
-		assertThat(LmdbNativeParallelPipelines.minimumWorkEstimate()).isEqualTo(4_096D);
+		assertThat(LmdbNativeParallelPipelines.minimumWorkEstimate()).isEqualTo(2_048D);
 		assertThat(LmdbNativeParallelPipelines.minimumWorkEstimate())
 				.isLessThan(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST / 4D);
 
@@ -447,7 +447,7 @@ public class LmdbNativeStrategyArbiterTest {
 		assertThat(LmdbNativeParallelPipelines.minimumWorkEstimate()).isEqualTo(512.5D);
 
 		System.setProperty(LmdbNativeParallelPipelines.MIN_WORK_ESTIMATE_PROPERTY, "not-a-number");
-		assertThat(LmdbNativeParallelPipelines.minimumWorkEstimate()).isEqualTo(4_096D);
+		assertThat(LmdbNativeParallelPipelines.minimumWorkEstimate()).isEqualTo(2_048D);
 	}
 
 	@Test

@@ -20,6 +20,11 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * The engine's specialization order over execution strategies, used to decide between candidates whose costs do not
  * separate.
  * <p>
+ * Each IR strategy occupies one consecutive group: parallel compiled, parallel interpreted, serial compiled, then
+ * serial interpreted. Unavailable variants are skipped. The same order drives mandatory adaptive trials, so those
+ * trials finish the current IR strategy's variants before considering another strategy. Cost-based selection still
+ * compares every candidate and may choose a cheaper non-IR strategy.
+ * <p>
  * <b>Why this exists.</b> Until now this order was expressed only as the physical position of {@code if} statements in
  * {@code LmdbNativeRowStep.openUnorderedInput} and {@code LmdbNativeGroupStep.evaluateAll} — whichever rung was written
  * first won. That is not a principle, it is an accident, and it is the direct cause of two measured 2x regressions: a
@@ -77,29 +82,35 @@ final class LmdbNativeStrategyPreference {
 	// nanos/rows evidence (nativeBareDirect*Actual) keeps the route auditable; revisit with memoized first-call
 	// arbitration if that evidence shows losses.
 	private static final String[] ORDER = {
-			// Parallel IR is the first-class execution family: compiled workers first, then the same kernels served
-			// by the interpreter. Serial IR follows, compiled before interpreted. Cost may still displace any rung.
+			// Keep each IR strategy's variants together rather than interleaving strategies by execution tier.
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED,
-			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
-			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED,
+
+			// Wildcard and node-domain serial routes share the general aggregate's parallel variants. Their serial
+			// tags depend on the plan shape; keep those alternatives within the same aggregate strategy group.
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
+
+			// Wildcard rows likewise use the general row kernel's parallel variants.
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED,
+
 			LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION,
 			LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX,
 			LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE,

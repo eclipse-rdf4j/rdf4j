@@ -13,11 +13,14 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongSupplier;
 
 /**
  * One execution-scoped observation. Row loops update primitive counters; clock reads and model publication happen only
- * at execution boundaries.
+ * at execution boundaries. Production observations use the store's millisecond clock; only elapsed durations are
+ * converted to the cost model's nanosecond units. Cooperative cancellation uses its own monotonic deadline clock.
  */
 final class LmdbNativeCostObservation implements AutoCloseable {
 
@@ -60,12 +63,13 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	private final LmdbNativeCostEstimate estimate;
 	private final LmdbNativeCostVector.Feature dominantRowFeature;
 	private final LmdbNativeAdaptiveCostModel model;
-	private final NanoClock clock;
+	private final LongSupplier clock;
+	private final TimeUnit clockUnit;
 	private final Role role;
 	/** The regime of the dispatch decision, captured at construction — completion may run much later. */
 	private final LmdbNativeRegimeKey regimeAtDispatch;
 	private final long epochAtDispatch;
-	private final long startedNanos;
+	private final long startedTime;
 	private volatile long censorDeadlineNanos = -1L;
 	private final double[] counters = new double[FEATURE_COUNT];
 	/**
@@ -77,8 +81,8 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	private final AtomicInteger completionGuard = new AtomicInteger(OPEN_STATE);
 
 	private volatile double contendedWeightFactor = 1.0;
-	private volatile long firstOutputNanos = -1L;
-	private volatile long closedNanos = -1L;
+	private volatile long firstOutputTime = -1L;
+	private volatile long closedTime = -1L;
 	private volatile Completion completion = Completion.OPEN;
 	private volatile double consumedFraction = Double.NaN;
 	private volatile LmdbNativeAdaptiveCostModel.TrainingResult trainingResult;
@@ -87,7 +91,11 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	private volatile Throwable failure;
 
 	LmdbNativeCostObservation(LmdbNativeCostEstimate estimate, LmdbNativeAdaptiveCostModel model) {
-		this(estimate, model, System::nanoTime, Role.NORMAL);
+		this(estimate, model, Role.NORMAL);
+	}
+
+	LmdbNativeCostObservation(LmdbNativeCostEstimate estimate, LmdbNativeAdaptiveCostModel model, Role role) {
+		this(estimate, model, model.store()::nowMillis, TimeUnit.MILLISECONDS, role);
 	}
 
 	LmdbNativeCostObservation(LmdbNativeCostEstimate estimate, LmdbNativeAdaptiveCostModel model, NanoClock clock) {
@@ -96,22 +104,28 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 
 	LmdbNativeCostObservation(LmdbNativeCostEstimate estimate, LmdbNativeAdaptiveCostModel model, NanoClock clock,
 			Role role) {
+		this(estimate, model, clock::nanoTime, TimeUnit.NANOSECONDS, role);
+	}
+
+	private LmdbNativeCostObservation(LmdbNativeCostEstimate estimate, LmdbNativeAdaptiveCostModel model,
+			LongSupplier clock, TimeUnit clockUnit, Role role) {
 		this.estimate = Objects.requireNonNull(estimate, "estimate");
 		this.dominantRowFeature = estimate.dominantRowFeature();
 		this.model = Objects.requireNonNull(model, "model");
 		this.clock = Objects.requireNonNull(clock, "clock");
+		this.clockUnit = clockUnit;
 		this.role = Objects.requireNonNull(role, "role");
 		LmdbNativeRegimeTracker.Snapshot dispatch = model.store().regimeTracker().snapshot();
 		this.regimeAtDispatch = dispatch.regime();
 		this.epochAtDispatch = dispatch.epoch();
-		startedNanos = clock.nanoTime();
+		startedTime = clock.getAsLong();
 	}
 
 	void firstOutput() {
-		if (firstOutputNanos < 0L && completionGuard.get() == OPEN_STATE) {
+		if (firstOutputTime < 0L && completionGuard.get() == OPEN_STATE) {
 			synchronized (this) {
-				if (firstOutputNanos < 0L && completionGuard.get() == OPEN_STATE) {
-					firstOutputNanos = clock.nanoTime();
+				if (firstOutputTime < 0L && completionGuard.get() == OPEN_STATE) {
+					firstOutputTime = clock.getAsLong();
 				}
 			}
 		}
@@ -229,8 +243,8 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 		if (!completionGuard.compareAndSet(OPEN_STATE, COMPLETED_STATE)) {
 			return;
 		}
-		long finished = clock.nanoTime();
-		closedNanos = finished;
+		long finished = clock.getAsLong();
+		closedTime = finished;
 		completion = result;
 		consumedFraction = fraction;
 		failure = throwable;
@@ -239,8 +253,11 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 				? estimate.forConsumption(fraction)
 				: estimate;
 		LmdbNativeCostVector actual = actualVector();
-		long elapsed = Math.max(0L, finished - startedNanos);
-		if (eligible) {
+		long elapsed = elapsedNanos(startedTime, finished);
+		long first = firstOutputTime;
+		boolean clockMovedBackwards = finished < startedTime
+				|| first >= 0L && (first < startedTime || finished < first);
+		if (eligible && !clockMovedBackwards) {
 			// Feature-wise compatibility bridge: measured counters replace the estimate per feature; features no
 			// counter reported yet keep the estimate so their shape ratios stay pinned at 1 instead of collapsing
 			// toward zero. The elapsed-time residual still trains the machine coefficients either way, and a family
@@ -262,7 +279,10 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 			trainedFeatures = actual;
 			double weight = (result == Completion.EXPECTED_EARLY_CLOSE ? Math.max(0.25, fraction) : 1.0)
 					* contendedWeightFactor;
-			trainingResult = model.recordCompleted(consumedEstimate, actual, elapsed, weight, regimeAtDispatch,
+			// A run completed within one clock tick is still useful evidence. Price it at the timer's resolution
+			// rather than as a one-nanosecond run, but never mint safety credit for unmeasured time.
+			long measuredCost = Math.max(clockUnit.toNanos(1L), elapsed);
+			trainingResult = model.recordCompleted(consumedEstimate, actual, measuredCost, weight, regimeAtDispatch,
 					epochAtDispatch);
 			if (role != Role.PROBE) {
 				model.earnSafetyCredit(elapsed);
@@ -273,7 +293,7 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 					// comparable. A HEDGE_BACKUP that got here did produce the user's rows,
 					// so it qualifies exactly as a normal dispatch does. Ordered after recordCompleted so the
 					// severe-miss check inside it still sees the pre-run price.
-					model.noteLatestObserved(consumedEstimate, elapsed, regimeAtDispatch, epochAtDispatch);
+					model.noteLatestObserved(consumedEstimate, measuredCost, regimeAtDispatch, epochAtDispatch);
 				}
 			}
 		} else if (result == Completion.BUDGET_CENSORED) {
@@ -285,7 +305,8 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 		} else {
 			trainedFeatures = actual;
 			trainingResult = new LmdbNativeAdaptiveCostModel.TrainingResult(false,
-					"recording disabled or observation ineligible", false, false);
+					clockMovedBackwards ? "clock moved backwards" : "recording disabled or observation ineligible",
+					false, false);
 		}
 	}
 
@@ -302,12 +323,16 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	}
 
 	Snapshot snapshot() {
-		long first = firstOutputNanos;
-		long closed = closedNanos;
+		long first = firstOutputTime;
+		long closed = closedTime;
 		LmdbNativeCostVector trained = trainedFeatures;
-		return new Snapshot(completion, Math.max(0L, (first < 0L ? closed : first) - startedNanos),
-				Math.max(0L, closed - startedNanos), first >= 0L, consumedFraction,
+		return new Snapshot(completion, elapsedNanos(startedTime, first < 0L ? closed : first),
+				elapsedNanos(startedTime, closed), first >= 0L, consumedFraction,
 				trained != null ? trained : actualVector(), trainingResult, failure);
+	}
+
+	private long elapsedNanos(long started, long finished) {
+		return finished < started ? 0L : clockUnit.toNanos(finished - started);
 	}
 
 	boolean isComplete() {

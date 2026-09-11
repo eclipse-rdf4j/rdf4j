@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.Varint;
 import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordVisitor;
 import org.lwjgl.system.MemoryUtil;
 
 /**
@@ -49,6 +50,9 @@ final class LmdbNativeValueCodec {
 	private static final int NO_FRACTION = 0x3FF;
 	private static final int NO_TIMEZONE_BITS = 0x7F;
 	private static final int CACHE_SIZE = 1 << 11;
+	private static final int MAX_UTF8_SCRATCH_BYTES = 64 << 10;
+	/** Shared across codec instances, retaining only bounded byte storage per decoding thread. */
+	private static final ThreadLocal<byte[]> UTF8_SCRATCH = new ThreadLocal<>();
 
 	static final AtomicLong ZERO_COPY_READS = new AtomicLong();
 	static final AtomicLong CACHE_HITS = new AtomicLong();
@@ -182,7 +186,7 @@ final class LmdbNativeValueCodec {
 			}
 			CoreDatatype coreDatatype = decoded.coreDatatype();
 			if (coreDatatype != null && coreDatatype != CoreDatatype.NONE) {
-				return vf.createLiteral(decoded.label(), coreDatatype.getIri());
+				return vf.createLiteral(decoded.label(), coreDatatype);
 			}
 			if (decoded.datatypeIri() != null) {
 				return vf.createLiteral(decoded.label(), vf.createIRI(decoded.datatypeIri()));
@@ -480,7 +484,47 @@ final class LmdbNativeValueCodec {
 			}
 			default -> null;
 			};
-		});
+		}, LmdbNativeValueCodec::readOverlayPayload);
+	}
+
+	private static StoredPayload readOverlayPayload(ValueStoreRecordVisitor.Record record) {
+		byte type = switch (record.kind()) {
+		case IRI -> URI_VALUE;
+		case LITERAL -> LITERAL_VALUE;
+		case BNODE -> BNODE_VALUE;
+		case NAMESPACE -> NAMESPACE_VALUE;
+		};
+		int lexicalLength = record.lexicalByteLength();
+		int languageLength = record.languageByteLength();
+		byte[] scratch = utf8Scratch(Math.max(lexicalLength, languageLength));
+		record.copyLexical(0, scratch, 0, lexicalLength);
+		// Complete construction before reusing the staging bytes. Neither copying nor the JDK UTF-8
+		// constructor calls back into value decoding, so even nested store callbacks cannot alias live bytes.
+		String text = new String(scratch, 0, lexicalLength, StandardCharsets.UTF_8);
+		String language = null;
+		if (languageLength != 0) {
+			record.copyLanguage(scratch, 0);
+			language = new String(scratch, 0, languageLength, StandardCharsets.UTF_8);
+		}
+		// Only owned strings and primitive metadata survive the overlay's snapshot lease.
+		return new StoredPayload(type, record.referenceId(), (record.direction() << 6) | languageLength, language,
+				text);
+	}
+
+	private static byte[] utf8Scratch(int length) {
+		if (length > MAX_UTF8_SCRATCH_BYTES) {
+			return new byte[length];
+		}
+		byte[] bytes = UTF8_SCRATCH.get();
+		if (bytes == null || bytes.length < length) {
+			int capacity = 1;
+			while (capacity < length) {
+				capacity <<= 1;
+			}
+			bytes = new byte[capacity];
+			UTF8_SCRATCH.set(bytes);
+		}
+		return bytes;
 	}
 
 	private static String decodeUtf8(ByteBuffer buffer, int offset, int length) {
@@ -553,22 +597,8 @@ final class LmdbNativeValueCodec {
 		if (iri == null) {
 			return CoreDatatype.NONE;
 		}
-		for (CoreDatatype.XSD datatype : CoreDatatype.XSD.values()) {
-			if (datatype.getIri().stringValue().equals(iri)) {
-				return datatype;
-			}
-		}
-		for (CoreDatatype.RDF datatype : CoreDatatype.RDF.values()) {
-			if (datatype.getIri().stringValue().equals(iri)) {
-				return datatype;
-			}
-		}
-		for (CoreDatatype.GEO datatype : CoreDatatype.GEO.values()) {
-			if (datatype.getIri().stringValue().equals(iri)) {
-				return datatype;
-			}
-		}
-		return CoreDatatype.NONE;
+
+		return CoreDatatype.from(iri);
 	}
 
 	static final class DecodedValue {

@@ -76,6 +76,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 
 import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap;
@@ -107,6 +108,7 @@ import org.eclipse.rdf4j.sail.lmdb.valueoverlay.CompressedValueOverlay;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayCapacityException;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueOverlayRegistry;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordLayout;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueStoreRecordVisitor;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
@@ -1491,7 +1493,35 @@ public class ValueStore extends AbstractValueFactory {
 
 	@InternalUseOnly
 	public <T> T withData(long id, ValueDataReader<T> reader) throws IOException {
+		return withData(id, reader, null);
+	}
+
+	/**
+	 * Reads a covered record through the typed overlay reader, otherwise invokes the native reader in the same
+	 * transaction. Both readers are callback-scoped: neither the typed record nor native memory may escape in the
+	 * result. A null overlay reader retains direct native access. An overlay reader returning null is still a hit.
+	 */
+	@InternalUseOnly
+	public <T> T withData(long id, ValueDataReader<T> reader,
+			Function<ValueStoreRecordVisitor.Record, T> overlayReader) throws IOException {
 		return readTransaction(env, (stack, txn) -> {
+			if (overlayReader != null) {
+				try (ValueOverlayRegistry.SnapshotLease overlay = borrowValueOverlay(txn)) {
+					if (overlay != null) {
+						var visitor = new ValueStoreRecordVisitor.Visitor() {
+							T result;
+
+							@Override
+							public void accept(ValueStoreRecordVisitor.Record record) {
+								result = overlayReader.apply(record);
+							}
+						};
+						if (overlay.visitRecord(id, visitor)) {
+							return visitor.result;
+						}
+					}
+				}
+			}
 			MDBVal keyData = MDBVal.calloc(stack);
 			LmdbUtil.setMDBValData(keyData, id2data(idBuffer(stack), id).flip());
 			MDBVal valueData = MDBVal.calloc(stack);

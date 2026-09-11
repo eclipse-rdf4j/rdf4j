@@ -40,7 +40,17 @@ public final class CompressedValueOverlay implements AutoCloseable {
 			long indexBytes, long nativeUsedBytes, long nativeReservedBytes, long pages, long rawPages,
 			long frontPages, long tokenPages, long vectorPages, long reverseIndexedRecords,
 			long reverseCapacity, long peakStagedBytes, long tokenTrials, long tokenTrialsSkipped,
-			int coalescedFamilies) {
+			int coalescedFamilies, long prefixPages) {
+		public Stats(long records, long skippedLargeRecords, long inputRecordBytes, long pageBytes,
+				long indexBytes, long nativeUsedBytes, long nativeReservedBytes, long pages, long rawPages,
+				long frontPages, long tokenPages, long vectorPages, long reverseIndexedRecords,
+				long reverseCapacity, long peakStagedBytes, long tokenTrials, long tokenTrialsSkipped,
+				int coalescedFamilies) {
+			this(records, skippedLargeRecords, inputRecordBytes, pageBytes, indexBytes, nativeUsedBytes,
+					nativeReservedBytes, pages, rawPages, frontPages, tokenPages, vectorPages, reverseIndexedRecords,
+					reverseCapacity, peakStagedBytes, tokenTrials, tokenTrialsSkipped, coalescedFamilies, 0);
+		}
+
 		public double bytesPerRecord() {
 			return records == 0 ? 0 : (double) nativeUsedBytes / records;
 		}
@@ -79,7 +89,7 @@ public final class CompressedValueOverlay implements AutoCloseable {
 		stats = new Stats(count, b.skipped, b.logicalBytes, pageBytes, allocator.usedBytes() - pageBytes,
 				allocator.usedBytes(), allocator.reservedBytes(), pages.size(), b.modeCounts[0], b.modeCounts[1],
 				b.modeCounts[2], b.modeCounts[3], b.reverseCount, reverseSlots, b.peakStagedBytes,
-				b.tokenTrials, b.tokenTrialsSkipped, b.coalescedCount());
+				b.tokenTrials, b.tokenTrialsSkipped, b.coalescedCount(), b.modeCounts[4]);
 	}
 
 	public static Builder builder(Options options) {
@@ -329,7 +339,18 @@ public final class CompressedValueOverlay implements AutoCloseable {
 		private final NativeLongList pages, blockFirst, blockIds, blockRoutes;
 		private final LinkedHashMap<Affinity, Tail> active = new LinkedHashMap<>(32, 0.75f, true);
 		private final long[] pendingIds = new long[PAGE_ENTRIES], pendingRoutes = new long[PAGE_ENTRIES];
-		private final long[] modeCounts = new long[4];
+		private final long[] modeCounts = new long[PageCodec.Mode.values().length];
+		private final boolean sharedPrefixes = Boolean.parseBoolean(System.getProperty(
+				"rdf4j.lmdb.valueOverlay.sharedPrefixes", "true"));
+		private final int vectorMinSavingPercent = vectorSavingFloor();
+
+		private static int vectorSavingFloor() {
+			int floor = Integer.parseInt(System.getProperty("rdf4j.lmdb.valueOverlay.vectorMinSavingPercent", "8"));
+			if (floor < 0 || floor > 100)
+				throw new IllegalArgumentException("invalid vector saving floor");
+			return floor;
+		}
+
 		private final TokenPolicy[] tokenPolicy = new TokenPolicy[RecordFamily.values().length];
 		private final int[] tinyEvictions = new int[RecordFamily.values().length];
 		private final boolean[] coalesced = new boolean[RecordFamily.values().length];
@@ -542,7 +563,8 @@ public final class CompressedValueOverlay implements AutoCloseable {
 							Math.addExact(Math.multiplyExact((long) tail.bytes, 16),
 									tokens ? (2L << 20) : (128L << 10)))) {
 				PageCodec.SealedPage sealed = PageCodec.seal(tail.records, tail.count, 16, 16, tokens, 1024, 48,
-						options.vectorCompression && tokenMinRecords != Integer.MAX_VALUE, options.adaptiveTokens);
+						options.vectorCompression && tokenMinRecords != Integer.MAX_VALUE, options.adaptiveTokens,
+						sharedPrefixes, vectorMinSavingPercent);
 				if (tokens && options.adaptiveTokens)
 					policy.observed(sealed.mode() == PageCodec.Mode.TOKEN);
 				long handle = allocator.copy(sealed.pageBytes());

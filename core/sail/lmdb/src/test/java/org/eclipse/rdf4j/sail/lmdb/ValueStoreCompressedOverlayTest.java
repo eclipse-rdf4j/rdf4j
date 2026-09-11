@@ -237,4 +237,44 @@ public class ValueStoreCompressedOverlayTest {
 		}
 	}
 
+	@Test
+	void sharedPrefixPagesPreserveNativeRecordsAndLazyMaterializationAcrossCommit() throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		var store = new ValueStore(new File(directory, "shared-prefix"),
+				new LmdbStoreConfig().setInlineLiterals(false));
+		try {
+			List<Value> values = new ArrayList<>();
+			long[] ids = new long[256];
+			store.startTransaction(true);
+			for (int i = 0; i < ids.length; i++) {
+				var v = vf.createLiteral("é/e\u0301/漢字/" + "shared long lexical prefix ".repeat(45) + i, "nB");
+				values.add(v);
+				ids[i] = store.storeValue(v);
+			}
+			store.commit();
+			var base = store.warmCompressedValueOverlay(options());
+			assertTrue(base.prefixPages() > 0);
+			store.clearCaches();
+			for (int i = 0; i < ids.length; i++) {
+				var expected = (Literal) values.get(i);
+				var actual = (Literal) store.getValue(ids[i]);
+				assertEquals(expected.getLabel(), actual.getLabel());
+				assertEquals(expected, actual);
+				assertEquals(ids[i], store.getId(expected));
+				assertTrue(store.visitRecord(ids[i], r -> assertTrue(r.lexicalEquals(
+						expected.getLabel().getBytes(java.nio.charset.StandardCharsets.UTF_8)))));
+			}
+			store.startTransaction(true);
+			var next = vf.createLiteral("new committed string");
+			long id = store.storeValue(next);
+			store.commit();
+			store.clearCaches();
+			assertSame(base, store.compressedValueOverlayStats());
+			assertEquals(next, store.getValue(id));
+			assertEquals(values.get(17), store.getValue(ids[17]));
+		} finally {
+			store.close();
+		}
+	}
+
 }

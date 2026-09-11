@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 
@@ -1170,14 +1171,14 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				.forcing(forcedStrategy, "row/join dispatch")) {
 			offerUnorderedStrategies(row, distinctPlan, multiJoin, correlatedEntry, retainedSlots, arbiter);
 
-			long startedNanos = System.nanoTime();
+			long startedMillis = System.currentTimeMillis();
 			LmdbNativeStrategySelection<NativeUnorderedInput> selection = arbiter.selectWithObservation();
 			if (selection == null) {
 				throw new IllegalStateException("native nested-loop fallback declined");
 			}
 			NativeUnorderedInput selected = selection.value();
 			selected.observeOnClose(selection);
-			selected.calibrateOnClose(arbiter.winningTag(), arbiter.winningPredictedWork(), startedNanos);
+			selected.calibrateOnClose(arbiter.winningTag(), arbiter.winningPredictedWork(), startedMillis);
 			return selected;
 		}
 	}
@@ -2295,7 +2296,7 @@ final class NativeUnorderedInput implements AutoCloseable {
 	DedupMode dedupMode = DedupMode.HASH;
 	String calibrationTag;
 	double calibrationWork = Double.NaN;
-	long calibrationStartedNanos;
+	long calibrationStartedMillis;
 	LmdbNativeStrategySelection<NativeUnorderedInput> adaptiveSelection;
 
 	private NativeUnorderedInput(RowState row) {
@@ -2336,10 +2337,10 @@ final class NativeUnorderedInput implements AutoCloseable {
 	 * Arms close-time calibration: a streaming winner's elapsed time is only known once this input closes, so the
 	 * dispatch site hands over what the model predicted and close() supplies the measurement.
 	 */
-	void calibrateOnClose(String tag, double predictedWork, long startedNanos) {
+	void calibrateOnClose(String tag, double predictedWork, long startedMillis) {
 		this.calibrationTag = tag;
 		this.calibrationWork = predictedWork;
-		this.calibrationStartedNanos = startedNanos;
+		this.calibrationStartedMillis = startedMillis;
 	}
 
 	/** Transfers ownership of the selected strategy's observation to this streaming input. */
@@ -2434,7 +2435,7 @@ final class NativeUnorderedInput implements AutoCloseable {
 					// shorter elapsed time deflates nanos-per-unit for often-truncated strategies
 					if (completed) {
 						LmdbNativeCostCalibration.record(calibrationTag, calibrationWork,
-								System.nanoTime() - calibrationStartedNanos);
+								TimeUnit.MILLISECONDS.toNanos(System.currentTimeMillis() - calibrationStartedMillis));
 					}
 					calibrationTag = null;
 				}

@@ -95,44 +95,29 @@ class LmdbNativeStrategyPreferenceOrderTest {
 	}
 
 	@Test
-	void everyParallelIrTierHeadsThePreferenceLadder() {
-		List<String> compiledParallel = List.of(
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL);
-		List<String> interpretedParallel = List.of(
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED);
-		List<String> remainingIr = List.of(
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD,
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED,
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED,
-				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED);
-
-		for (String compiled : compiledParallel) {
-			for (String interpreted : interpretedParallel) {
-				assertTrue(LmdbNativeStrategyPreference.rank(compiled) < LmdbNativeStrategyPreference.rank(interpreted),
-						compiled + " must outrank interpreted parallel " + interpreted);
-			}
+	void parallelVariantsPrecedeSerialVariantsWithinEachIrStrategy() {
+		for (String[] variants : new String[][] {
+				{ LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED },
+				{ LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED },
+				{ LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED },
+				{ LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED }
+		}) {
+			assertRanksAscending(variants);
+			assertTrue(LmdbNativeStrategyPreference.prefers(variants[3],
+					LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION));
 		}
-		for (String interpreted : interpretedParallel) {
-			for (String serial : remainingIr) {
-				assertTrue(LmdbNativeStrategyPreference.rank(interpreted) < LmdbNativeStrategyPreference.rank(serial),
-						interpreted + " must outrank serial IR " + serial);
-			}
-		}
-		int lastIr = remainingIr.stream()
-				.mapToInt(LmdbNativeStrategyPreference::rank)
-				.max()
-				.orElseThrow();
-		assertTrue(lastIr < LmdbNativeStrategyPreference.rank(LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION));
 	}
 
 	private static void assertRanksAscending(String... tags) {

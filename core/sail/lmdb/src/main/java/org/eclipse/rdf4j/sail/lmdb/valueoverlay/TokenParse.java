@@ -1,0 +1,97 @@
+/* SPDX-License-Identifier: EPL-2.0 */
+package org.eclipse.rdf4j.sail.lmdb.valueoverlay;
+
+import java.util.Arrays;
+
+/**
+ * Shortest byte encoding for a fixed TOKEN dictionary: one-byte token commands, or 1..128 literal bytes plus their
+ * command. A monotone queue computes the best literal transition in amortized constant time. This does not optimize
+ * dictionary selection and does not change the decoding format. Scratch is builder-local, reused for a page and bounded
+ * to records of at most 64 KiB.
+ */
+final class TokenParse {
+	static final int MAX_BYTES = 64 << 10;
+	private final byte[][] tokens;
+	private final int[] first = new int[257];
+	private final int[] order;
+	private int[] costs = new int[0], choice = new int[0];
+	private final int[] deque = new int[129];
+
+	TokenParse(byte[][] dictionary) {
+		if (dictionary.length > 64)
+			throw new IllegalArgumentException("too many tokens");
+		tokens = dictionary.clone();
+		for (byte[] token : tokens) {
+			if (token.length == 0)
+				throw new IllegalArgumentException("empty token");
+			first[(token[0] & 255) + 1]++;
+		}
+		for (int i = 1; i < first.length; i++)
+			first[i] += first[i - 1];
+		order = new int[tokens.length];
+		int[] next = first.clone();
+		for (int i = 0; i < tokens.length; i++)
+			order[next[tokens[i][0] & 255]++] = i;
+	}
+
+	/** Null asks the caller to retain bounded-scratch greedy encoding for an oversized record. */
+	byte[] encode(byte[] source) {
+		int n = source.length;
+		if (n > MAX_BYTES)
+			return null;
+		if (costs.length < n + 1) {
+			int size = Math.min(MAX_BYTES + 1, Math.max(n + 1, Math.max(64, costs.length * 2)));
+			costs = new int[size];
+			choice = new int[size];
+		}
+		costs[n] = 0;
+		int head = 0, tail = 0;
+		for (int i = n - 1; i >= 0; i--) {
+			while (head != tail && deque[head] > i + 128)
+				head = (head + 1) % deque.length;
+			int next = i + 1, score = costs[next] + next;
+			while (head != tail) {
+				int last = (tail + deque.length - 1) % deque.length, j = deque[last];
+				if (costs[j] + j < score)
+					break;
+				tail = last;
+			}
+			deque[tail] = next;
+			tail = (tail + 1) % deque.length;
+			int end = deque[head];
+			int best = 1 + end - i + costs[end], command = end - i;
+			int b = source[i] & 255;
+			for (int at = first[b]; at < first[b + 1]; at++) {
+				int id = order[at];
+				byte[] token = tokens[id];
+				if (token.length > n - i || !Arrays.equals(source, i, i + token.length, token, 0, token.length))
+					continue;
+				int candidate = 1 + costs[i + token.length];
+				if (candidate < best) {
+					best = candidate;
+					command = -id - 1;
+				}
+			}
+			costs[i] = best;
+			choice[i] = command;
+		}
+		byte[] encoded = new byte[costs[0]];
+		int read = 0, write = 0;
+		while (read < n) {
+			int command = choice[read];
+			if (command < 0) {
+				int id = -command - 1;
+				encoded[write++] = (byte) id;
+				read += tokens[id].length;
+			} else {
+				encoded[write++] = (byte) (command + 63);
+				System.arraycopy(source, read, encoded, write, command);
+				read += command;
+				write += command;
+			}
+		}
+		if (write != encoded.length)
+			throw new AssertionError("token parse size mismatch");
+		return encoded;
+	}
+}

@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 
@@ -1036,11 +1037,11 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				}
 				return List.of();
 			}
-			long startedNanos = System.nanoTime();
+			long startedMillis = System.currentTimeMillis();
 			List<BindingSet> selected = arbiter.select();
 			if (selected != null) {
 				LmdbNativeCostCalibration.record(arbiter.winningTag(), arbiter.winningPredictedWork(),
-						System.nanoTime() - startedNanos);
+						TimeUnit.MILLISECONDS.toNanos(System.currentTimeMillis() - startedMillis));
 				if (LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION.equals(arbiter.winningTag())) {
 					recordParallelStrategy(metrics);
 				}

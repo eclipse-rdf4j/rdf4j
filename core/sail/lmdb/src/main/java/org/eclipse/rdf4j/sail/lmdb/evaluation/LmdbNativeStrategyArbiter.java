@@ -20,6 +20,7 @@ import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -835,14 +836,15 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		java.util.concurrent.atomic.AtomicReference<T> backupValue = new java.util.concurrent.atomic.AtomicReference<>();
 		java.util.concurrent.CountDownLatch backupSettled = new java.util.concurrent.CountDownLatch(1);
 		LmdbNativeCostObservation backupObservation = new LmdbNativeCostObservation(
-				plan.backup().estimate(), adaptiveModel, System::nanoTime,
+				plan.backup().estimate(), adaptiveModel,
 				LmdbNativeCostObservation.Role.HEDGE_BACKUP);
-		long start = System.nanoTime();
+		// This timestamp proves a watchdog censor bound; strategy cost observations use milliseconds.
+		long startedNanos = System.nanoTime();
 		LmdbNativeHedgeSupport.ShadowContext shadowForTask = shadow;
 		LmdbNativeParallelPipelines.TaskReservation reservationForTask = taskReservation;
 		Runnable backupTask = () -> {
 			LmdbNativeSafetyLedger.Reservation guardReservation = null;
-			long launchNanos = 0L;
+			long launchMillis = 0L;
 			try {
 				while (go.getCount() > 0 && race.state() == LmdbNativeHedgeRace.State.PRIMARY_ONLY) {
 					if (go.await(50L, java.util.concurrent.TimeUnit.MILLISECONDS)) {
@@ -871,12 +873,12 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 					guardReservation = null;
 					return;
 				}
-				launchNanos = System.nanoTime();
+				launchMillis = adaptiveModel.store().nowMillis();
 				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(backupDeadline)) {
 					logSelected(explainTarget, decisionId, forcedDecisionPoint, backupTag, "guard backup",
 							"watchdog fired");
 					T produced = hedgeSupport.produceBackup(shadowForTask, backupTag, backupObservation);
-					long backupElapsed = System.nanoTime() - launchNanos;
+					long backupElapsed = chargeNanos(elapsedNanosSince(launchMillis));
 					if (produced == null) {
 						backupObservation.declined();
 						guardReservation.refund();
@@ -995,7 +997,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			tripped = true;
 		}
 		if (tripped) {
-			long elapsed = System.nanoTime() - start;
+			long elapsed = System.nanoTime() - startedNanos;
 			long bound = Math.max(1L,
 					LmdbNativeHedgePolicy.censorBoundNanos(plan.triggerNanos(), elapsed, hedgeConfig));
 			observation.budgetCensored(bound);
@@ -1153,7 +1155,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		java.util.concurrent.atomic.AtomicReference<T> backupValue = new java.util.concurrent.atomic.AtomicReference<>();
 		java.util.concurrent.CountDownLatch backupSettled = new java.util.concurrent.CountDownLatch(1);
 		LmdbNativeCostObservation backupObservation = new LmdbNativeCostObservation(probe.fallback().estimate(),
-				adaptiveModel, System::nanoTime, LmdbNativeCostObservation.Role.HEDGE_BACKUP);
+				adaptiveModel, LmdbNativeCostObservation.Role.HEDGE_BACKUP);
 		LmdbNativeHedgeSupport.ShadowContext shadowForTask = shadow;
 		LmdbNativeParallelPipelines.TaskReservation reservationForTask = taskReservation;
 		Runnable backupTask = () -> {
@@ -1217,13 +1219,14 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			race.fireWatchdog();
 		}
 
-		long start = System.nanoTime();
+		long startedMillis = adaptiveModel.store().nowMillis();
+		long deadlineNanoTime = System.nanoTime() + probe.deadlineNanos();
 		LmdbNativeCostObservation observation = new LmdbNativeCostObservation(probe.trial().estimate(), adaptiveModel,
-				System::nanoTime, LmdbNativeCostObservation.Role.PROBE);
+				LmdbNativeCostObservation.Role.PROBE);
 		boolean timedOut = false;
 		boolean capacityExceeded = false;
 		T value = null;
-		try (LmdbNativeProbeDeadline.Scope scope = LmdbNativeProbeDeadline.enter(start + probe.deadlineNanos())) {
+		try (LmdbNativeProbeDeadline.Scope scope = LmdbNativeProbeDeadline.enter(deadlineNanoTime)) {
 			race.primaryDeadline(scope.deadline());
 			try {
 				value = probe.trial().opener().open(observation);
@@ -1237,10 +1240,11 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				timedOut = true;
 			} catch (IOException | RuntimeException | Error failure) {
 				return hedgeTrialFailed(plan, trialIndex, fallbackIndex, race, backupValue, backupSettled,
-						backupObservation, observation, failure, start, scheduler, trialKey);
+						backupObservation, observation, failure, startedMillis, scheduler, trialKey);
 			} catch (Exception failure) {
 				return hedgeTrialFailed(plan, trialIndex, fallbackIndex, race, backupValue, backupSettled,
-						backupObservation, observation, new IOException("probe trial opener failed", failure), start,
+						backupObservation, observation, new IOException("probe trial opener failed", failure),
+						startedMillis,
 						scheduler, trialKey);
 			}
 			if (!timedOut && value == null && scope.deadline().tripped()) {
@@ -1252,7 +1256,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 						observation.markContended(hedgeConfig.evidenceWeight());
 					}
 					observation.exhausted();
-					long elapsed = System.nanoTime() - start;
+					long elapsed = elapsedNanosSince(startedMillis);
 					probe.reservation().commit(hedgedCharge(elapsed, delay, race.backupEverStarted()));
 					boolean decisivelyBad = elapsed > probe.fallbackPrediction().expectedNanos();
 					scheduler.completed(probe.flight(), decisivelyBad);
@@ -1277,7 +1281,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				// evidence is invented and the scheduler rests the arm without a strike.
 				capacityExceeded = true;
 				observation.fallback();
-				long elapsed = System.nanoTime() - start;
+				long elapsed = elapsedNanosSince(startedMillis);
 				probe.reservation().commit(hedgedCharge(elapsed, delay, race.backupEverStarted()));
 				scheduler.capacityExceeded(probe.flight());
 				if (value != null) {
@@ -1285,13 +1289,15 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 					value = null;
 				}
 			} else if (timedOut) {
-				long elapsed = System.nanoTime() - start;
+				long elapsed = elapsedNanosSince(startedMillis);
+				// A cancellation bound must share the deadline's monotonic clock, regardless of wall-clock ticks.
+				long deadlineElapsed = System.nanoTime() - deadlineNanoTime + probe.deadlineNanos();
 				long bound = Math.min(probe.deadlineNanos(),
-						Math.max(1L, LmdbNativeHedgePolicy.censorBoundNanos(delay, elapsed, hedgeConfig)));
+						Math.max(1L, LmdbNativeHedgePolicy.censorBoundNanos(delay, deadlineElapsed, hedgeConfig)));
 				observation.budgetCensored(bound);
 				LmdbNativeAdaptiveCostModel.CensorResult censor = observation.censorResult();
 				probe.reservation().commit(hedgedCharge(elapsed, delay, race.backupEverStarted()));
-				if (elapsed >= (long) (hedgeConfig.overshootQuarantineFactor() * probe.deadlineNanos())) {
+				if (deadlineElapsed >= (long) (hedgeConfig.overshootQuarantineFactor() * probe.deadlineNanos())) {
 					scheduler.quarantine(probe.flight());
 				} else {
 					scheduler.censored(probe.flight(),
@@ -1329,8 +1335,20 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		return null;
 	}
 
+	/** Strategy costs use millisecond measurements; deadline scopes retain their independent monotonic clock. */
+	private long elapsedNanosSince(long startedMillis) {
+		return TimeUnit.MILLISECONDS.toNanos(Math.max(0L, adaptiveModel.store().nowMillis() - startedMillis));
+	}
+
+	private static long chargeNanos(long elapsedNanos) {
+		// Speculative work cannot be free merely because it finished within one timer tick. Normal observations
+		// earn credit only for measured time, while trial charges use the same resolution floor as learned prices.
+		return Math.max(TimeUnit.MILLISECONDS.toNanos(1L), elapsedNanos);
+	}
+
 	/** Interference-inclusive actual ledger charge for a hedged trial (both-arm surcharge over the overlap). */
 	private long hedgedCharge(long elapsed, long launchDelay, boolean backupStarted) {
+		elapsed = chargeNanos(elapsed);
 		long overlap = backupStarted ? Math.max(0L, elapsed - launchDelay) : 0L;
 		return elapsed + (long) (2.0 * hedgeConfig.interferenceFraction() * overlap);
 	}
@@ -1340,11 +1358,11 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			LmdbNativeAdaptiveArbitration.DispatchPlan.Hedge<T> plan, int trialIndex, int fallbackIndex,
 			LmdbNativeHedgeRace race, java.util.concurrent.atomic.AtomicReference<T> backupValue,
 			java.util.concurrent.CountDownLatch backupSettled, LmdbNativeCostObservation backupObservation,
-			LmdbNativeCostObservation observation, Throwable failure, long start,
+			LmdbNativeCostObservation observation, Throwable failure, long startedMillis,
 			LmdbNativeProbeScheduler scheduler, LmdbNativePhysicalVariantKey trialKey) throws IOException {
 		LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<T> probe = plan.probe();
 		observation.failed(failure);
-		probe.reservation().commit(System.nanoTime() - start);
+		probe.reservation().commit(chargeNanos(elapsedNanosSince(startedMillis)));
 		scheduler.quarantine(probe.flight());
 		if (race.primaryFailed(failure)) {
 			LmdbNativeStrategySelection<T> adopted = adoptBackup(plan, trialIndex, fallbackIndex, race, backupValue,
@@ -1464,13 +1482,14 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		LmdbNativeStrategyProposal<T> trial = candidates.get(trialIndex);
 		LmdbNativePhysicalVariantKey trialKey = plan.trial().estimate().variantKey();
 		LmdbNativeProbeScheduler scheduler = adaptiveModel.store().probeScheduler();
-		long start = System.nanoTime();
+		long startedMillis = adaptiveModel.store().nowMillis();
+		long deadlineNanoTime = System.nanoTime() + plan.deadlineNanos();
 		LmdbNativeCostObservation observation = new LmdbNativeCostObservation(plan.trial().estimate(), adaptiveModel,
-				System::nanoTime, LmdbNativeCostObservation.Role.PROBE);
+				LmdbNativeCostObservation.Role.PROBE);
 		boolean timedOut = false;
 		boolean capacityExceeded = false;
 		T value = null;
-		try (LmdbNativeProbeDeadline.Scope scope = LmdbNativeProbeDeadline.enter(start + plan.deadlineNanos())) {
+		try (LmdbNativeProbeDeadline.Scope scope = LmdbNativeProbeDeadline.enter(deadlineNanoTime)) {
 			try {
 				value = plan.trial().opener().open(observation);
 				if (value != null) {
@@ -1478,7 +1497,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				}
 			} catch (KernelQueryCancelledException cancelled) {
 				observation.cancelled(cancelled);
-				plan.reservation().commit(System.nanoTime() - start);
+				plan.reservation().commit(chargeNanos(elapsedNanosSince(startedMillis)));
 				if (value != null) {
 					try {
 						probeHarness.discard(value);
@@ -1495,13 +1514,13 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			} catch (IOException | RuntimeException | Error failure) {
 				// a real failure is not a timeout: no silent fallback — record, charge, quarantine, rethrow
 				observation.failed(failure);
-				plan.reservation().commit(System.nanoTime() - start);
+				plan.reservation().commit(chargeNanos(elapsedNanosSince(startedMillis)));
 				scheduler.quarantine(plan.flight());
 				discardUnpublished(value, failure);
 				throw failure;
 			} catch (Exception failure) {
 				observation.failed(failure);
-				plan.reservation().commit(System.nanoTime() - start);
+				plan.reservation().commit(chargeNanos(elapsedNanosSince(startedMillis)));
 				scheduler.quarantine(plan.flight());
 				discardUnpublished(value, failure);
 				throw new IOException("probe trial opener failed", failure);
@@ -1514,8 +1533,8 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			capacityExceeded = timedOut && scope.deadline().capacityTripped();
 			if (!timedOut && value != null) {
 				observation.exhausted();
-				long elapsed = System.nanoTime() - start;
-				plan.reservation().commit(elapsed);
+				long elapsed = elapsedNanosSince(startedMillis);
+				plan.reservation().commit(chargeNanos(elapsed));
 				boolean decisivelyBad = elapsed > plan.fallbackPrediction().expectedNanos();
 				scheduler.completed(plan.flight(), decisivelyBad);
 				winningTag = trial.tag;
@@ -1534,7 +1553,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			// answer look slow. The real elapsed cost is still charged, and the scheduler rests the arm without a
 			// strike so two overflows can never park it until the regime epoch changes.
 			observation.fallback();
-			plan.reservation().commit(System.nanoTime() - start);
+			plan.reservation().commit(chargeNanos(elapsedNanosSince(startedMillis)));
 			scheduler.capacityExceeded(plan.flight());
 			if (value != null) {
 				probeHarness.discard(value);
@@ -1544,9 +1563,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		} else if (timedOut) {
 			observation.budgetCensored(plan.deadlineNanos());
 			LmdbNativeAdaptiveCostModel.CensorResult censor = observation.censorResult();
-			long elapsed = System.nanoTime() - start;
-			plan.reservation().commit(elapsed);
-			if (elapsed >= (long) (hedgeConfig.overshootQuarantineFactor() * plan.deadlineNanos())) {
+			long elapsed = elapsedNanosSince(startedMillis);
+			plan.reservation().commit(chargeNanos(elapsed));
+			long deadlineElapsed = System.nanoTime() - deadlineNanoTime + plan.deadlineNanos();
+			if (deadlineElapsed >= (long) (hedgeConfig.overshootQuarantineFactor() * plan.deadlineNanos())) {
 				// the arm blew far past its deadline before any cooperative poll fired: it has proven it is not
 				// promptly cancellable at this shape — a different failure class from "slow", quarantined outright
 				scheduler.quarantine(plan.flight());
