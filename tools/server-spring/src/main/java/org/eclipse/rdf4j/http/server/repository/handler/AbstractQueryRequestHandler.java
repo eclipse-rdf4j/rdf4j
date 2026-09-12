@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.repository.DelegatingRepository;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -289,6 +290,11 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 	}
 
 	private Runnable createRemoteCancelAction(Repository repository, String explainRequestId) {
+		// unwrap delegating repositories (e.g. OpenTelemetry's TracingRepository) to find the actual HTTPRepository
+		while (repository instanceof DelegatingRepository && !(repository instanceof HTTPRepository)) {
+			repository = ((DelegatingRepository) repository).getDelegate();
+		}
+
 		if (!(repository instanceof HTTPRepository)) {
 			return null;
 		}

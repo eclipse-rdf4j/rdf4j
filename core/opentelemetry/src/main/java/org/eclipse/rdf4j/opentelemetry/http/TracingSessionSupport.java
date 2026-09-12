@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.opentelemetry.http;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URISyntaxException;
 
 import org.eclipse.rdf4j.http.client.spi.HttpRequest;
 import org.eclipse.rdf4j.http.client.spi.HttpResponse;
@@ -80,10 +81,12 @@ final class TracingSessionSupport {
 				.startSpan();
 
 		try {
-			span.setAttribute(SparqlOtelAttributes.HTTP_REQUEST_METHOD, request.getMethod());
-			span.setAttribute(SparqlOtelAttributes.URL_FULL, request.getUri().toString());
-
 			URI uri = request.getUri();
+			span.setAttribute(SparqlOtelAttributes.HTTP_REQUEST_METHOD, request.getMethod());
+			// the query string can contain the full SPARQL query/update text (short queries are sent as GET
+			// parameters), so it must be stripped here unconditionally, regardless of captureQueryText
+			span.setAttribute(SparqlOtelAttributes.URL_FULL, withoutQuery(uri));
+
 			if (uri.getHost() != null) {
 				span.setAttribute(SparqlOtelAttributes.SERVER_ADDRESS, uri.getHost());
 			}
@@ -112,6 +115,15 @@ final class TracingSessionSupport {
 			}
 		} finally {
 			span.end();
+		}
+	}
+
+	private static String withoutQuery(URI uri) {
+		try {
+			return new URI(uri.getScheme(), uri.getAuthority(), uri.getPath(), null, null).toString();
+		} catch (URISyntaxException e) {
+			// should not happen: stripping components can't make a valid URI invalid
+			return uri.getScheme() + "://" + uri.getAuthority() + uri.getPath();
 		}
 	}
 
