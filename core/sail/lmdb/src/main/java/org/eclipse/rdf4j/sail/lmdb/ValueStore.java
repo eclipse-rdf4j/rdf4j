@@ -66,6 +66,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -74,6 +75,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
@@ -96,6 +98,7 @@ import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
@@ -511,6 +514,10 @@ public class ValueStore extends AbstractValueFactory {
 	private long writeTxn;
 	/** Null during dictionary mutation, including private-cache publication; fresh identity after commit/rollback. */
 	private volatile Object valueLookupGeneration = new Object();
+	private volatile DictionaryLookupScope dictionaryLookupScope;
+
+	private record DictionaryLookupScope(Object generation, long snapshotId) {
+	}
 
 	// An optional exact-read-view accelerator. It owns compressed copies, not LMDB page addresses.
 	private volatile ValueOverlayRegistry compressedValues = ValueOverlayRegistry.configured();
@@ -641,7 +648,7 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private void initializeIdsAndTermIndexes(LmdbStoreConfig config) throws IOException {
-		// read maximum id from store
+		// Recover the counter before opening the term indexes commits and persists it.
 		readTransaction(env, (stack, txn) -> {
 			if (coreDatatypeLiteralReferences) {
 				MDBVal counterKey = MDBVal.calloc(stack);
@@ -655,15 +662,15 @@ public class ValueStore extends AbstractValueFactory {
 			long cursor = 0;
 			PointerBuffer pp = stack.mallocPointer(1);
 
+			MDBVal keyData = MDBVal.calloc(stack);
+			MDBVal valueData = MDBVal.calloc(stack);
 			for (int lookupDbi : new int[] { dbi, freeDbi }) {
 				try {
 					E(mdb_cursor_open(txn, lookupDbi, pp));
 					cursor = pp.get(0);
 
-					MDBVal keyData = MDBVal.calloc(stack);
 					// set cursor after max ID
 					keyData.mv_data(stack.bytes(new byte[] { ID_KEY, (byte) 0xFF }));
-					MDBVal valueData = MDBVal.calloc(stack);
 					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 					if (rc != MDB_SUCCESS) {
 						// directly go to last value
@@ -686,13 +693,31 @@ public class ValueStore extends AbstractValueFactory {
 			}
 			return null;
 		});
-
 		initializeTermIndexes(config);
 	}
 
 	private void initializeTermIndexes(LmdbStoreConfig config) throws IOException {
 		startTransaction(true);
 		initTermIndexes(config);
+		// Triple terms can have the highest allocated ID without a main-dictionary entry.
+		readTransaction(env, (stack, txn) -> {
+			long cursor = 0;
+			PointerBuffer pp = stack.mallocPointer(1);
+			MDBVal keyData = MDBVal.calloc(stack);
+			MDBVal valueData = MDBVal.calloc(stack);
+			try {
+				E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), pp));
+				cursor = pp.get(0);
+				if (mdb_cursor_get(cursor, keyData, valueData, MDB_LAST) == MDB_SUCCESS) {
+					nextId = Math.max(nextId, ValueIds.referenceOrdinal(Varint.readUnsigned(keyData.mv_data())) + 1);
+				}
+			} finally {
+				if (cursor != 0) {
+					mdb_cursor_close(cursor);
+				}
+			}
+			return null;
+		});
 		commit();
 	}
 
@@ -812,7 +837,7 @@ public class ValueStore extends AbstractValueFactory {
 			return null;
 		});
 
-		txnManager.closeReadTxn();
+		txnManager.reset();
 
 		if (!deferAuxiliaryDatabases) {
 			openAuxiliaryDatabases();
@@ -844,7 +869,7 @@ public class ValueStore extends AbstractValueFactory {
 		// A read transaction opened before the named databases were created cannot use their database handles.
 		// This matters for deferred bulk initialization because capacity checks may have opened a pooled reader while
 		// the main database was being append-loaded.
-		txnManager.closeReadTxn();
+		txnManager.reset();
 
 		if (freshBulkLoad) {
 			freeIdsAvailable = false;
@@ -932,12 +957,16 @@ public class ValueStore extends AbstractValueFactory {
 		for (String fieldSeq : TripleIndex.orderIndexSpecs(indexSpecs)) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
 			var index = new TripleIndex("term-" + fieldSeq, fieldSeq, false, env, writeTxn);
-			tripleTermIndexes.add(index);
-			// ensure simple access to main indexes
-			switch (fieldSeq) {
-			case "spoc" -> tripleTermSpocIndex = index;
-			case "cspo" -> tripleTermCspoIndex = index;
-			}
+			registerTripleTermIndex(fieldSeq, index);
+		}
+	}
+
+	private void registerTripleTermIndex(String fieldSeq, TripleIndex index) {
+		tripleTermIndexes.add(index);
+		// Keep primary-index references consistent when opening or rebuilding the configured index set.
+		switch (fieldSeq) {
+		case "spoc" -> tripleTermSpocIndex = index;
+		case "cspo" -> tripleTermCspoIndex = index;
 		}
 	}
 
@@ -1017,7 +1046,7 @@ public class ValueStore extends AbstractValueFactory {
 		// Update the indexes using the specified index order
 		tripleTermIndexes.clear();
 		for (String fieldSeq : newIndexSpecs) {
-			tripleTermIndexes.add(currentIndexes.remove(fieldSeq));
+			registerTripleTermIndex(fieldSeq, currentIndexes.remove(fieldSeq));
 		}
 	}
 
@@ -2492,34 +2521,76 @@ public class ValueStore extends AbstractValueFactory {
 				return LmdbValue.UNKNOWN_ID;
 			}
 
-			incrementRefCount(stack, writeTxn, subj);
-			incrementRefCount(stack, writeTxn, pred);
-			incrementRefCount(stack, writeTxn, obj);
+			return writeTransaction((stack2, writeTxn) -> {
+				incrementRefCount(stack2, writeTxn, subj);
+				incrementRefCount(stack2, writeTxn, pred);
+				incrementRefCount(stack2, writeTxn, obj);
 
-			long id = nextId(TRIPLE_VALUE);
-			for (TripleIndex index : tripleTermIndexes) {
-				keyBuf.clear();
-				index.toKey(keyBuf, subj, pred, obj, id);
-				keyBuf.flip();
+				long id = nextId(TRIPLE_VALUE);
+				for (TripleIndex index : tripleTermIndexes) {
+					keyBuf.clear();
+					index.toKey(keyBuf, subj, pred, obj, id);
+					keyBuf.flip();
 
-				// update buffer positions in MDBVal
-				keyVal.mv_data(keyBuf);
+					// update buffer positions in MDBVal
+					keyVal.mv_data(keyBuf);
 
-				resizeMap(writeTxn, 0L);
-				E(mdb_put(writeTxn, index.getDB(true), keyVal, dataVal, 0));
-			}
-			return id;
+					resizeMap(writeTxn, 0L);
+					E(mdb_put(writeTxn, index.getDB(true), keyVal, dataVal, 0));
+				}
+				return id;
+			});
 		});
 	}
 
 	public RecordIterator getTripleTerms(long subj, long pred, long obj) throws IOException {
 		TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subj, pred, obj, -1);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, -1) > 0;
-		return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, txnManager.getReadTxn());
+		Txn txn = txnManager.createReadTxn();
+		try {
+			return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, txn) {
+				private final AtomicBoolean transactionClosed = new AtomicBoolean();
+
+				@Override
+				public void close() {
+					if (transactionClosed.compareAndSet(false, true)) {
+						try {
+							super.close();
+						} finally {
+							txn.close();
+						}
+					}
+				}
+			};
+		} catch (Throwable e) {
+			txn.close();
+			throw e;
+		}
 	}
 
 	TxnManager getTxnManager() {
 		return txnManager;
+	}
+
+	Map<String, LmdbStore.LmdbDatabaseStats> getLmdbStats() throws IOException {
+		return readTransaction(env, (stack, txn) -> {
+			Map<String, LmdbStore.LmdbDatabaseStats> stats = new LinkedHashMap<>();
+			MDBStat stat = MDBStat.malloc(stack);
+			addLmdbStats(stats, "main", txn, dbi, stat);
+			addLmdbStats(stats, "unused_ids", txn, unusedDbi, stat);
+			addLmdbStats(stats, "free_ids", txn, freeDbi, stat);
+			addLmdbStats(stats, "ref_counts", txn, refCountsDbi, stat);
+			for (TripleIndex index : tripleTermIndexes) {
+				addLmdbStats(stats, index.getName(true), txn, index.getDB(true), stat);
+			}
+			return stats;
+		});
+	}
+
+	private static void addLmdbStats(Map<String, LmdbStore.LmdbDatabaseStats> stats, String name, long txn, int dbi,
+			MDBStat stat) throws IOException {
+		E(mdb_stat(txn, dbi, stat));
+		stats.put(name, LmdbStore.LmdbDatabaseStats.from(stat));
 	}
 
 	<T> T readTransaction(long env, Transaction<T> transaction) throws IOException {
@@ -2532,8 +2603,8 @@ public class ValueStore extends AbstractValueFactory {
 				long stamp = lockManager.readLock();
 				hasReadLock.set(Boolean.TRUE);
 				try {
-					try (MemoryStack stack = stackPush()) {
-						return transaction.exec(stack, txnManager.getReadTxn().get());
+					try (Txn txn = txnManager.createReadTxn(); MemoryStack stack = stackPush()) {
+						return transaction.exec(stack, txn.get());
 					}
 				} finally {
 					hasReadLock.remove();
@@ -2558,7 +2629,7 @@ public class ValueStore extends AbstractValueFactory {
 			beginValueLookupMutation();
 			ValueOverlayRegistry.Prepared[] publication = new ValueOverlayRegistry.Prepared[1];
 			try {
-				T result = LmdbUtil.transaction(env, (stack, txn) -> {
+				T result = LmdbUtil.writeTransaction(env, (stack, txn) -> {
 					beginCompressedValueMutation(txn);
 					T out = transaction.exec(stack, txn);
 					persistNextId(stack, txn);
@@ -2573,9 +2644,43 @@ public class ValueStore extends AbstractValueFactory {
 					publication[0].close();
 				discardCompressedValueMutation();
 				try {
-					txnManager.reset();
+					resetReadersAfterWrite();
 				} finally {
 					endValueLookupMutation();
+				}
+			}
+		}
+	}
+
+	private void resetReadersAfterWrite() throws IOException {
+		var lockManager = txnManager.lockManager();
+		boolean readLocked = hasReadLock.get() != null;
+		if (readLocked) {
+			lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
+		}
+		long stamp = 0;
+		try {
+			stamp = lockManager.writeLock();
+			txnManager.reset();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		} finally {
+			if (stamp != 0) {
+				lockManager.unlockWrite(stamp);
+			}
+			if (readLocked) {
+				boolean interrupted = Thread.interrupted();
+				for (;;) {
+					try {
+						lockManager.readLock();
+						break;
+					} catch (InterruptedException e) {
+						interrupted = true;
+					}
+				}
+				if (interrupted) {
+					Thread.currentThread().interrupt();
 				}
 			}
 		}
@@ -2626,8 +2731,20 @@ public class ValueStore extends AbstractValueFactory {
 		if (generation == null) {
 			return null;
 		}
-		Object token = txnManager.getReadTxn().valueLookupScope(generation);
-		return valueLookupGeneration == generation ? token : null;
+		return readTransaction(env, (stack, txn) -> {
+			long snapshotId = mdb_txn_id(txn);
+			DictionaryLookupScope token = dictionaryLookupScope;
+			if (token == null || token.generation() != generation || token.snapshotId() != snapshotId) {
+				synchronized (this) {
+					token = dictionaryLookupScope;
+					if (token == null || token.generation() != generation || token.snapshotId() != snapshotId) {
+						token = new DictionaryLookupScope(generation, snapshotId);
+						dictionaryLookupScope = token;
+					}
+				}
+			}
+			return valueLookupGeneration == generation ? token : null;
+		});
 	}
 
 	/** Current-view delta accounting; use retained stats for base/history/compaction reservations. */
@@ -4541,7 +4658,14 @@ public class ValueStore extends AbstractValueFactory {
 		}
 
 		int directionAndLangLength = bb.get() & 0xFF;
-		int langLength = directionAndLangLength & 0x3F;
+		int directionValue = directionAndLangLength >> 6;
+		int langLength;
+		if (directionValue == 3) {
+			directionValue = directionAndLangLength & 0x3F;
+			langLength = (int) Varint.readUnsignedHeap(bb);
+		} else {
+			langLength = directionAndLangLength & 0x3F;
+		}
 
 		// Get language tag
 		String lang = null;
@@ -4549,7 +4673,6 @@ public class ValueStore extends AbstractValueFactory {
 			lang = new String(data, bb.position(), langLength, StandardCharsets.UTF_8);
 		}
 
-		int directionValue = directionAndLangLength >> 6;
 		Literal.BaseDirection baseDirection = switch (directionValue) {
 		case 1 -> Literal.BaseDirection.LTR;
 		case 2 -> Literal.BaseDirection.RTL;

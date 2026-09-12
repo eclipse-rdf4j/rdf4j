@@ -183,38 +183,26 @@ duration. `awaitDirectAdjacencyReady(timeout, unit)` provides an explicit bounde
 by consumption or degraded fallback; a catch-up pause lasts until admitted writes hand off and the final generation is
 published. Inspect `lastBuildFailure` and gap revisions when readiness is degraded.
 
-## Statement-pattern cardinality cache
+## Cardinality estimation
 
-Each LMDB store has its own thread-safe statement-pattern cardinality cache. The ordinary tier holds up to 8,192
-semantic patterns for three hours by default. Variable names do not affect a cache key. Committed additions and
-removals accumulate as mutation debt; when that debt becomes strictly greater than 1% of the exact statement count at
-the previous reset, ordinary entries are cleared and popular entries are refreshed.
+The LMDB Store normally estimates statement-pattern cardinalities by reading a bounded number of pages from the
+selected LMDB index. This avoids scanning the complete matching range while giving the query optimizer structural
+information about the B-tree. If page inspection cannot produce a safe estimate, the store automatically falls back to
+the cursor-sampling estimator used by RDF4J 5.3.2.
 
-For stores with more than 1,000,000 explicit-plus-inferred statements, a persistent popularity-ranked tier keeps up to
-128 frequently used patterns warm. A pattern becomes eligible on its third access within three hours. Popularity scores
-gain one point per access and decay with a three-hour half-life, allowing newer patterns to compete. The tier refreshes
-hourly on the estimator-maintenance executor and uses four times the normal sampled-leaf budget (64 leaves for
-contiguous-range sampling and 128 for residual matcher sampling). Foreground estimation retains the normal 16/32-leaf
-budgets, and exact boundary, branch, metadata, and small-range reads are not multiplied.
+For diagnosis or emergency compatibility, start the JVM with the following system property before creating the store:
 
-The popular tier is saved on clean shutdown in the LMDB store directory. Snapshots are loaded only when their format,
-capacities, and LMDB transaction ID match the current store; malformed, stale, or incompatible snapshots are ignored.
-The following `LmdbStoreConfig` properties are also available as RDF predicates in the
-`http://rdf4j.org/config/sail/lmdb#` namespace and as fields in the Workbench LMDB repository template:
+```text
+-Dorg.eclipse.rdf4j.sail.lmdb.disablePageWalkingEstimator=true
+```
 
-| Property | Default | Purpose |
-|---|---:|---|
-| `statementPatternCardinalityCacheSize` | `8192` | Maximum ordinary entries; `0` disables both tiers. |
-| `statementPatternCardinalityCacheExpiryMillis` | `10800000` | Ordinary and popular value lifetime from computation. |
-| `statementPatternCardinalityCacheMutationRatio` | `0.01` | Strict mutation-debt invalidation ratio. |
-| `popularStatementPatternCardinalityCacheSize` | `128` | Maximum popular entries; `0` disables only this tier. |
-| `popularStatementPatternCardinalityCacheActivationThreshold` | `1000000` | Store size that must be strictly exceeded before activation. |
-| `popularStatementPatternCardinalityCacheActivationCheckInterval` | `10` | Valid lookups between exact store-size checks. |
-| `popularStatementPatternCardinalityCachePromotionAccesses` | `3` | In-window accesses required for popularity eligibility. |
-| `popularStatementPatternCardinalityCachePromotionWindowMillis` | `10800000` | Access-history window. |
-| `popularStatementPatternCardinalityCacheRefreshMillis` | `3600000` | Scheduled refresh interval; `0` disables scheduled refresh. |
-| `popularStatementPatternCardinalityCacheDecayHalfLifeMillis` | `10800000` | Popularity score half-life. |
-| `popularStatementPatternCardinalityCacheRefreshSampleMultiplier` | `4` | Asynchronous sampled-leaf multiplier, clamped to `1`–`64`. |
+This bypasses page walking and uses the complete RDF4J 5.3.2 estimation path, including its index-selection rules and
+cursor sampler. The property is read when each LMDB store is opened; restart or reopen the store after changing it.
+Omitting the property, or setting it to any value other than `true`, leaves page walking enabled.
+
+`LmdbStoreConfig.setPageCardinalityEstimator(false)` also selects the complete RDF4J 5.3.2 estimation path. The system
+property provides the same compatibility behavior as an operational override when changing repository configuration is
+not practical.
 
 ## Required storage space, RAM size and disk performance
 You can expect a footprint of around 120 - 130 bytes per quad when using the LMDB store

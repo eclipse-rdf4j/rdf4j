@@ -23,14 +23,37 @@ import java.util.Map;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 
 /**
- * Bounded range-cardinality estimator for LMDB B+trees.
+ * Bounded range-cardinality estimator for one named LMDB B+tree in one pinned snapshot.
  *
  * <p>
- * The external range is inclusive in the outer LMDB key. DUPSORT databases count every duplicate value belonging to a
- * selected outer key. The current API deliberately does not express a range or predicate over duplicate values. Large
- * ranges are decomposed into exact boundary slices and complete sibling subtrees, then probed with deterministic
- * inverse-probability paths. Work is independent of the number of selected records once the exact-leaf threshold is
- * exceeded.
+ * The external range is inclusive in the outer LMDB key. Seeking converts it to two cursors whose leaf indexes delimit
+ * an internal half-open range. The selected part of each boundary leaf is measured exactly. Everything between those
+ * leaves is represented as a small list of complete sibling subtrees: right siblings on the lower path, siblings
+ * between the paths at their first divergence, and left siblings on the upper path. That decomposition is the central
+ * correctness invariant because every later exact count or weighted probe then covers only keys inside the request.
+ * </p>
+ *
+ * <p>
+ * If the interior fits {@link #EXACT_RANGE_LEAF_BUDGET}, every leaf is measured. Otherwise, each probe chooses a child
+ * in a structurally stratified band, repeatedly chooses a child at each remaining branch level, and weights the leaf by
+ * the inverse of that path's selection probability. The base-2 low-discrepancy coordinates are deterministic. Separate
+ * stream identifiers make pilot and confirmation samples reproducible but independent. Once the exact threshold is
+ * exceeded, page work is bounded by configured budgets and tree depth rather than by selected record count.
+ * </p>
+ *
+ * <p>
+ * A null matcher asks only for physical key-range cardinality. A non-null matcher represents bound statement fields
+ * outside the index prefix. In that case the estimator measures exact boundary matches, estimates interior physical
+ * mass, samples the interior match ratio, and records whether independent evidence disagrees. DUPSORT databases count
+ * every duplicate value belonging to a selected outer key; the current API deliberately does not express a range or
+ * predicate over duplicate values.
+ * </p>
+ *
+ * <p>
+ * When modifying this class, preserve exact boundaries, hard-bound clamping, deterministic stream separation, and
+ * snapshot-local page identities. Structural changes need synthetic page tests, while assumptions about native LMDB
+ * encodings need native integration tests. Statistical changes should also be checked with the opt-in Theme accuracy
+ * harness. Do not turn a quality-triggered confirmation into an unbounded retry loop.
  * </p>
  */
 final class LmdbBtreeRangeCounter {
@@ -43,6 +66,8 @@ final class LmdbBtreeRangeCounter {
 	 * useful entries.
 	 */
 	private static final int RANK_PAGE_CACHE_LIMIT = 256;
+	/* Internal diagnostic tuning properties are read once when this class initializes. They are not a public API. */
+	/* Exact and physical budgets control matcher-free structure measurement. */
 	private static final int EXACT_RANGE_LEAF_BUDGET = property("exactLeafBudget", 32, 1, 1 << 16);
 	private static final int PHYSICAL_SAMPLE_BUDGET = property("physicalProbeBudget", 32, 1, 1 << 16);
 	private static final int DUPSORT_PHYSICAL_SAMPLE_BUDGET = property("dupSortPhysicalProbeBudget", 64, 1,
@@ -51,12 +76,15 @@ final class LmdbBtreeRangeCounter {
 			1 << 16);
 	private static final int DUPSORT_PHYSICAL_CONFIRMATION_BUDGET = property(
 			"dupSortPhysicalConfirmationBudget", 128, 1, 1 << 16);
+	/* Residual budgets progress from a cheap pilot to bounded evidence for increasingly selective predicates. */
 	private static final int RESIDUAL_PILOT_BUDGET = property("residualPilotBudget", 16, 1, 1 << 16);
 	private static final int RESIDUAL_COMMON_BUDGET = property("residualCommonBudget", 32, 1, 1 << 16);
 	private static final int RESIDUAL_MODERATE_BUDGET = property("residualModerateBudget", 64, 1, 1 << 16);
 	private static final int RESIDUAL_SELECTIVE_BUDGET = property("residualSelectiveBudget", 128, 1, 1 << 16);
 	private static final int RESIDUAL_RARE_BUDGET = property("residualRareBudget", 256, 1, 1 << 16);
+	/* Request-local caches cap repeated page decoding when independent streams revisit a leaf. */
 	private static final int MAX_LOCAL_PAGE_CACHE = property("localPageCacheEntries", 4_096, 64, 1 << 20);
+	/* Reliability thresholds decide whether to collect bounded confirmation or consult another index. */
 	private static final double COMPLEMENT_RATIO = doubleProperty("complementRatio", 0.70d, 0.05d, 0.95d);
 	private static final double MIN_EFFECTIVE_SAMPLE_SIZE = doubleProperty("minEffectiveSampleSize", 8.0d,
 			1.0d, 1 << 16);
@@ -74,6 +102,7 @@ final class LmdbBtreeRangeCounter {
 			100.0d);
 	private static final double MAX_DIRECT_RATIO_DISAGREEMENT = doubleProperty("maxDirectRatioDisagreement", 3.0d,
 			1.01d, 100.0d);
+	/* Change SAMPLER_VERSION for a deliberate sampling-policy change; never reuse a stream ID for new evidence. */
 	private static final long SAMPLER_VERSION = 0x4c4d444245535434L; // "LMDBEST4"
 	private static final int STREAM_PHYSICAL = 0x11;
 	private static final int STREAM_PHYSICAL_CONFIRM = 0x12;
@@ -168,20 +197,17 @@ final class LmdbBtreeRangeCounter {
 		return page;
 	}
 
+	/**
+	 * Estimates an inclusive outer-key range. Exact empty, whole-database, same-leaf, and small-range exits happen
+	 * before sampling. The returned hard bounds are valid even when the point estimate is approximate.
+	 */
 	RangeCountResult estimateRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
 			GroupMatcher matcher) throws IOException {
-		return estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher, matcher == null ? 0 : 1, 1);
+		return estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher, matcher == null ? 0 : 1);
 	}
 
 	RangeCountResult estimateRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
-			GroupMatcher matcher, int sampleMultiplier) throws IOException {
-		return estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher, matcher == null ? 0 : 1,
-				sampleMultiplier);
-	}
-
-	RangeCountResult estimateRange(LmdbDb db, byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
-			GroupMatcher matcher, int residualFieldCount, int sampleMultiplier) throws IOException {
-		sampleMultiplier = Math.clamp(sampleMultiplier, 1, 64);
+			GroupMatcher matcher, int residualFieldCount) throws IOException {
 		RangeCountResult result = new RangeCountResult();
 		if (db.isEmpty()) {
 			result.entries = 0L;
@@ -194,7 +220,7 @@ final class LmdbBtreeRangeCounter {
 		result.hardUpperBound = db.entries();
 
 		boolean dupSort = db.isDupSort();
-		LocalPageCache localPages = new LocalPageCache(localCacheCapacity(db.depth(), sampleMultiplier));
+		LocalPageCache localPages = new LocalPageCache(localCacheCapacity(db.depth()));
 		SeekCursor lower = seekRaw(db, minKey, minKeyLength, false, localPages, result);
 		SeekCursor upper = seekRaw(db, maxKey, maxKeyLength, true, localPages, result);
 		RangePlan direct = rangePlan(lower, upper);
@@ -210,7 +236,7 @@ final class LmdbBtreeRangeCounter {
 			return result;
 		}
 
-		LeafMeasurementCache directMeasurements = new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier));
+		LeafMeasurementCache directMeasurements = new LeafMeasurementCache(maxMeasurementCapacity());
 		PreparedPlan prepared = preparePlan(direct, matcher, dupSort, directMeasurements, localPages, result);
 		result.hardLowerBound = prepared.boundary.matchedEntries;
 		if (prepared.exact) {
@@ -223,10 +249,10 @@ final class LmdbBtreeRangeCounter {
 		long estimate;
 		if (matcher == null) {
 			estimate = estimateMatcherFree(db, direct, prepared, dupSort, minKey, minKeyLength, maxKey,
-					maxKeyLength, sampleMultiplier, localPages, result);
+					maxKeyLength, localPages, result);
 		} else {
 			estimate = estimateResidual(db, direct, prepared, dupSort, minKey, minKeyLength, maxKey,
-					maxKeyLength, matcher, Math.max(1, residualFieldCount), sampleMultiplier, directMeasurements,
+					maxKeyLength, matcher, Math.max(1, residualFieldCount), directMeasurements,
 					localPages, result);
 		}
 		result.entries = clampToHardBounds(estimate, result);
@@ -269,10 +295,10 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	private long estimateMatcherFree(LmdbDb db, RangePlan direct, PreparedPlan prepared, boolean dupSort,
-			byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength, int sampleMultiplier,
+			byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength,
 			LocalPageCache localPages,
 			RangeCountResult result) throws IOException {
-		int budget = physicalBudget(dupSort, sampleMultiplier);
+		int budget = physicalBudget(dupSort);
 		long baseSeed = samplingSeed(db, minKey, minKeyLength, maxKey, maxKeyLength);
 
 		if (shouldUseComplement(db, direct, prepared, dupSort, localPages, result)) {
@@ -285,9 +311,9 @@ final class LmdbBtreeRangeCounter {
 			int leftBudget = splitBudget(budget, leftMass, rightMass, true);
 			int rightBudget = splitBudget(budget, rightMass, leftMass, false);
 
-			EstimateValue leftEstimate = estimatePhysicalPlan(db, left, dupSort, leftBudget, sampleMultiplier,
+			EstimateValue leftEstimate = estimatePhysicalPlan(db, left, dupSort, leftBudget,
 					mix64(baseSeed ^ STREAM_COMPLEMENT_LEFT), localPages, result);
-			EstimateValue rightEstimate = estimatePhysicalPlan(db, right, dupSort, rightBudget, sampleMultiplier,
+			EstimateValue rightEstimate = estimatePhysicalPlan(db, right, dupSort, rightBudget,
 					mix64(baseSeed ^ STREAM_COMPLEMENT_RIGHT), localPages, result);
 			long excluded = saturatedAdd(leftEstimate.entries, rightEstimate.entries);
 			long excludedLower = saturatedAdd(leftEstimate.hardLowerBound, rightEstimate.hardLowerBound);
@@ -309,8 +335,7 @@ final class LmdbBtreeRangeCounter {
 		}
 
 		SampleAggregate aggregate = samplePhysicalWithConditionalEvidence(db, direct.spans, dupSort, budget,
-				sampleMultiplier, mix64(baseSeed ^ STREAM_PHYSICAL),
-				new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier)),
+				mix64(baseSeed ^ STREAM_PHYSICAL), new LeafMeasurementCache(maxMeasurementCapacity()),
 				localPages, result);
 		double value = prepared.boundary.logicalEntries + aggregate.estimatedLogicalEntries;
 		result.mode = RangeCountResult.Mode.SAMPLED_DIRECT_RANGE;
@@ -328,7 +353,7 @@ final class LmdbBtreeRangeCounter {
 
 	private long estimateResidual(LmdbDb db, RangePlan direct, PreparedPlan prepared, boolean dupSort,
 			byte[] minKey, int minKeyLength, byte[] maxKey, int maxKeyLength, GroupMatcher matcher,
-			int residualFieldCount, int sampleMultiplier, LeafMeasurementCache matcherMeasurements,
+			int residualFieldCount, LeafMeasurementCache matcherMeasurements,
 			LocalPageCache localPages,
 			RangeCountResult result) throws IOException {
 		long baseSeed = samplingSeed(db, minKey, minKeyLength, maxKey, maxKeyLength);
@@ -339,9 +364,8 @@ final class LmdbBtreeRangeCounter {
 			physicalExact = true;
 		} else {
 			SampleAggregate physical = samplePhysicalWithConditionalEvidence(db, direct.spans, dupSort,
-					physicalBudget(dupSort, sampleMultiplier), sampleMultiplier,
-					mix64(baseSeed ^ STREAM_PHYSICAL),
-					new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier)), localPages, result);
+					physicalBudget(dupSort), mix64(baseSeed ^ STREAM_PHYSICAL),
+					new LeafMeasurementCache(maxMeasurementCapacity()), localPages, result);
 			physicalTotal = finiteClampedRound(prepared.boundary.logicalEntries
 					+ physical.estimatedLogicalEntries, db.entries());
 			physicalExact = physical.exhaustive;
@@ -351,7 +375,7 @@ final class LmdbBtreeRangeCounter {
 		}
 
 		double middlePhysical = Math.max(0.0d, physicalTotal - prepared.boundary.logicalEntries);
-		int pilotBudget = residualPilotBudget(dupSort, sampleMultiplier);
+		int pilotBudget = residualPilotBudget(dupSort);
 		result.residualPilotProbeBudgetUsed += pilotBudget;
 		SampleAggregate pilot = sampleSpans(db, direct.spans, matcher, dupSort, pilotBudget,
 				mix64(baseSeed ^ STREAM_RESIDUAL_PILOT), matcherMeasurements, localPages, result);
@@ -361,14 +385,14 @@ final class LmdbBtreeRangeCounter {
 		recordDisagreement(result, physicalPilotDisagreement);
 
 		int finalBaseBudget = chooseResidualBudget(pilot, residualFieldCount, dupSort, physicalPilotDisagreement);
-		int finalBudget = scaledBudget(finalBaseBudget, sampleMultiplier);
+		int finalBudget = finalBaseBudget;
 		result.residualFinalProbeBudgetUsed += finalBudget;
 		SampleAggregate sampled = sampleSpans(db, direct.spans, matcher, dupSort, finalBudget,
 				mix64(baseSeed ^ STREAM_RESIDUAL_FINAL), matcherMeasurements, localPages, result);
 		ResidualAssessment assessment = assessResidualEvidence(middlePhysical, pilot, sampled);
 
 		if (!sampled.exhaustive && assessment.difficult && finalBaseBudget < RESIDUAL_RARE_BUDGET) {
-			int confirmationBudget = scaledBudget(nextResidualBudget(finalBaseBudget), sampleMultiplier);
+			int confirmationBudget = nextResidualBudget(finalBaseBudget);
 			result.additionalEvidenceUsed = true;
 			result.conditionalProbeBudgetUsed += confirmationBudget;
 			SampleAggregate confirmation = sampleSpans(db, direct.spans, matcher, dupSort, confirmationBudget,
@@ -427,7 +451,7 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	private EstimateValue estimatePhysicalPlan(LmdbDb db, RangePlan plan, boolean dupSort, int budget,
-			int sampleMultiplier, long seed, LocalPageCache localPages, RangeCountResult result) throws IOException {
+			long seed, LocalPageCache localPages, RangeCountResult result) throws IOException {
 		if (plan.empty) {
 			return new EstimateValue(0L, true, true, 0L, 0L);
 		}
@@ -439,8 +463,7 @@ final class LmdbBtreeRangeCounter {
 			return new EstimateValue(exact, true, true, exact, exact);
 		}
 		SampleAggregate sampled = samplePhysicalWithConditionalEvidence(db, plan.spans, dupSort,
-				Math.max(1, budget), sampleMultiplier, seed,
-				new LeafMeasurementCache(maxMeasurementCapacity(sampleMultiplier)), localPages, result);
+				Math.max(1, budget), seed, new LeafMeasurementCache(maxMeasurementCapacity()), localPages, result);
 		long value = finiteClampedRound(prepared.boundary.logicalEntries + sampled.estimatedLogicalEntries,
 				db.entries());
 		long hardLower = saturatedAdd(prepared.boundary.logicalEntries, sampled.exactLogicalEntries);
@@ -452,6 +475,11 @@ final class LmdbBtreeRangeCounter {
 		return new EstimateValue(value, sampled.exhaustive, sampled.exhaustive, hardLower, hardUpper);
 	}
 
+	/**
+	 * Measures boundary slices and attempts bounded exactification of the interior. A null return from
+	 * {@link #collectExactLeafPlan(List, int, LocalPageCache, RangeCountResult)} is represented by {@code exact=false};
+	 * boundary measurements remain usable as proven mass and a hard lower bound.
+	 */
 	private PreparedPlan preparePlan(RangePlan plan, GroupMatcher matcher, boolean dupSort,
 			LeafMeasurementCache measurements, LocalPageCache localPages, RangeCountResult result) throws IOException {
 		if (plan.empty) {
@@ -535,6 +563,10 @@ final class LmdbBtreeRangeCounter {
 		return new SeekCursor(page, end ? page.numKeys : 0, branchPath);
 	}
 
+	/**
+	 * Produces disjoint, complete subtrees strictly between the boundary leaves. Ordering follows the B+tree from lower
+	 * to upper, but estimation depends only on disjoint coverage, not on list order.
+	 */
 	private List<SiblingSpan> decomposeRange(SeekCursor lower, SeekCursor upper) throws IOException {
 		List<BranchFrame> lowerPath = lower.branchPath;
 		List<BranchFrame> upperPath = upper.branchPath;
@@ -616,6 +648,10 @@ final class LmdbBtreeRangeCounter {
 		return true;
 	}
 
+	/**
+	 * Stratifies every subtree span, averages inverse-probability contributions within each band, and sums the bands.
+	 * Repeated physical leaves still contribute to the estimator, but are counted once for effective-coverage metrics.
+	 */
 	private SampleAggregate sampleSpans(LmdbDb db, List<SiblingSpan> spans, GroupMatcher matcher,
 			boolean dupSort, int totalBudget, long seed, LeafMeasurementCache measurements,
 			LocalPageCache localPages, RangeCountResult stats) throws IOException {
@@ -679,6 +715,7 @@ final class LmdbBtreeRangeCounter {
 		return aggregate;
 	}
 
+	/** Follows one coordinate through a subtree and returns the selected leaf plus its inverse path probability. */
 	private WeightedLeaf sampleLeaf(SiblingSpan span, int bandStart, int bandEnd, double coordinate,
 			GroupMatcher matcher, boolean dupSort, LeafMeasurementCache measurements, LocalPageCache localPages,
 			RangeCountResult stats) throws IOException {
@@ -707,6 +744,10 @@ final class LmdbBtreeRangeCounter {
 		return new WeightedLeaf(pageNumber, weight, measurement);
 	}
 
+	/**
+	 * Gives every disjoint span one probe, then greedily assigns remaining probes where modeled leaf mass offers the
+	 * largest marginal gain after accounting for existing probes and descent cost.
+	 */
 	private int[] allocateProbes(LmdbDb db, List<SiblingSpan> spans, int totalBudget, boolean dupSort) {
 		int count = spans.size();
 		int[] probes = new int[count];
@@ -764,6 +805,10 @@ final class LmdbBtreeRangeCounter {
 		return measured;
 	}
 
+	/**
+	 * Measures a half-open outer-key slice. With DUPSORT, {@code logicalEntries} and {@code matchedEntries} include
+	 * each selected key's duplicate multiplicity while {@code outerKeys} remains the physical key count.
+	 */
 	private LeafMeasurement measureLeafSlice(LmdbPage page, int fromInclusive, int toExclusive,
 			GroupMatcher matcher, boolean dupSort, RangeCountResult stats) throws IOException {
 		ensureOuterLeaf(page);
@@ -883,6 +928,7 @@ final class LmdbBtreeRangeCounter {
 		}
 	}
 
+	/** Chooses total-minus-complement only when modeled excluded leaf mass is materially cheaper than direct mass. */
 	private boolean shouldUseComplement(LmdbDb db, RangePlan direct, PreparedPlan prepared, boolean dupSort,
 			LocalPageCache localPages, RangeCountResult result) throws IOException {
 		if (direct.sameLeaf || direct.spans.isEmpty()) {
@@ -931,8 +977,9 @@ final class LmdbBtreeRangeCounter {
 		return mass;
 	}
 
+	/** Runs one physical stream and, only when its reliability is weak, one bounded independent confirmation stream. */
 	private SampleAggregate samplePhysicalWithConditionalEvidence(LmdbDb db, List<SiblingSpan> spans,
-			boolean dupSort, int budget, int sampleMultiplier, long seed, LeafMeasurementCache measurements,
+			boolean dupSort, int budget, long seed, LeafMeasurementCache measurements,
 			LocalPageCache localPages, RangeCountResult result) throws IOException {
 		result.physicalProbeBudgetUsed += budget;
 		SampleAggregate primary = sampleSpans(db, spans, null, dupSort, budget, seed, measurements, localPages,
@@ -943,8 +990,7 @@ final class LmdbBtreeRangeCounter {
 			return primary;
 		}
 
-		int confirmationBudget = Math.max(budget,
-				scaledBudget(physicalConfirmationBudget(dupSort), sampleMultiplier));
+		int confirmationBudget = Math.max(budget, physicalConfirmationBudget(dupSort));
 		result.additionalEvidenceUsed = true;
 		result.conditionalProbeBudgetUsed += confirmationBudget;
 		SampleAggregate confirmation = sampleSpans(db, spans, null, dupSort, confirmationBudget,
@@ -957,6 +1003,10 @@ final class LmdbBtreeRangeCounter {
 		return confirmation;
 	}
 
+	/**
+	 * Distinguishes probe count from useful information. Concentrated weights, duplicate probes, material sampled mass,
+	 * and observed/finite-sample error can make a nominally large sample difficult.
+	 */
 	private Reliability assessReliability(SampleAggregate aggregate, boolean residualRatio) {
 		if (aggregate.exhaustive) {
 			return Reliability.EXACT;
@@ -1065,6 +1115,10 @@ final class LmdbBtreeRangeCounter {
 		return value <= lower ? lower : Math.min(value, upper);
 	}
 
+	/**
+	 * Selects one of the fixed residual budgets from pilot selectivity and quality. More residual fields and DUPSORT
+	 * can promote the choice, but the result never exceeds {@link #RESIDUAL_RARE_BUDGET}.
+	 */
 	private int chooseResidualBudget(SampleAggregate pilot, int residualFieldCount, boolean dupSort,
 			double physicalPilotDisagreement) {
 		double ratio = pilot.ratio();
@@ -1095,18 +1149,13 @@ final class LmdbBtreeRangeCounter {
 		return budget;
 	}
 
-	private int physicalBudget(boolean dupSort, int sampleMultiplier) {
-		return scaledBudget(dupSort ? DUPSORT_PHYSICAL_SAMPLE_BUDGET : PHYSICAL_SAMPLE_BUDGET, sampleMultiplier);
+	private int physicalBudget(boolean dupSort) {
+		return dupSort ? DUPSORT_PHYSICAL_SAMPLE_BUDGET : PHYSICAL_SAMPLE_BUDGET;
 	}
 
-	private int residualPilotBudget(boolean dupSort, int sampleMultiplier) {
-		int base = dupSort ? Math.min(RESIDUAL_RARE_BUDGET, RESIDUAL_PILOT_BUDGET << 1)
+	private int residualPilotBudget(boolean dupSort) {
+		return dupSort ? Math.min(RESIDUAL_RARE_BUDGET, RESIDUAL_PILOT_BUDGET << 1)
 				: RESIDUAL_PILOT_BUDGET;
-		return scaledBudget(base, sampleMultiplier);
-	}
-
-	private int scaledBudget(int budget, int sampleMultiplier) {
-		return (int) Math.min(Integer.MAX_VALUE, (long) budget * Math.clamp(sampleMultiplier, 1, 64));
 	}
 
 	private int splitBudget(int total, double ownMass, double otherMass, boolean first) {
@@ -1121,6 +1170,7 @@ final class LmdbBtreeRangeCounter {
 		return Math.max(1, Math.min(total - 1, value));
 	}
 
+	/** Comparator-aware lower-bound search; branch slot zero is a sentinel and is skipped during separator search. */
 	private SearchResult findFirstGreaterOrEqual(LmdbPage page, byte[] key, int keyLength, boolean leafSearch,
 			int databaseFlags) throws IOException {
 		if (page.numKeys == 0) {
@@ -1268,6 +1318,7 @@ final class LmdbBtreeRangeCounter {
 		return count;
 	}
 
+	/** Builds a logical-range seed that intentionally excludes copy-on-write page numbers. */
 	private long samplingSeed(LmdbDb db, byte[] minKey, int minLength, byte[] maxKey, int maxLength) {
 		long seed = mix64(SAMPLER_VERSION ^ databaseIdentity ^ ((long) db.flags() << 32) ^ db.depth());
 		seed = hashBytes(seed, minKey, minLength);
@@ -1328,29 +1379,21 @@ final class LmdbBtreeRangeCounter {
 		result.mode = mode;
 	}
 
-	private int localCacheCapacity(int depth, int sampleMultiplier) {
+	private int localCacheCapacity(int depth) {
 		int maximumPhysical = Math.max(Math.max(PHYSICAL_SAMPLE_BUDGET, DUPSORT_PHYSICAL_SAMPLE_BUDGET),
 				Math.max(PHYSICAL_CONFIRMATION_BUDGET, DUPSORT_PHYSICAL_CONFIRMATION_BUDGET));
 		int maximumPilot = Math.min(RESIDUAL_RARE_BUDGET, RESIDUAL_PILOT_BUDGET << 1);
 		long expected = Math.max(64L,
-				(long) (scaledBudget(RESIDUAL_RARE_BUDGET, sampleMultiplier)
-						+ scaledBudget(maximumPilot, sampleMultiplier)
-						+ scaledBudget(maximumPhysical, sampleMultiplier) + 32)
+				(long) (RESIDUAL_RARE_BUDGET + maximumPilot + maximumPhysical + 32)
 						* Math.max(2, depth));
 		return (int) Math.min(MAX_LOCAL_PAGE_CACHE, expected);
 	}
 
-	private int localCacheCapacity(int depth) {
-		return localCacheCapacity(depth, 1);
-	}
-
-	private int maxMeasurementCapacity(int sampleMultiplier) {
+	private int maxMeasurementCapacity() {
 		int maximumPhysical = Math.max(Math.max(PHYSICAL_SAMPLE_BUDGET, DUPSORT_PHYSICAL_SAMPLE_BUDGET),
 				Math.max(PHYSICAL_CONFIRMATION_BUDGET, DUPSORT_PHYSICAL_CONFIRMATION_BUDGET));
 		int maximumPilot = Math.min(RESIDUAL_RARE_BUDGET, RESIDUAL_PILOT_BUDGET << 1);
-		long expected = 2L * (scaledBudget(RESIDUAL_RARE_BUDGET, sampleMultiplier)
-				+ scaledBudget(maximumPilot, sampleMultiplier)
-				+ scaledBudget(maximumPhysical, sampleMultiplier));
+		long expected = 2L * (RESIDUAL_RARE_BUDGET + maximumPilot + maximumPhysical);
 		return (int) Math.min(Integer.MAX_VALUE, Math.max(64L, expected));
 	}
 
@@ -1447,6 +1490,10 @@ final class LmdbBtreeRangeCounter {
 		}
 	}
 
+	/**
+	 * Accumulates weighted band estimates and enough first/second-order information to assess concentration, variance,
+	 * covariance, duplicate probes, and matched-to-physical ratios without retaining per-probe objects.
+	 */
 	private static final class SampleAggregate {
 		private static final SampleAggregate EMPTY_EXACT = exactEmpty();
 

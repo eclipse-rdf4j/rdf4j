@@ -864,7 +864,7 @@ public class LmdbSailStoreTest {
 			return invocation.callRealMethod();
 		}).when(tripleStoreSpy)
 				.storePreparedTriples(any(long[].class), any(long[].class), any(long[].class), any(long[].class),
-						anyInt(), anyBoolean(), anyBoolean(), any(IntConsumer.class),
+						anyInt(), anyBoolean(), anyBoolean(), nullable(IntConsumer.class),
 						nullable(TripleStore.EncodedIndexKeys.class),
 						any(TripleStore.PreparedSecondaryIndexesSupplier.class));
 

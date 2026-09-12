@@ -15,7 +15,10 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -52,6 +55,7 @@ import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory;
+import org.lwjgl.util.lmdb.MDBStat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -79,6 +83,42 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	static final int VERSION = 4;
 	static final String CORE_LITERAL_REFERENCE_MARKER_FILE = "lmdbrdf.ver";
 	static final String CORE_LITERAL_REFERENCE_MARKER = "rdf4j-lmdb-core-literal-reference-v1\n";
+
+	/**
+	 * A detached snapshot of the native LMDB statistics for the databases in the value and triple environments.
+	 *
+	 * @param valueDatabases  statistics keyed by database name in the value environment
+	 * @param tripleDatabases statistics keyed by database name in the triple environment
+	 */
+	@InternalUseOnly
+	public record LmdbStats(Map<String, LmdbDatabaseStats> valueDatabases,
+			Map<String, LmdbDatabaseStats> tripleDatabases) {
+
+		public LmdbStats {
+			valueDatabases = Collections.unmodifiableMap(new LinkedHashMap<>(valueDatabases));
+			tripleDatabases = Collections.unmodifiableMap(new LinkedHashMap<>(tripleDatabases));
+		}
+	}
+
+	/**
+	 * A detached copy of LMDB's native {@code MDB_stat} fields for one database.
+	 *
+	 * @param pageSize      database page size in bytes
+	 * @param depth         B-tree depth
+	 * @param branchPages   number of internal branch pages
+	 * @param leafPages     number of leaf pages
+	 * @param overflowPages number of overflow pages
+	 * @param entries       number of data items
+	 */
+	@InternalUseOnly
+	public record LmdbDatabaseStats(int pageSize, int depth, long branchPages, long leafPages, long overflowPages,
+			long entries) {
+
+		static LmdbDatabaseStats from(MDBStat stat) {
+			return new LmdbDatabaseStats(stat.ms_psize(), stat.ms_depth(), stat.ms_branch_pages(), stat.ms_leaf_pages(),
+					stat.ms_overflow_pages(), stat.ms_entries());
+		}
+	}
 
 	/**
 	 * Specifies which triple indexes this lmdb store must use.
@@ -230,6 +270,22 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	public boolean getPageCardinalityEstimator() {
 		return config.getPageCardinalityEstimator();
+	}
+
+	/**
+	 * Returns a detached snapshot of the native LMDB statistics for every database in this store's value and triple
+	 * environments.
+	 *
+	 * @return the native LMDB statistics
+	 * @throws SailException if the native statistics cannot be read
+	 */
+	@InternalUseOnly
+	public LmdbStats getLmdbStats() throws SailException {
+		try {
+			return backingStore.getLmdbStats();
+		} catch (IOException e) {
+			throw new SailException("Unable to read native LMDB statistics", e);
+		}
 	}
 
 	/**
@@ -531,6 +587,40 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	SailStore getSailStore() {
 		return store;
+	}
+
+	SailStore getConnectionSailStore() {
+		SailStore sharedStore = store;
+		Object transactionOwner = new Object();
+		return new SailStore() {
+			@Override
+			public ValueFactory getValueFactory() {
+				return sharedStore.getValueFactory();
+			}
+
+			@Override
+			public EvaluationStatistics getEvaluationStatistics() {
+				return sharedStore.getEvaluationStatistics();
+			}
+
+			@Override
+			public SailSource getExplicitSailSource() {
+				return isIsolationDisabled() ? backingStore.getExplicitSailSource(transactionOwner)
+						: sharedStore.getExplicitSailSource();
+			}
+
+			@Override
+			public SailSource getInferredSailSource() {
+				// Both sources belong to this connection's transaction, including with isolation NONE.
+				return isIsolationDisabled() ? backingStore.getInferredSailSource(transactionOwner)
+						: sharedStore.getInferredSailSource();
+			}
+
+			@Override
+			public void close() {
+				// This connection view does not own the shared store.
+			}
+		};
 	}
 
 	LmdbSailStore getBackingStore() {

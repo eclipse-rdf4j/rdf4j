@@ -122,11 +122,18 @@ public final class ValueStoreRecordCodec {
 		};
 		byte[] label = labelValue.getBytes(StandardCharsets.UTF_8);
 		int datatypeLength = Varint.calcLengthUnsigned(datatypeId);
-		byte[] data = new byte[2 + datatypeLength + languageLength + label.length];
+		boolean extendedLanguageLength = languageLength > 0x3F;
+		int languageLengthBytes = extendedLanguageLength ? Varint.calcLengthUnsigned(languageLength) : 0;
+		byte[] data = new byte[2 + datatypeLength + languageLengthBytes + languageLength + label.length];
 		ByteBuffer buffer = ByteBuffer.wrap(data);
 		buffer.put(LITERAL_VALUE);
 		Varint.writeUnsigned(buffer, datatypeId);
-		buffer.put((byte) (direction << 6 | languageLength));
+		if (extendedLanguageLength) {
+			buffer.put((byte) (0xC0 | direction));
+			Varint.writeUnsigned(buffer, languageLength);
+		} else {
+			buffer.put((byte) (direction << 6 | languageLength));
+		}
 		if (languageBytes != null) {
 			buffer.put(languageBytes);
 		}

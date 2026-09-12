@@ -13,7 +13,24 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Snapshot-scoped cache. A new instance is created whenever the pinned LMDB transaction changes. */
+/**
+ * Capacity-limited cache shared by estimates that use one pinned LMDB snapshot.
+ *
+ * <p>
+ * LMDB reuses page numbers after copy-on-write updates, so this cache must never outlive the {@code SnapshotCache} that
+ * owns it. Full decoded pages serve branch descent, boundary slicing, matchers, and DUPSORT. The smaller header value
+ * is sufficient for matcher-free ordinary leaves and avoids reading an entire page. Entries are admitted while the
+ * observed size is below the configured capacity and are then left in place; there is deliberately no eviction
+ * bookkeeping on the planner hot path.
+ * </p>
+ *
+ * <p>
+ * Both maps are concurrent because cardinality calls can share a read transaction. A racing insertion for the same page
+ * returns the already-published immutable object. Distinct-page admissions are not serialized, so concurrent callers
+ * can overshoot the configured capacity slightly; it is a memory target, not a hard resource or security limit. A zero
+ * capacity disables that cache.
+ * </p>
+ */
 final class LmdbPageCache {
 
 	private static final int DEFAULT_MAX_FULL_PAGES = positiveIntProperty(
@@ -41,6 +58,7 @@ final class LmdbPageCache {
 		return fullPages.get(pageNumber);
 	}
 
+	/** Returns the cached winner when another thread published the same immutable page first. */
 	LmdbPage putPage(long pageNumber, LmdbPage page) {
 		LmdbPage existing = fullPages.get(pageNumber);
 		if (existing != null) {

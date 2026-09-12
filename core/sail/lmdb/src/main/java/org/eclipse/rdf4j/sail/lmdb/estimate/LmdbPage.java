@@ -14,6 +14,19 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+/**
+ * Validated, read-only view of one LMDB page.
+ *
+ * <p>
+ * The offsets and flags exposed here are LMDB's on-disk values; higher-level tree-walking code should use these
+ * accessors instead of duplicating layout arithmetic. A page can be backed directly by LMDB's native mapping, so its
+ * {@link ByteBuffer} and any values read from it must not escape the estimator snapshot that loaded it. In particular,
+ * do not retain an {@code LmdbPage} across transactions or map resizes.
+ *
+ * <p>
+ * Parsing rejects impossible bounds and page-number mismatches before traversal. When adding a new accessor, perform
+ * the same bounds validation here so callers cannot accidentally interpret adjacent page data as part of a node.
+ */
 final class LmdbPage {
 
 	final long expectedPgno;

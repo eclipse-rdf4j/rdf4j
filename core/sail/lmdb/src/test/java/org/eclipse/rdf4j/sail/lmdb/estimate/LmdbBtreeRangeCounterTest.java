@@ -204,53 +204,6 @@ class LmdbBtreeRangeCounterTest {
 	}
 
 	@Test
-	void richProfileUsesMorePhysicalProbes(@TempDir Path tempDir) throws Exception {
-		TreeFile tree = writeTwoBranchLevelTree(tempDir.resolve("data.mdb"), 8, 64,
-				LmdbBtreeRangeCounterTest::quadKey);
-
-		RangeCountResult ordinary = countRange(tree, quadKey(100), quadKey(399), null);
-		RangeCountResult rich = countRange(tree, quadKey(100), quadKey(399), null, 4);
-
-		assertEquals(300, ordinary.entries);
-		assertEquals(ordinary.entries, rich.entries);
-		assertTrue(rich.leafSampleProbes > ordinary.leafSampleProbes,
-				"A rich cache refresh must spend a larger physical probe budget");
-	}
-
-	@Test
-	void richProfileUsesMoreResidualProbes(@TempDir Path tempDir) throws Exception {
-		int leafCount = 1_024;
-		TreeFile tree = writeTwoBranchLevelTree(tempDir.resolve("data.mdb"), 16, 64,
-				LmdbBtreeRangeCounterTest::quadKey);
-		GroupMatcher matchesAbsentSecondField = new GroupMatcher(new byte[] { 0, 2, 0, 0 },
-				new boolean[] { false, true, false, false });
-
-		RangeCountResult ordinary = countRange(tree, quadKey(0), quadKey(leafCount - 1),
-				matchesAbsentSecondField);
-		RangeCountResult rich = countRange(tree, quadKey(0), quadKey(leafCount - 1),
-				matchesAbsentSecondField, 4);
-
-		assertTrue(ordinary.entries > 0);
-		assertTrue(!ordinary.exhaustive);
-		assertTrue(rich.entries < ordinary.entries,
-				"The richer zero-hit sample should move the sparse prior closer to the exact zero");
-		assertTrue(rich.leafSampleProbes > ordinary.leafSampleProbes,
-				"A rich cache refresh must spend a larger residual probe budget");
-	}
-
-	@Test
-	void richProfileDoesNotChangeTheThirtyTwoLeafExactCutoff(@TempDir Path tempDir) throws Exception {
-		TreeFile tree = writeSingleBranchTree(tempDir.resolve("data.mdb"), LARGE_RANGE_LEAVES, 1,
-				LmdbBtreeRangeCounterTest::statementKey);
-
-		RangeCountResult result = countRange(tree, statementKey(5), statementKey(36), null, 64);
-
-		assertEquals(32, result.entries);
-		assertTrue(result.exact);
-		assertEquals(RangeCountResult.Mode.EXACT_SMALL_RANGE, result.mode);
-	}
-
-	@Test
 	void samplesAcrossMultipleBranchLevels(@TempDir Path tempDir) throws Exception {
 		TreeFile tree = writeTwoBranchLevelTree(tempDir.resolve("data.mdb"), 4, 32,
 				LmdbBtreeRangeCounterTest::ordinalKey);
@@ -264,16 +217,10 @@ class LmdbBtreeRangeCounterTest {
 
 	private static RangeCountResult countRange(TreeFile tree, byte[] minKey, byte[] maxKey, GroupMatcher matcher)
 			throws IOException {
-		return countRange(tree, minKey, maxKey, matcher, 1);
-	}
-
-	private static RangeCountResult countRange(TreeFile tree, byte[] minKey, byte[] maxKey, GroupMatcher matcher,
-			int sampleMultiplier) throws IOException {
 		try (LmdbDataFile dataFile = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(),
 				tree.meta.pageSize())) {
 			return new LmdbBtreeRangeCounter(dataFile, tree.meta)
-					.estimateRange(tree.db, minKey, minKey.length, maxKey, maxKey.length, matcher,
-							sampleMultiplier);
+					.estimateRange(tree.db, minKey, minKey.length, maxKey, maxKey.length, matcher);
 		}
 	}
 

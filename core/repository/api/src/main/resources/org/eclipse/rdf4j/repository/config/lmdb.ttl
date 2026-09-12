@@ -67,28 +67,6 @@
          # @workbench.field len=16
          lmdb:backgroundRawSamplingMaxMillisPerCycle {%Background raw sampling max millis per cycle|10%} ;
          # @workbench.field len=16
-         lmdb:statementPatternCardinalityCacheSize {%Statement pattern cardinality cache size|8192%} ;
-         # @workbench.field len=16
-         lmdb:statementPatternCardinalityCacheExpiryMillis {%Statement pattern cardinality cache expiry millis|10800000%} ;
-         # @workbench.field len=16
-         lmdb:statementPatternCardinalityCacheMutationRatio {%Statement pattern cardinality cache mutation ratio|0.01%} ;
-         # @workbench.field len=16
-         lmdb:popularStatementPatternCardinalityCacheSize {%Popular statement pattern cardinality cache size|128%} ;
-         # @workbench.field len=16
-         lmdb:popularStatementPatternCardinalityCacheActivationThreshold {%Popular statement pattern cardinality cache activation threshold|1000000%} ;
-         # @workbench.field len=16
-         lmdb:popularStatementPatternCardinalityCacheActivationCheckInterval {%Popular statement pattern cardinality cache activation check interval|10%} ;
-         # @workbench.field len=16
-         lmdb:popularStatementPatternCardinalityCachePromotionAccesses {%Popular statement pattern cardinality cache promotion accesses|3%} ;
-         # @workbench.field len=16
-         lmdb:popularStatementPatternCardinalityCachePromotionWindowMillis {%Popular statement pattern cardinality cache promotion window millis|10800000%} ;
-         # @workbench.field len=16
-         lmdb:popularStatementPatternCardinalityCacheRefreshMillis {%Popular statement pattern cardinality cache refresh millis|3600000%} ;
-         # @workbench.field len=16
-         lmdb:popularStatementPatternCardinalityCacheDecayHalfLifeMillis {%Popular statement pattern cardinality cache decay half life millis|10800000%} ;
-         # @workbench.field len=16
-         lmdb:popularStatementPatternCardinalityCacheRefreshSampleMultiplier {%Popular statement pattern cardinality cache refresh sample multiplier|4%} ;
-         # @workbench.field len=16
          lmdb:forceSync {%Force sync|false|true%} ;
          lmdb:noReadahead {%No readahead|false|true%} ;
          config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STANDARD|STRICT%}";
