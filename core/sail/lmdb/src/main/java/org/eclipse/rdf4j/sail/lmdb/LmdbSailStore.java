@@ -39,6 +39,7 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.IterationConstants;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -741,13 +742,13 @@ class LmdbSailStore implements SailStore {
 			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
-			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+			return IterationConstants.EMPTY_STATEMENT_ITERATION;
 		}
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getId(subj);
 			if (subjID == LmdbValue.UNKNOWN_ID) {
-				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
 		}
 
@@ -755,7 +756,7 @@ class LmdbSailStore implements SailStore {
 		if (pred != null) {
 			predID = valueStore.getId(pred);
 			if (predID == LmdbValue.UNKNOWN_ID) {
-				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
 		}
 
@@ -764,7 +765,7 @@ class LmdbSailStore implements SailStore {
 			objID = valueStore.getId(obj);
 
 			if (objID == LmdbValue.UNKNOWN_ID) {
-				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
 		}
 
