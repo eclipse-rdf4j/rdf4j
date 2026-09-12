@@ -106,6 +106,10 @@
 					<url>https://central.sonatype.com/repository/maven-snapshots/</url>
 				</snapshotRepository>
 			</distributionManagement>
+			<properties>
+				<!-- Allow two hours for Central validation and publishing; the plugin default is 30 minutes. -->
+				<central.publishing.waitMaxTime>7200</central.publishing.waitMaxTime>
+			</properties>
 			<build>
 				<plugins>
 					<plugin>
@@ -117,6 +121,7 @@
 							<publishingServerId>central</publishingServerId>
 							<autoPublish>true</autoPublish>
 							<waitUntil>published</waitUntil>
+							<waitMaxTime>${central.publishing.waitMaxTime}</waitMaxTime>
 							<centralSnapshotsUrl>https://central.sonatype.com/repository/maven-snapshots/</centralSnapshotsUrl>
 						</configuration>
 					</plugin>
