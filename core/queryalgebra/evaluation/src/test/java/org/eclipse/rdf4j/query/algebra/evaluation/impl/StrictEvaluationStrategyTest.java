@@ -77,6 +77,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 public class StrictEvaluationStrategyTest {
 
@@ -129,6 +131,24 @@ public class StrictEvaluationStrategyTest {
 		strategy.optimize(expr, stats, bindings);
 		verify(optimizer1, times(1)).optimize(expr, null, bindings);
 		verify(optimizer2, times(1)).optimize(expr, null, bindings);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 1 })
+	public void volatileOrderKeysPreserveIncomingBindings(int spillThreshold) {
+		DefaultEvaluationStrategy evaluator = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, null,
+				spillThreshold, new EvaluationStatistics());
+		ParsedQuery query = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"SELECT ?x ?__orderKey0 WHERE { VALUES ?x { 1 2 } } ORDER BY (?x + RAND() * 0)", null);
+		QueryBindingSet bindings = new QueryBindingSet();
+		Value incoming = SimpleValueFactory.getInstance().createLiteral(42);
+		bindings.addBinding("__orderKey0", incoming);
+
+		List<BindingSet> rows = QueryResults.asList(evaluator.precompile(query.getTupleExpr()).evaluate(bindings));
+
+		assertEquals(List.of("1", "2"), rows.stream().map(row -> row.getValue("x").stringValue()).toList());
+		assertEquals(List.of(incoming, incoming), rows.stream().map(row -> row.getValue("__orderKey0")).toList());
+		assertEquals(incoming, bindings.getValue("__orderKey0"), "sorting must not mutate incoming bindings");
 	}
 
 	@Test

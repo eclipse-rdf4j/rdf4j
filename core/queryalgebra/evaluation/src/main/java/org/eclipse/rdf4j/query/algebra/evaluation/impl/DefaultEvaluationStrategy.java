@@ -15,7 +15,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -727,11 +726,13 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			// A non-stable ordering expression evaluated inside the comparator gives the same solution
 			// different keys during one sort, violating the comparator contract, and the comparator's
 			// error handling would swallow query-fatal errors. Instead, a stable ordering key is
-			// established once per solution occurrence BEFORE sorting, stored as a synthetic binding (so
-			// it survives parallel comparison and disk spilling), and stripped from the output. A
+			// established once per solution occurrence BEFORE sorting and kept separately from query
+			// bindings, including during parallel comparison and disk spilling. A
 			// row-local expression error leaves the key absent (sorting as an unbound value); a
 			// query-fatal error propagates and fails the query.
-			return prepareVolatileKeyOrder(node, context, vcmp, limit, preparedArg);
+			// The parent must eliminate duplicates before applying its slice. Distinct solution
+			// occurrences can have different keys, so the sort cannot deduplicate or truncate them.
+			return prepareVolatileKeyOrder(node, context, vcmp, reduced ? Long.MAX_VALUE : limit, preparedArg);
 		}
 
 		OrderComparator cmp = new OrderComparator(this, node, vcmp, context);
@@ -742,33 +743,21 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			ValueComparator vcmp, long limit, QueryEvaluationStep preparedArg) {
 
 		List<OrderElem> elements = node.getElements();
-		Set<String> visibleNames = node.getBindingNames();
-		String[] keyNames = new String[elements.size()];
 		QueryValueEvaluationStep[] keySteps = new QueryValueEvaluationStep[elements.size()];
-		String[] compareNames = new String[elements.size()];
 		boolean[] ascending = new boolean[elements.size()];
 		for (int i = 0; i < elements.size(); i++) {
 			OrderElem element = elements.get(i);
 			ascending[i] = element.isAscending();
-			if (element.getExpr() instanceof Var) {
-				compareNames[i] = ((Var) element.getExpr()).getName();
-			} else {
-				String candidate = "__orderKey" + i;
-				while (visibleNames.contains(candidate)) {
-					candidate = "_" + candidate;
-				}
-				keyNames[i] = candidate;
-				compareNames[i] = candidate;
-				keySteps[i] = precompile(element.getExpr(), context);
-			}
+			keySteps[i] = precompile(element.getExpr(), context);
 		}
 
-		// tie-breaking total order over the full (decorated) binding sets; the stored keys take part in the
-		// value comparison, so the tie-break is deterministic
+		// Break ties using only the original query bindings.
 		OrderComparator contentsComparator = new OrderComparator(this, new Order(), vcmp, context);
 		Comparator<BindingSet> comparator = (o1, o2) -> {
-			for (int i = 0; i < compareNames.length; i++) {
-				int compare = vcmp.compare(o1.getValue(compareNames[i]), o2.getValue(compareNames[i]));
+			Value[] leftKeys = ((OrderKeyBindingSet) o1).keys;
+			Value[] rightKeys = ((OrderKeyBindingSet) o2).keys;
+			for (int i = 0; i < keySteps.length; i++) {
+				int compare = vcmp.compare(leftKeys[i], rightKeys[i]);
 				if (compare != 0) {
 					return ascending[i] ? compare : -compare;
 				}
@@ -782,17 +771,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 				@Override
 				protected BindingSet convert(BindingSet sourceRow) {
-					QueryBindingSet withKeys = new QueryBindingSet(sourceRow);
+					OrderKeyBindingSet withKeys = new OrderKeyBindingSet(sourceRow, keySteps.length);
 					for (int i = 0; i < keySteps.length; i++) {
-						if (keySteps[i] == null) {
-							continue;
-						}
 						try {
-							// evaluated against the ORIGINAL solution: keys must not observe each other
-							Value key = keySteps[i].evaluate(sourceRow);
-							if (key != null) {
-								withKeys.setBinding(keyNames[i], key);
-							}
+							withKeys.keys[i] = keySteps[i].evaluate(sourceRow);
 						} catch (ValueExprEvaluationException e) {
 							// row-local: the key stays absent and sorts as an unbound value
 						}
@@ -800,24 +782,30 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 					return withKeys;
 				}
 			};
-			// distinct pre-deduplication is disabled: decorated duplicates carry distinct keys; any parent
-			// DISTINCT/REDUCED node still enforces its own semantics on the stripped output
+			// Keys belong to individual solution occurrences. Leave duplicate elimination to the parent.
 			CloseableIteration<BindingSet> ordered = new OrderIterator(decorated, comparator, limit, false,
 					iterationCacheSyncThreshold);
 			return new ConvertingIteration<>(ordered) {
 
 				@Override
 				protected BindingSet convert(BindingSet decoratedRow) {
-					QueryBindingSet stripped = new QueryBindingSet(decoratedRow);
-					for (String keyName : keyNames) {
-						if (keyName != null) {
-							stripped.removeBinding(keyName);
-						}
-					}
-					return stripped;
+					return new QueryBindingSet(decoratedRow);
 				}
 			};
 		};
+	}
+
+	/** Keeps per-occurrence sort keys serializable without introducing query-visible bindings. */
+	private static final class OrderKeyBindingSet extends QueryBindingSet {
+
+		private static final long serialVersionUID = 1L;
+
+		private final Value[] keys;
+
+		private OrderKeyBindingSet(BindingSet bindings, int keyCount) {
+			super(bindings);
+			keys = new Value[keyCount];
+		}
 	}
 
 	protected QueryEvaluationStep prepare(BindingSetAssignment node, QueryEvaluationContext context)
