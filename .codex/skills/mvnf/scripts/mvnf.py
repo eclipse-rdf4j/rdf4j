@@ -15,6 +15,31 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from maven_workspace import (
+    MavenWorkspaceError,
+    MavenWorkspaceInterrupted,
+    RunRegistration,
+    WorkspacePaths,
+    create_workspace_paths,
+    default_maven_command,
+    find_repo_root,
+    isolation_arguments,
+    load_project_gav,
+    prepare_reactor_tmp_directories,
+    project_build_directory,
+    registered_run,
+    resolve_workspace,
+    tracked_maven_process,
+    validate_forwarded_arguments,
+    validate_inherited_maven_arguments,
+    validate_maven_version,
+    validate_project_maven_config,
+    validate_reused_workspace_trees,
+    validate_threads,
+    validate_workspace_owned_path,
+    write_run_metadata,
+)
+
 
 def _quote_cmd(cmd: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in cmd)
@@ -36,40 +61,15 @@ def _maven_build_stream_filter() -> Callable[[str], bool]:
     return should_print
 
 
-def _find_git_root(start: Path) -> Path | None:
-    for current in [start] + list(start.parents):
-        if (current / ".git").exists():
-            return current
-    return None
-
-
 def _find_repo_root() -> Path:
-    candidates = [Path.cwd(), Path(__file__).resolve()]
-
-    for candidate in candidates:
-        start = candidate if candidate.is_dir() else candidate.parent
-
-        git_root = _find_git_root(start)
-        if git_root is not None and (git_root / "pom.xml").is_file():
-            return git_root
-
-        pom_roots: list[Path] = []
-        for current in [start] + list(start.parents):
-            if (current / "pom.xml").is_file():
-                pom_roots.append(current)
-        if pom_roots:
-            return pom_roots[-1]
-
-    raise SystemExit("Could not locate a Maven repo root (no pom.xml found in parent dirs).")
+    try:
+        return find_repo_root(Path.cwd())
+    except MavenWorkspaceError:
+        return find_repo_root(Path(__file__).resolve())
 
 
 def _default_maven_cmd(repo_root: Path) -> list[str]:
-    mvnw = repo_root / "mvnw"
-    if mvnw.is_file():
-        if os.access(mvnw, os.X_OK):
-            return [str(mvnw)]
-        return ["sh", str(mvnw)]
-    return ["mvn"]
+    return default_maven_command(repo_root)
 
 
 def _resolve_module_dir(repo_root: Path, module: str) -> Path | None:
@@ -101,19 +101,28 @@ def _is_existing_file_path(repo_root: Path, maybe_path: str) -> Path | None:
     return None
 
 
-def _find_test_files(repo_root: Path, class_name: str) -> list[Path]:
+_TEST_DISCOVERY_EXCLUDED_DIRECTORIES = frozenset({".git", ".m2_repo", ".mvnf", "target"})
+
+
+def _find_test_files(search_root: Path, class_name: str) -> list[Path]:
     simple = class_name.split(".")[-1]
-
-    patterns = [
-        f"**/src/test/java/**/{simple}.java",
-        f"**/src/test/java/**/{simple}.kt",
-        f"**/src/test/**/{simple}.java",
-        f"**/src/test/**/{simple}.kt",
-    ]
-
     matches: list[Path] = []
-    for pattern in patterns:
-        matches.extend(repo_root.glob(pattern))
+    expected_names = {f"{simple}.java", f"{simple}.kt"}
+
+    for current_root, directories, files in os.walk(search_root, topdown=True, followlinks=False):
+        directories[:] = sorted(
+            directory
+            for directory in directories
+            if directory not in _TEST_DISCOVERY_EXCLUDED_DIRECTORIES
+        )
+        current_path = Path(current_root)
+        relative_parts = current_path.relative_to(search_root).parts
+        if not any(
+            relative_parts[index : index + 2] == ("src", "test")
+            for index in range(len(relative_parts) - 1)
+        ):
+            continue
+        matches.extend(current_path / filename for filename in files if filename in expected_names)
 
     unique = sorted({match.resolve() for match in matches})
 
@@ -136,20 +145,22 @@ def _find_nearest_module_dir(repo_root: Path, file_path: Path) -> Path:
 
 def _infer_module_and_selector(repo_root: Path, selector: str, forced_module: str | None) -> tuple[str, str]:
     class_part, method_part = _split_test_selector(selector)
+    module_dir: Path | None = None
+    if forced_module is not None:
+        module_dir = _resolve_module_dir(repo_root, forced_module)
+        if module_dir is None:
+            raise SystemExit(f"Module not found (expected a path containing pom.xml): {forced_module}")
 
     test_file = _is_existing_file_path(repo_root, class_part)
     if test_file is None and (class_part.endswith(".java") or class_part.endswith(".kt")):
         raise SystemExit(f"Test file not found: {class_part}")
 
     if test_file is None:
-        matches = _find_test_files(repo_root, class_part)
+        matches = _find_test_files(module_dir or repo_root, class_part)
     else:
         matches = [test_file]
 
-    if forced_module is not None:
-        module_dir = _resolve_module_dir(repo_root, forced_module)
-        if module_dir is None:
-            raise SystemExit(f"Module not found (expected a path containing pom.xml): {forced_module}")
+    if module_dir is not None:
         matches = [m for m in matches if str(m).startswith(str(module_dir.resolve()) + os.sep)]
 
     if not matches:
@@ -189,108 +200,6 @@ def _log_dir(repo_root: Path) -> Path:
     return log_dir
 
 
-@dataclass(frozen=True)
-class _ActiveMvnfRun:
-    pid: int
-    marker: Path
-    started_at: str
-
-
-def _run_registry_dir(repo_root: Path) -> Path:
-    return repo_root / "target" / "mvnf-runs"
-
-
-def _pid_is_running(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-
-
-def _cleanup_mvnf_run(marker: Path) -> None:
-    try:
-        shutil.rmtree(marker)
-    except FileNotFoundError:
-        pass
-    except OSError as exc:
-        print(f"[mvnf] Warning: could not remove run marker {marker}: {exc}")
-
-
-def _active_mvnf_runs(repo_root: Path, current_pid: int) -> list[_ActiveMvnfRun]:
-    registry_dir = _run_registry_dir(repo_root)
-    if not registry_dir.is_dir():
-        return []
-
-    active: list[_ActiveMvnfRun] = []
-    for marker in sorted(registry_dir.iterdir()):
-        if not marker.is_dir():
-            continue
-        try:
-            pid = int(marker.name)
-        except ValueError:
-            continue
-        if pid == current_pid:
-            continue
-        if not _pid_is_running(pid):
-            _cleanup_mvnf_run(marker)
-            continue
-        try:
-            started_at = (marker / "started-at").read_text(encoding="utf-8").strip()
-        except OSError:
-            started_at = "unknown"
-        active.append(_ActiveMvnfRun(pid=pid, marker=marker, started_at=started_at))
-    return active
-
-
-def _create_mvnf_run_marker(repo_root: Path) -> Path:
-    registry_dir = _run_registry_dir(repo_root)
-    registry_dir.mkdir(parents=True, exist_ok=True)
-    marker = registry_dir / str(os.getpid())
-    if marker.exists():
-        _cleanup_mvnf_run(marker)
-    marker.mkdir()
-    (marker / "started-at").write_text(datetime.datetime.now(datetime.UTC).isoformat(), encoding="utf-8")
-    (marker / "argv").write_text(_quote_cmd(sys.argv), encoding="utf-8")
-    return marker
-
-
-def _register_mvnf_run(repo_root: Path, allow_concurrent: bool) -> Path | None:
-    marker = _create_mvnf_run_marker(repo_root)
-    active_runs = _active_mvnf_runs(repo_root, os.getpid())
-    if not active_runs:
-        return marker
-
-    if allow_concurrent:
-        print("[mvnf] Warning: another mvnf.py process appears to be running in this repo.")
-        for active in active_runs:
-            print(
-                f"[mvnf] Active run: pid={active.pid}, started={active.started_at}, "
-                f"marker={active.marker.relative_to(repo_root).as_posix()}"
-            )
-        print("[mvnf] Continuing because --allow-concurrent was supplied.")
-        return marker
-
-    print("[mvnf] Error: another mvnf.py process appears to be running in this repo.")
-    for active in active_runs:
-        print(
-            f"[mvnf] Active run: pid={active.pid}, started={active.started_at}, "
-            f"marker={active.marker.relative_to(repo_root).as_posix()}"
-        )
-    print(
-        "[mvnf] This PID-based check can false-positive after PID reuse or an unclean exit; "
-        "re-run with --allow-concurrent after verifying it is safe."
-    )
-    _cleanup_mvnf_run(marker)
-    return None
-
-
 def _run(
     cmd: list[str],
     cwd: Path,
@@ -299,6 +208,7 @@ def _run(
     stream: bool,
     stream_filter: Callable[[str], bool] | None = None,
     tail_on_success: bool = False,
+    registration: RunRegistration | None = None,
 ) -> tuple[int, list[str]]:
     print(f"\n$ {_quote_cmd(cmd)}")
     print(f"[mvnf] Log: {log_path.relative_to(cwd).as_posix()}")
@@ -308,7 +218,10 @@ def _run(
     log_path.parent.mkdir(parents=True, exist_ok=True)
     returncode = 0
     with log_path.open("w", encoding="utf-8", errors="replace") as log_file:
-        with subprocess.Popen(
+        if registration is None:
+            raise RuntimeError("A registered Maven run is required before starting a child process")
+        with tracked_maven_process(
+            registration,
             cmd,
             cwd=str(cwd),
             stdout=subprocess.PIPE,
@@ -335,10 +248,10 @@ def _run(
 def _print_install_success(repo_root: Path, log_path: Path) -> None:
     elapsed = ""
     try:
-        for line in reversed(log_path.read_text(encoding="utf-8", errors="replace").splitlines()):
-            if "Total time:" in line:
-                elapsed = " " + line.split("Total time:", 1)[1].strip()
-                break
+        with log_path.open("r", encoding="utf-8", errors="replace") as log_file:
+            for line in log_file:
+                if "Total time:" in line:
+                    elapsed = " " + line.split("Total time:", 1)[1].strip()
     except OSError:
         pass
 
@@ -353,9 +266,16 @@ def _delete_logs(log_paths: list[Path]) -> None:
             print(f"[mvnf] Warning: could not delete log {log_path}: {exc}")
 
 
-def _delete_module_test_artifacts(repo_root: Path, module: str) -> bool:
+def _delete_module_test_artifacts(
+    repo_root: Path,
+    module: str,
+    build_directory: Path | None = None,
+    workspace_build_root: Path | None = None,
+) -> bool:
     module_dir = (repo_root / module).resolve()
-    target_dir = module_dir / "target"
+    target_dir = module_dir / "target" if build_directory is None else build_directory
+    if workspace_build_root is not None:
+        validate_workspace_owned_path(target_dir, workspace_build_root)
     if target_dir.is_symlink():
         raise RuntimeError(f"Refusing to delete through symlinked module target: {target_dir}")
 
@@ -383,11 +303,12 @@ def _delete_module_test_artifacts(repo_root: Path, module: str) -> bool:
     return deleted
 
 
-def _list_report_files(repo_root: Path, module: str) -> list[Path]:
+def _list_report_files(repo_root: Path, module: str, build_directory: Path | None = None) -> list[Path]:
     module_dir = (repo_root / module).resolve()
+    target_dir = module_dir / "target" if build_directory is None else build_directory
     report_dirs = [
-        module_dir / "target" / "surefire-reports",
-        module_dir / "target" / "failsafe-reports",
+        target_dir / "surefire-reports",
+        target_dir / "failsafe-reports",
     ]
 
     files: list[Path] = []
@@ -487,9 +408,9 @@ def _parse_xml_report(report: Path, summary: _ReportSummary) -> bool:
     return True
 
 
-def _summarize_reports(repo_root: Path, module: str) -> _ReportSummary:
+def _summarize_reports(repo_root: Path, module: str, build_directory: Path | None = None) -> _ReportSummary:
     summary = _ReportSummary()
-    for report in _list_report_files(repo_root, module):
+    for report in _list_report_files(repo_root, module, build_directory):
         if report.suffix == ".xml":
             _parse_xml_report(report, summary)
         elif report.suffix == ".txt":
@@ -504,13 +425,18 @@ def _format_report_totals(summary: _ReportSummary) -> str:
     )
 
 
-def _print_report_summary(repo_root: Path, module: str, include_failures: bool) -> None:
-    reports = _list_report_files(repo_root, module)
+def _print_report_summary(
+    repo_root: Path,
+    module: str,
+    include_failures: bool,
+    build_directory: Path | None = None,
+) -> None:
+    reports = _list_report_files(repo_root, module, build_directory)
     if not reports:
         print("\n[mvnf] No surefire/failsafe reports found for this module.")
         return
 
-    summary = _summarize_reports(repo_root, module)
+    summary = _summarize_reports(repo_root, module, build_directory)
     print("\n[mvnf] Reports:")
     if summary.tests or summary.parsed_reports:
         print(f"[mvnf] Summary: {_format_report_totals(summary)}")
@@ -564,92 +490,179 @@ def main() -> int:
     parser.add_argument("--tail", type=int, default=200, help="Keep the last N Maven output lines for failures.")
     parser.add_argument("--mvn", help="Override the Maven command (default: mvn or ./mvnw).")
     parser.add_argument(
+        "--workspace",
+        help="Use an isolated named Maven output workspace (or set MVNF_WORKSPACE).",
+    )
+    parser.add_argument(
+        "--threads",
+        help="Positive Maven reactor thread count in workspace mode (default: 1).",
+    )
+    parser.add_argument(
         "--allow-concurrent",
         action="store_true",
-        help="Allow this mvnf run even if another mvnf.py process appears active in the same repo.",
+        help="Deprecated: use --workspace; this flag never bypasses workspace ownership.",
     )
     args = parser.parse_args(argv)
 
-    repo_root = _find_repo_root()
-    mvn_cmd = shlex.split(args.mvn) if args.mvn else _default_maven_cmd(repo_root)
-
-    offline_flag = [] if args.no_offline else ["-o"]
-    common_flags = offline_flag + ["-Dmaven.repo.local=.m2_repo"]
-
-    module_dir = _resolve_module_dir(repo_root, args.target.strip())
-    if args.module is None and module_dir is not None:
-        module = module_dir.relative_to(repo_root).as_posix()
-        test_selector = None
-    else:
-        module, test_selector = _infer_module_and_selector(repo_root, args.target.strip(), args.module)
-
-    print(f"Repo root: {repo_root}")
-    print(f"Module: {module}")
-    if test_selector is not None:
-        print(f"Test selector: {test_selector} ({'failsafe' if args.it else 'surefire'})")
-
-    install_cmd = mvn_cmd + [
-        "-B",
-        "-ntp",
-        "-Dmaven.compiler.showWarnings=false",
-        "-T",
-        "1C",
-    ] + (offline_flag + ["-Dmaven.repo.local=.m2_repo", "-Pquick", "install"])
-
-    verify_cmd = mvn_cmd + common_flags + ["-pl", module]
-    if test_selector is not None:
-        if args.it:
-            verify_cmd.extend(["-PskipUnitTests", f"-Dit.test={test_selector}"])
-        else:
-            verify_cmd.extend(["-DskipITs", f"-Dtest={test_selector}"])
-    verify_cmd.extend(passthrough_args)
-    verify_cmd.append("verify")
-
-    run_id = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
-    log_dir = _log_dir(repo_root)
-    log_paths = [
-        repo_root / "maven-build.log",
-        log_dir / f"{run_id}-verify.log",
-    ]
-
-    run_marker = _register_mvnf_run(repo_root, args.allow_concurrent)
-    if run_marker is None:
-        return 2
-
     try:
-        if _delete_module_test_artifacts(repo_root, module):
-            print("\n[mvnf] Deleted stale module test artifacts.")
+        repo_root = _find_repo_root()
+        workspace_id = resolve_workspace(args.workspace, os.environ)
+        if args.tail < 0:
+            raise MavenWorkspaceError("--tail must be a non-negative integer")
+        if args.allow_concurrent and workspace_id is None:
+            raise MavenWorkspaceError(
+                "--allow-concurrent no longer bypasses shared Maven outputs; use --workspace <id>"
+            )
+        if args.threads is not None and workspace_id is None:
+            raise MavenWorkspaceError("--threads is available only with --workspace")
+        if workspace_id is not None:
+            validate_threads(args.threads)
+            validate_forwarded_arguments(passthrough_args, workspace_mode=True, test_runner=True)
+            validate_inherited_maven_arguments(os.environ, test_runner=True)
+            validate_project_maven_config(repo_root, test_runner=True)
+            if args.allow_concurrent:
+                print(
+                    "[mvnf] Warning: --allow-concurrent is deprecated; the named workspace lock remains enforced."
+                )
+
+        mvn_cmd = shlex.split(args.mvn) if args.mvn else _default_maven_cmd(repo_root)
+        if workspace_id is not None:
+            validate_forwarded_arguments(mvn_cmd[1:], workspace_mode=True, test_runner=True)
+        offline_flag = [] if args.no_offline else ["-o"]
+        module_dir = _resolve_module_dir(repo_root, args.target.strip())
+        if args.module is None and module_dir is not None:
+            module = module_dir.relative_to(repo_root).as_posix()
+            test_selector = None
         else:
-            print("\n[mvnf] No stale module test artifacts found.")
+            module, test_selector = _infer_module_and_selector(repo_root, args.target.strip(), args.module)
 
-        rc, _ = _run(
-            install_cmd,
-            repo_root,
-            args.tail,
-            log_paths[0],
-            args.stream,
-            _maven_build_stream_filter(),
-            args.tail_on_success,
-        )
-        if rc != 0:
-            print("\n[mvnf] Root install failed.")
+        workspace_paths: WorkspacePaths | None = None
+        module_build_directory: Path | None = None
+        if workspace_id is not None:
+            workspace_paths = create_workspace_paths(repo_root, workspace_id)
+            module_gav = load_project_gav(repo_root / module / "pom.xml")
+            module_build_directory = project_build_directory(workspace_paths, module_gav)
+            isolation_flags = isolation_arguments(repo_root, workspace_paths, args.threads)
+            install_flags = isolation_flags
+            verify_common_flags = offline_flag + isolation_flags
+            log_paths = [
+                workspace_paths.log_dir / "install.log",
+                workspace_paths.log_dir / "verify.log",
+            ]
+        else:
+            install_flags = ["-T", "1C", "-Dmaven.repo.local=.m2_repo"]
+            verify_common_flags = offline_flag + ["-Dmaven.repo.local=.m2_repo"]
+            run_id = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
+            log_paths = [repo_root / "maven-build.log", _log_dir(repo_root) / f"{run_id}-verify.log"]
+
+        print(f"Repo root: {repo_root}")
+        print(f"Module: {module}")
+        if workspace_id is not None:
+            print(f"Workspace: {workspace_id} ({workspace_paths.root})")
+        if test_selector is not None:
+            print(f"Test selector: {test_selector} ({'failsafe' if args.it else 'surefire'})")
+
+        install_cmd = mvn_cmd + [
+            "-B",
+            "-ntp",
+            "-Dmaven.compiler.showWarnings=false",
+        ] + install_flags + offline_flag + ["-Pquick", "install"]
+        verify_cmd = mvn_cmd + verify_common_flags + ["-pl", module]
+        if test_selector is not None:
+            if args.it:
+                verify_cmd.extend(["-PskipUnitTests", f"-Dit.test={test_selector}"])
+            else:
+                verify_cmd.extend(["-DskipITs", f"-Dtest={test_selector}"])
+        verify_cmd.extend(passthrough_args)
+        verify_cmd.append("verify")
+
+        with registered_run(repo_root, workspace_id, sys.argv) as registration:
+            if workspace_paths is not None:
+                validate_reused_workspace_trees(workspace_paths)
+                version_log = workspace_paths.log_dir / "maven-version.log"
+                version_rc, _ = _run(
+                    mvn_cmd + ["--version"],
+                    repo_root,
+                    args.tail,
+                    version_log,
+                    False,
+                    registration=registration,
+                )
+                if version_rc != 0:
+                    raise MavenWorkspaceError(f"Maven version probe failed with exit code {version_rc}")
+                try:
+                    version_output = version_log.read_text(encoding="utf-8", errors="replace")
+                except OSError as exc:
+                    raise MavenWorkspaceError(f"Could not read Maven version log {version_log}: {exc}") from exc
+                validate_maven_version(version_output)
+                prepare_reactor_tmp_directories(repo_root, workspace_paths)
+                write_run_metadata(
+                    workspace_paths,
+                    runner="mvnf",
+                    command=sys.argv,
+                    module=module,
+                )
+
+            if _delete_module_test_artifacts(
+                repo_root,
+                module,
+                module_build_directory,
+                None if workspace_paths is None else workspace_paths.build_root,
+            ):
+                print("\n[mvnf] Deleted stale module test artifacts.")
+            else:
+                print("\n[mvnf] No stale module test artifacts found.")
+
+            rc, _ = _run(
+                install_cmd,
+                repo_root,
+                args.tail,
+                log_paths[0],
+                args.stream,
+                _maven_build_stream_filter(),
+                args.tail_on_success,
+                registration,
+            )
+            if rc != 0:
+                print("\n[mvnf] Root install failed.")
+                return rc
+            _print_install_success(repo_root, log_paths[0])
+
+            rc, _ = _run(
+                verify_cmd,
+                repo_root,
+                args.tail,
+                log_paths[1],
+                args.stream,
+                tail_on_success=args.tail_on_success,
+                registration=registration,
+            )
+            if rc == 0:
+                print("\n[mvnf] Tests passed.")
+                _print_report_summary(
+                    repo_root,
+                    module,
+                    include_failures=False,
+                    build_directory=module_build_directory,
+                )
+                if workspace_paths is None and not args.retain_logs:
+                    _delete_logs([log_paths[1]])
+                return 0
+
+            print("\n[mvnf] Tests failed.")
+            _print_report_summary(
+                repo_root,
+                module,
+                include_failures=True,
+                build_directory=module_build_directory,
+            )
             return rc
-        _print_install_success(repo_root, log_paths[0])
-
-        rc, _ = _run(verify_cmd, repo_root, args.tail, log_paths[1], args.stream, tail_on_success=args.tail_on_success)
-        if rc == 0:
-            print("\n[mvnf] Tests passed.")
-            _print_report_summary(repo_root, module, include_failures=False)
-            if not args.retain_logs:
-                _delete_logs([log_paths[1]])
-            return 0
-
-        print("\n[mvnf] Tests failed.")
-        _print_report_summary(repo_root, module, include_failures=True)
-
-        return rc
-    finally:
-        _cleanup_mvnf_run(run_marker)
+    except MavenWorkspaceInterrupted as exc:
+        print(f"[mvnf] Interrupted by signal {exc.signum}; no subsequent Maven phase will start")
+        return 128 + exc.signum
+    except MavenWorkspaceError as exc:
+        print(f"[mvnf] Error: {exc}")
+        return 2
 
 
 if __name__ == "__main__":

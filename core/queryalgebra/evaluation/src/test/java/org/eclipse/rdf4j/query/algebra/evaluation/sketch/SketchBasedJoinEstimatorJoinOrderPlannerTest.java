@@ -323,6 +323,146 @@ class SketchBasedJoinEstimatorJoinOrderPlannerTest {
 	}
 
 	@Test
+	void singletonBindingSetAssignmentIsPlannedBeforeUnrelatedCheapLookup() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		Resource target = VF.createIRI("urn:target");
+		Resource unrelatedSubject = VF.createIRI("urn:unrelated");
+		IRI targetPredicate = VF.createIRI("urn:targetPredicate");
+		IRI unrelatedPredicate = VF.createIRI("urn:unrelatedPredicate");
+		store.add(VF.createStatement(target, targetPredicate, VF.createIRI("urn:targetResult")));
+		store.add(VF.createStatement(unrelatedSubject, unrelatedPredicate, VF.createIRI("urn:unrelatedResult")));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		BindingSetAssignment targetValues = singleVariableValues("target", List.of(target));
+		StatementPattern targetLookup = pattern("target", targetPredicate, "targetResult");
+		StatementPattern unrelatedLookup = new StatementPattern(Var.of("unrelatedSubject", unrelatedSubject),
+				Var.of("unrelatedPredicate", unrelatedPredicate), Var.of("unrelatedResult"));
+		List<TupleExpr> args = List.of(unrelatedLookup, targetLookup, targetValues);
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == targetValues) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(5.0d, 1.0d));
+			}
+			if (factor == targetLookup) {
+				if (boundVars.contains("target")) {
+					return Optional.of(exactDirectLookup(1.0d, 1.0d));
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(100.0d, 100.0d));
+			}
+			if (factor == unrelatedLookup) {
+				return Optional.of(exactDirectLookup(0.25d, 1.0d));
+			}
+			return Optional.empty();
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(args, Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel,
+						List.of())
+				.getPlan()
+				.orElseThrow();
+
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		assertEquals(targetValues, orderedArgs.get(0),
+				"Singleton VALUES should bind before unrelated work, even when not needed yet: " + orderedArgs);
+		assertTrue(orderedArgs.containsAll(args), "Expected every original factor in the selected plan");
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
+	void unusedSingletonBindingSetAssignmentIsPlannedBeforeUnrelatedWork() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		Resource patient = VF.createIRI("urn:patient");
+		IRI typePredicate = VF.createIRI("urn:type");
+		IRI encounterPredicate = VF.createIRI("urn:encounter");
+		store.add(VF.createStatement(patient, typePredicate, VF.createIRI("urn:Patient")));
+		store.add(VF.createStatement(patient, encounterPredicate, VF.createIRI("urn:encounter1")));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		BindingSetAssignment limitValues = singleVariableValues("limit", List.of(VF.createLiteral(55)));
+		StatementPattern patientType = new StatementPattern(Var.of("patient"), Var.of("type", typePredicate),
+				Var.of("patientType", VF.createIRI("urn:Patient")));
+		StatementPattern patientEncounter = pattern("patient", encounterPredicate, "encounter");
+		List<TupleExpr> args = List.of(patientType, patientEncounter, limitValues);
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == limitValues) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+			}
+			if (factor == patientType) {
+				return Optional.of(exactDirectLookup(0.25d, 1.0d));
+			}
+			if (factor == patientEncounter) {
+				if (boundVars.contains("patient")) {
+					return Optional.of(exactDirectLookup(1.0d, 1.0d));
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(100.0d, 100.0d));
+			}
+			return Optional.empty();
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(args, Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel,
+						List.of())
+				.getPlan()
+				.orElseThrow();
+
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		assertEquals(limitValues, orderedArgs.get(0),
+				"Unused singleton VALUES should still bind before unrelated work: " + orderedArgs);
+		assertTrue(orderedArgs.containsAll(args), "Expected every original factor in the selected plan");
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
+	void emptySingletonBindingSetAssignmentIsPlannedBeforeUnrelatedWork() {
+		StubSketchStatementSource store = new StubSketchStatementSource();
+		Resource patient = VF.createIRI("urn:patient");
+		IRI typePredicate = VF.createIRI("urn:type");
+		IRI encounterPredicate = VF.createIRI("urn:encounter");
+		store.add(VF.createStatement(patient, typePredicate, VF.createIRI("urn:Patient")));
+		store.add(VF.createStatement(patient, encounterPredicate, VF.createIRI("urn:encounter1")));
+
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		estimator.rebuild();
+
+		BindingSetAssignment emptyValues = new BindingSetAssignment();
+		emptyValues.setBindingSets(List.of(new QueryBindingSet()));
+		StatementPattern patientType = new StatementPattern(Var.of("patient"), Var.of("type", typePredicate),
+				Var.of("patientType", VF.createIRI("urn:Patient")));
+		StatementPattern patientEncounter = pattern("patient", encounterPredicate, "encounter");
+		List<TupleExpr> args = List.of(patientType, patientEncounter, emptyValues);
+		JoinFactorCostModel costModel = (factor, boundVars) -> {
+			if (factor == emptyValues) {
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(1.0d, 1.0d));
+			}
+			if (factor == patientType) {
+				return Optional.of(exactDirectLookup(0.25d, 1.0d));
+			}
+			if (factor == patientEncounter) {
+				if (boundVars.contains("patient")) {
+					return Optional.of(exactDirectLookup(1.0d, 1.0d));
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(100.0d, 100.0d));
+			}
+			return Optional.empty();
+		};
+
+		JoinOrderPlanner.JoinOrderPlan plan = estimator
+				.planJoinOrderAttempt(args, Set.of(), JoinOrderPlanner.Algorithm.DYNAMIC_PROGRAMMING, costModel,
+						List.of())
+				.getPlan()
+				.orElseThrow();
+
+		List<TupleExpr> orderedArgs = plan.getOrderedArgs();
+		assertEquals(emptyValues, orderedArgs.get(0),
+				"Empty singleton VALUES should still bind before unrelated work: " + orderedArgs);
+		assertTrue(orderedArgs.containsAll(args), "Expected every original factor in the selected plan");
+		assertPlanWorkMatchesStepSum(plan);
+	}
+
+	@Test
 	void nestedDeferredFilterWithZeroPassRatioStillPaysRepeatedWork() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI pValue = VF.createIRI("urn:pValue");

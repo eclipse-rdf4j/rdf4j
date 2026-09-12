@@ -1,0 +1,4 @@
+interface:
+  display_name: "JMH Benchmark Compare"
+  short_description: "Compare JMH benchmark outputs and export diff reports"
+  default_prompt: "Parse JMH outputs, compare overlapping benchmarks, and export sortable diff tables in requested formats."

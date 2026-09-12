@@ -134,6 +134,39 @@ public class LmdbStoreSchema {
 	 */
 	public final static IRI INLINE_LITERALS;
 
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#orderedNumericIds</tt>
+	 */
+	public final static IRI ORDERED_NUMERIC_IDS;
+
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#directAdjacencyMode</tt>
+	 */
+	public final static IRI DIRECT_ADJACENCY_MODE;
+
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#directAdjacencyCoverage</tt>
+	 */
+	public final static IRI DIRECT_ADJACENCY_COVERAGE;
+
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#directAdjacencyPredicate</tt> (repeated once per selected IRI)
+	 */
+	public final static IRI DIRECT_ADJACENCY_PREDICATE;
+
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#directAdjacencyMaxBytes</tt>
+	 */
+	public final static IRI DIRECT_ADJACENCY_MAX_BYTES;
+
+	/** Unpublished-delta admission threshold in bytes; zero selects AUTO. */
+	public final static IRI DIRECT_ADJACENCY_BACKLOG_MAX_BYTES;
+
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#directAdjacencyBuildOnStart</tt>
+	 */
+	public final static IRI DIRECT_ADJACENCY_BUILD_ON_START;
+
 	static {
 		ValueFactory factory = SimpleValueFactory.getInstance();
 		TRIPLE_INDEXES = factory.createIRI(NAMESPACE, "tripleIndexes");
@@ -167,5 +200,12 @@ public class LmdbStoreSchema {
 		BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = factory.createIRI(NAMESPACE,
 				"backgroundRawSamplingMaxMillisPerCycle");
 		INLINE_LITERALS = factory.createIRI(NAMESPACE, "inlineLiterals");
+		ORDERED_NUMERIC_IDS = factory.createIRI(NAMESPACE, "orderedNumericIds");
+		DIRECT_ADJACENCY_MODE = factory.createIRI(NAMESPACE, "directAdjacencyMode");
+		DIRECT_ADJACENCY_COVERAGE = factory.createIRI(NAMESPACE, "directAdjacencyCoverage");
+		DIRECT_ADJACENCY_PREDICATE = factory.createIRI(NAMESPACE, "directAdjacencyPredicate");
+		DIRECT_ADJACENCY_MAX_BYTES = factory.createIRI(NAMESPACE, "directAdjacencyMaxBytes");
+		DIRECT_ADJACENCY_BACKLOG_MAX_BYTES = factory.createIRI(NAMESPACE, "directAdjacencyBacklogMaxBytes");
+		DIRECT_ADJACENCY_BUILD_ON_START = factory.createIRI(NAMESPACE, "directAdjacencyBuildOnStart");
 	}
 }

@@ -1,0 +1,301 @@
+Maven packaging skipped by --no-build.
+Running benchmark with jar /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 4 iterations, 4 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = MEDICAL_RECORDS, z_queryIndex = 0, z_z_janinoEnabled = true)
+# Run progress: 0.00% complete, ETA 00:04:02
+# Fork: 1 of 1
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+### Original Query ###
+1.219 ms/op
+# Warmup Iteration   2: 0.626 ms/op
+# Warmup Iteration   3: 0.593 ms/op
+# Warmup Iteration   4: 0.623 ms/op
+Iteration   1: 0.583 ms/op
+Iteration   2: 0.589 ms/op
+### Telemetry Query ###
+0.595 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  0.589 ±(99.9%) 0.105 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 4 iterations, 4 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = MEDICAL_RECORDS, z_queryIndex = 1, z_z_janinoEnabled = true)
+# Run progress: 9.09% complete, ETA 00:03:44
+# Fork: 1 of 1
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+### Original Query ###
+10.584 ms/op
+# Warmup Iteration   2: 6.278 ms/op
+# Warmup Iteration   3: 6.169 ms/op
+# Warmup Iteration   4: 6.071 ms/op
+Iteration   1: 6.029 ms/op
+Iteration   2: 6.044 ms/op
+### Telemetry Query ###
+6.054 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  6.042 ±(99.9%) 0.232 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 4 iterations, 4 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = MEDICAL_RECORDS, z_queryIndex = 2, z_z_janinoEnabled = true)
+# Run progress: 18.18% complete, ETA 00:03:22
+# Fork: 1 of 1
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+### Original Query ###
+0.589 ms/op
+# Warmup Iteration   2: 0.321 ms/op
+# Warmup Iteration   3: 0.320 ms/op
+# Warmup Iteration   4: 0.319 ms/op
+Iteration   1: 0.320 ms/op
+Iteration   2: 0.320 ms/op
+### Telemetry Query ###
+0.319 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  0.320 ±(99.9%) 0.008 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 4 iterations, 4 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = MEDICAL_RECORDS, z_queryIndex = 3, z_z_janinoEnabled = true)
+# Run progress: 27.27% complete, ETA 00:02:59
+# Fork: 1 of 1
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+### Original Query ###
+3.983 ms/op
+# Warmup Iteration   2: 1.521 ms/op
+# Warmup Iteration   3: 1.421 ms/op
+# Warmup Iteration   4: 1.389 ms/op
+Iteration   1: 1.369 ms/op
+Iteration   2: 1.359 ms/op
+### Telemetry Query ###
+1.358 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  1.362 ±(99.9%) 0.112 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 4 iterations, 4 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = MEDICAL_RECORDS, z_queryIndex = 4, z_z_janinoEnabled = true)
+# Run progress: 36.36% complete, ETA 00:02:37
+# Fork: 1 of 1
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+### Original Query ###
+10.154 ms/op
+# Warmup Iteration   2: 5.096 ms/op
+# Warmup Iteration   3: 5.072 ms/op
+# Warmup Iteration   4: 5.014 ms/op
+Iteration   1: 4.986 ms/op
+Iteration   2: 4.972 ms/op
+### Telemetry Query ###
+4.956 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  4.971 ±(99.9%) 0.267 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 4 iterations, 4 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = MEDICAL_RECORDS, z_queryIndex = 5, z_z_janinoEnabled = true)
+# Run progress: 45.45% complete, ETA 00:02:14
+# Fork: 1 of 1
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+### Original Query ###
+1.312 ms/op
+# Warmup Iteration   2: 0.720 ms/op
+# Warmup Iteration   3: 0.700 ms/op
+# Warmup Iteration   4: 0.691 ms/op
+Iteration   1: 0.692 ms/op
+Iteration   2: 0.696 ms/op
+### Telemetry Query ###
+0.693 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  0.694 ±(99.9%) 0.033 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 4 iterations, 4 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = MEDICAL_RECORDS, z_queryIndex = 6, z_z_janinoEnabled = true)
+# Run progress: 54.55% complete, ETA 00:01:52
+# Fork: 1 of 1
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+### Original Query ###
+9.513 ms/op
+# Warmup Iteration   2: 4.160 ms/op
+# Warmup Iteration   3: 4.084 ms/op
+# Warmup Iteration   4: 4.038 ms/op
+Iteration   1: 4.013 ms/op
+Iteration   2: 3.986 ms/op
+### Telemetry Query ###
+3.981 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  3.994 ±(99.9%) 0.311 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 4 iterations, 4 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = MEDICAL_RECORDS, z_queryIndex = 7, z_z_janinoEnabled = true)
+# Run progress: 63.64% complete, ETA 00:01:29
+# Fork: 1 of 1
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+### Original Query ###
+3.680 ms/op
+# Warmup Iteration   2: 1.996 ms/op
+# Warmup Iteration   3: 1.954 ms/op
+# Warmup Iteration   4: 1.922 ms/op
+Iteration   1: 1.923 ms/op
+Iteration   2: 1.917 ms/op
+### Telemetry Query ###
+1.897 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  1.912 ±(99.9%) 0.242 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 4 iterations, 4 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = MEDICAL_RECORDS, z_queryIndex = 8, z_z_janinoEnabled = true)
+# Run progress: 72.73% complete, ETA 00:01:07
+# Fork: 1 of 1
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+### Original Query ###
+12.302 ms/op
+# Warmup Iteration   2: 4.083 ms/op
+# Warmup Iteration   3: 3.955 ms/op
+# Warmup Iteration   4: 3.912 ms/op
+Iteration   1: 3.869 ms/op
+Iteration   2: 3.866 ms/op
+### Telemetry Query ###
+3.896 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  3.877 ±(99.9%) 0.303 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 4 iterations, 4 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = MEDICAL_RECORDS, z_queryIndex = 9, z_z_janinoEnabled = true)
+# Run progress: 81.82% complete, ETA 00:00:44
+# Fork: 1 of 1
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+### Original Query ###
+19.113 ms/op
+# Warmup Iteration   2: 7.315 ms/op
+# Warmup Iteration   3: 7.229 ms/op
+# Warmup Iteration   4: 7.186 ms/op
+Iteration   1: 7.143 ms/op
+Iteration   2: 7.165 ms/op
+### Telemetry Query ###
+7.204 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  7.171 ±(99.9%) 0.572 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx16G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 4 iterations, 4 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery
+# Parameters: (themeName = MEDICAL_RECORDS, z_queryIndex = 10, z_z_janinoEnabled = true)
+# Run progress: 90.91% complete, ETA 00:00:22
+# Fork: 1 of 1
+# Warmup Iteration   1: /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/lmdb-theme-query-benchmark/complete
+### Original Query ###
+12.107 ms/op
+# Warmup Iteration   2: 6.918 ms/op
+# Warmup Iteration   3: 6.829 ms/op
+# Warmup Iteration   4: 6.774 ms/op
+Iteration   1: 6.750 ms/op
+Iteration   2: 6.736 ms/op
+### Telemetry Query ###
+6.702 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  6.729 ±(99.9%) 0.445 ms/op [Average]
+# Run complete. Total time: 00:04:06
+Benchmark                             (themeName)  (z_queryIndex)  (z_z_janinoEnabled)  Mode  Cnt  Score   Error  Units
+ThemeQueryBenchmark.executeQuery  MEDICAL_RECORDS               0                 true  avgt    3  0.589 ± 0.105  ms/op
+ThemeQueryBenchmark.executeQuery  MEDICAL_RECORDS               1                 true  avgt    3  6.042 ± 0.232  ms/op
+ThemeQueryBenchmark.executeQuery  MEDICAL_RECORDS               2                 true  avgt    3  0.320 ± 0.008  ms/op
+ThemeQueryBenchmark.executeQuery  MEDICAL_RECORDS               3                 true  avgt    3  1.362 ± 0.112  ms/op
+ThemeQueryBenchmark.executeQuery  MEDICAL_RECORDS               4                 true  avgt    3  4.971 ± 0.267  ms/op
+ThemeQueryBenchmark.executeQuery  MEDICAL_RECORDS               5                 true  avgt    3  0.694 ± 0.033  ms/op
+ThemeQueryBenchmark.executeQuery  MEDICAL_RECORDS               6                 true  avgt    3  3.994 ± 0.311  ms/op
+ThemeQueryBenchmark.executeQuery  MEDICAL_RECORDS               7                 true  avgt    3  1.912 ± 0.242  ms/op
+ThemeQueryBenchmark.executeQuery  MEDICAL_RECORDS               8                 true  avgt    3  3.877 ± 0.303  ms/op
+ThemeQueryBenchmark.executeQuery  MEDICAL_RECORDS               9                 true  avgt    3  7.171 ± 0.572  ms/op
+ThemeQueryBenchmark.executeQuery  MEDICAL_RECORDS              10                 true  avgt    3  6.729 ± 0.445  ms/op

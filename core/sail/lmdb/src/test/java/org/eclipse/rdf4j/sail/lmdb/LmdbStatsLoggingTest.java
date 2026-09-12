@@ -30,8 +30,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Level;
@@ -100,28 +100,33 @@ class LmdbStatsLoggingTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(booleans = { false, true })
-	void logsBeforeNativeWritesAndAfterCommit(boolean threaded) throws IOException {
-		try (LmdbSailStore store = new LmdbSailStore(dataDir, new StoreProperties(), config(), false)) {
+	@CsvSource({ "false,0", "true,0", "false,1024", "true,1024" })
+	void logsBeforeNativeWritesAndAfterCommit(boolean threaded, int bulkOperationSize) throws IOException {
+		LmdbStoreConfig config = config().setBulkOperationSize(bulkOperationSize);
+		try (LmdbSailStore store = new LmdbSailStore(dataDir, new StoreProperties(), config, false)) {
 			store.enableMultiThreading = threaded;
 			LmdbStats before = store.getLmdbStats();
 			try (SailSink sink = store.getExplicitSailSource().sink(IsolationLevels.NONE)) {
 				sink.approve(RDF.TYPE, RDF.TYPE, RDF.PROPERTY, RDFS.RESOURCE);
 				sink.approve(RDFS.LABEL, RDF.TYPE, RDF.PROPERTY, RDFS.RESOURCE);
-				assertThat(snapshots(Level.TRACE)).containsExactly(before);
-				assertThat(events(Level.TRACE).getFirst().getFormattedMessage())
-						.contains("before writes", dataDir.toString());
+				if (bulkOperationSize == 0) {
+					assertThat(snapshots(Level.TRACE)).containsExactly(before);
+				} else {
+					assertThat(snapshots(Level.TRACE)).isEmpty();
+				}
 				sink.prepare();
-				assertThat(snapshots(Level.TRACE)).containsExactly(before);
+				assertThat(snapshots(Level.TRACE)).hasSize(bulkOperationSize == 0 ? 1 : 0);
 				sink.flush();
 				LmdbStats after = store.getLmdbStats();
 				assertThat(snapshots(Level.TRACE)).containsExactly(before, after);
+				assertThat(events(Level.TRACE).getFirst().getFormattedMessage())
+						.contains("before writes", dataDir.toString());
 				assertThat(after.valueDatabases().get("main").entries())
 						.isGreaterThan(before.valueDatabases().get("main").entries());
 				assertThat(after.tripleDatabases().get("contexts").entries()).isEqualTo(1);
 				assertThat(events(Level.TRACE).getLast().getFormattedMessage()).contains("after commit");
 
-				// A reused sink starts a new native transaction and needs a fresh pair of snapshots.
+				// Once the store is populated, approval starts the next native transaction even when its writes buffer.
 				sink.approve(RDFS.COMMENT, RDF.TYPE, RDF.PROPERTY, RDFS.RESOURCE);
 				assertThat(snapshots(Level.TRACE)).containsExactly(before, after, after);
 				sink.flush();
@@ -158,7 +163,9 @@ class LmdbStatsLoggingTest {
 			connection.begin(isolation);
 			connection.setNamespace("rdf", RDF.NAMESPACE);
 			connection.commit();
-			assertWriteSnapshots(before, store.getLmdbStats());
+			// Namespace-only changes do not open a native write transaction.
+			assertThat(store.getLmdbStats()).isEqualTo(before);
+			assertThat(snapshots(Level.TRACE)).isEmpty();
 
 			appender.list.clear();
 			connection.begin(isolation);
@@ -174,7 +181,9 @@ class LmdbStatsLoggingTest {
 
 	@Test
 	void rollbackDoesNotLogACommittedSnapshot() throws IOException {
-		try (LmdbSailStore store = new LmdbSailStore(dataDir, new StoreProperties(), config(), false)) {
+		// Exercise a native rollback, after writes have reached LMDB rather than remaining in the approval buffer.
+		LmdbStoreConfig config = config().setBulkOperationSize(0);
+		try (LmdbSailStore store = new LmdbSailStore(dataDir, new StoreProperties(), config, false)) {
 			store.enableMultiThreading = false;
 			LmdbStats before = store.getLmdbStats();
 			try (SailSink sink = store.getExplicitSailSource().sink(IsolationLevels.NONE)) {

@@ -15,6 +15,8 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
@@ -29,6 +31,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxreaders;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -41,8 +44,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -436,6 +441,132 @@ public class TxnManagerTest {
 			readers.forEach(TxnManager.Txn::close);
 			closeManager();
 			mdb_env_close(env);
+		}
+	}
+
+	@Test
+	public void closeDoesNotUseTransactionReadLockAsReaderBarrier(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 2);
+		TxnManager manager = new TxnManager(env, TxnManager.Mode.ABORT);
+		int available = manager.availableReadTxnSlots(2, 0);
+		TxnManager.Txn txn = manager.createReadTxn();
+		long readStamp = txn.lockManager().readLock();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<?> closeTask = executor.submit(txn::close);
+		try {
+			closeTask.get(1, TimeUnit.SECONDS);
+			assertEquals(0L, txn.get(), "a closed transaction must not expose its aborted native handle");
+			assertEquals(available, manager.availableReadTxnSlots(2, 0),
+					"Txn.close() must return the reader permit while the transaction read lock remains held");
+		} finally {
+			txn.lockManager().unlockRead(readStamp);
+			if (!closeTask.isDone()) {
+				closeTask.get(5, TimeUnit.SECONDS);
+			}
+			executor.shutdownNow();
+			manager.close();
+			mdb_env_close(env);
+		}
+	}
+
+	@Test
+	public void pinnedReadTxnFamilyReadsOneRevisionForEverySibling(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 8);
+		TxnManager.Txn[] transactions = null;
+
+		try {
+			TxnManager txnManager = new TxnManager(env, TxnManager.Mode.RESET);
+			AtomicLong suppliedRevision = new AtomicLong(41);
+			transactions = txnManager.createReadTxnPinnedFamily(4, suppliedRevision::getAndIncrement);
+
+			assertEquals(42, suppliedRevision.get(), "the family must sample the data revision exactly once");
+			long snapshotId = mdb_txn_id(transactions[0].get());
+			for (TxnManager.Txn transaction : transactions) {
+				assertEquals(41, transaction.snapshotRevision());
+				assertEquals(snapshotId, mdb_txn_id(transaction.get()));
+			}
+		} finally {
+			if (transactions != null) {
+				for (int i = transactions.length - 1; i >= 0; i--) {
+					transactions[i].close();
+				}
+			}
+			mdb_env_close(env);
+		}
+	}
+
+	@Test
+	public void pinnedReadTxnClosesWhenRevisionSupplierThrows(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 1);
+		TxnManager.Txn replacementTxn = null;
+
+		try {
+			TxnManager txnManager = new TxnManager(env, TxnManager.Mode.RESET);
+			IllegalStateException revisionFailure = new IllegalStateException("synthetic revision failure");
+
+			assertSame(revisionFailure,
+					assertThrows(IllegalStateException.class,
+							() -> txnManager.createReadTxnPinned(() -> {
+								throw revisionFailure;
+							})));
+
+			replacementTxn = txnManager.createReadTxn();
+		} finally {
+			if (replacementTxn != null) {
+				replacementTxn.close();
+			}
+			mdb_env_close(env);
+		}
+	}
+
+	@Test
+	void reusedPinnedReaderDoesNotRetainInvalidationOrDictionaryView(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
+			TxnManager manager = fixture.manager;
+			long version;
+			Object dictionaryView;
+			Object dictionaryGeneration = new Object();
+			try (TxnManager.Txn pinned = manager.createReadTxnPinned(() -> 41)) {
+				assertEquals(41, manager.minPinnedSnapshotRevision());
+				dictionaryView = pinned.valueLookupScope(dictionaryGeneration);
+				manager.deactivate();
+				manager.activate();
+				assertThrows(SailException.class, pinned::ensureSnapshotValid);
+				version = pinned.version();
+			}
+			assertEquals(Long.MAX_VALUE, manager.minPinnedSnapshotRevision());
+			try (TxnManager.Txn ordinary = manager.createReadTxn()) {
+				ordinary.ensureSnapshotValid();
+				assertEquals(-1, ordinary.snapshotRevision());
+				assertTrue(ordinary.version() > version, "reused readers must rebind cached cursors");
+				assertNotSame(dictionaryView, ordinary.valueLookupScope(dictionaryGeneration));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
+	void failedPinnedFamilyReturnsAllReservedReaderSlots(TxnManager.Mode mode, @TempDir Path dataDir)
+			throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode)) {
+			TxnManager manager = fixture.manager;
+			IllegalStateException failure = new IllegalStateException("synthetic family revision failure");
+			assertSame(failure, assertThrows(IllegalStateException.class,
+					() -> manager.createReadTxnPinnedFamily(4, () -> {
+						throw failure;
+					})));
+			assertEquals(TxnManager.POOL_SIZE - 1, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
+			TxnManager.Txn[] family = manager.createReadTxnPinnedFamily(TxnManager.POOL_SIZE - 1, () -> 42);
+			try {
+				assertEquals(0, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
+				assertEquals(42, manager.minPinnedSnapshotRevision());
+			} finally {
+				for (TxnManager.Txn transaction : family) {
+					transaction.close();
+				}
+			}
+			assertEquals(Long.MAX_VALUE, manager.minPinnedSnapshotRevision());
+			assertEquals(TxnManager.POOL_SIZE - 1, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
 		}
 	}
 

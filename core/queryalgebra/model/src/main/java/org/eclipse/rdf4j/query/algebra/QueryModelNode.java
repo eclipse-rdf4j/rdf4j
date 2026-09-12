@@ -268,6 +268,13 @@ public interface QueryModelNode extends Cloneable, Serializable {
 	}
 
 	@Experimental
+	default long incrementLongMetricActual(String metricName) {
+		long next = Math.max(0L, getLongMetricActual(metricName)) + 1L;
+		setLongMetricActual(metricName, next);
+		return next;
+	}
+
+	@Experimental
 	default Map<String, Double> getDoubleMetricsActual() {
 		return Collections.emptyMap();
 	}
@@ -294,6 +301,14 @@ public interface QueryModelNode extends Cloneable, Serializable {
 
 	@Experimental
 	default void setStringMetricActual(String metricName, String metricValue) {
+		// no-op
+	}
+
+	/**
+	 * Clears runtime measurements from an earlier evaluation while retaining estimates and planned metrics.
+	 */
+	@Experimental
+	default void clearMetricsActual() {
 		// no-op
 	}
 
@@ -349,6 +364,16 @@ public interface QueryModelNode extends Cloneable, Serializable {
 
 	@Experimental
 	default void setRuntimeTelemetryEnabled(boolean runtimeTelemetryEnabled) {
+		// no-op
+	}
+
+	@Experimental
+	default boolean isExecutionSummaryEnabled() {
+		return false;
+	}
+
+	@Experimental
+	default void setExecutionSummaryEnabled(boolean executionSummaryEnabled) {
 		// no-op
 	}
 

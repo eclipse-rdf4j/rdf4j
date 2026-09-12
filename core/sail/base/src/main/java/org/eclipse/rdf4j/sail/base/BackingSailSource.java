@@ -10,6 +10,13 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.base;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.function.Consumer;
+
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -19,6 +26,16 @@ import org.eclipse.rdf4j.sail.SailException;
  * @author James Leigh
  */
 public abstract class BackingSailSource implements SailSource {
+
+	protected List<Statement> bufferStatementsForBranch(Iterable<? extends Statement> statements, int expectedSize,
+			Consumer<Resource> contextConsumer) {
+		ArrayList<Statement> buffered = new ArrayList<>(expectedSize);
+		for (Statement statement : statements) {
+			buffered.add(statement);
+			contextConsumer.accept(statement.getContext());
+		}
+		return Collections.unmodifiableList(buffered);
+	}
 
 	@Override
 	public SailSource fork() {

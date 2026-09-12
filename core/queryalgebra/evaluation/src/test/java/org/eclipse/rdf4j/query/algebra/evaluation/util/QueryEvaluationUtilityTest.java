@@ -21,18 +21,38 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Sample;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.BooleanCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.DateTimeCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.DecimalCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.DoubleCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FloatCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.IntegerCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.StringCast;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -122,6 +142,92 @@ public class QueryEvaluationUtilityTest {
 
 		arg1unknown = f.createLiteral("foo", f.createIRI("http://example.com/datatype"));
 		arg2unknown = f.createLiteral("bar", f.createIRI("http://example.com/datatype"));
+	}
+
+	@Test
+	public void registryReplacementOfNowIsNotClassifiedAsQueryStable() {
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		Function replacement = new ReplacementNowFunction();
+		Optional<Function> previous = registry.add(replacement);
+		try {
+			assertFalse(QueryEvaluationUtility.isRepeatable(new FunctionCall("NOW")));
+		} finally {
+			registry.remove(replacement);
+			previous.ifPresent(registry::add);
+		}
+	}
+
+	@Test
+	public void serviceIsNotRepeatable() {
+		Service service = new Service(Var.of("serviceRef"), new SingletonSet(), "{ VALUES ?x { 1 } }", Map.of(),
+				null, false);
+
+		assertFalse(QueryEvaluationUtility.isRepeatable(service));
+	}
+
+	@Test
+	public void tupleFunctionCallIsNotRepeatable() {
+		TupleFunctionCall call = new TupleFunctionCall();
+		call.setURI("urn:test:tuple-function");
+		call.addArg(new ValueConstant(f.createLiteral("input")));
+		call.addResultVar(Var.of("result"));
+
+		assertFalse(QueryEvaluationUtility.isRepeatable(call));
+	}
+
+	@Test
+	public void sampleIsNotRepeatable() {
+		assertFalse(QueryEvaluationUtility.isRepeatable(new Sample(Var.of("value"))));
+	}
+
+	@Test
+	public void customAggregateFunctionCallIsNotRepeatable() {
+		AggregateFunctionCall call = new AggregateFunctionCall(List.of(Var.of("value")),
+				"urn:test:aggregate-function", false);
+
+		assertFalse(QueryEvaluationUtility.isRepeatable(call));
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	public void deprecatedBooleanCastIsRepeatableWhenRegistered() {
+		assertRegisteredFunctionIsRepeatable(new BooleanCast());
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	public void deprecatedDateTimeCastIsRepeatableWhenRegistered() {
+		assertRegisteredFunctionIsRepeatable(new DateTimeCast());
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	public void deprecatedDecimalCastIsRepeatableWhenRegistered() {
+		assertRegisteredFunctionIsRepeatable(new DecimalCast());
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	public void deprecatedDoubleCastIsRepeatableWhenRegistered() {
+		assertRegisteredFunctionIsRepeatable(new DoubleCast());
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	public void deprecatedFloatCastIsRepeatableWhenRegistered() {
+		assertRegisteredFunctionIsRepeatable(new FloatCast());
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	public void deprecatedIntegerCastIsRepeatableWhenRegistered() {
+		assertRegisteredFunctionIsRepeatable(new IntegerCast());
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	public void deprecatedStringCastIsRepeatableWhenRegistered() {
+		assertRegisteredFunctionIsRepeatable(new StringCast());
 	}
 
 	@Test
@@ -726,5 +832,33 @@ public class QueryEvaluationUtilityTest {
 			}
 		};
 		return right;
+	}
+
+	private static void assertRegisteredFunctionIsRepeatable(Function function) {
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		Optional<Function> previous = registry.add(function);
+		try {
+			assertSame(function, registry.get(function.getURI()).orElseThrow());
+			assertTrue(QueryEvaluationUtility.isRepeatable(function), function.getClass().getName());
+		} finally {
+			if (previous.isPresent()) {
+				registry.add(previous.orElseThrow());
+			} else {
+				registry.remove(function);
+			}
+		}
+	}
+
+	private static final class ReplacementNowFunction implements Function {
+
+		@Override
+		public String getURI() {
+			return "NOW";
+		}
+
+		@Override
+		public Value evaluate(ValueFactory valueFactory, Value... args) {
+			return valueFactory.createLiteral("replacement");
+		}
 	}
 }

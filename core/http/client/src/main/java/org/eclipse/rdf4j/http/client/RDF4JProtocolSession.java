@@ -48,6 +48,8 @@ import org.eclipse.rdf4j.http.client.spi.HttpUtils;
 import org.eclipse.rdf4j.http.client.spi.NameValuePair;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.http.client.spi.UriBuilder;
+import org.eclipse.rdf4j.http.protocol.LmdbForceableStrategy;
+import org.eclipse.rdf4j.http.protocol.LmdbRuntimeProperty;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -84,6 +86,7 @@ import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -96,6 +99,11 @@ import tools.jackson.databind.ObjectMapper;
  */
 public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	private static final ObjectMapper EXPLANATION_MAPPER = new ObjectMapper();
+	private static final ObjectMapper RUNTIME_PROPERTY_MAPPER = new ObjectMapper();
+	private static final TypeReference<List<LmdbRuntimeProperty>> RUNTIME_PROPERTY_LIST = new TypeReference<>() {
+	};
+	private static final TypeReference<List<LmdbForceableStrategy>> FORCEABLE_STRATEGY_LIST = new TypeReference<>() {
+	};
 
 	/**
 	 * How long the client should wait before sending another PING to the server
@@ -113,6 +121,8 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	private ScheduledFuture<?> ping;
 
 	private long pingDelay = PINGDELAY;
+
+	private String forcedLmdbExecutionStrategy;
 
 	public RDF4JProtocolSession(RDF4JHttpClient client, ExecutorService executor) {
 		super(client, executor);
@@ -255,6 +265,74 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			return HttpUtils.toString(response);
 		} catch (RepositoryException e) {
 			throw e;
+		} catch (RDF4JException e) {
+			throw new RepositoryException(e);
+		}
+	}
+
+	/** Lists the live LMDB feature catalog exposed by this server. */
+	public List<LmdbRuntimeProperty> getLmdbRuntimeProperties()
+			throws IOException, RepositoryException, UnauthorizedException {
+		checkServerURL();
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.get(Protocol.getLmdbRuntimePropertiesLocation(serverURL)))
+						.header(Protocol.ACCEPT_PARAM_NAME, "application/json")
+						.build();
+		try (HttpResponse response = executeOK(method)) {
+			return RUNTIME_PROPERTY_MAPPER.readValue(response.getBodyAsStream(), RUNTIME_PROPERTY_LIST);
+		} catch (RDF4JException e) {
+			throw new RepositoryException(e);
+		}
+	}
+
+	/** Lists the LMDB query-execution strategies this server allows a single query to pin. */
+	public List<LmdbForceableStrategy> getLmdbForceableStrategies()
+			throws IOException, RepositoryException, UnauthorizedException {
+		checkServerURL();
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.get(Protocol.getLmdbForceableStrategiesLocation(serverURL)))
+						.header(Protocol.ACCEPT_PARAM_NAME, "application/json")
+						.build();
+		try (HttpResponse response = executeOK(method)) {
+			return RUNTIME_PROPERTY_MAPPER.readValue(response.getBodyAsStream(), FORCEABLE_STRATEGY_LIST);
+		} catch (RDF4JException e) {
+			throw new RepositoryException(e);
+		}
+	}
+
+	/**
+	 * Pins one named LMDB query-execution strategy for every query subsequently sent through this session, instead of
+	 * letting the store select adaptively. Every spelling of "no strategy" accepted by
+	 * {@link Protocol#isLmdbForcedExecutionStrategyUnset(String)} — {@code null}, blank, and
+	 * {@link Protocol#LMDB_FORCED_EXECUTION_STRATEGY_NOT_ACTIVATED} — means "do not force anything", which is the
+	 * default and which sends no parameter at all. Otherwise the value is sent as
+	 * {@link Protocol#LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME} and is ignored by servers whose repository is not LMDB
+	 * backed.
+	 */
+	public void setForcedLmdbExecutionStrategy(String strategyOrNull) {
+		this.forcedLmdbExecutionStrategy = Protocol.isLmdbForcedExecutionStrategyUnset(strategyOrNull) ? null
+				: strategyOrNull;
+	}
+
+	/** The strategy set by {@link #setForcedLmdbExecutionStrategy(String)}, or {@code null} when none is forced. */
+	public String getForcedLmdbExecutionStrategy() {
+		return forcedLmdbExecutionStrategy;
+	}
+
+	/** Updates one allowlisted live LMDB feature on this server. */
+	public LmdbRuntimeProperty setLmdbRuntimeProperty(String name, boolean enabled)
+			throws IOException, RepositoryException, UnauthorizedException {
+		checkServerURL();
+		List<NameValuePair> params = List.of(NameValuePair.of("name", name),
+				NameValuePair.of("enabled", Boolean.toString(enabled)));
+		HttpRequest method = applyAdditionalHeaders(
+				HttpRequests.post(Protocol.getLmdbRuntimePropertiesLocation(serverURL))
+						.header("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8")
+						.header(Protocol.ACCEPT_PARAM_NAME, "application/json")
+						.body(HttpRequestBody.ofFormData(params)))
+								.build();
+		try (HttpResponse response = executeOK(method)) {
+			return RUNTIME_PROPERTY_MAPPER.readValue(response.getBodyAsStream(), LmdbRuntimeProperty.class);
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
@@ -1017,6 +1095,11 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		}
 
 		queryParams.add(NameValuePair.of(Protocol.INCLUDE_INFERRED_PARAM_NAME, Boolean.toString(includeInferred)));
+
+		if (forcedLmdbExecutionStrategy != null) {
+			queryParams.add(NameValuePair.of(Protocol.LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME,
+					forcedLmdbExecutionStrategy));
+		}
 
 		if (maxQueryTime > 0) {
 			queryParams.add(NameValuePair.of(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));

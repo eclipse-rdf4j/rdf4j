@@ -132,7 +132,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 		Map<String, String> fastestQueries = parseFastestOptimizedQueries();
 		for (Map.Entry<Theme, List<TargetQuery>> entry : targetsByTheme().entrySet()) {
 			System.out.println("Preparing theme " + entry.getKey());
-			Path storeDirectory = prepareThemeStore(dataDir, entry.getKey(), entry.getValue());
+			Path storeDirectory = prepareThemeStore(dataDir, entry.getKey());
 			LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
 			System.out.println("Prepared store for theme " + entry.getKey().name());
@@ -255,12 +255,11 @@ class LmdbThemeTopRegressionSnapshotIT {
 		throw new AssertionError("Unable to locate theme query benchmark results directory");
 	}
 
-	private static Path prepareThemeStore(Path dataDir, Theme theme, List<TargetQuery> targetQueries) throws Exception {
-		List<TargetQuery> primedQueries = learnedFilterPrimeQueries(targetQueries);
+	private static Path prepareThemeStore(Path dataDir, Theme theme) throws Exception {
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
 						dataDir.resolve("top-regression-" + theme.name()),
-						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/" + primeIndexKey(primedQueries),
+						PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/cold",
 						storeDirectory -> {
 							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
 							SailRepository repository = new SailRepository(store);
@@ -268,7 +267,6 @@ class LmdbThemeTopRegressionSnapshotIT {
 								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 								loadData(repository, theme);
 								BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-								primeLearnedFilterStats(repository, primedQueries);
 								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
 							} finally {
 								shutdownAndRelease(repository, store);
@@ -281,22 +279,6 @@ class LmdbThemeTopRegressionSnapshotIT {
 		return preparedStore.storeDirectory();
 	}
 
-	private static List<TargetQuery> learnedFilterPrimeQueries(List<TargetQuery> targetQueries) {
-		return targetQueries.stream()
-				.filter(targetQuery -> targetQuery.theme == Theme.HIGHLY_CONNECTED)
-				.filter(targetQuery -> targetQuery.queryIndex == 5)
-				.collect(Collectors.toList());
-	}
-
-	private static String primeIndexKey(List<TargetQuery> targetQueries) {
-		String key = targetQueries.stream()
-				.map(targetQuery -> Integer.toString(targetQuery.queryIndex))
-				.distinct()
-				.sorted()
-				.collect(Collectors.joining("-"));
-		return key.isEmpty() ? "no-prime" : key;
-	}
-
 	private static void loadData(SailRepository repository, Theme theme) throws IOException {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.READ_COMMITTED);
@@ -305,28 +287,6 @@ class LmdbThemeTopRegressionSnapshotIT {
 			connection.commit();
 		}
 		System.out.println("Loaded data for theme " + theme.name());
-	}
-
-	private static void primeLearnedFilterStats(SailRepository repository, List<TargetQuery> targetQueries) {
-		for (TargetQuery targetQuery : targetQueries) {
-			String query = ThemeQueryCatalog.queryFor(targetQuery.theme, targetQuery.queryIndex);
-			long expected = ThemeQueryCatalog.expectedCountFor(targetQuery.theme, targetQuery.queryIndex);
-			long actual = executeQuery(repository, query);
-			if (actual != expected) {
-				throw new AssertionError("Unable to prime learned filter stats: theme=" + targetQuery.theme
-						+ ", queryIndex=" + targetQuery.queryIndex + ", expected=" + expected + ", actual="
-						+ actual);
-			}
-		}
-	}
-
-	private static long executeQuery(SailRepository repository, String query) {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query)
-					.evaluate()
-					.stream()
-					.count();
-		}
 	}
 
 	private static String explainOptimized(SailRepository repository, TargetQuery targetQuery) {
@@ -385,7 +345,7 @@ class LmdbThemeTopRegressionSnapshotIT {
 			return normalizedActual.contains("VALUES ?u { <http://example.com/theme/social/user/7>")
 					&& normalizedActual
 							.contains("VALUES ?optName { \"user7\" \"user8\" \"user9\" \"user10\" \"user11\" }")
-					&& normalizedActual
+					&& !normalizedActual
 							.contains("FILTER (?optName IN (\"user7\", \"user8\", \"user9\", \"user10\", \"user11\"))")
 					&& planHasBoundPredicateAccess(plan, "http://example.com/theme/social/follows")
 					&& planHasBoundPredicateAccess(plan, "http://example.com/theme/social/authored")
@@ -426,6 +386,9 @@ class LmdbThemeTopRegressionSnapshotIT {
 		}
 		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 9) {
 			return engineeringQ9FastShapeMismatches(normalizedActual, plan).isEmpty();
+		}
+		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 8) {
+			return engineeringQ8FastShapeMismatches(normalizedActual, plan).isEmpty();
 		}
 		if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 3) {
 			return engineeringQ3FastShapeMismatches(normalizedActual, plan).isEmpty();
@@ -517,8 +480,11 @@ class LmdbThemeTopRegressionSnapshotIT {
 					"BindingSetAssignment ([[optName=\"user7\"]",
 					"value=http://example.com/theme/social/name",
 					"value=http://example.com/theme/social/follows",
-					"value=http://example.com/theme/social/authored",
-					"plannedFilterPassRatio=0");
+					"value=http://example.com/theme/social/authored");
+			assertTrue(plan.contains("plannedFilterPassRatio=0") || plan.contains("plannedAccessRows=0"),
+					targetQuery.key()
+							+ " should retain explicit zero-cardinality pruning as a filter or access estimate:\n"
+							+ plan);
 			assertTrue(planHasBoundPredicateAccess(plan, "http://example.com/theme/social/follows"),
 					targetQuery.key() + " should use bound follows access:\n" + plan);
 			assertTrue(planHasBoundPredicateAccess(plan, "http://example.com/theme/social/authored"),
@@ -609,12 +575,21 @@ class LmdbThemeTopRegressionSnapshotIT {
 			assertTrue(mismatches.isEmpty(),
 					targetQuery.key() + " should keep the canonical fast measurement-requirement shape:\n"
 							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
+		} else if (targetQuery.theme == Theme.ENGINEERING && targetQuery.queryIndex == 8) {
+			String renderedQuery = normalize(explainOptimized(repository, targetQuery));
+			String plan = explainOptimizedPlan(repository, targetQuery);
+			List<String> mismatches = engineeringQ8FastShapeMismatches(renderedQuery, plan);
+			assertTrue(mismatches.isEmpty(),
+					targetQuery.key() + " should keep the canonical fast requirement-component shape:\n"
+							+ String.join("\n", mismatches) + "\nQuery:\n" + renderedQuery + "\nPlan:\n" + plan);
 		}
 	}
 
 	private static List<String> socialMediaQ0FastShapeMismatches(String renderedQuery, String plan) {
 		List<String> mismatches = new ArrayList<>();
 		boolean combinedPairNameValues = renderedQuery.contains("VALUES (?u ?v ?optName)");
+		String optNameFilter = "FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))";
+		boolean hasOptNameFilter = renderedQuery.contains(optNameFilter);
 		if (combinedPairNameValues) {
 			requireDoesNotContain(mismatches, renderedQuery,
 					"(<http://example.com/theme/social/user/0> <http://example.com/theme/social/user/0>",
@@ -627,9 +602,10 @@ class LmdbThemeTopRegressionSnapshotIT {
 			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/follows> ?v .",
 					"?u <http://example.com/theme/social/name> ?optName .",
 					"name lookup should stay after the bounded follows lookup");
-			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/name> ?optName .",
-					"FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
-					"literal optName filter should stay after the name lookup");
+			if (hasOptNameFilter) {
+				requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/name> ?optName .",
+						optNameFilter, "literal optName filter should stay after the name lookup");
+			}
 		} else {
 			requireContains(mismatches, renderedQuery, "VALUES (?u ?v)",
 					"missing finite pair pruning prefix");
@@ -646,23 +622,29 @@ class LmdbThemeTopRegressionSnapshotIT {
 			requireBefore(mismatches, renderedQuery, "VALUES ?optName",
 					"?u <http://example.com/theme/social/name> ?optName .",
 					"optName VALUES should make the name lookup exact");
-			requireBefore(mismatches, renderedQuery, "VALUES ?optName",
-					"FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
-					"optName VALUES should retain the literal filter");
+			if (hasOptNameFilter) {
+				requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/name> ?optName .",
+						optNameFilter, "literal optName filter should stay after the exact name lookup");
+			} else {
+				requireDoesNotContain(mismatches, renderedQuery, "OPTIONAL",
+						"exact name values without a residual filter should use a mandatory name lookup");
+			}
 		} else if (!combinedPairNameValues) {
 			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/follows> ?v .",
 					"?u <http://example.com/theme/social/name> ?optName .",
 					"optional name lookup should stay after the bounded follows lookup");
 			requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/name> ?optName .",
-					"FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
+					optNameFilter,
 					"literal optName filter should stay after the optional name lookup");
 			requireAnyPredicateHeaderContains(mismatches, plan, "http://example.com/theme/social/name",
 					"plannedLookupComponents=[S, P]",
 					"optional name lookup should use bound subject access when optName is filtered afterwards");
 		}
-		requireBefore(mismatches, renderedQuery, "FILTER (?optName IN (\"user0\", \"user1\", \"user2\"))",
-				"BIND(CONCAT(STR(?u), STR(?v)) AS ?pair)",
-				"literal optName filter should remain before projection");
+		if (hasOptNameFilter) {
+			requireBefore(mismatches, renderedQuery, optNameFilter,
+					"BIND(CONCAT(STR(?u), STR(?v)) AS ?pair)",
+					"literal optName filter should remain before projection");
+		}
 		requireBefore(mismatches, renderedQuery, "?u <http://example.com/theme/social/name> ?optName .",
 				"BIND(CONCAT(STR(?u), STR(?v)) AS ?pair)",
 				"pair projection should run after bounded follows/name lookups");
@@ -853,22 +835,26 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requirePlanAccess(mismatches, plan, "http://example.com/theme/train/name", "train name");
 		requirePredicateHeaderContains(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
 				"plannedLookupComponents=[S, P, O]", "Line type should use exact direct access");
-		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/partOfLine",
-				"plannedLookupComponents=[O]", "partOfLine optional should use bound line object access");
+		requirePredicateHeaderContainsAny(mismatches, plan, "http://example.com/theme/train/partOfLine",
+				"partOfLine optional should use a bounded line object access",
+				"plannedLookupComponents=[O]", "plannedLookupComponents=[P, O]");
 		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 100.0d, 2);
 		return mismatches;
 	}
 
 	private static List<String> trainQ8FastShapeMismatches(String renderedQuery, String plan) {
 		List<String> mismatches = new ArrayList<>();
+		String optNameFilter = "FILTER (?optName IN (\"Line 0\", \"Line 1\"))";
 		requireContains(mismatches, renderedQuery, "VALUES ?optName { \"Line 0\" \"Line 1\" }",
 				"missing finite line-name anchor");
 		requireBefore(mismatches, renderedQuery, "VALUES ?optName",
 				"?line <http://example.com/theme/train/name> ?optName .",
-				"literal optName filter should guard the line name lookup");
-		requireBefore(mismatches, renderedQuery, "FILTER (?optName IN (\"Line 0\", \"Line 1\"))",
-				"?s1 <http://example.com/theme/train/partOfLine> ?line .",
-				"retained optName filter should run before section fanout");
+				"finite optName values should guard the line name lookup");
+		if (renderedQuery.contains(optNameFilter)) {
+			requireBefore(mismatches, renderedQuery, optNameFilter,
+					"?s1 <http://example.com/theme/train/partOfLine> ?line .",
+					"retained optName filter should run before section fanout");
+		}
 		requireBefore(mismatches, renderedQuery, "?line <http://example.com/theme/train/name> ?optName .",
 				"?s1 <http://example.com/theme/train/partOfLine> ?line .",
 				"line name lookup should bind line before the first section lookup");
@@ -893,7 +879,8 @@ class LmdbThemeTopRegressionSnapshotIT {
 		requireBefore(mismatches, renderedQuery, "?s2 <http://example.com/theme/train/partOfLine> ?line .",
 				"FILTER EXISTS",
 				"bounded service/section lookups should run before the correlated operational-point EXISTS");
-		requirePlanAccess(mismatches, plan, "http://example.com/theme/train/name", "train name");
+		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/name",
+				"plannedLookupComponents=[P, O]", "train name should use the finite literal object domain");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/partOfLine",
 				"plannedLookupComponents=[O]", "partOfLine should use bound line object access");
 		requirePredicateHeaderContains(mismatches, plan, "http://example.com/theme/train/connectsOperationalPoint",
@@ -1089,15 +1076,18 @@ class LmdbThemeTopRegressionSnapshotIT {
 
 	private static List<String> libraryQ8FastShapeMismatches(String renderedQuery, String plan) {
 		List<String> mismatches = new ArrayList<>();
+		String optNameFilter = "FILTER (?optName IN (\"Member 1\", \"Member 2\", \"Member 3\"))";
 		requireContains(mismatches, renderedQuery,
 				"VALUES ?optName { \"Member 1\" \"Member 2\" \"Member 3\" }",
 				"missing finite member-name anchor");
-		requireContains(mismatches, renderedQuery,
-				"FILTER (?optName IN (\"Member 1\", \"Member 2\", \"Member 3\"))",
-				"missing retained member-name filter");
 		requireBefore(mismatches, renderedQuery, "VALUES ?optName",
 				"?member <http://example.com/theme/library/name> ?optName .",
 				"finite member-name values should guard the name lookup");
+		if (renderedQuery.contains(optNameFilter)) {
+			requireBefore(mismatches, renderedQuery, optNameFilter,
+					"?loan <http://example.com/theme/library/borrowedBy> ?member .",
+					"retained member-name filter should run before loan fanout");
+		}
 		requireBefore(mismatches, renderedQuery, "?member <http://example.com/theme/library/name> ?optName .",
 				"?loan <http://example.com/theme/library/borrowedBy> ?member .",
 				"name lookup should bind member before loan lookup");
@@ -1182,6 +1172,36 @@ class LmdbThemeTopRegressionSnapshotIT {
 		return mismatches;
 	}
 
+	private static List<String> engineeringQ8FastShapeMismatches(String renderedQuery, String plan) {
+		List<String> mismatches = new ArrayList<>();
+		requireContains(mismatches, renderedQuery,
+				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
+				"satisfies bridge should remain visible");
+		requireBefore(mismatches, renderedQuery,
+				"?requirement <http://example.com/theme/engineering/satisfies> ?component .",
+				"?component a <http://example.com/theme/engineering/Component> .",
+				"satisfies should bind component before the component type guard");
+		requireBefore(mismatches, renderedQuery,
+				"?component a <http://example.com/theme/engineering/Component> .",
+				"?component <http://example.com/theme/engineering/partOf> ?assembly .",
+				"component type guard should run before assembly fanout");
+		requireBefore(mismatches, renderedQuery,
+				"?component <http://example.com/theme/engineering/partOf> ?assembly .",
+				"OPTIONAL",
+				"mandatory component chain should finish before optional dependsOn fanout");
+		requireBefore(mismatches, renderedQuery, "OPTIONAL", "FILTER (?optDep != ?component)",
+				"optional dependsOn fanout should stay before the optDep filter");
+		requireDoesNotContain(mismatches, plan, "Join (BoundStatementPatternJoinIteration) (resultSizeEstimate=520)",
+				"component type guard should not run through the known slow bound-statement count shape");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/satisfies", "satisfies");
+		requirePlanAccess(mismatches, plan, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+				"Component type");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/partOf", "partOf");
+		requirePlanAccess(mismatches, plan, "http://example.com/theme/engineering/dependsOn", "dependsOn");
+		requireDirectLookupAccessWorkRowsBelow(mismatches, plan, 2_000.0d, 3);
+		return mismatches;
+	}
+
 	private static List<String> engineeringQ3FastShapeMismatches(String renderedQuery, String plan) {
 		List<String> mismatches = new ArrayList<>();
 		requireContains(mismatches, renderedQuery,
@@ -1262,6 +1282,29 @@ class LmdbThemeTopRegressionSnapshotIT {
 		if (!header.contains(expectedHeaderPart)) {
 			mismatches.add(description + ": expected `" + expectedHeaderPart + "` in `" + header + "`");
 		}
+	}
+
+	private static void requirePredicateHeaderContainsAny(List<String> mismatches, String plan, String predicateIri,
+			String description, String... expectedHeaderParts) {
+		int predicateIndex = plan.indexOf("value=" + predicateIri);
+		if (predicateIndex < 0) {
+			mismatches.add(description + ": missing predicate `" + predicateIri + "`");
+			return;
+		}
+		int patternStart = plan.lastIndexOf("StatementPattern (", predicateIndex);
+		int patternEnd = plan.indexOf('\n', patternStart);
+		if (patternStart < 0 || patternEnd < 0) {
+			mismatches.add(description + ": missing statement-pattern header for `" + predicateIri + "`");
+			return;
+		}
+		String header = plan.substring(patternStart, patternEnd);
+		for (String expectedHeaderPart : expectedHeaderParts) {
+			if (header.contains(expectedHeaderPart)) {
+				return;
+			}
+		}
+		mismatches.add(description + ": expected one of `" + String.join("`, `", expectedHeaderParts)
+				+ "` in `" + header + "`");
 	}
 
 	private static void requireAnyPredicateHeaderContains(List<String> mismatches, String plan, String predicateIri,

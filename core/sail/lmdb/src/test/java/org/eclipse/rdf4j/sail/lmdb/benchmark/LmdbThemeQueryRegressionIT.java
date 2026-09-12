@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -49,10 +50,14 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.ResultOrder;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -98,13 +103,6 @@ class LmdbThemeQueryRegressionIT {
 			Theme.TRAIN, List.of(2, 7, 8));
 	private static final Map<Theme, List<Integer>> COUNT_REGRESSION_QUERY_INDEXES = Map.of(
 			Theme.PHARMA, List.of(8, 10));
-	private static final Map<Theme, List<Integer>> LEARNED_FILTER_PRIME_QUERY_INDEXES = Map.of(
-			Theme.PHARMA, List.of(0, 5, 10),
-			Theme.LIBRARY, List.of(7),
-			Theme.MEDICAL_RECORDS, List.of(2, 4, 5, 7),
-			Theme.ENGINEERING, List.of(5, 9),
-			Theme.ELECTRICAL_GRID, List.of(2, 4, 5),
-			Theme.TRAIN, List.of(2, 7, 8));
 	private static final List<ShapeAnchor> HIGH_VALUE_ANCHORS = List.of(
 			anchor(Theme.SOCIAL_MEDIA, 0, "VALUES", "<http://example.com/theme/social/follows> ?v"),
 			anchor(Theme.SOCIAL_MEDIA, 1, "VALUES (?u1 ?u2)",
@@ -212,7 +210,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void highValueThemeQueriesExposePersistedOptimizerDiagnostics(Theme theme, @TempDir Path dataDir)
 			throws Exception {
-		Path themeDir = prepareThemeStore(dataDir, theme, primeableHighValueQueryIndexes(theme));
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -547,7 +545,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void highlyConnectedQ2WeightsBeforeConnectsFanout(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.HIGHLY_CONNECTED;
-		Path themeDir = prepareThemeStore(dataDir, theme, 2);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -558,11 +556,11 @@ class LmdbThemeQueryRegressionIT {
 							"<http://example.com/theme/connected/connectsTo> ?neighbor",
 							"Highly connected q2 should bind the weight filter before expanding connectsTo fanout\n"
 									+ snapshot.plan());
-					assertDoesNotContain(snapshot.renderedQuery(), "OPTIONAL",
-							"Highly connected q2 should remove the no-new-binding reverse optional probe; "
-									+ "it only repeats already-bound edge existence checks before grouping\n"
+					assertContains(snapshot.renderedQuery(), "OPTIONAL",
+							"Highly connected q2 must retain its contextless reverse-edge OPTIONAL because "
+									+ "an SPO probe is not unique across multiple default contexts\n"
 									+ snapshot.plan());
-					assertNoConnectedReverseOptionalProbe(snapshot.plan());
+					assertConnectedReverseOptionalUsesBoundDirectLookup(snapshot.plan());
 				});
 			} finally {
 				shutdownAndRelease(repository, store);
@@ -576,7 +574,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void socialQ8ForwardCycleStepBeforeReverseProbe(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.SOCIAL_MEDIA;
-		Path themeDir = prepareThemeStore(dataDir, theme, 8);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -633,7 +631,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void highlyConnectedQ5ChargesAntiExistsScopeWork(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.HIGHLY_CONNECTED;
-		Path themeDir = prepareThemeStore(dataDir, theme, 5);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -680,7 +678,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void highlyConnectedQ10RunsAntiExistsBeforeWeightFanout(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.HIGHLY_CONNECTED;
-		Path themeDir = prepareThemeStore(dataDir, theme, 10);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -714,10 +712,39 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	void trainFiveRetainsCorrelatedThreshold(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.TRAIN;
+		Path themeDir = prepareThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				String query = ThemeQueryCatalog.queryFor(theme, 5);
+				BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds("TRAIN:5 count binding",
+						() -> {
+							try (SailRepositoryConnection connection = repository.getConnection();
+									var result = connection.prepareTupleQuery(query).evaluate()) {
+								Assertions.assertTrue(result.hasNext(), "TRAIN:5 should return its aggregate row");
+								BindingSet row = result.next();
+								Assertions.assertFalse(result.hasNext(),
+										"TRAIN:5 should return exactly one aggregate row");
+								Assertions.assertInstanceOf(Literal.class, row.getValue("count"));
+								Assertions.assertEquals(24L, ((Literal) row.getValue("count")).longValue());
+							}
+						});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
 	@Disabled
 	void trainQ9ChargesOptionalOperationalPointFanout(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.TRAIN;
-		Path themeDir = prepareThemeStore(dataDir, theme, 9);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -763,7 +790,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void trainQ7KeepsDependentAntiNameFilterBeforePassesThroughExists(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.TRAIN;
-		Path themeDir = prepareThemeStore(dataDir, theme, 7);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -795,7 +822,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void trainQ8KeepsServiceBridgeBeforeOperationalPointExists(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.TRAIN;
-		Path themeDir = prepareThemeStore(dataDir, theme, 8);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -879,7 +906,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void libraryAuthorsByNameDoesNotReuseConditionedLearnedPatternStats(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
-		Path themeDir = prepareThemeStore(dataDir, theme, 2);
+		Path themeDir = prepareThemeStoreWithLearnedFilterStats(dataDir, theme, 2);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -931,7 +958,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void libraryCopyBranchExclusionDoesNotScanAllLocatedAt(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
-		Path themeDir = prepareThemeStore(dataDir, theme, 7);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -970,7 +997,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void libraryEntitiesByNameKeepsFastestKnownUnionShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
-		Path themeDir = prepareThemeStore(dataDir, theme, 1);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -999,7 +1026,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void libraryLoanDateAntiJoinKeepsLoanTypeBeforeNotExists(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
-		Path themeDir = prepareThemeStore(dataDir, theme, 5);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1030,7 +1057,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void libraryMemberLoansApplyLoanTypeBeforeCopyFanout(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
-		Path themeDir = prepareThemeStore(dataDir, theme, 8);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1070,7 +1097,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void pharmaCombinationSynergyScorePrecedesCombinationType(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
-		Path themeDir = prepareThemeStore(dataDir, theme, 1);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1139,10 +1166,10 @@ class LmdbThemeQueryRegressionIT {
 
 	@Test
 	@Disabled
-	void pharmaClinicalTrialResponsesKeepRateFilterBeforeAntiProbe(@TempDir Path dataDir) throws Exception {
+	void pharmaClinicalTrialResponsesKeepRateFilterBeforeAntiProbeAfterLearnedStatisticsPersist(@TempDir Path dataDir)
+			throws Exception {
 		Theme theme = Theme.PHARMA;
-		Path themeDir = prepareFreshBenchmarkThemeStore(dataDir, theme, IntStream.rangeClosed(0, 10)
-				.toArray());
+		Path themeDir = prepareFreshBenchmarkThemeStoreWithLearnedFilterStats(dataDir, theme, 3);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1186,7 +1213,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void pharmaDrugClassExclusionKeepsMaterializedMinus(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
-		Path themeDir = prepareThemeStore(dataDir, theme, 4);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1212,7 +1239,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void pharmaTargetContraindicationKeepsMaterializedMinus(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
-		Path themeDir = prepareThemeStore(dataDir, theme, 8);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1238,7 +1265,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void pharmaClinicalTrialArmsAntiJoinStartsFromBoundArm(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
-		Path themeDir = prepareThemeStore(dataDir, theme, 7);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1265,7 +1292,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void pharmaDiseaseTrialPipelineKeepsResultFiltersAfterBoundLookups(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
-		Path themeDir = prepareThemeStore(dataDir, theme, 0);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1302,7 +1329,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void pharmaMarkerResultPipelineKeepsPValueFilterAfterBoundLookups(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
-		Path themeDir = prepareThemeStore(dataDir, theme, 5);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1345,7 +1372,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void pharmaQ2TargetTypePreparesTargetDomainBeforePathwayExpansion(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
-		Path themeDir = prepareThemeStore(dataDir, theme, 2);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1387,10 +1414,108 @@ class LmdbThemeQueryRegressionIT {
 	}
 
 	@Test
+	void pharmaQ10NullableCorrelationAvoidsNativeExistencePath(@TempDir Path dataDir) throws Exception {
+		Theme theme = Theme.PHARMA;
+		Path themeDir = prepareThemeStore(dataDir, theme);
+		try {
+			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+			SailRepository repository = new SailRepository(store);
+			try {
+				repository.init();
+				BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "pharma-q10-exists", 60,
+						TimeUnit.SECONDS);
+				String query = ThemeQueryCatalog.queryFor(theme, 10);
+				Assertions.assertEquals(ThemeQueryCatalog.expectedCountFor(theme, 10), executeQuery(repository, query),
+						() -> explainBestEffort(repository, query));
+				BenchmarkJoinEstimatorSupport.assertQueryRegressionPassesWithinThirtySeconds("PHARMA:10 exists path",
+						() -> {
+							try (SailRepositoryConnection connection = repository.getConnection()) {
+								String plan = connection.prepareTupleQuery(query)
+										.explain(Explanation.Level.Telemetry)
+										.toString();
+								Assertions.assertFalse(plan.contains("nativeExecutionPath=bareExists"),
+										() -> "PHARMA q10's EXISTS consumes ?trial from an OPTIONAL, so nullable correlation "
+												+ "must stay with the scope-aware semantic native row evaluator:\n"
+												+ plan);
+							}
+						});
+			} finally {
+				shutdownAndRelease(repository, store);
+			}
+		} finally {
+			BenchmarkJoinEstimatorSupport.deleteStoreDirectory(themeDir);
+		}
+	}
+
+	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void pharmaQ10MatchesIndependentFourArmOracleAtEveryScopeBoundary(@TempDir Path dataDir) throws Exception {
+		String prefix = "PREFIX pharma: <http://example.com/theme/pharma/>\n";
+		String exists = prefix + "SELECT ?pathway (COUNT(DISTINCT ?drug) AS ?drugCount) WHERE { "
+				+ "VALUES ?marker { <http://example.com/theme/pharma/biomarker/3> "
+				+ "<http://example.com/theme/pharma/biomarker/4> } "
+				+ "?drug a pharma:Drug ; pharma:targets ?target . "
+				+ "?target pharma:inPathway ?pathway . "
+				+ "OPTIONAL { ?drug pharma:testedIn ?trial . BIND(?trial AS ?optTrial) } "
+				+ "FILTER(?optTrial != <http://example.com/theme/pharma/trial/0>) "
+				+ "FILTER EXISTS { ?trial pharma:hasArm ?arm . ?arm pharma:hasResult ?result . "
+				+ "?result pharma:biomarker ?marker . } } GROUP BY ?pathway HAVING(COUNT(DISTINCT ?drug) > 1)";
+		try (IndependentSparqlOracle oracle = IndependentSparqlOracle.builder(dataDir.resolve("oracle"))
+				.load(connection -> {
+					String ns = "http://example.com/theme/pharma/";
+					IRI goodA = VALUE_FACTORY.createIRI(ns, "test-drug-good-a");
+					IRI goodB = VALUE_FACTORY.createIRI(ns, "test-drug-good-b");
+					IRI bad = VALUE_FACTORY.createIRI(ns, "test-drug-bad");
+					IRI target = VALUE_FACTORY.createIRI(ns, "test-target");
+					IRI pathway = VALUE_FACTORY.createIRI(ns, "test-pathway");
+					IRI goodTrial = VALUE_FACTORY.createIRI(ns, "test-trial-good");
+					IRI badTrial = VALUE_FACTORY.createIRI(ns, "test-trial-bad");
+					IRI arm = VALUE_FACTORY.createIRI(ns, "test-arm");
+					IRI result = VALUE_FACTORY.createIRI(ns, "test-result");
+					IRI badArm = VALUE_FACTORY.createIRI(ns, "test-arm-bad");
+					IRI badResult = VALUE_FACTORY.createIRI(ns, "test-result-bad");
+					IRI otherMarker = VALUE_FACTORY.createIRI(ns, "biomarker/5");
+					IRI testedIn = VALUE_FACTORY.createIRI(ns, "testedIn");
+					IRI hasArm = VALUE_FACTORY.createIRI(ns, "hasArm");
+					IRI hasResult = VALUE_FACTORY.createIRI(ns, "hasResult");
+					IRI biomarker = VALUE_FACTORY.createIRI(ns, "biomarker");
+					for (IRI drug : List.of(goodA, goodB, bad)) {
+						connection.add(drug, RDF.TYPE, PHARMA_DRUG);
+						connection.add(drug, PHARMA_TARGETS, target);
+					}
+					connection.add(target, PHARMA_IN_PATHWAY, pathway);
+					connection.add(goodA, testedIn, goodTrial);
+					connection.add(goodB, testedIn, goodTrial);
+					connection.add(bad, testedIn, badTrial);
+					connection.add(goodTrial, hasArm, arm);
+					connection.add(arm, hasResult, result);
+					connection.add(result, biomarker, PHARMA_BIOMARKER_3);
+					connection.add(badTrial, hasArm, badArm);
+					connection.add(badArm, hasResult, badResult);
+					connection.add(badResult, biomarker, otherMarker);
+					for (int i = 0; i < 600; i++) {
+						IRI extraBad = VALUE_FACTORY.createIRI(ns, "test-drug-bad-" + i);
+						IRI extraTrial = VALUE_FACTORY.createIRI(ns, "test-trial-bad-" + i);
+						IRI extraArm = VALUE_FACTORY.createIRI(ns, "test-arm-bad-" + i);
+						IRI extraResult = VALUE_FACTORY.createIRI(ns, "test-result-bad-" + i);
+						connection.add(extraBad, RDF.TYPE, PHARMA_DRUG);
+						connection.add(extraBad, PHARMA_TARGETS, target);
+						connection.add(extraBad, testedIn, extraTrial);
+						connection.add(extraTrial, hasArm, extraArm);
+						connection.add(extraArm, hasResult, extraResult);
+						connection.add(extraResult, biomarker, otherMarker);
+					}
+				})
+				.build()) {
+			oracle.assertEquivalent(exists, ResultOrder.UNORDERED);
+		}
+	}
+
+	@Test
 	@Disabled
 	void pharmaQ10MandatoryBridgePreparesEndpointDomainsBeforeTargetsSeed(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
-		Path themeDir = prepareThemeStore(dataDir, theme, 10);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1455,7 +1580,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void libraryQ9FiniteAuthorDomainPrecedesNameLookupInMemo(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
-		Path themeDir = prepareThemeStore(dataDir, theme, 9);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1512,7 +1637,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void pharmaCombinationTargetsUseCheapBoundDirectLookups(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.PHARMA;
-		Path themeDir = prepareThemeStore(dataDir, theme, 6);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1541,7 +1666,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void electricalGridSubstationNameAnchorKeepsDirectLookupWorkCheap(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ELECTRICAL_GRID;
-		Path themeDir = prepareThemeStore(dataDir, theme, 2);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1566,7 +1691,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void electricalGridQ7NameValuesDoNotKeepRedundantLocalFilter(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ELECTRICAL_GRID;
-		Path themeDir = prepareThemeStore(dataDir, theme, 7);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1608,7 +1733,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void electricalGridQ10KeepsOptionalLoadValueCombinedAntiFilter(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ELECTRICAL_GRID;
-		Path themeDir = prepareThemeStore(dataDir, theme, 10);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1647,7 +1772,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void engineeringAssemblyNameInFilterUsesBoundLiteralLookups(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 2);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1675,7 +1800,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void engineeringRequirementsSatisfyBeforeTypeGuard(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
-		Path themeDir = prepareThemeStore(dataDir, theme, 8);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1706,7 +1831,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void trainLineNameAnchorKeepsDirectLookupWorkCheap(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.TRAIN;
-		Path themeDir = prepareThemeStore(dataDir, theme, 2);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1729,9 +1854,10 @@ class LmdbThemeQueryRegressionIT {
 
 	@Test
 	@Disabled
-	void trainScheduledTimeSeedStaysAheadOfBroadTypeAnchor(@TempDir Path dataDir) throws Exception {
+	void trainScheduledTimeSeedStaysAheadOfBroadTypeAnchorAfterLearnedStatisticsPersist(@TempDir Path dataDir)
+			throws Exception {
 		Theme theme = Theme.TRAIN;
-		Path themeDir = prepareThemeStore(dataDir, theme, 5);
+		Path themeDir = prepareThemeStoreWithLearnedFilterStats(dataDir, theme, 5);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1755,7 +1881,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void medicalEncounterDateFilterStaysAheadOfBroadTypeAnchor(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
-		Path themeDir = prepareThemeStore(dataDir, theme, 2);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1786,7 +1912,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void medicalEncounterConditionCodeKeepsEncounterAnchor(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
-		Path themeDir = prepareThemeStore(dataDir, theme, 4);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1846,7 +1972,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void medicalHighObservationValuesKeepMaterializedMinus(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
-		Path themeDir = prepareThemeStore(dataDir, theme, 3);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1878,7 +2004,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void medicalMedicationCodeMinusUsesCorrelatedNotExists(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
-		Path themeDir = prepareThemeStore(dataDir, theme, 7);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -1932,15 +2058,7 @@ class LmdbThemeQueryRegressionIT {
 			try {
 				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "?cond <http://example.com/theme/medical/code> ?condCode",
-							"?enc <http://example.com/theme/medical/hasCondition> ?cond",
-							"Medical q9 should bind the filtered condition code domain before hasCondition fanout\n"
-									+ snapshot.plan());
-					assertBefore(snapshot.renderedQuery(), "?enc <http://example.com/theme/medical/hasCondition> ?cond",
-							"?enc a <http://example.com/theme/medical/Encounter>",
-							"Medical q9 should validate the Encounter type after hasCondition has bound enc exactly\n"
-									+ snapshot.plan());
-					assertMedicalQ9CodeFirstPlanShape(snapshot.plan());
+					assertMedicalQ9NativeDomainPlanShape(snapshot.plan());
 					assertContains(snapshot.renderedQuery(), "MINUS",
 							"Medical q9 should keep the develop materialized anti-join; the correlated rewrite "
 									+ "repeats the filtered observation/value suffix per encounter\n"
@@ -1963,24 +2081,18 @@ class LmdbThemeQueryRegressionIT {
 		}
 	}
 
-	private static void assertMedicalQ9CodeFirstPlanShape(String plan) {
-		int conditionPredicateIndex = plan.indexOf("value=http://example.com/theme/medical/hasCondition");
-		if (conditionPredicateIndex < 0) {
-			throw new AssertionError("Medical q9 plan should include the hasCondition pattern:\n" + plan);
+	private static void assertMedicalQ9NativeDomainPlanShape(String plan) {
+		int physicalPlanStart = plan.indexOf("nativePhysicalPlan=");
+		if (physicalPlanStart < 0) {
+			throw new AssertionError("Medical q9 should expose its native physical plan:\n" + plan);
 		}
-		String conditionPattern = statementPatternWindow(plan, conditionPredicateIndex);
-		assertContains(conditionPattern, "plannedIndexAccessMode=directLookup");
-		assertContains(conditionPattern, "plannedLookupComponents=[P, O]");
-		assertContains(conditionPattern, "plannedBoundVars=cond,condCode");
-
-		int encounterTypeIndex = plan.indexOf("value=http://example.com/theme/medical/Encounter");
-		if (encounterTypeIndex < 0) {
-			throw new AssertionError("Medical q9 plan should include the Encounter type pattern:\n" + plan);
-		}
-		String encounterPattern = statementPatternWindow(plan, encounterTypeIndex);
-		assertContains(encounterPattern, "plannedIndexAccessMode=directLookup");
-		assertContains(encounterPattern, "plannedLookupComponents=[S, P, O]");
-		assertContains(encounterPattern, "plannedBoundVars=cond,condCode,enc");
+		int physicalPlanEnd = plan.indexOf('\n', physicalPlanStart);
+		String physicalPlan = plan.substring(physicalPlanStart,
+				physicalPlanEnd < 0 ? plan.length() : physicalPlanEnd);
+		assertContains(physicalPlan, "NativeGroup(arg=Minus(left=MultiJoin(order=[ExactDomainDrive(slot=?condCode");
+		assertContains(physicalPlan, "arity=3, access=per-value-index");
+		assertContains(physicalPlan, "right=MultiJoin(order=[Pattern(s=?enc");
+		assertContains(physicalPlan, "sharedMask=0x1 [?enc");
 	}
 
 	@Test
@@ -2026,7 +2138,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void electricalGridGeneratorCapacityThresholdUsesFastestKnownShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ELECTRICAL_GRID;
-		Path themeDir = prepareThemeStore(dataDir, theme, 5);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -2047,7 +2159,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void medicalConditionsOrMedicationsByCodeUsesBranchLocalValuesAndFilter(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.MEDICAL_RECORDS;
-		Path themeDir = prepareThemeStore(dataDir, theme, 1);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -2074,7 +2186,7 @@ class LmdbThemeQueryRegressionIT {
 	void electricalGridSubstationsOrGeneratorsByNameUsesFastestKnownUnionShape(@TempDir Path dataDir)
 			throws Exception {
 		Theme theme = Theme.ELECTRICAL_GRID;
-		Path themeDir = prepareThemeStore(dataDir, theme, 1);
+		Path themeDir = prepareThemeStore(dataDir, theme);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -2101,9 +2213,10 @@ class LmdbThemeQueryRegressionIT {
 
 	@Test
 	@Disabled
-	void libraryMembersBorrowingBooksByAuthorsUsesFiniteAuthorAnchor(@TempDir Path dataDir) throws Exception {
+	void libraryMembersBorrowingBooksByAuthorsUsesFiniteAuthorAnchorAfterLearnedStatisticsPersist(
+			@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.LIBRARY;
-		Path themeDir = prepareThemeStore(dataDir, theme, 9);
+		Path themeDir = prepareThemeStoreWithLearnedFilterStats(dataDir, theme, 9);
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -2111,13 +2224,17 @@ class LmdbThemeQueryRegressionIT {
 				assertQueryRegressionPasses(repository, theme, 9, snapshot -> {
 					assertPlannerDiagnosticsPresent(theme, 9, snapshot.plan());
 					String renderedQuery = snapshot.renderedQuery();
-					assertBefore(renderedQuery, "VALUES (?authorName ?target)",
+					assertBefore(renderedQuery, "VALUES ?target",
 							"?author <http://example.com/theme/library/name> ?authorName",
-							"Library q9 should bind the finite author-name domain before the author-name lookup\n"
+							"Library q9 should bind the finite target domain before the author-name lookup\n"
 									+ snapshot.plan());
-					assertBefore(renderedQuery, "VALUES (?authorName ?target)",
+					assertBefore(renderedQuery, "VALUES ?target",
 							"FILTER ((?authorName = ?target) || (?authorName = \"Author 3\"))",
-							"Library q9 should apply the original filter once both finite domains are bound\n"
+							"Library q9 should apply the original filter after binding its finite target domain\n"
+									+ snapshot.plan());
+					Assertions.assertTrue(snapshot.plan().contains("ExactDomainDrive(slot=?authorName")
+							&& snapshot.plan().contains("arity=3, access=per-value-index, index=posc"),
+							"Library q9 should compile the filter union to a three-value author-name domain drive\n"
 									+ snapshot.plan());
 					assertBefore(renderedQuery, "?book <http://example.com/theme/library/writtenBy> ?author",
 							"?book <http://example.com/theme/library/hasCopy> ?copy",
@@ -2126,8 +2243,6 @@ class LmdbThemeQueryRegressionIT {
 							"?loan <http://example.com/theme/library/loanedCopy> ?copy",
 							"Library q9 should bind copies before loan probes\n" + snapshot.plan());
 					assertLibraryQ9FastLoanTail(renderedQuery, snapshot.plan());
-					assertPredicateLookupWorkRowsBelow(snapshot.plan(), "http://example.com/theme/library/name",
-							30.0d);
 					assertDirectLookupWorkRowsBelow(snapshot.plan(), 200.0d, 4);
 					assertNoUnboundLeftStatementGuard(snapshot.plan(),
 							"Library q9 should not add failed left bound-statement probes to the author/book tail");
@@ -2145,7 +2260,7 @@ class LmdbThemeQueryRegressionIT {
 	@Disabled
 	void finiteLiteralFiltersUseValuesAnchors(FiniteLiteralFilterQuery target, @TempDir Path dataDir)
 			throws Exception {
-		Path themeDir = prepareThemeStore(dataDir, target.theme(), target.queryIndex());
+		Path themeDir = prepareThemeStore(dataDir, target.theme());
 		try {
 			LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
 			SailRepository repository = new SailRepository(store);
@@ -2192,29 +2307,32 @@ class LmdbThemeQueryRegressionIT {
 						"http://example.com/theme/library/title", "title", "\"Book 1\""));
 	}
 
-	private static Path prepareThemeStore(Path dataDir, Theme theme, int... primeIndexes) throws Exception {
-		return prepareThemeStore(dataDir, theme, IntStream.of(primeIndexes)
-				.boxed()
-				.collect(Collectors.toList()));
+	private static Path prepareThemeStore(Path dataDir, Theme theme) throws Exception {
+		return prepareThemeStoreFixture(dataDir, theme, "cold", List.of());
 	}
 
-	private static Path prepareThemeStore(Path dataDir, Theme theme, List<Integer> primeIndexes) throws Exception {
-		String storeKey = PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/" + primeIndexKey(primeIndexes);
+	private static Path prepareThemeStoreWithLearnedFilterStats(Path dataDir, Theme theme, int... queryIndexes)
+			throws Exception {
+		List<Integer> indexes = IntStream.of(queryIndexes)
+				.boxed()
+				.collect(Collectors.toList());
+		return prepareThemeStoreFixture(dataDir, theme, "learned-" + queryIndexKey(indexes), indexes);
+	}
+
+	private static Path prepareThemeStoreFixture(Path dataDir, Theme theme, String conditioningKey,
+			List<Integer> learnedFilterQueryIndexes) throws Exception {
+		String storeKey = PERSISTENT_STORE_KEY_PREFIX + "/" + theme.name() + "/" + conditioningKey;
 		BenchmarkJoinEstimatorSupport.ThemeRegressionStore preparedStore = BenchmarkJoinEstimatorSupport
 				.prepareThemeRegressionStore(
-						dataDir.resolve("theme-query-regression-" + theme.name() + "-" + primeIndexKey(primeIndexes)),
+						dataDir.resolve("theme-query-regression-" + theme.name() + "-" + conditioningKey),
 						storeKey,
 						storeDirectory -> {
-							LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
-							SailRepository repository = new SailRepository(store);
-							try {
-								BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-								loadData(repository, theme);
-								persistEstimatorAfterBulkLoad(repository, store);
-								primeLearnedFilterStats(repository, theme, primeIndexes);
-								BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-							} finally {
-								shutdownAndRelease(repository, store);
+							loadWithEstimatorDisabled(storeDirectory, repository -> loadData(repository, theme));
+							if (learnedFilterQueryIndexes.isEmpty()) {
+								prepareEstimatorSnapshot(storeDirectory);
+							} else {
+								prepareEstimatorSnapshotWithLearnedFilterStats(storeDirectory, theme,
+										learnedFilterQueryIndexes);
 							}
 						});
 		if (preparedStore.reused()) {
@@ -2224,49 +2342,78 @@ class LmdbThemeQueryRegressionIT {
 		return preparedStore.storeDirectory();
 	}
 
-	private static Path prepareFreshBenchmarkThemeStore(Path dataDir, Theme theme, int... primeIndexes)
-			throws Exception {
-		List<Integer> indexes = IntStream.of(primeIndexes)
+	private static Path prepareFreshBenchmarkThemeStore(Path dataDir, Theme theme) throws Exception {
+		Path themeDir = dataDir.resolve("benchmark-" + theme.name() + "-cold");
+		loadWithEstimatorDisabled(themeDir, LmdbThemeQueryRegressionIT::loadBenchmarkData);
+		prepareEstimatorSnapshot(themeDir);
+		return themeDir;
+	}
+
+	private static Path prepareFreshBenchmarkThemeStoreWithLearnedFilterStats(Path dataDir, Theme theme,
+			int... queryIndexes) throws Exception {
+		List<Integer> indexes = IntStream.of(queryIndexes)
 				.boxed()
 				.collect(Collectors.toList());
-		Path themeDir = dataDir.resolve("benchmark-" + theme.name() + "-" + primeIndexKey(indexes));
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
-		SailRepository repository = new SailRepository(store);
-		try {
-			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-			loadBenchmarkData(repository);
-			persistEstimatorAfterBulkLoad(repository, store);
-			primeLearnedFilterStats(repository, theme, indexes);
-			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
-		} finally {
-			shutdownAndRelease(repository, store);
-		}
+		Path themeDir = dataDir.resolve("benchmark-" + theme.name() + "-learned-" + queryIndexKey(indexes));
+		loadWithEstimatorDisabled(themeDir, LmdbThemeQueryRegressionIT::loadBenchmarkData);
+		prepareEstimatorSnapshotWithLearnedFilterStats(themeDir, theme, indexes);
 		return themeDir;
 	}
 
 	private static Path prepareFreshRuntimeThemeStore(Path dataDir, Theme theme) throws Exception {
 		Path themeDir = dataDir.resolve("runtime-" + theme.name());
-		LmdbStore store = new LmdbStore(themeDir.toFile(), ConfigUtil.createConfig());
+		loadWithEstimatorDisabled(themeDir, repository -> loadData(repository, theme));
+		prepareEstimatorSnapshot(themeDir);
+		return themeDir;
+	}
+
+	private static void loadWithEstimatorDisabled(Path storeDirectory, RepositoryLoader loader) throws Exception {
+		LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createBulkLoadConfig());
 		SailRepository repository = new SailRepository(store);
 		try {
-			loadData(repository, theme);
-			repository.init();
-			BenchmarkJoinEstimatorSupport.awaitEstimatorReady(store, "theme benchmark regression setup", 60,
-					TimeUnit.SECONDS);
+			loader.load(repository);
+		} finally {
+			shutdownAndRelease(repository, store);
+		}
+	}
+
+	private static void prepareEstimatorSnapshot(Path storeDirectory) throws Exception {
+		prepareEstimatorSnapshot(storeDirectory, null, List.of());
+	}
+
+	private static void prepareEstimatorSnapshotWithLearnedFilterStats(Path storeDirectory, Theme theme,
+			List<Integer> queryIndexes) throws Exception {
+		prepareEstimatorSnapshot(storeDirectory, theme, queryIndexes);
+	}
+
+	private static void prepareEstimatorSnapshot(Path storeDirectory, Theme theme, List<Integer> queryIndexes)
+			throws Exception {
+		LmdbStore store = new LmdbStore(storeDirectory.toFile(), ConfigUtil.createConfig());
+		SailRepository repository = new SailRepository(store);
+		try {
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			persistEstimatorAfterBulkLoad(repository, store);
+			if (!queryIndexes.isEmpty()) {
+				primeLearnedFilterStats(repository, theme, queryIndexes);
+			}
 			BenchmarkJoinEstimatorSupport.persistStoreStatistics(store);
 		} finally {
 			shutdownAndRelease(repository, store);
 		}
-		return themeDir;
 	}
 
-	private static String primeIndexKey(List<Integer> primeIndexes) {
-		String key = primeIndexes.stream()
+	@FunctionalInterface
+	private interface RepositoryLoader {
+		void load(SailRepository repository) throws Exception;
+	}
+
+	private static String queryIndexKey(List<Integer> queryIndexes) {
+		String key = queryIndexes.stream()
 				.distinct()
 				.sorted()
 				.map(String::valueOf)
 				.collect(Collectors.joining("-"));
-		return key.isEmpty() ? "no-prime" : key;
+		return key.isEmpty() ? "none" : key;
 	}
 
 	private static JoinOrderPlanner joinOrderPlanner(LmdbStore store) {
@@ -2423,13 +2570,6 @@ class LmdbThemeQueryRegressionIT {
 						+ queryIndex + ", expected=" + expected + ", actual=" + actual);
 			}
 		}
-	}
-
-	private static int[] primeableHighValueQueryIndexes(Theme theme) {
-		return LEARNED_FILTER_PRIME_QUERY_INDEXES.getOrDefault(theme, List.of())
-				.stream()
-				.mapToInt(Integer::intValue)
-				.toArray();
 	}
 
 	private static void loadData(SailRepository repository, Theme theme) throws IOException {
@@ -2815,18 +2955,21 @@ class LmdbThemeQueryRegressionIT {
 		}
 	}
 
-	private static void assertNoConnectedReverseOptionalProbe(String plan) {
+	private static void assertConnectedReverseOptionalUsesBoundDirectLookup(String plan) {
 		int predicateIndex = plan.indexOf("value=http://example.com/theme/connected/connectsTo");
 		while (predicateIndex >= 0) {
 			String pattern = statementPatternWindow(plan, predicateIndex);
 			if (pattern.contains("s: Var (name=neighbor) (bindingState=bound)")
 					&& pattern.contains("o: Var (name=node) (bindingState=bound)")) {
-				throw new AssertionError(
-						"Highly connected q2 should remove the no-new-binding reverse optional probe:\n"
-								+ pattern + "\nFull plan:\n" + plan);
+				assertContains(pattern, "plannedIndexAccessMode=directLookup",
+						"Highly connected q2 should execute its retained reverse OPTIONAL as a bound direct lookup");
+				assertContains(pattern, "plannedLookupComponents=[S, P, O]",
+						"Highly connected q2 reverse OPTIONAL should bind every SPO component");
+				return;
 			}
 			predicateIndex = plan.indexOf("value=http://example.com/theme/connected/connectsTo", predicateIndex + 1);
 		}
+		throw new AssertionError("Highly connected q2 should retain a bound reverse OPTIONAL probe:\n" + plan);
 	}
 
 	private static void assertEngineeringAssemblyNameFilterDoesNotScanAllNames(String plan) {
@@ -2920,7 +3063,7 @@ class LmdbThemeQueryRegressionIT {
 				"FILTER (?capacity IN (700, 800, 900))",
 				"Electrical grid q5 should keep the capacity filter attached to the capacity pattern\n" + plan);
 		assertBefore(renderedQuery, "FILTER (?capacity IN (700, 800, 900))",
-				"VALUES ?threshold { 700 }",
+				"?generator a <http://example.com/theme/grid/Generator> .",
 				"Electrical grid q5 should apply the selective capacity filter before the broad type check\n" + plan);
 		assertBefore(renderedQuery, "VALUES ?threshold { 700 }", "FILTER NOT EXISTS",
 				"Electrical grid q5 should bind the threshold before the anti-join filter\n" + plan);

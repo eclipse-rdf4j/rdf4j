@@ -1,0 +1,27 @@
+# Theme queries swept by scripts/lmdb-regret-scorer.py.
+#
+# Chosen to span every strategy the dispatch reachability census shows winning, inside a time band
+# JMH can resolve: fast enough that eight arms are affordable, slow enough that a real difference
+# clears the confidence interval. Sub-millisecond queries (e.g. ANALYTICS q0, the prefix-run case)
+# are deliberately excluded -- at 0.16 ms/op the interval swamps any effect, so including them
+# would add noise, not coverage. Multi-second queries (PHARMA q10 at 3.5 s) are excluded for cost.
+#
+# The list is meant to grow. Anything of the form THEME:INDEX works.
+
+# --- the two 2026-07-26 regressions, as standing guards -------------------------------
+ELECTRICAL_GRID:7            # default: batch  (regressed to irKernel, now fixed)
+HIGHLY_CONNECTED:8           # default: wcoj   (regressed to irAggregate, now fixed)
+
+# --- kernel-won shapes, including the largest measured kernel win ----------------------
+ADAPTIVE_FILTER_PLACEMENT:0  # default: irKernel
+ADAPTIVE_FILTER_PLACEMENT:5  # default: irKernel, 5.71x vs no-kernel in the P9 calibration
+TRAIN:4                      # default: irKernel, only 1.09x vs no-kernel -- weakest kernel case
+
+# --- batch-won shapes ------------------------------------------------------------------
+MEDICAL_RECORDS:8            # default: batch + bareBulk
+
+# --- aggregate shapes, where irAggregate wins 83 of the corpus --------------------------
+LIBRARY:1
+TRAIN:9
+ELECTRICAL_GRID:10
+HIGHLY_CONNECTED:3

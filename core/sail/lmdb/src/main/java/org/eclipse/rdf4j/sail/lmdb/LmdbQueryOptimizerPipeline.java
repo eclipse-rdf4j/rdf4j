@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -23,7 +24,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptim
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CompareOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstraintSplitterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
@@ -32,9 +32,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ProjectionRemovalOpt
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctionOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
 
-final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
+@InternalUseOnly
+public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
 	private static boolean assertsEnabled = false;
 
@@ -46,7 +48,6 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private static final BindingAssignerOptimizer BINDING_ASSIGNER = new BindingAssignerOptimizer();
 	private static final CompareOptimizer COMPARE_OPTIMIZER = new CompareOptimizer();
 	private static final ConjunctiveConstraintSplitterOptimizer CONJUNCTIVE_CONSTRAINT_SPLITTER = new ConjunctiveConstraintSplitterOptimizer();
-	private static final DisjunctiveConstraintOptimizer DISJUNCTIVE_CONSTRAINT_OPTIMIZER = new DisjunctiveConstraintOptimizer();
 	private static final SameTermFilterOptimizer SAME_TERM_FILTER_OPTIMIZER = new SameTermFilterOptimizer();
 	private static final UnionScopeChangeOptimizer UNION_SCOPE_CHANGE_OPTIMIZER = new UnionScopeChangeOptimizer();
 	private static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer();
@@ -58,7 +59,8 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private final TripleSource tripleSource;
 	private final EvaluationStatistics evaluationStatistics;
 
-	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+	@InternalUseOnly
+	public LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
 		this.strategy = strategy;
 		this.tripleSource = tripleSource;
@@ -73,7 +75,8 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,
-				DISJUNCTIVE_CONSTRAINT_OPTIMIZER,
+				// DisjunctiveConstraintOptimizer is excluded: its split is not multiset-preserving for
+				// non-disjoint disjuncts. See that class's javadoc.
 				SAME_TERM_FILTER_OPTIMIZER,
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,
@@ -82,7 +85,9 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				new LmdbFilterSimplifierOptimizer(evaluationStatistics),
 				new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
-				ORDER_LIMIT_OPTIMIZER);
+				StandardQueryOptimizerPipeline.getFilterInValuesOptimizer(),
+				ORDER_LIMIT_OPTIMIZER,
+				new LmdbOrderByOptimizer(tripleSource));
 
 		if (assertsEnabled) {
 			List<QueryOptimizer> checked = new ArrayList<>();

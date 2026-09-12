@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -105,7 +106,9 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	}
 
 	private static boolean canMerge(Filter parent, Filter child) {
-		return !isVariableScopeChange(parent) && !isVariableScopeChange(child);
+		return !isVariableScopeChange(parent) && !isVariableScopeChange(child)
+				&& QueryEvaluationUtility.isRepeatable(parent.getCondition())
+				&& QueryEvaluationUtility.isRepeatable(child.getCondition());
 	}
 
 	private static boolean isVariableScopeChange(Filter filter) {
@@ -120,7 +123,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	}
 
 	private void rewriteSmallLiteralFilterAnchors(Filter filter) {
-		if (isVariableScopeChange(filter)) {
+		if (isVariableScopeChange(filter) || !QueryEvaluationUtility.isRepeatable(filter.getCondition())) {
 			return;
 		}
 
@@ -133,6 +136,9 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		if (mandatoryArg != arg) {
 			arg = mandatoryArg;
 			filter.setArg(arg);
+		}
+		if (!QueryEvaluationUtility.isRepeatable(arg)) {
+			return;
 		}
 
 		Set<String> assuredBindings = arg.getAssuredBindingNames();
@@ -214,7 +220,8 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			return MandatoryOptionalRewrite.unchanged(arg);
 		}
 
-		if (leftJoin.hasCondition() || leftJoin.getLeftArg().getBindingNames().contains(bindingName)
+		if (leftJoin.hasCondition() || !QueryEvaluationUtility.isRepeatable(leftJoin.getRightArg())
+				|| leftJoin.getLeftArg().getBindingNames().contains(bindingName)
 				|| !leftJoin.getRightArg().getBindingNames().contains(bindingName)) {
 			return MandatoryOptionalRewrite.unchanged(arg);
 		}
@@ -308,6 +315,9 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		TupleExpr fanoutArg = leftJoin.getRightArg();
 		if (!(fanoutArg instanceof Union) && (!(fanoutArg instanceof VariableScopeChange)
 				|| !((VariableScopeChange) fanoutArg).isVariableScopeChange())) {
+			return null;
+		}
+		if (!QueryEvaluationUtility.isRepeatable(fanoutArg)) {
 			return null;
 		}
 

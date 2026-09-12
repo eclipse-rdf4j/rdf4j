@@ -37,6 +37,8 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 	private final Comparator<Value> cmp;
 	private final Function<BindingSet, Value> valueFunction;
 	private final QueryEvaluationContext context;
+	private final boolean leftSeek;
+	private final boolean rightSeek;
 
 	private BindingSet next;
 	private BindingSet currentLeft;
@@ -57,6 +59,8 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 		this.cmp = cmp;
 		this.valueFunction = valueFunction;
 		this.context = context;
+		this.leftSeek = this.leftIterator.supportsSeek();
+		this.rightSeek = this.rightIterator.supportsSeek();
 	}
 
 	public static CloseableIteration<BindingSet> getInstance(QueryEvaluationStep leftPrepared,
@@ -129,7 +133,8 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 					currentLeftValueAndPeekEquals = -1;
 				}
 
-				int compare = compare(currentLeftValue, valueFunction.apply(peekRight));
+				Value rightValue = valueFunction.apply(peekRight);
+				int compare = compare(currentLeftValue, rightValue);
 
 				if (compare == 0) {
 					equal();
@@ -137,7 +142,7 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 				} else if (compare < 0) {
 					// leftIterator is behind, or in other words, rightIterator is ahead
 					if (leftIterator.hasNext()) {
-						lessThan();
+						lessThan(rightValue);
 					} else {
 						close();
 						return;
@@ -145,7 +150,10 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 				} else {
 					// rightIterator is behind, skip forward
 					rightIterator.next();
-
+					if (rightSeek) {
+						// advisory hint: right rows ordered before the current left value can never join
+						rightIterator.seek(currentLeftValue, true, null, true);
+					}
 				}
 
 			} else if (rightIterator.isResettable() && leftIterator.hasNext()) {
@@ -173,7 +181,7 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 		return compareTo;
 	}
 
-	private void lessThan() {
+	private void lessThan(Value rightValue) {
 		Value oldLeftValue = currentLeftValue;
 		currentLeft = leftIterator.next();
 		if (leftPeekValue != null) {
@@ -193,6 +201,12 @@ public class InnerMergeJoinIterator implements CloseableIteration<BindingSet> {
 			}
 		} else {
 			rightIterator.unmark();
+		}
+
+		if (leftSeek && !rightIterator.isResettable()) {
+			// advisory hint: with no replay obligations left on the right side, every unconsumed right row is
+			// ordered at or after rightValue, so left rows ordered before it can never join
+			leftIterator.seek(rightValue, true, null, true);
 		}
 	}
 

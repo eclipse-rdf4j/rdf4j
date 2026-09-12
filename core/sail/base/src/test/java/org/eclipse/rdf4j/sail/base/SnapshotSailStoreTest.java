@@ -14,7 +14,13 @@ package org.eclipse.rdf4j.sail.base;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -65,6 +71,52 @@ import ch.qos.logback.core.read.ListAppender;
  * Minimal tests for the functionality of {@link SnapshotSailStore}
  */
 public class SnapshotSailStoreTest {
+
+	@Test
+	public void sizeUsesDatasetCountWithoutRequestingStatements() {
+		SailDataset dataset = mock(SailDataset.class);
+		Resource[] contexts = { null, SimpleValueFactory.getInstance().createIRI("urn:context") };
+		long count = Integer.MAX_VALUE + 1L;
+		when(dataset.getStatementCount(null, null, null, contexts)).thenReturn(count);
+		when(dataset.getStatements(null, null, null, contexts))
+				.thenThrow(new AssertionError("size must use the dataset count without requesting statements"));
+		SailSource source = mock(SailSource.class);
+		when(source.fork()).thenReturn(source);
+		when(source.dataset(any())).thenReturn(dataset);
+		SailStore store = mock(SailStore.class);
+		when(store.getExplicitSailSource()).thenReturn(source);
+		Sail sail = createSail(store);
+		try (SailConnection connection = sail.getConnection()) {
+			assertEquals(count, connection.size(contexts));
+			verify(dataset).getStatementCount(null, null, null, contexts);
+			verify(dataset).close();
+			verify(source).close();
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void sizeReleasesDatasetAndSourceWhenCountingFails() {
+		SailException failure = new SailException("count failed");
+		SailDataset dataset = mock(SailDataset.class);
+		when(dataset.getStatementCount(null, null, null)).thenThrow(failure);
+		when(dataset.getStatements(null, null, null))
+				.thenThrow(new AssertionError("size must use the dataset count without requesting statements"));
+		SailSource source = mock(SailSource.class);
+		when(source.fork()).thenReturn(source);
+		when(source.dataset(any())).thenReturn(dataset);
+		SailStore store = mock(SailStore.class);
+		when(store.getExplicitSailSource()).thenReturn(source);
+		Sail sail = createSail(store);
+		try (SailConnection connection = sail.getConnection()) {
+			assertSame(failure, assertThrows(SailException.class, connection::size));
+			verify(dataset).close();
+			verify(source).close();
+		} finally {
+			sail.shutDown();
+		}
+	}
 
 	/**
 	 * Base no-op sink as base for testing
@@ -158,6 +210,7 @@ public class SnapshotSailStoreTest {
 					EmptyBindingSet.getInstance(), true, 0);
 			assertTrue(explanation.toJson().contains("\"hasNextCallCountActual\""));
 			assertFalse(tupleExpr.isRuntimeTelemetryEnabled());
+			assertFalse(tupleExpr.isExecutionSummaryEnabled());
 		} finally {
 			sail.shutDown();
 		}

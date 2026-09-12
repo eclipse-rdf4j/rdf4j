@@ -28,10 +28,21 @@ assert_not_contains() {
 	fi
 }
 
+assert_matches() {
+	local haystack="$1"
+	local pattern="$2"
+	local message="$3"
+	if [[ ! "${haystack}" =~ ${pattern} ]]; then
+		fail "${message}"
+	fi
+}
+
 INPUT="$(mktemp "${TMPDIR:-/tmp}/theme-query-clean-input.XXXXXX")"
 FIRST_OUTPUT="$(mktemp "${TMPDIR:-/tmp}/theme-query-clean-first.XXXXXX")"
 SECOND_OUTPUT="$(mktemp "${TMPDIR:-/tmp}/theme-query-clean-second.XXXXXX")"
-trap 'rm -f "${INPUT}" "${FIRST_OUTPUT}" "${SECOND_OUTPUT}"' EXIT
+CAPTURE_INPUT="$(mktemp "${TMPDIR:-/tmp}/theme-query-capture-input.XXXXXX")"
+CAPTURE_OUTPUT="$(mktemp "${TMPDIR:-/tmp}/theme-query-capture-output.XXXXXX")"
+trap 'rm -f "${INPUT}" "${FIRST_OUTPUT}" "${SECOND_OUTPUT}" "${CAPTURE_INPUT}" "${CAPTURE_OUTPUT}"' EXIT
 
 cat >"${INPUT}" <<'FIXTURE'
 ```
@@ -98,3 +109,25 @@ assert_contains "${CLEANED}" "62.319 +/- 9.381 ms/op [Average]" \
 if ! cmp -s "${FIRST_OUTPUT}" "${SECOND_OUTPUT}"; then
 	fail "clean should be idempotent"
 fi
+
+cat >"${CAPTURE_INPUT}" <<'FIXTURE'
+# Parameters: (janinoEnabled = false, themeName = MEDICAL_RECORDS, z_queryIndex = 0)
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+62.319 ms/op
+
+# Parameters: (janinoEnabled = true, themeName = MEDICAL_RECORDS, z_queryIndex = 0)
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+41.007 ms/op
+FIXTURE
+
+bash "${RESULTS_SCRIPT}" capture --output "${CAPTURE_OUTPUT}" "${CAPTURE_INPUT}" >/dev/null
+CAPTURED="$(cat "${CAPTURE_OUTPUT}")"
+
+assert_contains "${CAPTURED}" "(janinoEnabled)" \
+	"capture should preserve the Janino comparison parameter"
+assert_matches "${CAPTURED}" \
+	'ThemeQueryBenchmark\.executeQuery[[:space:]]+false[[:space:]]+MEDICAL_RECORDS[[:space:]]+0' \
+	"capture should synthesize the Janino-disabled result row"
+assert_matches "${CAPTURED}" \
+	'ThemeQueryBenchmark\.executeQuery[[:space:]]+true[[:space:]]+MEDICAL_RECORDS[[:space:]]+0' \
+	"capture should synthesize the Janino-enabled result row"

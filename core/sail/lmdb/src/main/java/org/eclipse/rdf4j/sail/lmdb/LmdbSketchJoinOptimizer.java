@@ -16,8 +16,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -75,6 +77,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -108,9 +111,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		QueryEvaluationUtility.pinFunctions(tupleExpr);
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope scope = beginQueryOptimizationScope()) {
 			Set<String> initiallyBoundVars = bindings == null ? Set.of() : bindings.getBindingNames();
-			tupleExpr.visit(new JoinVisitor(initiallyBoundVars));
+			tupleExpr.visit(new JoinVisitor(initiallyBoundVars, dataset));
 			new LmdbTupleExprEstimateAnnotator(statistics).annotate(tupleExpr);
 		}
 	}
@@ -124,6 +128,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 	private final class JoinVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
+		private final Dataset dataset;
 		private Set<String> boundVars;
 		private List<Filter> contextualCostingFilters = List.of();
 		private double repeatedSubplanInvocations = 1.0d;
@@ -132,13 +137,18 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		private Map<String, String> selectedPlanSummaryStringMetrics = Map.of();
 		private Map<String, Double> selectedPlanSummaryDoubleMetrics = Map.of();
 
-		private JoinVisitor(Set<String> initiallyBoundVars) {
+		private JoinVisitor(Set<String> initiallyBoundVars, Dataset dataset) {
 			super(trackResultSize);
+			this.dataset = dataset;
 			this.boundVars = new HashSet<>(initiallyBoundVars);
 		}
 
 		@Override
 		public void meet(Filter filter) {
+			if (!QueryEvaluationUtility.isRepeatable(filter.getCondition())) {
+				filter.getArg().visit(this);
+				return;
+			}
 			TupleExpr existsReplacement = rewriteNoNewBindingExistsProbe(filter);
 			if (existsReplacement != null) {
 				existsReplacement.visit(this);
@@ -177,6 +187,10 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(LeftJoin leftJoin) {
+			if (leftJoin.hasCondition() && !QueryEvaluationUtility.isRepeatable(leftJoin.getCondition())) {
+				visitLeftJoin(leftJoin, List.of());
+				return;
+			}
 			TupleExpr replacement = rewriteOverlappingOptional(leftJoin);
 			if (replacement != null) {
 				replacement.visit(this);
@@ -244,6 +258,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		private TupleExpr rewriteOverlappingOptional(LeftJoin leftJoin) {
 			TupleExpr leftArg = leftJoin.getLeftArg();
 			if (!(leftArg instanceof LeftJoin previousOptional)) {
+				return null;
+			}
+			if (!QueryEvaluationUtility.isRepeatable(previousOptional)
+					|| !QueryEvaluationUtility.isRepeatable(leftJoin.getRightArg())
+					|| (leftJoin.hasCondition() && !QueryEvaluationUtility.isRepeatable(leftJoin.getCondition()))
+					|| (previousOptional.hasCondition()
+							&& !QueryEvaluationUtility.isRepeatable(previousOptional.getCondition()))) {
 				return null;
 			}
 			TupleExpr replacement = rewriteMutuallyExclusiveOptionalsAsUnion(leftJoin, previousOptional);
@@ -320,13 +341,14 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (branches.size() < 2) {
 				return false;
 			}
-			Map<String, Set<Value>> discriminatorValues = new LinkedHashMap<>();
+			Map<String, List<List<EqualityDomainProof>>> discriminatorProofs = new LinkedHashMap<>();
 			Set<String> candidateNames = null;
 			for (OptionalBranch branch : branches) {
 				if (branch.condition() == null) {
 					return false;
 				}
-				Map<String, Value> branchDiscriminators = baseConstantEqualities(branch.condition(), baseNames);
+				Map<String, List<EqualityDomainProof>> branchDiscriminators = baseConstantEqualities(branch.condition(),
+						baseNames);
 				if (branchDiscriminators.isEmpty()) {
 					return false;
 				}
@@ -335,25 +357,50 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				} else {
 					candidateNames.retainAll(branchDiscriminators.keySet());
 				}
-				for (Map.Entry<String, Value> entry : branchDiscriminators.entrySet()) {
-					discriminatorValues.computeIfAbsent(entry.getKey(), key -> new LinkedHashSet<>())
-							.add(entry.getValue());
+				for (Map.Entry<String, List<EqualityDomainProof>> entry : branchDiscriminators.entrySet()) {
+					discriminatorProofs.computeIfAbsent(entry.getKey(), key -> new ArrayList<>())
+							.add(List.copyOf(entry.getValue()));
 				}
 			}
 			if (candidateNames == null || candidateNames.isEmpty()) {
 				return false;
 			}
 			for (String candidateName : candidateNames) {
-				Set<Value> values = discriminatorValues.get(candidateName);
-				if (values != null && values.size() == branches.size()) {
+				List<List<EqualityDomainProof>> proofGroups = discriminatorProofs.get(candidateName);
+				if (proofGroups != null && proofGroups.size() == branches.size()
+						&& pairwiseMutuallyExclusive(proofGroups)) {
 					return true;
 				}
 			}
 			return false;
 		}
 
-		private Map<String, Value> baseConstantEqualities(ValueExpr condition, Set<String> baseNames) {
-			Map<String, Value> equalities = new LinkedHashMap<>();
+		private boolean pairwiseMutuallyExclusive(List<List<EqualityDomainProof>> proofGroups) {
+			for (int left = 0; left < proofGroups.size(); left++) {
+				for (int right = left + 1; right < proofGroups.size(); right++) {
+					if (!hasMutuallyExclusiveProofPair(proofGroups.get(left), proofGroups.get(right))) {
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
+		private boolean hasMutuallyExclusiveProofPair(List<EqualityDomainProof> leftProofs,
+				List<EqualityDomainProof> rightProofs) {
+			for (EqualityDomainProof left : leftProofs) {
+				for (EqualityDomainProof right : rightProofs) {
+					if (left.provesMutuallyExclusiveWith(right)) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		private Map<String, List<EqualityDomainProof>> baseConstantEqualities(ValueExpr condition,
+				Set<String> baseNames) {
+			Map<String, List<EqualityDomainProof>> equalities = new LinkedHashMap<>();
 			for (ValueExpr conjunct : LmdbJoinPlanSupport.splitConjuncts(condition)) {
 				recordBaseConstantEquality(conjunct, baseNames, equalities);
 			}
@@ -361,26 +408,30 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private void recordBaseConstantEquality(ValueExpr expression, Set<String> baseNames,
-				Map<String, Value> equalities) {
+				Map<String, List<EqualityDomainProof>> equalities) {
 			if (expression instanceof SameTerm sameTerm) {
-				recordBaseConstantEquality(sameTerm.getLeftArg(), sameTerm.getRightArg(), baseNames, equalities);
+				recordBaseConstantEquality(sameTerm.getLeftArg(), sameTerm.getRightArg(), baseNames, equalities,
+						EqualityOperator.SAME_TERM);
 				return;
 			}
 			if (expression instanceof Compare compare && compare.getOperator() == Compare.CompareOp.EQ) {
-				recordBaseConstantEquality(compare.getLeftArg(), compare.getRightArg(), baseNames, equalities);
+				recordBaseConstantEquality(compare.getLeftArg(), compare.getRightArg(), baseNames, equalities,
+						EqualityOperator.VALUE_EQUAL);
 			}
 		}
 
 		private void recordBaseConstantEquality(ValueExpr left, ValueExpr right, Set<String> baseNames,
-				Map<String, Value> equalities) {
+				Map<String, List<EqualityDomainProof>> equalities, EqualityOperator operator) {
 			if (left instanceof Var var && !var.hasValue() && baseNames.contains(var.getName())
 					&& right instanceof ValueConstant constant) {
-				equalities.put(var.getName(), constant.getValue());
+				equalities.computeIfAbsent(var.getName(), key -> new ArrayList<>())
+						.add(new EqualityDomainProof(constant.getValue(), operator));
 				return;
 			}
 			if (right instanceof Var var && !var.hasValue() && baseNames.contains(var.getName())
 					&& left instanceof ValueConstant constant) {
-				equalities.put(var.getName(), constant.getValue());
+				equalities.computeIfAbsent(var.getName(), key -> new ArrayList<>())
+						.add(new EqualityDomainProof(constant.getValue(), operator));
 			}
 		}
 
@@ -550,7 +601,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			Set<String> extensionNames = new HashSet<>();
 			for (ExtensionElem element : extension.getElements()) {
 				if (leftBindings.contains(element.getName())
-						|| !leftBindings.containsAll(VarNameCollector.process(element.getExpr()))) {
+						|| !leftBindings.containsAll(VarNameCollector.process(element.getExpr()))
+						|| !QueryEvaluationUtility.isRepeatable(element.getExpr())) {
 					return false;
 				}
 				extensionNames.add(element.getName());
@@ -568,44 +620,109 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private boolean isNullRejectingOptionalExpression(ValueExpr expression, Set<String> optionalBindings,
 				Set<String> leftAssuredBindings) {
+			return !optionalUnboundEbvOutcomes(expression, optionalBindings, leftAssuredBindings)
+					.contains(EbvOutcome.TRUE);
+		}
+
+		private EnumSet<EbvOutcome> optionalUnboundEbvOutcomes(ValueExpr expression, Set<String> optionalBindings,
+				Set<String> leftAssuredBindings) {
 			if (expression instanceof And and) {
-				return isNullRejectingOptionalExpression(and.getLeftArg(), optionalBindings, leftAssuredBindings)
-						|| isNullRejectingOptionalExpression(and.getRightArg(), optionalBindings,
-								leftAssuredBindings);
+				return combineEbvOutcomes(
+						optionalUnboundEbvOutcomes(and.getLeftArg(), optionalBindings, leftAssuredBindings),
+						optionalUnboundEbvOutcomes(and.getRightArg(), optionalBindings, leftAssuredBindings), true);
 			}
 			if (expression instanceof Or or) {
-				return isNullRejectingOptionalExpression(or.getLeftArg(), optionalBindings, leftAssuredBindings)
-						&& isNullRejectingOptionalExpression(or.getRightArg(), optionalBindings,
-								leftAssuredBindings);
+				return combineEbvOutcomes(
+						optionalUnboundEbvOutcomes(or.getLeftArg(), optionalBindings, leftAssuredBindings),
+						optionalUnboundEbvOutcomes(or.getRightArg(), optionalBindings, leftAssuredBindings), false);
 			}
 			if (expression instanceof Not not) {
-				return isNullRejectingOptionalExpression(not.getArg(), optionalBindings, leftAssuredBindings);
+				EnumSet<EbvOutcome> outcomes = EnumSet.noneOf(EbvOutcome.class);
+				for (EbvOutcome outcome : optionalUnboundEbvOutcomes(not.getArg(), optionalBindings,
+						leftAssuredBindings)) {
+					outcomes.add(switch (outcome) {
+					case TRUE -> EbvOutcome.FALSE;
+					case FALSE -> EbvOutcome.TRUE;
+					case ERROR -> EbvOutcome.ERROR;
+					});
+				}
+				return outcomes;
 			}
 			if (expression instanceof Compare compare) {
-				return isNullRejectingOptionalCompare(compare, optionalBindings, leftAssuredBindings);
+				return strictOptionalExpressionOutcomes(
+						isNullRejectingOptionalCompare(compare, optionalBindings, leftAssuredBindings));
 			}
 			if (expression instanceof SameTerm sameTerm) {
-				return isNullRejectingOptionalSameTerm(sameTerm, optionalBindings, leftAssuredBindings);
+				return strictOptionalExpressionOutcomes(
+						isNullRejectingOptionalSameTerm(sameTerm, optionalBindings, leftAssuredBindings));
 			}
 			if (expression instanceof Bound bound) {
-				return optionalBindings.contains(bound.getArg().getName());
+				Var argument = bound.getArg();
+				if (argument.hasValue() || leftAssuredBindings.contains(argument.getName())) {
+					return EnumSet.of(EbvOutcome.TRUE);
+				}
+				if (optionalBindings.contains(argument.getName())) {
+					return EnumSet.of(EbvOutcome.FALSE);
+				}
+				return EnumSet.allOf(EbvOutcome.class);
 			}
 			if (isTermKindPredicateOnOptionalBinding(expression, optionalBindings)) {
-				return true;
+				return EnumSet.of(EbvOutcome.ERROR);
 			}
 			if (expression instanceof LangMatches langMatches) {
-				return isNullRejectingOptionalLangMatches(langMatches, optionalBindings, leftAssuredBindings);
+				return strictOptionalExpressionOutcomes(
+						isNullRejectingOptionalLangMatches(langMatches, optionalBindings, leftAssuredBindings));
 			}
 			if (expression instanceof FunctionCall functionCall) {
-				return isNullRejectingOptionalStringFunction(functionCall, optionalBindings, leftAssuredBindings);
+				return strictOptionalExpressionOutcomes(
+						isNullRejectingOptionalStringFunction(functionCall, optionalBindings, leftAssuredBindings));
 			}
 			if (expression instanceof Regex regex) {
-				return isNullRejectingOptionalRegex(regex, optionalBindings, leftAssuredBindings);
+				return strictOptionalExpressionOutcomes(
+						isNullRejectingOptionalRegex(regex, optionalBindings, leftAssuredBindings));
 			}
 			if (expression instanceof ListMemberOperator list) {
-				return isNullRejectingOptionalListMember(list, optionalBindings, leftAssuredBindings);
+				return strictOptionalExpressionOutcomes(
+						isNullRejectingOptionalListMember(list, optionalBindings, leftAssuredBindings));
 			}
-			return false;
+			return EnumSet.allOf(EbvOutcome.class);
+		}
+
+		private EnumSet<EbvOutcome> strictOptionalExpressionOutcomes(boolean mustErrorWhenOptionalUnbound) {
+			return mustErrorWhenOptionalUnbound
+					? EnumSet.of(EbvOutcome.ERROR)
+					: EnumSet.allOf(EbvOutcome.class);
+		}
+
+		private EnumSet<EbvOutcome> combineEbvOutcomes(Set<EbvOutcome> leftOutcomes,
+				Set<EbvOutcome> rightOutcomes, boolean conjunction) {
+			EnumSet<EbvOutcome> outcomes = EnumSet.noneOf(EbvOutcome.class);
+			for (EbvOutcome left : leftOutcomes) {
+				for (EbvOutcome right : rightOutcomes) {
+					outcomes.add(conjunction ? andOutcome(left, right) : orOutcome(left, right));
+				}
+			}
+			return outcomes;
+		}
+
+		private EbvOutcome andOutcome(EbvOutcome left, EbvOutcome right) {
+			if (left == EbvOutcome.FALSE || right == EbvOutcome.FALSE) {
+				return EbvOutcome.FALSE;
+			}
+			if (left == EbvOutcome.ERROR || right == EbvOutcome.ERROR) {
+				return EbvOutcome.ERROR;
+			}
+			return EbvOutcome.TRUE;
+		}
+
+		private EbvOutcome orOutcome(EbvOutcome left, EbvOutcome right) {
+			if (left == EbvOutcome.TRUE || right == EbvOutcome.TRUE) {
+				return EbvOutcome.TRUE;
+			}
+			if (left == EbvOutcome.ERROR || right == EbvOutcome.ERROR) {
+				return EbvOutcome.ERROR;
+			}
+			return EbvOutcome.FALSE;
 		}
 
 		private boolean isNullRejectingOptionalCompare(Compare compare, Set<String> optionalBindings,
@@ -631,13 +748,17 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private boolean isNullRejectingOptionalListMember(ListMemberOperator list, Set<String> optionalBindings,
 				Set<String> leftAssuredBindings) {
+			if (list.getArguments().isEmpty()
+					|| !referencesAnyOptionalBinding(list.getArguments().getFirst(), optionalBindings)) {
+				return false;
+			}
 			for (ValueExpr argument : list.getArguments()) {
 				if (!isSupportedNullRejectingCompareOperand(argument, optionalBindings)
 						|| !nonOptionalCompareOperandIsAssured(argument, optionalBindings, leftAssuredBindings)) {
 					return false;
 				}
 			}
-			return referencesAnyOptionalBinding(list, optionalBindings);
+			return true;
 		}
 
 		private boolean isSupportedNullRejectingCompareOperand(ValueExpr expression, Set<String> optionalBindings) {
@@ -907,7 +1028,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private TupleExpr rewriteNoNewBindingExistsProbe(Filter filter) {
-			if (filter.getArg() instanceof Join && !LmdbJoinPlanSupport.isJoinOrderSeparator(filter.getArg())) {
+			if (!QueryEvaluationUtility.isRepeatable(filter.getArg())
+					|| (filter.getArg() instanceof Join
+							&& !LmdbJoinPlanSupport.isJoinOrderSeparator(filter.getArg()))) {
 				return null;
 			}
 			TupleExpr replacement = noNewBindingExistsProbeJoin(filter.getArg(), filter.getCondition(), true);
@@ -952,18 +1075,17 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					&& isFixedOrBoundPatternVar(statementPattern.getObjectVar(), boundNames)
 					&& (contextVar != null
 							? isFixedOrBoundPatternVar(contextVar, boundNames)
-							: estimatedBoundContextlessProbeIsUnique(statementPattern, boundNames));
+							: datasetFixesSingleContext(statementPattern));
 		}
 
-		private boolean estimatedBoundContextlessProbeIsUnique(StatementPattern statementPattern,
-				Set<String> boundNames) {
-			if (!(statistics instanceof JoinFactorCostModel costModel)) {
+		private boolean datasetFixesSingleContext(StatementPattern statementPattern) {
+			if (dataset == null) {
 				return false;
 			}
-			Optional<JoinFactorCostModel.FactorCostEstimate> estimate = costModel.estimateFactorCost(statementPattern,
-					boundNames);
-			return estimate.isPresent()
-					&& estimate.get().getOutputRows() <= 1.0d;
+			return switch (statementPattern.getScope()) {
+			case DEFAULT_CONTEXTS -> dataset.getDefaultGraphs().size() == 1;
+			case NAMED_CONTEXTS -> dataset.getNamedGraphs().size() == 1;
+			};
 		}
 
 		private boolean isFixedOrBoundPatternVar(Var var, Set<String> boundNames) {
@@ -1010,7 +1132,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (!(rightFilter.getArg() instanceof StatementPattern)) {
 				return null;
 			}
-
+			if (!QueryEvaluationUtility.isRepeatable(rightFilter.getCondition())) {
+				return null;
+			}
 			Set<String> availableBindings = new HashSet<>(rightFilter.getArg().getBindingNames());
 			availableBindings.addAll(boundVars);
 			Set<String> unavailableConditionVars = new HashSet<>(VarNameCollector.process(rightFilter.getCondition()));
@@ -1052,7 +1176,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			TupleExpr leftArg = difference.getLeftArg();
 			TupleExpr rightArg = difference.getRightArg();
 			Set<String> leftBindingNames = leftArg.getBindingNames();
-			if (!isSafeMinusNotExistsRightArg(rightArg, leftBindingNames)) {
+			if (!QueryEvaluationUtility.isRepeatable(rightArg)
+					|| !isSafeMinusNotExistsRightArg(rightArg, leftBindingNames)) {
 				return null;
 			}
 
@@ -1519,7 +1644,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private double finiteBindingRows(TupleExpr tupleExpr, Set<String> finiteBindingNames) {
 			if (tupleExpr instanceof BindingSetAssignment assignment) {
-				finiteBindingNames.addAll(assignment.getBindingNames());
+				finiteBindingNames.addAll(assignment.getAssuredBindingNames());
 				return bindingSetRows(assignment);
 			}
 			if (tupleExpr instanceof StatementPattern) {
@@ -1898,7 +2023,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private TupleExpr unwrapJoinFilterChain(Filter filter, List<Filter> filters) {
 			TupleExpr current = filter;
-			while (current instanceof Filter currentFilter && !TupleExprs.isVariableScopeChange(current)) {
+			while (current instanceof Filter currentFilter && !TupleExprs.isVariableScopeChange(current)
+					&& QueryEvaluationUtility.isRepeatable(currentFilter.getCondition())) {
 				filters.add(currentFilter);
 				current = currentFilter.getArg();
 			}
@@ -1910,7 +2036,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			List<ValueExpr> remaining = new ArrayList<>();
 			Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
 			for (ValueExpr condition : LmdbJoinPlanSupport.splitConjuncts(filter.getCondition())) {
-				if (leftBindingNames.containsAll(VarNameCollector.process(condition))) {
+				if (QueryEvaluationUtility.isRepeatable(condition)
+						&& leftBindingNames.containsAll(VarNameCollector.process(condition))) {
 					movable.add(condition);
 				} else {
 					remaining.add(condition);
@@ -1930,7 +2057,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		private TupleExpr buildOrderedRoot(CollectedJoinArgs collected, Set<String> outerBoundVars) {
 			rewriteSmallLiteralDeferredFilterAnchors(collected);
-			dropNonSelectiveFiltersCoveredByAssignments(collected);
+			dropFiltersCoveredByAssignments(collected);
 			deduplicateEquivalentBindingSetAssignments(collected.joinArgs);
 			moveUnionIndependentFiniteSuffixAfterScopedUnion(collected.joinArgs, outerBoundVars);
 			Set<String> scopeBindingNames = new HashSet<>(outerBoundVars);
@@ -2094,7 +2221,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			for (ExtensionElem element : extension.getElements()) {
 				String name = element.getName();
 				if (name == null || argBindings.contains(name) || !extensionNames.add(name)
-						|| !argBindings.containsAll(VarNameCollector.process(element.getExpr()))) {
+						|| !argBindings.containsAll(VarNameCollector.process(element.getExpr()))
+						|| !QueryEvaluationUtility.isRepeatable(element.getExpr())) {
 					return null;
 				}
 				elements.add(element);
@@ -2177,21 +2305,25 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			collected.deferredFilters.addAll(remainingFilters);
 		}
 
-		private void dropNonSelectiveFiltersCoveredByAssignments(CollectedJoinArgs collected) {
-			Map<String, LinkedHashSet<Value>> assignmentValues = smallLiteralAssignmentValues(collected.joinArgs);
-			if (assignmentValues.isEmpty()) {
-				return;
-			}
+		private void dropFiltersCoveredByAssignments(CollectedJoinArgs collected) {
 			List<Filter> remainingFilters = new ArrayList<>();
 			for (Filter filter : collected.deferredFilters) {
+				Map<String, LinkedHashSet<Value>> assignmentValues = smallLiteralAssignmentValuesInFilterSegment(
+						collected.joinArgs, filter.getArg());
 				List<ValueExpr> remainingConditions = new ArrayList<>();
+				List<ValueExpr> costingConditions = new ArrayList<>();
 				for (ValueExpr condition : LmdbJoinPlanSupport.splitConjuncts(filter.getCondition())) {
-					if (smallLiteralAssignmentCovers(condition, assignmentValues)
-							&& !LmdbJoinPlanSupport.isSelectiveSmallLiteralFilterAnchor(statistics, filter,
-									condition)) {
+					if (smallLiteralAssignmentCovers(condition, assignmentValues)) {
+						if (LmdbJoinPlanSupport.isSelectiveSmallLiteralFilterAnchor(statistics, filter, condition)) {
+							costingConditions.add(condition.clone());
+						}
 						continue;
 					}
 					remainingConditions.add(condition);
+				}
+				if (!costingConditions.isEmpty()) {
+					collected.costingOnlyFilters.add(new Filter(filter.getArg().clone(),
+							LmdbJoinPlanSupport.combinedCondition(costingConditions)));
 				}
 				if (remainingConditions.isEmpty()) {
 					continue;
@@ -2203,6 +2335,39 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			collected.deferredFilters.clear();
 			collected.deferredFilters.addAll(remainingFilters);
+		}
+
+		private Map<String, LinkedHashSet<Value>> smallLiteralAssignmentValuesInFilterSegment(
+				List<TupleExpr> joinArgs, TupleExpr filterArg) {
+			Set<StatementPattern> filterPatterns = LmdbJoinPlanSupport.collectPatternIdentities(filterArg);
+			if (filterPatterns.isEmpty()) {
+				return Map.of();
+			}
+
+			int matchingSegmentStart = -1;
+			int matchingSegmentEnd = -1;
+			int segmentStart = 0;
+			for (int i = 0; i <= joinArgs.size(); i++) {
+				if (i < joinArgs.size() && !LmdbJoinPlanSupport.isJoinOrderSeparator(joinArgs.get(i))) {
+					continue;
+				}
+				Set<StatementPattern> segmentPatterns = Collections.newSetFromMap(new IdentityHashMap<>());
+				for (int segmentIndex = segmentStart; segmentIndex < i; segmentIndex++) {
+					segmentPatterns.addAll(LmdbJoinPlanSupport.collectPatternIdentities(joinArgs.get(segmentIndex)));
+				}
+				if (!Collections.disjoint(filterPatterns, segmentPatterns)) {
+					if (matchingSegmentStart >= 0 || !segmentPatterns.containsAll(filterPatterns)) {
+						return Map.of();
+					}
+					matchingSegmentStart = segmentStart;
+					matchingSegmentEnd = i;
+				}
+				segmentStart = i + 1;
+			}
+			if (matchingSegmentStart < 0) {
+				return Map.of();
+			}
+			return smallLiteralAssignmentValues(joinArgs.subList(matchingSegmentStart, matchingSegmentEnd));
 		}
 
 		private Map<String, LinkedHashSet<Value>> smallLiteralAssignmentValues(List<TupleExpr> joinArgs) {
@@ -2532,14 +2697,16 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			clearSelectedPlanAnnotations();
 			int segmentFilterCount = segmentFilters.size();
 			if (segment.size() < 2 || !(statistics instanceof JoinOrderPlanner planner)) {
-				return new OrderedSegment(new ArrayDeque<>(segment), Map.of(), false);
+				return new OrderedSegment(new ArrayDeque<>(hoistSingleBindingSetAssignments(segment, segment)),
+						Map.of(), false);
 			}
 			boolean preferFiniteAnchorFastPath = statistics.supportsJoinEstimation();
 			if (preferFiniteAnchorFastPath) {
 				Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
 						boundBeforeSegment, plannerFilters);
 				if (canonicalFiniteAnchorOrder.isPresent()) {
-					List<TupleExpr> orderedArgs = canonicalFiniteAnchorOrder.get();
+					List<TupleExpr> orderedArgs = hoistSingleBindingSetAssignments(canonicalFiniteAnchorOrder.get(),
+							segment);
 					applyFiniteAnchorPlannerMetrics(orderedArgs);
 					FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
 							orderedArgs, boundBeforeSegment);
@@ -2555,7 +2722,8 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					Optional<List<TupleExpr>> canonicalFiniteAnchorOrder = canonicalFiniteAnchorOrder(segment,
 							boundBeforeSegment, plannerFilters);
 					if (canonicalFiniteAnchorOrder.isPresent()) {
-						List<TupleExpr> orderedArgs = canonicalFiniteAnchorOrder.get();
+						List<TupleExpr> orderedArgs = hoistSingleBindingSetAssignments(canonicalFiniteAnchorOrder.get(),
+								segment);
 						applyFiniteAnchorPlannerMetrics(orderedArgs);
 						FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
 								orderedArgs, boundBeforeSegment);
@@ -2572,10 +2740,13 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					selectedPlan, algorithm, planner)
 							.orElse(selectedPlan);
 			applyPlannerStepEstimates(selectedPlan);
+			List<TupleExpr> selectedPlanOrderedArgs = selectedPlan.getOrderedArgs();
+			List<TupleExpr> selectedOrderedArgs = hoistSingleBindingSetAssignments(selectedPlanOrderedArgs, segment);
+			boolean singletonHoisted = !sameTupleOrder(selectedOrderedArgs, selectedPlanOrderedArgs);
 			FiniteAssignmentReorder finiteAssignmentReorder = deferFiniteAssignmentsAfterBoundExactLookups(
-					selectedPlan.getOrderedArgs(), boundBeforeSegment);
+					selectedOrderedArgs, boundBeforeSegment);
 			List<TupleExpr> orderedArgs = finiteAssignmentReorder.orderedArgs();
-			Map<Integer, Integer> filterPlacementSteps = finiteAssignmentReorder.changed()
+			Map<Integer, Integer> filterPlacementSteps = finiteAssignmentReorder.changed() || singletonHoisted
 					? Map.of()
 					: plannerFilterPlacementSteps(selectedPlan, segmentFilterCount);
 			return new OrderedSegment(new ArrayDeque<>(orderedArgs), filterPlacementSteps, false);
@@ -2592,8 +2763,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 						tupleExpr);
 				if (assignmentNames.isEmpty()
 						|| assignmentNames.get().isEmpty()
+						|| isSingleBindingSetAssignment(tupleExpr)
 						|| !isSingleLiteralBindingAssignment(tupleExpr)) {
-					bound.addAll(plannerBindingNames(tupleExpr.getBindingNames()));
+					bound.addAll(plannerBindingNames(tupleExpr.getAssuredBindingNames()));
 					i++;
 					continue;
 				}
@@ -2631,6 +2803,19 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			return sawValue;
+		}
+
+		private boolean isSingleBindingSetAssignment(TupleExpr tupleExpr) {
+			if (!(tupleExpr instanceof BindingSetAssignment assignment) || assignment.getBindingSets() == null) {
+				return false;
+			}
+			Iterator<BindingSet> bindingSets = assignment.getBindingSets()
+					.iterator();
+			if (!bindingSets.hasNext()) {
+				return false;
+			}
+			bindingSets.next();
+			return !bindingSets.hasNext();
 		}
 
 		private int assignmentDependentBoundLookupBlockEnd(List<TupleExpr> orderedArgs, int assignmentIndex,
@@ -2706,7 +2891,46 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private OrderedSegment locallySelectiveFallbackOrder(List<TupleExpr> segment) {
-			return new OrderedSegment(new ArrayDeque<>(segment), Map.of(), false);
+			return new OrderedSegment(new ArrayDeque<>(hoistSingleBindingSetAssignments(segment, segment)), Map.of(),
+					false);
+		}
+
+		private List<TupleExpr> hoistSingleBindingSetAssignments(List<TupleExpr> orderedArgs,
+				List<TupleExpr> originalSegment) {
+			List<TupleExpr> singleAssignments = new ArrayList<>();
+			List<TupleExpr> remaining = new ArrayList<>(orderedArgs.size());
+			for (TupleExpr tupleExpr : orderedArgs) {
+				if (isSingleBindingSetAssignment(tupleExpr)) {
+					singleAssignments.add(tupleExpr);
+				} else {
+					remaining.add(tupleExpr);
+				}
+			}
+			if (singleAssignments.isEmpty()) {
+				return orderedArgs;
+			}
+			Map<TupleExpr, Integer> originalOrder = new IdentityHashMap<>();
+			for (int i = 0; i < originalSegment.size(); i++) {
+				originalOrder.put(originalSegment.get(i), i);
+			}
+			singleAssignments.sort((left, right) -> Integer.compare(originalOrder.getOrDefault(left, Integer.MAX_VALUE),
+					originalOrder.getOrDefault(right, Integer.MAX_VALUE)));
+			List<TupleExpr> hoisted = new ArrayList<>(orderedArgs.size());
+			hoisted.addAll(singleAssignments);
+			hoisted.addAll(remaining);
+			return List.copyOf(hoisted);
+		}
+
+		private boolean sameTupleOrder(List<TupleExpr> left, List<TupleExpr> right) {
+			if (left.size() != right.size()) {
+				return false;
+			}
+			for (int i = 0; i < left.size(); i++) {
+				if (left.get(i) != right.get(i)) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		private Optional<JoinOrderPlanner.JoinOrderPlan> selectiveLocalFilterPrefixPlan(List<TupleExpr> segment,
@@ -3963,6 +4187,65 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 	private record OptionalBranch(TupleExpr tupleExpr, ValueExpr condition) {
 
+	}
+
+	private enum EbvOutcome {
+		TRUE,
+		FALSE,
+		ERROR
+	}
+
+	private record EqualityDomainProof(Value constant, EqualityOperator operator) {
+
+		private boolean provesMutuallyExclusiveWith(EqualityDomainProof other) {
+			if (operator == EqualityOperator.SAME_TERM && other.operator == EqualityOperator.SAME_TERM) {
+				return !constant.equals(other.constant);
+			}
+
+			EqualityDomain domain = equalityDomain(constant);
+			EqualityDomain otherDomain = equalityDomain(other.constant);
+			if (domain == EqualityDomain.UNPROVEN || otherDomain == EqualityDomain.UNPROVEN) {
+				return false;
+			}
+			if (domain != otherDomain) {
+				return true;
+			}
+			return QueryEvaluationUtility.compare(constant, other.constant,
+					Compare.CompareOp.EQ) != QueryEvaluationUtility.Result._true;
+		}
+
+		private static EqualityDomain equalityDomain(Value value) {
+			if (value.isResource()) {
+				return EqualityDomain.RESOURCE;
+			}
+			if (!(value instanceof Literal literal)) {
+				return EqualityDomain.UNPROVEN;
+			}
+			CoreDatatype datatype = literal.getCoreDatatype();
+			if (datatype == CoreDatatype.XSD.BOOLEAN) {
+				return EqualityDomain.BOOLEAN;
+			}
+			if (datatype == CoreDatatype.XSD.STRING) {
+				return EqualityDomain.STRING;
+			}
+			if (datatype == CoreDatatype.RDF.LANGSTRING || datatype == CoreDatatype.RDF.DIRLANGSTRING) {
+				return EqualityDomain.LANGUAGE_STRING;
+			}
+			return EqualityDomain.UNPROVEN;
+		}
+	}
+
+	private enum EqualityOperator {
+		SAME_TERM,
+		VALUE_EQUAL
+	}
+
+	private enum EqualityDomain {
+		RESOURCE,
+		BOOLEAN,
+		STRING,
+		LANGUAGE_STRING,
+		UNPROVEN
 	}
 
 }

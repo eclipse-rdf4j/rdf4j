@@ -721,6 +721,76 @@ public class QueryServletTest {
 	}
 
 	@Test
+	public void testExecShouldReportTupleQueryDurationInXmlResponse() throws Exception {
+		String responseBody = executeQueryAgainstMemoryStore(SHORT_QUERY);
+
+		assertThat(responseBody).contains("<workbench:query-duration>");
+		assertThat(extractQueryDurationMillis(responseBody)).isNotNegative();
+	}
+
+	@Test
+	public void testExecShouldReportGraphQueryDurationInXmlResponse() throws Exception {
+		String responseBody = executeQueryAgainstMemoryStore("construct {?s ?p ?o} where {?s ?p ?o}");
+
+		assertThat(responseBody).contains("<workbench:query-duration>");
+		assertThat(extractQueryDurationMillis(responseBody)).isNotNegative();
+	}
+
+	@Test
+	public void testExecShouldReportBooleanQueryDurationInXmlResponse() throws Exception {
+		String responseBody = executeQueryAgainstMemoryStore("ask {?s ?p ?o}");
+
+		assertThat(responseBody).contains("<workbench:query-duration>");
+		assertThat(extractQueryDurationMillis(responseBody)).isNotNegative();
+	}
+
+	private String executeQueryAgainstMemoryStore(String queryText) throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			servlet.setCookieHandler(mock(CookieHandler.class));
+			servlet.setRepository(repository);
+			servlet.writeQueryCookie = true;
+
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.getParameter("action")).thenReturn("exec");
+			when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+			when(request.getParameter(QueryServlet.QUERY)).thenReturn(queryText);
+			when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+			when(request.getParameter("queryLn")).thenReturn("SPARQL");
+			when(request.isParameterPresent("infer")).thenReturn(false);
+			when(request.isParameterPresent("Accept")).thenReturn(false);
+			when(request.isParameterPresent("explain")).thenReturn(false);
+			when(request.getInt("offset")).thenReturn(0);
+			when(request.getInt("limit_query")).thenReturn(0);
+			when(request.getInt("know_total")).thenReturn(0);
+			when(request.getInt("query-timeout")).thenReturn(0);
+			when(request.getHeader("Accept-Encoding")).thenReturn(null);
+			when(request.getContextPath()).thenReturn("");
+
+			ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getOutputStream()).thenReturn(outputStream);
+
+			servlet.service(request, response, "/transformations");
+
+			return outputStream.asString();
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static long extractQueryDurationMillis(String responseBody) {
+		String openTag = "<workbench:query-duration>";
+		String closeTag = "</workbench:query-duration>";
+		int start = responseBody.indexOf(openTag);
+		assertThat(start).isNotNegative();
+		int end = responseBody.indexOf(closeTag, start);
+		assertThat(end).isNotNegative();
+		return Long.parseLong(responseBody.substring(start + openTag.length(), end).trim());
+	}
+
+	@Test
 	public void testQueryServletShouldBufferDownloadWrites() throws IOException {
 		String queryServletSource = Files.readString(
 				Path.of("src/main/java/org/eclipse/rdf4j/workbench/commands/QueryServlet.java"),

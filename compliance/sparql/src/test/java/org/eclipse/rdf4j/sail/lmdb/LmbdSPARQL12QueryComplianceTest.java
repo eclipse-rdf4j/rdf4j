@@ -17,7 +17,6 @@ import java.util.UUID;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.dataset.DatasetRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
-import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL12QueryComplianceTest;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -31,7 +30,7 @@ public class LmbdSPARQL12QueryComplianceTest extends SPARQL12QueryComplianceTest
 		var temp = new File(folder, UUID.randomUUID().toString());
 		temp.mkdir();
 		return new DatasetRepository(
-				new SailRepository(new LmdbStore(temp, new LmdbStoreConfig("spoc"))));
+				new SailRepository(new LmdbStore(temp, LmdbComplianceTestSupport.config("spoc"))));
 	}
 
 	@Override
