@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
@@ -65,6 +66,8 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	/** Runtime interner of this evaluation; null on the compile-scoped carrier. */
 	private final NativeExecutionContext context;
 	private final LmdbNativeTermAuthority authority;
+	private NativeGeneratedKeyPlan generatedKeyPlan = NativeGeneratedKeyPlan.NONE;
+	private NativeGeneratedKeyAuthority generatedKeyAuthority;
 	/** Shared identity token for same-evaluation parallel decorators; {@code null} means this instance is the token. */
 	private final Object syntheticIdSpace;
 
@@ -91,12 +94,46 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	SyntheticValueSource forEvaluation() {
 		SyntheticValueSource active = ACTIVE_EVALUATION.get();
 		if (active != null) {
-			if (active.delegate == delegate && active.catalog == catalog) {
+			if (active.delegate == delegate && active.catalog == catalog && active.generatedKeyAuthority == null) {
 				return active;
 			}
 			return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext(active.context));
 		}
 		return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext());
+	}
+
+	/** Activate once, before evaluation: no first-batch guesses, property changes or mutable plan flags. */
+	SyntheticValueSource forEvaluation(NativeGeneratedKeyPlan proof, NativeSlotLayout layout, BindingSet bindings) {
+		SyntheticValueSource result = forEvaluation();
+		// A borrowed context is not this operator's terminal scope. Never alter another operator's identity policy.
+		if (result != ACTIVE_EVALUATION.get() && proof.enabled(layout, bindings)) {
+			result.generatedKeyPlan = proof;
+			result.generatedKeyAuthority = result.context.nativeState(proof,
+					() -> new NativeGeneratedKeyAuthority(result.authority, result.context));
+			NativeGeneratedKeyPlan.ACTIVATIONS.incrementAndGet();
+		}
+		return result;
+	}
+
+	NativeTermAuthority keyAuthority() {
+		return generatedKeyAuthority == null ? authority : generatedKeyAuthority;
+	}
+
+	long internComputedValue(CopyBinding assignment, Value value) {
+		if (value == null) {
+			return UNKNOWN;
+		}
+		return generatedKeyAuthority != null && generatedKeyPlan.accepts(assignment)
+				? generatedKeyAuthority.intern(context.authoritativeQueryScopedValue(value))
+				: internComputedValue(value);
+	}
+
+	long internComputedValue(CopyBinding assignment, LmdbNativeValueCodec.DecodedValue value) {
+		if (value != null && value.plainStringLiteral() && generatedKeyAuthority != null
+				&& generatedKeyPlan.accepts(assignment) && !context.hasQueryScopedValues()) {
+			return generatedKeyAuthority.internString(value.label());
+		}
+		return internComputedValue(assignment, toValue(value));
 	}
 
 	/** Makes this evaluation's context inheritable by semantic-native steps invoked recursively on the same thread. */
@@ -215,7 +252,17 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	boolean anySynthetic(long subj, long pred, long obj, long context) {
+		requireResolvedProbeTerm(subj);
+		requireResolvedProbeTerm(pred);
+		requireResolvedProbeTerm(obj);
+		requireResolvedProbeTerm(context);
 		return synthetic(subj) || synthetic(pred) || synthetic(obj) || synthetic(context);
+	}
+
+	private void requireResolvedProbeTerm(long id) {
+		if (context != null && context.isUnresolvedKey(id)) {
+			throw new IllegalStateException("Unresolved terminal key escaped into a dictionary probe");
+		}
 	}
 
 	@Override
@@ -290,6 +337,9 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	@Override
 	public RecordIterator tripleTerms(long subj, long pred, long obj) throws IOException {
+		requireResolvedProbeTerm(subj);
+		requireResolvedProbeTerm(pred);
+		requireResolvedProbeTerm(obj);
 		if (synthetic(subj) || synthetic(pred) || synthetic(obj)) {
 			return EMPTY;
 		}

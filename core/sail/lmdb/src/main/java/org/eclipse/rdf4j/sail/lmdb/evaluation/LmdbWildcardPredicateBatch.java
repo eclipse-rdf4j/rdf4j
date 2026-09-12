@@ -284,10 +284,7 @@ final class LmdbWildcardPredicateBatch {
 			java.util.Objects.checkIndex(slot, Long.SIZE);
 			liveMask |= 1L << slot;
 		}
-		SlotPlan weightedPlan = plan instanceof PatternPlan
-				? new MultiJoinPlan(new SlotPlan[] { plan }, new MaskedFilter[0])
-				: plan;
-		return openWeighted(weightedPlan, row, liveMask, capacity);
+		return openWeightedWithinBudget(plan, row, liveMask, capacity);
 	}
 
 	/** Capability admission only: physical access and bounded memory can still decline at open. */
@@ -334,15 +331,14 @@ final class LmdbWildcardPredicateBatch {
 		for (int slot : groupSlots) {
 			liveMask |= 1L << slot;
 		}
+		long assuredMask = SlotPlan.assuredMask(plan) | row.boundMask();
 		for (AggregateSpec aggregate : aggregates) {
+			liveMask |= aggregate.rowInputMask(assuredMask);
 			if (aggregate.slot >= 0) {
 				liveMask |= 1L << aggregate.slot;
 			}
 		}
-		SlotPlan weightedPlan = plan instanceof PatternPlan
-				? new MultiJoinPlan(new SlotPlan[] { plan }, new MaskedFilter[0])
-				: plan;
-		return openWeighted(weightedPlan, row, liveMask, capacity);
+		return openWeightedWithinBudget(plan, row, liveMask, capacity);
 	}
 
 	private static int distinctAggregateValueSlot(AggregateSpec[] aggregates) {
@@ -396,7 +392,9 @@ final class LmdbWildcardPredicateBatch {
 		for (int slot : groupSlots) {
 			liveMask |= 1L << slot;
 		}
+		long assuredMask = SlotPlan.assuredMask(plan) | row.boundMask();
 		for (AggregateSpec aggregate : aggregates) {
+			liveMask |= aggregate.rowInputMask(assuredMask);
 			if (aggregate.slot >= 0) {
 				liveMask |= 1L << aggregate.slot;
 			}
@@ -443,7 +441,9 @@ final class LmdbWildcardPredicateBatch {
 		for (int slot : groupSlots) {
 			liveMask |= 1L << slot;
 		}
+		long assuredMask = SlotPlan.assuredMask(plan) | row.boundMask();
 		for (AggregateSpec aggregate : aggregates) {
+			liveMask |= aggregate.rowInputMask(assuredMask);
 			if (aggregate.slot >= 0) {
 				liveMask |= 1L << aggregate.slot;
 			}
@@ -503,6 +503,23 @@ final class LmdbWildcardPredicateBatch {
 			return containsWildcard(lateral.left) || containsWildcard(lateral.right);
 		}
 		return false;
+	}
+
+	/**
+	 * Opening a weighted pipeline acquires scratch and probes without advancing its input. A refused allocation closes
+	 * that attempt, so retry smaller batches against the same snapshot before conceding the exact scalar fallback.
+	 */
+	private static RowCursor openWeightedWithinBudget(SlotPlan plan, RowState row, long liveMask, int capacity)
+			throws IOException {
+		LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
+		while (true) {
+			long refusalsBefore = memory.memoryRefusals();
+			RowCursor cursor = openWeighted(plan, row, liveMask, capacity);
+			if (cursor != null || capacity <= 1 || memory.memoryRefusals() == refusalsBefore) {
+				return cursor;
+			}
+			capacity = Math.max(1, capacity / 2);
+		}
 	}
 
 	private static RowCursor openWeighted(SlotPlan plan, RowState row, long liveMask, int capacity)
@@ -633,7 +650,9 @@ final class LmdbWildcardPredicateBatch {
 			}
 			return refactorize(new LateralCursor(left, lateral.right, visibleInputMask, row), row, liveMask, capacity);
 		}
-		if (!(plan instanceof MultiJoinPlan join)) {
+		MultiJoinPlan join = plan instanceof MultiJoinPlan multi ? multi
+				: plan instanceof PatternPlan ? new MultiJoinPlan(new SlotPlan[] { plan }, new MaskedFilter[0]) : null;
+		if (join == null) {
 			return null;
 		}
 		Shape shape = Shape.match(join, row, LmdbWildcardPhysicalDemand.weighted(liveMask));

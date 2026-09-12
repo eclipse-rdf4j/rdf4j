@@ -81,6 +81,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 	/** The HAVING condition the caller enforces above this step, offered to the kernel as a sinkable pre-filter. */
 	final ValueExpr havingCondition;
 	final NativeAggregateDistinctPlan distinctPlan;
+	final NativeGeneratedKeyPlan generatedKeys;
 	QueryEvaluationStep genericStep;
 	/** Root-host compiles only: one evaluate() is one query evaluation, so generic fallbacks may prepare per call. */
 	boolean rootEvaluationScoped;
@@ -124,6 +125,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 		this.prefixMinRunCount = prefixMinRunCount;
 		this.existsIntersection = existsIntersection;
 		this.havingCondition = havingCondition;
+		this.generatedKeys = NativeGeneratedKeyPlan.group(arg, groupSlots, aggregates);
 		this.distinctPlan = previewDistinctPlan();
 	}
 
@@ -169,7 +171,8 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 					null, havingCondition, originalExpr, forcedExecutionStrategyName());
 			return applyScopedHaving(withContextLifetime(iteration, evalSource), evalSource, havingDescriptor);
 		}
-		NativeLmdbQuerySource evalSource = evaluationSource();
+		NativeLmdbQuerySource evalSource = source instanceof SyntheticValueSource synthetic
+				? synthetic.forEvaluation(generatedKeys, layout, bindings) : source;
 		initializeQueryBase(evalSource, bindings);
 		NativeGroupIteration nativeIteration = new NativeGroupIteration(evalSource, arg, layout, groupSlots,
 				aggregates, strictCompare, bindings,

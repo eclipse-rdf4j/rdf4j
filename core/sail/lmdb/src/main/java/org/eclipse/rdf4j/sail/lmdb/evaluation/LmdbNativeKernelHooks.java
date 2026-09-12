@@ -50,6 +50,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 
 	private final NativeLmdbQuerySource source;
 	private final RowState scratch;
+	private final KernelHooks keyHooks;
 	private final LmdbNativeValueCodec codec;
 	private final LmdbNativeKernelBindings.FilterHook[] filters;
 	private final LmdbNativeKernelBindings.BindHook[] binds;
@@ -108,6 +109,8 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		this.source = liveRow.source;
 		this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base, liveRow.exactValuesMetrics,
 				liveRow.cancellation);
+		this.keyHooks = scratch.keyAuthority() instanceof NativeGeneratedKeyAuthority generated
+				? new NativeGeneratedKeyHooks(this, generated) : this;
 		this.scratch.memoryScope = liveRow.memoryScope;
 		this.scratch.runtimePlan = liveRow.runtimePlan;
 		this.scratch.lexicalInputMask = liveRow.lexicalInputMask;
@@ -178,6 +181,11 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			this.fragmentFastPaths = null;
 			this.fragmentFastBindings = null;
 		}
+	}
+
+	@Override
+	public KernelHooks keySemantics() {
+		return keyHooks;
 	}
 
 	@Override
@@ -586,7 +594,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		KernelRuntime.LongHashSet[] sets = distinctSets[aggregateId];
 		KernelRuntime.LongHashSet set = sets[groupId];
 		if (set == null) {
-			set = new KernelRuntime.LongHashSet(distinctExpected, this);
+			set = new KernelRuntime.LongHashSet(distinctExpected, keyHooks);
 			sets[groupId] = set;
 		}
 		return set.add(valueId);

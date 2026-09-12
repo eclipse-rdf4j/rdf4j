@@ -26,6 +26,15 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 @InternalUseOnly
 public interface KernelHooks {
 
+	/**
+	 * Equality/hashing at the terminal DISTINCT/GROUP BY boundary. Upstream filters and probes continue to use this
+	 * hook's storage-facing authority. A generated-only terminal can return local content-key semantics without
+	 * resolving its keys against the dictionary. The default preserves every existing kernel binding.
+	 */
+	default KernelHooks keySemantics() {
+		return this;
+	}
+
 	/** RDF-term equality for ids in this bound kernel's evaluation-scoped authority. */
 	default boolean sameRdfTerm(long left, long right) {
 		return left == right;

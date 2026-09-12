@@ -137,6 +137,11 @@ final class RowState implements LmdbNativeSlotReader {
 		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).authority() : null;
 	}
 
+	/** Terminal hashing/equality only. Pattern probes and expression comparisons keep termAuthority(). */
+	NativeTermAuthority keyAuthority() {
+		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).keyAuthority() : null;
+	}
+
 	@Override
 	public SyntheticValueSource evaluationScope() {
 		return source instanceof SyntheticValueSource ? (SyntheticValueSource) source : null;
@@ -680,6 +685,8 @@ final class CopyBinding {
 	final LmdbNativeCompiledValue computedValue;
 	/** General semantic-row evaluator for legal value expressions outside the specialized decoded-value compiler. */
 	final NativeBindingSetValueEvaluator semanticValue;
+	/** Dependency proof for terminal keying only; does not change generic BIND kernel argument lowering. */
+	private final long semanticKeyReadMask;
 	final boolean encounterOrderReplaySafe;
 	/**
 	 * Value-guarded VALUES constant (M-F1): when the target slot is free the constant binds; when it is already bound
@@ -702,6 +709,7 @@ final class CopyBinding {
 		this.computed = computed;
 		this.computedValue = null;
 		this.semanticValue = null;
+		this.semanticKeyReadMask = -1L;
 		this.encounterOrderReplaySafe = computed == null || computed.encounterOrderReplaySafe();
 		this.termChecked = false;
 	}
@@ -713,6 +721,7 @@ final class CopyBinding {
 		this.computed = null;
 		this.computedValue = computedValue;
 		this.semanticValue = null;
+		this.semanticKeyReadMask = -1L;
 		this.encounterOrderReplaySafe = encounterOrderReplaySafe;
 		this.termChecked = false;
 	}
@@ -724,18 +733,20 @@ final class CopyBinding {
 		this.computed = null;
 		this.computedValue = null;
 		this.semanticValue = null;
+		this.semanticKeyReadMask = -1L;
 		this.encounterOrderReplaySafe = true;
 		this.termChecked = termChecked;
 	}
 
 	private CopyBinding(int targetSlot, NativeBindingSetValueEvaluator semanticValue,
-			boolean encounterOrderReplaySafe) {
+			boolean encounterOrderReplaySafe, long semanticKeyReadMask) {
 		this.targetSlot = targetSlot;
 		this.sourceSlot = -1;
 		this.constant = UNKNOWN;
 		this.computed = null;
 		this.computedValue = null;
 		this.semanticValue = semanticValue;
+		this.semanticKeyReadMask = semanticKeyReadMask;
 		this.encounterOrderReplaySafe = encounterOrderReplaySafe;
 		this.termChecked = false;
 	}
@@ -759,7 +770,16 @@ final class CopyBinding {
 
 	static CopyBinding semanticValue(int targetSlot, NativeBindingSetValueEvaluator semanticValue,
 			boolean encounterOrderReplaySafe) {
-		return new CopyBinding(targetSlot, semanticValue, encounterOrderReplaySafe);
+		return new CopyBinding(targetSlot, semanticValue, encounterOrderReplaySafe, -1L);
+	}
+
+	static CopyBinding semanticValue(int targetSlot, NativeBindingSetValueEvaluator semanticValue,
+			boolean encounterOrderReplaySafe, long semanticKeyReadMask) {
+		return new CopyBinding(targetSlot, semanticValue, encounterOrderReplaySafe, semanticKeyReadMask);
+	}
+
+	long keyReadMask() {
+		return semanticValue != null ? semanticKeyReadMask : requiredMask();
 	}
 
 	static CopyBinding termCheckedConstant(int targetSlot, long constant) {
@@ -772,7 +792,7 @@ final class CopyBinding {
 			if (!outcome.isBound() || !(row.source instanceof SyntheticValueSource)) {
 				return UNKNOWN;
 			}
-			return ((SyntheticValueSource) row.source).internComputedValue(outcome.value());
+			return ((SyntheticValueSource) row.source).internComputedValue(this, outcome.value());
 		}
 		if (computedValue != null) {
 			LmdbNativeValueCodec.DecodedValue decoded = computedValue.evaluator.eval(row);
@@ -780,7 +800,7 @@ final class CopyBinding {
 				return UNKNOWN;
 			}
 			return row.source instanceof SyntheticValueSource
-					? ((SyntheticValueSource) row.source).internComputedValue(decoded)
+					? ((SyntheticValueSource) row.source).internComputedValue(this, decoded)
 					: UNKNOWN;
 		}
 		return computed != null ? computed.id(row) : sourceSlot >= 0 ? row.slots[sourceSlot] : constant;

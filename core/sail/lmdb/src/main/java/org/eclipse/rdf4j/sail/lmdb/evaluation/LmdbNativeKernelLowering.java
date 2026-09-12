@@ -16,7 +16,9 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.safeResourceId;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 
@@ -998,6 +1000,16 @@ final class LmdbNativeKernelLowering {
 		if (lowered == null) {
 			return aggregateDeclineOrBridge(arg, row, groupSlots, aggregates, having, declineTarget, builder.reason);
 		}
+		if (!builder.bindHooks.isEmpty()) {
+			for (AggregateSpec aggregate : aggregates) {
+				if (aggregate.rowInputMask(builder.aggregateInputAssuredMask) != 0L) {
+					// A BIND hook uses the IR's single unbound sentinel. Wildcard row state also observes whether
+					// a failed assignment occupies the mapping, which ExtensionCursor preserves separately from
+					// absent bindings. Keep that native producer when the aggregate needs the visible row domain.
+					return lowerAggregateWithPlanProducer(arg, row, groupSlots, aggregates, having);
+				}
+			}
+		}
 		return lowered;
 	}
 
@@ -1012,7 +1024,7 @@ final class LmdbNativeKernelLowering {
 			return false;
 		}
 		for (AggregateSpec aggregate : aggregates) {
-			if (aggregate.kind != AggKind.COUNT || aggregate.distinct || aggregate.rowSlots != null) {
+			if (aggregate.kind != AggKind.COUNT || aggregate.distinct) {
 				return false;
 			}
 		}
@@ -1270,6 +1282,7 @@ final class LmdbNativeKernelLowering {
 			}
 		}
 		for (AggregateSpec aggregate : aggregates) {
+			requiredMask |= aggregate.rowInputMask(bridge.aggregateInputAssuredMask);
 			if (aggregate.slot >= 0 && !(aggregate.kind == AggKind.COUNT && !aggregate.distinct
 					&& (bridge.aggregateInputAssuredMask & (1L << aggregate.slot)) != 0L)) {
 				requiredMask |= 1L << aggregate.slot;
@@ -2564,8 +2577,7 @@ final class LmdbNativeKernelLowering {
 				}
 				Operand operand = expressionOperand(slot);
 				if (operand == null) {
-					reason = reasonPrefix + "bind-source-unavailable";
-					return false;
+					return lowerGeneralCopy(copy);
 				}
 				argSlots[out] = slot;
 				args[out] = operand;
@@ -2611,8 +2623,7 @@ final class LmdbNativeKernelLowering {
 				}
 				Operand operand = expressionOperand(slot);
 				if (operand == null) {
-					reason = reasonPrefix + "bind-source-unavailable";
-					return false;
+					return lowerGeneralCopy(copy);
 				}
 				argSlots[out] = slot;
 				args[out] = operand;
@@ -2622,7 +2633,7 @@ final class LmdbNativeKernelLowering {
 			// interned ids carry arbitrary type bits and the expression can error per row: maybe-null, and no
 			// raw-id shortcut may consume the column (the compile-time synthetic-var guard enforces the latter)
 			optionalColMask |= 1L << target;
-			bindHooks.add(new LmdbNativeKernelBindings.BindHook(copy.computedValue, argSlots));
+			bindHooks.add(new LmdbNativeKernelBindings.BindHook(copy, argSlots));
 			currentDepthNodes().add(new LmdbNativeKernelIr.BindHook(bindHooks.size() - 1, args, target));
 			BIND_HOOK_LOWERINGS.incrementAndGet();
 			return true;
@@ -5287,8 +5298,20 @@ final class LmdbNativeKernelLowering {
 				}
 				groupCols[i] = slotColumn[groupSlots[i]];
 			}
+			// Finalize the engine-column space before allocating scratch columns for value-only views below.
+			for (AggregateSpec spec : aggregates) {
+				if (spec.rowInputMask(aggregateInputAssuredMask) != 0L) {
+					for (int slot : spec.rowSlots) {
+						ensureAggregateColumn(slot);
+					}
+				} else if (spec.slot >= 0
+						&& (spec.kind == AggKind.SAMPLE || spec.kind == AggKind.GROUP_CONCAT)) {
+					ensureAggregateColumn(spec.slot);
+				}
+			}
 			LmdbNativeKernelIr.AggregateOutput[] outputs = new LmdbNativeKernelIr.AggregateOutput[aggregates.length];
 			LmdbNativeKernelBindings.AggOut[] outs = new LmdbNativeKernelBindings.AggOut[aggregates.length];
+			Map<Integer, Integer> valueColumns = new HashMap<>();
 			// Group keys and DISTINCT are RDF terms, not raw dictionary ids. Their generated primitive structures need
 			// the evaluation-scoped term authority whenever ids can be noncanonical (for example language-tag
 			// spelling).
@@ -5334,6 +5357,24 @@ final class LmdbNativeKernelLowering {
 					return null;
 				}
 				int col = slotColumn[spec.slot];
+				if (!planRequests.isEmpty() && (aggregateInputAssuredMask & (1L << spec.slot)) == 0L) {
+					// Native plan rows preserve failed-BIND placeholders (zero) for wildcard row state. Value
+					// aggregates use the IR's unbound sentinel instead; keep a separate column so both views coexist.
+					col = valueColumns.computeIfAbsent(spec.slot, slot -> {
+						int target = scratchColumn();
+						LmdbNativeCompiledInlineId value = new LmdbNativeCompiledInlineId(1L << slot, true, input -> {
+							long id = input.id(slot);
+							return id == LmdbNativeAggregateCompiler.NULL_CONTEXT_ID
+									? LmdbNativeAggregateCompiler.UNKNOWN
+									: id;
+						});
+						bindHooks.add(new LmdbNativeKernelBindings.BindHook(value, new int[] { slot }));
+						currentDepthNodes().add(new LmdbNativeKernelIr.BindHook(bindHooks.size() - 1,
+								new Operand[] { Operand.col(slotColumn[slot]) }, target));
+						return target;
+					});
+					hooksRequired = true;
+				}
 				switch (spec.kind) {
 				case COUNT:
 					if (spec.distinct) {

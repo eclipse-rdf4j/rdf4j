@@ -115,11 +115,15 @@ final class NativeGroupTable implements AutoCloseable {
 			this.longGroups = new LongAggStateMap();
 			break;
 		case TUPLE_COUNTS:
-			this.tuples = new PrimitiveTupleTable(groupSlots.length, 256, rowMetrics);
+			this.tuples = new PrimitiveTupleTable(groupSlots.length, 256, rowMetrics,
+					java.util.function.IntUnaryOperator.identity(),
+					ctx.termAuthority instanceof NativeGeneratedKeyAuthority ? ctx.termAuthority::canonicalTermKey : null);
 			this.tupleCounts = new long[Math.max(16, aggregates.length * 16)];
 			break;
 		case TUPLE_STATES:
-			this.tuples = new PrimitiveTupleTable(groupSlots.length, 256, rowMetrics);
+			this.tuples = new PrimitiveTupleTable(groupSlots.length, 256, rowMetrics,
+					java.util.function.IntUnaryOperator.identity(),
+					ctx.termAuthority instanceof NativeGeneratedKeyAuthority ? ctx.termAuthority::canonicalTermKey : null);
 			this.tupleStates = new AggState[16];
 			break;
 		}
@@ -130,7 +134,7 @@ final class NativeGroupTable implements AutoCloseable {
 		Mode mode;
 		if (groupSlots.length == 0) {
 			mode = Mode.ZERO;
-		} else if (groupSlots.length == 1) {
+		} else if (groupSlots.length == 1 && !(ctx.termAuthority instanceof NativeGeneratedKeyAuthority)) {
 			mode = Mode.SINGLE_SLOT;
 		} else {
 			mode = allowCountFastPath && pureCounts(aggregates) ? Mode.TUPLE_COUNTS : Mode.TUPLE_STATES;
@@ -371,7 +375,7 @@ final class NativeGroupTable implements AutoCloseable {
 			return false;
 		if (!boundedChecked) {
 			boundedChecked = true;
-			NativeTermAuthority authority = row.termAuthority();
+			NativeTermAuthority authority = row.keyAuthority();
 			if (!authority.supportsCanonicalTermKeys())
 				return false;
 			boolean[] distinct = new boolean[aggregates.length];

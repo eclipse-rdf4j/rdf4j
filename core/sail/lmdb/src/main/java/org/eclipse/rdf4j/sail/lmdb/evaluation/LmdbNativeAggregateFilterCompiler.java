@@ -295,7 +295,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 						NativeBindingSetValueEvaluator semanticValue = NativeBindingSetValueCompiler.compile(expression,
 								strategy, context);
 						copies[i] = CopyBinding.semanticValue(slot(elem.getName()), semanticValue,
-								QueryEvaluationUtility.isRepeatableWithinPreparation(expression));
+								QueryEvaluationUtility.isRepeatableWithinPreparation(expression), keyReadMask(expression));
 					} else {
 						copies[i] = CopyBinding.computedValue(slot(elem.getName()), computedValue,
 								QueryEvaluationUtility.isRepeatableWithinPreparation(expression));
@@ -336,7 +336,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				NativeBindingSetValueEvaluator semanticValue = NativeBindingSetValueCompiler.compile(pending.expression,
 						strategy, context);
 				copies[i] = CopyBinding.semanticValue(pending.slot, semanticValue,
-						QueryEvaluationUtility.isRepeatableWithinPreparation(pending.expression));
+						QueryEvaluationUtility.isRepeatableWithinPreparation(pending.expression),
+						keyReadMask(pending.expression));
 			} else {
 				copies[i] = CopyBinding.computedValue(pending.slot, computedValue,
 						QueryEvaluationUtility.isRepeatableWithinPreparation(pending.expression));
@@ -344,6 +345,22 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			sawComputedValueCopy = true;
 		}
 		return SlotPlan.extension(arg, copies);
+	}
+
+	/** Conservative dependency information for generated terminal keys, not a claim that a semantic BIND is inline. */
+	private long keyReadMask(ValueExpr expression) {
+		if (containsExists(expression)) {
+			return -1L;
+		}
+		long mask = 0L;
+		for (String name : VarNameCollector.process(expression)) {
+			Integer slot = slots.get(name);
+			if (slot == null) {
+				return -1L;
+			}
+			mask |= 1L << slot;
+		}
+		return mask;
 	}
 
 	SlotPlan compileFactorizedLeftJoinFilter(Filter filter, boolean duplicateInsensitive) {

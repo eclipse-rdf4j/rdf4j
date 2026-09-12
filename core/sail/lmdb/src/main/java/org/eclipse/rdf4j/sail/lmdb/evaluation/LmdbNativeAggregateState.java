@@ -239,8 +239,8 @@ final class AggregateSpec {
 	}
 
 	/**
-	 * COUNT(*): every solution row contributes exactly once, so the spec only needs a constant that is never UNKNOWN.
-	 * Must not be used with DISTINCT — COUNT(DISTINCT *) deduplicates full rows through {@link #starDistinct}.
+	 * COUNT(*): retain the visible binding domain so the collector can skip empty mappings. Failed BIND assignments
+	 * occupy that domain even though their values remain unbound. DISTINCT uses {@link #starDistinct} instead.
 	 */
 	static AggregateSpec star(String name, int[] rowSlots) {
 		return new AggregateSpec(name, -1, NULL_CONTEXT_ID, false, AggKind.COUNT, null, rowSlots);
@@ -255,8 +255,8 @@ final class AggregateSpec {
 
 	/**
 	 * COUNT(DISTINCT *) (M-F3): counts distinct full visible solution mappings — names, bound status and term identity
-	 * over {@code rowSlots}. A fully-unbound row is the empty solution, which the generic WildCardCountAggregate skips,
-	 * so it is not counted here either. Serial-path only: every specialized strategy declines this shape.
+	 * over {@code rowSlots}. Empty mappings are skipped; failed BIND assignments still occupy a mapping even though
+	 * their values remain unbound. Serial-path only: every specialized strategy declines this shape.
 	 */
 	static AggregateSpec starDistinct(String name, int[] rowSlots) {
 		return new AggregateSpec(name, -1, NULL_CONTEXT_ID, true, AggKind.COUNT, null, rowSlots);
@@ -267,6 +267,20 @@ final class AggregateSpec {
 		return kind == AggKind.COUNT && slot < 0 && constant == NULL_CONTEXT_ID;
 	}
 
+	/**
+	 * Visible row slots needed after projection or folding. A non-distinct wildcard count can discard its domain only
+	 * when an assured binding proves every input mapping is non-empty. DISTINCT still needs the complete mapping.
+	 */
+	long rowInputMask(long assuredMask) {
+		long visibleMask = 0L;
+		if (rowSlots != null) {
+			for (int rowSlot : rowSlots) {
+				visibleMask |= 1L << rowSlot;
+			}
+		}
+		return distinct || (visibleMask & assuredMask) == 0L ? visibleMask : 0L;
+	}
+
 	/** Whether this aggregate has an input on the current solution row. */
 	boolean hasInput(RowState row) {
 		if (isWildcardCount()) {
@@ -275,7 +289,9 @@ final class AggregateSpec {
 			}
 			for (int rowSlot : rowSlots) {
 				long value = row.slots[rowSlot];
-				if (value != UNKNOWN && value != NULL_CONTEXT_ID) {
+				// ExtensionIterator installs a null placeholder on error. It contributes to BindingSet.isEmpty(),
+				// which the generic wildcard collector checks, despite remaining unbound to COUNT(?variable).
+				if (value != UNKNOWN) {
 					return true;
 				}
 			}
@@ -348,7 +364,7 @@ final class AggContext {
 	AggContext(NativeLmdbQuerySource source, boolean strictCompare, boolean encounterOrderChanging,
 			boolean deferDistinctValueAggregates) {
 		this.source = source;
-		this.termAuthority = source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).authority()
+		this.termAuthority = source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).keyAuthority()
 				: null;
 		this.encounterOrderChanging = encounterOrderChanging;
 		this.deferDistinctValueAggregates = deferDistinctValueAggregates;

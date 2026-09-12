@@ -165,6 +165,10 @@ final class LmdbNativeTermAuthority implements NativeTermAuthority {
 
 	@Override
 	public TermProbeDisposition probeDisposition(long id) {
+		// A local key was never looked up. In particular, an IRI key is NOT proven absent from the store.
+		if (context.isUnresolvedKey(id)) {
+			return TermProbeDisposition.VALUE_GUARDED_PROBE;
+		}
 		switch (kind(id)) {
 		case PLAN:
 		case RUNTIME:

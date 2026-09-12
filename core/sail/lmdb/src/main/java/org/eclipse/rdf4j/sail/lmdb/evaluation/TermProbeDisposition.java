@@ -18,8 +18,9 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * normally. {@code DEFINITELY_STORE_ABSENT}: the id is ephemeral for a value whose store representation would be
  * unique, so its absence proves no stored statement can match — an empty probe result is semantically correct.
  * {@code VALUE_GUARDED_PROBE}: the value may exist in the store under a different but term-equal representation (the
- * language-tagged literal family on stores with verbatim tags), so a correct consumer must probe unconstrained and
- * filter by RDF term equality instead of trusting the id.
+ * language-tagged literal family on stores with verbatim tags), or is a generated terminal key whose dictionary
+ * membership has deliberately not been resolved. A correct consumer must use an explicit value-aware boundary
+ * instead of trusting such an id as a store id or as proof of absence.
  */
 @Experimental
 enum TermProbeDisposition {

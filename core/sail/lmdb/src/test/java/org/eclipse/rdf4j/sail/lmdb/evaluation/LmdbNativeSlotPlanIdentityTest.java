@@ -81,6 +81,23 @@ class LmdbNativeSlotPlanIdentityTest {
 	}
 
 	@Test
+	void nestedExtensionsPreserveAssuredBindingsWithoutAssuringOptionalAliases() {
+		SlotPlan left = SlotPlan.values(new ValuesRow[] {
+				new ValuesRow(new int[] { 0 }, new long[] { 11L })
+		});
+		SlotPlan right = SlotPlan.values(new ValuesRow[] {
+				new ValuesRow(new int[] { 1 }, new long[] { 22L })
+		});
+		SlotPlan optional = SlotPlan.leftJoin(left, right);
+		SlotPlan extension = SlotPlan.extension(optional, new CopyBinding[] { CopyBinding.slot(2, 1) });
+		SlotPlan nested = SlotPlan.extension(extension, new CopyBinding[] { CopyBinding.slot(3, 2) });
+
+		assertThat(SlotPlan.assuredMask(extension)).isEqualTo(1L);
+		assertThat(SlotPlan.assuredMask(nested)).isEqualTo(1L);
+		assertThat(SlotPlan.assuredMask(SlotPlan.union(extension, nested))).isEqualTo(1L);
+	}
+
+	@Test
 	void lateralKeepsOneLexicalInputMaskAcrossRightRows() throws Exception {
 		NativeSlotLayout layout = layout(2);
 		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());

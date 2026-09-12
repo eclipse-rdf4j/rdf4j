@@ -23,7 +23,7 @@ public final class KernelGroupSink implements AutoCloseable {
 	public static KernelGroupSink tryCreate(KernelContext context, int groupWidth, boolean[] distinct,
 			int[] orderKeys, boolean[] descending, boolean valueOrder, long offset, long limit,
 			int havingOutput, int havingOp, long havingValue) {
-		if (context.hooks != null && !context.hooks.supportsCanonicalTermKeys())
+		if (context.hooks != null && !context.hooks.keySemantics().supportsCanonicalTermKeys())
 			return null;
 		return new KernelGroupSink(context, groupWidth, distinct, orderKeys, descending, valueOrder,
 				offset, limit, havingOutput, havingOp, havingValue);
@@ -42,7 +42,7 @@ public final class KernelGroupSink implements AutoCloseable {
 		this.havingOp = havingOp;
 		this.havingValue = havingValue;
 		store = new NativeCountGroupStore(groupWidth, distinct,
-				context.hooks == null ? id -> id : context.hooks::canonicalTermKey,
+				context.hooks == null ? id -> id : context.hooks.keySemantics()::canonicalTermKey,
 				context.cancellation, context.groupMemoryLedger());
 		if (orderKeys != null)
 			store.unorderedOutput();

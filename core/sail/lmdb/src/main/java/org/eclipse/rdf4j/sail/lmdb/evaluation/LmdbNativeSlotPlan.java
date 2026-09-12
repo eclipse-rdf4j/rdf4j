@@ -144,6 +144,10 @@ interface SlotPlan {
 		if (plan instanceof FilterPlan) {
 			return assuredMask(((FilterPlan) plan).arg);
 		}
+		if (plan instanceof ExtensionPlan extension) {
+			// A BIND may fail to supply its target, but it preserves the argument's bindings on every emitted row.
+			return assuredMask(extension.arg);
+		}
 		if (plan instanceof EntryBindingCompatibilityPlan entry) {
 			return assuredMask(entry.arg) | entry.restoredMask;
 		}

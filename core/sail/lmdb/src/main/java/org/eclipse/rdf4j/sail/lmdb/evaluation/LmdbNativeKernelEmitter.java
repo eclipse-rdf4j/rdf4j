@@ -1042,7 +1042,7 @@ final class LmdbNativeKernelEmitter {
 							.append(";\n");
 				}
 			}
-			source.append("    private KernelHooks hooks;\n");
+			source.append("    private KernelHooks hooks;\n    private KernelHooks keyHooks;\n");
 			// Probe-deadline poll state: null cancellation (every normal run) makes each poll one masked increment
 			// plus a branch, and keeps the generated source identical for probe and normal runs (one cache entry).
 			source.append("    private KernelCancellation cancel;\n");
@@ -1524,7 +1524,8 @@ final class LmdbNativeKernelEmitter {
 						.append(selected)
 						.append(");\n");
 			}
-			source.append("        hooks = context.hooks;\n");
+			source.append("        hooks = context.hooks;\n")
+					.append("        keyHooks = hooks == null ? null : hooks.keySemantics();\n");
 			if (kernel.requirements.scans > 0) {
 				source.append("        scanner = context.scanner;\n");
 			}
@@ -1537,7 +1538,7 @@ final class LmdbNativeKernelEmitter {
 				Emit emit = (Emit) kernel.terminal;
 				int residual = emit.cols.length - emit.alignedCount;
 				if (residual > 0) {
-					source.append("        dedup = new KernelRuntime.RowSet(").append(residual).append(");\n");
+					source.append("        dedup = new KernelRuntime.RowSet(").append(residual).append(", keyHooks == hooks ? null : keyHooks);\n");
 				}
 				if (emit.alignedCount > 0) {
 					source.append("        dseen = false;\n");
@@ -1564,11 +1565,11 @@ final class LmdbNativeKernelEmitter {
 						source.append("        distinctExpected = context.distinctExpected;\n");
 					}
 					if (aggregate.groupCols.length == 1) {
-						source.append("        groups = new KernelRuntime.LongIntMap(hooks);\n");
+						source.append("        groups = new KernelRuntime.LongIntMap(keyHooks);\n");
 					} else if (aggregate.groupCols.length > 1) {
 						source.append("        groupKeys = new KernelRuntime.RowSet(")
 								.append(aggregate.groupCols.length)
-								.append(", hooks);\n");
+								.append(", keyHooks);\n");
 					}
 					source.append("        accCap = 16;\n");
 					for (int i = 0; i < aggregate.outputs.length; i++) {
@@ -2132,7 +2133,7 @@ final class LmdbNativeKernelEmitter {
 						.append(") {\n")
 						.append("                if (!agB")
 						.append(index)
-						.append("[g] || !hooks.sameRdfTerm(agL")
+						.append("[g] || !keyHooks.sameRdfTerm(agL")
 						.append(index)
 						.append("[g], ")
 						.append(value)
@@ -2715,7 +2716,7 @@ final class LmdbNativeKernelEmitter {
 							.append("[g] == null) {\n")
 							.append("            agD")
 							.append(i)
-							.append("[g] = new KernelRuntime.LongHashSet(distinctExpected, hooks);\n")
+							.append("[g] = new KernelRuntime.LongHashSet(distinctExpected, keyHooks);\n")
 							.append("        }\n");
 				}
 			}
@@ -2820,7 +2821,7 @@ final class LmdbNativeKernelEmitter {
 					.append("        if (!sgSeen) {\n")
 					.append("            sgSeen = true;\n")
 					.append("            sgKey = key;\n")
-					.append("        } else if (!hooks.sameRdfTerm(sgKey, key)) {\n")
+					.append("        } else if (!keyHooks.sameRdfTerm(sgKey, key)) {\n")
 					.append("            emitGroup(0);\n")
 					.append("            resetGroup();\n")
 					.append("            sgKey = key;\n")
@@ -2887,7 +2888,7 @@ final class LmdbNativeKernelEmitter {
 							.append(value)
 							.append(" != -1L && (!agB")
 							.append(i)
-							.append(" || !hooks.sameRdfTerm(agL")
+							.append(" || !keyHooks.sameRdfTerm(agL")
 							.append(i)
 							.append(", ")
 							.append(value)

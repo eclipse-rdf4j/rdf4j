@@ -620,6 +620,8 @@ public final class KernelRuntime {
 	public static final class LongIntMap {
 
 		private final KernelHooks semantics;
+		/** Canonical keys live in the probe table; keysByOrdinal retains the first original output payload. */
+		private final boolean canonicalKeys;
 		private long[] keys;
 		private int[] ordinals;
 		private long[] keysByOrdinal;
@@ -642,6 +644,7 @@ public final class KernelRuntime {
 
 		public LongIntMap(int expected, KernelHooks semantics) {
 			this.semantics = semantics;
+			this.canonicalKeys = semantics != null && semantics.supportsCanonicalTermKeys();
 			int capacity = tableSizeFor(Math.max(expected, 2));
 			keys = new long[capacity];
 			ordinals = new int[capacity];
@@ -652,25 +655,26 @@ public final class KernelRuntime {
 
 		/** Returns the key's ordinal, inserting a fresh one (the current {@link #size()}) when absent. */
 		public int getOrInsert(long key) {
-			if (key == 0L) {
+			long lookup = canonicalKeys ? semantics.canonicalTermKey(key) : key;
+			if (lookup == 0L) {
 				if (zeroOrdinal < 0) {
 					zeroOrdinal = appendOrdinal(key);
 				}
 				return zeroOrdinal;
 			}
-			int slot = hash(key) & mask;
+			int slot = hash(lookup) & mask;
 			while (true) {
 				long current = keys[slot];
 				if (current == 0L) {
 					int ordinal = appendOrdinal(key);
-					keys[slot] = key;
+					keys[slot] = lookup;
 					ordinals[slot] = ordinal;
 					if (size >= threshold) {
 						grow();
 					}
 					return ordinal;
 				}
-				if (same(current, key)) {
+				if (same(current, lookup)) {
 					return ordinals[slot];
 				}
 				slot = slot + 1 & mask;
@@ -679,16 +683,17 @@ public final class KernelRuntime {
 
 		/** Returns the key's ordinal or -1 when absent. */
 		public int get(long key) {
-			if (key == 0L) {
+			long lookup = canonicalKeys ? semantics.canonicalTermKey(key) : key;
+			if (lookup == 0L) {
 				return zeroOrdinal;
 			}
-			int slot = hash(key) & mask;
+			int slot = hash(lookup) & mask;
 			while (true) {
 				long current = keys[slot];
 				if (current == 0L) {
 					return -1;
 				}
-				if (same(current, key)) {
+				if (same(current, lookup)) {
 					return ordinals[slot];
 				}
 				slot = slot + 1 & mask;
@@ -735,11 +740,11 @@ public final class KernelRuntime {
 		}
 
 		private int hash(long key) {
-			return (int) mix(semantics == null ? key : semantics.termHashKey(key));
+			return (int) mix(semantics == null || canonicalKeys ? key : semantics.termHashKey(key));
 		}
 
 		private boolean same(long left, long right) {
-			return left == right || semantics != null && semantics.sameRdfTerm(left, right);
+			return left == right || !canonicalKeys && semantics != null && semantics.sameRdfTerm(left, right);
 		}
 	}
 

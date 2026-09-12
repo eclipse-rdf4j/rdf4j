@@ -18,6 +18,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntUnaryOperator;
+import java.util.function.LongUnaryOperator;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
@@ -34,6 +35,7 @@ final class PrimitiveTupleTable {
 	final int width;
 	final boolean metricsEnabled;
 	final IntUnaryOperator hashHook;
+	final LongUnaryOperator keyNormalizer;
 	long[] keys;
 	int[] fullHashes;
 	int[] buckets;
@@ -54,6 +56,12 @@ final class PrimitiveTupleTable {
 	}
 
 	PrimitiveTupleTable(int width, int expectedSize, boolean metricsEnabled, IntUnaryOperator hashHook) {
+		this(width, expectedSize, metricsEnabled, hashHook, null);
+	}
+
+	PrimitiveTupleTable(int width, int expectedSize, boolean metricsEnabled, IntUnaryOperator hashHook,
+			LongUnaryOperator keyNormalizer) {
+		this.keyNormalizer = keyNormalizer;
 		if (width < 1) {
 			throw new IllegalArgumentException("Primitive tuple width must be positive: " + width);
 		}
@@ -274,30 +282,30 @@ final class PrimitiveTupleTable {
 	private void store(int index, long[] row, int[] slots, boolean nullAsUnknown) {
 		int offset = index * width;
 		for (int i = 0; i < width; i++) {
-			keys[offset + i] = normalize(row[slots[i]], nullAsUnknown);
+			keys[offset + i] = original(row[slots[i]], nullAsUnknown);
 		}
 	}
 
 	private void store(int index, NativeBatch batch, int row, int[] slots, boolean nullAsUnknown) {
 		int offset = index * width;
 		for (int i = 0; i < width; i++) {
-			keys[offset + i] = normalize(batch.get(slots[i], row), nullAsUnknown);
+			keys[offset + i] = original(batch.get(slots[i], row), nullAsUnknown);
 		}
 	}
 
 	private boolean matches(int index, long[] row, int[] slots, boolean nullAsUnknown) {
 		int offset = index * width;
 		return switch (width) {
-		case 1 -> keys[offset] == normalize(row[slots[0]], nullAsUnknown);
-		case 2 -> keys[offset] == normalize(row[slots[0]], nullAsUnknown)
-				&& keys[offset + 1] == normalize(row[slots[1]], nullAsUnknown);
-		case 3 -> keys[offset] == normalize(row[slots[0]], nullAsUnknown)
-				&& keys[offset + 1] == normalize(row[slots[1]], nullAsUnknown)
-				&& keys[offset + 2] == normalize(row[slots[2]], nullAsUnknown);
-		case 4 -> keys[offset] == normalize(row[slots[0]], nullAsUnknown)
-				&& keys[offset + 1] == normalize(row[slots[1]], nullAsUnknown)
-				&& keys[offset + 2] == normalize(row[slots[2]], nullAsUnknown)
-				&& keys[offset + 3] == normalize(row[slots[3]], nullAsUnknown);
+		case 1 -> normalize(keys[offset], nullAsUnknown) == normalize(row[slots[0]], nullAsUnknown);
+		case 2 -> normalize(keys[offset], nullAsUnknown) == normalize(row[slots[0]], nullAsUnknown)
+				&& normalize(keys[offset + 1], nullAsUnknown) == normalize(row[slots[1]], nullAsUnknown);
+		case 3 -> normalize(keys[offset], nullAsUnknown) == normalize(row[slots[0]], nullAsUnknown)
+				&& normalize(keys[offset + 1], nullAsUnknown) == normalize(row[slots[1]], nullAsUnknown)
+				&& normalize(keys[offset + 2], nullAsUnknown) == normalize(row[slots[2]], nullAsUnknown);
+		case 4 -> normalize(keys[offset], nullAsUnknown) == normalize(row[slots[0]], nullAsUnknown)
+				&& normalize(keys[offset + 1], nullAsUnknown) == normalize(row[slots[1]], nullAsUnknown)
+				&& normalize(keys[offset + 2], nullAsUnknown) == normalize(row[slots[2]], nullAsUnknown)
+				&& normalize(keys[offset + 3], nullAsUnknown) == normalize(row[slots[3]], nullAsUnknown);
 		default -> matchesWide(offset, row, slots, nullAsUnknown);
 		};
 	}
@@ -305,23 +313,23 @@ final class PrimitiveTupleTable {
 	private boolean matches(int index, NativeBatch batch, int row, int[] slots, boolean nullAsUnknown) {
 		int offset = index * width;
 		return switch (width) {
-		case 1 -> keys[offset] == normalize(batch.get(slots[0], row), nullAsUnknown);
-		case 2 -> keys[offset] == normalize(batch.get(slots[0], row), nullAsUnknown)
-				&& keys[offset + 1] == normalize(batch.get(slots[1], row), nullAsUnknown);
-		case 3 -> keys[offset] == normalize(batch.get(slots[0], row), nullAsUnknown)
-				&& keys[offset + 1] == normalize(batch.get(slots[1], row), nullAsUnknown)
-				&& keys[offset + 2] == normalize(batch.get(slots[2], row), nullAsUnknown);
-		case 4 -> keys[offset] == normalize(batch.get(slots[0], row), nullAsUnknown)
-				&& keys[offset + 1] == normalize(batch.get(slots[1], row), nullAsUnknown)
-				&& keys[offset + 2] == normalize(batch.get(slots[2], row), nullAsUnknown)
-				&& keys[offset + 3] == normalize(batch.get(slots[3], row), nullAsUnknown);
+		case 1 -> normalize(keys[offset], nullAsUnknown) == normalize(batch.get(slots[0], row), nullAsUnknown);
+		case 2 -> normalize(keys[offset], nullAsUnknown) == normalize(batch.get(slots[0], row), nullAsUnknown)
+				&& normalize(keys[offset + 1], nullAsUnknown) == normalize(batch.get(slots[1], row), nullAsUnknown);
+		case 3 -> normalize(keys[offset], nullAsUnknown) == normalize(batch.get(slots[0], row), nullAsUnknown)
+				&& normalize(keys[offset + 1], nullAsUnknown) == normalize(batch.get(slots[1], row), nullAsUnknown)
+				&& normalize(keys[offset + 2], nullAsUnknown) == normalize(batch.get(slots[2], row), nullAsUnknown);
+		case 4 -> normalize(keys[offset], nullAsUnknown) == normalize(batch.get(slots[0], row), nullAsUnknown)
+				&& normalize(keys[offset + 1], nullAsUnknown) == normalize(batch.get(slots[1], row), nullAsUnknown)
+				&& normalize(keys[offset + 2], nullAsUnknown) == normalize(batch.get(slots[2], row), nullAsUnknown)
+				&& normalize(keys[offset + 3], nullAsUnknown) == normalize(batch.get(slots[3], row), nullAsUnknown);
 		default -> matchesWide(offset, batch, row, slots, nullAsUnknown);
 		};
 	}
 
 	private boolean matchesWide(int offset, long[] row, int[] slots, boolean nullAsUnknown) {
 		for (int i = 0; i < width; i++) {
-			if (keys[offset + i] != normalize(row[slots[i]], nullAsUnknown)) {
+			if (normalize(keys[offset + i], nullAsUnknown) != normalize(row[slots[i]], nullAsUnknown)) {
 				return false;
 			}
 		}
@@ -330,7 +338,7 @@ final class PrimitiveTupleTable {
 
 	private boolean matchesWide(int offset, NativeBatch batch, int row, int[] slots, boolean nullAsUnknown) {
 		for (int i = 0; i < width; i++) {
-			if (keys[offset + i] != normalize(batch.get(slots[i], row), nullAsUnknown)) {
+			if (normalize(keys[offset + i], nullAsUnknown) != normalize(batch.get(slots[i], row), nullAsUnknown)) {
 				return false;
 			}
 		}
@@ -390,7 +398,12 @@ final class PrimitiveTupleTable {
 		version++;
 	}
 
-	private static long normalize(long value, boolean nullAsUnknown) {
+	private long normalize(long value, boolean nullAsUnknown) {
+		value = original(value, nullAsUnknown);
+		return keyNormalizer == null ? value : keyNormalizer.applyAsLong(value);
+	}
+
+	private static long original(long value, boolean nullAsUnknown) {
 		return nullAsUnknown && value == NULL_CONTEXT_ID ? UNKNOWN : value;
 	}
 }

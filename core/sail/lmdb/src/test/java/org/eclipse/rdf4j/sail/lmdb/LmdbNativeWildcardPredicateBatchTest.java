@@ -24,12 +24,15 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIrTestAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbNativeWildcardPredicateBatchTest {
 
@@ -683,6 +686,78 @@ class LmdbNativeWildcardPredicateBatchTest {
 		assertComputedTypeGroupUsesWeightedInput(dataDir, null);
 	}
 
+	@ParameterizedTest
+	@ValueSource(ints = { 16, 65_536 })
+	void computedTypeGroupKeepsWeightsAcrossBatchSizes(int batchRows, @TempDir File dataDir) {
+		System.setProperty(NATIVE_BATCH_ROWS_PROPERTY, Integer.toString(batchRows));
+		assertComputedTypeGroupUsesWeightedInput(dataDir, null);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "irAggregate", "irAggregateInterpreted", "withoutIr" })
+	void computedWildcardCountsPreserveVisibleInputMappings(String strategy, @TempDir File dataDir) {
+		open(dataDir);
+		List<String> queries = List.of(
+				"SELECT ?label (COUNT(*) AS ?count) WHERE { ?s ?p ?o "
+						+ "BIND(STR(?missing) AS ?label) } GROUP BY ?label",
+				"SELECT ?label (COUNT(*) AS ?count) (COUNT(?o) AS ?objects) (COUNT(1) AS ?rows) "
+						+ "(COUNT(?label) AS ?bound) WHERE { "
+						+ "{ ?s ?p ?o } UNION { VALUES ?unused { UNDEF UNDEF } } "
+						+ "BIND(STR(?missing) AS ?label) } GROUP BY ?label",
+				"SELECT ?label (COUNT(*) AS ?count) WHERE { "
+						+ "{ { ?s ?p ?o } UNION { VALUES ?unused { UNDEF } } } "
+						+ "UNION { ?a ?b ?c } BIND(STR(?missing) AS ?label) } GROUP BY ?label",
+				"SELECT ?label (COUNT(DISTINCT *) AS ?count) WHERE { "
+						+ "{ ?s ?p ?o } UNION { ?s ?p ?o } UNION { VALUES ?unused { UNDEF } } "
+						+ "BIND(STR(?missing) AS ?label) } GROUP BY ?label",
+				"SELECT ?label (COUNT(DISTINCT *) AS ?count) WHERE { "
+						+ "{ ?s ?p ?o } UNION { ?s ?p ?o } UNION { VALUES ?unused { UNDEF } } "
+						+ "BIND((?missing + 1) AS ?label) } GROUP BY ?label",
+				"SELECT ?label (COUNT(DISTINCT *) AS ?count) WHERE { "
+						+ "{ ?s ?p ?o } UNION { ?s ?p ?o } UNION { VALUES ?unused { UNDEF } } "
+						+ "BIND((?s + 1) AS ?label) } GROUP BY ?label",
+				"SELECT ?label (COUNT(DISTINCT *) AS ?count) (COUNT(?label) AS ?bound) "
+						+ "(COUNT(DISTINCT ?label) AS ?distinctBound) (SUM(?label) AS ?sum) "
+						+ "(AVG(?label) AS ?average) (MIN(?label) AS ?minimum) (MAX(?label) AS ?maximum) WHERE { "
+						+ "{ ?s ?p ?o } UNION { VALUES ?unused { UNDEF } } "
+						+ "BIND((?s + 1) AS ?label) } GROUP BY ?label");
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+		List<List<String>> expected = queries.stream().map(this::allRows).toList();
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		System.setProperty(JANINO_PROPERTY, Boolean.toString("irAggregate".equals(strategy)));
+		System.setProperty(KERNEL_INTERPRETER_PROPERTY, Boolean.toString(!"withoutIr".equals(strategy)));
+		String synchronous = System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
+		try {
+			for (int i = 0; i < queries.size(); i++) {
+				long folded = LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded();
+				try (RepositoryConnection connection = repository.getConnection()) {
+					SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(queries.get(i));
+					if (!"withoutIr".equals(strategy)) {
+						prepared.setForcedLmdbExecutionStrategy(strategy);
+					}
+					List<String> actual = QueryResults.asList(prepared.evaluate())
+							.stream()
+							.map(LmdbNativeWildcardPredicateBatchTest::canonicalRow)
+							.sorted()
+							.toList();
+					assertThat(actual).as("%s: %s", strategy, queries.get(i))
+							.containsExactlyElementsOf(expected.get(i));
+				}
+				if (i == 0) {
+					assertThat(LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded())
+							.as("a failed group-key expression must retain the weighted wildcard producer")
+							.isGreaterThan(folded);
+				}
+			}
+		} finally {
+			if (synchronous == null) {
+				System.clearProperty("rdf4j.lmdb.janinoCodegen.synchronous");
+			} else {
+				System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", synchronous);
+			}
+		}
+	}
+
 	private void assertComputedTypeGroupUsesWeightedInput(File dataDir, String strategy) {
 		open(dataDir, true);
 		try (RepositoryConnection connection = repository.getConnection()) {
@@ -720,10 +795,10 @@ class LmdbNativeWildcardPredicateBatchTest {
 			System.setProperty(KERNEL_INTERPRETER_PROPERTY, Boolean.toString(strategy != null));
 			long folded = LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded();
 			try (RepositoryConnection connection = repository.getConnection()) {
-				org.eclipse.rdf4j.repository.sail.SailTupleQuery prepared = (org.eclipse.rdf4j.repository.sail.SailTupleQuery) connection
-						.prepareTupleQuery(query);
-				if (strategy != null)
+				SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+				if (strategy != null) {
 					prepared.setForcedLmdbExecutionStrategy(strategy);
+				}
 				List<BindingSet> result = QueryResults.asList(prepared.evaluate());
 				List<String> actual = result.stream()
 						.map(bindings -> bindings.getBindingNames()
@@ -743,17 +818,20 @@ class LmdbNativeWildcardPredicateBatchTest {
 				}
 			}
 			assertThat(LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded())
-					.as("computed grouping must execute the weighted wildcard path, not only a native fallback")
+					.as("computed grouping must execute the weighted wildcard path, not only a native fallback%n%s",
+							explain(query))
 					.isGreaterThan(folded);
 		} finally {
-			if (synchronous == null)
+			if (synchronous == null) {
 				System.clearProperty("rdf4j.lmdb.janinoCodegen.synchronous");
-			else
+			} else {
 				System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", synchronous);
-			if (projection == null)
+			}
+			if (projection == null) {
 				System.clearProperty("rdf4j.lmdb.janinoCodegen.weightedComputedGroups");
-			else
+			} else {
 				System.setProperty("rdf4j.lmdb.janinoCodegen.weightedComputedGroups", projection);
+			}
 		}
 	}
 
@@ -907,15 +985,19 @@ class LmdbNativeWildcardPredicateBatchTest {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
 					.stream()
-					.map(row -> row.getBindingNames()
-							.stream()
-							.sorted()
-							.map(name -> name + '=' + row.getValue(name).stringValue())
-							.reduce((left, right) -> left + '|' + right)
-							.orElse(""))
+					.map(LmdbNativeWildcardPredicateBatchTest::canonicalRow)
 					.sorted()
 					.toList();
 		}
+	}
+
+	private static String canonicalRow(BindingSet row) {
+		return row.getBindingNames()
+				.stream()
+				.sorted()
+				.map(name -> name + '=' + row.getValue(name).stringValue())
+				.reduce((left, right) -> left + '|' + right)
+				.orElse("");
 	}
 
 	private void assertWildcardExecutionParity(String query, List<String> expected) {

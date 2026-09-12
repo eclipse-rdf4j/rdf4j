@@ -33,10 +33,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
  * compiled step may be evaluated repeatedly and concurrently and two evaluations may mint the same numeric RUNTIME id
  * for different values.
  *
- * Currently owns the runtime value interner (ids from {@code RUNTIME_INTERN_BASE}, keyed by exact RDF spelling so
- * term-equal language-tag variants retain their authoritative values; semantic equality belongs to
- * {@link NativeTermAuthority}). Membership is answered by the map, never by a bare range check: an id allocated by the
- * counter could otherwise be observed by a concurrent reader before its value is published. Also owns the bounded
+ * Owns the compact runtime-value table (IDs from {@code RUNTIME_INTERN_BASE}). Exact spellings retain their
+ * original Values; a separate primitive canonical ordinal coalesces RDF-equal language variants for local keying.
+ * Membership is established by an acquire-read publication word, never by a bare numeric interval. Also owns the bounded
  * per-source dictionary resolution caches (including read-view-scoped misses), as well as per-evaluation generic
  * preparation (M-A1a): one evaluation-local generic context carrying the query scope (NOW, BNODE labels) and one
  * prepared step per {@link GenericSubplanDescriptor} per evaluation.
@@ -50,15 +49,17 @@ final class NativeExecutionContext implements AutoCloseable {
 	private final NativeExecutionContext queryScopeOwner;
 	final boolean valueResolutionCacheEnabled;
 	private final long executionId = NEXT_EXECUTION_ID.getAndIncrement();
-	private final ConcurrentHashMap<NativeValueKey, Long> idsByValue = new ConcurrentHashMap<>();
-	private final ConcurrentHashMap<Long, Value> valuesById = new ConcurrentHashMap<>();
-	/** Fast negative gate: ordinary store-id paths must not box and probe an empty runtime map. */
-	private volatile boolean hasInternedValues;
+	/** Lazily allocated: pure stored-ID executions never allocate a runtime interner or touch its hash tables. */
+	private volatile NativeRuntimeValueTable runtimeValues;
+	/** Do not acquire the context monitor from nativeState factories while they hold a ConcurrentHashMap bin lock. */
+	private final Object runtimeValuesLock = new Object();
+	/** One admission budget across the separately owned runtime-ID spaces of nested native roots. */
+	private volatile NativeRuntimeValueTable.Budget runtimeValueBudget;
 	/** Query-scoped representatives (notably NOW), shared by nested native catalogs of this evaluation. */
 	private final ConcurrentHashMap<NativeValueKey, Value> queryScopedValues = new ConcurrentHashMap<>();
 	/** Authoritative representatives for canonical store ids whose decoder would otherwise allocate a fresh Value. */
 	private final ConcurrentHashMap<Long, Value> queryScopedStoreValuesById = new ConcurrentHashMap<>();
-	/** Query-owner counterpart of {@link #hasInternedValues} for retained canonical store representatives. */
+	/** Whether the query owner retains canonical store representatives in addition to its runtime payload table. */
 	private volatile boolean hasQueryScopedStoreValues;
 	private final AtomicLong nextId = new AtomicLong(RUNTIME_INTERN_BASE);
 	private final AtomicLong nextSolutionId = new AtomicLong(1L);
@@ -166,72 +167,101 @@ final class NativeExecutionContext implements AutoCloseable {
 				() -> new NativeValueResolver(store, catalog, this));
 	}
 
-	/** Interns the value, returning a stable id within this evaluation; {@code UNKNOWN} for {@code null}. */
+	/** Interns an exact spelling after the caller's store-first lookup has proved it absent. */
 	long internValue(Value value) {
 		if (value == null) {
 			return UNKNOWN;
 		}
-		if (closed) {
-			throw new IllegalStateException("execution context is closed");
-		}
-		return internValue(value, NativeValueKey.of(value));
+		return runtimeValueTable().intern(value, false);
 	}
 
-	/** Caller has already captured the exact spelling for dictionary resolution. */
-	long internValue(Value value, NativeValueKey key) {
-		if (closed) {
+	/** Local terminal identity: no store, catalog, structural spelling-key allocation, or overlay lookup. */
+	long internGeneratedKey(Value value) {
+		if (value == null) {
+			return UNKNOWN;
+		}
+		return runtimeValueTable().intern(value, true);
+	}
+
+	/** Compatibility for callers that already captured a spelling; the table compares original Values directly. */
+	long internGeneratedKey(Value value, NativeValueKey spelling) {
+		return internGeneratedKey(value);
+	}
+
+	long internValue(Value value, NativeValueKey spelling) {
+		return internValue(value);
+	}
+
+	NativeRuntimeValueTable runtimeValueTable() {
+		if (isClosed()) {
 			throw new IllegalStateException("execution context is closed");
 		}
-		Long existing = idsByValue.get(key);
-		if (existing != null) {
-			return existing;
+		NativeRuntimeValueTable table = runtimeValues;
+		if (table == null) {
+			synchronized (runtimeValuesLock) {
+				if (isClosed()) {
+					throw new IllegalStateException("execution context is closed");
+				}
+				table = runtimeValues;
+				if (table == null) {
+					runtimeValues = table = new NativeRuntimeValueTable(nextId, runtimeValueBudget());
+				}
+			}
 		}
-		long candidate = nextId.getAndIncrement();
-		// Publish the value BEFORE the id becomes discoverable through the value map, so a reader that wins the
-		// putIfAbsent race can always resolve the id it is handed.
-		hasInternedValues = true;
-		valuesById.put(candidate, value);
-		Long prior = idsByValue.putIfAbsent(key, candidate);
-		if (prior != null) {
-			valuesById.remove(candidate);
-			return prior;
+		return table;
+	}
+
+	private NativeRuntimeValueTable.Budget runtimeValueBudget() {
+		if (queryScopeOwner != this) {
+			return queryScopeOwner.runtimeValueBudget();
 		}
-		return candidate;
+		NativeRuntimeValueTable.Budget budget = runtimeValueBudget;
+		if (budget == null) {
+			synchronized (runtimeValuesLock) {
+				budget = runtimeValueBudget;
+				if (budget == null) {
+					runtimeValueBudget = budget = NativeRuntimeValueTable.Budget.configured();
+				}
+			}
+		}
+		return budget;
+	}
+
+	boolean isUnresolvedKey(long id) {
+		NativeRuntimeValueTable table = runtimeValues;
+		return table != null && table.unresolved(id);
 	}
 
 	Value valueOf(long id) {
-		if (!hasResolvableValues()) {
-			return null;
-		}
-		Value value = valuesById.get(id);
+		NativeRuntimeValueTable table = runtimeValues;
+		Value value = table == null ? null : table.valueOf(id);
 		if (value != null) {
 			return value;
 		}
-		return queryScopeOwner.queryScopedStoreValuesById.get(id);
+		return queryScopeOwner.hasQueryScopedStoreValues ? queryScopeOwner.queryScopedStoreValuesById.get(id) : null;
 	}
 
-	/**
-	 * Only an actually published runtime-interner value, never a retained representative of a store id. The allocation
-	 * interval is a negative gate; map membership remains the positive proof. In particular, arbitrary high-bit store
-	 * ids are not classified by their sign or by an allocated-but-unpublished number.
-	 */
+	/** Membership is a published payload word, never a sign test or an allocated-but-unpublished ordinal. */
 	Value internedValueOf(long id) {
-		if (!hasInternedValues
-				|| Long.compareUnsigned(id - RUNTIME_INTERN_BASE, nextId.get() - RUNTIME_INTERN_BASE) >= 0) {
-			return null;
-		}
-		return valuesById.get(id);
+		NativeRuntimeValueTable table = runtimeValues;
+		return table == null ? null : table.valueOf(id);
 	}
 
 	boolean contains(long id) {
-		if (!hasResolvableValues()) {
-			return false;
-		}
-		return valuesById.containsKey(id) || queryScopeOwner.queryScopedStoreValuesById.containsKey(id);
+		NativeRuntimeValueTable table = runtimeValues;
+		return (table != null && table.contains(id)) || (queryScopeOwner.hasQueryScopedStoreValues
+				&& queryScopeOwner.queryScopedStoreValuesById.containsKey(id));
 	}
 
-	private boolean hasResolvableValues() {
-		return hasInternedValues || queryScopeOwner.hasQueryScopedStoreValues;
+	/** Metadata-only diagnostics; no scan or materialization of retained terms. */
+	long runtimeValueAccountedBytes() {
+		NativeRuntimeValueTable table = runtimeValues;
+		return table == null ? 0L : table.accountedBytes();
+	}
+
+	long queryRuntimeValueAccountedBytes() {
+		NativeRuntimeValueTable.Budget budget = queryScopeOwner.runtimeValueBudget;
+		return budget == null ? 0L : budget.usedBytes();
 	}
 
 	/**
@@ -251,6 +281,10 @@ final class NativeExecutionContext implements AutoCloseable {
 			hasQueryScopedStoreValues = true;
 			queryScopedStoreValuesById.putIfAbsent(storeId, representative);
 		}
+	}
+
+	boolean hasQueryScopedValues() {
+		return !queryScopeOwner.queryScopedValues.isEmpty();
 	}
 
 	/** Returns the retained query-scoped representative equal to {@code value}, or {@code value} itself. */
@@ -299,11 +333,12 @@ final class NativeExecutionContext implements AutoCloseable {
 	}
 
 	int internedCount() {
-		return valuesById.size() + queryScopeOwner.queryScopedStoreValuesById.size();
+		NativeRuntimeValueTable table = runtimeValues;
+		return (table == null ? 0 : table.size()) + queryScopeOwner.queryScopedStoreValuesById.size();
 	}
 
 	boolean isClosed() {
-		return closed;
+		return closed || queryScopeOwner.closed;
 	}
 
 	@Override
@@ -329,9 +364,13 @@ final class NativeExecutionContext implements AutoCloseable {
 				}
 			}
 		}
-		idsByValue.clear();
-		valuesById.clear();
-		hasInternedValues = false;
+		synchronized (runtimeValuesLock) {
+			NativeRuntimeValueTable table = runtimeValues;
+			runtimeValues = null;
+			if (table != null) {
+				table.close();
+			}
+		}
 		if (queryScopeOwner == this) {
 			queryScopedValues.clear();
 			queryScopedStoreValuesById.clear();

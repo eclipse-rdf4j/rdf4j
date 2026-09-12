@@ -729,6 +729,12 @@ final class LmdbNativeValueCodec {
 			return decimalValue != null || floatingValue != null;
 		}
 
+		/** Exact xsd:string construction shape; permits duplicate-key probing before allocating a Literal. */
+		boolean plainStringLiteral() {
+			return kind == Kind.LITERAL && coreDatatype == CoreDatatype.XSD.STRING && language == null
+					&& baseDirection == Literal.BaseDirection.NONE;
+		}
+
 		boolean stringLiteral() {
 			return literal() && (coreDatatype == CoreDatatype.XSD.STRING
 					|| coreDatatype == CoreDatatype.RDF.LANGSTRING

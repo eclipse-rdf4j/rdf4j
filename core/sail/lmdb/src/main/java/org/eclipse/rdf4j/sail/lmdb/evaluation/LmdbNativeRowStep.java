@@ -277,6 +277,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	final PatternPlan prefixPattern;
 	final LmdbPrefixRunPlan prefixRunPlan;
 	final NativeTupleDistinctPlan distinctPlan;
+	final NativeGeneratedKeyPlan generatedKeys;
 	final NativeConstantFalseWhenUnboundFilter[] constantFalseGuards;
 	/**
 	 * Bare-fragment mode: rows are full-slot snapshots carrying base bindings through ({@link RowBindingSetView})
@@ -336,6 +337,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				: optionalOnlyNames.toArray(String[]::new);
 		this.prefixPattern = prefixPattern;
 		this.prefixRunPlan = prefixRunPlan;
+		this.generatedKeys = distinct ? NativeGeneratedKeyPlan.distinct(arg, sourceSlots) : NativeGeneratedKeyPlan.NONE;
 		this.distinctPlan = previewDistinctPlan();
 		this.constantFalseGuards = collectConstantFalseGuards(arg);
 	}
@@ -406,7 +408,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			LmdbNativeExplain.recordExecutionPath(originalExpr, variant.executionPath());
 			return withEntryBindingVariant(variant).evaluate(variant.filteredBase);
 		}
-		NativeLmdbQuerySource evalSource = evaluationSource();
+		NativeLmdbQuerySource evalSource = evaluationSource(bindings);
 		initializeQueryBase(evalSource, bindings);
 		if (orderSlots.length == 0) {
 			return withContextLifetime(new NativeRowsIteration(this, evalSource, bindings), evalSource);
@@ -471,6 +473,11 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	 * runtime consumer of the evaluation (row states, value contexts, emissions) must resolve through this one
 	 * instance, reached as {@code row.source}/{@code values.source}.
 	 */
+	NativeLmdbQuerySource evaluationSource(BindingSet bindings) {
+		return source instanceof SyntheticValueSource synthetic
+				? synthetic.forEvaluation(generatedKeys, layout, bindings) : source;
+	}
+
 	NativeLmdbQuerySource evaluationSource() {
 		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).forEvaluation() : source;
 	}
@@ -511,7 +518,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	}
 
 	List<BindingSet> evaluateAll(BindingSet base) {
-		return evaluateAll(base, evaluationSource());
+		return evaluateAll(base, evaluationSource(base));
 	}
 
 	List<BindingSet> evaluateAll(BindingSet base, NativeLmdbQuerySource evalSource) {
@@ -692,7 +699,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		LmdbNativeAttemptMetrics metrics = sortMetrics == null ? LmdbNativeAttemptMetrics.direct() : sortMetrics;
 		FactorizedTail.MemoBudget budget = new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES, metrics);
 		NativeTopKBuffer best = new NativeTopKBuffer(sortLayout.liveToPlan.length, topK, comparator, budget);
-		NativeDistinctTracker topKDistinct = distinct ? new NativeDistinctTracker(sourceSlots, row.termAuthority())
+		NativeDistinctTracker topKDistinct = distinct ? new NativeDistinctTracker(sourceSlots, row.keyAuthority())
 				: null;
 		long[] packed = new long[sortLayout.liveToPlan.length];
 		long ordinal = 0L;
@@ -729,7 +736,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	private List<BindingSet> evaluateReducingTopK(RowState row, AggContext values, PackedRowComparator comparator,
 			int topK, long emitCap, LmdbNativeAttemptMetrics sortMetrics) {
 		LmdbNativeAttemptMetrics metrics = sortMetrics == null ? LmdbNativeAttemptMetrics.direct() : sortMetrics;
-		NativeDistinctTracker topKDistinct = distinct ? new NativeDistinctTracker(sourceSlots, row.termAuthority())
+		NativeDistinctTracker topKDistinct = distinct ? new NativeDistinctTracker(sourceSlots, row.keyAuthority())
 				: null;
 		try (NativeSpillSort snapshots = new NativeSpillSort(sortLayout.liveToPlan.length, sortLayout.keyWidth,
 				comparator, topK, metrics)) {
@@ -1041,9 +1048,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		ArrayList<BindingSet> results = new ArrayList<>();
 		NativeDistinctTracker distinctRows = distinct && !distinctAlreadyApplied
 				? new NativeDistinctTracker(activeLayout.sourceSlots,
-						values.source instanceof SyntheticValueSource
-								? ((SyntheticValueSource) values.source).authority()
-								: null)
+						values.termAuthority)
 				: null;
 		long[] snapshot = new long[activeLayout.liveToPlan.length];
 		try {
@@ -2816,9 +2821,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 		distinctHandledByCursor = unorderedInput.dedupMode == NativeUnorderedInput.DedupMode.HANDLED;
 		if (step.distinct) {
 			distinctRows = unorderedInput.dedupMode == NativeUnorderedInput.DedupMode.ORDERED
-					? new NativeOrderedDistinctTracker(distinctPlan, row.termAuthority())
+					? new NativeOrderedDistinctTracker(distinctPlan, row.keyAuthority())
 					: new NativeOrderedDistinctTracker(
-							NativeTupleDistinctPlan.global(step.arg, step.sourceSlots), row.termAuthority());
+							NativeTupleDistinctPlan.global(step.arg, step.sourceSlots), row.keyAuthority());
 		}
 		cursor = unorderedInput.cursor;
 		batchCursor = unorderedInput.batchCursor;
