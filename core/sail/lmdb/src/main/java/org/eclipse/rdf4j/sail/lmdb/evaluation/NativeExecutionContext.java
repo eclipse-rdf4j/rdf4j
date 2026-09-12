@@ -33,12 +33,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
  * compiled step may be evaluated repeatedly and concurrently and two evaluations may mint the same numeric RUNTIME id
  * for different values.
  *
- * Owns the compact runtime-value table (IDs from {@code RUNTIME_INTERN_BASE}). Exact spellings retain their
- * original Values; a separate primitive canonical ordinal coalesces RDF-equal language variants for local keying.
- * Membership is established by an acquire-read publication word, never by a bare numeric interval. Also owns the bounded
- * per-source dictionary resolution caches (including read-view-scoped misses), as well as per-evaluation generic
- * preparation (M-A1a): one evaluation-local generic context carrying the query scope (NOW, BNODE labels) and one
- * prepared step per {@link GenericSubplanDescriptor} per evaluation.
+ * Owns the compact runtime-value table (IDs from {@code RUNTIME_INTERN_BASE}). Exact spellings retain their original
+ * Values; a separate primitive canonical ordinal coalesces RDF-equal language variants for local keying. Membership is
+ * established by an acquire-read publication word, never by a bare numeric interval. Also owns the bounded per-source
+ * dictionary resolution caches (including read-view-scoped misses), as well as per-evaluation generic preparation
+ * (M-A1a): one evaluation-local generic context carrying the query scope (NOW, BNODE labels) and one prepared step per
+ * {@link GenericSubplanDescriptor} per evaluation.
  */
 @Experimental
 final class NativeExecutionContext implements AutoCloseable {

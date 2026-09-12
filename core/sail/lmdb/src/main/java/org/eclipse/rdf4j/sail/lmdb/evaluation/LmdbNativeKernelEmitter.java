@@ -1538,7 +1538,9 @@ final class LmdbNativeKernelEmitter {
 				Emit emit = (Emit) kernel.terminal;
 				int residual = emit.cols.length - emit.alignedCount;
 				if (residual > 0) {
-					source.append("        dedup = new KernelRuntime.RowSet(").append(residual).append(", keyHooks == hooks ? null : keyHooks);\n");
+					source.append("        dedup = new KernelRuntime.RowSet(")
+							.append(residual)
+							.append(", keyHooks == hooks ? null : keyHooks);\n");
 				}
 				if (emit.alignedCount > 0) {
 					source.append("        dseen = false;\n");

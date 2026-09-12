@@ -109,8 +109,9 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		this.source = liveRow.source;
 		this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base, liveRow.exactValuesMetrics,
 				liveRow.cancellation);
-		this.keyHooks = scratch.keyAuthority() instanceof NativeGeneratedKeyAuthority generated
-				? new NativeGeneratedKeyHooks(this, generated) : this;
+		this.keyHooks = scratch.keyAuthority()instanceof NativeGeneratedKeyAuthority generated
+				? new NativeGeneratedKeyHooks(this, generated)
+				: this;
 		this.scratch.memoryScope = liveRow.memoryScope;
 		this.scratch.runtimePlan = liveRow.runtimePlan;
 		this.scratch.lexicalInputMask = liveRow.lexicalInputMask;

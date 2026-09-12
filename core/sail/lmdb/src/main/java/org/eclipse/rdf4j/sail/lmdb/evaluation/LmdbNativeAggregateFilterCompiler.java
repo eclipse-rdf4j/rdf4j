@@ -295,7 +295,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 						NativeBindingSetValueEvaluator semanticValue = NativeBindingSetValueCompiler.compile(expression,
 								strategy, context);
 						copies[i] = CopyBinding.semanticValue(slot(elem.getName()), semanticValue,
-								QueryEvaluationUtility.isRepeatableWithinPreparation(expression), keyReadMask(expression));
+								QueryEvaluationUtility.isRepeatableWithinPreparation(expression),
+								keyReadMask(expression));
 					} else {
 						copies[i] = CopyBinding.computedValue(slot(elem.getName()), computedValue,
 								QueryEvaluationUtility.isRepeatableWithinPreparation(expression));

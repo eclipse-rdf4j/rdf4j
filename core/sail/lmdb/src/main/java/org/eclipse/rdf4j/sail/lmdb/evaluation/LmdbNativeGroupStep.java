@@ -172,7 +172,8 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 			return applyScopedHaving(withContextLifetime(iteration, evalSource), evalSource, havingDescriptor);
 		}
 		NativeLmdbQuerySource evalSource = source instanceof SyntheticValueSource synthetic
-				? synthetic.forEvaluation(generatedKeys, layout, bindings) : source;
+				? synthetic.forEvaluation(generatedKeys, layout, bindings)
+				: source;
 		initializeQueryBase(evalSource, bindings);
 		NativeGroupIteration nativeIteration = new NativeGroupIteration(evalSource, arg, layout, groupSlots,
 				aggregates, strictCompare, bindings,

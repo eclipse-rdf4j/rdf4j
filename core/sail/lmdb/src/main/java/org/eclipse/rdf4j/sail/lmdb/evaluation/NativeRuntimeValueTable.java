@@ -23,10 +23,10 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
- * Append-only, evaluation-owned runtime values. A hash slot is one primitive word: a cached 32-bit hash and an
- * unsigned ordinal+1. The payload pages keep the original Value and one publication word containing the canonical
- * term ordinal and the unresolved-membership bit. No boxed IDs, structural keys, per-term nodes, or separate
- * canonicalization cache are allocated. Spelling and RDF-term equality are deliberately separate.
+ * Append-only, evaluation-owned runtime values. A hash slot is one primitive word: a cached 32-bit hash and an unsigned
+ * ordinal+1. The payload pages keep the original Value and one publication word containing the canonical term ordinal
+ * and the unresolved-membership bit. No boxed IDs, structural keys, per-term nodes, or separate canonicalization cache
+ * are allocated. Spelling and RDF-term equality are deliberately separate.
  *
  * Readers acquire a published slot (or payload word); duplicates take no monitor. A new spelling locks only its hash
  * stripe and reuses the already-probed empty slot when it is still valid. Growth rehashes cached hashes, never moves
@@ -112,8 +112,8 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	}
 
 	/**
-	 * Probe an already-computed xsd:string label without manufacturing a Literal just to discard it on a hit.
-	 * Admitted native expressions use this before materialization; the normal Value path uses the very same table.
+	 * Probe an already-computed xsd:string label without manufacturing a Literal just to discard it on a hit. Admitted
+	 * native expressions use this before materialization; the normal Value path uses the very same table.
 	 */
 	long internString(String label) {
 		checkOpen();
@@ -134,7 +134,8 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 		for (int probes = 0, hashCollisions = 0;; probes++) {
 			long entry = (long) LONGS.getAcquire(slots, slot);
 			if (entry == 0L) {
-				return insert(stripe, index, SimpleValueFactory.getInstance().createLiteral(label), true, hash, slot, 0L);
+				return insert(stripe, index, SimpleValueFactory.getInstance().createLiteral(label), true, hash, slot,
+						0L);
 			}
 			if ((int) (entry >>> 32) == hash) {
 				hashCollisions++;
@@ -282,7 +283,6 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 			}
 		}
 	}
-
 
 	/** An acquired hash entry already publishes this payload. Do not repeat the metadata ownership probe here. */
 	private Value publishedValue(long entry) {
@@ -476,7 +476,9 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 		return RUNTIME_INTERN_BASE + (entry & 0xffff_ffffL) - 1L;
 	}
 
-	/** Cheap cached lexical hashes; semantic equality, not an implementation-specific Value.hashCode, is the contract. */
+	/**
+	 * Cheap cached lexical hashes; semantic equality, not an implementation-specific Value.hashCode, is the contract.
+	 */
 	private static int cheapHash(Value value) {
 		if (value instanceof Literal literal) {
 			return mix(literal.getLabel().hashCode());
@@ -576,7 +578,9 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 		return hash;
 	}
 
-	/** Conservative charge for standard RDF Values. This is not a heap-graph/RSS measurement of arbitrary subclasses. */
+	/**
+	 * Conservative charge for standard RDF Values. This is not a heap-graph/RSS measurement of arbitrary subclasses.
+	 */
 	private static long retainedValueBytes(Value value, int depth) {
 		if (depth > 256) {
 			throw new QueryEvaluationException("Runtime triple-term nesting exceeds 256 levels");
@@ -598,7 +602,9 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 		return 48L + 2L * value.length();
 	}
 
-	/** Shared by nested contexts of one query. Limits admission; it does not evict live IDs or pretend to spill Values. */
+	/**
+	 * Shared by nested contexts of one query. Limits admission; it does not evict live IDs or pretend to spill Values.
+	 */
 	static final class Budget {
 		private final long limit;
 		private long used;

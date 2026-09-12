@@ -117,13 +117,15 @@ final class NativeGroupTable implements AutoCloseable {
 		case TUPLE_COUNTS:
 			this.tuples = new PrimitiveTupleTable(groupSlots.length, 256, rowMetrics,
 					java.util.function.IntUnaryOperator.identity(),
-					ctx.termAuthority instanceof NativeGeneratedKeyAuthority ? ctx.termAuthority::canonicalTermKey : null);
+					ctx.termAuthority instanceof NativeGeneratedKeyAuthority ? ctx.termAuthority::canonicalTermKey
+							: null);
 			this.tupleCounts = new long[Math.max(16, aggregates.length * 16)];
 			break;
 		case TUPLE_STATES:
 			this.tuples = new PrimitiveTupleTable(groupSlots.length, 256, rowMetrics,
 					java.util.function.IntUnaryOperator.identity(),
-					ctx.termAuthority instanceof NativeGeneratedKeyAuthority ? ctx.termAuthority::canonicalTermKey : null);
+					ctx.termAuthority instanceof NativeGeneratedKeyAuthority ? ctx.termAuthority::canonicalTermKey
+							: null);
 			this.tupleStates = new AggState[16];
 			break;
 		}

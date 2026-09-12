@@ -16,8 +16,8 @@ import org.eclipse.rdf4j.model.Value;
  * membership, and the canonical key share one publication record. The common path creates no spelling key, boxed ID,
  * representative object, map entry, or second canonicalization cache. Upstream probes retain the ordinary authority.
  *
- * An unexpected stored/plan key is normalized defensively by reading its Value once (never by value-to-ID lookup).
- * Only such exceptional IDs need a separate memoization map. This path cannot run for proven all-generated keys.
+ * An unexpected stored/plan key is normalized defensively by reading its Value once (never by value-to-ID lookup). Only
+ * such exceptional IDs need a separate memoization map. This path cannot run for proven all-generated keys.
  */
 final class NativeGeneratedKeyAuthority implements NativeTermAuthority, AutoCloseable {
 	private final NativeTermAuthority delegate;

@@ -475,7 +475,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	 */
 	NativeLmdbQuerySource evaluationSource(BindingSet bindings) {
 		return source instanceof SyntheticValueSource synthetic
-				? synthetic.forEvaluation(generatedKeys, layout, bindings) : source;
+				? synthetic.forEvaluation(generatedKeys, layout, bindings)
+				: source;
 	}
 
 	NativeLmdbQuerySource evaluationSource() {
