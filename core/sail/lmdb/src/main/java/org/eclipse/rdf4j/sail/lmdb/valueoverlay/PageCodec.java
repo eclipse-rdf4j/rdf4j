@@ -20,6 +20,9 @@ public final class PageCodec {
 	private static final int CHECKPOINT_GROUP = 16;
 	private static final int CODEC_MASK = 0x0b;
 	private static final int FLAG_LOB = 0x04;
+	// Header word +12 stores the minimum encoded length instead of the redundant checkpoint count.
+	// Zero residual bits imply a constant-length page: no checkpoints or packed-length tail are stored.
+	private static final int FLAG_LENGTH_FOR = 0x10;
 
 	public enum Mode {
 		RAW(0),
@@ -179,7 +182,10 @@ public final class PageCodec {
 		int flags = Byte.toUnsignedInt(segment.get(ValueLayout.JAVA_BYTE, base + 7));
 		int restart = Short.toUnsignedInt(segment.get(FfmAccess.SHORT_LE, base + 8));
 		int dictionaryBytes = Short.toUnsignedInt(segment.get(FfmAccess.SHORT_LE, base + 10));
-		int checkpointCount = segment.get(FfmAccess.INT_LE, base + 12);
+		int lengthBase = (flags & FLAG_LENGTH_FOR) != 0 ? segment.get(FfmAccess.INT_LE, base + 12) : 0;
+		int checkpointCount = (flags & FLAG_LENGTH_FOR) != 0
+				? bitWidth == 0 ? 0 : (count + CHECKPOINT_GROUP - 1) / CHECKPOINT_GROUP
+				: segment.get(FfmAccess.INT_LE, base + 12);
 		int packedOffset = segment.get(FfmAccess.INT_LE, base + 16);
 		int payloadOffset = segment.get(FfmAccess.INT_LE, base + 20);
 		int payloadBytes = segment.get(FfmAccess.INT_LE, base + 24);
@@ -187,16 +193,16 @@ public final class PageCodec {
 		boolean hasLob = (flags & FLAG_LOB) != 0;
 		Mode mode = Mode.fromCode(flags & CODEC_MASK);
 		validateHeader(count, bitWidth, flags, mode, restart, dictionaryBytes, checkpointCount, packedOffset,
-				payloadOffset, payloadBytes, totalBytes, segment.byteSize() - base);
+				payloadOffset, payloadBytes, totalBytes, segment.byteSize() - base, lengthBase);
 
 		byte[] physical = switch (mode) {
-		case RAW -> encodedRecord(segment, base, slot, bitWidth, packedOffset, payloadOffset, payloadBytes);
+		case RAW -> encodedRecord(segment, base, slot, bitWidth, packedOffset, payloadOffset, payloadBytes, lengthBase);
 		case FRONT -> decodeFront(segment, base, slot, restart, bitWidth, packedOffset, payloadOffset,
-				payloadBytes);
+				payloadBytes, lengthBase);
 		case TOKEN -> decodeToken(segment, base, slot, count, dictionaryBytes, bitWidth,
-				packedOffset, payloadOffset, payloadBytes, checkpointCount, hasLob);
+				packedOffset, payloadOffset, payloadBytes, checkpointCount, hasLob, lengthBase);
 		case PREFIX -> decodePrefix(segment, base, slot, dictionaryBytes, bitWidth, packedOffset,
-				payloadOffset, payloadBytes, checkpointCount);
+				payloadOffset, payloadBytes, checkpointCount, lengthBase);
 		case VECTOR -> throw new IllegalStateException("vector codec requires vector page header");
 		};
 		boolean large = hasLob && bitmapBit(segment, base, checkpointCount, slot);
@@ -219,17 +225,20 @@ public final class PageCodec {
 		int flags = segment.get(ValueLayout.JAVA_BYTE, base + 7) & 255;
 		int restart = Short.toUnsignedInt(segment.get(FfmAccess.SHORT_LE, base + 8));
 		int dictBytes = Short.toUnsignedInt(segment.get(FfmAccess.SHORT_LE, base + 10));
-		int checkpoints = segment.get(FfmAccess.INT_LE, base + 12);
+		int lengthBase = (flags & FLAG_LENGTH_FOR) != 0 ? segment.get(FfmAccess.INT_LE, base + 12) : 0;
+		int checkpoints = (flags & FLAG_LENGTH_FOR) != 0
+				? bits == 0 ? 0 : (count + CHECKPOINT_GROUP - 1) / CHECKPOINT_GROUP
+				: segment.get(FfmAccess.INT_LE, base + 12);
 		int packed = segment.get(FfmAccess.INT_LE, base + 16), payload = segment.get(FfmAccess.INT_LE, base + 20);
 		int payloadBytes = segment.get(FfmAccess.INT_LE, base + 24), total = segment.get(FfmAccess.INT_LE, base + 28);
 		Mode mode = Mode.fromCode(flags & CODEC_MASK);
 		validateHeader(count, bits, flags, mode, restart, dictBytes, checkpoints, packed, payload,
-				payloadBytes, total, segment.byteSize() - base);
+				payloadBytes, total, segment.byteSize() - base, lengthBase);
 		// LOB marks the physical record's interpretation, not a raw-codec override. FRONT still
 		// front-codes these bytes; TOKEN writes literal commands for them. Match read()'s decoding.
 		if (mode == Mode.FRONT)
-			return new FrontAccess(segment, base, slot, restart, bits, packed, payload, payloadBytes);
-		long range = encodedRange(segment, base, slot, bits, packed, payload, payloadBytes);
+			return new FrontAccess(segment, base, slot, restart, bits, packed, payload, payloadBytes, lengthBase);
+		long range = encodedRange(segment, base, slot, bits, packed, payload, payloadBytes, lengthBase);
 		long encodedOffset = base + (range >>> 32);
 		int encodedBytes = (int) range;
 		if (mode == Mode.RAW)
@@ -246,15 +255,97 @@ public final class PageCodec {
 
 	/** High word: page-relative start; low word: length. Both are bounded by the validated page header. */
 	private static long encodedRange(MemorySegment segment, long base, int slot, int bits, int packed,
-			int payload, int payloadBytes) {
-		int group = slot / CHECKPOINT_GROUP;
-		long relative = segment.get(FfmAccess.INT_LE, base + HEADER_BYTES + group * 4L);
-		for (int i = group * CHECKPOINT_GROUP; i < slot; i++)
-			relative += packedLength(segment, base, packed, bits, i);
-		int length = packedLength(segment, base, packed, bits, slot);
+			int payload, int payloadBytes, int lengthBase) {
+		long relative;
+		if (bits == 0) {
+			relative = (long) slot * lengthBase;
+		} else {
+			int group = slot / CHECKPOINT_GROUP;
+			int lane = slot & (CHECKPOINT_GROUP - 1);
+			relative = segment.get(FfmAccess.INT_LE, base + HEADER_BYTES + group * 4L)
+					+ (long) lane * lengthBase
+					+ prefixResidualSum(segment, base + packed + (long) group * (CHECKPOINT_GROUP / 8) * bits,
+							bits, lane);
+		}
+		int length = packedLength(segment, base, packed, bits, slot, lengthBase);
 		if (relative < 0 || length < 0 || relative > payloadBytes - length)
 			throw new IllegalStateException("corrupt record boundary");
 		return ((payload + relative) << 32) | length;
+	}
+
+	/** Sum at most 15 preceding residuals without materializing an offset sidecar. */
+	private static long prefixResidualSum(MemorySegment segment, long address, int bits, int count) {
+		if (count == 0)
+			return 0;
+		if (bits <= 4) {
+			long word = segment.get(FfmAccess.LONG_LE, address) & ((1L << (count * bits)) - 1);
+			if (bits == 1)
+				return Long.bitCount(word);
+			if (bits == 2)
+				return Long.bitCount(word & 0x5555555555555555L)
+						+ 2L * Long.bitCount(word & 0xaaaaaaaaaaaaaaaaL);
+			if (bits == 3)
+				return Long.bitCount(word & 0x9249249249249249L)
+						+ 2L * Long.bitCount(word & 0x2492492492492492L)
+						+ 4L * Long.bitCount(word & 0x4924924924924924L);
+			// Two nibble lanes become one byte. Total is at most 15 * 15, so the multiply cannot carry.
+			word = (word & 0x0f0f0f0f0f0f0f0fL) + ((word >>> 4) & 0x0f0f0f0f0f0f0f0fL);
+			return (word * 0x0101010101010101L) >>> 56;
+		}
+		if (bits == 8) {
+			long first = segment.get(FfmAccess.LONG_LE, address);
+			if (count < 8)
+				return sumBytes(first & ((1L << (count * 8)) - 1));
+			long sum = sumBytes(first);
+			if (count > 8)
+				sum += sumBytes(segment.get(FfmAccess.LONG_LE, address + 8) & ((1L << ((count - 8) * 8)) - 1));
+			return sum;
+		}
+		if (bits < 8)
+			return mediumPrefixSum(segment, address, bits, count);
+		return widePrefixSum(segment, address, bits, count);
+	}
+
+	/** Five-to-seven-bit fields: sum two eight-lane words, without per-field loads or integer division. */
+	private static long mediumPrefixSum(MemorySegment segment, long address, int bits, int count) {
+		long even = bits == 5 ? 0x7c1f07c1fL : bits == 6 ? 0x3f03f03f03fL : 0x1fc07f01fc07fL;
+		long pairs = bits == 5 ? 0x3ff003ffL : bits == 6 ? 0xfff000fffL : 0x3fff0003fffL;
+		long word = segment.get(FfmAccess.LONG_LE, address) & ((1L << (Math.min(count, 8) * bits)) - 1);
+		long lanes = (word & even) + ((word >>> bits) & even);
+		if (count > 8) {
+			word = segment.get(FfmAccess.LONG_LE, address + bits) & ((1L << ((count - 8) * bits)) - 1);
+			lanes += (word & even) + ((word >>> bits) & even);
+		}
+		lanes = (lanes & pairs) + ((lanes >>> (2 * bits)) & pairs);
+		int shift = 4 * bits;
+		return (lanes & ((1L << shift) - 1)) + (lanes >>> shift);
+	}
+
+	/** Rare wide residuals; bind a native word once for each group of fields. */
+	private static long widePrefixSum(MemorySegment segment, long address, int bits, int count) {
+		long mask = (1L << bits) - 1, sum = 0;
+		int bit = 0;
+		while (count > 0) {
+			int shift = bit & 7;
+			long word = segment.get(FfmAccess.LONG_LE, address + (bit >>> 3)) >>> shift;
+			int lanes = bits <= 9 ? 7 : bits <= 10 ? 6 : bits <= 12 ? 5 : bits <= 16 ? 4 : bits <= 21 ? 3 : 2;
+			if (lanes * bits + shift > 64)
+				lanes--;
+			lanes = Math.min(count, lanes);
+			count -= lanes;
+			bit += lanes * bits;
+			while (lanes-- > 0) {
+				sum += word & mask;
+				word >>>= bits;
+			}
+		}
+		return sum;
+	}
+
+	private static int sumBytes(long word) {
+		word = (word & 0x00ff00ff00ff00ffL) + ((word >>> 8) & 0x00ff00ff00ff00ffL);
+		word = (word & 0x0000ffff0000ffffL) + ((word >>> 16) & 0x0000ffff0000ffffL);
+		return (int) word + (int) (word >>> 32);
 	}
 
 	private static final class PrefixAccess implements RecordByteAccess {
@@ -304,18 +395,16 @@ public final class PageCodec {
 		private final int length;
 
 		FrontAccess(MemorySegment page, long base, int slot, int restart, int bits, int packed, int payload,
-				int payloadBytes) {
+				int payloadBytes, int lengthBase) {
 			this.page = page;
 			this.base = base;
 			int first = slot - slot % restart;
 			coordinates = new long[slot - first + 1];
-			int group = first / CHECKPOINT_GROUP;
-			long relative = page.get(FfmAccess.INT_LE, base + HEADER_BYTES + group * 4L);
-			for (int i = group * CHECKPOINT_GROUP; i < first; i++)
-				relative += packedLength(page, base, packed, bits, i);
+			long relative = (encodedRange(page, base, first, bits, packed, payload, payloadBytes, lengthBase) >>> 32)
+					- payload;
 			int previousLength = 0;
 			for (int i = first; i <= slot; i++) {
-				int encodedLength = packedLength(page, base, packed, bits, i);
+				int encodedLength = packedLength(page, base, packed, bits, i, lengthBase);
 				if (relative < 0 || encodedLength < 0 || relative > payloadBytes - encodedLength)
 					throw new IllegalStateException("corrupt front record boundary");
 				long start = payload + relative, prefix = 0;
@@ -398,8 +487,10 @@ public final class PageCodec {
 		}
 
 		private int bindToken(int command) {
-			int start = Short.toUnsignedInt(segment.get(FfmAccess.SHORT_LE, dictionaryOffset + 1 + 2L * command));
-			int end = Short.toUnsignedInt(segment.get(FfmAccess.SHORT_LE, dictionaryOffset + 3 + 2L * command));
+			// Adjacent 16-bit offsets are one bounded unaligned load, including the last token.
+			int offsets = segment.get(FfmAccess.INT_LE, dictionaryOffset + 1 + 2L * command);
+			int start = offsets & 0xffff;
+			int end = offsets >>> 16;
 			if (end < start || tableEnd + (long) end > dictionaryBytes)
 				throw new IllegalStateException("corrupt token offset");
 			runOffset = dictionaryOffset + tableEnd + start;
@@ -447,6 +538,10 @@ public final class PageCodec {
 			Objects.checkFromIndexSize(offset, count, target.length);
 			if (count == 0)
 				return;
+			if (from + count == knownLength) {
+				copyToEnd(from, target, offset, count);
+				return;
+			}
 			if (from < runStart) {
 				commandPosition = runStart = runEnd = 0;
 				runOffset = 0;
@@ -463,20 +558,87 @@ public final class PageCodec {
 			}
 		}
 
+		/**
+		 * Decode a whole record or its suffix with local cursor variables. After skipping the prefix, each command is
+		 * copied in full, without maintaining seek state or trimming both run ends. Deliberately preserve the byteAt
+		 * cursor; it remains valid for subsequent partial reads.
+		 */
+		private void copyToEnd(int from, byte[] target, int offset, int count) {
+			int position = 0, output = offset, end = offset + count, skip = from;
+			while (position < encodedBytes) {
+				int command = segment.get(ValueLayout.JAVA_BYTE, encodedOffset + position++) & 255;
+				int n;
+				long source;
+				if (command < tokens) {
+					int offsets = segment.get(FfmAccess.INT_LE, dictionaryOffset + 1 + 2L * command);
+					int begin = offsets & 0xffff, finish = offsets >>> 16;
+					if (finish < begin || tableEnd + (long) finish > dictionaryBytes)
+						throw new IllegalStateException("corrupt token offset");
+					n = finish - begin;
+					source = dictionaryOffset + tableEnd + begin;
+				} else if (command >= 64 && command <= 191) {
+					n = command - 63;
+					if (position > encodedBytes - n)
+						throw new IllegalStateException("corrupt token literal");
+					source = encodedOffset + position;
+					position += n;
+				} else
+					throw new IllegalStateException("corrupt token command");
+				if (skip >= n) {
+					skip -= n;
+					continue;
+				}
+				if (skip != 0) {
+					source += skip;
+					n -= skip;
+					skip = 0;
+				}
+				if (output > end - n)
+					throw new IllegalStateException("token length changed");
+				MemorySegment.copy(segment, ValueLayout.JAVA_BYTE, source, target, output, n);
+				output += n;
+			}
+			if (output != end)
+				throw new IllegalStateException("token length changed");
+		}
+
 		public int length() {
-			if (knownLength < 0)
-				while (advance()) {
-					/* count commands, not decoded bytes */ }
-			return knownLength;
+			if (knownLength >= 0)
+				return knownLength;
+			// Keep the navigation cursor intact. Only the result is published: the variable-step
+			// scan uses local induction variables instead of mutating the cursor per command.
+			int position = commandPosition, length = runEnd;
+			while (position < encodedBytes) {
+				int command = segment.get(ValueLayout.JAVA_BYTE, encodedOffset + position++) & 255;
+				int n;
+				if (command < tokens) {
+					int offsets = segment.get(FfmAccess.INT_LE, dictionaryOffset + 1 + 2L * command);
+					int start = offsets & 0xffff, end = offsets >>> 16;
+					if (end < start || tableEnd + (long) end > dictionaryBytes)
+						throw new IllegalStateException("corrupt token offset");
+					n = end - start;
+				} else if (command >= 64 && command <= 191) {
+					n = command - 63;
+					if (position > encodedBytes - n)
+						throw new IllegalStateException("corrupt token literal");
+					position += n;
+				} else
+					throw new IllegalStateException("corrupt token command");
+				length = Math.addExact(length, n);
+			}
+			knownLength = length;
+			return length;
 		}
 	}
 
 	private static void validateHeader(int count, int bitWidth, int flags, Mode mode, int restart,
 			int dictionaryBytes, int checkpointCount, int packedOffset, int payloadOffset, int payloadBytes,
-			int totalBytes, long available) {
-		if (count <= 0 || count > 32_768 || bitWidth <= 0 || bitWidth > 31
-				|| (flags & ~(CODEC_MASK | FLAG_LOB)) != 0
-				|| checkpointCount != (count + CHECKPOINT_GROUP - 1) / CHECKPOINT_GROUP
+			int totalBytes, long available, int lengthBase) {
+		boolean framed = (flags & FLAG_LENGTH_FOR) != 0;
+		if (count <= 0 || count > 32_768 || bitWidth < 0 || bitWidth > 31 || !framed && bitWidth == 0
+				|| lengthBase < 0 || !framed && lengthBase != 0
+				|| (flags & ~(CODEC_MASK | FLAG_LOB | FLAG_LENGTH_FOR)) != 0
+				|| checkpointCount != (bitWidth == 0 ? 0 : (count + CHECKPOINT_GROUP - 1) / CHECKPOINT_GROUP)
 				|| dictionaryBytes < 0 || payloadBytes < 0 || totalBytes < HEADER_BYTES
 				|| totalBytes > available) {
 			throw new IllegalStateException("corrupt cache page header");
@@ -491,11 +653,11 @@ public final class PageCodec {
 		long bitmapBytes = (flags & FLAG_LOB) != 0 ? (count + 7L) >>> 3 : 0;
 		long dictionaryEnd = HEADER_BYTES + checkpointCount * 4L + bitmapBytes + dictionaryBytes;
 		long packedBytes = ((long) count * bitWidth + 7L) >>> 3;
-		long minimumPayloadOffset = (long) packedOffset + packedBytes + Long.BYTES;
+		long minimumPayloadOffset = (long) packedOffset + packedBytes + (bitWidth == 0 ? 0 : Long.BYTES);
 		long payloadEnd = (long) payloadOffset + payloadBytes;
 		if (packedOffset < dictionaryEnd || (packedOffset & 7) != 0
 				|| payloadOffset < minimumPayloadOffset || (payloadOffset & 7) != 0
-				|| payloadEnd != totalBytes) {
+				|| payloadEnd != totalBytes || bitWidth == 0 && (long) lengthBase * count != payloadBytes) {
 			throw new IllegalStateException("corrupt cache page offsets");
 		}
 	}
@@ -708,56 +870,62 @@ public final class PageCodec {
 		out.writeByte(value >>> 8);
 	}
 
-	private static int estimatedPageBytes(Representation representation, boolean[] large) {
+	/** Page-local FOR costs no extra word: checkpoint count is derived from count and width. */
+	private record LengthLayout(int minimum, int bits, int checkpoints, int dictionaryOffset,
+			int packedOffset, int payloadOffset, int payloadBytes, int totalBytes, boolean framed) {
+	}
+
+	private static LengthLayout lengthLayout(Representation representation, boolean[] large) {
 		int count = representation.records.length;
-		int checkpoints = (count + CHECKPOINT_GROUP - 1) / CHECKPOINT_GROUP;
-		int bitmap = any(large) ? (count + 7) >>> 3 : 0;
-		int maxLength = 0;
+		int minimum = Integer.MAX_VALUE, maximum = 0;
 		long payload = 0;
 		for (byte[] record : representation.records) {
-			maxLength = Math.max(maxLength, record.length);
+			minimum = Math.min(minimum, record.length);
+			maximum = Math.max(maximum, record.length);
 			payload += record.length;
 		}
 		if (payload > Integer.MAX_VALUE)
 			throw new IllegalArgumentException("page payload exceeds Java array limit");
-		int bits = Math.max(1, 32 - Integer.numberOfLeadingZeros(maxLength));
+		int legacyBits = Math.max(1, 32 - Integer.numberOfLeadingZeros(maximum));
+		int residualBits = 32 - Integer.numberOfLeadingZeros(maximum - minimum);
+		boolean framed = residualBits < legacyBits;
+		int bits = framed ? residualBits : legacyBits;
+		int checkpoints = bits == 0 ? 0 : (count + CHECKPOINT_GROUP - 1) / CHECKPOINT_GROUP;
+		int dictionaryOffset = HEADER_BYTES + checkpoints * 4 + (any(large) ? (count + 7) >>> 3 : 0);
+		long packedOffset = FfmAccess.alignUp((long) dictionaryOffset + representation.dictionary.length, 8);
 		long packed = ((long) count * bits + 7) >>> 3;
-		long packedOffset = FfmAccess.alignUp((long) HEADER_BYTES + checkpoints * 4L + bitmap
-				+ representation.dictionary.length, 8);
-		long payloadOffset = FfmAccess.alignUp(packedOffset + packed + 8, 8);
+		long payloadOffset = FfmAccess.alignUp(packedOffset + packed + (bits == 0 ? 0 : 8), 8);
 		long total = payloadOffset + payload;
 		if (total > Integer.MAX_VALUE)
 			throw new IllegalArgumentException("page exceeds Java array limit");
-		return (int) total;
+		return new LengthLayout(framed ? minimum : 0, bits, checkpoints, dictionaryOffset,
+				(int) packedOffset, (int) payloadOffset, (int) payload, (int) total, framed);
+	}
+
+	private static int estimatedPageBytes(Representation representation, boolean[] large) {
+		return lengthLayout(representation, large).totalBytes;
 	}
 
 	private static byte[] materialize(Representation representation, boolean[] large, int totalBytes) {
 		int count = representation.records.length;
-		int checkpointCount = (count + CHECKPOINT_GROUP - 1) / CHECKPOINT_GROUP;
+		LengthLayout layout = lengthLayout(representation, large);
+		int checkpointCount = layout.checkpoints;
 		boolean hasLob = any(large);
-		int bitmapBytes = hasLob ? (count + 7) >>> 3 : 0;
-		int maxLength = 0;
-		int payloadBytes = 0;
-		for (byte[] record : representation.records) {
-			maxLength = Math.max(maxLength, record.length);
-			payloadBytes = Math.addExact(payloadBytes, record.length);
-		}
-		int bits = Math.max(1, 32 - Integer.numberOfLeadingZeros(maxLength));
-		int packedBytes = Math.toIntExact(((long) count * bits + 7) >>> 3);
-		int dictionaryOffset = HEADER_BYTES + checkpointCount * 4 + bitmapBytes;
-		int packedOffset = Math.toIntExact(FfmAccess.alignUp(dictionaryOffset + representation.dictionary.length, 8));
-		int payloadOffset = Math.toIntExact(FfmAccess.alignUp((long) packedOffset + packedBytes + 8, 8));
-		if (payloadOffset + payloadBytes != totalBytes)
+		int bits = layout.bits;
+		int dictionaryOffset = layout.dictionaryOffset;
+		int packedOffset = layout.packedOffset, payloadOffset = layout.payloadOffset,
+				payloadBytes = layout.payloadBytes;
+		if (layout.totalBytes != totalBytes)
 			throw new AssertionError("page size mismatch");
 
 		byte[] page = new byte[totalBytes];
 		putInt(page, 0, MAGIC);
 		putShort(page, 4, count);
 		page[6] = (byte) bits;
-		page[7] = (byte) (representation.mode.code | (hasLob ? FLAG_LOB : 0));
+		page[7] = (byte) (representation.mode.code | (hasLob ? FLAG_LOB : 0) | (layout.framed ? FLAG_LENGTH_FOR : 0));
 		putShort(page, 8, representation.restart);
 		putShort(page, 10, representation.dictionary.length);
-		putInt(page, 12, checkpointCount);
+		putInt(page, 12, layout.framed ? layout.minimum : checkpointCount);
 		putInt(page, 16, packedOffset);
 		putInt(page, 20, payloadOffset);
 		putInt(page, 24, payloadBytes);
@@ -780,7 +948,7 @@ public final class PageCodec {
 		}
 		System.arraycopy(representation.dictionary, 0, page, dictionaryOffset, representation.dictionary.length);
 		for (int i = 0; i < count; i++) {
-			pack(page, packedOffset, (long) i * bits, bits, representation.records[i].length);
+			pack(page, packedOffset, (long) i * bits, bits, representation.records[i].length - layout.minimum);
 		}
 		int payloadCursor = payloadOffset;
 		for (byte[] record : representation.records) {
@@ -791,33 +959,26 @@ public final class PageCodec {
 	}
 
 	private static byte[] encodedRecord(MemorySegment segment, long base, int slot, int bits,
-			int packedOffset, int payloadOffset, int payloadBytes) {
-		int group = slot / CHECKPOINT_GROUP;
-		int first = group * CHECKPOINT_GROUP;
-		int relative = segment.get(FfmAccess.INT_LE, base + HEADER_BYTES + group * 4L);
-		for (int i = first; i < slot; i++)
-			relative += packedLength(segment, base, packedOffset, bits, i);
-		int length = packedLength(segment, base, packedOffset, bits, slot);
-		if (relative < 0 || length < 0 || relative > payloadBytes - length) {
-			throw new IllegalStateException("corrupt cache page record boundary");
-		}
+			int packedOffset, int payloadOffset, int payloadBytes, int lengthBase) {
+		long range = encodedRange(segment, base, slot, bits, packedOffset, payloadOffset, payloadBytes, lengthBase);
+		int length = (int) range;
 		byte[] result = new byte[length];
-		MemorySegment.copy(segment, ValueLayout.JAVA_BYTE, base + payloadOffset + relative, result, 0, length);
+		MemorySegment.copy(segment, ValueLayout.JAVA_BYTE, base + (range >>> 32), result, 0, length);
 		return result;
 	}
 
 	private static byte[] decodeFront(MemorySegment segment, long base, int slot, int restart, int bits,
-			int packedOffset, int payloadOffset, int payloadBytes) {
+			int packedOffset, int payloadOffset, int payloadBytes, int lengthBase) {
 		FrontAccess source = new FrontAccess(segment, base,
-				slot, restart, bits, packedOffset, payloadOffset, payloadBytes);
+				slot, restart, bits, packedOffset, payloadOffset, payloadBytes, lengthBase);
 		byte[] result = new byte[source.length()];
 		source.copy(0, result, 0, result.length);
 		return result;
 	}
 
 	private static byte[] decodePrefix(MemorySegment segment, long base, int slot, int prefixBytes, int bits,
-			int packedOffset, int payloadOffset, int payloadBytes, int checkpoints) {
-		long range = encodedRange(segment, base, slot, bits, packedOffset, payloadOffset, payloadBytes);
+			int packedOffset, int payloadOffset, int payloadBytes, int checkpoints, int lengthBase) {
+		long range = encodedRange(segment, base, slot, bits, packedOffset, payloadOffset, payloadBytes, lengthBase);
 		int suffixBytes = (int) range;
 		byte[] out = new byte[Math.addExact(prefixBytes, suffixBytes)];
 		MemorySegment.copy(segment, ValueLayout.JAVA_BYTE, base + HEADER_BYTES + checkpoints * 4L,
@@ -828,8 +989,9 @@ public final class PageCodec {
 
 	private static byte[] decodeToken(MemorySegment segment, long base, int slot, int count,
 			int dictionaryBytes, int bits, int packedOffset, int payloadOffset, int payloadBytes,
-			int checkpointCount, boolean hasLob) {
-		byte[] encoded = encodedRecord(segment, base, slot, bits, packedOffset, payloadOffset, payloadBytes);
+			int checkpointCount, boolean hasLob, int lengthBase) {
+		byte[] encoded = encodedRecord(segment, base, slot, bits, packedOffset, payloadOffset, payloadBytes,
+				lengthBase);
 		int bitmapBytes = hasLob ? (count + 7) >>> 3 : 0;
 		long dictionaryOffset = base + HEADER_BYTES + checkpointCount * 4L + bitmapBytes;
 		if (dictionaryBytes <= 0)
@@ -886,11 +1048,14 @@ public final class PageCodec {
 		return (value & (1 << (slot & 7))) != 0;
 	}
 
-	private static int packedLength(MemorySegment segment, long base, int packedOffset, int bits, int index) {
+	private static int packedLength(MemorySegment segment, long base, int packedOffset, int bits, int index,
+			int lengthBase) {
+		if (bits == 0)
+			return lengthBase;
 		long bit = (long) index * bits;
 		long word = segment.get(FfmAccess.LONG_LE, base + packedOffset + (bit >>> 3));
 		long mask = (1L << bits) - 1;
-		return (int) ((word >>> (bit & 7)) & mask);
+		return Math.addExact(lengthBase, (int) ((word >>> (bit & 7)) & mask));
 	}
 
 	private static void pack(byte[] target, int offset, long bitPosition, int bits, int value) {

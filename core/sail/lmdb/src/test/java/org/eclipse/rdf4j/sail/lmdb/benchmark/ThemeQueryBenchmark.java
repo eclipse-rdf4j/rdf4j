@@ -70,18 +70,17 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 4, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 5000)
+@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 10000)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
 		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true",
 		"-Drdf4j.lmdb.janinoCodegen.factorGuardPeeling=true"
 
-		, "-Drdf4j.lmdb.valueOverlay.maxBytes=1073741824", "-Drdf4j.lmdb.valueOverlay.reverseSlots=1048576"
-
-		, "-Drdf4j.lmdb.valueOverlay.delta.maxBytes=67108864", "-Drdf4j.lmdb.valueOverlay.delta.maxChangedIds=65536",
-		"-Drdf4j.lmdb.valueOverlay.delta.retainedSnapshots=4", "-Drdf4j.lmdb.valueOverlay.delta.maxLevels=20"
+		, "-Drdf4j.lmdb.valueOverlay.maxBytes=1073741824", "-Drdf4j.lmdb.valueOverlay.retained.maxBytes=268435455",
+		"-Drdf4j.lmdb.valueOverlay.reverseSlots=16777216", "-Drdf4j.lmdb.valueOverlay.sharedPrefixes=true",
+		"-Drdf4j.lmdb.valueOverlay.optimalTokenParsing=true", "-Drdf4j.lmdb.valueOverlay.vectorMinSavingPercent=8"
 })
-@Measurement(iterations = 4, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
+@Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ThemeQueryBenchmark {
 
@@ -141,26 +140,26 @@ public class ThemeQueryBenchmark {
 	public String z_z_irMode;
 
 	@Param({
-//			"0",
-//			"1",
-//			"2",
-//			"3",
-//			"4",
-//			"5",
-//			"6",
-//			"7",
-//			"8",
-//			"9",
-//			"10",
-//			"11",
+			"0",
+			"1",
+			"2",
+			"3",
+			"4",
+			"5",
+			"6",
+			"7",
+			"8",
+			"9",
+			"10",
+			"11",
 			"12"
 	})
 	public int z_queryIndex;
 
 	@Param({
-//			"MEDICAL_RECORDS",
-//			"SOCIAL_MEDIA",
-//			"LIBRARY",
+			"MEDICAL_RECORDS",
+			"SOCIAL_MEDIA",
+			"LIBRARY",
 //			"ENGINEERING",
 //			"HIGHLY_CONNECTED",
 //			"TRAIN",
@@ -169,7 +168,7 @@ public class ThemeQueryBenchmark {
 //			"ADAPTIVE_FILTER_PLACEMENT",
 //			"ANALYTICS",
 //			"EXPLORATION",
-			"DATA_TRANSFORMATION"
+//			"DATA_TRANSFORMATION"
 	})
 	public String themeName;
 

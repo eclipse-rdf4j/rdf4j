@@ -6,9 +6,16 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Objects;
 
-/** Independently addressable unsigned FOR or affine vector, with an explicit eight-byte safe tail. */
+/**
+ * Independently addressable unsigned FOR, affine, integer-slope, or verified dense-high-bits vector. Dense vectors
+ * store only varying low bits: the ordinal is implicit in the position. Native encodings are private to the memory-only
+ * overlay. Bitpacked payloads have an eight-byte safe tail; affine/constant/periodic models do not overread and need no
+ * tail.
+ */
 final class PackedVector {
 	private static final int HEADER = 24;
+	private static final int LINEAR = 128;
+	private static final int PERIODIC = 256, MAX_PERIOD = 16;
 
 	private PackedVector() {
 	}
@@ -32,21 +39,97 @@ final class PackedVector {
 					&& values[i] == values[0] + step * i;
 		}
 		int bits = sequence ? -1 : 64 - Long.numberOfLeadingZeros(max - base);
-		int bytes = HEADER + (bits <= 0 ? 0 : Math.toIntExact(((long) bits * count + 7) >>> 3)) + 8;
+		int dense = !sequence && affine ? denseHighBits(values, count, base, max) : 0;
+		int tagShift = 0;
+		long metadata = sequence ? step : dense;
+		boolean residual = false;
+		if (dense != 0) {
+			int shift = dense - 1;
+			long mask = (1L << shift) - 1;
+			long varying = 0;
+			for (int i = 0; i < count; i++)
+				varying |= (values[i] ^ base) & mask;
+			tagShift = varying == 0 ? 0 : Long.numberOfTrailingZeros(varying);
+			int width = 64 - Long.numberOfLeadingZeros(varying >>> tagShift);
+			if (width < bits) {
+				bits = width;
+				residual = true;
+				metadata = shift | (long) tagShift << 6;
+			}
+		}
+		// A dense ordinal model is preferable when available. Otherwise remove a verified integer
+		// slope before FOR packing. Signed errors are admitted only when the unsigned distance fits;
+		// reconstruction itself uses exact modulo-2^64 arithmetic, not a floating-point prediction.
+		long encodedBase = base;
+		boolean linear = false;
+		if (!sequence && !residual && affine && count >= 3 && values[0] == base && values[count - 1] == max) {
+			long slope = Long.divideUnsigned(max - base, count - 1);
+			long minimumError = 0, maximumError = 0;
+			boolean valid = true;
+			for (int i = 1; i < count; i++) {
+				long predicted = base + slope * i;
+				long error = values[i] - predicted;
+				if (Long.compareUnsigned(values[i], values[i - 1]) < 0
+						|| (Long.compareUnsigned(values[i], predicted) < 0) != (error < 0)) {
+					valid = false;
+					break;
+				}
+				minimumError = Math.min(minimumError, error);
+				maximumError = Math.max(maximumError, error);
+			}
+			int width = 64 - Long.numberOfLeadingZeros(maximumError - minimumError);
+			if (valid && width < bits) {
+				bits = width;
+				linear = true;
+				metadata = slope;
+				encodedBase = base + minimumError;
+			}
+		}
+		int bytes = HEADER + (bits <= 0 ? 0 : Math.toIntExact(((long) bits * count + 7) >>> 3) + Long.BYTES);
 		byte[] encoded = new byte[bytes];
 		ByteBuffer b = ByteBuffer.wrap(encoded).order(ByteOrder.LITTLE_ENDIAN);
-		// Non-affine vectors previously left an unused first difference in this word. Keep the
-		// 24-byte layout, but use it for a builder-verified dense-high-bits lookup hint. The packed
-		// values are still complete IDs, including every low tag bit; readers never trust the hint
-		// as membership. These vectors are private to the rebuilt in-memory overlay, not LMDB data.
+		// -1 is affine; -2-width is dense residual; 128+width is integer-slope residual.
+		// Ordinary FOR and legacy dense hints remain readable.
 		b.putInt(count)
-				.putInt(bits)
-				.putLong(base)
-				.putLong(sequence ? step : affine ? denseHighBits(values, count, base, max) : 0);
-		if (bits > 0)
-			for (int i = 0; i < count; i++)
-				put(encoded, HEADER, (long) i * bits, bits, values[i] - base);
+				.putInt(residual ? -2 - bits : linear ? LINEAR + bits : bits)
+				.putLong(encodedBase)
+				.putLong(metadata);
+		if (bits > 0) {
+			long lowMask = residual ? (1L << (dense - 1)) - 1 : 0;
+			for (int i = 0; i < count; i++) {
+				long value = residual ? ((values[i] ^ base) & lowMask) >>> tagShift
+						: linear ? values[i] - encodedBase - metadata * i : values[i] - base;
+				put(encoded, HEADER, (long) i * bits, bits, value);
+			}
+		}
 		return encoded;
+	}
+
+	/**
+	 * Routing can consist of a small number of interleaved, advancing page cursors. Store their seeds and common cycle
+	 * increment only if every locator verifies and the complete vector shrinks. Kept out of encode(): ID vectors retain
+	 * their constant-time dense membership path.
+	 */
+	static byte[] encodeRoutes(long[] values, int count) {
+		byte[] fallback = encode(values, count, true);
+		for (int period = 2; period <= MAX_PERIOD && period <= count / 2; period++) {
+			int bytes = HEADER + (period - 1) * Long.BYTES;
+			if (bytes >= fallback.length)
+				break;
+			long step = values[period] - values[0];
+			int i = period;
+			while (i < count && values[i] == values[i % period] + (long) (i / period) * step)
+				i++;
+			if (i == count) {
+				byte[] encoded = new byte[bytes];
+				ByteBuffer b = ByteBuffer.wrap(encoded).order(ByteOrder.LITTLE_ENDIAN);
+				b.putInt(count).putInt(PERIODIC + period).putLong(values[0]).putLong(step);
+				for (i = 1; i < period; i++)
+					b.putLong(values[i]);
+				return encoded;
+			}
+		}
+		return fallback;
 	}
 
 	/** Zero means no hint; shift+1 means (value[i] >>> shift) == (base >>> shift)+i for every i. */
@@ -81,20 +164,58 @@ final class PackedVector {
 		long base = s.get(FfmAccess.LONG_LE, p + 8);
 		if (bits == -1)
 			return base + index * s.get(FfmAccess.LONG_LE, p + 16);
-		if (bits < 0 || bits > 64)
+		if (bits < -1)
+			return denseValue(s, p, index, base, bits, s.get(FfmAccess.LONG_LE, p + 16));
+		if (bits >= LINEAR && bits < LINEAR + 64)
+			return base + (long) index * s.get(FfmAccess.LONG_LE, p + 16)
+					+ getBits(s, p + HEADER, (long) index * (bits - LINEAR), bits - LINEAR);
+		if (bits >= PERIODIC + 2 && bits <= PERIODIC + MAX_PERIOD)
+			return periodicValue(s, p, index, base, bits - PERIODIC);
+		if (bits > 64)
 			throw new IllegalStateException("corrupt vector width");
 		return base + getBits(s, p + HEADER, (long) index * bits, bits);
 	}
 
-	/** Exact lookup in an unsigned-sorted ID vector; bind/decode the header only once. */
+	/** Keep the common dense-ID dispatch small enough to inline into the overlay directory lookup. */
 	static int indexOf(NativeSlabAllocator allocator, long handle, long value) {
 		MemorySegment s = allocator.segment(handle);
 		long p = NativeSlabAllocator.offset(handle);
-		int n = s.get(FfmAccess.INT_LE, p);
-		int bits = s.get(FfmAccess.INT_LE, p + 4);
+		long header = s.get(FfmAccess.LONG_LE, p);
+		int n = (int) header, bits = (int) (header >>> 32);
 		long base = s.get(FfmAccess.LONG_LE, p + 8);
-		if (n <= 0 || bits < -1 || bits > 64)
+		if (n <= 0)
 			throw new IllegalStateException("corrupt ID vector header");
+		if (bits < -1)
+			return denseIndexOf(s, p, n, base, bits, value);
+		return indexOfOther(s, p, n, base, bits, value);
+	}
+
+	private static int denseIndexOf(MemorySegment s, long p, int n, long base, int code, long value) {
+		long metadata = s.get(FfmAccess.LONG_LE, p + 16);
+		int width = -2 - code;
+		int shift = (int) metadata & 63;
+		int tagShift = (int) (metadata >>> 6);
+		if (width < 0 || width > 63 || tagShift < 0 || tagShift > shift || width > shift - tagShift)
+			throw new IllegalStateException("corrupt dense vector metadata");
+		long rank = (value >>> shift) - (base >>> shift);
+		if (Long.compareUnsigned(rank, n) >= 0)
+			return -1;
+		// High bits already select and verify the ordinal. Compare all low bits without
+		// reconstructing the high portion a second time, including the invariant tag bits.
+		long expected = (value ^ base) & ((1L << shift) - 1);
+		long actual = getBits(s, p + HEADER, rank * width, width) << tagShift;
+		return actual == expected ? (int) rank : -1;
+	}
+
+	private static int indexOfOther(MemorySegment s, long p, int n, long base, int bits, long value) {
+		// The dispatch already checked n and routed every negative non-affine code to denseIndexOf.
+		if (bits > 64 && (bits < LINEAR || bits >= LINEAR + 64)
+				&& (bits < PERIODIC + 2 || bits > PERIODIC + MAX_PERIOD))
+			throw new IllegalStateException("corrupt ID vector header");
+		if (bits >= PERIODIC + 2)
+			return periodicSearch(s, p, n, base, bits - PERIODIC, value, true);
+		if (bits >= LINEAR)
+			return linearSearch(s, p, n, base, bits - LINEAR, value, true);
 		if (value == base)
 			return 0;
 		if (Long.compareUnsigned(value, base) < 0)
@@ -149,6 +270,10 @@ final class PackedVector {
 		int n = s.get(FfmAccess.INT_LE, p);
 		int bits = s.get(FfmAccess.INT_LE, p + 4);
 		long base = s.get(FfmAccess.LONG_LE, p + 8);
+		if (bits >= PERIODIC + 2 && bits <= PERIODIC + MAX_PERIOD)
+			return periodicSearch(s, p, n, base, bits - PERIODIC, value, false);
+		if (bits >= LINEAR && bits < LINEAR + 64)
+			return linearSearch(s, p, n, base, bits - LINEAR, value, false);
 		if (Long.compareUnsigned(value, base) <= 0)
 			return 0;
 		if (bits == -1) {
@@ -160,6 +285,15 @@ final class PackedVector {
 			if (Long.compareUnsigned(q, n) >= 0)
 				return n;
 			return (int) q + (Long.remainderUnsigned(delta, step) == 0 ? 0 : 1);
+		}
+		if (bits < -1) {
+			long metadata = s.get(FfmAccess.LONG_LE, p + 16);
+			int shift = (int) metadata & 63;
+			long rank = (value >>> shift) - (base >>> shift);
+			if (Long.compareUnsigned(rank, n) >= 0)
+				return n;
+			long candidate = denseValue(s, p, (int) rank, base, bits, metadata);
+			return (int) rank + (Long.compareUnsigned(candidate, value) < 0 ? 1 : 0);
 		}
 		if (bits < 0 || bits > 64)
 			throw new IllegalStateException("corrupt vector width");
@@ -175,6 +309,77 @@ final class PackedVector {
 		return lo;
 	}
 
+	private static long periodicValue(MemorySegment s, long p, int index, long base, int period) {
+		int cycle = index / period, lane = index - cycle * period;
+		long seed = lane == 0 ? base : s.get(FfmAccess.LONG_LE, p + HEADER + (lane - 1L) * Long.BYTES);
+		return seed + (long) cycle * s.get(FfmAccess.LONG_LE, p + 16);
+	}
+
+	private static int periodicSearch(MemorySegment s, long p, int count, long base, int period, long value,
+			boolean exact) {
+		int lo = 0, hi = count;
+		while (lo < hi) {
+			int mid = (lo + hi) >>> 1;
+			long candidate = periodicValue(s, p, mid, base, period);
+			if (exact && candidate == value)
+				return mid;
+			if (Long.compareUnsigned(candidate, value) < 0)
+				lo = mid + 1;
+			else
+				hi = mid;
+		}
+		return exact ? -1 : lo;
+	}
+
+	/** Sorted reconstructed values, not residuals, determine the unsigned search order. */
+	private static int linearSearch(MemorySegment s, long p, int count, long base, int bits, long value,
+			boolean exact) {
+		if (exact)
+			return linearExactSearch(s, p, count, base, bits, value);
+		long slope = s.get(FfmAccess.LONG_LE, p + 16);
+		int lo = 0, hi = count;
+		while (lo < hi) {
+			int mid = (lo + hi) >>> 1;
+			long candidate = base + (long) mid * slope + getBits(s, p + HEADER, (long) mid * bits, bits);
+			if (Long.compareUnsigned(candidate, value) < 0)
+				lo = mid + 1;
+			else
+				hi = mid;
+		}
+		return lo;
+	}
+
+	/**
+	 * Keep the halving schedule independent of the comparison. C2 can select an increment with CMOV (rather than branch
+	 * on both interval endpoints), then verify membership once. This is an exact predecessor search, not interpolation.
+	 * The dispatch guarantees count > 0; duplicates may return any matching position here, while lowerBound retains
+	 * first-match semantics.
+	 */
+	private static int linearExactSearch(MemorySegment s, long p, int count, long base, int bits, long value) {
+		long slope = s.get(FfmAccess.LONG_LE, p + 16);
+		int lo = 0, remaining = count;
+		while (remaining > 1) {
+			int half = remaining >>> 1;
+			int mid = lo + half;
+			long candidate = base + (long) mid * slope + getBits(s, p + HEADER, (long) mid * bits, bits);
+			lo += Long.compareUnsigned(candidate, value) <= 0 ? half : 0;
+			remaining -= half;
+		}
+		long candidate = base + (long) lo * slope + getBits(s, p + HEADER, (long) lo * bits, bits);
+		return candidate == value ? lo : -1;
+	}
+
+	private static long denseValue(MemorySegment s, long p, int index, long base, int code, long metadata) {
+		int width = -2 - code;
+		int shift = (int) metadata & 63;
+		int tagShift = (int) (metadata >>> 6);
+		if (width < 0 || width > 63 || tagShift < 0 || tagShift > shift || width > shift - tagShift)
+			throw new IllegalStateException("corrupt dense vector metadata");
+		long mask = (1L << shift) - 1;
+		long tag = (base & mask) ^ (getBits(s, p + HEADER, (long) index * width, width) << tagShift);
+		return ((base & ~mask) + ((long) index << shift)) | tag;
+	}
+
 	static long getBits(MemorySegment s, long base, long bit, int width) {
 		if (width == 0)
 			return 0;
@@ -182,11 +387,12 @@ final class PackedVector {
 		long address = base + (bit >>> 3);
 		long low = s.get(FfmAccess.LONG_LE, address) >>> shift;
 		// Wide, unaligned values can spill into a ninth byte; the producer owns a bounded safe tail.
-		if (shift != 0 && width > 64 - shift) {
+		if (shift + width > 64) {
 			low |= (long) Byte.toUnsignedInt(s.get(java.lang.foreign.ValueLayout.JAVA_BYTE, address + 8)) << (64
 					- shift);
 		}
-		return width == 64 ? low : low & ((1L << width) - 1);
+		// width==0 returned above; an unsigned shift also covers width==64 without a branch.
+		return low & (-1L >>> (64 - width));
 	}
 
 	static void put(byte[] out, int base, long bit, int width, long value) {
