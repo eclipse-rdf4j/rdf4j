@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.tools.serverboot;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -114,6 +115,8 @@ public class Rdf4jServerWorkbenchApplication {
 	@Bean
 	TomcatServletWebServerFactory tomcatFactory(WebappResourceExtractor extractor) {
 		TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
+		// Spring Boot applies an explicitly configured server.address after this default.
+		factory.setAddress(InetAddress.ofLiteral("127.0.0.1"));
 		factory.setDocumentRoot(extractor.getServerDocBase().toFile());
 		factory.addContextCustomizers(workbenchResourcesCustomizer(extractor));
 		Compression compression = new Compression();
