@@ -42,8 +42,20 @@ public abstract class RDF4JDao {
 		return rdf4JTemplate;
 	}
 
-	protected abstract NamedSparqlSupplierPreparer prepareNamedSparqlSuppliers(
-			NamedSparqlSupplierPreparer preparer);
+	/**
+	 * Registers named SPARQL operations used by this DAO.
+	 *
+	 * <p>
+	 * Subclasses only need to override this hook when they use named SPARQL suppliers. DAOs that use
+	 * {@code JoinQueryBuilder} query factories exclusively can inherit this default no-op implementation.
+	 *
+	 * @param preparer registration builder for named SPARQL operations
+	 * @return the supplied registration builder
+	 */
+	protected NamedSparqlSupplierPreparer prepareNamedSparqlSuppliers(
+			NamedSparqlSupplierPreparer preparer) {
+		return preparer;
+	}
 
 	/**
 	 * Prepares the specified SPARQL string for later use, e.g. in

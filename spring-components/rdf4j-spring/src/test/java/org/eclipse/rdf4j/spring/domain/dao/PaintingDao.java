@@ -17,6 +17,8 @@ import static org.eclipse.rdf4j.spring.domain.model.Painting.PAINTING_ID;
 import static org.eclipse.rdf4j.spring.domain.model.Painting.PAINTING_LABEL;
 import static org.eclipse.rdf4j.spring.domain.model.Painting.PAINTING_TECHNIQUE;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -24,6 +26,8 @@ import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
 import org.eclipse.rdf4j.spring.dao.SimpleRDF4JCRUDDao;
 import org.eclipse.rdf4j.spring.dao.support.UpdateWithModelBuilder;
 import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.MutableBindings;
+import org.eclipse.rdf4j.spring.dao.support.joinbuilder.JoinQueryBuilder;
+import org.eclipse.rdf4j.spring.dao.support.joinbuilder.queryfactory.JoinDefaultQueryFactory;
 import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
 import org.eclipse.rdf4j.spring.domain.model.EX;
 import org.eclipse.rdf4j.spring.domain.model.Painting;
@@ -42,14 +46,22 @@ public class PaintingDao extends SimpleRDF4JCRUDDao<Painting, IRI> {
 		super(rdf4JTemplate);
 	}
 
-	@Override
-	protected void populateIdBindings(MutableBindings bindingsBuilder, IRI iri) {
-		bindingsBuilder.add(PAINTING_ID, iri);
+	private static final JoinDefaultQueryFactory ARTIST_IDS_BY_PAINTING = JoinQueryBuilder
+			.of(p -> p.pred(EX.creatorOf).inv())
+			.sourceEntityConstraints(artist -> artist.isA(EX.Painting))
+			.targetEntityConstraints(painting -> painting.isA(EX.Artist))
+			.leftOuterJoin()
+			.buildFactory();
+
+	public Set<IRI> getArtistIdsOfPainting(IRI paintingId) {
+		return ARTIST_IDS_BY_PAINTING.get(getRdf4JTemplate())
+				.withSourceEntityId(paintingId)
+				.asTargetEntityIdSet();
 	}
 
 	@Override
-	protected NamedSparqlSupplierPreparer prepareNamedSparqlSuppliers(NamedSparqlSupplierPreparer preparer) {
-		return null;
+	protected void populateIdBindings(MutableBindings bindingsBuilder, IRI iri) {
+		bindingsBuilder.add(PAINTING_ID, iri);
 	}
 
 	@Override
