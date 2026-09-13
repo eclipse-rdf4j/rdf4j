@@ -52,6 +52,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.sail.lmdb.Varint;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -64,6 +65,13 @@ import org.lwjgl.util.lmdb.MDBVal;
 
 @Timeout(30)
 class LmdbPageMappingLifecycleTest {
+	private static final long COMMITTED_GROWTH_THRESHOLD = 64L << 20;
+	private static final long GROWTH_MAP_SIZE = 128L << 20;
+	private static final int VALUE_SIZE = 64;
+	private static final int INITIAL_ENTRY_COUNT = 32;
+	private static final int GROWTH_ENTRY_COUNT = Math.toIntExact(COMMITTED_GROWTH_THRESHOLD / VALUE_SIZE) + 1;
+	private static final int GROWTH_END = INITIAL_ENTRY_COUNT + GROWTH_ENTRY_COUNT;
+	private static final int KEY_BUFFER_SIZE = Varint.calcListLengthUnsigned(Integer.MAX_VALUE, 1, 1, 1);
 
 	@TempDir
 	Path directory;
@@ -121,29 +129,40 @@ class LmdbPageMappingLifecycleTest {
 		}
 	}
 
-	@Test
-	void concurrentPinnedSnapshotsSurviveFileGrowth() throws Exception {
-		try (Environment env = new Environment(directory, 0)) {
-			env.put(0, 32);
+	@ParameterizedTest
+	@ValueSource(ints = { 0, MDB_WRITEMAP })
+	void concurrentPinnedSnapshotsSurviveFileGrowth(int flags) throws Exception {
+		try (Environment env = new Environment(directory, flags, GROWTH_MAP_SIZE)) {
+			env.put(0, INITIAL_ENTRY_COUNT);
 			try (ReadTxn oldTxn = env.read();
 					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
-							env.handle)) {
-				assertEquals(32, totalEntries(estimator, oldTxn.handle()));
-				long oldSize = Files.size(env.dataPath);
-				env.put(32, 2500);
-				assertTrue(Files.size(env.dataPath) > oldSize);
+							env.handle);
+					LmdbDataFile file = new LmdbDataFile(env.dataPath.toFile(), env.handle)) {
+				assertEquals(INITIAL_ENTRY_COUNT, totalEntries(estimator, oldTxn.handle()));
+				LmdbMeta oldMeta = file.readMetaForReadTransaction(oldTxn.handle());
+				long oldCommittedBytes = committedBytes(oldMeta);
+				env.put(INITIAL_ENTRY_COUNT, GROWTH_END);
 				try (ReadTxn newTxn = env.read(); var executor = Executors.newFixedThreadPool(2)) {
+					LmdbMeta newMeta = file.readMetaForReadTransaction(newTxn.handle());
+					assertTrue(newMeta.lastPage() > oldMeta.lastPage(),
+							"The committed snapshot should contain additional pages");
+					long newCommittedBytes = committedBytes(newMeta);
+					assertTrue(newCommittedBytes > COMMITTED_GROWTH_THRESHOLD,
+							"The committed snapshot should exceed the original 64 MiB map size");
+					System.out.printf(
+							"flags=0x%x entriesBefore=%d entriesAfter=%d committedBytesBefore=%d committedBytesAfter=%d%n",
+							flags, INITIAL_ENTRY_COUNT, GROWTH_END, oldCommittedBytes, newCommittedBytes);
 					// NOTLS permits sequential migration to another thread, not concurrent use of one transaction.
 					Future<?> oldReader = executor.submit(() -> {
 						for (int pass = 0; pass < 30; pass++) {
-							assertEquals(32, totalEntries(estimator, oldTxn.handle()));
+							assertEquals(INITIAL_ENTRY_COUNT, totalEntries(estimator, oldTxn.handle()));
 							assertEquals(10, estimate(estimator, oldTxn.handle(), null));
 						}
 						return null;
 					});
 					Future<?> newReader = executor.submit(() -> {
 						for (int pass = 0; pass < 30; pass++) {
-							assertEquals(2500, totalEntries(estimator, newTxn.handle()));
+							assertEquals(GROWTH_END, totalEntries(estimator, newTxn.handle()));
 							assertEquals(10, estimate(estimator, newTxn.handle(), null));
 						}
 						return null;
@@ -349,7 +368,23 @@ class LmdbPageMappingLifecycleTest {
 	}
 
 	private static byte[] key(int ordinal) {
-		return new byte[] { (byte) (1 + ordinal / 100), (byte) (1 + ordinal % 100), 1, 1 };
+		ByteBuffer keyBytes = ByteBuffer.allocate(KEY_BUFFER_SIZE);
+		writeKey(keyBytes, ordinal);
+		keyBytes.flip();
+		byte[] key = new byte[keyBytes.remaining()];
+		keyBytes.get(key);
+		return key;
+	}
+
+	private static void writeKey(ByteBuffer keyBytes, int ordinal) {
+		Varint.writeUnsigned(keyBytes, ordinal + 1L);
+		Varint.writeUnsigned(keyBytes, 1L);
+		Varint.writeUnsigned(keyBytes, 1L);
+		Varint.writeUnsigned(keyBytes, 1L);
+	}
+
+	private static long committedBytes(LmdbMeta meta) {
+		return Math.multiplyExact(Math.addExact(meta.lastPage(), 1L), (long) meta.pageSize());
 	}
 
 	private static void check(int result) {
@@ -373,13 +408,17 @@ class LmdbPageMappingLifecycleTest {
 		final int dbi;
 
 		Environment(Path location, int flags) {
+			this(location, flags, 64L << 20);
+		}
+
+		Environment(Path location, int flags, long mapSize) {
 			dataPath = (flags & MDB_NOSUBDIR) != 0 ? location : location.resolve("data.mdb");
 			try (MemoryStack stack = stackPush()) {
 				PointerBuffer pointer = stack.mallocPointer(1);
 				check(mdb_env_create(pointer));
 				handle = pointer.get(0);
 				try {
-					check(mdb_env_set_mapsize(handle, 64L << 20));
+					check(mdb_env_set_mapsize(handle, mapSize));
 					check(mdb_env_set_maxdbs(handle, 4));
 					check(mdb_env_open(handle, location.toString(), MDB_NOTLS | flags, 0664));
 					check(mdb_txn_begin(handle, NULL, flags & MDB_RDONLY, pointer));
@@ -414,11 +453,14 @@ class LmdbPageMappingLifecycleTest {
 				check(mdb_txn_begin(handle, NULL, 0, pointer));
 				long txn = pointer.get(0);
 				try {
-					ByteBuffer keyBytes = stack.malloc(4);
-					MDBVal key = MDBVal.malloc(stack).mv_data(keyBytes);
-					MDBVal value = MDBVal.malloc(stack).mv_data(stack.calloc(64));
+					ByteBuffer keyBytes = stack.malloc(KEY_BUFFER_SIZE);
+					MDBVal key = MDBVal.malloc(stack);
+					MDBVal value = MDBVal.malloc(stack).mv_data(stack.calloc(VALUE_SIZE));
 					for (int ordinal = start; ordinal < end; ordinal++) {
-						keyBytes.clear().put(key(ordinal)).flip();
+						keyBytes.clear();
+						writeKey(keyBytes, ordinal);
+						keyBytes.flip();
+						key.mv_data(keyBytes);
 						check(mdb_put(txn, dbi, key, value, 0));
 					}
 				} catch (Throwable failure) {
