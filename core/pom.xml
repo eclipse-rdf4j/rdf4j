@@ -29,6 +29,7 @@
 		<module>spin</module>
 		<module>client</module>
 		<module>storage</module>
+		<module>opentelemetry</module>
 		<module>collection-factory</module>
 	</modules>
 	<name>RDF4J: Core</name>
