@@ -1315,28 +1315,29 @@ class ValueStore extends AbstractValueFactory {
 				incrementRefCount(stack2, writeTxn, pred);
 				incrementRefCount(stack2, writeTxn, obj);
 
-			long id = nextId(TRIPLE_VALUE);
-			for (TripleIndex index : tripleTermIndexes) {
-				keyBuf.clear();
-				valueBuf.clear();
-				index.toEntry(keyBuf, valueBuf, subj, pred, obj, id);
-				keyBuf.flip();
-				valueBuf.flip();
+				long id = nextId(TRIPLE_VALUE);
+				for (TripleIndex index : tripleTermIndexes) {
+					keyBuf.clear();
+					valueBuf.clear();
+					index.toEntry(keyBuf, valueBuf, subj, pred, obj, id);
+					keyBuf.flip();
+					valueBuf.flip();
 
-				// update buffer positions in MDBVal
-				keyVal.mv_data(keyBuf);
-				dataVal.mv_data(valueBuf);
+					// update buffer positions in MDBVal
+					keyVal.mv_data(keyBuf);
+					dataVal.mv_data(valueBuf);
 
-				resizeMap(writeTxn, 0L);
-				E(mdb_cursor_open(writeTxn, index.getDB(true), pp));
-				long indexCursor = pp.get(0);
-				try {
-					E(mergeChunk(indexCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf, mergedBuf));
-				} finally {
-					mdb_cursor_close(indexCursor);
+					resizeMap(writeTxn, 0L);
+					E(mdb_cursor_open(writeTxn, index.getDB(true), pp));
+					long indexCursor = pp.get(0);
+					try {
+						E(mergeChunk(indexCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf,
+								mergedBuf));
+					} finally {
+						mdb_cursor_close(indexCursor);
+					}
 				}
-			}
-			return id;
+				return id;
 			});
 		});
 	}

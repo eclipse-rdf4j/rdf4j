@@ -93,11 +93,11 @@ import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
 import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.IndexShape;
 import org.eclipse.rdf4j.sail.lmdb.util.EntryMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexEntryWriters;
 import org.eclipse.rdf4j.sail.lmdb.util.VarintTupleIO;
-import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
-import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.IndexShape;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
@@ -846,7 +846,7 @@ class TripleStore implements Closeable {
 	 * </p>
 	 */
 	private double cardinalityUsingSamplingEstimator(TripleIndex index, long subj, long pred, long obj, long context)
-		throws IOException {
+			throws IOException {
 
 		int relevantParts = index.getPatternScore(subj, pred, obj, context);
 		if (relevantParts == 0) {
@@ -913,13 +913,13 @@ class TripleStore implements Closeable {
 					}
 					int keyDiff;
 					if (rc != MDB_SUCCESS ||
-						(keyDiff = mdb_cmp(txn, dbi, keyData, maxKey)) >= 0 &&
-							(keyDiff > 0 || mdb_dcmp(txn, dbi, valueData, maxValue) >= 0)) {
+							(keyDiff = mdb_cmp(txn, dbi, keyData, maxKey)) >= 0 &&
+									(keyDiff > 0 || mdb_dcmp(txn, dbi, valueData, maxValue) >= 0)) {
 						break;
 					} else {
 						IndexEntryWriters.read(keyData.mv_data(), valueData.mv_data(),
-							index.getIndexSplitPosition(),
-							s.minValues);
+								index.getIndexSplitPosition(),
+								s.minValues);
 					}
 
 					// set cursor to max key
@@ -942,8 +942,8 @@ class TripleStore implements Closeable {
 					}
 					if (rc == MDB_SUCCESS) {
 						IndexEntryWriters.read(keyData.mv_data(), valueData.mv_data(),
-							index.getIndexSplitPosition(),
-							s.maxValues);
+								index.getIndexSplitPosition(),
+								s.maxValues);
 						// this is required to correctly estimate the range size at a later point
 						s.startValues[Statistics.MAX_BUCKETS] = s.maxValues;
 					} else {
@@ -956,11 +956,11 @@ class TripleStore implements Closeable {
 					for (; bucket < Statistics.MAX_BUCKETS && !endOfRange; bucket++) {
 						if (bucket != 0) {
 							bucketStart((double) bucket / Statistics.MAX_BUCKETS, s.minValues, s.maxValues,
-								s.values);
+									s.values);
 							keyBuf.clear();
 							valueBuf.clear();
 							IndexEntryWriters.write(keyBuf, valueBuf, index.getIndexSplitPosition(),
-								s.values[0], s.values[1], s.values[2], s.values[3]);
+									s.values[0], s.values[1], s.values[2], s.values[3]);
 							keyBuf.flip();
 							valueBuf.flip();
 						}
@@ -987,7 +987,7 @@ class TripleStore implements Closeable {
 
 								System.arraycopy(s.values, 0, s.lastValues[bucket], 0, s.values.length);
 								IndexEntryWriters.read(keyData.mv_data(), valueData.mv_data(),
-									index.getIndexSplitPosition(), s.values);
+										index.getIndexSplitPosition(), s.values);
 
 								if (currentSamplesCount == 1) {
 									Arrays.fill(s.counts, 1);
@@ -1000,8 +1000,8 @@ class TripleStore implements Closeable {
 											long diff = s.values[i] - s.lastValues[bucket][i];
 											s.avgRowsPerValueCounts[i]++;
 											s.avgRowsPerValue[i] = (s.avgRowsPerValue[i]
-												* (s.avgRowsPerValueCounts[i] - 1) +
-												(double) s.counts[i] / diff) / s.avgRowsPerValueCounts[i];
+													* (s.avgRowsPerValueCounts[i] - 1) +
+													(double) s.counts[i] / diff) / s.avgRowsPerValueCounts[i];
 											s.counts[i] = 0;
 										}
 									}
@@ -1025,13 +1025,13 @@ class TripleStore implements Closeable {
 						// find first element that has been changed
 						pos = 0;
 						while (pos < s.lastValues[bucket].length
-							&& s.startValues[bucket][pos] == s.lastValues[bucket - 1][pos]) {
+								&& s.startValues[bucket][pos] == s.lastValues[bucket - 1][pos]) {
 							pos++;
 						}
 						if (pos < s.lastValues[bucket].length) {
 							// this may be < 0 if two groups are overlapping
 							long diffBetweenGroups = Math
-								.max(s.startValues[bucket][pos] - s.lastValues[bucket - 1][pos], 0);
+									.max(s.startValues[bucket][pos] - s.lastValues[bucket - 1][pos], 0);
 							// estimate number of elements between last element of previous bucket and first element
 							// of current bucket
 							cardinality += s.avgRowsPerValue[pos] * diffBetweenGroups;
