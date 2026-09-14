@@ -122,9 +122,10 @@ class LmdbRecordIterator implements RecordIterator {
 
 	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
-		this.state = Pool.get().getState();
+		this.state = txnRef.getValuePool().getState();
 		this.state.patternQuad = new long[] { subj, pred, obj, context };
 		this.state.quad = new long[] { subj, pred, obj, context };
+
 		this.index = index;
 		this.state.indexScore = indexScore;
 		this.keyELementsFixed = indexScore >= index.getIndexSplitPosition();
@@ -190,7 +191,7 @@ class LmdbRecordIterator implements RecordIterator {
 			if (state.txnRefVersion != state.txnRef.version()) {
 				// TODO: None of the tests in the LMDB Store cover this case!
 				// cursor must be renewed
-				mdb_cursor_renew(state.txn, state.cursor);
+				E(mdb_cursor_renew(state.txn, state.cursor));
 				if (fetchNext) {
 					// cursor must be positioned on last item, reuse minKeyBuf if available
 					state.minKeyBuf.clear();
@@ -325,6 +326,9 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 			closeInternal(false);
 			return null;
+		} catch (IOException e) {
+			closeInternal(false);
+			throw new SailException(e);
 		} finally {
 			state.txnLockManager.unlockRead(readStamp);
 		}
@@ -371,7 +375,7 @@ class LmdbRecordIterator implements RecordIterator {
 					}
 					state.txnRef.returnCursor(state.dbi, state.cursor);
 					state.cursor = 0;
-					Pool.get().free(state);
+					state.txnRef.getValuePool().free(state);
 				}
 			} finally {
 				closed = true;

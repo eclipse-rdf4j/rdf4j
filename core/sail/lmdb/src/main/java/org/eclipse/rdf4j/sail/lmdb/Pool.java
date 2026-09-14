@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2022 Eclipse RDF4J contributors.
+ * Copyright (c) 2026 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -12,30 +12,29 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.nio.ByteBuffer;
 
+import org.eclipse.rdf4j.sail.lmdb.util.MpmcRingBuffer;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
- * A simple pool for {@link MDBVal}, {@link ByteBuffer} and {@link Statistics} instances.
+ * A simple pool for {@link MDBVal} and {@link ByteBuffer} instances.
+ * <p>
+ * Passing an instance to {@code free} transfers ownership to the pool; callers must not use it afterwards.
  */
-class Pool {
-	// thread-local pool instance
-	private static final ThreadLocal<Pool> threadlocal = ThreadLocal.withInitial(Pool::new);
+final class Pool {
 
-	private final MDBVal[] valPool = new MDBVal[2048];
-	private final ByteBuffer[] keyPool = new ByteBuffer[2048];
-	private final Statistics[] statisticsPool = new Statistics[512];
+	private static final int POOL_SIZE = 2048;
+
+	private final MpmcRingBuffer<MDBVal> valPool = new MpmcRingBuffer<>(POOL_SIZE);
+	private final MpmcRingBuffer<ByteBuffer> keyPool = new MpmcRingBuffer<>(POOL_SIZE);
 	private final LmdbRecordIterator.State[] statePool = new LmdbRecordIterator.State[128];
-	private int valPoolIndex = -1;
-	private int keyPoolIndex = -1;
-	private int statisticsPoolIndex = -1;
 	private int statePoolIndex = -1;
 
-	final MDBVal getVal() {
-		if (valPoolIndex >= 0) {
-			return valPool[valPoolIndex--];
-		}
-		return MDBVal.malloc();
+	private volatile boolean closed;
+
+	MDBVal getVal() {
+		MDBVal val = valPool.poll();
+		return val != null ? val : MDBVal.malloc();
 	}
 
 	final LmdbRecordIterator.State getState() {
@@ -45,41 +44,25 @@ class Pool {
 		return new LmdbRecordIterator.State();
 	}
 
-	final ByteBuffer getKeyBuffer() {
-		if (keyPoolIndex >= 0) {
-			ByteBuffer bb = keyPool[keyPoolIndex--];
-			bb.clear();
-			return bb;
+	ByteBuffer getKeyBuffer() {
+		ByteBuffer bb = keyPool.poll();
+		if (bb != null) {
+			return bb.clear();
 		}
 		return MemoryUtil.memAlloc(TripleIndex.MAX_KEY_LENGTH);
 	}
 
-	final Statistics getStatistics() {
-		if (statisticsPoolIndex >= 0) {
-			return statisticsPool[statisticsPoolIndex--];
-		}
-		return new Statistics();
-	}
-
-	final void free(MDBVal val) {
-		if (valPoolIndex < valPool.length - 1) {
-			valPool[++valPoolIndex] = val;
-		} else {
+	void free(MDBVal val) {
+		if (closed || !valPool.offer(val)) {
 			val.close();
 		}
 	}
 
-	final void free(ByteBuffer bb) {
-		if (keyPoolIndex < keyPool.length - 1) {
-			keyPool[++keyPoolIndex] = bb;
-		} else {
+	void free(ByteBuffer bb) {
+		assert bb.isDirect() && bb.capacity() == TripleIndex.MAX_KEY_LENGTH
+				: "buffer not allocated by this pool";
+		if (closed || !keyPool.offer(bb)) {
 			MemoryUtil.memFree(bb);
-		}
-	}
-
-	final void free(Statistics statistics) {
-		if (statisticsPoolIndex < statisticsPool.length - 1) {
-			statisticsPool[++statisticsPoolIndex] = statistics;
 		}
 	}
 
@@ -91,33 +74,18 @@ class Pool {
 		}
 	}
 
-	final void close() {
+	void close() {
+		closed = true;
 		while (statePoolIndex >= 0) {
 			statePool[statePoolIndex--].close();
 		}
-		while (valPoolIndex >= 0) {
-			valPool[valPoolIndex--].close();
+		MDBVal val;
+		while ((val = valPool.poll()) != null) {
+			val.close();
 		}
-		while (keyPoolIndex >= 0) {
-			MemoryUtil.memFree(keyPool[keyPoolIndex--]);
+		ByteBuffer bb;
+		while ((bb = keyPool.poll()) != null) {
+			MemoryUtil.memFree(bb);
 		}
-	}
-
-	/**
-	 * Get a pool instance for the current thread.
-	 *
-	 * @return a Pool instance
-	 */
-	public static Pool get() {
-		return threadlocal.get();
-	}
-
-	/**
-	 * Release the pool instance for the current thread.
-	 */
-	public static void release() {
-		Pool pool = threadlocal.get();
-		pool.close();
-		threadlocal.remove();
 	}
 }

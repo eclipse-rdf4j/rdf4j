@@ -39,6 +39,7 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.IterationConstants;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -66,6 +67,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
 
 /**
  * A disk based {@link SailStore} implementation that keeps committed statements in a {@link TripleStore}.
@@ -74,6 +76,8 @@ class LmdbSailStore implements SailStore {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
 	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
+
+	private final File dataDir;
 
 	private final TripleStore tripleStore;
 
@@ -301,6 +305,7 @@ class LmdbSailStore implements SailStore {
 	public LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 			boolean sketchBasedJoinEstimatorEnabled)
 			throws IOException, SailException {
+		this.dataDir = dataDir;
 		this.setFactory = new PersistentSetFactory<>(dataDir);
 		this.bulkOperationSize = config.getBulkOperationSize();
 		this.backgroundRawSamplingMaxMillisPerCycle = config.getBackgroundRawSamplingMaxMillisPerCycle();
@@ -346,6 +351,7 @@ class LmdbSailStore implements SailStore {
 				close();
 			}
 		}
+		logLmdbStats(Level.INFO, "on startup");
 	}
 
 	private final class GuardedEstimatorStatementSource implements SketchStatementSource {
@@ -503,6 +509,9 @@ class LmdbSailStore implements SailStore {
 				}
 				if (filterSelectivityStats != null) {
 					filterSelectivityStats.persistIfDirty();
+				}
+				if (valueStore != null && tripleStore != null) {
+					logLmdbStats(Level.INFO, "on shutdown");
 				}
 			} finally {
 				try {
@@ -694,6 +703,21 @@ class LmdbSailStore implements SailStore {
 				statementPatternCardinalitySource);
 	}
 
+	LmdbStore.LmdbStats getLmdbStats() throws IOException {
+		return new LmdbStore.LmdbStats(valueStore.getLmdbStats(), tripleStore.getLmdbStats());
+	}
+
+	private void logLmdbStats(Level level, String phase) {
+		if (logger.isEnabledForLevel(level)) {
+			try {
+				logger.atLevel(level).log("Native LMDB statistics {} for {}: {}", phase, dataDir, getLmdbStats());
+			} catch (IOException | SailException e) {
+				// Diagnostic failures must not change the outcome of a transaction or prevent cleanup.
+				logger.warn("Unable to read native LMDB statistics {} for {}", phase, dataDir, e);
+			}
+		}
+	}
+
 	@Override
 	public SailSource getExplicitSailSource() {
 		return new LmdbSailSource(true);
@@ -718,13 +742,13 @@ class LmdbSailStore implements SailStore {
 			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
-			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+			return IterationConstants.EMPTY_STATEMENT_ITERATION;
 		}
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getId(subj);
 			if (subjID == LmdbValue.UNKNOWN_ID) {
-				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
 		}
 
@@ -732,7 +756,7 @@ class LmdbSailStore implements SailStore {
 		if (pred != null) {
 			predID = valueStore.getId(pred);
 			if (predID == LmdbValue.UNKNOWN_ID) {
-				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
 		}
 
@@ -741,7 +765,7 @@ class LmdbSailStore implements SailStore {
 			objID = valueStore.getId(obj);
 
 			if (objID == LmdbValue.UNKNOWN_ID) {
-				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
 		}
 
@@ -765,8 +789,13 @@ class LmdbSailStore implements SailStore {
 		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contextIDList.size());
 
 		for (long contextID : contextIDList) {
-			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
-			perContextIterList.add(new LmdbStatementIterator(records, valueStore));
+			try {
+				RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
+				perContextIterList.add(new LmdbStatementIterator(records, valueStore));
+			} catch (IOException e) {
+				System.out.println("Txn:\n" + Objects.toString(txn));
+				throw e;
+			}
 		}
 
 		if (perContextIterList.size() == 1) {
@@ -1029,6 +1058,7 @@ class LmdbSailStore implements SailStore {
 						valueStore.commit();
 						// The triple/value stores are authoritative once both commits succeed.
 						storeTxnStarted.set(false);
+						logLmdbStats(Level.TRACE, "after commit");
 						estimatorTouchedInTransaction = false;
 						estimatorTouchedSinceStoreTxnStart.set(false);
 						if (filterSelectivityStats != null) {
@@ -1317,6 +1347,8 @@ class LmdbSailStore implements SailStore {
 		private void startTransaction(boolean preferThreading) throws SailException {
 			synchronized (storeTxnStarted) {
 				if (storeTxnStarted.compareAndSet(false, true)) {
+					// Capture committed data before starting either writer or queuing any native writes.
+					logLmdbStats(Level.TRACE, "before writes");
 					multiThreadingActive = preferThreading && enableMultiThreading;
 					nextTransactionAsync = multiThreadingActive;
 					asyncTransactionFinished = false;
@@ -1605,13 +1637,13 @@ class LmdbSailStore implements SailStore {
 
 		private final boolean explicit;
 		private final Txn txn;
+		private volatile boolean closed = false;
 
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this.explicit = explicit;
 			try {
-				TxnManager txnManager = tripleStore.getTxnManager();
-				this.txn = trackActiveTxn ? txnManager.createReadTxn()
-						: txnManager.createReadTxnUntracked();
+				this.txn = trackActiveTxn ? tripleStore.getTxnManager().createReadTxn()
+						: tripleStore.getTxnManager().createReadTxnUntracked();
 			} catch (IOException e) {
 				throw new SailException(e);
 			}
@@ -1619,8 +1651,10 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void close() {
-			// close the associated txn
-			txn.close();
+			if (!closed) {
+				closed = true;
+				txn.close();
+			}
 		}
 
 		@Override

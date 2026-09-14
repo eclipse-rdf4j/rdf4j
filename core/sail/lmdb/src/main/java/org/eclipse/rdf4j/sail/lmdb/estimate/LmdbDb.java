@@ -13,11 +13,28 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 import java.nio.ByteBuffer;
 
+/**
+ * Snapshot of an LMDB {@code MDB_db} descriptor from a meta page or a named-database node.
+ *
+ * @param pad           format-dependent padding; for DUPFIXED databases LMDB also uses it as the fixed duplicate width
+ * @param flags         database comparator and duplicate-layout flags
+ * @param depth         B-tree depth, where an empty database has depth zero
+ * @param branchPages   number of branch pages recorded by LMDB
+ * @param leafPages     number of leaf pages recorded by LMDB
+ * @param overflowPages number of overflow pages recorded by LMDB
+ * @param entries       logical entry count; for DUPSORT databases this includes duplicate values rather than only outer
+ *                      keys
+ * @param rootPgno      root page number, or {@link LmdbFormat#P_INVALID} for an empty database
+ */
 record LmdbDb(int pad, int flags, int depth, long branchPages, long leafPages, long overflowPages, long entries,
 		long rootPgno) {
 
 	boolean isEmpty() {
 		return rootPgno == LmdbFormat.P_INVALID || entries == 0;
+	}
+
+	boolean isDupSort() {
+		return (flags & LmdbFormat.MDB_DUPSORT) != 0;
 	}
 
 	static LmdbDb parse(ByteBuffer buffer, int offset) {

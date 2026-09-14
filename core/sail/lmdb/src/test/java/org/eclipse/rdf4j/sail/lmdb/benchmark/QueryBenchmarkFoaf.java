@@ -98,8 +98,6 @@ public class QueryBenchmarkFoaf extends BenchmarkBaseFoaf {
 
 		connection = repository.getConnection();
 
-		((LmdbStore) repository.getSail()).printSizeInfo();
-
 		System.gc();
 	}
 

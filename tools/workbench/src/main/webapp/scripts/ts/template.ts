@@ -91,9 +91,14 @@ workbench
         var encoded = workbench.getCookie("server-user-password");
         var decoded = encoded && window.atob ? window.atob(encoded) : encoded;
         var user = decoded && decoded.substring(0, decoded.indexOf(':'));
-        if (!user || user == '""') {
-            user = '<span class="disabled">None</span>';
-        }
         var selectedUser = document.getElementById('selected-user');
-        selectedUser.innerHTML = user;
+        if (!user || user == '""') {
+            selectedUser.textContent = '';
+            var anonymousUser = document.createElement('span');
+            anonymousUser.className = 'disabled';
+            anonymousUser.textContent = 'None';
+            selectedUser.appendChild(anonymousUser);
+        } else {
+            selectedUser.textContent = user;
+        }
     });
