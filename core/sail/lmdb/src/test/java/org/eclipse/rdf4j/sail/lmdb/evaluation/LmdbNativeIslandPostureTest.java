@@ -16,8 +16,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -26,10 +29,16 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -52,7 +61,13 @@ public class LmdbNativeIslandPostureTest {
 
 	private static final String EX = "http://example.com/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String VOLATILE_ISLAND_URI = EX + "volatileIsland";
+	private static final List<String> VOLATILE_ISLAND_CALLS = new ArrayList<>();
 	private static final String PREFIX = "PREFIX ex: <" + EX + ">\nPREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n";
+
+	static {
+		FunctionRegistry.getInstance().add(new VolatileIslandFunction());
+	}
 
 	@TempDir
 	File dataDir;
@@ -172,6 +187,119 @@ public class LmdbNativeIslandPostureTest {
 	}
 
 	@Test
+	public void forcedInteriorIslandSharesScopeForCorrelatedInput() {
+		String previous = System.getProperty("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands", "true");
+		try {
+			String query = PREFIX + "SELECT ?s ?same WHERE { ?s ex:p ?o . "
+					+ "{ SELECT ?s (NOW() AS ?y) WHERE { ?s ex:q ?n } } BIND(NOW() = ?y AS ?same) }";
+			List<String> genericRows = rows(query, false);
+			assertThat(genericRows).isNotEmpty();
+			List<String> nativeRows = rows(query, true);
+			assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
+			assertThat(nativeRows).allMatch(row -> row.contains("same=\"true\""));
+		} finally {
+			if (previous == null) {
+				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands");
+			} else {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands", previous);
+			}
+		}
+	}
+
+	@Test
+	public void forcedInteriorIslandSharesScopeWhenBufferedAndReplayed() {
+		String previous = System.getProperty("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands", "true");
+		try {
+			String query = PREFIX + "SELECT ?s ?same WHERE { ?s ex:p ?o . "
+					+ "{ SELECT (NOW() AS ?y) WHERE {} } BIND(NOW() = ?y AS ?same) }";
+			List<String> genericRows = rows(query, false);
+			assertThat(genericRows).hasSize(8);
+			List<String> nativeRows = rows(query, true);
+			assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
+			assertThat(nativeRows).allMatch(row -> row.contains("same=\"true\""));
+		} finally {
+			if (previous == null) {
+				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands");
+			} else {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands", previous);
+			}
+		}
+	}
+
+	@Test
+	public void lateralInteriorIslandReplaysEachFrameAgainstItsParent() {
+		String previous = System.getProperty("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands", "true");
+		try {
+			String query = PREFIX + "SELECT ?s ?label ?same WHERE { ?s ex:p ?o . "
+					+ "LATERAL { SELECT ?s ?label (NOW() AS ?innerNow) WHERE { ?s ex:q ?label . ?s ex:p ?number } } "
+					+ "BIND(NOW() = ?innerNow AS ?same) }";
+			List<String> genericRows = rows(query, false);
+			assertThat(genericRows).hasSize(4);
+			List<String> nativeRows = rows(query, true);
+			assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
+			assertThat(nativeRows).allMatch(row -> row.contains("same=\"true\""));
+		} finally {
+			if (previous == null) {
+				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands");
+			} else {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.forceInteriorIslands", previous);
+			}
+		}
+	}
+
+	@Test
+	public void directLateralIslandDoesNotReplayVolatileRightForDuplicateLeftMappings() {
+		ValueFactory vf = repository.getValueFactory();
+		IRI p = vf.createIRI(EX, "p");
+		IRI q = vf.createIRI(EX, "q");
+		StatementPattern leftPattern = new StatementPattern(new Var("s"), constVar("p", p.stringValue()),
+				new Var("o"));
+		StatementPattern duplicateLeftPattern = new StatementPattern(new Var("s"), constVar("p2", p.stringValue()),
+				new Var("o"));
+		Union left = new Union(leftPattern, duplicateLeftPattern);
+		StatementPattern volatileLeft = new StatementPattern(new Var("x"), constVar("q", q.stringValue()),
+				new Var("label"));
+		Filter volatileBranch = new Filter(volatileLeft, new FunctionCall(VOLATILE_ISLAND_URI));
+		StatementPattern intersectionRight = new StatementPattern(new Var("x"), constVar("q2", q.stringValue()),
+				new Var("label"));
+		Intersection right = new Intersection(volatileBranch, intersectionRight);
+		org.eclipse.rdf4j.query.algebra.Lateral lateral = new org.eclipse.rdf4j.query.algebra.Lateral(left, right,
+				Set.of());
+		QueryRoot tree = new QueryRoot(new org.eclipse.rdf4j.query.algebra.Projection(lateral,
+				new org.eclipse.rdf4j.query.algebra.ProjectionElemList(
+						new org.eclipse.rdf4j.query.algebra.ProjectionElem("s"),
+						new org.eclipse.rdf4j.query.algebra.ProjectionElem("u"))));
+
+		List<String> genericRows = evaluateTree(tree.clone(), false);
+		List<String> genericCalls;
+		synchronized (VOLATILE_ISLAND_CALLS) {
+			genericCalls = new ArrayList<>(VOLATILE_ISLAND_CALLS);
+			VOLATILE_ISLAND_CALLS.clear();
+		}
+		long islandsBefore = LmdbNativeAggregateCompiler.ISLAND_OPENS.get();
+		List<String> nativeRows = evaluateTree(tree.clone(), true);
+		List<String> nativeCalls;
+		synchronized (VOLATILE_ISLAND_CALLS) {
+			nativeCalls = new ArrayList<>(VOLATILE_ISLAND_CALLS);
+		}
+		long islandOpens = LmdbNativeAggregateCompiler.ISLAND_OPENS.get() - islandsBefore;
+		assertThat(genericRows).hasSize(64);
+		assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
+		assertThat(genericCalls).hasSize(genericRows.size());
+		assertThat(new HashSet<>(genericCalls)).hasSize(genericCalls.size());
+		assertThat(nativeCalls)
+				.as("the direct LATERAL right arm must be evaluated for every duplicate left mapping")
+				.hasSize(nativeRows.size());
+		assertThat(new HashSet<>(nativeCalls)).hasSize(nativeCalls.size());
+		assertThat(islandOpens)
+				.as("the native path must open the direct right GenericEvalPlan")
+				.isEqualTo(16);
+	}
+
+	@Test
 	public void intersectionEvaluatesIdenticallyThroughBothEngines() {
 		// Intersection is unreachable from the SPARQL parser (census: ISLAND); drive a hand-built algebra tree
 		// through the sail connection with the native engine on and off
@@ -211,6 +339,22 @@ public class LmdbNativeIslandPostureTest {
 			} else {
 				System.setProperty(NATIVE_FLAG, previous);
 			}
+		}
+	}
+
+	private static final class VolatileIslandFunction implements Function {
+		@Override
+		public String getURI() {
+			return VOLATILE_ISLAND_URI;
+		}
+
+		@Override
+		public org.eclipse.rdf4j.model.Value evaluate(ValueFactory valueFactory,
+				org.eclipse.rdf4j.model.Value... args) throws ValueExprEvaluationException {
+			synchronized (VOLATILE_ISLAND_CALLS) {
+				VOLATILE_ISLAND_CALLS.add(UUID.randomUUID().toString());
+			}
+			return valueFactory.createLiteral(true);
 		}
 	}
 }

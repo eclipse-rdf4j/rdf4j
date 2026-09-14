@@ -530,7 +530,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		case CUSTOM -> {
 			if (empty) {
 				state.specs[0].custom.process(EmptyBindingSet.getInstance(), state.customPredicates[0],
-						state.customCollectors[0]);
+						state.customCollectors[0], state.ctx);
 			}
 			try {
 				yield state.customCollectors[0].getFinalValue();

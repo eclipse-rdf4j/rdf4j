@@ -24,13 +24,22 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection;
+import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -141,6 +150,35 @@ class LmdbNativeCensusAggregateTest {
 			String telemetry = telemetry(CENSUS);
 			assertThat(telemetry).as(mode).contains("nativeExecutionPath=adjacencyCensus");
 			assertThat(telemetry).as(mode).doesNotContain("ENCOUNTER_ORDER_REQUIRES_LMDB");
+		}
+	}
+
+	@Test
+	void specializedCensusResultSharesPostGroupNowWithinEvaluationAndRefreshes() {
+		String query = CENSUS.replace("  (COUNT(DISTINCT ?o) AS ?objects)\n",
+				"  (COUNT(DISTINCT ?o) AS ?objects) (NOW() AS ?now)\n");
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+					new EvaluationStatistics(), false);
+			LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(
+					root, new QueryEvaluationContext.Minimal((Dataset) null), strategy,
+					(NativeLmdbQuerySource) dataset);
+			assertThat(outcome.isSupported()).isTrue();
+			assertThat(outcome.step()).isInstanceOf(LmdbNativePhysicalPlan.class);
+			assertThat(((LmdbNativePhysicalPlan) outcome.step()).nativePhysicalPlan())
+					.contains("LmdbNativeCensusAggregate");
+			List<BindingSet> first = evaluate(outcome.step());
+			List<BindingSet> second = evaluate(outcome.step());
+			assertThat(first).hasSize(1);
+			assertThat(second).hasSize(1);
+			assertThat(first.getFirst().getValue("now")).as("the specialized census must return a NOW value")
+					.isNotNull();
+			assertThat(second.getFirst().getValue("now"))
+					.as("a retained specialized census step must get a fresh post-group NOW value")
+					.isNotSameAs(first.getFirst().getValue("now"));
 		}
 	}
 
@@ -415,6 +453,12 @@ class LmdbNativeCensusAggregateTest {
 		var prepared = connection.prepareTupleQuery(query);
 		prepared.setIncludeInferred(includeInferred);
 		return QueryResults.asList(prepared.evaluate());
+	}
+
+	private static List<BindingSet> evaluate(QueryEvaluationStep step) {
+		try (var result = step.evaluate(org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance())) {
+			return QueryResults.asList(result);
+		}
 	}
 
 	private List<BindingSet> rows(String query) {

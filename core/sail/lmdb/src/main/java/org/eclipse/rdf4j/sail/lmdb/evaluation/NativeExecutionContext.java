@@ -15,8 +15,15 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.RUNTIME_INTERN_BASE;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -51,7 +58,7 @@ final class NativeExecutionContext implements AutoCloseable {
 	private final long executionId = NEXT_EXECUTION_ID.getAndIncrement();
 	/** Lazily allocated: pure stored-ID executions never allocate a runtime interner or touch its hash tables. */
 	private volatile NativeRuntimeValueTable runtimeValues;
-	/** Do not acquire the context monitor from nativeState factories while they hold a ConcurrentHashMap bin lock. */
+	/** Protects lazy runtime-value table creation; native-state factories use the context monitor below. */
 	private final Object runtimeValuesLock = new Object();
 	/** One admission budget across the separately owned runtime-ID spaces of nested native roots. */
 	private volatile NativeRuntimeValueTable.Budget runtimeValueBudget;
@@ -69,11 +76,27 @@ final class NativeExecutionContext implements AutoCloseable {
 	private final ConcurrentHashMap<GenericSubplanDescriptor, Object> genericSteps = new ConcurrentHashMap<>();
 	/** Per-evaluation semantic-native operator state, keyed by the compiled plan object's identity. */
 	private final ConcurrentHashMap<Object, Object> nativeStates = new ConcurrentHashMap<>();
+	/** Protects short native-state admission and publication sections; factories never run while it is held. */
+	private final Object nativeStateLock = new Object();
+	/**
+	 * In-flight native states coordinate concurrent callers without holding a cache lock through arbitrary factories.
+	 */
+	private final Map<Object, NativeStateInitialization> nativeStateInitializations = new HashMap<>();
+	/** Same-thread recursion uses normal key equality, matching the cache's key contract. */
+	private final ThreadLocal<Set<Object>> initializingNativeStates = ThreadLocal.withInitial(HashSet::new);
 	/** The evaluation-local generic context (owns the query scope: NOW, BNODE labels); created lazily at first use. */
 	private volatile QueryEvaluationContext genericContext;
+	/** The root synthetic source's authority callback for retaining query-scoped representatives such as NOW. */
+	private volatile Consumer<Value> queryScopedValueRegistrar;
 	/** Caller-supplied bindings at the outermost query evaluation, distinct from nested correlation inputs. */
 	private volatile BindingSet queryBase;
+	/** A root evaluation source used when nested semantic operators need to borrow this query scope. */
+	private volatile SyntheticValueSource evaluationSource;
 	private volatile boolean closed;
+	/** Set when a carrier reached EOF while an outer semantic consumer still owns a lease. */
+	private boolean closeRequested;
+	/** Number of active consumers that may still evaluate against this context after an inner close request. */
+	private int leaseCount;
 
 	NativeExecutionContext() {
 		this.queryScopeOwner = this;
@@ -130,11 +153,68 @@ final class NativeExecutionContext implements AutoCloseable {
 				context = genericContext;
 				if (context == null) {
 					context = factory.get();
+					installRegistrar(context);
+					// Do not publish a context until its query-scope registrar is installed. Concurrent fast-path
+					// readers
+					// must never observe a context that can return an unretained query-scoped value.
 					genericContext = context;
 				}
 			}
 		}
 		return context;
+	}
+
+	/**
+	 * Installs the first root authority that can map a query-scoped Value to its canonical store id. Nested native
+	 * roots share the owner and must not replace that authority with a different catalog.
+	 */
+	void installQueryScopedValueRegistrar(Consumer<Value> registrar) {
+		if (queryScopeOwner != this) {
+			queryScopeOwner.installQueryScopedValueRegistrar(registrar);
+			return;
+		}
+		if (registrar == null) {
+			return;
+		}
+		synchronized (this) {
+			if (queryScopedValueRegistrar == null) {
+				queryScopedValueRegistrar = registrar;
+			}
+			installRegistrar(genericContext);
+		}
+	}
+
+	/**
+	 * Records the first evaluation-scoped source for this query owner. Nested contexts share that source rather than
+	 * replacing the owner's query-scope authority, so scalar subqueries and generic islands can borrow the same scope.
+	 */
+	void installEvaluationSource(SyntheticValueSource source) {
+		if (queryScopeOwner != this) {
+			queryScopeOwner.installEvaluationSource(source);
+			return;
+		}
+		if (source == null) {
+			return;
+		}
+		synchronized (this) {
+			if (evaluationSource == null) {
+				evaluationSource = source;
+			}
+		}
+	}
+
+	/** Returns the root source that owns this context's query-scoped values, if one has been installed. */
+	SyntheticValueSource evaluationSource() {
+		return queryScopeOwner == this ? evaluationSource : queryScopeOwner.evaluationSource();
+	}
+
+	private void installRegistrar(QueryEvaluationContext context) {
+		if (context instanceof EvaluationScopedQueryEvaluationContext scoped) {
+			Consumer<Value> registrar = queryScopedValueRegistrar;
+			if (registrar != null) {
+				scoped.installQueryScopedValueRegistrar(registrar);
+			}
+		}
 	}
 
 	/**
@@ -155,10 +235,115 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	@SuppressWarnings("unchecked")
 	<T> T nativeState(Object plan, Supplier<T> factory) {
-		if (closed) {
-			throw new IllegalStateException("execution context is closed");
+		NativeStateInitialization initialization;
+		boolean create;
+		Set<Object> initializing = initializingNativeStates.get();
+		synchronized (nativeStateLock) {
+			if (closed) {
+				throw new IllegalStateException("execution context is closed");
+			}
+			Object existing = nativeStates.get(plan);
+			if (existing != null) {
+				return (T) existing;
+			}
+			if (initializing.contains(plan)) {
+				throw new IllegalStateException("recursive native state initialization");
+			}
+			initialization = nativeStateInitializations.get(plan);
+			if (initialization == null) {
+				initialization = new NativeStateInitialization();
+				nativeStateInitializations.put(plan, initialization);
+				initializing.add(plan);
+				create = true;
+			} else {
+				create = false;
+			}
 		}
-		return (T) nativeStates.computeIfAbsent(plan, ignored -> factory.get());
+		if (!create) {
+			return (T) awaitNativeState(initialization);
+		}
+
+		try {
+			T created;
+			try {
+				created = factory.get();
+			} catch (RuntimeException | Error failure) {
+				initialization.result.completeExceptionally(failure);
+				throw failure;
+			}
+
+			IllegalStateException closedFailure = null;
+			Object published = created;
+			synchronized (nativeStateLock) {
+				if (closed) {
+					closedFailure = new IllegalStateException("execution context is closed");
+					initialization.result.completeExceptionally(closedFailure);
+				} else if (created == null) {
+					initialization.result.complete(null);
+				} else {
+					Object existing = nativeStates.putIfAbsent(plan, created);
+					published = existing == null ? created : existing;
+					initialization.result.complete(published);
+				}
+				nativeStateInitializations.remove(plan, initialization);
+			}
+			if (closedFailure != null) {
+				addSuppressed(closedFailure, closeNativeState(created));
+				throw closedFailure;
+			}
+			if (published != created) {
+				Throwable cleanup = closeNativeState(created);
+				if (cleanup != null) {
+					throw nativeStateFailure(cleanup);
+				}
+			}
+			return (T) published;
+		} finally {
+			initializing.remove(plan);
+			if (initializing.isEmpty()) {
+				initializingNativeStates.remove();
+			}
+			synchronized (nativeStateLock) {
+				nativeStateInitializations.remove(plan, initialization);
+			}
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private static <T> T awaitNativeState(NativeStateInitialization initialization) {
+		try {
+			return (T) initialization.result.join();
+		} catch (CompletionException failure) {
+			throw nativeStateFailure(failure.getCause());
+		}
+	}
+
+	private static RuntimeException nativeStateFailure(Throwable failure) {
+		if (failure instanceof RuntimeException runtimeException) {
+			return runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		return new IllegalStateException("native evaluation state initialization failed", failure);
+	}
+
+	private static Throwable closeNativeState(Object state) {
+		if (!(state instanceof AutoCloseable closeable)) {
+			return null;
+		}
+		try {
+			closeable.close();
+			return null;
+		} catch (Throwable failure) {
+			return failure;
+		}
+	}
+
+	private static void addSuppressed(Throwable failure, Throwable cleanup) {
+		if (cleanup != null && cleanup != failure) {
+			failure.addSuppressed(cleanup);
+		}
 	}
 
 	/** One resolver per exact source/catalog pair, never shared with the compiled plan or another evaluation. */
@@ -341,14 +526,69 @@ final class NativeExecutionContext implements AutoCloseable {
 		return closed || queryScopeOwner.closed;
 	}
 
-	@Override
-	public synchronized void close() {
-		if (closed) {
-			return;
+	/**
+	 * Retains this exact context while a wrapper may continue evaluating rows after an inner carrier requests close.
+	 * Leases are deliberately local to a context: a child context must not keep an unrelated parent context alive.
+	 */
+	Lease retainLease() {
+		synchronized (this) {
+			if (isClosed() || closeRequested) {
+				throw new IllegalStateException("execution context is closed");
+			}
+			leaseCount++;
+			return new Lease(this);
 		}
+	}
+
+	private void releaseLease() {
+		RuntimeException failure = null;
+		synchronized (this) {
+			if (leaseCount <= 0) {
+				throw new IllegalStateException("execution context lease released more than once");
+			}
+			leaseCount--;
+			if (leaseCount == 0 && closeRequested && !closed) {
+				failure = closeResourcesLocked();
+			}
+		}
+		if (failure != null) {
+			throw failure;
+		}
+	}
+
+	@Override
+	public void close() {
+		RuntimeException failure = null;
+		synchronized (this) {
+			if (closed || closeRequested) {
+				return;
+			}
+			closeRequested = true;
+			if (leaseCount != 0) {
+				return;
+			}
+			failure = closeResourcesLocked();
+		}
+		if (failure != null) {
+			throw failure;
+		}
+	}
+
+	/** Performs terminal cleanup while this context's monitor is held. */
+	private RuntimeException closeResourcesLocked() {
 		closed = true;
 		RuntimeException failure = null;
-		for (Object state : nativeStates.values()) {
+		Object[] states;
+		synchronized (nativeStateLock) {
+			IllegalStateException closedFailure = new IllegalStateException("execution context is closed");
+			for (NativeStateInitialization initialization : nativeStateInitializations.values()) {
+				initialization.result.completeExceptionally(closedFailure);
+			}
+			nativeStateInitializations.clear();
+			states = nativeStates.values().toArray();
+			nativeStates.clear();
+		}
+		for (Object state : states) {
 			if (state instanceof AutoCloseable closeable) {
 				try {
 					closeable.close();
@@ -375,19 +615,46 @@ final class NativeExecutionContext implements AutoCloseable {
 			queryScopedValues.clear();
 			queryScopedStoreValuesById.clear();
 			hasQueryScopedStoreValues = false;
+			queryScopedValueRegistrar = null;
+			if (genericContext instanceof EvaluationScopedQueryEvaluationContext scoped) {
+				scoped.clearQueryScopedValueRegistrar();
+			}
 			labeledBNodes.clear();
 			genericSteps.clear();
 		}
-		nativeStates.clear();
 		if (queryScopeOwner == this) {
 			genericContext = null;
 			queryBase = null;
+			evaluationSource = null;
 		}
-		if (failure != null) {
-			throw failure;
+		return failure;
+	}
+
+	/** One-shot ownership token for a context-bearing semantic wrapper. */
+	static final class Lease implements AutoCloseable {
+		private NativeExecutionContext context;
+
+		private Lease(NativeExecutionContext context) {
+			this.context = context;
+		}
+
+		@Override
+		public void close() {
+			NativeExecutionContext current;
+			synchronized (this) {
+				current = context;
+				context = null;
+			}
+			if (current != null) {
+				current.releaseLease();
+			}
 		}
 	}
 
 	private record BNodeKey(long solutionIdentity, String label) {
+	}
+
+	private static final class NativeStateInitialization {
+		private final CompletableFuture<Object> result = new CompletableFuture<>();
 	}
 }

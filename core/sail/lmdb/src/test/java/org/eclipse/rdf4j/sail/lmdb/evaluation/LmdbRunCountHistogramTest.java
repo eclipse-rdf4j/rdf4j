@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -23,14 +24,28 @@ import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -44,6 +59,8 @@ import org.junit.jupiter.api.io.TempDir;
 public class LmdbRunCountHistogramTest {
 
 	private static final String EX = "http://example.com/";
+	private static final String RECORD_LITERAL_NOW_URI = EX + "recordLiteralNow";
+	private static final List<Value> RECORDED = new ArrayList<>();
 
 	private static final String OUT_DEGREE_HISTOGRAM = "SELECT ?outDegree (COUNT(?instance) AS ?subjects) WHERE {\n"
 			+ "  {\n"
@@ -55,6 +72,21 @@ public class LmdbRunCountHistogramTest {
 			+ "}\n"
 			+ "GROUP BY ?outDegree\n"
 			+ "ORDER BY ?outDegree";
+
+	static {
+		FunctionRegistry.getInstance().add(new Function() {
+			@Override
+			public String getURI() {
+				return RECORD_LITERAL_NOW_URI;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+				RECORDED.add(args[0]);
+				return args[0];
+			}
+		});
+	}
 
 	@TempDir
 	File dataDir;
@@ -157,6 +189,102 @@ public class LmdbRunCountHistogramTest {
 		assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(before);
 	}
 
+	@Test
+	public void specializedRunCountResultSharesPostGroupNowAcrossEvaluations() {
+		openRepository();
+		String query = OUT_DEGREE_HISTOGRAM.replace("SELECT ?outDegree ", "SELECT ?outDegree (NOW() AS ?now) ");
+		long before = LmdbNativeRunCountHistogram.RUNS.get();
+
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		try (var dataset = org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess.openExplicitDataset(store)) {
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+					new EvaluationStatistics(), false);
+			LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(root,
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, (NativeLmdbQuerySource) dataset);
+			assertThat(outcome.isSupported()).as("the specialized grouped query must compile natively").isTrue();
+			QueryEvaluationStep step = outcome.step();
+			List<BindingSet> first = evaluate(step);
+			List<BindingSet> second = evaluate(step);
+			assertThat(first).hasSize(3);
+			assertThat(second).hasSize(3);
+			assertThat(first)
+					.allSatisfy(row -> assertThat(row.getValue("now")).isSameAs(first.getFirst().getValue("now")));
+			assertThat(second)
+					.allSatisfy(row -> assertThat(row.getValue("now")).isSameAs(second.getFirst().getValue("now")));
+			assertThat(second.getFirst().getValue("now"))
+					.as("a retained specialized aggregate step must create a fresh query scope per evaluation")
+					.isNotSameAs(first.getFirst().getValue("now"));
+			assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isGreaterThan(before);
+		}
+	}
+
+	@Test
+	public void specializedRunCountFallbackKeepsPostGroupNowScoped() {
+		openRepository();
+		String query = OUT_DEGREE_HISTOGRAM.replace("SELECT ?outDegree ",
+				"SELECT ?outDegree (<" + RECORD_LITERAL_NOW_URI
+						+ ">(NOW()) AS ?now) ");
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		try (var dataset = org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess.openExplicitDataset(store)) {
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+					new EvaluationStatistics(), false);
+			LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(root,
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, (NativeLmdbQuerySource) dataset);
+			assertThat(outcome.isSupported()).as("the specialized grouped query must compile natively").isTrue();
+
+			QueryBindingSet input = new QueryBindingSet();
+			input.addBinding("unrelated", repository.getValueFactory().createIRI(EX, "input"));
+			RECORDED.clear();
+			List<BindingSet> first = evaluate(outcome.step(), input);
+			List<Value> firstNow = new ArrayList<>(RECORDED);
+			RECORDED.clear();
+			List<BindingSet> second = evaluate(outcome.step(), input);
+			List<Value> secondNow = new ArrayList<>(RECORDED);
+
+			assertThat(first).isNotEmpty();
+			assertThat(second).hasSameSizeAs(first);
+			assertThat(firstNow).isNotEmpty().allMatch(value -> value == firstNow.getFirst());
+			assertThat(secondNow).isNotEmpty().allMatch(value -> value == secondNow.getFirst());
+			assertThat(secondNow.getFirst())
+					.as("a specialized fallback must create a fresh scope per evaluation")
+					.isNotSameAs(firstNow.getFirst());
+		}
+	}
+
+	@Test
+	public void directRunCountGenericDeclinePreparesNowPerEvaluation() throws Exception {
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		try (var dataset = org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+					new EvaluationStatistics(), false);
+			TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+					"SELECT ?now WHERE { BIND(NOW() AS ?now) }", null).getTupleExpr();
+			LmdbNativeRunCountHistogram step = new LmdbNativeRunCountHistogram(source, null, UNKNOWN, UNKNOWN, UNKNOWN,
+					"key", "count", strategy, expression, new QueryEvaluationContext.Minimal((Dataset) null));
+			QueryBindingSet input = new QueryBindingSet();
+			input.addBinding("unrelated", repository.getValueFactory().createIRI(EX, "input"));
+			Value firstNow;
+			Value secondNow;
+			try (CloseableIteration<BindingSet> first = step.evaluate(input)) {
+				assertThat(first.hasNext()).isTrue();
+				firstNow = first.next().getValue("now");
+			}
+			try (CloseableIteration<BindingSet> second = step.evaluate(input)) {
+				assertThat(second.hasNext()).isTrue();
+				secondNow = second.next().getValue("now");
+			}
+			assertThat(secondNow).as("a specialized generic decline must get a fresh query scope per evaluation")
+					.isNotSameAs(firstNow);
+		}
+	}
+
 	private void openRepository() {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc"));
 		repository = new SailRepository(store);
@@ -191,6 +319,16 @@ public class LmdbRunCountHistogramTest {
 			}
 		}
 		return rows;
+	}
+
+	private List<BindingSet> evaluate(QueryEvaluationStep step) {
+		return evaluate(step, org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance());
+	}
+
+	private List<BindingSet> evaluate(QueryEvaluationStep step, BindingSet bindings) {
+		try (var iteration = step.evaluate(bindings)) {
+			return QueryResults.asList(iteration);
+		}
 	}
 
 	private static AtomicLong metric(String name) throws ReflectiveOperationException {

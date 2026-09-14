@@ -1718,6 +1718,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private LmdbAdjacencyDeltaGeneration mergeGenerationRange(LmdbAdjacencyPublishedState state, int from, int to) {
 		LmdbAdjacencyOverlaySet overlays = state.overlays();
 		LmdbAdjacencyContextCatalog contexts = state.contextCatalog();
+		LmdbAdjacencyArenaCatalog baseCatalog = state.base().arenaCatalog();
+		LmdbAdjacencySourceRegistry targetRegistry = baseCatalog.sourceRegistry();
 		LmdbAdjacencyArenaSizingPlan sizingPlan = new LmdbAdjacencyArenaSizingPlan(workspaceRegionBytes);
 		int[] rowCount = { 0 };
 		List<LmdbAdjacencyRunCodec.SourceSlice> retainedSources = new ArrayList<>();
@@ -1725,9 +1727,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			rowCount[0] = Math.incrementExact(rowCount[0]);
 			LmdbAdjacencyDeltaGeneration source = overlays.generation(sourceIndex);
 			if (!source.tombstoneAt(rowIndex)) {
-				retainedSources.add(LmdbAdjacencyRunCodec.wholePersistentSource(source.catalog(), contexts,
-						source.handleAt(rowIndex)));
-				sizingPlan.allocate(LmdbAdjacencyRunCodec.persistentNodeBytes(1), 8);
+				LmdbAdjacencyRunCodec.SourceSlice retainedSource = LmdbAdjacencyRunCodec.wholePersistentSource(
+						source.catalog(), contexts, source.handleAt(rowIndex));
+				if (source.catalog().sourceRegistry() == targetRegistry) {
+					retainedSources.add(retainedSource);
+					sizingPlan.allocate(LmdbAdjacencyRunCodec.persistentNodeBytes(1), 8);
+				} else {
+					LmdbAdjacencyRunCodec.planEncodedCopy(source.catalog(), contexts, source.handleAt(rowIndex),
+							sizingPlan);
+				}
 			}
 		});
 		sizingPlan.seal();
@@ -1770,6 +1778,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				planes[target] = (byte) source.rowPlaneAt(rowIndex);
 				predicates[target] = source.rowPredicateAt(rowIndex);
 				if (!source.tombstoneAt(rowIndex)) {
+					if (source.catalog().sourceRegistry() != targetRegistry) {
+						runRefs[target] = LmdbAdjacencyRunCodec.writeEncodedCopy(source.catalog(), contexts,
+								source.handleAt(rowIndex), outputArena).rootRef;
+						return;
+					}
 					LmdbAdjacencyRunCodec.SourceSlice retainedSource = retainedSources.get(retained[0]++);
 					LmdbAdjacencyRunCodec.PersistentChild child = new LmdbAdjacencyRunCodec.PersistentChild(
 							retainedSource.firstNeighbor, retainedSource.firstContext, retainedSource.count,

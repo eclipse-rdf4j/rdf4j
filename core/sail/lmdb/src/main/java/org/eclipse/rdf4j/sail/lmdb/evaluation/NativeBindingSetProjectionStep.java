@@ -50,8 +50,9 @@ final class NativeBindingSetProjectionStep implements QueryEvaluationStep, LmdbN
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-		return new ProjectionIteration(arg.evaluate(bindings), bindings, sourceNames, targetNames,
-				includeAllParentBindings);
+		CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
+		return new ProjectionIteration(delegate, bindings, sourceNames, targetNames, includeAllParentBindings,
+				NativeExecutionContextCarrier.contextOf(delegate));
 	}
 
 	@Override
@@ -78,27 +79,50 @@ final class NativeBindingSetProjectionStep implements QueryEvaluationStep, LmdbN
 	}
 
 	private static final class ProjectionIteration
-			implements CloseableIteration<BindingSet>, CooperativeCancellation {
+			implements CloseableIteration<BindingSet>, CooperativeCancellation, NativeExecutionContextCarrier {
 
 		private final CloseableIteration<BindingSet> delegate;
 		private final BindingSet parentBindings;
 		private final String[] sourceNames;
 		private final String[] targetNames;
 		private final boolean includeAllParentBindings;
+		private final NativeExecutionContext executionContext;
+		private final NativeExecutionContext.Lease lease;
 		private boolean closed;
 
 		private ProjectionIteration(CloseableIteration<BindingSet> delegate, BindingSet parentBindings,
-				String[] sourceNames, String[] targetNames, boolean includeAllParentBindings) {
+				String[] sourceNames, String[] targetNames, boolean includeAllParentBindings,
+				NativeExecutionContext executionContext) {
 			this.delegate = delegate;
 			this.parentBindings = parentBindings;
 			this.sourceNames = sourceNames;
 			this.targetNames = targetNames;
 			this.includeAllParentBindings = includeAllParentBindings;
+			this.executionContext = executionContext;
+			this.lease = NativeExecutionContextCarrier.retain(delegate);
 		}
 
 		@Override
 		public boolean hasNext() {
-			return !closed && delegate.hasNext();
+			if (closed) {
+				return false;
+			}
+			try {
+				boolean result = delegate.hasNext();
+				if (!result) {
+					close();
+				}
+				return result;
+			} catch (RuntimeException | Error e) {
+				try {
+					close();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != e) {
+						e.addSuppressed(cleanup);
+					}
+				}
+				throw e;
+			}
 		}
 
 		@Override
@@ -106,7 +130,18 @@ final class NativeBindingSetProjectionStep implements QueryEvaluationStep, LmdbN
 			if (closed) {
 				throw new NoSuchElementException();
 			}
-			return project(delegate.next(), parentBindings, sourceNames, targetNames, includeAllParentBindings);
+			try {
+				return project(delegate.next(), parentBindings, sourceNames, targetNames, includeAllParentBindings);
+			} catch (RuntimeException | Error e) {
+				try {
+					close();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != e) {
+						e.addSuppressed(cleanup);
+					}
+				}
+				throw e;
+			}
 		}
 
 		@Override
@@ -118,7 +153,7 @@ final class NativeBindingSetProjectionStep implements QueryEvaluationStep, LmdbN
 		public void close() {
 			if (!closed) {
 				closed = true;
-				delegate.close();
+				NativeExecutionContextCarrier.closeWithLease(delegate, lease);
 			}
 		}
 
@@ -128,6 +163,11 @@ final class NativeBindingSetProjectionStep implements QueryEvaluationStep, LmdbN
 				return false;
 			}
 			return cancellation.requestCancellation();
+		}
+
+		@Override
+		public NativeExecutionContext executionContext() {
+			return executionContext;
 		}
 	}
 

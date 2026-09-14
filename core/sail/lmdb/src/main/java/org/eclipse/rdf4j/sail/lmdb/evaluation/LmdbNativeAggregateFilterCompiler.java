@@ -585,29 +585,27 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	}
 
 	NativeBooleanFilter compileSemanticBoolean(ValueExpr expr) {
-		if (rootEvaluationScoped) {
-			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(expr);
-			if (!descriptor.shareableAcrossEvaluations()) {
-				// The condition carries query-scope state (NOW/BNODE/volatiles): compile its predicate once per
-				// evaluation through the execution context, so a retained compiled step observes a fresh query scope
-				// each evaluation while all rows of one evaluation share one. Root-scoped only — an interior step
-				// evaluates once per outer mapping, where per-call freshness would be wrong.
-				requiresExecutionContext = true;
-				long readMask = genericReadMask(expr);
-				LmdbNativeEvaluationStrategy compilingStrategy = strategy;
-				QueryEvaluationContext compileContext = context;
-				NativeSlotLayout layoutSnapshot = layout;
-				ValueExpr pinned = descriptor.pinnedExpr();
-				Function<NativeExecutionContext, NativeBindingSetValueEvaluator> perEvaluation = executionContext -> {
-					QueryEvaluationContext scoped = executionContext
-							.genericContext(() -> new EvaluationScopedQueryEvaluationContext(compileContext));
-					return compileSemanticValue(compilingStrategy, pinned,
-							new SlotAwareQueryEvaluationContext(scoped, layoutSnapshot));
-				};
-				Supplier<NativeBindingSetValueEvaluator> sharedFallback = () -> compileSemanticValue(compilingStrategy,
-						pinned, new SlotAwareQueryEvaluationContext(compileContext, layoutSnapshot));
-				return new NativeValueOutcomeBooleanFilter(descriptor, perEvaluation, sharedFallback, readMask);
-			}
+		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(expr);
+		if (!descriptor.shareableAcrossEvaluations()) {
+			// The condition carries query-scope state (NOW/BNODE/volatiles): compile its predicate once per
+			// evaluation through the execution context, so a retained compiled step observes a fresh query scope
+			// each evaluation while all rows of one evaluation share one. Interior steps borrow the surrounding
+			// NativeSubqueryPlan evaluation source rather than freezing the planner context.
+			requiresExecutionContext = true;
+			long readMask = genericReadMask(expr);
+			LmdbNativeEvaluationStrategy compilingStrategy = strategy;
+			QueryEvaluationContext compileContext = context;
+			NativeSlotLayout layoutSnapshot = layout;
+			ValueExpr pinned = descriptor.pinnedExpr();
+			Function<NativeExecutionContext, NativeBindingSetValueEvaluator> perEvaluation = executionContext -> {
+				QueryEvaluationContext scoped = executionContext
+						.genericContext(() -> new EvaluationScopedQueryEvaluationContext(compileContext));
+				return compileSemanticValue(compilingStrategy, pinned,
+						new SlotAwareQueryEvaluationContext(scoped, layoutSnapshot));
+			};
+			Supplier<NativeBindingSetValueEvaluator> sharedFallback = () -> compileSemanticValue(compilingStrategy,
+					pinned, new SlotAwareQueryEvaluationContext(compileContext, layoutSnapshot));
+			return new NativeValueOutcomeBooleanFilter(descriptor, perEvaluation, sharedFallback, readMask);
 		}
 		QueryValueEvaluationStep step;
 		try {

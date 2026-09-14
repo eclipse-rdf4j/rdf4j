@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -364,6 +365,27 @@ class LmdbNativeKernelLoweringTest {
 		assertTrue(lowered.kernel.shapeKey().contains("ED(d0,k0,sk);"), lowered.kernel.shapeKey());
 	}
 
+	@Test
+	void nonCanonicalPatternDomainDoesNotClaimSemanticOrder() {
+		long clazz = 9L << 7 | 1L << 1;
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constant(clazz),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]);
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan,
+				freshRow(new NonCanonicalSource()), null);
+		assertNotNull(lowered, lowered == null ? "noncanonical pattern should still lower" : null);
+		assertTrue(lowered.kernel.shapeKey().contains("ED(d0,k0);"), lowered.kernel.shapeKey());
+		assertFalse(lowered.kernel.shapeKey().contains(",sk"), lowered.kernel.shapeKey());
+		assertFalse(new SyntheticValueSource(new NonCanonicalSource(), PlanValueCatalog.EMPTY).hasCanonicalIds());
+	}
+
+	@Test
+	void syntheticRuntimeIdsDoNotClaimCanonicalIds() {
+		assertFalse(new SyntheticValueSource(new StubSource(), PlanValueCatalog.EMPTY).hasCanonicalIds(),
+				"synthetic plan/runtime ids can represent distinct wrappers for one RDF term");
+	}
+
 	/**
 	 * The whole chain for the LIBRARY-10 root shape through the real aggregate rung: domain dedup, SIP marking of the
 	 * absorbed branch's enumerator, then the distinct-root-exists union collapse. The lowered kernel must root at the
@@ -588,7 +610,7 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
-	void lexicalFrameLeftJoinLowersWithoutAPlanBridge() {
+	void lexicalFrameLeftJoinUsesSemanticPlanRowsForUnreplayableScope() {
 		RowState row = freshRow();
 		row.bind(2, 777L);
 		SlotPlan plan = SlotPlan.lexicalFrameLeftJoin(
@@ -600,9 +622,18 @@ class LmdbNativeKernelLoweringTest {
 		try {
 			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, row, null);
 
-			assertNotNull(lowered, "the lexical frame must lower to semantic kernel IR");
-			assertNull(lowered.planBridgeReason, "the semantic row bridge must not carry the lexical frame");
-			assertTrue(lowered.kernel.shapeKey().contains("lfj["), lowered.kernel.shapeKey());
+			assertNotNull(lowered, "the unreplayable lexical frame must lower to a semantic PlanRows producer");
+			assertNull(lowered.planBridgeReason, "the semantic PlanRows producer must not be marked as a plan bridge");
+			assertTrue(lowered.kernel.pipeline.stream().anyMatch(LmdbNativeKernelIr.PlanRows.class::isInstance),
+					lowered.kernel.shapeKey());
+			assertTrue(lowered.kernel.shapeKey().contains("PR(p0,e0->0,1,2);emit(0,1,2);"),
+					lowered.kernel.shapeKey());
+			assertEquals(1, lowered.bindings.planRequests.length);
+			LmdbNativeKernelBindings.PlanRequest request = lowered.bindings.planRequests[0];
+			assertSame(plan, request.plan, "the complete lexical frame must remain one bound producer");
+			assertArrayEquals(new int[] { 0, 1, 2 }, request.outputSlots);
+			assertArrayEquals(new int[] { 2 }, request.inputSlots,
+					"the bound lexical problem slot must be the producer's only entry input");
 		} finally {
 			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
 		}
@@ -649,7 +680,7 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
-	void filterTiersAssignIdHookAndResidual() {
+	void filterTiersAssignIdAndHookForReplaySafePlan() {
 		StubSource source = new StubSource();
 		// id tier: slot-vs-slot NE with a subject-assured operand
 		MaskedFilter idTier = new MaskedFilter(
@@ -659,13 +690,9 @@ class LmdbNativeKernelLoweringTest {
 		MaskedFilter hookTier = new MaskedFilter(
 				new CachedCompareFilter(2, 300L, false, Compare.CompareOp.LT, false, bindings -> true, null),
 				1L << 2);
-		// residual tier: a sticky generic predicate nothing can lower — since M10 a sticky filter with a usable
-		// batchReadMask takes the witness tail's id-then-hook treatment instead, so only an opaque lambda stays
-		// residual
-		MaskedFilter residual = new MaskedFilter(bindings -> true, -1L);
 		MultiJoinPlan plan = new MultiJoinPlan(
 				new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)) },
-				new MaskedFilter[] { idTier, hookTier, residual });
+				new MaskedFilter[] { idTier, hookTier });
 		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering
 				.lowerRows(plan, new RowState(source, LAYOUT, EmptyBindingSet.getInstance()), null);
 		assertNotNull(lowered);
@@ -674,7 +701,37 @@ class LmdbNativeKernelLoweringTest {
 		assertTrue(key.contains("fv(0,v2);"), key);
 		assertEquals(1, lowered.bindings.filterHooks.length);
 		assertArrayEquals(new int[] { 2 }, lowered.bindings.filterHooks[0].argSlots);
-		assertEquals(1, lowered.bindings.residualFilters.size());
+		assertTrue(lowered.bindings.residualFilters.isEmpty());
+	}
+
+	@Test
+	void opaqueResidualKeepsWholePlanRowsProducer() {
+		StubSource source = new StubSource();
+		MaskedFilter idTier = new MaskedFilter(
+				new OrderedSlotCompareFilter(0, 2, Compare.CompareOp.NE, bindings -> true, true, true),
+				1L | 1L << 2);
+		MaskedFilter hookTier = new MaskedFilter(
+				new CachedCompareFilter(2, 300L, false, Compare.CompareOp.LT, false, bindings -> true, null),
+				1L << 2);
+		// An opaque residual has unknown scope. It is intentionally kept with the complete producer so lowering cannot
+		// extract or reorder the observable filter around the PlanRows boundary.
+		MaskedFilter residual = new MaskedFilter(bindings -> true, -1L);
+		MultiJoinPlan plan = new MultiJoinPlan(
+				new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)) },
+				new MaskedFilter[] { idTier, hookTier, residual });
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering
+				.lowerRows(plan, new RowState(source, LAYOUT, EmptyBindingSet.getInstance()), null);
+
+		assertNotNull(lowered);
+		assertNull(lowered.planBridgeReason);
+		assertTrue(lowered.kernel.shapeKey().contains("PR(p0->0,1,2)"), lowered.kernel.shapeKey());
+		assertEquals(1, lowered.bindings.planRequests.length);
+		LmdbNativeKernelBindings.PlanRequest request = lowered.bindings.planRequests[0];
+		assertSame(plan, request.plan);
+		assertArrayEquals(new int[] { 0, 1, 2 }, request.outputSlots);
+		assertArrayEquals(new int[0], request.inputSlots);
+		assertEquals(0, lowered.bindings.filterHooks.length);
+		assertTrue(lowered.bindings.residualFilters.isEmpty());
 	}
 
 	@Test
@@ -1090,8 +1147,13 @@ class LmdbNativeKernelLoweringTest {
 		}
 	}
 
+	/**
+	 * The aggregate rung applies a sticky outer EXISTS after the complete producer chain. Its filters are collected
+	 * before the core is lowered, so the witness must not be moved between two producer depths where it could change
+	 * the aggregate's input domain.
+	 */
 	@Test
-	void correlatedExistsRunsAtItsEarliestProducerDepth() {
+	void correlatedExistsRunsAfterTheAggregateProducerChain() {
 		StubSource source = new StubSource();
 		MultiJoinPlan join = new MultiJoinPlan(
 				new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)) },
@@ -1108,8 +1170,8 @@ class LmdbNativeKernelLoweringTest {
 		int firstProbe = key.indexOf("EA(a0");
 		int witness = key.indexOf("ex{");
 		int fanOutProbe = key.indexOf("P(a1");
-		assertTrue(firstProbe >= 0 && witness > firstProbe && fanOutProbe > witness,
-				"the witness must run after its ?enc producer and before the unrelated fan-out; key=" + key);
+		assertTrue(firstProbe >= 0 && fanOutProbe > firstProbe && witness > fanOutProbe,
+				"the aggregate witness must run after the complete producer chain; key=" + key);
 	}
 
 	@Test
@@ -1245,13 +1307,14 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	/**
-	 * Computed BINDs lower through {@code hooks.computeBind} since the M7 bind-hook seam. Three boundaries pinned here:
-	 * a zero-input repeatable expression folds at lowering time into a constant alias (no per-row hook), an
-	 * input-bearing expression registers a bind hook carrying its argument slots, and a non-repeatable expression
-	 * (RAND-family) uses the exact row hook on the serial encounter-order path.
+	 * Replay-safe computed BINDs use the bind-hook seam, while a non-repeatable expression stays on a complete plan-row
+	 * producer so the aggregate receives the original per-solution binding semantics. Three boundaries are pinned here:
+	 * a zero-input repeatable expression folds at lowering time into a constant alias, an input-bearing expression
+	 * registers a bind hook carrying its argument slots, and a non-repeatable expression retains its whole plan
+	 * request.
 	 */
 	@Test
-	void aggregateRungLowersAComputedBindThroughTheBindHookSeam() {
+	void aggregateRungUsesBindHooksOnlyForReplaySafeComputedBinds() {
 		LmdbNativeCompiledInlineId constant = new LmdbNativeCompiledInlineId(0L, true, row -> PRED);
 		LmdbNativeKernelLowering.Lowered folded = lowerCounting(computedBindCore(constant), 2);
 		assertNotNull(folded, "a zero-input repeatable expression must fold into a constant alias");
@@ -1264,11 +1327,18 @@ class LmdbNativeKernelLoweringTest {
 		assertArrayEquals(new int[] { 1 }, hooked.bindings.bindHooks[0].argSlots);
 
 		LmdbNativeCompiledInlineId unstable = new LmdbNativeCompiledInlineId(0L, false, row -> PRED);
-		LmdbNativeKernelLowering.Lowered volatileBind = lowerCounting(computedBindCore(unstable), 2);
+		SlotPlan volatileCore = computedBindCore(unstable);
+		LmdbNativeKernelLowering.Lowered volatileBind = lowerCounting(volatileCore, 2);
 		assertNotNull(volatileBind);
-		assertEquals(1, volatileBind.bindings.bindHooks.length);
-		assertNotNull(volatileBind.bindings.bindHooks[0].copy,
-				"a non-repeatable expression must retain its original per-solution binding operation");
+		assertEquals(0, volatileBind.bindings.bindHooks.length,
+				"a non-repeatable expression must not be replayed through a bind hook");
+		assertEquals(1, volatileBind.bindings.planRequests.length,
+				"a non-repeatable expression must retain one complete plan-row producer");
+		LmdbNativeKernelBindings.PlanRequest request = volatileBind.bindings.planRequests[0];
+		assertSame(((JoinPlan) volatileCore).right, request.plan,
+				"the non-replayable extension must remain the bound producer");
+		assertArrayEquals(new int[] { 0, 1, 3 }, request.outputSlots);
+		assertArrayEquals(new int[] { 1, 2 }, request.inputSlots);
 	}
 
 	/** The kill switch restores the pre-M7 decline unchanged. */
@@ -2250,6 +2320,14 @@ class LmdbNativeKernelLoweringTest {
 
 		@Override
 		public boolean hasStatementsInSource() {
+			return false;
+		}
+	}
+
+	private static final class NonCanonicalSource extends StubSource {
+
+		@Override
+		public boolean hasCanonicalIds() {
 			return false;
 		}
 	}

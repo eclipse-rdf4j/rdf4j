@@ -97,13 +97,6 @@ public class LmdbNativeKernelDeclineCensusTest {
 	 * find. Declines are recorded when a rung refuses at open time, so a truncated run still reports them.
 	 */
 	private static final int QUERY_TIMEOUT_SECONDS = 5;
-	/**
-	 * Minimal non-aggregate two-pattern join retained as a reachability witness for the set-at-a-time chunk pipeline.
-	 * The chunk pipeline is the semantic successor to the legacy batch route and owns this row-producing shape.
-	 */
-	private static final String ROW_JOIN_WITNESS_QUERY = "SELECT ?s ?p ?o ?q ?v WHERE { "
-			+ "?s ?p ?o . ?s ?q ?v . } LIMIT 1";
-
 	@TempDir
 	static File dataDir;
 
@@ -301,8 +294,8 @@ public class LmdbNativeKernelDeclineCensusTest {
 	}
 
 	/**
-	 * Dispatch reachability census: every strategy the engine still ships must win at least one production-shaped
-	 * engagement case.
+	 * Compiled-kernel dispatch reachability census: the scaled theme corpus must exercise the serial compiled row
+	 * kernel.
 	 * <p>
 	 * This is the anti-tautology gate for cost-based dispatch. The characteristic failure mode of ranking strategies —
 	 * whether by a specialization order or by a cost model — is not that the wrong one wins, but that one of them stops
@@ -315,7 +308,7 @@ public class LmdbNativeKernelDeclineCensusTest {
 	 * reachable, which does not depend on which particular query it wins and so does not drift with the corpus.
 	 */
 	@Test
-	void everyShippedStrategyWinsTheEngagementCensus() throws IOException {
+	void everyCompiledKernelStrategyWinsTheThemeCensus() throws IOException {
 		Map<String, Set<String>> winners = new TreeMap<>();
 		for (Theme theme : Theme.values()) {
 			List<String> queries = ThemeQueryCatalog.queriesFor(theme);
@@ -328,11 +321,6 @@ public class LmdbNativeKernelDeclineCensusTest {
 							key -> new LinkedHashSet<>()).add(pair);
 				}
 			}
-		}
-		for (String path : executionPaths(ROW_JOIN_WITNESS_QUERY)) {
-			int paren = path.indexOf('(');
-			winners.computeIfAbsent(paren > 0 ? path.substring(0, paren) : path,
-					key -> new LinkedHashSet<>()).add("chunk-pipeline row-join witness");
 		}
 
 		StringBuilder out = new StringBuilder("=== Dispatch reachability census ===\n");
@@ -347,13 +335,7 @@ public class LmdbNativeKernelDeclineCensusTest {
 		assertThat(winners.keySet())
 				.as("a strategy that never wins is dead code; census written to target/dispatch-reachability-census.txt:%n%s",
 						out)
-				.contains("chunkPipeline", "irKernel");
-	}
-
-	@Test
-	void chunkPipelineWinsTheTwoPatternRowJoinWitness() {
-		assertThat(executionPaths(ROW_JOIN_WITNESS_QUERY))
-				.anyMatch(path -> path.startsWith("chunkPipeline("));
+				.contains("irKernel");
 	}
 
 	/** Distinct {@code nativeExecutionPath} tags a query records, across the whole explain tree. */

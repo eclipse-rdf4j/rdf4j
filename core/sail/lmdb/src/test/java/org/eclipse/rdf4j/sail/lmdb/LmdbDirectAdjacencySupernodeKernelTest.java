@@ -251,6 +251,7 @@ class LmdbDirectAdjacencySupernodeKernelTest {
 
 	@Test
 	void kernelDeclinesDuringPendingWindowAndServesAfterApply() throws Exception {
+		recreateStoreForPendingWindow();
 		commit(() -> {
 			addQuiet(S1, P1, O1);
 			addQuiet(S2, P1, O1);
@@ -285,6 +286,17 @@ class LmdbDirectAdjacencySupernodeKernelTest {
 			assertThat(adjacency.size(baseRun)).isEqualTo(1);
 			assertThat(adjacency.find(uri(999))).isEqualTo(NativeLmdbQuerySource.NativeAdjacency.NOT_FOUND);
 		}
+	}
+
+	private void recreateStoreForPendingWindow() {
+		store.close();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyMaxBytes(1L << 30);
+		options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30,
+				name -> LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY.equals(name) ? "false" : null, 4);
+		store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
+		tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(), store.newCommitDelta());
 	}
 
 	@Test

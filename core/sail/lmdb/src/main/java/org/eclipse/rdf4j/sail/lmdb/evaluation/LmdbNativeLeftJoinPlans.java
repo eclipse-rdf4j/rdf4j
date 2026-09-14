@@ -90,18 +90,15 @@ final class LeftJoinPlan implements SlotPlan {
 		if (lexicalSharedSlots != null) {
 			return new LexicalLeftJoinCursor(left, right, lexicalSharedSlots, lexicalHashKeys, row);
 		}
-		double expectedProbes = Double.NaN;
-		double perProbeRows = Double.NaN;
-		double sweepEstimate = Double.NaN;
-		if (RightMemoProbe.sweepEnabled()) {
-			long boundMask = row.boundMask();
-			expectedProbes = LmdbNativeWork.rowsOut(left, row, boundMask);
-			perProbeRows = RightMemoProbe.fragmentRowsForMask(right, row, boundMask | left.producedMask());
-			// correlated slots are unbound at open time, so this estimates the key-unbound fragment sweep
-			sweepEstimate = LmdbNativeWork.rowsOut(right, row, boundMask);
+		JoinSweepEstimates estimates = JoinSweepEstimates.forPlans(left, right, row);
+		RowCursor leftCursor = left.open(row);
+		try {
+			return new LeftJoinCursor(leftCursor, right, row, left.producedMask(), estimates.entryBoundMask(),
+					estimates.expectedProbes(), estimates.perProbeRows(), estimates.sweepEstimate());
+		} catch (RuntimeException | Error failure) {
+			closeSuppressing(leftCursor, failure);
+			throw failure;
 		}
-		return new LeftJoinCursor(left.open(row), right, row, left.producedMask(), expectedProbes, perProbeRows,
-				sweepEstimate);
 	}
 
 	@Override
@@ -115,14 +112,37 @@ final class LeftJoinPlan implements SlotPlan {
 				return wildcard;
 			}
 		}
+		// Capture the entry mask before opening the batch producer. A batch cursor may materialize or restore rows
+		// while
+		// opening; sweep admission must use the same entry-bound shape as scalar LeftJoinPlan.open.
+		JoinSweepEstimates estimates = JoinSweepEstimates.forPlans(left, right, row);
 		BatchCursor batch = left.openBatch(row, capacity);
 		if (batch == null) {
 			return null;
 		}
 		RowCursor rows = LmdbWildcardPredicateBatch.asRows(batch, row, capacity);
-		return rows == null ? null
-				: new RowBatchCursor(new LeftJoinCursor(rows, right, row, left.producedMask(), Double.NaN, Double.NaN,
-						Double.NaN), row);
+		if (rows == null) {
+			return null;
+		}
+		try {
+			return new RowBatchCursor(
+					new LeftJoinCursor(rows, right, row, left.producedMask(), estimates.entryBoundMask(),
+							estimates.expectedProbes(), estimates.perProbeRows(), estimates.sweepEstimate()),
+					row);
+		} catch (RuntimeException | Error failure) {
+			closeSuppressing(rows, failure);
+			throw failure;
+		}
+	}
+
+	private static void closeSuppressing(RowCursor cursor, Throwable failure) {
+		try {
+			cursor.close();
+		} catch (RuntimeException | Error cleanup) {
+			if (cleanup != failure) {
+				failure.addSuppressed(cleanup);
+			}
+		}
 	}
 
 	@Override
@@ -462,6 +482,11 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 
 	LeftJoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask,
 			double expectedProbes, double perProbeRows, double sweepEstimate) {
+		this(leftCursor, right, row, leftProducedMask, row.boundMask(), expectedProbes, perProbeRows, sweepEstimate);
+	}
+
+	LeftJoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask, long entryBoundMask,
+			double expectedProbes, double perProbeRows, double sweepEstimate) {
 		this.leftCursor = leftCursor;
 		this.right = right;
 		this.row = row;
@@ -472,8 +497,8 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 						? slotsOf(right.producedMask())
 						: null;
 		this.payloadProbe = PatternPayloadProbe.tryCreate(right, expectedProbes, perProbeRows, sweepEstimate);
-		this.rightMemo = RightMemoProbe.tryCreate(right, leftProducedMask, readMask, row, expectedProbes,
-				perProbeRows, sweepEstimate);
+		this.rightMemo = RightMemoProbe.tryCreate(right, leftProducedMask, readMask, row, entryBoundMask,
+				expectedProbes, perProbeRows, sweepEstimate);
 	}
 
 	@Override

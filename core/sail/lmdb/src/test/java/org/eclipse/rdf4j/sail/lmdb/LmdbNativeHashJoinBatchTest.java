@@ -15,6 +15,9 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -269,10 +272,10 @@ class LmdbNativeHashJoinBatchTest {
 	}
 
 	@Test
-	void bushyBuildDeclinesUnionBuildThatCanLeaveAKeyUnbound() {
+	void bushyBuildKeepsNullableUnionOnTheNestedLoopPath() {
 		// One UNION branch never binds the join key ?key: such a build row would have to match EVERY probe
-		// key, which a hash table cannot express — the assured-mask admission gate must decline and leave the
-		// nested loop (whose bind semantics answer it correctly) untouched.
+		// key, which a bushy hash table cannot express. The root hash candidate therefore declines, while the
+		// ordinary two-pattern arm may still build its own table.
 		addMinusGroupData();
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
@@ -285,8 +288,38 @@ class LmdbNativeHashJoinBatchTest {
 		resetCounters();
 
 		assertThat(rows(unionQuery)).isEqualTo(generic);
-		assertThat(LmdbNativeHashJoin.BUILDS.get()).isZero();
+		assertThat(LmdbNativeHashJoin.BUILDS.get()).isOne();
 		assertThat(LmdbNativeHashJoin.BUSHY_BUILDS.get()).isZero();
+		assertThat(LmdbNativeHashJoin.BUSHY_ABORTS.get()).isZero();
+	}
+
+	@Test
+	void bushyAdmissionRejectsNullableUnionKeyBeforeCosting() {
+		// Keep the admission contract independent from optimizer distribution: the UNION's first arm binds ?key,
+		// but its second arm does not, so the UNION as a whole cannot assure the key on every emitted row.
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("probe", 0, "probeValue", 1, "row", 2, "loose", 3),
+				null);
+		layout.freeze(List.of("probe", "probeValue", "row", "loose"));
+		CountingJoinSource source = new CountingJoinSource();
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		assertThat(LmdbNativeAggregateCompiler.initializeRow(row, EmptyBindingSet.getInstance(), source, layout))
+				.isTrue();
+		PatternPlan probe = new PatternPlan(Term.slot(0), Term.constant(7L), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 3);
+		PatternPlan keyArm = new PatternPlan(Term.slot(2), Term.constant(8L), Term.slot(0), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 3);
+		PatternPlan looseArm = new PatternPlan(Term.slot(2), Term.constant(8L), Term.slot(3), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 3);
+		JoinPlan plan = new JoinPlan(probe, new UnionPlan(keyArm, looseArm));
+		Map<String, String> declines = new LinkedHashMap<>();
+		Map<String, String> previous = LmdbNativeAttemptMetrics.installDeclineCapture(declines);
+		try {
+			assertThat(LmdbNativeHashJoin.tryOpenBushy(plan, row, 2)).isNull();
+		} finally {
+			LmdbNativeAttemptMetrics.installDeclineCapture(previous);
+		}
+
+		assertThat(declines).containsEntry(LmdbNativeAttemptMetrics.STRATEGY_HASH_JOIN, "bushy-unassured-key");
 	}
 
 	private void addMinusGroupData() {
@@ -456,15 +489,44 @@ class LmdbNativeHashJoinBatchTest {
 	}
 
 	@Test
-	void byteAdmissionDifferentiatesPayloadWidthAtEqualRows() {
+	void payloadWidthQueriesMatchGenericResults() {
 		String wideQuery = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?left ?key ?right ?p WHERE { ?left ex:key ?key . ?right ?p ?key }";
 		List<String> genericNarrow = genericRows();
 		List<String> genericWide = genericRows(wideQuery);
 		resetCounters();
 		System.setProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false");
-		// Same ~200 build rows; payload width 1 (narrow) vs 2 (wide). A budget between the two footprints must
-		// admit the narrow build and refuse the wide one.
+		assertThat(rows()).isEqualTo(genericNarrow);
+		long wildcardBatchesBefore = LmdbWildcardPredicateBatch.BATCHES.get();
+		assertThat(rows(wideQuery)).isEqualTo(genericWide);
+		assertThat(LmdbWildcardPredicateBatch.BATCHES.get())
+				.as("variable-predicate query keeps its specialist execution path")
+				.isGreaterThan(wildcardBatchesBefore);
+	}
+
+	@Test
+	void byteAdmissionDifferentiatesPayloadWidthAtEqualRows() throws IOException {
+		// Keep admission independent from optimizer distribution: the two direct candidates use the same source rows,
+		// key slot, and 200-row estimate. Only the build's projected payload width changes from one slot to two.
+		NativeSlotLayout layout = new NativeSlotLayout(
+				Map.of("key", 0, "narrow", 1, "wideFirst", 2, "wideSecond", 3), null);
+		layout.freeze(List.of("key", "narrow", "wideFirst", "wideSecond"));
+		CountingJoinSource source = new CountingJoinSource();
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		assertThat(LmdbNativeAggregateCompiler.initializeRow(row, EmptyBindingSet.getInstance(), source, layout))
+				.isTrue();
+		PatternPlan narrowProbe = new PatternPlan(Term.slot(0), Term.constant(8L), Term.slot(3), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 200);
+		PatternPlan narrowBuild = new PatternPlan(Term.slot(0), Term.constant(7L), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 200);
+		PatternPlan wideProbe = new PatternPlan(Term.slot(0), Term.constant(8L), Term.slot(3), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 200);
+		PatternPlan wideBuild = new PatternPlan(Term.slot(0), Term.constant(7L), Term.slot(1), Term.slot(2),
+				ContextConstraint.UNRESTRICTED, false, 200);
+		MultiJoinPlan narrowPlan = new MultiJoinPlan(new SlotPlan[] { narrowProbe, narrowBuild },
+				new MaskedFilter[0]);
+		MultiJoinPlan widePlan = new MultiJoinPlan(new SlotPlan[] { wideProbe, wideBuild }, new MaskedFilter[0]);
+
 		long narrowBytes = LmdbNativeHashJoin.estimateBuildBytes(200, 1, 1);
 		long wideBytes = LmdbNativeHashJoin.estimateBuildBytes(200, 1, 2);
 		assertThat(wideBytes).isGreaterThan(narrowBytes);
@@ -473,16 +535,48 @@ class LmdbNativeHashJoinBatchTest {
 				.createForTesting(budget, budget);
 		System.setProperty(LmdbNativeHashJoin.BYTE_ADMISSION_PROPERTY, "true");
 		try {
-			assertThat(rows()).isEqualTo(genericNarrow);
+			resetCounters();
+			try (BatchCursor cursor = LmdbNativeHashJoin.tryOpen(narrowPlan, row, 4)) {
+				assertThat(cursor).isNotNull();
+				assertThat(directRows(cursor, row.slots.length))
+						.containsExactlyInAnyOrder(
+								Arrays.toString(new long[] { 1L, 11L, LmdbNativeAggregateCompiler.UNKNOWN, 101L }),
+								Arrays.toString(new long[] { 2L, 12L, LmdbNativeAggregateCompiler.UNKNOWN, 102L }),
+								Arrays.toString(new long[] { 3L, 13L, LmdbNativeAggregateCompiler.UNKNOWN, 103L }));
+			}
 			assertThat(LmdbNativeHashJoin.BUILDS.get()).as("narrow build admitted").isOne();
 			assertThat(LmdbNativeHashJoin.PREFLIGHT_REFUSALS.get()).isZero();
 
-			assertThat(rows(wideQuery)).isEqualTo(genericWide);
+			resetCounters();
+			try (BatchCursor cursor = LmdbNativeHashJoin.tryOpen(widePlan, row, 4)) {
+				assertThat(cursor).isNotNull();
+				assertThat(directRows(cursor, row.slots.length))
+						.containsExactlyInAnyOrder(
+								Arrays.toString(new long[] { 1L, 11L, 0L, 101L }),
+								Arrays.toString(new long[] { 2L, 12L, 0L, 102L }),
+								Arrays.toString(new long[] { 3L, 13L, 0L, 103L }));
+			}
 			assertThat(LmdbNativeHashJoin.PREFLIGHT_REFUSALS.get()).as("wide build refused").isOne();
+			assertThat(LmdbNativeHashJoin.BUILDS.get()).as("wide build never scanned").isZero();
+			assertThat(LmdbNativeHashJoin.LATE_REFUSALS.get()).as("wide build did not reach late refusal").isZero();
 			assertThat(LmdbNativeHashJoin.queryMemoryOverride.usedBytes()).as("ledger balance").isZero();
 		} finally {
 			LmdbNativeHashJoin.queryMemoryOverride = null;
 		}
+	}
+
+	private static List<String> directRows(BatchCursor cursor, int slotCount) throws IOException {
+		List<String> rows = new ArrayList<>();
+		NativeBatch batch = new NativeBatch(slotCount, 4);
+		int count;
+		while ((count = cursor.fill(batch)) > 0) {
+			for (int row = 0; row < count; row++) {
+				long[] values = new long[slotCount];
+				batch.copyToRow(batch.selection[row], values);
+				rows.add(Arrays.toString(values));
+			}
+		}
+		return rows;
 	}
 
 	private List<String> genericRows() {

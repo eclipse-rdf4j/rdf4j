@@ -223,7 +223,9 @@ public class LmdbNativePackedSortTest {
 				left[leftOffset], right[rightOffset]);
 		String previous = System.getProperty(NativeSpillSort.MAX_BYTES_PROPERTY);
 		try {
-			System.setProperty(NativeSpillSort.MAX_BYTES_PROPERTY, "64");
+			// The three-slot arena accounts 72 bytes per buffered row; 144 bytes keeps two rows before the third
+			// spills.
+			System.setProperty(NativeSpillSort.MAX_BYTES_PROPERTY, "144");
 			try (NativeSpillSort sort = new NativeSpillSort(3, 1, comparator)) {
 				sort.add(new long[] { 2L, 200L, 2_000L }, 0L);
 				sort.add(new long[] { 1L, 100L, 1_000L }, 1L);

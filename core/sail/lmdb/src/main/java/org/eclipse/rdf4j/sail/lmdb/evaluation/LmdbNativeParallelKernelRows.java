@@ -109,6 +109,12 @@ final class LmdbNativeParallelKernelRows {
 			return debugDecline(explainTarget, "not-emit");
 		}
 		Emit emit = (Emit) lowered.kernel.terminal;
+		NativeTermAuthority distinctAuthority = emit.distinct && lowered.kernel.requirements.semanticKeys
+				? row.keyAuthority()
+				: null;
+		if (emit.distinct && lowered.kernel.requirements.semanticKeys && distinctAuthority == null) {
+			return debugDecline(explainTarget, "semantic-key-authority-unavailable");
+		}
 		if (emit.cols.length == 0) {
 			return debugDecline(explainTarget, "zero-columns");
 		}
@@ -263,7 +269,7 @@ final class LmdbNativeParallelKernelRows {
 		Supplier<JaninoKernel> workerFactory = () -> kernelFactory.apply(workerKernelFinal);
 		return start(lowered, rootAdjacency, rootDomain, rootWildcard, rootScan, domains, rootKeys, scanPartitions,
 				sources, threads,
-				row, workerFactory, reservation, emit, hashLedger);
+				row, workerFactory, reservation, emit, distinctAuthority, hashLedger);
 	}
 
 	/**
@@ -277,6 +283,7 @@ final class LmdbNativeParallelKernelRows {
 			LmdbRootScanPartition[] scanPartitions,
 			NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
 			Supplier<JaninoKernel> kernelFactory, LmdbNativeParallelPipelines.TaskReservation reservation, Emit emit,
+			NativeTermAuthority distinctAuthority,
 			org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashLedger) {
 		// One work queue either way: key-ordinal windows over an adjacency or domain root, or planned scan ranges.
 		ConcurrentLinkedQueue<long[]> ranges = rootScan >= 0 ? null
@@ -322,8 +329,8 @@ final class LmdbNativeParallelKernelRows {
 			}
 		}
 		if (emit.mods.orderKeys != null) {
-			return startOrdered(lowered, sources, threads, row, reservation, emit, output, failure, cancelled, tasks,
-					hashLedger);
+			return startOrdered(lowered, sources, threads, row, reservation, emit, distinctAuthority, output, failure,
+					cancelled, tasks, hashLedger);
 		}
 		Page first = null;
 		int endedWorkers = 0;
@@ -366,7 +373,7 @@ final class LmdbNativeParallelKernelRows {
 		}
 		PARALLEL_RUNS.incrementAndGet();
 		return new ParallelKernelRowCursor(row, lowered.bindings.columnEngineSlots, sources, reservation, output,
-				failure, cancelled, tasks, threads, first, endedWorkers, emit, hashLedger);
+				failure, cancelled, tasks, threads, first, endedWorkers, emit, distinctAuthority, hashLedger);
 	}
 
 	/** Cancels the worker group pre-handoff and releases every resource; close failures surface as errors only. */
@@ -393,7 +400,8 @@ final class LmdbNativeParallelKernelRows {
 	 */
 	private static RowCursor startOrdered(LmdbNativeKernelLowering.Lowered lowered,
 			NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
-			LmdbNativeParallelPipelines.TaskReservation reservation, Emit emit, ArrayBlockingQueue<Page> output,
+			LmdbNativeParallelPipelines.TaskReservation reservation, Emit emit, NativeTermAuthority distinctAuthority,
+			ArrayBlockingQueue<Page> output,
 			AtomicReference<Throwable> failure, AtomicBoolean cancelled, CountDownLatch tasks,
 			org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashLedger) {
 		int[] columnSlots = lowered.bindings.columnEngineSlots;
@@ -457,14 +465,14 @@ final class LmdbNativeParallelKernelRows {
 		}
 		int count = 0;
 		long[] rows = new long[Math.toIntExact(totalRows * stride)];
-		HashSet<PackedKey> distinct = emit.distinct ? new HashSet<>() : null;
+		DistinctRows distinct = emit.distinct ? new DistinctRows(distinctAuthority) : null;
 		for (Page page : pages) {
 			if (distinct == null) {
 				System.arraycopy(page.rows, 0, rows, count * stride, page.count * stride);
 				count += page.count;
 			} else {
 				for (int r = 0; r < page.count; r++) {
-					if (distinct.add(new PackedKey(Arrays.copyOfRange(page.rows, r * stride, (r + 1) * stride)))) {
+					if (distinct.add(page.rows, r * stride, (r + 1) * stride)) {
 						System.arraycopy(page.rows, r * stride, rows, count * stride, stride);
 						count++;
 					}
@@ -534,7 +542,7 @@ final class LmdbNativeParallelKernelRows {
 			if (lowered.kernel.requirements.scans > 0) {
 				scanner = new LmdbNativeKernelScanner(workerRow, bindings.scanSites);
 			}
-			LmdbNativeKernelHooks hooks = bindings.needsHooks()
+			LmdbNativeKernelHooks hooks = bindings.needsHooks() || lowered.kernel.requirements.hooks
 					? new LmdbNativeKernelHooks(workerRow, bindings,
 							forkedHooks != null ? forkedHooks : bindings.filterHooks)
 					: null;
@@ -811,6 +819,65 @@ final class LmdbNativeParallelKernelRows {
 		}
 	}
 
+	/** Packed row identity using the evaluation authority's RDF-term equality and hash contracts. */
+	private static final class SemanticPackedKey {
+		final long[] row;
+		final NativeTermAuthority authority;
+		private final int hash;
+
+		SemanticPackedKey(long[] row, NativeTermAuthority authority) {
+			this.row = row;
+			this.authority = authority;
+			int result = 1;
+			for (long id : row) {
+				result = 31 * result + Long.hashCode(authority.rdfTermHash(id));
+			}
+			hash = result;
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			if (!(other instanceof SemanticPackedKey)) {
+				return false;
+			}
+			SemanticPackedKey that = (SemanticPackedKey) other;
+			if (row.length != that.row.length) {
+				return false;
+			}
+			for (int i = 0; i < row.length; i++) {
+				if (!authority.sameRdfTerm(row[i], that.row[i])) {
+					return false;
+				}
+			}
+			return true;
+		}
+	}
+
+	/** Cross-partition DISTINCT identity; semantic keys are used only when the lowered kernel requires them. */
+	private static final class DistinctRows {
+		private final NativeTermAuthority authority;
+		private final HashSet<PackedKey> rawKeys;
+		private final HashSet<SemanticPackedKey> semanticKeys;
+
+		DistinctRows(NativeTermAuthority authority) {
+			this.authority = authority;
+			rawKeys = authority == null ? new HashSet<>() : null;
+			semanticKeys = authority == null ? null : new HashSet<>();
+		}
+
+		boolean add(long[] rows, int from, int to) {
+			long[] copy = Arrays.copyOfRange(rows, from, to);
+			return semanticKeys != null
+					? semanticKeys.add(new SemanticPackedKey(copy, authority))
+					: rawKeys.add(new PackedKey(copy));
+		}
+	}
+
 	/**
 	 * Query-thread cursor over streamed worker pages; binds packed rows exactly like the sequential cursor. Carries the
 	 * global output modifiers the workers could not apply: cross-partition DISTINCT, and the OFFSET/LIMIT slice counted
@@ -826,7 +893,7 @@ final class LmdbNativeParallelKernelRows {
 		private final AtomicBoolean cancelled;
 		private final CountDownLatch tasks;
 		private final int threads;
-		private final HashSet<PackedKey> distinct;
+		private final DistinctRows distinct;
 		private long skipRemaining;
 		private long remaining;
 		private Page active;
@@ -841,6 +908,7 @@ final class LmdbNativeParallelKernelRows {
 				LmdbNativeParallelPipelines.TaskReservation reservation, ArrayBlockingQueue<Page> output,
 				AtomicReference<Throwable> failure, AtomicBoolean cancelled, CountDownLatch tasks, int threads,
 				Page first, int endedWorkers, Emit emit,
+				NativeTermAuthority distinctAuthority,
 				org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashLedger) {
 			this.hashLedger = hashLedger;
 			this.row = row;
@@ -854,7 +922,7 @@ final class LmdbNativeParallelKernelRows {
 			this.threads = threads;
 			this.active = first;
 			this.endedWorkers = endedWorkers;
-			this.distinct = emit.distinct ? new HashSet<>() : null;
+			this.distinct = emit.distinct ? new DistinctRows(distinctAuthority) : null;
 			this.skipRemaining = emit.mods.offset;
 			this.remaining = emit.mods.limit;
 			if (first != null) {
@@ -880,8 +948,7 @@ final class LmdbNativeParallelKernelRows {
 				while (active != null && activeIndex < active.count) {
 					int base = activeIndex * columnSlots.length;
 					activeIndex++;
-					if (distinct != null && !distinct
-							.add(new PackedKey(Arrays.copyOfRange(active.rows, base, base + columnSlots.length)))) {
+					if (distinct != null && !distinct.add(active.rows, base, base + columnSlots.length)) {
 						continue;
 					}
 					if (skipRemaining > 0L) {

@@ -23,7 +23,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 
@@ -42,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
@@ -49,15 +49,30 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 
 @Experimental
-final class FilteringIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
+final class FilteringIteration
+		implements CloseableIteration<BindingSet>, CooperativeCancellation, NativeExecutionContextCarrier {
 	final CloseableIteration<BindingSet> delegate;
 	final Predicate<BindingSet> predicate;
+	final NativeBindingSetValueEvaluator semanticPredicate;
+	private final NativeExecutionContext executionContext;
+	private final NativeExecutionContext.Lease lease;
 	BindingSet next;
 	volatile boolean closed;
 
 	FilteringIteration(CloseableIteration<BindingSet> delegate, Predicate<BindingSet> predicate) {
 		this.delegate = delegate;
 		this.predicate = predicate;
+		this.semanticPredicate = null;
+		this.executionContext = NativeExecutionContextCarrier.contextOf(delegate);
+		this.lease = NativeExecutionContextCarrier.retain(delegate);
+	}
+
+	FilteringIteration(CloseableIteration<BindingSet> delegate, NativeBindingSetValueEvaluator semanticPredicate) {
+		this.delegate = delegate;
+		this.predicate = null;
+		this.semanticPredicate = semanticPredicate;
+		this.executionContext = NativeExecutionContextCarrier.contextOf(delegate);
+		this.lease = NativeExecutionContextCarrier.retain(delegate);
 	}
 
 	@Override
@@ -65,13 +80,36 @@ final class FilteringIteration implements CloseableIteration<BindingSet>, Cooper
 		if (closed) {
 			return false;
 		}
-		while (next == null && delegate.hasNext()) {
-			BindingSet candidate = delegate.next();
-			if (predicate.test(candidate)) {
-				next = candidate;
+		try {
+			while (next == null && delegate.hasNext()) {
+				BindingSet candidate = delegate.next();
+				if (accept(candidate)) {
+					next = candidate;
+				}
 			}
+			if (next == null) {
+				close();
+			}
+			return next != null;
+		} catch (RuntimeException | Error e) {
+			try {
+				close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != e) {
+					e.addSuppressed(cleanup);
+				}
+			}
+			throw e;
 		}
-		return next != null;
+	}
+
+	private boolean accept(BindingSet candidate) {
+		if (predicate != null) {
+			return predicate.test(candidate);
+		}
+		NativeValueOutcome outcome = semanticPredicate.evaluate(candidate, executionContext);
+		return outcome.isBound()
+				&& QueryEvaluationUtility.getEffectiveBooleanValue(outcome.value()).orElse(false);
 	}
 
 	@Override
@@ -91,9 +129,11 @@ final class FilteringIteration implements CloseableIteration<BindingSet>, Cooper
 
 	@Override
 	public void close() {
-		closed = true;
-		next = null;
-		delegate.close();
+		if (!closed) {
+			closed = true;
+			next = null;
+			NativeExecutionContextCarrier.closeWithLease(delegate, lease);
+		}
 	}
 
 	@Override
@@ -102,6 +142,11 @@ final class FilteringIteration implements CloseableIteration<BindingSet>, Cooper
 			return false;
 		}
 		return cancellation.requestCancellation();
+	}
+
+	@Override
+	public NativeExecutionContext executionContext() {
+		return executionContext;
 	}
 }
 
@@ -342,6 +387,11 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		this.constantFalseGuards = collectConstantFalseGuards(arg);
 	}
 
+	/** Forced execution is optional for the standalone bare-fragment steps used by the native evaluator and tests. */
+	private String forcedExecutionStrategyName() {
+		return strategy == null ? null : strategy.forcedExecutionStrategyName();
+	}
+
 	/**
 	 * Constant-false guards on the plan's conjunctive spine: FilterPlan wrappers and MultiJoin filters, where an
 	 * always-empty filter empties the whole fragment. Union branches and optional arms are deliberately not walked — a
@@ -398,12 +448,16 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			NativeEntryBindingVariant variant = NativeEntryBindingVariant.tryCreate(source, layout, bindings,
 					optionalOnlyNames);
 			if (variant == null) {
+				NativeLmdbQuerySource evalSource = evaluationSourceForGenericFallback(bindings);
+				initializeQueryBase(evalSource, bindings);
 				LmdbNativeStrategyArbiter.logDirect(originalExpr, "optional entry binding dispatch",
 						LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK,
 						"An optional-only binding cannot be represented in the native ID space");
 				LmdbNativeExplain.recordExecutionPath(originalExpr,
 						LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK + "(optionalOnlyBinding)");
-				return genericStep().evaluate(bindings);
+				SyntheticValueSource synthetic = (SyntheticValueSource) evalSource;
+				return NativeExecutionContextCarrier.forEvaluation(
+						genericStep(synthetic.executionContext()).evaluate(bindings), synthetic);
 			}
 			LmdbNativeExplain.recordExecutionPath(originalExpr, variant.executionPath());
 			return withEntryBindingVariant(variant).evaluate(variant.filteredBase);
@@ -414,6 +468,11 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			return withContextLifetime(new NativeRowsIteration(this, evalSource, bindings), evalSource);
 		}
 		return withContextLifetime(new NativeOrderedRowsIteration(this, evalSource, bindings), evalSource);
+	}
+
+	private NativeLmdbQuerySource evaluationSourceForGenericFallback(BindingSet bindings) {
+		return source instanceof SyntheticValueSource ? evaluationSource(bindings)
+				: SyntheticValueSource.forEvaluation(source);
 	}
 
 	/**
@@ -465,6 +524,20 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			genericStep = strategy.genericPrecompile(originalExpr, context);
 		}
 		return genericStep;
+	}
+
+	synchronized QueryEvaluationStep genericStep(NativeExecutionContext executionContext) {
+		if (genericFallbackDescriptor == null) {
+			genericFallbackDescriptor = GenericSubplanDescriptor.create(originalExpr);
+		}
+		if (!genericFallbackDescriptor.shareableAcrossEvaluations()) {
+			return executionContext.genericStep(genericFallbackDescriptor, () -> {
+				QueryEvaluationContext scoped = executionContext
+						.genericContext(() -> new EvaluationScopedQueryEvaluationContext(context));
+				return strategy.genericPrecompile(genericFallbackDescriptor.<TupleExpr>pinnedExpr(), scoped);
+			});
+		}
+		return genericStep();
 	}
 
 	/**
@@ -610,7 +683,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
 					.<List<BindingSet>>forExpr(originalExpr, row.source)
 					.probeHarness(LmdbNativeProbeHarness.blocking())
-					.forcingWhereApplicable(strategy.forcedExecutionStrategyName(), "ORDER BY dispatch")) {
+					.forcingWhereApplicable(forcedExecutionStrategyName(), "ORDER BY dispatch")) {
 				offerOrderedStrategies(row, base, values, comparator, emitCap, arbiter);
 				List<BindingSet> ordered = arbiter.select();
 				if (ordered != null) {
@@ -1134,7 +1207,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		// A forced strategy must go through the arbiter below, where it can be validated and, if unavailable,
 		// reported in detail: these two fast paths open unconditionally with no cost competition and no
 		// possibility of an alternative winning, so honoring a forced strategy requires skipping them.
-		String forcedStrategy = strategy.forcedExecutionStrategyName();
+		String forcedStrategy = forcedExecutionStrategyName();
 		if (forcedStrategy == null && !correlatedEntry
 				&& LmdbWildcardPredicateBatch.ownsExistenceParallelRound(arg, row)) {
 			LmdbNativeStrategyProposal<NativeUnorderedInput> wildcardExists = proposeBatch(row, null, false);
@@ -1177,14 +1250,14 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				.forcing(forcedStrategy, "row/join dispatch")) {
 			offerUnorderedStrategies(row, distinctPlan, multiJoin, correlatedEntry, retainedSlots, arbiter);
 
-			long startedMillis = System.currentTimeMillis();
+			long startedNanos = System.nanoTime();
 			LmdbNativeStrategySelection<NativeUnorderedInput> selection = arbiter.selectWithObservation();
 			if (selection == null) {
 				throw new IllegalStateException("native nested-loop fallback declined");
 			}
 			NativeUnorderedInput selected = selection.value();
 			selected.observeOnClose(selection);
-			selected.calibrateOnClose(arbiter.winningTag(), arbiter.winningPredictedWork(), startedMillis);
+			selected.calibrateOnClose(arbiter.winningTag(), arbiter.winningPredictedWork(), startedNanos);
 			return selected;
 		}
 	}
@@ -1314,7 +1387,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			try (LmdbNativeStrategyArbiter<List<BindingSet>> ordered = LmdbNativeStrategyArbiter
 					.<List<BindingSet>>forExpr(originalExpr, row.source)
 					.probeHarness(LmdbNativeProbeHarness.blocking())
-					.forcingWhereApplicable(strategy.forcedExecutionStrategyName(), "ORDER BY dispatch")) {
+					.forcingWhereApplicable(forcedExecutionStrategyName(), "ORDER BY dispatch")) {
 				offerOrderedStrategies(row, row.base, null, null,
 						NativeSliceMath.limitPlusOffset(limit, Math.max(0L, offset)), ordered);
 				ordered.preview("ORDER BY dispatch");
@@ -1337,14 +1410,14 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		try (LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter = LmdbNativeStrategyArbiter
 				.<NativeUnorderedInput>forSlice(originalExpr, consumableRows(), source)
 				.probeHarness(new NativeProbeBufferHarness())
-				.forcing(strategy == null ? null : strategy.forcedExecutionStrategyName(), "row/join dispatch")) {
+				.forcing(forcedExecutionStrategyName(), "row/join dispatch")) {
 			NativeTupleDistinctPlan distinctPlan = distinct ? LmdbNativeOrderPlanner.tuple(arg, sourceSlots, row)
 					: null;
 			offerUnorderedStrategies(row, distinctPlan, multiJoin, (arg.producedMask() & row.boundMask()) != 0L,
 					orderSlots.length == 0 ? sourceSlots : sortLayout.liveToPlan, arbiter);
 			String directTag = null;
 			String directReason = null;
-			if (strategy.forcedExecutionStrategyName() == null && (arg.producedMask() & row.boundMask()) == 0L) {
+			if (forcedExecutionStrategyName() == null && (arg.producedMask() & row.boundMask()) == 0L) {
 				MultiJoinPlan wildcardJoin = multiJoin;
 				if (wildcardJoin == null && distinct && arg instanceof PatternPlan pattern) {
 					wildcardJoin = new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]);
@@ -2302,7 +2375,7 @@ final class NativeUnorderedInput implements AutoCloseable {
 	DedupMode dedupMode = DedupMode.HASH;
 	String calibrationTag;
 	double calibrationWork = Double.NaN;
-	long calibrationStartedMillis;
+	long calibrationStartedNanos;
 	LmdbNativeStrategySelection<NativeUnorderedInput> adaptiveSelection;
 
 	private NativeUnorderedInput(RowState row) {
@@ -2343,10 +2416,10 @@ final class NativeUnorderedInput implements AutoCloseable {
 	 * Arms close-time calibration: a streaming winner's elapsed time is only known once this input closes, so the
 	 * dispatch site hands over what the model predicted and close() supplies the measurement.
 	 */
-	void calibrateOnClose(String tag, double predictedWork, long startedMillis) {
+	void calibrateOnClose(String tag, double predictedWork, long startedNanos) {
 		this.calibrationTag = tag;
 		this.calibrationWork = predictedWork;
-		this.calibrationStartedMillis = startedMillis;
+		this.calibrationStartedNanos = startedNanos;
 	}
 
 	/** Transfers ownership of the selected strategy's observation to this streaming input. */
@@ -2404,6 +2477,8 @@ final class NativeUnorderedInput implements AutoCloseable {
 		LmdbNativeStrategySelection<NativeUnorderedInput> selection = adaptiveSelection;
 		adaptiveSelection = null;
 		boolean cleanupSucceeded = false;
+		boolean producerCleanupSucceeded = false;
+		boolean selectionCloseSucceeded = selection == null;
 		try {
 			if (batchCursor != null) {
 				batchCursor.close();
@@ -2423,6 +2498,7 @@ final class NativeUnorderedInput implements AutoCloseable {
 				if (selection != null && cleanupSucceeded && completed) {
 					selection.exhausted();
 				}
+				producerCleanupSucceeded = cleanupSucceeded;
 			} catch (RuntimeException | Error failure) {
 				if (selection != null) {
 					selection.failed(failure);
@@ -2432,6 +2508,7 @@ final class NativeUnorderedInput implements AutoCloseable {
 				if (selection != null) {
 					selection.close();
 				}
+				selectionCloseSucceeded = true;
 				batchCursor = null;
 				cursor = null;
 				batch = null;
@@ -2439,9 +2516,9 @@ final class NativeUnorderedInput implements AutoCloseable {
 					// only a completed run is calibration evidence (gap-analysis C6): a LIMIT or early close
 					// spans a fraction of the predicted work, and charging the full prediction against the
 					// shorter elapsed time deflates nanos-per-unit for often-truncated strategies
-					if (completed) {
+					if (completed && producerCleanupSucceeded && selectionCloseSucceeded) {
 						LmdbNativeCostCalibration.record(calibrationTag, calibrationWork,
-								TimeUnit.MILLISECONDS.toNanos(System.currentTimeMillis() - calibrationStartedMillis));
+								System.nanoTime() - calibrationStartedNanos);
 					}
 					calibrationTag = null;
 				}
@@ -2671,7 +2748,10 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 		try {
 			next = getNextElement();
 			if (next == null) {
-				finish(true);
+				// A satisfied LIMIT returns null without asking the producer for another row. Likewise, a cooperative
+				// cancellation may stop a cursor loop before it observes EOF. Neither case is producer exhaustion, so
+				// close the selected input as a partial run and keep it out of completed calibration evidence.
+				finish(remainingLimit != 0L && !cancellation.isCancellationRequested());
 			}
 			return next != null;
 		} catch (KernelQueryCancelledException cancelled) {

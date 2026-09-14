@@ -93,6 +93,15 @@ class LmdbDirectAdjacencyConsolidationTest {
 		store.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta());
 	}
 
+	private void commitAdds(long s, long p, long firstObjectPayload, int count) throws IOException {
+		tripleStore.startTransaction();
+		for (int i = 0; i < count; i++) {
+			tripleStore.storeTriple(s, p, uri(firstObjectPayload + i), 0, true);
+		}
+		tripleStore.commit();
+		store.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta());
+	}
+
 	private void commitRemove(long s, long p, long o, long context, boolean explicit) throws IOException {
 		tripleStore.startTransaction();
 		tripleStore.removeTriplesByContext(s, p, o, context, explicit, removed -> {
@@ -118,6 +127,14 @@ class LmdbDirectAdjacencyConsolidationTest {
 			it.close();
 		}
 		return rows;
+	}
+
+	private List<Long> objectIds(List<long[]> rows) {
+		List<Long> objects = new ArrayList<>(rows.size());
+		for (long[] row : rows) {
+			objects.add(row[2]);
+		}
+		return objects;
 	}
 
 	@Test
@@ -566,6 +583,148 @@ class LmdbDirectAdjacencyConsolidationTest {
 		assertThat(store.memoryAccount().totalChargedBytes()).isLessThan(chargedWithCandidateAndCommit);
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(probe(view, S1, P1)).hasSize(4);
+		}
+	}
+
+	@Test
+	void pagedFoldRebasesAConcurrentSupernodeSuffixBeforeTheNextCommit() throws Exception {
+		int supernodeEdges = Math.toIntExact(store.options().supernodeEdges());
+		int baseEdges = Math.addExact(supernodeEdges, 1);
+		commitAdd(S1, P1, O_BASE);
+		commitAdds(S1, P1, 10_000, baseEdges);
+		assertThat(store.buildNowForTest()).isTrue();
+		commitAdd(S1, P1, uri(20_001));
+		store.pauseApplierForTest(false);
+		commitAdd(S1, P1, uri(20_002));
+		store.pauseApplierForTest(false);
+		LmdbInMemoryAdjacencyIndex originalBase = store.publishedStateForTest().base();
+		long pinnedRevision = tripleStore.getDataRevision();
+
+		CountDownLatch candidateReady = new CountDownLatch(1);
+		CountDownLatch allowPublication = new CountDownLatch(1);
+		store.beforePagedCsfPublicationForTest = () -> {
+			candidateReady.countDown();
+			try {
+				if (!allowPublication.await(10, TimeUnit.SECONDS)) {
+					throw new AssertionError("test did not release candidate publication");
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(e);
+			}
+		};
+
+		try (LmdbAdjacencyReadView pinned = store.acquire(pinnedRevision)) {
+			assertThat(pinned.isExact()).isTrue();
+			List<Long> pinnedObjects = objectIds(probe(pinned, S1, P1));
+			CompletableFuture<Void> consolidation = CompletableFuture.runAsync(store::consolidateNowForTest);
+			try {
+				assertThat(candidateReady.await(10, TimeUnit.SECONDS)).isTrue();
+				commitAdd(S1, P1, uri(20_003));
+				store.pauseApplierForTest(false);
+			} finally {
+				allowPublication.countDown();
+			}
+			consolidation.get(10, TimeUnit.SECONDS);
+			store.beforePagedCsfPublicationForTest = null;
+
+			LmdbAdjacencyPublishedState folded = store.publishedStateForTest();
+			assertThat(folded.base()).isNotSameAs(originalBase);
+			assertThat(folded.base().baseRevision()).isEqualTo(folded.appliedRevision() - 1);
+			assertThat(folded.appliedRevision()).isEqualTo(tripleStore.getDataRevision());
+			assertThat(folded.overlays()).isNotNull();
+			assertThat(folded.overlays().generationCount()).isEqualTo(1);
+			LmdbAdjacencyDeltaGeneration suffix = folded.overlays().generation(0);
+			long suffixRoot = suffix.find(S1, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, P1);
+			assertThat(LmdbAdjacencyRunCodec.edgeCount(suffix.catalog(), suffixRoot))
+					.isGreaterThan(supernodeEdges);
+			assertThat(LmdbAdjacencyRunCodec.persistentComposite(suffix.catalog(), suffixRoot)).isTrue();
+
+			commitAdd(S1, P1, uri(20_004));
+			store.pauseApplierForTest(false);
+			assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(tripleStore.getDataRevision());
+			assertThat(pinned.isExact()).isTrue();
+			assertThat(objectIds(probe(pinned, S1, P1))).containsExactlyElementsOf(pinnedObjects);
+			try (LmdbAdjacencyReadView latest = store.acquire(tripleStore.getDataRevision())) {
+				assertThat(latest.isExact()).isTrue();
+				List<Long> expected = new ArrayList<>(pinnedObjects);
+				expected.add(uri(20_003));
+				expected.add(uri(20_004));
+				expected.sort(Long::compareUnsigned);
+				assertThat(objectIds(probe(latest, S1, P1))).containsExactlyElementsOf(expected);
+			}
+		}
+	}
+
+	@Test
+	void deltaMergeReencodesForeignPersistentSuffixAlongsideNewRows() throws Exception {
+		int supernodeEdges = Math.toIntExact(store.options().supernodeEdges());
+		int baseEdges = Math.addExact(supernodeEdges, 1);
+		commitAdd(S1, P1, O_BASE);
+		commitAdds(S1, P1, 30_000, baseEdges);
+		assertThat(store.buildNowForTest()).isTrue();
+		commitAdd(S1, P1, uri(40_001));
+		store.pauseApplierForTest(false);
+		commitAdd(S1, P1, uri(40_002));
+		store.pauseApplierForTest(false);
+		LmdbInMemoryAdjacencyIndex originalBase = store.publishedStateForTest().base();
+		long pinnedRevision = tripleStore.getDataRevision();
+
+		CountDownLatch candidateReady = new CountDownLatch(1);
+		CountDownLatch allowPublication = new CountDownLatch(1);
+		store.beforePagedCsfPublicationForTest = () -> {
+			candidateReady.countDown();
+			try {
+				if (!allowPublication.await(10, TimeUnit.SECONDS)) {
+					throw new AssertionError("test did not release candidate publication");
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(e);
+			}
+		};
+
+		try (LmdbAdjacencyReadView pinned = store.acquire(pinnedRevision)) {
+			assertThat(pinned.isExact()).isTrue();
+			List<Long> pinnedObjects = objectIds(probe(pinned, S1, P1));
+			CompletableFuture<Void> consolidation = CompletableFuture.runAsync(store::consolidateNowForTest);
+			try {
+				assertThat(candidateReady.await(10, TimeUnit.SECONDS)).isTrue();
+				commitAdd(S1, P1, uri(40_003));
+				store.pauseApplierForTest(false);
+			} finally {
+				allowPublication.countDown();
+			}
+			consolidation.get(10, TimeUnit.SECONDS);
+			store.beforePagedCsfPublicationForTest = null;
+
+			LmdbAdjacencyPublishedState folded = store.publishedStateForTest();
+			assertThat(folded.base()).isNotSameAs(originalBase);
+			assertThat(folded.base().baseRevision()).isEqualTo(folded.appliedRevision() - 1);
+			assertThat(folded.overlays()).isNotNull();
+			assertThat(folded.overlays().generationCount()).isEqualTo(1);
+			LmdbAdjacencyDeltaGeneration suffix = folded.overlays().generation(0);
+			long suffixRoot = suffix.find(S1, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, P1);
+			assertThat(LmdbAdjacencyRunCodec.edgeCount(suffix.catalog(), suffixRoot))
+					.isGreaterThan(supernodeEdges);
+			assertThat(LmdbAdjacencyRunCodec.persistentComposite(suffix.catalog(), suffixRoot)).isTrue();
+
+			// Keep the foreign suffix row alive while distinct rows force the delta-range merge to retain it.
+			for (int i = 4; i <= 6; i++) {
+				commitAdd(uri(50_000 + i), P1, uri(60_000 + i));
+				store.pauseApplierForTest(false);
+			}
+			store.requestCompactionForTest();
+
+			LmdbAdjacencyPublishedState merged = store.publishedStateForTest();
+			assertThat(merged.overlays()).isNotNull();
+			assertThat(merged.overlays().generationCount()).isEqualTo(1);
+			assertThat(pinned.isExact()).isTrue();
+			assertThat(objectIds(probe(pinned, S1, P1))).containsExactlyElementsOf(pinnedObjects);
+			try (LmdbAdjacencyReadView latest = store.acquire(tripleStore.getDataRevision())) {
+				assertThat(latest.isExact()).isTrue();
+				assertThat(objectIds(probe(latest, S1, P1))).contains(uri(40_003));
+			}
 		}
 	}
 

@@ -13,12 +13,15 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -27,14 +30,31 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.CompareAny;
 import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.Intersection;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
@@ -45,7 +65,9 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -64,7 +86,9 @@ import org.junit.jupiter.api.io.TempDir;
 public class LmdbNativeGenericBridgeScopeTest {
 
 	private static final String EX = "http://example.com/";
+	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String RECORD_NOW_URI = EX + "recordNow";
+	private static final String RECORD_LITERAL_NOW_URI = EX + "recordLiteralNow";
 
 	/** NOW() values the filter predicate observed, one entry per predicate invocation. */
 	private static final List<Value> RECORDED = Collections.synchronizedList(new ArrayList<>());
@@ -83,8 +107,23 @@ public class LmdbNativeGenericBridgeScopeTest {
 		}
 	}
 
+	/** Returns and records its NOW argument so a retained post-group extension can be checked by object identity. */
+	public static final class RecordLiteralNowFunction implements Function {
+		@Override
+		public String getURI() {
+			return RECORD_LITERAL_NOW_URI;
+		}
+
+		@Override
+		public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+			RECORDED.add(args[0]);
+			return args[0];
+		}
+	}
+
 	static {
 		FunctionRegistry.getInstance().add(new RecordNowFunction());
+		FunctionRegistry.getInstance().add(new RecordLiteralNowFunction());
 	}
 
 	@TempDir
@@ -101,10 +140,16 @@ public class LmdbNativeGenericBridgeScopeTest {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI link = vf.createIRI(EX, "link");
+			IRI genericLink = vf.createIRI(EX, "genericLink");
+			IRI nativeLink = vf.createIRI(EX, "nativeLink");
 			conn.begin();
 			for (int i = 0; i < 3; i++) {
 				conn.add(vf.createIRI(EX, "s" + i), link, vf.createIRI(EX, "o" + i));
 			}
+			conn.add(vf.createIRI(EX, "generic"), genericLink, vf.createIRI(EX, "genericObject"));
+			conn.add(vf.createIRI(EX, "native"), nativeLink, vf.createIRI(EX, "nativeObject"));
+			conn.add(vf.createIRI(EX, "shared"), genericLink, vf.createIRI(EX, "sharedGenericObject"));
+			conn.add(vf.createIRI(EX, "shared"), nativeLink, vf.createIRI(EX, "sharedNativeObject"));
 			conn.commit();
 		}
 		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
@@ -150,6 +195,77 @@ public class LmdbNativeGenericBridgeScopeTest {
 		assertThat(secondEvaluation.get(0))
 				.as("a new evaluation of a retained compiled step must observe a fresh NOW value")
 				.isNotEqualTo(firstEvaluation.get(0));
+	}
+
+	@Test
+	public void failedQueryScopeRegistrationDoesNotPublishPartialGenericContext() {
+		NativeExecutionContext execution = new NativeExecutionContext();
+		RuntimeException registrationFailure = new RuntimeException("registration failed");
+		AtomicInteger factoryCalls = new AtomicInteger();
+		execution.installQueryScopedValueRegistrar(value -> {
+			throw registrationFailure;
+		});
+
+		try {
+			assertThatThrownBy(() -> execution.genericContext(() -> {
+				factoryCalls.incrementAndGet();
+				EvaluationScopedQueryEvaluationContext context = new EvaluationScopedQueryEvaluationContext(
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				context.getNow();
+				return context;
+			})).isSameAs(registrationFailure);
+			assertThatThrownBy(() -> execution.genericContext(() -> {
+				factoryCalls.incrementAndGet();
+				EvaluationScopedQueryEvaluationContext context = new EvaluationScopedQueryEvaluationContext(
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				context.getNow();
+				return context;
+			})).isSameAs(registrationFailure);
+			assertThat(factoryCalls).as("a failed registrar must not publish its partially initialized context")
+					.hasValue(2);
+		} finally {
+			execution.close();
+		}
+	}
+
+	@Test
+	public void contextCloseWaitsForTheLastSemanticConsumerLease() {
+		NativeExecutionContext execution = new NativeExecutionContext();
+		NativeExecutionContext.Lease lease = execution.retainLease();
+
+		execution.close();
+		assertThat(execution.isClosed()).as("an inner carrier close must wait for its outer semantic consumer")
+				.isFalse();
+
+		lease.close();
+		assertThat(execution.isClosed()).isTrue();
+		lease.close();
+	}
+
+	@Test
+	public void genericFilterAndNativeProjectionShareNowAtSailBoundary() {
+		String previous = System.getProperty(NATIVE_FLAG);
+		System.setProperty(NATIVE_FLAG, "true");
+		RECORDED.clear();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			TupleQuery query = conn.prepareTupleQuery(
+					"SELECT ?s (NOW() AS ?nativeNow) WHERE { ?s <" + EX + "link> ?o . FILTER(<" + RECORD_NOW_URI
+							+ ">(NOW())) }");
+			try (TupleQueryResult result = query.evaluate()) {
+				List<BindingSet> rows = QueryResults.asList(result);
+				assertThat(rows).hasSize(3);
+				assertThat(RECORDED).hasSize(3);
+				Value now = RECORDED.getFirst();
+				assertThat(RECORDED).allMatch(value -> value == now);
+				assertThat(rows).allSatisfy(row -> assertThat(row.getValue("nativeNow")).isSameAs(now));
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
+		}
 	}
 
 	@Test
@@ -212,6 +328,294 @@ public class LmdbNativeGenericBridgeScopeTest {
 				.isNotEqualTo(firstEvaluation.getFirst());
 	}
 
+	@Test
+	public void retainedPostGroupSemanticExtensionGetsFreshNowPerEvaluation() throws Exception {
+		String query = "SELECT ?s (COUNT(?o) AS ?count) (<" + RECORD_LITERAL_NOW_URI
+				+ ">(NOW()) AS ?now) WHERE { ?s <" + EX + "link> ?o } GROUP BY ?s";
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null,
+				0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(root,
+				new DelayedDatasetContext(), strategy, (NativeLmdbQuerySource) dataset);
+		assertThat(outcome.isSupported()).as("the grouped projection must compile as a retained native step").isTrue();
+
+		List<Value> firstEvaluation = drainAndCollectNow(outcome.step());
+		List<Value> secondEvaluation = drainAndCollectNow(outcome.step());
+
+		assertThat(firstEvaluation).hasSize(3);
+		assertThat(secondEvaluation).hasSize(3);
+		assertThat(new HashSet<>(firstEvaluation)).hasSize(1);
+		assertThat(new HashSet<>(secondEvaluation)).hasSize(1);
+		assertThat(secondEvaluation.getFirst())
+				.as("a retained post-group extension must get a fresh NOW value per evaluation")
+				.isNotSameAs(firstEvaluation.getFirst());
+	}
+
+	@Test
+	public void retainedPostGroupFilterGetsFreshNowPerEvaluation() throws Exception {
+		IRI link = repository.getValueFactory().createIRI(EX, "link");
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("link", link), Var.of("o"));
+		Group group = new Group(pattern, List.of("s"));
+		group.addGroupElement(new GroupElem("count", new Count(Var.of("o"), false)));
+		Extension extension = new Extension(group,
+				new ExtensionElem(new FunctionCall(RECORD_LITERAL_NOW_URI, new FunctionCall("NOW")), "now"));
+		Filter filter = new Filter(extension, new FunctionCall(RECORD_NOW_URI, new FunctionCall("NOW")));
+		Projection projection = new Projection(filter,
+				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("count"),
+						new ProjectionElem("now")),
+				false);
+		TupleExpr root = new QueryRoot(projection);
+
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null,
+				0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(root,
+				new DelayedDatasetContext(), strategy, (NativeLmdbQuerySource) dataset);
+		assertThat(outcome.isSupported())
+				.as("a retained filter above a post-group extension must compile natively")
+				.isTrue();
+
+		List<Value> firstEvaluation = drainAndCollectNow(outcome.step());
+		List<Value> secondEvaluation = drainAndCollectNow(outcome.step());
+
+		assertThat(firstEvaluation).hasSize(6);
+		assertThat(secondEvaluation).hasSize(6);
+		assertThat(new HashSet<>(firstEvaluation)).hasSize(1);
+		assertThat(new HashSet<>(secondEvaluation)).hasSize(1);
+		assertThat(secondEvaluation.getFirst())
+				.as("a retained post-group filter must get a fresh NOW value per evaluation")
+				.isNotSameAs(firstEvaluation.getFirst());
+	}
+
+	@Test
+	public void interiorRetainedPostGroupFilterGetsFreshNowPerEvaluation() {
+		IRI link = repository.getValueFactory().createIRI(EX + "link");
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("link", link), Var.of("o"));
+		Group group = new Group(pattern, List.of("s"));
+		group.addGroupElement(new GroupElem("count", new Count(Var.of("o"), false)));
+		Extension extension = new Extension(group,
+				new ExtensionElem(new FunctionCall(RECORD_LITERAL_NOW_URI, new FunctionCall("NOW")), "now"));
+		Filter filter = new Filter(extension, new FunctionCall(RECORD_NOW_URI, new FunctionCall("NOW")));
+		Projection projection = new Projection(filter,
+				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("count"),
+						new ProjectionElem("now")),
+				false);
+		TupleExpr root = new QueryRoot(projection);
+
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null,
+				0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(root, new DelayedDatasetContext(), strategy,
+				(NativeLmdbQuerySource) dataset);
+		assertThat(step).as("the interior aggregate subquery must compile natively").isNotNull();
+
+		List<Value> firstEvaluation = drainAndCollectNow(step);
+		List<Value> secondEvaluation = drainAndCollectNow(step);
+
+		assertThat(firstEvaluation).hasSize(6);
+		assertThat(secondEvaluation).hasSize(6);
+		assertThat(new HashSet<>(firstEvaluation)).hasSize(1);
+		assertThat(new HashSet<>(secondEvaluation)).hasSize(1);
+		assertThat(secondEvaluation.getFirst())
+				.as("an interior retained aggregate filter must get a fresh NOW per evaluation")
+				.isNotSameAs(firstEvaluation.getFirst());
+	}
+
+	@Test
+	public void interiorAggregateHavingGetsFreshNowPerEvaluation() {
+		IRI link = repository.getValueFactory().createIRI(EX + "link");
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("link", link), Var.of("o"));
+		Group group = new Group(pattern, List.of("s"));
+		group.addGroupElement(new GroupElem("count", new Count(Var.of("o"), false)));
+		Filter filter = new Filter(group, recordNow("s"));
+
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null,
+				0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(filter, new DelayedDatasetContext(), strategy,
+				(NativeLmdbQuerySource) dataset);
+		assertThat(step).as("the interior aggregate HAVING filter must compile natively").isNotNull();
+
+		List<Value> firstEvaluation = drainAndCollectNow(step);
+		List<Value> secondEvaluation = drainAndCollectNow(step);
+
+		assertThat(firstEvaluation).hasSize(3);
+		assertThat(secondEvaluation).hasSize(3);
+		assertThat(new HashSet<>(firstEvaluation)).hasSize(1);
+		assertThat(new HashSet<>(secondEvaluation)).hasSize(1);
+		assertThat(secondEvaluation.getFirst())
+				.as("an interior aggregate HAVING filter must get a fresh NOW per evaluation")
+				.isNotSameAs(firstEvaluation.getFirst());
+	}
+
+	@Test
+	public void optionalOnlyGenericFallbackUsesOneNowScopePerEvaluation() {
+		ValueFactory vf = repository.getValueFactory();
+		QueryBindingSet genericRow = new QueryBindingSet();
+		genericRow.addBinding("seed", vf.createIRI(EX, "generic-seed"));
+		BindingSetAssignment genericInput = new BindingSetAssignment();
+		genericInput.setBindingSets(List.of(genericRow));
+		Extension original = new Extension(genericInput,
+				new ExtensionElem(new FunctionCall(RECORD_LITERAL_NOW_URI, new FunctionCall("NOW")), "now"));
+		SyntheticValueSource compileSource = new SyntheticValueSource((NativeLmdbQuerySource) dataset,
+				PlanValueCatalog.EMPTY);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null,
+				0L, new EvaluationStatistics(), false);
+		NativeRowsStep step = new NativeRowsStep(compileSource, SlotPlan.empty(), NativeSlotLayout.empty(), new int[0],
+				new String[0], false, new int[0], new boolean[0], 0L, -1L, true, strategy, original,
+				new DelayedDatasetContext(), Set.of("optional"), null, null);
+		QueryBindingSet optionalBinding = new QueryBindingSet();
+		optionalBinding.addBinding("optional", vf.createIRI(EX, "foreign"));
+
+		List<BindingSet> first = evaluateStep(step, optionalBinding);
+		List<BindingSet> second = evaluateStep(step, optionalBinding);
+
+		assertThat(first).hasSize(1);
+		assertThat(second).hasSize(1);
+		assertThat(second.getFirst().getValue("now"))
+				.as("an optional-only generic fallback must prepare NOW for each evaluation")
+				.isNotSameAs(first.getFirst().getValue("now"));
+	}
+
+	@Test
+	public void genericFirstUnionAndNativeLaterShareOneNowScope() throws Exception {
+		ValueFactory vf = repository.getValueFactory();
+		IRI nativeLink = vf.createIRI(EX, "nativeLink");
+		StatementPattern nativePattern = new StatementPattern(Var.of("s"), Var.of("nativeLink", nativeLink),
+				Var.of("nativeObject"));
+		QueryBindingSet genericBinding = new QueryBindingSet();
+		genericBinding.addBinding("s", vf.createIRI(EX, "shared"));
+		BindingSetAssignment genericInput = new BindingSetAssignment();
+		genericInput.setBindingSets(List.of(genericBinding));
+		FunctionCall genericNow = new FunctionCall(RECORD_LITERAL_NOW_URI, new FunctionCall("NOW"));
+		FunctionCall nativeNow = new FunctionCall("NOW");
+		Extension genericFirst = new Extension(genericInput, new ExtensionElem(genericNow, "genericNow"));
+		Intersection genericIsland = new Intersection(genericFirst, genericFirst.clone());
+		Extension nativeLater = new Extension(nativePattern, new ExtensionElem(nativeNow, "nativeNow"));
+		Projection rootProjection = new Projection(new Join(genericIsland, nativeLater),
+				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("genericNow"),
+						new ProjectionElem("nativeNow"), new ProjectionElem("genericObject"),
+						new ProjectionElem("nativeObject")),
+				false);
+		TupleExpr root = new QueryRoot(rootProjection);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null,
+				0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(root,
+				new DelayedDatasetContext(), strategy, (NativeLmdbQuerySource) dataset);
+		assertThat(outcome.isSupported()).as("the union must retain a native host around its generic island").isTrue();
+		assertThat(((LmdbNativePhysicalPlan) outcome.step()).nativePhysicalPlan()).contains("GenericEvalPlan");
+
+		List<BindingSet> firstEvaluation = evaluateStep(outcome.step());
+		List<BindingSet> secondEvaluation = evaluateStep(outcome.step());
+		assertThat(firstEvaluation).hasSize(1);
+		assertThat(secondEvaluation).hasSize(1);
+		Value firstNow = firstEvaluation.getFirst().getValue("genericNow");
+		Value firstNativeNow = firstEvaluation.getFirst().getValue("nativeNow");
+		assertThat(firstNativeNow).isSameAs(firstNow);
+		Value secondNow = secondEvaluation.getFirst().getValue("genericNow");
+		Value secondNativeNow = secondEvaluation.getFirst().getValue("nativeNow");
+		assertThat(secondNativeNow).isSameAs(secondNow);
+		assertThat(secondNow).as("a retained union must get a fresh NOW object per evaluation")
+				.isNotSameAs(firstNow);
+	}
+
+	@Test
+	public void orderKeyEvaluatesBeforeItsNativeContextCloses() {
+		IRI link = repository.getValueFactory().createIRI(EX, "link");
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("link", link), Var.of("o"));
+		QueryEvaluationContext context = new DelayedDatasetContext();
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null,
+				0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(pattern, context,
+				strategy, (NativeLmdbQuerySource) dataset);
+		assertThat(outcome.isSupported()).as("the native row source must compile before adding the root ORDER stage")
+				.isTrue();
+		Order order = new Order(pattern);
+		order.addElement(new OrderElem(new FunctionCall(RECORD_LITERAL_NOW_URI, new FunctionCall("NOW")), true));
+		QueryEvaluationStep ordered = NativeRootPipeline.order(outcome.step(), order, strategy, context);
+
+		RECORDED.clear();
+		List<BindingSet> rows = evaluateStep(ordered);
+		assertThat(rows).hasSize(3);
+		assertThat(RECORDED).as("the semantic order key must be evaluated").isNotEmpty();
+		Value now = RECORDED.getFirst();
+		assertThat(RECORDED).allMatch(value -> value == now);
+	}
+
+	@Test
+	public void semanticExtensionRetainsContextAfterOrderMaterializesRows() {
+		IRI link = repository.getValueFactory().createIRI(EX, "link");
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("link", link), Var.of("o"));
+		QueryEvaluationContext context = new DelayedDatasetContext();
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null,
+				0L, new EvaluationStatistics(), false);
+		LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(pattern, context,
+				strategy, (NativeLmdbQuerySource) dataset);
+		assertThat(outcome.isSupported()).isTrue();
+		Order order = new Order(pattern);
+		order.addElement(new OrderElem(new FunctionCall(RECORD_LITERAL_NOW_URI, new FunctionCall("NOW")), true));
+		QueryEvaluationStep ordered = NativeRootPipeline.order(outcome.step(), order, strategy, context);
+		Extension extension = new Extension(pattern,
+				new ExtensionElem(new FunctionCall(RECORD_LITERAL_NOW_URI, new FunctionCall("NOW")), "afterOrder"));
+		QueryEvaluationStep extended = NativeBindingSetExtensionStep.tryCreate(ordered, extension, null, strategy,
+				context);
+		assertThat(extended).as("the outer semantic extension must compile").isNotNull();
+
+		RECORDED.clear();
+		List<BindingSet> rows = evaluateStep(extended);
+		assertThat(rows).hasSize(3);
+		assertThat(RECORDED).as("both ORDER and the outer extension must evaluate NOW").isNotEmpty();
+		Value now = RECORDED.getFirst();
+		assertThat(RECORDED)
+				.as("semantic consumers above a materializing ORDER stage must share its evaluation scope")
+				.allMatch(value -> value == now);
+	}
+
+	@Test
+	public void scalarSubquerySharesTheOuterNowScope() {
+		String previous = System.getProperty(NATIVE_FLAG);
+		System.setProperty(NATIVE_FLAG, "true");
+		RECORDED.clear();
+		ValueFactory vf = repository.getValueFactory();
+		BindingSetAssignment outerInput = new BindingSetAssignment();
+		QueryBindingSet outerRow = new QueryBindingSet();
+		outerRow.addBinding("outerSeed", vf.createIRI(EX, "outer-seed"));
+		outerInput.setBindingSets(List.of(outerRow));
+		BindingSetAssignment innerInput = new BindingSetAssignment();
+		List<BindingSet> innerRows = new ArrayList<>();
+		for (int i = 0; i < 3; i++) {
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("seed", vf.createIRI(EX, "seed" + i));
+			innerRows.add(row);
+		}
+		innerInput.setBindingSets(innerRows);
+		Extension subquery = new Extension(innerInput,
+				new ExtensionElem(new FunctionCall(RECORD_LITERAL_NOW_URI, new FunctionCall("NOW")), "inner"));
+		CompareAny scalar = new CompareAny(new FunctionCall(RECORD_LITERAL_NOW_URI, new FunctionCall("NOW")), subquery,
+				CompareOp.EQ);
+		Extension root = new Extension(outerInput, new ExtensionElem(scalar, "matched"));
+		QueryEvaluationContext context = new DelayedDatasetContext();
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+				new EvaluationStatistics(), false);
+		LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(
+				new QueryRoot(root),
+				context, strategy, (NativeLmdbQuerySource) dataset);
+		assertThat(outcome.isSupported()).as("the scalar subquery must compile as a native semantic extension")
+				.isTrue();
+		long evaluationsBefore = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get();
+		List<BindingSet> rows = evaluateStep(outcome.step());
+		assertThat(NativeScalarSubqueryValueEvaluator.EVALUATIONS.get()).isGreaterThan(evaluationsBefore);
+		assertThat(rows).hasSize(1);
+		assertThat(RECORDED).as("the outer and scalar-subquery functions must both run").hasSize(4);
+		Value now = RECORDED.getFirst();
+		assertThat(RECORDED)
+				.as("a scalar subquery must borrow the outer query's query-scoped NOW representative")
+				.allMatch(value -> value == now);
+		if (previous == null) {
+			System.clearProperty(NATIVE_FLAG);
+		} else {
+			System.setProperty(NATIVE_FLAG, previous);
+		}
+	}
+
 	private static FunctionCall recordNow(String bindingName) {
 		return new FunctionCall(RECORD_NOW_URI, new FunctionCall("NOW"), Var.of(bindingName));
 	}
@@ -227,6 +631,28 @@ public class LmdbNativeGenericBridgeScopeTest {
 		}
 		assertThat(rows).as("the filter accepts everything, so all statements must survive").isEqualTo(3);
 		return new ArrayList<>(RECORDED);
+	}
+
+	private static List<BindingSet> evaluateStep(QueryEvaluationStep step) {
+		return evaluateStep(step, EmptyBindingSet.getInstance());
+	}
+
+	private static List<BindingSet> evaluateStep(QueryEvaluationStep step, BindingSet bindings) {
+		List<BindingSet> rows = new ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(bindings)) {
+			while (iteration.hasNext()) {
+				rows.add(iteration.next());
+			}
+		}
+		return rows;
+	}
+
+	private static Value valueForSubject(List<BindingSet> rows, String subject) {
+		return rows.stream()
+				.filter(row -> subject.equals(row.getValue("s").stringValue()))
+				.findFirst()
+				.orElseThrow()
+				.getValue("now");
 	}
 
 	private static final class EmptyTripleSource implements org.eclipse.rdf4j.query.algebra.evaluation.TripleSource {

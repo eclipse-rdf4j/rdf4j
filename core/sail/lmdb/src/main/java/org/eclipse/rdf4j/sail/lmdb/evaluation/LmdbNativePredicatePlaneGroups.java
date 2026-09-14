@@ -102,7 +102,7 @@ final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		if (!bindings.isEmpty()) {
-			return genericStep().evaluate(bindings);
+			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
 		LmdbAdjacencyOptimizationTelemetry telemetry = LmdbAdjacencyOptimizationTelemetry.create(originalExpr,
 				LmdbAdjacencyOptimizationTelemetry.Grain.PLANE,
@@ -117,7 +117,7 @@ final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
 			throw new QueryEvaluationException(e);
 		}
 		if (groups == null) {
-			return genericStep().evaluate(bindings);
+			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
 		ArrayList<BindingSet> rows = new ArrayList<>(groups.size());
 		for (GroupState group : groups.values()) {
@@ -134,7 +134,7 @@ final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
 			telemetry.publish(originalExpr);
 		}
 		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS);
-		return new CloseableIteratorIteration<>(rows.iterator());
+		return NativeExecutionContextCarrier.forEvaluation(new CloseableIteratorIteration<>(rows.iterator()), source);
 	}
 
 	private Map<Literal, GroupState> collectGroups(LmdbAdjacencyOptimizationTelemetry telemetry) throws IOException {

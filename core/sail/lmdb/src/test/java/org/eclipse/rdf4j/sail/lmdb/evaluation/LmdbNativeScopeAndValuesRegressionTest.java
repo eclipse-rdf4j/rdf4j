@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.util.List;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Value;
@@ -26,18 +27,25 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /** Regression tests for scoped groups and post-query VALUES in the LMDB native query engine. */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbNativeScopeAndValuesRegressionTest {
 
 	private static final String EX = "http://example.org/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String JANINO_ENABLED = "rdf4j.lmdb.janinoCodegen.enabled";
+	private static final String JANINO_THRESHOLD_ROWS = "rdf4j.lmdb.janinoCodegen.thresholdRows";
+	private static final String JANINO_SYNCHRONOUS = "rdf4j.lmdb.janinoCodegen.synchronous";
 
 	@TempDir
 	File dataDir;
@@ -264,6 +272,67 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 	}
 
 	@Test
+	public void languageTagCaseVariantsDeduplicateInInterpretedKernel() {
+		String query = "SELECT DISTINCT ?value WHERE {\n"
+				+ "  VALUES ?value { \"hello\"@EN \"hello\"@en }\n"
+				+ "}";
+
+		List<String> generic = rows(query, false, null, null);
+		List<String> interpreted = rows(query, true, null, null,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED);
+		assertThat(interpreted).as("interpreted DISTINCT must use RDF-term key semantics").isEqualTo(generic);
+		assertThat(interpreted).hasSize(1);
+	}
+
+	@Test
+	public void distinctKeepsNonEqualNumericLexicalFormsSeparate() {
+		String query = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n"
+				+ "SELECT DISTINCT ?value WHERE {\n"
+				+ "  VALUES ?value { \"01\"^^xsd:integer \"1\"^^xsd:integer }\n"
+				+ "}";
+
+		List<String> generic = rows(query, false, null, null);
+		List<String> nativeRows = rows(query, true, null, null);
+		assertThat(nativeRows).as("numeric lexical forms are different RDF terms").isEqualTo(generic);
+		assertThat(nativeRows).hasSize(2);
+	}
+
+	@Test
+	public void nestedTripleTermsDeduplicateWithRdfTermKeys() {
+		String query = "PREFIX : <" + EX + ">\n"
+				+ "SELECT DISTINCT ?value WHERE {\n"
+				+ "  VALUES ?value { <<( :a :p :o )>> <<( :a :p :o )>>\n"
+				+ "    <<( :a :p <<( :inner-p :inner-o :inner-v )>> )>> }\n"
+				+ "}";
+
+		List<String> generic = rows(query, false, null, null);
+		List<String> nativeRows = rows(query, true, null, null);
+		assertThat(nativeRows).as("nested RDF-star terms must use recursive term equality").isEqualTo(generic);
+		assertThat(nativeRows).hasSize(2);
+	}
+
+	@Test
+	public void interleavedValuesRemainDistinctAcrossCompiledAndInterpretedKernels() {
+		String query = "SELECT DISTINCT ?value WHERE {\n"
+				+ "  VALUES ?value { \"x\"@EN \"y\"@en \"x\"@en }\n"
+				+ "}";
+
+		List<String> generic = rows(query, false, null, null);
+		List<String> compiled = withProperty(JANINO_ENABLED, "true",
+				() -> withProperty(JANINO_THRESHOLD_ROWS, "0",
+						() -> withProperty(JANINO_SYNCHRONOUS, "true",
+								() -> rows(query, true, null, null,
+										LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT))));
+		List<String> interpreted = withProperty(JANINO_ENABLED, "false",
+				() -> rows(query, true, null, null,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED));
+
+		assertThat(compiled).as("compiled DISTINCT must retain noncontiguous RDF-term keys").isEqualTo(generic);
+		assertThat(interpreted).as("interpreted DISTINCT must retain noncontiguous RDF-term keys").isEqualTo(generic);
+		assertThat(generic).hasSize(2);
+	}
+
+	@Test
 	public void scopedGroupInsideExistsCompilesAsCorrelatedWitness() {
 		String query = "PREFIX : <" + EX + ">\n"
 				+ "SELECT ?s WHERE {\n"
@@ -301,11 +370,19 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 	}
 
 	private List<String> rows(String query, boolean nativeEnabled, String bindingName, Value bindingValue) {
+		return rows(query, nativeEnabled, bindingName, bindingValue, null);
+	}
+
+	private List<String> rows(String query, boolean nativeEnabled, String bindingName, Value bindingValue,
+			String forcedStrategy) {
 		String previous = System.getProperty(NATIVE_FLAG);
 		try {
 			System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEnabled));
 			try (SailRepositoryConnection conn = repository.getConnection()) {
 				TupleQuery tupleQuery = conn.prepareTupleQuery(query);
+				if (forcedStrategy != null) {
+					((SailTupleQuery) tupleQuery).setForcedLmdbExecutionStrategy(forcedStrategy);
+				}
 				if (bindingName != null) {
 					tupleQuery.setBinding(bindingName, bindingValue);
 				}
@@ -342,6 +419,20 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 			System.clearProperty(NATIVE_FLAG);
 		} else {
 			System.setProperty(NATIVE_FLAG, previous);
+		}
+	}
+
+	private static <T> T withProperty(String property, String value, Supplier<T> action) {
+		String previous = System.getProperty(property);
+		try {
+			System.setProperty(property, value);
+			return action.get();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
 		}
 	}
 }

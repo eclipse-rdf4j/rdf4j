@@ -175,6 +175,14 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			int subjectTypeKeyPosition, String[] groupNames, String[] aggregateNames, MaskedFilter[] predicateFilters,
 			int edgePredicateSlot, NativeSlotLayout layout, LmdbNativeEvaluationStrategy strategy,
 			TupleExpr originalExpr, QueryEvaluationContext context) {
+		this(source, subjectTypePredicate, objectTypePredicate, subjectTypeKeyPosition, groupNames, aggregateNames,
+				predicateFilters, edgePredicateSlot, layout, strategy, originalExpr, context, true);
+	}
+
+	private LmdbNativeTypeMatrix(NativeLmdbQuerySource source, long subjectTypePredicate, long objectTypePredicate,
+			int subjectTypeKeyPosition, String[] groupNames, String[] aggregateNames, MaskedFilter[] predicateFilters,
+			int edgePredicateSlot, NativeSlotLayout layout, LmdbNativeEvaluationStrategy strategy,
+			TupleExpr originalExpr, QueryEvaluationContext context, boolean countPlan) {
 		this.source = source;
 		this.subjectTypePredicate = subjectTypePredicate;
 		this.objectTypePredicate = objectTypePredicate;
@@ -187,7 +195,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		this.strategy = strategy;
 		this.originalExpr = originalExpr;
 		this.context = context;
-		PLANNED.incrementAndGet();
+		if (countPlan) {
+			PLANNED.incrementAndGet();
+		}
 	}
 
 	private boolean linkageMode() {
@@ -220,8 +230,24 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		return evaluate(bindings, SyntheticValueSource.forEvaluation(source));
+	}
+
+	/**
+	 * Evaluates this retained matrix against the source owned by the current evaluation. Predicate filters run before
+	 * any output rows exist, so they must use the same evaluation-scoped source as the matrix scan rather than the
+	 * compile-scoped source captured in this plan.
+	 */
+	CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeLmdbQuerySource evaluationSource) {
+		if (evaluationSource != source) {
+			return copyForEvaluation(evaluationSource).evaluateCurrentSource(bindings);
+		}
+		return evaluateCurrentSource(bindings);
+	}
+
+	private CloseableIteration<BindingSet> evaluateCurrentSource(BindingSet bindings) {
 		if (!bindings.isEmpty()) {
-			return genericStep().evaluate(bindings);
+			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
 		LongHashSet acceptedPredicates;
 		try {
@@ -230,7 +256,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			throw new QueryEvaluationException(e);
 		}
 		if (predicateFilters.length > 0 && acceptedPredicates == null) {
-			return genericStep().evaluate(bindings);
+			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
 		try {
 			LmdbAdjacencyOptimizationTelemetry optimization = LmdbAdjacencyOptimizationTelemetry.create(originalExpr,
@@ -249,7 +275,8 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 					optimization.publish(originalExpr);
 				}
 				LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX);
-				return new CloseableIteratorIteration<>(adjacency.iterator());
+				return NativeExecutionContextCarrier.forEvaluation(
+						new CloseableIteratorIteration<>(adjacency.iterator()), source);
 			}
 			Map<GroupKey, long[]> table = tryParallelScan(acceptedPredicates);
 			boolean parallel = table != null;
@@ -278,15 +305,28 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				PARALLEL_RUNS.incrementAndGet();
 			}
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX);
-			return new CloseableIteratorIteration<>(results.iterator());
+			return NativeExecutionContextCarrier.forEvaluation(
+					new CloseableIteratorIteration<>(results.iterator()), source);
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
 	}
 
+	private LmdbNativeTypeMatrix copyForEvaluation(NativeLmdbQuerySource evaluationSource) {
+		return new LmdbNativeTypeMatrix(evaluationSource, subjectTypePredicate, objectTypePredicate,
+				subjectTypeKeyPosition,
+				groupNames, aggregateNames, predicateFilters, edgePredicateSlot, layout, strategy, originalExpr,
+				context, false);
+	}
+
 	private synchronized QueryEvaluationStep genericStep() {
 		if (genericStep == null) {
-			genericStep = strategy.genericPrecompile(originalExpr, context);
+			QueryEvaluationContext evaluationContext = context;
+			if (source instanceof SyntheticValueSource synthetic && synthetic.executionContext() != null) {
+				evaluationContext = synthetic.executionContext()
+						.genericContext(() -> new EvaluationScopedQueryEvaluationContext(context));
+			}
+			genericStep = strategy.genericPrecompile(originalExpr, evaluationContext);
 		}
 		return genericStep;
 	}

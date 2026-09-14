@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
@@ -45,6 +46,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Engagement + exactness tests for the IR aggregate rung (plan:
@@ -53,6 +56,7 @@ import org.junit.jupiter.api.TestInstance;
  * engagement proves the new lowering. WCOJ stays off; SUM exactness is proven by a dataset value above 2^53.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbNativeKernelAggregateTest {
 
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
@@ -249,6 +253,7 @@ public class LmdbNativeKernelAggregateTest {
 		save("rdf4j.lmdb.parallel.enabled", "false");
 		save("rdf4j.lmdb.packedFtree.enabled", "false");
 		save(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
+		save(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "true");
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
 		save(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY, "true");
 		save(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
@@ -1058,10 +1063,10 @@ public class LmdbNativeKernelAggregateTest {
 	}
 
 	@Test
-	public void disabledJaninoUsesTheSemanticInterpreterTier() {
+	public void forcedInterpreterUsesTheSemanticTierWhenJaninoIsDisabled() {
 		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
 		try {
-			assertEquals(genericRows(NOT_EXISTS_COUNT_QUERY), rows(NOT_EXISTS_COUNT_QUERY));
+			assertEquals(genericRows(NOT_EXISTS_COUNT_QUERY), rows(NOT_EXISTS_COUNT_QUERY, "irAggregateInterpreted"));
 			assertTrue(KernelExecutionTestAccess.aggPlanned() > 0L);
 			assertTrue(KernelExecutionTestAccess.aggOpened() > 0L);
 			assertEquals(0L, LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get());
@@ -1096,17 +1101,24 @@ public class LmdbNativeKernelAggregateTest {
 	}
 
 	private List<String> rows(String query) {
+		return rows(query, null);
+	}
+
+	private List<String> rows(String query, String forcedStrategy) {
 		List<String> result = new ArrayList<>();
-		try (SailRepositoryConnection connection = repository.getConnection();
-				TupleQueryResult tupleResult = connection.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			while (tupleResult.hasNext()) {
-				BindingSet row = tupleResult.next();
-				List<String> bindings = new ArrayList<>();
-				for (String name : row.getBindingNames()) {
-					bindings.add(name + "=" + row.getValue(name).toString());
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery preparedQuery = (SailTupleQuery) connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			try (TupleQueryResult tupleResult = preparedQuery.evaluate()) {
+				while (tupleResult.hasNext()) {
+					BindingSet row = tupleResult.next();
+					List<String> bindings = new ArrayList<>();
+					for (String name : row.getBindingNames()) {
+						bindings.add(name + "=" + row.getValue(name).toString());
+					}
+					Collections.sort(bindings);
+					result.add(String.join("|", bindings));
 				}
-				Collections.sort(bindings);
-				result.add(String.join("|", bindings));
 			}
 		}
 		Collections.sort(result);

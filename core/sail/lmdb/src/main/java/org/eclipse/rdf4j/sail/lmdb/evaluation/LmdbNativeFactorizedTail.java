@@ -672,9 +672,9 @@ final class FactorizedTail {
 	 * aggregate needs per-record branch values beyond the key itself, the pairs are memoized per probe key, so prefix
 	 * rows sharing a hub replay the bucketed contributions from memory instead of re-scanning.
 	 */
-	void aggregateGrouped(RowState row, LongAggStateMap groups) throws IOException {
+	void aggregateGrouped(RowState row, LongAggStateMap groups, AggContext context) throws IOException {
 		if (!groupedMemoEnabled) {
-			aggregateGroupedDirect(row, groups);
+			aggregateGroupedDirect(row, groups, context);
 			return;
 		}
 		Branch branch = branches[0];
@@ -696,7 +696,7 @@ final class FactorizedTail {
 				putGroupedMemo(groupedProbe.storedCopy(), pairs, pairs.length);
 			}
 		}
-		applyGroupedPairs(pairs, row, groups);
+		applyGroupedPairs(pairs, row, groups, context);
 	}
 
 	private void putGroupedMemo(GroupKey key, long[] pairs, long reservedValues) {
@@ -736,14 +736,13 @@ final class FactorizedTail {
 		return pairs;
 	}
 
-	void applyGroupedPairs(long[] pairs, RowState row, LongAggStateMap groups) {
+	void applyGroupedPairs(long[] pairs, RowState row, LongAggStateMap groups, AggContext context) {
 		for (int pair = 0; pair < pairs.length; pair += 2) {
 			long groupKey = pairs[pair];
 			long recordCount = pairs[pair + 1];
 			AggState state = groups.get(groupKey);
 			if (state == null) {
-				// factorized tails are gated to all-COUNT specs, which never touch the value context
-				state = new AggState(specs, 16, null, hashDistinctChannels);
+				state = new AggState(specs, 16, context, hashDistinctChannels);
 				groups.put(groupKey, state);
 			}
 			for (int k = 0; k < specs.length; k++) {
@@ -770,7 +769,7 @@ final class FactorizedTail {
 	}
 
 	/** Per-record fallback when a DISTINCT aggregate needs branch values other than the group key. */
-	void aggregateGroupedDirect(RowState row, LongAggStateMap groups) throws IOException {
+	void aggregateGroupedDirect(RowState row, LongAggStateMap groups, AggContext context) throws IOException {
 		Branch branch = branches[0];
 		long[] batch = branch.batch;
 		try (PatternCursor cursor = branch.pattern.openRaw(row, branch.probe(row))) {
@@ -785,8 +784,7 @@ final class FactorizedTail {
 					long key = batch[offset + tailGroupPos];
 					AggState state = groups.get(key);
 					if (state == null) {
-						// factorized tails are gated to all-COUNT specs, which never touch the value context
-						state = new AggState(specs, 16, null, hashDistinctChannels);
+						state = new AggState(specs, 16, context, hashDistinctChannels);
 						groups.put(key, state);
 					}
 					for (int k = 0; k < specs.length; k++) {

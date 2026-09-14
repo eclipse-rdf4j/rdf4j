@@ -42,18 +42,19 @@ import org.junit.jupiter.api.io.TempDir;
  *
  * <p>
  * The contract this plan exists to establish is not "the rungs never decline" — they should decline whenever running
- * partitioned would be wrong or pointless. It is that <em>every reason they still emit is one the interpreted parallel
- * engine also declines on</em>, so "the kernel rung declined" can never again silently mean "the older tier would have
- * been faster".
+ * partitioned would be wrong or pointless. It is that <em>every capability, lowering or bind reason they still emit is
+ * one the interpreted parallel engine also declines on</em>, so "the kernel rung declined" can never again silently
+ * mean "the older tier would have been faster".
  *
  * <p>
  * That contract rots the moment someone adds a bind/capability decline reason without checking it against the
  * interpreted engine, which is exactly what happened between plans 31 and 32. So it is asserted here rather than
  * described in a document: every such reason observed across the corpus below must appear in {@link #PARITY_LEDGER},
- * each entry carrying the reason the interpreted engine stays sequential too. Arbiter loss outcomes are deliberately
- * excluded: compiled and interpreted parallel kernels are independent competitors, so either may be outranked or lose a
- * probe without implying an operator-support difference. A new capability reason fails this test until someone writes
- * that justification down.
+ * each entry carrying the reason the interpreted engine stays sequential too. Dispatch ownership and selection outcomes
+ * are deliberately excluded: they happen before a candidate's lowering or bind path runs. Compiled and interpreted
+ * parallel kernels are independent competitors, so either may be outranked, lose a probe, or be suppressed by an
+ * algorithmic specialist without implying an operator-support difference. A new capability reason fails this test until
+ * someone writes that justification down.
  *
  * <p>
  * Reading the reasons out of explain output (rather than a debug-flagged stderr stream) is what plan 32's M5 made
@@ -65,7 +66,8 @@ public class LmdbNativeParallelKernelParityLedgerTest {
 
 	private static final String STRATEGY_DECLINES_METRIC = "nativeStrategyDeclines";
 	private static final Set<String> ARBITRATION_OUTCOMES = Set.of(
-			"higher-cost", "outranked", "adaptive-higher-cost", "probe-trial-lost");
+			"higher-cost", "outranked", "adaptive-higher-cost", "probe-trial-lost",
+			"suppressed-by-algorithmic-specialist");
 
 	/**
 	 * Every decline reason the parallel kernel rungs are allowed to emit, with the reason the interpreted parallel

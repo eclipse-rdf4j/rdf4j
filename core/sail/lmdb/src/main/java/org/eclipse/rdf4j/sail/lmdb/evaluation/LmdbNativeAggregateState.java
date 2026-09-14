@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Literal;
@@ -145,25 +146,46 @@ enum AggKind {
 }
 
 /**
- * Compile-time description of one custom aggregate: the pinned third-party function (built once per compiled plan,
- * stateless between rows), the per-group collector and DISTINCT-predicate suppliers, and whether it is the n-ary
- * flavor. Argument evaluation happens inside the function through the generic precompiled steps it was built with,
- * evaluated against the row's {@link RowBindingSetView} — the exact evaluation path the generic engine uses.
+ * Compile-time description of one custom aggregate: the pinned third-party factory, the per-group collector and
+ * DISTINCT-predicate suppliers, and whether it is the n-ary flavor. The factory is instantiated once per aggregate
+ * evaluation, while its argument evaluators use that evaluation's generic context. This keeps query-scoped values such
+ * as NOW fresh across retained evaluations while preserving one processor for all groups in one evaluation.
  */
 @Experimental
 final class NativeCustomAggregate {
-	final org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?> function;
+	final org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunctionFactory unaryFactory;
+	final org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateNAryFunctionFactory nAryFactory;
+	final NativeBindingSetValueEvaluator[] argumentEvaluators;
 	final java.util.function.Supplier<org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector> collectorSupplier;
 	final boolean nAry;
 	final boolean distinct;
 
-	NativeCustomAggregate(org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?> function,
+	NativeCustomAggregate(
+			org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunctionFactory unaryFactory,
+			org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateNAryFunctionFactory nAryFactory,
+			NativeBindingSetValueEvaluator[] argumentEvaluators,
 			java.util.function.Supplier<org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector> collectorSupplier,
 			boolean nAry, boolean distinct) {
-		this.function = function;
+		this.unaryFactory = unaryFactory;
+		this.nAryFactory = nAryFactory;
+		this.argumentEvaluators = argumentEvaluators;
 		this.collectorSupplier = collectorSupplier;
 		this.nAry = nAry;
 		this.distinct = distinct;
+	}
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?> newFunction(
+			NativeExecutionContext executionContext) {
+		java.util.function.BiFunction<Integer, org.eclipse.rdf4j.query.BindingSet, org.eclipse.rdf4j.model.Value> evalByIndex = (
+				index, bindings) -> {
+			NativeValueOutcome outcome = argumentEvaluators[index].evaluate(bindings, executionContext);
+			return outcome.isBound() ? outcome.value() : null;
+		};
+		if (nAry) {
+			return nAryFactory.buildFunction(evalByIndex);
+		}
+		return unaryFactory.buildFunction(bindings -> evalByIndex.apply(0, bindings));
 	}
 
 	/** A fresh DISTINCT predicate per group, mirroring the generic DistinctValues/DistinctTupleValues. */
@@ -175,11 +197,12 @@ final class NativeCustomAggregate {
 		return seen::add;
 	}
 
-	@SuppressWarnings({ "unchecked", "rawtypes" })
 	void process(org.eclipse.rdf4j.query.BindingSet row, java.util.function.Predicate<?> predicate,
-			org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector collector) {
-		((org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor) function).processAggregate(row,
-				(java.util.function.Predicate) predicate, collector);
+			org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector collector,
+			AggContext context) {
+		((org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor) context.customFunction(this))
+				.processAggregate(row,
+						(java.util.function.Predicate) predicate, collector);
 	}
 }
 
@@ -352,6 +375,8 @@ final class AggContext {
 	private byte[] valueCacheStates = new byte[INITIAL_VALUE_CACHE_CAPACITY];
 	private int valueCacheSize;
 	private int valueCacheThreshold = INITIAL_VALUE_CACHE_CAPACITY * 3 >>> 2;
+	/** One custom processor per aggregate evaluation; processors may carry factory-local state between rows. */
+	private IdentityHashMap<NativeCustomAggregate, org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?>> customFunctions;
 
 	AggContext(NativeLmdbQuerySource source, boolean strictCompare) {
 		this(source, strictCompare, false, false);
@@ -389,6 +414,15 @@ final class AggContext {
 		valueCacheStates[slot] = OCCUPIED;
 		valueCacheSize++;
 		return value;
+	}
+
+	org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?> customFunction(
+			NativeCustomAggregate aggregate) {
+		if (customFunctions == null) {
+			customFunctions = new IdentityHashMap<>();
+		}
+		return customFunctions.computeIfAbsent(aggregate, ignored -> aggregate.newFunction(
+				source instanceof SyntheticValueSource synthetic ? synthetic.executionContext() : null));
 	}
 
 	private int valueCacheSlot(long id) {
@@ -583,7 +617,7 @@ final class AggState {
 				if (ctx.encounterOrderChanging) {
 					throw EncounterOrderFallback.customAggregateOrder();
 				}
-				specs[i].custom.process(row.view, customPredicates[i], customCollectors[i]);
+				specs[i].custom.process(row.view, customPredicates[i], customCollectors[i], ctx);
 				continue;
 			}
 			long value = specs[i].value(row);

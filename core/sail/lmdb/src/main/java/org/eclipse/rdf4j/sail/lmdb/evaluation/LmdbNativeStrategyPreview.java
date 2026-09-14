@@ -187,7 +187,7 @@ final class LmdbNativeStrategyPreview {
 		case "orderedTopK", "orderedFullSort" -> "General sorting is the fallback after ordered specialists decline";
 		case "irKernelDistinct", "irKernelDistinctInterpreted", "irKernelDistinctParallel", "irKernelDistinctParallelInterpreted" -> "Requires a DISTINCT terminal with projected slots and a fusible input";
 		case "irKernelWildcard", "irKernelWildcardInterpreted", "irAggregateWildcard", "irAggregateWildcardInterpreted" -> "Requires a supported wildcard-predicate terminal";
-		case "irAggregateNodeDomainIntersection" -> "Requires a recognized node-domain intersection aggregate";
+		case "irAggregateNodeDomainIntersection", "irAggregateNodeDomainIntersectionInterpreted" -> "Requires a recognized node-domain intersection aggregate";
 		case "irAggregateTypeMatrix", "irAggregateTypeMatrixInterpreted", "irAggregateTypeMatrixParallel", "irAggregateTypeMatrixParallelInterpreted" -> "Requires a recognized type-matrix aggregate terminal";
 		case "irAggregate", "irAggregateInterpreted", "irAggregateParallel", "irAggregateParallelInterpreted" -> "This aggregate dispatch uses a specialized terminal or an algorithmic specialist";
 		case "irKernel", "irKernelInterpreted", "irKernelParallel", "irKernelParallelInterpreted" -> "The compiled row terminal uses a specialized wildcard route";

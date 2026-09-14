@@ -132,8 +132,9 @@ public class ThemeQueryBenchmark {
 
 	/**
 	 * Matched control for IR execution. Disabled trials use neither compiled nor interpreted IR kernels or fragments.
-	 * Auto trials use the engine defaults, including normal Janino thresholds and asynchronous compilation. Each trial
-	 * restores the caller's properties, including when running both modes in the same JVM via {@link #main}.
+	 * Both modes set the Janino threshold to zero for the trial; disabled trials compile asynchronously, while auto
+	 * trials compile synchronously so their IR measurements are deterministic. Each trial restores the caller's
+	 * properties, including when running both modes in the same JVM via {@link #main}.
 	 */
 	@Param({ "auto" })
 //	@Param({  "auto","disabled" })

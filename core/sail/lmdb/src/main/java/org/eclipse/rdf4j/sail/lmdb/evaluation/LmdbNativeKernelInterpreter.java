@@ -136,7 +136,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	/**
 	 * Returns an interpreted kernel for the row rung (M4), or null when the kernel is not interpretable (Aggregate
 	 * terminals go through {@link #forAggregate}; unknown node kinds decline). Uses demand-driven pull frames across
-	 * delegated row boundaries for nonblocking terminals. Pure native pipelines and blocking ORDER BY retain the
+	 * every supported unordered resumable pipeline; blocking ORDER BY and non-resumable direct callers retain the
 	 * existing materialized implementation.
 	 */
 	static JaninoKernel forRows(Kernel kernel) {
@@ -144,6 +144,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return null;
 		}
 		if (!supported(kernel.pipeline)) {
+			return null;
+		}
+		// The execution plane may request this tier because the shape advertises resumability. Refuse that
+		// admission unless every producer has a stateful pull implementation; otherwise the fallback in bind would
+		// silently materialize the whole result before satisfying the first fill.
+		if (kernel.resumable && !pullSupported(kernel.pipeline)) {
 			return null;
 		}
 		return new LmdbNativeKernelInterpreter(kernel);
@@ -351,7 +357,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}
 		}
 
-		this.out = new long[kernel.boundedOrder ? 0 : Math.max(stride * 64, 64)];
+		boolean demandDriven = emit != null && emit.mods.orderKeys == null && kernel.resumable
+				&& pullSupported(kernel.pipeline);
+		this.out = new long[kernel.boundedOrder || demandDriven ? 0 : Math.max(stride * 64, 64)];
 		if (kernel.boundedOrder) {
 			OutputMods mods = kernel.terminal.mods;
 			this.orderedRows = new KernelOrderSink(stride, mods.orderKeys, mods.descending,
@@ -366,7 +374,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 		// Build the op chain. Site lists and cursors are collected as a side effect, in the same DFS order the
 		// emitter numbers its methods and sites.
-		if (emit != null && emit.mods.orderKeys == null && hasPlanRows(kernel.pipeline)) {
+		if (demandDriven) {
 			this.pullRows = new PullPipeline(kernel.pipeline);
 		} else {
 			this.root = kernel.aggregateProjections != null
@@ -399,7 +407,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (emit.distinct) {
 			int residual = emit.cols.length - emit.alignedCount;
 			if (residual > 0) {
-				dedup = new KernelRuntime.RowSet(residual, keyHooks == hooks ? null : keyHooks);
+				dedup = new KernelRuntime.RowSet(residual,
+						kernel.requirements.semanticKeys ? keyHooks : keyHooks == hooks ? null : keyHooks);
 			}
 			if (emit.alignedCount > 0) {
 				dal = new long[emit.alignedCount];
@@ -541,25 +550,80 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private long pullAccepted;
 	private boolean pullDone;
 
-	private static boolean hasPlanRows(List<Node> nodes) {
+	/**
+	 * Whether every node in a resumable row pipeline has a stateful pull representation. This deliberately mirrors
+	 * {@link #pullStage(Node)} instead of treating {@link #supported(List)} as a demand guarantee: the latter only
+	 * answers whether the fused operation builder knows a node, while its final fallback collects all rows in a list.
+	 */
+	private static boolean pullSupported(List<Node> nodes) {
 		for (Node node : nodes) {
-			if (node instanceof PlanRows)
-				return true;
 			if (node instanceof Union union) {
-				for (List<Node> branch : union.branches)
-					if (hasPlanRows(branch))
-						return true;
-			} else if (node instanceof LeftGroup left && hasPlanRows(left.arm))
-				return true;
-			else if (node instanceof Exists exists && hasPlanRows(exists.pipeline))
-				return true;
-			else if (node instanceof LexicalFrameLeftJoin left
-					&& (hasPlanRows(left.left) || hasPlanRows(left.right)))
-				return true;
-			else if (node instanceof HashBuild build && hasPlanRows(build.pipeline))
-				return true;
+				for (List<Node> branch : union.branches) {
+					if (!pullSupported(branch)) {
+						return false;
+					}
+				}
+				continue;
+			}
+			if (node instanceof LeftGroup left) {
+				if (!pullSupported(left.arm)) {
+					return false;
+				}
+				continue;
+			}
+			if (node instanceof LexicalFrameLeftJoin lexical) {
+				if (!pullSupported(lexical.left) || !pullSupported(lexical.right)) {
+					return false;
+				}
+				continue;
+			}
+			if (node instanceof Exists || node instanceof HashBuild) {
+				// These are single-activation nodes. Their witness/build operation is intentionally blocking
+				// internally,
+				// but it emits at most one continuation to the enclosing pull frame and never uses the list fallback.
+				continue;
+			}
+			if (node instanceof PlanRows || node instanceof EnumerateNodeDomainIntersection
+					|| node instanceof EnumerateTerms
+					|| node instanceof PathExpand || node instanceof Intersect || node instanceof ProbeVariable
+					|| node instanceof LeftProbe || node instanceof EnumerateDomain || node instanceof Probe
+					|| node instanceof EnumerateAdjKeys || node instanceof ScanQuad || node instanceof HashProbe
+					|| node instanceof ProbeClose || node instanceof SipDomainProbe || node instanceof SipKeyProbe
+					|| node instanceof EnumerateEntry
+					|| node instanceof BindAlias || node instanceof BindHook || node instanceof FilterCompareId
+					|| node instanceof FilterEntryCompatible || node instanceof FilterInConstants
+					|| node instanceof FilterRangeUnsigned || node instanceof FilterDateCompare
+					|| node instanceof LmdbNativeKernelIr.FilterFragmentCompare || node instanceof FilterValue
+					|| node instanceof FilterResidual) {
+				continue;
+			}
+			if (node instanceof EnumeratePredicates enumerate) {
+				if (enumerate.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+					return false;
+				}
+				continue;
+			}
+			if (node instanceof EnumerateWildcard enumerate) {
+				if (enumerate.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+					return false;
+				}
+				continue;
+			}
+			if (node instanceof SipDomainWildcard wildcard) {
+				if (wildcard.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+					return false;
+				}
+				continue;
+			}
+			if (node instanceof SipKeyWildcard wildcard) {
+				if (wildcard.demand != LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+					return false;
+				}
+				continue;
+			}
+			return false;
 		}
-		return false;
+		return true;
 	}
 
 	private int fillPull(long[] target, int maximum) {
@@ -1155,6 +1219,31 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 			};
 		}
+		if (node instanceof EnumeratePredicates enumerate
+				&& enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+			return pullEnumeratePredicates(enumerate);
+		}
+		if (node instanceof EnumerateWildcard enumerate
+				&& enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+			return pullEnumerateWildcard(enumerate);
+		}
+		if (node instanceof ProbeClose close) {
+			return pullProbeClose(close);
+		}
+		if (node instanceof SipDomainProbe probe) {
+			return pullSipDomainProbe(probe);
+		}
+		if (node instanceof SipKeyProbe probe) {
+			return pullSipKeyProbe(probe);
+		}
+		if (node instanceof SipDomainWildcard probe
+				&& probe.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+			return pullSipDomainWildcard(probe);
+		}
+		if (node instanceof SipKeyWildcard probe
+				&& probe.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
+			return pullSipKeyWildcard(probe);
+		}
 		if (node instanceof EnumerateEntry || node instanceof BindAlias || node instanceof BindHook
 				|| node instanceof FilterResidual || LmdbNativeKernelIr.isFilter(node)
 				|| node instanceof FilterEntryCompatible || node instanceof Exists || node instanceof HashBuild) {
@@ -1205,6 +1294,600 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			@Override
 			void release() {
 				rows.clear();
+			}
+		};
+	}
+
+	private PullStage pullProbeClose(ProbeClose close) {
+		NativeLmdbQuerySource.RunView view = close.dynamic ? context.dynamicAdjacencies[close.adjacency]
+				: context.adjacencies[close.adjacency];
+		return new PullStage() {
+			long remaining;
+
+			@Override
+			void reset() {
+				remaining = 0L;
+				long key = read(close.key);
+				long target = read(close.target);
+				if (key == -1L || target == -1L) {
+					return;
+				}
+				long run;
+				if (close.dynamic) {
+					long predicate = read(close.predicate);
+					if (predicate == -1L) {
+						return;
+					}
+					run = context.dynamicAdjacencies[close.adjacency].runFor(key, predicate);
+					if (run == NativeLmdbQuerySource.DynamicAdjacency.NOT_COVERED) {
+						throw new IllegalStateException(
+								"dynamic adjacency refused a runtime predicate after kernel bind");
+					}
+				} else {
+					run = context.adjacencies[close.adjacency].find(key);
+				}
+				if (run <= 0L) {
+					return;
+				}
+				long end = view.size(run);
+				long start = close.seek ? view.lowerBound(run, 0L, target, 0L) : -1L;
+				if (start >= 0L) {
+					for (long i = start; i < end && view.neighborAt(run, i) == target; i++) {
+						poll();
+						remaining++;
+					}
+				} else {
+					for (long i = 0L; i < end; i++) {
+						poll();
+						if (view.neighborAt(run, i) == target) {
+							remaining++;
+						}
+					}
+				}
+				if (!close.multiplicity && remaining > 1L) {
+					remaining = 1L;
+				}
+			}
+
+			@Override
+			boolean advance() {
+				if (remaining == 0L) {
+					return false;
+				}
+				poll();
+				remaining--;
+				return true;
+			}
+		};
+	}
+
+	private PullStage pullEnumeratePredicates(EnumeratePredicates enumerate) {
+		if (enumerate.wildcard) {
+			return pullEnumerateWildcardPredicates(enumerate);
+		}
+		NativeLmdbQuerySource.NodePredicates predicates = context.nodePredicates[enumerate.view];
+		return new PullStage() {
+			NativeLmdbQuerySource.NodePredicates.PredicateRowCursor cursor;
+			long run;
+			long predicate;
+			long position;
+			long end;
+
+			@Override
+			void reset() {
+				position = end = 0L;
+				long key = read(enumerate.key);
+				cursor = key == -1L ? null : predicates.openRow(key);
+				if (key != -1L && cursor == null) {
+					throw new IllegalStateException("node-predicate projection refused a node after kernel bind");
+				}
+			}
+
+			@Override
+			boolean advance() {
+				while (cursor != null) {
+					while (position < end) {
+						poll();
+						long at = position++;
+						if (enumerate.ctxActive()) {
+							long ctx = predicates.contextAt(run, at);
+							if (!ctxAccepted(ctx, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+								continue;
+							}
+							if (enumerate.ctxCol >= 0) {
+								v[enumerate.ctxCol] = ctx;
+							}
+						}
+						v[enumerate.predicateCol] = predicate;
+						v[enumerate.valueCol] = predicates.neighborAt(run, at);
+						return true;
+					}
+					if (!cursor.advance()) {
+						return false;
+					}
+					predicate = cursor.predicate();
+					v[enumerate.predicateCol] = predicate;
+					run = cursor.runHandle();
+					end = predicates.size(run);
+					position = 0L;
+				}
+				return false;
+			}
+
+			@Override
+			void release() {
+				NativeLmdbQuerySource.NodePredicates.PredicateRowCursor owned = cursor;
+				cursor = null;
+				KernelRuntime.closeCursor(owned, null);
+			}
+		};
+	}
+
+	private PullStage pullEnumerateWildcardPredicates(EnumeratePredicates enumerate) {
+		NativeLmdbQuerySource.WildcardAdjacency wildcard = context.wildcardAdjacencies[enumerate.view];
+		long[] keys = new long[1];
+		long[] runs = new long[1];
+		return new PullStage() {
+			int predicateOrdinal;
+			long key;
+			long target;
+			long run;
+			long position;
+			long end;
+
+			@Override
+			void reset() {
+				predicateOrdinal = 0;
+				position = end = 0L;
+				key = read(enumerate.key);
+				target = enumerate.target == null ? -1L : read(enumerate.target);
+				if (key == -1L || enumerate.target != null && target == -1L) {
+					predicateOrdinal = wildcard.predicateCount();
+				}
+			}
+
+			@Override
+			boolean advance() {
+				while (true) {
+					while (position < end) {
+						poll();
+						long at = position++;
+						if (enumerate.ctxActive()) {
+							long ctx = wildcard.contextAt(run, at);
+							if (!ctxAccepted(ctx, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+								continue;
+							}
+							if (enumerate.ctxCol >= 0) {
+								v[enumerate.ctxCol] = ctx;
+							}
+						}
+						long neighbor = wildcard.neighborAt(run, at);
+						if (enumerate.target != null && neighbor != target) {
+							continue;
+						}
+						v[enumerate.predicateCol] = wildcard.predicateAt(predicateOrdinal - 1);
+						if (enumerate.valueCol >= 0) {
+							v[enumerate.valueCol] = neighbor;
+						}
+						return true;
+					}
+					if (predicateOrdinal >= wildcard.predicateCount()) {
+						return false;
+					}
+					int current = predicateOrdinal++;
+					poll();
+					wildcard.bind(current);
+					keys[0] = key;
+					wildcard.findBatch(keys, 0, 1, runs, 0);
+					run = runs[0];
+					if (run == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
+						throw new IllegalStateException("wildcard adjacency refused a node after kernel bind");
+					}
+					if (run <= 0L) {
+						continue;
+					}
+					end = wildcard.size(run);
+					position = 0L;
+				}
+			}
+		};
+	}
+
+	private PullStage pullEnumerateWildcard(EnumerateWildcard enumerate) {
+		NativeLmdbQuerySource.WildcardAdjacency wildcard = context.wildcardAdjacencies[enumerate.view];
+		return new PullStage() {
+			int predicateOrdinal;
+			NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor;
+			long key;
+			long position;
+			long end;
+
+			@Override
+			void reset() {
+				predicateOrdinal = 0;
+				position = end = 0L;
+				cursor = null;
+			}
+
+			@Override
+			boolean advance() {
+				while (true) {
+					while (cursor != null && position < end) {
+						poll();
+						long at = position++;
+						if (enumerate.ctxActive()) {
+							long ctx = cursor.contextAt(at);
+							if (!ctxAccepted(ctx, enumerate.ctxMatch, enumerate.ctxExcludeDefault)) {
+								continue;
+							}
+							if (enumerate.ctxCol >= 0) {
+								v[enumerate.ctxCol] = ctx;
+							}
+						}
+						v[enumerate.keyCol] = key;
+						v[enumerate.predicateCol] = wildcard.predicateAt(predicateOrdinal - 1);
+						v[enumerate.valueCol] = cursor.neighborAt(at);
+						return true;
+					}
+					if (cursor != null) {
+						if (cursor.advance()) {
+							key = cursor.key();
+							end = cursor.runSize();
+							position = 0L;
+							continue;
+						}
+						NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor owned = cursor;
+						cursor = null;
+						KernelRuntime.closeCursor(owned, null);
+					}
+					if (predicateOrdinal >= wildcard.predicateCount()) {
+						return false;
+					}
+					int current = predicateOrdinal++;
+					poll();
+					wildcard.bind(current);
+					cursor = wildcard.openKeyRunCursor();
+					if (cursor == null) {
+						throw new IllegalStateException("wildcard plane refused key enumeration after bind");
+					}
+					if (!cursor.advance()) {
+						continue;
+					}
+					key = cursor.key();
+					end = cursor.runSize();
+					position = 0L;
+				}
+			}
+
+			@Override
+			void release() {
+				NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor owned = cursor;
+				cursor = null;
+				KernelRuntime.closeCursor(owned, null);
+			}
+		};
+	}
+
+	private PullStage pullSipDomainProbe(SipDomainProbe probe) {
+		NativeLmdbQuerySource.NativeAdjacency adjacency = context.adjacencies[probe.probeAdjacency];
+		long[] domain = context.keyDomains[probe.domain];
+		int domainOffset = context.keyDomainOffsets[probe.domain];
+		int domainLength = context.keyDomainLengths[probe.domain];
+		long[] handles = new long[KEY_CHUNK];
+		int site = registerSipBatchProbe(probe);
+		return new PullStage() {
+			int domainPosition;
+			int batchBase;
+			int batchCount;
+			int lane;
+			long run;
+			long position;
+			long end;
+
+			@Override
+			void reset() {
+				domainPosition = batchBase = batchCount = lane = 0;
+				run = -1L;
+				position = end = 0L;
+			}
+
+			@Override
+			boolean advance() {
+				while (true) {
+					while (run > 0L && position < end) {
+						poll();
+						long at = position++;
+						if (probe.ctxActive()) {
+							long ctx = adjacency.contextAt(run, at);
+							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
+								continue;
+							}
+							if (probe.ctxCol >= 0) {
+								v[probe.ctxCol] = ctx;
+							}
+						}
+						v[probe.keyCol] = domain[domainOffset + batchBase + lane - 1];
+						v[probe.valueCol] = adjacency.neighborAt(run, at);
+						return true;
+					}
+					if (lane < batchCount) {
+						run = handles[lane++];
+						if (run <= 0L) {
+							continue;
+						}
+						end = adjacency.size(run);
+						position = 0L;
+						continue;
+					}
+					if (domainPosition >= domainLength) {
+						return false;
+					}
+					batchBase = domainPosition;
+					batchCount = Math.min(KEY_CHUNK, domainLength - domainPosition);
+					domainPosition += batchCount;
+					lane = 0;
+					poll();
+					int found = adjacency.findBatch(domain, domainOffset + batchBase, batchCount, handles, 0);
+					if (telemetry) {
+						sipBatchTests[site] += batchCount;
+						sipBatchRejects[site] += batchCount - found;
+					}
+				}
+			}
+		};
+	}
+
+	private PullStage pullSipKeyProbe(SipKeyProbe probe) {
+		NativeLmdbQuerySource.NativeAdjacency domain = context.adjacencies[probe.domainAdjacency];
+		NativeLmdbQuerySource.NativeAdjacency adjacency = context.adjacencies[probe.probeAdjacency];
+		NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[] slot = keyCursorSlot();
+		long[] keys = new long[KEY_CHUNK];
+		long[] handles = new long[KEY_CHUNK];
+		int site = registerSipBatchProbe(probe);
+		return new PullStage() {
+			NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor;
+			int batchCount;
+			int lane;
+			long run;
+			long position;
+			long end;
+
+			@Override
+			void reset() {
+				batchCount = lane = 0;
+				run = -1L;
+				position = end = 0L;
+				cursor = domain.openKeyRunCursor();
+				slot[0] = cursor;
+			}
+
+			@Override
+			boolean advance() {
+				while (true) {
+					while (run > 0L && position < end) {
+						poll();
+						long at = position++;
+						if (probe.ctxActive()) {
+							long ctx = adjacency.contextAt(run, at);
+							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
+								continue;
+							}
+							if (probe.ctxCol >= 0) {
+								v[probe.ctxCol] = ctx;
+							}
+						}
+						v[probe.keyCol] = keys[lane - 1];
+						v[probe.valueCol] = adjacency.neighborAt(run, at);
+						return true;
+					}
+					if (lane < batchCount) {
+						run = handles[lane++];
+						if (run <= 0L) {
+							continue;
+						}
+						end = adjacency.size(run);
+						position = 0L;
+						continue;
+					}
+					if (cursor == null) {
+						return false;
+					}
+					batchCount = cursor.fillKeys(keys, 0, KEY_CHUNK);
+					if (batchCount == 0) {
+						return false;
+					}
+					lane = 0;
+					poll();
+					int found = adjacency.findBatch(keys, 0, batchCount, handles, 0);
+					if (telemetry) {
+						sipBatchTests[site] += batchCount;
+						sipBatchRejects[site] += batchCount - found;
+					}
+				}
+			}
+
+			@Override
+			void release() {
+				NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor owned = cursor;
+				cursor = null;
+				slot[0] = null;
+				KernelRuntime.closeCursor(owned, null);
+			}
+		};
+	}
+
+	private PullStage pullSipDomainWildcard(SipDomainWildcard probe) {
+		NativeLmdbQuerySource.WildcardAdjacency wildcard = context.wildcardAdjacencies[probe.wildcardView];
+		long[] domain = context.keyDomains[probe.domain];
+		int domainOffset = context.keyDomainOffsets[probe.domain];
+		int domainLength = context.keyDomainLengths[probe.domain];
+		long[] handles = new long[KEY_CHUNK];
+		return new PullStage() {
+			int predicateOrdinal;
+			int domainPosition;
+			int batchBase;
+			int batchCount;
+			int lane;
+			boolean predicateBound;
+			long run;
+			long position;
+			long end;
+
+			@Override
+			void reset() {
+				predicateOrdinal = 0;
+				predicateBound = false;
+				domainPosition = batchBase = batchCount = lane = 0;
+				run = -1L;
+				position = end = 0L;
+			}
+
+			@Override
+			boolean advance() {
+				while (true) {
+					while (run > 0L && position < end) {
+						poll();
+						long at = position++;
+						if (probe.ctxActive()) {
+							long ctx = wildcard.contextAt(run, at);
+							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
+								continue;
+							}
+							if (probe.ctxCol >= 0) {
+								v[probe.ctxCol] = ctx;
+							}
+						}
+						v[probe.keyCol] = domain[domainOffset + batchBase + lane - 1];
+						v[probe.predicateCol] = wildcard.predicateAt(predicateOrdinal - 1);
+						v[probe.valueCol] = wildcard.neighborAt(run, at);
+						return true;
+					}
+					if (lane < batchCount) {
+						long current = handles[lane++];
+						if (current == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
+							throw new IllegalStateException("wildcard adjacency refused a SIP plane after kernel bind");
+						}
+						run = current;
+						if (run <= 0L) {
+							continue;
+						}
+						end = wildcard.size(run);
+						position = 0L;
+						continue;
+					}
+					if (predicateBound && domainPosition < domainLength) {
+						batchBase = domainPosition;
+						batchCount = Math.min(KEY_CHUNK, domainLength - domainPosition);
+						domainPosition += batchCount;
+						lane = 0;
+						wildcard.findBatch(domain, domainOffset + batchBase, batchCount, handles, 0);
+						poll();
+						continue;
+					}
+					if (predicateBound) {
+						predicateBound = false;
+					}
+					if (predicateOrdinal >= wildcard.predicateCount()) {
+						return false;
+					}
+					wildcard.bind(predicateOrdinal++);
+					predicateBound = true;
+					domainPosition = batchBase = batchCount = lane = 0;
+					run = -1L;
+					position = end = 0L;
+				}
+			}
+		};
+	}
+
+	private PullStage pullSipKeyWildcard(SipKeyWildcard probe) {
+		NativeLmdbQuerySource.NativeAdjacency domain = context.adjacencies[probe.domainAdjacency];
+		NativeLmdbQuerySource.WildcardAdjacency wildcard = context.wildcardAdjacencies[probe.wildcardView];
+		NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[] slot = keyCursorSlot();
+		long[] keys = new long[KEY_CHUNK];
+		long[] handles = new long[KEY_CHUNK];
+		return new PullStage() {
+			NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor;
+			int predicateOrdinal;
+			int batchCount;
+			int lane;
+			long run;
+			long position;
+			long end;
+
+			@Override
+			void reset() {
+				cursor = null;
+				predicateOrdinal = 0;
+				batchCount = lane = 0;
+				run = -1L;
+				position = end = 0L;
+			}
+
+			@Override
+			boolean advance() {
+				while (true) {
+					while (run > 0L && position < end) {
+						poll();
+						long at = position++;
+						if (probe.ctxActive()) {
+							long ctx = wildcard.contextAt(run, at);
+							if (!ctxAccepted(ctx, probe.ctxMatch, probe.ctxExcludeDefault)) {
+								continue;
+							}
+							if (probe.ctxCol >= 0) {
+								v[probe.ctxCol] = ctx;
+							}
+						}
+						v[probe.keyCol] = keys[lane - 1];
+						v[probe.predicateCol] = wildcard.predicateAt(predicateOrdinal - 1);
+						v[probe.valueCol] = wildcard.neighborAt(run, at);
+						return true;
+					}
+					if (lane < batchCount) {
+						long current = handles[lane++];
+						if (current == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
+							throw new IllegalStateException("wildcard adjacency refused a SIP plane after bind");
+						}
+						run = current;
+						if (run <= 0L) {
+							continue;
+						}
+						end = wildcard.size(run);
+						position = 0L;
+						continue;
+					}
+					if (cursor == null) {
+						if (predicateOrdinal >= wildcard.predicateCount()) {
+							return false;
+						}
+						wildcard.bind(predicateOrdinal++);
+						cursor = domain.openKeyRunCursor();
+						slot[0] = cursor;
+						if (cursor == null) {
+							return false;
+						}
+					}
+					batchCount = cursor.fillKeys(keys, 0, KEY_CHUNK);
+					if (batchCount == 0) {
+						NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor owned = cursor;
+						cursor = null;
+						slot[0] = null;
+						KernelRuntime.closeCursor(owned, null);
+						continue;
+					}
+					lane = 0;
+					wildcard.findBatch(keys, 0, batchCount, handles, 0);
+					poll();
+				}
+			}
+
+			@Override
+			void release() {
+				NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor owned = cursor;
+				cursor = null;
+				slot[0] = null;
+				KernelRuntime.closeCursor(owned, null);
 			}
 		};
 	}
@@ -3247,7 +3930,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				boolean advance = !dseen;
 				if (!advance) {
 					for (int i = 0; i < aligned; i++) {
-						if (rowScratch[i] != dal[i]) {
+						if (kernel.requirements.semanticKeys
+								? !keyHooks.sameRdfTerm(rowScratch[i], dal[i])
+								: rowScratch[i] != dal[i]) {
 							advance = true;
 							break;
 						}

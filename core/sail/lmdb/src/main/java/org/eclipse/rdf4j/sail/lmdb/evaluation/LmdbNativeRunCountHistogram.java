@@ -103,7 +103,7 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		if (!bindings.isEmpty()) {
 			// correlated evaluation could constrain inner variables; the run-counting scan cannot honor that
-			return genericStep().evaluate(bindings);
+			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
 		LmdbAdjacencyOptimizationTelemetry telemetry = LmdbAdjacencyOptimizationTelemetry.create(originalExpr,
 				LmdbAdjacencyOptimizationTelemetry.Grain.ROOT,
@@ -116,7 +116,7 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 			histogram = sequentialHistogram(telemetry);
 		}
 		if (histogram == null) {
-			return genericStep().evaluate(bindings);
+			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
 		ArrayList<BindingSet> rows = new ArrayList<>(histogram.size);
 		for (int slot = 0; slot < histogram.keys.length; slot++) {
@@ -135,7 +135,7 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 			telemetry.publish(originalExpr);
 		}
 		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM);
-		return new CloseableIteratorIteration<>(rows.iterator());
+		return NativeExecutionContextCarrier.forEvaluation(new CloseableIteratorIteration<>(rows.iterator()), source);
 	}
 
 	private synchronized QueryEvaluationStep genericStep() {

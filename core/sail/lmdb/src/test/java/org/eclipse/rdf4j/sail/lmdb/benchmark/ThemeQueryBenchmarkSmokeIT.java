@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -89,9 +88,23 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "disabled, MEDICAL_RECORDS", "auto, MEDICAL_RECORDS", "disabled, EXPLORATION", "auto, EXPLORATION" })
+	@CsvSource({
+			"disabled, MEDICAL_RECORDS, true",
+			"disabled, MEDICAL_RECORDS, false",
+			"disabled, MEDICAL_RECORDS, unset",
+			"auto, MEDICAL_RECORDS, true",
+			"auto, MEDICAL_RECORDS, false",
+			"auto, MEDICAL_RECORDS, unset",
+			"disabled, EXPLORATION, true",
+			"disabled, EXPLORATION, false",
+			"disabled, EXPLORATION, unset",
+			"auto, EXPLORATION, true",
+			"auto, EXPLORATION, false",
+			"auto, EXPLORATION, unset"
+	})
 	@ResourceLock(Resources.SYSTEM_PROPERTIES)
-	void irTrialReturnsExpectedCountAndRestoresCallerSetting(String irMode, Theme theme) throws Exception {
+	void irTrialReturnsExpectedCountAndRestoresCallerSetting(String irMode, Theme theme,
+			String callerSynchronousSetting) throws Exception {
 		String previousProfiling = System.getProperty(PROFILING_PROPERTY);
 		String previousSynchronous = System.getProperty(JANINO_SYNCHRONOUS_PROPERTY);
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
@@ -101,15 +114,21 @@ class ThemeQueryBenchmarkSmokeIT {
 		boolean initialized = false;
 		try {
 			System.setProperty(PROFILING_PROPERTY, "true");
-			System.setProperty(JANINO_SYNCHRONOUS_PROPERTY, "true");
+			if ("unset".equals(callerSynchronousSetting)) {
+				System.clearProperty(JANINO_SYNCHRONOUS_PROPERTY);
+			} else {
+				System.setProperty(JANINO_SYNCHRONOUS_PROPERTY, callerSynchronousSetting);
+			}
 			benchmark.setup();
 			initialized = true;
-			assertNull(System.getProperty(JANINO_SYNCHRONOUS_PROPERTY),
-					"IR trials must use the normal asynchronous compilation policy");
+			String expectedSynchronous = "disabled".equals(irMode) ? "false" : "true";
+			assertEquals(expectedSynchronous, System.getProperty(JANINO_SYNCHRONOUS_PROPERTY),
+					"IR trials must apply their explicit per-mode Janino compilation policy");
 			assertBenchmarkQueryCount(benchmark, theme, 0);
 			benchmark.tearDown();
 			initialized = false;
-			assertEquals("true", System.getProperty(JANINO_SYNCHRONOUS_PROPERTY),
+			assertEquals("unset".equals(callerSynchronousSetting) ? null : callerSynchronousSetting,
+					System.getProperty(JANINO_SYNCHRONOUS_PROPERTY),
 					"trial teardown must restore the caller's compilation policy");
 		} finally {
 			if (initialized) {

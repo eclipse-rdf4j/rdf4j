@@ -345,6 +345,74 @@ class LmdbAdjacencyDeltaApplierTest {
 		assertThat(account.totalChargedBytes()).isZero();
 	}
 
+	@Test
+	void foreignStructuralRowUsesStreamingWholeRowMerge() throws IOException {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		long subject = uri(1);
+		long predicate = uri(10);
+		long addedObject = uri(100_000);
+		LmdbAdjacencyArena sourceArena = new LmdbAdjacencyArena(BASE_REGION_BYTES);
+		LmdbAdjacencyContextCatalog sourceContexts = LmdbAdjacencyContextCatalog.base(sourceArena, new long[0]);
+		LmdbAdjacencyArenaCatalog sourceCatalog = LmdbAdjacencyArenaCatalog.of(sourceArena);
+		boolean sourceCatalogClosed = false;
+		boolean sourceContextsClosed = false;
+		boolean sourceArenaClosed = false;
+		LmdbAdjacencyRunCodec.Encoder sourceEncoder = LmdbAdjacencyRunCodec.writingEncoder(sourceContexts,
+				sourceArena);
+		for (int i = 0; i < 4_096; i++) {
+			sourceEncoder.accept(uri(1_000 + i), 0);
+		}
+		long sourceHandle = sourceCatalog.packHandle(0, sourceEncoder.finish().rootRef);
+		LmdbDirectAdjacencyCommitDelta delta = new LmdbDirectAdjacencyCommitDelta(account, BASE_REGION_BYTES);
+		delta.begin(7);
+		delta.recordAdd(subject, predicate, addedObject, 0, true);
+		SealedDirectDelta sealed = delta.seal(8);
+
+		try (LmdbInMemoryAdjacencyIndex base = emptyBase(account)) {
+			Result result = null;
+			try {
+				result = LmdbAdjacencyDeltaApplier.apply(sealed, base, base.contextCatalog(),
+						(key, plane, rawPredicateId) -> key == subject
+								&& plane == LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+								&& rawPredicateId == predicate
+										? new OldRun(sourceCatalog, sourceContexts, sourceHandle)
+										: null,
+						ignored -> true, new long[0], account, BASE_REGION_BYTES);
+				assertThat(result.generation).isNotNull();
+				assertThat(result.structuralStats.rows()).isZero();
+				long outgoing = result.generation.find(subject, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT,
+						predicate);
+				assertThat(LmdbAdjacencyRunCodec.edgeCount(result.generation.catalog(), outgoing)).isEqualTo(4_097);
+
+				// The target run must remain readable after every foreign source owner is closed.
+				sourceCatalog.close();
+				sourceCatalogClosed = true;
+				sourceContexts.close();
+				sourceContextsClosed = true;
+				sourceArena.close();
+				sourceArenaClosed = true;
+				assertThat(LmdbAdjacencyRunCodec.neighborAt(result.generation.catalog(), outgoing, 4_096))
+						.isEqualTo(addedObject);
+			} finally {
+				if (result != null && result.generation != null) {
+					result.generation.release();
+				}
+				sealed.close();
+			}
+		} finally {
+			if (!sourceCatalogClosed) {
+				sourceCatalog.close();
+			}
+			if (!sourceContextsClosed) {
+				sourceContexts.close();
+			}
+			if (!sourceArenaClosed) {
+				sourceArena.close();
+			}
+		}
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
 	private static LmdbInMemoryAdjacencyIndex emptyBase(LmdbAdjacencyMemoryAccount account) throws IOException {
 		return LmdbPagedCsfBaseBuilder.build(new EmptyScanner(), LmdbAdjacencyCoverage.full(), account,
 				BASE_REGION_BYTES, WORKSPACE_REGION_BYTES);

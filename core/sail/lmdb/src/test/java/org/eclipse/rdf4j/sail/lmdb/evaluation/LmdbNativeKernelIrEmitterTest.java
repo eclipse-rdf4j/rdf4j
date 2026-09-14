@@ -589,7 +589,7 @@ class LmdbNativeKernelIrEmitterTest {
 						null, OutputMods.none()));
 		String source = LmdbNativeKernelEmitter.emit(ir);
 		assertTrue(source.contains("KernelRuntime.unsignedNondecreasing(dom0, domO0, domL0)"), source);
-		assertTrue(source.contains("new KernelRuntime.LongHashSet(distinctExpected, hooks)"), source);
+		assertTrue(source.contains("new KernelRuntime.LongHashSet(distinctExpected, keyHooks)"), source);
 
 		assertRows(run(ir, context().domains(new long[] { 5, 5, 7, 9 }).distinctExpected(64)),
 				new long[][] { { 3 } });

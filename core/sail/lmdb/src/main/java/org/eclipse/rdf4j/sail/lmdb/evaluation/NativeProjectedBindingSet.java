@@ -226,9 +226,12 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 				}
 				Value value = values[i];
 				if (value == null) {
-					value = currentSource.lazyValue(ids[i]);
+					value = findMaterializedDuplicate(i);
+					if (value == null) {
+						value = currentSource.lazyValue(ids[i]);
+						materializedValues++;
+					}
 					values[i] = value;
-					materializedValues++;
 				}
 				consumer.accept(value);
 			}
@@ -265,12 +268,10 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		Value value = values[index];
 		if (value == null) {
 			long id = ids[index];
-			for (int i = 0; i < values.length; i++) {
-				if (i != index && ids[i] == id && values[i] != null) {
-					value = values[i];
-					values[index] = value;
-					return value;
-				}
+			value = findMaterializedDuplicate(index);
+			if (value != null) {
+				values[index] = value;
+				return value;
 			}
 			NativeLmdbQuerySource currentSource = source;
 			if (currentSource == null) {
@@ -281,6 +282,16 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 			MATERIALIZED_VALUES.incrementAndGet();
 		}
 		return value;
+	}
+
+	private Value findMaterializedDuplicate(int index) {
+		long id = ids[index];
+		for (int i = 0; i < values.length; i++) {
+			if (i != index && ids[i] == id && values[i] != null) {
+				return values[i];
+			}
+		}
+		return null;
 	}
 
 	static boolean isBound(long id) {

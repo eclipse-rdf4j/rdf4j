@@ -94,14 +94,21 @@ final class NativeScalarSubqueryValueEvaluator implements NativeBindingSetValueE
 
 	@Override
 	public NativeValueOutcome evaluate(BindingSet bindings) {
+		return evaluate(bindings, null);
+	}
+
+	@Override
+	public NativeValueOutcome evaluate(BindingSet bindings, NativeExecutionContext executionContext) {
 		EVALUATIONS.incrementAndGet();
-		NativeValueOutcome leftOutcome = left.evaluate(bindings);
+		NativeValueOutcome leftOutcome = left.evaluate(bindings, executionContext);
 		if (!leftOutcome.isBound()) {
 			return NativeValueOutcome.ERROR;
 		}
 		Value leftValue = leftOutcome.value();
 		boolean result = quantifier == Quantifier.ALL;
-		try (CloseableIteration<BindingSet> rows = subquery.evaluate(bindings)) {
+		SyntheticValueSource evaluationSource = executionContext == null ? null : executionContext.evaluationSource();
+		try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(evaluationSource);
+				CloseableIteration<BindingSet> rows = subquery.evaluate(bindings)) {
 			while (rows.hasNext()) {
 				Value rightValue = rows.next().getValue(bindingName);
 				if (quantifier == Quantifier.IN) {

@@ -810,6 +810,7 @@ final class LateralCursor implements FactorizedRowCursor {
 	private RowCursor right;
 	private int hiddenCount;
 	private long rightLexicalInputMask;
+	private RowState.LateralOccurrence lateralOccurrence;
 	private boolean leftHidden;
 	private boolean closed;
 	private int pollTick;
@@ -835,7 +836,18 @@ final class LateralCursor implements FactorizedRowCursor {
 				long previousScope = row.enterLexicalScope(rightLexicalInputMask);
 				boolean available;
 				try {
-					available = right.next();
+					try (RowState.LateralOccurrenceScope ignored = row.activateLateralOccurrence(lateralOccurrence)) {
+						available = right.next();
+					}
+				} catch (IOException | RuntimeException | Error problem) {
+					try {
+						close();
+					} catch (Throwable cleanup) {
+						if (cleanup != problem) {
+							problem.addSuppressed(cleanup);
+						}
+					}
+					throw problem;
 				} finally {
 					row.restoreLexicalScope(previousScope);
 					restoreLeftBindings();
@@ -843,8 +855,7 @@ final class LateralCursor implements FactorizedRowCursor {
 				if (available) {
 					return true;
 				}
-				right.close();
-				right = null;
+				closeRight();
 			}
 			if (!left.next()) {
 				close();
@@ -852,13 +863,53 @@ final class LateralCursor implements FactorizedRowCursor {
 			}
 			captureAndHideLeftBindings();
 			rightLexicalInputMask = row.boundMask();
+			RowState.LateralOccurrence nextOccurrence = row.newLateralOccurrence();
 			long previousScope = row.enterLexicalScope(rightLexicalInputMask);
 			try {
-				right = rightPlan.open(row);
+				try (RowState.LateralOccurrenceScope ignored = row.activateLateralOccurrence(nextOccurrence)) {
+					right = rightPlan.open(row);
+				}
+				lateralOccurrence = nextOccurrence;
+			} catch (IOException | RuntimeException | Error problem) {
+				row.closeLateralOccurrence(nextOccurrence);
+				try {
+					close();
+				} catch (Throwable cleanup) {
+					if (cleanup != problem) {
+						problem.addSuppressed(cleanup);
+					}
+				}
+				throw problem;
 			} finally {
 				row.restoreLexicalScope(previousScope);
 				restoreLeftBindings();
 			}
+		}
+	}
+
+	private void closeRight() {
+		RowCursor closingRight = right;
+		right = null;
+		RowState.LateralOccurrence closingOccurrence = lateralOccurrence;
+		lateralOccurrence = null;
+		Throwable failure = null;
+		if (closingRight != null) {
+			try (RowState.LateralOccurrenceScope ignored = row.activateLateralOccurrence(closingOccurrence)) {
+				try {
+					closingRight.close();
+				} catch (RuntimeException | Error problem) {
+					failure = problem;
+				}
+			}
+		}
+		if (closingOccurrence != null) {
+			row.closeLateralOccurrence(closingOccurrence);
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		if (failure != null) {
+			throw (RuntimeException) failure;
 		}
 	}
 
@@ -903,9 +954,7 @@ final class LateralCursor implements FactorizedRowCursor {
 		closed = true;
 		Throwable failure = null;
 		try {
-			if (right != null) {
-				right.close();
-			}
+			closeRight();
 		} catch (RuntimeException | Error problem) {
 			failure = problem;
 		}
@@ -933,6 +982,21 @@ final class LateralCursor implements FactorizedRowCursor {
 		long leftMultiplicity = left instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
 		long rightMultiplicity = right instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
 		return Math.multiplyExact(leftMultiplicity, rightMultiplicity);
+	}
+}
+
+/** Sweep admission inputs captured before either join child opens and can mutate the entry row. */
+record JoinSweepEstimates(long entryBoundMask, double expectedProbes, double perProbeRows, double sweepEstimate) {
+	static JoinSweepEstimates forPlans(SlotPlan left, SlotPlan right, RowState row) {
+		if (!RightMemoProbe.sweepEnabled()) {
+			return new JoinSweepEstimates(row.boundMask(), Double.NaN, Double.NaN, Double.NaN);
+		}
+		long boundMask = row.boundMask();
+		double expectedProbes = LmdbNativeWork.rowsOut(left, row, boundMask);
+		double perProbeRows = RightMemoProbe.fragmentRowsForMask(right, row, boundMask | left.producedMask());
+		// Correlated slots are unbound at open time, so this estimates the key-unbound fragment sweep.
+		double sweepEstimate = LmdbNativeWork.rowsOut(right, row, boundMask);
+		return new JoinSweepEstimates(boundMask, expectedProbes, perProbeRows, sweepEstimate);
 	}
 }
 
@@ -983,7 +1047,7 @@ final class JoinPlan implements SlotPlan {
 			return open(row, decision, decision != null);
 		} catch (IOException | RuntimeException | Error problem) {
 			if (decision != null) {
-				decision.close();
+				closeSuppressing(decision, problem);
 			}
 			throw problem;
 		}
@@ -1003,6 +1067,7 @@ final class JoinPlan implements SlotPlan {
 		if (bushy != null) {
 			return bushy;
 		}
+		JoinSweepEstimates estimates = JoinSweepEstimates.forPlans(left, right, row);
 		BatchCursor leftBatch = left.openBatch(row, capacity);
 		if (leftBatch == null) {
 			return null;
@@ -1015,36 +1080,49 @@ final class JoinPlan implements SlotPlan {
 		try {
 			decision = PathTargetDecision.tryCreate(left, right, row);
 			return new RowBatchCursor(new JoinCursor(leftRows, right, row, left.producedMask(), decision,
-					decision != null, Double.NaN, Double.NaN, Double.NaN), row);
+					decision != null, estimates.entryBoundMask(), estimates.expectedProbes(), estimates.perProbeRows(),
+					estimates.sweepEstimate()), row);
 		} catch (IOException | RuntimeException | Error problem) {
-			leftRows.close();
+			closeSuppressing(leftRows, problem);
 			if (decision != null) {
-				decision.close();
+				closeSuppressing(decision, problem);
 			}
 			throw problem;
 		}
 	}
 
 	RowCursor open(RowState row, PathTargetDecision decision, boolean ownsDecision) throws IOException {
-		double expectedProbes = Double.NaN;
-		double perProbeRows = Double.NaN;
-		double sweepEstimate = Double.NaN;
-		if (RightMemoProbe.sweepEnabled()) {
-			long boundMask = row.boundMask();
-			expectedProbes = LmdbNativeWork.rowsOut(left, row, boundMask);
-			perProbeRows = RightMemoProbe.fragmentRowsForMask(right, row, boundMask | left.producedMask());
-			// correlated slots are unbound at open time, so this estimates the key-unbound fragment sweep
-			sweepEstimate = LmdbNativeWork.rowsOut(right, row, boundMask);
-		}
+		JoinSweepEstimates estimates = JoinSweepEstimates.forPlans(left, right, row);
 		// only left-produced slots vary across left rows; slots bound at open time are constant for
 		// the lifetime of this cursor and do not disqualify replay
 		RowCursor leftCursor = openWithTargets(left, row, decision);
 		try {
 			return new JoinCursor(leftCursor, right, row, left.producedMask(), decision, ownsDecision,
-					expectedProbes, perProbeRows, sweepEstimate);
+					estimates.entryBoundMask(), estimates.expectedProbes(), estimates.perProbeRows(),
+					estimates.sweepEstimate());
 		} catch (RuntimeException | Error problem) {
-			leftCursor.close();
+			closeSuppressing(leftCursor, problem);
 			throw problem;
+		}
+	}
+
+	private static void closeSuppressing(RowCursor cursor, Throwable failure) {
+		try {
+			cursor.close();
+		} catch (RuntimeException | Error cleanup) {
+			if (cleanup != failure) {
+				failure.addSuppressed(cleanup);
+			}
+		}
+	}
+
+	private static void closeSuppressing(PathTargetDecision decision, Throwable failure) {
+		try {
+			decision.close();
+		} catch (RuntimeException | Error cleanup) {
+			if (cleanup != failure) {
+				failure.addSuppressed(cleanup);
+			}
 		}
 	}
 
@@ -1128,6 +1206,13 @@ final class JoinCursor implements FactorizedRowCursor {
 			PathTargetDecision pathTargetDecision, boolean ownsPathTargetDecision, double expectedProbes,
 			double perProbeRows,
 			double sweepEstimate) {
+		this(leftCursor, right, row, leftProducedMask, pathTargetDecision, ownsPathTargetDecision, row.boundMask(),
+				expectedProbes, perProbeRows, sweepEstimate);
+	}
+
+	JoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask,
+			PathTargetDecision pathTargetDecision, boolean ownsPathTargetDecision, long entryBoundMask,
+			double expectedProbes, double perProbeRows, double sweepEstimate) {
 		this.leftCursor = leftCursor;
 		this.right = right;
 		this.row = row;
@@ -1139,8 +1224,8 @@ final class JoinCursor implements FactorizedRowCursor {
 				? slotsOf(right.producedMask())
 				: null;
 		this.rightMemo = replaySlots == null
-				? RightMemoProbe.tryCreateSweepOnly(right, leftProducedMask, readMask, row, expectedProbes,
-						perProbeRows, sweepEstimate)
+				? RightMemoProbe.tryCreateSweepOnly(right, leftProducedMask, readMask, row, entryBoundMask,
+						expectedProbes, perProbeRows, sweepEstimate)
 				: null;
 	}
 

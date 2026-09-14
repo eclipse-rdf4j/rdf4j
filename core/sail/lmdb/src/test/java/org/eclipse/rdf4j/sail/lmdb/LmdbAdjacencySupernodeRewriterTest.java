@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
+
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.Charge;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 import org.junit.jupiter.api.Test;
@@ -33,7 +35,7 @@ class LmdbAdjacencySupernodeRewriterTest {
 				new long[] { 1_031, 1_064, 1_200 }, new boolean[] { true, false, true });
 
 		LmdbAdjacencySupernodeRewriter.RewritePlan rewrite = LmdbAdjacencySupernodeRewriter.plan(old, mutations,
-				contexts, 8, 1L << 20);
+				contexts, 8, 1L << 20, sourceCatalog.sourceRegistry());
 		assertThat(rewrite.changed()).isTrue();
 		assertThat(rewrite.decodedPairs()).isLessThanOrEqualTo(2 * 3 * 8L + mutations.size());
 		assertThat(rewrite.encodedPairs()).isLessThanOrEqualTo(2 * 3 * 8L + mutations.size());
@@ -71,6 +73,84 @@ class LmdbAdjacencySupernodeRewriterTest {
 		} finally {
 			targetCatalog.close();
 			owner.close();
+			sourceCatalog.close();
+			contexts.close();
+			sourceArena.close();
+		}
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
+	void foreignPersistentDirectoryUsesStreamingCopyDespiteNumericSourceIdCollision() {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 24);
+		LmdbAdjacencyArena sourceArena = new LmdbAdjacencyArena(1L << 20);
+		LmdbAdjacencyContextCatalog contexts = LmdbAdjacencyContextCatalog.base(sourceArena, new long[0]);
+		LmdbAdjacencyArenaCatalog sourceCatalog = LmdbAdjacencyArenaCatalog.of(sourceArena);
+		long leafRef = encodeEvenNeighbors(sourceArena, contexts, 64);
+		int sourceId = sourceCatalog.sourceRegistry().sourceIdForArena(sourceArena);
+		long rootRef = LmdbAdjacencyRunCodec.writePersistentNode(sourceArena, sourceCatalog.sourceRegistry(), 0,
+				List.of(
+						new LmdbAdjacencyRunCodec.PersistentChild(1_000, 0, 32, 0, sourceId, leafRef,
+								LmdbAdjacencyRunCodec.LEAF_RUN_SLICE),
+						new LmdbAdjacencyRunCodec.PersistentChild(1_064, 0, 32, 32, sourceId, leafRef,
+								LmdbAdjacencyRunCodec.LEAF_RUN_SLICE)),
+				true, true);
+		long sourceHandle = sourceCatalog.packHandle(0, rootRef);
+		LmdbAdjacencyArena targetBaseArena = new LmdbAdjacencyArena(1L << 20);
+		LmdbAdjacencyArenaCatalog targetBaseCatalog = LmdbAdjacencyArenaCatalog.of(targetBaseArena);
+		LmdbAdjacencyArena targetArena = null;
+		LmdbAdjacencyDeltaArenaOwner targetOwner = null;
+		LmdbAdjacencyArenaCatalog targetCatalog = null;
+		Charge targetCharge = null;
+		try {
+			assertThat(sourceCatalog.sourceRegistry()).isNotSameAs(targetBaseCatalog.sourceRegistry());
+			assertThat(sourceCatalog.sourceRegistry().sourceIdForArena(sourceArena))
+					.isEqualTo(targetBaseCatalog.sourceRegistry().sourceIdForArena(targetBaseArena));
+			LmdbAdjacencyArenaSizingPlan sizing = new LmdbAdjacencyArenaSizingPlan(1L << 20);
+			LmdbAdjacencyRunCodec.Encoder.Result planned = LmdbAdjacencyRunCodec.planEncodedCopy(sourceCatalog,
+					contexts,
+					sourceHandle, sizing);
+			assertThat(sourceCatalog.sourceRegistry().sourceIdForArena(sourceArena)).isEqualTo(1);
+			assertThat(targetBaseCatalog.sourceRegistry().sourceIdForArena(targetBaseArena)).isEqualTo(1);
+			assertThat(sizing.allocatedBytes()).isEqualTo(planned.totalBytes);
+			sizing.seal();
+			targetCharge = account.tryCharge(MemoryKind.DELTA, sizing.capacityBytes());
+			assertThat(targetCharge).isNotNull();
+			targetArena = new LmdbAdjacencyArena(sizing);
+			targetOwner = new LmdbAdjacencyDeltaArenaOwner(targetArena, targetCharge);
+			targetCatalog = LmdbAdjacencyArenaCatalog.composed(targetBaseCatalog, targetOwner,
+					List.of());
+			assertThat(targetCatalog.sourceRegistry().sourceIdForArena(targetArena)).isEqualTo(2);
+			long targetRef = LmdbAdjacencyRunCodec.writeEncodedCopy(sourceCatalog, contexts, sourceHandle,
+					targetArena).rootRef;
+			long targetHandle = targetCatalog.packHandle(1, targetRef);
+			assertThat(LmdbAdjacencyRunCodec.persistentComposite(targetCatalog, targetHandle)).isFalse();
+			assertThat(LmdbAdjacencyRunCodec.edgeCount(targetCatalog, targetHandle)).isEqualTo(64);
+			long[] expected = new long[64];
+			int expectedAt = 0;
+			for (long neighbor = 1_000; neighbor <= 1_126; neighbor += 2) {
+				expected[expectedAt++] = neighbor;
+			}
+			assertThat(expectedAt).isEqualTo(expected.length);
+			for (int i = 0; i < expected.length; i++) {
+				assertThat(LmdbAdjacencyRunCodec.neighborAt(targetCatalog, targetHandle, i)).isEqualTo(expected[i]);
+			}
+		} finally {
+			if (targetCatalog != null) {
+				targetCatalog.close();
+			}
+			if (targetOwner != null) {
+				targetOwner.close();
+			} else {
+				if (targetCharge != null) {
+					targetCharge.close();
+				}
+				if (targetArena != null) {
+					targetArena.close();
+				}
+			}
+			targetBaseCatalog.close();
+			targetBaseArena.close();
 			sourceCatalog.close();
 			contexts.close();
 			sourceArena.close();

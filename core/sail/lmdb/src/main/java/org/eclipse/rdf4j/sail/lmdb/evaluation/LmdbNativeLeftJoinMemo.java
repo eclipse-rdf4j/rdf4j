@@ -57,6 +57,12 @@ final class RightMemoProbe {
 
 	static RightMemoProbe tryCreate(SlotPlan right, long leftProducedMask, long readMask, RowState row,
 			double expectedProbes, double perProbeRows, double sweepEstimate) {
+		return tryCreate(right, leftProducedMask, readMask, row, row.boundMask(), expectedProbes, perProbeRows,
+				sweepEstimate);
+	}
+
+	static RightMemoProbe tryCreate(SlotPlan right, long leftProducedMask, long readMask, RowState row,
+			long entryBoundMask, double expectedProbes, double perProbeRows, double sweepEstimate) {
 		if (!Boolean.parseBoolean(System.getProperty(LEFTJOIN_MEMO_ENABLED, "true"))) {
 			return null;
 		}
@@ -77,7 +83,7 @@ final class RightMemoProbe {
 		// the fragment; a slot the fragment only reads (filter-only) cannot key the table. Entry-bound correlated
 		// slots are constant for this cursor, so the per-key memo already answers them in one fragment run.
 		if (sweepEnabled() && correlatedMask != 0L && Long.bitCount(correlatedMask) <= MAX_SWEEP_KEY_SLOTS
-				&& (correlatedMask & row.boundMask()) == 0L && (correlatedMask & ~right.producedMask()) == 0L
+				&& (correlatedMask & entryBoundMask) == 0L && (correlatedMask & ~right.producedMask()) == 0L
 				&& sweepJustified(expectedProbes, perProbeRows, sweepEstimate)) {
 			probe.sweepKeySlots = slotsOf(correlatedMask);
 			probe.sweepPending = true;
@@ -92,8 +98,14 @@ final class RightMemoProbe {
 	 */
 	static RightMemoProbe tryCreateSweepOnly(SlotPlan right, long leftProducedMask, long readMask, RowState row,
 			double expectedProbes, double perProbeRows, double sweepEstimate) {
-		RightMemoProbe probe = tryCreate(right, leftProducedMask, readMask, row, expectedProbes, perProbeRows,
+		return tryCreateSweepOnly(right, leftProducedMask, readMask, row, row.boundMask(), expectedProbes, perProbeRows,
 				sweepEstimate);
+	}
+
+	static RightMemoProbe tryCreateSweepOnly(SlotPlan right, long leftProducedMask, long readMask, RowState row,
+			long entryBoundMask, double expectedProbes, double perProbeRows, double sweepEstimate) {
+		RightMemoProbe probe = tryCreate(right, leftProducedMask, readMask, row, entryBoundMask, expectedProbes,
+				perProbeRows, sweepEstimate);
 		return probe != null && probe.sweepPending ? probe : null;
 	}
 

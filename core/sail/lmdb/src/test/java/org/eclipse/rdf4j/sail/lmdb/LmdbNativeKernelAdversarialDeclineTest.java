@@ -30,6 +30,8 @@ import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -40,6 +42,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Adversarial companion to {@link LmdbNativeKernelDeclineCensusTest}: a hand-written corpus of short (at most twenty
@@ -54,6 +58,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Each entry is capped at twenty lines by {@link #queriesStayWithinTwentyLines()} so the corpus keeps testing what the
  * goal actually asks about — a short query anyone could write — rather than drifting into pathological giants.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbNativeKernelAdversarialDeclineTest {
 
 	private static final Pattern KERNEL_DECLINE = Pattern
@@ -94,8 +99,11 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 	private static final String PREFIXES = ""
 			+ "PREFIX ex: <http://example.com/theme/medical/>\n"
 			+ "PREFIX soc: <http://example.com/theme/social/>\n"
+			+ "PREFIX path: <http://example.com/theme/adversarial-path/>\n"
 			+ "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
 			+ "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>\n";
+
+	private static final String SMALL_PATH_NAMESPACE = "http://example.com/theme/adversarial-path/";
 
 	/** Corpus entries: a name used in the report, and the query body appended to {@link #PREFIXES}. */
 	private static final Map<String, String> CORPUS = new LinkedHashMap<>();
@@ -161,9 +169,9 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 						+ "  ?p a ?t\n"
 						+ "}");
 		CORPUS.put("path-plus",
-				"SELECT ?a ?b WHERE { ?a soc:follows+ ?b }");
+				"SELECT ?a ?b WHERE { <http://example.com/theme/social/user0> soc:follows+ ?b }");
 		CORPUS.put("path-star",
-				"SELECT ?a ?b WHERE { ?a soc:follows* ?b }");
+				"SELECT ?b WHERE { <http://example.com/theme/social/user0> soc:follows* ?b }");
 		CORPUS.put("path-inverse",
 				"SELECT ?a ?b WHERE { ?a ^soc:follows ?b }");
 		CORPUS.put("path-sequence",
@@ -251,10 +259,21 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 						+ "}");
 	}
 
+	/** The small graph keeps unbound path closure checks bounded while retaining adversarial topology. */
+	private static final Map<String, String> SMALL_PATH_CORPUS = new LinkedHashMap<>();
+
+	static {
+		SMALL_PATH_CORPUS.put("small-path-star-unbound",
+				"SELECT ?a ?b WHERE { ?a path:follows* ?b }");
+		SMALL_PATH_CORPUS.put("small-path-plus-unbound",
+				"SELECT ?a ?b WHERE { ?a path:follows+ ?b }");
+	}
+
 	@TempDir
 	static File dataDir;
 
 	private static SailRepository repository;
+	private static SailRepository smallPathRepository;
 	private static String previousThreshold;
 	private static String previousSynchronous;
 
@@ -274,12 +293,42 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 					ThemeDataSetGenerator.socialMediaConfig().withUserCount(400).withPostsPerUser(4), inserter);
 			connection.commit();
 		}
+
+		smallPathRepository = new SailRepository(
+				new LmdbStore(new File(dataDir, "small-path"), new LmdbStoreConfig("spoc,posc,ospc")));
+		try (SailRepositoryConnection connection = smallPathRepository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			ValueFactory valueFactory = connection.getValueFactory();
+			IRI follows = valueFactory.createIRI(SMALL_PATH_NAMESPACE, "follows");
+			IRI other = valueFactory.createIRI(SMALL_PATH_NAMESPACE, "other");
+			IRI a = valueFactory.createIRI(SMALL_PATH_NAMESPACE, "a");
+			IRI b = valueFactory.createIRI(SMALL_PATH_NAMESPACE, "b");
+			IRI c = valueFactory.createIRI(SMALL_PATH_NAMESPACE, "c");
+			IRI d = valueFactory.createIRI(SMALL_PATH_NAMESPACE, "d");
+			IRI e = valueFactory.createIRI(SMALL_PATH_NAMESPACE, "e");
+			IRI f = valueFactory.createIRI(SMALL_PATH_NAMESPACE, "f");
+			IRI x = valueFactory.createIRI(SMALL_PATH_NAMESPACE, "x");
+			IRI y = valueFactory.createIRI(SMALL_PATH_NAMESPACE, "y");
+
+			connection.add(a, follows, b);
+			connection.add(b, follows, c);
+			connection.add(c, follows, a);
+			connection.add(c, follows, d);
+			connection.add(a, follows, d);
+			connection.add(d, follows, d);
+			connection.add(x, follows, y);
+			connection.add(e, other, f);
+			connection.commit();
+		}
 	}
 
 	@AfterAll
 	static void tearDown() {
 		if (repository != null) {
 			repository.shutDown();
+		}
+		if (smallPathRepository != null) {
+			smallPathRepository.shutDown();
 		}
 		if (previousThreshold == null) {
 			System.clearProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
@@ -297,6 +346,12 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 	void queriesStayWithinTwentyLines() {
 		List<String> tooLong = new ArrayList<>();
 		CORPUS.forEach((name, body) -> {
+			int lines = (PREFIXES + body).split("\n", -1).length;
+			if (lines > 20) {
+				tooLong.add(name + " (" + lines + " lines)");
+			}
+		});
+		SMALL_PATH_CORPUS.forEach((name, body) -> {
 			int lines = (PREFIXES + body).split("\n", -1).length;
 			if (lines > 20) {
 				tooLong.add(name + " (" + lines + " lines)");
@@ -349,8 +404,51 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 						+ " rows; first difference " + firstDifference(nativeRows, genericRows));
 			}
 		});
+		SMALL_PATH_CORPUS.forEach((name, body) -> {
+			compareNativeAndGeneric(smallPathRepository, name, body, mismatches);
+		});
 		assertThat(mismatches).as("adversarial queries whose native results differ from the generic evaluator")
 				.isEmpty();
+	}
+
+	/**
+	 * The large generated graph uses bound-start paths to keep this corpus a fast correctness gate. Keep the expensive
+	 * unbound closure semantics covered on a small graph whose topology makes each required case explicit.
+	 */
+	@Test
+	void smallUnboundPropertyPathsHaveExactReachabilityAndNativeParity() {
+		String starQuery = PREFIXES + SMALL_PATH_CORPUS.get("small-path-star-unbound");
+		String plusQuery = PREFIXES + SMALL_PATH_CORPUS.get("small-path-plus-unbound");
+
+		assertThat(rows(smallPathRepository, starQuery)).containsExactlyElementsOf(expectedSmallPathStarRows());
+		assertThat(rows(smallPathRepository, plusQuery)).containsExactlyElementsOf(expectedSmallPathPlusRows());
+		assertThat(rowsWithNativeFlag(smallPathRepository, starQuery, false))
+				.containsExactlyElementsOf(rowsWithNativeFlag(smallPathRepository, starQuery, true));
+		assertThat(rowsWithNativeFlag(smallPathRepository, plusQuery, false))
+				.containsExactlyElementsOf(rowsWithNativeFlag(smallPathRepository, plusQuery, true));
+	}
+
+	private static void compareNativeAndGeneric(SailRepository target, String name, String body,
+			List<String> mismatches) {
+		String query = PREFIXES + body;
+		List<String> nativeRows;
+		List<String> genericRows;
+		try {
+			nativeRows = rows(target, query);
+		} catch (RuntimeException problem) {
+			mismatches.add(name + ": native evaluation failed: " + problem);
+			return;
+		}
+		try {
+			genericRows = rowsWithNativeFlag(target, query, false);
+		} catch (RuntimeException problem) {
+			mismatches.add(name + ": generic evaluation failed: " + problem);
+			return;
+		}
+		if (!nativeRows.equals(genericRows)) {
+			mismatches.add(name + ": native " + nativeRows.size() + " rows vs generic " + genericRows.size()
+					+ " rows; first difference " + firstDifference(nativeRows, genericRows));
+		}
 	}
 
 	private static String firstDifference(List<String> left, List<String> right) {
@@ -366,7 +464,11 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 
 	/** Canonical, order-independent rendering of a query's solutions, so comparison is a multiset comparison. */
 	private static List<String> rows(String query) {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		return rows(repository, query);
+	}
+
+	private static List<String> rows(SailRepository target, String query) {
+		try (SailRepositoryConnection connection = target.getConnection()) {
 			org.eclipse.rdf4j.query.TupleQuery prepared = connection.prepareTupleQuery(query);
 			prepared.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
 			List<org.eclipse.rdf4j.query.BindingSet> result = org.eclipse.rdf4j.query.QueryResults
@@ -383,34 +485,58 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 		}
 	}
 
+	private static List<String> rowsWithNativeFlag(SailRepository target, String query, boolean nativeEnabled) {
+		String previous = System.getProperty(NATIVE_FLAG);
+		try {
+			System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEnabled));
+			return rows(target, query);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
+		}
+	}
+
+	private static List<String> expectedSmallPathStarRows() {
+		List<String> expected = new ArrayList<>();
+		addExpectedPairs(expected, "a", "a", "b", "c", "d");
+		addExpectedPairs(expected, "b", "a", "b", "c", "d");
+		addExpectedPairs(expected, "c", "a", "b", "c", "d");
+		addExpectedPairs(expected, "d", "d");
+		addExpectedPairs(expected, "e", "e");
+		addExpectedPairs(expected, "f", "f");
+		addExpectedPairs(expected, "x", "x", "y");
+		addExpectedPairs(expected, "y", "y");
+		return expected.stream().sorted().toList();
+	}
+
+	private static List<String> expectedSmallPathPlusRows() {
+		List<String> expected = new ArrayList<>();
+		addExpectedPairs(expected, "a", "a", "b", "c", "d");
+		addExpectedPairs(expected, "b", "a", "b", "c", "d");
+		addExpectedPairs(expected, "c", "a", "b", "c", "d");
+		addExpectedPairs(expected, "d", "d");
+		addExpectedPairs(expected, "x", "y");
+		return expected.stream().sorted().toList();
+	}
+
+	private static void addExpectedPairs(List<String> expected, String subject, String... objects) {
+		for (String object : objects) {
+			expected.add("a=" + SMALL_PATH_NAMESPACE + subject + ";b=" + SMALL_PATH_NAMESPACE + object + ";");
+		}
+	}
+
 	@Test
 	void adversarialSpecializedDeclinesStayOnTheSemanticNativeFloor() throws IOException {
 		Map<String, Set<String>> byReason = new LinkedHashMap<>();
 		Map<String, Set<String>> byQuery = new LinkedHashMap<>();
 		Map<String, String> failures = new LinkedHashMap<>();
 
-		CORPUS.forEach((name, body) -> {
-			String query = PREFIXES + body;
-			Set<String> reasons;
-			long started = System.nanoTime();
-			try {
-				reasons = declineReasons(query);
-			} catch (RuntimeException problem) {
-				failures.put(name, String.valueOf(problem));
-				System.out.println(String.format("%-30s FAILED  %s", name, problem));
-				return;
-			}
-			System.out.println(String.format("%-30s %5d ms  %s", name, (System.nanoTime() - started) / 1_000_000L,
-					reasons.isEmpty() ? "engaged" : String.join(", ", reasons)));
-			for (String reason : reasons) {
-				String bare = reason.substring(reason.indexOf(':') + 1);
-				if (isAllowedSemanticHandoff(bare)) {
-					continue;
-				}
-				byReason.computeIfAbsent(reason, key -> new LinkedHashSet<>()).add(name);
-				byQuery.computeIfAbsent(name, key -> new LinkedHashSet<>()).add(reason);
-			}
-		});
+		CORPUS.forEach((name, body) -> collectDeclineReport(repository, name, body, byReason, byQuery, failures));
+		SMALL_PATH_CORPUS.forEach(
+				(name, body) -> collectDeclineReport(smallPathRepository, name, body, byReason, byQuery, failures));
 
 		String report = render(byReason, byQuery, failures);
 		System.out.println(report);
@@ -419,6 +545,30 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 		assertThat(failures).as("adversarial queries that failed to execute").isEmpty();
 		assertThat(byQuery).as("adversarial queries still declining (report at %s):%n%s", reportFile(), report)
 				.isEmpty();
+	}
+
+	private static void collectDeclineReport(SailRepository target, String name, String body,
+			Map<String, Set<String>> byReason, Map<String, Set<String>> byQuery, Map<String, String> failures) {
+		String query = PREFIXES + body;
+		Set<String> reasons;
+		long started = System.nanoTime();
+		try {
+			reasons = declineReasons(target, query);
+		} catch (RuntimeException problem) {
+			failures.put(name, String.valueOf(problem));
+			System.out.println(String.format("%-30s FAILED  %s", name, problem));
+			return;
+		}
+		System.out.println(String.format("%-30s %5d ms  %s", name, (System.nanoTime() - started) / 1_000_000L,
+				reasons.isEmpty() ? "engaged" : String.join(", ", reasons)));
+		for (String reason : reasons) {
+			String bare = reason.substring(reason.indexOf(':') + 1);
+			if (isAllowedSemanticHandoff(bare)) {
+				continue;
+			}
+			byReason.computeIfAbsent(reason, key -> new LinkedHashSet<>()).add(name);
+			byQuery.computeIfAbsent(name, key -> new LinkedHashSet<>()).add(reason);
+		}
 	}
 
 	private static boolean isAllowedSemanticHandoff(String bareReason) {
@@ -433,10 +583,14 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 	}
 
 	private static Set<String> declineReasons(String query) {
+		return declineReasons(repository, query);
+	}
+
+	private static Set<String> declineReasons(SailRepository target, String query) {
 		Set<String> reasons = new LinkedHashSet<>();
 		for (int run = 0; run < WARMUP_RUNS; run++) {
 			reasons.clear();
-			try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (SailRepositoryConnection connection = target.getConnection()) {
 				org.eclipse.rdf4j.query.TupleQuery prepared = connection.prepareTupleQuery(query);
 				prepared.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
 				collectDeclineReasons(prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode(), reasons);

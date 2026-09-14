@@ -25,6 +25,7 @@ final class LmdbNativeStrategyCatalog {
 		Set<String> names = new LinkedHashSet<>(LmdbNativeForceableStrategies.names());
 		names.addAll(List.of(LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION_INTERPRETED,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL,

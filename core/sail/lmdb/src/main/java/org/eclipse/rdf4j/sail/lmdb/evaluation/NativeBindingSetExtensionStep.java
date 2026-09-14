@@ -79,7 +79,8 @@ final class NativeBindingSetExtensionStep implements QueryEvaluationStep, LmdbNa
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-		return new ExtensionIteration(arg.evaluate(bindings), assignments);
+		CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
+		return new ExtensionIteration(delegate, assignments, NativeExecutionContextCarrier.contextOf(delegate));
 	}
 
 	@Override
@@ -97,19 +98,43 @@ final class NativeBindingSetExtensionStep implements QueryEvaluationStep, LmdbNa
 	private record Assignment(String name, NativeBindingSetValueEvaluator evaluator) {
 	}
 
-	private static final class ExtensionIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
+	private static final class ExtensionIteration
+			implements CloseableIteration<BindingSet>, CooperativeCancellation, NativeExecutionContextCarrier {
 		private final CloseableIteration<BindingSet> delegate;
 		private final Assignment[] assignments;
+		private final NativeExecutionContext executionContext;
+		private final NativeExecutionContext.Lease lease;
 		private boolean closed;
 
-		private ExtensionIteration(CloseableIteration<BindingSet> delegate, Assignment[] assignments) {
+		private ExtensionIteration(CloseableIteration<BindingSet> delegate, Assignment[] assignments,
+				NativeExecutionContext executionContext) {
 			this.delegate = delegate;
 			this.assignments = assignments;
+			this.executionContext = executionContext;
+			this.lease = NativeExecutionContextCarrier.retain(delegate);
 		}
 
 		@Override
 		public boolean hasNext() {
-			return !closed && delegate.hasNext();
+			if (closed) {
+				return false;
+			}
+			try {
+				boolean result = delegate.hasNext();
+				if (!result) {
+					close();
+				}
+				return result;
+			} catch (RuntimeException | Error e) {
+				try {
+					close();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != e) {
+						e.addSuppressed(cleanup);
+					}
+				}
+				throw e;
+			}
 		}
 
 		@Override
@@ -117,20 +142,31 @@ final class NativeBindingSetExtensionStep implements QueryEvaluationStep, LmdbNa
 			if (!hasNext()) {
 				throw new NoSuchElementException();
 			}
-			BindingSet source = delegate.next();
-			MapBindingSet result = new MapBindingSet(source.size() + assignments.length);
-			for (Binding binding : source) {
-				result.setBinding(binding);
-			}
-			for (Assignment assignment : assignments) {
-				NativeValueOutcome outcome = assignment.evaluator().evaluate(result);
-				if (outcome.isBound()) {
-					result.setBinding(assignment.name(), outcome.value());
-				} else {
-					result.removeBinding(assignment.name());
+			try {
+				BindingSet source = delegate.next();
+				MapBindingSet result = new MapBindingSet(source.size() + assignments.length);
+				for (Binding binding : source) {
+					result.setBinding(binding);
 				}
+				for (Assignment assignment : assignments) {
+					NativeValueOutcome outcome = assignment.evaluator().evaluate(result, executionContext);
+					if (outcome.isBound()) {
+						result.setBinding(assignment.name(), outcome.value());
+					} else {
+						result.removeBinding(assignment.name());
+					}
+				}
+				return result;
+			} catch (RuntimeException | Error e) {
+				try {
+					close();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != e) {
+						e.addSuppressed(cleanup);
+					}
+				}
+				throw e;
 			}
-			return result;
 		}
 
 		@Override
@@ -142,7 +178,7 @@ final class NativeBindingSetExtensionStep implements QueryEvaluationStep, LmdbNa
 		public void close() {
 			if (!closed) {
 				closed = true;
-				delegate.close();
+				NativeExecutionContextCarrier.closeWithLease(delegate, lease);
 			}
 		}
 
@@ -150,6 +186,11 @@ final class NativeBindingSetExtensionStep implements QueryEvaluationStep, LmdbNa
 		public boolean requestCancellation() {
 			return !closed && delegate instanceof CooperativeCancellation cancellation
 					&& cancellation.requestCancellation();
+		}
+
+		@Override
+		public NativeExecutionContext executionContext() {
+			return executionContext;
 		}
 	}
 }
@@ -177,6 +218,11 @@ record NativeValueOutcome(Kind kind, Value value) {
 @FunctionalInterface
 interface NativeBindingSetValueEvaluator {
 	NativeValueOutcome evaluate(BindingSet bindings);
+
+	/** Evaluates against the current query execution when one is available. */
+	default NativeValueOutcome evaluate(BindingSet bindings, NativeExecutionContext executionContext) {
+		return evaluate(bindings);
+	}
 }
 
 /** Value-led semantic compiler independent of LMDB id availability. */
@@ -191,6 +237,10 @@ final class NativeBindingSetValueCompiler {
 		if (scalarSubquery != null) {
 			return scalarSubquery;
 		}
+		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(expression);
+		if (!descriptor.shareableAcrossEvaluations()) {
+			return new EvaluationScopedValueEvaluator(descriptor, strategy, context);
+		}
 		QueryValueEvaluationStep valueStep = strategy.precompile(expression, context);
 		return bindings -> {
 			try {
@@ -199,5 +249,44 @@ final class NativeBindingSetValueCompiler {
 				return NativeValueOutcome.ERROR;
 			}
 		};
+	}
+
+	/**
+	 * Prepares query-scoped value expressions once for each evaluation. Preparing a NOW-bearing expression against the
+	 * compile-time context would freeze its value in a retained plan, so the descriptor is compiled against the
+	 * execution's shared generic context on first use instead.
+	 */
+	private static final class EvaluationScopedValueEvaluator implements NativeBindingSetValueEvaluator {
+		private final GenericSubplanDescriptor descriptor;
+		private final LmdbNativeEvaluationStrategy strategy;
+		private final QueryEvaluationContext compileContext;
+
+		private EvaluationScopedValueEvaluator(GenericSubplanDescriptor descriptor,
+				LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext compileContext) {
+			this.descriptor = descriptor;
+			this.strategy = strategy;
+			this.compileContext = compileContext;
+		}
+
+		@Override
+		public NativeValueOutcome evaluate(BindingSet bindings) {
+			return evaluate(bindings, null);
+		}
+
+		@Override
+		public NativeValueOutcome evaluate(BindingSet bindings, NativeExecutionContext executionContext) {
+			QueryValueEvaluationStep valueStep = executionContext == null
+					? strategy.precompile(descriptor.<ValueExpr>pinnedExpr(), compileContext)
+					: executionContext.genericStep(descriptor, () -> {
+						QueryEvaluationContext scoped = executionContext
+								.genericContext(() -> new EvaluationScopedQueryEvaluationContext(compileContext));
+						return strategy.precompile(descriptor.<ValueExpr>pinnedExpr(), scoped);
+					});
+			try {
+				return NativeValueOutcome.bound(valueStep.evaluate(bindings));
+			} catch (ValueExprEvaluationException e) {
+				return NativeValueOutcome.ERROR;
+			}
+		}
 	}
 }

@@ -18,9 +18,30 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeStrategyProposalTest {
+
+	private String previousStartupCost;
+
+	@BeforeEach
+	void isolateDefaultStartupCost() {
+		previousStartupCost = System.clearProperty(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY);
+	}
+
+	@AfterEach
+	void restoreStartupCost() {
+		if (previousStartupCost == null) {
+			System.clearProperty(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY);
+		} else {
+			System.setProperty(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY, previousStartupCost);
+		}
+	}
 
 	@Test
 	void eightWorkerParallelProposalBeatsBatchForMillionRowOverlap() {
@@ -28,7 +49,7 @@ class LmdbNativeStrategyProposalTest {
 		double parallel = invokeDouble("parallelCost", 2_000_000D, 8);
 
 		assertThat(batch).isEqualTo(2_000_000D);
-		assertThat(parallel).isEqualTo(275_000D);
+		assertThat(parallel).isEqualTo(262_500D);
 		assertThat(invokeChoice(batch, parallel)).isEqualTo("parallelPipelines");
 	}
 
@@ -37,7 +58,7 @@ class LmdbNativeStrategyProposalTest {
 		double batch = invokeDouble("batchCost", 1_000_000D, 1_000_000D);
 		double parallel = invokeDouble("parallelCost", 2_000_000D, 1);
 
-		assertThat(parallel).isEqualTo(2_025_000D);
+		assertThat(parallel).isEqualTo(2_012_500D);
 		assertThat(invokeChoice(batch, parallel)).isEqualTo("batch");
 	}
 

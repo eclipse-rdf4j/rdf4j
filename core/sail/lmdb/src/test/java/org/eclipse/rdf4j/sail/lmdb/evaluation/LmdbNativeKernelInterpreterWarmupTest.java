@@ -34,14 +34,19 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Pending-compile warm-up tier (M5 of {@code .agent/lmdb-kernel-interpreter-execplan.md}): with janino ENABLED but the
  * compile deterministically unavailable (thresholdRows = Long.MAX_VALUE forces the below-threshold decline with no
- * async race), {@code rdf4j.lmdb.kernelInterpreter.warmup=true} must serve the interpreter on both rungs — proven by
- * the AGG_OPENED/OPENED counters, which only the kernel rungs advance — while warmup off keeps today's decline (the
- * counters stay at zero and the interpreted ladder still answers correctly).
+ * async race), the grouped arbiter still offers the interpreted tier independently of the compiled tier. The warm-up
+ * property controls the compiled tier's AUTO fallback and does not disable that independent interpreted candidate, so
+ * the warm-up-on and warm-up-off cases both require exact results, interpreter engagement, and zero compiled binds.
+ * Separate interpreter-disabled controls prove that the compiled tier declines and the sequential ladder keeps
+ * answering correctly when no interpreted candidate is available.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeKernelInterpreterWarmupTest {
 
 	private static final String EX = "http://example.com/warm/";
@@ -140,53 +145,101 @@ class LmdbNativeKernelInterpreterWarmupTest {
 	}
 
 	@Test
-	void warmupServesTheAggregateRungWhileTheCompileIsUnavailable() {
+	void warmupOnLeavesTheAggregateInterpreterAvailableWhenCompileIsUnavailable() {
 		List<String> expected = generic(AGGREGATE_QUERY);
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.warmup", "true");
 		LmdbNativeKernelExecution.resetMetrics();
 		assertThat(nativeRows(AGGREGATE_QUERY)).isEqualTo(expected);
 		assertThat(LmdbNativeKernelExecution.AGG_OPENED.get())
-				.as("warmup must serve the interpreter for a below-threshold compile")
+				.as("the independently offered aggregate interpreter must serve while compile is unavailable; this counter "
+						+ "does not identify AUTO fallback")
 				.isPositive();
 		assertThat(JaninoPipelineTestAccess.openedAny())
-				.as("an interpreted aggregate must not count as an opened compiled kernel")
+				.as("the aggregate interpreter must not count as an opened compiled kernel")
 				.isZero();
 	}
 
 	@Test
-	void warmupOffKeepsTheBelowThresholdDecline() {
+	void warmupOffRetainsTheIndependentAggregateInterpreter() {
 		List<String> expected = generic(AGGREGATE_QUERY);
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.warmup", "false");
 		LmdbNativeKernelExecution.resetMetrics();
 		assertThat(nativeRows(AGGREGATE_QUERY)).isEqualTo(expected);
 		assertThat(LmdbNativeKernelExecution.AGG_OPENED.get())
-				.as("without warmup a below-threshold compile must keep today's decline")
+				.as("warmup=false must leave the independently offered aggregate interpreter available")
+				.isPositive();
+		assertThat(JaninoPipelineTestAccess.openedAny())
+				.as("warmup=false must not open a compiled aggregate kernel below the threshold")
 				.isZero();
 	}
 
 	@Test
-	void warmupServesTheRowRungWhileTheCompileIsUnavailable() {
+	void interpreterDisabledAggregateFallsBackAfterCompiledDecline() {
+		assertInterpreterDisabledFallback(AGGREGATE_QUERY, generic(AGGREGATE_QUERY), true);
+	}
+
+	@Test
+	void warmupOnLeavesTheRowInterpreterAvailableWhenCompileIsUnavailable() {
 		List<String> expected = generic(ROW_QUERY);
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.warmup", "true");
 		LmdbNativeKernelExecution.resetMetrics();
 		assertThat(nativeRows(ROW_QUERY)).isEqualTo(expected);
 		assertThat(LmdbNativeKernelExecution.OPENED.get())
-				.as("warmup must serve the row interpreter for a below-threshold compile")
+				.as("the independently offered row interpreter must serve while compile is unavailable; this counter does "
+						+ "not identify AUTO fallback")
 				.isPositive();
 		assertThat(JaninoPipelineTestAccess.openedAny())
-				.as("an interpreted row kernel must not count as an opened compiled kernel")
+				.as("the row interpreter must not count as an opened compiled kernel")
 				.isZero();
 	}
 
 	@Test
-	void warmupOffKeepsTheRowRungDecline() {
+	void warmupOffRetainsTheIndependentRowInterpreter() {
 		List<String> expected = generic(ROW_QUERY);
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.warmup", "false");
 		LmdbNativeKernelExecution.resetMetrics();
 		assertThat(nativeRows(ROW_QUERY)).isEqualTo(expected);
 		assertThat(LmdbNativeKernelExecution.OPENED.get())
-				.as("without warmup a below-threshold row compile must keep today's decline")
+				.as("warmup=false must leave the independently offered row interpreter available")
+				.isPositive();
+		assertThat(JaninoPipelineTestAccess.openedAny())
+				.as("warmup=false must not open a compiled row kernel below the threshold")
 				.isZero();
+	}
+
+	@Test
+	void interpreterDisabledRowFallsBackAfterCompiledDecline() {
+		assertInterpreterDisabledFallback(ROW_QUERY, generic(ROW_QUERY), false);
+	}
+
+	private void assertInterpreterDisabledFallback(String query, List<String> expected, boolean aggregate) {
+		String previousInterpreter = System.getProperty("rdf4j.lmdb.kernelInterpreter.enabled");
+		String previousWarmup = System.getProperty("rdf4j.lmdb.kernelInterpreter.warmup");
+		try {
+			System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
+			System.setProperty("rdf4j.lmdb.kernelInterpreter.warmup", "false");
+			LmdbNativeKernelExecution.resetMetrics();
+			assertThat(nativeRows(query)).isEqualTo(expected);
+			assertThat(aggregate ? LmdbNativeKernelExecution.AGG_OPENED.get()
+					: LmdbNativeKernelExecution.OPENED.get())
+							.as("with the interpreter disabled, the below-threshold %s kernel must decline",
+									aggregate ? "aggregate" : "row")
+							.isZero();
+			assertThat(JaninoPipelineTestAccess.openedAny())
+					.as("with the interpreter disabled, no compiled kernel may open below the threshold")
+					.isZero();
+		} finally {
+			restoreProperty("rdf4j.lmdb.kernelInterpreter.enabled", previousInterpreter);
+			restoreProperty("rdf4j.lmdb.kernelInterpreter.warmup", previousWarmup);
+		}
+	}
+
+	private static void restoreProperty(String property, String previous) {
+		if (previous == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, previous);
+		}
 	}
 
 	private List<String> generic(String query) {

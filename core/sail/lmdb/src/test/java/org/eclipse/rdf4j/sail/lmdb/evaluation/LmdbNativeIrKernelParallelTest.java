@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -49,6 +50,7 @@ class LmdbNativeIrKernelParallelTest {
 			"rdf4j.lmdb.nativeQueryEngine.enabled",
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
+			"rdf4j.lmdb.janinoCodegen.synchronous",
 			"rdf4j.lmdb.janinoCodegen.dumpDir",
 			"rdf4j.lmdb.factorizedRows.enabled",
 			"rdf4j.lmdb.factorizedTail.enabled",
@@ -65,6 +67,7 @@ class LmdbNativeIrKernelParallelTest {
 			"rdf4j.lmdb.adaptiveProbe.enabled",
 			"rdf4j.lmdb.adaptiveHedge.enabled",
 			"rdf4j.lmdb.nativeHashJoin.minRows",
+			LmdbNativeKernelLowering.HASH_JOIN_PROPERTY,
 			"rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.parallel.threads",
 			"rdf4j.lmdb.parallel.minWorkEstimate",
@@ -122,6 +125,21 @@ class LmdbNativeIrKernelParallelTest {
 	/** M10B: a hash-build kernel partitions the probe root; each worker replicates the (small) build table. */
 	private static final String HASH_JOIN_QUERY = "SELECT ?s ?m ?v WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
 			+ "q> ?v }";
+
+	private static String languageDistinctValuesQuery() {
+		StringBuilder values = new StringBuilder("SELECT DISTINCT ?value WHERE { VALUES ?value { ");
+		for (int i = 0; i < 128; i++) {
+			if (i > 0) {
+				values.append(' ');
+			}
+			switch (i % 3) {
+			case 0 -> values.append("\"x\"@EN");
+			case 1 -> values.append("\"y\"@en");
+			default -> values.append("\"x\"@en");
+			}
+		}
+		return values.append(" } ?s <").append(EX).append("p> ?m }").toString();
+	}
 
 	@TempDir
 	File dataDir;
@@ -203,6 +221,7 @@ class LmdbNativeIrKernelParallelTest {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
 		// This class validates the IR row rung itself. Prevent stronger interpreted specialists from winning the
 		// common arbiter while leaving the IR lowering capabilities exercised below.
 		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
@@ -212,6 +231,9 @@ class LmdbNativeIrKernelParallelTest {
 		System.setProperty("rdf4j.lmdb.chunkPipeline.enabled", "false");
 		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
 		System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
+		// The hash-build lowering is a blocking whole-result shape and has dedicated coverage in
+		// LmdbNativeHashJoinBatchTest. This class asserts the resumable two-pattern row kernel's parallel rung.
+		System.setProperty(LmdbNativeKernelLowering.HASH_JOIN_PROPERTY, "false");
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "true");
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.warmup", "true");
 		System.setProperty("rdf4j.lmdb.adaptiveFilterPlacement.enabled", "false");
@@ -269,21 +291,43 @@ class LmdbNativeIrKernelParallelTest {
 		assertSemanticNativeWithoutGeneric(DISTINCT_BGP_QUERY, expected);
 	}
 
+	@Test
+	void parallelDistinctMergesLanguageTermsBySemanticKeys() {
+		String query = languageDistinctValuesQuery();
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(query);
+		assertThat(expected).containsExactlyInAnyOrder("value=\"x\"@EN", "value=\"y\"@en");
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+
+		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+		List<String> actual = rows(query, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED);
+		assertThat(normalizeLanguageTags(actual)).containsExactlyInAnyOrderElementsOf(normalizeLanguageTags(expected));
+		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get())
+				.as("language-equivalent values must remain deduplicated across worker pages")
+				.isGreaterThan(parallelBefore);
+	}
+
+	private static List<String> normalizeLanguageTags(List<String> rows) {
+		return rows.stream().map(row -> row.replace("@EN", "@en")).toList();
+	}
+
 	/**
 	 * Plan 32 witness-ordering pin: inside an existential rewrite, probes must anchor on VARIABLES (the outer join
 	 * column), never on a constant. A constant-anchored witness probe (`find(c<i>)` in the generated source) enumerates
 	 * a whole class extent per outer row — persons x extent on SP2B-scale stores, observed as a 60 s timeout against a
-	 * 60 ms interpreted baseline, with the profile pinned in the paged-CSF per-ordinal reader.
+	 * 60 ms interpreted baseline, with the profile pinned in the paged-CSF per-ordinal reader. The validated
+	 * variable-anchored witness is resumable and therefore eligible for the parallel row rung.
 	 */
 	@Test
-	void existentialWitnessKernelDeclinesToSemanticNativeWithoutLosingParity() {
+	void existentialWitnessKernelRunsParallelWithoutLosingParity() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(EXISTS_QUERY);
+		assertThat(expected).isNotEmpty();
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 
-		assertBlockingKernelDeclinesToSemanticNative(EXISTS_QUERY, expected);
+		assertParallelKernelMatchesGeneric(EXISTS_QUERY, expected);
 		assertThat(KernelExecutionTestAccess.rowExistsLowerings())
-				.as("the semantic fallback must follow a successful variable-anchored witness lowering")
+				.as("the parallel kernel must follow a successful variable-anchored witness lowering")
 				.isGreaterThan(0);
 	}
 
@@ -317,13 +361,18 @@ class LmdbNativeIrKernelParallelTest {
 
 	/** M10B: the triangle's Intersect levels carry no cross-row state, so the root edge enumeration partitions. */
 	@Test
-	void wcojKernelDeclinesToSemanticNativeWithExactResults() {
+	void wcojKernelRunsParallelWithExactResults() {
 		// the interpreted leapfrog sits above the kernel in the ladder; disable it so the kernel route serves
+		String previousWcoj = System.getProperty("rdf4j.lmdb.wcoj.enabled");
 		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
 		try {
 			wcojKernelParallelBody();
 		} finally {
-			System.clearProperty("rdf4j.lmdb.wcoj.enabled");
+			if (previousWcoj == null) {
+				System.clearProperty("rdf4j.lmdb.wcoj.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.wcoj.enabled", previousWcoj);
+			}
 		}
 	}
 
@@ -333,11 +382,12 @@ class LmdbNativeIrKernelParallelTest {
 		assertThat(expected).hasSize(600);
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 
-		assertBlockingKernelDeclinesToSemanticNative(TRIANGLE_QUERY, expected);
+		assertParallelKernelMatchesGeneric(TRIANGLE_QUERY, expected,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED);
 		assertThat(KernelExecutionTestAccess.wcojLowerings()).isGreaterThan(0);
 	}
 
-	/** M10B: a two-pattern IR kernel partitions the probe root while preserving exact results. */
+	/** M10B: the compiled two-pattern IR kernel partitions the probe root while preserving exact results. */
 	@Test
 	void twoPatternKernelRunsParallelWithExactResults() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
@@ -345,27 +395,19 @@ class LmdbNativeIrKernelParallelTest {
 		assertThat(expected).isNotEmpty();
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 
-		KernelExecutionTestAccess.resetMetrics();
-		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
-		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
-		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
-		assertThat(rows(HASH_JOIN_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
-		assertThat(KernelExecutionTestAccess.planned()).isPositive();
-		assertThat(KernelExecutionTestAccess.opened()).isPositive();
-		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get()).isGreaterThan(parallelBefore);
-		assertThat(KernelExecutionTestAccess.hostedGenericCompiles()).isEqualTo(hostedBefore);
-		assertThat(KernelExecutionTestAccess.islandCompiles()).isEqualTo(islandsBefore);
+		assertParallelKernelMatchesGeneric(HASH_JOIN_QUERY, expected,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL);
 	}
 
-	/** M10: the plain EXISTS shape now carries a STATELESS in-kernel witness, so it partitions safely. */
+	/** M10: the plain EXISTS shape carries a STATELESS in-kernel witness, so it partitions safely. */
 	@Test
-	void witnessExistsKernelDeclinesToSemanticNativeWithExactResults() {
+	void witnessExistsKernelRunsParallelWithExactResults() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(EXISTS_QUERY);
 		assertThat(expected).isNotEmpty();
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 
-		assertBlockingKernelDeclinesToSemanticNative(EXISTS_QUERY, expected);
+		assertParallelKernelMatchesGeneric(EXISTS_QUERY, expected);
 		assertThat(KernelExecutionTestAccess.rowExistsLowerings()).isGreaterThan(0);
 	}
 
@@ -381,30 +423,17 @@ class LmdbNativeIrKernelParallelTest {
 		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get()).isEqualTo(parallelBefore);
 	}
 
-	private void assertBlockingKernelDeclinesToSemanticNative(String query, List<String> expected) {
-		KernelExecutionTestAccess.resetMetrics();
-		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
-		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
-		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
-
-		assertThat(rows(query)).containsExactlyInAnyOrderElementsOf(expected);
-		assertThat(KernelExecutionTestAccess.planned()).as("the IR shape must lower before the streaming gate")
-				.isPositive();
-		assertThat(KernelExecutionTestAccess.declined()).as("the non-resumable IR shape must decline before output")
-				.isPositive();
-		assertThat(KernelExecutionTestAccess.opened()).as("a blocking row kernel must not open").isZero();
-		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get()).isEqualTo(parallelBefore);
-		assertThat(KernelExecutionTestAccess.hostedGenericCompiles()).isEqualTo(hostedBefore);
-		assertThat(KernelExecutionTestAccess.islandCompiles()).isEqualTo(islandsBefore);
+	private void assertParallelKernelMatchesGeneric(String query, List<String> expected) {
+		assertParallelKernelMatchesGeneric(query, expected, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL);
 	}
 
-	private void assertParallelKernelMatchesGeneric(String query, List<String> expected) {
+	private void assertParallelKernelMatchesGeneric(String query, List<String> expected, String forcedStrategy) {
 		KernelExecutionTestAccess.resetMetrics();
 		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
 		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
 		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
 
-		assertThat(rows(query)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rows(query, forcedStrategy)).containsExactlyInAnyOrderElementsOf(expected);
 		assertThat(KernelExecutionTestAccess.planned()).isPositive();
 		assertThat(KernelExecutionTestAccess.opened()).isPositive();
 		assertThat(KernelExecutionTestAccess.declined()).isZero();
@@ -423,9 +452,17 @@ class LmdbNativeIrKernelParallelTest {
 	}
 
 	private List<String> rows(String query) {
+		return rows(query, null);
+	}
+
+	private List<String> rows(String query, String forcedStrategy) {
 		List<String> rows = new ArrayList<>();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			try (var result = conn.prepareTupleQuery(query).evaluate()) {
+			SailTupleQuery preparedQuery = (SailTupleQuery) conn.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			try (var result = preparedQuery.evaluate()) {
 				while (result.hasNext()) {
 					BindingSet bindings = result.next();
 					List<String> parts = new ArrayList<>();

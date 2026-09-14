@@ -254,9 +254,9 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 		if (!bindings.isEmpty()
 				|| !Boolean.parseBoolean(
 						System.getProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true"))) {
-			return fallback().evaluate(bindings);
+			return NativeExecutionContextCarrier.forEvaluation(fallback().evaluate(bindings), source);
 		}
-		return new CensusIteration(bindings);
+		return NativeExecutionContextCarrier.forEvaluation(new CensusIteration(bindings), source);
 	}
 
 	private final class CensusIteration extends ThreadSafeDelayedIteration<BindingSet>

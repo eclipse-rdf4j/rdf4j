@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -34,10 +35,12 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 
 /**
- * Regression coverage for {@code FILTER(CONTAINS(LCASE(?o), "..."))} over long, mixed-case stored literals. Every
- * company below carries a long {@code brands} literal whose substring match is only visible after case folding, so the
- * filter must survive whatever id-level pre-filtering the native engine applies.
+ * Manual throughput benchmark for small transactions with optional large adjacency prefill. The small variants add
+ * {@value #COMPANIES} companies one transaction at a time; the large variants first prefill two million companies and
+ * then run the same workload. The methods retain their three-hundred-second timeout for explicit manual runs and do not
+ * assert query results, so they are excluded from automatic correctness suites.
  */
+@Disabled("Manual throughput benchmark: large workload has no correctness assertions and exceeds automatic test budgets")
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class SmallTransactionsTest {
 

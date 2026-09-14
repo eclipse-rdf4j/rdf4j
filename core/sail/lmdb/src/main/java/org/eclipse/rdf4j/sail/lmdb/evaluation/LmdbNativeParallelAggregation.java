@@ -814,7 +814,7 @@ final class LmdbNativeParallelAggregation {
 			try (RowCursor cursor = prefix) {
 				if (tail != null && tail.groupsByTail()) {
 					while (row.advance(cursor)) {
-						tail.aggregateGrouped(row, table.longGroups());
+						tail.aggregateGrouped(row, table.longGroups(), ctx);
 					}
 				} else if (tail != null) {
 					while (row.advance(cursor)) {

@@ -186,7 +186,8 @@ final class LmdbNativeKernelExecution {
 					: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX;
 		}
 		if (requirements.nodeDomainIntersections > 0) {
-			return LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION;
+			return interpreted ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION_INTERPRETED
+					: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION;
 		}
 		return aggregateRoute(interpreted, requirements.wildcardViews > 0);
 	}
@@ -488,7 +489,7 @@ final class LmdbNativeKernelExecution {
 			if (parallelExecution == ParallelExecution.REQUIRE) {
 				return null;
 			}
-			hooks = lowered.bindings.needsHooks()
+			hooks = lowered.bindings.needsHooks() || lowered.kernel.requirements.hooks
 					? new LmdbNativeKernelHooks(row, lowered.bindings)
 					: null;
 			if (hooks != null) {
@@ -1177,7 +1178,9 @@ final class LmdbNativeKernelExecution {
 				return null;
 			}
 
-			hooks = lowered.bindings.needsHooks() ? new LmdbNativeKernelHooks(row, lowered.bindings) : null;
+			hooks = lowered.bindings.needsHooks() || lowered.kernel.requirements.hooks
+					? new LmdbNativeKernelHooks(row, lowered.bindings)
+					: null;
 			if (hooks != null) {
 				LmdbNativeKernelIr.OutputMods mods = lowered.kernel.terminal.mods;
 				if (mods.orderKeys != null && mods.valueOrder) {

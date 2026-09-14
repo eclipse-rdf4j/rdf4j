@@ -24,6 +24,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -141,6 +143,41 @@ public class LmdbNativeLazyProjectedResultTest {
 	}
 
 	@Test
+	public void collectMaterializationValuesResolvesDuplicateInlineAndDictionaryIdsOnce() {
+		assertDuplicateProjectionResolvesOnce(ValueIds.createId(ValueIds.T_INTEGER, 17L));
+		assertDuplicateProjectionResolvesOnce(ValueIds.createId(ValueIds.T_LITERAL, 17L));
+	}
+
+	@Test
+	public void collectMaterializationValuesReusesPreviouslyReadDuplicateSlot() {
+		long id = ValueIds.createId(ValueIds.T_DATETIME, 123L);
+		Value expected = repository.getValueFactory().createLiteral("duplicate");
+		StubSource source = new StubSource(Map.of(id, expected));
+		NativeProjectedBindingSet row = new NativeProjectedBindingSet(source,
+				new String[] { "first", "second" }, new int[] { 0, 1 }, new long[] { id, id });
+
+		Value later = row.getValue("second");
+		List<Value> collected = new ArrayList<>();
+		row.collectMaterializationValues(collected::add);
+
+		assertThat(collected).containsExactly(later, later);
+		assertThat(source.lazyValueCalls).as("a pre-read duplicate ID must not be resolved again").isEqualTo(1);
+	}
+
+	private static void assertDuplicateProjectionResolvesOnce(long id) {
+		Value expected = SimpleValueFactory.getInstance().createLiteral("duplicate");
+		StubSource source = new StubSource(Map.of(id, expected));
+		NativeProjectedBindingSet row = new NativeProjectedBindingSet(source,
+				new String[] { "first", "second" }, new int[] { 0, 1 }, new long[] { id, id });
+		List<Value> collected = new ArrayList<>();
+
+		row.collectMaterializationValues(collected::add);
+
+		assertThat(collected).containsExactly(expected, expected);
+		assertThat(source.lazyValueCalls).as("duplicate ID %s must be resolved once", id).isEqualTo(1);
+	}
+
+	@Test
 	public void compiledStepReusesCanonicalDuplicateProjectionLayoutAcrossRows() {
 		ValueFactory vf = repository.getValueFactory();
 		Value firstX = vf.createLiteral("first x");
@@ -176,6 +213,7 @@ public class LmdbNativeLazyProjectedResultTest {
 
 	private static final class StubSource implements NativeLmdbQuerySource {
 		private final Map<Long, Value> values;
+		private int lazyValueCalls;
 
 		private StubSource(Value value) {
 			this(Map.of(42L, value));
@@ -192,6 +230,7 @@ public class LmdbNativeLazyProjectedResultTest {
 
 		@Override
 		public Value lazyValue(long id) {
+			lazyValueCalls++;
 			return values.get(id);
 		}
 

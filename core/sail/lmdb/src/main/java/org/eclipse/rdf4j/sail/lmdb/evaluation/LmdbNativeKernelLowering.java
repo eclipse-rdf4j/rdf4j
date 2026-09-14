@@ -717,7 +717,7 @@ final class LmdbNativeKernelLowering {
 				LmdbNativeKernelIr.EnumerateDomain domain = (LmdbNativeKernelIr.EnumerateDomain) node;
 				loopCols = new int[] { domain.col };
 				uniqueCols = new boolean[] { false };
-				sorted = domain.col < builder.columnOrderedDomains.size()
+				sorted = domain.sortedKeys && domain.col < builder.columnOrderedDomains.size()
 						&& builder.columnOrderedDomains.get(domain.col) >= 0;
 			} else if (node instanceof LmdbNativeKernelIr.ScanQuad || node instanceof LmdbNativeKernelIr.PlanRows
 					|| node instanceof LmdbNativeKernelIr.Intersect
@@ -1818,6 +1818,16 @@ final class LmdbNativeKernelLowering {
 			columnOrderedDomains.set(column, current == UNASSIGNED_DOMAIN ? domain : -1);
 		}
 
+		private boolean patternDomainHasSemanticOrder() {
+			NativeLmdbQuerySource patternSource = row.source;
+			if (patternSource instanceof SyntheticValueSource) {
+				// Synthetic plan/runtime ids preserve evaluation-local spellings; the proof belongs to its physical
+				// backing source, not to the carrier's id space.
+				patternSource = ((SyntheticValueSource) patternSource).delegate;
+			}
+			return patternSource != null && patternSource.hasCanonicalIds();
+		}
+
 		private int constantIndex(long id) {
 			constants.add(id);
 			return constants.size() - 1;
@@ -2846,18 +2856,28 @@ final class LmdbNativeKernelLowering {
 					&& pattern.o.hasSlot() && slotFresh(pattern.o.slot)) {
 				int domain = patternDomainIndex(pattern.p.constant, pattern.s.constant, true);
 				int column = newColumn(pattern.o.slot);
-				markOrderedDomain(column, domain);
-				// A pattern-backed domain is one adjacency neighbor run: sorted, equal keys adjacent.
-				currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateDomain(domain, column, false, null, true));
+				boolean sortedKeys = patternDomainHasSemanticOrder();
+				if (sortedKeys) {
+					markOrderedDomain(column, domain);
+				}
+				// A canonical pattern-backed domain is one adjacency neighbor run: sorted, equal keys adjacent. Raw
+				// ordering from a noncanonical id space is not RDF-term ordering and cannot feed aligned DISTINCT.
+				currentDepthNodes().add(
+						new LmdbNativeKernelIr.EnumerateDomain(domain, column, false, null, sortedKeys));
 				return true;
 			}
 			if (!ctxActive && pattern.o.isConstant() && !pattern.o.hasSlot() && !pattern.s.isConstant()
 					&& pattern.s.hasSlot() && slotFresh(pattern.s.slot)) {
 				int domain = patternDomainIndex(pattern.p.constant, pattern.o.constant, false);
 				int column = newColumn(pattern.s.slot);
-				markOrderedDomain(column, domain);
-				// A pattern-backed domain is one adjacency neighbor run: sorted, equal keys adjacent.
-				currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateDomain(domain, column, false, null, true));
+				boolean sortedKeys = patternDomainHasSemanticOrder();
+				if (sortedKeys) {
+					markOrderedDomain(column, domain);
+				}
+				// A canonical pattern-backed domain is one adjacency neighbor run: sorted, equal keys adjacent. Raw
+				// ordering from a noncanonical id space is not RDF-term ordering and cannot feed aligned DISTINCT.
+				currentDepthNodes().add(
+						new LmdbNativeKernelIr.EnumerateDomain(domain, column, false, null, sortedKeys));
 				assuredMask |= 1L << pattern.s.slot;
 				return true;
 			}
@@ -3260,7 +3280,7 @@ final class LmdbNativeKernelLowering {
 			keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(plan.constants.clone()));
 			int domain = keyDomains.size() - 1;
 			int column = newColumn(slot);
-			markOrderedDomain(column, domain);
+			// Multi-value constants preserve query input order; they are not a sorted key domain.
 			currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateDomain(domain, column, true,
 					"ExactDomainDrive(slot=" + slot + ",arity=" + plan.constants.length + ")"));
 			return lowerPatternInline(plan.fallback);
@@ -3292,7 +3312,7 @@ final class LmdbNativeKernelLowering {
 			keyDomains.add(new LmdbNativeKernelBindings.DomainRequest(domain));
 			int domainIndex = keyDomains.size() - 1;
 			int column = newColumn(slot);
-			markOrderedDomain(column, domainIndex);
+			// Literal VALUES preserve query input order; they are not a sorted key domain.
 			currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateDomain(domainIndex, column));
 			return true;
 		}

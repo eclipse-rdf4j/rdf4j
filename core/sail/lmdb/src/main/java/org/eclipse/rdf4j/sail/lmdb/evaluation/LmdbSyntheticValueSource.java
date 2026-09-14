@@ -88,6 +88,10 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		this.context = context;
 		this.authority = context == null ? null : new LmdbNativeTermAuthority(delegate, catalog, context);
 		this.syntheticIdSpace = syntheticIdSpace;
+		if (context != null) {
+			context.installEvaluationSource(this);
+			context.installQueryScopedValueRegistrar(this::retainQueryScopedValue);
+		}
 	}
 
 	/** A fresh evaluation-scoped instance over the same store and catalog, owning its own runtime interner. */
@@ -100,6 +104,18 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext(active.context));
 		}
 		return new SyntheticValueSource(delegate, catalog, new NativeExecutionContext());
+	}
+
+	/** Returns the active source for a nested raw-source operator, or creates an empty-catalog evaluation source. */
+	static SyntheticValueSource forEvaluation(NativeLmdbQuerySource source) {
+		if (source instanceof SyntheticValueSource synthetic) {
+			return synthetic.forEvaluation();
+		}
+		SyntheticValueSource active = ACTIVE_EVALUATION.get();
+		if (active != null && active.delegate == source && active.generatedKeyAuthority == null) {
+			return active;
+		}
+		return new SyntheticValueSource(source, PlanValueCatalog.EMPTY).forEvaluation();
 	}
 
 	/** Activate once, before evaluation: no first-batch guesses, property changes or mutable plan flags. */
@@ -302,6 +318,13 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public Object idSpace() {
 		return syntheticIdSpace == null ? this : syntheticIdSpace;
+	}
+
+	@Override
+	public boolean hasCanonicalIds() {
+		// Plan and runtime ids are spelling-preserving synthetic values, so the wrapper cannot claim the backing
+		// store's canonical id invariant. Callers that inspect a pattern-backed store domain must unwrap this carrier.
+		return false;
 	}
 
 	@Override

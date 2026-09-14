@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -244,6 +245,12 @@ public class ConstantOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(FunctionCall functionCall) {
 			super.meet(functionCall);
+
+			if (QueryEvaluationUtility.resolveFunction(functionCall)
+					.filter(function -> !QueryEvaluationUtility.isSafeForPlanConstantFolding(function))
+					.isPresent()) {
+				return;
+			}
 
 			List<ValueExpr> args = functionCall.getArgs();
 

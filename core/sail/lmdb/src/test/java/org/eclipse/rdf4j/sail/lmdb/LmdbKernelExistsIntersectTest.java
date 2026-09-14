@@ -33,7 +33,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * ANALYTICS query 10 ({@code COUNT(DISTINCT ?node) WHERE { ?node ?p ?o . FILTER EXISTS { ?s ?q ?node } }}) must lower
@@ -54,9 +54,10 @@ class LmdbKernelExistsIntersectTest {
 			"  FILTER EXISTS { ?s ?q ?node . }",
 			"}");
 
-	@ParameterizedTest(name = "janinoEnabled={0}")
-	@ValueSource(strings = { "false", "true" })
-	void existsIntersectionAnswersTheDistinctNodeCount(String janinoEnabled, @TempDir Path dataDir) throws Exception {
+	@ParameterizedTest(name = "janinoEnabled={0}, interpreterEnabled={1}, parallelEnabled={2}")
+	@CsvSource({ "false, true, false", "true, false, false", "true, true, true" })
+	void existsIntersectionAnswersTheDistinctNodeCount(boolean janinoEnabled, boolean interpreterEnabled,
+			boolean parallelEnabled, @TempDir Path dataDir) throws Exception {
 		String previousEnabled = System.getProperty("rdf4j.lmdb.janinoCodegen.enabled");
 		String previousThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
 		String previousSynchronous = System.getProperty("rdf4j.lmdb.janinoCodegen.synchronous");
@@ -69,14 +70,13 @@ class LmdbKernelExistsIntersectTest {
 		String previousParallelAggregate = System.getProperty("rdf4j.lmdb.irAggregateParallel.enabled");
 		String previousAdaptiveCost = System.getProperty("rdf4j.lmdb.costCalibration.enabled");
 		String previousAdaptiveProbe = System.getProperty("rdf4j.lmdb.adaptiveProbe.enabled");
-		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", janinoEnabled);
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(janinoEnabled));
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
-		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled",
-				Boolean.toString(!Boolean.parseBoolean(janinoEnabled)));
+		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", Boolean.toString(interpreterEnabled));
 		// The dedicated q10 view must not depend on the optional general-purpose retained-synopsis feature.
 		System.setProperty(SYNOPSIS_PROPERTY, "false");
-		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", Boolean.toString(parallelEnabled));
 		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
 		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
@@ -129,7 +129,9 @@ class LmdbKernelExistsIntersectTest {
 						TupleQueryResult result = connection.prepareTupleQuery(QUERY).evaluate()) {
 					long count = ((org.eclipse.rdf4j.model.Literal) result.next().getValue("count")).longValue();
 					Assertions.assertEquals(384L, count,
-							"distinct referenced subjects, janinoEnabled=" + janinoEnabled);
+							"distinct referenced subjects, janinoEnabled=" + janinoEnabled
+									+ ", interpreterEnabled=" + interpreterEnabled + ", parallelEnabled="
+									+ parallelEnabled);
 				}
 				KernelExecutionTestAccess.resetCostCalibration();
 				try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -140,14 +142,28 @@ class LmdbKernelExistsIntersectTest {
 							plan.contains("irAggregateNodeDomainIntersection")
 									|| plan.contains("nativeIrSelectedOperatorActual=EnumerateNodeDomainIntersection"),
 							"both execution tiers must retain the structural node-domain intersection"
-									+ " (janinoEnabled=" + janinoEnabled + ") but the executed plan was:\n" + plan);
+									+ " (janinoEnabled=" + janinoEnabled + ", interpreterEnabled=" + interpreterEnabled
+									+ ", parallelEnabled=" + parallelEnabled
+									+ ") but the executed plan was:\n" + plan);
 					Assertions.assertTrue(
 							plan.contains("nativeIrSelectedOperatorActual=EnumerateNodeDomainIntersection"),
 							"selected-operator telemetry must identify the IR root for serial and parallel execution:\n"
 									+ plan);
+					if (!janinoEnabled && interpreterEnabled && !parallelEnabled) {
+						Assertions.assertTrue(
+								plan.contains("nativeExecutionPath=irAggregateNodeDomainIntersectionInterpreted"),
+								"the interpreter tier must publish its distinct serial node-domain route tag:\n"
+										+ plan);
+					}
+					if (janinoEnabled && interpreterEnabled) {
+						Assertions.assertTrue(
+								plan.contains("irAggregateNodeDomainIntersection=")
+										&& plan.contains("irAggregateNodeDomainIntersectionInterpreted="),
+								"both tiers must have distinct node-domain proposal tags:\n" + plan);
+					}
 					Assertions.assertFalse(plan.contains("filter-not-forkable"),
 							"the set-level IR intersection must not retain the per-row wildcard EXISTS hook:\n" + plan);
-					if (Boolean.parseBoolean(janinoEnabled)) {
+					if (janinoEnabled && parallelEnabled) {
 						Assertions.assertTrue(plan.contains("irAggregateParallel"),
 								"the compiled forced-parallel arm must execute a parallel IR aggregate:\n" + plan);
 						Assertions.assertTrue(

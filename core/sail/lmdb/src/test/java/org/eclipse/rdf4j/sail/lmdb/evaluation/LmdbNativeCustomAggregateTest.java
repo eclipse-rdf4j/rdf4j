@@ -30,14 +30,26 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunctionFactory;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateNAryFunction;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateNAryFunctionFactory;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRegistry;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateNAryFunctionRegistry;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -59,6 +71,43 @@ public class LmdbNativeCustomAggregateTest {
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String PREFIX = "PREFIX ex: <" + EX + ">\n";
 	private static final String NARY_IRI = "http://example.com/aggregate#weightedSum";
+	private static final String NOW_IRI = "http://example.com/aggregate#recordNow";
+
+	private static final AggregateFunctionFactory RECORD_NOW = new AggregateFunctionFactory() {
+		@Override
+		public String getIri() {
+			return NOW_IRI;
+		}
+
+		@Override
+		public AggregateFunction<NowCollector, Value> buildFunction(
+				java.util.function.Function<BindingSet, Value> evaluationStep) {
+			return new AggregateFunction<>(evaluationStep) {
+				@Override
+				public void processAggregate(BindingSet bindingSet, Predicate<Value> distinctValue,
+						NowCollector collector) {
+					Value value = evaluate(bindingSet);
+					if (value != null && collector.value == null) {
+						collector.value = value;
+					}
+				}
+			};
+		}
+
+		@Override
+		public AggregateCollector getCollector() {
+			return new NowCollector();
+		}
+	};
+
+	private static final class NowCollector implements AggregateCollector {
+		private Value value;
+
+		@Override
+		public Value getFinalValue() {
+			return value;
+		}
+	}
 
 	/** Order-insensitive n-ary test aggregate: sum of (?v * ?w) over the group. */
 	private static final AggregateNAryFunctionFactory WEIGHTED_SUM = new AggregateNAryFunctionFactory() {
@@ -119,11 +168,13 @@ public class LmdbNativeCustomAggregateTest {
 	@BeforeAll
 	public static void registerNAry() {
 		CustomAggregateNAryFunctionRegistry.getInstance().add(WEIGHTED_SUM);
+		CustomAggregateFunctionRegistry.getInstance().add(RECORD_NOW);
 	}
 
 	@AfterAll
 	public static void unregisterNAry() {
 		CustomAggregateNAryFunctionRegistry.getInstance().remove(WEIGHTED_SUM);
+		CustomAggregateFunctionRegistry.getInstance().remove(RECORD_NOW);
 	}
 
 	@TempDir
@@ -250,6 +301,57 @@ public class LmdbNativeCustomAggregateTest {
 	}
 
 	@Test
+	public void customAggregateNowUsesOneScopePerEvaluation() {
+		String query = PREFIX + "SELECT (<" + NOW_IRI + ">(NOW()) AS ?now) WHERE { ?s ex:value ?v }";
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+					new EvaluationStatistics(), false);
+			LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(root,
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy,
+					(NativeLmdbQuerySource) dataset);
+			assertThat(outcome.isSupported()).as("the custom aggregate query must compile natively").isTrue();
+			assertThat(outcome.step()).isInstanceOf(LmdbNativePhysicalPlan.class);
+			List<BindingSet> first = evaluate(outcome.step());
+			List<BindingSet> second = evaluate(outcome.step());
+			assertThat(first).hasSize(1);
+			assertThat(second).hasSize(1);
+			assertThat(first.getFirst().getValue("now")).as("custom aggregate must evaluate NOW").isNotNull();
+			assertThat(second.getFirst().getValue("now"))
+					.as("a retained custom aggregate must get a fresh query scope per evaluation")
+					.isNotSameAs(first.getFirst().getValue("now"));
+		}
+	}
+
+	@Test
+	public void customAggregateNowSharesScopeAcrossGroups() {
+		String query = PREFIX + "SELECT ?g (<" + NOW_IRI + ">(NOW()) AS ?now) WHERE { "
+				+ "?s ex:group ?g ; ex:value ?v } GROUP BY ?g";
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+					new EvaluationStatistics(), false);
+			LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(root,
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy,
+					(NativeLmdbQuerySource) dataset);
+			assertThat(outcome.isSupported()).as("the grouped custom aggregate query must compile natively").isTrue();
+			List<BindingSet> rows = evaluate(outcome.step());
+			assertThat(rows).hasSize(3);
+			Value representative = rows.getFirst().getValue("now");
+			assertThat(representative).isNotNull();
+			for (BindingSet row : rows) {
+				assertThat(row.getValue("now"))
+						.as("all groups in one query evaluation share the custom argument scope")
+						.isSameAs(representative);
+			}
+		}
+	}
+
+	@Test
 	public void emptyInputGlobalGroup() {
 		assertSameRows(PREFIX + "SELECT (<http://rdf4j.org/aggregate#stdev>(?v) AS ?sd) WHERE { "
 				+ "?s ex:doesNotExist ?v . }");
@@ -270,5 +372,11 @@ public class LmdbNativeCustomAggregateTest {
 				.hasMessageContaining("aggregate");
 		org.assertj.core.api.Assertions.assertThatThrownBy(() -> rows(query, false))
 				.hasMessageContaining("aggregate");
+	}
+
+	private static List<BindingSet> evaluate(QueryEvaluationStep step) {
+		try (var result = step.evaluate(org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance())) {
+			return QueryResults.asList(result);
+		}
 	}
 }

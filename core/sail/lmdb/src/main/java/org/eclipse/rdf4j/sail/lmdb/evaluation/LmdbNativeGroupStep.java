@@ -158,9 +158,13 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 			NativeEntryBindingVariant variant = NativeEntryBindingVariant.tryCreate(source, layout, bindings,
 					optionalOnlyNames);
 			if (variant == null) {
+				NativeLmdbQuerySource evalSource = evaluationSourceForGenericFallback(bindings);
+				initializeQueryBase(evalSource, bindings);
 				LmdbNativeExplain.recordExecutionPath(originalExpr,
 						LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK + "(optionalOnlyBinding)");
-				return genericStep().evaluate(bindings);
+				SyntheticValueSource synthetic = (SyntheticValueSource) evalSource;
+				return NativeExecutionContextCarrier.forEvaluation(
+						genericStep(synthetic.executionContext()).evaluate(bindings), synthetic);
 			}
 			LmdbNativeExplain.recordExecutionPath(originalExpr, variant.executionPath());
 			NativeLmdbQuerySource evalSource = evaluationSource();
@@ -238,7 +242,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 						(ValueExpr) havingDescriptor.pinnedExpr(), new SlotAwareQueryEvaluationContext(scoped, layout));
 			});
 			Predicate<BindingSet> predicate = bindings -> {
-				NativeValueOutcome outcome = evaluator.evaluate(bindings);
+				NativeValueOutcome outcome = evaluator.evaluate(bindings, executionContext);
 				return outcome.isBound()
 						&& QueryEvaluationUtility.getEffectiveBooleanValue(outcome.value()).orElse(false);
 			};
@@ -261,6 +265,10 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 	 */
 	private NativeLmdbQuerySource evaluationSource() {
 		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).forEvaluation() : source;
+	}
+
+	private NativeLmdbQuerySource evaluationSourceForGenericFallback(BindingSet bindings) {
+		return source instanceof SyntheticValueSource ? evaluationSource() : SyntheticValueSource.forEvaluation(source);
 	}
 
 	/** Group rows materialize interned values at emission, so the context may close with the iteration (gate 5). */
@@ -295,6 +303,20 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 			genericStep = strategy.genericPrecompile(originalExpr, context);
 		}
 		return genericStep;
+	}
+
+	synchronized QueryEvaluationStep genericStep(NativeExecutionContext executionContext) {
+		if (genericFallbackDescriptor == null) {
+			genericFallbackDescriptor = GenericSubplanDescriptor.create(originalExpr);
+		}
+		if (!genericFallbackDescriptor.shareableAcrossEvaluations()) {
+			return executionContext.genericStep(genericFallbackDescriptor, () -> {
+				QueryEvaluationContext scoped = executionContext
+						.genericContext(() -> new EvaluationScopedQueryEvaluationContext(context));
+				return strategy.genericPrecompile(genericFallbackDescriptor.<TupleExpr>pinnedExpr(), scoped);
+			});
+		}
+		return genericStep();
 	}
 
 	@Override
@@ -906,7 +928,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							: typeMatrixIr
 									? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED
 									: nodeDomainIntersectionIr
-											? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION
+											? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION_INTERPRETED
 											: wildcardIr
 													? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED
 													: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED;
@@ -1058,7 +1080,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	private List<BindingSet> evaluateTypeMatrixFallback() {
 		ArrayList<BindingSet> result = new ArrayList<>();
-		try (CloseableIteration<BindingSet> rows = typeMatrix.evaluate(base)) {
+		try (CloseableIteration<BindingSet> rows = typeMatrix.evaluate(base, source)) {
 			while (rows.hasNext()) {
 				result.add(rows.next());
 			}
@@ -1754,7 +1776,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			NativeGroupTable table = NativeGroupTable.tailGrouped(aggregates, context, hashDistinctChannels);
 			try (RowCursor prefix = openFactorizedPrefix(row, plan, derived, tail, prefixLength)) {
 				while (prefix.next()) {
-					tail.aggregateGrouped(row, table.longGroups());
+					tail.aggregateGrouped(row, table.longGroups(), context);
 				}
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
@@ -2046,7 +2068,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					// mirror the generic empty-solution special case: the global group still processes one
 					// EmptyBindingSet solution through the function before the collector finalizes
 					state.specs[i].custom.process(org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(),
-							state.customPredicates[i], state.customCollectors[i]);
+							state.customPredicates[i], state.customCollectors[i], state.ctx);
 				}
 				try {
 					org.eclipse.rdf4j.model.Value value = state.customCollectors[i].getFinalValue();

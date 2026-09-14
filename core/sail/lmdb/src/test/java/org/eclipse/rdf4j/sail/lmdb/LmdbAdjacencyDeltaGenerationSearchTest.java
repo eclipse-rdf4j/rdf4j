@@ -185,21 +185,36 @@ class LmdbAdjacencyDeltaGenerationSearchTest {
 			byte[] planes = new byte[rows.size()];
 			long[] predicates = new long[rows.size()];
 			long[] runRefs = new long[rows.size()];
-			for (int i = 0; i < rows.size(); i++) {
-				Row row = rows.get(i);
-				keys[i] = row.key;
-				planes[i] = (byte) row.plane;
-				predicates[i] = row.predicate;
-				runRefs[i] = row.runRef;
+			LmdbAdjacencyContextCatalog contexts = LmdbAdjacencyContextCatalog.base(deltaArena, new long[0]);
+			try {
+				for (int i = 0; i < rows.size(); i++) {
+					Row row = rows.get(i);
+					keys[i] = row.key;
+					planes[i] = (byte) row.plane;
+					predicates[i] = row.predicate;
+					if (row.runRef != 0) {
+						LmdbAdjacencyRunCodec.Encoder encoder = LmdbAdjacencyRunCodec.writingEncoder(contexts,
+								deltaArena);
+						encoder.accept(row.runRef, 0);
+						runRefs[i] = encoder.finish().rootRef;
+					}
+				}
+			} finally {
+				contexts.close();
 			}
-			Charge charge = account.tryCharge(MemoryKind.DELTA, REGION_BYTES);
+			long deltaCapacity = deltaArena.capacityBytes();
+			Charge charge = account.tryCharge(MemoryKind.DELTA, deltaCapacity);
 			if (charge == null) {
+				generationCatalog.close();
+				deltaArena.close();
 				throw new IllegalStateException("test generation charge refused");
 			}
 			Charge metadataCharge = account.tryCharge(MemoryKind.JAVA_METADATA,
 					LmdbAdjacencyDeltaGeneration.modeledJavaBytes(keys.length));
 			if (metadataCharge == null) {
 				charge.close();
+				generationCatalog.close();
+				deltaArena.close();
 				throw new IllegalStateException("test generation metadata charge refused");
 			}
 			generation = new LmdbAdjacencyDeltaGeneration(8, deltaArena, generationCatalog, charge, metadataCharge,

@@ -1,4 +1,4 @@
-# name	aggregate	expected-count (- means generic-oracle comparison)
+# name	aggregate	expected-count (- means generic-oracle comparison)	optional route-family
 fixed-service	true	3
 duplicate-values	true	5
 undef-values	true	5
@@ -46,8 +46,9 @@ unbound-aggregate	true	-
 # r14 resumable producer composition; real RDF4J execution remains an integration requirement.
 rows-local-star-path-service-first	false	-
 rows-local-plus-path-service-first	false	-
-rows-dynamic-predicate-service-first	false	-
-rows-dynamic-predicate-service-resume	false	-
+rows-dynamic-predicate-service-first	false	-	wildcard
+rows-dynamic-predicate-service-resume	false	-	wildcard
+rows-dynamic-predicate-service-singleton-control	false	-	adaptive-control
 rows-optional-missing-service-resume	false	-
 rows-identity-optional-service	false	-
 rows-identity-union-service	false	-

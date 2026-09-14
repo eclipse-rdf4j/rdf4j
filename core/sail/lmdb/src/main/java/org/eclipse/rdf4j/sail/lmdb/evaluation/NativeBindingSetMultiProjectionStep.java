@@ -40,7 +40,9 @@ final class NativeBindingSetMultiProjectionStep implements QueryEvaluationStep, 
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-		return new MultiProjectionIteration(arg.evaluate(bindings), bindings, projections);
+		CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
+		return new MultiProjectionIteration(delegate, bindings, projections,
+				NativeExecutionContextCarrier.contextOf(delegate));
 	}
 
 	@Override
@@ -70,45 +72,64 @@ final class NativeBindingSetMultiProjectionStep implements QueryEvaluationStep, 
 	}
 
 	private static final class MultiProjectionIteration
-			implements CloseableIteration<BindingSet>, CooperativeCancellation {
+			implements CloseableIteration<BindingSet>, CooperativeCancellation, NativeExecutionContextCarrier {
 
 		private final CloseableIteration<BindingSet> delegate;
 		private final BindingSet parentBindings;
 		private final ProjectionSpec[] projections;
 		private final BindingSet[] previousBindings;
+		private final NativeExecutionContext executionContext;
+		private final NativeExecutionContext.Lease lease;
 		private BindingSet currentBindings;
 		private BindingSet next;
 		private int nextProjectionIndex = -1;
 		private boolean closed;
 
 		private MultiProjectionIteration(CloseableIteration<BindingSet> delegate, BindingSet parentBindings,
-				ProjectionSpec[] projections) {
+				ProjectionSpec[] projections, NativeExecutionContext executionContext) {
 			this.delegate = delegate;
 			this.parentBindings = parentBindings;
 			this.projections = projections;
+			this.executionContext = executionContext;
+			this.lease = NativeExecutionContextCarrier.retain(delegate);
 			this.previousBindings = new BindingSet[projections.length];
 		}
 
 		@Override
 		public boolean hasNext() {
-			while (!closed && next == null) {
-				if (nextProjectionIndex >= 0 && nextProjectionIndex < projections.length) {
-					int projectionIndex = nextProjectionIndex++;
-					ProjectionSpec projection = projections[projectionIndex];
-					BindingSet candidate = NativeBindingSetProjectionStep.project(currentBindings, parentBindings,
-							projection.sourceNames(), projection.targetNames(), false);
-					if (!candidate.equals(previousBindings[projectionIndex])) {
-						previousBindings[projectionIndex] = candidate;
-						next = candidate;
-					}
-				} else if (delegate.hasNext()) {
-					currentBindings = delegate.next();
-					nextProjectionIndex = 0;
-				} else {
-					return false;
-				}
+			if (closed) {
+				return false;
 			}
-			return next != null;
+			try {
+				while (next == null) {
+					if (nextProjectionIndex >= 0 && nextProjectionIndex < projections.length) {
+						int projectionIndex = nextProjectionIndex++;
+						ProjectionSpec projection = projections[projectionIndex];
+						BindingSet candidate = NativeBindingSetProjectionStep.project(currentBindings, parentBindings,
+								projection.sourceNames(), projection.targetNames(), false);
+						if (!candidate.equals(previousBindings[projectionIndex])) {
+							previousBindings[projectionIndex] = candidate;
+							next = candidate;
+						}
+					} else if (delegate.hasNext()) {
+						currentBindings = delegate.next();
+						nextProjectionIndex = 0;
+					} else {
+						close();
+						return false;
+					}
+				}
+				return next != null;
+			} catch (RuntimeException | Error e) {
+				try {
+					close();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != e) {
+						e.addSuppressed(cleanup);
+					}
+				}
+				throw e;
+			}
 		}
 
 		@Override
@@ -134,7 +155,7 @@ final class NativeBindingSetMultiProjectionStep implements QueryEvaluationStep, 
 				next = null;
 				nextProjectionIndex = -1;
 				Arrays.fill(previousBindings, null);
-				delegate.close();
+				NativeExecutionContextCarrier.closeWithLease(delegate, lease);
 			}
 		}
 
@@ -144,6 +165,11 @@ final class NativeBindingSetMultiProjectionStep implements QueryEvaluationStep, 
 				return false;
 			}
 			return cancellation.requestCancellation();
+		}
+
+		@Override
+		public NativeExecutionContext executionContext() {
+			return executionContext;
 		}
 	}
 }

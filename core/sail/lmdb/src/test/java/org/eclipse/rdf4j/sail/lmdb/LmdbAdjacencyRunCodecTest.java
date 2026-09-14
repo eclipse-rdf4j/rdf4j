@@ -201,6 +201,77 @@ class LmdbAdjacencyRunCodecTest {
 	}
 
 	@Test
+	void compactionReencodesNestedPersistentDirectoryWithCollidingSourceIds() {
+		LmdbAdjacencyArena sourceArena = newArena(1 << 20);
+		LmdbAdjacencyContextCatalog contexts = LmdbAdjacencyContextCatalog.base(sourceArena, new long[0]);
+		toClose.add(contexts);
+		LmdbAdjacencyArenaCatalog sourceCatalog = newCatalog(sourceArena);
+		int sourceId = sourceCatalog.sourceRegistry().sourceIdForArena(sourceArena);
+		List<LmdbAdjacencyRunCodec.PersistentChild> leaves = new ArrayList<>();
+		for (int i = 0; i < 65; i++) {
+			long neighbor = 10_000L + i * 2L;
+			LmdbAdjacencyRunCodec.Encoder encoder = LmdbAdjacencyRunCodec.writingEncoder(contexts, sourceArena);
+			encoder.accept(neighbor, 0);
+			long leafRef = encoder.finish().rootRef;
+			leaves.add(new LmdbAdjacencyRunCodec.PersistentChild(neighbor, 0, 1, 0, sourceId, leafRef,
+					LmdbAdjacencyRunCodec.LEAF_RUN_SLICE));
+		}
+		List<LmdbAdjacencyRunCodec.PersistentChild> levelOne = new ArrayList<>();
+		for (int from = 0; from < leaves.size(); from += LmdbAdjacencyRunCodec.PERSISTENT_FANOUT) {
+			int to = Math.min(leaves.size(), from + LmdbAdjacencyRunCodec.PERSISTENT_FANOUT);
+			List<LmdbAdjacencyRunCodec.PersistentChild> group = leaves.subList(from, to);
+			long nodeRef = LmdbAdjacencyRunCodec.writePersistentNode(sourceArena, sourceCatalog.sourceRegistry(), 0,
+					group, false, true);
+			levelOne.add(new LmdbAdjacencyRunCodec.PersistentChild(group.get(0).firstNeighbor, 0, group.size(), 0,
+					sourceId, nodeRef, LmdbAdjacencyRunCodec.PERSISTENT_CHILD_NODE));
+		}
+		long rootRef = LmdbAdjacencyRunCodec.writePersistentNode(sourceArena, sourceCatalog.sourceRegistry(), 1,
+				levelOne, false, true);
+		long sourceHandle = sourceCatalog.packHandle(0, rootRef);
+		assertThat(LmdbAdjacencyRunCodec.persistentNode(sourceCatalog, sourceHandle).level()).isEqualTo(1);
+
+		LmdbAdjacencyArena targetBaseArena = newArena(1 << 20);
+		LmdbAdjacencyArenaCatalog targetBaseCatalog = newCatalog(targetBaseArena);
+		assertThat(sourceCatalog.sourceRegistry()).isNotSameAs(targetBaseCatalog.sourceRegistry());
+		assertThat(sourceId).isEqualTo(targetBaseCatalog.sourceRegistry().sourceIdForArena(targetBaseArena));
+
+		LmdbAdjacencyArenaSizingPlan sizing = new LmdbAdjacencyArenaSizingPlan(1 << 20);
+		LmdbAdjacencyRunCodec.Encoder.Result planned = LmdbAdjacencyRunCodec.planEncodedCopy(sourceCatalog, contexts,
+				sourceHandle, sizing);
+		assertThat(sizing.allocatedBytes()).isEqualTo(planned.totalBytes);
+		sizing.seal();
+		long reservedBytes = sizing.capacityBytes();
+		LmdbAdjacencyMemoryAccount refusedAccount = new LmdbAdjacencyMemoryAccount(Math.max(0, reservedBytes - 1));
+		assertThat(refusedAccount.tryCharge(MemoryKind.CONSOLIDATION_OUTPUT, reservedBytes)).isNull();
+		assertThat(refusedAccount.totalChargedBytes()).isZero();
+
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(reservedBytes);
+		LmdbAdjacencyMemoryAccount.Charge charge = account.tryCharge(MemoryKind.CONSOLIDATION_OUTPUT, reservedBytes);
+		assertThat(charge).isNotNull();
+		LmdbAdjacencyArena targetArena = new LmdbAdjacencyArena(sizing);
+		LmdbAdjacencyDeltaArenaOwner targetOwner = new LmdbAdjacencyDeltaArenaOwner(targetArena, charge);
+		LmdbAdjacencyArenaCatalog targetCatalog = LmdbAdjacencyArenaCatalog.composed(targetBaseCatalog, targetOwner,
+				List.of());
+		try {
+			long targetRef = LmdbAdjacencyRunCodec.writeEncodedCopy(sourceCatalog, contexts, sourceHandle,
+					targetArena).rootRef;
+			long targetHandle = targetCatalog.packHandle(1, targetRef);
+			assertThat(targetArena.allocatedBytes()).isEqualTo(planned.totalBytes);
+			assertThat(targetArena.capacityBytes()).isEqualTo(reservedBytes);
+			assertThat(LmdbAdjacencyRunCodec.edgeCount(targetCatalog, targetHandle)).isEqualTo(65);
+			for (int i = 0; i < 65; i++) {
+				assertThat(LmdbAdjacencyRunCodec.neighborAt(targetCatalog, targetHandle, i))
+						.isEqualTo(10_000L + i * 2L);
+			}
+			assertThat(LmdbAdjacencyRunCodec.edgeCount(sourceCatalog, sourceHandle)).isEqualTo(65);
+		} finally {
+			targetCatalog.close();
+			targetOwner.close();
+		}
+		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@Test
 	void sequentialPairCursorReadsBlockRunAcrossBoundaries() {
 		LmdbAdjacencyArena arena = newArena(1 << 20);
 		long[][] pairs = new long[4_096][2];

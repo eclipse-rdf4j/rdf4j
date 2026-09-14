@@ -1001,10 +1001,10 @@ abstract class LmdbNativeAggregatePlannerBase {
 	/**
 	 * Compiles a custom aggregate call (M5): resolves the third-party factory exactly as the generic
 	 * {@code GroupIterator} does (unary factory wins for one argument, else the n-ary registry with its arity window),
-	 * precompiles the argument expressions against the slot-aware context so they evaluate against the row's
-	 * {@link RowBindingSetView}, and pins the built function into the spec. Any resolution or arity failure declines to
-	 * the island path, where the generic engine raises its own error. Kill switch
-	 * {@code rdf4j.lmdb.customAggregates.native.enabled}.
+	 * compiles argument evaluators against the slot-aware context, and pins the factory and evaluators into the spec.
+	 * The processor is built once per aggregate evaluation so query-scoped arguments stay fresh across retained plans.
+	 * Any resolution or arity failure declines to the island path, where the generic engine raises its own error. Kill
+	 * switch {@code rdf4j.lmdb.customAggregates.native.enabled}.
 	 */
 	AggregateSpec compileCustomAggregate(String name, org.eclipse.rdf4j.query.algebra.AggregateFunctionCall call) {
 		if ("false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.customAggregates.native.enabled"))) {
@@ -1017,29 +1017,20 @@ abstract class LmdbNativeAggregatePlannerBase {
 		var nAryFactory = org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateNAryFunctionRegistry
 				.getInstance()
 				.get(call.getIRI());
-		org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep[] steps = new org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep[args
-				.size()];
+		NativeBindingSetValueEvaluator[] argumentEvaluators = new NativeBindingSetValueEvaluator[args.size()];
 		try {
 			for (int i = 0; i < args.size(); i++) {
-				steps[i] = strategy.precompile(args.get(i), slotAwareContext());
+				argumentEvaluators[i] = NativeBindingSetValueCompiler.compile(args.get(i), strategy,
+						slotAwareContext());
 			}
 		} catch (org.eclipse.rdf4j.query.QueryEvaluationException e) {
 			return null;
 		}
-		java.util.function.BiFunction<Integer, org.eclipse.rdf4j.query.BindingSet, org.eclipse.rdf4j.model.Value> evalByIndex = (
-				index, bindings) -> {
-			try {
-				return steps[index].evaluate(bindings);
-			} catch (org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException e) {
-				// treat missing or invalid expressions as null, like the generic QueryStepEvaluator
-				return null;
-			}
-		};
 		if (args.size() == 1 && unaryFactory.isPresent()) {
 			var factory = unaryFactory.get();
-			var function = factory.buildFunction(bindings -> evalByIndex.apply(0, bindings));
 			return AggregateSpec.custom(name,
-					new NativeCustomAggregate(function, factory::getCollector, false, call.isDistinct()));
+					new NativeCustomAggregate(factory, null, argumentEvaluators, factory::getCollector, false,
+							call.isDistinct()));
 		}
 		if (nAryFactory.isPresent()) {
 			var factory = nAryFactory.get();
@@ -1049,9 +1040,9 @@ abstract class LmdbNativeAggregatePlannerBase {
 				// arity violation: the generic engine raises a query error — leave it to the island
 				return null;
 			}
-			var function = factory.buildFunction(evalByIndex);
 			return AggregateSpec.custom(name,
-					new NativeCustomAggregate(function, factory::getCollector, true, call.isDistinct()));
+					new NativeCustomAggregate(null, factory, argumentEvaluators, factory::getCollector, true,
+							call.isDistinct()));
 		}
 		return null;
 	}

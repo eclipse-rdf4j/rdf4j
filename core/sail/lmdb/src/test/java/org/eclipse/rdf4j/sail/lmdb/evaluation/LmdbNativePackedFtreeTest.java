@@ -515,6 +515,8 @@ class LmdbNativePackedFtreeTest {
 		String simpleName = "PackedFtreeGeneratedParity";
 		String className = "org.eclipse.rdf4j.sail.lmdb.evaluation.codegen." + simpleName;
 		SimpleCompiler compiler = new SimpleCompiler();
+		compiler.setSourceVersion(8);
+		compiler.setTargetVersion(8);
 		compiler.setParentClassLoader(getClass().getClassLoader());
 		compiler.cook(LmdbNativePackedFtreeJanino.sourceForTest(plan, simpleName));
 		PackedFtreeKernel kernel = (PackedFtreeKernel) compiler.getClassLoader()
@@ -558,6 +560,8 @@ class LmdbNativePackedFtreeTest {
 		String simpleName = "PackedFtreeMaximumWidthStar";
 		String className = "org.eclipse.rdf4j.sail.lmdb.evaluation.codegen." + simpleName;
 		SimpleCompiler compiler = new SimpleCompiler();
+		compiler.setSourceVersion(8);
+		compiler.setTargetVersion(8);
 		compiler.setParentClassLoader(PackedFtreeKernel.class.getClassLoader());
 		compiler.cook(LmdbNativePackedFtreeJanino.sourceForTest(plan, simpleName));
 		PackedFtreeKernel kernel = (PackedFtreeKernel) compiler.getClassLoader()

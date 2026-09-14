@@ -13,8 +13,11 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,17 +25,34 @@ import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -53,6 +73,25 @@ public class LmdbTypeMatrixTest {
 
 	private static final String EX = "http://example.com/";
 	private static final String SYNOPSIS_PROPERTY = "rdf4j.lmdb.directAdjacency.synopsis.enabled";
+	private static final String TYPE_MATRIX_RECORD_NOW_URI = EX + "typeMatrixRecordNow";
+	private static final List<Value> TYPE_MATRIX_RECORDED = Collections.synchronizedList(new ArrayList<>());
+
+	private static final class TypeMatrixRecordNowFunction implements Function {
+		@Override
+		public String getURI() {
+			return TYPE_MATRIX_RECORD_NOW_URI;
+		}
+
+		@Override
+		public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+			TYPE_MATRIX_RECORDED.add(args[0]);
+			return valueFactory.createLiteral(true);
+		}
+	}
+
+	static {
+		FunctionRegistry.getInstance().add(new TypeMatrixRecordNowFunction());
+	}
 
 	private static final String USAGE_MATRIX = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
 			+ "SELECT ?type ?p (COUNT(*) AS ?statements) WHERE {\n"
@@ -544,6 +583,121 @@ public class LmdbTypeMatrixTest {
 		assertThat(LmdbNativeTypeMatrix.DYNAMIC_PREDICATE_SWEEPS.get())
 				.as("projection-free matrices must merge existing SOC roots, never sweep every predicate per subject")
 				.isZero();
+	}
+
+	@Test
+	public void typeMatrixPostGroupNowUsesFreshEvaluationScope() {
+		openRepository(0, true);
+		String query = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
+				+ "SELECT ?type ?p (COUNT(*) AS ?statements) (NOW() AS ?now) WHERE {\n"
+				+ "  ?instance a ?type .\n"
+				+ "  ?instance ?p ?o .\n"
+				+ "  FILTER(?p != rdf:type)\n"
+				+ "}\n"
+				+ "GROUP BY ?type ?p";
+
+		LmdbStore store = (LmdbStore) repository.getSail();
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+					new EvaluationStatistics(), false);
+			LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(root,
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, (NativeLmdbQuerySource) dataset);
+			assertThat(outcome.isSupported()).as("the type-matrix projection must compile as a retained native step")
+					.isTrue();
+			assertThat(((LmdbNativePhysicalPlan) outcome.step()).nativePhysicalPlan())
+					.as("the retained producer must be the type-matrix specialization")
+					.contains("typeMatrix");
+			long runsBefore = LmdbNativeTypeMatrix.RUNS.get();
+			List<BindingSet> first = evaluateStep(outcome.step());
+			List<BindingSet> second = evaluateStep(outcome.step());
+
+			assertThat(first).isNotEmpty();
+			assertThat(second).isNotEmpty();
+			assertThat(LmdbNativeTypeMatrix.RUNS.get()).isGreaterThan(runsBefore);
+			Value firstNow = first.getFirst().getValue("now");
+			Value secondNow = second.getFirst().getValue("now");
+			assertThat(first).allSatisfy(row -> assertThat(row.getValue("now")).isSameAs(firstNow));
+			assertThat(second).allSatisfy(row -> assertThat(row.getValue("now")).isSameAs(secondNow));
+			assertThat(secondNow).as("a retained type-matrix step must use a fresh NOW per evaluation")
+					.isNotSameAs(firstNow);
+		}
+	}
+
+	@Test
+	public void successfulTypeMatrixEvaluationCarriesItsExecutionContext() throws Exception {
+		openRepository(0, true);
+		LmdbStore store = (LmdbStore) repository.getSail();
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+					new EvaluationStatistics(), false);
+			TupleExpr usage = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, USAGE_MATRIX, null).getTupleExpr();
+			LmdbNativeTypeMatrix matrix = new LmdbNativeTypeMatrix(source, source.idOf(RDF.TYPE), UNKNOWN, 0,
+					new String[] { "type", "p" }, new String[] { "statements" }, new MaskedFilter[0], 0,
+					NativeSlotLayout.empty(), strategy, usage, new QueryEvaluationContext.Minimal((Dataset) null));
+
+			try (CloseableIteration<BindingSet> result = matrix.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(NativeExecutionContextCarrier.contextOf(result))
+						.as("a successful type-matrix producer must carry its evaluation context to outer semantic stages")
+						.isNotNull();
+				assertThat(result.hasNext()).isTrue();
+			}
+		}
+	}
+
+	@Test
+	public void typeMatrixPredicateFilterUsesFreshNowPerEvaluation() {
+		openRepository(0, true);
+		LmdbStore store = (LmdbStore) repository.getSail();
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+					new EvaluationStatistics(), false);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source);
+			NativeBooleanFilter predicateFilter = planner
+					.compileBoolean(new FunctionCall(TYPE_MATRIX_RECORD_NOW_URI, new FunctionCall("NOW")));
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("p", 0), null);
+			layout.freeze(List.of("p"));
+			TupleExpr usage = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, USAGE_MATRIX, null).getTupleExpr();
+			LmdbNativeTypeMatrix matrix = new LmdbNativeTypeMatrix(source, source.idOf(RDF.TYPE), UNKNOWN, 0,
+					new String[] { "type", "p" }, new String[] { "statements" },
+					new MaskedFilter[] { new MaskedFilter(predicateFilter, 0L) }, 0, layout, strategy, usage, context);
+
+			TYPE_MATRIX_RECORDED.clear();
+			List<BindingSet> first = evaluateStep(matrix);
+			List<Value> firstRecorded = List.copyOf(TYPE_MATRIX_RECORDED);
+			TYPE_MATRIX_RECORDED.clear();
+			List<BindingSet> second = evaluateStep(matrix);
+			List<Value> secondRecorded = List.copyOf(TYPE_MATRIX_RECORDED);
+
+			assertThat(first).isNotEmpty();
+			assertThat(second).isNotEmpty();
+			assertThat(firstRecorded).as("the predicate filter must execute during the first matrix evaluation")
+					.isNotEmpty();
+			assertThat(secondRecorded).as("the predicate filter must execute during the second matrix evaluation")
+					.isNotEmpty();
+			Value firstNow = firstRecorded.getFirst();
+			Value secondNow = secondRecorded.getFirst();
+			assertThat(firstRecorded).allSatisfy(value -> assertThat(value).isSameAs(firstNow));
+			assertThat(secondRecorded).allSatisfy(value -> assertThat(value).isSameAs(secondNow));
+			assertThat(secondNow).as("a retained type-matrix predicate filter must use a fresh NOW per evaluation")
+					.isNotSameAs(firstNow);
+		}
+	}
+
+	private static List<BindingSet> evaluateStep(QueryEvaluationStep step) {
+		List<BindingSet> rows = new java.util.ArrayList<>();
+		try (CloseableIteration<BindingSet> result = step.evaluate(EmptyBindingSet.getInstance())) {
+			while (result.hasNext()) {
+				rows.add(result.next());
+			}
+		}
+		return rows;
 	}
 
 	@Test

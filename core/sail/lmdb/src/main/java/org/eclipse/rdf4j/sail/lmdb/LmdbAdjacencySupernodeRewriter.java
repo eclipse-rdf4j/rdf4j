@@ -299,7 +299,13 @@ final class LmdbAdjacencySupernodeRewriter {
 	}
 
 	static RewritePlan plan(LmdbAdjacencyDeltaApplier.OldRun old, SortedMutationSource mutations,
-			ContextCatalog contexts, long targetLeafEdges, long targetLeafBytes) {
+			ContextCatalog contexts, long targetLeafEdges, long targetLeafBytes,
+			LmdbAdjacencySourceRegistry targetRegistry) {
+		boolean foreignSources = old.catalog.sourceRegistry() != targetRegistry;
+		if (foreignSources) {
+			throw new IllegalArgumentException(
+					"foreign rows must use the streaming merge path before destination sizing");
+		}
 		if (LmdbAdjacencyRunCodec.persistentComposite(old.catalog, old.handle)) {
 			return new RewritePlan(LmdbAdjacencyPersistentRowRewriter.plan(old, mutations, contexts, targetLeafEdges,
 					targetLeafBytes));

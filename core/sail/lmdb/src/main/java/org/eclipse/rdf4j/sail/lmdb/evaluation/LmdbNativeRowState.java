@@ -15,7 +15,10 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
 import java.io.IOException;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
@@ -57,6 +60,8 @@ final class RowState implements LmdbNativeSlotReader {
 	long lexicalInputMask;
 	/** Nesting depth of explicit correlated scope frames such as EXISTS and LATERAL. */
 	int lexicalScopeDepth;
+	/** The currently active direct-LATERAL RHS occurrence, if one is being opened or advanced. */
+	private LateralOccurrence lateralOccurrence;
 	long logicalSolutionIdentity;
 	/**
 	 * Query-scoped memory ledger holder. Fresh per root row; derived rows (parallel workers, rescan rows, kernel
@@ -126,6 +131,7 @@ final class RowState implements LmdbNativeSlotReader {
 		copy.runtimePlan = runtimePlan;
 		copy.lexicalInputMask = lexicalInputMask;
 		copy.lexicalScopeDepth = lexicalScopeDepth;
+		copy.lateralOccurrence = lateralOccurrence;
 		copy.logicalSolutionIdentity = logicalSolutionIdentity;
 		copy.encounterOrderRequired = encounterOrderRequired;
 		copy.parallelOwnership = parallelOwnership;
@@ -246,6 +252,70 @@ final class RowState implements LmdbNativeSlotReader {
 	void restoreLexicalScope(long previous) {
 		lexicalInputMask = previous;
 		lexicalScopeDepth--;
+	}
+
+	/** Creates one lexical identity for a direct LATERAL right-hand evaluation. */
+	LateralOccurrence newLateralOccurrence() {
+		return new LateralOccurrence();
+	}
+
+	/** Temporarily activates an occurrence while a right-hand cursor opens, advances, or closes. */
+	LateralOccurrenceScope activateLateralOccurrence(LateralOccurrence occurrence) {
+		LateralOccurrence previous = lateralOccurrence;
+		lateralOccurrence = occurrence;
+		return new LateralOccurrenceScope(this, previous, occurrence);
+	}
+
+	LateralOccurrence activeLateralOccurrence() {
+		return lateralOccurrence;
+	}
+
+	/** Per-occurrence replay state is cleared as soon as the right-hand cursor completes. */
+	void closeLateralOccurrence(LateralOccurrence occurrence) {
+		occurrence.close();
+	}
+
+	static final class LateralOccurrence {
+		private final Map<Object, Object> replayStates = new ConcurrentHashMap<>();
+		private volatile boolean closed;
+
+		@SuppressWarnings("unchecked")
+		<T> T state(Object key, Supplier<T> factory) {
+			if (closed) {
+				throw new IllegalStateException("LATERAL occurrence is closed");
+			}
+			return (T) replayStates.computeIfAbsent(key, ignored -> factory.get());
+		}
+
+		void close() {
+			closed = true;
+			replayStates.clear();
+		}
+	}
+
+	static final class LateralOccurrenceScope implements AutoCloseable {
+		private final RowState row;
+		private final LateralOccurrence previous;
+		private final LateralOccurrence occurrence;
+		private boolean closed;
+
+		private LateralOccurrenceScope(RowState row, LateralOccurrence previous, LateralOccurrence occurrence) {
+			this.row = row;
+			this.previous = previous;
+			this.occurrence = occurrence;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			if (row.lateralOccurrence != occurrence) {
+				throw new IllegalStateException("LATERAL occurrence scope closed out of order");
+			}
+			row.lateralOccurrence = previous;
+		}
 	}
 
 	void beginLogicalSolution() {
@@ -788,7 +858,10 @@ final class CopyBinding {
 
 	long value(RowState row) {
 		if (semanticValue != null) {
-			NativeValueOutcome outcome = semanticValue.evaluate(row.view);
+			NativeExecutionContext executionContext = row.source instanceof SyntheticValueSource synthetic
+					? synthetic.executionContext()
+					: null;
+			NativeValueOutcome outcome = semanticValue.evaluate(row.view, executionContext);
 			if (!outcome.isBound() || !(row.source instanceof SyntheticValueSource)) {
 				return UNKNOWN;
 			}

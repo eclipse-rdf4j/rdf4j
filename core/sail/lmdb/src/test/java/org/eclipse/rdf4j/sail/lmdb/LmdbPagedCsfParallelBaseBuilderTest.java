@@ -348,10 +348,10 @@ class LmdbPagedCsfParallelBaseBuilderTest {
 		private final ConcurrentPassGate sizing = new ConcurrentPassGate();
 		private final ConcurrentPassGate materialization = new ConcurrentPassGate();
 		private final PlaneScanner[] scanners = {
-				new PlaneScanner(0, sizing, materialization),
-				new PlaneScanner(1, sizing, materialization),
-				new PlaneScanner(2, sizing, materialization),
-				new PlaneScanner(3, sizing, materialization)
+				new PlaneScanner(sizing, materialization),
+				new PlaneScanner(sizing, materialization),
+				new PlaneScanner(sizing, materialization),
+				new PlaneScanner(sizing, materialization)
 		};
 
 		@Override
@@ -860,13 +860,11 @@ class LmdbPagedCsfParallelBaseBuilderTest {
 
 	private static final class PlaneScanner implements AdjacencySourceScanner {
 
-		private final int plane;
 		private final ConcurrentPassGate sizing;
 		private final ConcurrentPassGate materialization;
 		private final AtomicInteger scans = new AtomicInteger();
 
-		private PlaneScanner(int plane, ConcurrentPassGate sizing, ConcurrentPassGate materialization) {
-			this.plane = plane;
+		private PlaneScanner(ConcurrentPassGate sizing, ConcurrentPassGate materialization) {
 			this.sizing = sizing;
 			this.materialization = materialization;
 		}
@@ -882,15 +880,15 @@ class LmdbPagedCsfParallelBaseBuilderTest {
 
 		@Override
 		public void scanOutgoing(boolean explicit, GroupConsumer consumer) {
-			scan(consumer);
+			scan(LmdbAdjacencyPlane.of(true, explicit), consumer);
 		}
 
 		@Override
 		public void scanIncoming(boolean explicit, GroupConsumer consumer) {
-			scan(consumer);
+			scan(LmdbAdjacencyPlane.of(false, explicit), consumer);
 		}
 
-		private void scan(GroupConsumer consumer) {
+		private void scan(int plane, GroupConsumer consumer) {
 			(scans.getAndIncrement() == 0 ? sizing : materialization).enter();
 			consumer.begin(SUBJECT, PREDICATE, plane);
 			consumer.pair(OBJECT, 0);

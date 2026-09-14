@@ -42,6 +42,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Differential parity harness for the interpreted IR ROW kernel (M4 of {@code .agent/lmdb-kernel-interpreter-execplan}
@@ -50,6 +52,7 @@ import org.junit.jupiter.api.io.TempDir;
  * {@code OPENED}-delta proof that the interpreted arm actually served through the row kernel rung. The fixture mirrors
  * the aggregate parity test's MEDICAL shapes, loaded in one transaction with the direct-adjacency readiness gate.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeKernelInterpreterRowParityTest {
 
 	private static final String EX = "http://example.com/med/";
@@ -201,6 +204,31 @@ class LmdbNativeKernelInterpreterRowParityTest {
 	}
 
 	@Test
+	void resumableInterpreterDoesNotMaterializePlainDomainBeforeFirstRow() {
+		long[] domain = new long[4096];
+		for (int i = 0; i < domain.length; i++) {
+			domain[i] = i + 1L;
+		}
+		Kernel ir = new Kernel(1, List.of(new EnumerateDomain(0, 0)),
+				new Emit(new int[] { 0 }, false, OutputMods.none()));
+		assertThat(ir.resumable).as("plain unordered row kernels must advertise resumable demand").isTrue();
+		LmdbNativeKernelInterpreter kernel = (LmdbNativeKernelInterpreter) LmdbNativeKernelInterpreter.forRows(ir);
+		assertThat(kernel).isNotNull();
+		try {
+			kernel.bind(new KernelContext(new NativeLmdbQuerySource.NativeAdjacency[0], new long[0], new long[0],
+					new long[][] { domain }));
+			long[] row = new long[1];
+			assertThat(kernel.fill(row, 1)).isEqualTo(1);
+			assertThat(row[0]).isEqualTo(1L);
+			assertThat(kernel.retainedRowCapacityForTest())
+					.as("the first one-row demand must not retain the remaining domain")
+					.isZero();
+		} finally {
+			kernel.close();
+		}
+	}
+
+	@Test
 	void valueFilterOnJoin() {
 		// A value-tier FILTER riding the row pipeline (hooks.testFilter or residual filters on the wrapper cursor).
 		assertParityInterpreterServed(prefixes()
@@ -243,24 +271,36 @@ class LmdbNativeKernelInterpreterRowParityTest {
 	}
 
 	@Test
-	void closeReleasesInterpreterMaterializationOwnedByTimedOutEvaluations() {
-		long[] domain = new long[4096];
-		for (int i = 0; i < domain.length; i++) {
-			domain[i] = i + 1L;
+	void closeReleasesInterpreterMaterializationOwnedByBlockingEvaluations() {
+		String previous = System.getProperty(LmdbNativeKernelIr.RESUMABLE_PROPERTY);
+		System.setProperty(LmdbNativeKernelIr.RESUMABLE_PROPERTY, "false");
+		try {
+			long[] domain = new long[4096];
+			for (int i = 0; i < domain.length; i++) {
+				domain[i] = i + 1L;
+			}
+			Kernel ir = new Kernel(1, List.of(new EnumerateDomain(0, 0)),
+					new Emit(new int[] { 0 }, false, OutputMods.none()));
+			LmdbNativeKernelInterpreter kernel = (LmdbNativeKernelInterpreter) LmdbNativeKernelInterpreter.forRows(ir);
+			try {
+				kernel.bind(new KernelContext(new NativeLmdbQuerySource.NativeAdjacency[0], new long[0], new long[0],
+						new long[][] { domain }));
+				kernel.fill(new long[1], 1);
+				assertThat(kernel.retainedRowCapacityForTest()).isGreaterThan(0);
+			} finally {
+				kernel.close();
+			}
+
+			assertThat(kernel.retainedRowCapacityForTest())
+					.as("closed blocking evaluations must not retain private materialization")
+					.isZero();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(LmdbNativeKernelIr.RESUMABLE_PROPERTY);
+			} else {
+				System.setProperty(LmdbNativeKernelIr.RESUMABLE_PROPERTY, previous);
+			}
 		}
-		Kernel ir = new Kernel(1, List.of(new EnumerateDomain(0, 0)),
-				new Emit(new int[] { 0 }, false, OutputMods.none()));
-		LmdbNativeKernelInterpreter kernel = (LmdbNativeKernelInterpreter) LmdbNativeKernelInterpreter.forRows(ir);
-		kernel.bind(new KernelContext(new NativeLmdbQuerySource.NativeAdjacency[0], new long[0], new long[0],
-				new long[][] { domain }));
-		kernel.fill(new long[1], 1);
-		assertThat(kernel.retainedRowCapacityForTest()).isGreaterThan(0);
-
-		kernel.close();
-
-		assertThat(kernel.retainedRowCapacityForTest())
-				.as("closed evaluations must not retain their private materialization")
-				.isZero();
 	}
 
 	private static void assertProbeBoundedRowKernel(boolean compiled) throws Exception {

@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -140,8 +141,16 @@ public class LmdbNativeParallelAggregationTest {
 	}
 
 	private List<String> rows(String query) {
+		return rows(query, null);
+	}
+
+	private List<String> rows(String query, String forcedStrategy) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			SailTupleQuery preparedQuery = (SailTupleQuery) conn.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			List<BindingSet> result = QueryResults.asList(preparedQuery.evaluate());
 			return serializedRows(result);
 		}
 	}
@@ -211,6 +220,15 @@ public class LmdbNativeParallelAggregationTest {
 		assertThat(parallelRows).as("parallel vs generic for:\n" + query).isEqualTo(genericRows);
 	}
 
+	private void assertForcedParallelAndAllThreeAgree(String query) {
+		List<String> parallelRows = rows(query, "parallelAggregation");
+		List<String> sequentialRows = rowsWithProperty(PARALLEL_FLAG, "false", query);
+		List<String> genericRows = rowsWithProperty(NATIVE_FLAG, "false", query);
+		assertThat(parallelRows).as("forced parallel vs sequential native for:\n" + query)
+				.isEqualTo(sequentialRows);
+		assertThat(parallelRows).as("forced parallel vs generic for:\n" + query).isEqualTo(genericRows);
+	}
+
 	private static String star(String select, String extra) {
 		return "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT " + select + " WHERE {\n"
@@ -243,6 +261,12 @@ public class LmdbNativeParallelAggregationTest {
 	@Test
 	public void groupByTailSlot() {
 		assertAllThreeAgree(star("?b (COUNT(?s) AS ?c)", "") + " GROUP BY ?b");
+	}
+
+	@Test
+	public void forcedParallelGroupedTailWithDistinctPrefixValueMatchesGeneric() {
+		String query = star("?b (COUNT(DISTINCT ?s) AS ?d) (COUNT(?b) AS ?c)", "") + " GROUP BY ?b";
+		assertForcedParallelAndAllThreeAgree(query);
 	}
 
 	@Test

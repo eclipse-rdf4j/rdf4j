@@ -156,16 +156,28 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 	}
 
 	@Test
-	void factorizedRowsOutrankAnEligibleCompiledKernel() {
+	void compiledKernelOutranksEligibleFactorizedRows() {
 		String query = "PREFIX ex: <" + EX + ">\nSELECT ?s ?y WHERE {\n"
 				+ "  ?s ex:p1 ?a .\n"
 				+ "  ?a ex:p2 ?y .\n"
 				+ "}";
 		String previousFactorized = System.getProperty("rdf4j.lmdb.factorizedRows.enabled");
+		String previousJanino = System.getProperty(JANINO_CODEGEN_FLAG);
 		String previousThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
 		String previousSynchronous = System.getProperty("rdf4j.lmdb.janinoCodegen.synchronous");
 		String previousCalibration = System.getProperty("rdf4j.lmdb.costCalibration.enabled");
+		int expectedRowCount = 64 * 3;
 		try {
+			System.setProperty(JANINO_CODEGEN_FLAG, "false");
+			System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "true");
+			JaninoPipelineTestAccess.resetAll();
+			long factorizedBefore = JoinDispatchTestAccess.factorizedEngaged();
+			List<String> factorizedRows = queryRows(query);
+			assertThat(factorizedRows).hasSize(expectedRowCount);
+			assertThat(JoinDispatchTestAccess.factorizedEngaged())
+					.as("the fixture must be eligible for factorized rows")
+					.isGreaterThan(factorizedBefore);
+
 			System.setProperty(JANINO_CODEGEN_FLAG, "true");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
@@ -173,27 +185,29 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 
 			System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
 			JaninoPipelineTestAccess.resetAll();
-			List<String> expected = queryRows(query);
+			List<String> compiledOnlyRows = queryRows(query);
+			assertThat(compiledOnlyRows).containsExactlyElementsOf(factorizedRows);
 			assertThat(JaninoPipelineTestAccess.opened())
 					.as("fixture must be executable by the generated row kernel")
 					.isPositive();
 
 			System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "true");
 			JaninoPipelineTestAccess.resetAll();
-			long factorizedBefore = JoinDispatchTestAccess.factorizedEngaged();
-			assertThat(queryRows(query)).containsExactlyElementsOf(expected);
+			long factorizedBeforeBoth = JoinDispatchTestAccess.factorizedEngaged();
+			List<String> bothRows = queryRows(query);
+			assertThat(bothRows).containsExactlyElementsOf(factorizedRows);
 			assertThat(JoinDispatchTestAccess.factorizedEngaged())
-					.as("all eligible row strategies must compete in one arbiter")
-					.isGreaterThan(factorizedBefore);
+					.as("the higher-ranked compiled kernel must win the shared arbiter")
+					.isEqualTo(factorizedBeforeBoth);
 			assertThat(JaninoPipelineTestAccess.opened())
-					.as("the lower-ranked generated kernel must remain unopened")
-					.isZero();
+					.as("the selected compiled kernel must open")
+					.isPositive();
 		} finally {
 			restoreProperty("rdf4j.lmdb.factorizedRows.enabled", previousFactorized);
+			restoreProperty(JANINO_CODEGEN_FLAG, previousJanino);
 			restoreProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", previousThreshold);
 			restoreProperty("rdf4j.lmdb.janinoCodegen.synchronous", previousSynchronous);
 			restoreProperty("rdf4j.lmdb.costCalibration.enabled", previousCalibration);
-			System.setProperty(JANINO_CODEGEN_FLAG, "false");
 			JaninoPipelineTestAccess.resetAll();
 		}
 	}

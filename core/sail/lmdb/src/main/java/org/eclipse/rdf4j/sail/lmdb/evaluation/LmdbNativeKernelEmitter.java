@@ -341,6 +341,7 @@ final class LmdbNativeKernelEmitter {
 		private final List<String> methods = new ArrayList<>();
 		private final List<String> expansionCursorTypes = new ArrayList<>();
 		private int nextPipelineId;
+		private int nextCleanupMethodId;
 		/** Hash-build inputs drain synchronously even when their enclosing row kernel is resumable. */
 		private int synchronousPipelineDepth;
 		/** Saved-counter field ids for every node reachable from a resumable pipeline, including OPTIONAL arms. */
@@ -1540,7 +1541,10 @@ final class LmdbNativeKernelEmitter {
 				if (residual > 0) {
 					source.append("        dedup = new KernelRuntime.RowSet(")
 							.append(residual)
-							.append(", keyHooks == hooks ? null : keyHooks);\n");
+							.append(", ")
+							.append(kernel.requirements.semanticKeys ? "keyHooks"
+									: "keyHooks == hooks ? null : keyHooks")
+							.append(");\n");
 				}
 				if (emit.alignedCount > 0) {
 					source.append("        dseen = false;\n");
@@ -2971,11 +2975,19 @@ final class LmdbNativeKernelEmitter {
 						.append("        if (!dadv) {\n")
 						.append("            dadv = ");
 				for (int i = 0; i < aligned; i++) {
-					source.append(i == 0 ? "" : " || ")
-							.append("rowScratch[")
-							.append(i)
-							.append("] != dal")
-							.append(i);
+					source.append(i == 0 ? "" : " || ");
+					if (kernel.requirements.semanticKeys) {
+						source.append("!keyHooks.sameRdfTerm(rowScratch[")
+								.append(i)
+								.append("], dal")
+								.append(i)
+								.append(')');
+					} else {
+						source.append("rowScratch[")
+								.append(i)
+								.append("] != dal")
+								.append(i);
+					}
 				}
 				source.append(";\n").append("        }\n");
 				source.append("        if (dadv) {\n").append("            dseen = true;\n");
@@ -6197,6 +6209,29 @@ final class LmdbNativeKernelEmitter {
 			}
 		}
 
+		/**
+		 * Moves plan-cursor cleanup into a void helper. Keeping the nested close/restore finally out of a pipeline
+		 * method prevents Janino from assigning the enclosing method's return value to the cleanup handler stack map.
+		 * The cursor is detached before close so a later kernel close cannot close the same activation twice, and
+		 * restore remains in a finally block so it runs when cursor close reports a failure.
+		 */
+		private String emitPlanRowsCleanup(PlanRows plan) {
+			String methodName = "closePlan" + nextCleanupMethodId++;
+			StringBuilder method = new StringBuilder("    private void ")
+					.append(methodName)
+					.append("(Throwable cursorFailure) {\n")
+					.append("        KernelPlan.Cursor closing = pc")
+					.append(plan.plan)
+					.append(";\n        pc")
+					.append(plan.plan)
+					.append(" = null;\n")
+					.append("        try { KernelRuntime.closePlanCursor(closing, cursorFailure); } finally {\n");
+			emitPlanRestore(method, "            ", plan);
+			method.append("        }\n    }\n\n");
+			methods.add(method.toString());
+			return methodName;
+		}
+
 		/** Copies one packed engine-plan row into the columns registered for that plan site. */
 		private static void emitPlanColumns(StringBuilder body, String indent, PlanRows plan, String buffer,
 				String row) {
@@ -7901,16 +7936,8 @@ final class LmdbNativeKernelEmitter {
 						.append(read)
 						.append(", KernelRuntime.SCAN_BATCH_ROWS);\n");
 				body.append(indent).append("}\n");
-				StringBuilder cleanup = new StringBuilder();
-				cleanup.append("KernelPlan.Cursor closing = ")
-						.append(cursor)
-						.append("; ")
-						.append(cursor)
-						.append(" = null;\n")
-						.append("try { KernelRuntime.closePlanCursor(closing, cursorFailure); } finally {\n");
-				emitPlanRestore(cleanup, indent + "        ", plan);
-				cleanup.append(indent).append("    }");
-				endCursorScope(body, indent, cleanup.toString());
+				String cleanupMethod = emitPlanRowsCleanup(plan);
+				endCursorScope(body, indent, cleanupMethod + "(cursorFailure);");
 				return;
 			}
 			if (node instanceof EnumerateNodeDomainIntersection) {
@@ -8960,7 +8987,9 @@ final class LmdbNativeKernelEmitter {
 				contexts.append(i == 0 ? "" : ", ").append(path.contexts[i].token());
 			contexts.append('}');
 			body.append(indent)
-					.append("try (org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.Path xc = new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.Path(a")
+					.append("{\n")
+					.append(indent)
+					.append("    org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.Path xc = new org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors.Path(a")
 					.append(path.adjacency)
 					.append(", ")
 					.append(path.source.token())
@@ -8968,8 +8997,9 @@ final class LmdbNativeKernelEmitter {
 					.append(path.minHops)
 					.append(", ")
 					.append(contexts)
-					.append(", cancel)) {\n")
-					.append(indent)
+					.append(", cancel);\n");
+			beginCursorScope(body, indent + "    ");
+			body.append(indent)
 					.append("    while (xc.next()) {\n")
 					.append(indent)
 					.append("        v")
@@ -8977,9 +9007,9 @@ final class LmdbNativeKernelEmitter {
 					.append(" = xc.value();\n")
 					.append(next(nextTemplate, indent + "        "))
 					.append(indent)
-					.append("    }\n")
-					.append(indent)
-					.append("}\n");
+					.append("    }\n");
+			endCursorScope(body, indent + "    ", "KernelRuntime.closeCursor(xc, cursorFailure);");
+			body.append(indent).append("}\n");
 		}
 
 	}

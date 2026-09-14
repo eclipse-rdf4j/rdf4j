@@ -310,19 +310,23 @@ public class LmdbNativePropertyPathTest {
 		String query = repeatedStartQuery();
 
 		assertSameAsGeneric(query);
-		List<String> fresh = withProperty(PATH_MEMO_ENABLED, "false", () -> rowSequence(query));
-		List<String> memoized = withProperty(PATH_MEMO_ENABLED, "true", () -> rowSequence(query));
-		assertThat(memoized).containsExactlyElementsOf(fresh);
-		assertThat(memoized).hasSize(21);
+		// The counters below belong to PathCursor; the enabled interpreter uses PathExpand telemetry instead.
+		withProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false", () -> {
+			List<String> fresh = withProperty(PATH_MEMO_ENABLED, "false", () -> rowSequence(query));
+			List<String> memoized = withProperty(PATH_MEMO_ENABLED, "true", () -> rowSequence(query));
+			assertThat(memoized).containsExactlyElementsOf(fresh);
+			assertThat(memoized).hasSize(21);
 
-		String telemetry = withProperty(PATH_MEMO_ENABLED, "true", () -> telemetry(query));
-		assertThat(telemetry)
-				.contains("nativePathTraversalsActual=1")
-				.contains("nativePathMemoHitsActual=2")
-				.contains("nativePathMemoMissesActual=1")
-				.contains("nativePathMemoStoresActual=1")
-				.contains("nativePathMemoReleasedEntriesActual=1")
-				.contains("nativePathMemoReleasedValuesActual=7");
+			String telemetry = withProperty(PATH_MEMO_ENABLED, "true", () -> telemetry(query));
+			assertThat(telemetry)
+					.contains("nativePathTraversalsActual=1")
+					.contains("nativePathMemoHitsActual=2")
+					.contains("nativePathMemoMissesActual=1")
+					.contains("nativePathMemoStoresActual=1")
+					.contains("nativePathMemoReleasedEntriesActual=1")
+					.contains("nativePathMemoReleasedValuesActual=7");
+			return null;
+		});
 	}
 
 	/**
@@ -359,35 +363,43 @@ public class LmdbNativePropertyPathTest {
 		addRepeatedStartDrivers(3);
 		String query = q("SELECT ?reachable WHERE { "
 				+ "?driver ex:start ?target . ?reachable ex:p+ ?target . }");
-		List<String> fresh = withProperty(PATH_MEMO_ENABLED, "false", () -> rowSequence(query));
-		List<String> memoized = withProperty(PATH_MEMO_ENABLED, "true", () -> rowSequence(query));
+		// The counters below belong to PathCursor; the enabled interpreter uses PathExpand telemetry instead.
+		withProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false", () -> {
+			List<String> fresh = withProperty(PATH_MEMO_ENABLED, "false", () -> rowSequence(query));
+			List<String> memoized = withProperty(PATH_MEMO_ENABLED, "true", () -> rowSequence(query));
 
-		assertThat(memoized).containsExactlyElementsOf(fresh);
-		String telemetry = withProperty(PATH_MEMO_ENABLED, "true", () -> telemetry(query));
-		assertThat(telemetry)
-				.contains("nativePathTraversalsActual=1")
-				.contains("nativePathMemoHitsActual=2")
-				.contains("nativePathMemoMissesActual=1");
+			assertThat(memoized).containsExactlyElementsOf(fresh);
+			String telemetry = withProperty(PATH_MEMO_ENABLED, "true", () -> telemetry(query));
+			assertThat(telemetry)
+					.contains("nativePathTraversalsActual=1")
+					.contains("nativePathMemoHitsActual=2")
+					.contains("nativePathMemoMissesActual=1");
+			return null;
+		});
 	}
 
 	@Test
 	public void pathMemoRefusalFallsBackWithoutChangingSequence() {
 		addRepeatedStartDrivers(3);
 		String query = repeatedStartQuery();
-		List<String> fresh = withProperty(PATH_MEMO_ENABLED, "false", () -> rowSequence(query));
-		List<String> refused = withProperty(PATH_MEMO_ENABLED, "true",
-				() -> withProperty(PATH_MEMO_MAX_VALUES, "1", () -> rowSequence(query)));
-		assertThat(refused).containsExactlyElementsOf(fresh);
+		// The counters below belong to PathCursor; the enabled interpreter uses PathExpand telemetry instead.
+		withProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false", () -> {
+			List<String> fresh = withProperty(PATH_MEMO_ENABLED, "false", () -> rowSequence(query));
+			List<String> refused = withProperty(PATH_MEMO_ENABLED, "true",
+					() -> withProperty(PATH_MEMO_MAX_VALUES, "1", () -> rowSequence(query)));
+			assertThat(refused).containsExactlyElementsOf(fresh);
 
-		String telemetry = withProperty(PATH_MEMO_ENABLED, "true",
-				() -> withProperty(PATH_MEMO_MAX_VALUES, "1", () -> telemetry(query)));
-		assertThat(telemetry)
-				.contains("nativePathTraversalsActual=3")
-				.contains("nativePathMemoMissesActual=3")
-				.contains("nativePathMemoBypassesActual=3")
-				.doesNotContain("nativePathMemoHitsActual=")
-				.doesNotContain("nativePathMemoStoresActual=")
-				.doesNotContain("nativePathMemoReleasedEntriesActual=");
+			String telemetry = withProperty(PATH_MEMO_ENABLED, "true",
+					() -> withProperty(PATH_MEMO_MAX_VALUES, "1", () -> telemetry(query)));
+			assertThat(telemetry)
+					.contains("nativePathTraversalsActual=3")
+					.contains("nativePathMemoMissesActual=3")
+					.contains("nativePathMemoBypassesActual=3")
+					.doesNotContain("nativePathMemoHitsActual=")
+					.doesNotContain("nativePathMemoStoresActual=")
+					.doesNotContain("nativePathMemoReleasedEntriesActual=");
+			return null;
+		});
 	}
 
 	@Test
@@ -416,10 +428,12 @@ public class LmdbNativePropertyPathTest {
 	public void uncorrelatedPathMaterializesOnceForAllDrivingRows() {
 		String query = q("SELECT ?driver ?reachable WHERE { "
 				+ "?driver ex:q ?value . ex:a ex:p+ ?reachable . }");
-		long before = PathPlan.ENGAGED.get();
-		List<String> nativeRows = rows(query);
-
-		assertThat(PathPlan.ENGAGED.get() - before).isEqualTo(1L);
+		List<String> nativeRows = withProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false", () -> {
+			long before = PathPlan.ENGAGED.get();
+			List<String> result = rows(query);
+			assertThat(PathPlan.ENGAGED.get() - before).isEqualTo(1L);
+			return result;
+		});
 		assertThat(nativeRows).isEqualTo(genericRows(query));
 	}
 
@@ -1423,8 +1437,12 @@ public class LmdbNativePropertyPathTest {
 					+ "?driver ex:prefix1 ?p1 . ?p1 ex:prefix2 ?p2 . ?p2 ex:prefix3 ?p3 . "
 					+ "?p3 ex:prefix4 ?p4 . ?p4 ex:prefix5 ?s . ?s rdf:rest*/rdf:first ?o . }";
 			List<String> expected = withProperty(NATIVE_FLAG, "false", () -> rows(isolated, query));
-			List<String> actual = rows(isolated, query);
-			String rendered = telemetry(isolated, query);
+			// This contract observes PathCursor target materialization. The enabled interpreter has an equivalent
+			// PathExpand implementation with different telemetry, so pin only this native execution and report read.
+			List<String> actual = withProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false",
+					() -> rows(isolated, query));
+			String rendered = withProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false",
+					() -> telemetry(isolated, query));
 
 			assertThat(actual).containsExactlyElementsOf(expected).hasSize(4);
 			assertThat(rendered)

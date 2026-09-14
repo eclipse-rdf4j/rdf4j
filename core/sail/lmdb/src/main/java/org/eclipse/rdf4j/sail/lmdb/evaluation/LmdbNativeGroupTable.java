@@ -378,7 +378,7 @@ final class NativeGroupTable implements AutoCloseable {
 		if (!boundedChecked) {
 			boundedChecked = true;
 			NativeTermAuthority authority = row.keyAuthority();
-			if (!authority.supportsCanonicalTermKeys())
+			if (authority == null || !authority.supportsCanonicalTermKeys())
 				return false;
 			boolean[] distinct = new boolean[aggregates.length];
 			for (int i = 0; i < distinct.length; i++)

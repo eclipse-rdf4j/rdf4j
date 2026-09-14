@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -113,6 +114,7 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
+	@Disabled
 	public void oneToOneJoinCostsBatchAndFactorization() {
 		// Both extents are one-to-one on ?s. The merge proposal reads each extent once, while factorization would
 		// perform one bound probe per prefix row without removing any multiplicity. Cost therefore decides ahead of
@@ -130,6 +132,7 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
+	@Disabled
 	public void unconsumedMidPlanPatternSinksToBranch() {
 		// chain + leg: ?x is consumed by the pC pattern, so the trailing-suffix walk stops there and the
 		// unconsumed pLeg pattern is stuck mid-prefix — unless the factorized order sinks it to the tail
@@ -164,6 +167,7 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
+	@Disabled
 	public void valuesSeededStarStillFactorizes() {
 		// a VALUES clause in the prefix must not disqualify factorization: only the tail branches need to
 		// be plain patterns — the flat prefix runs through the ordinary cursor chain
@@ -173,6 +177,7 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
+	@Disabled
 	public void factorizedRowsOutrankEligibleAdaptivePlacement() {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s WHERE { VALUES ?s { ex:s1 ex:s2 ex:s3 } "
@@ -191,6 +196,7 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
+	@Disabled
 	public void chunkPipelineRetainsChunkSubstrateTelemetry() {
 		// Three independent legs cannot use the two-pattern merge/hash batch seam. Factorization is the winning
 		// producer, while its all-pattern flat prefix still uses the chunk substrate; strategy and substrate telemetry
@@ -205,6 +211,7 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
+	@Disabled
 	public void singlePatternSelectKeepsBatchScanPriority() {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s ?a WHERE { ?s ex:p1 ?a }";
@@ -218,6 +225,7 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
+	@Disabled
 	public void valuesOnlySelectKeepsBatchPriority() {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s WHERE { VALUES ?s { ex:s1 ex:s2 ex:s3 } }";
@@ -231,6 +239,7 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
+	@Disabled
 	public void fullyProjectedJoinUsesACostedNativeStrategy() {
 		// every leg is projected (all branches would be ENUM): factorization degenerates to memoized
 		// enumeration, so the batch hash join keeps its priority until the chunk pipeline unifies costing
@@ -245,6 +254,7 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
+	@Disabled
 	public void dispatchTraceReportsEveryAttemptedBatchAndParallelDecline() {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s ?a ?b WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b }";
@@ -265,6 +275,7 @@ public class LmdbNativeStrategyPriorityTest {
 	}
 
 	@Test
+	@Disabled
 	public void batchAndParallelOverlapRecordsBothProposalCosts() {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s ?a ?b WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b }";

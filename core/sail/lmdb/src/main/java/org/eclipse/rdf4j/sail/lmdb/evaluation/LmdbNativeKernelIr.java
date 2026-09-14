@@ -279,6 +279,8 @@ final class LmdbNativeKernelIr {
 		int nodeDomainIntersections;
 		int typeMatrices;
 		boolean hooks;
+		/** Terminal keying must use RDF-term semantics, even when the hook is the ordinary store authority. */
+		boolean semanticKeys;
 
 		void nodePredicateView(int index) {
 			nodePredicateViews = Math.max(nodePredicateViews, index + 1);
@@ -2744,6 +2746,12 @@ final class LmdbNativeKernelIr {
 
 		@Override
 		void requirements(Requirements requirements) {
+			if (distinct) {
+				// DISTINCT compares output terms, which may come from different id spaces (for example VALUES plan ids
+				// and store ids). Keep the authority-backed key relation at the terminal instead of comparing raw ids.
+				requirements.hooks = true;
+				requirements.semanticKeys = true;
+			}
 			if (mods.orderKeys != null && mods.valueOrder) {
 				requirements.hooks = true;
 			}

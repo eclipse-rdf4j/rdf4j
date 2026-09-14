@@ -227,6 +227,26 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 	}
 
+	private void awaitPendingPublication(CountDownLatch pendingPublished) {
+		try {
+			assertThat(pendingPublished.await(30, TimeUnit.SECONDS))
+					.as("pending row publication should precede snapshot acquisition")
+					.isTrue();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("interrupted while waiting for pending row publication", e);
+		}
+	}
+
+	private static void awaitQueueAdmissionRelease(CountDownLatch releaseQueueAdmission) {
+		try {
+			releaseQueueAdmission.await();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("interrupted while holding queue admission", e);
+		}
+	}
+
 	private void openPreferStore() throws IOException {
 		openStore(DirectAdjacencyMode.PREFER, null, null);
 	}
@@ -2061,24 +2081,43 @@ class LmdbDirectAdjacencyQueryTest {
 		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY, "true");
 		openPreferStore();
 		direct.pauseApplierForTest(true);
+		CountDownLatch firstPendingPublished = new CountDownLatch(1);
+		CountDownLatch releaseFirstQueueAdmission = new CountDownLatch(1);
+		CountDownLatch secondPendingPublished = new CountDownLatch(1);
+		CountDownLatch releaseSecondQueueAdmission = new CountDownLatch(1);
+		Runnable previousQueueAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
+		direct.beforeApplyQueueAdmissionForTest = () -> {
+			firstPendingPublished.countDown();
+			awaitQueueAdmissionRelease(releaseFirstQueueAdmission);
+		};
 		try {
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.add(F.createIRI("http://example.org/unrelated"), P2, O2);
 			}
+			awaitPendingPublication(firstPendingPublished);
+			releaseFirstQueueAdmission.countDown();
 			try (var dataset = dataset()) {
 				assertThat(dataset.source.indexName(-1, -1, o1, -1)).isEqualTo("direct-psoc");
 				long hitsBefore = direct.snapshotMetrics().lookupHits;
 				assertThat(CloseableDataset.collect(dataset.source.statements(-1, -1, o1, -1))).hasSize(3);
 				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
 			}
+			direct.beforeApplyQueueAdmissionForTest = () -> {
+				secondPendingPublished.countDown();
+				awaitQueueAdmissionRelease(releaseSecondQueueAdmission);
+			};
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.add(F.createIRI("http://example.org/touches-o1"), P3, O1);
 			}
+			awaitPendingPublication(secondPendingPublished);
 			try (var touched = dataset()) {
 				assertThat(touched.source.indexName(-1, -1, o1, -1))
 						.isEqualTo(backing.getTripleStore().getIndexName(-1, -1, o1, -1));
 			}
 		} finally {
+			releaseFirstQueueAdmission.countDown();
+			releaseSecondQueueAdmission.countDown();
+			direct.beforeApplyQueueAdmissionForTest = previousQueueAdmissionHook;
 			direct.pauseApplierForTest(false);
 		}
 	}

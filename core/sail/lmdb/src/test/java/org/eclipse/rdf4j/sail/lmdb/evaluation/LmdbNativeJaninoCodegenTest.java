@@ -59,6 +59,31 @@ public class LmdbNativeJaninoCodegenTest {
 			+ "        return 1;\n"
 			+ "    }\n"
 			+ "}\n";
+	private static final String FACTOR_PREDICATE_KERNEL_CLASS = "org.eclipse.rdf4j.sail.lmdb.gen.M2FactorPredicateKernel";
+	private static final String FACTOR_PREDICATE_KERNEL_SOURCE = "package org.eclipse.rdf4j.sail.lmdb.gen;\n"
+			+ "public final class M2FactorPredicateKernel implements "
+			+ "org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel, "
+			+ "org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorPredicate {\n"
+			+ "    private boolean done;\n"
+			+ "    public int guardCount() { return 1; }\n"
+			+ "    public long dependencies(int guard) { return 0L; }\n"
+			+ "    public boolean test(int guard, long[] prefix) { return prefix[0] == 7L; }\n"
+			+ "    public void filter(int guard, long[][] columns, long[] prefix, long[] selected, int size) {\n"
+			+ "        for (int i = 0; i < size; i++) {\n"
+			+ "            if (columns[0][i] != 7L) { selected[i] = 0L; }\n"
+			+ "        }\n"
+			+ "    }\n"
+			+ "    public void bind(org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext context) { }\n"
+			+ "    public int fill(long[] rowBuffer, int maxRows) {\n"
+			+ "        if (done || maxRows < 1) { return 0; }\n"
+			+ "        long[][] columns = new long[][] { new long[] { 7L, 8L } };\n"
+			+ "        long[] weights = new long[] { 2L, 3L };\n"
+			+ "        rowBuffer[0] = org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorPredicate."
+			+ "sumGeneric(this, 1L, columns, new long[] { 7L }, weights, new long[2], 2);\n"
+			+ "        done = true;\n"
+			+ "        return 1;\n"
+			+ "    }\n"
+			+ "}\n";
 
 	private String previousEnabled;
 	private String previousThreshold;
@@ -120,6 +145,27 @@ public class LmdbNativeJaninoCodegenTest {
 		assertEquals(0, kernel.fill(buffer, 4));
 		kernel.close();
 		assertEquals(1L, LmdbNativeJaninoCodegen.COMPILATIONS.get());
+	}
+
+	@Test
+	public void productionServiceCompilesAndExecutesStaticInterfaceFallback() throws Exception {
+		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel("shape-static-interface-fallback",
+				FACTOR_PREDICATE_KERNEL_CLASS, () -> FACTOR_PREDICATE_KERNEL_SOURCE, 1L);
+		if (kernel == null) {
+			kernel = LmdbNativeJaninoCodegen.awaitKernel("shape-static-interface-fallback", 30, TimeUnit.SECONDS);
+		}
+		assertNotNull(kernel);
+		try {
+			kernel.bind(new KernelContext(null, new long[0], null, null));
+			long[] buffer = new long[1];
+			assertEquals(1, kernel.fill(buffer, 1));
+			assertEquals(2L, buffer[0]);
+			assertEquals(0, kernel.fill(buffer, 1));
+		} finally {
+			kernel.close();
+		}
+		assertEquals(1L, LmdbNativeJaninoCodegen.COMPILATIONS.get());
+		assertEquals(0L, LmdbNativeJaninoCodegen.COMPILE_FAILURES.get());
 	}
 
 	@Test

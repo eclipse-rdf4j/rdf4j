@@ -26,21 +26,28 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Query-level tests for the worst-case-optimal (leapfrog triejoin) operator: cyclic BGPs of three or more patterns must
- * engage the leapfrog ({@link LmdbNativeLeapfrogJoin#PLANNED}/{@link LmdbNativeLeapfrogJoin#OPENED} move) and produce
- * results identical to the generic evaluator; acyclic shapes and disabled-flag runs must not engage it.
+ * engage the explicitly forced leapfrog strategy
+ * ({@link LmdbNativeLeapfrogJoin#PLANNED}/{@link LmdbNativeLeapfrogJoin#OPENED} move) and produce results identical to
+ * the generic evaluator; acyclic shapes and disabled-flag runs must not engage it.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbNativeLeapfrogJoinTest {
 
 	private static final String EX = "http://example.com/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String PARALLEL_THREADS_PROPERTY = "rdf4j.lmdb.parallel.threads";
+	private static final String WCOJ_STRATEGY = "wcoj";
 
 	private static final String TRIANGLE = "SELECT ?a ?b ?c WHERE {\n"
 			+ "  ?a <" + EX + "knows> ?b .\n"
@@ -126,13 +133,13 @@ public class LmdbNativeLeapfrogJoinTest {
 					.as("interpreted oracle: three rotations, each doubled by the duplicated edge")
 					.containsExactly("count=\"6\"^^<http://www.w3.org/2001/XMLSchema#integer>");
 			long openedBefore = LmdbNativeLeapfrogJoin.OPENED.get();
-			assertThat(rowsWithNativeEngine(count, true))
+			assertThat(rowsWithNativeEngine(count, true, WCOJ_STRATEGY))
 					.as("native COUNT over the duplicated triangle must fold the full bag")
 					.isEqualTo(expectedCount);
 			assertThat(LmdbNativeLeapfrogJoin.OPENED.get()).as("leapfrog opened").isGreaterThan(openedBefore);
 
 			List<String> expectedGrouped = rowsWithNativeEngine(grouped, false);
-			assertThat(rowsWithNativeEngine(grouped, true))
+			assertThat(rowsWithNativeEngine(grouped, true, WCOJ_STRATEGY))
 					.as("native grouped COUNT over the duplicated triangle must fold per-group bags")
 					.containsExactlyInAnyOrderElementsOf(expectedGrouped);
 		} finally {
@@ -164,7 +171,7 @@ public class LmdbNativeLeapfrogJoinTest {
 		long plannedBefore = LmdbNativeLeapfrogJoin.PLANNED.get();
 		long openedBefore = LmdbNativeLeapfrogJoin.OPENED.get();
 
-		List<String> actual = rowsWithNativeEngine(TRIANGLE, true);
+		List<String> actual = rowsWithNativeEngine(TRIANGLE, true, WCOJ_STRATEGY);
 
 		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
 		assertThat(actual).hasSize(7); // T1 and T2 contribute three rotations each, h->h contributes (h,h,h)
@@ -179,7 +186,7 @@ public class LmdbNativeLeapfrogJoinTest {
 		List<String> expected = rowsWithNativeEngine(FOUR_CYCLE, false);
 		long openedBefore = LmdbNativeLeapfrogJoin.OPENED.get();
 
-		List<String> actual = rowsWithNativeEngine(FOUR_CYCLE, true);
+		List<String> actual = rowsWithNativeEngine(FOUR_CYCLE, true, WCOJ_STRATEGY);
 
 		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
 		assertThat(LmdbNativeLeapfrogJoin.OPENED.get()).as("leapfrog opened").isGreaterThan(openedBefore);
@@ -199,7 +206,7 @@ public class LmdbNativeLeapfrogJoinTest {
 		List<String> expected = rowsWithNativeEngine(query, false);
 		long openedBefore = LmdbNativeLeapfrogJoin.OPENED.get();
 
-		List<String> actual = rowsWithNativeEngine(query, true);
+		List<String> actual = rowsWithNativeEngine(query, true, WCOJ_STRATEGY);
 
 		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
 		assertThat(expected).isNotEmpty();
@@ -297,39 +304,47 @@ public class LmdbNativeLeapfrogJoinTest {
 
 	@Test
 	public void parallelLeapfrogMatchesSerialResults() {
+		String previousMinCandidates = System.getProperty(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY);
+		String previousThreads = System.getProperty(PARALLEL_THREADS_PROPERTY);
 		System.setProperty(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY, "1");
+		System.setProperty(PARALLEL_THREADS_PROPERTY, "4");
 		try {
 			openRepository();
 
 			List<String> expected = rowsWithNativeEngine(TRIANGLE, false);
 			long parallelBefore = LmdbNativeLeapfrogJoin.PARALLEL_RUNS.get();
 
-			List<String> actual = rowsWithNativeEngine(TRIANGLE, true);
+			List<String> actual = rowsWithNativeEngine(TRIANGLE, true, WCOJ_STRATEGY);
 
 			assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
 			assertThat(LmdbNativeLeapfrogJoin.PARALLEL_RUNS.get()).as("parallel leapfrog engaged")
 					.isGreaterThan(parallelBefore);
 		} finally {
-			System.clearProperty(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY);
+			restore(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY, previousMinCandidates);
+			restore(PARALLEL_THREADS_PROPERTY, previousThreads);
 		}
 	}
 
 	@Test
 	public void fourCycleParallelLeapfrogMatchesSerialResults() {
+		String previousMinCandidates = System.getProperty(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY);
+		String previousThreads = System.getProperty(PARALLEL_THREADS_PROPERTY);
 		System.setProperty(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY, "1");
+		System.setProperty(PARALLEL_THREADS_PROPERTY, "4");
 		try {
 			openRepository();
 
 			List<String> expected = rowsWithNativeEngine(FOUR_CYCLE, false);
 			long parallelBefore = LmdbNativeLeapfrogJoin.PARALLEL_RUNS.get();
 
-			List<String> actual = rowsWithNativeEngine(FOUR_CYCLE, true);
+			List<String> actual = rowsWithNativeEngine(FOUR_CYCLE, true, WCOJ_STRATEGY);
 
 			assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
 			assertThat(LmdbNativeLeapfrogJoin.PARALLEL_RUNS.get()).as("parallel leapfrog engaged")
 					.isGreaterThan(parallelBefore);
 		} finally {
-			System.clearProperty(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY);
+			restore(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY, previousMinCandidates);
+			restore(PARALLEL_THREADS_PROPERTY, previousThreads);
 		}
 	}
 
@@ -430,12 +445,20 @@ public class LmdbNativeLeapfrogJoinTest {
 	}
 
 	private List<String> rowsWithNativeEngine(String query, boolean nativeEnabled) {
+		return rowsWithNativeEngine(query, nativeEnabled, null);
+	}
+
+	private List<String> rowsWithNativeEngine(String query, boolean nativeEnabled, String forcedStrategy) {
 		String previous = System.getProperty(NATIVE_FLAG);
 		System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEnabled));
 		try {
 			try (SailRepositoryConnection conn = repository.getConnection()) {
+				SailTupleQuery preparedQuery = (SailTupleQuery) conn.prepareTupleQuery(query);
+				if (forcedStrategy != null) {
+					preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+				}
 				List<String> rows = new ArrayList<>();
-				for (BindingSet bs : QueryResults.asList(conn.prepareTupleQuery(query).evaluate())) {
+				for (BindingSet bs : QueryResults.asList(preparedQuery.evaluate())) {
 					rows.add(bs.getBindingNames()
 							.stream()
 							.sorted()
@@ -450,6 +473,14 @@ public class LmdbNativeLeapfrogJoinTest {
 			} else {
 				System.setProperty(NATIVE_FLAG, previous);
 			}
+		}
+	}
+
+	private static void restore(String key, String previous) {
+		if (previous == null) {
+			System.clearProperty(key);
+		} else {
+			System.setProperty(key, previous);
 		}
 	}
 

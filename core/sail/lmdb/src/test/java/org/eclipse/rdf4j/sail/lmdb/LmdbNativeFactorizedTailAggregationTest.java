@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
 import org.junit.jupiter.api.AfterEach;
@@ -117,14 +118,24 @@ public class LmdbNativeFactorizedTailAggregationTest {
 	}
 
 	private List<String> rows(String query) {
+		return rows(query, null);
+	}
+
+	private List<String> rows(String query, String forcedStrategy) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			SailTupleQuery preparedQuery = (SailTupleQuery) conn.prepareTupleQuery(query);
+			preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			List<BindingSet> result = QueryResults.asList(preparedQuery.evaluate());
 			return result.stream().map(Object::toString).sorted().collect(Collectors.toList());
 		}
 	}
 
 	private void assertSameAsGeneric(String query) {
-		List<String> nativeRows = rows(query);
+		assertSameAsGeneric(query, null);
+	}
+
+	private void assertSameAsGeneric(String query, String forcedStrategy) {
+		List<String> nativeRows = rows(query, forcedStrategy);
 		String previous = System.getProperty(NATIVE_FLAG);
 		List<String> genericRows;
 		try {
@@ -197,9 +208,33 @@ public class LmdbNativeFactorizedTailAggregationTest {
 	}
 
 	@Test
+	public void groupByTailVariableWithDistinctPrefixValueUsesMemoizedBuckets() {
+		String query = star("?b (COUNT(DISTINCT ?s) AS ?d)", "") + " GROUP BY ?b";
+		assertSameAsGeneric(query, "factorizedTail");
+	}
+
+	@Test
 	public void groupByTailVariableWithMixedAggregates() {
-		assertSameAsGeneric(star("?b (COUNT(?s) AS ?c) (COUNT(DISTINCT ?s) AS ?d) (COUNT(?b) AS ?e)", "")
-				+ " GROUP BY ?b");
+		String query = star("?b (COUNT(?s) AS ?c) (COUNT(DISTINCT ?s) AS ?d) (COUNT(?b) AS ?e)", "")
+				+ " GROUP BY ?b";
+		assertSameAsGeneric(query, "factorizedTail");
+	}
+
+	@Test
+	public void groupByTailVariableWithDistinctNonKeyTailValueUsesDirectBuckets() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			conn.begin();
+			conn.add(vf.createIRI(EX, "hub1"), vf.createIRI(EX, "p2"), vf.createIRI(EX, "bGraph"),
+					vf.createIRI(EX, "g2"));
+			conn.commit();
+		}
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?b (COUNT(DISTINCT ?g) AS ?graphs) (COUNT(?s) AS ?rows) WHERE {\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  GRAPH ?g { ?s ex:p2 ?b . }\n"
+				+ "} GROUP BY ?b";
+		assertSameAsGeneric(query, "factorizedTail");
 	}
 
 	@Test

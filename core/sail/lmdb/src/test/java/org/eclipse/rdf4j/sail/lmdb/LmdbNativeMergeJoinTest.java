@@ -32,6 +32,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Parity and eligibility tests for the symmetric leapfrog merge join: results must equal the generic engine's bag
@@ -61,6 +63,7 @@ class LmdbNativeMergeJoinTest {
 	private String previousChunkPipelineEnabled;
 	private String previousAccumulateJoinEnabled;
 	private String previousCostCalibrationEnabled;
+	private String previousParallelEnabled;
 
 	@BeforeEach
 	void setUp() {
@@ -71,6 +74,7 @@ class LmdbNativeMergeJoinTest {
 		previousChunkPipelineEnabled = System.getProperty("rdf4j.lmdb.chunkPipeline.enabled");
 		previousAccumulateJoinEnabled = System.getProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY);
 		previousCostCalibrationEnabled = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
+		previousParallelEnabled = System.getProperty(PARALLEL_FLAG);
 		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
 		System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
 		System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
@@ -107,7 +111,9 @@ class LmdbNativeMergeJoinTest {
 		System.clearProperty(LmdbNativeMergeJoin.MAX_RUN_ROWS_PROPERTY);
 		System.clearProperty(LmdbNativeHashJoin.ENABLED_PROPERTY);
 		System.clearProperty(LmdbNativeHashJoin.MIN_ROWS_PROPERTY);
-		System.clearProperty(PARALLEL_FLAG);
+		restoreProperty(PARALLEL_FLAG, previousParallelEnabled);
+		assertThat(System.getProperty(PARALLEL_FLAG)).as("test teardown must restore the incoming parallel setting")
+				.isEqualTo(previousParallelEnabled);
 		if (previousJaninoEnabled == null) {
 			System.clearProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
 		} else {
@@ -343,16 +349,28 @@ class LmdbNativeMergeJoinTest {
 	}
 
 	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
 	void multiKeyValuePairsUseBatchMergeJoin() {
-		addValuePairData();
-		// keys (?a, ?p) lead both sides' spoc order while ?x and ?y keep each pattern from full coverage
-		String query = "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT ?a ?x ?y WHERE { ?a ?p ?x . ?a ?p ?y }";
-		List<String> generic = genericRows(query);
-		resetCounters();
+		String previousWildcardBatch = System.getProperty(LmdbWildcardPredicateBatch.ENABLED_PROPERTY);
+		String previousParallel = System.getProperty(PARALLEL_FLAG);
+		try {
+			// The merge mechanics are the contract here; wildcard batching and parallel pipelines have their own
+			// engagement tests and otherwise legitimately win this costed dispatch site.
+			System.setProperty(LmdbWildcardPredicateBatch.ENABLED_PROPERTY, "false");
+			System.setProperty(PARALLEL_FLAG, "false");
+			addValuePairData();
+			// keys (?a, ?p) lead both sides' spoc order while ?x and ?y keep each pattern from full coverage
+			String query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT ?a ?x ?y WHERE { ?a ?p ?x . ?a ?p ?y }";
+			List<String> generic = genericRows(query);
+			resetCounters();
 
-		assertThat(rows(query)).isEqualTo(generic);
-		assertThat(LmdbNativeMergeJoin.JOINS.get()).isOne();
+			assertThat(rows(query)).isEqualTo(generic);
+			assertThat(LmdbNativeMergeJoin.JOINS.get()).isOne();
+		} finally {
+			restoreProperty(LmdbWildcardPredicateBatch.ENABLED_PROPERTY, previousWildcardBatch);
+			restoreProperty(PARALLEL_FLAG, previousParallel);
+		}
 	}
 
 	private void addValuePairData() {

@@ -143,18 +143,55 @@ public class LmdbNativePrimitiveGroupingTest {
 		previousProperties.put(property, System.setProperty(property, "false"));
 	}
 
-	@Test
-	public void twoKeyPlainCountsUseParallelPrimitiveState() {
-		Map<String, Long> counts = groupedCounts("COUNT(?s)");
-
-		assertThat(counts).hasSize(15).allSatisfy((key, count) -> assertThat(count).isEqualTo(40L));
-		assertThat(NativeGroupIteration.PRIMITIVE_COUNT_GROUP_ROWS.get()).isEqualTo(600L);
-		assertThat(NativeGroupIteration.PRIMITIVE_TUPLE_GROUP_ROWS.get()).isZero();
-		assertThat(PrimitiveTupleTable.INSERTIONS.get()).isEqualTo(15L);
+	private static void restoreProperty(String property, String value) {
+		if (value == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, value);
+		}
 	}
 
 	@Test
-	public void eightKeyAggregateMatchesGenericAndUsesPrimitiveState() {
+	public void twoKeyPlainCountsUseBoundedCountStateByDefault() {
+		String previous = System.getProperty(NativeCountGroupStore.ENABLED_PROPERTY);
+		System.setProperty(NativeCountGroupStore.ENABLED_PROPERTY, "true");
+		try {
+			Map<String, Long> counts = groupedCounts("COUNT(?s)");
+
+			assertThat(counts).hasSize(15).allSatisfy((key, count) -> assertThat(count).isEqualTo(40L));
+			assertThat(NativeGroupIteration.PRIMITIVE_COUNT_GROUP_ROWS.get()).isEqualTo(600L);
+			assertThat(NativeGroupIteration.PRIMITIVE_TUPLE_GROUP_ROWS.get()).isZero();
+			assertThat(PrimitiveTupleTable.INSERTIONS.get()).isZero();
+		} finally {
+			restoreProperty(NativeCountGroupStore.ENABLED_PROPERTY, previous);
+		}
+	}
+
+	@Test
+	public void twoKeyPlainCountsUsePrimitiveTupleStateWhenBoundedCountsAreDisabled() {
+		String previous = System.getProperty(NativeCountGroupStore.ENABLED_PROPERTY);
+		System.setProperty(NativeCountGroupStore.ENABLED_PROPERTY, "false");
+		try {
+			Map<String, Long> counts = groupedCounts("COUNT(?s)");
+
+			assertThat(counts).hasSize(15).allSatisfy((key, count) -> assertThat(count).isEqualTo(40L));
+			assertThat(NativeGroupIteration.PRIMITIVE_COUNT_GROUP_ROWS.get()).isEqualTo(600L);
+			assertThat(NativeGroupIteration.PRIMITIVE_TUPLE_GROUP_ROWS.get()).isZero();
+			assertThat(PrimitiveTupleTable.INSERTIONS.get()).isEqualTo(15L);
+		} finally {
+			restoreProperty(NativeCountGroupStore.ENABLED_PROPERTY, previous);
+		}
+	}
+
+	@Test
+	public void eightKeyAggregateMatchesGenericAndUsesPrimitiveTupleStateWhenSpecialistsAreDisabled() {
+		String previousBounded = System.getProperty(NativeCountGroupStore.ENABLED_PROPERTY);
+		String previousWildcard = System.getProperty(LmdbWildcardPredicateBatch.ENABLED_PROPERTY);
+		// This test is specifically about the legacy eight-key tuple table. Disable the newer bounded count store and
+		// wildcard adjacency candidate locally so the adaptive arbiter reaches that representation while preserving the
+		// end-to-end result comparison below.
+		System.setProperty(NativeCountGroupStore.ENABLED_PROPERTY, "false");
+		System.setProperty(LmdbWildcardPredicateBatch.ENABLED_PROPERTY, "false");
 		String query = """
 				SELECT ?p ?o (COUNT(?s) AS ?c)
 				WHERE {
@@ -169,10 +206,15 @@ public class LmdbNativePrimitiveGroupingTest {
 				GROUP BY ?p ?o ?p2 ?p3 ?p4 ?o2 ?o3 ?o4
 				""";
 
-		assertNativeMatchesGeneric(repository, query);
+		try {
+			assertNativeMatchesGeneric(repository, query);
 
-		assertThat(strategy(repository, query)).isEqualTo("primitiveTupleGroups");
-		assertThat(PrimitiveTupleTable.INSERTIONS.get()).isGreaterThanOrEqualTo(15L);
+			assertThat(strategy(repository, query)).isEqualTo("primitiveTupleGroups");
+			assertThat(PrimitiveTupleTable.INSERTIONS.get()).isGreaterThanOrEqualTo(15L);
+		} finally {
+			restoreProperty(LmdbWildcardPredicateBatch.ENABLED_PROPERTY, previousWildcard);
+			restoreProperty(NativeCountGroupStore.ENABLED_PROPERTY, previousBounded);
+		}
 	}
 
 	@Test
@@ -184,9 +226,11 @@ public class LmdbNativePrimitiveGroupingTest {
 	}
 
 	@Test
-	public void unsafeContextFirstOrderKeepsPrimitiveTwoKeyGroupMap() {
+	public void unsafeContextFirstOrderKeepsPrimitiveTwoKeyGroupMapWhenBoundedCountsAreDisabled() {
 		SailRepository contextRepository = new SailRepository(
 				new LmdbStore(new File(dataDir, "context-first"), new LmdbStoreConfig("cspo")));
+		String previousBounded = System.getProperty(NativeCountGroupStore.ENABLED_PROPERTY);
+		System.setProperty(NativeCountGroupStore.ENABLED_PROPERTY, "false");
 		try {
 			try (SailRepositoryConnection connection = contextRepository.getConnection()) {
 				ValueFactory vf = connection.getValueFactory();
@@ -214,7 +258,11 @@ public class LmdbNativePrimitiveGroupingTest {
 			assertThat(NativeGroupIteration.PRIMITIVE_TUPLE_GROUP_ROWS.get()).isEqualTo(600L);
 			assertThat(PrimitiveTupleTable.INSERTIONS.get()).isEqualTo(15L);
 		} finally {
-			contextRepository.shutDown();
+			try {
+				contextRepository.shutDown();
+			} finally {
+				restoreProperty(NativeCountGroupStore.ENABLED_PROPERTY, previousBounded);
+			}
 		}
 	}
 
@@ -244,22 +292,34 @@ public class LmdbNativePrimitiveGroupingTest {
 	}
 
 	@Test
-	public void orderedSinglePatternGroupingKeepsOnlyTheActiveAggregateState() {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			List<BindingSet> rows = QueryResults.asList(connection.prepareTupleQuery(
-					"SELECT ?p (COUNT(?s) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p").evaluate());
-			assertThat(rows).hasSize(3)
-					.allSatisfy(
-							row -> assertThat(((Literal) row.getValue("c")).longValue()).isEqualTo(200L));
-		}
+	public void orderedSinglePatternGroupingKeepsOnlyTheActiveAggregateStateWhenWildcardBatchIsDisabled() {
+		String previousWildcard = System.getProperty(LmdbWildcardPredicateBatch.ENABLED_PROPERTY);
+		// Keep the single-pattern query on its named ordered-group route; the wildcard batch is a separate valid
+		// specialist for the same syntactic shape.
+		System.setProperty(LmdbWildcardPredicateBatch.ENABLED_PROPERTY, "false");
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				List<BindingSet> rows = QueryResults.asList(connection.prepareTupleQuery(
+						"SELECT ?p (COUNT(?s) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p").evaluate());
+				assertThat(rows).hasSize(3)
+						.allSatisfy(
+								row -> assertThat(((Literal) row.getValue("c")).longValue()).isEqualTo(200L));
+			}
 
-		assertThat(NativeGroupIteration.ORDERED_GROUP_ROWS.get()).isEqualTo(600L);
-		assertThat(NativeGroupIteration.ORDERED_GROUPS.get()).isEqualTo(3L);
-		assertThat(NativeGroupIteration.PRIMITIVE_COUNT_GROUP_ROWS.get()).isZero();
+			assertThat(NativeGroupIteration.ORDERED_GROUP_ROWS.get()).isEqualTo(600L);
+			assertThat(NativeGroupIteration.ORDERED_GROUPS.get()).isEqualTo(3L);
+			assertThat(NativeGroupIteration.PRIMITIVE_COUNT_GROUP_ROWS.get()).isZero();
+		} finally {
+			restoreProperty(LmdbWildcardPredicateBatch.ENABLED_PROPERTY, previousWildcard);
+		}
 	}
 
 	@Test
-	public void floatingSumFallsBackFromOrderedSinglePatternGrouping() {
+	public void floatingSumFallsBackFromOrderedSinglePatternGroupingWhenWildcardBatchIsDisabled() {
+		String previousWildcard = System.getProperty(LmdbWildcardPredicateBatch.ENABLED_PROPERTY);
+		// The exact follow-up COUNT query is a single-pattern ordered-group contract. Keep the wildcard aggregate
+		// specialist from claiming that same shape so this test exercises the ordered representation it names.
+		System.setProperty(LmdbWildcardPredicateBatch.ENABLED_PROPERTY, "false");
 		SailRepository floatingRepository = new SailRepository(
 				new LmdbStore(new File(dataDir, "ordered-floating"), new LmdbStoreConfig("spoc,posc,ospc")));
 		try {
@@ -295,7 +355,11 @@ public class LmdbNativePrimitiveGroupingTest {
 					.as("a floating fallback must not disable a subsequent exact ordered grouping")
 					.isGreaterThan(exactRowsBefore);
 		} finally {
-			floatingRepository.shutDown();
+			try {
+				floatingRepository.shutDown();
+			} finally {
+				restoreProperty(LmdbWildcardPredicateBatch.ENABLED_PROPERTY, previousWildcard);
+			}
 		}
 	}
 

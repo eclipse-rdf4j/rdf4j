@@ -19,35 +19,63 @@ import org.eclipse.rdf4j.query.BindingSet;
 
 /**
  * Ties a {@link NativeExecutionContext}'s lifetime to the result iteration it served (M-A0 gate 5): the context closes
- * on natural exhaustion and on {@link #close()} (which callers reach on both success and failure paths). Safe only for
- * iterations whose emitted rows no longer depend on the context — the native group step materializes runtime-interned
- * values into its result rows at emission.
+ * on natural exhaustion and on {@link #close()} (which callers reach on both success and failure paths). Wrappers that
+ * continue evaluating values after the carrier reaches EOF retain a lease on the same context until that work ends.
  */
 @Experimental
-final class NativeContextClosingIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
+final class NativeContextClosingIteration
+		implements CloseableIteration<BindingSet>, CooperativeCancellation, NativeExecutionContextCarrier {
 
 	private final CloseableIteration<BindingSet> delegate;
 	private final NativeExecutionContext context;
+	private final boolean closeContext;
 	private volatile boolean closed;
 
 	NativeContextClosingIteration(CloseableIteration<BindingSet> delegate, NativeExecutionContext context) {
+		this(delegate, context, true);
+	}
+
+	NativeContextClosingIteration(CloseableIteration<BindingSet> delegate, NativeExecutionContext context,
+			boolean closeContext) {
 		this.delegate = delegate;
 		this.context = context;
+		this.closeContext = closeContext;
 	}
 
 	@Override
 	public boolean hasNext() {
-		boolean hasNext = delegate.hasNext();
+		if (closed) {
+			return false;
+		}
+		boolean hasNext;
+		try {
+			hasNext = delegate.hasNext();
+		} catch (Throwable failure) {
+			Throwable cleanupFailure = closeResources();
+			if (cleanupFailure != null && cleanupFailure != failure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throwFailure(failure);
+			return false;
+		}
 		if (!hasNext) {
-			closed = true;
-			context.close();
+			close();
 		}
 		return hasNext;
 	}
 
 	@Override
 	public BindingSet next() {
-		return delegate.next();
+		try {
+			return delegate.next();
+		} catch (Throwable failure) {
+			Throwable cleanupFailure = closeResources();
+			if (cleanupFailure != null && cleanupFailure != failure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throwFailure(failure);
+			return null;
+		}
 	}
 
 	@Override
@@ -64,12 +92,102 @@ final class NativeContextClosingIteration implements CloseableIteration<BindingS
 	}
 
 	@Override
+	public NativeExecutionContext executionContext() {
+		return context;
+	}
+
+	@Override
 	public void close() {
+		Throwable failure = closeResources();
+		if (failure != null) {
+			throwFailure(failure);
+		}
+	}
+
+	private synchronized Throwable closeResources() {
+		if (closed) {
+			return null;
+		}
 		closed = true;
+		Throwable failure = null;
 		try {
 			delegate.close();
-		} finally {
-			context.close();
+		} catch (Throwable cleanup) {
+			failure = cleanup;
+		}
+		if (closeContext) {
+			try {
+				context.close();
+			} catch (Throwable cleanup) {
+				if (failure == null) {
+					failure = cleanup;
+				} else if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+		}
+		return failure;
+	}
+
+	static void throwFailure(Throwable failure) {
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		throw new IllegalStateException("iteration cleanup failed", failure);
+	}
+}
+
+/** Exposes an evaluation context through wrappers that still own the native result lifetime. */
+interface NativeExecutionContextCarrier {
+	NativeExecutionContext executionContext();
+
+	static NativeExecutionContext contextOf(Object value) {
+		return value instanceof NativeExecutionContextCarrier carrier ? carrier.executionContext() : null;
+	}
+
+	static NativeExecutionContext.Lease retain(Object value) {
+		NativeExecutionContext context = contextOf(value);
+		return context == null ? null : context.retainLease();
+	}
+
+	static CloseableIteration<BindingSet> forEvaluation(CloseableIteration<BindingSet> delegate,
+			NativeLmdbQuerySource source) {
+		SyntheticValueSource evaluation = source instanceof SyntheticValueSource synthetic
+				&& synthetic.executionContext() != null
+						? synthetic
+						: SyntheticValueSource.forEvaluation(source);
+		return forEvaluation(delegate, evaluation);
+	}
+
+	static CloseableIteration<BindingSet> forEvaluation(CloseableIteration<BindingSet> delegate,
+			SyntheticValueSource evaluation) {
+		return new NativeContextClosingIteration(delegate, evaluation.executionContext(),
+				!SyntheticValueSource.inheritedEvaluation(evaluation));
+	}
+
+	static void closeWithLease(CloseableIteration<?> delegate, NativeExecutionContext.Lease lease) {
+		Throwable failure = null;
+		try {
+			delegate.close();
+		} catch (Throwable cleanup) {
+			failure = cleanup;
+		}
+		if (lease != null) {
+			try {
+				lease.close();
+			} catch (Throwable cleanup) {
+				if (failure == null) {
+					failure = cleanup;
+				} else {
+					failure.addSuppressed(cleanup);
+				}
+			}
+		}
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
 		}
 	}
 }

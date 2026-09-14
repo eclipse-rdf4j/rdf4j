@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -28,6 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -35,7 +37,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 class LmdbNativeRowCancellationTest {
 
@@ -108,6 +114,131 @@ class LmdbNativeRowCancellationTest {
 	}
 
 	@Test
+	void boundPlanFillDoesNotAdvanceCancelledCursorBeforeFirstRow() throws Exception {
+		CancellationProbePlan plan = new CancellationProbePlan();
+		RowState row = new RowState(new StubSource(), layout(), EmptyBindingSet.getInstance());
+		row.cancellation.requestCancellation();
+		KernelPlan.Cursor cursor = boundPlan(row, plan).open();
+
+		try {
+			assertThat(cursor.fill(new long[4], 4)).isZero();
+			assertThat(plan.nextCalls).hasValue(0);
+			assertThat(plan.closeCalls).hasValue(1);
+		} finally {
+			cursor.close();
+		}
+	}
+
+	@Test
+	void boundPlanWeightedFillDoesNotAdvanceCancelledCursorBeforeFirstRow() throws Exception {
+		CancellationProbePlan plan = new CancellationProbePlan();
+		RowState row = new RowState(new StubSource(), layout(), EmptyBindingSet.getInstance());
+		row.cancellation.requestCancellation();
+		KernelPlan.Cursor cursor = boundPlan(row, plan).openWeighted();
+
+		try {
+			assertThat(cursor.fillWeighted(new long[4], new long[4], 4)).isZero();
+			assertThat(plan.nextCalls).hasValue(0);
+			assertThat(plan.closeCalls).hasValue(1);
+		} finally {
+			cursor.close();
+		}
+	}
+
+	@Test
+	void boundPlanFillStopsAfterCancellationDuringPartialBatch() throws Exception {
+		PartialBatchPlan plan = new PartialBatchPlan();
+		RowState row = new RowState(new PartialBatchSource(plan), layout(), EmptyBindingSet.getInstance());
+		KernelPlan.Cursor cursor = boundPlan(row, partialBatchPattern()).open();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<Integer> worker = executor.submit(() -> cursor.fill(new long[4], 4));
+
+		try {
+			assertThat(plan.secondEntered.await(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+			row.cancellation.requestCancellation();
+			plan.releaseSecond.countDown();
+			assertThat(worker.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+					.as("cancellation must preserve the completed part of a bulk fill")
+					.isOne();
+			assertThat(plan.nextCalls).hasValue(2);
+		} finally {
+			row.cancellation.requestCancellation();
+			plan.releaseSecond.countDown();
+			cursor.close();
+			executor.shutdownNow();
+			executor.awaitTermination(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+		}
+		assertThat(plan.closeCalls).hasValue(1);
+	}
+
+	@Test
+	void boundPlanWeightedFillStopsAfterCancellationDuringPartialBatch() throws Exception {
+		PartialBatchPlan plan = new PartialBatchPlan();
+		RowState row = new RowState(new PartialBatchSource(plan), layout(), EmptyBindingSet.getInstance());
+		KernelPlan.Cursor cursor = boundPlan(row, partialBatchPattern()).openWeighted();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		long[] weights = new long[4];
+		Future<Integer> worker = executor.submit(() -> cursor.fillWeighted(new long[4], weights, 4));
+
+		try {
+			assertThat(plan.secondEntered.await(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+			row.cancellation.requestCancellation();
+			plan.releaseSecond.countDown();
+			assertThat(worker.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+					.as("cancellation must preserve the completed part of a weighted bulk fill")
+					.isOne();
+			assertThat(weights[0]).isOne();
+			assertThat(plan.nextCalls).hasValue(2);
+		} finally {
+			row.cancellation.requestCancellation();
+			plan.releaseSecond.countDown();
+			cursor.close();
+			executor.shutdownNow();
+			executor.awaitTermination(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+		}
+		assertThat(plan.closeCalls).hasValue(1);
+	}
+
+	@Test
+	void boundPlanFillPreservesScanFailureWhenCursorCloseFails() {
+		IOException scanFailure = new IOException("synthetic bulk scan failure");
+		RuntimeException closeFailure = new IllegalStateException("synthetic cursor close failure");
+		IOExceptionPlan plan = new IOExceptionPlan(scanFailure, closeFailure);
+		RowState row = new RowState(new StubSource(), layout(), EmptyBindingSet.getInstance());
+		KernelPlan.Cursor cursor = boundPlan(row, plan).open();
+
+		try {
+			LmdbNativeKernelBindings.PlanFailure failure = Assertions.assertThrows(
+					LmdbNativeKernelBindings.PlanFailure.class, () -> cursor.fill(new long[4], 4));
+			assertThat(failure.ioCause()).isSameAs(scanFailure);
+			assertThat(scanFailure.getSuppressed()).containsExactly(closeFailure);
+		} finally {
+			cursor.close();
+		}
+		assertThat(plan.closeCalls).hasValue(1);
+	}
+
+	@Test
+	void boundPlanWeightedFillPreservesScanFailureWhenCursorCloseFails() {
+		IOException scanFailure = new IOException("synthetic weighted scan failure");
+		RuntimeException closeFailure = new IllegalStateException("synthetic weighted cursor close failure");
+		IOExceptionPlan plan = new IOExceptionPlan(scanFailure, closeFailure);
+		RowState row = new RowState(new StubSource(), layout(), EmptyBindingSet.getInstance());
+		KernelPlan.Cursor cursor = boundPlan(row, plan).openWeighted();
+
+		try {
+			LmdbNativeKernelBindings.PlanFailure failure = Assertions.assertThrows(
+					LmdbNativeKernelBindings.PlanFailure.class,
+					() -> cursor.fillWeighted(new long[4], new long[4], 4));
+			assertThat(failure.ioCause()).isSameAs(scanFailure);
+			assertThat(scanFailure.getSuppressed()).containsExactly(closeFailure);
+		} finally {
+			cursor.close();
+		}
+		assertThat(plan.closeCalls).hasValue(1);
+	}
+
+	@Test
 	void requestCancellationStopsInFlightOrderedMaterializationBeforeEmission() throws Exception {
 		ControlledPlan plan = new ControlledPlan();
 		NativeLmdbQuerySource source = new StubSource();
@@ -141,61 +272,72 @@ class LmdbNativeRowCancellationTest {
 	}
 
 	@Test
-	void requestCancellationStopsOrderedPostSortProjectionBeforeEmission() throws Exception {
-		CountDownLatch projectionEntered = new CountDownLatch(1);
-		CountDownLatch releaseProjection = new CountDownLatch(1);
-		NativeLmdbQuerySource source = new SyntheticValueSource(
-				new StubSource(projectionEntered, releaseProjection), PlanValueCatalog.EMPTY);
-		NativeSlotLayout layout = layout();
-		SlotPlan plan = new SlotPlan() {
-			@Override
-			public RowCursor open(RowState row) {
-				return new RowCursor() {
-					private boolean emitted;
-
-					@Override
-					public boolean next() {
-						if (emitted) {
-							return false;
-						}
-						emitted = true;
-						row.bind(0, 1L);
-						return true;
-					}
-
-					@Override
-					public void close() {
-					}
-				};
-			}
-
-			@Override
-			public long producedMask() {
-				return 1L;
-			}
-		};
-		NativeRowsStep step = new NativeRowsStep(source, plan, layout, new int[] { 0 }, new String[] { "value" },
-				true, new int[] { 0 }, new boolean[] { true }, 0L, -1L, false, null, null, null, Set.of(), null,
-				null);
-		CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance());
-		ExecutorService executor = Executors.newSingleThreadExecutor();
-		Future<Boolean> worker = executor.submit(iteration::hasNext);
-
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void requestCancellationStopsOrderedEagerPostSortProjectionBeforeEmission() throws Exception {
+		String previousLazyResults = System.getProperty(NativeProjectedBindingSet.ENABLED_PROPERTY);
+		System.setProperty(NativeProjectedBindingSet.ENABLED_PROPERTY, "false");
 		try {
-			assertThat(projectionEntered.await(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
-					.as("the ordered worker must enter post-sort projection before cancellation")
-					.isTrue();
-			assertThat(((CooperativeCancellation) iteration).requestCancellation()).isTrue();
-			releaseProjection.countDown();
+			CountDownLatch projectionEntered = new CountDownLatch(1);
+			CountDownLatch releaseProjection = new CountDownLatch(1);
+			NativeLmdbQuerySource source = new SyntheticValueSource(
+					new StubSource(projectionEntered, releaseProjection), PlanValueCatalog.EMPTY);
+			NativeSlotLayout layout = layout();
+			SlotPlan plan = new SlotPlan() {
+				@Override
+				public RowCursor open(RowState row) {
+					return new RowCursor() {
+						private boolean emitted;
 
-			assertThat(worker.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
-					.as("a row projected after cancellation must not reach the result")
-					.isFalse();
+						@Override
+						public boolean next() {
+							if (emitted) {
+								return false;
+							}
+							emitted = true;
+							row.bind(0, 1L);
+							return true;
+						}
+
+						@Override
+						public void close() {
+						}
+					};
+				}
+
+				@Override
+				public long producedMask() {
+					return 1L;
+				}
+			};
+			NativeRowsStep step = new NativeRowsStep(source, plan, layout, new int[] { 0 }, new String[] { "value" },
+					true, new int[] { 0 }, new boolean[] { true }, 0L, -1L, false, null, null, null, Set.of(), null,
+					null);
+			CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance());
+			ExecutorService executor = Executors.newSingleThreadExecutor();
+			Future<Boolean> worker = executor.submit(iteration::hasNext);
+
+			try {
+				assertThat(projectionEntered.await(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+						.as("the eager ordered worker must enter post-sort projection before cancellation")
+						.isTrue();
+				assertThat(((CooperativeCancellation) iteration).requestCancellation()).isTrue();
+				releaseProjection.countDown();
+
+				assertThat(worker.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+						.as("a row projected after cancellation must not reach the result")
+						.isFalse();
+			} finally {
+				releaseProjection.countDown();
+				iteration.close();
+				executor.shutdownNow();
+				executor.awaitTermination(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+			}
 		} finally {
-			releaseProjection.countDown();
-			iteration.close();
-			executor.shutdownNow();
-			executor.awaitTermination(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+			if (previousLazyResults == null) {
+				System.clearProperty(NativeProjectedBindingSet.ENABLED_PROPERTY);
+			} else {
+				System.setProperty(NativeProjectedBindingSet.ENABLED_PROPERTY, previousLazyResults);
+			}
 		}
 	}
 
@@ -259,6 +401,125 @@ class LmdbNativeRowCancellationTest {
 		return layout;
 	}
 
+	private static KernelPlan boundPlan(RowState row, SlotPlan nested) {
+		LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
+				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
+				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0],
+				new int[0], List.of(), new StatementOrder[0],
+				new LmdbNativeKernelBindings.PlanRequest[] {
+						new LmdbNativeKernelBindings.PlanRequest(nested, new int[] { 0 }) },
+				null, false, 16);
+		return bindings.context(new NativeLmdbQuerySource.NativeAdjacency[0],
+				new LmdbNativeKernelBindings.BoundDomains(new long[0][], new int[0], new int[0]), row,
+				null).plans[0];
+	}
+
+	private static PatternPlan partialBatchPattern() {
+		return new PatternPlan(Term.unbound(), Term.unbound(), Term.unbound(), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 2D);
+	}
+
+	private static final class CancellationProbePlan implements SlotPlan {
+		private final AtomicInteger nextCalls = new AtomicInteger();
+		private final AtomicInteger closeCalls = new AtomicInteger();
+
+		@Override
+		public RowCursor open(RowState row) {
+			return new RowCursor() {
+				@Override
+				public boolean next() {
+					nextCalls.incrementAndGet();
+					throw new AssertionError("cancelled bound plan advanced before its first row");
+				}
+
+				@Override
+				public void close() {
+					closeCalls.incrementAndGet();
+				}
+			};
+		}
+
+		@Override
+		public long producedMask() {
+			return 1L;
+		}
+	}
+
+	private static final class PartialBatchPlan {
+		private final CountDownLatch secondEntered = new CountDownLatch(1);
+		private final CountDownLatch releaseSecond = new CountDownLatch(1);
+		private final AtomicInteger nextCalls = new AtomicInteger();
+		private final AtomicInteger closeCalls = new AtomicInteger();
+
+		private RecordIterator open() {
+			return new RecordIterator() {
+				@Override
+				public long[] next() {
+					int call = nextCalls.incrementAndGet();
+					if (call == 1) {
+						return new long[] { 1L, 1L, 2L, 0L };
+					}
+					if (call == 2) {
+						secondEntered.countDown();
+						await(releaseSecond);
+						return new long[] { 1L, 1L, 4L, 0L };
+					}
+					throw new AssertionError("bound plan advanced beyond cancelled partial batch");
+				}
+
+				@Override
+				public void close() {
+					closeCalls.incrementAndGet();
+				}
+			};
+		}
+	}
+
+	private static final class PartialBatchSource extends StubSource {
+		private final PartialBatchPlan plan;
+
+		private PartialBatchSource(PartialBatchPlan plan) {
+			this.plan = plan;
+		}
+
+		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context) {
+			return plan.open();
+		}
+	}
+
+	private static final class IOExceptionPlan implements SlotPlan {
+		private final IOException scanFailure;
+		private final RuntimeException closeFailure;
+		private final AtomicInteger closeCalls = new AtomicInteger();
+
+		private IOExceptionPlan(IOException scanFailure, RuntimeException closeFailure) {
+			this.scanFailure = scanFailure;
+			this.closeFailure = closeFailure;
+		}
+
+		@Override
+		public RowCursor open(RowState row) {
+			return new RowCursor() {
+				@Override
+				public boolean next() throws IOException {
+					throw scanFailure;
+				}
+
+				@Override
+				public void close() {
+					closeCalls.incrementAndGet();
+					throw closeFailure;
+				}
+			};
+		}
+
+		@Override
+		public long producedMask() {
+			return 1L;
+		}
+	}
+
 	private static final class ControlledPlan implements SlotPlan {
 
 		private final CountDownLatch rowEntered = new CountDownLatch(1);
@@ -305,7 +566,7 @@ class LmdbNativeRowCancellationTest {
 		}
 	}
 
-	private static final class StubSource implements NativeLmdbQuerySource {
+	private static class StubSource implements NativeLmdbQuerySource {
 
 		private final Object idSpace = new Object();
 		private final CountDownLatch projectionEntered;

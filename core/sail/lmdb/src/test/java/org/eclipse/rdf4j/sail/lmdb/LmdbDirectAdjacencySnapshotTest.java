@@ -18,6 +18,8 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -34,12 +36,15 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Plan 27 Milestone 6 through the complete {@link LmdbSailStore} stack: commits keep SNAPSHOT datasets exact across
  * pending windows, delta application, catalog extension, and SELECTED first-commit classification — without any
  * rebuild.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbDirectAdjacencySnapshotTest {
 
 	private static final ValueFactory F = SimpleValueFactory.getInstance();
@@ -87,6 +92,21 @@ class LmdbDirectAdjacencySnapshotTest {
 		backing = sail.getBackingStore();
 		direct = backing.directAdjacencyStore();
 		assertThat(direct.buildNowForTest()).isTrue();
+	}
+
+	private void openStoreWithSynchronousMaintenance(boolean synchronous) {
+		String property = LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY;
+		String previous = System.getProperty(property);
+		System.setProperty(property, Boolean.toString(synchronous));
+		try {
+			openStore(null, null);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
 	}
 
 	private NativeLmdbQuerySource dataset() {
@@ -176,11 +196,31 @@ class LmdbDirectAdjacencySnapshotTest {
 
 	@Test
 	void pendingWindowFallsBackForTouchedRowsOnly() throws IOException {
-		openStore(null, null);
+		openStoreWithSynchronousMaintenance(false);
 		direct.pauseApplierForTest(true);
+		CountDownLatch pendingPublished = new CountDownLatch(1);
+		CountDownLatch releaseQueueAdmission = new CountDownLatch(1);
+		Runnable previousQueueAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
+		direct.beforeApplyQueueAdmissionForTest = () -> {
+			pendingPublished.countDown();
+			try {
+				releaseQueueAdmission.await();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(e);
+			}
+		};
 		try {
 			try (RepositoryConnection conn = repo.getConnection()) {
 				conn.add(S1, P1, O3);
+			}
+			try {
+				assertThat(pendingPublished.await(30, TimeUnit.SECONDS))
+						.as("pending row publication should precede snapshot acquisition")
+						.isTrue();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(e);
 			}
 			NativeLmdbQuerySource dataset = dataset();
 			try {
@@ -200,6 +240,8 @@ class LmdbDirectAdjacencySnapshotTest {
 				((org.eclipse.rdf4j.sail.base.SailDataset) dataset).close();
 			}
 		} finally {
+			releaseQueueAdmission.countDown();
+			direct.beforeApplyQueueAdmissionForTest = previousQueueAdmissionHook;
 			direct.pauseApplierForTest(false);
 		}
 		NativeLmdbQuerySource dataset = dataset();

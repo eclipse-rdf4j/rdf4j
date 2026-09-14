@@ -580,13 +580,24 @@ final class LmdbAdjacencyDeltaApplier {
 				if (emitState == null) {
 					// subpass A: resolve once, size the merged row, and retain changed rows for subpass B
 					OldRun old = previousRows.find(key, plane, predicate);
-					if (old != null && (LmdbAdjacencyRunCodec.edgeCount(old.catalog, old.handle) >= supernodeEdges
-							|| LmdbAdjacencyRunCodec.structurallySliced(old.catalog, old.handle))) {
+					boolean structural = old != null
+							&& (LmdbAdjacencyRunCodec.edgeCount(old.catalog, old.handle) >= supernodeEdges
+									|| LmdbAdjacencyRunCodec.structurallySliced(old.catalog, old.handle));
+					boolean foreign = old != null
+							&& old.catalog.sourceRegistry() != base.arenaCatalog().sourceRegistry();
+					if (structural && !foreign) {
 						planSupernodeRow(order, i, end, key, plane, predicate, outgoingDirection, old,
 								encodeContexts, plan);
 					} else {
+						// A foreign persistent directory contains registry-local child IDs. Stream its complete row
+						// through
+						// the normal sizing/replay passes instead of retaining a PreparedRun while the destination is
+						// sized.
+						LmdbAdjacencyRunCodec.Encoder encoder = structural
+								? LmdbAdjacencyRunCodec.sizingEncoder(encodeContexts)
+								: LmdbAdjacencyRunCodec.preparingEncoder(encodeContexts);
 						mergeRow(order, i, end, key, plane, predicate, outgoingDirection, old, oldCursor,
-								LmdbAdjacencyRunCodec.preparingEncoder(encodeContexts), plan, null);
+								encoder, plan, null);
 					}
 				} else {
 					// subpass B: consume subpass A's outcome; only a CHANGED row creates a writing encoder
@@ -785,7 +796,7 @@ final class LmdbAdjacencyDeltaApplier {
 			boolean outgoingDirection, OldRun old, ContextCatalog contexts, RowPlan plan) {
 		RowMutations mutations = new RowMutations(order, from, end, outgoingDirection);
 		LmdbAdjacencySupernodeRewriter.RewritePlan rewrite = LmdbAdjacencySupernodeRewriter.plan(old, mutations,
-				contexts, supernodeChunkEdges, supernodeTargetBytes);
+				contexts, supernodeChunkEdges, supernodeTargetBytes, base.arenaCatalog().sourceRegistry());
 		if (!rewrite.changed()) {
 			plan.record(RowPlan.UNCHANGED);
 			return;

@@ -273,6 +273,9 @@ final class LmdbNativeJaninoCodegen {
 		try {
 			source = sourceSupplier.get();
 			SimpleCompiler janino = new SimpleCompiler();
+			// Generated kernels use Java 8 interface static methods; keep the source and class-file contract explicit.
+			janino.setSourceVersion(8);
+			janino.setTargetVersion(8);
 			janino.setParentClassLoader(JaninoKernel.class.getClassLoader());
 			janino.cook(source);
 			Class<?> kernelClass = janino.getClassLoader().loadClass(className);

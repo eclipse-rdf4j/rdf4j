@@ -192,7 +192,8 @@ final class NativeRootPipeline {
 
 		@Override
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-			return new SliceIteration(arg.evaluate(bindings), offset, limit);
+			CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
+			return new SliceIteration(delegate, offset, limit, NativeExecutionContextCarrier.contextOf(delegate));
 		}
 
 		@Override
@@ -206,32 +207,57 @@ final class NativeRootPipeline {
 		}
 	}
 
-	private static final class SliceIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
+	private static final class SliceIteration
+			implements CloseableIteration<BindingSet>, CooperativeCancellation, NativeExecutionContextCarrier {
 		private final CloseableIteration<BindingSet> delegate;
 		private long offsetRemaining;
 		private long limitRemaining;
 		private boolean offsetApplied;
 		private boolean closed;
+		private final NativeExecutionContext executionContext;
+		private final NativeExecutionContext.Lease lease;
 
-		private SliceIteration(CloseableIteration<BindingSet> delegate, long offset, long limit) {
+		private SliceIteration(CloseableIteration<BindingSet> delegate, long offset, long limit,
+				NativeExecutionContext executionContext) {
 			this.delegate = delegate;
 			this.offsetRemaining = offset;
 			this.limitRemaining = limit < 0L ? Long.MAX_VALUE : limit;
+			this.executionContext = executionContext;
+			this.lease = NativeExecutionContextCarrier.retain(delegate);
 		}
 
 		@Override
 		public boolean hasNext() {
-			if (closed || limitRemaining == 0L) {
+			if (closed) {
 				return false;
 			}
-			if (!offsetApplied) {
-				while (offsetRemaining > 0L && delegate.hasNext()) {
-					delegate.next();
-					offsetRemaining--;
-				}
-				offsetApplied = true;
+			if (limitRemaining == 0L) {
+				close();
+				return false;
 			}
-			return delegate.hasNext();
+			try {
+				if (!offsetApplied) {
+					while (offsetRemaining > 0L && delegate.hasNext()) {
+						delegate.next();
+						offsetRemaining--;
+					}
+					offsetApplied = true;
+				}
+				boolean result = delegate.hasNext();
+				if (!result) {
+					close();
+				}
+				return result;
+			} catch (RuntimeException | Error e) {
+				try {
+					close();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != e) {
+						e.addSuppressed(cleanup);
+					}
+				}
+				throw e;
+			}
 		}
 
 		@Override
@@ -239,10 +265,21 @@ final class NativeRootPipeline {
 			if (!hasNext()) {
 				throw new NoSuchElementException();
 			}
-			if (limitRemaining != Long.MAX_VALUE) {
-				limitRemaining--;
+			try {
+				if (limitRemaining != Long.MAX_VALUE) {
+					limitRemaining--;
+				}
+				return delegate.next();
+			} catch (RuntimeException | Error e) {
+				try {
+					close();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != e) {
+						e.addSuppressed(cleanup);
+					}
+				}
+				throw e;
 			}
-			return delegate.next();
 		}
 
 		@Override
@@ -254,7 +291,7 @@ final class NativeRootPipeline {
 		public void close() {
 			if (!closed) {
 				closed = true;
-				delegate.close();
+				NativeExecutionContextCarrier.closeWithLease(delegate, lease);
 			}
 		}
 
@@ -262,6 +299,11 @@ final class NativeRootPipeline {
 		public boolean requestCancellation() {
 			return !closed && delegate instanceof CooperativeCancellation cancellation
 					&& cancellation.requestCancellation();
+		}
+
+		@Override
+		public NativeExecutionContext executionContext() {
+			return executionContext;
 		}
 	}
 
@@ -274,7 +316,8 @@ final class NativeRootPipeline {
 
 		@Override
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-			return new DistinctIteration(arg.evaluate(bindings));
+			CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
+			return new DistinctIteration(delegate, NativeExecutionContextCarrier.contextOf(delegate));
 		}
 
 		@Override
@@ -288,25 +331,47 @@ final class NativeRootPipeline {
 		}
 	}
 
-	private static final class DistinctIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
+	private static final class DistinctIteration
+			implements CloseableIteration<BindingSet>, CooperativeCancellation, NativeExecutionContextCarrier {
 		private final CloseableIteration<BindingSet> delegate;
 		private final Set<BindingSet> seen = new HashSet<>();
+		private final NativeExecutionContext executionContext;
+		private final NativeExecutionContext.Lease lease;
 		private BindingSet next;
 		private boolean closed;
 
-		private DistinctIteration(CloseableIteration<BindingSet> delegate) {
+		private DistinctIteration(CloseableIteration<BindingSet> delegate, NativeExecutionContext executionContext) {
 			this.delegate = delegate;
+			this.executionContext = executionContext;
+			this.lease = NativeExecutionContextCarrier.retain(delegate);
 		}
 
 		@Override
 		public boolean hasNext() {
-			while (!closed && next == null && delegate.hasNext()) {
-				BindingSet candidate = delegate.next();
-				if (seen.add(candidate)) {
-					next = candidate;
-				}
+			if (closed) {
+				return false;
 			}
-			return next != null;
+			try {
+				while (next == null && delegate.hasNext()) {
+					BindingSet candidate = delegate.next();
+					if (seen.add(candidate)) {
+						next = candidate;
+					}
+				}
+				if (next == null) {
+					close();
+				}
+				return next != null;
+			} catch (RuntimeException | Error e) {
+				try {
+					close();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != e) {
+						e.addSuppressed(cleanup);
+					}
+				}
+				throw e;
+			}
 		}
 
 		@Override
@@ -330,7 +395,7 @@ final class NativeRootPipeline {
 				closed = true;
 				next = null;
 				seen.clear();
-				delegate.close();
+				NativeExecutionContextCarrier.closeWithLease(delegate, lease);
 			}
 		}
 
@@ -338,6 +403,11 @@ final class NativeRootPipeline {
 		public boolean requestCancellation() {
 			return !closed && delegate instanceof CooperativeCancellation cancellation
 					&& cancellation.requestCancellation();
+		}
+
+		@Override
+		public NativeExecutionContext executionContext() {
+			return executionContext;
 		}
 	}
 
@@ -356,7 +426,8 @@ final class NativeRootPipeline {
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 			LmdbNativeStrategyArbiter.logDirect(null, "ORDER BY dispatch",
 					LmdbNativeAttemptMetrics.PATH_ORDERED_FULL_SORT, "Sort the complete staged input");
-			return new OrderIteration(arg.evaluate(bindings), keys, strict);
+			CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
+			return new OrderIteration(delegate, keys, strict, NativeExecutionContextCarrier.contextOf(delegate));
 		}
 
 		@Override
@@ -373,23 +444,28 @@ final class NativeRootPipeline {
 	}
 
 	private record OrderKey(NativeBindingSetValueEvaluator evaluator, boolean ascending) {
-		private Value value(BindingSet bindings) {
-			NativeValueOutcome outcome = evaluator.evaluate(bindings);
+		private Value value(BindingSet bindings, NativeExecutionContext executionContext) {
+			NativeValueOutcome outcome = evaluator.evaluate(bindings, executionContext);
 			return outcome.isBound() ? outcome.value() : null;
 		}
 	}
 
 	private static final class OrderIteration extends DelayedIteration<BindingSet>
-			implements CooperativeCancellation {
+			implements CooperativeCancellation, NativeExecutionContextCarrier {
 		private CloseableIteration<BindingSet> source;
 		private final OrderKey[] keys;
 		private final ValueComparator comparator = new ValueComparator();
+		private final NativeExecutionContext executionContext;
+		private final NativeExecutionContext.Lease lease;
 		private volatile boolean cancellationRequested;
 
-		private OrderIteration(CloseableIteration<BindingSet> source, OrderKey[] keys, boolean strict) {
+		private OrderIteration(CloseableIteration<BindingSet> source, OrderKey[] keys, boolean strict,
+				NativeExecutionContext executionContext) {
 			this.source = source;
 			this.keys = keys;
 			this.comparator.setStrict(strict);
+			this.executionContext = executionContext;
+			this.lease = NativeExecutionContextCarrier.retain(source);
 		}
 
 		@Override
@@ -406,7 +482,11 @@ final class NativeRootPipeline {
 				}
 				return new CloseableIteratorIteration<>(rows.iterator());
 			} finally {
-				releaseSource();
+				try {
+					releaseSource();
+				} finally {
+					releaseLease();
+				}
 			}
 		}
 
@@ -415,7 +495,8 @@ final class NativeRootPipeline {
 				return 0;
 			}
 			for (OrderKey key : keys) {
-				int comparison = comparator.compare(key.value(left), key.value(right));
+				int comparison = comparator.compare(key.value(left, executionContext),
+						key.value(right, executionContext));
 				if (comparison != 0) {
 					return key.ascending() ? comparison : -comparison;
 				}
@@ -429,7 +510,11 @@ final class NativeRootPipeline {
 			try {
 				super.handleClose();
 			} finally {
-				releaseSource();
+				try {
+					releaseSource();
+				} finally {
+					releaseLease();
+				}
 			}
 		}
 
@@ -443,11 +528,22 @@ final class NativeRootPipeline {
 			return current instanceof CooperativeCancellation cancellation && cancellation.requestCancellation();
 		}
 
+		@Override
+		public NativeExecutionContext executionContext() {
+			return executionContext;
+		}
+
 		private void releaseSource() {
 			CloseableIteration<BindingSet> current = source;
 			source = null;
 			if (current != null) {
 				current.close();
+			}
+		}
+
+		private void releaseLease() {
+			if (lease != null) {
+				lease.close();
 			}
 		}
 	}

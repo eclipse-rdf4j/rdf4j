@@ -102,11 +102,12 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 
 	QueryEvaluationStep compile(Filter filter) {
 		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition());
-		boolean evaluationScopedHaving = rootEvaluationScoped && !descriptor.shareableAcrossEvaluations();
+		boolean evaluationScopedHaving = !descriptor.shareableAcrossEvaluations();
 		if (evaluationScopedHaving) {
-			// The group interior and its authoritative HAVING predicate are one query evaluation. Force the group
-			// source to own a NativeExecutionContext even when the interior itself needs no synthetic values or
-			// generic bridges, so both sides can prepare against the same query-scoped NOW/BNODE state.
+			// The group and its authoritative HAVING predicate are one query evaluation. This applies to both root
+			// groups and groups evaluated as an interior native subquery, whose caller attaches the outer evaluation
+			// source before opening the child. Force the group source to own a NativeExecutionContext even when the
+			// interior itself needs no synthetic values or generic bridges, so both sides share query-scoped state.
 			requiresExecutionContext = true;
 		}
 		QueryEvaluationStep groupStep = compileGroup((Group) filter.getArg(), filter.getCondition(), filter);
@@ -175,6 +176,20 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			AggregateRootStack arg = compileAggregateRootStack(filter.getArg());
 			if (arg == null) {
 				return null;
+			}
+			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition());
+			if (!descriptor.shareableAcrossEvaluations()) {
+				// A retained aggregate wrapper must prepare its semantic predicate against the same evaluation context
+				// as the grouped source. Preparing it against the planner context would freeze query-scoped values such
+				// as
+				// NOW() across repeated evaluations. Interior subqueries borrow this context through their
+				// NativeSubqueryPlan evaluation scope.
+				requiresExecutionContext = true;
+				NativeBindingSetValueEvaluator evaluator = LmdbNativeAggregateFilterCompiler.compileSemanticValue(
+						strategy,
+						descriptor.pinnedExpr(), context);
+				QueryEvaluationStep step = bindings -> new FilteringIteration(arg.step.evaluate(bindings), evaluator);
+				return new AggregateRootStack(step, arg.group);
 			}
 			Predicate<BindingSet> predicate = strategy.precompile(filter.getCondition(), context).asPredicate();
 			QueryEvaluationStep step = bindings -> new FilteringIteration(arg.step.evaluate(bindings), predicate);

@@ -117,7 +117,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		if (!bindings.isEmpty()) {
-			return genericStep().evaluate(bindings);
+			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
 		LmdbAdjacencyOptimizationTelemetry telemetry = telemetry(LmdbAdjacencyOptimizationTelemetry.Grain.PLANE);
 		Map<IRI, long[]> histogram = tryDomainHistogram(telemetry);
@@ -130,7 +130,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 			histogram = sequentialHistogram(telemetry);
 		}
 		if (histogram == null) {
-			return genericStep().evaluate(bindings);
+			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
 		ArrayList<BindingSet> rows = new ArrayList<>(histogram.size());
 		for (Map.Entry<IRI, long[]> entry : histogram.entrySet()) {
@@ -145,7 +145,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 			telemetry.publish(originalExpr);
 		}
 		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM);
-		return new CloseableIteratorIteration<>(rows.iterator());
+		return NativeExecutionContextCarrier.forEvaluation(new CloseableIteratorIteration<>(rows.iterator()), source);
 	}
 
 	private LmdbAdjacencyOptimizationTelemetry telemetry(LmdbAdjacencyOptimizationTelemetry.Grain grain) {

@@ -135,7 +135,10 @@ final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
 
 	@Override
 	public boolean accept(RowState row) {
-		NativeValueOutcome outcome = resolveEvaluator(row).evaluate(row.view);
+		NativeExecutionContext executionContext = row.source instanceof SyntheticValueSource synthetic
+				? synthetic.executionContext()
+				: null;
+		NativeValueOutcome outcome = resolveEvaluator(row).evaluate(row.view, executionContext);
 		return outcome.isBound()
 				&& QueryEvaluationUtility.getEffectiveBooleanValue(outcome.value()).orElse(false);
 	}

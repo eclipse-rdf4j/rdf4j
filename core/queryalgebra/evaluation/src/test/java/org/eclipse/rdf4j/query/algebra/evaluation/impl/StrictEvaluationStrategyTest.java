@@ -569,6 +569,78 @@ public class StrictEvaluationStrategyTest {
 	}
 
 	@Test
+	public void constantBindErrorRemainsRowLocalWhenFiltered() {
+		ParsedQuery query = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"SELECT (COUNT(*) AS ?n) WHERE { VALUES ?row { 1 2 3 } BIND(1 / 0 AS ?bad) "
+						+ "FILTER(!BOUND(?bad)) }",
+				null);
+
+		List<BindingSet> results = QueryResults.asList(
+				strategy.precompile(query.getTupleExpr()).evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(results).hasSize(1);
+		assertThat(results.get(0).getValue("n").stringValue()).isEqualTo("3");
+	}
+
+	@Test
+	public void rowDependentBindErrorRemainsRowLocal() {
+		ParsedQuery query = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"SELECT ?row ?quotient WHERE { VALUES (?row ?denom) { (1 0) (2 2) (3 0) } "
+						+ "BIND(10 / ?denom AS ?quotient) FILTER(BOUND(?quotient)) }",
+				null);
+
+		List<BindingSet> results = QueryResults.asList(
+				strategy.precompile(query.getTupleExpr()).evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(results).hasSize(1);
+		assertThat(results.get(0).getValue("row").stringValue()).isEqualTo("2");
+		assertThat(results.get(0).getValue("quotient").stringValue()).isEqualTo("5");
+	}
+
+	@Test
+	public void dependentBindUsesRowsAfterPreparationError() {
+		ParsedQuery query = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"SELECT ?row ?fallback WHERE { VALUES ?row { 1 2 3 } BIND(1 / 0 AS ?bad) "
+						+ "BIND(IF(BOUND(?bad), ?bad, ?row) AS ?fallback) FILTER(BOUND(?fallback)) }",
+				null);
+
+		List<BindingSet> results = QueryResults.asList(
+				strategy.precompile(query.getTupleExpr()).evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(results).hasSize(3);
+		for (BindingSet result : results) {
+			assertThat(result.getValue("fallback")).isEqualTo(result.getValue("row"));
+		}
+	}
+
+	@Test
+	public void nestedAggregateRetainsRowsAfterPreparationError() {
+		ParsedQuery query = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"SELECT (COUNT(*) AS ?n) WHERE { { SELECT ?row WHERE { VALUES ?row { 1 2 3 } "
+						+ "BIND(1 / 0 AS ?bad) FILTER(!BOUND(?bad)) } } }",
+				null);
+
+		List<BindingSet> results = QueryResults.asList(
+				strategy.precompile(query.getTupleExpr()).evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(results).hasSize(1);
+		assertThat(results.get(0).getValue("n").stringValue()).isEqualTo("3");
+	}
+
+	@Test
+	public void minusRightExtensionKeepsErrorRowsUnbound() {
+		ParsedQuery query = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"SELECT ?row WHERE { VALUES ?row { 1 2 3 } MINUS { VALUES ?row { 1 2 3 } "
+						+ "BIND(1 / 0 AS ?bad) FILTER(!BOUND(?bad)) } }",
+				null);
+
+		List<BindingSet> results = QueryResults.asList(
+				strategy.precompile(query.getTupleExpr()).evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(results).isEmpty();
+	}
+
+	@Test
 	public void testSES1991NOWEvaluation() {
 		String query = "PREFIX ex:<http://example.org> SELECT ?d WHERE {VALUES(?s ?p ?o) {(ex:type rdf:type ex:type)(ex:type ex:type ex:type)} . BIND(NOW() as ?d) } LIMIT 2";
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
