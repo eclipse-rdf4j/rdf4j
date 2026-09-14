@@ -13,6 +13,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
@@ -29,13 +32,80 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 
 public class TxnManagerTest {
+
+	@Test
+	public void createReadTxnBlocksWhenPoolIsExhausted(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, TxnManager.POOL_SIZE);
+		TxnManager txnManager = new TxnManager(env, TxnManager.Mode.RESET);
+		TxnManager.Txn[] txns = new TxnManager.Txn[TxnManager.POOL_SIZE - 1];
+		CountDownLatch started = new CountDownLatch(1);
+		CountDownLatch acquired = new CountDownLatch(1);
+		AtomicReference<TxnManager.Txn> blockedTxn = new AtomicReference<>();
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread waiter = new Thread(() -> {
+			started.countDown();
+			try {
+				TxnManager.Txn txn = txnManager.createReadTxn();
+				blockedTxn.set(txn);
+				acquired.countDown();
+			} catch (Throwable t) {
+				failure.set(t);
+				acquired.countDown();
+			}
+		}, "txn-manager-pool-waiter");
+
+		try {
+			for (int i = 0; i < txns.length; i++) {
+				System.out.println("Acquiring txn " + i);
+				txns[i] = txnManager.createReadTxn();
+				System.out.println("Acquired txn " + i + ": " + txns[i].get());
+			}
+
+			waiter.start();
+
+			assertTrue(started.await(5, TimeUnit.SECONDS), "Waiter thread should start");
+			assertFalse(acquired.await(200, TimeUnit.MILLISECONDS),
+					"Ordinary readers must leave the last slot reserved for priority callbacks");
+
+			txns[0].close();
+
+			assertTrue(acquired.await(5, TimeUnit.SECONDS),
+					"Blocked reader should resume once a transaction is returned to the pool");
+			assertTrue(failure.get() == null, () -> "Unexpected failure: " + failure.get());
+			assertTrue(blockedTxn.get() != null, "Blocked reader should receive a transaction");
+		} finally {
+			if (blockedTxn.get() != null) {
+				blockedTxn.get().close();
+			}
+			for (int i = 1; i < txns.length; i++) {
+				if (txns[i] != null) {
+					txns[i].close();
+				}
+			}
+			waiter.join(TimeUnit.SECONDS.toMillis(5));
+			mdb_env_close(env);
+		}
+	}
 
 	@Test
 	public void readersFullRetryDoesNotAbortTrackedInactiveTxn(@TempDir Path dataDir) throws Exception {
@@ -145,6 +215,226 @@ public class TxnManagerTest {
 			if (untrackedTxn != null) {
 				untrackedTxn.close();
 			}
+			mdb_env_close(env);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
+	void priorityUsesReservedSlotAndReturnsItAfterFailures(TxnManager.Mode mode, @TempDir Path dataDir)
+			throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode);
+				ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			fixture.hold(TxnManager.POOL_SIZE - 1);
+			List<Transaction<Void>> failures = List.of(
+					(stack, txn) -> {
+						throw new IOException("checked failure");
+					},
+					(stack, txn) -> {
+						throw new IllegalStateException("unchecked failure");
+					},
+					(stack, txn) -> {
+						throw new AssertionError("error failure");
+					});
+			try {
+				for (Transaction<Void> failure : failures) {
+					Future<Void> failed = executor.submit(() -> fixture.manager.doWithPriority(failure));
+					assertThrows(ExecutionException.class, () -> failed.get(5, TimeUnit.SECONDS));
+					Future<Long> next = executor.submit(() -> fixture.manager.doWithPriority((stack, txn) -> txn));
+					assertNotEquals(0L, next.get(5, TimeUnit.SECONDS));
+				}
+				// Reserved readers remain in the same lifecycle as ordinary pooled readers.
+				fixture.manager.deactivate();
+				fixture.manager.activate();
+				fixture.manager.reset();
+				Future<Long> renewed = executor.submit(() -> fixture.manager.doWithPriority((stack, txn) -> txn));
+				assertNotEquals(0L, renewed.get(5, TimeUnit.SECONDS));
+			} finally {
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
+	void priorityUsesOrdinarySlotBeforeReservedSlot(TxnManager.Mode mode, @TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode);
+				ExecutorService executor = Executors.newFixedThreadPool(3)) {
+			fixture.hold(TxnManager.POOL_SIZE - 2);
+			CountDownLatch entered = new CountDownLatch(1);
+			CountDownLatch release = new CountDownLatch(1);
+			try {
+				Future<Long> first = executor.submit(() -> fixture.manager.doWithPriority((stack, txn) -> {
+					entered.countDown();
+					await(release);
+					return txn;
+				}));
+				assertTrue(entered.await(5, TimeUnit.SECONDS));
+				Future<Long> ordinary = executor.submit(() -> {
+					try (TxnManager.Txn txn = fixture.manager.createReadTxn()) {
+						return txn.get();
+					}
+				});
+				assertThrows(TimeoutException.class, () -> ordinary.get(200, TimeUnit.MILLISECONDS),
+						"The first priority callback must consume the remaining ordinary slot");
+				Future<Long> reserved = executor.submit(() -> fixture.manager.doWithPriority((stack, txn) -> txn));
+				assertNotEquals(0L, reserved.get(5, TimeUnit.SECONDS),
+						"The reserved slot must remain available even with an ordinary waiter queued");
+				release.countDown();
+				assertNotEquals(0L, first.get(5, TimeUnit.SECONDS));
+				assertNotEquals(0L, ordinary.get(5, TimeUnit.SECONDS),
+						"Closing a priority callback that used an ordinary slot must return the ordinary permit");
+			} finally {
+				release.countDown();
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
+	void ordinaryCallbacksAndUntrackedReadersCannotUseReservedSlot(TxnManager.Mode mode, @TempDir Path dataDir)
+			throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode);
+				ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			try {
+				for (boolean untracked : new boolean[] { false, true }) {
+					fixture.hold(TxnManager.POOL_SIZE - 1 - fixture.readers.size());
+					Future<Long> ordinary = executor.submit(() -> {
+						if (untracked) {
+							try (TxnManager.Txn txn = fixture.manager.createReadTxnUntracked()) {
+								return txn.get();
+							}
+						}
+						return fixture.manager.doWith((stack, txn) -> txn);
+					});
+					assertThrows(TimeoutException.class, () -> ordinary.get(200, TimeUnit.MILLISECONDS));
+					Future<Long> priority = executor.submit(() -> fixture.manager.doWithPriority((stack, txn) -> txn));
+					assertNotEquals(0L, priority.get(5, TimeUnit.SECONDS));
+					assertThrows(TimeoutException.class, () -> ordinary.get(200, TimeUnit.MILLISECONDS),
+							"Returning the reserved permit must not admit an ordinary reader");
+					fixture.readers.removeLast().close();
+					assertNotEquals(0L, ordinary.get(5, TimeUnit.SECONDS));
+				}
+			} finally {
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
+	void priorityWaitersAreInterruptedAndWokenOnClose(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newFixedThreadPool(3)) {
+			fixture.hold(TxnManager.POOL_SIZE - 1);
+			CountDownLatch entered = new CountDownLatch(1);
+			CountDownLatch release = new CountDownLatch(1);
+			try {
+				Future<Void> holder = executor.submit(() -> fixture.manager.doWithPriority((stack, txn) -> {
+					entered.countDown();
+					await(release);
+					return null;
+				}));
+				assertTrue(entered.await(5, TimeUnit.SECONDS));
+				CountDownLatch waiting = new CountDownLatch(1);
+				AtomicReference<Thread> waiterThread = new AtomicReference<>();
+				Future<Boolean> interrupted = executor.submit(() -> {
+					waiterThread.set(Thread.currentThread());
+					waiting.countDown();
+					IOException failure = assertThrows(IOException.class,
+							() -> fixture.manager.doWithPriority((stack, txn) -> txn));
+					assertTrue(failure.getMessage().contains("Interrupted"));
+					return Thread.currentThread().isInterrupted();
+				});
+				assertTrue(waiting.await(5, TimeUnit.SECONDS));
+				assertThrows(TimeoutException.class, () -> interrupted.get(200, TimeUnit.MILLISECONDS));
+				waiterThread.get().interrupt();
+				assertTrue(interrupted.get(5, TimeUnit.SECONDS));
+
+				Future<Long> priority = executor.submit(() -> fixture.manager.doWithPriority((stack, txn) -> txn));
+				Future<Long> ordinary = executor.submit(() -> fixture.manager.doWith((stack, txn) -> txn));
+				assertThrows(TimeoutException.class, () -> priority.get(200, TimeUnit.MILLISECONDS));
+				assertThrows(TimeoutException.class, () -> ordinary.get(200, TimeUnit.MILLISECONDS));
+				fixture.closeManager();
+				for (Future<Long> waiter : List.of(priority, ordinary)) {
+					ExecutionException failure = assertThrows(ExecutionException.class,
+							() -> waiter.get(5, TimeUnit.SECONDS));
+					assertTrue(failure.getCause() instanceof IOException);
+					assertTrue(failure.getCause().getMessage().contains("closed"));
+				}
+				release.countDown();
+				holder.get(5, TimeUnit.SECONDS);
+			} finally {
+				release.countDown();
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
+	void failedNativeStartReturnsReservedPermit(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.ABORT);
+				ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			fixture.hold(TxnManager.POOL_SIZE - 1);
+			long foreignTxn = beginReadTxn(fixture.env);
+			try {
+				Future<Long> failed = executor.submit(() -> fixture.manager.doWithPriority((stack, txn) -> txn));
+				ExecutionException failure = assertThrows(ExecutionException.class,
+						() -> failed.get(10, TimeUnit.SECONDS));
+				assertTrue(failure.getCause() instanceof IOException);
+				assertTrue(failure.getCause().getMessage().contains("MDB_READERS_FULL"));
+				mdb_txn_abort(foreignTxn);
+				foreignTxn = 0;
+				Future<Long> next = executor.submit(() -> fixture.manager.doWithPriority((stack, txn) -> txn));
+				assertNotEquals(0L, next.get(5, TimeUnit.SECONDS));
+			} finally {
+				if (foreignTxn != 0) {
+					mdb_txn_abort(foreignTxn);
+				}
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	private static void await(CountDownLatch latch) throws IOException {
+		try {
+			if (!latch.await(5, TimeUnit.SECONDS)) {
+				throw new IOException("Timed out waiting for test callback release");
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+	}
+
+	private static final class ReaderFixture implements AutoCloseable {
+		private final long env;
+		private final TxnManager manager;
+		private final List<TxnManager.Txn> readers = new ArrayList<>();
+		private boolean managerClosed;
+
+		private ReaderFixture(Path dataDir, TxnManager.Mode mode) throws IOException {
+			env = openEnv(dataDir, TxnManager.POOL_SIZE);
+			manager = new TxnManager(env, mode);
+		}
+
+		private void hold(int count) throws IOException {
+			for (int i = 0; i < count; i++) {
+				readers.add(manager.createReadTxn());
+			}
+		}
+
+		private void closeManager() {
+			if (!managerClosed) {
+				manager.close();
+				managerClosed = true;
+			}
+		}
+
+		@Override
+		public void close() {
+			readers.forEach(TxnManager.Txn::close);
+			closeManager();
 			mdb_env_close(env);
 		}
 	}

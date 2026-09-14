@@ -371,4 +371,44 @@ public class URIUtil {
 				|| codePoint >= 0x0300 && codePoint <= 0x036F || codePoint >= 0x203F && codePoint <= 0x2040;
 	}
 
+	/**
+	 * True if the string starts with a valid RFC 3986 scheme followed by ':'. A colon appearing after '/', '?' or '#'
+	 * does not make the reference absolute.
+	 *
+	 * @param iri a string representing an RDF IRI reference to check.
+	 * @throws IllegalArgumentException if the reference begins with ':' (an empty scheme, which is not a valid
+	 *                                  URI-reference per RFC 3986).
+	 */
+	public static boolean isAbsoluteIri(String iri) {
+		for (int i = 0; i < iri.length(); i++) {
+			char c = iri.charAt(i);
+			if (c == ':') {
+				if (i == 0) {
+					throw new IllegalArgumentException("Invalid IRI \"" + iri
+							+ "\": empty scheme / colon at start is not allowed per RFC 3986");
+				}
+				return true;
+			}
+			if (c == '/' || c == '?' || c == '#') {
+				return false;
+			}
+			if (i == 0) {
+				if (!isAsciiAlpha(c)) {
+					return false;
+				}
+			} else if (!isAsciiAlpha(c) && !isAsciiDigit(c) && c != '+' && c != '-' && c != '.') {
+				return false;
+			}
+		}
+		return false;
+	}
+
+	private static boolean isAsciiAlpha(char c) {
+		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+	}
+
+	private static boolean isAsciiDigit(char c) {
+		return c >= '0' && c <= '9';
+	}
+
 }
