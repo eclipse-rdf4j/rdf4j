@@ -78,6 +78,96 @@
     min-width: 14em;
 }
 
+.lmdb-runtime-features {
+    border-top: 1px solid #c8d1d8;
+    border-bottom: 1px solid #c8d1d8;
+    padding: 0.7rem 0;
+}
+
+.lmdb-runtime-features > summary {
+    cursor: pointer;
+    font-family: "Libre Franklin", "Helvetica Neue", sans-serif;
+    font-weight: 700;
+}
+
+.lmdb-runtime-features__scope {
+    color: #53616b;
+    font-size: 0.88em;
+    font-weight: 400;
+    margin-left: 0.65rem;
+}
+
+.lmdb-runtime-features__toolbar {
+    align-items: center;
+    display: flex;
+    gap: 0.75rem;
+    margin: 0.8rem 0;
+}
+
+#lmdb-runtime-status {
+    color: #34454f;
+    font-size: 0.9em;
+}
+
+.lmdb-runtime-group + .lmdb-runtime-group {
+    margin-top: 1rem;
+}
+
+.lmdb-runtime-group h4 {
+    color: #263b47;
+    font-family: "Libre Franklin", "Helvetica Neue", sans-serif;
+    font-size: 0.82rem;
+    letter-spacing: 0.06em;
+    margin: 0 0 0.25rem;
+    text-transform: uppercase;
+}
+
+.lmdb-runtime-property {
+    align-items: center;
+    border-top: 1px solid #e3e8eb;
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    padding: 0.55rem 0;
+}
+
+.lmdb-runtime-property__copy {
+    display: grid;
+    gap: 0.12rem;
+    min-width: 0;
+}
+
+.lmdb-runtime-property__copy label {
+    font-weight: 700;
+}
+
+.lmdb-runtime-property__copy code {
+    color: #34505f;
+    overflow-wrap: anywhere;
+}
+
+.lmdb-runtime-property__description,
+.lmdb-runtime-property__state {
+    color: #5b6870;
+    font-size: 0.86em;
+}
+
+.lmdb-runtime-switch {
+    height: 1.2rem;
+    width: 1.2rem;
+}
+
+@media (max-width: 42rem) {
+    .lmdb-runtime-features__scope {
+        display: block;
+        margin: 0.3rem 0 0 1rem;
+    }
+
+    .lmdb-runtime-property {
+        align-items: flex-start;
+    }
+}
+
 #query,
 #query-compare {
     width: 100%;

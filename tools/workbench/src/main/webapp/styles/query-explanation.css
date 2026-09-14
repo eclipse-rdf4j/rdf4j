@@ -288,3 +288,23 @@
     color: #6e7781;
     font-style: italic;
 }
+/* Strategy decisions belong to the explanation snapshot in either comparison pane. */
+.query-strategy-decisions {
+    width: 100%;
+    overflow-x: auto;
+    margin-top: 1rem;
+}
+.query-strategy-decisions section { margin-bottom: 1.5rem; }
+.query-strategy-decisions table { width: 100%; border-collapse: collapse; }
+.query-strategy-decisions th, .query-strategy-decisions td {
+    text-align: left;
+    vertical-align: top;
+    padding: 0.5rem;
+    border-bottom: 1px solid #ccd3da;
+    overflow-wrap: anywhere;
+}
+.query-strategy-decisions__selection { font-weight: 600; }
+.query-strategy-decisions__selected { background: #e8f4ed; }
+.query-strategy-decisions th { white-space: nowrap; }
+.query-strategy-decisions td:nth-child(3) { min-width: 5em; overflow-wrap: normal; }
+.query-strategy-decisions td:nth-child(4) { min-width: 6.5em; overflow-wrap: normal; }

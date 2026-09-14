@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -61,6 +62,12 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		this.evaluationStatistics = evaluationStatistics;
 	}
 
+	/** Returns the standard safe exact-filter rewrite without exposing its package-private implementation type. */
+	@InternalUseOnly
+	public static QueryOptimizer getFilterInValuesOptimizer() {
+		return FILTER_IN_VALUES_OPTIMIZER;
+	}
+
 	/*
 	 * (non-Javadoc)
 	 *
@@ -75,7 +82,8 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,
-				DISJUNCTIVE_CONSTRAINT_OPTIMIZER,
+				// DISJUNCTIVE_CONSTRAINT_OPTIMIZER is excluded: its split is not multiset-preserving for
+				// non-disjoint disjuncts. See DisjunctiveConstraintOptimizer's javadoc.
 				SAME_TERM_FILTER_OPTIMIZER,
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,

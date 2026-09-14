@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "module": "compliance/sparql",
+  "frozenAt": "2026-07-18T16:45:05+02:00",
+  "source": {
+    "head": "42e6ab6f2e",
+    "log": "logs/mvnf/20260718-144033-verify.log",
+    "summary": "2648 tests, 24 failures, 0 errors, 3 skipped"
+  },
+  "requiredSuites": [
+    "org.eclipse.rdf4j.sail.lmdb.LmbdSPARQL12QueryComplianceTest",
+    "org.eclipse.rdf4j.sail.lmdb.LmbdSPARQL12UpdateComplianceTest",
+    "org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest",
+    "org.eclipse.rdf4j.sail.lmdb.LmdbSPARQL11QueryComplianceTest",
+    "org.eclipse.rdf4j.sail.lmdb.LmdbSPARQLComplianceTest"
+  ],
+  "failures": [
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbSPARQL11QueryComplianceTest#tests()[31]",
+      "description": "bind10 - BIND scoping - variable in filter not in scope"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbSPARQL11QueryComplianceTest#tests()[35]",
+      "description": "Post-query VALUES with 2 object variables and 1 row"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest#getTestData()[13]",
+      "description": "INSERT 01"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest#getTestData()[35]",
+      "description": "DELETE INSERT 1"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest#getTestData()[36]",
+      "description": "DELETE INSERT 1b"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest#getTestData()[37]",
+      "description": "DELETE INSERT 1c"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest#getTestData()[38]",
+      "description": "DELETE INSERT 2"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest#getTestData()[39]",
+      "description": "DELETE INSERT 4"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest#getTestData()[40]",
+      "description": "DELETE INSERT 4b"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest#getTestData()[41]",
+      "description": "DELETE INSERT 5b"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest#getTestData()[43]",
+      "description": "Simple DELETE WHERE 1"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest#getTestData()[47]",
+      "description": "Graph-specific DELETE WHERE 1"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest#getTestData()[49]",
+      "description": "Simple DELETE 1"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbPARQL11UpdateComplianceTest#getTestData()[53]",
+      "description": "Graph-specific DELETE 1"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbSPARQLComplianceTest#defaultGraph()[1]",
+      "description": "DefaultGraphTest.testSesameNilAsGraph"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbSPARQLComplianceTest#filterScopeTests()[1]",
+      "description": "FilterScopeTest.testScope1"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbSPARQLComplianceTest#filterScopeTests()[5]",
+      "description": "FilterScopeTest.testScope3"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbSPARQLComplianceTest#bind()[8]",
+      "description": "BindTest.testBindScope"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbSPARQLComplianceTest#minus()[1]",
+      "description": "MinusTest.testScopingOfFilterInMinus"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbSPARQLComplianceTest#aggregate()[21]",
+      "description": "AggregateTest.testSES2361UndefCountWildcard"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbSPARQLComplianceTest#builtinFunction()[20]",
+      "description": "BuiltinFunctionTest.testSES869ValueOfNow"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbSPARQLComplianceTest#minusScope()[12]",
+      "description": "SparqlMinusScopingTests.T15_rhs_filter_referencing_outer_var_is_unbound_and_ignored"
+    },
+    {
+      "id": "org.eclipse.rdf4j.sail.lmdb.LmdbSPARQLComplianceTest#minusScope()[13]",
+      "description": "SparqlMinusScopingTests.T16_rhs_bind_of_outer_var_produces_unbound_then_overremoves_on_shared_subset"
+    }
+  ]
+}

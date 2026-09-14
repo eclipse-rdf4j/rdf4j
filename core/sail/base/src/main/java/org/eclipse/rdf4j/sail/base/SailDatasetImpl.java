@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.IterationConstants;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -81,6 +83,24 @@ class SailDatasetImpl implements SailDataset {
 	public void close() throws SailException {
 		changes.removeRefback(this);
 		derivedFrom.close();
+	}
+
+	boolean hasStatementChanges() {
+		Set<Resource> deprecatedContexts = changes.getDeprecatedContexts();
+		return changes.isStatementCleared() || changes.hasApproved() || changes.hasDeprecated()
+				|| (deprecatedContexts != null && !deprecatedContexts.isEmpty());
+	}
+
+	SailDataset getDerivedFrom() {
+		return derivedFrom;
+	}
+
+	@Override
+	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		if (!hasStatementChanges()) {
+			return derivedFrom.getStatementCount(subj, pred, obj, contexts);
+		}
+		return SailDataset.super.getStatementCount(subj, pred, obj, contexts);
 	}
 
 	@Override
@@ -289,6 +309,32 @@ class SailDatasetImpl implements SailDataset {
 		} else {
 			return IterationConstants.EMPTY_STATEMENT_ITERATION;
 		}
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws SailException {
+		if (hasStatementChanges()) {
+			throw new SailException(
+					"Statement ordering is unavailable after the current transaction has pending changes");
+		}
+		return derivedFrom.getStatements(statementOrder, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+		if (hasStatementChanges()) {
+			return Set.of();
+		}
+		return derivedFrom.getSupportedOrders(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public Comparator<Value> getComparator() {
+		if (hasStatementChanges()) {
+			return null;
+		}
+		return derivedFrom.getComparator();
 	}
 
 	@Override

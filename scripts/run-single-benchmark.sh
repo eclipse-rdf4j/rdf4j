@@ -4,6 +4,7 @@ set -euo pipefail
 usage() {
         cat <<USAGE
 Usage: $0 --module <modulePath> --class <fullyQualifiedClass> --method <methodName> [options]
+       $0 --module <modulePath> --main-class <fullyQualifiedClass> [options]
        $0 --theme-plan-run --theme-query <THEME:INDEX> [options]
        $0 --aas-run [--aas-query <queryName>] [options]
 
@@ -20,6 +21,7 @@ Options:
   --forks <number>                  Number of forks (default: 1)
   --param <name=value>              Append a benchmark parameter override (can be repeated)
   --jvm-arg <value>                 Append a JVM argument (can be repeated)
+  --main-arg <value>                Append an argument passed to the selected main class
   --jmh-arg <value>                 Append a raw JMH argument (can be repeated)
   --enable-jfr                      Enable JFR profiling with fixed iteration and timing settings
   --enable-jfr-cpu-times            Include Java 25 CPU time JFR options (requires --enable-jfr)
@@ -39,6 +41,7 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 module=""
 benchmark_class=""
 benchmark_method=""
+main_class=""
 theme_plan_run=false
 theme_query=""
 aas_run=false
@@ -52,6 +55,7 @@ forks=1
 benchmark_params=()
 jmh_extra_args=()
 jvm_args=()
+main_args=()
 profiling_jvm_args=()
 measurement_time=""
 enable_jfr=false
@@ -105,6 +109,10 @@ while [[ $# -gt 0 ]]; do
                 benchmark_method="$2"
                 shift 2
                 ;;
+        --main-class)
+                main_class="$2"
+                shift 2
+                ;;
         --warmup-iterations)
                 warmup_iterations="$2"
                 warmup_overridden=true
@@ -126,6 +134,10 @@ while [[ $# -gt 0 ]]; do
                 ;;
         --jvm-arg)
                 jvm_args+=("$2")
+                shift 2
+                ;;
+        --main-arg)
+                main_args+=("$2")
                 shift 2
                 ;;
         --jmh-arg)
@@ -265,10 +277,34 @@ if [[ -n "${aas_query}" ]]; then
         benchmark_params+=("query=${aas_query}")
 fi
 
-if [[ -z "${module}" || -z "${benchmark_class}" || -z "${benchmark_method}" ]]; then
-        echo "Error: --module, --class, and --method are required." >&2
-        usage >&2
-        exit 1
+if [[ -n "${main_class}" ]]; then
+        if [[ -z "${module}" ]]; then
+                echo "Error: --module is required with --main-class." >&2
+                usage >&2
+                exit 1
+        fi
+        if [[ -n "${benchmark_class}" || -n "${benchmark_method}" ]] || ${theme_plan_run} || ${aas_run}; then
+                echo "Error: --main-class cannot be combined with a JMH benchmark selector." >&2
+                exit 1
+        fi
+        if (( ${#benchmark_params[@]} > 0 || ${#jmh_extra_args[@]} > 0 )); then
+                echo "Error: --param and --jmh-arg are not valid with --main-class; use --main-arg." >&2
+                exit 1
+        fi
+        if ${enable_jmh_jfr}; then
+                echo "Error: --enable-jmh-jfr is not valid with --main-class; use --enable-jfr." >&2
+                exit 1
+        fi
+else
+        if [[ -z "${module}" || -z "${benchmark_class}" || -z "${benchmark_method}" ]]; then
+                echo "Error: --module, --class, and --method are required." >&2
+                usage >&2
+                exit 1
+        fi
+        if (( ${#main_args[@]} > 0 )); then
+                echo "Error: --main-arg requires --main-class." >&2
+                exit 1
+        fi
 fi
 
 if ${clean_build} && ${no_build}; then
@@ -302,35 +338,43 @@ fi
 if ${enable_jfr}; then
         start_flight_recording_options=()
 
-        if (( ${#jmh_extra_args[@]} > 0 )); then
-                echo "Error: --enable-jfr cannot be combined with additional JMH arguments." >&2
-                exit 1
-        fi
+        if [[ -z "${main_class}" ]]; then
+                if (( ${#jmh_extra_args[@]} > 0 )); then
+                        echo "Error: --enable-jfr cannot be combined with additional JMH arguments." >&2
+                        exit 1
+                fi
 
-        if ${warmup_overridden} && [[ "${warmup_iterations}" != "0" ]]; then
-                echo "Error: --enable-jfr requires 0 warmup iterations." >&2
-                exit 1
-        fi
+                if ${warmup_overridden} && [[ "${warmup_iterations}" != "0" ]]; then
+                        echo "Error: --enable-jfr requires 0 warmup iterations." >&2
+                        exit 1
+                fi
 
-        if ${measurement_overridden} && [[ "${measurement_iterations}" != "10" ]]; then
-                echo "Error: --enable-jfr requires 10 measurement iterations." >&2
-                exit 1
-        fi
+                if ${measurement_overridden} && [[ "${measurement_iterations}" != "10" ]]; then
+                        echo "Error: --enable-jfr requires 10 measurement iterations." >&2
+                        exit 1
+                fi
 
-        if ${forks_overridden} && [[ "${forks}" != "1" ]]; then
-                echo "Error: --enable-jfr requires a single fork." >&2
-                exit 1
-        fi
+                if ${forks_overridden} && [[ "${forks}" != "1" ]]; then
+                        echo "Error: --enable-jfr requires a single fork." >&2
+                        exit 1
+                fi
 
-        warmup_iterations=0
-        measurement_iterations=10
-        measurement_time="10s"
-        forks=1
+                warmup_iterations=0
+                measurement_iterations=10
+                measurement_time="10s"
+                forks=1
+        fi
 
         if [[ -z "${jfr_output}" ]]; then
-                local_class="${benchmark_class##*.}"
+                if [[ -n "${main_class}" ]]; then
+                        local_class="${main_class##*.}"
+                        output_method="main"
+                else
+                        local_class="${benchmark_class##*.}"
+                        output_method="${benchmark_method}"
+                fi
                 sanitized_class="${local_class//[^A-Za-z0-9_]/_}"
-                sanitized_method="${benchmark_method//[^A-Za-z0-9_]/_}"
+                sanitized_method="${output_method//[^A-Za-z0-9_]/_}"
                 jfr_output="${module_dir}/target/${sanitized_class}.${sanitized_method}.jfr"
         elif [[ "${jfr_output}" != /* ]]; then
                 jfr_output="${REPO_ROOT}/${jfr_output}"
@@ -352,7 +396,11 @@ if ${enable_jfr}; then
         jvm_args+=("-XX:StartFlightRecording:${start_flight_recording_option}")
         profiling_jvm_args+=("-Drdf4j.benchmark.profiling=true")
 
-        jfr_notice="JFR profiling enabled: enforcing warmup=0, measurement=10 iterations of 10s, forks=1. Recording will be written to ${jfr_output}."
+        if [[ -n "${main_class}" ]]; then
+                jfr_notice="JFR profiling enabled for ${main_class}.main. Recording will be written to ${jfr_output}."
+        else
+                jfr_notice="JFR profiling enabled: enforcing warmup=0, measurement=10 iterations of 10s, forks=1. Recording will be written to ${jfr_output}."
+        fi
 fi
 
 if ${enable_jmh_jfr}; then
@@ -414,23 +462,27 @@ mvn_cmd_parallel+=("${mvn_common_args[@]}" "${mvn_goals[@]}")
 
 mvn_cmd_single_threaded=(mvn "${mvn_common_args[@]}" "${mvn_goals[@]}")
 
-benchmark_pattern="${benchmark_class}.${benchmark_method}"
-jmh_args=(-wi "${warmup_iterations}" -i "${measurement_iterations}" -f "${forks}")
-if [[ -n "${measurement_time}" ]]; then
-        jmh_args+=(-r "${measurement_time}")
+benchmark_pattern=""
+jmh_args=()
+if [[ -z "${main_class}" ]]; then
+        benchmark_pattern="${benchmark_class}.${benchmark_method}"
+        jmh_args=(-wi "${warmup_iterations}" -i "${measurement_iterations}" -f "${forks}")
+        if [[ -n "${measurement_time}" ]]; then
+                jmh_args+=(-r "${measurement_time}")
+        fi
+        for param in "${benchmark_params[@]}"; do
+                jmh_args+=(-p "${param}")
+        done
+        for arg in "${jvm_args[@]}"; do
+                jmh_args+=("-jvmArgsAppend" "${arg}")
+        done
+        for arg in "${profiling_jvm_args[@]}"; do
+                jmh_args+=("-jvmArgsAppend" "${arg}")
+        done
+        for arg in "${jmh_extra_args[@]}"; do
+                jmh_args+=("${arg}")
+        done
 fi
-for param in "${benchmark_params[@]}"; do
-        jmh_args+=(-p "${param}")
-done
-for arg in "${jvm_args[@]}"; do
-        jmh_args+=("-jvmArgsAppend" "${arg}")
-done
-for arg in "${profiling_jvm_args[@]}"; do
-        jmh_args+=("-jvmArgsAppend" "${arg}")
-done
-for arg in "${jmh_extra_args[@]}"; do
-        jmh_args+=("${arg}")
-done
 
 find_benchmark_jar() {
         local module_path="$1"
@@ -585,6 +637,17 @@ run_benchmark_command() {
         return "${java_status}"
 }
 
+run_main_command() {
+        local benchmark_log="${module_dir}/target/benchmark-output.log"
+        mkdir -p "$(dirname "${benchmark_log}")"
+        set +e
+        "${java_cmd[@]}" 2>&1 | tee "${benchmark_log}"
+        local pipeline_status=("${PIPESTATUS[@]}")
+        local java_status=${pipeline_status[0]:-1}
+        set -e
+        return "${java_status}"
+}
+
 run_maven_packaging_command() {
         local append_mode="$1"
         shift
@@ -606,6 +669,15 @@ run_maven_packaging_command() {
         return "${status}"
 }
 
+build_java_command() {
+        local benchmark_jar="$1"
+        if [[ -n "${main_class}" ]]; then
+                java_cmd=(java "${jvm_args[@]}" "${profiling_jvm_args[@]}" -cp "${benchmark_jar}" "${main_class}" "${main_args[@]}")
+        else
+                java_cmd=(java -jar "${benchmark_jar}" "${jmh_args[@]}" "${benchmark_pattern}")
+        fi
+}
+
 if ${dry_run}; then
         if ${enable_jfr}; then
                 echo "${jfr_notice}"
@@ -621,12 +693,14 @@ if ${dry_run}; then
                 echo "# On failure, reruns single-threaded:"
                 print_command "${mvn_cmd_single_threaded[@]}"
         fi
-        java_cmd=(java -jar "${jar_path}" "${jmh_args[@]}" "${benchmark_pattern}")
+        build_java_command "${jar_path}"
         print_command "${java_cmd[@]}"
         exit 0
 fi
 
-check_jmh_fork_socket_support
+if [[ -z "${main_class}" ]]; then
+        check_jmh_fork_socket_support
+fi
 
 if ${no_build}; then
         echo "Maven packaging skipped by --no-build."
@@ -644,12 +718,8 @@ if ${enable_jfr_cpu_times}; then
         require_linux_java25_for_cpu_time_jfr
 fi
 
-if ${enable_jfr_cpu_times}; then
-        require_linux_java25_for_cpu_time_jfr
-fi
-
 jar_path="$(find_benchmark_jar "${module_dir}" true)"
-java_cmd=(java -jar "${jar_path}" "${jmh_args[@]}" "${benchmark_pattern}")
+build_java_command "${jar_path}"
 
 if ${enable_jfr}; then
         echo "${jfr_notice}"
@@ -662,4 +732,8 @@ if ${enable_jmh_jfr}; then
 fi
 
 printf 'Running benchmark with jar %s\n' "${jar_path}"
-run_benchmark_command
+if [[ -n "${main_class}" ]]; then
+        run_main_command
+else
+        run_benchmark_command
+fi

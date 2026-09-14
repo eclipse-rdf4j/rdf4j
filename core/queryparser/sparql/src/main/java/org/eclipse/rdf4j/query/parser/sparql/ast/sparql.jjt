@@ -1312,7 +1312,8 @@ void UnaryMinus() #NumericLiteral :
 void PrimaryExpression() #void :
 {}
 {
-	BrackettedExpression()
+	LabeledTripleTerm()
+|	BrackettedExpression()
 |	BuiltInCall()
 |	LOOKAHEAD(2) FunctionCall()
 |	IRIref()

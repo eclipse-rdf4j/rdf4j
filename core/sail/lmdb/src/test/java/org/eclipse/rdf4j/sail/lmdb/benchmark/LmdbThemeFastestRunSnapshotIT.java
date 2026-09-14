@@ -72,7 +72,7 @@ class LmdbThemeFastestRunSnapshotIT {
 	}
 
 	@Test
-	@Disabled
+	@Disabled("Legacy query optimizer behavior; superseded by the query optimizer rewrite in progress")
 	void pharmaQuery0BenchmarkLifecycleAvoidsMemoExplosion(@TempDir Path dataDir) throws Exception {
 		Path storeDir = dataDir.resolve("pharma-q0-benchmark-lifecycle");
 		LmdbStoreConfig bulkLoadConfig = ConfigUtil.createConfig();

@@ -68,6 +68,15 @@ public class Values {
 	static int MAX_LENGTH = 7;
 
 	public static long packLiteral(Literal literal) {
+		return packLiteral(literal, false);
+	}
+
+	/**
+	 * Packs a literal into an inline id. With {@code orderedNumericIds} the signed integer family uses the
+	 * value-ordered (biased) type codes — written only by stores whose {@code store.properties} records
+	 * {@code numeric-id-encoding=ordered-v1}; all other types keep their single encoding.
+	 */
+	public static long packLiteral(Literal literal, boolean orderedNumericIds) {
 		XSD xsdDataType = literal.getCoreDatatype().asXSDDatatypeOrNull();
 		if (xsdDataType == null) {
 			return 0L;
@@ -76,19 +85,23 @@ public class Values {
 		case DECIMAL -> packDecimal(literal.decimalValue());
 		case DOUBLE -> packDouble(literal.doubleValue());
 		case FLOAT -> packFloat(literal.floatValue());
-		case INTEGER -> packInteger(literal);
-		case LONG -> packLong(literal);
-		case INT -> packInt(literal);
-		case SHORT -> packShort(literal);
-		case BYTE -> packByte(literal);
+		case INTEGER -> orderedNumericIds ? Integers.packOrderedInteger(literal) : packInteger(literal);
+		case LONG -> orderedNumericIds ? Integers.packOrderedLong(literal) : packLong(literal);
+		case INT -> orderedNumericIds ? Integers.packOrderedInt(literal) : packInt(literal);
+		case SHORT -> orderedNumericIds ? Integers.packOrderedShort(literal) : packShort(literal);
+		case BYTE -> orderedNumericIds ? Integers.packOrderedByte(literal) : packByte(literal);
 		case UNSIGNED_LONG -> packUnsignedLong(literal);
 		case UNSIGNED_INT -> packUnsignedInt(literal);
 		case UNSIGNED_SHORT -> packUnsignedShort(literal);
 		case UNSIGNED_BYTE -> packUnsignedByte(literal);
-		case POSITIVE_INTEGER -> packPositiveInteger(literal);
-		case NEGATIVE_INTEGER -> packNegativeInteger(literal);
-		case NON_NEGATIVE_INTEGER -> packNonNegativeInteger(literal);
-		case NON_POSITIVE_INTEGER -> packNonPositiveInteger(literal);
+		case POSITIVE_INTEGER -> orderedNumericIds ? Integers.packOrderedPositiveInteger(literal)
+				: packPositiveInteger(literal);
+		case NEGATIVE_INTEGER -> orderedNumericIds ? Integers.packOrderedNegativeInteger(literal)
+				: packNegativeInteger(literal);
+		case NON_NEGATIVE_INTEGER -> orderedNumericIds ? Integers.packOrderedNonNegativeInteger(literal)
+				: packNonNegativeInteger(literal);
+		case NON_POSITIVE_INTEGER -> orderedNumericIds ? Integers.packOrderedNonPositiveInteger(literal)
+				: packNonPositiveInteger(literal);
 		case STRING -> packString(literal);
 		case DATETIME -> packDateTime(literal);
 		case DATETIMESTAMP -> packDateTimeStamp(literal);
@@ -97,6 +110,42 @@ public class Values {
 		default ->
 			// unsupported type
 			0L;
+		};
+	}
+
+	/**
+	 * The core datatype encoded by an inlined literal id, derived from the id's type bits alone — no unpacking, no
+	 * value resolution. Every inlined id encodes an XSD core datatype. Returns {@code null} when the id is not an
+	 * inlined literal id (reference ids carry no datatype information).
+	 */
+	public static XSD coreDatatypeOfInlined(long id) {
+		if (!ValueIds.isInlined(id)) {
+			return null;
+		}
+		int idType = ValueIds.getIdType(id);
+		return switch (idType) {
+		case ValueIds.T_DOUBLE -> XSD.DOUBLE;
+		case ValueIds.T_DECIMAL -> XSD.DECIMAL;
+		case ValueIds.T_FLOAT -> XSD.FLOAT;
+		case ValueIds.T_INTEGER, ValueIds.T_ORD_INTEGER -> XSD.INTEGER;
+		case ValueIds.T_LONG, ValueIds.T_ORD_LONG -> XSD.LONG;
+		case ValueIds.T_INT, ValueIds.T_ORD_INT -> XSD.INT;
+		case ValueIds.T_SHORT, ValueIds.T_ORD_SHORT -> XSD.SHORT;
+		case ValueIds.T_BYTE, ValueIds.T_ORD_BYTE -> XSD.BYTE;
+		case ValueIds.T_UNSIGNEDLONG -> XSD.UNSIGNED_LONG;
+		case ValueIds.T_UNSIGNEDINT -> XSD.UNSIGNED_INT;
+		case ValueIds.T_UNSIGNEDSHORT -> XSD.UNSIGNED_SHORT;
+		case ValueIds.T_UNSIGNEDBYTE -> XSD.UNSIGNED_BYTE;
+		case ValueIds.T_POSITIVE_INTEGER, ValueIds.T_ORD_POSITIVE_INTEGER -> XSD.POSITIVE_INTEGER;
+		case ValueIds.T_NEGATIVE_INTEGER, ValueIds.T_ORD_NEGATIVE_INTEGER -> XSD.NEGATIVE_INTEGER;
+		case ValueIds.T_NON_NEGATIVE_INTEGER, ValueIds.T_ORD_NON_NEGATIVE_INTEGER -> XSD.NON_NEGATIVE_INTEGER;
+		case ValueIds.T_NON_POSITIVE_INTEGER, ValueIds.T_ORD_NON_POSITIVE_INTEGER -> XSD.NON_POSITIVE_INTEGER;
+		case ValueIds.T_SHORTSTRING -> XSD.STRING;
+		case ValueIds.T_DATETIME -> XSD.DATETIME;
+		case ValueIds.T_DATETIMESTAMP -> XSD.DATETIMESTAMP;
+		case ValueIds.T_DATE -> XSD.DATE;
+		case ValueIds.T_BOOLEAN -> XSD.BOOLEAN;
+		default -> throw new IllegalArgumentException("Invalid inlined id " + id + " with id type: " + idType);
 		};
 	}
 
@@ -124,6 +173,15 @@ public class Values {
 		case ValueIds.T_DATETIMESTAMP -> unpackDateTimeStamp(value, valueFactory);
 		case ValueIds.T_DATE -> unpackDate(value, valueFactory);
 		case ValueIds.T_BOOLEAN -> unpackBoolean(value, valueFactory);
+		case ValueIds.T_ORD_INTEGER -> Integers.unpackOrderedInteger(value, valueFactory);
+		case ValueIds.T_ORD_LONG -> Integers.unpackOrderedLong(value, valueFactory);
+		case ValueIds.T_ORD_INT -> Integers.unpackOrderedInt(value, valueFactory);
+		case ValueIds.T_ORD_SHORT -> Integers.unpackOrderedShort(value, valueFactory);
+		case ValueIds.T_ORD_BYTE -> Integers.unpackOrderedByte(value, valueFactory);
+		case ValueIds.T_ORD_POSITIVE_INTEGER -> Integers.unpackOrderedPositiveInteger(value, valueFactory);
+		case ValueIds.T_ORD_NEGATIVE_INTEGER -> Integers.unpackOrderedNegativeInteger(value, valueFactory);
+		case ValueIds.T_ORD_NON_NEGATIVE_INTEGER -> Integers.unpackOrderedNonNegativeInteger(value, valueFactory);
+		case ValueIds.T_ORD_NON_POSITIVE_INTEGER -> Integers.unpackOrderedNonPositiveInteger(value, valueFactory);
 		default -> throw new IllegalArgumentException("Invalid packed value " + value + " with id type: " + idType);
 		};
 	}

@@ -500,4 +500,16 @@ class GenericPlanNodeTest {
 		assertTrue(telemetry.contains("sampleCountActual="), telemetry);
 		assertTrue(telemetry.contains("varianceActual="), telemetry);
 	}
+
+	@Test
+	void telemetryRendersExplicitZeroMapMetricButOmitsUnsetMetric() {
+		GenericPlanNode node = new GenericPlanNode("Group");
+		node.setLongMetricActual("nativeAdjacencyNeighborIdsDecodedActual", 0L);
+		node.applyExplanationLevel(Explanation.Level.Telemetry);
+
+		String telemetry = node.toString();
+
+		assertTrue(telemetry.contains("nativeAdjacencyNeighborIdsDecodedActual=0"), telemetry);
+		assertFalse(telemetry.contains("nativeAdjacencyContextIdsDecodedActual="), telemetry);
+	}
 }
