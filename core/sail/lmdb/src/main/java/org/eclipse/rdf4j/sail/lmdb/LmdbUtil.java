@@ -16,10 +16,18 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.util.lmdb.LMDB.MDB_GET_BOTH_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
+import static org.lwjgl.util.lmdb.LMDB.MDB_LAST_DUP;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
+import static org.lwjgl.util.lmdb.LMDB.MDB_PREV_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_del;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
@@ -27,12 +35,15 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 
+import org.eclipse.rdf4j.sail.lmdb.util.VarintTupleIO;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.Pointer;
+import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,7 +63,7 @@ final class LmdbUtil {
 	 * Percentage free space in an LMDB db before automatically resizing the map. Default is 80%.
 	 */
 	@SuppressWarnings("StaticNonFinalField")
-	public static int PERCENTAGE_FULL_TRIGGERS_RESIZE = 80;
+	static int PERCENTAGE_FULL_TRIGGERS_RESIZE = 80;
 
 	private LmdbUtil() {
 	}
@@ -182,6 +193,147 @@ final class LmdbUtil {
 	public static long getNewSize(int pageSize, long txn, long requiredSize) {
 		long nextPgno = mdbTxnMtNextPgno(txn);
 		return (nextPgno * pageSize) + requiredSize;
+	}
+
+	static int compareRegion(ByteBuffer bb1, int startIdx1, ByteBuffer bb2, int startIdx2, int length) {
+		int result = 0;
+		for (int i = 0; result == 0 && i < length; i++) {
+			result = (bb1.get(startIdx1 + i) & 0xff) - (bb2.get(startIdx2 + i) & 0xff);
+		}
+		return result;
+	}
+
+	static int mergeChunk(long cursor, int elements, MDBVal keyVal, MDBVal dataVal,
+			ByteBuffer newValueBuf, ByteBuffer target) throws IOException {
+		final int maxChunkSize = 511 - TripleIndex.MAX_KEY_LENGTH;
+
+		dataVal.mv_data(newValueBuf);
+		int rc = E(mdb_cursor_put(cursor, keyVal, dataVal, MDB_NOOVERWRITE));
+		if (rc == MDB_SUCCESS) {
+			return MDB_SUCCESS;
+		}
+
+		final var keyBuffer = keyVal.mv_data();
+
+		// Position cursor at the first duplicate value for this key that is >= newValueBuf.
+		dataVal.mv_data(newValueBuf);
+		rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_GET_BOTH_RANGE));
+
+		if (rc == MDB_SUCCESS) {
+			var buffer = dataVal.mv_data();
+			if (compareRegion(newValueBuf, 0, buffer, 0, Math.min(newValueBuf.remaining(), buffer.remaining())) == 0) {
+				// The new value is equal to the first duplicate value >= newValueBuf. The tuple already exists in this
+				// chunk.
+				return MDB_KEYEXIST;
+			}
+			// The new value is smaller than the first duplicate value >= newValueBuf. Step back to the previous
+			// duplicate value.
+			if (E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_PREV_DUP)) != MDB_SUCCESS) {
+				// ignore
+			}
+		} else {
+			E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET));
+			E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_LAST_DUP));
+		}
+
+		// We are positioned at the first duplicate value < newValueBuf.
+		// Find the correct insertion point for newValueBuf in the selected chunk, and check if it already exists.
+		var existing = new VarintTupleIO(elements, dataVal.mv_data());
+		int diff = existing.seek(newValueBuf);
+		if (diff == 0) {
+			return MDB_KEYEXIST;
+		}
+
+		target.clear();
+
+		// Copy the already-consumed prefix of the selected chunk, then insert newValueBuf, then
+		// continue copying tuples from the selected chunk until the first output chunk is full.
+		var encoder = existing.createEncoder(target);
+		int firstPos = target.position();
+
+		boolean addValueToSecondChunk = false;
+		boolean addedAll = false;
+		if (firstPos < maxChunkSize) {
+			encoder.append(newValueBuf);
+			addedAll = encoder.appendAllTuples(existing, maxChunkSize);
+
+			firstPos = target.position();
+		} else {
+			// No room left in the first chunk after copying the prefix; start a second chunk with the new value.
+			addValueToSecondChunk = true;
+		}
+
+		if (addValueToSecondChunk || !addedAll && existing.hasNext()) {
+			encoder.resetDeltaEncoding();
+
+			if (addValueToSecondChunk) {
+				encoder.append(newValueBuf);
+			}
+
+			if (existing.hasNext()) {
+				encoder.appendNextTuple(existing);
+				encoder.appendAllTuples(existing, Integer.MAX_VALUE);
+			}
+		}
+
+		int secondPos = target.position();
+
+		// Replace the selected duplicate value with one or two newly encoded duplicate values.
+		E(mdb_cursor_del(cursor, 0));
+
+		keyVal.mv_data(keyBuffer);
+
+		target.position(0);
+		target.limit(firstPos);
+		dataVal.mv_data(target);
+		E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+
+		if (firstPos < secondPos) {
+			target.position(firstPos);
+			target.limit(secondPos);
+			dataVal.mv_data(target);
+			E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+		}
+
+		return MDB_SUCCESS;
+	}
+
+	static boolean deleteFromChunk(long cursor, int elements, MDBVal keyVal, MDBVal dataVal,
+			ByteBuffer valueToDelete, ByteBuffer target) throws IOException {
+		int rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_GET_BOTH_RANGE));
+		if (rc != MDB_SUCCESS) {
+			return false;
+		}
+
+		var buffer = dataVal.mv_data();
+		if (compareRegion(valueToDelete, 0, buffer, 0, Math.min(valueToDelete.remaining(), buffer.remaining())) < 0) {
+			// The value to delete is smaller than the first duplicate value >= valueToDelete. Step back to the previous
+			// duplicate value.
+			if (E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_PREV_DUP)) != MDB_SUCCESS) {
+				// ignore
+			}
+		}
+
+		var existing = new VarintTupleIO(elements, dataVal.mv_data());
+		int diff = existing.seek(valueToDelete);
+		if (diff != 0) {
+			return false;
+		}
+
+		existing.resetTuple();
+		target.clear();
+		var encoder = existing.createEncoder(target);
+		existing.skipTuple();
+		while (existing.hasNext()) {
+			encoder.appendNextTuple(existing);
+		}
+		E(mdb_cursor_del(cursor, 0));
+		if (target.position() > 0) {
+			target.flip();
+			dataVal.mv_data(target);
+			E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+		}
+		return true;
 	}
 
 	@FunctionalInterface

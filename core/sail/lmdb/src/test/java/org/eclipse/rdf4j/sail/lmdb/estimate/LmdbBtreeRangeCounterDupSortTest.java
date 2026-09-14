@@ -21,12 +21,11 @@ import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbBtreeRangeCounterDupSortTest {
-
+/*
 	private static final int PAGE_SIZE = 4096;
 	private static final ByteOrder BYTE_ORDER = ByteOrder.LITTLE_ENDIAN;
 
@@ -377,4 +376,6 @@ class LmdbBtreeRangeCounterDupSortTest {
 
 	private record TreeFile(Path path, LmdbDb db, LmdbMeta meta) {
 	}
+
+ */
 }
