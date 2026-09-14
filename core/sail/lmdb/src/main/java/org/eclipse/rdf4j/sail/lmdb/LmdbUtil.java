@@ -195,55 +195,6 @@ final class LmdbUtil {
 		return (nextPgno * pageSize) + requiredSize;
 	}
 
-	static boolean deleteFromMergedValue(long cursor, int elements, MDBVal keyVal, MDBVal dataVal,
-			ByteBuffer valueToDelete, ByteBuffer target) throws IOException {
-		int rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_GET_BOTH_RANGE));
-		if (rc != MDB_SUCCESS) {
-			return false;
-		}
-
-		ByteBuffer existing = dataVal.mv_data();
-		int valueToDeleteSize = valueToDelete.remaining();
-		if (valueToDeleteSize == 0 || existing.remaining() < valueToDeleteSize) {
-			return false;
-		}
-
-		while (existing.hasRemaining()) {
-			int entryStart = existing.position();
-			int compareLength = Math.min(valueToDeleteSize, existing.remaining());
-			int diff = compareRegion(valueToDelete, 0, existing, entryStart, compareLength);
-			if (diff < 0) {
-				return false;
-			}
-			if (diff == 0 && existing.remaining() >= valueToDeleteSize) {
-				int originalLimit = existing.limit();
-				int entryEnd = entryStart + valueToDeleteSize;
-				target.clear();
-				if (entryStart > 0) {
-					existing.limit(entryStart);
-					target.put(existing.duplicate().flip());
-				}
-				if (entryEnd < originalLimit) {
-					existing.limit(originalLimit);
-					existing.position(entryEnd);
-					target.put(existing);
-				}
-				E(mdb_cursor_del(cursor, 0));
-				if (target.position() > 0) {
-					target.flip();
-					dataVal.mv_data(target);
-					E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
-				}
-				return true;
-			}
-			existing.position(entryStart);
-			for (int i = 0; i < elements; i++) {
-				skipVarint(existing);
-			}
-		}
-		return false;
-	}
-
 	static int compareRegion(ByteBuffer bb1, int startIdx1, ByteBuffer bb2, int startIdx2, int length) {
 		int result = 0;
 		for (int i = 0; result == 0 && i < length; i++) {
@@ -252,17 +203,9 @@ final class LmdbUtil {
 		return result;
 	}
 
-	static void skipVarint(ByteBuffer other) {
-		int i = Varint.firstToLength(other.get()) - 1;
-		assert i >= 0;
-		if (i > 0) {
-			other.position(i + other.position());
-		}
-	}
-
-	static int merge(long cursor, int elements, MDBVal keyVal, MDBVal dataVal,
+	static int mergeChunk(long cursor, int elements, MDBVal keyVal, MDBVal dataVal,
 			ByteBuffer newValueBuf, ByteBuffer target) throws IOException {
-		final int maxChunkSize = 311 - TripleIndex.MAX_KEY_LENGTH;
+		final int maxChunkSize = 511 - TripleIndex.MAX_KEY_LENGTH;
 
 		dataVal.mv_data(newValueBuf);
 		int rc = E(mdb_cursor_put(cursor, keyVal, dataVal, MDB_NOOVERWRITE));
@@ -355,20 +298,24 @@ final class LmdbUtil {
 		return MDB_SUCCESS;
 	}
 
-	static boolean deleteFromMergedValue2(long cursor, int elements, MDBVal keyVal, MDBVal dataVal,
+	static boolean deleteFromChunk(long cursor, int elements, MDBVal keyVal, MDBVal dataVal,
 			ByteBuffer valueToDelete, ByteBuffer target) throws IOException {
 		int rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_GET_BOTH_RANGE));
 		if (rc != MDB_SUCCESS) {
 			return false;
 		}
 
-		var existing = new VarintTupleIO(elements, dataVal.mv_data());
-		int diff = -1;
-		while (existing.hasNext() && (diff = existing.compareTuple(valueToDelete)) > 0) {
-			for (int i = 0; i < elements; i++) {
-				existing.skip();
+		var buffer = dataVal.mv_data();
+		if (compareRegion(valueToDelete, 0, buffer, 0, Math.min(valueToDelete.remaining(), buffer.remaining())) < 0) {
+			// The value to delete is smaller than the first duplicate value >= valueToDelete. Step back to the previous
+			// duplicate value.
+			if (E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_PREV_DUP)) != MDB_SUCCESS) {
+				// ignore
 			}
 		}
+
+		var existing = new VarintTupleIO(elements, dataVal.mv_data());
+		int diff = existing.seek(valueToDelete);
 		if (diff != 0) {
 			return false;
 		}
@@ -376,9 +323,7 @@ final class LmdbUtil {
 		existing.resetTuple();
 		target.clear();
 		var encoder = existing.createEncoder(target);
-		for (int i = 0; i < elements; i++) {
-			existing.skip();
-		}
+		existing.skipTuple();
 		while (existing.hasNext()) {
 			encoder.appendNextTuple(existing);
 		}

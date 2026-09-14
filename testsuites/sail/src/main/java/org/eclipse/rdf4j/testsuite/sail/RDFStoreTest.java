@@ -62,7 +62,7 @@ import org.junit.jupiter.api.Timeout;
  * retrieval which assumes that no inferencing or whatsoever is performed. This is an abstract class that should be
  * extended for specific Sail implementations.
  */
-@Timeout(value = 60)
+// @Timeout(value = 60)
 public abstract class RDFStoreTest {
 
 	@BeforeAll

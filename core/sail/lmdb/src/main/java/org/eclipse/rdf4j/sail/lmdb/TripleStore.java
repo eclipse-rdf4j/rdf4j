@@ -12,8 +12,8 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.deleteFromMergedValue;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.merge;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.deleteFromChunk;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.mergeChunk;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
 import static org.lwjgl.system.MemoryStack.stackPush;
@@ -77,8 +77,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
-import java.util.stream.LongStream;
-import java.util.stream.Stream;
 
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
@@ -117,7 +115,6 @@ class TripleStore implements Closeable {
 	 * The default triple indexes.
 	 */
 	private static final String DEFAULT_TRIPLE_INDEXES = "spoc,posc";
-	private static final boolean REUSE_SECONDARY_WRITE_CURSOR = true;
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -387,7 +384,8 @@ class TripleStore implements Closeable {
 									startTransaction();
 								}
 
-								E(merge(cursor, 4 - addedIndex.getIndexSplitPosition(), keyValue, dataValue, dataBuf,
+								E(mergeChunk(cursor, 4 - addedIndex.getIndexSplitPosition(), keyValue, dataValue,
+										dataBuf,
 										mergedBuf));
 							}
 						} finally {
@@ -1053,6 +1051,18 @@ class TripleStore implements Closeable {
 		return false;
 	}
 
+	record Quad(long subj, long pred, long obj, long context) {
+		long element(int index) {
+			return switch (index) {
+			case 0 -> subj;
+			case 1 -> pred;
+			case 2 -> obj;
+			case 3 -> context;
+			default -> throw new IndexOutOfBoundsException();
+			};
+		}
+	}
+
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
 		TripleIndex mainIndex = indexes.getFirst();
 		boolean stAdded;
@@ -1117,7 +1127,8 @@ class TripleStore implements Closeable {
 			mdb_cursor_open(writeTxn, mainIndex.getDB(explicit), pCursor);
 			long cursor = pCursor.get(0);
 			try {
-				int rc = merge(cursor, 4 - mainIndex.getIndexSplitPosition(), keyVal, dataVal, valueBuf, mergedBuf);
+				int rc = mergeChunk(cursor, 4 - mainIndex.getIndexSplitPosition(), keyVal, dataVal, valueBuf,
+						mergedBuf);
 				if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
 					throw new IOException(mdb_strerror(rc));
 				}
@@ -1131,7 +1142,7 @@ class TripleStore implements Closeable {
 				mdb_cursor_open(writeTxn, mainIndex.getDB(false), pCursor);
 				cursor = pCursor.get(0);
 				try {
-					foundImplicit = deleteFromMergedValue(cursor, 4 - mainIndex.getIndexSplitPosition(), keyVal,
+					foundImplicit = deleteFromChunk(cursor, 4 - mainIndex.getIndexSplitPosition(), keyVal,
 							dataVal, valueBuf, mergedBuf);
 				} finally {
 					mdb_cursor_close(cursor);
@@ -1155,7 +1166,7 @@ class TripleStore implements Closeable {
 						mdb_cursor_open(writeTxn, index.getDB(false), pCursor);
 						cursor = pCursor.get(0);
 						try {
-							deleteFromMergedValue(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf,
+							deleteFromChunk(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf,
 									mergedBuf);
 						} finally {
 							mdb_cursor_close(cursor);
@@ -1165,7 +1176,7 @@ class TripleStore implements Closeable {
 					mdb_cursor_open(writeTxn, index.getDB(explicit), pCursor);
 					cursor = pCursor.get(0);
 					try {
-						merge(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf, mergedBuf);
+						mergeChunk(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf, mergedBuf);
 					} finally {
 						mdb_cursor_close(cursor);
 					}
@@ -1206,12 +1217,12 @@ class TripleStore implements Closeable {
 		int addedCount = 0;
 		int remainingStart = count;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
-			PointerBuffer cursorHandle = REUSE_SECONDARY_WRITE_CURSOR ? stack.mallocPointer(1) : null;
+			PointerBuffer cursorHandle = stack.mallocPointer(1);
 			MDBVal keyVal = MDBVal.malloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 			ByteBuffer valueBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			ByteBuffer mergedBuf = stack.malloc(600);
+			ByteBuffer mergedBuf = stack.malloc(4096);
 			PointerBuffer mainCursorHandle = stack.mallocPointer(1);
 			long mainCursor = 0;
 			PointerBuffer inferredDeleteCursorHandle = stack.mallocPointer(1);
@@ -1236,7 +1247,8 @@ class TripleStore implements Closeable {
 					E(mdb_cursor_open(writeTxn, mainIndex.getDB(explicit), mainCursorHandle));
 					mainCursor = mainCursorHandle.get(0);
 				}
-				int rc = merge(mainCursor, 4 - mainIndex.getIndexSplitPosition(), keyVal, dataVal, valueBuf, mergedBuf);
+				int rc = LmdbUtil.mergeChunk(mainCursor, 4 - mainIndex.getIndexSplitPosition(), keyVal, dataVal,
+						valueBuf, mergedBuf);
 				if (rc == MDB_MAP_FULL && autoGrow) {
 					remainingStart = i;
 					break;
@@ -1255,7 +1267,7 @@ class TripleStore implements Closeable {
 							E(mdb_cursor_open(writeTxn, mainIndex.getDB(false), inferredDeleteCursorHandle));
 							inferredMainDeleteCursor = inferredDeleteCursorHandle.get(0);
 						}
-						promotedFromImplicit[i] = deleteFromMergedValue(inferredMainDeleteCursor,
+						promotedFromImplicit[i] = deleteFromChunk(inferredMainDeleteCursor,
 								4 - mainIndex.getIndexSplitPosition(), keyVal, dataVal, valueBuf, mergedBuf);
 					}
 					contextIncrements.addToValue(context[i], 1);
@@ -1282,17 +1294,18 @@ class TripleStore implements Closeable {
 				return;
 			}
 
+			ChunkUpdater updater = new ChunkUpdater(stack.malloc(TripleIndex.MAX_KEY_LENGTH));
 			char[] currentFieldSeq = mainIndex.getFieldSeq();
 			for (int i = 1; i < indexes.size(); i++) {
 				TripleIndex index = indexes.get(i);
+				updater.reset();
 				if (TripleIndex.shouldResetToMainIndexOrder(mainIndex.getFieldSeq(), currentFieldSeq,
 						index.getFieldSeq())) {
 					System.arraycopy(mainOrderIndices, 0, sortedIndices, 0, addedCount);
 				}
 				sortStatementIndicesByLeadingField(sortedIndices, addedCount, index, subj, pred, obj, context);
 				currentFieldSeq = index.getFieldSeq();
-				long secondaryWriteCursor = REUSE_SECONDARY_WRITE_CURSOR && addedCount > 0
-						? getAlignedWriteCursor(i, index, explicit, cursorHandle)
+				long secondaryWriteCursor = addedCount > 0 ? getAlignedWriteCursor(i, index, explicit, cursorHandle)
 						: 0;
 				long secondaryDeleteCursor = 0;
 				if (explicit && addedCount > 0) {
@@ -1311,43 +1324,30 @@ class TripleStore implements Closeable {
 					dataVal.mv_data(valueBuf);
 
 					if (promotedFromImplicit[statementIndex]) {
-						deleteFromMergedValue(secondaryDeleteCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal,
+						deleteFromChunk(secondaryDeleteCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal,
 								valueBuf, mergedBuf);
 					}
 					if (shouldFallBackFromAlignedWrite()) {
+						updater.flush(secondaryWriteCursor, keyVal, dataVal, mergedBuf);
 						fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
 								promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
 								addedIndexConsumer);
 						return;
 					}
-					if (REUSE_SECONDARY_WRITE_CURSOR) {
-						int rc = merge(secondaryWriteCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal,
-								valueBuf, mergedBuf);
-						if (rc == MDB_MAP_FULL && autoGrow) {
-							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-									promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
-									addedIndexConsumer);
-							return;
-						}
-						E(rc);
-					} else {
-						E(mdb_cursor_open(writeTxn, index.getDB(explicit), cursorHandle));
-						long cursor = cursorHandle.get(0);
-						int rc;
-						try {
-							rc = merge(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf, mergedBuf);
-						} finally {
-							mdb_cursor_close(cursor);
-						}
-						if (rc == MDB_MAP_FULL && autoGrow) {
-							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-									promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
-									addedIndexConsumer);
-							return;
-						}
-						E(rc);
+					// System.out.println("Adding triple to index " + index + ": " + subj[statementIndex] + ", " +
+					// pred[statementIndex] + ", " + obj[statementIndex] + ", " + context[statementIndex]);
+					int rc = updater.add(secondaryWriteCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal,
+							valueBuf, mergedBuf);
+					if (rc == MDB_MAP_FULL && autoGrow) {
+						fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
+								promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
+								addedIndexConsumer);
+						return;
 					}
+					E(rc);
 				}
+				updater.flush(secondaryWriteCursor, keyVal, dataVal, mergedBuf);
+
 				if (secondaryDeleteCursor != 0) {
 					mdb_cursor_close(secondaryDeleteCursor);
 				}
@@ -1602,11 +1602,11 @@ class TripleStore implements Closeable {
 	 */
 	public void removeTriplesByContext(long subj, long pred, long obj, long context,
 			boolean explicit, Consumer<long[]> handler) throws IOException {
-		RecordIterator records = getTriples(txnManager.createReadTxn(), subj, pred, obj, context, explicit);
-		removeTriples(records, explicit, handler);
+		RecordIterator records = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
+		removeTriples((LmdbRecordIterator) records, explicit, handler);
 	}
 
-	public void removeTriples(RecordIterator it, boolean explicit, Consumer<long[]> handler) throws IOException {
+	protected void removeTriples(LmdbRecordIterator it, boolean explicit, Consumer<long[]> handler) throws IOException {
 		try (it; MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyValue = MDBVal.callocStack(stack);
 			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
@@ -1615,9 +1615,8 @@ class TripleStore implements Closeable {
 			ByteBuffer mergedBuf = stack.malloc(600);
 			PointerBuffer pCursor = stack.mallocPointer(1);
 
-			long[] quad = it.next();
-			long[] toDelete = new long[4];
-			while (quad != null) {
+			long[] quad;
+			while ((quad = it.next()) != null) {
 				if (recordCache == null) {
 					if (requiresResize()) {
 						// map is full, resize required
@@ -1629,18 +1628,17 @@ class TripleStore implements Closeable {
 				if (recordCache != null) {
 					recordCache.removeRecord(quad, explicit, true);
 					handler.accept(quad);
-					quad = it.next();
 					continue;
 				}
 
-				// copy quad that is going to be deleted and go to next one
-				// this is required as it.next() relies on the key and value buffers of the current quad
-				System.arraycopy(quad, 0, toDelete, 0, 4);
-				quad = it.next();
 				for (TripleIndex index : indexes) {
+					if (it.index == index) {
+						it.remove();
+						continue;
+					}
 					keyBuf.clear();
 					valueBuf.clear();
-					index.toEntry(keyBuf, valueBuf, toDelete[0], toDelete[1], toDelete[2], toDelete[3]);
+					index.toEntry(keyBuf, valueBuf, quad[0], quad[1], quad[2], quad[3]);
 					keyBuf.flip();
 					valueBuf.flip();
 					// update buffer positions in MDBVal
@@ -1649,15 +1647,15 @@ class TripleStore implements Closeable {
 					E(mdb_cursor_open(writeTxn, index.getDB(explicit), pCursor));
 					long cursor = pCursor.get(0);
 					try {
-						deleteFromMergedValue(cursor, 4 - index.getIndexSplitPosition(), keyValue, dataValue, valueBuf,
+						deleteFromChunk(cursor, 4 - index.getIndexSplitPosition(), keyValue, dataValue, valueBuf,
 								mergedBuf);
 					} finally {
 						mdb_cursor_close(cursor);
 					}
 				}
 
-				decrementContext(stack, toDelete[3]);
-				handler.accept(toDelete);
+				decrementContext(stack, quad[3]);
+				handler.accept(quad);
 			}
 		}
 	}
@@ -1714,9 +1712,10 @@ class TripleStore implements Closeable {
 						}
 
 						if (r.add) {
-							E(merge(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, dataBuf, mergedBuf));
+							E(mergeChunk(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, dataBuf,
+									mergedBuf));
 						} else {
-							E(deleteFromMergedValue(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, dataBuf,
+							E(deleteFromChunk(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, dataBuf,
 									mergedBuf) ? MDB_SUCCESS : MDB_NOTFOUND);
 						}
 						i++;

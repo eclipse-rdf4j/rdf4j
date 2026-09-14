@@ -51,11 +51,11 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * @author Håvard Ottestad
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 5)
+@Warmup(iterations = 2)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
 //@Fork(value = 1, jvmArgs = {"-Xms1G", "-Xmx1G", "-XX:StartFlightRecording=jdk.CPUTimeSample#enabled=true,filename=profile.jfr,method-profiling=max","-XX:FlightRecorderOptions=stackdepth=1024", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints"})
-@Measurement(iterations = 5)
+@Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class QueryBenchmark {
 
@@ -130,8 +130,8 @@ public class QueryBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("QueryBenchmark.ordered_union_limit") // adapt to run other benchmark tests
-				.forks(0)
+				.include("QueryBenchmark\\.complex") // adapt to run other benchmark tests
+				.forks(1)
 				.build();
 
 		new Runner(opt).run();
@@ -262,13 +262,20 @@ public class QueryBenchmark {
 		}
 	}
 
+	static boolean printCount = true;
+
 	@Benchmark
 	public long complexQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return count(connection
+			long c = count(connection
 					.prepareTupleQuery(query4)
 					.evaluate()
 			);
+			if (printCount) {
+				System.out.println("Count for complexQuery: " + c);
+				printCount = false;
+			}
+			return c;
 		}
 	}
 

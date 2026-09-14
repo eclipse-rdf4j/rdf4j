@@ -13,8 +13,8 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.deleteFromMergedValue;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.merge;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.deleteFromChunk;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.mergeChunk;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
@@ -557,7 +557,8 @@ class ValueStore extends AbstractValueFactory {
 							E(mdb_cursor_open(writeTxn, addedIndex.getDB(true), cursorHandle));
 							long cursor = cursorHandle.get(0);
 							try {
-								E(merge(cursor, 4 - addedIndex.getIndexSplitPosition(), keyValue, dataValue, dataBuf,
+								E(mergeChunk(cursor, 4 - addedIndex.getIndexSplitPosition(), keyValue, dataValue,
+										dataBuf,
 										mergedBuf));
 							} finally {
 								mdb_cursor_close(cursor);
@@ -1316,7 +1317,7 @@ class ValueStore extends AbstractValueFactory {
 				E(mdb_cursor_open(writeTxn, index.getDB(true), pp));
 				long indexCursor = pp.get(0);
 				try {
-					E(merge(indexCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf, mergedBuf));
+					E(mergeChunk(indexCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf, mergedBuf));
 				} finally {
 					mdb_cursor_close(indexCursor);
 				}
@@ -1620,7 +1621,7 @@ class ValueStore extends AbstractValueFactory {
 							E(mdb_cursor_open(writeTxn, index.getDB(true), pp));
 							long indexCursor = pp.get(0);
 							try {
-								deleteFromMergedValue(indexCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal,
+								deleteFromChunk(indexCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal,
 										valueBuf, mergedBuf);
 							} finally {
 								mdb_cursor_close(indexCursor);
@@ -1793,7 +1794,7 @@ class ValueStore extends AbstractValueFactory {
 									keyVal.mv_data(keyBuf.flip());
 									valueBuf.flip();
 									dataVal.mv_data(valueBuf);
-									deleteFromMergedValue(termsCursor,
+									deleteFromChunk(termsCursor,
 											4 - tripleTermCspoIndex.getIndexSplitPosition(), keyVal, dataVal, valueBuf,
 											mergedBuf);
 								}

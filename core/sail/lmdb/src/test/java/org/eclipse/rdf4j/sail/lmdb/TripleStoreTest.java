@@ -22,6 +22,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 
 import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
@@ -604,6 +605,30 @@ public class TripleStoreTest {
 			}
 		}
 
+		assertExistingTriples(preds, expectedByPredicate);
+
+		// test removal of some triples for each predicate
+
+		tripleStore.startTransaction();
+		random = new Random(378245L);
+		subj = 1;
+		for (int pred : preds) {
+			for (int i = 1; i <= size; i += 5) {
+				int obj = random.nextInt(maxObj) + 1;
+				tripleStore.removeTriplesByContext(subj, pred, obj, 1, true, quad -> {
+					;
+					// no-op
+				});
+				expectedByPredicate.get(String.valueOf(pred)).remove(subj + "," + pred + "," + obj + "," + 1);
+				subj++;
+			}
+		}
+		tripleStore.commit();
+
+		assertExistingTriples(preds, expectedByPredicate);
+	}
+
+	private void assertExistingTriples(int[] preds, Map<String, Set<String>> expectedByPredicate) throws IOException {
 		for (int pred : new LinkedHashSet<>(Arrays.stream(preds).boxed().toList())) {
 			try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 				for (TripleIndex index : tripleStore.getIndexes()) {

@@ -630,6 +630,10 @@ class TripleIndex {
 		return true;
 	}
 
+	public int[] getIndexMap() {
+		return indexMap;
+	}
+
 	record OrderScore(List<String> indexOrder, int reusedTransitions, int mainOrderResets) {
 
 		private static final OrderScore EMPTY = new OrderScore(List.of(), 0, 0);

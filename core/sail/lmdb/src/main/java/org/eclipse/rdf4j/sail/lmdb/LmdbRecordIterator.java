@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_GET_BOTH_RANGE;
@@ -23,7 +24,9 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 
 import java.io.IOException;
@@ -35,6 +38,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.util.EntryMatcher;
 import org.eclipse.rdf4j.sail.lmdb.util.VarintTupleIO;
+import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.Logger;
@@ -48,8 +52,6 @@ class LmdbRecordIterator implements RecordIterator {
 	private static final Logger log = LoggerFactory.getLogger(LmdbRecordIterator.class);
 
 	static class State {
-
-		private TripleIndex index;
 
 		private long cursor;
 
@@ -107,10 +109,12 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	private final Thread ownerThread = Thread.currentThread();
+	TripleIndex index;
 	private final State state;
 	private final boolean keyELementsFixed;
 	private volatile boolean closed = false;
 	private boolean fetchNext = false;
+	private ByteBuffer chunkBuffer1, chunkBuffer2;
 
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
@@ -121,7 +125,7 @@ class LmdbRecordIterator implements RecordIterator {
 		this.state = Pool.get().getState();
 		this.state.patternQuad = new long[] { subj, pred, obj, context };
 		this.state.quad = new long[] { subj, pred, obj, context };
-		this.state.index = index;
+		this.index = index;
 		this.state.indexScore = indexScore;
 		this.keyELementsFixed = indexScore >= index.getIndexSplitPosition();
 
@@ -191,7 +195,7 @@ class LmdbRecordIterator implements RecordIterator {
 					// cursor must be positioned on last item, reuse minKeyBuf if available
 					state.minKeyBuf.clear();
 					state.minValueBuf.clear();
-					state.index.toEntry(state.minKeyBuf, state.minValueBuf, state.quad[0], state.quad[1], state.quad[2],
+					index.toEntry(state.minKeyBuf, state.minValueBuf, state.quad[0], state.quad[1], state.quad[2],
 							state.quad[3]);
 					state.minKeyBuf.flip();
 					state.minValueBuf.flip();
@@ -221,6 +225,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 			boolean isDupValue = false;
 			if (fetchNext) {
+				state.valueInput.nextTuple();
 				if (!state.valueInput.hasNext()) {
 					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT_DUP);
 					if (lastResult != MDB_SUCCESS) {
@@ -310,10 +315,9 @@ class LmdbRecordIterator implements RecordIterator {
 				state.valueInput.resetTuple();
 
 				// Matching value found
-				state.index.entryToQuad(state.keyInput, state.valueInput, state.patternQuad, state.quad);
+				index.entryToQuad(state.keyInput, state.valueInput, state.patternQuad, state.quad);
 
 				state.keyInput.resetTuple();
-				state.valueInput.nextTuple();
 
 				// fetch next value
 				fetchNext = true;
@@ -333,7 +337,7 @@ class LmdbRecordIterator implements RecordIterator {
 					: !state.matcher.matches(keyInput, valueInput);
 		} else if (state.matchValues) {
 			// lazy init of group matcher
-			state.matcher = state.index.createMatcher(state.patternQuad[0], state.patternQuad[1], state.patternQuad[2],
+			state.matcher = index.createMatcher(state.patternQuad[0], state.patternQuad[1], state.patternQuad[2],
 					state.patternQuad[3]);
 			return testValueOnly
 					? !state.matcher.matchesValue(valueInput)
@@ -357,6 +361,14 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 			try {
 				if (!closed) {
+					if (chunkBuffer1 != null) {
+						MemoryUtil.memFree(chunkBuffer1);
+						chunkBuffer1 = null;
+						if (chunkBuffer2 != null) {
+							MemoryUtil.memFree(chunkBuffer2);
+							chunkBuffer2 = null;
+						}
+					}
 					state.txnRef.returnCursor(state.dbi, state.cursor);
 					state.cursor = 0;
 					Pool.get().free(state);
@@ -371,13 +383,49 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	@Override
+	public void remove() throws IOException {
+		if (chunkBuffer1 == null) {
+			chunkBuffer1 = MemoryUtil.memAlloc(512);
+			chunkBuffer2 = MemoryUtil.memAlloc(512);
+		}
+		state.valueInput.resetTuple();
+
+		// we need duplicate here because valueInput could use chunkBuffer if a previous value was removed
+		var targetBuffer = state.valueInput.getBuffer() == chunkBuffer1 ? chunkBuffer2 : chunkBuffer1;
+		targetBuffer.clear();
+		var encoder = state.valueInput.createEncoder(targetBuffer);
+		state.valueInput.skipTuple();
+		while (state.valueInput.hasNext()) {
+			encoder.appendNextTuple(state.valueInput);
+		}
+		E(mdb_cursor_del(state.cursor, 0));
+		targetBuffer.flip();
+		if (targetBuffer.limit() > 0) {
+			state.valueData.mv_data(targetBuffer);
+			E(mdb_cursor_put(state.cursor, state.keyData, state.valueData, 0));
+		}
+		state.valueInput.setBuffer(targetBuffer);
+
+		if (targetBuffer.limit() > 0) {
+			// position cursor on the next value, if any
+			state.minKeyBuf.clear();
+			state.minValueBuf.clear();
+			index.toEntry(state.minKeyBuf, state.minValueBuf, state.quad[0], state.quad[1], state.quad[2],
+					state.quad[3]);
+			state.minKeyBuf.flip();
+			state.minValueBuf.flip();
+			state.valueInput.seek(state.minValueBuf);
+		}
+	}
+
+	@Override
 	public void close() {
 		closeInternal(true);
 	}
 
 	@Override
 	public String getIndexName() {
-		return state.index.toString();
+		return index.toString();
 	}
 
 	@Override

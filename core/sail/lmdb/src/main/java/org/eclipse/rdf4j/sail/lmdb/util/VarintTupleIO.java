@@ -183,8 +183,8 @@ public final class VarintTupleIO {
 		 *
 		 * @param input         the input cursor providing tuples to append
 		 * @param maxBufferSize the maximum allowed size of the output buffer
-		 * @return {@code true} if all remaining tuples were appended; {@code false} if not all tuples could be appended without
-		 *         exceeding the maximum buffer size
+		 * @return {@code true} if all remaining tuples were appended; {@code false} if not all tuples could be appended
+		 *         without exceeding the maximum buffer size
 		 */
 		public boolean appendAllTuples(VarintTupleIO input, int maxBufferSize) {
 			if (out.position() < maxBufferSize && input.hasNext()) {
@@ -345,7 +345,6 @@ public final class VarintTupleIO {
 	public int seek(ByteBuffer tuple) {
 		int diff = -1;
 		final int limit = buffer.limit();
-
 		while (nextPosition < limit) {
 			int otherValuePosition = tuple.position();
 			int rawPosition = tupleStartPosition;
