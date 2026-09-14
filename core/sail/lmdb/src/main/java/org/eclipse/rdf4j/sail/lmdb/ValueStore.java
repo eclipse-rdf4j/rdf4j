@@ -1344,7 +1344,22 @@ class ValueStore extends AbstractValueFactory {
 	public RecordIterator getTripleTerms(long subj, long pred, long obj) throws IOException {
 		TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subj, pred, obj, -1);
 		int indexScore = index.getPatternScore(subj, pred, obj, -1);
-		return new LmdbRecordIterator(index, indexScore, subj, pred, obj, -1, true, txnManager.getReadTxn());
+		Txn txn = txnManager.createReadTxn();
+		try {
+			return new LmdbRecordIterator(index, indexScore, subj, pred, obj, -1, true, txn) {
+				@Override
+				public void close() {
+					try {
+						super.close();
+					} finally {
+						txn.close();
+					}
+				}
+			};
+		} catch (Throwable e) {
+			txn.close();
+			throw e;
+		}
 	}
 
 	TxnManager getTxnManager() {

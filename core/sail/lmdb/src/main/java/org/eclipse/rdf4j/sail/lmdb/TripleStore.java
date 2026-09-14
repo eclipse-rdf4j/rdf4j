@@ -178,7 +178,7 @@ class TripleStore implements Closeable {
 		boolean forceSync = config.getForceSync();
 		boolean noReadahead = config.getNoReadahead();
 		this.autoGrow = config.getAutoGrow();
-		this.pageWalkingEstimatorEnabled = config.getPageCardinalityEstimator()
+		this.pageWalkingEstimatorEnabled = false && config.getPageCardinalityEstimator()
 				&& !Boolean.getBoolean(DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY);
 		this.valueStore = valueStore;
 		// create directory if it not exists
