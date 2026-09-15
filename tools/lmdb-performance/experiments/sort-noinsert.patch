@@ -1,0 +1,68 @@
+diff --git a/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSort.java b/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSort.java
+index 285fac0..020ed65 100644
+--- a/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSort.java
++++ b/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSort.java
+@@ -173,7 +173,35 @@ final class NativeSortBuffer {
+ 		for (int i = 0; i < size; i++) {
+ 			order[i] = i;
+ 		}
+-		for (int width = 1; width < size;) {
++		if (size < 2) {
++			return order;
++		}
++		// Adjacency scans and ordered upstream operators often already supply one run. Reverse
++		// strictly descending runs only: comparator-equal rows must retain their encounter order.
++		int prefix = 2;
++		boolean descending = compareRows(0, 1, comparator) > 0;
++		while (prefix < size) {
++			int compared = compareRows(prefix - 1, prefix, comparator);
++			if (descending ? compared <= 0 : compared > 0) {
++				break;
++			}
++			prefix++;
++		}
++		if (descending) {
++			for (int left = 0, right = prefix - 1; left < right; left++, right--) {
++				int row = order[left];
++				order[left] = order[right];
++				order[right] = row;
++			}
++		}
++		if (prefix == size) {
++			return order;
++		}
++
++		// Stable insertion on small cache-local runs replaces the first four merge passes.
++		// The primitive arena and the two pre-admitted index arrays are unchanged.
++		final int runLength = 1;
++		for (int width = runLength; width < size;) {
+ 			for (int from = 0; from < size;) {
+ 				int middle = (int) Math.min((long) from + width, size);
+ 				int to = (int) Math.min((long) from + 2L * width, size);
+@@ -200,6 +228,10 @@ final class NativeSortBuffer {
+ 	}
+ 
+ 	private void merge(int[] source, int[] target, int from, int middle, int to, PackedRowComparator comparator) {
++		if (middle == to || compareRows(source[middle - 1], source[middle], comparator) <= 0) {
++			System.arraycopy(source, from, target, from, to - from);
++			return;
++		}
+ 		int left = from;
+ 		int right = middle;
+ 		int out = from;
+@@ -210,11 +242,10 @@ final class NativeSortBuffer {
+ 				target[out++] = source[right++];
+ 			}
+ 		}
+-		while (left < middle) {
+-			target[out++] = source[left++];
+-		}
+-		while (right < to) {
+-			target[out++] = source[right++];
++		if (left < middle) {
++			System.arraycopy(source, left, target, out, middle - left);
++		} else if (right < to) {
++			System.arraycopy(source, right, target, out, to - right);
+ 		}
+ 	}
+ 
