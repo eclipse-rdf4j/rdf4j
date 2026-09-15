@@ -14,5 +14,13 @@
  * {@link org.eclipse.rdf4j.http.client.SPARQLProtocolSession}/{@link org.eclipse.rdf4j.http.client.RDF4JProtocolSession}
  * created through a dedicated {@link org.eclipse.rdf4j.http.client.HttpClientSessionManager}. See
  * {@link org.eclipse.rdf4j.opentelemetry.OpenTelemetrySupport} for the one-line opt-in entry point.
+ *
+ * @apiNote This feature is experimental: its existence, signature or behavior may change without warning from one
+ *          release to the next.
  */
+
+@Experimental
+
 package org.eclipse.rdf4j.opentelemetry.http;
+
+import org.eclipse.rdf4j.common.annotation.Experimental;
