@@ -109,10 +109,10 @@ public abstract class FilterIteration<E> implements CloseableIteration<E> {
 					return;
 				}
 				try {
-					// We know that nextElement has to be null and that wrappedIter.hasNext() must be true, based on the
-					// code
-					// above. To be sure that these invariants don't change we also assert them below.
-					assert nextElement == null && wrappedIter.hasNext();
+					// Availability was established above. Do not ask again: an asynchronously closed wrapped
+					// iteration can legitimately change its answer between the two calls, while next() already
+					// supplies the authoritative NoSuchElementException for that race.
+					assert nextElement == null;
 
 					result = wrappedIter.next();
 				} catch (NoSuchElementException e) {
