@@ -61,11 +61,13 @@ final class CompactCsfPageEncoder {
 		boolean rowQuadEqualsNeighbor = true;
 		int rowTraitFlags = columnTraitFlags(data, true);
 		for (int row = 0; row < data.rowCount; row++) {
-			rowNeighborOne &= data.rowFiberCount(row) == 1;
-			rowQuadEqualsNeighbor &= data.rowQuadCount(row) == data.rowFiberCount(row);
+			int fibers = data.rowFiberCount(row);
+			int quads = data.rowQuadCount(row);
+			rowNeighborOne &= fibers == 1;
+			rowQuadEqualsNeighbor &= quads == fibers;
 			fingerprint = mix(fingerprint, data.row(row));
-			fingerprint = mix(fingerprint, data.rowFiberCount(row));
-			fingerprint = mix(fingerprint, data.rowQuadCount(row));
+			fingerprint = mix(fingerprint, fibers);
+			fingerprint = mix(fingerprint, quads);
 		}
 		boolean contextCountOne = true;
 		boolean allOrderedIntegers = true;
@@ -73,10 +75,12 @@ final class CompactCsfPageEncoder {
 		long commonContext = data.context(0);
 		boolean oneCommonContext = true;
 		for (int fiber = 0; fiber < data.fiberCount; fiber++) {
-			contextCountOne &= data.fiberContextCount(fiber) == 1;
-			allOrderedIntegers &= isOrderedInteger(data.neighbor(fiber));
-			fingerprint = mix(fingerprint, data.neighbor(fiber));
-			fingerprint = mix(fingerprint, data.fiberContextCount(fiber));
+			int contexts = data.fiberContextCount(fiber);
+			long neighbor = data.neighbor(fiber);
+			contextCountOne &= contexts == 1;
+			allOrderedIntegers &= isOrderedInteger(neighbor);
+			fingerprint = mix(fingerprint, neighbor);
+			fingerprint = mix(fingerprint, contexts);
 		}
 		for (int i = 0; i < data.quadCount; i++) {
 			oneCommonContext &= data.context(i) == commonContext;
@@ -646,72 +650,59 @@ final class CompactCsfPageEncoder {
 		int size = rows ? data.rowCount : data.fiberCount;
 		int firstKind = ValueIds.termKind(rows ? data.row(0) : data.neighbor(0));
 		boolean uniformKind = true;
-		int literalCount = 0;
+		int firstTag = -1;
+		boolean uniformDatatype = true;
 		int legacyCount = 0;
 		for (int i = 0; i < size; i++) {
 			long id = rows ? data.row(i) : data.neighbor(i);
 			int kind = ValueIds.termKind(id);
 			uniformKind &= kind == firstKind;
-			if (kind != ValueIds.TERM_KIND_LITERAL) {
+			if (kind != ValueIds.TERM_KIND_LITERAL || !uniformDatatype) {
 				continue;
 			}
-			literalCount++;
-			if (ValueIds.encodedCoreDatatypeTag(id) == 0) {
+			int tag = ValueIds.encodedCoreDatatypeTag(id);
+			if (firstTag < 0) {
+				firstTag = tag;
+			} else if (tag != firstTag) {
+				// Different encoded tags, or mixed legacy/encoded representations, cannot establish
+				// the existing uniform-datatype flag. Do not query LMDB for a disproved candidate.
+				uniformDatatype = false;
+				continue;
+			}
+			if (tag == 0) {
 				ensureLegacyCapacity(legacyCount + 1);
 				legacyLiteralIds[legacyCount++] = id;
 			}
 		}
-		boolean uniformLiteralDatatype = literalCount > 0 && resolveUniformLiteralDatatype(data, rows, legacyCount);
+		uniformDatatype &= firstTag >= 0;
+		if (uniformDatatype && firstTag == 0) {
+			uniformDatatype = resolveUniformLegacyDatatype(legacyCount);
+		}
 		int uniformKindFlag = rows ? CompactCsfPageFormat.FLAG_UNIFORM_ROW_TERM_KIND
 				: CompactCsfPageFormat.FLAG_UNIFORM_NEIGHBOR_TERM_KIND;
 		int uniformDatatypeFlag = rows ? CompactCsfPageFormat.FLAG_UNIFORM_ROW_LITERAL_DATATYPE
 				: CompactCsfPageFormat.FLAG_UNIFORM_NEIGHBOR_LITERAL_DATATYPE;
-		return (uniformKind ? uniformKindFlag : 0)
-				| (uniformLiteralDatatype ? uniformDatatypeFlag : 0);
+		return (uniformKind ? uniformKindFlag : 0) | (uniformDatatype ? uniformDatatypeFlag : 0);
 	}
 
-	private boolean resolveUniformLiteralDatatype(CsfPageData.View data, boolean rows, int legacyCount) {
-		if (legacyCount > 0) {
-			int populated;
-			try {
-				populated = literalDatatypeLookup.lookup(legacyLiteralIds, 0, legacyCount, legacyDatatypeIds, 0);
-			} catch (IOException e) {
-				throw new UncheckedIOException("unable to classify legacy literal datatypes while building CSF page",
-						e);
+	private boolean resolveUniformLegacyDatatype(int count) {
+		try {
+			if (literalDatatypeLookup.lookup(legacyLiteralIds, 0, count, legacyDatatypeIds, 0) != count) {
+				return false;
 			}
-			if (populated != legacyCount) {
+		} catch (IOException e) {
+			throw new UncheckedIOException("unable to classify legacy literal datatypes while building CSF page", e);
+		}
+		long first = legacyDatatypeIds[0];
+		if (first < 0) {
+			return false;
+		}
+		for (int i = 1; i < count; i++) {
+			if (legacyDatatypeIds[i] != first) {
 				return false;
 			}
 		}
-		int firstEncoding = 0;
-		long firstDatatype = 0;
-		int legacyAt = 0;
-		for (int i = 0, size = rows ? data.rowCount : data.fiberCount; i < size; i++) {
-			long id = rows ? data.row(i) : data.neighbor(i);
-			if (ValueIds.termKind(id) != ValueIds.TERM_KIND_LITERAL) {
-				continue;
-			}
-			int encodedTag = ValueIds.encodedCoreDatatypeTag(id);
-			int encoding;
-			long datatype;
-			if (encodedTag != 0) {
-				encoding = 1;
-				datatype = encodedTag;
-			} else {
-				encoding = 2;
-				datatype = legacyDatatypeIds[legacyAt++];
-				if (datatype < 0) {
-					return false;
-				}
-			}
-			if (firstEncoding == 0) {
-				firstEncoding = encoding;
-				firstDatatype = datatype;
-			} else if (encoding != firstEncoding || datatype != firstDatatype) {
-				return false;
-			}
-		}
-		return firstEncoding != 0;
+		return true;
 	}
 
 	private void ensureLegacyCapacity(int required) {
@@ -828,6 +819,93 @@ final class CompactCsfPageEncoder {
 			case CONTEXT_TAILS -> nextContextTail();
 			default -> throw new IllegalStateException("unknown CSF page section: " + section);
 			};
+		}
+
+		@Override
+		public void nextBlock(long[] target, int count) {
+			java.util.Objects.checkFromIndexSize(0, count, target.length);
+			if (count > size - index) {
+				throw new IllegalStateException("packed-vector source advanced beyond its declared size");
+			}
+			int from = index;
+			// Dispatch once per block. Each section loop has one access pattern, allowing C2 to
+			// hoist view invariants and range checks instead of retaining a switch in every lane.
+			switch (section) {
+			case ROW_IDS -> {
+				for (int i = 0; i < count; i++)
+					target[i] = data.row(from + i);
+			}
+			case ROW_FIBER_STARTS -> {
+				for (int i = 0; i < count; i++)
+					target[i] = Integer.toUnsignedLong(data.rowFiberStart(from + i));
+			}
+			case ROW_QUAD_COUNTS -> {
+				for (int i = 0; i < count; i++)
+					target[i] = Integer.toUnsignedLong(data.rowQuadCount(from + i));
+			}
+			case FIRST_NEIGHBORS -> {
+				for (int i = 0; i < count; i++)
+					target[i] = data.neighbor(data.rowFiberStart(from + i));
+			}
+			case CONTEXT_COUNTS -> {
+				for (int i = 0; i < count; i++)
+					target[i] = Integer.toUnsignedLong(data.fiberContextCount(from + i));
+			}
+			case FIRST_CONTEXTS -> {
+				for (int i = 0; i < count; i++)
+					target[i] = data.context(data.fiberContextStart(from + i));
+			}
+			case NEIGHBOR_TAILS -> copyNeighborTails(target, count);
+			case CONTEXT_TAILS -> copyContextTails(target, count);
+			default -> throw new IllegalStateException("unknown CSF page section: " + section);
+			}
+			index = from + count;
+		}
+
+		private void copyNeighborTails(long[] target, int count) {
+			int row = group, lane = withinGroup, out = 0;
+			while (out < count) {
+				int fibers = data.rowFiberCount(row);
+				if (lane >= fibers) {
+					row++;
+					lane = 1;
+					continue;
+				}
+				int take = Math.min(count - out, fibers - lane);
+				int at = data.rowFiberStart(row) + lane;
+				long previous = data.neighbor(at - 1);
+				for (int i = 0; i < take; i++) {
+					long value = data.neighbor(at + i);
+					target[out++] = value - previous;
+					previous = value;
+				}
+				lane += take;
+			}
+			group = row;
+			withinGroup = lane;
+		}
+
+		private void copyContextTails(long[] target, int count) {
+			int fiber = group, lane = withinGroup, out = 0;
+			while (out < count) {
+				int contexts = data.fiberContextCount(fiber);
+				if (lane >= contexts) {
+					fiber++;
+					lane = 1;
+					continue;
+				}
+				int take = Math.min(count - out, contexts - lane);
+				int at = data.fiberContextStart(fiber) + lane;
+				long previous = data.context(at - 1);
+				for (int i = 0; i < take; i++) {
+					long value = data.context(at + i);
+					target[out++] = value - previous;
+					previous = value;
+				}
+				lane += take;
+			}
+			group = fiber;
+			withinGroup = lane;
 		}
 
 		private long nextNeighborTail() {

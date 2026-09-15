@@ -134,6 +134,10 @@ final class NativeSortBuffer {
 		}
 		ensureOpen();
 		metrics.recordNativeSort();
+		int direction = orderedRun(comparator);
+		if (direction != 0) {
+			return orderedIndices(direction);
+		}
 		int[] order = new int[size];
 		int[] scratch = new int[size];
 		return sort(order, scratch, comparator);
@@ -152,9 +156,14 @@ final class NativeSortBuffer {
 		int[] order;
 		int[] scratch;
 		try {
-			order = new int[size];
-			scratch = new int[size];
-			order = sort(order, scratch, comparator);
+			int direction = orderedRun(comparator);
+			if (direction != 0) {
+				order = orderedIndices(direction);
+			} else {
+				order = new int[size];
+				scratch = new int[size];
+				order = sort(order, scratch, comparator);
+			}
 			if (retainedOrders == null) {
 				retainedOrders = new ArrayList<>();
 			}
@@ -166,6 +175,44 @@ final class NativeSortBuffer {
 		metrics.recordNativeSort();
 		retainedOrderValues += arrayValues;
 		budget.release(0, arrayValues);
+		return order;
+	}
+
+	/** Zero means general sorting; nonzero means an already ordered complete run. */
+	private int orderedRun(PackedRowComparator comparator) {
+		if (size < 2) {
+			return 1;
+		}
+		if (compareRows(0, 1, comparator) <= 0) {
+			for (int i = 2; i < size; i++) {
+				if (compareRows(i - 1, i, comparator) > 0) {
+					return 0;
+				}
+			}
+			return 1;
+		}
+		// Reversal is stable only for a strictly descending run, including stability ordinals.
+		for (int i = 2; i < size; i++) {
+			if (compareRows(i - 1, i, comparator) <= 0) {
+				return 0;
+			}
+		}
+		return -1;
+	}
+
+	private int[] orderedIndices(int direction) {
+		// The budgeted caller conservatively admitted both index arrays; it releases the unused
+		// scratch reservation as usual. Neither a scratch allocation nor merge passes are needed.
+		int[] order = new int[size];
+		if (direction > 0) {
+			for (int i = 0; i < size; i++) {
+				order[i] = i;
+			}
+		} else {
+			for (int i = 0; i < size; i++) {
+				order[i] = size - 1 - i;
+			}
+		}
 		return order;
 	}
 

@@ -528,10 +528,16 @@ final class LmdbNativeValueCodec {
 	}
 
 	private static String decodeUtf8(ByteBuffer buffer, int offset, int length) {
-		ByteBuffer slice = buffer.duplicate();
-		slice.position(offset);
-		slice.limit(offset + length);
-		return StandardCharsets.UTF_8.decode(slice).toString();
+		// Share the overlay decoder's bounded staging bytes. The String constructor specializes
+		// ASCII/Latin-1 and malformed UTF-8 without allocating a CharsetDecoder and CharBuffer.
+		// Absolute bulk get preserves the caller's position/limit/mark and checks the full range.
+		java.util.Objects.checkFromIndexSize(offset, length, buffer.limit());
+		if (buffer.hasArray()) {
+			return new String(buffer.array(), buffer.arrayOffset() + offset, length, StandardCharsets.UTF_8);
+		}
+		byte[] scratch = utf8Scratch(length);
+		buffer.get(offset, scratch, 0, length);
+		return new String(scratch, 0, length, StandardCharsets.UTF_8);
 	}
 
 	private static int cacheIndex(long id) {

@@ -77,10 +77,28 @@ final class PackedLongVector {
 		void reset();
 
 		long next();
+
+		/** Consume a block without requiring the producer to dispatch and publish state per lane. */
+		default void nextBlock(long[] target, int count) {
+			java.util.Objects.checkFromIndexSize(0, count, target.length);
+			for (int i = 0; i < count; i++) {
+				target[i] = next();
+			}
+		}
 	}
 
 	static final class WriteScratch {
-		private final long[] block = new long[BLOCK_SIZE];
+		private final long[] block;
+
+		WriteScratch() {
+			this(new long[BLOCK_SIZE]);
+		}
+
+		/** Heap encoding already owns its input array; planning it needs no staging block. */
+		private WriteScratch(long[] block) {
+			this.block = block;
+		}
+
 		private int mode;
 		private int type;
 		private int width;
@@ -185,6 +203,7 @@ final class PackedLongVector {
 		}
 
 		BlockPlan[] plans = new BlockPlan[blockCount];
+		WriteScratch planScratch = new WriteScratch(null);
 		int directoryBytes = Math.multiplyExact(blockCount + 1, Integer.BYTES);
 		boolean indexed = searchIndexed(hint, blockCount);
 		boolean prefixIndexed = prefixIndexed(hint, blockCount);
@@ -196,7 +215,9 @@ final class PackedLongVector {
 		for (int block = 0; block < blockCount; block++) {
 			int blockFrom = from + block * BLOCK_SIZE;
 			int blockLength = Math.min(BLOCK_SIZE, count - block * BLOCK_SIZE);
-			BlockPlan plan = planBlock(values, blockFrom, blockLength, hint);
+			planBlock(values, blockFrom, blockLength, hint, planScratch);
+			BlockPlan plan = new BlockPlan(planScratch.mode, planScratch.type, planScratch.width,
+					planScratch.count, planScratch.base, planScratch.lanes, planScratch.encodedBytes);
 			plans[block] = plan;
 			total = Math.addExact(total, plan.encodedBytes());
 		}
@@ -1170,105 +1191,60 @@ final class PackedLongVector {
 		return metadata;
 	}
 
-	private static BlockPlan planBlock(long[] values, int from, int count, Hint hint) {
-		Candidate best = forRaw(values, from, count);
-		Candidate typedFor = forTypedPayload(values, from, count);
-		if (typedFor != null && typedFor.bytes < best.bytes) {
-			best = typedFor;
-		}
-		if (hint == Hint.SORTED_SEQUENTIAL_IDS) {
-			Candidate delta = deltaRaw(values, from, count);
-			if (delta.bytes < best.bytes) {
-				best = delta;
-			}
-			Candidate typedDelta = deltaTypedPayload(values, from, count);
-			if (typedDelta != null && typedDelta.bytes < best.bytes) {
-				best = typedDelta;
-			}
-		}
-		return new BlockPlan(best.mode, best.type, best.width, count, best.base, best.lanes, best.bytes);
-	}
-
 	private static void fillBlock(SequentialValues values, long[] block, int count) {
-		for (int i = 0; i < count; i++) {
-			block[i] = values.next();
-		}
+		values.nextBlock(block, count);
 	}
 
 	private static void planBlock(long[] values, int count, Hint hint, WriteScratch scratch) {
-		long base = values[0];
-		for (int i = 1; i < count; i++) {
-			if (Long.compareUnsigned(values[i], base) < 0) {
-				base = values[i];
-			}
-		}
-		long maxDelta = 0;
-		for (int i = 0; i < count; i++) {
-			long delta = values[i] - base;
-			if (Long.compareUnsigned(delta, maxDelta) > 0) {
-				maxDelta = delta;
-			}
-		}
-		setPlan(scratch, MODE_FOR_RAW, 0, unsignedWidth(maxDelta), count, base, count);
+		planBlock(values, 0, count, hint, scratch);
+	}
 
-		int type = compoundType(values[0]);
-		if (type >= 0) {
-			long payloadBase = values[0] >>> 7;
-			boolean sameType = true;
-			for (int i = 1; i < count; i++) {
-				if (compoundType(values[i]) != type) {
-					sameType = false;
-					break;
-				}
-				payloadBase = Math.min(payloadBase, values[i] >>> 7);
-			}
-			if (sameType) {
-				long maxPayloadDelta = 0;
-				for (int i = 0; i < count; i++) {
-					maxPayloadDelta = Math.max(maxPayloadDelta, (values[i] >>> 7) - payloadBase);
-				}
-				considerPlan(scratch, MODE_FOR_TYPED_PAYLOAD, type, unsignedWidth(maxPayloadDelta), count,
-						payloadBase, count);
-			}
+	private static void planBlock(long[] values, int from, int count, Hint hint, WriteScratch scratch) {
+		long first = values[from];
+		// Bias unsigned IDs into signed order so C2 can use min/max reductions. The largest FOR
+		// residual is exactly unsignedMax - unsignedMin; a second residual scan is unnecessary.
+		long minimum = first ^ Long.MIN_VALUE;
+		long maximum = minimum;
+		long varying = 0;
+		int end = from + count;
+		for (int i = from + 1; i < end; i++) {
+			long value = values[i];
+			long ordered = value ^ Long.MIN_VALUE;
+			minimum = Math.min(minimum, ordered);
+			maximum = Math.max(maximum, ordered);
+			varying |= value ^ first;
 		}
+		long base = minimum ^ Long.MIN_VALUE;
+		long last = maximum ^ Long.MIN_VALUE;
+		setPlan(scratch, MODE_FOR_RAW, 0, unsignedWidth(last - base), count, base, count);
 
+		// Every compound ID has the same low seven bits iff this test succeeds. Payload extrema
+		// then coincide with raw unsigned extrema, including ranges crossing Long.MAX_VALUE.
+		int type = compoundType(first);
+		boolean typed = type >= 0 && (varying & 0x7fL) == 0;
+		if (typed) {
+			considerPlan(scratch, MODE_FOR_TYPED_PAYLOAD, type,
+					unsignedWidth((last >>> 7) - (base >>> 7)), count, base >>> 7, count);
+		}
 		if (hint != Hint.SORTED_SEQUENTIAL_IDS) {
 			return;
 		}
-		boolean sorted = true;
-		maxDelta = 0;
-		for (int i = 1; i < count; i++) {
-			if (Long.compareUnsigned(values[i - 1], values[i]) > 0) {
-				sorted = false;
-				break;
+		long previous = first;
+		long deltaBits = 0;
+		for (int i = from + 1; i < end; i++) {
+			long value = values[i];
+			if (Long.compareUnsigned(previous, value) > 0) {
+				return; // A hint is not a sorting proof: retain the measured FOR alternative.
 			}
-			long delta = values[i] - values[i - 1];
-			if (Long.compareUnsigned(delta, maxDelta) > 0) {
-				maxDelta = delta;
-			}
+			deltaBits |= value - previous;
+			previous = value;
 		}
-		if (sorted) {
-			considerPlan(scratch, MODE_DELTA_RAW, 0, unsignedWidth(maxDelta), count, values[0], count - 1);
-		}
-
-		if (type >= 0) {
-			long previous = values[0] >>> 7;
-			long maxPayloadDelta = 0;
-			boolean typedSorted = true;
-			for (int i = 1; i < count; i++) {
-				long value = values[i];
-				long payload = value >>> 7;
-				if (compoundType(value) != type || payload < previous) {
-					typedSorted = false;
-					break;
-				}
-				maxPayloadDelta = Math.max(maxPayloadDelta, payload - previous);
-				previous = payload;
-			}
-			if (typedSorted) {
-				considerPlan(scratch, MODE_DELTA_TYPED_PAYLOAD, type, unsignedWidth(maxPayloadDelta), count,
-						values[0] >>> 7, count - 1);
-			}
+		// OR and unsigned maximum have identical required widths. With uniform low bits, every
+		// delta is divisible by 128, so typed delta planning requires no additional scan either.
+		considerPlan(scratch, MODE_DELTA_RAW, 0, unsignedWidth(deltaBits), count, first, count - 1);
+		if (typed) {
+			considerPlan(scratch, MODE_DELTA_TYPED_PAYLOAD, type, unsignedWidth(deltaBits >>> 7), count,
+					first >>> 7, count - 1);
 		}
 	}
 
@@ -1289,85 +1265,6 @@ final class PackedLongVector {
 		if (encodedBytes < scratch.encodedBytes) {
 			setPlan(scratch, mode, type, width, count, base, lanes);
 		}
-	}
-
-	private static Candidate forRaw(long[] values, int from, int count) {
-		long base = values[from];
-		for (int i = 1; i < count; i++) {
-			if (Long.compareUnsigned(values[from + i], base) < 0) {
-				base = values[from + i];
-			}
-		}
-		long maxDelta = 0;
-		for (int i = 0; i < count; i++) {
-			long delta = values[from + i] - base;
-			if (Long.compareUnsigned(delta, maxDelta) > 0) {
-				maxDelta = delta;
-			}
-		}
-		return candidate(MODE_FOR_RAW, 0, unsignedWidth(maxDelta), base, count);
-	}
-
-	private static Candidate forTypedPayload(long[] values, int from, int count) {
-		int type = compoundType(values[from]);
-		if (type < 0) {
-			return null;
-		}
-		long base = values[from] >>> 7;
-		for (int i = 1; i < count; i++) {
-			long value = values[from + i];
-			if (compoundType(value) != type) {
-				return null;
-			}
-			base = Math.min(base, value >>> 7);
-		}
-		long maxDelta = 0;
-		for (int i = 0; i < count; i++) {
-			maxDelta = Math.max(maxDelta, (values[from + i] >>> 7) - base);
-		}
-		return candidate(MODE_FOR_TYPED_PAYLOAD, type, unsignedWidth(maxDelta), base, count);
-	}
-
-	private static Candidate deltaRaw(long[] values, int from, int count) {
-		long maxDelta = 0;
-		for (int i = 1; i < count; i++) {
-			if (Long.compareUnsigned(values[from + i - 1], values[from + i]) > 0) {
-				return forRaw(values, from, count);
-			}
-			long delta = values[from + i] - values[from + i - 1];
-			if (Long.compareUnsigned(delta, maxDelta) > 0) {
-				maxDelta = delta;
-			}
-		}
-		return candidate(MODE_DELTA_RAW, 0, unsignedWidth(maxDelta), values[from], Math.max(0, count - 1));
-	}
-
-	private static Candidate deltaTypedPayload(long[] values, int from, int count) {
-		int type = compoundType(values[from]);
-		if (type < 0) {
-			return null;
-		}
-		long previous = values[from] >>> 7;
-		long maxDelta = 0;
-		for (int i = 1; i < count; i++) {
-			long value = values[from + i];
-			if (compoundType(value) != type) {
-				return null;
-			}
-			long payload = value >>> 7;
-			if (payload < previous) {
-				return null;
-			}
-			maxDelta = Math.max(maxDelta, payload - previous);
-			previous = payload;
-		}
-		return candidate(MODE_DELTA_TYPED_PAYLOAD, type, unsignedWidth(maxDelta), values[from] >>> 7,
-				Math.max(0, count - 1));
-	}
-
-	private static Candidate candidate(int mode, int type, int width, long base, int lanes) {
-		return new Candidate(mode, type, width, base, lanes,
-				Math.addExact(BLOCK_HEADER_BYTES, packedBytes(lanes, width)));
 	}
 
 	private static void writeSearchRadix(byte[] target, int at, long[] values, int from, BlockPlan plan,
@@ -1939,9 +1836,6 @@ final class PackedLongVector {
 			at += take;
 		}
 		return value;
-	}
-
-	private record Candidate(int mode, int type, int width, long base, int lanes, int bytes) {
 	}
 
 	private record BlockPlan(int mode, int type, int width, int count, long base, int lanes, int encodedBytes) {

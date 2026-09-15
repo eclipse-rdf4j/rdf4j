@@ -276,11 +276,11 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 	}
 
 	void slotReplaced(boolean wasBound, boolean isBound) {
-		if (!stable) {
-			if (wasBound != isBound) {
-				boundSlotCount += isBound ? 1 : -1;
-				empty = baseEmpty && boundSlotCount == 0;
-			}
+		// Names and size depend on the binding domain, not the value of an already-bound slot.
+		// Payload memoization is independently guarded by memoIds in value(int).
+		if (!stable && wasBound != isBound) {
+			boundSlotCount += isBound ? 1 : -1;
+			empty = baseEmpty && boundSlotCount == 0;
 			evictTransientCaches();
 		}
 	}
