@@ -22,7 +22,18 @@ interface NativeLmdbQuerySource { long idOf(Value v); Value lazyValue(long id);
  default LmdbNativeValueCodec nativeValueCodec(){return null;} }
 final class GenericSubplanDescriptor {}
 final class LmdbNativeExpressionCompiler {static final AtomicLong LAZY_VALUE_CALLS=new AtomicLong();}
-final class LmdbNativeValueCodec {record DecodedValue(Value value,boolean error) {} static Value toValue(DecodedValue v){return v==null||v.error()?null:v.value();} }
+final class LmdbNativeValueCodec {
+ record DecodedValue(Value value,boolean error,String text) {
+  DecodedValue(Value v,boolean e){this(v,e,null);}
+  static DecodedValue string(String s){return new DecodedValue(null,false,s);}
+  String label(){return text!=null?text:((org.eclipse.rdf4j.model.Literal)value).getLabel();}
+  boolean plainStringLiteral(){return !error&&(text!=null||value instanceof org.eclipse.rdf4j.model.Literal l
+   &&l.getLanguage().isEmpty()&&l.getBaseDirection()==org.eclipse.rdf4j.model.Literal.BaseDirection.NONE
+   &&l.getDatatype().stringValue().equals("http://www.w3.org/2001/XMLSchema#string"));}
+ }
+ static Value toValue(DecodedValue v){return v==null||v.error()?null:v.text()!=null
+   ?org.eclipse.rdf4j.model.impl.SimpleValueFactory.getInstance().createLiteral(v.text()):v.value();}
+}
 final class NativeSlotLayout { final String[] names; NativeSlotLayout(String... names){this.names=names;} String slotName(int slot){return names[slot];} }
 interface SlotPlan {long producedMask();}
 final class ExtensionPlan implements SlotPlan { final SlotPlan arg; final CopyBinding[] copies;

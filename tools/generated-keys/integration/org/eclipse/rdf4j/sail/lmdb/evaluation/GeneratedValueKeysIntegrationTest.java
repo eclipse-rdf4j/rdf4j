@@ -178,4 +178,43 @@ public class GeneratedValueKeysIntegrationTest {
             }
 		}
 	}
+	@Test
+	void compactStringIngressAgreesWithTheActualModel() {
+		NativeLmdbQuerySource forbidden = (NativeLmdbQuerySource) Proxy.newProxyInstance(
+				NativeLmdbQuerySource.class.getClassLoader(), new Class<?>[] { NativeLmdbQuerySource.class },
+				(proxy, method, args) -> {
+					if (method.getName().equals("hasCanonicalIds")) return true;
+					throw new AssertionError("Unexpected dictionary operation: " + method);
+				});
+		var vf = SimpleValueFactory.getInstance();
+		try (var context = new NativeExecutionContext();
+				var keys = new NativeGeneratedKeyAuthority(new LmdbNativeTermAuthority(forbidden, PlanValueCatalog.EMPTY, context), context)) {
+			for (String label : List.of("", "Aa", "BB", "a generated string", "\u03bb\ud83d\ude00", "\u0000")) {
+				long original = keys.internString(label);
+				assertEquals(original, keys.intern(vf.createLiteral(label)));
+				assertEquals(vf.createLiteral(label), keys.valueOf(original));
+				assertTrue(context.isUnresolvedKey(original));
+				assertEquals(original, keys.canonicalTermKey(original));
+			}
+			long upper = keys.intern(vf.createLiteral("original spelling", "EN"));
+			long lower = keys.intern(vf.createLiteral("original spelling", "en"));
+			assertEquals(keys.canonicalTermKey(upper), keys.canonicalTermKey(lower));
+			assertEquals("EN", ((Literal) keys.valueOf(upper)).getLanguage().orElseThrow());
+			assertEquals("en", ((Literal) keys.valueOf(lower)).getLanguage().orElseThrow());
+			assertTrue(LmdbNativeValueCodec.fromValue(vf.createLiteral("text")).plainStringLiteral());
+			assertFalse(LmdbNativeValueCodec.fromValue(vf.createLiteral("text", "en")).plainStringLiteral());
+			assertFalse(LmdbNativeValueCodec.fromValue(vf.createLiteral("text", "en", Literal.BaseDirection.RTL)).plainStringLiteral());
+			assertFalse(LmdbNativeValueCodec.fromValue(vf.createLiteral(42)).plainStringLiteral());
+			assertFalse(LmdbNativeValueCodec.fromValue(vf.createIRI(EX, "iri")).plainStringLiteral());
+		}
+	}
+
+	@Test
+	void runtimeAdmissionFailureMustNotBeFoldedIntoAnUnboundKey() {
+		set(NativeRuntimeValueTable.MAX_BYTES_PROPERTY, "4096");
+		assertThrows(org.eclipse.rdf4j.query.QueryEvaluationException.class,
+				() -> rows("SELECT ?k (COUNT(*) AS ?c) WHERE { ?s ex:label ?v BIND(LCASE(?v) AS ?k) } GROUP BY ?k",
+						Mode.LOCAL_NATIVE), "Resource refusal must fail the evaluation, not drop keys or return partial groups");
+	}
+
 }

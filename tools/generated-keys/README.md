@@ -1,3 +1,18 @@
+# Compact generated terminal keys — latest revision
+
+Read **OPTIMIZATION_REPORT.md** first for the current implementation, measurements, admission limits and integration status. The older REPORT.md below describes the preceding implementation; its per-value maps and benchmark numbers are no longer current.
+
+```bash
+export JAVA_HOME=/path/to/jdk-26
+python3 tools/generated-keys/run.py --out /tmp/generated-keys-tests
+python3 tools/generated-keys/compare.py --baseline /path/to/extracted/generated-value-keys-source \
+  --out /tmp/generated-keys-comparison --forks 5 --bench --memory --c2
+```
+
+The new runtime-value budget is `rdf4j.lmdb.runtimeValues.maxBytes`. It is an admission estimate, not a full heap/RSS limit. Runtime payload spilling is not implemented. Both complete-source and production-only patches apply to the preceding generated-value-keys-source.zip; choose one patch. The cumulative patch targets the original judges' tree.
+
+---
+
 # Generated terminal keys
 
 This directory contains offline tests, a direct key-path microbenchmark, and separate full-repository integration tests for dictionary-free generated DISTINCT/GROUP BY keys. Production code is under `java/` in the source root.
