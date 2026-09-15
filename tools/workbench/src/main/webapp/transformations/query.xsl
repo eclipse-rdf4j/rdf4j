@@ -145,6 +145,60 @@
                                     Timed
                                 </option>
                             </select>
+                            <span id="explanation-settings" class="query-explanation-settings">
+                                <button id="explanation-settings-toggle"
+                                        class="query-explanation-settings__toggle" type="button"
+                                        aria-controls="explanation-settings-panel" aria-expanded="false">
+                                    Config
+                                </button>
+                                <div id="explanation-settings-panel"
+                                     class="query-explanation-settings__panel" role="group"
+                                     aria-label="Explanation display settings" hidden="hidden">
+                                    <div class="query-explanation-settings__section">
+                                        <div class="query-explanation-settings__header">
+                                            <strong>Highlighting</strong>
+                                        </div>
+                                        <div class="query-explanation-settings__highlighting">
+                                            <span id="explanation-highlight-mode"
+                                                  class="query-explanation-highlight-mode" role="radiogroup"
+                                                  aria-label="Text explanation highlighting" aria-hidden="false">
+                                                <input id="explanation-highlight-syntax"
+                                                       name="explanation-highlight-mode" type="radio"
+                                                       value="syntax" checked="checked"/>
+                                                <label for="explanation-highlight-syntax">Normal</label>
+                                                <input id="explanation-highlight-hotspot"
+                                                       name="explanation-highlight-mode" type="radio"
+                                                       value="hotspot"/>
+                                                <label for="explanation-highlight-hotspot">Heatmap</label>
+                                            </span>
+                                            <span id="explanation-hotspot-legend"
+                                                  class="query-explanation-hotspot-legend"
+                                                  aria-live="polite"></span>
+                                        </div>
+                                    </div>
+                                    <div id="explanation-property-config"
+                                         class="query-explanation-property-config query-explanation-settings__section">
+                                        <div class="query-explanation-property-config__header">
+                                            <span class="query-explanation-property-config__title">
+                                                <strong>Visible properties</strong>
+                                                <span id="explanation-property-count"
+                                                      class="query-explanation-property-config__count"
+                                                      aria-live="polite"></span>
+                                            </span>
+                                            <span class="query-explanation-property-config__actions">
+                                                <button id="explanation-properties-all" type="button">All</button>
+                                                <button id="explanation-properties-none" type="button">None</button>
+                                            </span>
+                                        </div>
+                                        <div id="explanation-property-options"
+                                             class="query-explanation-property-config__options"
+                                             role="group" aria-label="Visible query plan properties"></div>
+                                        <p class="query-explanation-property-config__hint">
+                                            Plan structure always remains visible.
+                                        </p>
+                                    </div>
+                                </div>
+                            </span>
                         </span>
                         <span id="primary-explain-repeat-controls" class="query-form__field--controls-group">
                             <input id="rerun-explanation" type="button"
@@ -440,6 +494,7 @@
         <script src="../../scripts/viz/viz.js" type="text/javascript"></script>
         <script src="../../scripts/viz/full.render.js" type="text/javascript"></script>
         <script src="../../scripts/svg-pan-zoom.min.js" type="text/javascript"></script>
+        <script src="../../scripts/queryExplanationHighlighter.js" type="text/javascript"></script>
         <script src="../../scripts/query.js" type="text/javascript"></script>
 
     </xsl:template>
