@@ -113,7 +113,7 @@ final class PackedLongVector {
 		if (count < 0) {
 			throw new IllegalArgumentException("vector size must not be negative: " + count);
 		}
-		int blockCount = (count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+		int blockCount = (int) (((long) count + BLOCK_SIZE - 1) / BLOCK_SIZE);
 		int directoryBytes = Math.multiplyExact(blockCount + 1, Integer.BYTES);
 		boolean indexed = searchIndexed(hint, blockCount);
 		boolean prefixIndexed = prefixIndexed(hint, blockCount);
@@ -140,7 +140,10 @@ final class PackedLongVector {
 			throw new IllegalArgumentException("native vector address must not be zero");
 		}
 		int count = values.size();
-		int blockCount = (count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+		if (count < 0) {
+			throw new IllegalArgumentException("vector size must not be negative: " + count);
+		}
+		int blockCount = (int) (((long) count + BLOCK_SIZE - 1) / BLOCK_SIZE);
 		int directoryBytes = Math.multiplyExact(blockCount + 1, Integer.BYTES);
 		boolean indexed = searchIndexed(hint, blockCount);
 		boolean prefixIndexed = prefixIndexed(hint, blockCount);
@@ -150,7 +153,15 @@ final class PackedLongVector {
 		int prefixBytes = prefixIndexed ? prefixMetadataBytes(blockCount) : 0;
 		int blockAt = Math.addExact(Math.addExact(Math.addExact(HEADER_BYTES, directoryBytes), radixBytes),
 				prefixBytes);
-		UnsafeAccess.clear(address, byteLength);
+		if (byteLength < blockAt) {
+			throw new IllegalArgumentException("native vector is shorter than its header and directory");
+		}
+		// Headers, directory and word-packed payloads are assigned, never ORed into old memory.
+		// Only optional metadata can contain holes or alignment padding; do not clear the payload twice
+		// when the vector is emitted into an already-zeroed page.
+		if (radixBytes + prefixBytes != 0) {
+			UnsafeAccess.clear(address + HEADER_BYTES + directoryBytes, radixBytes + prefixBytes);
+		}
 		UnsafeAccess.putIntLE(address, count);
 		int storedBlockCount = indexed ? encodeStoredBlockCount(blockCount, radixBits) : blockCount;
 		if (prefixIndexed) {
@@ -169,6 +180,10 @@ final class PackedLongVector {
 			int blockLength = Math.min(BLOCK_SIZE, count - block * BLOCK_SIZE);
 			fillBlock(values, scratch.block, blockLength);
 			planBlock(scratch.block, blockLength, hint, scratch);
+			int nextBlockAt = Math.addExact(blockAt, scratch.encodedBytes);
+			if (nextBlockAt > byteLength) {
+				throw new IllegalStateException("native vector block exceeds measured length: " + byteLength);
+			}
 			if (indexed) {
 				writeSearchRadixNative(radixBase + (long) block * radixStride, scratch.block, scratch, radixBits);
 			}
@@ -180,7 +195,7 @@ final class PackedLongVector {
 				}
 			}
 			writeBlockNative(address + blockAt, scratch.block, scratch);
-			blockAt = Math.addExact(blockAt, scratch.encodedBytes);
+			blockAt = nextBlockAt;
 		}
 		UnsafeAccess.putIntLE(address + HEADER_BYTES + (long) blockCount * Integer.BYTES, blockAt);
 		if (blockAt != byteLength) {
@@ -193,7 +208,7 @@ final class PackedLongVector {
 		if (from < 0 || count < 0 || from > values.length - count) {
 			throw new IllegalArgumentException("invalid vector range");
 		}
-		int blockCount = (count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+		int blockCount = (int) (((long) count + BLOCK_SIZE - 1) / BLOCK_SIZE);
 		if (blockCount == 0) {
 			byte[] empty = new byte[HEADER_BYTES + Integer.BYTES];
 			LeBytes.putInt(empty, 0, 0);
@@ -1314,36 +1329,9 @@ final class PackedLongVector {
 		target[at + 1] = (byte) plan.width;
 		LeBytes.putShort(target, at + 2, plan.count);
 		LeBytes.putLong(target, at + 4, plan.base);
-		int payloadAt = at + BLOCK_HEADER_BYTES;
-		if (plan.lanes == 0 || plan.width == 0) {
-			return;
-		}
-		switch (plan.mode) {
-		case MODE_FOR_RAW:
-			for (int i = 0; i < plan.count; i++) {
-				writeBits(target, payloadAt, (long) i * plan.width, plan.width, values[from + i] - plan.base);
-			}
-			break;
-		case MODE_FOR_TYPED_PAYLOAD:
-			for (int i = 0; i < plan.count; i++) {
-				writeBits(target, payloadAt, (long) i * plan.width, plan.width,
-						(values[from + i] >>> 7) - plan.base);
-			}
-			break;
-		case MODE_DELTA_RAW:
-			for (int i = 1; i < plan.count; i++) {
-				writeBits(target, payloadAt, (long) (i - 1) * plan.width, plan.width,
-						values[from + i] - values[from + i - 1]);
-			}
-			break;
-		case MODE_DELTA_TYPED_PAYLOAD:
-			for (int i = 1; i < plan.count; i++) {
-				writeBits(target, payloadAt, (long) (i - 1) * plan.width, plan.width,
-						(values[from + i] >>> 7) - (values[from + i - 1] >>> 7));
-			}
-			break;
-		default:
-			throw new IllegalStateException("unknown packed-vector mode: " + plan.mode);
+		if (plan.lanes != 0 && plan.width != 0) {
+			packBlock(target, at + BLOCK_HEADER_BYTES, values, from, plan.count, plan.mode, plan.width,
+					plan.base);
 		}
 	}
 
@@ -1352,34 +1340,8 @@ final class PackedLongVector {
 		UnsafeAccess.putByte(address + 1, (byte) plan.width);
 		UnsafeAccess.putShortLE(address + 2, (short) plan.count);
 		UnsafeAccess.putLongLE(address + 4, plan.base);
-		long payload = address + BLOCK_HEADER_BYTES;
-		if (plan.lanes == 0 || plan.width == 0) {
-			return;
-		}
-		switch (plan.mode) {
-		case MODE_FOR_RAW:
-			for (int i = 0; i < plan.count; i++) {
-				writeBits(payload, (long) i * plan.width, plan.width, values[i] - plan.base);
-			}
-			break;
-		case MODE_FOR_TYPED_PAYLOAD:
-			for (int i = 0; i < plan.count; i++) {
-				writeBits(payload, (long) i * plan.width, plan.width, (values[i] >>> 7) - plan.base);
-			}
-			break;
-		case MODE_DELTA_RAW:
-			for (int i = 1; i < plan.count; i++) {
-				writeBits(payload, (long) (i - 1) * plan.width, plan.width, values[i] - values[i - 1]);
-			}
-			break;
-		case MODE_DELTA_TYPED_PAYLOAD:
-			for (int i = 1; i < plan.count; i++) {
-				writeBits(payload, (long) (i - 1) * plan.width, plan.width,
-						(values[i] >>> 7) - (values[i - 1] >>> 7));
-			}
-			break;
-		default:
-			throw new IllegalStateException("unknown packed-vector mode: " + plan.mode);
+		if (plan.lanes != 0 && plan.width != 0) {
+			packBlock(address + BLOCK_HEADER_BYTES, values, plan.count, plan.mode, plan.width, plan.base);
 		}
 	}
 
@@ -1406,43 +1368,70 @@ final class PackedLongVector {
 		return Math.toIntExact((bits + 7) >>> 3);
 	}
 
-	private static void writeBits(byte[] target, int payloadAt, long bitOffset, int width, long value) {
-		if (width == 0) {
-			return;
+	/**
+	 * Emit each complete little-endian word once. The final store is byte-bounded: an encoded block owns no writable
+	 * padding and can end at the allocation boundary. Input is never modified.
+	 */
+	private static void packBlock(byte[] target, int at, long[] values, int from, int count, int mode, int width,
+			long base) {
+		boolean delta = (mode & MODE_DELTA_RAW) != 0;
+		int shift = (mode & MODE_FOR_TYPED_PAYLOAD) == 0 ? 0 : 7;
+		int start = delta ? 1 : 0;
+		long word = 0;
+		int used = 0;
+		for (int i = start; i < count; i++) {
+			long current = values[from + i] >>> shift;
+			long residual = current - base;
+			if (delta) {
+				base = current;
+			}
+			word |= residual << used;
+			int next = used + width;
+			if (next >= Long.SIZE) {
+				LeBytes.putLong(target, at, word);
+				at += Long.BYTES;
+				// Java masks a shift by 64 to zero; a boundary-aligned lane has no carry.
+				word = next == Long.SIZE ? 0 : residual >>> (Long.SIZE - used);
+				next -= Long.SIZE;
+			}
+			used = next;
 		}
-		int remaining = width;
-		long at = bitOffset;
-		long v = value;
-		while (remaining > 0) {
-			int byteIndex = Math.toIntExact(at >>> 3);
-			int within = (int) (at & 7);
-			int take = Math.min(remaining, 8 - within);
-			int mask = (1 << take) - 1;
-			int bits = (int) v & mask;
-			target[payloadAt + byteIndex] |= (byte) (bits << within);
-			v >>>= take;
-			remaining -= take;
-			at += take;
+		for (int remaining = used; remaining > 0; remaining -= Byte.SIZE) {
+			target[at++] = (byte) word;
+			word >>>= Byte.SIZE;
 		}
 	}
 
-	private static void writeBits(long payloadAddress, long bitOffset, int width, long value) {
-		if (width == 0) {
-			return;
+	/**
+	 * Emit each complete little-endian word once. The final store is byte-bounded: an encoded block owns no writable
+	 * padding and can end at the allocation boundary. Input is never modified.
+	 */
+	private static void packBlock(long address, long[] values, int count, int mode, int width, long base) {
+		boolean delta = (mode & MODE_DELTA_RAW) != 0;
+		int shift = (mode & MODE_FOR_TYPED_PAYLOAD) == 0 ? 0 : 7;
+		int start = delta ? 1 : 0;
+		long word = 0;
+		int used = 0;
+		for (int i = start; i < count; i++) {
+			long current = values[i] >>> shift;
+			long residual = current - base;
+			if (delta) {
+				base = current;
+			}
+			word |= residual << used;
+			int next = used + width;
+			if (next >= Long.SIZE) {
+				UnsafeAccess.putLongLE(address, word);
+				address += Long.BYTES;
+				// Java masks a shift by 64 to zero; a boundary-aligned lane has no carry.
+				word = next == Long.SIZE ? 0 : residual >>> (Long.SIZE - used);
+				next -= Long.SIZE;
+			}
+			used = next;
 		}
-		int remaining = width;
-		long at = bitOffset;
-		long v = value;
-		while (remaining > 0) {
-			long address = payloadAddress + (at >>> 3);
-			int within = (int) (at & 7);
-			int take = Math.min(remaining, 8 - within);
-			int mask = (1 << take) - 1;
-			int bits = (int) v & mask;
-			UnsafeAccess.putByte(address, (byte) (UnsafeAccess.getUnsignedByte(address) | bits << within));
-			v >>>= take;
-			remaining -= take;
-			at += take;
+		for (int remaining = used; remaining > 0; remaining -= Byte.SIZE) {
+			UnsafeAccess.putByte(address++, (byte) word);
+			word >>>= Byte.SIZE;
 		}
 	}
 
@@ -1820,6 +1809,17 @@ final class PackedLongVector {
 		if (width == 0) {
 			return 0;
 		}
+		int byteAt = payloadAt + Math.toIntExact(bitOffset >>> 3);
+		if (byteAt <= source.length - Long.BYTES) {
+			int within = (int) bitOffset & 7;
+			long value = LeBytes.getLong(source, byteAt) >>> within;
+			if (within + width > Long.SIZE) {
+				value |= (source[byteAt + Long.BYTES] & 0xffL) << (Long.SIZE - within);
+			}
+			return value & (-1L >>> -width);
+		}
+		// Heap vectors have no readable tail padding. Decode the last partial word exactly.
+
 		int remaining = width;
 		long at = bitOffset;
 		int shift = 0;
