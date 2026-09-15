@@ -56,6 +56,27 @@ public class TripleStoreAutoGrowTest {
 	}
 
 	@Test
+	public void testPageEstimatorAcrossAutoGrowth() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(1, 7, 11, 3, true);
+		tripleStore.commit();
+		assertEquals(1.0, tripleStore.cardinality(-1, 7, -1, -1));
+		long initialSize = new File(dataDir, "data.mdb").length();
+
+		for (int batch = 0; batch < 4; batch++) {
+			// Every batch begins with a live estimator mapping from the previous cardinality call.
+			tripleStore.startTransaction();
+			for (int item = 0; item < 10_000; item++) {
+				tripleStore.storeTriple(2L + batch * 10_000 + item, 7, 11, 3, true);
+			}
+			tripleStore.commit();
+			assertEquals(1.0 + (batch + 1) * 10_000, tripleStore.cardinality(-1, 7, -1, -1));
+			assertEquals(1.0, tripleStore.cardinality(2L + batch * 10_000, 7, -1, -1));
+		}
+		assertTrue(new File(dataDir, "data.mdb").length() > initialSize);
+	}
+
+	@Test
 	public void testAutoGrowLargeCommits() throws Exception {
 		Random rnd = new Random(1337);
 

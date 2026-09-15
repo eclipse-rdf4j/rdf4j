@@ -52,7 +52,6 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
-import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.Closeable;
 import java.io.File;
@@ -725,34 +724,35 @@ class TripleStore implements Closeable {
 
 		// Query optimization already holds the dataset's read transaction.
 		return txnManager.doWithPriority((stack, txn) -> {
-			long txnId = mdb_txn_id(txn);
-			if (bindingMask == 0) {
-				double exact = (double) estimator.totalEntries(txnId, explicitDbName)
-						+ estimator.totalEntries(txnId, inferredDbName);
-				return CardinalityEstimate.exact(exact);
+			try (LmdbPageCardinalityEstimator.ReadView view = estimator.readTransaction(txn)) {
+				if (bindingMask == 0) {
+					double exact = (double) view.totalEntries(explicitDbName)
+							+ view.totalEntries(inferredDbName);
+					return CardinalityEstimate.exact(exact);
+				}
+
+				ByteBuffer minKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				index.getMinKey(minKeyBuffer, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
+						indexShape.rangeObject(obj), indexShape.rangeContext(context));
+				minKeyBuffer.flip();
+				byte[] minKey = toArray(minKeyBuffer);
+
+				ByteBuffer maxKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				index.getMaxKey(maxKeyBuffer, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
+						indexShape.rangeObject(obj), indexShape.rangeContext(context));
+				maxKeyBuffer.flip();
+				byte[] maxKey = toArray(maxKeyBuffer);
+
+				GroupMatcher matcher = indexShape.residualFieldCount() == 0 ? null
+						: index.createMatcher(subj, pred, obj, context);
+				LmdbPageCardinalityEstimator.Estimate explicit = view.estimateEntriesWithQuality(
+						explicitDbName, minKey, minKey.length, maxKey, maxKey.length, matcher,
+						indexShape.residualFieldCount());
+				LmdbPageCardinalityEstimator.Estimate inferred = view.estimateEntriesWithQuality(
+						inferredDbName, minKey, minKey.length, maxKey, maxKey.length, matcher,
+						indexShape.residualFieldCount());
+				return LmdbPageCardinalityEstimator.combineDatabaseEstimates(explicit, inferred);
 			}
-
-			ByteBuffer minKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			index.getMinKey(minKeyBuffer, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
-					indexShape.rangeObject(obj), indexShape.rangeContext(context));
-			minKeyBuffer.flip();
-			byte[] minKey = toArray(minKeyBuffer);
-
-			ByteBuffer maxKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			index.getMaxKey(maxKeyBuffer, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
-					indexShape.rangeObject(obj), indexShape.rangeContext(context));
-			maxKeyBuffer.flip();
-			byte[] maxKey = toArray(maxKeyBuffer);
-
-			GroupMatcher matcher = indexShape.residualFieldCount() == 0 ? null
-					: index.createMatcher(subj, pred, obj, context);
-			LmdbPageCardinalityEstimator.Estimate explicit = estimator.estimateEntriesWithQuality(txnId,
-					explicitDbName, minKey, minKey.length, maxKey, maxKey.length, matcher,
-					indexShape.residualFieldCount());
-			LmdbPageCardinalityEstimator.Estimate inferred = estimator.estimateEntriesWithQuality(txnId,
-					inferredDbName, minKey, minKey.length, maxKey, maxKey.length, matcher,
-					indexShape.residualFieldCount());
-			return LmdbPageCardinalityEstimator.combineDatabaseEstimates(explicit, inferred);
 		});
 	}
 
