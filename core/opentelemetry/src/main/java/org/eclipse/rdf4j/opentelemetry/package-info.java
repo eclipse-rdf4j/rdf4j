@@ -30,5 +30,13 @@
  * (one-line opt-in for any {@link org.eclipse.rdf4j.repository.Repository}) or by directly wrapping a
  * {@link org.eclipse.rdf4j.repository.Repository} in a
  * {@link org.eclipse.rdf4j.opentelemetry.repository.TracingRepository}.
+ *
+ * @apiNote This feature is experimental: its existence, signature or behavior may change without warning from one
+ *          release to the next.
  */
+
+@Experimental
+
 package org.eclipse.rdf4j.opentelemetry;
+
+import org.eclipse.rdf4j.common.annotation.Experimental;

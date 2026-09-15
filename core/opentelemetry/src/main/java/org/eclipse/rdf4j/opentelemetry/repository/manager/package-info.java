@@ -19,5 +19,13 @@
  * Because {@code RepositoryManager.getRepository(String)} caches its result by id and only ever calls
  * {@code createRepository(String)} once per id, wrapping there instruments every repository the manager serves exactly
  * once, regardless of which application (RDF4J Server, Workbench, a custom embedder, ...) is using the manager.
+ *
+ * @apiNote This feature is experimental: its existence, signature or behavior may change without warning from one
+ *          release to the next.
  */
+
+@Experimental
+
 package org.eclipse.rdf4j.opentelemetry.repository.manager;
+
+import org.eclipse.rdf4j.common.annotation.Experimental;

@@ -24,5 +24,13 @@
  * does not expose a seam for the {@code .http} package's session-level instrumentation.
  * <p>
  * See {@link org.eclipse.rdf4j.opentelemetry.OpenTelemetrySupport} for the one-line opt-in entry point.
+ *
+ * @apiNote This feature is experimental: its existence, signature or behavior may change without warning from one
+ *          release to the next.
  */
+
+@Experimental
+
 package org.eclipse.rdf4j.opentelemetry.repository;
+
+import org.eclipse.rdf4j.common.annotation.Experimental;
