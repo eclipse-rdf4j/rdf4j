@@ -1381,7 +1381,7 @@ class TripleStore implements Closeable {
 				return;
 			}
 
-			ChunkUpdater updater = new ChunkUpdater(stack.malloc(TripleIndex.MAX_KEY_LENGTH));
+			ChunkUpdater updater = new ChunkUpdater(stack);
 			char[] currentFieldSeq = mainIndex.getFieldSeq();
 			for (int i = 1; i < indexes.size(); i++) {
 				TripleIndex index = indexes.get(i);
@@ -1415,7 +1415,7 @@ class TripleStore implements Closeable {
 								valueBuf, mergedBuf);
 					}
 					if (shouldFallBackFromAlignedWrite()) {
-						updater.flush(secondaryWriteCursor, keyVal, dataVal, mergedBuf);
+						updater.flush(secondaryWriteCursor,4 - index.getIndexSplitPosition(), keyVal, dataVal);
 						fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
 								promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
 								addedIndexConsumer);
@@ -1424,7 +1424,7 @@ class TripleStore implements Closeable {
 					// System.out.println("Adding triple to index " + index + ": " + subj[statementIndex] + ", " +
 					// pred[statementIndex] + ", " + obj[statementIndex] + ", " + context[statementIndex]);
 					int rc = updater.add(secondaryWriteCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal,
-							valueBuf, mergedBuf);
+							valueBuf);
 					if (rc == MDB_MAP_FULL && autoGrow) {
 						fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
 								promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
@@ -1433,7 +1433,7 @@ class TripleStore implements Closeable {
 					}
 					E(rc);
 				}
-				updater.flush(secondaryWriteCursor, keyVal, dataVal, mergedBuf);
+				updater.flush(secondaryWriteCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal);
 
 				if (secondaryDeleteCursor != 0) {
 					mdb_cursor_close(secondaryDeleteCursor);

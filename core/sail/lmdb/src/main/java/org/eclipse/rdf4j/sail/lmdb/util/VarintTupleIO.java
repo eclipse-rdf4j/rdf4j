@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.lmdb.util;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.sail.lmdb.Varint;
@@ -61,6 +62,11 @@ public final class VarintTupleIO {
 		}
 
 		public void resetDeltaEncoding() {
+			this.deltaEncodeNextTuple = false;
+		}
+
+		public void reset() {
+			this.lastTuplePosition = out.position();
 			this.deltaEncodeNextTuple = false;
 		}
 

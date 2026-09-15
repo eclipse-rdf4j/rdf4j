@@ -18,27 +18,41 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.TreeSet;
 
 import org.eclipse.rdf4j.sail.lmdb.util.VarintTupleIO;
+import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.util.lmdb.MDBEnvInfo;
 import org.lwjgl.util.lmdb.MDBVal;
 
 public final class ChunkUpdater {
-
 	final ByteBuffer targetKey;
 	ByteBuffer existingBuffer;
-	VarintTupleIO existing;
-	VarintTupleIO.Encoder encoder;
-	final List<Integer> splitPositions = new ArrayList<>();
-	int currentChunkSize = 0;
 	static final int maxChunkSize = 511 - TripleIndex.MAX_KEY_LENGTH;
 
-	ChunkUpdater(ByteBuffer targetKey) {
-		this.targetKey = targetKey;
+	ByteBuffer targetBuffer, tupleBuffer;
+
+	boolean sortedInsertion = false;
+
+	record Tuple (int offset, int length) {}
+
+	final TreeSet<Tuple> newTuples = new TreeSet<>((a, b) -> compareRegion(tupleBuffer, a.offset, tupleBuffer, b.offset, Math.min(a.length, b.length)));
+
+	VarintTupleIO chunkInput;
+
+	ChunkUpdater(MemoryStack stack) {
+		this.targetKey = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+		this.targetBuffer = stack.malloc(512);
+		this.tupleBuffer = stack.malloc(4096);
 	}
 
-	int add(long cursor, int elements, MDBVal keyVal, MDBVal dataVal, ByteBuffer newValueBuf, ByteBuffer target)
+	int add(long cursor, int elements, MDBVal keyVal, MDBVal dataVal, ByteBuffer newValueBuf)
 			throws IOException {
+		if (tupleBuffer.position() + newValueBuf.remaining() > tupleBuffer.capacity()) {
+			flush(cursor, elements, keyVal, dataVal);
+		}
+
 		final var keyBuffer = keyVal.mv_data();
 
 		int rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET));
@@ -52,8 +66,7 @@ public final class ChunkUpdater {
 				if (compareRegion(newValueBuf, 0, buffer, 0,
 						Math.min(newValueBuf.remaining(), buffer.remaining())) == 0) {
 					// The new value is equal to the first duplicate value >= newValueBuf. The tuple already exists in
-					// this
-					// chunk.
+					// this chunk.
 					return MDB_KEYEXIST;
 				}
 				// The new value is smaller than the first duplicate value >= newValueBuf. Step back to the previous
@@ -72,11 +85,12 @@ public final class ChunkUpdater {
 		}
 
 		var dataBuffer = dataVal.mv_data();
-		if (merge && dataBuffer.limit() < maxChunkSize) {
+		if (merge) {
 			if (existingBuffer != null && MemoryUtil.memAddress(existingBuffer) != MemoryUtil.memAddress(dataBuffer) ||
-					existingBuffer == null && encoder != null) {
-				flush(cursor, keyVal, dataVal, target);
+				existingBuffer == null && !newTuples.isEmpty()) {
+				flush(cursor, elements, keyVal, dataVal);
 
+				// position cursor at the first duplicate value for this key that is <= newValueBuf.
 				dataVal.mv_data(newValueBuf);
 				rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_GET_BOTH_RANGE));
 				if (rc == MDB_SUCCESS) {
@@ -96,94 +110,115 @@ public final class ChunkUpdater {
 			if (targetKey.position() == 0) {
 				targetKey.put(keyBuffer);
 			}
-
-			if (existingBuffer == null) {
-				// We are positioned at the first duplicate value < newValueBuf.
-				// Find the correct insertion point for newValueBuf in the selected chunk, and check if it already
-				// exists.
-				var tupleInput = new VarintTupleIO(elements, dataBuffer);
-
-				int diff = tupleInput.seek(newValueBuf);
-				if (diff == 0) {
-					return MDB_KEYEXIST;
-				}
-
-				existingBuffer = tupleInput.getBuffer();
-				existing = tupleInput;
-
-				// Copy the already-consumed prefix of the selected chunk, then insert newValueBuf, then
-				// continue copying tuples from the selected chunk until the first output chunk is full.
-				target.clear();
-				encoder = existing.createEncoder(target);
-				currentChunkSize = target.position();
-			} else {
-				while (existing.hasNext()) {
-					int diff = existing.compareTuple(newValueBuf);
-					if (diff == 0) {
-						return MDB_KEYEXIST;
-					} else if (diff > 0) {
-						break;
-					}
-
-					int pos = target.position();
-					if (currentChunkSize >= maxChunkSize) {
-						splitPositions.add(pos);
-						encoder.resetDeltaEncoding();
-						currentChunkSize = 0;
-					}
-					encoder.appendNextTuple(existing);
-					currentChunkSize += target.position() - pos;
-				}
-			}
 		} else {
 			if (targetKey.position() > 0) {
 				if (compareRegion(targetKey, 0, keyBuffer, 0, Math.min(targetKey.limit(), keyBuffer.limit())) != 0) {
-					flush(cursor, keyVal, dataVal, target);
+					flush(cursor, elements, keyVal, dataVal);
 					targetKey.put(keyBuffer);
 				}
 			} else {
 				targetKey.put(keyBuffer);
 			}
-			if (encoder == null) {
-				target.clear();
-				encoder = new VarintTupleIO(elements).createEncoder(target);
+		}
+
+		if (merge && existingBuffer == null) {
+			// We are positioned at the first duplicate value < newValueBuf.
+			// Find the correct insertion point for newValueBuf in the selected chunk, and check if it already
+			// exists.
+			var tupleInput = new VarintTupleIO(elements, dataBuffer);
+			int diff = tupleInput.seek(newValueBuf);
+			if (diff == 0) {
+				return MDB_KEYEXIST;
+			}
+
+			existingBuffer = dataBuffer;
+			chunkInput = tupleInput;
+		} else if (chunkInput != null) {
+			if (! sortedInsertion) {
+				existingBuffer.rewind();
+				chunkInput.setBuffer(existingBuffer);
+			} else {
+				while (chunkInput.hasNext()) {
+					int diff = chunkInput.compareTuple(newValueBuf);
+					if (diff == 0) {
+						return MDB_KEYEXIST;
+					} else if (diff > 0) {
+						break;
+					}
+					chunkInput.skipTuple();
+				}
 			}
 		}
 
-		int pos = target.position();
-		if (currentChunkSize >= maxChunkSize) {
-			splitPositions.add(pos);
-			encoder.resetDeltaEncoding();
-			currentChunkSize = 0;
+		int pos = tupleBuffer.position();
+		int length = newValueBuf.remaining();
+		tupleBuffer.put(newValueBuf);
+		if (!newTuples.add(new Tuple(pos, length))) {
+			return MDB_KEYEXIST;
 		}
-		encoder.append(newValueBuf);
-		currentChunkSize += target.position() - pos;
-
 		return MDB_SUCCESS;
 	}
 
-	public void flush(long cursor, MDBVal keyVal, MDBVal dataVal, ByteBuffer target) throws IOException {
-		if (encoder == null) {
+	public void flush(long cursor, int elements, MDBVal keyVal, MDBVal dataVal) throws IOException {
+		if (newTuples.isEmpty()) {
 			return;
 		}
 
-		int lastPos = target.position();
-
 		targetKey.flip();
-		if (existingBuffer != null) {
-			while (existing.hasNext()) {
-				int pos = target.position();
-				if (currentChunkSize >= maxChunkSize) {
-					splitPositions.add(pos);
-					encoder.resetDeltaEncoding();
-					currentChunkSize = 0;
-				}
-				encoder.appendNextTuple(existing);
-				currentChunkSize += target.position() - pos;
-			}
-			lastPos = target.position();
+		boolean hasExisting = existingBuffer != null;
+		if (hasExisting) {
+			existingBuffer.rewind();
+			chunkInput.setBuffer(existingBuffer);
+		}
+		targetBuffer.clear();
 
-			keyVal.mv_data(targetKey);
+		VarintTupleIO.Encoder encoder = chunkInput == null ? new VarintTupleIO(elements).createEncoder(targetBuffer) :
+			chunkInput.createEncoder(targetBuffer);
+		for (var tuple : newTuples) {
+			tupleBuffer.limit(tuple.offset + tuple.length);
+			tupleBuffer.position(tuple.offset);
+			System.out.println("storing: " + valueToString(tupleBuffer));
+			if (hasExisting) {
+				while (chunkInput.hasNext()) {
+					int diff = chunkInput.compareTuple(tupleBuffer);
+					if (diff < 0) {
+						encoder.appendNextTuple(chunkInput);
+						if (targetBuffer.position() > maxChunkSize) {
+							dataVal.mv_data(targetBuffer.flip());
+							E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+							targetBuffer.clear();
+							encoder.reset();
+						}
+					} else if (diff > 0) {
+						break;
+					}
+				}
+			}
+			encoder.append(tupleBuffer);
+			if (targetBuffer.position() > maxChunkSize) {
+				dataVal.mv_data(targetBuffer.flip());
+				E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+				targetBuffer.clear();
+				encoder.reset();
+			}
+		}
+
+		if (hasExisting) {
+			while (chunkInput.hasNext()) {
+				encoder.appendNextTuple(chunkInput);
+				if (targetBuffer.position() > maxChunkSize) {
+					dataVal.mv_data(targetBuffer.flip());
+					E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+					targetBuffer.clear();
+					encoder.reset();
+				}
+			}
+			if (targetBuffer.position() > 0) {
+				dataVal.mv_data(targetBuffer.flip());
+				E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+				targetBuffer.clear();
+				encoder.reset();
+			}
 
 			int rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET));
 			if (rc == MDB_SUCCESS) {
@@ -197,42 +232,24 @@ public final class ChunkUpdater {
 				// Replace the selected duplicate value with one or two newly encoded duplicate values.
 				E(mdb_cursor_del(cursor, 0));
 			} else {
-				// System.out.println("not found " + Varint.readUnsigned(targetKey, 0));
+				System.out.println("not found " + Varint.readUnsigned(targetKey, 0));
 			}
+			chunkInput.setBuffer(existingBuffer);
 		}
 
-		keyVal.mv_data(targetKey);
-		target.position(0);
-		for (var splitPos : splitPositions) {
-			target.limit(splitPos);
-			dataVal.mv_data(target);
-			E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
-			target.position(splitPos);
-		}
-
-		if (target.position() < lastPos) {
-			target.limit(lastPos);
-			dataVal.mv_data(target);
-			E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
-		}
-
-		// System.out.println(
-		// "Wrote (split=" + splitPositions + ") for key " + Varint.readUnsigned(targetKey, 0) + ": " +
-		// valueToString(target));
 		reset();
 	}
 
 	public void reset() {
 		targetKey.clear();
 		existingBuffer = null;
-		existing = null;
-		encoder = null;
-		splitPositions.clear();
-		currentChunkSize = 0;
+		newTuples.clear();
+		tupleBuffer.clear();
+		chunkInput = null;
 	}
 
 	String valueToString(ByteBuffer buffer) {
-		var values = new VarintTupleIO(3, buffer.duplicate().position(0));
+		var values = new VarintTupleIO(3, buffer.duplicate());
 		var sb = new StringBuilder();
 		while (values.hasNext()) {
 			values.next();

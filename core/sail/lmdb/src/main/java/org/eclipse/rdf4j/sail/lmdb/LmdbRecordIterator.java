@@ -114,7 +114,8 @@ class LmdbRecordIterator implements RecordIterator {
 	private final boolean keyELementsFixed;
 	private volatile boolean closed = false;
 	private boolean fetchNext = false;
-	private ByteBuffer chunkBuffer1, chunkBuffer2;
+	private VarintTupleIO.Encoder encoder;
+	private ByteBuffer chunkBuffer;
 
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
@@ -226,8 +227,18 @@ class LmdbRecordIterator implements RecordIterator {
 
 			boolean isDupValue = false;
 			if (fetchNext) {
-				state.valueInput.nextTuple();
+				if (encoder != null && !remove) {
+					state.valueInput.resetTuple();
+					encoder.appendNextTuple(state.valueInput);
+				} else {
+					state.valueInput.nextTuple();
+				}
 				if (!state.valueInput.hasNext()) {
+					try {
+						flush();
+					} catch (IOException e) {
+						throw new SailException(e);
+					}
 					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT_DUP);
 					if (lastResult != MDB_SUCCESS) {
 						// no more duplicates, move to next key
@@ -353,6 +364,11 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private void closeInternal(boolean maybeCalledAsync) {
 		if (!closed) {
+			try {
+				flush();
+			} catch (IOException e) {
+				throw new SailException(e);
+			}
 			long writeStamp = 0L;
 			boolean writeLocked = false;
 			if (maybeCalledAsync && ownerThread != Thread.currentThread()) {
@@ -365,13 +381,9 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 			try {
 				if (!closed) {
-					if (chunkBuffer1 != null) {
-						MemoryUtil.memFree(chunkBuffer1);
-						chunkBuffer1 = null;
-						if (chunkBuffer2 != null) {
-							MemoryUtil.memFree(chunkBuffer2);
-							chunkBuffer2 = null;
-						}
+					if (chunkBuffer != null) {
+						MemoryUtil.memFree(chunkBuffer);
+						chunkBuffer = null;
 					}
 					state.txnRef.returnCursor(state.dbi, state.cursor);
 					state.cursor = 0;
@@ -386,39 +398,34 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 	}
 
+	private void flush() throws IOException {
+		if (encoder != null) {
+			while (state.valueInput.hasNext()) {
+				encoder.appendNextTuple(state.valueInput);
+			}
+			if (chunkBuffer.position() == 0) {
+				// no changes, skip flush
+				return;
+			}
+			E(mdb_cursor_del(state.cursor, 0));
+			state.valueData.mv_data(chunkBuffer.flip());
+			E(mdb_cursor_put(state.cursor, state.keyData, state.valueData, 0));
+			encoder = null;
+		}
+	}
+
+	boolean remove = false;
+
 	@Override
 	public void remove() throws IOException {
-		if (chunkBuffer1 == null) {
-			chunkBuffer1 = MemoryUtil.memAlloc(512);
-			chunkBuffer2 = MemoryUtil.memAlloc(512);
+		if (chunkBuffer == null) {
+			chunkBuffer = MemoryUtil.memAlloc(512);
 		}
-		state.valueInput.resetTuple();
 
-		// we need duplicate here because valueInput could use chunkBuffer if a previous value was removed
-		var targetBuffer = state.valueInput.getBuffer() == chunkBuffer1 ? chunkBuffer2 : chunkBuffer1;
-		targetBuffer.clear();
-		var encoder = state.valueInput.createEncoder(targetBuffer);
-		state.valueInput.skipTuple();
-		while (state.valueInput.hasNext()) {
-			encoder.appendNextTuple(state.valueInput);
-		}
-		E(mdb_cursor_del(state.cursor, 0));
-		targetBuffer.flip();
-		if (targetBuffer.limit() > 0) {
-			state.valueData.mv_data(targetBuffer);
-			E(mdb_cursor_put(state.cursor, state.keyData, state.valueData, 0));
-		}
-		state.valueInput.setBuffer(targetBuffer);
-
-		if (targetBuffer.limit() > 0) {
-			// position cursor on the next value, if any
-			state.minKeyBuf.clear();
-			state.minValueBuf.clear();
-			index.toEntry(state.minKeyBuf, state.minValueBuf, state.quad[0], state.quad[1], state.quad[2],
-					state.quad[3]);
-			state.minKeyBuf.flip();
-			state.minValueBuf.flip();
-			state.valueInput.seek(state.minValueBuf);
+		if (encoder == null) {
+			chunkBuffer.clear();
+			state.valueInput.resetTuple();
+			encoder = state.valueInput.createEncoder(chunkBuffer);
 		}
 	}
 
