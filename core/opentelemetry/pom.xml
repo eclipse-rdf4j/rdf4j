@@ -12,6 +12,11 @@
 		RepositoryManager wrappers, and outbound SPARQL Protocol HTTP requests.</description>
 	<dependencies>
 		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-params</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-http-client</artifactId>
 			<version>${project.version}</version>
