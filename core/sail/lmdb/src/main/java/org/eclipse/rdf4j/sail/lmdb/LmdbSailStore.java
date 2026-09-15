@@ -2460,7 +2460,7 @@ class LmdbSailStore implements SailStore {
 			}
 			sinkStoreAccessLock.lock();
 			try {
-				if (prepared != null && !storeTxnStarted.get()) {
+				if (prepared != null) {
 					startBackingTransaction(true, prepared);
 				} else {
 					startBackingTransaction(true);
@@ -2963,7 +2963,8 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 			synchronized (storeTxnStarted) {
-				if (storeTxnStarted.compareAndSet(false, true)) {
+				boolean started = storeTxnStarted.compareAndSet(false, true);
+				if (started) {
 					storeTxnOwner = transactionOwner;
 					storeTxnGeneration++;
 					if (storeTxnGeneration == 0L) {
@@ -3061,15 +3062,21 @@ class LmdbSailStore implements SailStore {
 						throw new SailException(e);
 					}
 				}
+				if (!started && prepared != null && freshValueSession != null && !freshValueSessionInvalidated) {
+					try {
+						reservePreparedImportCapacity(prepared);
+					} catch (IOException e) {
+						throw new SailException(e);
+					}
+				}
 				return storeTxnGeneration;
 			}
 		}
 
 		private void reservePreparedImportCapacity(PreparedStatementBatch prepared) throws IOException {
-			long valueBytes = PREPARED_VALUE_ESTIMATED_BYTES * prepared.values().length;
+			valueStore.reservePreparedValueCapacity(freshValueSession, prepared.values());
 			long indexBytes = (TripleIndex.MAX_KEY_LENGTH + PREPARED_INDEX_ENTRY_OVERHEAD)
 					* (tripleStore.secondaryIndexCount() + 1L) * prepared.size();
-			valueStore.reserveWriteCapacity(valueBytes);
 			tripleStore.reserveWriteCapacity(indexBytes);
 		}
 

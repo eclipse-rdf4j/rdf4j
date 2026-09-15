@@ -78,7 +78,7 @@ class LmdbAutogrowIsolationIT {
 	private static final int INITIAL_READER_ROWS = GROWING_TRANSACTION_ROWS;
 	private static final int OPEN_READER_ROWS = ROWS_PER_COMMIT;
 	private static final int VALUE_ONLY_ROWS = 512;
-	private static final int VALUE_ONLY_LITERAL_LENGTH = 8192;
+	private static final int VALUE_ONLY_LITERAL_LENGTH = 32768;
 
 	@TempDir
 	Path dataDir;
@@ -183,42 +183,49 @@ class LmdbAutogrowIsolationIT {
 	@Test
 	@Timeout(60)
 	void pinnedTripleReaderSurvivesValueMapGrowthWithoutTripleResize() throws Exception {
-		LmdbStore store = new LmdbStore(dataDir.toFile(), autoGrowConfigWithoutDirectAdjacency());
+		LmdbStore store = new LmdbStore(dataDir.toFile(), autoGrowConfigWithoutDirectAdjacency()
+				.setTripleDBSize(16L * 1024 * 1024));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 
 		try {
-			int initialRows = seed(repository, INITIAL_READER_ROWS);
-			Set<Statement> expectedStatements = expectedInitialStatements(INITIAL_READER_ROWS);
-			try (ResizeLogCapture resizeLogs = ResizeLogCapture.open();
-					SailDataset dataset = store.getBackingStore()
-							.getExplicitSailSource()
-							.dataset(IsolationLevels.SNAPSHOT);
-					CloseableIteration<? extends Statement> statements = dataset.getStatements(null, PREDICATE, null);
-					SailRepositoryConnection writer = repository.getConnection()) {
-				assertThat(statements.hasNext()).as("pinned reader must see initial rows before value growth")
-						.isTrue();
-				Set<Statement> seen = new HashSet<>();
-				assertKnownAndUnique(expectedStatements, seen, statements.next());
-
-				writer.begin(IsolationLevels.READ_COMMITTED);
-				addLargeValueRows(writer, 0, VALUE_ONLY_ROWS);
-				writer.commit();
-				assertThat(resizeLogs.valueResizeMessages())
-						.as("value map must resize while the pinned triple reader remains open")
-						.isNotEmpty();
-				assertThat(resizeLogs.tripleResizeMessages())
-						.as("value-only commit must not resize the triple map")
-						.isEmpty();
-
-				while (statements.hasNext()) {
+			try (ResizeLogCapture resizeLogs = ResizeLogCapture.open()) {
+				int initialRows = seed(repository, OPEN_READER_ROWS);
+				List<String> seedValueResizeMessages = resizeLogs.valueResizeMessages();
+				List<String> seedTripleResizeMessages = resizeLogs.tripleResizeMessages();
+				resizeLogs.clear();
+				Set<Statement> expectedStatements = expectedInitialStatements(OPEN_READER_ROWS);
+				try (SailDataset dataset = store.getBackingStore()
+						.getExplicitSailSource()
+						.dataset(IsolationLevels.SNAPSHOT);
+						CloseableIteration<? extends Statement> statements = dataset.getStatements(null, PREDICATE,
+								null);
+						SailRepositoryConnection writer = repository.getConnection()) {
+					assertThat(statements.hasNext()).as("pinned reader must see initial rows before value growth")
+							.isTrue();
+					Set<Statement> seen = new HashSet<>();
 					assertKnownAndUnique(expectedStatements, seen, statements.next());
+
+					writer.begin(IsolationLevels.READ_COMMITTED);
+					addLargeValueRows(writer, 0, VALUE_ONLY_ROWS);
+					writer.commit();
+					assertThat(resizeLogs.valueResizeMessages())
+							.as("value map must resize while the pinned triple reader remains open; seed=%s",
+									seedValueResizeMessages)
+							.isNotEmpty();
+					assertThat(resizeLogs.tripleResizeMessages())
+							.as("value-only commit must not resize the triple map")
+							.isEmpty();
+
+					while (statements.hasNext()) {
+						assertKnownAndUnique(expectedStatements, seen, statements.next());
+					}
+					assertThat(seen).as("value-only growth must preserve every pinned statement exactly")
+							.isEqualTo(expectedStatements);
+					assertThat(dataset.getStatementCount(null, PREDICATE, null))
+							.as("the pinned triple dataset remains usable after value-only growth")
+							.isEqualTo(initialRows);
 				}
-				assertThat(seen).as("value-only growth must preserve every pinned statement exactly")
-						.isEqualTo(expectedStatements);
-				assertThat(dataset.getStatementCount(null, PREDICATE, null))
-						.as("the pinned triple dataset remains usable after value-only growth")
-						.isEqualTo(initialRows);
 			}
 		} finally {
 			repository.shutDown();
@@ -684,6 +691,9 @@ class LmdbAutogrowIsolationIT {
 		return new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(256L * 1024)
 				.setValueDBSize(256L * 1024)
+				// Keep isolation tests on the incremental writer path; the prepared-import reservation is covered by
+				// LmdbAutogrowSingleCommitIT and would otherwise pre-reserve the entire seed batch.
+				.setBulkOperationSize(0)
 				.setAutoGrow(true);
 	}
 

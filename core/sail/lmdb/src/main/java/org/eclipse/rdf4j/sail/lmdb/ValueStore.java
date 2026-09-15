@@ -419,11 +419,58 @@ public class ValueStore extends AbstractValueFactory {
 	 * Maximum size of keys before hashing is used (size of two long values)
 	 */
 	private static final int MAX_KEY_SIZE = ValueStoreRecordCodec.MAX_INLINE_KEY_BYTES;
+	private static final int MAX_UNSIGNED_ID_BYTES = 9;
+	private static final int MAX_ID_KEY_BYTES = 1 + MAX_UNSIGNED_ID_BYTES;
+	private static final int MAX_HASH_ID_KEY_BYTES = 1 + MAX_UNSIGNED_ID_BYTES + MAX_ID_KEY_BYTES;
+	private static final int LMDB_PAGE_HEADER_BYTES = 16;
+	private static final int LMDB_NODE_HEADER_BYTES = 8;
 	private static final int MIN_TRANSACTION_VALUE_CACHE_SIZE = 4 * 1024;
 	private static final int MAX_TRANSACTION_VALUE_CACHE_SIZE = 1024 * 1024;
 	private static final long TRANSACTION_VALUE_CACHE_BYTES_PER_ENTRY = 4 * 1024L;
 	private static final int MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS = 1024 * 1024;
 	private static final long BULK_AUXILIARY_DATABASE_RESERVATION_PAGES = 16L;
+
+	private static final class PreparedValueFootprint {
+		private long mainPuts;
+		private long mainKeyBytes;
+		private long mainValueBytes;
+		private long mainOverflowPages;
+		private long referencePuts;
+		private long tripleRecords;
+
+		private void addStoredRecord(long dataLength, int pageSize) {
+			if (dataLength <= MAX_KEY_SIZE) {
+				mainPuts = add(mainPuts, 2L);
+				mainKeyBytes = add(mainKeyBytes, add(dataLength, MAX_ID_KEY_BYTES));
+				mainValueBytes = add(mainValueBytes, add(MAX_ID_KEY_BYTES, dataLength));
+			} else {
+				// One forward record and one hash record are written for a large value. The hash record may be a
+				// first-hash or a collision key; reserve for the longer collision form and the largest ID value.
+				mainPuts = add(mainPuts, 2L);
+				mainKeyBytes = add(mainKeyBytes, add(MAX_ID_KEY_BYTES, MAX_HASH_ID_KEY_BYTES));
+				mainValueBytes = add(mainValueBytes, 2L * MAX_ID_KEY_BYTES);
+				mainOverflowPages = add(mainOverflowPages,
+						pageCeiling(add(dataLength, LMDB_PAGE_HEADER_BYTES), pageSize));
+			}
+		}
+
+		private void addReference() {
+			referencePuts = add(referencePuts, 1L);
+		}
+
+		private void addTripleRecord() {
+			tripleRecords = add(tripleRecords, 1L);
+			referencePuts = add(referencePuts, 3L);
+		}
+	}
+
+	private static long add(long left, long right) {
+		return Math.addExact(left, right);
+	}
+
+	private static long pageCeiling(long bytes, int pageSize) {
+		return bytes == 0L ? 0L : (add(bytes, pageSize - 1L) / pageSize);
+	}
 
 	private static final VarHandle PREVIOUS_NAMESPACE_HANDLE;
 
@@ -1882,6 +1929,10 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private void resizeMap(long txn, long requiredSize) throws IOException {
+		resizeMap(txn, requiredSize, null);
+	}
+
+	private void resizeMap(long txn, long requiredSize, boolean[] activeWriteTxnCommitted) throws IOException {
 		if (autoGrow) {
 			if (LmdbUtil.requiresResize(mapSize, pageSize, txn, requiredSize)) {
 				// map is full, resize
@@ -1899,10 +1950,13 @@ public class ValueStore extends AbstractValueFactory {
 					throw new IOException(e);
 				}
 
+				boolean activeWriteTxn = writeTxn != 0;
 				try {
-					boolean activeWriteTxn = writeTxn != 0;
 					if (activeWriteTxn) {
 						endTransaction(true, true);
+						if (activeWriteTxnCommitted != null) {
+							activeWriteTxnCommitted[0] = true;
+						}
 					}
 					txnManager.deactivate();
 
@@ -1930,6 +1984,153 @@ public class ValueStore extends AbstractValueFactory {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Reserves enough value-map space for a complete fresh prepared batch before its IDs are assigned. The walk is
+	 * deliberately independent of the mutable fresh session: a failed reservation must not leave provisional IDs,
+	 * reference counts, or large-value hash entries behind.
+	 */
+	void reservePreparedValueCapacity(FreshValueSession session, Value[] values) throws IOException {
+		if (!autoGrow || session == null || values.length == 0) {
+			return;
+		}
+
+		PreparedValueFootprint footprint = new PreparedValueFootprint();
+		Set<Value> visitedValues = new HashSet<>();
+		Set<String> visitedNamespaces = new HashSet<>();
+		for (Value value : values) {
+			estimateFreshValue(session, footprint, visitedValues, visitedNamespaces, value);
+		}
+		if (coreDatatypeLiteralReferences && !deferNextIdPersistence) {
+			footprint.mainPuts = add(footprint.mainPuts, 1L);
+			footprint.mainKeyBytes = add(footprint.mainKeyBytes, 1L);
+			footprint.mainValueBytes = add(footprint.mainValueBytes, MAX_UNSIGNED_ID_BYTES);
+		}
+		if (footprint.referencePuts > 0L) {
+			// Reference counts are written once per referenced ID in the prepared batch. Counting every edge is a safe
+			// upper bound when several values share one datatype, namespace, or triple component.
+			footprint.referencePuts = Math.max(1L, footprint.referencePuts);
+		}
+
+		boolean[] activeWriteTxnCommitted = new boolean[1];
+		try {
+			readTransaction(env, (stack, txn) -> {
+				long requiredBytes = preparedValueReservation(stack, txn, footprint);
+				resizeMap(txn, requiredBytes, activeWriteTxnCommitted);
+				return null;
+			});
+		} finally {
+			if (activeWriteTxnCommitted[0]) {
+				// The resize had to commit the previous value writer. Keep its assigned IDs and reference totals in the
+				// session so later batches resolve against the new transaction instead of treating the dictionary as empty
+				// after a rollback or restart failure.
+				commitFreshValueTransaction(session);
+			}
+		}
+	}
+
+	private void estimateFreshValue(FreshValueSession session, PreparedValueFootprint footprint,
+			Set<Value> visitedValues, Set<String> visitedNamespaces, Value value) {
+		if (value == null || session.valueIds.getIfAbsent(value, LmdbValue.UNKNOWN_ID) != LmdbValue.UNKNOWN_ID
+				|| !visitedValues.add(value) || getInlineId(value) != LmdbValue.UNKNOWN_ID) {
+			return;
+		}
+
+		if (value instanceof TripleTerm triple) {
+			estimateFreshValue(session, footprint, visitedValues, visitedNamespaces, triple.getSubject());
+			estimateFreshValue(session, footprint, visitedValues, visitedNamespaces, triple.getPredicate());
+			estimateFreshValue(session, footprint, visitedValues, visitedNamespaces, triple.getObject());
+			footprint.addTripleRecord();
+			return;
+		}
+
+		switch (value.getType()) {
+		case Value.Type.IRI:
+			IRI iri = (IRI) value;
+			String namespace = iri.getNamespace();
+			if (session.namespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID) == LmdbValue.UNKNOWN_ID
+					&& visitedNamespaces.add(namespace)) {
+				footprint.addStoredRecord(add(1L, utf8Length(namespace)), pageSize);
+			}
+			footprint.addStoredRecord(add(1L, add(MAX_UNSIGNED_ID_BYTES, utf8Length(iri.getLocalName()))), pageSize);
+			footprint.addReference();
+			break;
+		case Value.Type.BNode:
+			footprint.addStoredRecord(add(1L, utf8Length(((BNode) value).getID())), pageSize);
+			break;
+		case Value.Type.Literal:
+			Literal literal = (Literal) value;
+			IRI datatype = literal.getDatatype();
+			if (datatype != null) {
+				estimateFreshValue(session, footprint, visitedValues, visitedNamespaces, datatype);
+				footprint.addReference();
+			}
+			footprint.addStoredRecord(literalDataLength(literal), pageSize);
+			break;
+		default:
+			throw new IllegalArgumentException("Unsupported fresh value type " + value.getType());
+		}
+	}
+
+	private long literalDataLength(Literal literal) {
+		String language = literal.getLanguage().orElse(null);
+		if (canonicalLanguageTags && language != null) {
+			language = language.toLowerCase(Locale.ROOT);
+		}
+		long languageLength = language == null ? 0L : utf8Length(language);
+		long languageLengthBytes = languageLength > 0x3F ? Varint.calcLengthUnsigned(languageLength) : 0L;
+		return add(2L + MAX_UNSIGNED_ID_BYTES,
+				add(languageLengthBytes, add(languageLength, utf8Length(literal.getLabel()))));
+	}
+
+	private static long utf8Length(String value) {
+		return value.getBytes(StandardCharsets.UTF_8).length;
+	}
+
+	private long preparedValueReservation(MemoryStack stack, long txn, PreparedValueFootprint footprint)
+			throws IOException {
+		MDBStat stat = MDBStat.malloc(stack);
+		long pages = preparedDatabasePages(txn, dbi, stat, footprint.mainPuts, footprint.mainKeyBytes,
+				footprint.mainValueBytes, footprint.mainOverflowPages);
+		if (footprint.referencePuts > 0L) {
+			pages = add(pages, preparedDatabasePages(txn, refCountsDbi, stat, footprint.referencePuts,
+					multiply(footprint.referencePuts, MAX_ID_KEY_BYTES),
+					multiply(footprint.referencePuts, MAX_UNSIGNED_ID_BYTES), 0L));
+		}
+		if (footprint.tripleRecords > 0L) {
+			for (TripleIndex index : tripleTermIndexes) {
+				pages = add(pages, preparedDatabasePages(txn, index.getDB(true), stat, footprint.tripleRecords,
+						multiply(footprint.tripleRecords, TripleIndex.MAX_KEY_LENGTH), 0L, 0L));
+			}
+		}
+		return multiply(pages, pageSize);
+	}
+
+	private long preparedDatabasePages(long txn, int database, MDBStat stat, long puts, long keyBytes,
+			long valueBytes, long overflowPages) throws IOException {
+		if (puts == 0L) {
+			return 0L;
+		}
+		E(mdb_stat(txn, database, stat));
+		long structuralPages = add(stat.ms_branch_pages(), multiply(stat.ms_leaf_pages(), 2L));
+		long payloadBytes = add(add(keyBytes, valueBytes), multiply(puts, LMDB_NODE_HEADER_BYTES));
+		long payloadPages = pageCeiling(payloadBytes, pageSize - LMDB_PAGE_HEADER_BYTES);
+		if (stat.ms_entries() <= 1L) {
+			// A fresh value DB contains only the NEXT_ID metadata record. Its user tree has no committed pages to copy;
+			// retain the one existing leaf-page allowance above, and bound new leaves and branches by the encoded
+			// payload.
+			structuralPages = add(structuralPages, payloadPages);
+		} else {
+			// With a pinned reader, every original branch/leaf page and each possible split page may remain live until
+			// commit. Bound the structural tail by the current pages plus two pages per prepared put.
+			structuralPages = add(structuralPages, multiply(puts, 2L));
+		}
+		return add(1L, add(structuralPages, add(payloadPages, overflowPages)));
+	}
+
+	private static long multiply(long left, long right) {
+		return Math.multiplyExact(left, right);
 	}
 
 	void reserveWriteCapacity(long requiredSize) throws IOException {

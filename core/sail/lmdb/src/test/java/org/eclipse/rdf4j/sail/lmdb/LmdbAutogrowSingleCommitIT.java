@@ -19,15 +19,18 @@ import java.util.List;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -51,6 +54,8 @@ class LmdbAutogrowSingleCommitIT {
 	private static final IRI PREDICATE = VF.createIRI("urn:lmdb-autogrow:isolation:predicate");
 	private static final int ROWS = 32_768;
 	private static final int VALUE_LENGTH = 160;
+	private static final int SEPARATE_BATCH_ROWS = 1_024;
+	private static final int SEPARATE_BATCH_LARGE_VALUE_LENGTH = 262_144;
 
 	@TempDir
 	Path dataDir;
@@ -65,6 +70,36 @@ class LmdbAutogrowSingleCommitIT {
 	@Timeout(60)
 	void singleQuotedCommitCompletesWithoutHeldReader() throws Exception {
 		exerciseSingleQuotedCommit(false);
+	}
+
+	@Test
+	@Timeout(60)
+	void separatelyApprovedPreparedBatchesReserveAgainstTheActiveWriter() throws Exception {
+		LmdbStore store = new LmdbStore(dataDir.toFile(), autoGrowConfig());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			try (ResizeLogCapture resizeLogs = ResizeLogCapture.open();
+					SailSink sink = store.getBackingStore()
+							.getExplicitSailSource()
+							.sink(IsolationLevels.READ_COMMITTED)) {
+				Model firstBatch = preparedRows(0, SEPARATE_BATCH_ROWS, 1);
+				Model secondBatch = preparedRows(SEPARATE_BATCH_ROWS, SEPARATE_BATCH_ROWS,
+						SEPARATE_BATCH_LARGE_VALUE_LENGTH);
+				sink.approveAll(firstBatch);
+				sink.approveAll(secondBatch);
+				sink.flush();
+
+				assertThat(resizeLogs.valueResizeMessages())
+						.as("each separately approved prepared batch must reserve its own value footprint; resizes=%s",
+								resizeLogs.valueResizeMessages())
+						.hasSizeGreaterThan(1);
+				assertThat(countRows(repository)).isEqualTo(2 * SEPARATE_BATCH_ROWS);
+			}
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	private void exerciseSingleQuotedCommit(boolean holdReader) throws Exception {
@@ -101,9 +136,9 @@ class LmdbAutogrowSingleCommitIT {
 					}
 				}
 
-				assertThat(resizeLogs.valueResizeMessages())
-						.as("a successful single commit must log the value-map resize")
-						.isNotEmpty();
+				assertThat(beforeGrowth)
+						.as("preparing the quoted seed batch must grow the value map")
+						.anyMatch(message -> message.contains("Resizing map from"));
 				assertThat(countRows(repository)).as("a successful single commit must preserve every input row")
 						.isEqualTo(initialRows + ROWS);
 			}
@@ -159,6 +194,15 @@ class LmdbAutogrowSingleCommitIT {
 			connection.add(VF.createIRI("urn:lmdb-autogrow:" + subjectPrefix + i), PREDICATE,
 					VF.createLiteral(valuePrefix + i + "-" + "x".repeat(VALUE_LENGTH)));
 		}
+	}
+
+	private static Model preparedRows(int start, int count, int valueLength) {
+		Model rows = new LinkedHashModel();
+		for (int i = start; i < start + count; i++) {
+			rows.add(VF.createBNode("b" + i), PREDICATE,
+					VF.createLiteral("separate-batch-value-" + i + "-" + "p".repeat(valueLength)));
+		}
+		return rows;
 	}
 
 	private static LmdbStoreConfig autoGrowConfig() {
@@ -223,7 +267,7 @@ class LmdbAutogrowSingleCommitIT {
 		private List<String> valueResizeMessages() {
 			return valueAppender.list.stream()
 					.map(ILoggingEvent::getFormattedMessage)
-					.filter(message -> message.contains("Resizing map from"))
+					.filter(message -> message.contains("resized map to") || message.contains("Resizing map from"))
 					.toList();
 		}
 
