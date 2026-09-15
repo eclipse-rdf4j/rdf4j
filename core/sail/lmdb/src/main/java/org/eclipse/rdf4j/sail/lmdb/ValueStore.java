@@ -2023,7 +2023,8 @@ public class ValueStore extends AbstractValueFactory {
 		} finally {
 			if (activeWriteTxnCommitted[0]) {
 				// The resize had to commit the previous value writer. Keep its assigned IDs and reference totals in the
-				// session so later batches resolve against the new transaction instead of treating the dictionary as empty
+				// session so later batches resolve against the new transaction instead of treating the dictionary as
+				// empty
 				// after a rollback or restart failure.
 				commitFreshValueTransaction(session);
 			}
