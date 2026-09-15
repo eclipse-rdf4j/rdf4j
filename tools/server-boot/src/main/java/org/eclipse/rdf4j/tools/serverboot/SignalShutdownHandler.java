@@ -70,27 +70,44 @@ final class SignalShutdownHandler implements AutoCloseable {
 			return;
 		}
 		logger.info("SIG{} received; initiating graceful shutdown.", signalName);
-		shutdownAndExit(contextRef.get(), "SIG" + signalName, 0, System::exit);
+		shutdownAndExit(contextRef.get(), "SIG" + signalName, 0, System::exit, Runtime.getRuntime()::halt);
 	}
 
 	/**
 	 * Shuts the application down and exits the JVM: runs {@link SpringApplication#exit} (exit-code generators and the
-	 * {@code ExitCodeEvent}), closes {@code context}, then exits with the resulting status (at least
-	 * {@code exitStatus}). A daemon watchdog forces the exit after 10 seconds should the shutdown hang.
+	 * {@code ExitCodeEvent}), closes {@code context}, then exits with the nonzero status returned by Spring, or
+	 * {@code exitStatus} when Spring returns zero. A daemon watchdog forces the exit after 10 seconds should the
+	 * shutdown hang.
 	 *
 	 * @param context    the root application context, or {@code null} when it is not (yet) available
 	 * @param reason     what triggered the shutdown, for logging (for example {@code SIGTERM})
-	 * @param exitStatus the minimum JVM exit status
+	 * @param exitStatus the fallback JVM exit status when Spring returns zero
 	 * @param exit       performs the JVM exit ({@code System::exit} in production; injectable for tests)
 	 */
 	static void shutdownAndExit(ConfigurableApplicationContext context, String reason, int exitStatus,
 			IntConsumer exit) {
-		startDelayedSystemExitThread(reason, exit);
+		shutdownAndExit(context, reason, exitStatus, exit, Runtime.getRuntime()::halt);
+	}
+
+	static void shutdownAndExit(ConfigurableApplicationContext context, String reason, int exitStatus,
+			IntConsumer exit, IntConsumer emergencyHalt) {
+		try {
+			startDelayedSystemExitThread(reason, exit);
+		} catch (RuntimeException | Error watchdogFailure) {
+			try {
+				requestEmergencyTermination(exitStatus, emergencyHalt, exit);
+			} catch (RuntimeException | Error emergencyFailure) {
+				watchdogFailure.addSuppressed(emergencyFailure);
+				throw watchdogFailure;
+			}
+			return;
+		}
 
 		int exitCode = exitStatus;
 		try {
 			if (context != null) {
-				exitCode = Math.max(exitStatus, SpringApplication.exit(context, () -> exitStatus));
+				int springExitCode = SpringApplication.exit(context, () -> exitStatus);
+				exitCode = springExitCode != 0 ? springExitCode : exitStatus;
 				if (context.isActive()) {
 					context.close();
 				}
@@ -105,6 +122,23 @@ final class SignalShutdownHandler implements AutoCloseable {
 				exit.accept(exitCode);
 			} catch (SecurityException e) {
 				logger.error("System.exit({}) blocked by security manager after {}", exitCode, reason, e);
+			}
+		}
+	}
+
+	/**
+	 * Requests termination without allocating a thread. The emergency halt is attempted first because JVM shutdown
+	 * hooks may also need resources that are unavailable after a thread-start failure.
+	 */
+	static void requestEmergencyTermination(int exitStatus, IntConsumer emergencyHalt, IntConsumer exit) {
+		try {
+			emergencyHalt.accept(exitStatus);
+		} catch (RuntimeException | Error haltFailure) {
+			try {
+				exit.accept(exitStatus);
+			} catch (RuntimeException | Error exitFailure) {
+				haltFailure.addSuppressed(exitFailure);
+				throw haltFailure;
 			}
 		}
 	}

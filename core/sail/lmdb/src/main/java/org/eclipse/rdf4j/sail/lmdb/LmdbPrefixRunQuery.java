@@ -256,7 +256,7 @@ final class LmdbPrefixRunQuery {
 				if (closed) {
 					return null;
 				}
-				localTxn = store.createReadTxn();
+				localTxn = store.createReadTxnUntracked();
 				txn = localTxn;
 			}
 

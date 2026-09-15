@@ -88,11 +88,21 @@ class LoggingDispatcherServlet extends DispatcherServlet {
 		// Shut down on a dedicated thread: this request thread still holds the servlet allocation, which the
 		// container's graceful shutdown would otherwise wait for, and the JVM must exit with a failure status
 		// (forced after a delay) even if closing the context hangs under memory pressure.
-		Thread thread = new Thread(
-				() -> SignalShutdownHandler.shutdownAndExit(rootContext, "OutOfMemoryError", 1, this::exitJvm),
-				"rdf4j-oom-shutdown");
-		thread.setDaemon(true);
-		thread.start();
+		try {
+			Thread thread = new Thread(
+					() -> SignalShutdownHandler.shutdownAndExit(rootContext, "OutOfMemoryError", 1, this::exitJvm,
+							this::haltJvm),
+					"rdf4j-oom-shutdown");
+			thread.setDaemon(true);
+			thread.start();
+		} catch (RuntimeException | Error startFailure) {
+			try {
+				SignalShutdownHandler.requestEmergencyTermination(1, this::haltJvm, this::exitJvm);
+			} catch (RuntimeException | Error shutdownFailure) {
+				outOfMemoryError.addSuppressed(shutdownFailure);
+			}
+			outOfMemoryError.addSuppressed(startFailure);
+		}
 	}
 
 	/**
@@ -100,5 +110,12 @@ class LoggingDispatcherServlet extends DispatcherServlet {
 	 */
 	protected void exitJvm(int status) {
 		System.exit(status);
+	}
+
+	/**
+	 * Immediately halts the JVM with the given status. Overridable for tests.
+	 */
+	protected void haltJvm(int status) {
+		Runtime.getRuntime().halt(status);
 	}
 }

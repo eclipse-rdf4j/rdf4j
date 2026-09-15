@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
@@ -27,6 +28,8 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.query.Binding;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
@@ -48,6 +51,7 @@ import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
@@ -55,6 +59,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /**
  * This class will take over for QueryEvaluationUtil. Currently marked as InternalUseOnly because there may still be
@@ -180,6 +185,57 @@ public class QueryEvaluationUtility {
 	public static boolean canDiscardWithoutEvaluation(TupleExpr right, TupleExpr left) {
 		return canDiscardWithoutEvaluation(right)
 				|| !Collections.disjoint(right.getBindingNames(), left.getBindingNames());
+	}
+
+	/**
+	 * Prepares the bindings and projection variables for a SERVICE request. Values already present in the input
+	 * bindings and values embedded in the SERVICE expression are sent as constraints. Variables that remain free are
+	 * returned as the SELECT projection; when none remain, the caller must use ASK.
+	 */
+	public static ServiceBindings prepareServiceBindings(Service service, BindingSet bindings) {
+		Set<String> freeVars = new HashSet<>(service.getServiceVars());
+		freeVars.removeAll(bindings.getBindingNames());
+
+		MapBindingSet allBindings = new MapBindingSet();
+		for (Binding binding : bindings) {
+			allBindings.setBinding(binding.getName(), binding.getValue());
+		}
+
+		for (Var boundVar : getBoundVariables(service)) {
+			freeVars.remove(boundVar.getName());
+			allBindings.setBinding(boundVar.getName(), boundVar.getValue());
+		}
+
+		return new ServiceBindings(freeVars, allBindings);
+	}
+
+	private static Set<Var> getBoundVariables(Service service) {
+		BoundVarVisitor visitor = new BoundVarVisitor();
+		visitor.meet(service);
+		return visitor.boundVars;
+	}
+
+	private static final class BoundVarVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		private final Set<Var> boundVars = new HashSet<>();
+
+		private BoundVarVisitor() {
+			super(true);
+		}
+
+		@Override
+		public void meet(Var var) {
+			if (var.hasValue()) {
+				boundVars.add(var);
+			}
+		}
+	}
+
+	/**
+	 * The request bindings and free variables prepared for a SERVICE invocation.
+	 */
+	@InternalUseOnly
+	public record ServiceBindings(Set<String> freeVars, BindingSet bindings) {
 	}
 
 	/**

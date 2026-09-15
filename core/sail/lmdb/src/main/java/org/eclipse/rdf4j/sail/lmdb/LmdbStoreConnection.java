@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
@@ -212,16 +214,25 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			return null;
 		}
 		SailStore snapshotStore = lmdbStore.getSailStore();
-		if (snapshotStore instanceof SnapshotSailStore
-				&& ((SnapshotSailStore) snapshotStore).hasUnflushedChanges(includeInferred)) {
+		if (!(snapshotStore instanceof SnapshotSailStore)) {
+			return null;
+		}
+		if (((SnapshotSailStore) snapshotStore).hasUnflushedChanges(includeInferred)) {
 			// committed changes still parked in the shared auto-flush branch (another connection keeps a dataset
 			// open) are invisible to a direct index scan
 			return null;
 		}
+		// Keep an ordinary branch dataset open for the whole lazy result. Its observer prevents a concurrent commit
+		// from flushing the shared auto-flush branch to the backing store while this direct scan is reading it.
+		SailSource snapshotBranch = ((SnapshotSailStore) snapshotStore).getExplicitSailSourceForSnapshot();
+		SailDataset snapshot = null;
+		boolean handedOff = false;
 		try {
+			snapshot = snapshotBranch.dataset(getIsolationLevel());
 			CloseableIteration<BindingSet> distinct = LmdbPrefixRunQuery.evaluateDistinct(store, tupleExpr, true);
 			if (distinct != null) {
-				return distinct;
+				handedOff = true;
+				return interlock(distinct, snapshot, snapshotBranch);
 			}
 			CloseableIteration<BindingSet> counts = LmdbPrefixRunQuery.evaluateDistinctCounts(store, tupleExpr, true,
 					lmdbStore.getValueFactory(), rewritten -> {
@@ -232,11 +243,22 @@ public class LmdbStoreConnection extends SailSourceConnection {
 						}
 					});
 			if (counts != null) {
-				return counts;
+				handedOff = true;
+				return interlock(counts, snapshot, snapshotBranch);
 			}
 			return null;
 		} catch (IOException e) {
 			throw new SailException(e);
+		} finally {
+			if (!handedOff) {
+				try {
+					if (snapshot != null) {
+						snapshot.close();
+					}
+				} finally {
+					snapshotBranch.close();
+				}
+			}
 		}
 	}
 

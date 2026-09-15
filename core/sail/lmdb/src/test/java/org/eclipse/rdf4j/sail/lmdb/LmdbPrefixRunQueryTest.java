@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -22,6 +23,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -32,6 +35,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -43,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -264,6 +269,34 @@ public class LmdbPrefixRunQueryTest {
 	}
 
 	@Test
+	public void multipleDistinctCountsStayOnOneSnapshotAcrossCommit() throws Exception {
+		SnapshotSwitchingStore store = new SnapshotSwitchingStore(dataDir);
+		try {
+			store.writeStateA();
+			StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+			Group group = new Group(pattern);
+			group.addGroupElement(new GroupElem("predicates", new Count(Var.of("p"), true)));
+			group.addGroupElement(new GroupElem("subjects", new Count(Var.of("s"), true)));
+			TupleExpr tupleExpr = new Projection(group,
+					new ProjectionElemList(new ProjectionElem("predicates"), new ProjectionElem("subjects")));
+
+			try (var result = LmdbPrefixRunQuery.evaluateDistinctCounts(store, tupleExpr, true,
+					SimpleValueFactory.getInstance(), rewritten -> {
+						BindingSetAssignment assignment = (BindingSetAssignment) ((Projection) rewritten).getArg();
+						return new SingletonIteration<>(assignment.getBindingSets().iterator().next());
+					})) {
+				assertThat(result.hasNext()).isTrue();
+				BindingSet row = result.next();
+				assertThat(((Literal) row.getValue("predicates")).longValue()).isEqualTo(1L);
+				assertThat(((Literal) row.getValue("subjects")).longValue()).isEqualTo(2L);
+			}
+			assertThat(store.replacementDone).isTrue();
+		} finally {
+			store.close();
+		}
+	}
+
+	@Test
 	public void repeatedDistinctCountUsesTheSameScan() {
 		openRepository("spoc,posc,ospc");
 
@@ -299,6 +332,71 @@ public class LmdbPrefixRunQueryTest {
 
 		assertThat(values("SELECT DISTINCT ?p WHERE { ?s ?p ?o }", "p")).hasSize(133);
 		assertThat(count("SELECT (COUNT(DISTINCT ?p) AS ?c) WHERE { ?s ?p ?o }", "c")).isEqualTo(133L);
+	}
+
+	@Test
+	public void repositoryDistinctResultKeepsItsSnapshotAcrossBatchBoundaryAndCommit() {
+		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		try (SailRepositoryConnection writer = repository.getConnection()) {
+			ValueFactory vf = writer.getValueFactory();
+			writer.begin();
+			for (int i = 0; i < 129; i++) {
+				writer.add(vf.createIRI(EX, "initial-subject-" + i),
+						vf.createIRI(EX, "initial-predicate-" + i), vf.createIRI(EX, "initial-object"));
+			}
+			writer.commit();
+		}
+
+		try (SailRepositoryConnection reader = repository.getConnection();
+				var result = reader.prepareTupleQuery("SELECT DISTINCT ?p WHERE { ?s ?p ?o }").evaluate()) {
+			List<String> predicates = new ArrayList<>();
+			for (int i = 0; i < 128; i++) {
+				assertThat(result.hasNext()).isTrue();
+				predicates.add(result.next().getValue("p").stringValue());
+			}
+
+			replaceRepositoryContents();
+
+			while (result.hasNext()) {
+				predicates.add(result.next().getValue("p").stringValue());
+			}
+			assertThat(predicates).hasSize(129).allMatch(value -> value.startsWith(EX + "initial-predicate-"));
+		}
+
+		assertThat(values("SELECT DISTINCT ?p WHERE { ?s ?p ?o }", "p"))
+				.containsExactly(EX + "replacement-predicate", EX + "replacement-predicate-2");
+	}
+
+	@Test
+	public void lazyMultipleDistinctCountsKeepSnapshotWhenConsumedAfterCommit() {
+		openRepository("spoc,posc,ospc");
+		try (SailRepositoryConnection reader = repository.getConnection();
+				var result = reader.prepareTupleQuery(
+						"SELECT (COUNT(DISTINCT ?p) AS ?predicates) (COUNT(DISTINCT ?s) AS ?subjects) WHERE { ?s ?p ?o }")
+						.evaluate()) {
+			replaceRepositoryContents();
+
+			assertThat(result.hasNext()).isTrue();
+			BindingSet row = result.next();
+			assertThat(((Literal) row.getValue("predicates")).longValue()).isEqualTo(4L);
+			assertThat(((Literal) row.getValue("subjects")).longValue()).isEqualTo(8L);
+		}
+
+		assertReplacementCounts();
+	}
+
+	@Test
+	public void closingUnconsumedLazyDistinctCountsReleasesSnapshotObserver() {
+		openRepository("spoc,posc,ospc");
+		try (SailRepositoryConnection reader = repository.getConnection()) {
+			var result = reader.prepareTupleQuery(
+					"SELECT (COUNT(DISTINCT ?p) AS ?predicates) (COUNT(DISTINCT ?s) AS ?subjects) WHERE { ?s ?p ?o }")
+					.evaluate();
+			replaceRepositoryContents();
+			result.close();
+		}
+
+		assertReplacementCounts();
 	}
 
 	@Test
@@ -502,6 +600,29 @@ public class LmdbPrefixRunQueryTest {
 		}
 	}
 
+	private void replaceRepositoryContents() {
+		try (SailRepositoryConnection writer = repository.getConnection()) {
+			ValueFactory vf = writer.getValueFactory();
+			writer.begin();
+			writer.clear();
+			writer.add(vf.createIRI(EX, "replacement-subject-1"), vf.createIRI(EX, "replacement-predicate"),
+					vf.createIRI(EX, "replacement-object-1"));
+			writer.add(vf.createIRI(EX, "replacement-subject-2"), vf.createIRI(EX, "replacement-predicate"),
+					vf.createIRI(EX, "replacement-object-2"));
+			writer.add(vf.createIRI(EX, "replacement-subject-3"), vf.createIRI(EX, "replacement-predicate-2"),
+					vf.createIRI(EX, "replacement-object-3"));
+			writer.commit();
+		}
+	}
+
+	private void assertReplacementCounts() {
+		List<BindingSet> result = query(
+				"SELECT (COUNT(DISTINCT ?p) AS ?predicates) (COUNT(DISTINCT ?s) AS ?subjects) WHERE { ?s ?p ?o }");
+		assertThat(result).hasSize(1);
+		assertThat(((Literal) result.get(0).getValue("predicates")).longValue()).isEqualTo(2L);
+		assertThat(((Literal) result.get(0).getValue("subjects")).longValue()).isEqualTo(3L);
+	}
+
 	private static final class BlockingPrefixStore extends LmdbSailStore {
 		private final CountDownLatch openEntered = new CountDownLatch(1);
 		private final CountDownLatch openRelease = new CountDownLatch(1);
@@ -533,6 +654,49 @@ public class LmdbPrefixRunQueryTest {
 				throw new IllegalStateException("Read transaction closed while opening prefix scan");
 			}
 			return LmdbPrefixRunScan.empty();
+		}
+	}
+
+	private static final class SnapshotSwitchingStore extends LmdbSailStore {
+		private final ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		private int scanOpens;
+		private boolean replacementDone;
+
+		private SnapshotSwitchingStore(File dataDir) throws IOException {
+			super(dataDir, new StoreProperties(), new LmdbStoreConfig("spoc,posc,ospc"), false);
+		}
+
+		private void writeStateA() {
+			try (SailSink sink = getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				sink.approve(valueFactory.createIRI(EX, "a1"), valueFactory.createIRI(EX, "p1"),
+						valueFactory.createIRI(EX, "o1"), null);
+				sink.approve(valueFactory.createIRI(EX, "a2"), valueFactory.createIRI(EX, "p1"),
+						valueFactory.createIRI(EX, "o2"), null);
+				sink.flush();
+			}
+		}
+
+		@Override
+		LmdbPrefixRunScan openPrefixRunScan(Txn sharedTxn, boolean explicit, int[] prefixFields, Resource subj,
+				IRI pred, Value obj, Resource context, boolean countRunRows) throws IOException {
+			if (++scanOpens == 2) {
+				replaceWithStateB();
+				replacementDone = true;
+			}
+			return super.openPrefixRunScan(sharedTxn, explicit, prefixFields, subj, pred, obj, context, countRunRows);
+		}
+
+		private void replaceWithStateB() {
+			try (SailSink sink = getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				sink.clear();
+				sink.approve(valueFactory.createIRI(EX, "b1"), valueFactory.createIRI(EX, "p2"),
+						valueFactory.createIRI(EX, "o1"), null);
+				sink.approve(valueFactory.createIRI(EX, "b2"), valueFactory.createIRI(EX, "p3"),
+						valueFactory.createIRI(EX, "o2"), null);
+				sink.approve(valueFactory.createIRI(EX, "b3"), valueFactory.createIRI(EX, "p3"),
+						valueFactory.createIRI(EX, "o3"), null);
+				sink.flush();
+			}
 		}
 	}
 }

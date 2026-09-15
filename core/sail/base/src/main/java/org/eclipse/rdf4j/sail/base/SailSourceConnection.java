@@ -1018,7 +1018,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	 * Inner class MemEvaluationStatistics *
 	 *-------------------------------------*/
 
-	private IsolationLevel getIsolationLevel() throws UnknownSailTransactionStateException {
+	protected IsolationLevel getIsolationLevel() throws UnknownSailTransactionStateException {
 		if (isActive()) {
 			return getTransactionIsolation();
 		} else {
@@ -1074,7 +1074,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 	}
 
-	private <T> CloseableIteration<T> interlock(
+	protected <T> CloseableIteration<T> interlock(
 			CloseableIteration<T> iter, SailClosable... closes) {
 		return new SailClosingIteration<>(iter, closes) {
 

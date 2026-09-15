@@ -13,13 +13,18 @@ package org.eclipse.rdf4j.tools.serverboot;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mockConstruction;
 
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedConstruction;
+import org.springframework.beans.factory.DisposableBean;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockServletConfig;
@@ -76,12 +81,75 @@ class LoggingDispatcherServletTest {
 		}
 	}
 
+	@Test
+	void requestsEmergencyHaltWhenRequestShutdownThreadCannotStart() throws Exception {
+		OutOfMemoryError outOfMemoryError = new OutOfMemoryError("simulated heap exhaustion");
+		GenericWebApplicationContext rootContext = new GenericWebApplicationContext();
+		AtomicBoolean terminationRequested = new AtomicBoolean();
+		AtomicBoolean closeBeforeTermination = new AtomicBoolean();
+		rootContext.registerBean("shutdownProbe", DisposableBean.class,
+				() -> () -> closeBeforeTermination.set(!terminationRequested.get()));
+		rootContext.refresh();
+
+		GenericWebApplicationContext servletContext = new GenericWebApplicationContext();
+		servletContext.setParent(rootContext);
+		Controller controller = (request, response) -> {
+			throw outOfMemoryError;
+		};
+		servletContext.registerBean("handlerMapping", SimpleUrlHandlerMapping.class,
+				() -> new SimpleUrlHandlerMapping(Map.of("/oom", controller)));
+		servletContext.registerBean("handlerAdapter", SimpleControllerHandlerAdapter.class,
+				SimpleControllerHandlerAdapter::new);
+		HandlerExceptionResolver resolver = (request, response, handler, exception) -> new ModelAndView();
+		servletContext.registerBean("handlerExceptionResolver", HandlerExceptionResolver.class, () -> resolver);
+
+		MockServletContext mockServletContext = new MockServletContext();
+		TestLoggingDispatcherServlet servlet = new TestLoggingDispatcherServlet(terminationRequested);
+		servlet.setApplicationContext(servletContext);
+		servlet.init(new MockServletConfig(mockServletContext, "rdf4jServer"));
+		try (MockedConstruction<Thread> ignored = mockConstruction(Thread.class,
+				(thread, context) -> doThrow(new OutOfMemoryError("simulated native thread exhaustion"))
+						.when(thread)
+						.start())) {
+			try {
+				MockHttpServletRequest request = new MockHttpServletRequest(mockServletContext, "POST", "/oom");
+				request.setServletPath("/oom");
+
+				Throwable thrown = catchThrowable(() -> servlet.dispatch(request, new MockHttpServletResponse()));
+
+				assertThat(ignored.constructed()).hasSize(1);
+				assertThat(thrown).isSameAs(outOfMemoryError);
+				assertThat(closeBeforeTermination).as("context close must not precede termination request").isFalse();
+				// Runtime.halt is requested before graceful shutdown; the test override returns so the context remains
+				// active.
+				assertThat(servlet.halted.await(10, TimeUnit.SECONDS)).isTrue();
+				assertThat(rootContext.isActive()).isTrue();
+				assertThat(servlet.haltStatus.get()).isEqualTo(1);
+			} finally {
+				servlet.destroy();
+				servletContext.close();
+				rootContext.close();
+			}
+		}
+	}
+
 	private static final class TestLoggingDispatcherServlet extends LoggingDispatcherServlet {
 
 		private static final long serialVersionUID = 1L;
 
 		private final CountDownLatch exited = new CountDownLatch(1);
+		private final CountDownLatch halted = new CountDownLatch(1);
 		private final AtomicInteger exitStatus = new AtomicInteger(-1);
+		private final AtomicInteger haltStatus = new AtomicInteger(-1);
+		private final AtomicBoolean terminationRequested;
+
+		private TestLoggingDispatcherServlet() {
+			this(new AtomicBoolean());
+		}
+
+		private TestLoggingDispatcherServlet(AtomicBoolean terminationRequested) {
+			this.terminationRequested = terminationRequested;
+		}
 
 		private void dispatch(HttpServletRequest request, HttpServletResponse response) throws Exception {
 			super.doService(request, response);
@@ -89,8 +157,16 @@ class LoggingDispatcherServletTest {
 
 		@Override
 		protected void exitJvm(int status) {
+			terminationRequested.set(true);
 			exitStatus.compareAndSet(-1, status);
 			exited.countDown();
+		}
+
+		@Override
+		protected void haltJvm(int status) {
+			terminationRequested.set(true);
+			haltStatus.compareAndSet(-1, status);
+			halted.countDown();
 		}
 	}
 }

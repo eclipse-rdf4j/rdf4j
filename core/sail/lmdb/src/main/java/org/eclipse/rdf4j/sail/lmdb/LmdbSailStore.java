@@ -845,6 +845,15 @@ class LmdbSailStore implements SailStore {
 	}
 
 	/**
+	 * Opens a reader for a prefix-run result. Prefix-run results can be consumed after another write commits, so their
+	 * reader must keep its snapshot until the result is closed. The transaction still participates in map-resize
+	 * deactivate/activate handling through {@link TxnManager}.
+	 */
+	Txn createReadTxnUntracked() throws IOException {
+		return tripleStore.getTxnManager().createReadTxnUntracked();
+	}
+
+	/**
 	 * See {@link #openPrefixRunScan(boolean, int[], Resource, IRI, Value, Resource, boolean)}.
 	 *
 	 * @param sharedTxn a read transaction owned by the caller and kept open while the scan is used, so that several
@@ -891,7 +900,7 @@ class LmdbSailStore implements SailStore {
 				return LmdbPrefixRunScan.empty();
 			}
 		}
-		Txn txn = sharedTxn != null ? sharedTxn : tripleStore.getTxnManager().createReadTxn();
+		Txn txn = sharedTxn != null ? sharedTxn : tripleStore.getTxnManager().createReadTxnUntracked();
 		try {
 			LmdbPrefixRunIterator cursor = tripleStore.getPrefixRuns(txn, plan, subjID, predID, objID, contextID,
 					explicit, countRunRows);
