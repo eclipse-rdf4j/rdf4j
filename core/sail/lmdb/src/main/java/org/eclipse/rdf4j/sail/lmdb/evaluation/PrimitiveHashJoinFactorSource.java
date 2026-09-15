@@ -27,8 +27,8 @@ final class PrimitiveHashJoinFactorSource extends BorrowedTupleBatch.Source {
 		checkOpen();
 		if (batch.source() != this)
 			throw new IllegalArgumentException("foreign descriptor source");
-		Objects.checkIndex(bucket, table.occupied.length);
-		if (table.occupied[bucket] == 0)
+		Objects.checkIndex(bucket, table.capacity());
+		if (!table.occupied(bucket))
 			throw new IllegalArgumentException("unoccupied bucket");
 		batch.bind(lane, bucket, table.chainCounts[bucket]);
 	}
@@ -36,7 +36,7 @@ final class PrimitiveHashJoinFactorSource extends BorrowedTupleBatch.Source {
 	@Override
 	protected void validate(long reference, long count) {
 		checkOpen();
-		if (reference < 0 || reference >= table.occupied.length || table.occupied[(int) reference] == 0
+		if (reference < 0 || reference >= table.capacity() || !table.occupied((int) reference)
 				|| count != table.chainCounts[(int) reference])
 			throw new IllegalArgumentException("not an exact hash group descriptor");
 	}
@@ -61,7 +61,7 @@ final class PrimitiveHashJoinFactorSource extends BorrowedTupleBatch.Source {
 		public void bind(long reference, long count) {
 			checkReader();
 			validate(reference, count);
-			head = table.heads[(int) reference];
+			head = table.head((int) reference);
 			next = head;
 			current = -1;
 			position = 0L;

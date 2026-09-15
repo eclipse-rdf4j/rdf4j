@@ -82,13 +82,28 @@ final class LmdbNativeHashJoin {
 	 * and by tests deriving admission budgets.
 	 */
 	static long estimateBuildBytes(long rows, int keyWidth, int payloadWidth) {
+		if (rows < 0 || keyWidth < 0 || payloadWidth < 0) {
+			throw new IllegalArgumentException("negative hash build dimension");
+		}
+		// All arrays use int indexes. Refuse an impossible estimate rather than overflow a
+		// doubling loop or under-reserve a saturated estimate from the optimizer.
+		if (rows > (1L << 30) * 3 / 4) {
+			return Long.MAX_VALUE;
+		}
 		long buckets = 32;
-		while (rows + 1 > buckets * 3 / 4) {
+		while (rows > buckets * 3 / 4) {
 			buckets <<= 1;
 		}
-		long payloadCapacity = Math.max(32, rows);
-		long bucketBytes = buckets * (8L * keyWidth + 1 + 1 + 4 + 4 + 4 + 4);
-		long payloadBytes = payloadCapacity * (8L * Math.max(1, payloadWidth) + 4);
+		long payloadCapacity = 32;
+		while (payloadCapacity < rows) {
+			payloadCapacity <<= 1;
+		}
+		if (buckets * keyWidth > Integer.MAX_VALUE - 8L
+				|| payloadCapacity * payloadWidth > Integer.MAX_VALUE - 8L) {
+			return Long.MAX_VALUE;
+		}
+		long bucketBytes = buckets * (8L * keyWidth + 8 + 1 + 4 + 4);
+		long payloadBytes = payloadCapacity * (8L * payloadWidth + 4);
 		return bucketBytes + payloadBytes;
 	}
 
@@ -453,10 +468,10 @@ final class HashJoinBatchCursor implements BatchCursor {
 	PrimitiveHashJoinTable table;
 	BatchCursor probeCursor;
 	NativeBatch probeBatch;
+	/** Intermediate hashes during hashing; prefetched first-bucket words after entryBatch(). */
 	final long[] probeHashState;
 	final int[] probeHashes;
 	final int[] probeBuckets;
-	final int[] probeHeads;
 	int probeCount;
 	int probeIndex;
 	int currentProbeRow;
@@ -483,7 +498,6 @@ final class HashJoinBatchCursor implements BatchCursor {
 		this.probeHashState = new long[capacity];
 		this.probeHashes = new int[capacity];
 		this.probeBuckets = new int[capacity];
-		this.probeHeads = new int[capacity];
 	}
 
 	@Override
@@ -594,7 +608,7 @@ final class HashJoinBatchCursor implements BatchCursor {
 			probeCount = probeBatch.selectedCount;
 			probeIndex = 0;
 			table.hashBatch(probeBatch, probeBatch.selection, probeCount, keySlots, probeHashState, probeHashes);
-			table.headBatch(probeHashes, probeCount, probeBuckets, probeHeads);
+			table.entryBatch(probeHashes, probeCount, probeBuckets, probeHashState);
 			if (probeCount == 0) {
 				break;
 			}
@@ -605,7 +619,7 @@ final class HashJoinBatchCursor implements BatchCursor {
 		int currentProbe = probeIndex++;
 		currentProbeRow = probeBatch.selection[currentProbe];
 		return table.lookupPreparedChainCount(probeBatch, currentProbeRow, keySlots, probeHashes[currentProbe],
-				probeBuckets[currentProbe]);
+				probeBuckets[currentProbe], probeHashState[currentProbe]);
 	}
 
 	private int finishOutput(NativeBatch output, int outputRows) {
@@ -626,7 +640,7 @@ final class HashJoinBatchCursor implements BatchCursor {
 			probeCount = probeBatch.selectedCount;
 			probeIndex = 0;
 			table.hashBatch(probeBatch, probeBatch.selection, probeCount, keySlots, probeHashState, probeHashes);
-			table.headBatch(probeHashes, probeCount, probeBuckets, probeHeads);
+			table.entryBatch(probeHashes, probeCount, probeBuckets, probeHashState);
 			if (probeCount == 0) {
 				break;
 			}
@@ -637,7 +651,7 @@ final class HashJoinBatchCursor implements BatchCursor {
 		int currentProbe = probeIndex++;
 		currentProbeRow = probeBatch.selection[currentProbe];
 		return table.lookupPrepared(probeBatch, currentProbeRow, keySlots, probeHashes[currentProbe],
-				probeBuckets[currentProbe], probeHeads[currentProbe]);
+				probeBuckets[currentProbe], probeHashState[currentProbe]);
 	}
 
 	/** Same batched hash/probe work as scalar emission; retain the resolved bucket for grouped consumers. */
@@ -648,12 +662,12 @@ final class HashJoinBatchCursor implements BatchCursor {
 			probeCount = probeBatch.selectedCount;
 			probeIndex = 0;
 			table.hashBatch(probeBatch, probeBatch.selection, probeCount, keySlots, probeHashState, probeHashes);
-			table.headBatch(probeHashes, probeCount, probeBuckets, probeHeads);
+			table.entryBatch(probeHashes, probeCount, probeBuckets, probeHashState);
 		}
 		int currentProbe = probeIndex++;
 		currentProbeRow = probeBatch.selection[currentProbe];
 		return table.lookupPreparedBucket(probeBatch, currentProbeRow, keySlots,
-				probeHashes[currentProbe], probeBuckets[currentProbe]);
+				probeHashes[currentProbe], probeBuckets[currentProbe], probeHashState[currentProbe]);
 	}
 
 	boolean build() throws IOException {

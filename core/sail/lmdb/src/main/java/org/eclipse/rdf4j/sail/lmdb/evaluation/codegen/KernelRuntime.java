@@ -294,13 +294,11 @@ public final class KernelRuntime {
 		return true;
 	}
 
-	/** Open-addressing set of longs. Slot value 0 marks empty; the real key 0 is tracked by a side flag. */
 	/**
 	 * In-kernel hash-join table (three-tier parity plan, M8), mirroring the interpreted
-	 * {@code PrimitiveHashJoinTable}'s layout: open-addressed buckets with stored full hashes and 8-bit fingerprints
-	 * over flat {@code long[]} keys, plus head/tail/next chains over a flat payload arena so duplicate keys keep their
-	 * multiplicity. The generated build loop calls {@link #add}; the generated probe loop walks
-	 * {@link #lookup}/{@link #next}/{@link #payload}.
+	 * {@code PrimitiveHashJoinTable}'s layout: one packed full-hash/head word per bucket over flat {@code long[]} keys,
+	 * plus head/tail/next chains over a flat payload arena so duplicate keys keep their multiplicity. The generated
+	 * build loop calls {@link #add}; the generated probe loop walks {@link #lookup}/{@link #next}/{@link #payload}.
 	 */
 	public static final class LongRowMap {
 
@@ -308,10 +306,9 @@ public final class KernelRuntime {
 		private final int payloadWidth;
 		private final int maxRows;
 		private long[] keys;
-		private byte[] occupied;
-		private byte[] fingerprints;
-		private int[] fullHashes;
-		private int[] heads;
+		/** Full hash in the low word, head payload ordinal + 1 in the high word; zero is empty. */
+		private long[] entries;
+		private byte[] controls;
 		private int[] tails;
 		private long[] payloads;
 		private int[] next;
@@ -319,21 +316,19 @@ public final class KernelRuntime {
 		private int distinctKeys;
 
 		public LongRowMap(int keyWidth, int payloadWidth, int maxRows) {
+			if (keyWidth < 0 || payloadWidth < 0 || maxRows < 0) {
+				throw new IllegalArgumentException("negative hash build dimension");
+			}
 			this.keyWidth = keyWidth;
 			this.payloadWidth = payloadWidth;
 			this.maxRows = maxRows;
 			int capacity = 32;
-			this.keys = new long[keyWidth * capacity];
-			this.occupied = new byte[capacity];
-			this.fingerprints = new byte[capacity];
-			this.fullHashes = new int[capacity];
-			this.heads = new int[capacity];
+			this.keys = new long[Math.multiplyExact(keyWidth, capacity)];
+			this.entries = new long[capacity];
+			this.controls = new byte[capacity];
 			this.tails = new int[capacity];
-			java.util.Arrays.fill(heads, -1);
-			java.util.Arrays.fill(tails, -1);
-			this.payloads = new long[Math.max(capacity, payloadWidth * capacity)];
+			this.payloads = new long[Math.multiplyExact(payloadWidth, capacity)];
 			this.next = new int[capacity];
-			java.util.Arrays.fill(next, -1);
 		}
 
 		/** Inserts one build row; duplicate keys chain. Aborts the kernel when the build exceeds its row cap. */
@@ -341,48 +336,77 @@ public final class KernelRuntime {
 			if (payloadCount >= maxRows) {
 				throw new IllegalStateException("kernel hash build exceeded its row cap of " + maxRows);
 			}
-			if ((distinctKeys + 1) * 4 > occupied.length * 3) {
-				growBuckets();
-			}
 			int hash = hash(key);
 			int bucket = find(key, hash);
-			if (occupied[bucket] == 0) {
-				occupied[bucket] = 1;
-				fingerprints[bucket] = (byte) (hash >>> 24);
-				fullHashes[bucket] = hash;
-				int offset = bucket * keyWidth;
-				for (int i = 0; i < keyWidth; i++) {
-					keys[offset + i] = key[i];
-				}
-				distinctKeys++;
+			boolean inserted = entries[bucket] == 0L;
+			if (inserted && distinctKeys >= entries.length - (entries.length >>> 2)) {
+				growBuckets();
+				bucket = find(key, hash);
 			}
 			if (payloadCount == next.length) {
 				growPayloads();
 			}
-			int row = payloadCount++;
+			int row = payloadCount;
+			int at = row * payloadWidth;
 			for (int i = 0; i < payloadWidth; i++) {
-				payloads[row * payloadWidth + i] = payload[i];
+				payloads[at + i] = payload[i];
 			}
-			if (heads[bucket] < 0) {
-				heads[bucket] = row;
+			if (inserted) {
+				int offset = bucket * keyWidth;
+				for (int i = 0; i < keyWidth; i++) {
+					keys[offset + i] = key[i];
+				}
+				entries[bucket] = (row + 1L) << Integer.SIZE | (hash & 0xffff_ffffL);
+				controls[bucket] = control(hash);
+				distinctKeys++;
 			} else {
 				next[tails[bucket]] = row;
 			}
+			next[row] = -1;
 			tails[bucket] = row;
+			payloadCount = row + 1;
 		}
 
 		/** Head payload index for the probe key, or -1 when absent. */
 		public int lookup(long[] key) {
+			if (keyWidth == 1) {
+				return lookupScalarSingle(key[0]);
+			}
 			int hash = hash(key);
-			int bucket = hash & (occupied.length - 1);
-			byte fingerprint = (byte) (hash >>> 24);
-			while (occupied[bucket] != 0) {
-				if (fingerprints[bucket] == fingerprint && fullHashes[bucket] == hash && keysEqual(bucket, key)) {
-					return heads[bucket];
+			byte[] tags = controls;
+			byte expected = control(hash), tag;
+			int mask = tags.length - 1;
+			int bucket = hash & mask;
+			while ((tag = tags[bucket]) != 0) {
+				if (tag == expected && (int) entries[bucket] == hash && keysEqual(bucket, key)) {
+					return (int) (entries[bucket] >>> Integer.SIZE) - 1;
 				}
-				bucket = bucket + 1 & (occupied.length - 1);
+				bucket = (bucket + 1) & mask;
 			}
 			return -1;
+		}
+
+		private int lookupScalarSingle(long key) {
+			long mixed = mix(0x9E3779B97F4A7C15L ^ key);
+			int hash = (int) (mixed ^ mixed >>> Integer.SIZE);
+			byte[] tags = controls;
+			byte expected = control(hash), tag;
+			int mask = tags.length - 1;
+			int bucket = hash & mask;
+			while ((tag = tags[bucket]) != 0) {
+				if (tag == expected) {
+					long entry = entries[bucket];
+					if ((int) entry == hash && keys[bucket] == key) {
+						return (int) (entry >>> Integer.SIZE) - 1;
+					}
+				}
+				bucket = (bucket + 1) & mask;
+			}
+			return -1;
+		}
+
+		private static byte control(int hash) {
+			return (byte) (0x80 | (hash >>> 25));
 		}
 
 		/** Next payload index in the duplicate chain, or -1. */
@@ -398,10 +422,10 @@ public final class KernelRuntime {
 			return payloadCount;
 		}
 
-		/** Physical data bytes across every backing array (headers excluded; admission estimates absorb them). */
+		/** Backing-array data bytes; object/array headers, cursor scratch and inputs are excluded. */
 		public long byteSize() {
-			return 8L * keys.length + occupied.length + fingerprints.length + 4L * fullHashes.length
-					+ 4L * heads.length + 4L * tails.length + 8L * payloads.length + 4L * next.length;
+			return 8L * keys.length + 8L * entries.length + controls.length + 4L * tails.length + 8L * payloads.length
+					+ 4L * next.length;
 		}
 
 		private boolean keysEqual(int bucket, long[] key) {
@@ -423,55 +447,53 @@ public final class KernelRuntime {
 		}
 
 		private int find(long[] key, int hash) {
-			int bucket = hash & (occupied.length - 1);
-			byte fingerprint = (byte) (hash >>> 24);
-			while (occupied[bucket] != 0) {
-				if (fingerprints[bucket] == fingerprint && fullHashes[bucket] == hash && keysEqual(bucket, key)) {
+			byte[] tags = controls;
+			int mask = tags.length - 1;
+			int bucket = hash & mask;
+			byte expected = control(hash), tag;
+			while ((tag = tags[bucket]) != 0) {
+				if (tag == expected && (int) entries[bucket] == hash && keysEqual(bucket, key)) {
 					return bucket;
 				}
-				bucket = bucket + 1 & (occupied.length - 1);
+				bucket = (bucket + 1) & mask;
 			}
 			return bucket;
 		}
 
 		private void growBuckets() {
-			long[] oldKeys = keys;
-			byte[] oldOccupied = occupied;
-			int[] oldHashes = fullHashes;
-			int[] oldHeads = heads;
-			int[] oldTails = tails;
-			int capacity = occupied.length * 2;
-			keys = new long[keyWidth * capacity];
-			occupied = new byte[capacity];
-			fingerprints = new byte[capacity];
-			fullHashes = new int[capacity];
-			heads = new int[capacity];
-			tails = new int[capacity];
-			java.util.Arrays.fill(heads, -1);
-			java.util.Arrays.fill(tails, -1);
-			for (int oldBucket = 0; oldBucket < oldOccupied.length; oldBucket++) {
-				if (oldOccupied[oldBucket] == 0) {
+			int capacity = Math.multiplyExact(entries.length, 2);
+			long[] newKeys = new long[Math.multiplyExact(keyWidth, capacity)];
+			long[] newEntries = new long[capacity];
+			byte[] newControls = new byte[capacity];
+			int[] newTails = new int[capacity];
+			int mask = capacity - 1;
+			for (int oldBucket = 0; oldBucket < entries.length; oldBucket++) {
+				long entry = entries[oldBucket];
+				if (entry == 0L) {
 					continue;
 				}
-				int hash = oldHashes[oldBucket];
-				int bucket = hash & (capacity - 1);
-				while (occupied[bucket] != 0) {
-					bucket = bucket + 1 & (capacity - 1);
+				int bucket = (int) entry & mask;
+				while (newEntries[bucket] != 0L) {
+					bucket = bucket + 1 & mask;
 				}
-				occupied[bucket] = 1;
-				fingerprints[bucket] = (byte) (hash >>> 24);
-				fullHashes[bucket] = hash;
-				System.arraycopy(oldKeys, oldBucket * keyWidth, keys, bucket * keyWidth, keyWidth);
-				heads[bucket] = oldHeads[oldBucket];
-				tails[bucket] = oldTails[oldBucket];
+				newEntries[bucket] = entry;
+				newControls[bucket] = controls[oldBucket];
+				System.arraycopy(keys, oldBucket * keyWidth, newKeys, bucket * keyWidth, keyWidth);
+				newTails[bucket] = tails[oldBucket];
 			}
+			keys = newKeys;
+			entries = newEntries;
+			controls = newControls;
+			tails = newTails;
 		}
 
 		private void growPayloads() {
-			payloads = java.util.Arrays.copyOf(payloads, Math.max(payloads.length * 2, payloadWidth * next.length * 2));
-			int oldLength = next.length;
-			next = java.util.Arrays.copyOf(next, oldLength * 2);
-			java.util.Arrays.fill(next, oldLength, next.length, -1);
+			int capacity = Math.multiplyExact(next.length, 2);
+			long[] newPayloads = payloadWidth == 0 ? payloads
+					: java.util.Arrays.copyOf(payloads, Math.multiplyExact(payloadWidth, capacity));
+			int[] newNext = java.util.Arrays.copyOf(next, capacity);
+			payloads = newPayloads;
+			next = newNext;
 		}
 	}
 

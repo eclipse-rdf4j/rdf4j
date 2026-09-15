@@ -5,6 +5,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.function.IntUnaryOperator;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -15,10 +16,10 @@ final class PrimitiveHashJoinTable {
 	final int payloadWidth;
 	final IntUnaryOperator hashHook;
 	long[] keys;
-	byte[] occupied;
-	byte[] fingerprints;
-	int[] fullHashes;
-	int[] heads;
+	/** Low 32 bits: full hash. High 32 bits: first payload row + 1; zero word is empty. */
+	long[] entries;
+	/** Occupancy and seven hash bits share one byte, keeping negative scalar probes compact. */
+	byte[] controls;
 	int[] tails;
 	/** Duplicate-chain length per bucket — the §6.2 build-time chain statistic, maintained as rows arrive. */
 	int[] chainCounts;
@@ -35,27 +36,41 @@ final class PrimitiveHashJoinTable {
 	}
 
 	PrimitiveHashJoinTable(int keyWidth, int payloadWidth, IntUnaryOperator hashHook) {
+		if (keyWidth < 0 || payloadWidth < 0) {
+			throw new IllegalArgumentException("negative hash table width");
+		}
 		this.keyWidth = keyWidth;
 		this.payloadWidth = payloadWidth;
-		this.hashHook = hashHook;
-		this.keys = new long[keyWidth * 32];
-		this.occupied = new byte[32];
-		this.fingerprints = new byte[32];
-		this.fullHashes = new int[32];
-		this.heads = new int[32];
+		this.hashHook = Objects.requireNonNull(hashHook);
+		this.keys = new long[Math.multiplyExact(keyWidth, 32)];
+		this.entries = new long[32];
+		this.controls = new byte[32];
 		this.tails = new int[32];
-		Arrays.fill(heads, -1);
-		Arrays.fill(tails, -1);
 		this.chainCounts = new int[32];
-		this.payloads = new long[Math.max(32, payloadWidth * 32)];
+		this.payloads = new long[Math.multiplyExact(payloadWidth, 32)];
 		this.next = new int[32];
-		Arrays.fill(next, -1);
 	}
 
-	/** Physical data bytes across every backing array (headers excluded; the admission estimate absorbs them). */
+	/** Backing-array data bytes; object/array headers, cursor scratch and inputs are excluded. */
 	long byteSize() {
-		return 8L * keys.length + occupied.length + fingerprints.length + 4L * fullHashes.length + 4L * heads.length
-				+ 4L * tails.length + 4L * chainCounts.length + 8L * payloads.length + 4L * next.length;
+		return 8L * keys.length + 8L * entries.length + controls.length + 4L * tails.length + 4L * chainCounts.length
+				+ 8L * payloads.length + 4L * next.length;
+	}
+
+	int capacity() {
+		return entries.length;
+	}
+
+	boolean occupied(int bucket) {
+		return entries[bucket] != 0L;
+	}
+
+	int head(int bucket) {
+		return (int) (entries[bucket] >>> Integer.SIZE) - 1;
+	}
+
+	private static long entry(int hash, int head) {
+		return (head + 1L) << Integer.SIZE | (hash & 0xffff_ffffL);
 	}
 
 	/** Longest duplicate chain observed at build time — the §6.2 skew statistic. */
@@ -85,52 +100,60 @@ final class PrimitiveHashJoinTable {
 	/** Positioned lookup: retain the bucket so consumers can select count, payload or tuple-group demand. */
 	int lookupBucket(long[] row, int[] keySlots) {
 		int bucket = find(row, keySlots, hash(row, keySlots));
-		return occupied[bucket] == 0 ? -1 : bucket;
+		return entries[bucket] == 0L ? -1 : bucket;
 	}
 
 	int lookupPreparedBucket(NativeBatch batch, int row, int[] keySlots, int hash, int bucket) {
-		int mask = occupied.length - 1;
-		byte fingerprint = fingerprint(hash);
-		while (occupied[bucket] != 0) {
-			if (fingerprints[bucket] == fingerprint && fullHashes[bucket] == hash
-					&& matches(batch, row, keySlots, bucket))
+		return lookupPreparedBucket(batch, row, keySlots, hash, bucket, entries[bucket]);
+	}
+
+	int lookupPreparedBucket(NativeBatch batch, int row, int[] keySlots, int hash, int bucket, long entry) {
+		long[] index = entries;
+		int mask = index.length - 1;
+		while (entry != 0L) {
+			if ((int) entry == hash && matches(batch, row, keySlots, bucket)) {
 				return bucket;
+			}
 			bucket = (bucket + 1) & mask;
+			entry = index[bucket];
 		}
 		return -1;
 	}
 
 	void add(long[] row, int[] keySlots, int[] payloadSlots) {
-		if (sealed)
+		if (sealed) {
 			throw new IllegalStateException("hash table is borrowed and immutable");
-		if ((distinctKeys + 1) * 4 > occupied.length * 3) {
-			growBuckets();
 		}
 		int hash = hash(row, keySlots);
 		int bucket = find(row, keySlots, hash);
-		if (occupied[bucket] == 0) {
-			occupied[bucket] = 1;
-			fingerprints[bucket] = fingerprint(hash);
-			fullHashes[bucket] = hash;
+		boolean inserted = entries[bucket] == 0L;
+		// Duplicate payload rows do not consume a bucket. In particular a duplicate at 75% load
+		// must not double the index and all key/statistic arrays.
+		if (inserted && distinctKeys >= entries.length - (entries.length >>> 2)) {
+			growBuckets();
+			bucket = find(row, keySlots, hash);
+		}
+		ensurePayloadCapacity(Math.addExact(payloadCount, 1));
+		int payload = payloadCount;
+		int payloadAt = payload * payloadWidth;
+		for (int i = 0; i < payloadWidth; i++) {
+			payloads[payloadAt + i] = row[payloadSlots[i]];
+		}
+		if (inserted) {
 			int offset = bucket * keyWidth;
 			for (int i = 0; i < keyWidth; i++) {
 				keys[offset + i] = row[keySlots[i]];
 			}
+			entries[bucket] = entry(hash, payload);
+			controls[bucket] = control(hash);
 			distinctKeys++;
 		} else {
 			uniqueKeys = false;
-		}
-		ensurePayloadCapacity(payloadCount + 1);
-		int payload = payloadCount++;
-		for (int i = 0; i < payloadWidth; i++) {
-			payloads[payload * payloadWidth + i] = row[payloadSlots[i]];
-		}
-		if (heads[bucket] < 0) {
-			heads[bucket] = payload;
-		} else {
 			next[tails[bucket]] = payload;
 		}
+		next[payload] = -1;
 		tails[bucket] = payload;
+		payloadCount = payload + 1;
 		int length = ++chainCounts[bucket];
 		if (length > maxChainLength) {
 			maxChainLength = length;
@@ -142,22 +165,53 @@ final class PrimitiveHashJoinTable {
 	 * resolved bucket's chain length, or 0 on a miss.
 	 */
 	int lookupPreparedChainCount(NativeBatch batch, int row, int[] keySlots, int hash, int bucket) {
-		int mask = occupied.length - 1;
-		byte fingerprint = fingerprint(hash);
-		while (occupied[bucket] != 0) {
-			if (fingerprints[bucket] == fingerprint && fullHashes[bucket] == hash
-					&& matches(batch, row, keySlots, bucket)) {
-				return chainCounts[bucket];
-			}
-			bucket = (bucket + 1) & mask;
-		}
-		return 0;
+		return lookupPreparedChainCount(batch, row, keySlots, hash, bucket, entries[bucket]);
+	}
+
+	int lookupPreparedChainCount(NativeBatch batch, int row, int[] keySlots, int hash, int bucket, long entry) {
+		int found = lookupPreparedBucket(batch, row, keySlots, hash, bucket, entry);
+		return found < 0 ? 0 : chainCounts[found];
 	}
 
 	int lookup(NativeBatch batch, int row, int[] keySlots) {
+		if (keyWidth == 1 && keySlots.length == 1) {
+			long key = batch.get(keySlots[0], row);
+			return lookupScalarSingle(key, hashHook.applyAsInt((int) mix(0x9e3779b97f4a7c15L ^ key)));
+		}
 		int hash = hash(batch, row, keySlots);
-		int bucket = hash & (occupied.length - 1);
-		return lookupPrepared(batch, row, keySlots, hash, bucket, heads[bucket]);
+		byte expected = control(hash);
+		byte[] tags = controls;
+		int mask = tags.length - 1;
+		int bucket = hash & mask;
+		byte tag;
+		while ((tag = tags[bucket]) != 0) {
+			if (tag == expected && (int) entries[bucket] == hash && matches(batch, row, keySlots, bucket)) {
+				return head(bucket);
+			}
+			bucket = (bucket + 1) & mask;
+		}
+		return -1;
+	}
+
+	private int lookupScalarSingle(long key, int hash) {
+		byte[] tags = controls;
+		byte expected = control(hash), tag;
+		int mask = tags.length - 1;
+		int bucket = hash & mask;
+		while ((tag = tags[bucket]) != 0) {
+			if (tag == expected) {
+				long entry = entries[bucket];
+				if ((int) entry == hash && keys[bucket] == key) {
+					return (int) (entry >>> Integer.SIZE) - 1;
+				}
+			}
+			bucket = (bucket + 1) & mask;
+		}
+		return -1;
+	}
+
+	private static byte control(int hash) {
+		return (byte) (0x80 | (hash >>> 25));
 	}
 
 	void hashBatch(NativeBatch batch, int[] rows, int rowCount, int[] keySlots, long[] hashState,
@@ -175,27 +229,62 @@ final class PrimitiveHashJoinTable {
 	}
 
 	void headBatch(int[] hashes, int rowCount, int[] buckets, int[] candidateHeads) {
-		int mask = occupied.length - 1;
+		int mask = entries.length - 1;
 		for (int i = 0; i < rowCount; i++) {
 			int bucket = hashes[i] & mask;
 			buckets[i] = bucket;
-			candidateHeads[i] = heads[bucket];
+			candidateHeads[i] = head(bucket);
+		}
+	}
+
+	/**
+	 * Prefetch first probe words. The table must not change before they are consumed. Hash scratch is dead after
+	 * hashBatch(), so callers can reuse it here instead of allocating heads.
+	 */
+	void entryBatch(int[] hashes, int rowCount, int[] buckets, long[] candidates) {
+		long[] index = entries;
+		int mask = index.length - 1;
+		for (int i = 0; i < rowCount; i++) {
+			int bucket = hashes[i] & mask;
+			buckets[i] = bucket;
+			candidates[i] = index[bucket];
 		}
 	}
 
 	int lookupPrepared(NativeBatch batch, int row, int[] keySlots, int hash, int bucket, int candidateHead) {
-		int mask = occupied.length - 1;
-		byte fingerprint = fingerprint(hash);
-		boolean initialBucket = true;
-		while (occupied[bucket] != 0) {
-			if (fingerprints[bucket] == fingerprint && fullHashes[bucket] == hash
-					&& matches(batch, row, keySlots, bucket)) {
-				return initialBucket ? candidateHead : heads[bucket];
+		return lookupPrepared(batch, row, keySlots, hash, bucket, entries[bucket]);
+	}
+
+	int lookupPrepared(NativeBatch batch, int row, int[] keySlots, int hash, int bucket, long entry) {
+		if (keyWidth == 1) {
+			return lookupSingle(batch.get(keySlots[0], row), hash, bucket, entry);
+		}
+		long[] index = entries;
+		int mask = index.length - 1;
+		while ((int) entry != hash || !matches(batch, row, keySlots, bucket)) {
+			if (entry == 0L) {
+				return -1;
 			}
 			bucket = (bucket + 1) & mask;
-			initialBucket = false;
+			entry = index[bucket];
 		}
-		return -1;
+		// The empty word also decodes to -1 (including a zero-hash/zero-key probe).
+		return (int) (entry >>> Integer.SIZE) - 1;
+	}
+
+	/** A scalar key needs neither a tuple loop nor repeated batch column addressing. */
+	private int lookupSingle(long key, int hash, int bucket, long entry) {
+		long[] index = entries;
+		long[] values = keys;
+		int mask = index.length - 1;
+		while ((int) entry != hash || values[bucket] != key) {
+			if (entry == 0L) {
+				return -1;
+			}
+			bucket = (bucket + 1) & mask;
+			entry = index[bucket];
+		}
+		return (int) (entry >>> Integer.SIZE) - 1;
 	}
 
 	long payload(int payload, int offset) {
@@ -203,11 +292,14 @@ final class PrimitiveHashJoinTable {
 	}
 
 	int find(long[] row, int[] keySlots, int hash) {
-		int mask = occupied.length - 1;
+		byte[] tags = controls;
+		int mask = tags.length - 1;
 		int bucket = hash & mask;
-		byte fingerprint = fingerprint(hash);
-		while (occupied[bucket] != 0 && (fingerprints[bucket] != fingerprint || fullHashes[bucket] != hash
-				|| !matches(row, keySlots, bucket))) {
+		byte expected = control(hash), tag;
+		while ((tag = tags[bucket]) != 0) {
+			if (tag == expected && (int) entries[bucket] == hash && matches(row, keySlots, bucket)) {
+				return bucket;
+			}
 			bucket = (bucket + 1) & mask;
 		}
 		return bucket;
@@ -262,54 +354,51 @@ final class PrimitiveHashJoinTable {
 	}
 
 	void ensurePayloadCapacity(int requiredRows) {
+		if (requiredRows < 0) {
+			throw new IllegalArgumentException("negative payload capacity");
+		}
 		if (requiredRows <= next.length) {
 			return;
 		}
-		int oldLength = next.length;
-		int newLength = oldLength << 1;
+		int newLength = next.length;
 		while (newLength < requiredRows) {
-			newLength <<= 1;
+			newLength = Math.multiplyExact(newLength, 2);
 		}
-		next = Arrays.copyOf(next, newLength);
-		Arrays.fill(next, oldLength, newLength, -1);
-		payloads = Arrays.copyOf(payloads, Math.max(newLength, payloadWidth * newLength));
+		long[] newPayloads = payloadWidth == 0 ? payloads
+				: Arrays.copyOf(payloads, Math.multiplyExact(payloadWidth, newLength));
+		int[] newNext = Arrays.copyOf(next, newLength);
+		// add() assigns the new row's sentinel; unwritten rows are not part of any chain.
+		payloads = newPayloads;
+		next = newNext;
 	}
 
 	void growBuckets() {
-		long[] oldKeys = keys;
-		byte[] oldOccupied = occupied;
-		byte[] oldFingerprints = fingerprints;
-		int[] oldFullHashes = fullHashes;
-		int[] oldHeads = heads;
-		int[] oldTails = tails;
-		int[] oldChainCounts = chainCounts;
-		int newLength = oldOccupied.length << 1;
-		keys = new long[keyWidth * newLength];
-		occupied = new byte[newLength];
-		fingerprints = new byte[newLength];
-		fullHashes = new int[newLength];
-		heads = new int[newLength];
-		tails = new int[newLength];
-		chainCounts = new int[newLength];
-		Arrays.fill(heads, -1);
-		Arrays.fill(tails, -1);
-		for (int oldBucket = 0; oldBucket < oldOccupied.length; oldBucket++) {
-			if (oldOccupied[oldBucket] == 0) {
+		int newLength = Math.multiplyExact(entries.length, 2);
+		long[] newKeys = new long[Math.multiplyExact(keyWidth, newLength)];
+		long[] newEntries = new long[newLength];
+		byte[] newControls = new byte[newLength];
+		int[] newTails = new int[newLength];
+		int[] newChainCounts = new int[newLength];
+		int mask = newLength - 1;
+		for (int oldBucket = 0; oldBucket < entries.length; oldBucket++) {
+			long entry = entries[oldBucket];
+			if (entry == 0L) {
 				continue;
 			}
-			int mask = newLength - 1;
-			int hash = oldFullHashes[oldBucket];
-			int bucket = hash & mask;
-			while (occupied[bucket] != 0) {
+			int bucket = (int) entry & mask;
+			while (newEntries[bucket] != 0L) {
 				bucket = (bucket + 1) & mask;
 			}
-			occupied[bucket] = 1;
-			fingerprints[bucket] = oldFingerprints[oldBucket];
-			fullHashes[bucket] = hash;
-			System.arraycopy(oldKeys, oldBucket * keyWidth, keys, bucket * keyWidth, keyWidth);
-			heads[bucket] = oldHeads[oldBucket];
-			tails[bucket] = oldTails[oldBucket];
-			chainCounts[bucket] = oldChainCounts[oldBucket];
+			newEntries[bucket] = entry;
+			newControls[bucket] = controls[oldBucket];
+			System.arraycopy(keys, oldBucket * keyWidth, newKeys, bucket * keyWidth, keyWidth);
+			newTails[bucket] = tails[oldBucket];
+			newChainCounts[bucket] = chainCounts[oldBucket];
 		}
+		keys = newKeys;
+		entries = newEntries;
+		controls = newControls;
+		tails = newTails;
+		chainCounts = newChainCounts;
 	}
 }

@@ -114,7 +114,7 @@ final class HashJoinFactorCursor implements LmdbNativeFactorCursor {
 				weight = probeWeight;
 				if (inlinePayload) {
 					probeMark = row.mark();
-					int payload = core.table.heads[bucket];
+					int payload = core.table.head(bucket);
 					pendingPayload = core.table.next[payload];
 					if (!installPayload(payload))
 						continue;
@@ -125,7 +125,7 @@ final class HashJoinFactorCursor implements LmdbNativeFactorCursor {
 					weight = Math.multiplyExact(weight, count);
 				} else if (count == 1) {
 					// Preserve the existing unique-key/singleton fast path: no tuple window or descriptor.
-					if (!installPayload(core.table.heads[bucket]))
+					if (!installPayload(core.table.head(bucket)))
 						continue;
 				} else {
 					source.export(groups, 0, bucket);

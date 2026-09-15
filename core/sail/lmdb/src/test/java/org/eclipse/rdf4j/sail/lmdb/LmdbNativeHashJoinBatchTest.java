@@ -386,29 +386,30 @@ class LmdbNativeHashJoinBatchTest {
 	}
 
 	@Test
-	void byteAdmissionLateRefusalAfterDeliberateUnderestimate() {
-		// Unique join keys: the bucket-array estimate matches the actual table, but the payload arrays grow by
-		// doubling (…128 → 256 slots for 200 rows), overshooting the estimated 200-slot payload reservation. A
-		// budget barely above the preflight bytes admits the build and then refuses the growth — the
-		// late-refusal path with a discarded partial build and a correct fallback result.
-		String uniqueQuery = "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT ?left ?key ?right WHERE { ?left ex:ukey ?key . ?right ex:ukey ?key }";
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			ValueFactory vf = connection.getValueFactory();
-			IRI ukey = vf.createIRI(EX, "ukey");
-			for (int i = 0; i < 200; i++) {
-				connection.add(vf.createIRI(EX, "urow" + i), ukey, vf.createIRI(EX, "unique" + i));
-			}
-		}
-		List<String> generic = genericRows(uniqueQuery);
+	void byteAdmissionLateRefusalAfterDeliberateUnderestimate() throws IOException {
+		// Use the direct cursor fixture to keep this lifecycle contract independent of the estimator. The build has
+		// forty rows but is deliberately admitted with a one-row estimate, so the first physical table growth takes
+		// the late-refusal path and the untouched fallback must still return the exact forty-row join.
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("key", 0, "left", 1, "right", 2), null);
+		layout.freeze(List.of("key", "left", "right"));
+		CountingJoinSource source = new CountingJoinSource(40);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		assertThat(LmdbNativeAggregateCompiler.initializeRow(row, EmptyBindingSet.getInstance(), source, layout))
+				.isTrue();
+		PatternPlan probe = new PatternPlan(Term.slot(0), Term.constant(8L), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 3);
+		PatternPlan build = new PatternPlan(Term.slot(0), Term.constant(7L), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { probe, build }, new MaskedFilter[0]);
 		resetCounters();
-		System.setProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false");
-		long preflightBytes = LmdbNativeHashJoin.estimateBuildBytes(200, 1, 1);
+		long preflightBytes = LmdbNativeHashJoin.estimateBuildBytes(1, 1, 1);
 		LmdbNativeHashJoin.queryMemoryOverride = org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager
 				.createForTesting(preflightBytes + 100, preflightBytes + 100);
 		System.setProperty(LmdbNativeHashJoin.BYTE_ADMISSION_PROPERTY, "true");
 		try {
-			assertThat(rows(uniqueQuery)).isEqualTo(generic).hasSize(200);
+			try (BatchCursor cursor = new HashJoinBatchCursor(plan, probe, build, row, new int[] { 0 }, 2, 32, 1D)) {
+				assertThat(directRows(cursor, row.slots.length)).containsExactlyInAnyOrderElementsOf(expectedRows(40));
+			}
 			assertThat(LmdbNativeHashJoin.PREFLIGHT_REFUSALS.get()).as("preflight admitted").isZero();
 			assertThat(LmdbNativeHashJoin.LATE_REFUSALS.get()).as("growth refused mid-build").isOne();
 			assertThat(LmdbNativeHashJoin.BUILDS.get()).as("no completed build").isZero();
@@ -579,6 +580,14 @@ class LmdbNativeHashJoinBatchTest {
 		return rows;
 	}
 
+	private static List<String> expectedRows(int count) {
+		List<String> rows = new ArrayList<>(count);
+		for (int i = 0; i < count; i++) {
+			rows.add(Arrays.toString(new long[] { i + 1L, 11L + i, 101L + i }));
+		}
+		return rows;
+	}
+
 	private List<String> genericRows() {
 		return genericRows(QUERY);
 	}
@@ -625,14 +634,19 @@ class LmdbNativeHashJoinBatchTest {
 	}
 
 	private static final class CountingJoinSource implements NativeLmdbQuerySource {
-		private final long[][] rows = {
-				{ 1L, 7L, 11L, 0L },
-				{ 2L, 7L, 12L, 0L },
-				{ 3L, 7L, 13L, 0L },
-				{ 1L, 8L, 101L, 0L },
-				{ 2L, 8L, 102L, 0L },
-				{ 3L, 8L, 103L, 0L }
-		};
+		private final long[][] rows;
+
+		private CountingJoinSource() {
+			this(3);
+		}
+
+		private CountingJoinSource(int rowsPerPredicate) {
+			rows = new long[rowsPerPredicate * 2][4];
+			for (int i = 0; i < rowsPerPredicate; i++) {
+				rows[i] = new long[] { i + 1L, 7L, 11L + i, 0L };
+				rows[rowsPerPredicate + i] = new long[] { i + 1L, 8L, 101L + i, 0L };
+			}
+		}
 
 		@Override
 		public long idOf(Value value) {

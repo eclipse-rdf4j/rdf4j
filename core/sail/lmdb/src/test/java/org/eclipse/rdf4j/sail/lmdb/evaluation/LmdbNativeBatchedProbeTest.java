@@ -30,10 +30,10 @@ class LmdbNativeBatchedProbeTest {
 				.getDeclaredConstructor(int.class, int.class, IntUnaryOperator.class);
 		Method hashBatch = PrimitiveHashJoinTable.class.getDeclaredMethod("hashBatch", NativeBatch.class,
 				int[].class, int.class, int[].class, long[].class, int[].class);
-		Method headBatch = PrimitiveHashJoinTable.class.getDeclaredMethod("headBatch", int[].class, int.class,
-				int[].class, int[].class);
+		Method entryBatch = PrimitiveHashJoinTable.class.getDeclaredMethod("entryBatch", int[].class, int.class,
+				int[].class, long[].class);
 		Method lookupPrepared = PrimitiveHashJoinTable.class.getDeclaredMethod("lookupPrepared", NativeBatch.class,
-				int.class, int[].class, int.class, int.class, int.class);
+				int.class, int[].class, int.class, int.class, long.class);
 
 		for (int width = 1; width <= 4; width++) {
 			PrimitiveHashJoinTable table = constructor.newInstance(width, 1, (IntUnaryOperator) ignored -> 0);
@@ -59,23 +59,23 @@ class LmdbNativeBatchedProbeTest {
 			long[] hashState = new long[64];
 			int[] hashes = new int[64];
 			int[] buckets = new int[64];
-			int[] heads = new int[64];
+			long[] entries = new long[64];
 
 			hashBatch.invoke(table, batch, rows, rows.length, keySlots, hashState, hashes);
-			headBatch.invoke(table, hashes, rows.length, buckets, heads);
+			entryBatch.invoke(table, hashes, rows.length, buckets, entries);
 			for (int i = 0; i < rows.length; i++) {
 				int row = rows[i];
 				int scalar = table.lookup(batch, row, keySlots);
 				int prepared = (int) lookupPrepared.invoke(table, batch, row, keySlots, hashes[i], buckets[i],
-						heads[i]);
+						entries[i]);
 				assertThat(payloadChain(table, prepared)).as("width %s, probe row %s", width, row)
 						.isEqualTo(payloadChain(table, scalar));
 			}
 		}
 
 		assertThat(PrimitiveHashJoinTable.class.getDeclaredField("keys").getType()).isEqualTo(long[].class);
-		assertThat(PrimitiveHashJoinTable.class.getDeclaredField("fingerprints").getType()).isEqualTo(byte[].class);
-		assertThat(PrimitiveHashJoinTable.class.getDeclaredField("fullHashes").getType()).isEqualTo(int[].class);
+		assertThat(PrimitiveHashJoinTable.class.getDeclaredField("entries").getType()).isEqualTo(long[].class);
+		assertThat(PrimitiveHashJoinTable.class.getDeclaredField("controls").getType()).isEqualTo(byte[].class);
 	}
 
 	@Test
