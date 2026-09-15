@@ -3152,11 +3152,26 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	@Override
-	public ValueExprTripleRef visit(ASTTripleFunc node, Object data) throws VisitorException {
-		// Bind arbitrary component expressions in SPARQL's left-to-right argument order.
-		Var s = toVar(castToValueExpr(node.getSubj().jjtAccept(this, data)));
-		Var p = toVar(castToValueExpr(node.getPred().jjtAccept(this, data)));
-		Var o = toVar(castToValueExpr(node.getObj().jjtAccept(this, data)));
+	public ValueExpr visit(ASTTripleFunc node, Object data) throws VisitorException {
+		ValueExpr subject = castToValueExpr(node.getSubj().jjtAccept(this, data));
+		ValueExpr predicate = castToValueExpr(node.getPred().jjtAccept(this, data));
+		ValueExpr object = castToValueExpr(node.getObj().jjtAccept(this, data));
+
+		if (!isSimpleTripleComponent(subject) || !isSimpleTripleComponent(predicate)
+				|| !isSimpleTripleComponent(object)) {
+			// Keep arbitrary expressions as function arguments so their surrounding expression controls evaluation and
+			// scope. This is required for nested TRIPLE calls and IF/COALESCE short-circuiting in every query clause.
+			FunctionCall functionCall = new FunctionCall(RDF.STATEMENT.stringValue());
+			functionCall.addArg(subject);
+			functionCall.addArg(predicate);
+			functionCall.addArg(object);
+			return functionCall;
+		}
+
+		// Preserve the existing variable/constant lowering for the compact triple-reference representation.
+		Var s = toVar(subject);
+		Var p = toVar(predicate);
+		Var o = toVar(object);
 
 		// Create a fresh anonymous variable to hold the result triple term
 		Var exprVar = createAnonVar();
@@ -3164,25 +3179,38 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		return new ValueExprTripleRef(exprVar.getName(), s, p, o);
 	}
 
-	@Override
-	public TripleComponent visit(ASTSubjectFunc node, Object data) throws VisitorException {
-		var tripleTermExpr = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));
-		Var tripleTermVar = mapValueExprToVar(tripleTermExpr);
-		return new TripleComponent(tripleTermVar, SUBJECT);
+	private boolean isSimpleTripleComponent(ValueExpr expr) {
+		return expr instanceof Var || expr instanceof ValueConstant;
 	}
 
 	@Override
-	public TripleComponent visit(ASTPredicateFunc node, Object data) throws VisitorException {
+	public ValueExpr visit(ASTSubjectFunc node, Object data) throws VisitorException {
 		var tripleTermExpr = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));
-		Var tripleTermVar = mapValueExprToVar(tripleTermExpr);
-		return new TripleComponent(tripleTermVar, PREDICATE);
+		return tripleComponent(tripleTermExpr, SUBJECT, RDF.SUBJECT.stringValue());
 	}
 
 	@Override
-	public TripleComponent visit(ASTObjectFunc node, Object data) throws VisitorException {
+	public ValueExpr visit(ASTPredicateFunc node, Object data) throws VisitorException {
 		var tripleTermExpr = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));
-		Var tripleTermVar = mapValueExprToVar(tripleTermExpr);
-		return new TripleComponent(tripleTermVar, OBJECT);
+		return tripleComponent(tripleTermExpr, PREDICATE, RDF.PREDICATE.stringValue());
+	}
+
+	@Override
+	public ValueExpr visit(ASTObjectFunc node, Object data) throws VisitorException {
+		var tripleTermExpr = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));
+		return tripleComponent(tripleTermExpr, OBJECT, RDF.OBJECT.stringValue());
+	}
+
+	private ValueExpr tripleComponent(ValueExpr tripleTermExpr, TripleComponent.Role role, String functionUri)
+			throws VisitorException {
+		if (tripleTermExpr instanceof Var || tripleTermExpr instanceof ValueConstant
+				|| tripleTermExpr instanceof TripleRef
+				|| tripleTermExpr instanceof ReifiedTripleRef) {
+			return new TripleComponent(mapValueExprToVar(tripleTermExpr), role);
+		}
+		FunctionCall functionCall = new FunctionCall(functionUri);
+		functionCall.addArg(tripleTermExpr);
+		return functionCall;
 	}
 
 	protected TripleRef constructTripleRefFromAST(ASTTripleTerm node) throws VisitorException {
