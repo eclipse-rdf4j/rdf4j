@@ -424,6 +424,11 @@ public class ValueStore extends AbstractValueFactory {
 	private static final int MAX_HASH_ID_KEY_BYTES = 1 + MAX_UNSIGNED_ID_BYTES + MAX_ID_KEY_BYTES;
 	private static final int LMDB_PAGE_HEADER_BYTES = 16;
 	private static final int LMDB_NODE_HEADER_BYTES = 8;
+	private static final int LMDB_INDEX_ENTRY_BYTES = Short.BYTES;
+	private static final int LMDB_PAGE_NUMBER_BYTES = Long.BYTES;
+	private static final int LMDB_DATABASE_DESCRIPTOR_BYTES = 48; // sizeof(MDB_db) in the supported LMDB ABI
+	private static final int LMDB_MIN_KEYS = 2;
+	private static final int LMDB_FREE_DBI = 0;
 	private static final int MIN_TRANSACTION_VALUE_CACHE_SIZE = 4 * 1024;
 	private static final int MAX_TRANSACTION_VALUE_CACHE_SIZE = 1024 * 1024;
 	private static final long TRANSACTION_VALUE_CACHE_BYTES_PER_ENTRY = 4 * 1024L;
@@ -432,35 +437,51 @@ public class ValueStore extends AbstractValueFactory {
 
 	private static final class PreparedValueFootprint {
 		private long mainPuts;
-		private long mainKeyBytes;
-		private long mainValueBytes;
+		private long mainEntryBytes;
 		private long mainOverflowPages;
 		private long referencePuts;
+		private long referenceEntryBytes;
 		private long tripleRecords;
+		private long tripleEntryBytes;
 
 		private void addStoredRecord(long dataLength, int pageSize) {
 			if (dataLength <= MAX_KEY_SIZE) {
-				mainPuts = add(mainPuts, 2L);
-				mainKeyBytes = add(mainKeyBytes, add(dataLength, MAX_ID_KEY_BYTES));
-				mainValueBytes = add(mainValueBytes, add(MAX_ID_KEY_BYTES, dataLength));
+				addMainEntry(dataLength, MAX_ID_KEY_BYTES);
+				addMainEntry(MAX_ID_KEY_BYTES, dataLength);
 			} else {
 				// One forward record and one hash record are written for a large value. The hash record may be a
 				// first-hash or a collision key; reserve for the longer collision form and the largest ID value.
-				mainPuts = add(mainPuts, 2L);
-				mainKeyBytes = add(mainKeyBytes, add(MAX_ID_KEY_BYTES, MAX_HASH_ID_KEY_BYTES));
-				mainValueBytes = add(mainValueBytes, 2L * MAX_ID_KEY_BYTES);
-				mainOverflowPages = add(mainOverflowPages,
-						pageCeiling(add(dataLength, LMDB_PAGE_HEADER_BYTES), pageSize));
+				addMainEntry(MAX_HASH_ID_KEY_BYTES, MAX_ID_KEY_BYTES);
+				if (needsOverflow(MAX_ID_KEY_BYTES, dataLength, pageSize)) {
+					addMainEntry(MAX_ID_KEY_BYTES, LMDB_PAGE_NUMBER_BYTES);
+					mainOverflowPages = add(mainOverflowPages, overflowPages(dataLength, pageSize));
+				} else {
+					addMainEntry(MAX_ID_KEY_BYTES, dataLength);
+				}
 			}
+		}
+
+		private void addMainEntry(long keyLength, long valueLength) {
+			mainPuts = add(mainPuts, 1L);
+			mainEntryBytes = add(mainEntryBytes, leafEntryBytes(keyLength, valueLength));
+		}
+
+		private void addNamedDatabase(String name) {
+			addMainEntry(name.getBytes(StandardCharsets.UTF_8).length, LMDB_DATABASE_DESCRIPTOR_BYTES);
 		}
 
 		private void addReference() {
 			referencePuts = add(referencePuts, 1L);
+			referenceEntryBytes = add(referenceEntryBytes,
+					leafEntryBytes(MAX_ID_KEY_BYTES, MAX_UNSIGNED_ID_BYTES));
 		}
 
 		private void addTripleRecord() {
 			tripleRecords = add(tripleRecords, 1L);
 			referencePuts = add(referencePuts, 3L);
+			referenceEntryBytes = add(referenceEntryBytes,
+					multiply(leafEntryBytes(MAX_ID_KEY_BYTES, MAX_UNSIGNED_ID_BYTES), 3L));
+			tripleEntryBytes = add(tripleEntryBytes, leafEntryBytes(TripleIndex.MAX_KEY_LENGTH, 0L));
 		}
 	}
 
@@ -470,6 +491,35 @@ public class ValueStore extends AbstractValueFactory {
 
 	private static long pageCeiling(long bytes, int pageSize) {
 		return bytes == 0L ? 0L : (add(bytes, pageSize - 1L) / pageSize);
+	}
+
+	/**
+	 * Returns the aligned leaf-node footprint used by LMDB for one key/value pair. LMDB stores a two-byte page index
+	 * alongside every node, and node sizes are rounded to an even number of bytes.
+	 */
+	private static long leafEntryBytes(long keyLength, long valueLength) {
+		return add(even(add(LMDB_NODE_HEADER_BYTES, add(keyLength, valueLength))), LMDB_INDEX_ENTRY_BYTES);
+	}
+
+	private static long even(long value) {
+		return add(value, 1L) & ~1L;
+	}
+
+	private static long lmdbNodeMax(int pageSize) {
+		long max = ((pageSize - LMDB_PAGE_HEADER_BYTES) / LMDB_MIN_KEYS) & ~1L;
+		return max - LMDB_INDEX_ENTRY_BYTES;
+	}
+
+	private static boolean needsOverflow(long keyLength, long valueLength, int pageSize) {
+		return add(LMDB_NODE_HEADER_BYTES, add(keyLength, valueLength)) > lmdbNodeMax(pageSize);
+	}
+
+	/**
+	 * Mirrors LMDB's OVPAGES(size, psize) macro. The page header is included in the overflow-page calculation, while
+	 * the main leaf node stores only the page number.
+	 */
+	private static long overflowPages(long valueLength, int pageSize) {
+		return add(add(LMDB_PAGE_HEADER_BYTES - 1L, valueLength) / pageSize, 1L);
 	}
 
 	private static final VarHandle PREVIOUS_NAMESPACE_HANDLE;
@@ -2003,14 +2053,18 @@ public class ValueStore extends AbstractValueFactory {
 			estimateFreshValue(session, footprint, visitedValues, visitedNamespaces, value);
 		}
 		if (coreDatatypeLiteralReferences && !deferNextIdPersistence) {
-			footprint.mainPuts = add(footprint.mainPuts, 1L);
-			footprint.mainKeyBytes = add(footprint.mainKeyBytes, 1L);
-			footprint.mainValueBytes = add(footprint.mainValueBytes, MAX_UNSIGNED_ID_BYTES);
+			footprint.addMainEntry(1L, MAX_UNSIGNED_ID_BYTES);
 		}
 		if (footprint.referencePuts > 0L) {
 			// Reference counts are written once per referenced ID in the prepared batch. Counting every edge is a safe
 			// upper bound when several values share one datatype, namespace, or triple component.
 			footprint.referencePuts = Math.max(1L, footprint.referencePuts);
+			footprint.addNamedDatabase("ref_counts");
+		}
+		if (footprint.tripleRecords > 0L) {
+			for (TripleIndex index : tripleTermIndexes) {
+				footprint.addNamedDatabase(index.getName(true));
+			}
 		}
 
 		boolean[] activeWriteTxnCommitted = new boolean[1];
@@ -2091,43 +2145,67 @@ public class ValueStore extends AbstractValueFactory {
 
 	private long preparedValueReservation(MemoryStack stack, long txn, PreparedValueFootprint footprint)
 			throws IOException {
+		if (footprint.mainPuts == 0L && footprint.referencePuts == 0L && footprint.tripleRecords == 0L) {
+			return 0L;
+		}
 		MDBStat stat = MDBStat.malloc(stack);
-		long pages = preparedDatabasePages(txn, dbi, stat, footprint.mainPuts, footprint.mainKeyBytes,
-				footprint.mainValueBytes, footprint.mainOverflowPages);
+		PreparedDatabaseReservation main = preparedDatabaseReservation(txn, dbi, stat, footprint.mainPuts,
+				footprint.mainEntryBytes, footprint.mainOverflowPages);
+		long pages = main.pages();
+		long replaceablePages = main.replaceablePages();
 		if (footprint.referencePuts > 0L) {
-			pages = add(pages, preparedDatabasePages(txn, refCountsDbi, stat, footprint.referencePuts,
-					multiply(footprint.referencePuts, MAX_ID_KEY_BYTES),
-					multiply(footprint.referencePuts, MAX_UNSIGNED_ID_BYTES), 0L));
+			PreparedDatabaseReservation references = preparedDatabaseReservation(txn, refCountsDbi, stat,
+					footprint.referencePuts, footprint.referenceEntryBytes, 0L);
+			pages = add(pages, references.pages());
+			replaceablePages = add(replaceablePages, references.replaceablePages());
 		}
 		if (footprint.tripleRecords > 0L) {
 			for (TripleIndex index : tripleTermIndexes) {
-				pages = add(pages, preparedDatabasePages(txn, index.getDB(true), stat, footprint.tripleRecords,
-						multiply(footprint.tripleRecords, TripleIndex.MAX_KEY_LENGTH), 0L, 0L));
+				PreparedDatabaseReservation triples = preparedDatabaseReservation(txn, index.getDB(true), stat,
+						footprint.tripleRecords, footprint.tripleEntryBytes, 0L);
+				pages = add(pages, triples.pages());
+				replaceablePages = add(replaceablePages, triples.replaceablePages());
 			}
 		}
-		return multiply(pages, pageSize);
+
+		long freeDatabasePages = preparedFreeDatabasePages(txn, stat, replaceablePages);
+		return multiply(add(pages, freeDatabasePages), pageSize);
 	}
 
-	private long preparedDatabasePages(long txn, int database, MDBStat stat, long puts, long keyBytes,
-			long valueBytes, long overflowPages) throws IOException {
+	private PreparedDatabaseReservation preparedDatabaseReservation(long txn, int database, MDBStat stat, long puts,
+			long entryBytes, long overflowPages) throws IOException {
 		if (puts == 0L) {
-			return 0L;
+			return new PreparedDatabaseReservation(0L, 0L);
 		}
 		E(mdb_stat(txn, database, stat));
-		long structuralPages = add(stat.ms_branch_pages(), multiply(stat.ms_leaf_pages(), 2L));
-		long payloadBytes = add(add(keyBytes, valueBytes), multiply(puts, LMDB_NODE_HEADER_BYTES));
-		long payloadPages = pageCeiling(payloadBytes, pageSize - LMDB_PAGE_HEADER_BYTES);
-		if (stat.ms_entries() <= 1L) {
-			// A fresh value DB contains only the NEXT_ID metadata record. Its user tree has no committed pages to copy;
-			// retain the one existing leaf-page allowance above, and bound new leaves and branches by the encoded
-			// payload.
-			structuralPages = add(structuralPages, payloadPages);
-		} else {
-			// With a pinned reader, every original branch/leaf page and each possible split page may remain live until
-			// commit. Bound the structural tail by the current pages plus two pages per prepared put.
-			structuralPages = add(structuralPages, multiply(puts, 2L));
-		}
-		return add(1L, add(structuralPages, add(payloadPages, overflowPages)));
+		// A pinned reader can retain every old branch/leaf page. Each new put can also require a leaf and a branch
+		// page while the tree is being copied and split, so reserve two structural pages per put.
+		long structuralPages = add(stat.ms_branch_pages(),
+				add(multiply(stat.ms_leaf_pages(), 2L), multiply(puts, 2L)));
+		long payloadPages = pageCeiling(entryBytes, pageSize - LMDB_PAGE_HEADER_BYTES);
+		long pages = add(1L, add(structuralPages, add(payloadPages, overflowPages)));
+		long replaceablePages = add(stat.ms_branch_pages(), stat.ms_leaf_pages());
+		return new PreparedDatabaseReservation(pages, replaceablePages);
+	}
+
+	private long preparedFreeDatabasePages(long txn, MDBStat stat, long replaceablePages) throws IOException {
+		E(mdb_stat(txn, LMDB_FREE_DBI, stat));
+		// LMDB adds one record for the current transaction's free-page ID list. Existing historical records are
+		// retained or removed, rather than rewritten with this list, so only one new record needs to be budgeted here.
+		// Pages allocated for this new record are not replaceable in the same transaction; this makes the bound a
+		// single
+		// checked calculation instead of a recurrence over historical free-list records.
+		long freePageIds = add(replaceablePages,
+				add(stat.ms_branch_pages(), stat.ms_leaf_pages()));
+		long freeDataBytes = multiply(add(freePageIds, 1L), LMDB_PAGE_NUMBER_BYTES);
+		boolean freeDataOverflows = needsOverflow(LMDB_PAGE_NUMBER_BYTES, freeDataBytes, pageSize);
+		long freeEntryBytes = leafEntryBytes(LMDB_PAGE_NUMBER_BYTES,
+				freeDataOverflows ? LMDB_PAGE_NUMBER_BYTES : freeDataBytes);
+		long freeOverflowPages = freeDataOverflows ? overflowPages(freeDataBytes, pageSize) : 0L;
+		return preparedDatabaseReservation(txn, LMDB_FREE_DBI, stat, 1L, freeEntryBytes, freeOverflowPages).pages();
+	}
+
+	private record PreparedDatabaseReservation(long pages, long replaceablePages) {
 	}
 
 	private static long multiply(long left, long right) {

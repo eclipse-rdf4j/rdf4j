@@ -74,6 +74,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 public class ValueStoreTest {
 
 	private static final IRI INLINE_LITERALS = Values.iri(LmdbStoreSchema.NAMESPACE + "inlineLiterals");
+	private static final int LONG_LIVED_READER_BATCHES = 600;
 
 	private ValueStore valueStore;
 	private File dataDir;
@@ -234,6 +235,46 @@ public class ValueStoreTest {
 		assertEquals(ids[2], valueStore.getId(secondCollision));
 		assertEquals(ids[3], valueStore.getId(triple));
 		assertEquals(triple, valueStore.getValue(ids[3]));
+	}
+
+	@Test
+	public void preparedReservationHandlesManyBatchesWithLongLivedReader() throws Exception {
+		valueStore.close();
+		valueStore = createValueStore(new LmdbStoreConfig().setAutoGrow(true).setValueDBSize(256L * 1024));
+		ValueStore.FreshValueSession session = valueStore.startFreshValueSessionIfEmpty();
+		assertNotNull(session);
+		long transactionBeforeHistory = valueStore.lastTransactionId();
+		List<Value> values = new ArrayList<>(LONG_LIVED_READER_BATCHES);
+		List<Long> ids = new ArrayList<>(LONG_LIVED_READER_BATCHES);
+		// Keep a supported long-lived reader open while repeated prepared writers reserve and commit batches.
+		try (Txn pinnedReader = valueStore.getTxnManager().createReadTxnUntracked()) {
+			for (int i = 0; i < LONG_LIVED_READER_BATCHES; i++) {
+				Value value = SimpleValueFactory.getInstance().createBNode("historical-free-list-" + i);
+				Value[] input = { value };
+				values.add(value);
+				valueStore.reservePreparedValueCapacity(session, input);
+				valueStore.startTransaction(true);
+				ValueStore.FreshValueAssignment assignment = valueStore.assignFreshValues(session, input);
+				ValueStore.FreshValueEncoder encoder = valueStore.freshValueEncoder(session, assignment);
+				ValueStore.PreparedValueBatch batch;
+				while ((batch = encoder.next(1)) != null) {
+					valueStore.persistPreparedValues(batch);
+					batch.releasePersistenceData();
+				}
+				valueStore.commit();
+				valueStore.commitFreshValueTransaction(session);
+				valueStore.publishPreparedValues(assignment.publication());
+				ids.add(assignment.ids()[0]);
+			}
+			assertTrue("the long-lived reader must span enough committed writers to exercise repeated prepared COW",
+					valueStore.lastTransactionId() - transactionBeforeHistory >= LONG_LIVED_READER_BATCHES);
+		} finally {
+			valueStore.discardFreshValueSession(session);
+		}
+
+		for (int i = 0; i < values.size(); i++) {
+			assertEquals(values.get(i), valueStore.getValue(ids.get(i)));
+		}
 	}
 
 	@Test

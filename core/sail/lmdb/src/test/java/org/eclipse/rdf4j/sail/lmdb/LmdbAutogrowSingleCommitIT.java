@@ -14,12 +14,15 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -32,6 +35,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -56,6 +60,7 @@ class LmdbAutogrowSingleCommitIT {
 	private static final int VALUE_LENGTH = 160;
 	private static final int SEPARATE_BATCH_ROWS = 1_024;
 	private static final int SEPARATE_BATCH_LARGE_VALUE_LENGTH = 262_144;
+	private static final int PINNED_PREPARED_BATCH_ROWS = 32_768;
 
 	@TempDir
 	Path dataDir;
@@ -97,6 +102,114 @@ class LmdbAutogrowSingleCommitIT {
 						.hasSizeGreaterThan(1);
 				assertThat(countRows(repository)).isEqualTo(2 * SEPARATE_BATCH_ROWS);
 			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(60)
+	void preparedBatchesPreserveExactQuotedStatementsAcrossPinnedReaderResize() throws Exception {
+		LmdbStore store = new LmdbStore(dataDir.toFile(), autoGrowConfig());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		Model firstBatch = preparedQuotedRows(0, SEPARATE_BATCH_ROWS);
+		Model secondBatch = preparedRows(SEPARATE_BATCH_ROWS, PINNED_PREPARED_BATCH_ROWS, VALUE_LENGTH);
+		Model expected = new LinkedHashModel();
+		expected.addAll(firstBatch);
+		expected.addAll(secondBatch);
+		Set<TripleTerm> expectedTripleTerms = new HashSet<>();
+		firstBatch.forEach(statement -> expectedTripleTerms.add((TripleTerm) statement.getObject()));
+		ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
+		try {
+			try (ResizeLogCapture resizeLogs = ResizeLogCapture.open();
+					SailSink sink = store.getBackingStore()
+							.getExplicitSailSource()
+							.sink(IsolationLevels.READ_COMMITTED)) {
+				sink.approveAll(firstBatch);
+				sink.flush();
+				int resizesBeforePinnedReader = resizeLogs.valueResizeMessages().size();
+				long predicateId = valueStore.getId(PREDICATE);
+				try (RecordIterator heldTriples = valueStore.getTripleTerms(-1, predicateId, -1)) {
+					long[] firstQuad = heldTriples.next();
+					assertThat(firstQuad).as("the committed first prepared batch must be readable").isNotNull();
+					sink.approveAll(secondBatch);
+					sink.flush();
+					assertThat(resizeLogs.valueResizeMessages().size())
+							.as("the second prepared batch must resize while a native value reader is held")
+							.isGreaterThan(resizesBeforePinnedReader);
+
+					Set<TripleTerm> actualTripleTerms = new HashSet<>();
+					actualTripleTerms.add(decodeTripleTerm(valueStore, firstQuad));
+					long[] quad;
+					while ((quad = heldTriples.next()) != null) {
+						actualTripleTerms.add(decodeTripleTerm(valueStore, quad));
+					}
+					assertThat(actualTripleTerms)
+							.as("the native reader must retain every committed RDF-star term ID across the resize; "
+									+ "term values are decoded through fresh dictionary reads")
+							.containsExactlyInAnyOrderElementsOf(expectedTripleTerms);
+				}
+			}
+
+			assertThat(readRows(repository))
+					.as("prepared checkpointing must preserve every statement and nested RDF-star value")
+					.containsExactlyInAnyOrderElementsOf(expected);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(60)
+	void preparedBatchResizeRollbackCanRetryExactValues() throws Exception {
+		LmdbStore store = new LmdbStore(dataDir.toFile(), autoGrowConfig());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		Model firstBatch = preparedRows(0, SEPARATE_BATCH_ROWS, 1);
+		Model secondBatch = preparedQuotedRows(SEPARATE_BATCH_ROWS, SEPARATE_BATCH_ROWS);
+		Model expected = new LinkedHashModel();
+		expected.addAll(firstBatch);
+		expected.addAll(secondBatch);
+		try (ResizeLogCapture resizeLogs = ResizeLogCapture.open()) {
+			SailSink failedSink = store.getBackingStore()
+					.getExplicitSailSource()
+					.sink(IsolationLevels.READ_COMMITTED);
+			try {
+				failedSink.approveAll(firstBatch);
+				int resizesAfterFirstBatch = resizeLogs.valueResizeMessages().size();
+				assertThat(resizesAfterFirstBatch)
+						.as("the first prepared batch must reserve its own value footprint")
+						.isGreaterThan(0);
+				failedSink.approveAll(secondBatch);
+				assertThat(resizeLogs.valueResizeMessages())
+						.as("the retry must begin after a prepared-batch value checkpoint")
+						.hasSizeGreaterThan(resizesAfterFirstBatch);
+			} finally {
+				failedSink.close();
+			}
+
+			assertThat(readRows(repository))
+					.as("closing the failed sink must roll back its statements before retry")
+					.isEmpty();
+			Set<TripleTerm> secondBatchTerms = new HashSet<>();
+			secondBatch.forEach(statement -> secondBatchTerms.add((TripleTerm) statement.getObject()));
+			assertThat(readNativeTripleTerms((ValueStore) store.getBackingStore().getValueFactory()))
+					.as("closing the failed sink must not publish second-batch RDF-star terms")
+					.doesNotContainAnyElementsOf(secondBatchTerms);
+
+			try (SailSink retrySink = store.getBackingStore()
+					.getExplicitSailSource()
+					.sink(IsolationLevels.READ_COMMITTED)) {
+				retrySink.approveAll(expected);
+				retrySink.flush();
+			}
+
+			assertThat(readRows(repository))
+					.as("rollback after an intermediate value checkpoint must leave exact retryable RDF values")
+					.containsExactlyInAnyOrderElementsOf(expected);
 		} finally {
 			repository.shutDown();
 		}
@@ -201,6 +314,49 @@ class LmdbAutogrowSingleCommitIT {
 		for (int i = start; i < start + count; i++) {
 			rows.add(VF.createBNode("b" + i), PREDICATE,
 					VF.createLiteral("separate-batch-value-" + i + "-" + "p".repeat(valueLength)));
+		}
+		return rows;
+	}
+
+	private static Model preparedQuotedRows(int start, int count) {
+		Model rows = new LinkedHashModel();
+		for (int i = start; i < start + count; i++) {
+			IRI quotedSubject = VF.createIRI("urn:lmdb-autogrow:prepared-quoted-subject:" + i);
+			TripleTerm quoted = VF.createTripleTerm(quotedSubject, PREDICATE,
+					VF.createLiteral("prepared-quoted-object-" + i + "-" + "q".repeat(VALUE_LENGTH)));
+			rows.add(VF.createIRI("urn:lmdb-autogrow:prepared-owner:" + i), PREDICATE, quoted);
+		}
+		return rows;
+	}
+
+	private static TripleTerm decodeTripleTerm(ValueStore valueStore, long[] quad) throws Exception {
+		return VF.createTripleTerm((Resource) valueStore.getValue(quad[0]),
+				(IRI) valueStore.getValue(quad[1]), valueStore.getValue(quad[2]));
+	}
+
+	private static Set<TripleTerm> readNativeTripleTerms(ValueStore valueStore) throws Exception {
+		long predicateId = valueStore.getId(PREDICATE);
+		if (predicateId == LmdbValue.UNKNOWN_ID) {
+			return Set.of();
+		}
+		Set<TripleTerm> terms = new HashSet<>();
+		try (RecordIterator iterator = valueStore.getTripleTerms(-1, predicateId, -1)) {
+			long[] quad;
+			while ((quad = iterator.next()) != null) {
+				terms.add(decodeTripleTerm(valueStore, quad));
+			}
+		}
+		return terms;
+	}
+
+	private static Model readRows(SailRepository repository) {
+		Model rows = new LinkedHashModel();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			try (RepositoryResult<Statement> result = connection.getStatements(null, PREDICATE, null, false)) {
+				result.forEachRemaining(rows::add);
+			}
+			connection.commit();
 		}
 		return rows;
 	}
