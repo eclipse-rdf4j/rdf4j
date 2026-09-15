@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.TripleIndex.PRED_IDX;
 import static org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX;
 
 import java.io.File;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -25,12 +26,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.util.lmdb.MDBVal;
 
 /**
  * Storage-level tests for prefix-run scans over LMDB statement indexes.
@@ -355,6 +363,130 @@ public class LmdbPrefixRunIteratorTest {
 		assertThat(tripleStore.prefixRunPlan(new int[] { SUBJ_IDX }, 0, -1, -1, -1)).isNotNull();
 	}
 
+	@Test
+	public void constructorFailureReclaimsPooledResourcesAndRestoresInterrupt() throws Exception {
+		open("spoc,posc");
+		storeDefaultRows();
+		LmdbPrefixRunPlan plan = tripleStore.prefixRunPlan(new int[] { PRED_IDX }, -1, -1, -1, -1);
+		TxnManager manager = new TxnManager(tripleStore.env, TxnManager.Mode.ABORT);
+		try {
+			try (Txn txn = manager.createReadTxn()) {
+				Pool pool = txn.getValuePool();
+				MDBVal firstValue = pool.getVal();
+				MDBVal secondValue = pool.getVal();
+				ByteBuffer keyBuffer = pool.getKeyBuffer();
+				pool.free(firstValue);
+				pool.free(secondValue);
+				pool.free(keyBuffer);
+
+				AtomicReference<Throwable> failure = new AtomicReference<>();
+				AtomicReference<LmdbPrefixRunIterator> created = new AtomicReference<>();
+				AtomicBoolean interrupted = new AtomicBoolean();
+				CountDownLatch finished = new CountDownLatch(1);
+				Thread worker = new Thread(() -> {
+					Thread.currentThread().interrupt();
+					try {
+						created.set(new LmdbPrefixRunIterator(plan, txn, -1, -1, -1, -1, true, false));
+					} catch (Throwable e) {
+						failure.set(e);
+					} finally {
+						interrupted.set(Thread.currentThread().isInterrupted());
+						finished.countDown();
+					}
+				}, "lmdb-prefix-run-constructor-failure");
+				long writeStamp = txn.lockManager().writeLock();
+				try {
+					worker.start();
+					assertThat(finished.await(5, TimeUnit.SECONDS)).as("constructor worker should finish").isTrue();
+				} finally {
+					txn.lockManager().unlockWrite(writeStamp);
+					worker.interrupt();
+					worker.join();
+				}
+
+				assertThat(failure.get()).isInstanceOf(SailException.class);
+				LmdbPrefixRunIterator createdCursor = created.get();
+				if (createdCursor != null) {
+					createdCursor.close();
+				}
+				MDBVal observedFirst = null;
+				MDBVal observedSecond = null;
+				ByteBuffer observedKey = null;
+				try {
+					observedFirst = pool.getVal();
+					observedSecond = pool.getVal();
+					observedKey = pool.getKeyBuffer();
+					assertThat(List.of(observedFirst, observedSecond))
+							.as("both MDBVals should be returned after failed construction")
+							.containsExactlyInAnyOrder(firstValue, secondValue);
+					assertThat(observedKey).as("key buffer should be returned after failed construction")
+							.isSameAs(keyBuffer);
+					assertThat(interrupted.get()).as("constructor interruption should be preserved").isTrue();
+				} finally {
+					freeUnique(pool, observedFirst, observedSecond);
+					freeUnique(pool, observedKey);
+					if (observedFirst != firstValue && observedSecond != firstValue) {
+						firstValue.close();
+					}
+					if (observedFirst != secondValue && observedSecond != secondValue) {
+						secondValue.close();
+					}
+					if (observedKey != keyBuffer) {
+						MemoryUtil.memFree(keyBuffer);
+					}
+				}
+			}
+		} finally {
+			manager.close();
+		}
+	}
+
+	@Test
+	public void successfulCloseReturnsPooledResourcesExactlyOnce() throws Exception {
+		open("spoc,posc");
+		storeDefaultRows();
+		LmdbPrefixRunPlan plan = tripleStore.prefixRunPlan(new int[] { PRED_IDX }, -1, -1, -1, -1);
+		TxnManager manager = new TxnManager(tripleStore.env, TxnManager.Mode.ABORT);
+		try {
+			try (Txn txn = manager.createReadTxn()) {
+				Pool pool = txn.getValuePool();
+				MDBVal firstValue = pool.getVal();
+				MDBVal secondValue = pool.getVal();
+				ByteBuffer keyBuffer = pool.getKeyBuffer();
+				pool.free(firstValue);
+				pool.free(secondValue);
+				pool.free(keyBuffer);
+
+				LmdbPrefixRunIterator cursor = new LmdbPrefixRunIterator(plan, txn, -1, -1, -1, -1, true, false);
+				cursor.close();
+				cursor.close();
+
+				MDBVal returnedFirst = null;
+				MDBVal returnedSecond = null;
+				MDBVal extraValue = null;
+				ByteBuffer returnedKey = null;
+				ByteBuffer extraKey = null;
+				try {
+					returnedFirst = pool.getVal();
+					returnedSecond = pool.getVal();
+					returnedKey = pool.getKeyBuffer();
+					extraValue = pool.getVal();
+					extraKey = pool.getKeyBuffer();
+					assertThat(List.of(returnedFirst, returnedSecond)).containsExactlyInAnyOrder(firstValue,
+							secondValue);
+					assertThat(returnedKey).isSameAs(keyBuffer);
+					assertThat(extraValue).isNotSameAs(firstValue).isNotSameAs(secondValue);
+					assertThat(extraKey).isNotSameAs(keyBuffer);
+				} finally {
+					freeUnique(pool, returnedFirst, returnedSecond, extraValue);
+					freeUnique(pool, returnedKey, extraKey);
+				}
+			}
+		} finally {
+			manager.close();
+		}
+	}
+
 	/*-----------------------*
 	 * Successor key builder *
 	 *-----------------------*/
@@ -424,6 +556,44 @@ public class LmdbPrefixRunIteratorTest {
 
 	private static long[] bound(long subj, long pred, long obj, long context) {
 		return new long[] { subj, pred, obj, context };
+	}
+
+	private static void freeUnique(Pool pool, MDBVal... values) {
+		for (int i = 0; i < values.length; i++) {
+			MDBVal value = values[i];
+			if (value == null) {
+				continue;
+			}
+			boolean alreadyReturned = false;
+			for (int previous = 0; previous < i; previous++) {
+				if (values[previous] == value) {
+					alreadyReturned = true;
+					break;
+				}
+			}
+			if (!alreadyReturned) {
+				pool.free(value);
+			}
+		}
+	}
+
+	private static void freeUnique(Pool pool, ByteBuffer... buffers) {
+		for (int i = 0; i < buffers.length; i++) {
+			ByteBuffer buffer = buffers[i];
+			if (buffer == null) {
+				continue;
+			}
+			boolean alreadyReturned = false;
+			for (int previous = 0; previous < i; previous++) {
+				if (buffers[previous] == buffer) {
+					alreadyReturned = true;
+					break;
+				}
+			}
+			if (!alreadyReturned) {
+				pool.free(buffer);
+			}
+		}
 	}
 
 	private void storeDefaultRows() throws Exception {
