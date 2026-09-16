@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.lwjgl.util.lmdb.LMDB.MDB_CURRENT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_GET_BOTH_RANGE;
@@ -227,9 +228,14 @@ class LmdbRecordIterator implements RecordIterator {
 
 			boolean isDupValue = false;
 			if (fetchNext) {
-				if (encoder != null && !remove) {
-					state.valueInput.resetTuple();
-					encoder.appendNextTuple(state.valueInput);
+				if (encoder != null) {
+					if (remove) {
+						state.valueInput.nextTuple();
+						remove = false;
+					} else {
+						state.valueInput.resetTuple();
+						encoder.appendNextTuple(state.valueInput);
+					}
 				} else {
 					state.valueInput.nextTuple();
 				}
@@ -403,13 +409,13 @@ class LmdbRecordIterator implements RecordIterator {
 			while (state.valueInput.hasNext()) {
 				encoder.appendNextTuple(state.valueInput);
 			}
-			if (chunkBuffer.position() == 0) {
-				// no changes, skip flush
-				return;
+			if (chunkBuffer.position() > 0) {
+				state.valueData.mv_data(chunkBuffer.flip());
+				// directly replace value instead of deleting it first (LMDB manages deletion)
+				E(mdb_cursor_put(state.cursor, state.keyData, state.valueData, MDB_CURRENT));
+			} else {
+				E(mdb_cursor_del(state.cursor, 0));
 			}
-			E(mdb_cursor_del(state.cursor, 0));
-			state.valueData.mv_data(chunkBuffer.flip());
-			E(mdb_cursor_put(state.cursor, state.keyData, state.valueData, 0));
 			encoder = null;
 		}
 	}
@@ -427,6 +433,7 @@ class LmdbRecordIterator implements RecordIterator {
 			state.valueInput.resetTuple();
 			encoder = state.valueInput.createEncoder(chunkBuffer);
 		}
+		remove = true;
 	}
 
 	@Override

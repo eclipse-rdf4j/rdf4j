@@ -616,7 +616,6 @@ public class TripleStoreTest {
 			for (int i = 1; i <= size; i += 5) {
 				int obj = random.nextInt(maxObj) + 1;
 				tripleStore.removeTriplesByContext(subj, pred, obj, 1, true, quad -> {
-					;
 					// no-op
 				});
 				expectedByPredicate.get(String.valueOf(pred)).remove(subj + "," + pred + "," + obj + "," + 1);
@@ -624,6 +623,56 @@ public class TripleStoreTest {
 			}
 		}
 		tripleStore.commit();
+
+		assertExistingTriples(preds, expectedByPredicate);
+	}
+
+	@Test
+	public void testHighCardinalityPredicatesStoreAligned() throws Exception {
+		tripleStore.startTransaction();
+
+		int[] preds = { 42, 41, 40, 42, 43, 42, 40 };
+
+		Random random = new Random(378245L);
+		int maxObj = 1 << 24;
+		int size = 256;
+		int subj = 1;
+
+		Map<String, Set<String>> expectedByPredicate = new HashMap<>();
+		for (int pred : preds) {
+			long[] subjects = new long[size];
+			long[] predicates = new long[size];
+			long[] objects = new long[size];
+			long[] contexts = new long[size];
+			for (int i = 0; i < size; i++) {
+				int obj = random.nextInt(maxObj) + 1; // many object values, randomized insertion order
+				int context = 1;
+				expectedByPredicate.computeIfAbsent(String.valueOf(pred), k -> new HashSet<>())
+						.add(subj + "," + pred + "," + obj + "," + context);
+				subjects[i] = subj;
+				predicates[i] = pred;
+				objects[i] = obj;
+				contexts[i] = context;
+				subj++;
+			}
+			tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, true);
+		}
+
+		tripleStore.commit();
+
+		random = new Random(378245L);
+		subj = 1;
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			for (int pred : preds) {
+				for (int i = 1; i <= size; i++) {
+					int obj = random.nextInt(maxObj) + 1;
+					try (var it = tripleStore.getTriples(txn, subj, pred, obj, 1, true)) {
+						assertNotNull(it.next());
+					}
+					subj++;
+				}
+			}
+		}
 
 		assertExistingTriples(preds, expectedByPredicate);
 	}

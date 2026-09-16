@@ -12,8 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.deleteFromChunk;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.mergeChunk;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.writeTransaction;
 import static org.lwjgl.system.MemoryStack.stackPush;
@@ -422,7 +420,7 @@ class TripleStore implements Closeable {
 									startTransaction();
 								}
 
-								E(mergeChunk(cursor, 4 - addedIndex.getIndexSplitPosition(), keyValue, dataValue,
+								E(Chunks.mergeChunk(cursor, 4 - addedIndex.getIndexSplitPosition(), keyValue, dataValue,
 										dataBuf,
 										mergedBuf));
 							}
@@ -1214,7 +1212,7 @@ class TripleStore implements Closeable {
 			mdb_cursor_open(writeTxn, mainIndex.getDB(explicit), pCursor);
 			long cursor = pCursor.get(0);
 			try {
-				int rc = mergeChunk(cursor, 4 - mainIndex.getIndexSplitPosition(), keyVal, dataVal, valueBuf,
+				int rc = Chunks.mergeChunk(cursor, 4 - mainIndex.getIndexSplitPosition(), keyVal, dataVal, valueBuf,
 						mergedBuf);
 				if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
 					throw new IOException(mdb_strerror(rc));
@@ -1229,7 +1227,7 @@ class TripleStore implements Closeable {
 				mdb_cursor_open(writeTxn, mainIndex.getDB(false), pCursor);
 				cursor = pCursor.get(0);
 				try {
-					foundImplicit = deleteFromChunk(cursor, 4 - mainIndex.getIndexSplitPosition(), keyVal,
+					foundImplicit = Chunks.deleteFromChunk(cursor, 4 - mainIndex.getIndexSplitPosition(), keyVal,
 							dataVal, valueBuf, mergedBuf);
 				} finally {
 					mdb_cursor_close(cursor);
@@ -1253,7 +1251,7 @@ class TripleStore implements Closeable {
 						mdb_cursor_open(writeTxn, index.getDB(false), pCursor);
 						cursor = pCursor.get(0);
 						try {
-							deleteFromChunk(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf,
+							Chunks.deleteFromChunk(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf,
 									mergedBuf);
 						} finally {
 							mdb_cursor_close(cursor);
@@ -1263,7 +1261,8 @@ class TripleStore implements Closeable {
 					mdb_cursor_open(writeTxn, index.getDB(explicit), pCursor);
 					cursor = pCursor.get(0);
 					try {
-						mergeChunk(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf, mergedBuf);
+						Chunks.mergeChunk(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf,
+								mergedBuf);
 					} finally {
 						mdb_cursor_close(cursor);
 					}
@@ -1317,7 +1316,7 @@ class TripleStore implements Closeable {
 			int[] sortedIndices = new int[count];
 			boolean[] promotedFromImplicit = new boolean[count];
 			LongIntHashMap contextIncrements = new LongIntHashMap();
-
+			ChunkUpdater updater = new ChunkUpdater(stack);
 			for (int i = 0; i < count; i++) {
 				if (shouldFallBackFromAlignedWrite()) {
 					remainingStart = i;
@@ -1334,8 +1333,8 @@ class TripleStore implements Closeable {
 					E(mdb_cursor_open(writeTxn, mainIndex.getDB(explicit), mainCursorHandle));
 					mainCursor = mainCursorHandle.get(0);
 				}
-				int rc = LmdbUtil.mergeChunk(mainCursor, 4 - mainIndex.getIndexSplitPosition(), keyVal, dataVal,
-						valueBuf, mergedBuf);
+				int rc = updater.add(mainCursor, 4 - mainIndex.getIndexSplitPosition(), keyVal, dataVal,
+						valueBuf);
 				if (rc == MDB_MAP_FULL && autoGrow) {
 					remainingStart = i;
 					break;
@@ -1354,12 +1353,13 @@ class TripleStore implements Closeable {
 							E(mdb_cursor_open(writeTxn, mainIndex.getDB(false), inferredDeleteCursorHandle));
 							inferredMainDeleteCursor = inferredDeleteCursorHandle.get(0);
 						}
-						promotedFromImplicit[i] = deleteFromChunk(inferredMainDeleteCursor,
+						promotedFromImplicit[i] = Chunks.deleteFromChunk(inferredMainDeleteCursor,
 								4 - mainIndex.getIndexSplitPosition(), keyVal, dataVal, valueBuf, mergedBuf);
 					}
 					contextIncrements.addToValue(context[i], 1);
 				}
 			}
+			updater.flush(mainCursor, 4 - mainIndex.getIndexSplitPosition(), keyVal, dataVal);
 
 			int[] mainOrderIndices = Arrays.copyOf(sortedIndices, addedCount);
 			LongIntHashMap appliedContextIncrements = new LongIntHashMap();
@@ -1381,8 +1381,8 @@ class TripleStore implements Closeable {
 				return;
 			}
 
-			ChunkUpdater updater = new ChunkUpdater(stack);
 			char[] currentFieldSeq = mainIndex.getFieldSeq();
+			updater.setSortedInsertion(true);
 			for (int i = 1; i < indexes.size(); i++) {
 				TripleIndex index = indexes.get(i);
 				updater.reset();
@@ -1411,11 +1411,12 @@ class TripleStore implements Closeable {
 					dataVal.mv_data(valueBuf);
 
 					if (promotedFromImplicit[statementIndex]) {
-						deleteFromChunk(secondaryDeleteCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal,
+						Chunks.deleteFromChunk(secondaryDeleteCursor, 4 - index.getIndexSplitPosition(), keyVal,
+								dataVal,
 								valueBuf, mergedBuf);
 					}
 					if (shouldFallBackFromAlignedWrite()) {
-						updater.flush(secondaryWriteCursor,4 - index.getIndexSplitPosition(), keyVal, dataVal);
+						updater.flush(secondaryWriteCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal);
 						fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
 								promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
 								addedIndexConsumer);
@@ -1734,7 +1735,7 @@ class TripleStore implements Closeable {
 					E(mdb_cursor_open(writeTxn, index.getDB(explicit), pCursor));
 					long cursor = pCursor.get(0);
 					try {
-						deleteFromChunk(cursor, 4 - index.getIndexSplitPosition(), keyValue, dataValue, valueBuf,
+						Chunks.deleteFromChunk(cursor, 4 - index.getIndexSplitPosition(), keyValue, dataValue, valueBuf,
 								mergedBuf);
 					} finally {
 						mdb_cursor_close(cursor);
@@ -1799,10 +1800,11 @@ class TripleStore implements Closeable {
 						}
 
 						if (r.add) {
-							E(mergeChunk(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, dataBuf,
+							E(Chunks.mergeChunk(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, dataBuf,
 									mergedBuf));
 						} else {
-							E(deleteFromChunk(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, dataBuf,
+							E(Chunks.deleteFromChunk(cursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal,
+									dataBuf,
 									mergedBuf) ? MDB_SUCCESS : MDB_NOTFOUND);
 						}
 						i++;

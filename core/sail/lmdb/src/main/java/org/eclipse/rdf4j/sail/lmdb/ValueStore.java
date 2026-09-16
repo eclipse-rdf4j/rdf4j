@@ -13,8 +13,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.deleteFromChunk;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.mergeChunk;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
@@ -570,7 +568,7 @@ class ValueStore extends AbstractValueFactory {
 							E(mdb_cursor_open(writeTxn, addedIndex.getDB(true), cursorHandle));
 							long cursor = cursorHandle.get(0);
 							try {
-								E(mergeChunk(cursor, 4 - addedIndex.getIndexSplitPosition(), keyValue, dataValue,
+								E(Chunks.mergeChunk(cursor, 4 - addedIndex.getIndexSplitPosition(), keyValue, dataValue,
 										dataBuf,
 										mergedBuf));
 							} finally {
@@ -1331,7 +1329,7 @@ class ValueStore extends AbstractValueFactory {
 					E(mdb_cursor_open(writeTxn, index.getDB(true), pp));
 					long indexCursor = pp.get(0);
 					try {
-						E(mergeChunk(indexCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf,
+						E(Chunks.mergeChunk(indexCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal, valueBuf,
 								mergedBuf));
 					} finally {
 						mdb_cursor_close(indexCursor);
@@ -1695,7 +1693,7 @@ class ValueStore extends AbstractValueFactory {
 							E(mdb_cursor_open(writeTxn, index.getDB(true), pp));
 							long indexCursor = pp.get(0);
 							try {
-								deleteFromChunk(indexCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal,
+								Chunks.deleteFromChunk(indexCursor, 4 - index.getIndexSplitPosition(), keyVal, dataVal,
 										valueBuf, mergedBuf);
 							} finally {
 								mdb_cursor_close(indexCursor);
@@ -1868,7 +1866,7 @@ class ValueStore extends AbstractValueFactory {
 									keyVal.mv_data(keyBuf.flip());
 									valueBuf.flip();
 									dataVal.mv_data(valueBuf);
-									deleteFromChunk(termsCursor,
+									Chunks.deleteFromChunk(termsCursor,
 											4 - tripleTermCspoIndex.getIndexSplitPosition(), keyVal, dataVal, valueBuf,
 											mergedBuf);
 								}
