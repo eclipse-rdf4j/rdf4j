@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.system.MemoryUtil.memAddress;
@@ -44,13 +45,17 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.sail.lmdb.Varint;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
@@ -72,6 +77,8 @@ class LmdbPageMappingLifecycleTest {
 	private static final int GROWTH_ENTRY_COUNT = Math.toIntExact(COMMITTED_GROWTH_THRESHOLD / VALUE_SIZE) + 1;
 	private static final int GROWTH_END = INITIAL_ENTRY_COUNT + GROWTH_ENTRY_COUNT;
 	private static final int KEY_BUFFER_SIZE = Varint.calcListLengthUnsigned(Integer.MAX_VALUE, 1, 1, 1);
+	private static final int CLOSE_PROBE_TIMEOUT_SECONDS = 20;
+	private static final int CLOSE_PROBE_CLEANUP_TIMEOUT_SECONDS = 10;
 
 	@TempDir
 	Path directory;
@@ -254,6 +261,189 @@ class LmdbPageMappingLifecycleTest {
 	}
 
 	@Test
+	void sameThreadCloseRejectsAnActiveReadView() throws Exception {
+		ProcessResult result = runSameThreadCloseProbe(directory, "active-read-view");
+
+		assertEquals(0, result.exitCode, result.output);
+		assertTrue(result.output.contains("ACTIVE_READ_VIEW_CLOSE_REJECTED"), result.output);
+		assertTrue(result.output.contains("ACTIVE_READ_VIEW_PROBE_OK"), result.output);
+		assertTrue(result.output.contains("CLOSE_PROBE_OK"), result.output);
+	}
+
+	private static ProcessResult runSameThreadCloseProbe(Path dataDir, String scenario)
+			throws IOException, InterruptedException {
+		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		List<String> command = new ArrayList<>();
+		command.add(javaBinary);
+		command.add("-ea");
+		command.add("-cp");
+		command.add(System.getProperty("java.class.path"));
+		command.add(SameThreadCloseProbe.class.getName());
+		command.add(scenario);
+		command.add(dataDir.toAbsolutePath().toString());
+
+		Path outputPath = dataDir.resolve("same-thread-close-probe-" + scenario + ".log");
+		Process process = new ProcessBuilder(command)
+				.redirectErrorStream(true)
+				.redirectOutput(outputPath.toFile())
+				.start();
+		try {
+			boolean finished = process.waitFor(CLOSE_PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+			String output = Files.readString(outputPath, StandardCharsets.UTF_8);
+			if (!finished) {
+				fail("Same-thread estimator close probe timed out after " + CLOSE_PROBE_TIMEOUT_SECONDS + " seconds:\n"
+						+ output);
+			}
+			return new ProcessResult(process.exitValue(), output);
+		} finally {
+			terminateCloseProbe(process);
+		}
+	}
+
+	private static void terminateCloseProbe(Process process) throws InterruptedException {
+		if (!process.isAlive()) {
+			return;
+		}
+
+		process.destroyForcibly();
+		boolean interrupted = false;
+		long deadline = System.nanoTime()
+				+ TimeUnit.SECONDS.toNanos(CLOSE_PROBE_CLEANUP_TIMEOUT_SECONDS);
+		while (process.isAlive()) {
+			long remaining = deadline - System.nanoTime();
+			if (remaining <= 0) {
+				break;
+			}
+			try {
+				process.waitFor(remaining, TimeUnit.NANOSECONDS);
+			} catch (InterruptedException e) {
+				interrupted = true;
+			}
+		}
+		if (interrupted) {
+			Thread.currentThread().interrupt();
+		}
+		if (process.isAlive()) {
+			throw new IllegalStateException("Unable to terminate same-thread estimator close probe");
+		}
+	}
+
+	private static void runActiveReadViewScenario(Path dataDir) throws Exception {
+		try (Environment env = new Environment(dataDir, 0)) {
+			env.put(0, 32);
+			try (ReadTxn txn = env.read();
+					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
+							env.handle, env.mainDbi);
+					var view = estimator.readTransaction(txn.handle())) {
+				System.out.println("ACTIVE_READ_VIEW_READY");
+				System.out.flush();
+				try {
+					estimator.close();
+					throw new AssertionError("Estimator close unexpectedly completed with an active read view");
+				} catch (IllegalStateException expected) {
+					if (expected.getMessage() == null
+							|| !expected.getMessage().contains("active LMDB estimation/read scope")) {
+						throw expected;
+					}
+					System.out.println("ACTIVE_READ_VIEW_CLOSE_REJECTED");
+				}
+			}
+		}
+		System.out.println("ACTIVE_READ_VIEW_PROBE_OK");
+	}
+
+	private static void runNestedReadViewsScenario(Path dataDir) throws Exception {
+		try (Environment env = new Environment(dataDir, 0)) {
+			env.put(0, 32);
+			try (ReadTxn txn = env.read();
+					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
+							env.handle, env.mainDbi)) {
+				try (var outer = estimator.readTransaction(txn.handle())) {
+					assertEquals(32, outer.totalEntries("statements"));
+					try (var inner = estimator.readTransaction(txn.handle())) {
+						assertCloseRejected(estimator);
+						assertEquals(32, inner.totalEntries("statements"));
+					}
+					assertCloseRejected(estimator);
+					assertEquals(32, outer.totalEntries("statements"));
+				}
+
+				assertEquals(32, totalEntries(estimator, txn.handle()));
+				estimator.close();
+				estimator.close();
+				assertThrows(IOException.class, () -> totalEntries(estimator, txn.handle()));
+			}
+		}
+		System.out.println("NESTED_READ_VIEWS_PROBE_OK");
+	}
+
+	private static void runReentrantCallbackScenario(Path dataDir) throws Exception {
+		try (Environment env = new Environment(dataDir, 0)) {
+			env.put(0, 32);
+			try (ReadTxn txn = env.read();
+					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
+							env.handle, env.mainDbi)) {
+				AtomicInteger callbackCount = new AtomicInteger();
+				for (boolean borrowedRead : new boolean[] { false, true }) {
+					int callbacksBefore = callbackCount.get();
+					GroupMatcher matcher = new GroupMatcher(key(0), new boolean[] { false, false, false, false }) {
+						@Override
+						public boolean matches(ByteBuffer candidate) {
+							callbackCount.incrementAndGet();
+							assertCloseRejected(estimator);
+							return true;
+						}
+					};
+					long count = borrowedRead
+							? estimate(estimator, txn.handle(), matcher)
+							: estimator.estimateEntries(txn.id(), "statements", key(0), 4, key(9), 4, matcher, 1);
+					assertEquals(10, count);
+					assertTrue(callbackCount.get() > callbacksBefore);
+					assertEquals(32, totalEntries(estimator, txn.handle()));
+				}
+				estimator.close();
+			}
+		}
+		System.out.println("REENTRANT_CALLBACK_PROBE_OK");
+	}
+
+	public static final class SameThreadCloseProbe {
+
+		public static void main(String[] args) throws Exception {
+			String scenario = args[0];
+			Path dataDir = Path.of(args[1]);
+			switch (scenario) {
+			case "active-read-view" -> runActiveReadViewScenario(dataDir);
+			case "nested-read-views" -> runNestedReadViewsScenario(dataDir);
+			case "reentrant-callback" -> runReentrantCallbackScenario(dataDir);
+			default -> throw new IllegalArgumentException("Unknown close probe scenario: " + scenario);
+			}
+			System.out.println("CLOSE_PROBE_OK");
+		}
+	}
+
+	private record ProcessResult(int exitCode, String output) {
+	}
+
+	@Test
+	void sameThreadCloseRejectsNestedReadViewsAndLeavesEstimatorUsable() throws Exception {
+		ProcessResult result = runSameThreadCloseProbe(directory, "nested-read-views");
+
+		assertEquals(0, result.exitCode, result.output);
+		assertTrue(result.output.contains("NESTED_READ_VIEWS_PROBE_OK"), result.output);
+		assertTrue(result.output.contains("CLOSE_PROBE_OK"), result.output);
+	}
+
+	@Test
+	void sameThreadCloseRejectsReentrantEstimatorCloseFromBothReadPaths() throws Exception {
+		ProcessResult result = runSameThreadCloseProbe(directory, "reentrant-callback");
+
+		assertEquals(0, result.exitCode, result.output);
+		assertTrue(result.output.contains("REENTRANT_CALLBACK_PROBE_OK"), result.output);
+		assertTrue(result.output.contains("CLOSE_PROBE_OK"), result.output);
+	}
+
+	@Test
 	void nativeAndLegacyCachesKeepTheirOwnBackingMemory() throws Exception {
 		try (Environment env = new Environment(directory, 0)) {
 			env.put(0, 32);
@@ -356,6 +546,12 @@ class LmdbPageMappingLifecycleTest {
 		try (var view = estimator.readTransaction(txn)) {
 			return view.totalEntries("statements");
 		}
+	}
+
+	private static void assertCloseRejected(LmdbPageCardinalityEstimator estimator) {
+		IllegalStateException failure = assertThrows(IllegalStateException.class, estimator::close);
+		assertTrue(failure.getMessage() != null
+				&& failure.getMessage().contains("active LMDB estimation/read scope"), failure.getMessage());
 	}
 
 	private static long estimate(LmdbPageCardinalityEstimator estimator, long txn, GroupMatcher matcher)

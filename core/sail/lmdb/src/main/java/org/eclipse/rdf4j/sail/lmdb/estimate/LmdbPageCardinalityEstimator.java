@@ -34,7 +34,8 @@ import org.slf4j.LoggerFactory;
  * Production callers borrow an already-pinned read-only transaction with {@link #readTransaction(long)}. Each scope
  * obtains LMDB's current mapping identity through the public cursor API before using cached pages when constructed with
  * an existing main database handle. Transaction-ID-only methods remain available through positional file reads. Both
- * paths select metadata no newer than the caller's snapshot and use the same decoder and counting algorithm.
+ * paths select metadata no newer than the caller's snapshot and use the same decoder and counting algorithm. Close each
+ * borrowed scope before closing this estimator; an owner-thread close while a scope is active is rejected.
  * </p>
  */
 public final class LmdbPageCardinalityEstimator implements Closeable {
@@ -209,7 +210,8 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	/**
 	 * Borrows an active read-only LMDB transaction for a thread-confined estimation scope. Close the scope before
 	 * resetting or ending the transaction, and exclude environment resize/close throughout it, as LMDB requires for all
-	 * mapped pointers. Closing this scope does not close the transaction or unmap any memory.
+	 * mapped pointers. Closing this scope does not close the transaction or unmap any memory. The estimator must remain
+	 * open until the scope is closed.
 	 */
 	public ReadView readTransaction(long readTxn) throws IOException {
 		if (readTxn == 0L) {
@@ -629,8 +631,22 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		}
 	}
 
+	/**
+	 * Closes this estimator after all read scopes owned by the calling thread have been released.
+	 *
+	 * <p>
+	 * A close from another thread continues to wait for active read scopes. A close from the thread that owns an active
+	 * scope is rejected so that the thread can release the scope instead of waiting for its own read lock.
+	 * </p>
+	 *
+	 * @throws IllegalStateException if the calling thread owns an active estimation/read scope
+	 */
 	@Override
 	public void close() throws IOException {
+		if (snapshotLock.getReadHoldCount() > 0) {
+			throw new IllegalStateException(
+					"Cannot close the LMDB page cardinality estimator while an active LMDB estimation/read scope is held by the calling thread");
+		}
 		snapshotLock.writeLock().lock();
 		try {
 			if (!closed) {
