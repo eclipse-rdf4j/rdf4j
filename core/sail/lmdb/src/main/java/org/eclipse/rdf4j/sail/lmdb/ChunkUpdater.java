@@ -96,11 +96,11 @@ public final class ChunkUpdater {
 	 */
 	int add(long cursor, int elements, MDBVal keyVal, MDBVal dataVal, ByteBuffer newValueBuf)
 			throws IOException {
+		final var keyBuffer = keyVal.mv_data();
 		if (tupleBuffer.position() + newValueBuf.remaining() > tupleBuffer.capacity()) {
 			flush(cursor, elements, keyVal, dataVal);
+			keyVal.mv_data(keyBuffer);
 		}
-
-		final var keyBuffer = keyVal.mv_data();
 
 		int rc = E(mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET));
 		boolean merge = true;
