@@ -34,6 +34,13 @@ import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 class TripleIndex {
 	static final int MAX_KEY_LENGTH = 4 * 9;
 
+	/** Result of {@link #keyToQuadMatchStatus}: every bound field of the pattern matches the key. */
+	static final int KEY_MATCH = 0;
+	/** Result of {@link #keyToQuadMatchStatus}: a bound field outside the range prefix does not match the key. */
+	static final int KEY_FILTERED = 1;
+	/** Result of {@link #keyToQuadMatchStatus}: a bound field inside the range prefix does not match the key. */
+	static final int KEY_OUT_OF_RANGE = 2;
+
 	// triples are represented by 4 varints for subject, predicate, object and context
 	static final int SUBJ_IDX = 0;
 	static final int PRED_IDX = 1;
@@ -288,6 +295,37 @@ class TripleIndex {
 		} else {
 			quad[indexMap[3]] = Varint.readUnsigned(key);
 		}
+	}
+
+	/**
+	 * Decodes a key into {@code quad} (in statement field order) and classifies it against the supplied pattern, where
+	 * {@code -1} marks an unbound field. Fields are compared in index key order: a mismatching bound field at a key
+	 * position below {@code rangePrefixLength} means the cursor has left the key range that can still match the pattern
+	 * ({@link #KEY_OUT_OF_RANGE}); a mismatching bound field at a later position is merely filtered
+	 * ({@link #KEY_FILTERED}).
+	 */
+	int keyToQuadMatchStatus(ByteBuffer key, int rangePrefixLength, long matchSubj, long matchPred, long matchObj,
+			long matchContext, long[] quad) {
+		for (int i = 0; i < indexMap.length; i++) {
+			long value = Varint.readUnsigned(key);
+			int field = indexMap[i];
+			long expected = expectedValue(field, matchSubj, matchPred, matchObj, matchContext);
+			quad[field] = value;
+			if (expected != -1 && value != expected) {
+				return i < rangePrefixLength ? KEY_OUT_OF_RANGE : KEY_FILTERED;
+			}
+		}
+		return KEY_MATCH;
+	}
+
+	private static long expectedValue(int field, long matchSubj, long matchPred, long matchObj, long matchContext) {
+		return switch (field) {
+		case SUBJ_IDX -> matchSubj;
+		case PRED_IDX -> matchPred;
+		case OBJ_IDX -> matchObj;
+		case CONTEXT_IDX -> matchContext;
+		default -> throw new IllegalArgumentException("Invalid statement field index: " + field);
+		};
 	}
 
 	@Override

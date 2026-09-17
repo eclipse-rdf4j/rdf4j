@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
@@ -84,8 +85,11 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			Set<String> bindingNames = filterArg.getBindingNames();
 			if (isUnboundVar(leftArg, bindingNames) || isUnboundVar(rightArg, bindingNames)) {
 				// One or both var(s) are unbound, this expression will never
-				// return any results
-				filter.replaceWith(new EmptySet());
+				// return any results; the argument may only be discarded unevaluated when it cannot raise an
+				// observable query-fatal error
+				if (QueryEvaluationUtility.canDiscardWithoutEvaluation(filterArg)) {
+					filter.replaceWith(new EmptySet());
+				}
 				return;
 			}
 
@@ -114,8 +118,9 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 				for (BindingSetAssignment bsa : collector.getBindingSetAssignments()) {
 					// check if the VALUES clause / bindingsetassignment contains
 					// one of the arguments of the sameTerm.
-					// if so, we can not inline.
-					Set<String> names = bsa.getAssuredBindingNames();
+					// if so, we can not inline. Any column that may bind the variable counts, including one
+					// with UNDEF rows (which is not an assured binding name).
+					Set<String> names = bsa.getBindingNames();
 					if (leftArg instanceof Var) {
 						if (names.contains(((Var) leftArg).getName())) {
 							return;

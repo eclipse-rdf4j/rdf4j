@@ -216,7 +216,8 @@ public class Service extends UnaryTupleOperator {
 
 			@Override
 			public void meet(BindingSetAssignment bsa) {
-				res.addAll(bsa.getAssuredBindingNames());
+				// every column is a service variable, including columns with UNDEF rows
+				res.addAll(bsa.getBindingNames());
 			}
 
 			@Override

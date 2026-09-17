@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
@@ -325,6 +326,8 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 				scopeBindingNames.addAll(join.getLeftArg().getBindingNames());
 			} else if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
 				scopeBindingNames.addAll(leftJoin.getLeftArg().getBindingNames());
+			} else if (parent instanceof Lateral lateral && lateral.getRightArg() == child) {
+				scopeBindingNames.addAll(lateral.getRightInputBindingNames());
 			}
 			child = parent;
 			parent = parent.getParentNode();
