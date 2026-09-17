@@ -62,7 +62,7 @@ public class QueryEvaluationUtil {
 			return false;
 		}
 
-		if (value.isLiteral()) {
+		if (value != null && value.isLiteral()) {
 			Literal lit = (Literal) value;
 			String label = lit.getLabel();
 			CoreDatatype.XSD dt = lit.getCoreDatatype().asXSDDatatypeOrNull();
