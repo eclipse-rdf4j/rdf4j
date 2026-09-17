@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.rio.ParseErrorListener;
 import org.eclipse.rdf4j.rio.ParseLocationListener;
 import org.eclipse.rdf4j.rio.ParserConfig;
@@ -322,7 +323,7 @@ public abstract class AbstractRDFParser implements RDFParser {
 	 * Resolves a URI-string against the base URI and creates a {@link IRI} object for it.
 	 */
 	protected IRI resolveURI(String uriSpec) throws RDFParseException {
-		if (uriSpec.indexOf(':') < 0) {
+		if (isRelativeIri(uriSpec)) {
 			// Resolve relative URIs against base URI
 			if (baseURI == null) {
 				reportFatalError("Unable to resolve URIs, no base URI has been set");
@@ -337,8 +338,17 @@ public abstract class AbstractRDFParser implements RDFParser {
 
 			return createURI(baseURI.resolve(uriSpec));
 		} else {
-			// URI is not relative
+			// URI has a scheme, i.e. it is absolute
 			return createURI(uriSpec);
+		}
+	}
+
+	private boolean isRelativeIri(String iri) {
+		try {
+			return !URIUtil.isAbsoluteIri(iri);
+		} catch (IllegalArgumentException e) {
+			reportFatalError(e);
+			throw e;
 		}
 	}
 
