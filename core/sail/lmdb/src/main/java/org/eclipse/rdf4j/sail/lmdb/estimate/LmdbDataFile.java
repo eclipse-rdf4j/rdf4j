@@ -23,7 +23,6 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
-import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_get_flags;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_get_path;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
@@ -48,8 +47,8 @@ import org.lwjgl.util.lmdb.MDBEnvInfo;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
- * Reads LMDB pages either as zero-copy views over the environment's existing native map or, for the public file-only
- * constructor and tests, through positional file reads.
+ * Reads LMDB pages either as zero-copy views over the environment's existing native map or, for constructors without an
+ * explicit main database handle, through positional file reads.
  */
 final class LmdbDataFile implements Closeable {
 
@@ -58,22 +57,42 @@ final class LmdbDataFile implements Closeable {
 	private static final int MIN_PAGE_SIZE = 512;
 	private static final int MAX_PAGE_SIZE = 65_536;
 	private static final long NO_NATIVE_MAP = 0L;
+	private static final int NO_MAIN_DBI = -1;
 
 	private final File dataFile;
 	private final FileChannel channel;
 	private final long env;
+	private final int mainDbi;
 	private final ByteOrder byteOrder;
 	private final int pageSize;
 	private final ThreadLocal<ByteBuffer> headerBuffer = ThreadLocal
 			.withInitial(() -> ByteBuffer.allocateDirect(LmdbFormat.PAGE_HEADER_SIZE));
 
 	LmdbDataFile(File dataFile) throws IOException {
-		this(dataFile, 0L);
+		this(dataFile, 0L, NO_MAIN_DBI, true);
 	}
 
+	/**
+	 * Retains environment and transaction validation for compatibility, but uses positional page reads because an
+	 * existing main database handle cannot be recovered safely from an environment handle alone.
+	 */
 	LmdbDataFile(File dataFile, long env) throws IOException {
+		this(dataFile, env, NO_MAIN_DBI, true);
+	}
+
+	/**
+	 * Borrows an already-open main database handle for native page reads. The handle remains owned by the caller and is
+	 * never closed by this data file.
+	 */
+	LmdbDataFile(File dataFile, long env, int mainDbi) throws IOException {
+		this(dataFile, env, mainDbi, false);
+	}
+
+	private LmdbDataFile(File dataFile, long env, int mainDbi, boolean compatibilityPath) throws IOException {
+		validateConstructorArguments(dataFile, env, mainDbi, compatibilityPath);
 		this.dataFile = dataFile;
 		this.env = env;
+		this.mainDbi = mainDbi;
 		this.channel = FileChannel.open(dataFile.toPath(), StandardOpenOption.READ);
 		try {
 			validateEnvironmentFile();
@@ -102,6 +121,7 @@ final class LmdbDataFile implements Closeable {
 		}
 		this.dataFile = dataFile;
 		this.env = NO_NATIVE_MAP;
+		this.mainDbi = NO_MAIN_DBI;
 		this.channel = FileChannel.open(dataFile.toPath(), StandardOpenOption.READ);
 		this.byteOrder = byteOrder;
 		this.pageSize = pageSize;
@@ -215,7 +235,7 @@ final class LmdbDataFile implements Closeable {
 	 * native page. No assumption is made about OS allocation alignment or database comparator order.
 	 */
 	MappingAnchor mappingAnchor(LmdbMeta meta) throws IOException {
-		if (env == NO_NATIVE_MAP || meta.mainDb().isEmpty()) {
+		if (mainDbi == NO_MAIN_DBI || meta.mainDb().isEmpty()) {
 			return null;
 		}
 		LmdbMeta fileMeta = withMap(meta, 0L, 0L);
@@ -265,7 +285,7 @@ final class LmdbDataFile implements Closeable {
 		if (meta.txnId() != mdb_txn_id(readTxn)) {
 			throw new IOException("No exact committed metadata for the pinned LMDB transaction");
 		}
-		if (anchor == null) {
+		if (mainDbi == NO_MAIN_DBI || anchor == null) {
 			return withMap(meta, 0L, 0L);
 		}
 		try (MemoryStack stack = stackPush()) {
@@ -281,10 +301,8 @@ final class LmdbDataFile implements Closeable {
 					|| anchor.fileOffset < 0 || anchor.fileOffset > size - anchor.key.length) {
 				throw new IOException("LMDB snapshot exceeds mapping bounds");
 			}
-			IntBuffer dbi = stack.mallocInt(1);
-			check(mdb_dbi_open(readTxn, (ByteBuffer) null, 0, dbi));
 			PointerBuffer cursorPointer = stack.mallocPointer(1);
-			check(mdb_cursor_open(readTxn, dbi.get(0), cursorPointer));
+			check(mdb_cursor_open(readTxn, mainDbi, cursorPointer));
 			long cursor = cursorPointer.get(0);
 			try {
 				MDBVal key = MDBVal.malloc(stack);
@@ -337,6 +355,22 @@ final class LmdbDataFile implements Closeable {
 
 	/** Heap-only anchor; no memory owned by an LMDB transaction escapes through this record. */
 	record MappingAnchor(long fileOffset, byte[] key) {
+	}
+
+	private static void validateConstructorArguments(File dataFile, long env, int mainDbi, boolean compatibilityPath) {
+		if (dataFile == null) {
+			throw new NullPointerException("dataFile");
+		}
+		if (compatibilityPath) {
+			return;
+		}
+		if (mainDbi < 0) {
+			throw new IllegalArgumentException("Invalid LMDB main database handle " + mainDbi);
+		}
+		if (env == NO_NATIVE_MAP) {
+			throw new IllegalArgumentException(
+					"An LMDB environment is required when a main database handle is supplied");
+		}
 	}
 
 	private void validateEnvironmentFile() throws IOException {

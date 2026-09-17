@@ -22,10 +22,12 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_DUPSORT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_INTEGERDUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_INTEGERKEY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_REVERSEDUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_REVERSEKEY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
@@ -35,6 +37,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
+import static org.lwjgl.util.lmdb.LMDB.mdb_set_compare;
 import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
@@ -46,6 +49,9 @@ import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -53,6 +59,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBCmpFunc;
 import org.lwjgl.util.lmdb.MDBVal;
 
 class LmdbMappingAnchorTest {
@@ -83,7 +90,8 @@ class LmdbMappingAnchorTest {
 	void mapReservationCanExceedByteBufferCapacity() throws Exception {
 		try (Environment env = new Environment(directory, 3L << 30)) {
 			env.populate(0, false);
-			try (ReadTxn txn = env.read(); LmdbDataFile file = new LmdbDataFile(env.file.toFile(), env.handle)) {
+			try (ReadTxn txn = env.read();
+					LmdbDataFile file = new LmdbDataFile(env.file.toFile(), env.handle, env.mainDbi)) {
 				LmdbMeta meta = file.readMetaForReadTransaction(txn.handle);
 				assertTrue(meta.mapSize() > Integer.MAX_VALUE);
 				assertTrue(meta.hasNativeMap());
@@ -94,9 +102,115 @@ class LmdbMappingAnchorTest {
 	}
 
 	@Test
+	void readTransactionPreservesConfiguredMainDatabaseComparator() throws Exception {
+		try (Environment env = new Environment(directory, 64L << 20)) {
+			env.populate(0, false);
+			AtomicInteger comparatorInvocations = new AtomicInteger();
+			try (LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.file.toFile(),
+					env.handle);
+					ReadTxn txn = env.read();
+					MDBCmpFunc comparator = MDBCmpFunc.create((leftAddress, rightAddress) -> {
+						comparatorInvocations.incrementAndGet();
+						MDBVal left = MDBVal.create(leftAddress);
+						MDBVal right = MDBVal.create(rightAddress);
+						ByteBuffer leftData = left.mv_data();
+						ByteBuffer rightData = right.mv_data();
+						int commonLength = Math.min(Math.toIntExact(left.mv_size()), Math.toIntExact(right.mv_size()));
+						for (int index = 0; index < commonLength; index++) {
+							int comparison = Integer.compare(Byte.toUnsignedInt(leftData.get(index)),
+									Byte.toUnsignedInt(rightData.get(index)));
+							if (comparison != 0) {
+								return comparison;
+							}
+						}
+						return Long.compare(left.mv_size(), right.mv_size());
+					});
+					MemoryStack stack = stackPush()) {
+				IntBuffer dbi = stack.mallocInt(1);
+				check(mdb_dbi_open(txn.handle, (ByteBuffer) null, 0, dbi));
+				check(mdb_set_compare(txn.handle, dbi.get(0), comparator));
+				MDBVal lower = MDBVal.malloc(stack).mv_data(stack.bytes((byte) 1));
+				MDBVal higher = MDBVal.malloc(stack).mv_data(stack.bytes((byte) 2));
+				int invocationsBeforeCompare = comparatorInvocations.get();
+				assertTrue(mdb_cmp(txn.handle, dbi.get(0), lower, higher) < 0,
+						"The custom comparator must be installed before mapping lookup");
+				assertTrue(comparatorInvocations.get() > invocationsBeforeCompare,
+						"LMDB must invoke the configured comparator before mapping lookup");
+
+				try (LmdbPageCardinalityEstimator.ReadView ignored = estimator.readTransaction(txn.handle)) {
+					// Opening the read scope exercises the native mapping lookup.
+				}
+
+				invocationsBeforeCompare = comparatorInvocations.get();
+				assertTrue(mdb_cmp(txn.handle, dbi.get(0), lower, higher) < 0,
+						"The mapping lookup must preserve the configured main-DB comparator");
+				assertTrue(comparatorInvocations.get() > invocationsBeforeCompare,
+						"The mapping lookup must not replace the configured main-DB comparator");
+			}
+		}
+	}
+
+	@Test
+	void legacyEnvironmentConstructorRemainsUsableWithAnActiveTlsReader() throws Exception {
+		try (Environment env = new Environment(directory, 64L << 20)) {
+			env.populate(0, false);
+			AtomicInteger comparatorInvocations = new AtomicInteger();
+			try (MDBCmpFunc comparator = countingComparator(comparatorInvocations);
+					ReadTxn txn = env.read()) {
+				check(mdb_set_compare(txn.handle, env.mainDbi, comparator));
+				try (LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.file.toFile(),
+						env.handle);
+						LmdbPageCardinalityEstimator.ReadView ignored = estimator.readTransaction(txn.handle)) {
+					// The compatibility constructor must not discover or reopen a DBI while a TLS reader is active.
+				}
+				try (MemoryStack stack = stackPush()) {
+					assertComparatorStillInstalled(txn.handle, env.mainDbi, comparatorInvocations, stack);
+				}
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, MDB_NOTLS })
+	void explicitMainDatabaseHandlePreservesComparatorAcrossConcurrentReadScopes(int environmentFlags)
+			throws Exception {
+		try (Environment env = new Environment(directory, 64L << 20, environmentFlags)) {
+			env.populate(0, false);
+			AtomicInteger comparatorInvocations = new AtomicInteger();
+			try (MDBCmpFunc comparator = countingComparator(comparatorInvocations);
+					LmdbDataFile file = new LmdbDataFile(env.file.toFile(), env.handle, env.mainDbi);
+					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.file.toFile(),
+							env.handle,
+							env.mainDbi);
+					ReadTxn txn = env.read();
+					MemoryStack stack = stackPush()) {
+				check(mdb_set_compare(txn.handle, env.mainDbi, comparator));
+				assertComparatorStillInstalled(txn.handle, env.mainDbi, comparatorInvocations, stack);
+				assertTrue(file.readMetaForReadTransaction(txn.handle).hasNativeMap(),
+						"The explicit main DBI constructor must activate native page reads");
+
+				try (var executor = Executors.newFixedThreadPool(2)) {
+					Future<?> first = executor.submit(() -> {
+						readNativeScopes(estimator, file, env);
+						return null;
+					});
+					Future<?> second = executor.submit(() -> {
+						readNativeScopes(estimator, file, env);
+						return null;
+					});
+					first.get();
+					second.get();
+				}
+
+				assertComparatorStillInstalled(txn.handle, env.mainDbi, comparatorInvocations, stack);
+			}
+		}
+	}
+
+	@Test
 	void emptyMainDatabaseNeedsNoAnchorAndActivatesAfterACommit() throws Exception {
 		try (Environment env = new Environment(directory, 64L << 20);
-				LmdbDataFile file = new LmdbDataFile(env.file.toFile(), env.handle)) {
+				LmdbDataFile file = new LmdbDataFile(env.file.toFile(), env.handle, env.mainDbi)) {
 			try (ReadTxn txn = env.read()) {
 				LmdbMeta meta = file.readMetaForReadTransaction(txn.handle);
 				assertFalse(meta.hasNativeMap());
@@ -124,44 +238,54 @@ class LmdbMappingAnchorTest {
 	}
 
 	@Test
+	void rejectsAnInvalidExplicitMainDatabaseHandleBeforeOpeningTheFile() throws Exception {
+		try (Environment env = new Environment(directory, 64L << 20)) {
+			assertThrows(IllegalArgumentException.class,
+					() -> new LmdbPageCardinalityEstimator(env.file.toFile(), 0L, env.mainDbi));
+			assertThrows(IllegalArgumentException.class,
+					() -> new LmdbPageCardinalityEstimator(env.file.toFile(), env.handle, -1));
+		}
+	}
+
+	@Test
 	void rejectsStalePageOffsetEvenWhenTheKeyIsUnchanged() throws Exception {
-		try (Environment env = new Environment(directory, 64L << 20);
-				LmdbDataFile file = new LmdbDataFile(env.file.toFile(), env.handle)) {
+		try (Environment env = new Environment(directory, 64L << 20)) {
 			env.populate(0, false);
-			LmdbDataFile.MappingAnchor oldAnchor;
-			try (ReadTxn txn = env.read()) {
-				oldAnchor = file.mappingAnchor(file.readMetaForReadTransaction(txn.handle));
-			}
-			try (MemoryStack stack = stackPush()) {
-				PointerBuffer pointer = stack.mallocPointer(1);
-				check(mdb_txn_begin(env.handle, 0L, 0, pointer));
-				long writer = pointer.get(0);
-				try {
-					IntBuffer dbi = stack.mallocInt(1);
-					check(mdb_dbi_open(writer, (ByteBuffer) null, 0, dbi));
-					MDBVal key = MDBVal.malloc(stack)
-							.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.nativeOrder()).putLong(0, 0L));
-					MDBVal value = MDBVal.malloc(stack)
-							.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.nativeOrder()).putLong(0, 2_000_000L));
-					check(mdb_put(writer, dbi.get(0), key, value, 0));
-				} catch (Throwable failure) {
-					mdb_txn_abort(writer);
-					throw failure;
+			try (LmdbDataFile file = new LmdbDataFile(env.file.toFile(), env.handle, env.mainDbi)) {
+				LmdbDataFile.MappingAnchor oldAnchor;
+				try (ReadTxn txn = env.read()) {
+					oldAnchor = file.mappingAnchor(file.readMetaForReadTransaction(txn.handle));
 				}
-				check(mdb_txn_commit(writer));
-			}
-			try (ReadTxn txn = env.read()) {
-				LmdbMeta current = file.readMetaForReadTransaction(txn.handle);
-				assertTrue(current.hasNativeMap());
-				assertThrows(IOException.class, () -> file.withNativeMap(current, oldAnchor, txn.handle),
-						"Matching key bytes must not accept a page offset from a different snapshot");
+				try (MemoryStack stack = stackPush()) {
+					PointerBuffer pointer = stack.mallocPointer(1);
+					check(mdb_txn_begin(env.handle, 0L, 0, pointer));
+					long writer = pointer.get(0);
+					try {
+						MDBVal key = MDBVal.malloc(stack)
+								.mv_data(stack.malloc(Long.BYTES).order(ByteOrder.nativeOrder()).putLong(0, 0L));
+						MDBVal value = MDBVal.malloc(stack)
+								.mv_data(
+										stack.malloc(Long.BYTES).order(ByteOrder.nativeOrder()).putLong(0, 2_000_000L));
+						check(mdb_put(writer, env.mainDbi, key, value, 0));
+					} catch (Throwable failure) {
+						mdb_txn_abort(writer);
+						throw failure;
+					}
+					check(mdb_txn_commit(writer));
+				}
+				try (ReadTxn txn = env.read()) {
+					LmdbMeta current = file.readMetaForReadTransaction(txn.handle);
+					assertTrue(current.hasNativeMap());
+					assertThrows(IOException.class, () -> file.withNativeMap(current, oldAnchor, txn.handle),
+							"Matching key bytes must not accept a page offset from a different snapshot");
+				}
 			}
 		}
 	}
 
 	private static void verifyLastKey(Environment env) throws Exception {
 		try (ReadTxn txn = env.read();
-				LmdbDataFile file = new LmdbDataFile(env.file.toFile(), env.handle);
+				LmdbDataFile file = new LmdbDataFile(env.file.toFile(), env.handle, env.mainDbi);
 				MemoryStack stack = stackPush()) {
 			LmdbMeta meta = file.readMetaForReadTransaction(txn.handle);
 			assertTrue(meta.hasNativeMap());
@@ -171,10 +295,8 @@ class LmdbMappingAnchorTest {
 				page = file.readPage(page.branchPgnoAt(page.nodeOffset(page.numKeys - 1)), meta);
 			}
 			LmdbNode last = page.node(page.numKeys - 1);
-			IntBuffer dbi = stack.mallocInt(1);
-			check(mdb_dbi_open(txn.handle, (ByteBuffer) null, 0, dbi));
 			PointerBuffer pointer = stack.mallocPointer(1);
-			check(mdb_cursor_open(txn.handle, dbi.get(0), pointer));
+			check(mdb_cursor_open(txn.handle, env.mainDbi, pointer));
 			long cursor = pointer.get(0);
 			try {
 				MDBVal key = MDBVal.malloc(stack);
@@ -194,6 +316,47 @@ class LmdbMappingAnchorTest {
 		assertEquals(MDB_SUCCESS, result, () -> mdb_strerror(result));
 	}
 
+	private static MDBCmpFunc countingComparator(AtomicInteger comparatorInvocations) {
+		return MDBCmpFunc.create((leftAddress, rightAddress) -> {
+			comparatorInvocations.incrementAndGet();
+			MDBVal left = MDBVal.create(leftAddress);
+			MDBVal right = MDBVal.create(rightAddress);
+			ByteBuffer leftData = left.mv_data();
+			ByteBuffer rightData = right.mv_data();
+			int commonLength = Math.min(Math.toIntExact(left.mv_size()), Math.toIntExact(right.mv_size()));
+			for (int index = 0; index < commonLength; index++) {
+				int comparison = Integer.compare(Byte.toUnsignedInt(leftData.get(index)),
+						Byte.toUnsignedInt(rightData.get(index)));
+				if (comparison != 0) {
+					return comparison;
+				}
+			}
+			return Long.compare(left.mv_size(), right.mv_size());
+		});
+	}
+
+	private static void assertComparatorStillInstalled(long txn, int dbi, AtomicInteger comparatorInvocations,
+			MemoryStack stack) {
+		MDBVal lower = MDBVal.malloc(stack).mv_data(stack.bytes((byte) 1));
+		MDBVal higher = MDBVal.malloc(stack).mv_data(stack.bytes((byte) 2));
+		int invocationsBeforeCompare = comparatorInvocations.get();
+		assertTrue(mdb_cmp(txn, dbi, lower, higher) < 0,
+				"The configured main-DB comparator must preserve unsigned byte ordering");
+		assertTrue(comparatorInvocations.get() > invocationsBeforeCompare,
+				"LMDB must invoke the configured main-DB comparator");
+	}
+
+	private static void readNativeScopes(LmdbPageCardinalityEstimator estimator, LmdbDataFile file, Environment env)
+			throws IOException {
+		for (int pass = 0; pass < 3; pass++) {
+			try (ReadTxn txn = env.read();
+					LmdbPageCardinalityEstimator.ReadView ignored = estimator.readTransaction(txn.handle)) {
+				assertTrue(file.readMetaForReadTransaction(txn.handle).hasNativeMap(),
+						"Each explicit read scope must use LMDB's native mapping");
+			}
+		}
+	}
+
 	private record ReadTxn(long handle) implements AutoCloseable {
 		@Override
 		public void close() {
@@ -204,8 +367,13 @@ class LmdbMappingAnchorTest {
 	private static final class Environment implements AutoCloseable {
 		final long handle;
 		final Path file;
+		final int mainDbi;
 
 		Environment(Path directory, long mapSize) {
+			this(directory, mapSize, 0);
+		}
+
+		Environment(Path directory, long mapSize, int flags) {
 			file = directory.resolve("data.mdb");
 			try (MemoryStack stack = stackPush()) {
 				PointerBuffer pointer = stack.mallocPointer(1);
@@ -213,7 +381,8 @@ class LmdbMappingAnchorTest {
 				handle = pointer.get(0);
 				try {
 					check(mdb_env_set_mapsize(handle, mapSize));
-					check(mdb_env_open(handle, directory.toString(), 0, 0664));
+					check(mdb_env_open(handle, directory.toString(), flags, 0664));
+					mainDbi = openMainDatabase(handle);
 				} catch (Throwable failure) {
 					mdb_env_close(handle);
 					throw failure;
@@ -235,8 +404,11 @@ class LmdbMappingAnchorTest {
 				check(mdb_txn_begin(handle, 0L, 0, pointer));
 				long txn = pointer.get(0);
 				try {
-					IntBuffer dbi = stack.mallocInt(1);
-					check(mdb_dbi_open(txn, (ByteBuffer) null, flags, dbi));
+					if (flags != 0) {
+						IntBuffer configuredDbi = stack.mallocInt(1);
+						check(mdb_dbi_open(txn, (ByteBuffer) null, flags, configuredDbi));
+						assertEquals(mainDbi, configuredDbi.get(0));
+					}
 					ByteBuffer keyBytes = stack.malloc(Long.BYTES).order(ByteOrder.nativeOrder());
 					ByteBuffer valueBytes = stack.malloc(Long.BYTES).order(ByteOrder.nativeOrder());
 					MDBVal key = MDBVal.malloc(stack).mv_data(keyBytes);
@@ -246,13 +418,13 @@ class LmdbMappingAnchorTest {
 						keyBytes.putLong(0, ordinal);
 						valueBytes.putLong(0, ordinal);
 						value.mv_data(overflow && ordinal == 0 ? largeValue : valueBytes);
-						check(mdb_put(txn, dbi.get(0), key, value, 0));
+						check(mdb_put(txn, mainDbi, key, value, 0));
 					}
 					if ((flags & MDB_DUPSORT) != 0) {
 						keyBytes.putLong(0, 0L);
 						for (int duplicate = 1; duplicate < 2_000; duplicate++) {
 							valueBytes.putLong(0, duplicate);
-							check(mdb_put(txn, dbi.get(0), key, value, 0));
+							check(mdb_put(txn, mainDbi, key, value, 0));
 						}
 					}
 				} catch (Throwable failure) {
@@ -260,6 +432,27 @@ class LmdbMappingAnchorTest {
 					throw failure;
 				}
 				check(mdb_txn_commit(txn));
+			}
+		}
+
+		private static int openMainDatabase(long environment) {
+			try (MemoryStack stack = stackPush()) {
+				PointerBuffer pointer = stack.mallocPointer(1);
+				check(mdb_txn_begin(environment, 0L, 0, pointer));
+				long txn = pointer.get(0);
+				boolean open = true;
+				try {
+					IntBuffer dbi = stack.mallocInt(1);
+					check(mdb_dbi_open(txn, (ByteBuffer) null, 0, dbi));
+					check(mdb_txn_commit(txn));
+					open = false;
+					return dbi.get(0);
+				} catch (Throwable failure) {
+					if (open) {
+						mdb_txn_abort(txn);
+					}
+					throw failure;
+				}
 			}
 		}
 

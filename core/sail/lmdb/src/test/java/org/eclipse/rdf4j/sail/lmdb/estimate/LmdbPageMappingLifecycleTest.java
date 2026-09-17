@@ -90,8 +90,8 @@ class LmdbPageMappingLifecycleTest {
 		try (Environment env = new Environment(location, flags | MDB_RDONLY);
 				ReadTxn txn = env.read();
 				LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(dataPath.toFile(),
-						env.handle);
-				LmdbDataFile file = new LmdbDataFile(dataPath.toFile(), env.handle)) {
+						env.handle, env.mainDbi);
+				LmdbDataFile file = new LmdbDataFile(dataPath.toFile(), env.handle, env.mainDbi)) {
 			assertEquals(32, totalEntries(estimator, txn.handle()));
 			assertEquals(10, estimate(estimator, txn.handle(), null));
 			LmdbMeta meta = file.readMetaForReadTransaction(txn.handle());
@@ -105,9 +105,9 @@ class LmdbPageMappingLifecycleTest {
 	@ValueSource(ints = { 0, MDB_WRITEMAP })
 	void rediscoversLmdbMappingAfterResizeWithoutANewCommit(int flags) throws Exception {
 		try (Environment env = new Environment(directory, flags);
-				LmdbDataFile file = new LmdbDataFile(env.dataPath.toFile(), env.handle);
+				LmdbDataFile file = new LmdbDataFile(env.dataPath.toFile(), env.handle, env.mainDbi);
 				LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
-						env.handle)) {
+						env.handle, env.mainDbi)) {
 			env.put(0, 32);
 			LmdbMeta meta;
 			LmdbPage page;
@@ -136,8 +136,8 @@ class LmdbPageMappingLifecycleTest {
 			env.put(0, INITIAL_ENTRY_COUNT);
 			try (ReadTxn oldTxn = env.read();
 					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
-							env.handle);
-					LmdbDataFile file = new LmdbDataFile(env.dataPath.toFile(), env.handle)) {
+							env.handle, env.mainDbi);
+					LmdbDataFile file = new LmdbDataFile(env.dataPath.toFile(), env.handle, env.mainDbi)) {
 				assertEquals(INITIAL_ENTRY_COUNT, totalEntries(estimator, oldTxn.handle()));
 				LmdbMeta oldMeta = file.readMetaForReadTransaction(oldTxn.handle());
 				long oldCommittedBytes = committedBytes(oldMeta);
@@ -182,7 +182,7 @@ class LmdbPageMappingLifecycleTest {
 			env.put(0, 32);
 			try (ReadTxn txn = env.read();
 					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
-							env.handle);
+							env.handle, env.mainDbi);
 					var executor = Executors.newFixedThreadPool(2)) {
 				GroupMatcher matcher = blockingMatcher(entered, release);
 				Future<Long> first = executor.submit(() -> {
@@ -216,7 +216,7 @@ class LmdbPageMappingLifecycleTest {
 			env.put(0, 32);
 			try (ReadTxn txn = env.read();
 					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
-							env.handle);
+							env.handle, env.mainDbi);
 					var executor = Executors.newSingleThreadExecutor()) {
 				Future<Long> reader = executor
 						.submit(() -> estimate(estimator, txn.handle(), blockingMatcher(entered, release)));
@@ -260,7 +260,7 @@ class LmdbPageMappingLifecycleTest {
 			try (ReadTxn txn = env.read();
 					MemoryStack stack = stackPush();
 					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
-							env.handle)) {
+							env.handle, env.mainDbi)) {
 				PointerBuffer pointer = stack.mallocPointer(1);
 				check(mdb_cursor_open(txn.handle(), env.dbi, pointer));
 				long cursor = pointer.get(0);
@@ -298,7 +298,7 @@ class LmdbPageMappingLifecycleTest {
 			env.put(0, 32);
 			try (ReadTxn oldTxn = env.read();
 					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
-							env.handle);
+							env.handle, env.mainDbi);
 					var oldView = estimator.readTransaction(oldTxn.handle())) {
 				assertEquals(32, oldView.totalEntries("statements"));
 				for (int batch = 1; batch <= 4; batch++) {
@@ -319,8 +319,8 @@ class LmdbPageMappingLifecycleTest {
 			env.put(0, 32);
 			try (ReadTxn txn = env.read();
 					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
-							env.handle);
-					LmdbDataFile file = new LmdbDataFile(env.dataPath.toFile(), env.handle)) {
+							env.handle, env.mainDbi);
+					LmdbDataFile file = new LmdbDataFile(env.dataPath.toFile(), env.handle, env.mainDbi)) {
 				var view = estimator.readTransaction(txn.handle());
 				assertEquals(32, view.totalEntries("statements"));
 				view.close();
@@ -405,6 +405,7 @@ class LmdbPageMappingLifecycleTest {
 	private static final class Environment implements AutoCloseable {
 		final long handle;
 		final Path dataPath;
+		final int mainDbi;
 		final int dbi;
 
 		Environment(Path location, int flags) {
@@ -423,14 +424,17 @@ class LmdbPageMappingLifecycleTest {
 					check(mdb_env_open(handle, location.toString(), MDB_NOTLS | flags, 0664));
 					check(mdb_txn_begin(handle, NULL, flags & MDB_RDONLY, pointer));
 					long txn = pointer.get(0);
+					IntBuffer main = stack.mallocInt(1);
 					IntBuffer db = stack.mallocInt(1);
 					try {
+						check(mdb_dbi_open(txn, (ByteBuffer) null, 0, main));
 						check(mdb_dbi_open(txn, "statements", (flags & MDB_RDONLY) == 0 ? MDB_CREATE : 0, db));
 					} catch (Throwable failure) {
 						mdb_txn_abort(txn);
 						throw failure;
 					}
 					check(mdb_txn_commit(txn));
+					mainDbi = main.get(0);
 					dbi = db.get(0);
 				} catch (Throwable failure) {
 					mdb_env_close(handle);

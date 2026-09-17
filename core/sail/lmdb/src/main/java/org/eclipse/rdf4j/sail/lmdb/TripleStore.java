@@ -138,6 +138,7 @@ class TripleStore implements Closeable {
 
 	long env;
 	long writeTxn;
+	private final int mainDbi;
 	private final int contextsDbi;
 	private int pageSize;
 	private final boolean autoGrow;
@@ -156,6 +157,9 @@ class TripleStore implements Closeable {
 	private final AtomicLong dataRevision = new AtomicLong();
 
 	private TxnRecordCache recordCache = null;
+
+	private record DatabaseHandles(int mainDbi, int contextsDbi) {
+	}
 
 	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore) throws IOException, SailException {
 		this(dir, new StoreProperties(dir), config, valueStore);
@@ -194,18 +198,25 @@ class TripleStore implements Closeable {
 			flags |= MDB_NORDAHEAD;
 		}
 		E(mdb_env_open(env, this.dir.getAbsolutePath(), flags, 0664));
-		// open contexts database
-		contextsDbi = writeTransaction(env, (stack, txn) -> {
+		// Open the unnamed main database and contexts database in one serialized setup transaction. The main DBI is
+		// retained for page-estimator read scopes; opening it again while readers are active mutates LMDB's shared
+		// comparator state.
+		DatabaseHandles databaseHandles = writeTransaction(env, (stack, txn) -> {
+			IntBuffer mainDbiHandle = stack.mallocInt(1);
+			E(mdb_dbi_open(txn, (ByteBuffer) null, 0, mainDbiHandle));
 			String name = "contexts";
 			IntBuffer ip = stack.mallocInt(1);
 			if (mdb_dbi_open(txn, name, 0, ip) == MDB_NOTFOUND) {
 				E(mdb_dbi_open(txn, name, MDB_CREATE, ip));
 			}
-			return ip.get(0);
+			return new DatabaseHandles(mainDbiHandle.get(0), ip.get(0));
 		});
+		mainDbi = databaseHandles.mainDbi();
+		contextsDbi = databaseHandles.contextsDbi();
 
 		txnManager = new TxnManager(env, Mode.RESET);
-		pageEstimator = pageWalkingEstimatorEnabled ? new LmdbPageCardinalityEstimator(dataMdbFile, env) : null;
+		pageEstimator = pageWalkingEstimatorEnabled ? new LmdbPageCardinalityEstimator(dataMdbFile, env, mainDbi)
+				: null;
 
 		try {
 			String indexSpecStr = config.getTripleIndexes();

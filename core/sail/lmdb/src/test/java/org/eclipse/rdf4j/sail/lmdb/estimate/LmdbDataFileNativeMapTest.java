@@ -89,7 +89,8 @@ class LmdbDataFileNativeMapTest {
 
 			check(mdb_txn_begin(environment, NULL, MDB_RDONLY, pointer));
 			long readTxn = pointer.get(0);
-			try (LmdbDataFile dataFile = new LmdbDataFile(directory.resolve("data.mdb").toFile(), environment)) {
+			try (LmdbDataFile dataFile = new LmdbDataFile(directory.resolve("data.mdb").toFile(), environment,
+					dbi.get(0))) {
 				check(mdb_get(readTxn, dbi.get(0), key, value));
 				ByteBuffer returnedValue = value.mv_data();
 				assertNotEquals(NULL, memAddress(returnedValue));

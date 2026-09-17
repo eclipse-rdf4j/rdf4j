@@ -53,6 +53,7 @@ class LmdbPageCardinalityEstimatorDupSortNativeTest {
 	@ValueSource(booleans = { false, true })
 	void countsRealLmdbDupSortAndDupFixedDatabases(boolean mapped, @TempDir Path directory) throws Exception {
 		long environment = 0;
+		int mainDbi = -1;
 		int dupSortDbi = -1;
 		int dupFixedDbi = -1;
 		try {
@@ -69,6 +70,8 @@ class LmdbPageCardinalityEstimatorDupSortNativeTest {
 				boolean writeTxnOpen = true;
 				try {
 					IntBuffer dbi = stack.mallocInt(1);
+					check(mdb_dbi_open(writeTxn, (ByteBuffer) null, 0, dbi));
+					mainDbi = dbi.get(0);
 					check(mdb_dbi_open(writeTxn, "dups", MDB_CREATE | MDB_DUPSORT, dbi));
 					dupSortDbi = dbi.get(0);
 					check(mdb_dbi_open(writeTxn, "dupfixed", MDB_CREATE | MDB_DUPSORT | MDB_DUPFIXED, dbi));
@@ -92,8 +95,9 @@ class LmdbPageCardinalityEstimatorDupSortNativeTest {
 
 				check(mdb_txn_begin(environment, NULL, MDB_RDONLY, pointer));
 				long readTxn = pointer.get(0);
-				try (LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(
-						directory.resolve("data.mdb").toFile(), mapped ? environment : 0L)) {
+				try (LmdbPageCardinalityEstimator estimator = mapped
+						? new LmdbPageCardinalityEstimator(directory.resolve("data.mdb").toFile(), environment, mainDbi)
+						: new LmdbPageCardinalityEstimator(directory.resolve("data.mdb").toFile())) {
 					long txn = mapped ? readTxn : mdb_txn_id(readTxn);
 					long expected = 8L + LARGE_DUPLICATE_COUNT;
 					assertEquals(expected, estimate(estimator, txn, mapped, "dups", 10, 30));

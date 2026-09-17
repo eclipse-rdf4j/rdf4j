@@ -32,9 +32,9 @@ import org.slf4j.LoggerFactory;
  *
  * <p>
  * Production callers borrow an already-pinned read-only transaction with {@link #readTransaction(long)}. Each scope
- * obtains LMDB's current mapping identity through the public cursor API before using cached pages. Transaction-ID-only
- * methods remain available through positional file reads. Both paths select metadata no newer than the caller's
- * snapshot and use the same decoder and counting algorithm.
+ * obtains LMDB's current mapping identity through the public cursor API before using cached pages when constructed with
+ * an existing main database handle. Transaction-ID-only methods remain available through positional file reads. Both
+ * paths select metadata no newer than the caller's snapshot and use the same decoder and counting algorithm.
  * </p>
  */
 public final class LmdbPageCardinalityEstimator implements Closeable {
@@ -179,12 +179,31 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	}
 
 	/**
-	 * Borrows {@code env} for native page reads through {@link #readTransaction(long)}. The data file must belong to
-	 * that environment, which must remain open until this estimator is closed. This class never creates or releases a
-	 * mapping. The transaction-ID-only methods continue to use positional reads.
+	 * Validates {@code env} and the data file for compatibility. Without the main database handle, read scopes use
+	 * positional page reads because an existing handle cannot be recovered safely from an environment handle alone.
+	 * Keep the environment open until this estimator is closed; read scopes still validate their transactions against
+	 * it.
 	 */
 	public LmdbPageCardinalityEstimator(File dataMdbFile, long env) throws IOException {
 		this.dataFile = new LmdbDataFile(dataMdbFile, env);
+	}
+
+	/**
+	 * Borrows {@code env} and an already-open main database handle for native page reads through
+	 * {@link #readTransaction(long)}. The caller must obtain the handle during serialized environment initialization
+	 * and complete that setup transaction before opening concurrent readers. The data file and environment must remain
+	 * valid until this estimator is closed. The database handle remains owned by the caller; this class never creates,
+	 * closes, or releases it.
+	 */
+	public LmdbPageCardinalityEstimator(File dataMdbFile, long env, int mainDbi) throws IOException {
+		if (env == 0L) {
+			throw new IllegalArgumentException(
+					"An LMDB environment is required when a main database handle is supplied");
+		}
+		if (mainDbi < 0) {
+			throw new IllegalArgumentException("Invalid LMDB main database handle " + mainDbi);
+		}
+		this.dataFile = new LmdbDataFile(dataMdbFile, env, mainDbi);
 	}
 
 	/**
