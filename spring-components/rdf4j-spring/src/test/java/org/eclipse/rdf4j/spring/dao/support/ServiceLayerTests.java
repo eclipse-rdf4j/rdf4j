@@ -17,6 +17,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Set;
+
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.spring.RDF4JSpringTestBase;
 import org.eclipse.rdf4j.spring.domain.model.Artist;
 import org.eclipse.rdf4j.spring.domain.model.EX;
@@ -107,6 +110,28 @@ public class ServiceLayerTests extends RDF4JSpringTestBase {
 					null));
 			// now ascertain that the transaction will not commit because of the exception
 			assertTrue(((TransactionObject) ((DefaultTransactionStatus) status).getTransaction()).isRollbackOnly());
+			return null;
+		});
+	}
+
+	@Test
+	public void testGetPaintingsOfArtist() {
+		transactionTemplate.execute(status -> {
+			Set<Painting> paintings = artService.getPaintingsOfArtist(EX.VanGogh);
+			assertEquals(3, paintings.size());
+			assertTrue(paintings.stream().anyMatch(p -> p.getId().equals(EX.starryNight)));
+			assertTrue(paintings.stream().anyMatch(p -> p.getId().equals(EX.potatoEaters)));
+			assertTrue(paintings.stream().anyMatch(p -> p.getId().equals(EX.sunflowers)));
+			return null;
+		});
+	}
+
+	@Test
+	public void testGetArtistOfPainting() {
+		transactionTemplate.execute(status -> {
+			Set<Artist> artists = artService.getArtistsOfPainting(EX.guernica);
+			assertEquals(1, artists.size());
+			assertTrue(artists.stream().anyMatch(p -> p.getId().equals(EX.Picasso)));
 			return null;
 		});
 	}

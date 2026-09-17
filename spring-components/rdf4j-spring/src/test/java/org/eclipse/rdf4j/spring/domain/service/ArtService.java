@@ -11,6 +11,9 @@
 
 package org.eclipse.rdf4j.spring.domain.service;
 
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.spring.domain.dao.ArtistDao;
 import org.eclipse.rdf4j.spring.domain.dao.PaintingDao;
@@ -37,6 +40,22 @@ public class ArtService {
 	@Transactional
 	public Painting getPainting(IRI id) {
 		return this.paintingDao.getById(id);
+	}
+
+	@Transactional
+	public Set<Painting> getPaintingsOfArtist(IRI artistId) {
+		return artistDao.getPaintingsIdsOfArtist(artistId)
+				.stream()
+				.map(paintingDao::getById)
+				.collect(Collectors.toSet());
+	}
+
+	@Transactional
+	public Set<Artist> getArtistsOfPainting(IRI paintingId) {
+		return paintingDao.getArtistIdsOfPainting(paintingId)
+				.stream()
+				.map(artistDao::getById)
+				.collect(Collectors.toSet());
 	}
 
 	@Transactional(propagation = Propagation.REQUIRED)
