@@ -22,22 +22,36 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.EmptyRecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -65,6 +79,15 @@ class LmdbNativeKernelLoweringTest {
 
 	private static RowState freshRow(NativeLmdbQuerySource source) {
 		RowState row = new RowState(source, LAYOUT, EmptyBindingSet.getInstance());
+		java.util.Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
+		row.recomputeBoundMask();
+		return row;
+	}
+
+	private static RowState freshFiveSlotRow() {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("a", 0, "b", 1, "c", 2, "d", 3, "e", 4), null);
+		layout.freeze(java.util.List.of("a", "b", "c", "d", "e"));
+		RowState row = new RowState(new StubSource(), layout, EmptyBindingSet.getInstance());
 		java.util.Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
 		row.recomputeBoundMask();
 		return row;
@@ -131,6 +154,20 @@ class LmdbNativeKernelLoweringTest {
 		assertEquals(1, lowered.bindings.planRequests.length);
 		assertEquals(endpoint, lowered.bindings.planRequests[0].plan);
 		assertTrue(lowered.kernel.terminal instanceof LmdbNativeKernelIr.Aggregate);
+	}
+
+	@Test
+	void emptyAggregateOutputsDeclineAsARegularCapabilityBoundary() {
+		PatternPlan plan = pattern(Term.slot(0), Term.constant(PRED + 128));
+		for (int[] groupSlots : new int[][] { new int[0], new int[] { 0 } }) {
+			LmdbNativeKernelLowering.Builder builder = new LmdbNativeKernelLowering.Builder(freshRow(), "agg:");
+			assertNull(builder.buildAggregate(groupSlots, new AggregateSpec[0], null, 16),
+					"zero-output aggregate must not construct an invalid terminal");
+			assertEquals("agg:no-aggregate-outputs", builder.reason);
+			assertNull(
+					LmdbNativeKernelLowering.lowerAggregate(plan, freshRow(), groupSlots, new AggregateSpec[0], null),
+					"zero-output aggregate must decline before choosing a physical producer");
+		}
 	}
 
 	@Test
@@ -573,6 +610,135 @@ class LmdbNativeKernelLoweringTest {
 		assertNotNull(lowered);
 		assertTrue(lowered.kernel.shapeKey().contains("P(a0,e0->0);"), lowered.kernel.shapeKey());
 		assertArrayEquals(new int[] { 0 }, lowered.bindings.entrySlotIds);
+	}
+
+	/**
+	 * A constant-slot term is both a fixed quad value and a binding-producing term. Keep that distinction intact in all
+	 * four quad positions, for both a fresh and an already compatible entry row, and reject a conflicting entry row.
+	 */
+	@Test
+	void constantSlotBindsFreshAndPreboundNamedConstantsAcrossEveryQuadPosition() {
+		long subject = PRED + 11L;
+		long object = PRED + 23L;
+		long context = PRED + 37L;
+		long[] quad = { subject, PRED, object, context };
+		PatternPlan[] patterns = {
+				new PatternPlan(Term.constantSlot(0, subject), Term.constant(PRED), Term.slot(1), Term.unbound(),
+						ContextConstraint.UNRESTRICTED, false, 1D),
+				new PatternPlan(Term.slot(0), Term.constantSlot(1, PRED), Term.slot(2), Term.unbound(),
+						ContextConstraint.UNRESTRICTED, false, 1D),
+				new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constantSlot(2, object), Term.unbound(),
+						ContextConstraint.UNRESTRICTED, false, 1D),
+				// A named graph is still a normal constant-slot binding when the quad carries that graph.
+				new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(3), Term.constantSlot(4, context),
+						ContextConstraint.UNRESTRICTED, true, 1D) };
+		int[] constantSlots = { 0, 1, 2, 4 };
+		long[] constants = { subject, PRED, object, context };
+
+		for (int i = 0; i < patterns.length; i++) {
+			PatternPlan pattern = patterns[i];
+			RowState fresh = freshFiveSlotRow();
+			assertTrue(pattern.bind(quad, fresh), "fresh constant-slot binding at quad position " + i);
+			assertEquals(constants[i], fresh.slots[constantSlots[i]], "fresh binding at quad position " + i);
+
+			RowState compatible = freshFiveSlotRow();
+			assertTrue(compatible.bind(constantSlots[i], constants[i]));
+			assertTrue(pattern.bind(quad, compatible), "compatible entry binding at quad position " + i);
+
+			RowState conflicting = freshFiveSlotRow();
+			assertTrue(conflicting.bind(constantSlots[i], constants[i] + 1L));
+			assertFalse(pattern.bind(quad, conflicting), "conflicting entry binding at quad position " + i);
+		}
+	}
+
+	/**
+	 * A constant-slot pattern must remain a native producer even when its entry value is fresh, compatible, or empty.
+	 */
+	@Test
+	void constantSlotPatternsAreAdmittedByRowsAndAggregatesForEveryQuadPosition() {
+		long subject = PRED + 71L;
+		long object = PRED + 83L;
+		long context = PRED + 97L;
+		PatternPlan[] patterns = {
+				new PatternPlan(Term.constantSlot(0, subject), Term.constant(PRED), Term.slot(1), Term.unbound(),
+						ContextConstraint.UNRESTRICTED, false, 1D),
+				new PatternPlan(Term.slot(0), Term.constantSlot(1, PRED), Term.slot(2), Term.unbound(),
+						ContextConstraint.UNRESTRICTED, false, 1D),
+				new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constantSlot(2, object), Term.unbound(),
+						ContextConstraint.UNRESTRICTED, false, 1D),
+				new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(3), Term.constantSlot(4, context),
+						ContextConstraint.UNRESTRICTED, true, 1D) };
+		int[] constantSlots = { 0, 1, 2, 4 };
+		int[] countedSlots = { 1, 2, 0, 3 };
+		long[] constants = { subject, PRED, object, context };
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			for (int i = 0; i < patterns.length; i++) {
+				PatternPlan pattern = patterns[i];
+				RowState fresh = freshFiveSlotRow();
+				assertNotNull(LmdbNativeKernelLowering.lowerRows(pattern, fresh, null),
+						"fresh constant-slot row lowering at quad position " + i);
+				assertNotNull(LmdbNativeKernelLowering.lowerAggregate(pattern, fresh, new int[0],
+						new AggregateSpec[] { AggregateSpec.slot("count", countedSlots[i], false, AggKind.COUNT) },
+						null),
+						"fresh constant-slot aggregate lowering at quad position " + i);
+
+				RowState compatible = freshFiveSlotRow();
+				assertTrue(compatible.bind(constantSlots[i], constants[i]));
+				assertNotNull(LmdbNativeKernelLowering.lowerRows(pattern, compatible, null),
+						"compatible constant-slot row lowering at quad position " + i);
+
+				RowState conflicting = freshFiveSlotRow();
+				assertTrue(conflicting.bind(constantSlots[i], constants[i] + 1L));
+				assertNotNull(LmdbNativeKernelLowering.lowerRows(pattern, conflicting, null),
+						"conflicting constant-slot row must lower to an empty native result at quad position " + i);
+			}
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	@Test
+	void repeatedConstantSlotRequiresTheSameValueInNestedPatternTerms() {
+		long subject = PRED + 41L;
+		PatternPlan repeated = new PatternPlan(Term.constantSlot(0, subject), Term.constant(PRED),
+				Term.constantSlot(0, subject), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+		assertTrue(repeated.hasRepeatedSlot());
+
+		RowState matching = freshFiveSlotRow();
+		assertTrue(repeated.bind(new long[] { subject, PRED, subject, PRED + 1L }, matching));
+		assertEquals(subject, matching.slots[0]);
+
+		RowState mismatching = freshFiveSlotRow();
+		assertFalse(repeated.bind(new long[] { subject, PRED, subject + 1L, PRED + 1L }, mismatching));
+	}
+
+	@Test
+	void nestedOptionalRetainsConstantSlotBindingAtItsSemanticBoundary() {
+		long object = PRED + 59L;
+		PatternPlan left = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1D);
+		PatternPlan optional = new PatternPlan(Term.slot(1), Term.constant(PRED + 2L),
+				Term.constantSlot(2, object), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+		SlotPlan nested = new LeftJoinPlan(left, optional);
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(nested, freshFiveSlotRow(), null);
+		assertNotNull(lowered, "a nested constant-slot OPTIONAL must retain its complete semantic boundary");
+		assertTrue(lowered.kernel.pipeline.stream().anyMatch(LmdbNativeKernelIr.LeftGroup.class::isInstance),
+				lowered.kernel.shapeKey());
+		long[] leftQuad = { PRED + 1L, PRED, PRED + 2L, PRED + 3L };
+		long[] optionalQuad = { PRED + 2L, PRED + 2L, object, PRED + 4L };
+		RowState matching = freshFiveSlotRow();
+		assertTrue(left.bind(leftQuad, matching));
+		assertTrue(optional.bind(optionalQuad, matching));
+		assertEquals(object, matching.slots[2], "a matching OPTIONAL arm must bind its constant-slot value");
+
+		RowState noMatch = freshFiveSlotRow();
+		assertTrue(left.bind(leftQuad, noMatch));
+		assertFalse(optional.bind(new long[] { PRED + 2L, PRED + 2L, object + 1L, PRED + 4L }, noMatch));
+		assertEquals(LmdbNativeAggregateCompiler.UNKNOWN, noMatch.slots[2],
+				"a non-matching OPTIONAL arm must leave its new slot unbound for null extension");
 	}
 
 	@Test
@@ -1247,17 +1413,19 @@ class LmdbNativeKernelLoweringTest {
 	 * M7 decline-reason prefix fix: the pattern/VALUES lowering sites are SHARED between the row builder (prefix
 	 * {@code ""}) and the aggregate builder (prefix {@code "agg:"}), but historically recorded bare strings — an
 	 * aggregate decline surfaced as {@code irKernel:pattern-guards} and the census mis-attributed it as a row-tier
-	 * decline. A bind-constant subject refuses both the adjacency guards and the scan fallback, so the shape declines
-	 * at exactly such a shared site.
+	 * decline. A variable predicate has no native adjacency route when scan sources are disabled, so it declines at
+	 * exactly such a shared site while keeping the fixture independent of constant-slot support.
 	 */
 	@Test
 	void aggregateProducerDeclinesCarryTheAggPrefixAtSharedSites() {
+		String previousScans = System.getProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY);
 		MultiJoinPlan plan = new MultiJoinPlan(
-				new SlotPlan[] { pattern(Term.constantSlot(0, 42L), Term.slot(1)),
-						pattern(Term.slot(1), Term.slot(2)) },
+				new SlotPlan[] { new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(0), Term.unbound(),
+						ContextConstraint.UNRESTRICTED, false, 1D), pattern(Term.slot(1), Term.slot(2)) },
 				new MaskedFilter[0]);
 		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
 		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		System.setProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, "false");
 		try {
 			SingletonSet target = new SingletonSet();
 			target.setRuntimeTelemetryEnabled(true);
@@ -1268,6 +1436,7 @@ class LmdbNativeKernelLoweringTest {
 					"an aggregate-path decline at a shared lowering site must carry the agg: prefix");
 		} finally {
 			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+			restoreProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, previousScans);
 		}
 	}
 
@@ -1339,6 +1508,451 @@ class LmdbNativeKernelLoweringTest {
 				"the non-replayable extension must remain the bound producer");
 		assertArrayEquals(new int[] { 0, 1, 3 }, request.outputSlots);
 		assertArrayEquals(new int[] { 1, 2 }, request.inputSlots);
+	}
+
+	/** A filter over the producer's column must run before an independent computed BIND at the same depth. */
+	@Test
+	void sameDepthFilterRunsBeforeIndependentComputedBind() {
+		LmdbNativeCompiledInlineId computed = pureComputedInlineId();
+		SlotPlan producer = pattern(Term.slot(0), Term.slot(1));
+		SlotPlan extension = new ExtensionPlan(producer,
+				new CopyBinding[] { CopyBinding.computed(2, computed) });
+		SlotPlan filtered = new FilterPlan(extension,
+				new CachedCompareFilter(1, PRED, false, Compare.CompareOp.NE, false, bindings -> true, null), 1L << 1);
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerCounting(filtered, 1);
+		assertNotNull(lowered, lowered == null ? "same-depth filter and BIND must remain lowerable" : null);
+		int filterIndex = -1;
+		int bindIndex = -1;
+		for (int i = 0; i < lowered.kernel.pipeline.size(); i++) {
+			LmdbNativeKernelIr.Node node = lowered.kernel.pipeline.get(i);
+			if (LmdbNativeKernelIr.isFilter(node)) {
+				filterIndex = i;
+			}
+			if (node instanceof LmdbNativeKernelIr.BindHook) {
+				bindIndex = i;
+			}
+		}
+		assertTrue(filterIndex >= 0, lowered.kernel.shapeKey());
+		assertTrue(bindIndex >= 0, lowered.kernel.shapeKey());
+		assertTrue(filterIndex < bindIndex,
+				"a filter over slot 1 must precede the independent BIND over slot 1: " + lowered.kernel.shapeKey());
+	}
+
+	/** A filter which reads a computed target must remain after the producer that writes that target. */
+	@Test
+	void sameDepthFilterDependingOnComputedBindStaysAfterTheBind() {
+		LmdbNativeCompiledInlineId computed = pureComputedInlineId();
+		SlotPlan producer = pattern(Term.slot(0), Term.slot(1));
+		SlotPlan extension = new ExtensionPlan(producer,
+				new CopyBinding[] { CopyBinding.computed(2, computed) });
+		SlotPlan filtered = new FilterPlan(extension,
+				new CachedCompareFilter(2, PRED, false, Compare.CompareOp.NE, false, bindings -> true, null), 1L << 2);
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerCounting(filtered, 1);
+		assertNotNull(lowered, lowered == null ? "computed target filter must remain lowerable" : null);
+		int filterIndex = -1;
+		int bindIndex = -1;
+		for (int i = 0; i < lowered.kernel.pipeline.size(); i++) {
+			LmdbNativeKernelIr.Node node = lowered.kernel.pipeline.get(i);
+			if (LmdbNativeKernelIr.isFilter(node)) {
+				filterIndex = i;
+			}
+			if (node instanceof LmdbNativeKernelIr.BindHook) {
+				bindIndex = i;
+			}
+		}
+		assertTrue(filterIndex > bindIndex,
+				"a filter over slot 2 must follow the BIND that writes slot 2: " + lowered.kernel.shapeKey());
+	}
+
+	/** A filter registered inside an extension argument must stay before an observable computed BIND in its parent. */
+	@Test
+	void filterRegisteredBeforeEffectfulComputedBindStaysBeforeIt() {
+		LmdbNativeCompiledInlineId effectful = new LmdbNativeCompiledInlineId(1L << 1, true, row -> row.id(1));
+		SlotPlan filteredArgument = new FilterPlan(pattern(Term.slot(0), Term.slot(1)),
+				new CachedCompareFilter(1, PRED, false, Compare.CompareOp.NE, false, bindings -> true, null), 1L << 1);
+		SlotPlan extension = new ExtensionPlan(filteredArgument,
+				new CopyBinding[] { CopyBinding.computed(2, effectful) });
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerCounting(extension, 2);
+		assertNotNull(lowered, "the effectful computed BIND must remain lowerable");
+		int filterIndex = -1;
+		int bindIndex = -1;
+		for (int i = 0; i < lowered.kernel.pipeline.size(); i++) {
+			LmdbNativeKernelIr.Node node = lowered.kernel.pipeline.get(i);
+			if (LmdbNativeKernelIr.isFilter(node)) {
+				filterIndex = i;
+			}
+			if (node instanceof LmdbNativeKernelIr.BindHook) {
+				bindIndex = i;
+			}
+		}
+		assertTrue(filterIndex >= 0 && bindIndex >= 0, lowered.kernel.shapeKey());
+		assertTrue(filterIndex < bindIndex,
+				"a filter registered before the BIND must not cross its effect barrier: " + lowered.kernel.shapeKey());
+	}
+
+	/** After the final effect barrier, a filter may run before later pure work in the same producer depth. */
+	@Test
+	void filterAfterFinalEffectfulBindRunsBeforeLaterPureBind() {
+		LmdbNativeCompiledInlineId effectful = new LmdbNativeCompiledInlineId(1L << 1, true, row -> row.id(1));
+		SlotPlan first = new ExtensionPlan(pattern(Term.slot(0), Term.slot(1)),
+				new CopyBinding[] { CopyBinding.computed(2, effectful) });
+		SlotPlan filtered = new FilterPlan(first,
+				new CachedCompareFilter(1, PRED, false, Compare.CompareOp.NE, false, bindings -> true, null), 1L << 1);
+		SlotPlan extension = new ExtensionPlan(filtered,
+				new CopyBinding[] { CopyBinding.computed(3, pureComputedInlineId()) });
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerCounting(extension, 2);
+		assertNotNull(lowered, "the two-stage computed extension must remain lowerable");
+		int filterIndex = -1;
+		int pureBindIndex = -1;
+		int effectfulBindIndex = -1;
+		for (int i = 0; i < lowered.kernel.pipeline.size(); i++) {
+			LmdbNativeKernelIr.Node node = lowered.kernel.pipeline.get(i);
+			if (LmdbNativeKernelIr.isFilter(node)) {
+				filterIndex = i;
+			} else if (node instanceof LmdbNativeKernelIr.BindHook bind) {
+				if (bind.effectful) {
+					effectfulBindIndex = i;
+				} else {
+					pureBindIndex = i;
+				}
+			}
+		}
+		assertTrue(effectfulBindIndex >= 0 && filterIndex >= 0 && pureBindIndex >= 0, lowered.kernel.shapeKey());
+		assertTrue(effectfulBindIndex < filterIndex && filterIndex < pureBindIndex,
+				"the filter should stay in the final barrier epoch before pure work: " + lowered.kernel.shapeKey());
+	}
+
+	/**
+	 * A filter cannot stop at the first effect barrier; it must wait past every barrier before its original boundary.
+	 */
+	@Test
+	void filterAfterTwoEffectfulBindsRunsBeforeLaterPureBind() {
+		LmdbNativeCompiledInlineId firstEffectful = new LmdbNativeCompiledInlineId(1L << 1, true, row -> row.id(1));
+		LmdbNativeCompiledInlineId secondEffectful = new LmdbNativeCompiledInlineId(1L << 1, true, row -> row.id(1));
+		SlotPlan first = new ExtensionPlan(pattern(Term.slot(0), Term.slot(1)),
+				new CopyBinding[] { CopyBinding.computed(2, firstEffectful) });
+		SlotPlan second = new ExtensionPlan(first,
+				new CopyBinding[] { CopyBinding.computed(3, secondEffectful) });
+		SlotPlan filtered = new FilterPlan(second,
+				new CachedCompareFilter(1, PRED, false, Compare.CompareOp.NE, false, bindings -> true, null), 1L << 1);
+		SlotPlan extension = new ExtensionPlan(filtered,
+				new CopyBinding[] { CopyBinding.computed(4, pureComputedInlineId()) });
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(extension,
+				freshFiveSlotRow(), new int[0],
+				new AggregateSpec[] { AggregateSpec.slot("count", 2, false, AggKind.COUNT) }, null);
+		assertNotNull(lowered, "the two effectful computed BINDs must remain lowerable");
+		int filterIndex = -1;
+		int pureBindIndex = -1;
+		List<Integer> effectfulBindIndices = new ArrayList<>();
+		for (int i = 0; i < lowered.kernel.pipeline.size(); i++) {
+			LmdbNativeKernelIr.Node node = lowered.kernel.pipeline.get(i);
+			if (LmdbNativeKernelIr.isFilter(node)) {
+				filterIndex = i;
+			} else if (node instanceof LmdbNativeKernelIr.BindHook bind) {
+				if (bind.effectful) {
+					effectfulBindIndices.add(i);
+				} else {
+					pureBindIndex = i;
+				}
+			}
+		}
+		assertEquals(2, effectfulBindIndices.size(), lowered.kernel.shapeKey());
+		assertTrue(filterIndex >= 0 && pureBindIndex >= 0, lowered.kernel.shapeKey());
+		assertTrue(effectfulBindIndices.get(0) < effectfulBindIndices.get(1)
+				&& effectfulBindIndices.get(1) < filterIndex && filterIndex < pureBindIndex,
+				"the filter must remain in the epoch after both effectful BINDs: " + lowered.kernel.shapeKey());
+	}
+
+	/** A blocked pure guard must not prevent a later independent guard from using its ready insertion point. */
+	@Test
+	void readyPureFilterDoesNotWaitForEarlierBlockedPureFilter() {
+		List<LmdbNativeKernelIr.Node> nodes = List.of(
+				new LmdbNativeKernelIr.BindAlias(LmdbNativeKernelIr.Operand.col(0), 2));
+		LmdbNativeKernelIr.Node blocked = new LmdbNativeKernelIr.FilterCompareId(false,
+				LmdbNativeKernelIr.Operand.col(2), LmdbNativeKernelIr.Operand.col(0))
+				.filterPlacement(0, 0, 1, 0);
+		LmdbNativeKernelIr.Node ready = new LmdbNativeKernelIr.FilterCompareId(false,
+				LmdbNativeKernelIr.Operand.col(0), LmdbNativeKernelIr.Operand.col(0))
+				.filterPlacement(0, 0, 1, 0);
+		List<LmdbNativeKernelIr.Node> pipeline = new ArrayList<>();
+		BitSet available = new BitSet();
+		available.set(0);
+
+		LmdbNativeKernelLowering.Builder.appendDepthPipeline(pipeline, nodes, List.of(blocked, ready), available, 3,
+				0, 0);
+
+		assertSame(ready, pipeline.get(0), "the ready guard should be selected even while the first guard waits");
+		assertSame(nodes.get(0), pipeline.get(1));
+		assertSame(blocked, pipeline.get(2), "the blocked guard must run after its producer");
+	}
+
+	/** An opaque filter remains a scope barrier for later guards even when its own input is not ready yet. */
+	@Test
+	void opaqueFilterKeepsLaterPureFilterBehindItsBoundary() {
+		List<LmdbNativeKernelIr.Node> nodes = List.of(
+				new LmdbNativeKernelIr.BindAlias(LmdbNativeKernelIr.Operand.col(0), 2));
+		LmdbNativeKernelIr.Node opaque = new LmdbNativeKernelIr.FilterValue(0,
+				new LmdbNativeKernelIr.Operand[] { LmdbNativeKernelIr.Operand.col(2) }, false)
+				.filterPlacement(0, 0, 1, 0);
+		LmdbNativeKernelIr.Node ready = new LmdbNativeKernelIr.FilterCompareId(false,
+				LmdbNativeKernelIr.Operand.col(0), LmdbNativeKernelIr.Operand.col(0))
+				.filterPlacement(0, 0, 1, 0);
+		List<LmdbNativeKernelIr.Node> pipeline = new ArrayList<>();
+		BitSet available = new BitSet();
+		available.set(0);
+
+		LmdbNativeKernelLowering.Builder.appendDepthPipeline(pipeline, nodes, List.of(opaque, ready), available, 3,
+				0, 0);
+
+		assertSame(nodes.get(0), pipeline.get(0));
+		assertSame(opaque, pipeline.get(1), "the opaque guard must retain its original boundary");
+		assertSame(ready, pipeline.get(2));
+	}
+
+	/** Equivalent compiler-produced scalar BINDs should share one pure evaluation while retaining both targets. */
+	@Test
+	void repeatedPureComputedBindsUseOneEvaluationAndTwoDestinations() throws Exception {
+		AtomicInteger evaluations = new AtomicInteger();
+		LmdbNativeCompiledInlineId first = countedPureComputedInlineId(1, evaluations);
+		LmdbNativeCompiledInlineId second = countedPureComputedInlineId(1, evaluations);
+		SlotPlan producer = pattern(Term.slot(0), Term.slot(1));
+		SlotPlan extension = new ExtensionPlan(producer,
+				new CopyBinding[] { CopyBinding.computed(2, first), CopyBinding.computed(3, second) });
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(extension, freshRow(), null);
+		assertNotNull(lowered, "equivalent pure BIND expressions must remain lowerable");
+
+		assertEquals(1, lowered.bindings.adjacencies.length, lowered.kernel.shapeKey());
+		boolean bySubject = lowered.bindings.adjacencies[0].bySubject;
+		List<String> rows = runLoweredRows(lowered, new CseAdjacency(bySubject), evaluations);
+		assertEquals(List.of("[10, 100, 100, 100]", "[10, 100, 100, 100]", "[10, 101, 101, 101]",
+				"[20, 200, 200, 200]", "[20, 200, 200, 200]"), rows);
+		assertEquals(3, evaluations.get(), "one evaluation per distinct fiber, shared by both destinations");
+		assertEquals(1, countNodes(lowered.kernel, LmdbNativeKernelIr.BindHook.class), lowered.kernel.shapeKey());
+		assertEquals(1, countNodes(lowered.kernel, LmdbNativeKernelIr.BindAlias.class), lowered.kernel.shapeKey());
+	}
+
+	/** A row-dependent QUERY_STABLE expression may share only with an explicitly propagated evaluation scope. */
+	@Test
+	void queryStableCompositeBindsReuseWithPropagatedEvaluationScope() {
+		ValueExpr expression = new If(new Bound(new Var("b")), new Str(new Var("b")),
+				new FunctionCall(LmdbNativeFunctionLibrary.NOW_URI));
+		NativeScalarPlan plan = NativeScalarPlan.create(expression, name -> 1, NativeScalarPlan.ResultKind.ID, false,
+				0L,
+				true, true);
+		assertEquals(EffectClass.QUERY_STABLE, plan.effect());
+		assertTrue(plan.dependencyMask() != 0L);
+		assertFalse(plan.canReuseAcrossSolutions());
+		assertTrue(plan.canReuseAcrossSolutions(true));
+
+		LmdbNativeCompiledInlineId first = new LmdbNativeCompiledInlineId(1L << 1, true, row -> row.id(1), plan);
+		LmdbNativeCompiledInlineId second = new LmdbNativeCompiledInlineId(1L << 1, true, row -> row.id(1), plan);
+		SlotPlan extension = new ExtensionPlan(pattern(Term.slot(0), Term.slot(1)),
+				new CopyBinding[] { CopyBinding.computed(2, first), CopyBinding.computed(3, second) });
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(extension, freshRow(), null);
+		assertNotNull(lowered, lowered == null ? "query-stable scoped BINDs must remain lowerable" : null);
+		assertEquals(1, countNodes(lowered.kernel, LmdbNativeKernelIr.BindHook.class), lowered.kernel.shapeKey());
+		assertEquals(1, countNodes(lowered.kernel, LmdbNativeKernelIr.BindAlias.class), lowered.kernel.shapeKey());
+	}
+
+	/** Equivalent BINDs reading a fixed entry use the ENTRY operand and may share one evaluation. */
+	@Test
+	void entryBoundScalarBindsReuseWithStableEntryOperand() {
+		RowState row = freshRow();
+		row.bind(0, 555L);
+		LmdbNativeCompiledInlineId first = pureComputedInlineId(0);
+		LmdbNativeCompiledInlineId second = pureComputedInlineId(0);
+		SlotPlan extension = new ExtensionPlan(pattern(Term.slot(0), Term.slot(1)),
+				new CopyBinding[] { CopyBinding.computed(2, first), CopyBinding.computed(3, second) });
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(extension, row, null);
+		assertNotNull(lowered, lowered == null ? "entry-bound scalar BINDs must remain lowerable" : null);
+		assertEquals(1, countNodes(lowered.kernel, LmdbNativeKernelIr.BindHook.class), lowered.kernel.shapeKey());
+		assertEquals(1, countNodes(lowered.kernel, LmdbNativeKernelIr.BindAlias.class), lowered.kernel.shapeKey());
+		assertTrue(lowered.kernel.shapeKey().contains("e0"), lowered.kernel.shapeKey());
+	}
+
+	@Test
+	void pureCseKeepsDifferentOperandMappingsSeparate() {
+		LmdbNativeCompiledInlineId first = pureComputedInlineId(1);
+		LmdbNativeCompiledInlineId second = pureComputedInlineId(2);
+		SlotPlan producer = new MultiJoinPlan(new SlotPlan[] { pattern(Term.slot(0), Term.slot(1)),
+				pattern(Term.slot(0), Term.slot(2)) }, new MaskedFilter[0]);
+		SlotPlan extension = new ExtensionPlan(producer,
+				new CopyBinding[] { CopyBinding.computed(3, first), CopyBinding.computed(4, second) });
+
+		String previous = System.getProperty(LmdbNativeKernelLowering.HASH_JOIN_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.HASH_JOIN_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(extension, freshFiveSlotRow(),
+					null);
+			assertNotNull(lowered);
+			assertEquals(2, countNodes(lowered.kernel, LmdbNativeKernelIr.BindHook.class), lowered.kernel.shapeKey());
+			assertEquals(0, countNodes(lowered.kernel, LmdbNativeKernelIr.BindAlias.class), lowered.kernel.shapeKey());
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.HASH_JOIN_PROPERTY, previous);
+		}
+	}
+
+	@Test
+	void legacyComputedClosuresNeverEnterStructuralCse() {
+		LmdbNativeCompiledInlineId first = new LmdbNativeCompiledInlineId(1L << 1, true, row -> row.id(1));
+		LmdbNativeCompiledInlineId second = new LmdbNativeCompiledInlineId(1L << 1, true, row -> row.id(1));
+		SlotPlan producer = pattern(Term.slot(0), Term.slot(1));
+		SlotPlan extension = new ExtensionPlan(producer,
+				new CopyBinding[] { CopyBinding.computed(2, first), CopyBinding.computed(3, second) });
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerCounting(extension, 1);
+		assertNotNull(lowered);
+		assertEquals(2, countNodes(lowered.kernel, LmdbNativeKernelIr.BindHook.class), lowered.kernel.shapeKey());
+	}
+
+	@Test
+	void cseKeepsDifferentBindErrorPoliciesSeparate() {
+		CopyBinding first = CopyBinding.computed(2, pureComputedInlineId());
+		CopyBinding second = CopyBinding.computed(3, pureComputedInlineId());
+		second.setNullOnError = false;
+		SlotPlan extension = new ExtensionPlan(pattern(Term.slot(0), Term.slot(1)),
+				new CopyBinding[] { first, second });
+
+		LmdbNativeKernelLowering.Lowered lowered = lowerCounting(extension, 1);
+		assertNotNull(lowered);
+		assertEquals(2, countNodes(lowered.kernel, LmdbNativeKernelIr.BindHook.class), lowered.kernel.shapeKey());
+	}
+
+	private static int countNodes(LmdbNativeKernelIr.Kernel kernel,
+			Class<? extends LmdbNativeKernelIr.Node> type) {
+		int count = 0;
+		for (LmdbNativeKernelIr.Node node : kernel.pipeline) {
+			if (type.isInstance(node)) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private static LmdbNativeCompiledInlineId pureComputedInlineId() {
+		return pureComputedInlineId(1);
+	}
+
+	private static LmdbNativeCompiledInlineId pureComputedInlineId(int sourceSlot) {
+		NativeLmdbQuerySource source = new StubSource() {
+			@Override
+			public LmdbNativeValueCodec nativeValueCodec() {
+				return new LmdbNativeValueCodec(null);
+			}
+		};
+		LmdbNativeCompiledInlineId compiled = LmdbNativeExpressionCompiler.compileInlineId(
+				new FunctionCall(FN.STRING_LENGTH.stringValue(), new Str(new Var("b"))), source, name -> sourceSlot,
+				false);
+		assertNotNull(compiled, "the compiler-produced STRLEN(STR(?b)) plan must be a real pure expression");
+		assertNotNull(compiled.scalarPlan());
+		return compiled;
+	}
+
+	private static LmdbNativeCompiledInlineId countedPureComputedInlineId(int sourceSlot, AtomicInteger evaluations) {
+		LmdbNativeCompiledInlineId template = pureComputedInlineId(sourceSlot);
+		return new LmdbNativeCompiledInlineId(template.requiredMask(), template.encounterOrderReplaySafe(), row -> {
+			evaluations.incrementAndGet();
+			return row.id(sourceSlot);
+		}, template.scalarPlan());
+	}
+
+	private static List<String> runLoweredRows(LmdbNativeKernelLowering.Lowered lowered, NativeAdjacency adjacency,
+			AtomicInteger evaluations) throws Exception {
+		RowState row = freshRow();
+		LmdbNativeKernelHooks hooks = new LmdbNativeKernelHooks(row, lowered.bindings);
+		JaninoKernel execution = LmdbNativeKernelInterpreter.forRows(lowered.kernel);
+		assertNotNull(execution, lowered.kernel.shapeKey());
+		try {
+			execution.bind(new KernelContext(new NativeAdjacency[] { adjacency }, lowered.bindings.constants,
+					new long[lowered.bindings.entrySlotIds.length], new long[0][], hooks));
+			List<String> rows = new ArrayList<>();
+			long[] buffer = new long[lowered.kernel.stride()];
+			while (execution.fill(buffer, 1) > 0) {
+				rows.add(Arrays.toString(buffer));
+				assertTrue(rows.size() < 100, "lowered cursor did not advance");
+			}
+			return rows;
+		} finally {
+			execution.close();
+			hooks.closeFilters();
+		}
+	}
+
+	private interface NativeAdjacency extends NativeLmdbQuerySource.NativeAdjacency {
+	}
+
+	private static final class CseAdjacency implements NativeAdjacency {
+		private final long[] roots;
+		private final long[][] neighbors;
+
+		private CseAdjacency(boolean bySubject) {
+			if (bySubject) {
+				roots = new long[] { 10L, 20L };
+				neighbors = new long[][] { { 100L, 100L, 101L }, { 200L, 200L } };
+			} else {
+				roots = new long[] { 100L, 101L, 200L };
+				neighbors = new long[][] { { 10L, 10L }, { 10L }, { 20L, 20L } };
+			}
+		}
+
+		@Override
+		public long find(long key) {
+			int index = Arrays.binarySearch(roots, key);
+			return index < 0 ? NOT_FOUND : index + 1L;
+		}
+
+		@Override
+		public long size(long handle) {
+			return neighbors[Math.toIntExact(handle - 1L)].length;
+		}
+
+		@Override
+		public long neighborAt(long handle, long offset) {
+			return neighbors[Math.toIntExact(handle - 1L)][Math.toIntExact(offset)];
+		}
+
+		@Override
+		public long contextAt(long handle, long offset) {
+			return 0L;
+		}
+
+		@Override
+		public boolean supportsKeyEnumeration() {
+			return true;
+		}
+
+		@Override
+		public boolean keysImplyNonEmptyRuns() {
+			return true;
+		}
+
+		@Override
+		public long keyCount() {
+			return roots.length;
+		}
+
+		@Override
+		public long keyAt(long ordinal) {
+			return roots[Math.toIntExact(ordinal)];
+		}
+	}
+
+	@Test
+	void unprovedBindHooksRemainReorderingBarriers() {
+		LmdbNativeKernelIr.BindHook first = new LmdbNativeKernelIr.BindHook(0,
+				new LmdbNativeKernelIr.Operand[] { LmdbNativeKernelIr.Operand.col(0) }, 1);
+		LmdbNativeKernelIr.BindHook second = new LmdbNativeKernelIr.BindHook(1,
+				new LmdbNativeKernelIr.Operand[] { LmdbNativeKernelIr.Operand.col(1) }, 2);
+		assertTrue(first.reorderingBarrier(), "an unproved closure must pin the first BIND");
+		assertTrue(second.reorderingBarrier(), "a second unproved closure must remain a barrier");
 	}
 
 	/** The kill switch restores the pre-M7 decline unchanged. */

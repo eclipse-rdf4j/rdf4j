@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 
 @Experimental
 interface NativeBooleanFilter {
@@ -73,6 +74,14 @@ interface NativeBooleanFilter {
 		return -1L;
 	}
 
+	/**
+	 * Optional immutable term-kind proof for this filter's hook arguments. A null result means that the filter cannot
+	 * expose a page proof; callers must then invoke the exact hook for every surviving row.
+	 */
+	default KernelTermKindProof pageProof(int[] argSlots) {
+		return null;
+	}
+
 	/** Whether this filter can create an independent owner for one parallel worker. */
 	default boolean parallelWorkerForkable() {
 		return false;
@@ -84,6 +93,15 @@ interface NativeBooleanFilter {
 	 */
 	default NativeBooleanFilter forkForParallelWorker() {
 		return null;
+	}
+
+	/**
+	 * Creates a worker copy bound to the worker's source, codec, and evaluation scope. Source-independent filters may
+	 * use the legacy no-context fork; source-bound compiled expressions override this method to rebuild from their
+	 * plan.
+	 */
+	default NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		return forkForParallelWorker();
 	}
 
 	default void close() {
@@ -229,6 +247,11 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	}
 
 	@Override
+	public KernelTermKindProof pageProof(int[] argSlots) {
+		return delegate.pageProof(argSlots);
+	}
+
+	@Override
 	public boolean variablePredicateExists() {
 		return delegate.variablePredicateExists();
 	}
@@ -240,13 +263,20 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 
 	@Override
 	public NativeBooleanFilter forkForParallelWorker() {
-		return forkForParallelWorker(null);
+		return forkForParallelWorker((RecordingNativeBooleanFilter) null);
 	}
 
 	NativeBooleanFilter forkForParallelWorker(RecordingNativeBooleanFilter target) {
 		NativeBooleanFilter workerDelegate = delegate.forkForParallelWorker();
 		return workerDelegate == null ? null
 				: new RecordingNativeBooleanFilter(workerDelegate, filter, statistics, adaptive, target);
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		NativeBooleanFilter workerDelegate = delegate.forkForParallelWorker(context);
+		return workerDelegate == null ? null
+				: new RecordingNativeBooleanFilter(workerDelegate, filter, statistics, adaptive, this);
 	}
 
 	@Override
@@ -321,6 +351,29 @@ final class NativeConstantFalseWhenUnboundFilter implements NativeBooleanFilter 
 	}
 
 	@Override
+	public boolean parallelWorkerForkable() {
+		return fallback.parallelWorkerForkable();
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker() {
+		NativeBooleanFilter forked = fallback.forkForParallelWorker();
+		return forked == null ? null : new NativeConstantFalseWhenUnboundFilter(requiredNames, forked);
+	}
+
+	@Override
+	public KernelTermKindProof pageProof(int[] argSlots) {
+		KernelTermKindProof proof = fallback.pageProof(argSlots);
+		return proof == null ? null : KernelTermKindProof.and(KernelTermKindProof.unknown(), proof);
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		NativeBooleanFilter forked = fallback.forkForParallelWorker(context);
+		return forked == null ? null : new NativeConstantFalseWhenUnboundFilter(requiredNames, forked);
+	}
+
+	@Override
 	public void close() {
 		fallback.close();
 	}
@@ -357,8 +410,30 @@ final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
 	}
 
 	@Override
+	public KernelTermKindProof pageProof(int[] argSlots) {
+		return delegate.pageProof(argSlots);
+	}
+
+	@Override
 	public boolean variablePredicateExists() {
 		return delegate.variablePredicateExists();
+	}
+
+	@Override
+	public boolean parallelWorkerForkable() {
+		return delegate.parallelWorkerForkable();
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker() {
+		NativeBooleanFilter forked = delegate.forkForParallelWorker();
+		return forked == null ? null : new CloseOnceNativeBooleanFilter(forked);
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		NativeBooleanFilter forked = delegate.forkForParallelWorker(context);
+		return forked == null ? null : new CloseOnceNativeBooleanFilter(forked);
 	}
 
 	@Override
@@ -1058,6 +1133,11 @@ final class ValueSetFilter implements NativeBooleanFilter {
 		return new ValueSetFilter(slot, accepted, queryValues, checkBound, true);
 	}
 
+	@Override
+	public ValueSetFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		return forkForParallelWorker();
+	}
+
 	private boolean acceptId(long id, NativeLmdbQuerySource source) {
 		if (checkBound && id == UNKNOWN) {
 			return false;
@@ -1232,6 +1312,23 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 	}
 
 	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		if (context == null) {
+			return null;
+		}
+		// The decoded constant is immutable plan data. Candidate ids, however, belong to the worker's sibling source
+		// and must be decoded through its codec. Falling back to the source codec keeps manually-created worker
+		// contexts safe while preserving the ordinary no-context compatibility path above.
+		LmdbNativeValueCodec workerCodec = context.codec() == null ? context.source().nativeValueCodec()
+				: context.codec();
+		if (workerCodec == null) {
+			return null;
+		}
+		return new CachedCompareFilter(slot, constant, constantOnLeft, op, strict, fallback, workerCodec,
+				constantDecoded, constantStoreId, checkBound);
+	}
+
+	@Override
 	public boolean accept(RowState row) {
 		long id = row.slots[slot];
 		Boolean decision = nativeDecision(id, row);
@@ -1382,9 +1479,27 @@ final class NegatedNativeBooleanFilter implements NativeBooleanFilter {
 	}
 
 	@Override
+	public KernelTermKindProof pageProof(int[] argSlots) {
+		// NativeBooleanFilter is an acceptance predicate: its boolean API has already collapsed an operand ERROR to
+		// false. Negating that result would turn an error into an accepted row, so only wrappers explicitly proven to
+		// have a two-valued operand may expose the structural three-valued proof.
+		if (!errorFreeOperand) {
+			return null;
+		}
+		KernelTermKindProof proof = delegate.pageProof(argSlots);
+		return proof == null ? null : KernelTermKindProof.not(proof);
+	}
+
+	@Override
 	public NativeBooleanFilter forkForParallelWorker() {
 		NativeBooleanFilter forked = delegate.forkForParallelWorker();
-		return forked == delegate ? this : new NegatedNativeBooleanFilter(forked, errorFreeOperand);
+		return forked == null ? null : new NegatedNativeBooleanFilter(forked, errorFreeOperand);
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		NativeBooleanFilter forked = delegate.forkForParallelWorker(context);
+		return forked == null ? null : new NegatedNativeBooleanFilter(forked, errorFreeOperand);
 	}
 
 	@Override
@@ -1420,6 +1535,17 @@ final class BooleanCombinationFilter implements NativeBooleanFilter {
 	}
 
 	@Override
+	public KernelTermKindProof pageProof(int[] argSlots) {
+		KernelTermKindProof leftProof = left.pageProof(argSlots);
+		KernelTermKindProof rightProof = right.pageProof(argSlots);
+		if (leftProof == null || rightProof == null) {
+			return null;
+		}
+		return conjunction ? KernelTermKindProof.and(leftProof, rightProof)
+				: KernelTermKindProof.or(leftProof, rightProof);
+	}
+
+	@Override
 	public boolean parallelWorkerForkable() {
 		return left.parallelWorkerForkable() && right.parallelWorkerForkable();
 	}
@@ -1430,20 +1556,79 @@ final class BooleanCombinationFilter implements NativeBooleanFilter {
 		if (leftFork == null) {
 			return null;
 		}
-		NativeBooleanFilter rightFork = right.forkForParallelWorker();
-		if (rightFork == null) {
-			leftFork.close();
+		return finishFork(leftFork, () -> right.forkForParallelWorker());
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		NativeBooleanFilter leftFork = left.forkForParallelWorker(context);
+		if (leftFork == null) {
 			return null;
 		}
-		return new BooleanCombinationFilter(leftFork, rightFork, conjunction);
+		return finishFork(leftFork, () -> right.forkForParallelWorker(context));
+	}
+
+	private NativeBooleanFilter finishFork(NativeBooleanFilter leftFork, ForkSupplier rightForkSupplier) {
+		NativeBooleanFilter rightFork;
+		try {
+			rightFork = rightForkSupplier.get();
+		} catch (RuntimeException | Error problem) {
+			closeFork(leftFork, problem);
+			throw problem;
+		}
+		if (rightFork == null) {
+			closeFork(leftFork, null);
+			return null;
+		}
+		try {
+			return new BooleanCombinationFilter(leftFork, rightFork, conjunction);
+		} catch (RuntimeException | Error problem) {
+			closeFork(rightFork, problem);
+			closeFork(leftFork, problem);
+			throw problem;
+		}
+	}
+
+	private static void closeFork(NativeBooleanFilter fork, Throwable primary) {
+		try {
+			fork.close();
+		} catch (RuntimeException | Error closeFailure) {
+			if (primary == null) {
+				throw closeFailure;
+			}
+			if (closeFailure != primary) {
+				primary.addSuppressed(closeFailure);
+			}
+		}
+	}
+
+	@FunctionalInterface
+	private interface ForkSupplier {
+		NativeBooleanFilter get();
 	}
 
 	@Override
 	public void close() {
+		Throwable failure = null;
 		try {
 			left.close();
-		} finally {
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+		}
+		try {
 			right.close();
+		} catch (RuntimeException | Error problem) {
+			if (failure == null) {
+				failure = problem;
+			} else if (failure != problem) {
+				failure.addSuppressed(problem);
+			}
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
 		}
 	}
 }

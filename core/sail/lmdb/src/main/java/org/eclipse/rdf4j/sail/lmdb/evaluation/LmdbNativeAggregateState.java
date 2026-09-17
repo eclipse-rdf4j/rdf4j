@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Internal control-flow signal used when a speculative aggregation discovers that its reordered input cannot preserve
@@ -357,6 +358,11 @@ final class AggregateSpec {
 final class AggContext {
 	private static final int INITIAL_VALUE_CACHE_CAPACITY = 16;
 	private static final byte OCCUPIED = 1;
+	private static final long ARRAY_HEADER_BYTES = 16L;
+	private static final long REFERENCE_BYTES = Long.BYTES;
+	private static final long VALUE_OBJECT_BYTES = 64L;
+	private static final long STRING_OBJECT_BYTES = 40L;
+	private static final long NUMERIC_OBJECT_BYTES = 96L;
 
 	static final Literal INTEGER_ZERO = SimpleValueFactory.getInstance()
 			.createLiteral("0", CoreDatatype.XSD.INTEGER);
@@ -370,11 +376,14 @@ final class AggContext {
 	final ValueComparator comparator = new ValueComparator();
 	final boolean encounterOrderChanging;
 	final boolean deferDistinctValueAggregates;
-	private long[] valueCacheIds = new long[INITIAL_VALUE_CACHE_CAPACITY];
-	private Value[] valueCacheValues = new Value[INITIAL_VALUE_CACHE_CAPACITY];
-	private byte[] valueCacheStates = new byte[INITIAL_VALUE_CACHE_CAPACITY];
+	private final KernelRuntime.MemoryAccount memory;
+	private long[] valueCacheIds;
+	private Value[] valueCacheValues;
+	private byte[] valueCacheStates;
 	private int valueCacheSize;
 	private int valueCacheThreshold = INITIAL_VALUE_CACHE_CAPACITY * 3 >>> 2;
+	private long valueCacheArrayBytes;
+	private long retainedValueBytes;
 	/** One custom processor per aggregate evaluation; processors may carry factory-local state between rows. */
 	private IdentityHashMap<NativeCustomAggregate, org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?>> customFunctions;
 
@@ -388,12 +397,33 @@ final class AggContext {
 
 	AggContext(NativeLmdbQuerySource source, boolean strictCompare, boolean encounterOrderChanging,
 			boolean deferDistinctValueAggregates) {
+		this(source, strictCompare, encounterOrderChanging, deferDistinctValueAggregates, null);
+	}
+
+	AggContext(NativeLmdbQuerySource source, boolean strictCompare, boolean encounterOrderChanging,
+			boolean deferDistinctValueAggregates, KernelRuntime.MemoryAccount memory) {
 		this.source = source;
 		this.termAuthority = source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).keyAuthority()
 				: null;
 		this.encounterOrderChanging = encounterOrderChanging;
 		this.deferDistinctValueAggregates = deferDistinctValueAggregates;
+		this.memory = memory;
 		this.comparator.setStrict(strictCompare);
+		long bytes = valueCacheMemoryBytes(INITIAL_VALUE_CACHE_CAPACITY);
+		if (memory != null) {
+			memory.reserve(bytes);
+		}
+		try {
+			this.valueCacheIds = new long[INITIAL_VALUE_CACHE_CAPACITY];
+			this.valueCacheValues = new Value[INITIAL_VALUE_CACHE_CAPACITY];
+			this.valueCacheStates = new byte[INITIAL_VALUE_CACHE_CAPACITY];
+			this.valueCacheArrayBytes = memory == null ? 0L : bytes;
+		} catch (RuntimeException | Error problem) {
+			if (memory != null) {
+				memory.release(bytes);
+			}
+			throw problem;
+		}
 	}
 
 	Value value(long id) {
@@ -405,15 +435,41 @@ final class AggContext {
 		if (value == null) {
 			return null;
 		}
-		if (valueCacheSize >= valueCacheThreshold) {
-			growValueCache();
-			slot = valueCacheSlot(id);
+		long retainedBytes = 0L;
+		boolean retained = false;
+		if (memory != null) {
+			retainedBytes = ownedValueBytes(value);
+			if (retainedBytes < 0L || !memory.tryReserve(retainedBytes)) {
+				// The caller still receives the exact value. An optional memo must not change expression semantics when
+				// its value graph cannot be bounded or the query ledger declines another retained object.
+				return value;
+			}
+			retained = retainedBytes > 0L;
 		}
-		valueCacheIds[slot] = id;
-		valueCacheValues[slot] = value;
-		valueCacheStates[slot] = OCCUPIED;
-		valueCacheSize++;
-		return value;
+		try {
+			if (valueCacheSize >= valueCacheThreshold) {
+				if (!growValueCache()) {
+					if (retained) {
+						memory.release(retainedBytes);
+					}
+					return value;
+				}
+				slot = valueCacheSlot(id);
+			}
+			valueCacheIds[slot] = id;
+			valueCacheValues[slot] = value;
+			valueCacheStates[slot] = OCCUPIED;
+			valueCacheSize++;
+			if (retained) {
+				retainedValueBytes = Math.addExact(retainedValueBytes, retainedBytes);
+			}
+			return value;
+		} catch (RuntimeException | Error problem) {
+			if (retained) {
+				memory.release(retainedBytes);
+			}
+			throw problem;
+		}
 	}
 
 	org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateProcessor<?, ?> customFunction(
@@ -426,31 +482,116 @@ final class AggContext {
 	}
 
 	private int valueCacheSlot(long id) {
-		int slot = mixValueId(id) & (valueCacheIds.length - 1);
-		while (valueCacheStates[slot] == OCCUPIED && valueCacheIds[slot] != id) {
-			slot = slot + 1 & (valueCacheIds.length - 1);
+		return valueCacheSlot(id, valueCacheIds, valueCacheStates);
+	}
+
+	private static int valueCacheSlot(long id, long[] ids, byte[] states) {
+		int slot = mixValueId(id) & (ids.length - 1);
+		while (states[slot] == OCCUPIED && ids[slot] != id) {
+			slot = slot + 1 & (ids.length - 1);
 		}
 		return slot;
 	}
 
-	private void growValueCache() {
+	private boolean growValueCache() {
 		long[] oldIds = valueCacheIds;
 		Value[] oldValues = valueCacheValues;
 		byte[] oldStates = valueCacheStates;
 		int capacity = oldIds.length << 1;
-		valueCacheIds = new long[capacity];
-		valueCacheValues = new Value[capacity];
-		valueCacheStates = new byte[capacity];
-		valueCacheThreshold = capacity * 3 >>> 2;
-		for (int i = 0; i < oldIds.length; i++) {
-			if (oldStates[i] != OCCUPIED) {
-				continue;
-			}
-			int slot = valueCacheSlot(oldIds[i]);
-			valueCacheIds[slot] = oldIds[i];
-			valueCacheValues[slot] = oldValues[i];
-			valueCacheStates[slot] = OCCUPIED;
+		long replacementBytes = valueCacheMemoryBytes(capacity);
+		if (memory != null && !memory.tryReserve(replacementBytes)) {
+			return false;
 		}
+		long[] replacementIds;
+		Value[] replacementValues;
+		byte[] replacementStates;
+		try {
+			replacementIds = new long[capacity];
+			replacementValues = new Value[capacity];
+			replacementStates = new byte[capacity];
+			for (int i = 0; i < oldIds.length; i++) {
+				if (oldStates[i] != OCCUPIED) {
+					continue;
+				}
+				int slot = valueCacheSlot(oldIds[i], replacementIds, replacementStates);
+				replacementIds[slot] = oldIds[i];
+				replacementValues[slot] = oldValues[i];
+				replacementStates[slot] = OCCUPIED;
+			}
+		} catch (RuntimeException | Error problem) {
+			if (memory != null) {
+				memory.release(replacementBytes);
+			}
+			throw problem;
+		}
+		valueCacheIds = replacementIds;
+		valueCacheValues = replacementValues;
+		valueCacheStates = replacementStates;
+		valueCacheThreshold = capacity * 3 >>> 2;
+		if (memory != null) {
+			memory.release(valueCacheArrayBytes);
+			valueCacheArrayBytes = replacementBytes;
+		}
+		return true;
+	}
+
+	/** Releases optional cache arrays and retained values. Generic contexts have no owner and remain unchanged. */
+	void close() {
+		if (memory == null) {
+			return;
+		}
+		if (retainedValueBytes > 0L) {
+			memory.release(retainedValueBytes);
+			retainedValueBytes = 0L;
+		}
+		if (valueCacheArrayBytes > 0L) {
+			memory.release(valueCacheArrayBytes);
+			valueCacheArrayBytes = 0L;
+		}
+		valueCacheIds = null;
+		valueCacheValues = null;
+		valueCacheStates = null;
+		valueCacheSize = 0;
+		customFunctions = null;
+	}
+
+	/** Conservative owned footprint for immutable public RDF values retained by this context. */
+	static long ownedValueBytes(Value value) {
+		if (value == null || value.isTripleTerm()) {
+			return value == null ? 0L : -1L;
+		}
+		if (value instanceof Literal literal) {
+			long bytes = VALUE_OBJECT_BYTES;
+			String label = literal.getLabel();
+			bytes = Math.addExact(bytes, stringBytes(label));
+			bytes = Math.addExact(bytes, stringBytes(literal.getLanguage().orElse(null)));
+			bytes = Math.addExact(bytes, stringBytes(literal.getDatatype().stringValue()));
+			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
+			if (datatype != null && datatype.isNumericDatatype()) {
+				bytes = Math.addExact(bytes, NUMERIC_OBJECT_BYTES);
+				bytes = Math.addExact(bytes, Math.multiplyExact(4L, (long) label.length()));
+			}
+			return bytes;
+		}
+		if (value.isIRI() || value.isBNode()) {
+			return Math.addExact(VALUE_OBJECT_BYTES, stringBytes(value.stringValue()));
+		}
+		return -1L;
+	}
+
+	private static long valueCacheMemoryBytes(int capacity) {
+		long bytes = arrayBytes(capacity, Long.BYTES);
+		bytes = Math.addExact(bytes, arrayBytes(capacity, REFERENCE_BYTES));
+		return Math.addExact(bytes, arrayBytes(capacity, Byte.BYTES));
+	}
+
+	private static long arrayBytes(int length, long elementBytes) {
+		return Math.addExact(ARRAY_HEADER_BYTES, Math.multiplyExact((long) length, elementBytes));
+	}
+
+	private static long stringBytes(String value) {
+		return value == null ? 0L
+				: Math.addExact(STRING_OBJECT_BYTES, Math.multiplyExact(2L, (long) value.length()));
 	}
 
 	private static int mixValueId(long value) {

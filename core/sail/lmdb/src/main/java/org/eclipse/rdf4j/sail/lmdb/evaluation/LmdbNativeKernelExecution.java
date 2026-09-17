@@ -14,16 +14,26 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPeerCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelWorkCounters;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.TypeMatrixContext;
 
 /**
@@ -67,6 +77,22 @@ final class LmdbNativeKernelExecution {
 	}
 
 	private LmdbNativeKernelExecution() {
+	}
+
+	/** Publishes a completed worker-local counter set after its cursors have released any prefetched payload. */
+	static void publishKernelWork(TupleExpr target, KernelWorkCounters counters) {
+		if (counters == null) {
+			return;
+		}
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeIrPagesVisitedActual", counters.pagesVisited());
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeIrPagesSkippedActual", counters.pagesSkipped());
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeIrRootsVisitedActual", counters.rootsVisited());
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeIrNeighborValuesCopiedActual",
+				counters.neighborValuesCopied());
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeIrContextValuesCopiedActual", counters.contextValuesCopied());
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeIrBindEvaluationsActual", counters.bindEvaluations());
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeIrValueFilterEvaluationsActual",
+				counters.valueFilterEvaluations());
 	}
 
 	static void resetMetrics() {
@@ -192,6 +218,66 @@ final class LmdbNativeKernelExecution {
 		return aggregateRoute(interpreted, requirements.wildcardViews > 0);
 	}
 
+	/**
+	 * Resolves the route that the aggregate lowering will actually expose to execution and explanation. Strategy
+	 * previews run before a kernel is opened, so they cannot reuse the route recorded by the bind boundary. Keeping the
+	 * lowering and requirement-to-route mapping here prevents previews from guessing from the source plan shape (which
+	 * is insufficient for mixed fixed/wildcard plans and scan fallback).
+	 */
+	static String aggregateRouteForExplanation(SlotPlan arg, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates, ValueExpr havingCondition, boolean interpreted, boolean strictCompare,
+			boolean allowFixedContexts) {
+		return aggregateRouteForExplanation(arg, row, groupSlots, aggregates, havingCondition, interpreted,
+				strictCompare,
+				allowFixedContexts, null);
+	}
+
+	/**
+	 * Resolves an aggregate route for an actual execution attempt. An execution target lets lowering publish the
+	 * concrete strategy gate that declined, while the preview overload above remains side-effect free. The target is
+	 * deliberately passed through both lowering attempts so an exact scan retry has the same diagnostics as execution.
+	 */
+	static String aggregateRouteForExplanation(SlotPlan arg, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates, ValueExpr havingCondition, boolean interpreted, boolean strictCompare,
+			boolean allowFixedContexts, TupleExpr explainTarget) {
+		LmdbNativeKernelIr.Having having = LmdbNativeKernelLowering.recognizeHaving(havingCondition, aggregates);
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
+				aggregates, having, explainTarget, false, false, strictCompare, allowFixedContexts);
+		if (lowered == null) {
+			recordAggregateLoweringAdmissionDecline(row, explainTarget, interpreted, false, false);
+			return null;
+		}
+		if (!interpreted && lowered.kernel.requirements.wildcardViews > 0
+				&& !LmdbNativeKernelIr.wildcardPredicatesEnabled()
+				&& LmdbNativeKernelLowering.scanSourcesEnabled()) {
+			// Compiled wildcard code has a separately gated emitter. Mirror the execution retry that lowers variable
+			// predicate sites onto exact scans, so the preview names the mixed scan route when that retry is available.
+			lowered = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots, aggregates, having, explainTarget,
+					false, true, strictCompare, allowFixedContexts);
+		}
+		if (lowered == null) {
+			recordAggregateLoweringAdmissionDecline(row, explainTarget, interpreted, false, true);
+			return null;
+		}
+		return aggregateRoute(interpreted, lowered.kernel.requirements);
+	}
+
+	private static void recordAggregateLoweringAdmissionDecline(RowState row, TupleExpr explainTarget,
+			boolean interpreted, boolean preferScans, boolean scanVariablePredicates) {
+		if (explainTarget == null) {
+			return;
+		}
+		String reason = "IR_AGGREGATE_LOWERING_DECLINED[phase=strategy-admission;preferScans=" + preferScans
+				+ ";scanVariablePredicates=" + scanVariablePredicates + "]";
+		LmdbNativeAttemptMetrics.recordDecline(explainTarget,
+				interpreted ? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED
+						: LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+				reason);
+		if (!interpreted && !LmdbNativeStrategyPreview.active() && row.runtimePlan != null) {
+			row.runtimePlan.janinoDeclined(reason);
+		}
+	}
+
 	private static String rowRoute(boolean interpreted, boolean distinct, boolean wildcard) {
 		if (distinct) {
 			return interpreted ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED
@@ -291,6 +377,9 @@ final class LmdbNativeKernelExecution {
 		NativeLmdbQuerySource.NativeAdjacency[] views = null;
 		NativeLmdbQuerySource.NodeDomainIntersection[] nodeDomainIntersections = null;
 		TypeMatrixContext[] typeMatrices = null;
+		boolean publishWork = false;
+		boolean parallelAttempt = false;
+		Throwable primaryFailure = null;
 		try {
 			LmdbNativeKernelLowering.Lowered semantic = LmdbNativeKernelLowering.lowerAggregate(arg, row, groupSlots,
 					aggregates, LmdbNativeKernelLowering.recognizeHaving(havingCondition, aggregates), explainTarget,
@@ -460,12 +549,14 @@ final class LmdbNativeKernelExecution {
 			}
 			// The parallel rung may request a worker kernel VARIANT (HAVING and output mods stripped); every requested
 			// shape compiles through the same cache under its own shape key, so the sequential shape stays untouched.
+			parallelAttempt = parallelExecution != ParallelExecution.DISABLE;
 			List<BindingSet> parallel = parallelExecution == ParallelExecution.DISABLE ? null
 					: LmdbNativeParallelKernelAggregate.tryEvaluate(lowered, views, variableViews,
 							nodeDomainIntersections, typeMatrices, domains, arg, row,
 							emitter, explainTarget,
 							workerKernelFactory(requestedTier, interpretedExecution, observedRowsForVariants,
 									LmdbNativeKernelInterpreter::forAggregate));
+			parallelAttempt = false;
 			if (parallel != null) {
 				String parallelRoute = lowered.kernel.requirements.typeMatrices > 0
 						? interpretedExecution
@@ -514,7 +605,9 @@ final class LmdbNativeKernelExecution {
 			}
 			AGG_OPENED.incrementAndGet();
 			AGG_ROWS.addAndGet(results.size());
+			publishWork = true;
 			publishStructuralOperator(explainTarget, lowered.kernel.requirements);
+			LmdbNativeExplain.recordExecutionPath(explainTarget, pathTag);
 			if (row.runtimePlan != null) {
 				SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 						? ((MultiJoinPlan) arg).derivedPlan(row).order
@@ -524,7 +617,41 @@ final class LmdbNativeKernelExecution {
 			}
 			return results;
 		} catch (RuntimeException | IOException problem) {
-			LmdbNativeJaninoCodegen.rethrowValidationFailure(problem);
+			if (parallelAttempt) {
+				// A normal return, including null, is the deliberate outcome of the exact parallel invocation. Every
+				// exception
+				// that escapes that invocation is a real execution outcome and must reach the caller; filtering
+				// probe/decline
+				// controls here would turn a worker failure into a silent sequential retry.
+				if (problem instanceof IOException) {
+					QueryEvaluationException propagated = new QueryEvaluationException(problem);
+					primaryFailure = propagated;
+					throw propagated;
+				}
+				primaryFailure = problem;
+				throw (RuntimeException) problem;
+			}
+			try {
+				LmdbNativeJaninoCodegen.rethrowValidationFailure(problem);
+			} catch (RuntimeException validationFailure) {
+				// Validation failures are real failures, even when the ordinary serial arm would otherwise decline this
+				// shape. Record the exact object before entering finally so resource cleanup cannot replace it.
+				primaryFailure = validationFailure;
+				throw validationFailure;
+			}
+			Throwable terminalFailure = serialTerminalFailure(problem);
+			if (terminalFailure != null) {
+				primaryFailure = terminalFailure;
+				if (terminalFailure instanceof Error error) {
+					throw error;
+				}
+				if (terminalFailure instanceof RuntimeException runtimeException) {
+					throw runtimeException;
+				}
+				QueryEvaluationException propagated = new QueryEvaluationException(terminalFailure);
+				primaryFailure = propagated;
+				throw propagated;
+			}
 			if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 				System.err.println("[ir-aggregate] decline: exception " + problem);
 			}
@@ -534,6 +661,9 @@ final class LmdbNativeKernelExecution {
 						+ problem.getClass().getName() + ",message=" + String.valueOf(problem.getMessage()) + "]");
 			}
 			return null;
+		} catch (Error problem) {
+			primaryFailure = problem;
+			throw problem;
 		} finally {
 			Throwable failure = null;
 			try {
@@ -546,6 +676,9 @@ final class LmdbNativeKernelExecution {
 			try {
 				if (kernel != null) {
 					kernel.close();
+					if (publishWork) {
+						publishKernelWork(explainTarget, kernel.workCounters());
+					}
 				}
 			} catch (RuntimeException | Error problem) {
 				failure = addFailure(failure, problem);
@@ -565,7 +698,10 @@ final class LmdbNativeKernelExecution {
 			} catch (RuntimeException | Error problem) {
 				failure = addFailure(failure, problem);
 			}
-			rethrowFailure(failure);
+			Throwable retainedFailure = addFailure(primaryFailure, failure);
+			if (primaryFailure == null || retainedFailure != primaryFailure) {
+				rethrowFailure(retainedFailure);
+			}
 		}
 	}
 
@@ -938,7 +1074,7 @@ final class LmdbNativeKernelExecution {
 	}
 
 	private static RowCursor tryOpenRows(SlotPlan arg, RowState row, TupleExpr originalExpr, boolean preferScans,
-			int[] distinctSlots, OrderedMods ordered, java.util.Set<Long> scanPredicates,
+			int[] distinctSlots, OrderedMods ordered, Set<Long> scanPredicates,
 			boolean scanVariablePredicates, ParallelExecution parallelExecution, KernelTier requestedTier)
 			throws IOException {
 		// With janino codegen disabled, the interpreted tier (M4) executes the same lowered IR through
@@ -1113,7 +1249,7 @@ final class LmdbNativeKernelExecution {
 				if (scanPredicates == null && !preferScans && unavailable < views.length
 						&& LmdbNativeKernelLowering.mixedBindingEnabled()
 						&& LmdbNativeKernelLowering.scanSourcesEnabled()) {
-					java.util.Set<Long> failed = new java.util.HashSet<>();
+					Set<Long> failed = new HashSet<>();
 					for (int i = 0; i < views.length; i++) {
 						if (views[i] == null) {
 							failed.add(lowered.bindings.adjacencies[i].predicate);
@@ -1288,21 +1424,156 @@ final class LmdbNativeKernelExecution {
 	}
 
 	private static Throwable addFailure(Throwable failure, Throwable problem) {
+		if (problem == null) {
+			return failure;
+		}
 		if (failure == null) {
 			return problem;
 		}
-		if (failure != problem) {
-			failure.addSuppressed(problem);
+		if (failure == problem) {
+			return failure;
 		}
+		Throwable existingReal = realFailureAttachedToControl(failure);
+		if (existingReal != null) {
+			Throwable problemReal = realFailureAttachedToControl(problem);
+			if (problemReal != null && problemReal != existingReal) {
+				addSuppressedOnce(existingReal, problemReal);
+			}
+			if (problem != problemReal && problem != existingReal) {
+				addSuppressedOnce(existingReal, problem);
+			}
+			if (failure != existingReal) {
+				addSuppressedOnce(existingReal, failure);
+			}
+			return existingReal;
+		}
+		if (isSuppressionDisabledControl(failure) || isControlWrapper(failure)) {
+			Throwable realProblem = LmdbNativeParallelKernelAggregate.realFailureInControlGraph(problem);
+			if (realProblem != null) {
+				addSuppressedOnce(realProblem, failure);
+				return realProblem;
+			}
+			if (!hasControlCause(problem)) {
+				addSuppressedOnce(problem, failure);
+				return problem;
+			}
+			return failure;
+		}
+		Throwable cleanupReal = realFailureAttachedToControl(problem);
+		if (cleanupReal != null) {
+			addSuppressedOnce(failure, cleanupReal);
+			if (problem != cleanupReal) {
+				addSuppressedOnce(failure, problem);
+			}
+			return failure;
+		}
+		addSuppressedOnce(failure, problem);
 		return failure;
 	}
 
+	private static void addSuppressedOnce(Throwable primary, Throwable suppressed) {
+		if (primary == suppressed) {
+			return;
+		}
+		for (Throwable existing : primary.getSuppressed()) {
+			if (existing == suppressed) {
+				return;
+			}
+		}
+		primary.addSuppressed(suppressed);
+	}
+
+	private static boolean isSuppressionDisabledControl(Throwable problem) {
+		return problem instanceof KernelCancelledException || problem instanceof KernelQueryCancelledException
+				|| problem instanceof KernelPeerCancelledException
+				|| problem instanceof LmdbNativeProbeDeadlineExceeded;
+	}
+
+	private static boolean isControlWrapper(Throwable problem) {
+		return !isControlSignal(problem) && hasControlCause(problem);
+	}
+
+	private static Throwable realFailureAttachedToControl(Throwable problem) {
+		if (!isControlSignal(problem) && !isControlWrapper(problem)) {
+			return null;
+		}
+		Throwable real = LmdbNativeParallelKernelAggregate.realFailureInControlGraph(problem);
+		return real == problem ? null : real;
+	}
+
+	private static boolean isControlSignal(Throwable problem) {
+		return problem instanceof KernelCancelledException || problem instanceof KernelQueryCancelledException
+				|| problem instanceof KernelPeerCancelledException || problem instanceof LmdbNativeProbeDeadlineExceeded
+				|| problem instanceof KernelRuntime.AllocationDeniedException;
+	}
+
+	private static Throwable serialTerminalFailure(Throwable problem) {
+		if (!hasControlCause(problem)) {
+			return null;
+		}
+		// An occurrence-local allocation refusal is a clean serial decline unless cleanup attached a real failure. The
+		// latter must escape just like a terminal cancellation, rather than disappearing behind the fallback return.
+		Throwable real = LmdbNativeParallelKernelAggregate.realFailureInControlGraph(problem);
+		if (real != null) {
+			return real;
+		}
+		Throwable terminal = causeOf(problem, KernelQueryCancelledException.class);
+		if (terminal == null) {
+			terminal = causeOf(problem, LmdbNativeProbeDeadlineExceeded.class);
+		}
+		if (terminal == null) {
+			terminal = causeOf(problem, KernelCancelledException.class);
+		}
+		if (terminal == null) {
+			terminal = causeOf(problem, KernelPeerCancelledException.class);
+		}
+		return terminal;
+	}
+
+	private static boolean hasControlCause(Throwable problem) {
+		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		while (problem != null && visited.add(problem)) {
+			if (isControlSignal(problem) || problem instanceof LmdbNativeKernelPartitions.ParallelKernelDecline
+					|| problem instanceof EncounterOrderFallback) {
+				return true;
+			}
+			Throwable cause = problem.getCause();
+			if (cause == problem) {
+				break;
+			}
+			problem = cause;
+		}
+		return false;
+	}
+
+	private static <T extends Throwable> T causeOf(Throwable problem, Class<T> type) {
+		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		while (problem != null && visited.add(problem)) {
+			if (type.isInstance(problem)) {
+				return type.cast(problem);
+			}
+			Throwable cause = problem.getCause();
+			if (cause == problem) {
+				break;
+			}
+			problem = cause;
+		}
+		return null;
+	}
+
 	private static void rethrowFailure(Throwable failure) {
+		Throwable realFailure = realFailureAttachedToControl(failure);
+		if (realFailure != null) {
+			failure = realFailure;
+		}
 		if (failure instanceof RuntimeException runtimeException) {
 			throw runtimeException;
 		}
 		if (failure instanceof Error error) {
 			throw error;
+		}
+		if (failure != null) {
+			throw new QueryEvaluationException(failure);
 		}
 	}
 
@@ -1442,6 +1713,7 @@ final class LmdbNativeKernelExecution {
 		private int bufferRows;
 		private int bufferPos;
 		private int activeMark = -1;
+		private boolean workPublished;
 
 		private final org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashReservation;
 		private final String route;
@@ -1543,6 +1815,10 @@ final class LmdbNativeKernelExecution {
 			}
 			try {
 				kernel.close();
+				if (!workPublished) {
+					workPublished = true;
+					publishKernelWork(row.telemetryTarget, kernel.workCounters());
+				}
 			} catch (RuntimeException | Error problem) {
 				failure = addFailure(failure, problem);
 			}

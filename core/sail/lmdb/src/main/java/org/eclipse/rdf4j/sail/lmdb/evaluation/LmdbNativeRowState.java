@@ -15,7 +15,9 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
@@ -24,6 +26,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 
 @Experimental
 final class RowState implements LmdbNativeSlotReader {
@@ -69,6 +72,14 @@ final class RowState implements LmdbNativeSlotReader {
 	 */
 	LmdbNativeQueryMemoryScope memoryScope = new LmdbNativeQueryMemoryScope();
 	ParallelOwnership parallelOwnership = ParallelOwnership.QUERY;
+	/** One decoded input per slot, shared by independently compiled scalar expressions on this reader. */
+	private long[] decodedIds;
+	private LmdbNativeValueCodec.DecodedValue[] decodedValues;
+	private LmdbNativeValueCodec decodedCodec;
+	private NativeTermAuthority decodedAuthority;
+	private boolean decodedInputAccounting;
+	private LmdbQueryMemoryManager.Reservation decodedInputReservation;
+	private long decodedInputValueBytes;
 
 	RowState(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base) {
 		this(source, layout, base, null, null, new NativeCancellationToken());
@@ -120,6 +131,161 @@ final class RowState implements LmdbNativeSlotReader {
 	@Override
 	public long id(int slot) {
 		return slots[slot];
+	}
+
+	@Override
+	public LmdbNativeValueCodec.DecodedValue decodedValue(int slot, LmdbNativeValueCodec codec, boolean assured) {
+		long id = slots[slot];
+		NativeTermAuthority authority = termAuthority();
+		SyntheticValueSource scope = evaluationScope();
+		NativeExecutionContext execution = scope == null ? null : scope.executionContext();
+		if (execution != null && execution.isClosed()) {
+			// Closing the runtime table removes its namespace membership. A memo must not extend that lifetime.
+			clearDecodedValues();
+			return LmdbNativeSlotReader.super.decodedValue(slot, codec, assured);
+		}
+		NativeIdKind kind = authority == null ? NativeIdKind.STORE : authority.kind(id);
+		boolean sameAuthority = decodedCodec == codec && decodedAuthority == authority;
+		if (sameAuthority && decodedValues != null && decodedIds[slot] == id && decodedValues[slot] != null) {
+			return decodedValues[slot];
+		}
+		if (!sameAuthority) {
+			clearDecodedValues();
+			decodedCodec = codec;
+			decodedAuthority = authority;
+		}
+		LmdbNativeValueCodec.DecodedValue value = LmdbNativeSlotReader.resolveValue(id, codec, assured, authority,
+				kind);
+		if (value == null || value.error()) {
+			// An unresolved value may be published later. Errors must never become negative cache entries.
+			clearDecodedEntry(slot);
+			return value;
+		}
+		if (decodedInputAccounting) {
+			if (!cacheDecodedValue(slot, id, value)) {
+				// A budget refusal is local to this optional memo. The exact decoded value remains usable by the
+				// caller.
+				return value;
+			}
+		} else {
+			ensureDecodedArrays();
+			decodedIds[slot] = id;
+			decodedValues[slot] = value;
+		}
+		return value;
+	}
+
+	/** Conservative fixed storage for the lazy decoded-input arrays and their ownership fields. */
+	static long decodedInputMemoryBytes(int slots) {
+		return Math.addExact(64L, Math.multiplyExact((long) slots, 2L * Long.BYTES));
+	}
+
+	/**
+	 * Enables optional accounting for this row's decoded-input memo. Allocation remains lazy until a value is retained.
+	 */
+	void enableDecodedInputAccounting() {
+		if (!decodedInputAccounting) {
+			// Values decoded before the optional accounting scope was enabled cannot be charged retroactively. Drop
+			// them before
+			// accepting any new retained value so the scope never contains an uncharged reference.
+			clearDecodedValues();
+			decodedInputAccounting = true;
+		}
+	}
+
+	/**
+	 * Shares the query ledger and accounting policy with a parent while keeping an independent, initially empty memo.
+	 * Worker and operator scratch rows therefore charge the same query cap without retaining the parent's values.
+	 */
+	void inheritDecodedInputAccounting(RowState parent) {
+		Objects.requireNonNull(parent, "parent");
+		if (parent == this) {
+			throw new IllegalArgumentException("a row cannot inherit its own decoded-input accounting");
+		}
+		closeDecodedInputs();
+		memoryScope = parent.memoryScope;
+		decodedInputAccounting = parent.decodedInputAccounting;
+	}
+
+	/** Releases this row's decoded-input reservation and all retained decoded values. Safe to call more than once. */
+	void closeDecodedInputs() {
+		clearDecodedValues();
+		if (decodedInputReservation != null) {
+			decodedInputReservation.close();
+			decodedInputReservation = null;
+		}
+		decodedInputValueBytes = 0L;
+		decodedIds = null;
+		decodedValues = null;
+		decodedCodec = null;
+		decodedAuthority = null;
+	}
+
+	private void ensureDecodedArrays() {
+		if (decodedValues == null) {
+			decodedIds = new long[slots.length];
+			decodedValues = new LmdbNativeValueCodec.DecodedValue[slots.length];
+		}
+	}
+
+	private boolean cacheDecodedValue(int slot, long id, LmdbNativeValueCodec.DecodedValue value) {
+		long valueBytes = value.ownedBytes();
+		if (valueBytes < 0L) {
+			// Triple terms may retain a store-backed object graph whose ownership cannot be bounded here. Do not retain
+			// them
+			// under accounting until a codec with an explicit ownership proof is available.
+			return false;
+		}
+		LmdbNativeValueCodec.DecodedValue previous = decodedValues == null ? null : decodedValues[slot];
+		long previousBytes = previous == null ? 0L : previous.ownedBytes();
+		long delta = Math.subtractExact(valueBytes, previousBytes);
+		if (decodedInputReservation == null) {
+			long initial = Math.addExact(decodedInputMemoryBytes(slots.length), valueBytes);
+			LmdbQueryMemoryManager.QueryLedger ledger = memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+			decodedInputReservation = ledger.reserve(initial, null);
+			if (decodedInputReservation == null) {
+				return false;
+			}
+			decodedInputValueBytes = valueBytes;
+		} else if (delta > 0L && !decodedInputReservation.tryGrow(delta)) {
+			return false;
+		} else if (delta < 0L) {
+			decodedInputReservation.release(-delta);
+			decodedInputValueBytes = Math.addExact(decodedInputValueBytes, delta);
+		} else {
+			decodedInputValueBytes = Math.addExact(decodedInputValueBytes, delta);
+		}
+		ensureDecodedArrays();
+		decodedIds[slot] = id;
+		decodedValues[slot] = value;
+		return true;
+	}
+
+	private void clearDecodedEntry(int slot) {
+		if (decodedValues == null || decodedValues[slot] == null) {
+			return;
+		}
+		if (decodedInputAccounting && decodedInputReservation != null) {
+			long bytes = decodedValues[slot].ownedBytes();
+			if (bytes >= 0L) {
+				decodedInputReservation.release(bytes);
+				decodedInputValueBytes = Math.subtractExact(decodedInputValueBytes, bytes);
+			}
+		}
+		decodedValues[slot] = null;
+		decodedIds[slot] = 0L;
+	}
+
+	private void clearDecodedValues() {
+		if (decodedValues == null) {
+			return;
+		}
+		if (decodedInputAccounting && decodedInputReservation != null && decodedInputValueBytes > 0L) {
+			decodedInputReservation.release(decodedInputValueBytes);
+		}
+		Arrays.fill(decodedValues, null);
+		Arrays.fill(decodedIds, 0L);
+		decodedInputValueBytes = 0L;
 	}
 
 	/** Independent binding/trail state at an operator boundary, sharing this evaluation's resources and scope. */
@@ -750,7 +916,8 @@ final class CopyBinding {
 	/**
 	 * A computed BIND whose result is NOT representable as an inline id (e.g. a long string from {@code STR}/
 	 * {@code COALESCE}). Its value is interned to a stable runtime id through the row's {@link SyntheticValueSource} so
-	 * it can serve as a native group key and be materialized back at output. Only used on the serial aggregate path.
+	 * it can serve as a native group key and be materialized back at output. Worker-bound copies retain the same
+	 * generated key admission proof as the query-owned assignment.
 	 */
 	final LmdbNativeCompiledValue computedValue;
 	/** General semantic-row evaluator for legal value expressions outside the specialized decoded-value compiler. */
@@ -758,6 +925,8 @@ final class CopyBinding {
 	/** Dependency proof for terminal keying only; does not change generic BIND kernel argument lowering. */
 	private final long semanticKeyReadMask;
 	final boolean encounterOrderReplaySafe;
+	/** Stable identity for generated-key admission; worker rebinding must retain the original proof token. */
+	final Object generatedKeyProof;
 	/**
 	 * Value-guarded VALUES constant (M-F1): when the target slot is free the constant binds; when it is already bound
 	 * the row survives only if the two ids denote the same RDF term per the evaluation's term authority
@@ -773,6 +942,11 @@ final class CopyBinding {
 
 	CopyBinding(int targetSlot, int sourceSlot, long constant,
 			LmdbNativeCompiledInlineId computed) {
+		this(targetSlot, sourceSlot, constant, computed, new Object());
+	}
+
+	private CopyBinding(int targetSlot, int sourceSlot, long constant,
+			LmdbNativeCompiledInlineId computed, Object generatedKeyProof) {
 		this.targetSlot = targetSlot;
 		this.sourceSlot = sourceSlot;
 		this.constant = constant;
@@ -782,9 +956,15 @@ final class CopyBinding {
 		this.semanticKeyReadMask = -1L;
 		this.encounterOrderReplaySafe = computed == null || computed.encounterOrderReplaySafe();
 		this.termChecked = false;
+		this.generatedKeyProof = generatedKeyProof;
 	}
 
 	private CopyBinding(int targetSlot, LmdbNativeCompiledValue computedValue, boolean encounterOrderReplaySafe) {
+		this(targetSlot, computedValue, encounterOrderReplaySafe, new Object());
+	}
+
+	private CopyBinding(int targetSlot, LmdbNativeCompiledValue computedValue, boolean encounterOrderReplaySafe,
+			Object generatedKeyProof) {
 		this.targetSlot = targetSlot;
 		this.sourceSlot = -1;
 		this.constant = UNKNOWN;
@@ -794,6 +974,7 @@ final class CopyBinding {
 		this.semanticKeyReadMask = -1L;
 		this.encounterOrderReplaySafe = encounterOrderReplaySafe;
 		this.termChecked = false;
+		this.generatedKeyProof = generatedKeyProof;
 	}
 
 	private CopyBinding(int targetSlot, long constant, boolean termChecked) {
@@ -806,10 +987,16 @@ final class CopyBinding {
 		this.semanticKeyReadMask = -1L;
 		this.encounterOrderReplaySafe = true;
 		this.termChecked = termChecked;
+		this.generatedKeyProof = new Object();
 	}
 
 	private CopyBinding(int targetSlot, NativeBindingSetValueEvaluator semanticValue,
 			boolean encounterOrderReplaySafe, long semanticKeyReadMask) {
+		this(targetSlot, semanticValue, encounterOrderReplaySafe, semanticKeyReadMask, new Object());
+	}
+
+	private CopyBinding(int targetSlot, NativeBindingSetValueEvaluator semanticValue,
+			boolean encounterOrderReplaySafe, long semanticKeyReadMask, Object generatedKeyProof) {
 		this.targetSlot = targetSlot;
 		this.sourceSlot = -1;
 		this.constant = UNKNOWN;
@@ -819,6 +1006,7 @@ final class CopyBinding {
 		this.semanticKeyReadMask = semanticKeyReadMask;
 		this.encounterOrderReplaySafe = encounterOrderReplaySafe;
 		this.termChecked = false;
+		this.generatedKeyProof = generatedKeyProof;
 	}
 
 	static CopyBinding slot(int targetSlot, int sourceSlot) {
@@ -836,6 +1024,24 @@ final class CopyBinding {
 	static CopyBinding computedValue(int targetSlot, LmdbNativeCompiledValue computedValue,
 			boolean encounterOrderReplaySafe) {
 		return new CopyBinding(targetSlot, computedValue, encounterOrderReplaySafe);
+	}
+
+	/**
+	 * Replaces the source-bound inline evaluator while retaining the assignment's target and error/replay policy. The
+	 * returned binding is owned by one worker hook; the original remains attached to the query-thread plan.
+	 */
+	CopyBinding withComputed(LmdbNativeCompiledInlineId workerComputed) {
+		CopyBinding rebound = new CopyBinding(targetSlot, -1, UNKNOWN, workerComputed, generatedKeyProof);
+		rebound.setNullOnError = setNullOnError;
+		return rebound;
+	}
+
+	/** Replaces the source-bound decoded-value evaluator for one worker without changing generated-key admission. */
+	CopyBinding withComputedValue(LmdbNativeCompiledValue workerComputedValue) {
+		CopyBinding rebound = new CopyBinding(targetSlot, workerComputedValue, encounterOrderReplaySafe,
+				generatedKeyProof);
+		rebound.setNullOnError = setNullOnError;
+		return rebound;
 	}
 
 	static CopyBinding semanticValue(int targetSlot, NativeBindingSetValueEvaluator semanticValue,

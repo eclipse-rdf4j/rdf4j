@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 
 @Experimental
 final class LmdbNativeAdaptiveFilterPlacement {
@@ -599,6 +600,11 @@ final class NonOwningAdaptiveFilter implements NativeBooleanFilter {
 	@Override
 	public long batchReadMask() {
 		return delegate.batchReadMask();
+	}
+
+	@Override
+	public KernelTermKindProof pageProof(int[] argSlots) {
+		return delegate.pageProof(argSlots);
 	}
 
 	@Override

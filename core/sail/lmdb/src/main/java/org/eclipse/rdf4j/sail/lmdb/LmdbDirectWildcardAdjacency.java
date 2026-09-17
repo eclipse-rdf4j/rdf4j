@@ -126,6 +126,21 @@ final class LmdbDirectWildcardAdjacency implements NativeLmdbQuerySource.Wildcar
 	}
 
 	@Override
+	public NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor openPageCursor() {
+		return bound().openPageCursor();
+	}
+
+	@Override
+	public long pageCount() {
+		return bound().pageCount();
+	}
+
+	@Override
+	public NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor openPageCursor(long fromPage, long toPage) {
+		return bound().openPageCursor(fromPage, toPage);
+	}
+
+	@Override
 	public long size(long runHandle) {
 		return bound().size(runHandle);
 	}

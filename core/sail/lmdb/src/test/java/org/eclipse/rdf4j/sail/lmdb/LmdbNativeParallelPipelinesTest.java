@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.io.IOException;
@@ -22,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -35,6 +37,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
@@ -241,6 +244,73 @@ public class LmdbNativeParallelPipelinesTest {
 		} finally {
 			restoreProperty("rdf4j.lmdb.factorizedRows.enabled", previous);
 		}
+	}
+
+	@Test
+	public void contextualTermFilterRebindsToEachWorkerSource() {
+		String query = chain(" FILTER(STR(?value) = \"http://example.com/v0-0\")");
+		String previous = System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
+		try {
+			List<String> generic = rowsWithProperty(NATIVE_FLAG, "false", query);
+			long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
+			List<String> parallel = rows(query);
+			assertThat(parallel).containsExactlyElementsOf(generic);
+			assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
+					.as("a source-dependent scalar filter must be rebound inside every worker")
+					.isEqualTo(parallelBefore + 1L);
+		} finally {
+			restoreProperty("rdf4j.lmdb.factorizedRows.enabled", previous);
+		}
+	}
+
+	@Test
+	public void contextualTermFilterRebindsInsideOrdinaryParallelAggregation() {
+		String query = aggregateChain(" FILTER(STR(?value) = \"http://example.com/v0-0\")");
+		List<String> generic = allRowsWithProperty(NATIVE_FLAG, "false", query);
+		long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
+
+		List<String> parallel = allRows(query, LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION);
+
+		assertThat(parallel)
+				.as("ordinary parallel aggregation must preserve the source-dependent filter result")
+				.containsExactlyElementsOf(generic);
+		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
+				.as("the regression must exercise LmdbNativeParallelAggregation rather than only IR aggregation")
+				.isEqualTo(parallelBefore + 1L);
+	}
+
+	@Test
+	public void failedWorkerFilterForkClosesOnlyOwnedCopies() {
+		NativeSlotLayout layout = twoSlotLayout();
+		RepeatedSlotSource source = new RepeatedSlotSource(new long[0][]);
+		PatternPlan root = pattern(Term.slot(0), 7L, Term.constant(8L), 1D);
+		PatternPlan fallback = pattern(Term.slot(0), 9L, Term.slot(1), 1D);
+		MultiValuePatternPlan child = new MultiValuePatternPlan(source, 0, new long[] { 7L },
+				new PatternPlan[] { fallback }, fallback);
+		TrackingForkFilter first = new TrackingForkFilter(false);
+		TrackingForkFilter failing = new TrackingForkFilter(true);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { root, child }, new MaskedFilter[] {
+				new MaskedFilter(first, 1L), new MaskedFilter(failing, 1L) });
+
+		assertThatThrownBy(() -> LmdbNativeParallelPipelines.forkWorkerPlan(plan,
+				new NativeScalarPlan.WorkerContext(source, null, null)))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("worker fork failed");
+		assertThat(first.templateCloseCount)
+				.as("a failed worker bind must leave the immutable template filter open")
+				.hasValue(0);
+		assertThat(first.workerCloseCount)
+				.as("a successful partial worker fork must be closed exactly once")
+				.hasValue(1);
+		assertThat(failing.templateCloseCount)
+				.as("a filter that failed before returning a worker copy remains template-owned")
+				.hasValue(0);
+		RowState row = emptyNativeRow(source, layout);
+		row.slots[0] = 7L;
+		row.recomputeBoundMask();
+		assertThat(child.fallbackFilter.accept(row))
+				.as("a failed child bind must leave the immutable template child usable")
+				.isTrue();
 	}
 
 	@Test
@@ -584,8 +654,8 @@ public class LmdbNativeParallelPipelinesTest {
 		assertThat(derived.order[0]).isSameAs(root);
 		assertThat(LmdbNativeFactorizedRows.tryCreateFromExternalRoot(plan, derived, planningRow,
 				planningRow.boundMask(), new int[] { 0, 1 }, false))
-						.as("the repeated-slot suffix is deliberately outside flat-bag factorization")
-						.isNull();
+				.as("the repeated-slot suffix is deliberately outside flat-bag factorization")
+				.isNull();
 
 		RowState sequentialRow = emptyNativeRow(source, layout);
 		List<String> sequential = readNativeRows(plan.open(sequentialRow), sequentialRow);
@@ -837,9 +907,13 @@ public class LmdbNativeParallelPipelinesTest {
 	}
 
 	private String aggregateChain() {
+		return aggregateChain("");
+	}
+
+	private String aggregateChain(String filter) {
 		// Keep this elastic-admission fixture out of the now-higher-priority factorized aggregate path.
 		return "SELECT (COUNT(?subject) AS ?count) (MIN(DISTINCT ?value) AS ?min) WHERE { ?subject <" + EX
-				+ "p1> ?middle . ?middle <" + EX + "p2> ?tail . ?tail <" + EX + "p3> ?value . }";
+				+ "p1> ?middle . ?middle <" + EX + "p2> ?tail . ?tail <" + EX + "p3> ?value ." + filter + " }";
 	}
 
 	private List<String> rows(String query) {
@@ -860,8 +934,16 @@ public class LmdbNativeParallelPipelinesTest {
 	}
 
 	private List<String> allRows(String query) {
+		return allRows(query, null);
+	}
+
+	private List<String> allRows(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+			SailTupleQuery tupleQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				tupleQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return QueryResults.asList(tupleQuery.evaluate())
 					.stream()
 					.map(row -> row.getBindingNames()
 							.stream()
@@ -1105,6 +1187,48 @@ public class LmdbNativeParallelPipelinesTest {
 
 		private static boolean matches(long requested, long actual) {
 			return requested == UNKNOWN_ID || requested == actual;
+		}
+	}
+
+	private static final class TrackingForkFilter implements NativeBooleanFilter {
+		private final boolean fail;
+		private final AtomicInteger templateCloseCount;
+		private final AtomicInteger workerCloseCount;
+		private final boolean worker;
+
+		private TrackingForkFilter(boolean fail) {
+			this(fail, new AtomicInteger(), new AtomicInteger(), false);
+		}
+
+		private TrackingForkFilter(boolean fail, AtomicInteger templateCloseCount, AtomicInteger workerCloseCount,
+				boolean worker) {
+			this.fail = fail;
+			this.templateCloseCount = templateCloseCount;
+			this.workerCloseCount = workerCloseCount;
+			this.worker = worker;
+		}
+
+		@Override
+		public boolean accept(RowState row) {
+			return true;
+		}
+
+		@Override
+		public boolean parallelWorkerForkable() {
+			return true;
+		}
+
+		@Override
+		public NativeBooleanFilter forkForParallelWorker() {
+			if (fail) {
+				throw new IllegalStateException("worker fork failed");
+			}
+			return new TrackingForkFilter(false, templateCloseCount, workerCloseCount, true);
+		}
+
+		@Override
+		public void close() {
+			(worker ? workerCloseCount : templateCloseCount).incrementAndGet();
 		}
 	}
 

@@ -137,7 +137,9 @@ public class LmdbNativeExpressionFilterTest {
 		assertThat(LmdbNativeExpressionCompiler.COMPILED_FILTERS.get()).isGreaterThan(0);
 		assertThat(LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.get()).isZero();
 		assertThat(LmdbNativeValueCodec.ZERO_COPY_READS.get()).isGreaterThan(0);
-		assertThat(LmdbNativeValueCodec.CACHE_HITS.get()).isGreaterThan(0);
+		assertThat(LmdbNativeValueCodec.ZERO_COPY_READS.get())
+				.as("stored decoding is bounded by two label records plus shared datatype and namespace records")
+				.isLessThanOrEqualTo(4);
 	}
 
 	@Test

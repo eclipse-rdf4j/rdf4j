@@ -23,10 +23,12 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -54,7 +56,9 @@ class LmdbNativeIrAggregateParallelTest {
 	private static final String[] PROPERTIES = {
 			"rdf4j.lmdb.nativeQueryEngine.enabled",
 			"rdf4j.lmdb.janinoCodegen.enabled",
+			"rdf4j.lmdb.janinoCodegen.synchronous",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
+			"rdf4j.lmdb.kernelInterpreter.enabled",
 			"rdf4j.lmdb.factorizedTail.enabled",
 			"rdf4j.lmdb.packedFtree.enabled",
 			"rdf4j.lmdb.wcoj.enabled",
@@ -68,6 +72,21 @@ class LmdbNativeIrAggregateParallelTest {
 			+ "(MAX(?v) AS ?mx) (AVG(?v) AS ?av) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
 			+ "q> ?v . } GROUP BY ?s";
 
+	/** The fixed-predicate key enumeration is fused with the following wildcard into a {@code SipKeyWildcard}. */
+	private static final String SIP_KEY_WILDCARD_QUERY = "SELECT ?p (COUNT(?v) AS ?c) WHERE { ?m <" + EX
+			+ "p> ?unused . ?m ?p ?v } GROUP BY ?p";
+
+	/** The baseline domain is large enough to admit bounded worker windows. */
+	private static final String SINGLE_DOMAIN_QUERY = "SELECT (COUNT(*) AS ?c) WHERE { VALUES ?s { <" + EX
+			+ "s0> <" + EX + "s1> <" + EX + "s2> <" + EX + "s3> <" + EX + "s4> <" + EX + "s5> <" + EX
+			+ "s6> <" + EX + "s7> } ?s ?p ?o }";
+
+	/** Every baseline domain row occurs twice; partitioning must preserve that legitimate bag multiplicity. */
+	private static final String DUPLICATE_DOMAIN_QUERY = "SELECT (COUNT(*) AS ?c) WHERE { VALUES ?s { <" + EX
+			+ "s0> <" + EX + "s0> <" + EX + "s1> <" + EX + "s1> <" + EX + "s2> <" + EX + "s2> <" + EX
+			+ "s3> <" + EX + "s3> <" + EX + "s4> <" + EX + "s4> <" + EX + "s5> <" + EX + "s5> <" + EX
+			+ "s6> <" + EX + "s6> <" + EX + "s7> <" + EX + "s7> } ?s ?p ?o }";
+
 	private static final String DISTINCT_QUERY = "SELECT ?s (COUNT(DISTINCT ?v) AS ?c) WHERE { ?s <" + EX
 			+ "p> ?m . OPTIONAL { ?m <" + EX + "q> ?v } } GROUP BY ?s";
 
@@ -78,6 +97,14 @@ class LmdbNativeIrAggregateParallelTest {
 	 */
 	private static final String FORKABLE_FILTER_QUERY = "SELECT ?s (COUNT(?v) AS ?c) (SUM(?v) AS ?sum) WHERE { ?s <"
 			+ EX + "p> ?m . ?m <" + EX + "q> ?v . ?m <" + EX + "q2> ?v2 . FILTER(?v != ?v2) } GROUP BY ?s";
+
+	/** A value expression in a filter must be compiled against each worker's codec and source. */
+	private static final String CONTEXTUAL_TERM_FILTER_QUERY = "SELECT ?s (COUNT(?v) AS ?c) WHERE { ?s <" + EX
+			+ "p> ?m . ?m <" + EX + "q> ?v . ?m <" + EX + "q2> ?v2 . FILTER(STR(?v) = STR(?v2)) } GROUP BY ?s";
+
+	/** A replay-safe computed group key must remain eligible for the parallel IR aggregate rung. */
+	private static final String COMPUTED_GROUP_QUERY = "SELECT ?k (COUNT(?v) AS ?c) WHERE { ?s <" + EX + "p> ?m . ?m <"
+			+ EX + "q> ?v . BIND((?v + 1) AS ?k) } GROUP BY ?k";
 
 	/** The constant-object class pattern lowers to an {@code EnumerateDomain} root (the type extent). */
 	private static final String DOMAIN_ROOT_QUERY = "SELECT ?s (COUNT(?v) AS ?c) (SUM(?v) AS ?sum) WHERE { ?s <"
@@ -92,6 +119,14 @@ class LmdbNativeIrAggregateParallelTest {
 	 */
 	private static final String EXTREMA_TIE_QUERY = "SELECT (MIN(?v) AS ?mn) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
 			+ "q3> ?v . }";
+
+	/**
+	 * The two minimum values are different physical ids but the same RDF term: language tags compare
+	 * case-insensitively. A parallel merge may retain either raw representative when the semantic term is equal, so it
+	 * must not decline merely because the ids differ.
+	 */
+	private static final String DUPLICATE_TERM_EXTREMA_QUERY = "SELECT (MIN(?v) AS ?mn) WHERE { ?s <" + EX
+			+ "p> ?m . ?m <" + EX + "q4> ?v . }";
 
 	/**
 	 * SUM over {@code xsd:double}: sequential floating rounding is encounter-order-sensitive, so both the interpreted
@@ -123,6 +158,7 @@ class LmdbNativeIrAggregateParallelTest {
 			IRI q = vf.createIRI(EX, "q");
 			IRI q2 = vf.createIRI(EX, "q2");
 			IRI q3 = vf.createIRI(EX, "q3");
+			IRI q4 = vf.createIRI(EX, "q4");
 			IRI f = vf.createIRI(EX, "f");
 			IRI t = vf.createIRI(EX, "t");
 			IRI x = vf.createIRI(EX, "X");
@@ -147,6 +183,15 @@ class LmdbNativeIrAggregateParallelTest {
 					} else {
 						conn.add(m, q3, vf.createLiteral(i * 3 + j + 10));
 					}
+					// q4: the global minimum is represented by two physical ids whose language tags differ only in
+					// case.
+					if (i == 0 && j == 0) {
+						conn.add(m, q4, vf.createLiteral("same", "en"));
+					} else if (i == 599 && j == 1) {
+						conn.add(m, q4, vf.createLiteral("same", "EN"));
+					} else {
+						conn.add(m, q4, vf.createLiteral("zz" + i + j, "en"));
+					}
 					// f: xsd:double values, order-sensitive under SUM
 					conn.add(m, f, vf.createLiteral(0.5d + i * 2 + j));
 				}
@@ -155,7 +200,9 @@ class LmdbNativeIrAggregateParallelTest {
 		}
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "true");
 		// These tests name the parallel IR aggregate rung. Keep the common arbiter enabled, remove competing
 		// factorized winners, and charge no synthetic startup work so the named proposal reaches its bind gates.
 		System.setProperty("rdf4j.lmdb.factorizedTail.enabled", "false");
@@ -203,6 +250,22 @@ class LmdbNativeIrAggregateParallelTest {
 	}
 
 	@Test
+	void sipKeyWildcardParallelUsesWholePredicateWindows() {
+		assertAllExecutionRungs(SIP_KEY_WILDCARD_QUERY);
+	}
+
+	@Test
+	void duplicateDomainOccurrencesRemainWeightedAcrossParallelWindows() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		long single = count(SINGLE_DOMAIN_QUERY, null);
+		long duplicate = count(DUPLICATE_DOMAIN_QUERY, null);
+		assertThat(duplicate)
+				.as("duplicate VALUES domain occurrences must retain their bag multiplicity")
+				.isEqualTo(single * 2L);
+		assertAllExecutionRungs(DUPLICATE_DOMAIN_QUERY);
+	}
+
+	@Test
 	void parallelIrAggregatePartitionsDomainRoot() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(DOMAIN_ROOT_QUERY);
@@ -243,6 +306,48 @@ class LmdbNativeIrAggregateParallelTest {
 				.isGreaterThan(parallelBefore);
 		// one more run with the parallel path known-active must still be exact
 		assertThat(rows(FORKABLE_FILTER_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	void parallelIrAggregateRebindsContextualTermFiltersPerWorker() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(CONTEXTUAL_TERM_FILTER_QUERY);
+		assertThat(expected).hasSize(600);
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
+
+		KernelExecutionTestAccess.resetMetrics();
+		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		for (int round = 0; round < 300
+				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
+			assertThat(rows(CONTEXTUAL_TERM_FILTER_QUERY)).as("parity on round " + round)
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
+		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
+				.as("contextual scalar filters must bind against the worker source before execution")
+				.isGreaterThan(parallelBefore);
+		assertThat(rows(CONTEXTUAL_TERM_FILTER_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	void pureComputedGroupAggregateRunsInParallel() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(COMPUTED_GROUP_QUERY);
+		assertThat(expected).isNotEmpty();
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
+
+		KernelExecutionTestAccess.resetMetrics();
+		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		for (int round = 0; round < 300
+				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
+			assertThat(rows(COMPUTED_GROUP_QUERY)).as("parity on round " + round)
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
+		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
+				.as("a pure replay-safe computed aggregate must run partitioned")
+				.isGreaterThan(parallelBefore);
+		assertThat(rows(COMPUTED_GROUP_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	/**
@@ -304,6 +409,27 @@ class LmdbNativeIrAggregateParallelTest {
 	}
 
 	@Test
+	void duplicateRdfTermExtremaIdsMergeInParallel() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(DUPLICATE_TERM_EXTREMA_QUERY);
+		assertThat(expected).hasSize(1);
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
+
+		KernelExecutionTestAccess.resetMetrics();
+		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		for (int round = 0; round < 300
+				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
+			assertThat(rows(DUPLICATE_TERM_EXTREMA_QUERY)).as("parity on round " + round)
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
+		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
+				.as("equal RDF terms with different physical ids may keep either representative during extrema merge")
+				.isGreaterThan(parallelBefore);
+		assertThat(rows(DUPLICATE_TERM_EXTREMA_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
 	void floatingSumNeverRunsParallelAndStaysExact() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(FLOATING_SUM_QUERY);
@@ -334,10 +460,78 @@ class LmdbNativeIrAggregateParallelTest {
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get()).isEqualTo(parallelBefore);
 	}
 
+	/**
+	 * Exercise every aggregate execution rung explicitly. The parallel assertions must observe a worker run, so this
+	 * helper catches a scheduler that silently falls back to a sequential result with the same bindings.
+	 */
+	private void assertAllExecutionRungs(String query) {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(query);
+		assertThat(expected).as("the generic evaluator must answer the query").isNotEmpty();
+
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "false");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+		List<String> generated = rows(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+		List<String> interpreted = rows(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED);
+
+		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		List<String> generatedParallel = rows(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL);
+		long generatedParallelRuns = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+		List<String> interpretedParallel = rows(query,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
+		long interpretedParallelRuns = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+
+		assertThat(generated).as("forced generated IR must match the generic evaluator")
+				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(interpreted).as("forced interpreted IR must match the generic evaluator")
+				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(generatedParallel).as("forced generated parallel IR must match the generic evaluator")
+				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(interpretedParallel).as("forced interpreted parallel IR must match the generic evaluator")
+				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(generatedParallelRuns)
+				.as("the generated route must execute through the parallel aggregate scheduler")
+				.isGreaterThan(parallelBefore);
+		assertThat(interpretedParallelRuns)
+				.as("the interpreted route must execute through the parallel aggregate scheduler")
+				.isGreaterThan(generatedParallelRuns);
+	}
+
+	private long count(String query, String forcedStrategy) {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			SailTupleQuery preparedQuery = (SailTupleQuery) conn.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			try (var result = preparedQuery.evaluate()) {
+				assertThat(result.hasNext()).as("count query must produce one row").isTrue();
+				Literal value = (Literal) result.next().getValue("c");
+				assertThat(value).as("count query must bind its aggregate result").isNotNull();
+				assertThat(result.hasNext()).as("count query must produce one row").isFalse();
+				return value.longValue();
+			}
+		}
+	}
+
 	private List<String> rows(String query) {
+		return rows(query, null);
+	}
+
+	private List<String> rows(String query, String forcedStrategy) {
 		List<String> rows = new ArrayList<>();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			try (var result = conn.prepareTupleQuery(query).evaluate()) {
+			SailTupleQuery preparedQuery = (SailTupleQuery) conn.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			try (var result = preparedQuery.evaluate()) {
 				while (result.hasNext()) {
 					BindingSet bindings = result.next();
 					List<String> parts = new ArrayList<>();

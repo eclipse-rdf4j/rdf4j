@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -113,18 +114,22 @@ public final class LmdbNativeExpressionCompiler {
 		if (!enabled()) {
 			return null;
 		}
+		ValueExpr ownedExpression = expr.clone();
+		NativeScalarPlan scalarPlan = NativeScalarPlan.create(ownedExpression, slots,
+				NativeScalarPlan.ResultKind.BOOLEAN,
+				strictCompare, assuredMask, false, false);
 		LmdbNativeValueCodec codec = source.nativeValueCodec();
 		if (codec == null) {
 			return null;
 		}
 		LmdbNativeCompiledTruth compiled = new LmdbNativeExpressionCompiler(source, codec, slots, strictCompare,
 				assuredMask)
-						.compileTruth(expr);
+				.compileTruth(ownedExpression);
 		if (compiled == null) {
 			return null;
 		}
 		recordCompiledFilter();
-		return new LmdbNativeCompiledBoolean(compiled.requiredMask, compiled.evaluator);
+		return new LmdbNativeCompiledBoolean(compiled.requiredMask, compiled.evaluator, scalarPlan);
 	}
 
 	static LmdbNativeCompiledInlineId compileInlineId(ValueExpr expr, NativeLmdbQuerySource source,
@@ -132,26 +137,29 @@ public final class LmdbNativeExpressionCompiler {
 		if (!enabled()) {
 			return null;
 		}
+		ValueExpr ownedExpression = expr.clone();
+		NativeScalarPlan scalarPlan = NativeScalarPlan.create(ownedExpression, slots,
+				NativeScalarPlan.ResultKind.INLINE_ID, strictCompare, 0L, false, false);
 		LmdbNativeValueCodec codec = source.nativeValueCodec();
 		if (codec == null) {
 			return null;
 		}
-		LmdbNativeCompiledInlineId constant = compileConstantInlineId(expr, source, codec);
+		LmdbNativeCompiledInlineId constant = compileConstantInlineId(ownedExpression, source, codec, scalarPlan);
 		if (constant != null) {
 			return constant;
 		}
 		LmdbNativeExpressionCompiler compiler = new LmdbNativeExpressionCompiler(source, codec, slots, strictCompare,
 				0L);
-		LmdbNativeCompiledValue value = compiler.compileValue(expr);
+		LmdbNativeCompiledValue value = compiler.compileValue(ownedExpression);
 		if (value == null) {
 			return null;
 		}
-		if (!compiler.guaranteedInline(expr)) {
+		if (!compiler.guaranteedInline(ownedExpression)) {
 			return null;
 		}
 		return new LmdbNativeCompiledInlineId(value.requiredMask,
-				QueryEvaluationUtility.isRepeatableWithinPreparation(expr),
-				row -> codec.packInlineId(value.evaluator.eval(row)));
+				QueryEvaluationUtility.isRepeatableWithinPreparation(ownedExpression),
+				row -> codec.packInlineId(value.evaluator.eval(row)), scalarPlan);
 	}
 
 	/**
@@ -176,13 +184,129 @@ public final class LmdbNativeExpressionCompiler {
 		if (!enabled()) {
 			return null;
 		}
+		ValueExpr ownedExpression = expr.clone();
+		NativeScalarPlan scalarPlan = NativeScalarPlan.create(ownedExpression, slots, NativeScalarPlan.ResultKind.VALUE,
+				strictCompare, 0L, true, true);
 		LmdbNativeValueCodec codec = source.nativeValueCodec();
 		if (codec == null) {
 			return null;
 		}
 		LmdbNativeExpressionCompiler compiler = new LmdbNativeExpressionCompiler(source, codec, slots, strictCompare,
 				0L, true, true, compileContext);
-		return compiler.compileValue(expr);
+		LmdbNativeCompiledValue compiled = compiler.compileValue(ownedExpression);
+		return compiled == null ? null
+				: new LmdbNativeCompiledValue(compiled.requiredMask, compiled.evaluator, scalarPlan);
+	}
+
+	static LmdbNativeCompiledBoolean bindBoolean(NativeScalarPlan plan, NativeScalarPlan.WorkerContext context) {
+		if (plan.resultKind() != NativeScalarPlan.ResultKind.BOOLEAN || !plan.workerBindable()) {
+			return null;
+		}
+		LmdbNativeExpressionCompiler compiler = workerCompiler(plan, context);
+		if (compiler == null) {
+			return null;
+		}
+		LmdbNativeCompiledTruth compiled = compiler.compileTruth(plan.expression());
+		return compiled == null ? null : new LmdbNativeCompiledBoolean(compiled.requiredMask, compiled.evaluator, plan);
+	}
+
+	static LmdbNativeCompiledInlineId bindInlineId(NativeScalarPlan plan, NativeScalarPlan.WorkerContext context) {
+		if (plan.resultKind() != NativeScalarPlan.ResultKind.INLINE_ID || !plan.workerBindable()) {
+			return null;
+		}
+		LmdbNativeExpressionCompiler compiler = workerCompiler(plan, context);
+		if (compiler == null) {
+			return null;
+		}
+		LmdbNativeValueCodec codec = context.codec() == null ? context.source().nativeValueCodec() : context.codec();
+		if (codec == null) {
+			return null;
+		}
+		ValueExpr expression = plan.expression();
+		LmdbNativeCompiledInlineId constant = compileConstantInlineId(expression, context.source(), codec, plan);
+		if (constant != null) {
+			return constant;
+		}
+		LmdbNativeCompiledValue value = compiler.compileValue(expression);
+		if (value == null || !compiler.guaranteedInline(expression)) {
+			return null;
+		}
+		return new LmdbNativeCompiledInlineId(value.requiredMask,
+				QueryEvaluationUtility.isRepeatableWithinPreparation(expression),
+				row -> codec.packInlineId(value.evaluator.eval(row)), plan);
+	}
+
+	static LmdbNativeCompiledTruth bindTruth(NativeScalarPlan plan, NativeScalarPlan.WorkerContext context) {
+		if (plan.resultKind() != NativeScalarPlan.ResultKind.TRUTH || !plan.workerBindable()) {
+			return null;
+		}
+		LmdbNativeExpressionCompiler compiler = workerCompiler(plan, context);
+		if (compiler == null) {
+			return null;
+		}
+		LmdbNativeCompiledTruth compiled = compiler.compileTruth(plan.expression());
+		return compiled == null ? null : new LmdbNativeCompiledTruth(compiled.requiredMask, compiled.evaluator, plan);
+	}
+
+	static LmdbNativeCompiledValue bindValue(NativeScalarPlan plan, NativeScalarPlan.WorkerContext context) {
+		if (plan.resultKind() != NativeScalarPlan.ResultKind.VALUE || !plan.workerBindable()) {
+			return null;
+		}
+		LmdbNativeExpressionCompiler compiler = workerCompiler(plan, context);
+		if (compiler == null) {
+			return null;
+		}
+		LmdbNativeCompiledValue compiled = compiler.compileValue(plan.expression());
+		return compiled == null ? null : new LmdbNativeCompiledValue(compiled.requiredMask, compiled.evaluator, plan);
+	}
+
+	static LmdbNativeCompiledString bindString(NativeScalarPlan plan, NativeScalarPlan.WorkerContext context) {
+		if (plan.resultKind() != NativeScalarPlan.ResultKind.STRING || !plan.workerBindable()) {
+			return null;
+		}
+		LmdbNativeExpressionCompiler compiler = workerCompiler(plan, context);
+		if (compiler == null) {
+			return null;
+		}
+		LmdbNativeCompiledString compiled = compiler.compileString(plan.expression());
+		return compiled == null ? null : new LmdbNativeCompiledString(compiled.requiredMask, compiled.evaluator, plan);
+	}
+
+	static LmdbNativeCompiledNumeric bindNumeric(NativeScalarPlan plan, NativeScalarPlan.WorkerContext context) {
+		if (plan.resultKind() != NativeScalarPlan.ResultKind.NUMERIC || !plan.workerBindable()) {
+			return null;
+		}
+		LmdbNativeExpressionCompiler compiler = workerCompiler(plan, context);
+		if (compiler == null) {
+			return null;
+		}
+		LmdbNativeCompiledNumeric compiled = compiler.scalar.compileNumeric(plan.expression());
+		return compiled == null ? null : new LmdbNativeCompiledNumeric(compiled.requiredMask, compiled.evaluator, plan);
+	}
+
+	static LmdbNativeCompiledId bindId(NativeScalarPlan plan, NativeScalarPlan.WorkerContext context) {
+		if (plan.resultKind() != NativeScalarPlan.ResultKind.ID || !plan.workerBindable()) {
+			return null;
+		}
+		LmdbNativeExpressionCompiler compiler = workerCompiler(plan, context);
+		if (compiler == null) {
+			return null;
+		}
+		LmdbNativeCompiledId compiled = compiler.compileId(plan.expression());
+		return compiled == null ? null : new LmdbNativeCompiledId(compiled.requiredMask, compiled.evaluator, plan);
+	}
+
+	private static LmdbNativeExpressionCompiler workerCompiler(NativeScalarPlan plan,
+			NativeScalarPlan.WorkerContext context) {
+		Objects.requireNonNull(plan, "plan");
+		Objects.requireNonNull(context, "context");
+		NativeLmdbQuerySource source = context.source();
+		LmdbNativeValueCodec codec = context.codec() == null ? source.nativeValueCodec() : context.codec();
+		if (codec == null) {
+			return null;
+		}
+		return new LmdbNativeExpressionCompiler(source, codec, plan.frozenSlotResolver(), plan.strictCompare(),
+				plan.assuredMask(), plan.allowVolatile(), plan.scopedEvaluation(), context.evaluationContext());
 	}
 
 	private static boolean enabled() {
@@ -194,7 +318,7 @@ public final class LmdbNativeExpressionCompiler {
 	}
 
 	private static LmdbNativeCompiledInlineId compileConstantInlineId(ValueExpr expr, NativeLmdbQuerySource source,
-			LmdbNativeValueCodec codec) {
+			LmdbNativeValueCodec codec, NativeScalarPlan scalarPlan) {
 		Value value = null;
 		if (expr instanceof ValueConstant) {
 			value = ((ValueConstant) expr).getValue();
@@ -211,7 +335,7 @@ public final class LmdbNativeExpressionCompiler {
 		}
 		long constant = id;
 		return constant == NativeLmdbQuerySource.UNKNOWN_ID ? null
-				: new LmdbNativeCompiledInlineId(0L, true, row -> constant);
+				: new LmdbNativeCompiledInlineId(0L, true, row -> constant, scalarPlan);
 	}
 
 	private boolean guaranteedInline(ValueExpr expr) {
@@ -617,7 +741,14 @@ public final class LmdbNativeExpressionCompiler {
 
 	private boolean numericType(int type) {
 		return switch (type) {
-		case ValueIds.T_DOUBLE, ValueIds.T_INTEGER, ValueIds.T_DECIMAL, ValueIds.T_FLOAT, ValueIds.T_POSITIVE_INTEGER, ValueIds.T_NEGATIVE_INTEGER, ValueIds.T_NON_NEGATIVE_INTEGER, ValueIds.T_NON_POSITIVE_INTEGER, ValueIds.T_LONG, ValueIds.T_INT, ValueIds.T_SHORT, ValueIds.T_BYTE, ValueIds.T_UNSIGNEDLONG, ValueIds.T_UNSIGNEDINT, ValueIds.T_UNSIGNEDSHORT, ValueIds.T_UNSIGNEDBYTE, ValueIds.T_ORD_INTEGER, ValueIds.T_ORD_LONG, ValueIds.T_ORD_INT, ValueIds.T_ORD_SHORT, ValueIds.T_ORD_BYTE, ValueIds.T_ORD_POSITIVE_INTEGER, ValueIds.T_ORD_NEGATIVE_INTEGER, ValueIds.T_ORD_NON_NEGATIVE_INTEGER, ValueIds.T_ORD_NON_POSITIVE_INTEGER -> true;
+		case ValueIds.T_DOUBLE, ValueIds.T_INTEGER, ValueIds.T_DECIMAL, ValueIds.T_FLOAT, ValueIds.T_POSITIVE_INTEGER,
+				ValueIds.T_NEGATIVE_INTEGER, ValueIds.T_NON_NEGATIVE_INTEGER, ValueIds.T_NON_POSITIVE_INTEGER,
+				ValueIds.T_LONG, ValueIds.T_INT, ValueIds.T_SHORT, ValueIds.T_BYTE, ValueIds.T_UNSIGNEDLONG,
+				ValueIds.T_UNSIGNEDINT, ValueIds.T_UNSIGNEDSHORT, ValueIds.T_UNSIGNEDBYTE, ValueIds.T_ORD_INTEGER,
+				ValueIds.T_ORD_LONG, ValueIds.T_ORD_INT, ValueIds.T_ORD_SHORT, ValueIds.T_ORD_BYTE,
+				ValueIds.T_ORD_POSITIVE_INTEGER, ValueIds.T_ORD_NEGATIVE_INTEGER, ValueIds.T_ORD_NON_NEGATIVE_INTEGER,
+				ValueIds.T_ORD_NON_POSITIVE_INTEGER ->
+			true;
 		default -> false;
 		};
 	}

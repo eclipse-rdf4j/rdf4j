@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -22,6 +23,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Aggregate;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.AggregateOutput;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.BindAlias;
@@ -29,6 +31,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Emit;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateAdjKeys;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumeratePredicates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateWildcard;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterValue;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
@@ -36,6 +39,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeVariable;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyWildcard;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor.TermKindColumn;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
@@ -43,6 +48,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -221,6 +227,60 @@ class LmdbNativeWildcardPredicateKernelTest {
 	}
 
 	@Test
+	void fixedUniformTermKindPageRejectsPureFilterBeforePayloadDecoding() throws Exception {
+		long root = ValueIds.createId(ValueIds.T_URI, 1L);
+		long uri = ValueIds.createId(ValueIds.T_URI, 2L);
+		long literal = ValueIds.createId(ValueIds.T_LITERAL, 3L);
+		FixtureWildcard compiled = fixtureWithPages(root, uri, literal);
+		compiled.bind(0);
+		Kernel ir = new Kernel(3,
+				List.of(new EnumerateAdjKeys(0, 0, 1, 2, null, false),
+						new FilterValue(0, new Operand[] { Operand.col(1) }, true,
+								KernelTermKindProof.forKind(0, 1 << ValueIds.TERM_KIND_LITERAL))),
+				emit(0, 1, 2));
+		long[][] expected = { { root, literal, 0L } };
+
+		assertRows(runCompiledWithAdjacencies(ir, new long[0],
+				new NativeLmdbQuerySource.NativeAdjacency[] { compiled }, compiled, 1), expected);
+		assertEquals(0, compiled.pageNeighborReads[0] + compiled.pageLegacyNeighborReads[0],
+				"compiled rejected page decoded a neighbor payload");
+		assertEquals(0, compiled.pageContextReads[0] + compiled.pageLegacyContextReads[0],
+				"compiled rejected page decoded a context payload");
+		assertTrue(compiled.pageHeaderReads > 0, "compiled path did not inspect page headers");
+
+		FixtureWildcard interpreted = fixtureWithPages(root, uri, literal);
+		interpreted.bind(0);
+		assertRows(runInterpretedWithAdjacencies(ir, new long[0],
+				new NativeLmdbQuerySource.NativeAdjacency[] { interpreted }, interpreted, 1), expected);
+		assertEquals(0, interpreted.pageNeighborReads[0] + interpreted.pageLegacyNeighborReads[0],
+				"interpreted rejected page decoded a neighbor payload");
+		assertEquals(0, interpreted.pageContextReads[0] + interpreted.pageLegacyContextReads[0],
+				"interpreted rejected page decoded a context payload");
+		assertTrue(interpreted.pageHeaderReads > 0, "interpreted path did not inspect page headers");
+	}
+
+	@Test
+	void wildcardPageWindowFollowsTheBoundPredicate() throws Exception {
+		long root = ValueIds.createId(ValueIds.T_URI, 11L);
+		long uri = ValueIds.createId(ValueIds.T_URI, 12L);
+		long literal = ValueIds.createId(ValueIds.T_LITERAL, 13L);
+		FixtureWildcard wildcard = fixtureWithPages(root, uri, literal);
+		wildcard.bind(0);
+		LmdbNativeKernelPartitions.WildcardPredicateWindow window = new LmdbNativeKernelPartitions.WildcardPredicateWindow(
+				wildcard, 0, 1);
+		window.bind(0);
+
+		assertEquals(2L, window.pageCount());
+		try (AdjacencyPageCursor pages = window.openPageCursor(1, 2)) {
+			assertNotNull(pages);
+			assertTrue(pages.advance());
+			assertEquals(1 << ValueIds.TERM_KIND_LITERAL,
+					LmdbNativePageProof.possibleTermKinds(pages, TermKindColumn.NEIGHBOR));
+			assertFalse(pages.advance());
+		}
+	}
+
+	@Test
 	void boundRootPhysicalDemandsAvoidUnneededPayloadDecoding() throws Exception {
 		Kernel predicateAny = new Kernel(1,
 				List.of(new EnumeratePredicates(0, true, true,
@@ -247,6 +307,65 @@ class LmdbNativeWildcardPredicateKernelTest {
 		assertBoundRootDemand(pairPresence, new long[] { 1 }, new long[][] { { 10 }, { 20 } });
 		assertBoundRootDemand(pairMultiplicity, new long[] { 1 }, new long[][] { { 10 }, { 10 }, { 20 } });
 		assertBoundRootDemand(nodeAny, new long[] { 1, 77 }, new long[][] { { 77 } });
+	}
+
+	@Test
+	void predicateAnyOwnsWholePredicateWindowsWithoutRootWindowPartitioning() throws Exception {
+		Kernel ir = predicateAnyKernel();
+		assertTrue(LmdbNativeKernelPartitions.partitionableRootWildcard(ir.pipeline) >= 0,
+				"PREDICATE_ANY must retain whole-predicate ownership");
+		assertEquals(-1, LmdbNativeKernelPartitions.partitionableRootWildcardWindow(ir.pipeline),
+				"PREDICATE_ANY must not claim root-window ownership");
+
+		assertPredicateWindowPartition(ir, true);
+		assertPredicateWindowPartition(ir, false);
+	}
+
+	private static Kernel predicateAnyKernel() {
+		return new Kernel(1,
+				List.of(new EnumerateWildcard(0, true,
+						LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY, 0, 0, 0, -1, null, false)),
+				emit(0));
+	}
+
+	private static void assertPredicateWindowPartition(Kernel ir, boolean compiled) throws Exception {
+		FixtureWildcard fullDelegate = fixture();
+		List<long[]> full = compiled ? runCompiled(ir, fullDelegate, 1) : runInterpreted(ir, fullDelegate, 1);
+		assertRows(full, new long[][] { { 10 }, { 20 } });
+		assertEquals(0, fullDelegate.neighborReads,
+				(compiled ? "compiled" : "interpreted") + " PREDICATE_ANY serial run decoded a neighbor payload");
+		assertEquals(0, fullDelegate.contextReads,
+				(compiled ? "compiled" : "interpreted") + " PREDICATE_ANY serial run decoded a context payload");
+
+		List<long[]> first = runPredicateWindow(ir, 0, 1, compiled);
+		List<long[]> second = runPredicateWindow(ir, 1, 2, compiled);
+		List<long[]> whole = runPredicateWindow(ir, 0, 2, compiled);
+		List<long[]> empty = runPredicateWindow(ir, 1, 1, compiled);
+
+		List<long[]> partitioned = new ArrayList<>(first);
+		partitioned.addAll(second);
+		assertRowsEqual(partitioned, full, "concatenated predicate windows");
+		assertRowsEqual(whole, full, "whole predicate window");
+		assertEquals(full.size(), distinctRowCount(partitioned), "predicate windows emitted duplicate rows");
+		assertEquals(full.size(), distinctRowCount(whole), "whole predicate window emitted duplicate rows");
+		assertEquals(0, empty.size(), "empty predicate window emitted rows");
+	}
+
+	private static List<long[]> runPredicateWindow(Kernel ir, int from, int to, boolean compiled)
+			throws Exception {
+		FixtureWildcard delegate = fixture();
+		NativeLmdbQuerySource.WildcardAdjacency window = new LmdbNativeKernelPartitions.WildcardPredicateWindow(
+				delegate, from, to);
+		JaninoKernel kernel = compiled ? compiledKernel(ir) : LmdbNativeKernelInterpreter.forRows(ir);
+		assertNotNull(kernel, (compiled ? "kernel did not compile; source:\n" : "interpreter declined ")
+				+ (compiled ? LmdbNativeKernelEmitter.emit(ir) : ir.shapeKey()));
+		List<long[]> rows = run(kernel, ir, new long[0],
+				new NativeLmdbQuerySource.WildcardAdjacency[] { window }, null, 1);
+		assertEquals(0, delegate.neighborReads,
+				(compiled ? "compiled" : "interpreted") + " PREDICATE_ANY window decoded a neighbor payload");
+		assertEquals(0, delegate.contextReads,
+				(compiled ? "compiled" : "interpreted") + " PREDICATE_ANY window decoded a context payload");
+		return rows;
 	}
 
 	@Test
@@ -485,6 +604,14 @@ class LmdbNativeWildcardPredicateKernelTest {
 				new Plane(20, new long[] { 1 }, new long[][] { { 6 } }, new long[][] { { 9 } }));
 	}
 
+	private static FixtureWildcard fixtureWithPages(long root, long uri, long literal) {
+		return new FixtureWildcard(new Plane(ValueIds.createId(ValueIds.T_URI, 4L), new long[] { root },
+				new long[][] { { uri, literal } }, new long[][] { { 0L, 0L } }))
+				.withPages(
+						PageSpec.single(root, uri, 0L, ValueIds.TERM_KIND_IRI),
+						PageSpec.single(root, literal, 0L, ValueIds.TERM_KIND_LITERAL));
+	}
+
 	private static FixtureWildcard wideFixture(int width) {
 		long[] neighbors = new long[width];
 		long[] contexts = new long[width];
@@ -512,7 +639,8 @@ class LmdbNativeWildcardPredicateKernelTest {
 		return runCompiled(ir, new long[0], new FixtureWildcard[] { wildcard }, null, maxRows);
 	}
 
-	private static List<long[]> runCompiled(Kernel ir, long[] constants, FixtureWildcard[] wildcards,
+	private static List<long[]> runCompiled(Kernel ir, long[] constants,
+			NativeLmdbQuerySource.WildcardAdjacency[] wildcards,
 			FixtureWildcard[] dynamics, int maxRows) throws Exception {
 		return run(compiledKernel(ir), ir, constants, wildcards, dynamics, maxRows);
 	}
@@ -527,7 +655,8 @@ class LmdbNativeWildcardPredicateKernelTest {
 		return kernel;
 	}
 
-	private static List<long[]> runCompiled(Kernel ir, long[] constants, FixtureWildcard[] wildcards,
+	private static List<long[]> runCompiled(Kernel ir, long[] constants,
+			NativeLmdbQuerySource.WildcardAdjacency[] wildcards,
 			FixtureWildcard[] dynamics, int maxRows, KernelCancellation cancellation) throws Exception {
 		return run(compiledKernel(ir), ir, constants, wildcards, dynamics, maxRows, cancellation);
 	}
@@ -547,7 +676,8 @@ class LmdbNativeWildcardPredicateKernelTest {
 		return runInterpreted(ir, new long[0], new FixtureWildcard[] { wildcard }, null, maxRows);
 	}
 
-	private static List<long[]> runInterpreted(Kernel ir, long[] constants, FixtureWildcard[] wildcards,
+	private static List<long[]> runInterpreted(Kernel ir, long[] constants,
+			NativeLmdbQuerySource.WildcardAdjacency[] wildcards,
 			FixtureWildcard[] dynamics, int maxRows) throws Exception {
 		JaninoKernel kernel = ir.terminal instanceof Aggregate
 				? LmdbNativeKernelInterpreter.forAggregate(ir)
@@ -556,7 +686,8 @@ class LmdbNativeWildcardPredicateKernelTest {
 		return run(kernel, ir, constants, wildcards, dynamics, maxRows);
 	}
 
-	private static List<long[]> runInterpreted(Kernel ir, long[] constants, FixtureWildcard[] wildcards,
+	private static List<long[]> runInterpreted(Kernel ir, long[] constants,
+			NativeLmdbQuerySource.WildcardAdjacency[] wildcards,
 			FixtureWildcard[] dynamics, int maxRows, KernelCancellation cancellation) throws Exception {
 		JaninoKernel kernel = ir.terminal instanceof Aggregate
 				? LmdbNativeKernelInterpreter.forAggregate(ir)
@@ -577,50 +708,65 @@ class LmdbNativeWildcardPredicateKernelTest {
 	private static List<long[]> runCompiledWithAdjacencies(Kernel ir,
 			NativeLmdbQuerySource.NativeAdjacency[] adjacencies, FixtureWildcard wildcard, int maxRows)
 			throws Exception {
+		return runCompiledWithAdjacencies(ir, new long[0], adjacencies, wildcard, maxRows);
+	}
+
+	private static List<long[]> runCompiledWithAdjacencies(Kernel ir, long[] constants,
+			NativeLmdbQuerySource.NativeAdjacency[] adjacencies, FixtureWildcard wildcard, int maxRows)
+			throws Exception {
 		JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(ir.shapeKey(), ir.className(),
 				() -> LmdbNativeKernelEmitter.emit(ir), Long.MAX_VALUE);
 		if (kernel == null) {
 			kernel = LmdbNativeJaninoCodegen.awaitKernel(ir.shapeKey(), 30, TimeUnit.SECONDS);
 		}
 		assertNotNull(kernel, "kernel did not compile; source:\n" + LmdbNativeKernelEmitter.emit(ir));
-		return run(kernel, ir, new long[0], new long[0][], adjacencies,
+		return run(kernel, ir, constants, new long[0][], adjacencies,
 				new FixtureWildcard[] { wildcard }, null, maxRows);
 	}
 
 	private static List<long[]> runInterpretedWithAdjacencies(Kernel ir,
 			NativeLmdbQuerySource.NativeAdjacency[] adjacencies, FixtureWildcard wildcard, int maxRows)
 			throws Exception {
+		return runInterpretedWithAdjacencies(ir, new long[0], adjacencies, wildcard, maxRows);
+	}
+
+	private static List<long[]> runInterpretedWithAdjacencies(Kernel ir, long[] constants,
+			NativeLmdbQuerySource.NativeAdjacency[] adjacencies, FixtureWildcard wildcard, int maxRows)
+			throws Exception {
 		JaninoKernel kernel = LmdbNativeKernelInterpreter.forRows(ir);
 		assertNotNull(kernel, "interpreter declined " + ir.shapeKey());
-		return run(kernel, ir, new long[0], new long[0][], adjacencies,
+		return run(kernel, ir, constants, new long[0][], adjacencies,
 				new FixtureWildcard[] { wildcard }, null, maxRows);
 	}
 
-	private static List<long[]> run(JaninoKernel kernel, Kernel ir, long[] constants, FixtureWildcard[] wildcards,
+	private static List<long[]> run(JaninoKernel kernel, Kernel ir, long[] constants,
+			NativeLmdbQuerySource.WildcardAdjacency[] wildcards,
 			FixtureWildcard[] dynamics, int maxRows) throws Exception {
 		return run(kernel, ir, constants, new long[0][], wildcards, dynamics, maxRows);
 	}
 
-	private static List<long[]> run(JaninoKernel kernel, Kernel ir, long[] constants, FixtureWildcard[] wildcards,
+	private static List<long[]> run(JaninoKernel kernel, Kernel ir, long[] constants,
+			NativeLmdbQuerySource.WildcardAdjacency[] wildcards,
 			FixtureWildcard[] dynamics, int maxRows, KernelCancellation cancellation) throws Exception {
 		return run(kernel, ir, constants, new long[0][], new NativeLmdbQuerySource.NativeAdjacency[0], wildcards,
 				dynamics, maxRows, cancellation);
 	}
 
 	private static List<long[]> run(JaninoKernel kernel, Kernel ir, long[] constants, long[][] domains,
-			FixtureWildcard[] wildcards, FixtureWildcard[] dynamics, int maxRows) throws Exception {
+			NativeLmdbQuerySource.WildcardAdjacency[] wildcards, FixtureWildcard[] dynamics, int maxRows)
+			throws Exception {
 		return run(kernel, ir, constants, domains, new NativeLmdbQuerySource.NativeAdjacency[0], wildcards,
 				dynamics, maxRows);
 	}
 
 	private static List<long[]> run(JaninoKernel kernel, Kernel ir, long[] constants, long[][] domains,
-			NativeLmdbQuerySource.NativeAdjacency[] adjacencies, FixtureWildcard[] wildcards,
+			NativeLmdbQuerySource.NativeAdjacency[] adjacencies, NativeLmdbQuerySource.WildcardAdjacency[] wildcards,
 			FixtureWildcard[] dynamics, int maxRows) throws Exception {
 		return run(kernel, ir, constants, domains, adjacencies, wildcards, dynamics, maxRows, null);
 	}
 
 	private static List<long[]> run(JaninoKernel kernel, Kernel ir, long[] constants, long[][] domains,
-			NativeLmdbQuerySource.NativeAdjacency[] adjacencies, FixtureWildcard[] wildcards,
+			NativeLmdbQuerySource.NativeAdjacency[] adjacencies, NativeLmdbQuerySource.WildcardAdjacency[] wildcards,
 			FixtureWildcard[] dynamics, int maxRows, KernelCancellation cancellation) throws Exception {
 		try {
 			KernelContext context = new KernelContext(adjacencies, constants, new long[0],
@@ -673,6 +819,18 @@ class LmdbNativeWildcardPredicateKernelTest {
 		}
 	}
 
+	private static void assertRowsEqual(List<long[]> actual, List<long[]> expected, String description) {
+		assertEquals(expected.size(), actual.size(), description + " row count");
+		for (int row = 0; row < expected.size(); row++) {
+			assertEquals(Arrays.toString(expected.get(row)), Arrays.toString(actual.get(row)),
+					description + " row " + row);
+		}
+	}
+
+	private static long distinctRowCount(List<long[]> rows) {
+		return rows.stream().map(Arrays::toString).distinct().count();
+	}
+
 	private static void restore(String property, String value) {
 		if (value == null) {
 			System.clearProperty(property);
@@ -704,9 +862,24 @@ class LmdbNativeWildcardPredicateKernelTest {
 		private int neighborReads;
 		private int contextReads;
 		private int findBatchCalls;
+		private PageSpec[] pages;
+		private int pageHeaderReads;
+		private int[] pageNeighborReads;
+		private int[] pageContextReads;
+		private int[] pageLegacyNeighborReads;
+		private int[] pageLegacyContextReads;
 
 		private FixtureWildcard(Plane... planes) {
 			this.planes = planes;
+		}
+
+		private FixtureWildcard withPages(PageSpec... pages) {
+			this.pages = pages.clone();
+			this.pageNeighborReads = new int[pages.length];
+			this.pageContextReads = new int[pages.length];
+			this.pageLegacyNeighborReads = new int[pages.length];
+			this.pageLegacyContextReads = new int[pages.length];
+			return this;
 		}
 
 		@Override
@@ -744,6 +917,27 @@ class LmdbNativeWildcardPredicateKernelTest {
 				count += neighbors.length;
 			}
 			return count;
+		}
+
+		@Override
+		public AdjacencyPageCursor openPageCursor() {
+			return pages == null ? null : new FixturePageCursor(this, pages, 0, pages.length);
+		}
+
+		@Override
+		public long pageCount() {
+			return pages == null ? -1L : pages.length;
+		}
+
+		@Override
+		public AdjacencyPageCursor openPageCursor(long fromPage, long toPage) {
+			if (pages == null) {
+				return null;
+			}
+			if (fromPage < 0L || toPage < fromPage || toPage > pages.length) {
+				throw new IllegalArgumentException("invalid page window");
+			}
+			return new FixturePageCursor(this, pages, (int) fromPage, (int) toPage);
 		}
 
 		@Override
@@ -831,24 +1025,28 @@ class LmdbNativeWildcardPredicateKernelTest {
 
 				@Override
 				public long neighborAt(long runOffset) {
-					neighborReads++;
+					recordLegacyNeighborRead(plane.keys[root], 1);
 					return plane.neighbors[root][(int) runOffset];
 				}
 
 				@Override
 				public long contextAt(long runOffset) {
-					contextReads++;
+					recordLegacyContextRead(plane.keys[root], 1);
 					return plane.contexts[root][(int) runOffset];
 				}
 
 				@Override
 				public int copyNeighbors(long runOffset, int length, long[] target, int targetOffset) {
-					return copy(plane.neighbors[root], runOffset, length, target, targetOffset);
+					int copied = copy(plane.neighbors[root], runOffset, length, target, targetOffset);
+					recordLegacyNeighborRead(plane.keys[root], copied);
+					return copied;
 				}
 
 				@Override
 				public int copyContexts(long runOffset, int length, long[] target, int targetOffset) {
-					return copy(plane.contexts[root], runOffset, length, target, targetOffset);
+					int copied = copy(plane.contexts[root], runOffset, length, target, targetOffset);
+					recordLegacyContextRead(plane.keys[root], copied);
+					return copied;
 				}
 			};
 		}
@@ -866,24 +1064,36 @@ class LmdbNativeWildcardPredicateKernelTest {
 
 		@Override
 		public long neighborAt(long runHandle, long runOffset) {
-			neighborReads++;
-			return plane().neighbors[(int) runHandle - 1][(int) runOffset];
+			int root = (int) runHandle - 1;
+			Plane plane = plane();
+			recordLegacyNeighborRead(plane.keys[root], 1);
+			return plane.neighbors[root][(int) runOffset];
 		}
 
 		@Override
 		public long contextAt(long runHandle, long runOffset) {
-			contextReads++;
-			return plane().contexts[(int) runHandle - 1][(int) runOffset];
+			int root = (int) runHandle - 1;
+			Plane plane = plane();
+			recordLegacyContextRead(plane.keys[root], 1);
+			return plane.contexts[root][(int) runOffset];
 		}
 
 		@Override
 		public int copyNeighbors(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
-			return copy(plane().neighbors[(int) runHandle - 1], runOffset, length, target, targetOffset);
+			int root = (int) runHandle - 1;
+			Plane plane = plane();
+			int copied = copy(plane.neighbors[root], runOffset, length, target, targetOffset);
+			recordLegacyNeighborRead(plane.keys[root], copied);
+			return copied;
 		}
 
 		@Override
 		public int copyContexts(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
-			return copy(plane().contexts[(int) runHandle - 1], runOffset, length, target, targetOffset);
+			int root = (int) runHandle - 1;
+			Plane plane = plane();
+			int copied = copy(plane.contexts[root], runOffset, length, target, targetOffset);
+			recordLegacyContextRead(plane.keys[root], copied);
+			return copied;
 		}
 
 		@Override
@@ -897,10 +1107,274 @@ class LmdbNativeWildcardPredicateKernelTest {
 			return planes[bound];
 		}
 
+		private void recordLegacyNeighborRead(long root, int count) {
+			neighborReads += count;
+			int page = pageForRoot(root);
+			if (page >= 0) {
+				pageLegacyNeighborReads[page] += count;
+			}
+		}
+
+		private void recordLegacyContextRead(long root, int count) {
+			contextReads += count;
+			int page = pageForRoot(root);
+			if (page >= 0) {
+				pageLegacyContextReads[page] += count;
+			}
+		}
+
+		private int pageForRoot(long root) {
+			if (pages == null) {
+				return -1;
+			}
+			for (int page = 0; page < pages.length; page++) {
+				for (long row : pages[page].rows) {
+					if (row == root) {
+						return page;
+					}
+				}
+			}
+			return -1;
+		}
+
 		private static int copy(long[] source, long runOffset, int length, long[] target, int targetOffset) {
 			int copied = Math.max(0, Math.min(length, source.length - (int) runOffset));
 			System.arraycopy(source, (int) runOffset, target, targetOffset, copied);
 			return copied;
+		}
+	}
+
+	private record PageSpec(long[] rows, long[][] neighbors, long[][] contexts,
+			boolean uniformRowTermKind, boolean uniformRowLiteralDatatype,
+			boolean uniformNeighborTermKind, boolean uniformNeighborLiteralDatatype,
+			int rowTermKindMask, int neighborTermKindMask) {
+		private PageSpec {
+			if (rows.length != neighbors.length || rows.length != contexts.length) {
+				throw new IllegalArgumentException("page arrays differ in row count");
+			}
+			for (int row = 0; row < rows.length; row++) {
+				if (neighbors[row].length != contexts[row].length) {
+					throw new IllegalArgumentException("page arrays differ in fiber count");
+				}
+			}
+		}
+
+		private PageSpec(long[] rows, long[][] neighbors, long[][] contexts,
+				boolean uniformRowTermKind, boolean uniformRowLiteralDatatype,
+				boolean uniformNeighborTermKind, boolean uniformNeighborLiteralDatatype) {
+			this(rows, neighbors, contexts, uniformRowTermKind, uniformRowLiteralDatatype, uniformNeighborTermKind,
+					uniformNeighborLiteralDatatype, headerTermKindMask(rows, uniformRowTermKind),
+					headerTermKindMask(neighbors, uniformNeighborTermKind));
+		}
+
+		private static int headerTermKindMask(long[] values, boolean uniform) {
+			if (values.length == 0) {
+				return 0;
+			}
+			return uniform ? knownTermKindMask(values[0]) : AdjacencyPageCursor.ALL_TERM_KINDS;
+		}
+
+		private static int headerTermKindMask(long[][] values, boolean uniform) {
+			long first = 0L;
+			boolean present = false;
+			for (long[] row : values) {
+				if (row.length > 0) {
+					first = row[0];
+					present = true;
+					break;
+				}
+			}
+			if (!present) {
+				return 0;
+			}
+			return uniform ? knownTermKindMask(first) : AdjacencyPageCursor.ALL_TERM_KINDS;
+		}
+
+		private static int knownTermKindMask(long value) {
+			int kind = ValueIds.termKind(value);
+			return kind <= ValueIds.TERM_KIND_UNKNOWN || kind == ValueIds.TERM_KIND_POINTER
+					? AdjacencyPageCursor.ALL_TERM_KINDS
+					: 1 << kind;
+		}
+
+		private static PageSpec single(long row, long neighbor, long context, int neighborKind) {
+			if (ValueIds.termKind(neighbor) != neighborKind) {
+				throw new IllegalArgumentException("neighbor id does not have the expected term kind");
+			}
+			return new PageSpec(new long[] { row }, new long[][] { { neighbor } }, new long[][] { { context } },
+					true, false, true, false);
+		}
+	}
+
+	private static final class FixturePageCursor implements AdjacencyPageCursor {
+		private final FixtureWildcard owner;
+		private final PageSpec[] pages;
+		private final int from;
+		private final int to;
+		private int current = -1;
+
+		private FixturePageCursor(FixtureWildcard owner, PageSpec[] pages, int from, int to) {
+			this.owner = owner;
+			this.pages = pages;
+			this.from = from;
+			this.to = to;
+		}
+
+		@Override
+		public boolean advance() {
+			if (current + 1 >= to - from) {
+				return false;
+			}
+			current++;
+			return true;
+		}
+
+		@Override
+		public int rowCount() {
+			return page().rows.length;
+		}
+
+		@Override
+		public int fiberCount() {
+			int count = 0;
+			for (long[] row : page().neighbors) {
+				count += row.length;
+			}
+			return count;
+		}
+
+		@Override
+		public long quadCount() {
+			return fiberCount();
+		}
+
+		@Override
+		public long firstRow() {
+			owner.pageHeaderReads++;
+			return page().rows.length == 0 ? -1L : page().rows[0];
+		}
+
+		@Override
+		public long firstNeighbor() {
+			owner.pageHeaderReads++;
+			for (long[] row : page().neighbors) {
+				if (row.length != 0) {
+					return row[0];
+				}
+			}
+			return -1L;
+		}
+
+		@Override
+		public boolean hasCommonContext() {
+			return true;
+		}
+
+		@Override
+		public long commonContext() {
+			return page().contexts.length == 0 || page().contexts[0].length == 0
+					? 0L
+					: page().contexts[0][0];
+		}
+
+		@Override
+		public int copyRowQuads(int rowIndex, int fromQuad, int length, long[] neighbors, long[] contexts) {
+			long[] pageNeighbors = page().neighbors[rowIndex];
+			long[] pageContexts = page().contexts[rowIndex];
+			int copied = Math.max(0, Math.min(length, pageNeighbors.length - fromQuad));
+			for (int i = 0; i < copied; i++) {
+				neighbors[i] = pageNeighbors[fromQuad + i];
+				contexts[i] = pageContexts[fromQuad + i];
+			}
+			owner.pageNeighborReads[pageIndex()] += copied;
+			owner.pageContextReads[pageIndex()] += copied;
+			return copied;
+		}
+
+		@Override
+		public boolean supportsContextAccess() {
+			return true;
+		}
+
+		@Override
+		public long rowAt(int rowIndex) {
+			return page().rows[rowIndex];
+		}
+
+		@Override
+		public long rowQuadCount(int rowIndex) {
+			return page().neighbors[rowIndex].length;
+		}
+
+		@Override
+		public int rowFiberCount(int rowIndex) {
+			return page().neighbors[rowIndex].length;
+		}
+
+		@Override
+		public long neighborAt(int rowIndex, int localFiber) {
+			owner.pageNeighborReads[pageIndex()]++;
+			return page().neighbors[rowIndex][localFiber];
+		}
+
+		@Override
+		public long fiberContextCount(int rowIndex, int localFiber) {
+			owner.pageContextReads[pageIndex()]++;
+			return 1L;
+		}
+
+		@Override
+		public int copyRowFibers(int rowIndex, int fromFiber, int length, long[] neighborTarget, int neighborOffset,
+				long[] multiplicityTarget, int multiplicityOffset) {
+			long[] pageNeighbors = page().neighbors[rowIndex];
+			int copied = Math.max(0, Math.min(length, pageNeighbors.length - fromFiber));
+			for (int i = 0; i < copied; i++) {
+				neighborTarget[neighborOffset + i] = pageNeighbors[fromFiber + i];
+				multiplicityTarget[multiplicityOffset + i] = 1L;
+			}
+			owner.pageNeighborReads[pageIndex()] += copied;
+			owner.pageContextReads[pageIndex()] += copied;
+			return copied;
+		}
+
+		@Override
+		public int headerTermKindMask(TermKindColumn column) {
+			owner.pageHeaderReads++;
+			return switch (column) {
+			case ROW -> page().rowTermKindMask;
+			case NEIGHBOR -> page().neighborTermKindMask;
+			};
+		}
+
+		@Override
+		public boolean uniformRowTermKind() {
+			return page().uniformRowTermKind;
+		}
+
+		@Override
+		public boolean uniformRowLiteralDatatype() {
+			return page().uniformRowLiteralDatatype;
+		}
+
+		@Override
+		public boolean uniformNeighborTermKind() {
+			return page().uniformNeighborTermKind;
+		}
+
+		@Override
+		public boolean uniformNeighborLiteralDatatype() {
+			return page().uniformNeighborLiteralDatatype;
+		}
+
+		private int pageIndex() {
+			if (current < 0 || current >= to - from) {
+				throw new IllegalStateException("page cursor is not positioned");
+			}
+			return from + current;
+		}
+
+		private PageSpec page() {
+			return pages[pageIndex()];
 		}
 	}
 }

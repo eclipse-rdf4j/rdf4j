@@ -608,6 +608,12 @@ final class LmdbNativeValueCodec {
 	}
 
 	static final class DecodedValue {
+		private static final long OBJECT_BYTES = 64L;
+		private static final long STRING_BYTES = 40L;
+		private static final long NUMERIC_OBJECT_BYTES = 96L;
+		private static final long FLOATING_OBJECT_BYTES = 24L;
+		private static final long UNKNOWN_OWNERSHIP = -1L;
+
 		static final DecodedValue ERROR = new DecodedValue(Kind.ERROR, null, null, null, CoreDatatype.NONE, null,
 				null, Literal.BaseDirection.NONE);
 
@@ -689,6 +695,40 @@ final class LmdbNativeValueCodec {
 
 		boolean error() {
 			return kind == Kind.ERROR;
+		}
+
+		/**
+		 * Conservative owned heap footprint of this immutable decoded value. The estimate is intentionally computed
+		 * from scalar fields and string lengths only, so accounting never walks an object graph. A triple term can
+		 * retain an arbitrary lazy store-backed graph and therefore reports unknown ownership until a bounded
+		 * representation exists.
+		 */
+		long ownedBytes() {
+			if (error()) {
+				return 0L;
+			}
+			if (triple()) {
+				return UNKNOWN_OWNERSHIP;
+			}
+			long bytes = OBJECT_BYTES;
+			bytes = Math.addExact(bytes, stringBytes(label));
+			bytes = Math.addExact(bytes, stringBytes(language));
+			bytes = Math.addExact(bytes, stringBytes(datatypeIri));
+			if (decimalValue != null) {
+				// The lexical form bounds the decimal's digit storage. Four bytes per character covers the unscaled
+				// magnitude and object headers without materializing BigInteger or its byte array for this estimate.
+				long lexicalLength = label == null ? 0L : label.length();
+				bytes = Math.addExact(bytes, NUMERIC_OBJECT_BYTES);
+				bytes = Math.addExact(bytes, Math.multiplyExact(4L, lexicalLength));
+			}
+			if (floatingValue != null) {
+				bytes = Math.addExact(bytes, FLOATING_OBJECT_BYTES);
+			}
+			return bytes;
+		}
+
+		private static long stringBytes(String value) {
+			return value == null ? 0L : Math.addExact(STRING_BYTES, Math.multiplyExact(2L, value.length()));
 		}
 
 		boolean literal() {

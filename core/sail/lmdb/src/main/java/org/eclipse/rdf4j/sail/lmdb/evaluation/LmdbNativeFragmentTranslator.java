@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentBinding;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentCompareOp;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentIR;
@@ -286,6 +287,11 @@ final class FragmentTruthFilter implements NativeBooleanFilter {
 	}
 
 	@Override
+	public KernelTermKindProof pageProof(int[] argSlots) {
+		return exact.pageProof(argSlots);
+	}
+
+	@Override
 	public boolean parallelWorkerForkable() {
 		return exact.parallelWorkerForkable();
 	}
@@ -293,6 +299,13 @@ final class FragmentTruthFilter implements NativeBooleanFilter {
 	@Override
 	public NativeBooleanFilter forkForParallelWorker() {
 		NativeBooleanFilter workerExact = exact.forkForParallelWorker();
+		return workerExact == null ? null
+				: new FragmentTruthFilter(ir, argSlots, binding.forkForParallelWorker(), workerExact);
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		NativeBooleanFilter workerExact = exact.forkForParallelWorker(context);
 		return workerExact == null ? null
 				: new FragmentTruthFilter(ir, argSlots, binding.forkForParallelWorker(), workerExact);
 	}

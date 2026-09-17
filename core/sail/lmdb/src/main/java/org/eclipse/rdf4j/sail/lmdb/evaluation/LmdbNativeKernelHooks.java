@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -42,8 +43,9 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.PredicateStatus;
  * unbound — the load-bearing convention for {@code BOUND} and error-means-false semantics), the bound mask is
  * recomputed, {@code accept} runs, and the written slots are reset so calls stay independent. The scratch row carries
  * the live row's base binding-set so name-based fallback predicates resolve outer-fragment variables exactly as on the
- * live row. Value comparison follows the native ORDER BY logic: ordered-integer ids compare without decoding, decoded
- * comparisons next, with the SPARQL {@code ValueComparator} (unbound first) as the general fallback.
+ * live row. Value comparison follows the native ORDER BY logic: store-owned ordered-integer ids compare without
+ * decoding, store values use decoded comparisons next, and PLAN/RUNTIME values resolve through their authority before
+ * the SPARQL {@code ValueComparator} (unbound first) provides the general fallback.
  */
 @Experimental
 final class LmdbNativeKernelHooks implements KernelHooks {
@@ -58,16 +60,19 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	private final long[][] bindPrevious;
 	private final MaskedFilter[] residuals;
 	private final ValueComparator comparator = new ValueComparator();
+	private final HookMemory memory;
 	private final AggKind[] numericKinds;
 	private final Literal[][] numericSums;
+	/** Query-memory charge currently held for each retained numeric sum value. */
+	private final long[][] numericSumBytes;
 	private final long[][] numericCounts;
 	private final boolean[][] numericErrors;
 	private final AggContext numericContext;
 	private final LmdbNativeKernelBindings.KernelGroupLayout groupLayout;
 	private final int[] columnSlots;
 	private final AggState[][] rowStates;
-	private int[] scratchWriteSlots = new int[8];
-	private long[] scratchWritePrevious = new long[8];
+	private int[] scratchWriteSlots;
+	private long[] scratchWritePrevious;
 	private int scratchWriteCount;
 	private int pendingScratchStart;
 	private final AggContext rowAggregateContext;
@@ -106,81 +111,104 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	 */
 	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings,
 			LmdbNativeKernelBindings.FilterHook[] filterHooks) {
+		this(liveRow, bindings, filterHooks, bindings.bindHooks);
+	}
+
+	/**
+	 * Worker variant with both filter and computed-BIND hooks rebound to the worker source. Keeping the arrays explicit
+	 * is essential: the binding descriptor is query-owned and its carriers close over the query thread's source.
+	 */
+	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings,
+			LmdbNativeKernelBindings.FilterHook[] filterHooks,
+			LmdbNativeKernelBindings.BindHook[] bindHooks) {
 		this.source = liveRow.source;
-		this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base, liveRow.exactValuesMetrics,
-				liveRow.cancellation);
-		this.keyHooks = scratch.keyAuthority()instanceof NativeGeneratedKeyAuthority generated
-				? new NativeGeneratedKeyHooks(this, generated)
-				: this;
-		this.scratch.memoryScope = liveRow.memoryScope;
-		this.scratch.runtimePlan = liveRow.runtimePlan;
-		this.scratch.lexicalInputMask = liveRow.lexicalInputMask;
-		this.scratch.lexicalScopeDepth = liveRow.lexicalScopeDepth;
-		this.scratch.encounterOrderRequired = liveRow.encounterOrderRequired;
-		System.arraycopy(liveRow.slots, 0, scratch.slots, 0, liveRow.slots.length);
-		this.scratch.recomputeBoundMask();
-		this.codec = liveRow.source.nativeValueCodec();
-		this.filters = filterHooks;
-		this.binds = bindings.bindHooks;
-		this.bindInputs = new long[binds.length][];
-		this.bindPrevious = new long[binds.length][];
-		for (int i = 0; i < binds.length; i++) {
-			bindInputs[i] = new long[binds[i].argSlots.length];
-			bindPrevious[i] = new long[binds[i].argSlots.length];
-		}
-		this.residuals = bindings.kernelResiduals;
-		this.groupLayout = bindings.groupLayout;
-		this.columnSlots = bindings.columnEngineSlots;
-		int aggregateCount = bindings.groupLayout == null ? 0 : bindings.groupLayout.outs.length;
-		this.rowStates = new AggState[aggregateCount][];
-		this.rowAggregateContext = new AggContext(source, false, false);
-		for (int i = 0; i < aggregateCount; i++) {
-			if (bindings.groupLayout.outs[i].encoding == LmdbNativeKernelBindings.ENC_ROW_STATE) {
-				rowStates[i] = new AggState[16];
+		this.memory = new HookMemory(liveRow.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+		try {
+			this.memory.reserveOrThrow(fixedMemoryBytes(liveRow, bindings, filterHooks, bindHooks),
+					"kernel-hook-memory");
+			this.scratchWriteSlots = new int[8];
+			this.scratchWritePrevious = new long[8];
+			this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base, liveRow.exactValuesMetrics,
+					liveRow.cancellation);
+			this.keyHooks = scratch.keyAuthority() instanceof NativeGeneratedKeyAuthority generated
+					? new NativeGeneratedKeyHooks(this, generated)
+					: this;
+			this.scratch.inheritDecodedInputAccounting(liveRow);
+			this.scratch.runtimePlan = liveRow.runtimePlan;
+			this.scratch.lexicalInputMask = liveRow.lexicalInputMask;
+			this.scratch.lexicalScopeDepth = liveRow.lexicalScopeDepth;
+			this.scratch.encounterOrderRequired = liveRow.encounterOrderRequired;
+			System.arraycopy(liveRow.slots, 0, scratch.slots, 0, liveRow.slots.length);
+			this.scratch.recomputeBoundMask();
+			this.codec = liveRow.source.nativeValueCodec();
+			this.filters = filterHooks;
+			this.binds = bindHooks;
+			this.bindInputs = new long[binds.length][];
+			this.bindPrevious = new long[binds.length][];
+			for (int i = 0; i < binds.length; i++) {
+				bindInputs[i] = new long[binds[i].argSlots.length];
+				bindPrevious[i] = new long[binds[i].argSlots.length];
 			}
-		}
-		this.numericKinds = new AggKind[aggregateCount];
-		this.numericSums = new Literal[aggregateCount][];
-		this.numericCounts = new long[aggregateCount][];
-		this.numericErrors = new boolean[aggregateCount][];
-		this.distinctSets = new KernelRuntime.LongHashSet[aggregateCount][];
-		this.distinctExpected = bindings.distinctExpected;
-		boolean hasNumericAggregate = false;
-		for (int i = 0; i < aggregateCount; i++) {
-			AggregateSpec spec = bindings.groupLayout.outs[i].spec;
-			AggKind kind = spec.kind;
-			if (kind == AggKind.SUM || kind == AggKind.AVG) {
-				hasNumericAggregate = true;
-				numericKinds[i] = kind;
-				numericSums[i] = new Literal[16];
-				numericErrors[i] = new boolean[16];
-				if (kind == AggKind.AVG) {
-					numericCounts[i] = new long[16];
+			this.residuals = bindings.kernelResiduals;
+			this.groupLayout = bindings.groupLayout;
+			this.columnSlots = bindings.columnEngineSlots;
+			int aggregateCount = bindings.groupLayout == null ? 0 : bindings.groupLayout.outs.length;
+			this.rowStates = new AggState[aggregateCount][];
+			this.rowAggregateContext = new AggContext(source, false, false, false, memory);
+			for (int i = 0; i < aggregateCount; i++) {
+				if (bindings.groupLayout.outs[i].encoding == LmdbNativeKernelBindings.ENC_ROW_STATE) {
+					rowStates[i] = new AggState[16];
 				}
 			}
-			// A DISTINCT spec is the only thing a hook-distinct variant can be lowered from, so the channel slot is
-			// reserved here from the bindings alone; the per-group sets themselves are created on first value.
-			if (spec.distinct) {
-				distinctSets[i] = new KernelRuntime.LongHashSet[16];
-			}
-		}
-		// A generated traversal may change encounter order. Integer and decimal addition remain exact; floating-point
-		// values use the established control-flow fallback because their sequential rounding is order-sensitive.
-		this.numericContext = hasNumericAggregate ? new AggContext(source, false, true) : null;
-		if (fragmentsEnabled() && filterHooks.length > 0) {
-			this.fragmentFastPaths = new LongPredicateFragment[filterHooks.length];
-			this.fragmentFastBindings = new FragmentBinding[filterHooks.length];
-			for (int i = 0; i < filterHooks.length; i++) {
-				LmdbNativeFragmentRecognizer.Recognized recognized = LmdbNativeFragmentRecognizer
-						.recognize(filterHooks[i]);
-				if (recognized != null) {
-					fragmentFastPaths[i] = recognized.fragment();
-					fragmentFastBindings[i] = recognized.binding();
+			this.numericKinds = new AggKind[aggregateCount];
+			this.numericSums = new Literal[aggregateCount][];
+			this.numericSumBytes = new long[aggregateCount][];
+			this.numericCounts = new long[aggregateCount][];
+			this.numericErrors = new boolean[aggregateCount][];
+			this.distinctSets = new KernelRuntime.LongHashSet[aggregateCount][];
+			this.distinctExpected = bindings.distinctExpected;
+			boolean hasNumericAggregate = false;
+			for (int i = 0; i < aggregateCount; i++) {
+				AggregateSpec spec = bindings.groupLayout.outs[i].spec;
+				AggKind kind = spec.kind;
+				if (kind == AggKind.SUM || kind == AggKind.AVG) {
+					hasNumericAggregate = true;
+					numericKinds[i] = kind;
+					numericSums[i] = new Literal[16];
+					numericSumBytes[i] = new long[16];
+					numericErrors[i] = new boolean[16];
+					if (kind == AggKind.AVG) {
+						numericCounts[i] = new long[16];
+					}
+				}
+				// A DISTINCT spec is the only thing a hook-distinct variant can be lowered from, so the channel slot is
+				// reserved here from the bindings alone; the per-group sets themselves are created on first value.
+				if (spec.distinct) {
+					distinctSets[i] = new KernelRuntime.LongHashSet[16];
 				}
 			}
-		} else {
-			this.fragmentFastPaths = null;
-			this.fragmentFastBindings = null;
+			// A generated traversal may change encounter order. Integer and decimal addition remain exact;
+			// floating-point
+			// values use the established control-flow fallback because their sequential rounding is order-sensitive.
+			this.numericContext = hasNumericAggregate ? new AggContext(source, false, true, false, memory) : null;
+			if (fragmentsEnabled() && filterHooks.length > 0) {
+				this.fragmentFastPaths = new LongPredicateFragment[filterHooks.length];
+				this.fragmentFastBindings = new FragmentBinding[filterHooks.length];
+				for (int i = 0; i < filterHooks.length; i++) {
+					LmdbNativeFragmentRecognizer.Recognized recognized = LmdbNativeFragmentRecognizer
+							.recognize(filterHooks[i]);
+					if (recognized != null) {
+						fragmentFastPaths[i] = recognized.fragment();
+						fragmentFastBindings[i] = recognized.binding();
+					}
+				}
+			} else {
+				this.fragmentFastPaths = null;
+				this.fragmentFastBindings = null;
+			}
+		} catch (RuntimeException | Error problem) {
+			this.memory.close();
+			throw problem;
 		}
 	}
 
@@ -191,7 +219,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 
 	@Override
 	public boolean sameRdfTerm(long left, long right) {
-		return scratch.termAuthority().sameRdfTerm(left, right);
+		return left == right || scratch.termAuthority() != null && scratch.termAuthority().sameRdfTerm(left, right);
 	}
 
 	@Override
@@ -399,8 +427,23 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 
 	private void installScratchInput(int engineSlot, long id) {
 		if (scratchWriteCount == scratchWriteSlots.length) {
-			scratchWriteSlots = Arrays.copyOf(scratchWriteSlots, scratchWriteCount * 2);
-			scratchWritePrevious = Arrays.copyOf(scratchWritePrevious, scratchWriteCount * 2);
+			int capacity = Math.multiplyExact(scratchWriteCount, 2);
+			long oldBytes = arrayBytes(scratchWriteSlots.length, Integer.BYTES)
+					+ arrayBytes(scratchWritePrevious.length, Long.BYTES);
+			long replacementBytes = arrayBytes(capacity, Integer.BYTES) + arrayBytes(capacity, Long.BYTES);
+			memory.reserveOrThrow(replacementBytes, "kernel-scratch-memory");
+			int[] replacementSlots;
+			long[] replacementPrevious;
+			try {
+				replacementSlots = Arrays.copyOf(scratchWriteSlots, capacity);
+				replacementPrevious = Arrays.copyOf(scratchWritePrevious, capacity);
+			} catch (RuntimeException | Error problem) {
+				memory.release(replacementBytes);
+				throw problem;
+			}
+			scratchWriteSlots = replacementSlots;
+			scratchWritePrevious = replacementPrevious;
+			memory.release(oldBytes);
 		}
 		scratchWriteSlots[scratchWriteCount] = engineSlot;
 		scratchWritePrevious[scratchWriteCount++] = scratch.replaceSlot(engineSlot, id);
@@ -440,7 +483,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	@Override
 	public boolean replacesWinner(long candidate, long incumbent, boolean min) {
 		int comparison = compareValues(candidate, incumbent);
-		if (comparison == 0 && candidate != incumbent) {
+		if (comparison == 0 && candidate != incumbent && !sameRdfTerm(candidate, incumbent)) {
 			throw EncounterOrderFallback.distinctTermExtremaTie();
 		}
 		return min ? comparison < 0 : comparison > 0;
@@ -448,7 +491,11 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 
 	@Override
 	public int compareValues(long left, long right) {
-		if (codec != null && left != UNKNOWN && left != NULL_CONTEXT_ID && right != UNKNOWN
+		NativeTermAuthority authority = scratch.termAuthority();
+		NativeIdKind leftKind = idKind(authority, left);
+		NativeIdKind rightKind = idKind(authority, right);
+		if (codec != null && leftKind == NativeIdKind.STORE && rightKind == NativeIdKind.STORE
+				&& left != UNKNOWN && left != NULL_CONTEXT_ID && right != UNKNOWN
 				&& right != NULL_CONTEXT_ID) {
 			if (ValueIds.isOrderedInteger(left) && ValueIds.isOrderedInteger(right)) {
 				return ValueIds.compareOrderedIntegers(left, right);
@@ -458,14 +505,23 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 				return decoded;
 			}
 		}
-		Value leftValue = left == UNKNOWN || left == NULL_CONTEXT_ID ? null : source.lazyValue(left);
-		Value rightValue = right == UNKNOWN || right == NULL_CONTEXT_ID ? null : source.lazyValue(right);
+		Value leftValue = valueForComparison(left, authority, leftKind);
+		Value rightValue = valueForComparison(right, authority, rightKind);
 		return comparator.compare(leftValue, rightValue);
 	}
 
 	@Override
 	public boolean isNumeric(long id) {
-		if (id == UNKNOWN || id == NULL_CONTEXT_ID || codec == null) {
+		if (id == UNKNOWN || id == NULL_CONTEXT_ID) {
+			return false;
+		}
+		NativeTermAuthority authority = scratch.termAuthority();
+		NativeIdKind kind = idKind(authority, id);
+		if (kind != NativeIdKind.STORE) {
+			LmdbNativeValueCodec.DecodedValue decoded = decodeAuthoritative(id, authority);
+			return !decoded.error() && decoded.numeric();
+		}
+		if (codec == null) {
 			return false;
 		}
 		if (ValueIds.isOrderedInteger(id)) {
@@ -477,14 +533,40 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 
 	@Override
 	public double doubleValue(long id) {
-		if (ValueIds.isOrderedInteger(id)) {
+		NativeTermAuthority authority = scratch.termAuthority();
+		NativeIdKind kind = idKind(authority, id);
+		if (kind == NativeIdKind.STORE && ValueIds.isOrderedInteger(id)) {
 			return ValueIds.orderedIntegerValue(id);
 		}
-		LmdbNativeValueCodec.DecodedValue decoded = codec.decode(id);
+		LmdbNativeValueCodec.DecodedValue decoded = kind == NativeIdKind.STORE
+				? codec.decode(id)
+				: decodeAuthoritative(id, authority);
 		if (decoded.floatingValue() != null) {
 			return decoded.floatingValue();
 		}
 		return decoded.decimalValue().doubleValue();
+	}
+
+	private static NativeIdKind idKind(NativeTermAuthority authority, long id) {
+		if (id == UNKNOWN) {
+			return NativeIdKind.UNKNOWN;
+		}
+		if (id == NULL_CONTEXT_ID) {
+			return NativeIdKind.NULL_CONTEXT;
+		}
+		return authority == null ? NativeIdKind.STORE : authority.kind(id);
+	}
+
+	private Value valueForComparison(long id, NativeTermAuthority authority, NativeIdKind kind) {
+		if (id == UNKNOWN || id == NULL_CONTEXT_ID) {
+			return null;
+		}
+		return authority != null && kind != NativeIdKind.STORE ? authority.valueOf(id) : source.lazyValue(id);
+	}
+
+	private static LmdbNativeValueCodec.DecodedValue decodeAuthoritative(long id, NativeTermAuthority authority) {
+		Value value = authority == null ? null : authority.valueOf(id);
+		return value == null ? LmdbNativeValueCodec.DecodedValue.ERROR : LmdbNativeValueCodec.fromValue(value);
 	}
 
 	@Override
@@ -508,8 +590,20 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	private AggState rowState(int aggregateId, int groupId) {
 		AggState[] states = rowStates[aggregateId];
 		if (groupId >= states.length) {
-			states = Arrays.copyOf(states, Math.max(groupId + 1, states.length * 2));
-			rowStates[aggregateId] = states;
+			int capacity = Math.max(Math.addExact(groupId, 1), Math.multiplyExact(states.length, 2));
+			long oldBytes = arrayBytes(states.length, Long.BYTES);
+			long replacementBytes = arrayBytes(capacity, Long.BYTES);
+			memory.reserveOrThrow(replacementBytes, "kernel-row-state-memory");
+			AggState[] replacement;
+			try {
+				replacement = Arrays.copyOf(states, capacity);
+			} catch (RuntimeException | Error problem) {
+				memory.release(replacementBytes);
+				throw problem;
+			}
+			states = replacement;
+			rowStates[aggregateId] = replacement;
+			memory.release(oldBytes);
 		}
 		if (states[groupId] == null) {
 			AggregateSpec[] specs = { groupLayout.outs[aggregateId].spec };
@@ -555,7 +649,8 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			numericErrors[aggregateId][groupId] = true;
 			return;
 		}
-		numericSums[aggregateId][groupId] = AggState.addNumeric(numericSums[aggregateId][groupId], literal);
+		Literal sum = AggState.addNumeric(numericSums[aggregateId][groupId], literal);
+		replaceNumericSum(aggregateId, groupId, sum);
 		if (numericKinds[aggregateId] == AggKind.AVG) {
 			numericCounts[aggregateId][groupId]++;
 		}
@@ -583,7 +678,8 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		Literal term = weight == 1L ? literal
 				: MathUtil.compute(literal, AggContext.integerLiteral(weight),
 						MathExpr.MathOp.MULTIPLY);
-		numericSums[aggregateId][groupId] = AggState.addNumeric(numericSums[aggregateId][groupId], term);
+		Literal sum = AggState.addNumeric(numericSums[aggregateId][groupId], term);
+		replaceNumericSum(aggregateId, groupId, sum);
 		if (numericKinds[aggregateId] == AggKind.AVG)
 			numericCounts[aggregateId][groupId] = Math.addExact(numericCounts[aggregateId][groupId], weight);
 	}
@@ -595,8 +691,15 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		KernelRuntime.LongHashSet[] sets = distinctSets[aggregateId];
 		KernelRuntime.LongHashSet set = sets[groupId];
 		if (set == null) {
-			set = new KernelRuntime.LongHashSet(distinctExpected, keyHooks);
-			sets[groupId] = set;
+			KernelRuntime.LongHashSet created = new KernelRuntime.LongHashSet(distinctExpected, keyHooks, memory);
+			try {
+				boolean added = created.add(valueId);
+				sets[groupId] = created;
+				return added;
+			} catch (RuntimeException | Error problem) {
+				created.close();
+				throw problem;
+			}
 		}
 		return set.add(valueId);
 	}
@@ -630,7 +733,18 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		while (capacity <= groupId) {
 			capacity = Math.multiplyExact(capacity, 2);
 		}
-		distinctSets[aggregateId] = Arrays.copyOf(sets, capacity);
+		long oldBytes = arrayBytes(sets.length, Long.BYTES);
+		long replacementBytes = arrayBytes(capacity, Long.BYTES);
+		memory.reserveOrThrow(replacementBytes, "kernel-distinct-groups-memory");
+		KernelRuntime.LongHashSet[] replacement;
+		try {
+			replacement = Arrays.copyOf(sets, capacity);
+		} catch (RuntimeException | Error problem) {
+			memory.release(replacementBytes);
+			throw problem;
+		}
+		distinctSets[aggregateId] = replacement;
+		memory.release(oldBytes);
 	}
 
 	/**
@@ -683,6 +797,211 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 					failure.addSuppressed(problem);
 				}
 			}
+		}
+		try {
+			closeState();
+		} catch (RuntimeException | Error problem) {
+			if (failure == null) {
+				failure = problem;
+			} else if (failure != problem) {
+				failure.addSuppressed(problem);
+			}
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure != null) {
+			throw (Error) failure;
+		}
+	}
+
+	/**
+	 * Reserves the eager hook-owned arrays before any of them is allocated. The estimate intentionally includes array
+	 * headers and a small object envelope; it is a budget guard, not a JVM object-size claim.
+	 */
+	private static long fixedMemoryBytes(RowState liveRow, LmdbNativeKernelBindings bindings,
+			LmdbNativeKernelBindings.FilterHook[] filterHooks, LmdbNativeKernelBindings.BindHook[] bindHooks) {
+		long bytes = 512L;
+		int slots = liveRow.layout.slotNames().length;
+		int trail = Math.max(8, Math.multiplyExact(slots, 4));
+		bytes = addBytes(bytes, arrayBytes(slots, Long.BYTES));
+		bytes = addBytes(bytes, arrayBytes(trail, Integer.BYTES));
+		bytes = addBytes(bytes, arrayBytes(trail, Long.BYTES));
+
+		bytes = addBytes(bytes, arrayBytes(bindHooks.length, Long.BYTES));
+		bytes = addBytes(bytes, arrayBytes(bindHooks.length, Long.BYTES));
+		for (LmdbNativeKernelBindings.BindHook bind : bindHooks) {
+			int arguments = bind.argSlots.length;
+			bytes = addBytes(bytes, arrayBytes(arguments, Long.BYTES));
+			bytes = addBytes(bytes, arrayBytes(arguments, Long.BYTES));
+		}
+
+		int aggregates = bindings.groupLayout == null ? 0 : bindings.groupLayout.outs.length;
+		bytes = addBytes(bytes, arrayBytes(aggregates, Long.BYTES)); // rowStates
+		bytes = addBytes(bytes, arrayBytes(aggregates, Long.BYTES)); // numericKinds
+		bytes = addBytes(bytes, arrayBytes(aggregates, Long.BYTES)); // numericSums
+		bytes = addBytes(bytes, arrayBytes(aggregates, Long.BYTES)); // numericSumBytes
+		bytes = addBytes(bytes, arrayBytes(aggregates, Long.BYTES)); // numericCounts
+		bytes = addBytes(bytes, arrayBytes(aggregates, Long.BYTES)); // numericErrors
+		bytes = addBytes(bytes, arrayBytes(aggregates, Long.BYTES)); // distinctSets
+		if (bindings.groupLayout != null) {
+			for (LmdbNativeKernelBindings.AggOut out : bindings.groupLayout.outs) {
+				if (out.encoding == LmdbNativeKernelBindings.ENC_ROW_STATE) {
+					bytes = addBytes(bytes, arrayBytes(16, Long.BYTES));
+				}
+				if (out.spec.kind == AggKind.SUM || out.spec.kind == AggKind.AVG) {
+					bytes = addBytes(bytes, arrayBytes(16, Long.BYTES)); // numeric sums
+					bytes = addBytes(bytes, arrayBytes(16, Long.BYTES)); // retained sum sizes
+					bytes = addBytes(bytes, arrayBytes(16, Byte.BYTES)); // numeric errors
+					if (out.spec.kind == AggKind.AVG) {
+						bytes = addBytes(bytes, arrayBytes(16, Long.BYTES));
+					}
+				}
+				if (out.spec.distinct) {
+					bytes = addBytes(bytes, arrayBytes(16, Long.BYTES));
+				}
+			}
+		}
+		bytes = addBytes(bytes, arrayBytes(8, Integer.BYTES));
+		bytes = addBytes(bytes, arrayBytes(8, Long.BYTES));
+		if (fragmentsEnabled() && filterHooks.length > 0) {
+			bytes = addBytes(bytes, arrayBytes(filterHooks.length, Long.BYTES));
+			bytes = addBytes(bytes, arrayBytes(filterHooks.length, Long.BYTES));
+		}
+		return bytes;
+	}
+
+	private static long addBytes(long left, long right) {
+		return Math.addExact(left, right);
+	}
+
+	private static long arrayBytes(long length, long elementBytes) {
+		return Math.addExact(16L, Math.multiplyExact(length, elementBytes));
+	}
+
+	private static Throwable retainCloseFailure(Throwable failure, Throwable cleanup) {
+		if (failure == null) {
+			return cleanup;
+		}
+		if (cleanup != failure) {
+			failure.addSuppressed(cleanup);
+		}
+		return failure;
+	}
+
+	/** One reservation shared by all hook-owned arrays and retained aggregate values. */
+	private static final class HookMemory implements KernelRuntime.MemoryAccount {
+		private final LmdbQueryMemoryManager.QueryLedger ledger;
+		private LmdbQueryMemoryManager.Reservation reservation;
+		private boolean closed;
+
+		private HookMemory(LmdbQueryMemoryManager.QueryLedger ledger) {
+			this.ledger = ledger;
+		}
+
+		@Override
+		public boolean tryReserve(long bytes) {
+			if (bytes < 0L) {
+				throw new IllegalArgumentException("allocation size must not be negative");
+			}
+			if (bytes == 0L) {
+				return true;
+			}
+			if (closed) {
+				return false;
+			}
+			if (reservation == null) {
+				reservation = ledger.reserve(bytes, null);
+				return reservation != null;
+			}
+			return reservation.tryGrow(bytes);
+		}
+
+		@Override
+		public void reserve(long bytes) {
+			if (!tryReserve(bytes)) {
+				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("kernel-hook-memory");
+			}
+		}
+
+		@Override
+		public void release(long bytes) {
+			if (bytes < 0L) {
+				throw new IllegalArgumentException("released size must not be negative");
+			}
+			if (bytes > 0L && reservation != null && !closed) {
+				reservation.release(bytes);
+			}
+		}
+
+		private void reserveOrThrow(long bytes, String reason) {
+			if (!tryReserve(bytes)) {
+				throw new LmdbNativeKernelPartitions.ParallelKernelDecline(reason);
+			}
+		}
+
+		private void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			if (reservation != null) {
+				reservation.close();
+				reservation = null;
+			}
+		}
+	}
+
+	/** Releases state owned by this hook set without closing the query-plan filter instances. */
+	void closeState() {
+		Throwable failure = null;
+		try {
+			scratch.closeDecodedInputs();
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+		}
+		for (KernelRuntime.LongHashSet[] sets : distinctSets) {
+			if (sets == null) {
+				continue;
+			}
+			for (KernelRuntime.LongHashSet set : sets) {
+				if (set == null) {
+					continue;
+				}
+				try {
+					set.close();
+				} catch (RuntimeException | Error problem) {
+					failure = retainCloseFailure(failure, problem);
+				}
+			}
+		}
+		try {
+			if (numericContext != null) {
+				numericContext.close();
+			}
+		} catch (RuntimeException | Error problem) {
+			failure = retainCloseFailure(failure, problem);
+		}
+		try {
+			rowAggregateContext.close();
+		} catch (RuntimeException | Error problem) {
+			failure = retainCloseFailure(failure, problem);
+		}
+		// Drop references before releasing the common reservation. This keeps a failed or repeated cleanup from
+		// retaining
+		// the immutable numeric values through the hook object after the ledger claim has been closed.
+		for (int aggregate = 0; aggregate < numericSums.length; aggregate++) {
+			if (numericSums[aggregate] != null) {
+				Arrays.fill(numericSums[aggregate], null);
+			}
+			if (numericSumBytes[aggregate] != null) {
+				Arrays.fill(numericSumBytes[aggregate], 0L);
+			}
+		}
+		try {
+			memory.close();
+		} catch (RuntimeException | Error problem) {
+			failure = retainCloseFailure(failure, problem);
 		}
 		if (failure instanceof RuntimeException runtimeException) {
 			throw runtimeException;
@@ -743,7 +1062,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	void installNumericPartial(int aggregateId, int groupId, Literal sum, long count, boolean error) {
 		requireNumericAccumulator(aggregateId, groupId);
 		ensureNumericCapacity(aggregateId, groupId);
-		numericSums[aggregateId][groupId] = sum;
+		replaceNumericSum(aggregateId, groupId, sum);
 		numericErrors[aggregateId][groupId] = error;
 		if (numericCounts[aggregateId] != null) {
 			numericCounts[aggregateId][groupId] = count;
@@ -767,10 +1086,66 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		while (capacity <= groupId) {
 			capacity = Math.multiplyExact(capacity, 2);
 		}
-		numericSums[aggregateId] = Arrays.copyOf(numericSums[aggregateId], capacity);
-		numericErrors[aggregateId] = Arrays.copyOf(numericErrors[aggregateId], capacity);
-		if (numericCounts[aggregateId] != null) {
-			numericCounts[aggregateId] = Arrays.copyOf(numericCounts[aggregateId], capacity);
+		long oldBytes = numericArrayBytes(numericSums[aggregateId].length, numericCounts[aggregateId] != null);
+		long replacementBytes = numericArrayBytes(capacity, numericCounts[aggregateId] != null);
+		memory.reserveOrThrow(replacementBytes, "kernel-numeric-groups-memory");
+		Literal[] sums;
+		long[] sumBytes;
+		boolean[] errors;
+		long[] counts = null;
+		try {
+			sums = Arrays.copyOf(numericSums[aggregateId], capacity);
+			sumBytes = Arrays.copyOf(numericSumBytes[aggregateId], capacity);
+			errors = Arrays.copyOf(numericErrors[aggregateId], capacity);
+			if (numericCounts[aggregateId] != null) {
+				counts = Arrays.copyOf(numericCounts[aggregateId], capacity);
+			}
+		} catch (RuntimeException | Error problem) {
+			memory.release(replacementBytes);
+			throw problem;
 		}
+		numericSums[aggregateId] = sums;
+		numericSumBytes[aggregateId] = sumBytes;
+		numericErrors[aggregateId] = errors;
+		if (counts != null) {
+			numericCounts[aggregateId] = counts;
+		}
+		memory.release(oldBytes);
+	}
+
+	private void replaceNumericSum(int aggregateId, int groupId, Literal sum) {
+		Literal previous = numericSums[aggregateId][groupId];
+		if (previous == sum) {
+			return;
+		}
+		long previousBytes = numericSumBytes[aggregateId][groupId];
+		long replacementBytes = AggContext.ownedValueBytes(sum);
+		if (replacementBytes < 0L) {
+			throw new LmdbNativeKernelPartitions.ParallelKernelDecline("kernel-numeric-value-memory");
+		}
+		long additionalBytes = replacementBytes > previousBytes ? replacementBytes - previousBytes : 0L;
+		if (additionalBytes > 0L) {
+			memory.reserveOrThrow(additionalBytes, "kernel-numeric-value-memory");
+		}
+		try {
+			numericSums[aggregateId][groupId] = sum;
+			numericSumBytes[aggregateId][groupId] = replacementBytes;
+		} catch (RuntimeException | Error problem) {
+			if (additionalBytes > 0L) {
+				memory.release(additionalBytes);
+			}
+			throw problem;
+		}
+		long releasedBytes = previousBytes > replacementBytes ? previousBytes - replacementBytes : 0L;
+		if (releasedBytes > 0L) {
+			memory.release(releasedBytes);
+		}
+	}
+
+	private static long numericArrayBytes(int capacity, boolean hasCounts) {
+		long bytes = arrayBytes(capacity, Long.BYTES); // Literal[] references
+		bytes = Math.addExact(bytes, arrayBytes(capacity, Byte.BYTES)); // boolean[] errors
+		bytes = Math.addExact(bytes, arrayBytes(capacity, Long.BYTES)); // retained sum sizes
+		return hasCounts ? Math.addExact(bytes, arrayBytes(capacity, Long.BYTES)) : bytes;
 	}
 }

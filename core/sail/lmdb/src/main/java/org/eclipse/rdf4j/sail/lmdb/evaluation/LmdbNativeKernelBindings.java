@@ -76,6 +76,13 @@ final class LmdbNativeKernelBindings {
 			this.source = source;
 			this.argSlots = argSlots;
 		}
+
+		FilterHook bindForWorker(NativeScalarPlan.WorkerContext context) {
+			NativeBooleanFilter fork = source.filter.forkForParallelWorker(context);
+			return fork == null ? null
+					: new FilterHook(new MaskedFilter(fork, source.mask, source.adaptive, source.plannedDepth),
+							argSlots.clone());
+		}
 	}
 
 	/** One computed-BIND registration, index-aligned with the IR's {@code BindHook.bindId}. */
@@ -114,6 +121,72 @@ final class LmdbNativeKernelBindings {
 
 		BindHook withSolutionScope() {
 			return new BindHook(computed, computedValue, copy, argSlots, true);
+		}
+
+		NativeScalarPlan scalarPlan() {
+			if (copy != null) {
+				if (copy.computed != null) {
+					return copy.computed.scalarPlan();
+				}
+				if (copy.computedValue != null) {
+					return copy.computedValue.scalarPlan();
+				}
+				return null;
+			}
+			return computed != null ? computed.scalarPlan() : computedValue == null ? null : computedValue.scalarPlan();
+		}
+
+		/**
+		 * A worker copy is admitted only when the expression has structural construction proof and the lowering already
+		 * proved that replay preserves encounter-order semantics. Legacy CopyBinding evaluators have no such proof.
+		 */
+		boolean workerBindable() {
+			NativeScalarPlan plan = scalarPlan();
+			if (plan == null || !plan.workerBindable() || startsSolution) {
+				return false;
+			}
+			if (copy != null && !copy.encounterOrderReplaySafe) {
+				return false;
+			}
+			return plan.effect() == org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass.PURE
+					|| plan.effect() == org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass.QUERY_STABLE;
+		}
+
+		BindHook bindForWorker(NativeScalarPlan.WorkerContext context) {
+			if (!workerBindable()) {
+				return null;
+			}
+			if (copy != null) {
+				if (copy.computed != null) {
+					LmdbNativeCompiledInlineId rebound = copy.computed.bindForWorker(context);
+					return rebound == null ? null : new BindHook(copy.withComputed(rebound), argSlots, startsSolution);
+				}
+				if (copy.computedValue != null) {
+					LmdbNativeCompiledValue rebound = copy.computedValue.bindForWorker(context);
+					return rebound == null ? null
+							: new BindHook(copy.withComputedValue(rebound), argSlots,
+									startsSolution);
+				}
+				return null;
+			}
+			if (computed != null) {
+				LmdbNativeCompiledInlineId rebound = computed.bindForWorker(context);
+				return rebound == null ? null : new BindHook(rebound, argSlots, startsSolution);
+			}
+			LmdbNativeCompiledValue rebound = computedValue.bindForWorker(context);
+			return rebound == null ? null : new BindHook(rebound, argSlots, startsSolution);
+		}
+
+		private BindHook(LmdbNativeCompiledInlineId computed, int[] argSlots, boolean startsSolution) {
+			this(computed, null, null, argSlots, startsSolution);
+		}
+
+		private BindHook(LmdbNativeCompiledValue computedValue, int[] argSlots, boolean startsSolution) {
+			this(null, computedValue, null, argSlots, startsSolution);
+		}
+
+		private BindHook(CopyBinding copy, int[] argSlots, boolean startsSolution) {
+			this(null, null, copy, argSlots, startsSolution);
 		}
 	}
 
@@ -881,6 +954,23 @@ final class LmdbNativeKernelBindings {
 	KernelContext context(NativeLmdbQuerySource.NativeAdjacency[] views, BoundDomains domains, RowState row,
 			KernelHooks hooks, KernelScanner scanner, VariablePredicateViews variablePredicateViews,
 			BooleanSupplier workerCancellation) {
+		return contextInternal(views, domains, row, hooks, scanner, variablePredicateViews, workerCancellation, null);
+	}
+
+	/**
+	 * Assembles an aggregate worker context. Its peer-stop supplier remains distinct from the streaming-row worker
+	 * cancellation argument so a sibling can unwind without being mistaken for a replayable probe timeout.
+	 */
+	KernelContext aggregateContext(NativeLmdbQuerySource.NativeAdjacency[] views, BoundDomains domains, RowState row,
+			KernelHooks hooks, KernelScanner scanner, VariablePredicateViews variablePredicateViews,
+			BooleanSupplier peerCancellation) {
+		return contextInternal(views, domains, row, hooks, scanner, variablePredicateViews, null, peerCancellation);
+	}
+
+	private KernelContext contextInternal(NativeLmdbQuerySource.NativeAdjacency[] views, BoundDomains domains,
+			RowState row,
+			KernelHooks hooks, KernelScanner scanner, VariablePredicateViews variablePredicateViews,
+			BooleanSupplier workerCancellation, BooleanSupplier peerCancellation) {
 		long[] entrySlots = new long[entrySlotIds.length];
 		for (int i = 0; i < entrySlots.length; i++) {
 			entrySlots[i] = row.slots[entrySlotIds[i]];
@@ -893,10 +983,12 @@ final class LmdbNativeKernelBindings {
 				hooks, scanner, plans, distinctExpected,
 				variablePredicateViews.nodePredicates(), variablePredicateViews.dynamics(),
 				variablePredicateViews.wildcards())
-						.withMemoryLedgerSupplier(() -> row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()))
-						.withCancellation(LmdbNativeProbeDeadline
-								.currentKernelCancellation(row.cancellation::isCancellationRequested,
-										workerCancellation));
+				.withMemoryLedgerSupplier(() -> row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()))
+				.withCancellation(peerCancellation == null
+						? LmdbNativeProbeDeadline.currentKernelCancellation(row.cancellation::isCancellationRequested,
+								workerCancellation)
+						: LmdbNativeProbeDeadline.currentAggregateKernelCancellation(
+								row.cancellation::isCancellationRequested, peerCancellation));
 	}
 
 	/** Runtime wrapper that isolates an interpreted producer from the row receiving generated-kernel output. */

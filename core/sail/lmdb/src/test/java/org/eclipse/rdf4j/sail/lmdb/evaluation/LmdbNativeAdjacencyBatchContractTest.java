@@ -27,7 +27,7 @@ class LmdbNativeAdjacencyBatchContractTest {
 	void exposesPhysicalGrainsAndPrimitiveAdjacencyBatches() throws Exception {
 		Class<?> grain = Class.forName(LmdbNativeKernelIr.class.getName() + "$Grain");
 		assertThat(Arrays.stream(grain.getEnumConstants()).map(Object::toString))
-				.containsExactly("PLANE", "ROOT", "FIBER", "QUAD");
+				.containsExactly("INPUT", "PLANE", "ROOT", "FIBER", "QUAD");
 
 		Class<?> planeBatch = nestedClass("PlaneBatch");
 		Class<?> rootBatch = nestedClass("RootBatch");

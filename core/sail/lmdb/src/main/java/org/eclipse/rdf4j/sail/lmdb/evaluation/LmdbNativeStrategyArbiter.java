@@ -81,6 +81,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	private String forcedTag;
 	private String forcedDecisionPoint;
 	private boolean forcedMandatory;
+	/** A matching forced proposal survived filtering and was therefore actually offered to the opener. */
+	private boolean forcedCandidateWasOffered;
+	/** The matching forced proposal's opener returned null; this is distinct from a structural non-offer. */
+	private boolean forcedCandidateReturnedNull;
 	private Map<String, String> forcedDeclineCapture;
 	private Map<String, String> previousDeclineCapture;
 
@@ -203,6 +207,8 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		this.forcedTag = tag;
 		this.forcedDecisionPoint = decisionPoint;
 		this.forcedMandatory = mandatory;
+		this.forcedCandidateWasOffered = false;
+		this.forcedCandidateReturnedNull = false;
 		if (tag != null && forcedDeclineCapture == null) {
 			forcedDeclineCapture = new HashMap<>();
 			previousDeclineCapture = LmdbNativeAttemptMetrics.installDeclineCapture(forcedDeclineCapture);
@@ -469,7 +475,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		return adaptiveDecision(candidates, sliceRows, model, probeContext, hedgeContext, null);
 	}
 
-	private record PreviewQuotes<T> (LmdbNativeAdaptiveCostModel.PricingBatch batch,
+	private record PreviewQuotes<T>(LmdbNativeAdaptiveCostModel.PricingBatch batch,
 			Map<LmdbNativeStrategyProposal<T>, LmdbNativeCostPrediction> predictions,
 			Map<LmdbNativeStrategyProposal<T>, LmdbNativeWork> costs) {
 	}
@@ -653,6 +659,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			}
 		}
 		closeAll(rejected);
+		forcedCandidateWasOffered = !candidates.isEmpty();
 
 		return !candidates.isEmpty();
 	}
@@ -668,6 +675,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		if (reason != null) {
 			return new QueryEvaluationException("LMDB execution strategy '" + forcedTag + "' could not be forced at "
 					+ where + ": it was offered and declined ('" + reason + "').");
+		}
+		if (forcedCandidateReturnedNull) {
+			return new QueryEvaluationException("LMDB execution strategy '" + forcedTag + "' could not be forced at "
+					+ where + ": it was offered and declined (its opener returned null).");
 		}
 		return new QueryEvaluationException("LMDB execution strategy '" + forcedTag + "' could not be forced at "
 				+ where + ": it was never a candidate for this query's shape at this decision point"
@@ -762,6 +773,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				return selection;
 			}
 			// A bind-time decline. The strategy has recorded its own reason; drop it and re-rank the rest.
+			if (forcedTag != null && forcedCandidateWasOffered
+					&& forcedTag.equals(LmdbNativeStrategyPreference.baseTag(chosen.tag))) {
+				forcedCandidateReturnedNull = true;
+			}
 			candidates.remove(index);
 			chosen.close();
 		}
@@ -1793,10 +1808,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		}
 	}
 
-	private record AdaptiveCandidate<T> (int index, LmdbNativeAdaptiveArbitration.Candidate<T> candidate) {
+	private record AdaptiveCandidate<T>(int index, LmdbNativeAdaptiveArbitration.Candidate<T> candidate) {
 	}
 
-	private record AdaptiveDecision<T> (int index, LmdbNativeAdaptiveArbitration.DispatchPlan<T> plan,
+	private record AdaptiveDecision<T>(int index, LmdbNativeAdaptiveArbitration.DispatchPlan<T> plan,
 			int fallbackIndex, String reason) {
 		private static <T> AdaptiveDecision<T> empty() {
 			return new AdaptiveDecision<>(-1, null, -1, "no candidates");

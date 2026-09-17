@@ -93,6 +93,9 @@ class LmdbNativeIrKernelParallelTest {
 			+ "?inproc <" + EX + "creator> ?person . "
 			+ "?person <" + EX + "name> ?pname }";
 
+	/** DISTINCT keeps only the predicate slot while PREDICATE_ANY remains on its complete predicate-domain fallback. */
+	private static final String PREDICATE_ANY_QUERY = "SELECT DISTINCT ?p WHERE { ?s ?p ?o . ?x ?p ?y }";
+
 	/** Since M10 this lowers to a stateless in-kernel Exists witness, which partitions safely. */
 	private static final String EXISTS_QUERY = "SELECT ?s ?v WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
 			+ "q> ?v . FILTER EXISTS { ?m <" + EX + "r> ?x } }";
@@ -305,6 +308,25 @@ class LmdbNativeIrKernelParallelTest {
 		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get())
 				.as("language-equivalent values must remain deduplicated across worker pages")
 				.isGreaterThan(parallelBefore);
+	}
+
+	@Test
+	void predicateAnyWildcardFallsBackExactlyAcrossKernelTiers() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(PREDICATE_ANY_QUERY);
+		assertThat(expected).isNotEmpty();
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+
+		for (boolean janino : new boolean[] { true, false }) {
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(janino));
+			for (boolean parallel : new boolean[] { false, true }) {
+				System.setProperty("rdf4j.lmdb.parallel.enabled", Boolean.toString(parallel));
+				System.setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, Boolean.toString(parallel));
+				assertThat(rows(PREDICATE_ANY_QUERY))
+						.as("PREDICATE_ANY fallback must preserve results (janino=%s, parallel=%s)", janino, parallel)
+						.containsExactlyInAnyOrderElementsOf(expected);
+			}
+		}
 	}
 
 	private static List<String> normalizeLanguageTags(List<String> rows) {

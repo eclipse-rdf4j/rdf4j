@@ -14,7 +14,10 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.IntUnaryOperator;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Aggregate;
@@ -58,7 +61,10 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainWildca
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor.TermKindColumn;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelAdjacencyCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelExpansionCursors;
@@ -67,8 +73,11 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorPredicate;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelIdMasks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelProjectionCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelWorkCounters;
 
 /**
  * Direct interpreter for IR-lowered aggregate kernels (plan: .agent/lmdb-kernel-interpreter-execplan.md, M1).
@@ -243,6 +252,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private final List<KernelExpansionCursors.Intersection> intersectionCursors = new ArrayList<>();
 	/** Key-run cursors held during an activation (EnumerateAdjKeys / SipKeyProbe); swept by close(). */
 	private final List<NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[]> activeKeyCursors = new ArrayList<>();
+	private final List<ProjectionProgram> projectionPrograms = new ArrayList<>();
+	private final KernelWorkCounters workCounters = new KernelWorkCounters();
+	private ProjectionProgram activeProjection;
+
 	/** One live cursor slot per plan site; the plan itself is also closed by close() (EM:1289-1307). */
 	private KernelPlan.Cursor[] planCursors;
 	private KernelFactorCursor factorCursor;
@@ -271,6 +284,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private long[][] agW;
 	private double[][] agM;
 	private boolean[] agO;
+	private KernelRuntime.AggregateMemory aggregateMemory;
+	private boolean chargeAggregateOutput;
+	/** Bytes retained by primitive aggregate arrays (map/set state owns its own reservation). */
+	private long aggregateArrayBytes;
 
 	// --- streaming-groups aggregate state ---------------------------------------------------
 	private boolean sgSeen;
@@ -332,8 +349,37 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	// ==========================================================================================
 
 	@Override
+	public KernelWorkCounters workCounters() {
+		return workCounters;
+	}
+
+	@Override
 	public void bind(KernelContext context) {
+		if (this.context != null || aggregateMemory != null) {
+			close();
+		}
+		closed = false;
+		try {
+			bindOpen(context);
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.closeAfterFailure(this, failure);
+			throw failure;
+		}
+	}
+
+	private void bindOpen(KernelContext context) {
 		this.context = context;
+		this.aggregateMemory = KernelRuntime.AggregateMemory.forLedger(context.groupMemoryLedger());
+		this.ran = false;
+		this.outCount = 0;
+		this.outPos = 0;
+		this.pollTick = 0;
+		this.factorFallbackWeight = 0L;
+		this.factorAccepted = 0L;
+		this.factorCandidates = 0L;
+		this.factorRejected = 0L;
+		this.pullAccepted = 0L;
+		this.pullDone = false;
 		this.hooks = context.hooks;
 		this.keyHooks = hooks == null ? null : hooks.keySemantics();
 		this.cancel = context.cancellation;
@@ -359,7 +405,15 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 		boolean demandDriven = emit != null && emit.mods.orderKeys == null && kernel.resumable
 				&& pullSupported(kernel.pipeline);
-		this.out = new long[kernel.boundedOrder || demandDriven ? 0 : Math.max(stride * 64, 64)];
+		this.chargeAggregateOutput = aggregate != null && !streamingGroups() && groupSink == null
+				&& !kernel.boundedOrder
+				&& !demandDriven;
+		int outputCapacity = kernel.boundedOrder || demandDriven || groupSink != null ? 0 : Math.max(stride * 64, 64);
+		if (chargeAggregateOutput) {
+			outputCapacity = KernelRuntime.aggregateOutputCapacity(stride);
+			reserveAggregateArray(outputCapacity, Long.BYTES);
+		}
+		this.out = new long[outputCapacity];
 		if (kernel.boundedOrder) {
 			OutputMods mods = kernel.terminal.mods;
 			this.orderedRows = new KernelOrderSink(stride, mods.orderKeys, mods.descending,
@@ -500,8 +554,43 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}
 		}
 		activeKeyCursors.clear();
+		for (ProjectionProgram program : projectionPrograms) {
+			failure = KernelRuntime.closeResource(program::closeCursor, failure);
+		}
+		projectionPrograms.clear();
 		failure = KernelRuntime.closeResource(orderedRows, failure);
 		orderedRows = null;
+		failure = KernelRuntime.closeResource(dedup, failure);
+		dedup = null;
+		if (agD != null) {
+			for (KernelRuntime.LongHashSet[] sets : agD) {
+				if (sets != null) {
+					for (int i = 0; i < sets.length; i++) {
+						failure = KernelRuntime.closeResource(sets[i], failure);
+						sets[i] = null;
+					}
+				}
+			}
+		}
+		failure = KernelRuntime.closeResource(groups, failure);
+		groups = null;
+		failure = KernelRuntime.closeResource(groupKeys, failure);
+		groupKeys = null;
+		if (aggregateArrayBytes > 0L && aggregateMemory != null) {
+			try {
+				aggregateMemory.release(aggregateArrayBytes);
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
+			}
+		}
+		aggregateArrayBytes = 0L;
+		failure = KernelRuntime.closeResource(aggregateMemory, failure);
+		aggregateMemory = null;
+		chargeAggregateOutput = false;
 		context = null;
 		hooks = null;
 		keyHooks = null;
@@ -517,8 +606,6 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		hashKeyScratch = null;
 		hashPayloadScratch = null;
 		leftGroupFlags = null;
-		groups = null;
-		groupKeys = null;
 		groupScratch = null;
 		agC = null;
 		agD = null;
@@ -696,9 +783,17 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		boolean output, done;
 
 		PullPipeline(List<Node> nodes) {
-			stages = new PullStage[nodes.size()];
-			for (int i = 0; i < stages.length; i++)
-				stages[i] = pullStage(nodes.get(i));
+			List<PullStage> compiled = new ArrayList<>();
+			for (int i = 0; i < nodes.size();) {
+				LmdbNativeProducerSchedule schedule = kernel.producerSchedules.get(nodes, nodes.get(i));
+				if (schedule == null) {
+					compiled.add(pullStage(nodes.get(i++)));
+				} else {
+					compiled.add(pullProjection(schedule, List.copyOf(nodes.subList(i, schedule.nextIndex))));
+					i = schedule.nextIndex;
+				}
+			}
+			stages = compiled.toArray(PullStage[]::new);
 		}
 
 		void reset() {
@@ -748,6 +843,219 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 			}
 			KernelRuntime.rethrowCloseFailure(failure);
+		}
+	}
+
+	private PullStage pullProjection(LmdbNativeProducerSchedule schedule, List<Node> ordinary) {
+		ProjectionProgram program = new ProjectionProgram(schedule);
+		PullPipeline fallback = new PullPipeline(ordinary);
+		return new PullStage() {
+			boolean ordinaryActive;
+
+			@Override
+			void reset() {
+				ordinaryActive = program.open() == null;
+				if (ordinaryActive) {
+					fallback.reset();
+				}
+			}
+
+			@Override
+			boolean advance() {
+				return ordinaryActive ? fallback.next() : program.cursor.advance();
+			}
+
+			@Override
+			void release() {
+				if (ordinaryActive) {
+					fallback.close();
+				} else if (program.cursor != null) {
+					program.closeCursor();
+				}
+			}
+		};
+	}
+
+	/** Worker-local scalar programs and retained columns for one physical producer. */
+	private final class ProjectionProgram implements KernelProjectionCursor.Program {
+		final LmdbNativeProducerSchedule schedule;
+		final Op[] entry = new Op[LmdbNativeProducerSchedule.GRAINS];
+		final long[][] saved = new long[LmdbNativeProducerSchedule.GRAINS][];
+		final Map<FilterValue, IntUnaryOperator> pageReaders = new IdentityHashMap<>();
+		final Map<FilterValue, IntUnaryOperator> idReaders = new IdentityHashMap<>();
+		final Map<FilterValue, Integer> pageFacts = new IdentityHashMap<>();
+		AdjacencyPageCursor proofPage;
+		KernelProjectionCursor cursor;
+
+		ProjectionProgram(LmdbNativeProducerSchedule schedule) {
+			this.schedule = schedule;
+			for (int level = 0; level < entry.length; level++) {
+				entry[level] = build(schedule.programs.get(level), 0, () -> true, true);
+				saved[level] = new long[schedule.savedColumns[level].length];
+				for (Node node : schedule.programs.get(level)) {
+					if (node instanceof FilterValue filter && filter.pageProof != null) {
+						pageReaders.put(filter, argument -> pageArgumentMask(filter.args[argument]));
+						idReaders.put(filter, argument -> idArgumentMask(filter.args[argument]));
+					}
+				}
+			}
+			projectionPrograms.add(this);
+		}
+
+		KernelProjectionCursor open() {
+			pageFacts.clear();
+			var layout = schedule.layout;
+			cursor = KernelProjectionCursor.open(source(), this, schedule.outputMask, schedule.programMask(),
+					schedule.contextObserved, layout.contextMatch() != null,
+					layout.contextMatch() == null ? -1L : read(layout.contextMatch()), layout.excludeDefault(),
+					cancel, context.groupMemoryLedger(), schedule.retainedColumns());
+			return cursor;
+		}
+
+		void closeCursor() {
+			KernelProjectionCursor owned = cursor;
+			cursor = null;
+			if (owned != null) {
+				try {
+					owned.close();
+				} finally {
+					workCounters.addProjection(owned);
+				}
+			}
+		}
+
+		private KernelProjectionCursor.Source source() {
+			Node producer = schedule.producer;
+			if (producer instanceof EnumerateAdjKeys keys) {
+				return keys.wildcard
+						? KernelProjectionCursor.wildcardKeys(context.wildcardAdjacencies[keys.adjacency],
+								read(keys.runtimePredicate))
+						: KernelProjectionCursor.fixed(context.adjacencies[keys.adjacency]);
+			}
+			if (producer instanceof EnumerateWildcard wildcard) {
+				return KernelProjectionCursor.wildcard(context.wildcardAdjacencies[wildcard.view]);
+			}
+			if (producer instanceof Probe probe) {
+				return KernelProjectionCursor.probe(context.adjacencies[probe.adjacency], read(probe.key));
+			}
+			if (producer instanceof ProbeVariable probe) {
+				return KernelProjectionCursor.dynamic(context.dynamicAdjacencies[probe.view], read(probe.key),
+						read(probe.predicate));
+			}
+			if (producer instanceof EnumeratePredicates predicates) {
+				return predicates.wildcard
+						? KernelProjectionCursor.predicates(context.wildcardAdjacencies[predicates.view],
+								read(predicates.key))
+						: KernelProjectionCursor.predicates(context.nodePredicates[predicates.view],
+								read(predicates.key));
+			}
+			throw new IllegalStateException("scheduled producer has no physical source");
+		}
+
+		@Override
+		public boolean enter(int level, long predicate, KernelAdjacencyCursor physical) {
+			var layout = schedule.layout;
+			switch (level) {
+			case LmdbNativeProducerSchedule.PLANE:
+				pageFacts.clear();
+				if (layout.predicateCol() >= 0) {
+					v[layout.predicateCol()] = predicate;
+				}
+				break;
+			case LmdbNativeProducerSchedule.ROOT:
+				if (layout.rootCol() >= 0) {
+					v[layout.rootCol()] = physical.rootId();
+				}
+				break;
+			case LmdbNativeProducerSchedule.FIBER:
+				v[layout.neighborCol()] = physical.neighborId();
+				break;
+			case LmdbNativeProducerSchedule.QUAD:
+				if (layout.contextCol() >= 0) {
+					v[layout.contextCol()] = physical.contextId();
+				}
+				break;
+			default:
+				break;
+			}
+			ProjectionProgram previous = activeProjection;
+			activeProjection = this;
+			try {
+				if (!entry[level].run()) {
+					return false;
+				}
+			} finally {
+				activeProjection = previous;
+			}
+			int[] columns = schedule.savedColumns[level];
+			for (int index = 0; index < columns.length; index++) {
+				saved[level][index] = v[columns[index]];
+			}
+			return true;
+		}
+
+		@Override
+		public void restore(int level) {
+			for (int g = LmdbNativeProducerSchedule.INPUT; g <= level; g++) {
+				int[] columns = schedule.savedColumns[g];
+				for (int index = 0; index < columns.length; index++) {
+					v[columns[index]] = saved[g][index];
+				}
+			}
+		}
+
+		@Override
+		public boolean acceptsPage(AdjacencyPageCursor page) {
+			// A downstream continuation may have overwritten input registers before physical advancement resumes.
+			restore(LmdbNativeProducerSchedule.PLANE);
+			pageFacts.clear();
+			proofPage = page;
+			try {
+				for (Map.Entry<FilterValue, IntUnaryOperator> proof : pageReaders.entrySet()) {
+					int outcomes = proof.getKey().pageProof.evaluate(proof.getValue());
+					pageFacts.put(proof.getKey(), outcomes);
+					if ((outcomes & KernelTermKindProof.TRUE_BIT) == 0) {
+						return false;
+					}
+				}
+				return true;
+			} finally {
+				proofPage = null;
+			}
+		}
+
+		private int pageArgumentMask(Operand argument) {
+			if (argument.kind != Operand.COL) {
+				return KernelTermKindProof.ALL_TERM_KINDS;
+			}
+			var layout = schedule.layout;
+			if (argument.index == layout.rootCol()) {
+				return proofPage.headerTermKindMask(TermKindColumn.ROW);
+			}
+			if (argument.index == layout.neighborCol()) {
+				return proofPage.headerTermKindMask(TermKindColumn.NEIGHBOR);
+			}
+			if (argument.index == layout.contextCol()) {
+				return proofPage.hasCommonContext() ? KernelTermKindProof.maskForId(proofPage.commonContext())
+						: KernelTermKindProof.ALL_TERM_KINDS;
+			}
+			if (argument.index == layout.predicateCol()) {
+				return KernelTermKindProof.maskForId(read(argument));
+			}
+			return KernelTermKindProof.ALL_TERM_KINDS;
+		}
+
+		private int idArgumentMask(Operand argument) {
+			// Only physical output columns have a proven store namespace. Bound constants, incoming mappings and
+			// computed values can carry synthetic ids whose bits happen to resemble a stored term kind.
+			if (argument.kind == Operand.COL) {
+				var layout = schedule.layout;
+				if (argument.index == layout.rootCol() || argument.index == layout.neighborCol()
+						|| argument.index == layout.predicateCol() || argument.index == layout.contextCol()) {
+					return KernelTermKindProof.maskForId(read(argument));
+				}
+			}
+			return KernelTermKindProof.ALL_TERM_KINDS;
 		}
 	}
 
@@ -1980,9 +2288,36 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (idx >= nodes.size()) {
 			return terminal;
 		}
+		LmdbNativeProducerSchedule schedule = kernel.producerSchedules.get(nodes, nodes.get(idx));
+		if (schedule != null) {
+			Op continuation = build(nodes, schedule.nextIndex, terminal, booleanMode);
+			Op fallback = buildNode(nodes.get(idx), build(nodes, idx + 1, terminal, booleanMode), booleanMode);
+			ProjectionProgram program = new ProjectionProgram(schedule);
+			return () -> {
+				if (schedule.weightedNumeric && !hooks.supportsWeightedNumericAggregates()) {
+					return fallback.run();
+				}
+				KernelProjectionCursor cursor = program.open();
+				if (cursor == null) {
+					return fallback.run();
+				}
+				try (cursor) {
+					while (cursor.advance()) {
+						if (schedule.aggregate) {
+							updateMarginal(schedule.channels[cursor.grain()], cursor.weight());
+						} else if (continuation.run()) {
+							return true;
+						}
+					}
+					return false;
+				} finally {
+					program.closeCursor();
+				}
+			};
+		}
 		Op next = build(nodes, idx + 1, terminal, booleanMode);
 		if (!booleanMode && nodes == kernel.pipeline && idx == nodes.size() - 1
-				&& nodes.get(idx)instanceof Intersect intersection && LmdbNativeKernelIr.intersectionCountTail(kernel))
+				&& nodes.get(idx) instanceof Intersect intersection && LmdbNativeKernelIr.intersectionCountTail(kernel))
 			return buildIntersect(intersection, next, true);
 		return buildNode(nodes.get(idx), next, booleanMode);
 	}
@@ -2079,6 +2414,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					for (int i = 0; i < bind.args.length; i++) {
 						hooks.setBindInput(bind.bindId, i, read(bind.args[i]));
 					}
+					workCounters.recordBind();
 					v[bind.dstCol] = hooks.computeBindRow(bind.bindId);
 					return next.run();
 				};
@@ -2087,6 +2423,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				long a0 = bind.args.length > 0 ? read(bind.args[0]) : -1L;
 				long a1 = bind.args.length > 1 ? read(bind.args[1]) : -1L;
 				// -1 = the expression errored: the target stays unbound and the row survives.
+				workCounters.recordBind();
 				v[bind.dstCol] = hooks.computeBind(bind.bindId, a0, a1);
 				return next.run();
 			};
@@ -3303,8 +3640,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					agC[i][group] = Math.addExact(agC[i][group], weight);
 				break;
 			case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
-				if (value != -1L)
-					agD[i][group].add(value);
+				if (value != -1L) {
+					if (output.hookDistinct) {
+						hooks.accumulateDistinct(i, group, value);
+					} else {
+						agD[i][group].add(value);
+					}
+				}
 				break;
 			case LmdbNativeKernelIr.AGG_SUM:
 			case LmdbNativeKernelIr.AGG_AVG:
@@ -3313,8 +3655,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				break;
 			case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
 			case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
-				if (value != -1L && agD[i][group].add(value))
-					hooks.accumulateNumeric(i, group, value);
+				if (value != -1L) {
+					if (output.hookDistinct) {
+						hooks.accumulateDistinct(i, group, value);
+					} else if (agD[i][group].add(value)) {
+						hooks.accumulateNumeric(i, group, value);
+					}
+				}
 				break;
 			case LmdbNativeKernelIr.AGG_MIN_ID:
 			case LmdbNativeKernelIr.AGG_MAX_ID:
@@ -3814,9 +4161,26 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					filter.op, filter.constantOnLeft, hooks, filter.filterId);
 		}
 		FilterValue filter = (FilterValue) node;
+		if (filter.reusable && filter.pageProof != null && activeProjection != null) {
+			Integer pageFact = activeProjection.pageFacts.get(filter);
+			int outcomes = pageFact == null ? KernelTermKindProof.ALL_OUTCOMES : pageFact;
+			if (outcomes != KernelTermKindProof.TRUE_BIT) {
+				IntUnaryOperator reader = activeProjection.idReaders.get(filter);
+				if (reader != null) {
+					outcomes = filter.pageProof.evaluate(reader);
+				}
+			}
+			if ((outcomes & KernelTermKindProof.TRUE_BIT) == 0) {
+				return false;
+			}
+			if (outcomes == KernelTermKindProof.TRUE_BIT) {
+				return true;
+			}
+		}
 		long a0 = filter.args.length > 0 ? read(filter.args[0]) : -1L;
 		long a1 = filter.args.length > 1 ? read(filter.args[1]) : -1L;
 		long a2 = filter.args.length > 2 ? read(filter.args[2]) : -1L;
+		workCounters.recordValueFilter();
 		return hooks.testFilter(filter.filterId, a0, a1, a2);
 	}
 
@@ -3856,26 +4220,33 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 		distinctExpected = context.distinctExpected;
 		if (aggregate.groupCols.length == 1) {
-			groups = new KernelRuntime.LongIntMap(keyHooks);
+			groups = new KernelRuntime.LongIntMap(16, keyHooks, aggregateMemory);
 		} else if (aggregate.groupCols.length > 1) {
-			groupKeys = new KernelRuntime.RowSet(aggregate.groupCols.length, keyHooks);
-			groupScratch = new long[aggregate.groupCols.length];
+			groupKeys = new KernelRuntime.RowSet(aggregate.groupCols.length, 16, keyHooks, aggregateMemory);
+			groupScratch = newLongAggregateArray(aggregate.groupCols.length);
 		}
 		accCap = 16;
 		int outputs = aggregate.outputs.length;
+		reserveAggregateArray(outputs, Long.BYTES);
 		agC = new long[outputs][];
+		reserveAggregateArray(outputs, Long.BYTES);
 		agD = new KernelRuntime.LongHashSet[outputs][];
+		reserveAggregateArray(outputs, Long.BYTES);
 		agL = new long[outputs][];
+		reserveAggregateArray(outputs, Long.BYTES);
 		agB = new boolean[outputs][];
+		reserveAggregateArray(outputs, Long.BYTES);
 		agW = new long[outputs][];
+		reserveAggregateArray(outputs, Long.BYTES);
 		agM = new double[outputs][];
+		reserveAggregateArray(outputs, 1L);
 		agO = new boolean[outputs];
 		for (int i = 0; i < outputs; i++) {
 			AggregateOutput output = aggregate.outputs[i];
 			switch (output.kind) {
 			case LmdbNativeKernelIr.AGG_COUNT_STAR:
 			case LmdbNativeKernelIr.AGG_COUNT:
-				agC[i] = new long[accCap];
+				agC[i] = newLongAggregateArray(accCap);
 				break;
 			case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
 			case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
@@ -3883,11 +4254,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				if (output.hookDistinct) {
 					break;
 				}
+				reserveAggregateArray(accCap, Long.BYTES);
 				agD[i] = new KernelRuntime.LongHashSet[accCap];
 				if (output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT && output.orderedDomain >= 0) {
-					agC[i] = new long[accCap];
-					agL[i] = new long[accCap];
-					agB[i] = new boolean[accCap];
+					agC[i] = newLongAggregateArray(accCap);
+					agL[i] = newLongAggregateArray(accCap);
+					agB[i] = newBooleanAggregateArray(accCap);
 					agO[i] = KernelRuntime.unsignedNondecreasing(context.keyDomains[output.orderedDomain],
 							context.keyDomainOffsets[output.orderedDomain],
 							context.keyDomainLengths[output.orderedDomain]);
@@ -3900,15 +4272,52 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				break;
 			case LmdbNativeKernelIr.AGG_MIN_ID:
 			case LmdbNativeKernelIr.AGG_MAX_ID:
-				agW[i] = new long[accCap];
-				agB[i] = new boolean[accCap];
+				agW[i] = newLongAggregateArray(accCap);
+				agB[i] = newBooleanAggregateArray(accCap);
 				break;
 			default: // MIN / MAX
-				agM[i] = new double[accCap];
-				agB[i] = new boolean[accCap];
+				agM[i] = newDoubleAggregateArray(accCap);
+				agB[i] = newBooleanAggregateArray(accCap);
 				break;
 			}
 		}
+	}
+
+	private long[] newLongAggregateArray(int length) {
+		reserveAggregateArray(length, Long.BYTES);
+		return new long[length];
+	}
+
+	private boolean[] newBooleanAggregateArray(int length) {
+		reserveAggregateArray(length, 1L);
+		return new boolean[length];
+	}
+
+	private double[] newDoubleAggregateArray(int length) {
+		reserveAggregateArray(length, Double.BYTES);
+		return new double[length];
+	}
+
+	private void reserveAggregateArray(long elements, long elementBytes) {
+		reserveAggregateBytes(KernelRuntime.aggregateArrayBytes(elements, elementBytes));
+	}
+
+	private void reserveAggregateBytes(long bytes) {
+		long total = KernelRuntime.aggregateTotalBytes(aggregateArrayBytes, bytes);
+		if (aggregateMemory != null) {
+			aggregateMemory.reserve(bytes);
+		}
+		aggregateArrayBytes = total;
+	}
+
+	private void releaseAggregateBytes(long bytes) {
+		if (bytes < 0L || bytes > aggregateArrayBytes) {
+			throw new IllegalArgumentException("invalid aggregate array release");
+		}
+		if (aggregateMemory != null) {
+			aggregateMemory.release(bytes);
+		}
+		aggregateArrayBytes -= bytes;
 	}
 
 	/**
@@ -4171,28 +4580,81 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (g >= accCap) {
 			int cap = accCap;
 			while (cap <= g) {
-				cap = cap * 2;
+				cap = KernelRuntime.checkedDoubleCapacity(cap);
 			}
-			for (int i = 0; i < aggregate.outputs.length; i++) {
+			int outputs = aggregate.outputs.length;
+			long replacementBytes = 0L;
+			long oldBytes = 0L;
+			for (int i = 0; i < outputs; i++) {
 				if (agC[i] != null) {
-					agC[i] = Arrays.copyOf(agC[i], cap);
+					replacementBytes = Math.addExact(replacementBytes, arrayBytes(cap, Long.BYTES));
+					oldBytes = Math.addExact(oldBytes, arrayBytes(agC[i].length, Long.BYTES));
 				}
 				if (agD[i] != null) {
-					agD[i] = Arrays.copyOf(agD[i], cap);
+					replacementBytes = Math.addExact(replacementBytes, arrayBytes(cap, Long.BYTES));
+					oldBytes = Math.addExact(oldBytes, arrayBytes(agD[i].length, Long.BYTES));
 				}
 				if (agL[i] != null) {
-					agL[i] = Arrays.copyOf(agL[i], cap);
+					replacementBytes = Math.addExact(replacementBytes, arrayBytes(cap, Long.BYTES));
+					oldBytes = Math.addExact(oldBytes, arrayBytes(agL[i].length, Long.BYTES));
 				}
 				if (agB[i] != null) {
-					agB[i] = Arrays.copyOf(agB[i], cap);
+					replacementBytes = Math.addExact(replacementBytes, arrayBytes(cap, 1L));
+					oldBytes = Math.addExact(oldBytes, arrayBytes(agB[i].length, 1L));
 				}
 				if (agW[i] != null) {
-					agW[i] = Arrays.copyOf(agW[i], cap);
+					replacementBytes = Math.addExact(replacementBytes, arrayBytes(cap, Long.BYTES));
+					oldBytes = Math.addExact(oldBytes, arrayBytes(agW[i].length, Long.BYTES));
 				}
 				if (agM[i] != null) {
-					agM[i] = Arrays.copyOf(agM[i], cap);
+					replacementBytes = Math.addExact(replacementBytes, arrayBytes(cap, Double.BYTES));
+					oldBytes = Math.addExact(oldBytes, arrayBytes(agM[i].length, Double.BYTES));
 				}
 			}
+			long stagingBytes = Math.multiplyExact(6L, arrayBytes(outputs, Long.BYTES));
+			reserveAggregateBytes(Math.addExact(replacementBytes, stagingBytes));
+			long[][] replacementC = new long[outputs][];
+			KernelRuntime.LongHashSet[][] replacementD = new KernelRuntime.LongHashSet[outputs][];
+			long[][] replacementL = new long[outputs][];
+			boolean[][] replacementB = new boolean[outputs][];
+			long[][] replacementW = new long[outputs][];
+			double[][] replacementM = new double[outputs][];
+			try {
+				for (int i = 0; i < outputs; i++) {
+					if (agC[i] != null) {
+						replacementC[i] = Arrays.copyOf(agC[i], cap);
+					}
+					if (agD[i] != null) {
+						replacementD[i] = Arrays.copyOf(agD[i], cap);
+					}
+					if (agL[i] != null) {
+						replacementL[i] = Arrays.copyOf(agL[i], cap);
+					}
+					if (agB[i] != null) {
+						replacementB[i] = Arrays.copyOf(agB[i], cap);
+					}
+					if (agW[i] != null) {
+						replacementW[i] = Arrays.copyOf(agW[i], cap);
+					}
+					if (agM[i] != null) {
+						replacementM[i] = Arrays.copyOf(agM[i], cap);
+					}
+				}
+			} catch (RuntimeException | Error problem) {
+				releaseAggregateBytes(stagingBytes);
+				releaseAggregateBytes(replacementBytes);
+				throw problem;
+			}
+			for (int i = 0; i < outputs; i++) {
+				agC[i] = replacementC[i];
+				agD[i] = replacementD[i];
+				agL[i] = replacementL[i];
+				agB[i] = replacementB[i];
+				agW[i] = replacementW[i];
+				agM[i] = replacementM[i];
+			}
+			releaseAggregateBytes(oldBytes);
+			releaseAggregateBytes(stagingBytes);
 			accCap = cap;
 		}
 		for (int i = 0; i < aggregate.outputs.length; i++) {
@@ -4200,9 +4662,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			if (agD[i] != null && agD[i][g] == null
 					&& !(output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT && output.orderedDomain >= 0
 							&& agO[i])) {
-				agD[i][g] = new KernelRuntime.LongHashSet(distinctExpected, keyHooks);
+				agD[i][g] = new KernelRuntime.LongHashSet(distinctExpected, keyHooks, aggregateMemory);
 			}
 		}
+	}
+
+	private static long arrayBytes(long elements, long elementBytes) {
+		return KernelRuntime.aggregateArrayBytes(elements, elementBytes);
 	}
 
 	private void updateStreaming() {
@@ -4334,8 +4800,25 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return;
 		}
 		KernelRuntime.checkMaterializationCapacity(cancel, outCount);
-		if ((outCount + 1) * stride > out.length) {
-			out = Arrays.copyOf(out, out.length * 2);
+		if ((long) outCount + 1L > out.length / stride) {
+			if (!chargeAggregateOutput) {
+				out = Arrays.copyOf(out, out.length * 2);
+			} else {
+				int oldLength = out.length;
+				int newLength = KernelRuntime.checkedDoubleCapacity(oldLength);
+				long oldBytes = arrayBytes(oldLength, Long.BYTES);
+				long newBytes = arrayBytes(newLength, Long.BYTES);
+				reserveAggregateBytes(newBytes);
+				long[] replacement;
+				try {
+					replacement = Arrays.copyOf(out, newLength);
+				} catch (RuntimeException | Error problem) {
+					releaseAggregateBytes(newBytes);
+					throw problem;
+				}
+				out = replacement;
+				releaseAggregateBytes(oldBytes);
+			}
 		}
 		System.arraycopy(rowScratch, 0, out, outCount * stride, stride);
 		outCount++;

@@ -135,6 +135,20 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		return generatedKeyAuthority == null ? authority : generatedKeyAuthority;
 	}
 
+	/** Returns this facade's worker-owned authority so a sibling can release it without exposing the shared table. */
+	final NativeGeneratedKeyAuthority generatedKeyAuthorityForClose() {
+		return generatedKeyAuthority;
+	}
+
+	/** Installs the query's generated-key policy on a sibling facade while retaining that facade's store authority. */
+	void installGeneratedKeyPolicy(NativeGeneratedKeyPlan proof) {
+		if (proof == null || proof.isEmpty() || context == null) {
+			return;
+		}
+		generatedKeyPlan = proof;
+		generatedKeyAuthority = new NativeGeneratedKeyAuthority(authority, context);
+	}
+
 	long internComputedValue(CopyBinding assignment, Value value) {
 		if (value == null) {
 			return UNKNOWN;
@@ -296,6 +310,13 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public Object valueLookupScope() {
 		return delegate.valueLookupScope();
+	}
+
+	@Override
+	public LmdbNativeValueCodec nativeValueCodec() {
+		// Synthetic ids are resolved by this facade, but stored ids still need the worker's backing dictionary codec.
+		// Delegate once here so WorkerContext.forSource can bind every worker evaluator to its own sibling codec.
+		return delegate.nativeValueCodec();
 	}
 
 	@Override
@@ -662,18 +683,22 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		if (opened == null) {
 			return null;
 		}
+		ParallelSource[] result = new ParallelSource[count];
 		boolean complete = false;
 		Throwable primary = null;
 		try {
 			if (opened.length != count) {
 				return null;
 			}
-			ParallelSource[] result = new ParallelSource[count];
+			Object delegateIdSpace = delegate.idSpace();
+			if (delegateIdSpace == null) {
+				return null;
+			}
 			for (int i = 0; i < count; i++) {
-				if (opened[i] == null) {
+				if (opened[i] == null || opened[i].idSpace() != delegateIdSpace) {
 					return null;
 				}
-				result[i] = new SyntheticParallelSource(opened[i], catalog, context, idSpace());
+				result[i] = new SyntheticParallelSource(opened[i], catalog, context, idSpace(), generatedKeyPlan);
 			}
 			complete = true;
 			return result;
@@ -683,7 +708,8 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		} finally {
 			if (!complete) {
 				Throwable closeFailure = null;
-				for (ParallelSource source : opened) {
+				for (int i = 0; i < opened.length; i++) {
+					ParallelSource source = i < result.length && result[i] != null ? result[i] : opened[i];
 					if (source == null) {
 						continue;
 					}
@@ -712,11 +738,18 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	private static final class SyntheticParallelSource extends SyntheticValueSource implements ParallelSource {
 
 		private final ParallelSource owned;
+		private boolean closed;
 
 		private SyntheticParallelSource(ParallelSource owned, PlanValueCatalog catalog,
-				NativeExecutionContext context, Object syntheticIdSpace) {
+				NativeExecutionContext context, Object syntheticIdSpace, NativeGeneratedKeyPlan generatedKeyPlan) {
 			super(owned, catalog, context, syntheticIdSpace);
 			this.owned = owned;
+			// All sibling facades share the query-owned runtime table through the context, but each receives a
+			// delegate-bound
+			// generated-key authority so store lookups and payload decoding remain worker-local. Generated ids
+			// themselves
+			// stay in the shared id space and therefore remain valid when partial results are merged before close.
+			installGeneratedKeyPolicy(generatedKeyPlan);
 		}
 
 		@Override
@@ -725,8 +758,35 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		}
 
 		@Override
-		public void close() {
-			owned.close();
+		public synchronized void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			Throwable failure = null;
+			try {
+				owned.close();
+			} catch (RuntimeException | Error problem) {
+				failure = problem;
+			}
+			NativeGeneratedKeyAuthority workerAuthority = generatedKeyAuthorityForClose();
+			if (workerAuthority != null) {
+				try {
+					workerAuthority.close();
+				} catch (RuntimeException | Error problem) {
+					if (failure == null) {
+						failure = problem;
+					} else if (failure != problem) {
+						failure.addSuppressed(problem);
+					}
+				}
+			}
+			if (failure instanceof RuntimeException runtimeException) {
+				throw runtimeException;
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
 		}
 	}
 }

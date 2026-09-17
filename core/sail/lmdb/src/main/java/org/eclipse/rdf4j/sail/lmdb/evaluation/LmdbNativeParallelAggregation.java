@@ -203,7 +203,10 @@ final class LmdbNativeParallelAggregation {
 					}
 				}
 				if (setupReady) {
-					workerPlans = LmdbNativeParallelPipelines.forkWorkerPlans(plan, threads);
+					// Keep the compiled plan as a query-thread template. Each worker binds its own copy after it owns a
+					// sibling source, so source-bound scalar evaluators never capture a transaction from another
+					// thread.
+					workerPlans = new MultiJoinPlan[threads];
 				} else {
 					dynamicDecline = "preflight-unavailable";
 				}
@@ -217,7 +220,7 @@ final class LmdbNativeParallelAggregation {
 		}
 		if (primaryFailure == null && workerPlans != null) {
 			try {
-				results = evaluate(it, workerPlans, root, sources, threads, metrics, preparedRoot, partitions);
+				results = evaluate(it, plan, workerPlans, root, sources, threads, metrics, preparedRoot, partitions);
 			} catch (RuntimeException | Error problem) {
 				primaryFailure = problem;
 			}
@@ -606,12 +609,19 @@ final class LmdbNativeParallelAggregation {
 	static List<BindingSet> evaluate(NativeGroupIteration it, MultiJoinPlan[] workerPlans, PatternPlan root,
 			NativeLmdbQuerySource.ParallelSource[] sources, int threads, LmdbNativeAttemptMetrics metrics,
 			PreparedRootScan preparedRoot) {
-		return evaluate(it, workerPlans, root, sources, threads, metrics, preparedRoot, null);
+		return evaluate(it, null, workerPlans, root, sources, threads, metrics, preparedRoot, null);
 	}
 
 	static List<BindingSet> evaluate(NativeGroupIteration it, MultiJoinPlan[] workerPlans, PatternPlan root,
 			NativeLmdbQuerySource.ParallelSource[] sources, int threads, LmdbNativeAttemptMetrics metrics,
 			PreparedRootScan preparedRoot, LmdbRootScanPartition[] plannedPartitions) {
+		return evaluate(it, null, workerPlans, root, sources, threads, metrics, preparedRoot, plannedPartitions);
+	}
+
+	static List<BindingSet> evaluate(NativeGroupIteration it, MultiJoinPlan templatePlan,
+			MultiJoinPlan[] workerPlans, PatternPlan root, NativeLmdbQuerySource.ParallelSource[] sources, int threads,
+			LmdbNativeAttemptMetrics metrics, PreparedRootScan preparedRoot,
+			LmdbRootScanPartition[] plannedPartitions) {
 		int expectedSources = threads + (plannedPartitions != null ? 0 : 1);
 		if (workerPlans == null || workerPlans.length != threads || sources == null
 				|| sources.length != expectedSources) {
@@ -632,15 +642,41 @@ final class LmdbNativeParallelAggregation {
 		Throwable submissionFailure = null;
 		for (int i = 0; i < threads; i++) {
 			NativeLmdbQuerySource source = sources[i];
-			MultiJoinPlan workerPlan = workerPlans[i];
 			LmdbNativeAttemptMetrics workerMetric = workerMetrics[i];
+			int worker = i;
 			try {
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
+					MultiJoinPlan workerPlan = null;
+					boolean handedToWorkerRunner = false;
 					try {
+						workerPlan = templatePlan == null
+								? workerPlans[worker]
+								: LmdbNativeParallelPipelines.forkWorkerPlan(templatePlan,
+										NativeScalarPlan.WorkerContext.forSource(source, it.evaluationContext));
+						workerPlans[worker] = workerPlan;
+						handedToWorkerRunner = true;
 						return runWorkerOwned(it, workerPlan, root, source, queue, partitions, failure, workerMetric);
 					} catch (Throwable t) {
 						failure.compareAndSet(null, t);
 						throw t;
+					} finally {
+						if (!handedToWorkerRunner && workerPlan != null) {
+							Throwable closeFailure = LmdbNativeParallelPipelines.closePlanFilters(workerPlan, null);
+							if (closeFailure != null) {
+								Throwable primary = failure.get();
+								if (primary == null) {
+									if (failure.compareAndSet(null, closeFailure)) {
+										primary = closeFailure;
+									} else {
+										primary = failure.get();
+									}
+								}
+								if (primary != null && primary != closeFailure) {
+									primary.addSuppressed(closeFailure);
+								}
+							}
+						}
+						workerPlans[worker] = null;
 					}
 				}));
 			} catch (RuntimeException | Error problem) {

@@ -67,9 +67,18 @@ final class MultiValuePatternPlan implements SlotPlan {
 
 	/** Creates worker-confined fallback memo/value caches while sharing only immutable pattern metadata. */
 	MultiValuePatternPlan forkForParallelWorker() {
-		return new MultiValuePatternPlan(constrainedSlot, constants, alternatives, fallback,
-				fallbackFilter == null ? null : fallbackFilter.forkForParallelWorker(), exactFilterRewrite,
-				exactProbeCount);
+		return forkForParallelWorker(null);
+	}
+
+	/** Creates a worker copy after the sibling source and its scalar binding context are available. */
+	MultiValuePatternPlan forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		ValueSetFilter workerFilter = fallbackFilter == null
+				? null
+				: context == null
+						? fallbackFilter.forkForParallelWorker()
+						: fallbackFilter.forkForParallelWorker(context);
+		return new MultiValuePatternPlan(constrainedSlot, constants, alternatives, fallback, workerFilter,
+				exactFilterRewrite, exactProbeCount);
 	}
 
 	@Override

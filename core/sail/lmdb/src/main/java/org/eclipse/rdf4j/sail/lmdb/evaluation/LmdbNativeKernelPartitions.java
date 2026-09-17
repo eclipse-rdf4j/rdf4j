@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -23,15 +24,13 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateNodeDomainIntersection;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumeratePredicates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateWildcard;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Exists;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterInConstants;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.HashBuild;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.LeftGroup;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyWildcard;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor;
 
 /**
  * Root-partitioning support shared by the parallel kernel rungs (three-tier parity ExecPlan, Milestone 10B). A kernel
@@ -50,8 +49,87 @@ final class LmdbNativeKernelPartitions {
 		private static final long serialVersionUID = 1L;
 
 		ParallelKernelDecline(String reason) {
-			super(reason, null, false, false);
+			super(reason, null, true, false);
 		}
+	}
+
+	private enum RequirementKind {
+		ADJACENCY,
+		DOMAIN,
+		WILDCARD_VIEW,
+		NODE_DOMAIN_INTERSECTION
+	}
+
+	/**
+	 * Tests every nested producer for a second read of one partitioned resource. The IR visitor is the single source of
+	 * truth for nested execution regions, while the requirements visitor preserves each resource's typed index
+	 * namespace. Ordinary probes are deliberately ignored: they resolve a key in the complete view and do not enumerate
+	 * the partitioned domain.
+	 */
+	private static boolean readsResourceElsewhere(List<Node> pipeline, Node root, int resource,
+			RequirementKind kind) {
+		boolean[] skippedRoot = { false };
+		boolean[] found = { false };
+		LmdbNativeKernelIr.visitNodes(pipeline, node -> {
+			if (!skippedRoot[0] && node == root) {
+				skippedRoot[0] = true;
+				return;
+			}
+			if (!isPartitionedResourceReader(node, kind)) {
+				return;
+			}
+			node.requirements(new LmdbNativeKernelIr.Requirements() {
+				@Override
+				void adjacency(int index) {
+					if (kind == RequirementKind.ADJACENCY && index == resource) {
+						found[0] = true;
+					}
+				}
+
+				@Override
+				void domain(int index) {
+					if (kind == RequirementKind.DOMAIN && index == resource) {
+						found[0] = true;
+					}
+				}
+
+				@Override
+				void wildcardView(int index) {
+					if (kind == RequirementKind.WILDCARD_VIEW && index == resource) {
+						found[0] = true;
+					}
+				}
+
+				@Override
+				void nodeDomainIntersection(int index) {
+					if (kind == RequirementKind.NODE_DOMAIN_INTERSECTION && index == resource) {
+						found[0] = true;
+					}
+				}
+			});
+		});
+		return found[0];
+	}
+
+	/**
+	 * Identifies IR nodes whose resource reference changes when the root resource is windowed. A {@link Probe} and its
+	 * close/fold variants only perform a lookup against a key supplied by the current row; their adjacency requirement
+	 * must therefore remain allowed. Domain membership filters are different: a partitioned domain would make their
+	 * membership test incomplete, so they remain readers even though they are not enumerators.
+	 */
+	private static boolean isPartitionedResourceReader(Node node, RequirementKind kind) {
+		return switch (kind) {
+		case ADJACENCY -> node instanceof EnumerateAdjKeys enumerate && !enumerate.wildcard;
+		case DOMAIN -> node instanceof EnumerateDomain
+				|| node instanceof SipDomainProbe
+				|| node instanceof LmdbNativeKernelIr.FilterInConstants;
+		case WILDCARD_VIEW -> node instanceof EnumerateAdjKeys enumerate && enumerate.wildcard
+				|| node instanceof EnumerateWildcard
+				|| node instanceof EnumeratePredicates enumerate2 && enumerate2.wildcard
+				|| node instanceof SipDomainWildcard
+				|| node instanceof SipKeyWildcard;
+		case NODE_DOMAIN_INTERSECTION -> node instanceof EnumerateNodeDomainIntersection;
+		};
 	}
 
 	/**
@@ -66,29 +144,23 @@ final class LmdbNativeKernelPartitions {
 		while (start < pipeline.size() && pipeline.get(start) instanceof LmdbNativeKernelIr.HashBuild) {
 			start++;
 		}
-		if (start >= pipeline.size() || !(pipeline.get(start) instanceof EnumerateAdjKeys)) {
+		if (start >= pipeline.size() || !(pipeline.get(start) instanceof EnumerateAdjKeys keys) || keys.wildcard) {
 			return -1;
 		}
-		int rootAdjacency = ((EnumerateAdjKeys) pipeline.get(start)).adjacency;
-		return enumeratesAdjacencyElsewhere(pipeline, start, rootAdjacency) ? -1 : rootAdjacency;
+		EnumerateAdjKeys root = (EnumerateAdjKeys) pipeline.get(start);
+		return readsResourceElsewhere(pipeline, root, root.adjacency, RequirementKind.ADJACENCY) ? -1 : root.adjacency;
 	}
 
-	private static boolean enumeratesAdjacencyElsewhere(List<Node> pipeline, int rootIndex, int rootAdjacency) {
-		for (int i = 0; i < pipeline.size(); i++) {
-			if (i == rootIndex) {
-				continue;
-			}
-			Node node = pipeline.get(i);
-			if (node instanceof EnumerateAdjKeys && ((EnumerateAdjKeys) node).adjacency == rootAdjacency) {
-				return true;
-			}
-			if (node instanceof LmdbNativeKernelIr.HashBuild
-					&& enumeratesAdjacencyElsewhere(((LmdbNativeKernelIr.HashBuild) node).pipeline, -1,
-							rootAdjacency)) {
-				return true;
-			}
+	/**
+	 * Returns the first physical producer after a per-worker hash-build preamble. The producer schedule is keyed by
+	 * object identity, so callers must use this node rather than reconstructing an equivalent shape node.
+	 */
+	static Node partitionableRootProducer(List<Node> pipeline) {
+		int start = 0;
+		while (start < pipeline.size() && pipeline.get(start) instanceof HashBuild) {
+			start++;
 		}
-		return false;
+		return start < pipeline.size() ? pipeline.get(start) : null;
 	}
 
 	/**
@@ -114,12 +186,7 @@ final class LmdbNativeKernelPartitions {
 		} else {
 			return -1;
 		}
-		for (int i = 0; i < pipeline.size(); i++) {
-			if (i != start && readsDomain(pipeline.get(i), rootDomain)) {
-				return -1;
-			}
-		}
-		return rootDomain;
+		return readsResourceElsewhere(pipeline, root, rootDomain, RequirementKind.DOMAIN) ? -1 : rootDomain;
 	}
 
 	/** The root node-domain-intersection view when it is the pipeline's only read of that view, or {@code -1}. */
@@ -128,16 +195,11 @@ final class LmdbNativeKernelPartitions {
 		while (start < pipeline.size() && pipeline.get(start) instanceof HashBuild) {
 			start++;
 		}
-		if (start >= pipeline.size() || !(pipeline.get(start)instanceof EnumerateNodeDomainIntersection root)) {
+		if (start >= pipeline.size() || !(pipeline.get(start) instanceof EnumerateNodeDomainIntersection root)) {
 			return -1;
 		}
-		for (int i = 0; i < pipeline.size(); i++) {
-			if (i != start && pipeline.get(i)instanceof EnumerateNodeDomainIntersection other
-					&& other.view == root.view) {
-				return -1;
-			}
-		}
-		return root.view;
+		return readsResourceElsewhere(pipeline, root, root.view, RequirementKind.NODE_DOMAIN_INTERSECTION) ? -1
+				: root.view;
 	}
 
 	/** A disjoint partition-ordinal window over a snapshot-bound intersection view. */
@@ -176,44 +238,6 @@ final class LmdbNativeKernelPartitions {
 		public Cursor cursor(int partition) {
 			return delegate.cursor(from + partition);
 		}
-	}
-
-	private static boolean readsDomain(Node node, int domain) {
-		if (node instanceof EnumerateDomain) {
-			return ((EnumerateDomain) node).domain == domain;
-		}
-		if (node instanceof SipDomainProbe) {
-			return ((SipDomainProbe) node).domain == domain;
-		}
-		if (node instanceof FilterInConstants) {
-			return ((FilterInConstants) node).domain == domain;
-		}
-		if (node instanceof HashBuild) {
-			return readsDomain(((HashBuild) node).pipeline, domain);
-		}
-		if (node instanceof Exists) {
-			return readsDomain(((Exists) node).pipeline, domain);
-		}
-		if (node instanceof LeftGroup) {
-			return readsDomain(((LeftGroup) node).arm, domain);
-		}
-		if (node instanceof Union) {
-			for (List<Node> branch : ((Union) node).branches) {
-				if (readsDomain(branch, domain)) {
-					return true;
-				}
-			}
-		}
-		return false;
-	}
-
-	private static boolean readsDomain(List<Node> pipeline, int domain) {
-		for (Node node : pipeline) {
-			if (readsDomain(node, domain)) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	/**
@@ -266,53 +290,55 @@ final class LmdbNativeKernelPartitions {
 		if (demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY) {
 			return -1;
 		}
-		for (int i = 0; i < pipeline.size(); i++) {
-			if (i != start && readsWildcard(pipeline.get(i), wildcardView)) {
+		return readsResourceElsewhere(pipeline, root, wildcardView, RequirementKind.WILDCARD_VIEW) ? -1
+				: wildcardView;
+	}
+
+	/**
+	 * Returns a wildcard view that may be split by root windows. This proof is intentionally narrower than
+	 * {@link #partitionableRootWildcard(List)}: only a producer that owns both the wildcard predicate plane and its
+	 * root enumeration can be wrapped without changing row multiplicity. The parallel scheduler may opt into this
+	 * helper when its page/root projection is available; the ordinary predicate-plane partition remains governed by
+	 * {@code partitionableRootWildcard}.
+	 */
+	static int partitionableRootWildcardWindow(List<Node> pipeline) {
+		int start = 0;
+		while (start < pipeline.size() && pipeline.get(start) instanceof HashBuild) {
+			start++;
+		}
+		if (start >= pipeline.size()) {
+			return -1;
+		}
+		Node root = pipeline.get(start);
+		int wildcardView;
+		if (root instanceof EnumerateAdjKeys enumerate && enumerate.wildcard) {
+			wildcardView = enumerate.adjacency;
+			if (enumerate.runtimePredicate == null
+					|| enumerate.runtimePredicate.kind == LmdbNativeKernelIr.Operand.COL
+					|| enumerate.ctxMatch != null && enumerate.ctxMatch.kind == LmdbNativeKernelIr.Operand.COL) {
 				return -1;
 			}
+		} else if (root instanceof EnumerateWildcard enumerate) {
+			wildcardView = enumerate.view;
+			if (enumerate.demand == LmdbWildcardPhysicalDemand.Demand.NODE_ANY
+					|| enumerate.demand == LmdbWildcardPhysicalDemand.Demand.PREDICATE_ANY
+					|| enumerate.ctxMatch != null && enumerate.ctxMatch.kind == LmdbNativeKernelIr.Operand.COL) {
+				return -1;
+			}
+		} else {
+			return -1;
 		}
-		return wildcardView;
+		return readsResourceElsewhere(pipeline, root, wildcardView, RequirementKind.WILDCARD_VIEW) ? -1
+				: wildcardView;
 	}
 
-	private static boolean readsWildcard(Node node, int wildcardView) {
-		if (node instanceof EnumerateWildcard enumerate) {
-			return enumerate.view == wildcardView;
+	/** Returns the runtime predicate operand for a bound wildcard key producer, or {@code null} for predicate-major. */
+	static LmdbNativeKernelIr.Operand rootWildcardPredicate(List<Node> pipeline, int wildcardView) {
+		Node root = partitionableRootProducer(pipeline);
+		if (root instanceof EnumerateAdjKeys keys && keys.wildcard && keys.adjacency == wildcardView) {
+			return keys.runtimePredicate;
 		}
-		if (node instanceof EnumeratePredicates enumerate) {
-			return enumerate.wildcard && enumerate.view == wildcardView;
-		}
-		if (node instanceof SipDomainWildcard probe) {
-			return probe.wildcardView == wildcardView;
-		}
-		if (node instanceof SipKeyWildcard probe) {
-			return probe.wildcardView == wildcardView;
-		}
-		if (node instanceof HashBuild build) {
-			return readsWildcard(build.pipeline, wildcardView);
-		}
-		if (node instanceof Exists exists) {
-			return readsWildcard(exists.pipeline, wildcardView);
-		}
-		if (node instanceof LeftGroup left) {
-			return readsWildcard(left.arm, wildcardView);
-		}
-		if (node instanceof Union union) {
-			for (List<Node> branch : union.branches) {
-				if (readsWildcard(branch, wildcardView)) {
-					return true;
-				}
-			}
-		}
-		return false;
-	}
-
-	private static boolean readsWildcard(List<Node> pipeline, int wildcardView) {
-		for (Node node : pipeline) {
-			if (readsWildcard(node, wildcardView)) {
-				return true;
-			}
-		}
-		return false;
+		return null;
 	}
 
 	/**
@@ -330,11 +356,6 @@ final class LmdbNativeKernelPartitions {
 		return seeded.boundMask() == row.boundMask() && Arrays.equals(seeded.slots, row.slots);
 	}
 
-	/**
-	 * True when every hook-invoked filter can create a worker-confined copy through the same
-	 * {@code NativeBooleanFilter.forkForParallelWorker} SPI the interpreted parallel engine uses. A shared filter with
-	 * mutable native state (memo tables, lazily acquired probes) answers false and keeps the sequential route.
-	 */
 	/**
 	 * The root producer's scan site when the pipeline is rooted at a {@link LmdbNativeKernelIr.ScanQuad} that no other
 	 * node re-reads, or -1. This is the scan-rooted twin of {@link #partitionableRootAdjacency}: the interpreted
@@ -461,6 +482,41 @@ final class LmdbNativeKernelPartitions {
 		return forked;
 	}
 
+	/** Worker-confined filter copies rebuilt with the worker's source, codec, and evaluation scope. */
+	static FilterHook[] forkFilterHooks(FilterHook[] hooks, NativeScalarPlan.WorkerContext context) {
+		FilterHook[] forked = new FilterHook[hooks.length];
+		for (int i = 0; i < hooks.length; i++) {
+			forked[i] = hooks[i].bindForWorker(context);
+			if (forked[i] == null) {
+				closeForkedHooks(forked, new ParallelKernelDecline("filter-worker-bind-unavailable"));
+			}
+		}
+		return forked;
+	}
+
+	/** Returns whether every computed-BIND hook carries a worker-safe structural recipe. */
+	static boolean bindHooksForkable(LmdbNativeKernelBindings.BindHook[] hooks) {
+		for (LmdbNativeKernelBindings.BindHook hook : hooks) {
+			if (!hook.workerBindable()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Worker-confined computed-BIND copies. Bind hooks have no native resources and need no partial cleanup. */
+	static LmdbNativeKernelBindings.BindHook[] forkBindHooks(LmdbNativeKernelBindings.BindHook[] hooks,
+			NativeScalarPlan.WorkerContext context) {
+		LmdbNativeKernelBindings.BindHook[] forked = new LmdbNativeKernelBindings.BindHook[hooks.length];
+		for (int i = 0; i < hooks.length; i++) {
+			forked[i] = hooks[i].bindForWorker(context);
+			if (forked[i] == null) {
+				throw new ParallelKernelDecline("bind-worker-unavailable");
+			}
+		}
+		return forked;
+	}
+
 	/** Worker-confined copies of the residual filters, encounter order preserved. */
 	static NativeBooleanFilter[] forkResidualFilters(List<MaskedFilter> residuals) {
 		NativeBooleanFilter[] forked = new NativeBooleanFilter[residuals.size()];
@@ -468,6 +524,20 @@ final class LmdbNativeKernelPartitions {
 			NativeBooleanFilter fork = residuals.get(i).filter.forkForParallelWorker();
 			if (fork == null) {
 				closeForked(forked, new ParallelKernelDecline("filter-fork-unavailable"));
+			}
+			forked[i] = fork;
+		}
+		return forked;
+	}
+
+	/** Worker-confined residual copies rebuilt with the worker's source, codec, and evaluation scope. */
+	static NativeBooleanFilter[] forkResidualFilters(List<MaskedFilter> residuals,
+			NativeScalarPlan.WorkerContext context) {
+		NativeBooleanFilter[] forked = new NativeBooleanFilter[residuals.size()];
+		for (int i = 0; i < forked.length; i++) {
+			NativeBooleanFilter fork = residuals.get(i).filter.forkForParallelWorker(context);
+			if (fork == null) {
+				closeForked(forked, new ParallelKernelDecline("filter-worker-bind-unavailable"));
 			}
 			forked[i] = fork;
 		}
@@ -524,9 +594,260 @@ final class LmdbNativeKernelPartitions {
 		return primary;
 	}
 
+	/**
+	 * The kind of physical unit represented by one plane in a flattened partition plan. Root ordinal windows are the
+	 * exact fallback for merged/overlay views; page windows are admitted only for immutable exact page cursors.
+	 */
+	enum UnitKind {
+		ROOT_ORDINAL,
+		PAGE
+	}
+
+	/** One plane's immutable prefix range in a flattened partition plan. */
+	record PlanePlan(int viewIndex, int predicateOrdinal, UnitKind kind, long firstUnit, long unitCount) {
+		PlanePlan {
+			Objects.requireNonNull(kind, "kind");
+			if (viewIndex < 0 || predicateOrdinal < -1 || firstUnit < 0L || unitCount < 0L) {
+				throw new IllegalArgumentException("invalid plane partition: view=" + viewIndex + ", predicate="
+						+ predicateOrdinal + ", first=" + firstUnit + ", count=" + unitCount);
+			}
+		}
+
+		long endUnit() {
+			return Math.addExact(firstUnit, unitCount);
+		}
+	}
+
+	/** One physical segment of a scheduler morsel, expressed in the plane's local coordinate system. */
+	record PartitionSegment(int viewIndex, int predicateOrdinal, UnitKind kind, long from, long to) {
+		PartitionSegment {
+			Objects.requireNonNull(kind, "kind");
+			if (viewIndex < 0 || predicateOrdinal < -1 || from < 0L || to < from) {
+				throw new IllegalArgumentException("invalid partition segment");
+			}
+		}
+	}
+
+	@FunctionalInterface
+	interface SegmentConsumer {
+		void accept(int viewIndex, int predicateOrdinal, UnitKind kind, long from, long to);
+	}
+
+	/**
+	 * Immutable prefix plan over one or more root planes. The plan stores one entry per plane, never one entry per
+	 * page; the existing bounded queue can therefore over-partition the flattened unit count without allocating a task
+	 * object for every physical page. A plan owns no adjacency and never closes its source views.
+	 */
+	static final class PartitionPlan {
+		private final PlanePlan[] planes;
+		private final long unitCount;
+		private final boolean usesPages;
+
+		private PartitionPlan(PlanePlan[] planes) {
+			this.planes = planes.clone();
+			boolean pages = false;
+			long expectedFirst = 0L;
+			for (PlanePlan plane : this.planes) {
+				if (plane.firstUnit() != expectedFirst) {
+					throw new IllegalArgumentException("plane prefixes must be contiguous");
+				}
+				expectedFirst = plane.endUnit();
+				pages |= plane.kind() == UnitKind.PAGE;
+			}
+			unitCount = expectedFirst;
+			usesPages = pages;
+		}
+
+		static PartitionPlan planAdjacency(int viewIndex, NativeLmdbQuerySource.NativeAdjacency adjacency,
+				boolean pageProducer, boolean requireContexts) {
+			Objects.requireNonNull(adjacency, "adjacency");
+			if (viewIndex < 0) {
+				throw new IllegalArgumentException("view index must be non-negative");
+			}
+			if (pageProducer) {
+				long pages = adjacency.pageCount();
+				if (pages >= 2L && pageCapability(adjacency, requireContexts)) {
+					return new PartitionPlan(new PlanePlan[] {
+							new PlanePlan(viewIndex, -1, UnitKind.PAGE, 0L, pages)
+					});
+				}
+			}
+			long roots = adjacency.keyCount();
+			if (roots < 0L) {
+				return null;
+			}
+			return new PartitionPlan(new PlanePlan[] {
+					new PlanePlan(viewIndex, -1, UnitKind.ROOT_ORDINAL, 0L, roots)
+			});
+		}
+
+		/**
+		 * Plans every predicate plane in a wildcard view. The view is bound briefly while capabilities are inspected. A
+		 * caller with a previously bound predicate has that binding restored; callers that need to preserve an unbound
+		 * view should pass a fresh disposable wildcard view for planning.
+		 */
+		static PartitionPlan planWildcard(int viewIndex, NativeLmdbQuerySource.WildcardAdjacency wildcard,
+				boolean pageProducer, boolean requireContexts) {
+			Objects.requireNonNull(wildcard, "wildcard");
+			if (viewIndex < 0) {
+				throw new IllegalArgumentException("view index must be non-negative");
+			}
+			int predicateCount = wildcard.predicateCount();
+			if (predicateCount < 0) {
+				throw new IllegalStateException("wildcard predicate count is negative");
+			}
+			PlanePlan[] planes = new PlanePlan[predicateCount];
+			int previous = wildcard.boundPredicateOrdinal();
+			long prefix = 0L;
+			try {
+				for (int predicateOrdinal = 0; predicateOrdinal < predicateCount; predicateOrdinal++) {
+					wildcard.bind(predicateOrdinal);
+					UnitChoice choice = chooseWildcardUnits(wildcard, pageProducer, requireContexts);
+					if (choice == null) {
+						return null;
+					}
+					planes[predicateOrdinal] = new PlanePlan(viewIndex, predicateOrdinal, choice.kind(), prefix,
+							choice.count());
+					prefix = Math.addExact(prefix, choice.count());
+				}
+				return new PartitionPlan(planes);
+			} finally {
+				if (previous >= 0 && previous < predicateCount) {
+					wildcard.bind(previous);
+				}
+			}
+		}
+
+		/** Plans the one predicate plane selected by a runtime-bound predicate operand. */
+		static PartitionPlan planWildcardPredicate(int viewIndex, NativeLmdbQuerySource.WildcardAdjacency wildcard,
+				long predicateId, boolean pageProducer, boolean requireContexts) {
+			Objects.requireNonNull(wildcard, "wildcard");
+			if (viewIndex < 0) {
+				throw new IllegalArgumentException("view index must be non-negative");
+			}
+			int predicateOrdinal = wildcard.predicateOrdinal(predicateId);
+			if (predicateOrdinal < 0) {
+				return new PartitionPlan(new PlanePlan[0]);
+			}
+			int previous = wildcard.boundPredicateOrdinal();
+			try {
+				wildcard.bind(predicateOrdinal);
+				UnitChoice choice = chooseWildcardUnits(wildcard, pageProducer, requireContexts);
+				if (choice == null) {
+					return null;
+				}
+				return new PartitionPlan(new PlanePlan[] {
+						new PlanePlan(viewIndex, predicateOrdinal, choice.kind(), 0L, choice.count())
+				});
+			} finally {
+				if (previous >= 0 && previous < wildcard.predicateCount()) {
+					wildcard.bind(previous);
+				}
+			}
+		}
+
+		private static UnitChoice chooseWildcardUnits(NativeLmdbQuerySource.WildcardAdjacency wildcard,
+				boolean pageProducer, boolean requireContexts) {
+			if (pageProducer) {
+				long pages = wildcard.pageCount();
+				if (pages >= 2L && wildcardPageCapability(wildcard, requireContexts)) {
+					return new UnitChoice(UnitKind.PAGE, pages);
+				}
+			}
+			long roots = wildcard.keyCount();
+			return roots < 0L ? null : new UnitChoice(UnitKind.ROOT_ORDINAL, roots);
+		}
+
+		private static boolean wildcardPageCapability(NativeLmdbQuerySource.WildcardAdjacency wildcard,
+				boolean requireContexts) {
+			NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor cursor = wildcard.openPageCursor(0L, 1L);
+			if (cursor == null) {
+				return false;
+			}
+			try {
+				return !requireContexts || cursor.supportsContextAccess();
+			} finally {
+				cursor.close();
+			}
+		}
+
+		private static boolean pageCapability(NativeLmdbQuerySource.NativeAdjacency adjacency,
+				boolean requireContexts) {
+			NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor cursor = adjacency.openPageCursor(0L, 1L);
+			if (cursor == null) {
+				return false;
+			}
+			try {
+				return !requireContexts || cursor.supportsContextAccess();
+			} finally {
+				cursor.close();
+			}
+		}
+
+		private record UnitChoice(UnitKind kind, long count) {
+		}
+
+		long unitCount() {
+			return unitCount;
+		}
+
+		int planeCount() {
+			return planes.length;
+		}
+
+		PlanePlan plane(int index) {
+			return planes[index];
+		}
+
+		boolean usesPages() {
+			return usesPages;
+		}
+
+		/** Invokes {@code consumer} for each plane interval intersecting global {@code [from,to)}. */
+		void forEachSegment(long from, long to, SegmentConsumer consumer) {
+			Objects.requireNonNull(consumer, "consumer");
+			if (from < 0L || to < from || to > unitCount) {
+				throw new IllegalArgumentException("invalid flattened partition range: [" + from + ", " + to
+						+ ") of " + unitCount);
+			}
+			for (PlanePlan plane : planes) {
+				long planeFrom = plane.firstUnit();
+				long planeTo = plane.endUnit();
+				if (planeTo <= from) {
+					continue;
+				}
+				if (planeFrom >= to) {
+					break;
+				}
+				long segmentFrom = Math.max(from, planeFrom) - planeFrom;
+				long segmentTo = Math.min(to, planeTo) - planeFrom;
+				if (segmentFrom < segmentTo) {
+					consumer.accept(plane.viewIndex(), plane.predicateOrdinal(), plane.kind(), segmentFrom, segmentTo);
+				}
+			}
+		}
+
+		List<PartitionSegment> segments(long from, long to) {
+			List<PartitionSegment> result = new java.util.ArrayList<>();
+			forEachSegment(from, to,
+					(view, predicate, kind, segmentFrom, segmentTo) -> result.add(
+							new PartitionSegment(view, predicate, kind, segmentFrom, segmentTo)));
+			return result;
+		}
+	}
+
 	/** Contiguous ordinal windows {@code [from, to)} covering {@code [0, total)}, over-partitioned for stealing. */
 	static ConcurrentLinkedQueue<long[]> ranges(long total, int threads, int rangesPerWorker) {
 		ConcurrentLinkedQueue<long[]> ranges = new ConcurrentLinkedQueue<>();
+		if (total < 0L) {
+			throw new IllegalArgumentException("range total must be non-negative");
+		}
+		if (threads <= 0 || rangesPerWorker <= 0) {
+			throw new IllegalArgumentException("range workers and ranges-per-worker must be positive");
+		}
+		if (total == 0L) {
+			return ranges;
+		}
 		long chunkCount = Math.min(total, (long) threads * rangesPerWorker);
 		long chunk = total / chunkCount;
 		long remainder = total % chunkCount;
@@ -537,6 +858,21 @@ final class LmdbNativeKernelPartitions {
 			at += size;
 		}
 		return ranges;
+	}
+
+	static PartitionPlan planAdjacency(int viewIndex, NativeLmdbQuerySource.NativeAdjacency adjacency,
+			boolean pageProducer, boolean requireContexts) {
+		return PartitionPlan.planAdjacency(viewIndex, adjacency, pageProducer, requireContexts);
+	}
+
+	static PartitionPlan planWildcard(int viewIndex, NativeLmdbQuerySource.WildcardAdjacency wildcard,
+			boolean pageProducer, boolean requireContexts) {
+		return PartitionPlan.planWildcard(viewIndex, wildcard, pageProducer, requireContexts);
+	}
+
+	static PartitionPlan planWildcardPredicate(int viewIndex, NativeLmdbQuerySource.WildcardAdjacency wildcard,
+			long predicateId, boolean pageProducer, boolean requireContexts) {
+		return PartitionPlan.planWildcardPredicate(viewIndex, wildcard, predicateId, pageProducer, requireContexts);
 	}
 
 	/**
@@ -646,67 +982,29 @@ final class LmdbNativeKernelPartitions {
 	}
 
 	/**
-	 * Predicate-ordinal window over one worker-owned wildcard view. The wrapper never owns the delegate: the worker's
-	 * probe closes it after every range has finished. Plane binding is translated to the delegate's global ordinal; run
-	 * handles are consumed before the next bind, exactly as required by
-	 * {@link NativeLmdbQuerySource.WildcardAdjacency}.
+	 * Exact physical-page window over one immutable adjacency plane. Key enumeration deliberately remains unavailable:
+	 * a page-selected worker must either use the page producer or decline to the ordinary exact root cursor, never
+	 * widen its range to all roots by invoking a fallback key enumerator.
 	 */
-	static final class WildcardPredicateWindow implements NativeLmdbQuerySource.WildcardAdjacency {
-		private final NativeLmdbQuerySource.WildcardAdjacency delegate;
-		private final int from;
-		private final int to;
+	static final class PageWindowView implements NativeLmdbQuerySource.NativeAdjacency {
+		private final NativeLmdbQuerySource.NativeAdjacency delegate;
+		private final long fromPage;
+		private final long toPage;
 
-		WildcardPredicateWindow(NativeLmdbQuerySource.WildcardAdjacency delegate, long from, long to) {
-			if (from < 0L || to < from || to > delegate.predicateCount() || to > Integer.MAX_VALUE) {
+		PageWindowView(NativeLmdbQuerySource.NativeAdjacency delegate, long fromPage, long toPage) {
+			this.delegate = Objects.requireNonNull(delegate, "delegate");
+			long pageCount = delegate.pageCount();
+			if (fromPage < 0L || toPage < fromPage || pageCount < 0L || toPage > pageCount) {
 				throw new IllegalArgumentException(
-						"invalid wildcard predicate window: [" + from + ", " + to + ") of "
-								+ delegate.predicateCount());
+						"invalid page window: [" + fromPage + ", " + toPage + ") of " + pageCount);
 			}
-			this.delegate = delegate;
-			this.from = (int) from;
-			this.to = (int) to;
+			this.fromPage = fromPage;
+			this.toPage = toPage;
 		}
 
 		@Override
-		public int predicateCount() {
-			return to - from;
-		}
-
-		@Override
-		public long predicateAt(int predicateOrdinal) {
-			if (predicateOrdinal < 0 || predicateOrdinal >= predicateCount()) {
-				throw new IndexOutOfBoundsException("wildcard predicate ordinal " + predicateOrdinal);
-			}
-			return delegate.predicateAt(from + predicateOrdinal);
-		}
-
-		@Override
-		public void bind(int predicateOrdinal) {
-			if (predicateOrdinal < 0 || predicateOrdinal >= predicateCount()) {
-				throw new IndexOutOfBoundsException("wildcard predicate ordinal " + predicateOrdinal);
-			}
-			delegate.bind(from + predicateOrdinal);
-		}
-
-		@Override
-		public int boundPredicateOrdinal() {
-			int ordinal = delegate.boundPredicateOrdinal();
-			return ordinal >= from && ordinal < to ? ordinal - from : -1;
-		}
-
-		@Override
-		public long keyCount() {
-			return delegate.keyCount();
-		}
-
-		@Override
-		public long maximumKey() {
-			return delegate.maximumKey();
-		}
-
-		@Override
-		public long keyAt(long keyOrdinal) {
-			return delegate.keyAt(keyOrdinal);
+		public long find(long key) {
+			return delegate.find(key);
 		}
 
 		@Override
@@ -715,18 +1013,230 @@ final class LmdbNativeKernelPartitions {
 		}
 
 		@Override
-		public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor() {
-			return delegate.openKeyRunCursor();
+		public long size(long runHandle) {
+			return delegate.size(runHandle);
 		}
 
 		@Override
-		public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor(long fromOrdinal, long toOrdinal) {
-			return delegate.openKeyRunCursor(fromOrdinal, toOrdinal);
+		public long neighborAt(long runHandle, long runOffset) {
+			return delegate.neighborAt(runHandle, runOffset);
+		}
+
+		@Override
+		public long contextAt(long runHandle, long runOffset) {
+			return delegate.contextAt(runHandle, runOffset);
+		}
+
+		@Override
+		public int copyNeighbors(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
+			return delegate.copyNeighbors(runHandle, runOffset, length, target, targetOffset);
+		}
+
+		@Override
+		public int copyContexts(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
+			return delegate.copyContexts(runHandle, runOffset, length, target, targetOffset);
+		}
+
+		@Override
+		public long lowerBound(long runHandle, long fromOffset, long neighbor, long context) {
+			return delegate.lowerBound(runHandle, fromOffset, neighbor, context);
+		}
+
+		@Override
+		public boolean supportsKeyEnumeration() {
+			return false;
+		}
+
+		@Override
+		public long keyCount() {
+			throw new ParallelKernelDecline("page-window-does-not-support-root-enumeration");
+		}
+
+		@Override
+		public long keyAt(long keyOrdinal) {
+			throw new UnsupportedOperationException("page window has no root ordinal enumeration");
+		}
+
+		@Override
+		public long lowerBoundKeyOrdinal(long key) {
+			throw new UnsupportedOperationException("page window has no root ordinal enumeration");
+		}
+
+		@Override
+		public KeyRunCursor openKeyRunCursor() {
+			throw new ParallelKernelDecline("page-window-does-not-support-root-enumeration");
+		}
+
+		@Override
+		public KeyRunCursor openKeyRunCursor(long fromOrdinal, long toOrdinal) {
+			throw new ParallelKernelDecline("page-window-does-not-support-root-enumeration");
+		}
+
+		@Override
+		public AdjacencyPageCursor openPageCursor() {
+			AdjacencyPageCursor cursor = delegate.openPageCursor(fromPage, toPage);
+			if (cursor == null) {
+				throw new ParallelKernelDecline("page-window-source-unavailable");
+			}
+			return cursor;
+		}
+
+		@Override
+		public long pageCount() {
+			return toPage - fromPage;
 		}
 
 		@Override
 		public long quadCount() {
-			return delegate.quadCount();
+			return -1L;
+		}
+
+		@Override
+		public AdjacencyPageCursor openPageCursor(long localFromPage, long localToPage) {
+			long count = pageCount();
+			if (localFromPage < 0L || localToPage < localFromPage || localToPage > count) {
+				throw new IllegalArgumentException("invalid local page window: [" + localFromPage + ", "
+						+ localToPage + ") of " + count);
+			}
+			AdjacencyPageCursor cursor = delegate.openPageCursor(fromPage + localFromPage, fromPage + localToPage);
+			if (cursor == null) {
+				throw new ParallelKernelDecline("page-window-source-unavailable");
+			}
+			return cursor;
+		}
+	}
+
+	/** Exact physical-page window over one predicate of a worker-owned wildcard view. */
+	static final class WildcardPageWindow implements NativeLmdbQuerySource.WildcardAdjacency {
+		private final NativeLmdbQuerySource.WildcardAdjacency delegate;
+		private final int predicateOrdinal;
+		private final long fromPage;
+		private final long toPage;
+		private boolean bound;
+
+		WildcardPageWindow(NativeLmdbQuerySource.WildcardAdjacency delegate, int predicateOrdinal, long fromPage,
+				long toPage) {
+			this.delegate = Objects.requireNonNull(delegate, "delegate");
+			int predicateCount = delegate.predicateCount();
+			if (predicateOrdinal < 0 || predicateOrdinal >= predicateCount) {
+				throw new IllegalArgumentException("invalid wildcard predicate ordinal: " + predicateOrdinal);
+			}
+			int previous = delegate.boundPredicateOrdinal();
+			long pageCount;
+			try {
+				// pageCount is bound-predicate state. Bind the target before asking for it, while restoring a different
+				// existing binding even when validation fails.
+				delegate.bind(predicateOrdinal);
+				pageCount = delegate.pageCount();
+				if (fromPage < 0L || toPage < fromPage || pageCount < 0L || toPage > pageCount) {
+					throw new IllegalArgumentException(
+							"invalid wildcard page window: [" + fromPage + ", " + toPage + ") of " + pageCount);
+				}
+			} finally {
+				if (previous >= 0 && previous < predicateCount && previous != predicateOrdinal) {
+					delegate.bind(previous);
+				}
+			}
+			this.predicateOrdinal = predicateOrdinal;
+			this.fromPage = fromPage;
+			this.toPage = toPage;
+			this.bound = previous < 0 || previous == predicateOrdinal;
+		}
+
+		@Override
+		public int predicateCount() {
+			return 1;
+		}
+
+		@Override
+		public long predicateAt(int ordinal) {
+			if (ordinal != 0) {
+				throw new IndexOutOfBoundsException("wildcard page window predicate ordinal " + ordinal);
+			}
+			return delegate.predicateAt(predicateOrdinal);
+		}
+
+		@Override
+		public void bind(int ordinal) {
+			if (ordinal != 0) {
+				throw new IndexOutOfBoundsException("wildcard page window predicate ordinal " + ordinal);
+			}
+			delegate.bind(predicateOrdinal);
+			bound = true;
+		}
+
+		@Override
+		public int boundPredicateOrdinal() {
+			return bound && delegate.boundPredicateOrdinal() == predicateOrdinal ? 0 : -1;
+		}
+
+		@Override
+		public long keyCount() {
+			throw new ParallelKernelDecline("wildcard-page-window-does-not-support-root-enumeration");
+		}
+
+		@Override
+		public long maximumKey() {
+			throw new ParallelKernelDecline("wildcard-page-window-does-not-support-root-enumeration");
+		}
+
+		@Override
+		public long keyAt(long keyOrdinal) {
+			throw new ParallelKernelDecline("wildcard-page-window-does-not-support-root-enumeration");
+		}
+
+		@Override
+		public int findBatch(long[] keys, int keyOffset, int count, long[] runHandles, int runOffset) {
+			return delegate.findBatch(keys, keyOffset, count, runHandles, runOffset);
+		}
+
+		@Override
+		public KeyRunCursor openKeyRunCursor() {
+			throw new ParallelKernelDecline("wildcard-page-window-does-not-support-root-enumeration");
+		}
+
+		@Override
+		public KeyRunCursor openKeyRunCursor(long fromOrdinal, long toOrdinal) {
+			throw new ParallelKernelDecline("wildcard-page-window-does-not-support-root-enumeration");
+		}
+
+		@Override
+		public AdjacencyPageCursor openPageCursor() {
+			if (!bound || delegate.boundPredicateOrdinal() != predicateOrdinal) {
+				bind(0);
+			}
+			AdjacencyPageCursor cursor = delegate.openPageCursor(fromPage, toPage);
+			if (cursor == null) {
+				throw new ParallelKernelDecline("wildcard-page-window-source-unavailable");
+			}
+			return cursor;
+		}
+
+		@Override
+		public long pageCount() {
+			return toPage - fromPage;
+		}
+
+		@Override
+		public AdjacencyPageCursor openPageCursor(long localFromPage, long localToPage) {
+			long count = pageCount();
+			if (localFromPage < 0L || localToPage < localFromPage || localToPage > count) {
+				throw new IllegalArgumentException("invalid local wildcard page window: [" + localFromPage + ", "
+						+ localToPage + ") of " + count);
+			}
+			if (!bound || delegate.boundPredicateOrdinal() != predicateOrdinal) {
+				bind(0);
+			}
+			AdjacencyPageCursor cursor = delegate.openPageCursor(fromPage + localFromPage, fromPage + localToPage);
+			if (cursor == null) {
+				throw new ParallelKernelDecline("wildcard-page-window-source-unavailable");
+			}
+			return cursor;
+		}
+
+		@Override
+		public long quadCount() {
+			return -1L;
 		}
 
 		@Override
@@ -762,6 +1272,211 @@ final class LmdbNativeKernelPartitions {
 		@Override
 		public boolean runsNeighborOrdered() {
 			return delegate.runsNeighborOrdered();
+		}
+
+		@Override
+		public void close() {
+			// The worker probe owns the delegate.
+		}
+	}
+
+	/**
+	 * Predicate-ordinal window over one worker-owned wildcard view. The wrapper never owns the delegate: the worker's
+	 * probe closes it after every range has finished. Plane binding is translated to the delegate's global ordinal; run
+	 * handles are consumed before the next bind, exactly as required by
+	 * {@link NativeLmdbQuerySource.WildcardAdjacency}.
+	 */
+	static final class WildcardPredicateWindow implements NativeLmdbQuerySource.WildcardAdjacency {
+		private final NativeLmdbQuerySource.WildcardAdjacency delegate;
+		private final int from;
+		private final int to;
+		private final boolean rootBounded;
+		private final long rootFrom;
+		private final long rootTo;
+
+		WildcardPredicateWindow(NativeLmdbQuerySource.WildcardAdjacency delegate, long from, long to) {
+			this(delegate, from, to, -1L, -1L);
+		}
+
+		/** Creates a one-predicate view with an exact root-ordinal window inside that predicate. */
+		WildcardPredicateWindow(NativeLmdbQuerySource.WildcardAdjacency delegate, long from, long to,
+				long rootFrom, long rootTo) {
+			this.delegate = Objects.requireNonNull(delegate, "delegate");
+			if (from < 0L || to < from || to > delegate.predicateCount() || to > Integer.MAX_VALUE) {
+				throw new IllegalArgumentException(
+						"invalid wildcard predicate window: [" + from + ", " + to + ") of "
+								+ delegate.predicateCount());
+			}
+			boolean bounded = rootFrom >= 0L || rootTo >= 0L;
+			if (bounded && (to - from != 1L || rootFrom < 0L || rootTo < rootFrom)) {
+				throw new IllegalArgumentException("root windows must select one predicate and be non-negative");
+			}
+			this.from = (int) from;
+			this.to = (int) to;
+			this.rootBounded = bounded;
+			this.rootFrom = bounded ? rootFrom : 0L;
+			this.rootTo = bounded ? rootTo : 0L;
+			if (bounded) {
+				int previous = delegate.boundPredicateOrdinal();
+				try {
+					delegate.bind(this.from);
+					long keyCount = delegate.keyCount();
+					if (rootTo > keyCount) {
+						throw new IllegalArgumentException(
+								"invalid wildcard root window: [" + rootFrom + ", " + rootTo + ") of " + keyCount);
+					}
+				} finally {
+					if (previous >= 0 && previous < delegate.predicateCount() && previous != this.from) {
+						delegate.bind(previous);
+					}
+				}
+			}
+		}
+
+		@Override
+		public int predicateCount() {
+			return to - from;
+		}
+
+		@Override
+		public long predicateAt(int predicateOrdinal) {
+			if (predicateOrdinal < 0 || predicateOrdinal >= predicateCount()) {
+				throw new IndexOutOfBoundsException("wildcard predicate ordinal " + predicateOrdinal);
+			}
+			return delegate.predicateAt(from + predicateOrdinal);
+		}
+
+		@Override
+		public void bind(int predicateOrdinal) {
+			if (predicateOrdinal < 0 || predicateOrdinal >= predicateCount()) {
+				throw new IndexOutOfBoundsException("wildcard predicate ordinal " + predicateOrdinal);
+			}
+			delegate.bind(from + predicateOrdinal);
+		}
+
+		@Override
+		public int boundPredicateOrdinal() {
+			int ordinal = delegate.boundPredicateOrdinal();
+			return ordinal >= from && ordinal < to ? ordinal - from : -1;
+		}
+
+		@Override
+		public long keyCount() {
+			return rootBounded ? rootTo - rootFrom : delegate.keyCount();
+		}
+
+		@Override
+		public long maximumKey() {
+			long count = keyCount();
+			return count == 0L ? 0L : keyAt(count - 1L);
+		}
+
+		@Override
+		public long keyAt(long keyOrdinal) {
+			long count = keyCount();
+			if (keyOrdinal < 0L || keyOrdinal >= count) {
+				throw new IndexOutOfBoundsException("wildcard root ordinal " + keyOrdinal);
+			}
+			ensureRootBound();
+			return delegate.keyAt(rootBounded ? rootFrom + keyOrdinal : keyOrdinal);
+		}
+
+		@Override
+		public int findBatch(long[] keys, int keyOffset, int count, long[] runHandles, int runOffset) {
+			ensureRootBound();
+			return delegate.findBatch(keys, keyOffset, count, runHandles, runOffset);
+		}
+
+		@Override
+		public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor() {
+			ensureRootBound();
+			return rootBounded ? delegate.openKeyRunCursor(rootFrom, rootTo) : delegate.openKeyRunCursor();
+		}
+
+		@Override
+		public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor(long fromOrdinal, long toOrdinal) {
+			long count = keyCount();
+			if (fromOrdinal < 0L || toOrdinal < fromOrdinal || toOrdinal > count) {
+				throw new IllegalArgumentException(
+						"invalid wildcard root window: [" + fromOrdinal + ", " + toOrdinal + ") of " + count);
+			}
+			ensureRootBound();
+			long base = rootBounded ? rootFrom : 0L;
+			return delegate.openKeyRunCursor(base + fromOrdinal, base + toOrdinal);
+		}
+
+		@Override
+		public NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor openPageCursor() {
+			if (rootBounded) {
+				return null;
+			}
+			return delegate.openPageCursor();
+		}
+
+		@Override
+		public long pageCount() {
+			return rootBounded ? -1L : delegate.pageCount();
+		}
+
+		@Override
+		public NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor openPageCursor(long fromPage, long toPage) {
+			if (rootBounded) {
+				return null;
+			}
+			return delegate.openPageCursor(fromPage, toPage);
+		}
+
+		@Override
+		public long quadCount() {
+			ensureRootBound();
+			return rootBounded ? -1L : delegate.quadCount();
+		}
+
+		@Override
+		public long size(long runHandle) {
+			ensureRootBound();
+			return delegate.size(runHandle);
+		}
+
+		@Override
+		public long neighborAt(long runHandle, long runOffset) {
+			ensureRootBound();
+			return delegate.neighborAt(runHandle, runOffset);
+		}
+
+		@Override
+		public long contextAt(long runHandle, long runOffset) {
+			ensureRootBound();
+			return delegate.contextAt(runHandle, runOffset);
+		}
+
+		@Override
+		public int copyNeighbors(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
+			ensureRootBound();
+			return delegate.copyNeighbors(runHandle, runOffset, length, target, targetOffset);
+		}
+
+		@Override
+		public int copyContexts(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
+			ensureRootBound();
+			return delegate.copyContexts(runHandle, runOffset, length, target, targetOffset);
+		}
+
+		@Override
+		public long lowerBound(long runHandle, long fromOffset, long neighbor, long context) {
+			ensureRootBound();
+			return delegate.lowerBound(runHandle, fromOffset, neighbor, context);
+		}
+
+		@Override
+		public boolean runsNeighborOrdered() {
+			return delegate.runsNeighborOrdered();
+		}
+
+		private void ensureRootBound() {
+			if (rootBounded && delegate.boundPredicateOrdinal() != from) {
+				delegate.bind(from);
+			}
 		}
 
 		@Override

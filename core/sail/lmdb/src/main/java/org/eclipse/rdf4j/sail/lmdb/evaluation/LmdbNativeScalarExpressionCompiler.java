@@ -175,13 +175,7 @@ final class LmdbNativeScalarExpressionCompiler {
 	}
 
 	private LmdbNativeValueCodec.DecodedValue decode(LmdbNativeSlotReader row, int slot, boolean assured) {
-		long id = row.id(slot);
-		NativeTermAuthority authority = row.termAuthority();
-		if (authority != null && authority.kind(id) != NativeIdKind.STORE) {
-			org.eclipse.rdf4j.model.Value value = authority.valueOf(id);
-			return value != null ? LmdbNativeValueCodec.fromValue(value) : LmdbNativeValueCodec.DecodedValue.ERROR;
-		}
-		return assured ? codec.decodeAssured(id) : codec.decode(id);
+		return row.decodedValue(slot, codec, assured);
 	}
 
 	private LmdbNativeCompiledValue compileBNode(BNodeGenerator generator) {
@@ -255,7 +249,7 @@ final class LmdbNativeScalarExpressionCompiler {
 					if (fast != null) {
 						return fast;
 					}
-					LmdbNativeValueCodec.DecodedValue decoded = assured ? codec.decodeAssured(id) : codec.decode(id);
+					LmdbNativeValueCodec.DecodedValue decoded = decode(row, slot, assured);
 					return evaluator.apply(new LmdbNativeValueCodec.DecodedValue[] { decoded });
 				});
 			}
@@ -388,7 +382,7 @@ final class LmdbNativeScalarExpressionCompiler {
 		return value.stringLiteral() ? value.label() : null;
 	}
 
-	private LmdbNativeCompiledNumeric compileNumeric(ValueExpr expr) {
+	LmdbNativeCompiledNumeric compileNumeric(ValueExpr expr) {
 		if (expr instanceof MathExpr) {
 			MathExpr math = (MathExpr) expr;
 			LmdbNativeCompiledNumeric left = compileNumeric(math.getLeftArg());

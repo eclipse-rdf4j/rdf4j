@@ -17,6 +17,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -24,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 
 @Experimental
 interface LmdbNativeSlotResolver {
@@ -33,6 +35,23 @@ interface LmdbNativeSlotResolver {
 @Experimental
 interface LmdbNativeSlotReader {
 	long id(int slot);
+
+	/** Resolves one scalar input through this reader's authority before consulting a stored-value codec. */
+	default LmdbNativeValueCodec.DecodedValue decodedValue(int slot, LmdbNativeValueCodec codec, boolean assured) {
+		long id = id(slot);
+		NativeTermAuthority authority = termAuthority();
+		NativeIdKind kind = authority == null ? NativeIdKind.STORE : authority.kind(id);
+		return resolveValue(id, codec, assured, authority, kind);
+	}
+
+	static LmdbNativeValueCodec.DecodedValue resolveValue(long id, LmdbNativeValueCodec codec, boolean assured,
+			NativeTermAuthority authority, NativeIdKind kind) {
+		if (authority != null && kind != NativeIdKind.STORE) {
+			Value value = authority.valueOf(id);
+			return value == null ? LmdbNativeValueCodec.DecodedValue.ERROR : LmdbNativeValueCodec.fromValue(value);
+		}
+		return assured ? codec.decodeAssured(id) : codec.decode(id);
+	}
 
 	/** The authority that can materialize every id visible through this reader, including plan/runtime ids. */
 	default NativeTermAuthority termAuthority() {
@@ -90,14 +109,28 @@ enum LmdbNativeTruth {
 final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 	private final long requiredMask;
 	private final LmdbNativeTruthEvaluator evaluator;
+	private final NativeScalarPlan scalarPlan;
 
 	LmdbNativeCompiledBoolean(long requiredMask, LmdbNativeTruthEvaluator evaluator) {
+		this(requiredMask, evaluator, null);
+	}
+
+	LmdbNativeCompiledBoolean(long requiredMask, LmdbNativeTruthEvaluator evaluator, NativeScalarPlan scalarPlan) {
 		this.requiredMask = requiredMask;
 		this.evaluator = evaluator;
+		this.scalarPlan = scalarPlan;
 	}
 
 	long requiredMask() {
 		return requiredMask;
+	}
+
+	NativeScalarPlan scalarPlan() {
+		return scalarPlan;
+	}
+
+	boolean workerBindable() {
+		return scalarPlan != null && scalarPlan.workerBindable();
 	}
 
 	@Override
@@ -124,18 +157,34 @@ final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 		return requiredMask;
 	}
 
+	@Override
+	public KernelTermKindProof pageProof(int[] argSlots) {
+		return scalarPlan == null ? null : scalarPlan.termKindProof(argSlots);
+	}
+
 	boolean accept(LmdbNativeSlotReader row) {
 		return evaluator.eval(row) == LmdbNativeTruth.TRUE;
 	}
 
 	@Override
 	public boolean parallelWorkerForkable() {
-		return true;
+		return workerBindable();
 	}
 
 	@Override
 	public NativeBooleanFilter forkForParallelWorker() {
-		return this;
+		// A carrier compiled for one source cannot safely be reused by a worker without that worker's source,
+		// codec, and evaluation context. The context-aware overload below creates the actual sibling-bound carrier.
+		return null;
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		return bindForWorker(context);
+	}
+
+	LmdbNativeCompiledBoolean bindForWorker(NativeScalarPlan.WorkerContext context) {
+		return scalarPlan == null ? null : scalarPlan.bindBoolean(context);
 	}
 
 	private static final class BatchSlotReader implements LmdbNativeSlotReader {
@@ -165,12 +214,19 @@ final class LmdbNativeCompiledInlineId {
 	private final long requiredMask;
 	private final boolean encounterOrderReplaySafe;
 	private final LmdbNativeIdEvaluator evaluator;
+	private final NativeScalarPlan scalarPlan;
 
 	LmdbNativeCompiledInlineId(long requiredMask, boolean encounterOrderReplaySafe,
 			LmdbNativeIdEvaluator evaluator) {
+		this(requiredMask, encounterOrderReplaySafe, evaluator, null);
+	}
+
+	LmdbNativeCompiledInlineId(long requiredMask, boolean encounterOrderReplaySafe,
+			LmdbNativeIdEvaluator evaluator, NativeScalarPlan scalarPlan) {
 		this.requiredMask = requiredMask;
 		this.encounterOrderReplaySafe = encounterOrderReplaySafe;
 		this.evaluator = evaluator;
+		this.scalarPlan = scalarPlan;
 	}
 
 	long requiredMask() {
@@ -181,6 +237,14 @@ final class LmdbNativeCompiledInlineId {
 		return encounterOrderReplaySafe;
 	}
 
+	NativeScalarPlan scalarPlan() {
+		return scalarPlan;
+	}
+
+	boolean workerBindable() {
+		return scalarPlan != null && scalarPlan.workerBindable();
+	}
+
 	long id(RowState row) {
 		return evaluator.eval(row);
 	}
@@ -188,27 +252,56 @@ final class LmdbNativeCompiledInlineId {
 	long id(LmdbNativeSlotReader row) {
 		return evaluator.eval(row);
 	}
+
+	LmdbNativeCompiledInlineId bindForWorker(NativeScalarPlan.WorkerContext context) {
+		return scalarPlan == null ? null : scalarPlan.bindInlineId(context);
+	}
 }
 
 @Experimental
 final class LmdbNativeCompiledTruth {
 	final long requiredMask;
 	final LmdbNativeTruthEvaluator evaluator;
+	private final NativeScalarPlan scalarPlan;
 
 	LmdbNativeCompiledTruth(long requiredMask, LmdbNativeTruthEvaluator evaluator) {
+		this(requiredMask, evaluator, null);
+	}
+
+	LmdbNativeCompiledTruth(long requiredMask, LmdbNativeTruthEvaluator evaluator, NativeScalarPlan scalarPlan) {
 		this.requiredMask = requiredMask;
 		this.evaluator = evaluator;
+		this.scalarPlan = scalarPlan;
 	}
+
+	NativeScalarPlan scalarPlan() {
+		return scalarPlan;
+	}
+
 }
 
 @Experimental
 final class LmdbNativeCompiledValue {
 	final long requiredMask;
 	final LmdbNativeValueEvaluator evaluator;
+	private final NativeScalarPlan scalarPlan;
 
 	LmdbNativeCompiledValue(long requiredMask, LmdbNativeValueEvaluator evaluator) {
+		this(requiredMask, evaluator, null);
+	}
+
+	LmdbNativeCompiledValue(long requiredMask, LmdbNativeValueEvaluator evaluator, NativeScalarPlan scalarPlan) {
 		this.requiredMask = requiredMask;
 		this.evaluator = evaluator;
+		this.scalarPlan = scalarPlan;
+	}
+
+	NativeScalarPlan scalarPlan() {
+		return scalarPlan;
+	}
+
+	LmdbNativeCompiledValue bindForWorker(NativeScalarPlan.WorkerContext context) {
+		return scalarPlan == null ? null : scalarPlan.bindValue(context);
 	}
 }
 
@@ -216,10 +309,20 @@ final class LmdbNativeCompiledValue {
 final class LmdbNativeCompiledString {
 	final long requiredMask;
 	final LmdbNativeStringEvaluator evaluator;
+	private final NativeScalarPlan scalarPlan;
 
 	LmdbNativeCompiledString(long requiredMask, LmdbNativeStringEvaluator evaluator) {
+		this(requiredMask, evaluator, null);
+	}
+
+	LmdbNativeCompiledString(long requiredMask, LmdbNativeStringEvaluator evaluator, NativeScalarPlan scalarPlan) {
 		this.requiredMask = requiredMask;
 		this.evaluator = evaluator;
+		this.scalarPlan = scalarPlan;
+	}
+
+	NativeScalarPlan scalarPlan() {
+		return scalarPlan;
 	}
 }
 
@@ -227,10 +330,20 @@ final class LmdbNativeCompiledString {
 final class LmdbNativeCompiledNumeric {
 	final long requiredMask;
 	final LmdbNativeNumericEvaluator evaluator;
+	private final NativeScalarPlan scalarPlan;
 
 	LmdbNativeCompiledNumeric(long requiredMask, LmdbNativeNumericEvaluator evaluator) {
+		this(requiredMask, evaluator, null);
+	}
+
+	LmdbNativeCompiledNumeric(long requiredMask, LmdbNativeNumericEvaluator evaluator, NativeScalarPlan scalarPlan) {
 		this.requiredMask = requiredMask;
 		this.evaluator = evaluator;
+		this.scalarPlan = scalarPlan;
+	}
+
+	NativeScalarPlan scalarPlan() {
+		return scalarPlan;
 	}
 }
 
@@ -238,10 +351,20 @@ final class LmdbNativeCompiledNumeric {
 final class LmdbNativeCompiledId {
 	final long requiredMask;
 	final LmdbNativeIdEvaluator evaluator;
+	private final NativeScalarPlan scalarPlan;
 
 	LmdbNativeCompiledId(long requiredMask, LmdbNativeIdEvaluator evaluator) {
+		this(requiredMask, evaluator, null);
+	}
+
+	LmdbNativeCompiledId(long requiredMask, LmdbNativeIdEvaluator evaluator, NativeScalarPlan scalarPlan) {
 		this.requiredMask = requiredMask;
 		this.evaluator = evaluator;
+		this.scalarPlan = scalarPlan;
+	}
+
+	NativeScalarPlan scalarPlan() {
+		return scalarPlan;
 	}
 }
 

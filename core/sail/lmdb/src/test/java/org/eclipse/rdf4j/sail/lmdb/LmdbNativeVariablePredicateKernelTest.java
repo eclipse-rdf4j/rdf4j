@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -54,6 +55,7 @@ class LmdbNativeVariablePredicateKernelTest {
 	private static final ValueFactory F = SimpleValueFactory.getInstance();
 	private static final String NS = "http://example.org/";
 	private static final String COST_CALIBRATION_PROPERTY = "rdf4j.lmdb.costCalibration.enabled";
+	private static final String JANINO_SYNCHRONOUS_PROPERTY = "rdf4j.lmdb.janinoCodegen.synchronous";
 	private static final IRI S1 = F.createIRI(NS, "s1");
 	private static final IRI S2 = F.createIRI(NS, "s2");
 	private static final IRI G1 = F.createIRI(NS, "g1");
@@ -186,24 +188,38 @@ class LmdbNativeVariablePredicateKernelTest {
 		long compiledBefore = JaninoPipelineTestAccess.openedAny();
 		open(selectedDir, true, false, DirectAdjacencyCoverage.SELECTED);
 		assertThat(run(query)).containsExactlyElementsOf(expected);
-		assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
-		for (int attempt = 0; attempt < 20 && JaninoPipelineTestAccess.openedAny() == compiledBefore; attempt++) {
-			assertThat(run(query)).containsExactlyElementsOf(expected);
-			Thread.onSpinWait();
-		}
+		String previousSynchronous = System.getProperty(JANINO_SYNCHRONOUS_PROPERTY);
 		String executed;
-		try (RepositoryConnection conn = repo.getConnection()) {
-			executed = conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+		try {
+			System.setProperty(JANINO_SYNCHRONOUS_PROPERTY, "true");
+			assertThat(run(query, "irAggregate")).containsExactlyElementsOf(expected);
+			assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
+			for (int attempt = 0; attempt < 20 && JaninoPipelineTestAccess.openedAny() == compiledBefore; attempt++) {
+				assertThat(run(query, "irAggregate")).containsExactlyElementsOf(expected);
+				Thread.onSpinWait();
+			}
+			try (RepositoryConnection conn = repo.getConnection()) {
+				SailTupleQuery preparedQuery = (SailTupleQuery) conn.prepareTupleQuery(query);
+				preparedQuery.setForcedLmdbExecutionStrategy("irAggregate");
+				executed = preparedQuery.explain(Explanation.Level.Telemetry).toString();
+			}
+			assertThat(executed)
+					.as("the covered type scan and LMDB wildcard scan must execute as one mixed IR aggregate%n%s",
+							executed)
+					.contains("nativeExecutionPath=irAggregate")
+					.contains("source: IN_MEMORY_ADJACENCY")
+					.doesNotContain("strategy: NOT_ACTIVATED")
+					.doesNotContain("NOT_ATTEMPTED[no Janino activation point reached]");
+			assertThat(JaninoPipelineTestAccess.openedAny())
+					.as("the LMDB-scan variant must reach a compiled IR bind")
+					.isGreaterThan(compiledBefore);
+		} finally {
+			if (previousSynchronous == null) {
+				System.clearProperty(JANINO_SYNCHRONOUS_PROPERTY);
+			} else {
+				System.setProperty(JANINO_SYNCHRONOUS_PROPERTY, previousSynchronous);
+			}
 		}
-		assertThat(executed)
-				.as("the covered type scan and LMDB wildcard scan must execute as one mixed IR aggregate%n%s", executed)
-				.contains("nativeExecutionPath=irAggregate")
-				.contains("source: IN_MEMORY_ADJACENCY")
-				.doesNotContain("strategy: NOT_ACTIVATED")
-				.doesNotContain("NOT_ATTEMPTED[no Janino activation point reached]");
-		assertThat(JaninoPipelineTestAccess.openedAny())
-				.as("the LMDB-scan variant must reach a compiled IR bind")
-				.isGreaterThan(compiledBefore);
 
 		long rowCompiledBefore = JaninoPipelineTestAccess.openedAny();
 		assertThat(run(rowQuery)).containsExactlyElementsOf(expectedRows);
@@ -417,16 +433,25 @@ class LmdbNativeVariablePredicateKernelTest {
 	}
 
 	private List<String> run(String query) {
+		return run(query, null);
+	}
+
+	private List<String> run(String query, String forcedStrategy) {
 		List<String> rows = new ArrayList<>();
-		try (RepositoryConnection conn = repo.getConnection();
-				TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
-			while (result.hasNext()) {
-				BindingSet bindings = result.next();
-				StringBuilder row = new StringBuilder();
-				for (String name : result.getBindingNames()) {
-					row.append(name).append('=').append(bindings.getValue(name)).append('|');
+		try (RepositoryConnection conn = repo.getConnection()) {
+			SailTupleQuery preparedQuery = (SailTupleQuery) conn.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			try (TupleQueryResult result = preparedQuery.evaluate()) {
+				while (result.hasNext()) {
+					BindingSet bindings = result.next();
+					StringBuilder row = new StringBuilder();
+					for (String name : result.getBindingNames()) {
+						row.append(name).append('=').append(bindings.getValue(name)).append('|');
+					}
+					rows.add(row.toString());
 				}
-				rows.add(row.toString());
 			}
 		}
 		rows.sort(String::compareTo);

@@ -18,8 +18,10 @@ import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -27,6 +29,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
@@ -47,6 +50,10 @@ import org.junit.jupiter.params.provider.MethodSource;
 class LmdbNativeIrAggregateCompletenessTest {
 	private static final String NATIVE = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String PREFIX = "PREFIX : <http://example.com/census/> ";
+	private static final String ORDERED_SUBSELECT_CHILD = "SELECT ?s (COUNT(*) AS ?n) WHERE { { SELECT DISTINCT ?s ?v "
+			+ "WHERE { ?s :number ?v } ORDER BY ?s ?v LIMIT 3 } ?s :label ?label } GROUP BY ?s";
+	private static final String UNORDERED_SUBSELECT_CHILD = "SELECT ?s (COUNT(*) AS ?n) WHERE { { SELECT DISTINCT ?s ?v "
+			+ "WHERE { ?s :number ?v } LIMIT 3 } ?s :label ?label } GROUP BY ?s";
 	@TempDir
 	File dataDir;
 	private final Map<String, String> previous = new HashMap<>();
@@ -128,6 +135,72 @@ class LmdbNativeIrAggregateCompletenessTest {
 		assertThat(after).isGreaterThan(before);
 	}
 
+	@ParameterizedTest(name = "unordered subselect child [{0}, indexes={1}]")
+	@CsvSource({ "irAggregateInterpreted,false", "irAggregateInterpreted,true", "irAggregate,false",
+			"irAggregate,true" })
+	void unorderedSubselectChildRetainsItsLegalGroupedContract(String strategy, boolean indexed) {
+		if (indexed) {
+			assertThat(AdjacencyEngagementTestAccess.buildNow((LmdbStore) repository.getSail())).isTrue();
+		}
+
+		assertUnorderedSubselectChildContract(false, null);
+		assertUnorderedSubselectChildContract(true, null);
+		long before = strategy.equals("irAggregateInterpreted")
+				? LmdbNativeKernelExecution.AGG_INTERPRETED_BINDS.get()
+				: LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get();
+		assertUnorderedSubselectChildContract(true, strategy);
+		long after = strategy.equals("irAggregateInterpreted")
+				? LmdbNativeKernelExecution.AGG_INTERPRETED_BINDS.get()
+				: LmdbNativeKernelExecution.AGG_COMPILED_BINDS.get();
+		assertThat(after).as("the forced %s route must bind an aggregate kernel", strategy).isGreaterThan(before);
+	}
+
+	private void assertUnorderedSubselectChildContract(boolean nativeEnabled, String strategy) {
+		set(NATIVE, Boolean.toString(nativeEnabled));
+		// The unqualified pattern uses the fixture's default union, so named-graph number pairs contribute to the
+		// subselect capacities: a has 3 default + 1 g1 + 1 g2, b has 2 default + 1 g1, and c has 2 default pairs.
+		Map<String, Integer> labelMultiplicity = Map.of(
+				"http://example.com/census/a", 2,
+				"http://example.com/census/b", 1,
+				"http://example.com/census/c", 1);
+		Map<String, Integer> subjectCapacity = Map.of(
+				"http://example.com/census/a", 5,
+				"http://example.com/census/b", 3,
+				"http://example.com/census/c", 2);
+		Set<String> subjects = new HashSet<>();
+		long selectedPairs = 0L;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(PREFIX + UNORDERED_SUBSELECT_CHILD);
+			query.setForcedLmdbExecutionStrategy(strategy);
+			query.setMaxExecutionTime(15);
+			try (TupleQueryResult result = query.evaluate()) {
+				while (result.hasNext()) {
+					BindingSet row = result.next();
+					assertThat(row.hasBinding("s")).isTrue();
+					assertThat(row.hasBinding("n")).isTrue();
+					assertThat(row.getValue("s").isIRI()).isTrue();
+					String subject = row.getValue("s").stringValue();
+					assertThat(labelMultiplicity).containsKey(subject);
+					assertThat(subjects.add(subject))
+							.as("GROUP BY must emit one row per selected subject")
+							.isTrue();
+					long count = ((Literal) row.getValue("n")).integerValue().longValueExact();
+					assertThat(count).as("group count must be positive for %s", subject).isPositive();
+					int multiplicity = labelMultiplicity.get(subject);
+					assertThat(count % multiplicity)
+							.as("labels must account for every selected pair of %s", subject)
+							.isZero();
+					long pairs = count / multiplicity;
+					assertThat(pairs).isPositive().isLessThanOrEqualTo(subjectCapacity.get(subject));
+					selectedPairs += pairs;
+				}
+			}
+		}
+		assertThat(selectedPairs)
+				.as("the unordered LIMIT must select exactly three distinct subject/value pairs")
+				.isEqualTo(3L);
+	}
+
 	static Stream<Arguments> cases() {
 		return Stream.of(
 				new String[] { "basic",
@@ -194,7 +267,7 @@ class LmdbNativeIrAggregateCompletenessTest {
 				new String[] { "path-zero-or-one", "SELECT (COUNT(*) AS ?n) WHERE { ?s :next? ?o }" },
 				new String[] { "path-compound-sequence", "SELECT (COUNT(*) AS ?n) WHERE { ?s (:next/:other)* ?o }" },
 				new String[] { "subselect-child",
-						"SELECT ?s (COUNT(*) AS ?n) WHERE { { SELECT DISTINCT ?s ?v WHERE { ?s :number ?v } LIMIT 3 } ?s :label ?label } GROUP BY ?s" },
+						ORDERED_SUBSELECT_CHILD },
 				new String[] { "subselect-nested-group",
 						"SELECT (SUM(?n) AS ?total) WHERE { { SELECT ?s (COUNT(*) AS ?n) WHERE { ?s :number ?v } GROUP BY ?s } }" },
 				new String[] { "lateral-child",

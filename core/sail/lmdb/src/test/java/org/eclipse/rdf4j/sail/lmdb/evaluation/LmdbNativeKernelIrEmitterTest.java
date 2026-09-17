@@ -589,7 +589,8 @@ class LmdbNativeKernelIrEmitterTest {
 						null, OutputMods.none()));
 		String source = LmdbNativeKernelEmitter.emit(ir);
 		assertTrue(source.contains("KernelRuntime.unsignedNondecreasing(dom0, domO0, domL0)"), source);
-		assertTrue(source.contains("new KernelRuntime.LongHashSet(distinctExpected, keyHooks)"), source);
+		assertTrue(source.contains("new KernelRuntime.LongHashSet(distinctExpected, keyHooks, aggregateMemory)"),
+				source);
 
 		assertRows(run(ir, context().domains(new long[] { 5, 5, 7, 9 }).distinctExpected(64)),
 				new long[][] { { 3 } });
@@ -1413,8 +1414,10 @@ class LmdbNativeKernelIrEmitterTest {
 				emit(0, 1));
 		assertTrue(streaming.resumable, "a plain row pipeline with no ordering or limit must stream");
 		String source = LmdbNativeKernelEmitter.emit(streaming);
-		assertTrue(source.contains("private long[] out = new long[0];"),
+		assertTrue(source.contains("private long[] out;"),
 				"a streaming kernel must not allocate the intermediate buffer; source:\n" + source);
+		assertFalse(source.contains("out = new long[0];"),
+				"a streaming kernel must not allocate even a materialization buffer; source:\n" + source);
 		assertTrue(source.contains("sink[base + 0]"), "rows must be written straight into the caller's buffer");
 		assertFalse(source.contains("appendRow()"), "the growing-buffer path must not be emitted at all");
 	}

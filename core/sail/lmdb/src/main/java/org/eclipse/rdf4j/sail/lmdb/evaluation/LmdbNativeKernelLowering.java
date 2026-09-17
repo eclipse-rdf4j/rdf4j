@@ -16,6 +16,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.safeResourceId;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +40,7 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 
 /**
  * General lowering pass from compiled {@code SlotPlan} trees to kernel IR (plan:
@@ -1054,9 +1057,9 @@ final class LmdbNativeKernelLowering {
 				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
 				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0], new int[0],
 				List.of(), layout, false)
-						.withTypeMatrixRequests(new LmdbNativeKernelBindings.TypeMatrixRequest[] {
-								new LmdbNativeKernelBindings.TypeMatrixRequest(plan.subjectTypePredicate,
-										plan.objectTypePredicate, plan.predicateFilters, plan.edgePredicateSlot) });
+				.withTypeMatrixRequests(new LmdbNativeKernelBindings.TypeMatrixRequest[] {
+						new LmdbNativeKernelBindings.TypeMatrixRequest(plan.subjectTypePredicate,
+								plan.objectTypePredicate, plan.predicateFilters, plan.edgePredicateSlot) });
 		return new Lowered(kernel, bindings);
 	}
 
@@ -1109,11 +1112,11 @@ final class LmdbNativeKernelLowering {
 				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
 				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0],
 				new int[] { aggregate.slot }, List.of(), layout, false)
-						.withNodeDomainIntersectionRequests(
-								new LmdbNativeKernelBindings.NodeDomainIntersectionRequest[] {
-										new LmdbNativeKernelBindings.NodeDomainIntersectionRequest(
-												outerField == TripleIndex.SUBJ_IDX,
-												existsField == TripleIndex.SUBJ_IDX) });
+				.withNodeDomainIntersectionRequests(
+						new LmdbNativeKernelBindings.NodeDomainIntersectionRequest[] {
+								new LmdbNativeKernelBindings.NodeDomainIntersectionRequest(
+										outerField == TripleIndex.SUBJ_IDX,
+										existsField == TripleIndex.SUBJ_IDX) });
 		return new Lowered(kernel, bindings);
 	}
 
@@ -1463,7 +1466,7 @@ final class LmdbNativeKernelLowering {
 	// Builder state
 	// ------------------------------------------------------------------
 
-	private static final class Builder {
+	static final class Builder {
 		private static final int UNASSIGNED_DOMAIN = -2;
 
 		final RowState row;
@@ -1511,6 +1514,109 @@ final class LmdbNativeKernelLowering {
 					&& slotColumn[slot] < 0;
 		}
 
+		/**
+		 * A physical producer can use a constant-slot term as a fixed key, but it must restore the named binding after
+		 * the producer has matched. Keeping the two representations separate is what lets the native path retain the
+		 * exact lookup while preserving {@link PatternPlan#bind}'s compatibility semantics.
+		 */
+		private record PhysicalPattern(PatternPlan pattern, int[] constantSlots, long[] constantIds) {
+		}
+
+		/**
+		 * Removes only the binding part of constant-slot terms for physical traversal. All planner metadata is copied
+		 * so range, context, order, and index promises remain attached to the physical pattern.
+		 */
+		private PhysicalPattern physicalPattern(PatternPlan original) {
+			Term[] originalTerms = { original.s, original.p, original.o, original.c };
+			Term[] physicalTerms = originalTerms.clone();
+			int[] slots = new int[originalTerms.length];
+			long[] ids = new long[originalTerms.length];
+			int count = 0;
+			for (int i = 0; i < originalTerms.length; i++) {
+				Term term = originalTerms[i];
+				if (term.bindConstant && term.isConstant()) {
+					slots[count] = term.slot;
+					ids[count] = term.constant;
+					count++;
+					physicalTerms[i] = Term.constant(term.constant);
+				}
+			}
+			if (count == 0) {
+				return new PhysicalPattern(original, new int[0], new long[0]);
+			}
+			PatternPlan physical = new PatternPlan(physicalTerms[0], physicalTerms[1], physicalTerms[2],
+					physicalTerms[3],
+					original.contexts, original.namedContextScope, original.statementOrder, original.indexName,
+					original.range,
+					original.staticEstimate);
+			return new PhysicalPattern(physical, java.util.Arrays.copyOf(slots, count),
+					java.util.Arrays.copyOf(ids, count));
+		}
+
+		/**
+		 * Restores every binding produced by a physical constant-slot pattern immediately after that producer. A live
+		 * column is checked before being overwritten; an entry or nullable column is materialized into the same native
+		 * column contract used by entry compatibility lowering. The UNKNOWN value accepted by FilterEntryCompatible is
+		 * intentional: a fresh or NULL-extended slot becomes the requested constant on a matching producer row.
+		 */
+		private boolean appendPhysicalBindings(PhysicalPattern physical, boolean assured) {
+			for (int i = 0; i < physical.constantSlots.length; i++) {
+				int slot = physical.constantSlots[i];
+				if (slot < 0 || slot >= slotColumn.length) {
+					reason = reasonPrefix + "constant-slot-range";
+					return false;
+				}
+				Operand existing = slotOperand(slot);
+				int column = slotColumn[slot];
+				if (column < 0) {
+					column = newColumn(slot);
+				}
+				if (existing != null && (existing.kind != Operand.COL || existing.index != column)) {
+					currentDepthNodes().add(new LmdbNativeKernelIr.BindAlias(existing, column));
+				}
+				int constant = constantIndex(physical.constantIds[i]);
+				currentDepthNodes().add(new LmdbNativeKernelIr.FilterEntryCompatible(Operand.col(column), constant));
+				currentDepthNodes().add(new LmdbNativeKernelIr.BindAlias(Operand.constant(constant), column));
+				if (assured) {
+					assuredMask |= 1L << slot;
+				}
+			}
+			return true;
+		}
+
+		/** Restores constant-slot bindings in an EXISTS/MINUS witness without replacing an outer correlated value. */
+		private boolean appendWitnessBindings(PhysicalPattern physical, WitnessColumns witnessCols,
+				List<Node> pipeline) {
+			for (int i = 0; i < physical.constantSlots.length; i++) {
+				int slot = physical.constantSlots[i];
+				if (slot < 0 || slot >= slotColumn.length) {
+					reason = reasonPrefix + "constant-slot-range";
+					return false;
+				}
+				boolean outer = (entryMask >>> slot & 1L) != 0L || slotColumn[slot] >= 0;
+				Operand existing = witnessOperand(Term.slot(slot), witnessCols);
+				if (existing == null && outer) {
+					reason = reasonPrefix + "witness-constant-slot-nullable";
+					return false;
+				}
+				if (existing == null) {
+					int column = scratchColumn();
+					witnessCols.put(slot, column);
+					existing = Operand.col(column);
+				}
+				int constant = constantIndex(physical.constantIds[i]);
+				if (witnessCols.containsKey(slot)) {
+					pipeline.add(new LmdbNativeKernelIr.FilterEntryCompatible(existing, constant));
+					pipeline.add(new LmdbNativeKernelIr.BindAlias(Operand.constant(constant), existing.index));
+				} else {
+					// An outer value is read-only for the witness. Its compatibility is an equality predicate, not a
+					// bind.
+					pipeline.add(new LmdbNativeKernelIr.FilterCompareId(false, existing, Operand.constant(constant)));
+				}
+			}
+			return true;
+		}
+
 		/** Kernel columns that may hold NULL (-1): produced by OPTIONAL arms. Indexed by column ordinal. */
 		long optionalColMask;
 
@@ -1523,14 +1629,21 @@ final class LmdbNativeKernelLowering {
 		 * pipeline in a LeftGroup, including join conditions and null extension.
 		 */
 		boolean lowerOptionalArm(SlotPlan arm) {
+			reusableScalars.clear();
 			if (preferScans || !(arm instanceof PatternPlan)) {
 				return lowerOptionalGroup(arm);
 			}
-			PatternPlan pattern = (PatternPlan) arm;
+			PhysicalPattern physical = physicalPattern((PatternPlan) arm);
+			PatternPlan pattern = physical.pattern;
+			if (physical.constantSlots.length > 0) {
+				// A LeftProbe invokes its continuation for the null-extended row when the right run is empty. The
+				// compatibility check and constant alias must therefore stay inside the matched arm; otherwise a
+				// missing OPTIONAL match would incorrectly bind the constant-slot variable on the left row.
+				return lowerOptionalGroup(arm);
+			}
 			if (pattern.hasRepeatedSlot() || pattern.namedContextScope || !pattern.p.isConstant()
 					|| pattern.p.hasSlot() || pattern.c.hasSlot() || pattern.c.isConstant()
-					|| pattern.contexts.isFixed() || pattern.s.bindConstant || pattern.o.bindConstant
-					|| pattern.statementOrder != null) {
+					|| pattern.contexts.isFixed() || pattern.statementOrder != null) {
 				return lowerOptionalGroup(arm);
 			}
 			Operand subject = operandOf(pattern.s);
@@ -1545,7 +1658,7 @@ final class LmdbNativeKernelLowering {
 				int column = newColumn(pattern.o.slot);
 				optionalColMask |= 1L << column;
 				currentDepthNodes().add(new LmdbNativeKernelIr.LeftProbe(adj, subject, column));
-				return true;
+				return appendPhysicalBindings(physical, false);
 			}
 			if (object != null && subject == null && pattern.s.hasSlot() && slotFresh(pattern.s.slot)) {
 				openDepth();
@@ -1554,7 +1667,7 @@ final class LmdbNativeKernelLowering {
 				optionalColMask |= 1L << column;
 				// never resource-assured: the null arm leaves the column unbound
 				currentDepthNodes().add(new LmdbNativeKernelIr.LeftProbe(adj, object, column));
-				return true;
+				return appendPhysicalBindings(physical, false);
 			}
 			return lowerOptionalGroup(arm);
 		}
@@ -1761,6 +1874,13 @@ final class LmdbNativeKernelLowering {
 		final List<LmdbNativeKernelBindings.WildcardRequest> wildcardRequests = new ArrayList<>();
 		final List<LmdbNativeKernelBindings.FilterHook> filterHooks = new ArrayList<>();
 		final List<LmdbNativeKernelBindings.BindHook> bindHooks = new ArrayList<>();
+		/**
+		 * Results of proven reusable scalar expressions in the current logical depth. The key deliberately contains the
+		 * actual kernel operands, rather than only the frozen expression slots: an entry value and a row column can
+		 * carry the same slot number while having different lifetimes and meanings. The map is a lowering-time CSE
+		 * table only; worker binding still compiles each retained plan against that worker's source and codec.
+		 */
+		final Map<ScalarReuseKey, Integer> reusableScalars = new HashMap<>();
 		final List<Integer> columnEngineSlots = new ArrayList<>();
 		final List<Integer> columnOrderedDomains = new ArrayList<>();
 		final List<MaskedFilter> residualFilters = new ArrayList<>();
@@ -1770,6 +1890,16 @@ final class LmdbNativeKernelLowering {
 
 		final int[] slotColumn;
 		final int[] slotColumnDepth;
+
+		private record ScalarReuseOperand(int kind, int index) {
+		}
+
+		private record ScalarReuseKey(NativeScalarPlan plan, List<ScalarReuseOperand> operands,
+				boolean replaySafe, boolean setNullOnError) {
+			ScalarReuseKey {
+				operands = List.copyOf(operands);
+			}
+		}
 
 		Builder(RowState row, String reasonPrefix) {
 			this.row = row;
@@ -1792,12 +1922,40 @@ final class LmdbNativeKernelLowering {
 		private void openDepth() {
 			nodesPerDepth.add(new ArrayList<>());
 			filtersPerDepth.add(new ArrayList<>());
+			// A new producer depth is a new logical row scope. A value computed in an enclosing depth must not be
+			// reused after that boundary, even when its expression happens to have the same structural key.
+			reusableScalars.clear();
+		}
+
+		private int barrierCountBefore(int atDepth, int position) {
+			int count = 0;
+			for (int d = 0; d < atDepth; d++) {
+				for (Node node : nodesPerDepth.get(d)) {
+					if (node.reorderingBarrier()) {
+						count++;
+					}
+				}
+			}
+			if (atDepth >= 0 && atDepth < nodesPerDepth.size()) {
+				List<Node> nodes = nodesPerDepth.get(atDepth);
+				for (int i = 0; i < Math.min(position, nodes.size()); i++) {
+					if (nodes.get(i).reorderingBarrier()) {
+						count++;
+					}
+				}
+			}
+			return count;
+		}
+
+		private int columnDomain() {
+			return columnEngineSlots.size() + scratchColumns;
 		}
 
 		private int newColumn(int engineSlot) {
 			// While lowering union branches a shared variable must reuse the column the first branch allocated.
 			Integer pinned = pinnedColumns.get(engineSlot);
 			if (pinned != null) {
+				invalidateScalarReuseForColumn(pinned);
 				slotColumn[engineSlot] = pinned;
 				slotColumnDepth[engineSlot] = depth();
 				return pinned;
@@ -1805,9 +1963,19 @@ final class LmdbNativeKernelLowering {
 			columnEngineSlots.add(engineSlot);
 			columnOrderedDomains.add(UNASSIGNED_DOMAIN);
 			int column = columnEngineSlots.size() - 1;
+			invalidateScalarReuseForColumn(column);
 			slotColumn[engineSlot] = column;
 			slotColumnDepth[engineSlot] = depth();
 			return column;
+		}
+
+		/** Remove entries whose inputs or result column is being overwritten; independent CSE results remain valid. */
+		private void invalidateScalarReuseForColumn(int column) {
+			reusableScalars.entrySet()
+					.removeIf(entry -> entry.getValue() == column || entry.getKey()
+							.operands()
+							.stream()
+							.anyMatch(operand -> operand.kind() == Operand.COL && operand.index() == column));
 		}
 
 		private void markOrderedDomain(int column, int domain) {
@@ -2003,6 +2171,10 @@ final class LmdbNativeKernelLowering {
 				}
 			}
 			openDepth();
+			// An opaque/native producer may expose callbacks, error timing, or a mapping-local state transition that
+			// the
+			// IR cannot inspect. Filters collected outside this boundary therefore stay on its far side.
+			filterDepthFloor = Math.max(filterDepthFloor, depth());
 			int[] outputSlots = slots(plan.producedMask(), slotColumn.length);
 			int[] outputCols = new int[outputSlots.length];
 			long assured = SlotPlan.assuredMask(plan);
@@ -2107,12 +2279,14 @@ final class LmdbNativeKernelLowering {
 			}
 			if (plan instanceof MultiJoinPlan) {
 				MultiJoinPlan multiJoin = (MultiJoinPlan) plan;
-				filters.addAll(java.util.Arrays.asList(multiJoin.filters));
+				List<MaskedFilter> multiFilters = java.util.Arrays.asList(multiJoin.filters);
+				List<MaskedFilter> filterContext = new ArrayList<>(filters);
+				filterContext.addAll(multiFilters);
 				if (tryLowerHashJoin(multiJoin, row)) {
-					return true;
+					return lowerRegisteredFilters(multiFilters);
 				}
 				if (tryLowerCyclicCore(multiJoin, row)) {
-					return true;
+					return lowerRegisteredFilters(multiFilters);
 				}
 				SlotPlan[] order = multiJoin.derivedPlan(row).order;
 				// Under DISTINCT sinking (plan 32 M4), branches whose fresh variables are all projected away
@@ -2120,7 +2294,7 @@ final class LmdbNativeKernelLowering {
 				// anchor variables, instead of multiplying rows the DISTINCT would collapse anyway.
 				List<List<PatternPlan>> existential = distinctRetainedMask == 0L
 						? java.util.Collections.emptyList()
-						: existentialComponents(order, filters);
+						: existentialComponents(order, filterContext);
 				java.util.Set<SlotPlan> deferred = java.util.Collections
 						.newSetFromMap(new java.util.IdentityHashMap<>());
 				for (List<PatternPlan> component : existential) {
@@ -2139,12 +2313,18 @@ final class LmdbNativeKernelLowering {
 						return false;
 					}
 				}
-				return true;
+				return lowerRegisteredFilters(multiFilters);
 			}
 			if (plan instanceof FilterPlan) {
 				FilterPlan filterPlan = (FilterPlan) plan;
-				filters.add(new MaskedFilter(filterPlan.filter, filterPlan.filterMask));
-				return lowerJoinOperand(filterPlan.arg, filters, row, false);
+				if (!lowerJoinOperand(filterPlan.arg, filters, row, false)) {
+					return false;
+				}
+				// Register the filter after its complete argument has been lowered. This records the semantic boundary
+				// before any producer belonging to the enclosing scope, so an observable BIND in the parent cannot be
+				// crossed by same-depth filter scheduling.
+				return lowerRegisteredFilters(java.util.List.of(
+						new MaskedFilter(filterPlan.filter, filterPlan.filterMask)));
 			}
 			if (plan instanceof ExtensionPlan) {
 				ExtensionPlan extension = (ExtensionPlan) plan;
@@ -2248,6 +2428,18 @@ final class LmdbNativeKernelLowering {
 			return true;
 		}
 
+		/** Lowers filters at the end of the scope that registered them, retaining row/aggregate tier semantics. */
+		private boolean lowerRegisteredFilters(List<MaskedFilter> filters) {
+			for (MaskedFilter filter : filters) {
+				if (reasonPrefix.isEmpty()) {
+					lowerFilter(filter);
+				} else if (!lowerFilterStrict(filter)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
 		/**
 		 * Registers the root badly-designed-OPTIONAL boundary. These nodes live after the producer-depth filters
 		 * because expressions inside {@code entry.arg} must observe the optional value (or absence) before the removed
@@ -2303,6 +2495,7 @@ final class LmdbNativeKernelLowering {
 				reason = reasonPrefix + "child:UnionPlan";
 				return false;
 			}
+			reusableScalars.clear();
 			joinOperands++;
 			// The Union node needs a depth of its OWN, always — not merely when none exists. A nested union
 			// (A UNION B UNION C arrives as UnionPlan(UnionPlan(a,b),c)) would otherwise compute a home depth below the
@@ -2429,15 +2622,185 @@ final class LmdbNativeKernelLowering {
 		/** Removes every depth from {@code mark} upward and returns their nodes in pipeline order. */
 		private List<Node> harvestDepths(int mark) {
 			List<Node> harvested = new ArrayList<>();
+			BitSet available = availableColumnsBefore(mark);
 			for (int d = mark; d < nodesPerDepth.size(); d++) {
-				harvested.addAll(nodesPerDepth.get(d));
-				harvested.addAll(filtersPerDepth.get(d));
+				appendDepthPipeline(harvested, nodesPerDepth.get(d), filtersPerDepth.get(d), available,
+						columnDomain(), d, barrierCountBefore(d, 0));
 			}
 			while (nodesPerDepth.size() > mark) {
 				nodesPerDepth.remove(nodesPerDepth.size() - 1);
 				filtersPerDepth.remove(filtersPerDepth.size() - 1);
 			}
 			return harvested;
+		}
+
+		/** Returns the columns produced by the enclosing depths and entry preamble before a harvested region starts. */
+		private BitSet availableColumnsBefore(int depth) {
+			BitSet available = new BitSet();
+			for (Node node : entryDepthFilters) {
+				node.produced(available);
+			}
+			for (int d = 0; d < depth; d++) {
+				for (Node node : nodesPerDepth.get(d)) {
+					node.produced(available);
+				}
+			}
+			return available;
+		}
+
+		/**
+		 * Appends one producer depth and places each filter immediately after the last producer of its input columns.
+		 * Filters whose inputs are already available run at the beginning of the depth; a filter depending on a later
+		 * producer waits until that producer has written its columns. Ready pure guards may pass an earlier guard that
+		 * is still waiting for a producer, while observable guards retain their encounter boundary. The selected
+		 * depth/floor remains authoritative because this method never moves a filter between depth lists.
+		 */
+		static void appendDepthPipeline(List<Node> pipeline, List<Node> nodes, List<Node> filters,
+				BitSet available, int columnDomain, int depth, int barrierBeforeDepth) {
+			if (filters.isEmpty()) {
+				for (Node node : nodes) {
+					pipeline.add(node);
+					node.produced(available);
+				}
+				return;
+			}
+
+			List<BitSet> filterReads = new ArrayList<>(filters.size());
+			List<FilterBounds> filterBounds = new ArrayList<>(filters.size());
+			for (Node filter : filters) {
+				BitSet reads = readColumns(filter, columnDomain);
+				filterReads.add(reads);
+				filterBounds.add(filterBounds(filter, reads, nodes, depth));
+			}
+			int[] barriersAt = new int[nodes.size() + 1];
+			barriersAt[0] = barrierBeforeDepth;
+			for (int i = 0; i < nodes.size(); i++) {
+				barriersAt[i + 1] = barriersAt[i] + (nodes.get(i).reorderingBarrier() ? 1 : 0);
+			}
+			boolean[] emittedFilters = new boolean[filters.size()];
+			for (int i = 0; i < nodes.size(); i++) {
+				appendReadyFilters(pipeline, filters, filterReads, filterBounds, emittedFilters, available, i,
+						barriersAt[i]);
+				Node node = nodes.get(i);
+				pipeline.add(node);
+				BitSet produced = new BitSet();
+				node.produced(produced);
+				available.or(produced);
+				appendReadyFilters(pipeline, filters, filterReads, filterBounds, emittedFilters, available, i + 1,
+						barriersAt[i + 1]);
+			}
+			appendReadyFilters(pipeline, filters, filterReads, filterBounds, emittedFilters, available, nodes.size(),
+					barriersAt[nodes.size()]);
+			for (int i = 0; i < filters.size(); i++) {
+				if (!emittedFilters[i]) {
+					pipeline.add(filters.get(i));
+				}
+			}
+		}
+
+		private static void appendReadyFilters(List<Node> pipeline, List<Node> filters, List<BitSet> filterReads,
+				List<FilterBounds> filterBounds, boolean[] emittedFilters, BitSet available, int position,
+				int barrierCount) {
+			while (true) {
+				int selected = -1;
+				for (int i = 0; i < filters.size(); i++) {
+					if (emittedFilters[i]) {
+						continue;
+					}
+					FilterBounds bounds = filterBounds.get(i);
+					if (position < bounds.earliest || position > bounds.latest
+							|| barrierCount != bounds.originalBarrierCount
+							|| !containsAll(available, filterReads.get(i))) {
+						continue;
+					}
+					if (crossesUnemittedFilterBoundary(filters, emittedFilters, i)) {
+						continue;
+					}
+					selected = i;
+					break;
+				}
+				if (selected < 0) {
+					return;
+				}
+				pipeline.add(filters.get(selected));
+				emittedFilters[selected] = true;
+			}
+		}
+
+		/**
+		 * A proven pure guard may pass an earlier pure guard whose producer is not ready yet. An observable guard may
+		 * never pass any outstanding guard: doing so would change invocation/error order. The same rule prevents a
+		 * later pure guard from crossing an opaque or effectful one.
+		 */
+		private static boolean crossesUnemittedFilterBoundary(List<Node> filters, boolean[] emittedFilters,
+				int candidate) {
+			boolean candidateBarrier = filters.get(candidate).reorderingBarrier();
+			for (int i = 0; i < candidate; i++) {
+				if (!emittedFilters[i]
+						&& (candidateBarrier || filters.get(i).reorderingBarrier())) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private static FilterBounds filterBounds(Node filter, BitSet reads, List<Node> nodes, int depth) {
+			int originalDepth = filter.originalFilterStage < 0 ? depth : filter.originalFilterStage;
+			int originalPosition = filter.originalFilterPosition < 0 ? nodes.size() : filter.originalFilterPosition;
+			int earliest = 0;
+			int latest = nodes.size();
+			for (int i = 0; i < nodes.size(); i++) {
+				BitSet produced = new BitSet();
+				nodes.get(i).produced(produced);
+				if (!produced.intersects(reads)) {
+					continue;
+				}
+				boolean beforeOriginal = depth < originalDepth
+						|| depth == originalDepth && i < originalPosition;
+				if (beforeOriginal) {
+					earliest = Math.max(earliest, i + 1);
+				} else {
+					latest = Math.min(latest, i);
+				}
+			}
+			if (filter.reorderingBarrier() && originalDepth == depth) {
+				int pinnedPosition = Math.max(0, Math.min(originalPosition, nodes.size()));
+				earliest = Math.max(earliest, pinnedPosition);
+				latest = Math.min(latest, pinnedPosition);
+			}
+			int originalBarrierCount = filter.originalFilterBarrierCount;
+			return new FilterBounds(earliest, latest, originalBarrierCount);
+		}
+
+		private static final class FilterBounds {
+			final int earliest;
+			final int latest;
+			final int originalBarrierCount;
+
+			FilterBounds(int earliest, int latest, int originalBarrierCount) {
+				this.earliest = earliest;
+				this.latest = latest;
+				this.originalBarrierCount = originalBarrierCount;
+			}
+		}
+
+		private static boolean containsAll(BitSet available, BitSet required) {
+			BitSet missing = (BitSet) required.clone();
+			missing.andNot(available);
+			return missing.isEmpty();
+		}
+
+		/** Computes the IR column dependencies using the same conservative read analysis as kernel rewrites. */
+		private static BitSet readColumns(Node node, int columnDomain) {
+			BitSet reads = new BitSet();
+			for (int column = 0; column < columnDomain; column++) {
+				BitSet candidate = new BitSet();
+				candidate.set(column);
+				if (Kernel.readsColumns(node, candidate)) {
+					reads.set(column);
+				}
+			}
+			return reads;
 		}
 
 		private boolean lowerExtensionCopies(ExtensionPlan extension) {
@@ -2462,9 +2825,13 @@ final class LmdbNativeKernelLowering {
 					return false;
 				}
 				if (copy.semanticValue != null || !copy.encounterOrderReplaySafe) {
+					// A legacy closure or an encounter-order-sensitive expression has no structural reuse proof. Keep
+					// it as a semantic barrier for entries accumulated earlier in this extension as well as later ones.
+					reusableScalars.clear();
 					if (!lowerGeneralCopy(copy)) {
 						return false;
 					}
+					reusableScalars.clear();
 					continue;
 				}
 				if (copy.computedValue != null) {
@@ -2545,10 +2912,21 @@ final class LmdbNativeKernelLowering {
 				args[i] = operand == null ? Operand.constant(constantIndex(LmdbNativeAggregateCompiler.UNKNOWN))
 						: operand;
 			}
+			NativeScalarPlan scalarPlan = planForCopy(copy);
+			int reusableColumn = reusableScalarColumn(copy, scalarPlan, args);
+			if (reusableColumn >= 0) {
+				int target = newColumn(copy.targetSlot);
+				optionalColMask |= 1L << target;
+				currentDepthNodes().add(new LmdbNativeKernelIr.BindAlias(Operand.col(reusableColumn), target));
+				return true;
+			}
 			int target = newColumn(copy.targetSlot);
 			optionalColMask |= 1L << target;
 			bindHooks.add(new LmdbNativeKernelBindings.BindHook(copy, inputSlots));
-			currentDepthNodes().add(new LmdbNativeKernelIr.BindHook(bindHooks.size() - 1, args, target));
+			boolean effectful = scalarPlan == null || !scalarCanReuseAcrossSolutions(scalarPlan)
+					|| !copy.encounterOrderReplaySafe;
+			currentDepthNodes().add(new LmdbNativeKernelIr.BindHook(bindHooks.size() - 1, args, target, effectful));
+			rememberReusableScalar(copy, scalarPlan, args, target);
 			BIND_HOOK_LOWERINGS.incrementAndGet();
 			return true;
 		}
@@ -2593,12 +2971,23 @@ final class LmdbNativeKernelLowering {
 				args[out] = operand;
 				out++;
 			}
+			NativeScalarPlan scalarPlan = copy.computed.scalarPlan();
+			int reusableColumn = reusableScalarColumn(copy, scalarPlan, args);
+			if (reusableColumn >= 0) {
+				int target = newColumn(copy.targetSlot);
+				optionalColMask |= 1L << target;
+				currentDepthNodes().add(new LmdbNativeKernelIr.BindAlias(Operand.col(reusableColumn), target));
+				return true;
+			}
 			int target = newColumn(copy.targetSlot);
 			// The expression can error on any row (leaving the target unbound while the row survives), so the column
 			// is maybe-null regardless of its inputs.
 			optionalColMask |= 1L << target;
 			bindHooks.add(new LmdbNativeKernelBindings.BindHook(copy.computed, argSlots));
-			currentDepthNodes().add(new LmdbNativeKernelIr.BindHook(bindHooks.size() - 1, args, target));
+			boolean effectful = scalarPlan == null || !scalarCanReuseAcrossSolutions(scalarPlan)
+					|| !copy.encounterOrderReplaySafe;
+			currentDepthNodes().add(new LmdbNativeKernelIr.BindHook(bindHooks.size() - 1, args, target, effectful));
+			rememberReusableScalar(copy, scalarPlan, args, target);
 			BIND_HOOK_LOWERINGS.incrementAndGet();
 			return true;
 		}
@@ -2639,14 +3028,80 @@ final class LmdbNativeKernelLowering {
 				args[out] = operand;
 				out++;
 			}
+			NativeScalarPlan scalarPlan = copy.computedValue.scalarPlan();
+			int reusableColumn = reusableScalarColumn(copy, scalarPlan, args);
+			if (reusableColumn >= 0) {
+				int target = newColumn(copy.targetSlot);
+				optionalColMask |= 1L << target;
+				currentDepthNodes().add(new LmdbNativeKernelIr.BindAlias(Operand.col(reusableColumn), target));
+				return true;
+			}
 			int target = newColumn(copy.targetSlot);
 			// interned ids carry arbitrary type bits and the expression can error per row: maybe-null, and no
 			// raw-id shortcut may consume the column (the compile-time synthetic-var guard enforces the latter)
 			optionalColMask |= 1L << target;
 			bindHooks.add(new LmdbNativeKernelBindings.BindHook(copy, argSlots));
-			currentDepthNodes().add(new LmdbNativeKernelIr.BindHook(bindHooks.size() - 1, args, target));
+			boolean effectful = scalarPlan == null || !scalarCanReuseAcrossSolutions(scalarPlan);
+			currentDepthNodes().add(new LmdbNativeKernelIr.BindHook(bindHooks.size() - 1, args, target, effectful));
+			rememberReusableScalar(copy, scalarPlan, args, target);
 			BIND_HOOK_LOWERINGS.incrementAndGet();
 			return true;
+		}
+
+		private static NativeScalarPlan planForCopy(CopyBinding copy) {
+			if (copy.computed != null) {
+				return copy.computed.scalarPlan();
+			}
+			return copy.computedValue == null ? null : copy.computedValue.scalarPlan();
+		}
+
+		/** Return a previously computed column only for a structural and operand-complete reuse proof. */
+		private int reusableScalarColumn(CopyBinding copy, NativeScalarPlan plan, Operand[] args) {
+			if (pinnedColumns.containsKey(copy.targetSlot)) {
+				// A union branch may pin a fresh slot to a column owned by another branch. Do not alias into that
+				// shared storage before the branch has written it.
+				return -1;
+			}
+			ScalarReuseKey key = scalarReuseKey(copy, plan, args);
+			if (key == null) {
+				return -1;
+			}
+			Integer column = reusableScalars.get(key);
+			return column == null ? -1 : column;
+		}
+
+		private void rememberReusableScalar(CopyBinding copy, NativeScalarPlan plan, Operand[] args, int target) {
+			ScalarReuseKey key = scalarReuseKey(copy, plan, args);
+			if (key != null) {
+				reusableScalars.put(key, target);
+			}
+		}
+
+		private ScalarReuseKey scalarReuseKey(CopyBinding copy, NativeScalarPlan plan, Operand[] args) {
+			if (plan == null || !scalarCanReuseAcrossSolutions(plan) || !copy.encounterOrderReplaySafe
+					|| args == null) {
+				return null;
+			}
+			List<ScalarReuseOperand> operands = new ArrayList<>(args.length);
+			for (Operand arg : args) {
+				// Scalar constants here are the UNKNOWN fallback used when a dependency could not be mapped to a live
+				// column. Query constants are folded or represented by the scalar plan; treating this sentinel as
+				// reusable
+				// would hide an incomplete dependency proof.
+				if (arg == null || arg.kind == Operand.CONST) {
+					return null;
+				}
+				operands.add(new ScalarReuseOperand(arg.kind, arg.index));
+			}
+			return new ScalarReuseKey(plan, operands, copy.encounterOrderReplaySafe, copy.setNullOnError);
+		}
+
+		/**
+		 * A query-stable plan may be shared across solutions only when its compiler supplied evaluation scope is
+		 * explicitly propagated. Pure plans remain reusable regardless of that scope marker.
+		 */
+		private static boolean scalarCanReuseAcrossSolutions(NativeScalarPlan plan) {
+			return plan.canReuseAcrossSolutions(plan.scopedEvaluation());
 		}
 
 		boolean lowerPattern(PatternPlan pattern) {
@@ -2769,78 +3224,79 @@ final class LmdbNativeKernelLowering {
 
 		/** Lowers a pattern into the current depth (used directly and by the multi-value seed). */
 		private boolean lowerPatternInline(PatternPlan pattern) {
+			PhysicalPattern physical = physicalPattern(pattern);
+			PatternPlan physicalPattern = physical.pattern;
 			// UNKNOWN is a wildcard binding in a join, never an adjacency key. The native scan binds nullable
 			// positions and checks already-bound terms using the same per-evaluation term authority.
 			if (hasNullableInputs(pattern)) {
 				return lowerNativeOperator(pattern);
 			}
-			if (pattern.range != null) {
+			if (physicalPattern.range != null) {
 				// Range pushdown replaces the original FILTER, so the exact raw key bounds are semantic. Only a scan
 				// whose planned index and bound mask are stable may carry them; adjacency or a correlated scan would
 				// widen the producer and can return wrong rows.
-				if (rangeScanCompatible(pattern) && lowerPatternAsScan(pattern)) {
-					return true;
+				if (rangeScanCompatible(physicalPattern) && lowerPatternAsScan(physicalPattern)) {
+					return appendPhysicalBindings(physical, true);
 				}
-				reason = rangeDeclineReason(pattern);
+				reason = rangeDeclineReason(physicalPattern);
 				return false;
 			}
-			if (preferScans && lowerPatternAsScan(pattern)) {
-				return true;
+			if (preferScans && lowerPatternAsScan(physicalPattern)) {
+				return appendPhysicalBindings(physical, true);
 			}
 			// A wildcard plane needs complete predicate coverage. If binding reports selected or otherwise incomplete
 			// coverage, keep every covered fixed-predicate adjacency and lower only the variable-predicate operators to
 			// exact retained LMDB scans. This is the mixed IR route used by e.g. an in-memory rdf:type extent joined to
 			// ?s ?p ?o; it avoids throwing the entire fused plan back to the nested evaluator.
-			if (scanVariablePredicates && !pattern.p.isConstant() && lowerPatternAsScan(pattern)) {
+			if (scanVariablePredicates && !physicalPattern.p.isConstant() && lowerPatternAsScan(physicalPattern)) {
 				MIXED_BINDING_LOWERINGS.incrementAndGet();
-				return true;
+				return appendPhysicalBindings(physical, true);
 			}
 			// Per-pattern mixed binding (M10): only the patterns whose predicate's views bind time reported
 			// unavailable prefer the scan; everything else keeps its adjacency route.
-			if (scanPredicates != null && pattern.p.isConstant() && !pattern.p.hasSlot()
-					&& scanPredicates.contains(pattern.p.constant) && lowerPatternAsScan(pattern)) {
+			if (scanPredicates != null && physicalPattern.p.isConstant() && !physicalPattern.p.hasSlot()
+					&& scanPredicates.contains(physicalPattern.p.constant) && lowerPatternAsScan(physicalPattern)) {
 				MIXED_BINDING_LOWERINGS.incrementAndGet();
-				return true;
+				return appendPhysicalBindings(physical, true);
 			}
 			// Context work the adjacency run's context column can express (M7): a constant GRAPH restriction, a
 			// projected or already-bound graph variable, and the named-graph default exclusion. A fixed dataset
 			// (context SET membership) and a bind-constant graph term stay out.
-			boolean ctxBearing = pattern.namedContextScope || pattern.c.isConstant() || pattern.c.hasSlot()
-					|| pattern.contexts.isFixed();
-			boolean ctxLowerable = ctxBearing && contextColumnsEnabled() && !pattern.contexts.isFixed()
-					&& !(pattern.c.isConstant() && pattern.c.hasSlot());
-			boolean variablePredicate = !pattern.p.isConstant() && !pattern.hasRepeatedSlot()
-					&& !pattern.s.bindConstant && !pattern.o.bindConstant && (!ctxBearing || ctxLowerable)
-					&& pattern.statementOrder == null;
-			if (variablePredicate && lowerVariablePredicatePattern(pattern, ctxLowerable)) {
-				return true;
+			boolean ctxBearing = physicalPattern.namedContextScope || physicalPattern.c.isConstant()
+					|| physicalPattern.c.hasSlot() || physicalPattern.contexts.isFixed();
+			boolean ctxLowerable = ctxBearing && contextColumnsEnabled() && !physicalPattern.contexts.isFixed()
+					&& !(physicalPattern.c.isConstant() && physicalPattern.c.hasSlot());
+			boolean variablePredicate = !physicalPattern.p.isConstant() && !physicalPattern.hasRepeatedSlot()
+					&& (!ctxBearing || ctxLowerable) && physicalPattern.statementOrder == null;
+			if (variablePredicate && lowerVariablePredicatePattern(physicalPattern, ctxLowerable)) {
+				return appendPhysicalBindings(physical, true);
 			}
-			if (pattern.hasRepeatedSlot() || !pattern.p.isConstant() || pattern.p.hasSlot()
-					|| pattern.s.bindConstant || pattern.o.bindConstant || (ctxBearing && !ctxLowerable)) {
+			if (physicalPattern.hasRepeatedSlot() || !physicalPattern.p.isConstant() || physicalPattern.p.hasSlot()
+					|| (ctxBearing && !ctxLowerable)) {
 				// No adjacency view can express this pattern. A direct LMDB scan can, for a subset of the reasons.
-				if (lowerPatternAsScan(pattern)) {
-					return true;
+				if (lowerPatternAsScan(physicalPattern)) {
+					return appendPhysicalBindings(physical, true);
 				}
 				reason = reasonPrefix + "pattern-guards";
 				return false;
 			}
 			// An ordered scan hint is a promise the consumer may rely on (ORDER BY satisfied by index order,
 			// merge-join inputs). Adjacency order is not enough, so preserve the promise through an ordered scanner.
-			if (pattern.statementOrder != null) {
-				if (lowerPatternAsScan(pattern)) {
-					return true;
+			if (physicalPattern.statementOrder != null) {
+				if (lowerPatternAsScan(physicalPattern)) {
+					return appendPhysicalBindings(physical, true);
 				}
 				reason = reasonPrefix + "pattern-ordered-scan";
 				return false;
 			}
 			Operand ctxMatch = null;
 			boolean ctxProject = false;
-			boolean ctxExclude = pattern.namedContextScope;
+			boolean ctxExclude = physicalPattern.namedContextScope;
 			if (ctxLowerable) {
-				if (pattern.c.isConstant()) {
-					ctxMatch = Operand.constant(constantIndex(pattern.c.constant));
-				} else if (pattern.c.hasSlot()) {
-					Operand bound = slotOperand(pattern.c.slot);
+				if (physicalPattern.c.isConstant()) {
+					ctxMatch = Operand.constant(constantIndex(physicalPattern.c.constant));
+				} else if (physicalPattern.c.hasSlot()) {
+					Operand bound = slotOperand(physicalPattern.c.slot);
 					if (bound != null) {
 						ctxMatch = bound;
 					} else {
@@ -2852,10 +3308,11 @@ final class LmdbNativeKernelLowering {
 			// Pure-constant key with a fresh other end: materialize the single run as a key domain at bind time
 			// instead of demanding a whole-predicate CSR view (a class extent needs one rdf:type run, not 84MB).
 			// A domain enumeration has no context column, so context-bearing patterns fall through to the probes.
-			if (!ctxActive && pattern.s.isConstant() && !pattern.s.hasSlot() && !pattern.o.isConstant()
-					&& pattern.o.hasSlot() && slotFresh(pattern.o.slot)) {
-				int domain = patternDomainIndex(pattern.p.constant, pattern.s.constant, true);
-				int column = newColumn(pattern.o.slot);
+			if (!ctxActive && physicalPattern.s.isConstant() && !physicalPattern.s.hasSlot()
+					&& !physicalPattern.o.isConstant() && physicalPattern.o.hasSlot()
+					&& slotFresh(physicalPattern.o.slot)) {
+				int domain = patternDomainIndex(physicalPattern.p.constant, physicalPattern.s.constant, true);
+				int column = newColumn(physicalPattern.o.slot);
 				boolean sortedKeys = patternDomainHasSemanticOrder();
 				if (sortedKeys) {
 					markOrderedDomain(column, domain);
@@ -2864,12 +3321,13 @@ final class LmdbNativeKernelLowering {
 				// ordering from a noncanonical id space is not RDF-term ordering and cannot feed aligned DISTINCT.
 				currentDepthNodes().add(
 						new LmdbNativeKernelIr.EnumerateDomain(domain, column, false, null, sortedKeys));
-				return true;
+				return appendPhysicalBindings(physical, true);
 			}
-			if (!ctxActive && pattern.o.isConstant() && !pattern.o.hasSlot() && !pattern.s.isConstant()
-					&& pattern.s.hasSlot() && slotFresh(pattern.s.slot)) {
-				int domain = patternDomainIndex(pattern.p.constant, pattern.o.constant, false);
-				int column = newColumn(pattern.s.slot);
+			if (!ctxActive && physicalPattern.o.isConstant() && !physicalPattern.o.hasSlot()
+					&& !physicalPattern.s.isConstant() && physicalPattern.s.hasSlot()
+					&& slotFresh(physicalPattern.s.slot)) {
+				int domain = patternDomainIndex(physicalPattern.p.constant, physicalPattern.o.constant, false);
+				int column = newColumn(physicalPattern.s.slot);
 				boolean sortedKeys = patternDomainHasSemanticOrder();
 				if (sortedKeys) {
 					markOrderedDomain(column, domain);
@@ -2878,53 +3336,53 @@ final class LmdbNativeKernelLowering {
 				// ordering from a noncanonical id space is not RDF-term ordering and cannot feed aligned DISTINCT.
 				currentDepthNodes().add(
 						new LmdbNativeKernelIr.EnumerateDomain(domain, column, false, null, sortedKeys));
-				assuredMask |= 1L << pattern.s.slot;
-				return true;
+				assuredMask |= 1L << physicalPattern.s.slot;
+				return appendPhysicalBindings(physical, true);
 			}
-			Operand subject = operandOf(pattern.s);
-			Operand object = operandOf(pattern.o);
-			if (pattern.s.hasSlot()) {
-				assuredMask |= 1L << pattern.s.slot;
+			Operand subject = operandOf(physicalPattern.s);
+			Operand object = operandOf(physicalPattern.o);
+			if (physicalPattern.s.hasSlot()) {
+				assuredMask |= 1L << physicalPattern.s.slot;
 			}
-			if (subject != null && object == null && pattern.o.hasSlot()) {
-				int adj = adjacency(pattern.p.constant, true, false);
-				currentDepthNodes().add(new LmdbNativeKernelIr.Probe(adj, subject, newColumn(pattern.o.slot),
-						ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude));
+			if (subject != null && object == null && physicalPattern.o.hasSlot()) {
+				int adj = adjacency(physicalPattern.p.constant, true, false);
+				currentDepthNodes().add(new LmdbNativeKernelIr.Probe(adj, subject, newColumn(physicalPattern.o.slot),
+						ctxProject ? newColumn(physicalPattern.c.slot) : -1, ctxMatch, ctxExclude));
 				witnessCtxLowering(ctxActive);
-				return true;
+				return appendPhysicalBindings(physical, true);
 			}
-			if (object != null && subject == null && pattern.s.hasSlot()) {
-				int adj = adjacency(pattern.p.constant, false, false);
-				currentDepthNodes().add(new LmdbNativeKernelIr.Probe(adj, object, newColumn(pattern.s.slot),
-						ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude));
+			if (object != null && subject == null && physicalPattern.s.hasSlot()) {
+				int adj = adjacency(physicalPattern.p.constant, false, false);
+				currentDepthNodes().add(new LmdbNativeKernelIr.Probe(adj, object, newColumn(physicalPattern.s.slot),
+						ctxProject ? newColumn(physicalPattern.c.slot) : -1, ctxMatch, ctxExclude));
 				witnessCtxLowering(ctxActive);
-				return true;
+				return appendPhysicalBindings(physical, true);
 			}
 			if (subject != null && object != null) {
 				if (ctxActive) {
 					// Both endpoints known: the multiplicity counter has no per-entry continuation to guard, so the
 					// context restriction cannot ride it yet. A scan can still express the projected-variable form.
-					if (lowerPatternAsScan(pattern)) {
-						return true;
+					if (lowerPatternAsScan(physicalPattern)) {
+						return appendPhysicalBindings(physical, true);
 					}
 					reason = reasonPrefix + "pattern-ctx-shape";
 					return false;
 				}
-				int adj = adjacency(pattern.p.constant, true, false);
+				int adj = adjacency(physicalPattern.p.constant, true, false);
 				currentDepthNodes().add(new LmdbNativeKernelIr.ProbeClose(adj, subject, object, true,
 						LmdbNativeKernelIr.probeCloseSeekEnabled()));
-				return true;
+				return appendPhysicalBindings(physical, true);
 			}
-			if (subject == null && object == null && pattern.s.hasSlot() && pattern.o.hasSlot()) {
+			if (subject == null && object == null && physicalPattern.s.hasSlot() && physicalPattern.o.hasSlot()) {
 				// Both endpoints fresh: enumerate the predicate's key domain. Valid at any depth — nested loops
 				// make a cartesian with earlier producers exact (e.g. a single-row VALUES seed before this).
-				int adj = adjacency(pattern.p.constant, true, true);
-				int keyColumn = newColumn(pattern.s.slot);
-				int valueColumn = newColumn(pattern.o.slot);
+				int adj = adjacency(physicalPattern.p.constant, true, true);
+				int keyColumn = newColumn(physicalPattern.s.slot);
+				int valueColumn = newColumn(physicalPattern.o.slot);
 				currentDepthNodes().add(new LmdbNativeKernelIr.EnumerateAdjKeys(adj, keyColumn, valueColumn,
-						ctxProject ? newColumn(pattern.c.slot) : -1, ctxMatch, ctxExclude));
+						ctxProject ? newColumn(physicalPattern.c.slot) : -1, ctxMatch, ctxExclude));
 				witnessCtxLowering(ctxActive);
-				return true;
+				return appendPhysicalBindings(physical, true);
 			}
 			reason = reasonPrefix + "pattern-shape";
 			return false;
@@ -3322,6 +3780,9 @@ final class LmdbNativeKernelLowering {
 		// ------------------------------------------------------------------
 
 		void lowerFilter(MaskedFilter masked) {
+			// A filter is an observable placement boundary for error-producing expressions. Do not carry a CSE
+			// candidate across it unless a later producer independently proves the same computation.
+			reusableScalars.clear();
 			NativeBooleanFilter filter = inspectFilter(masked.filter);
 			if (lowerIdFilter(filter)) {
 				return;
@@ -3530,8 +3991,14 @@ final class LmdbNativeKernelLowering {
 						orderedCompare.constantOnLeft), filterDepth);
 				return true;
 			}
-			placeFilter(new LmdbNativeKernelIr.FilterValue(filterId, args), filterDepth);
+			placeFilter(new LmdbNativeKernelIr.FilterValue(filterId, args, filterReusable(delegate),
+					delegate.pageProof(argSlots)), filterDepth);
 			return true;
+		}
+
+		/** A value guard is movable only when its read set and worker ownership are both explicitly proven. */
+		private static boolean filterReusable(NativeBooleanFilter filter) {
+			return filter.batchReadMask() >= 0L && filter.parallelWorkerForkable();
 		}
 
 		private void placeFilter(Node filterNode, int filterDepth) {
@@ -3540,8 +4007,13 @@ final class LmdbNativeKernelLowering {
 			// semantically legal point after accounting for operand availability and OPTIONAL/MINUS floors. Keep this
 			// metadata on the IR node so Janino telemetry reports the semantic relocation that actually happened; the
 			// old
-			// generated-source regex pass could neither prove nor observe this relationship.
-			filterNode.filterPlacement(depth(), placementDepth);
+			// generated-source regex pass could neither prove nor observe this relationship. The registration position
+			// and
+			// barrier epoch preserve the filter's original observable interval while pure producer work is reordered.
+			int originalStage = depth();
+			int originalPosition = originalStage < 0 ? 0 : currentDepthNodes().size();
+			filterNode.filterPlacement(originalStage, placementDepth, originalPosition,
+					barrierCountBefore(originalStage, originalPosition));
 			if (placementDepth < 0) {
 				entryDepthFilters.add(filterNode);
 			} else {
@@ -3740,7 +4212,7 @@ final class LmdbNativeKernelLowering {
 			for (int at = 0; at < nested.size(); at++) {
 				Node producer = nested.get(at);
 				if (at + 1 < nested.size()
-						&& nested.get(at + 1)instanceof LmdbNativeKernelIr.EnumeratePredicates wildcard
+						&& nested.get(at + 1) instanceof LmdbNativeKernelIr.EnumeratePredicates wildcard
 						&& wildcard.wildcard && wildcard.target == null
 						&& wildcard.key.kind == LmdbNativeKernelIr.Operand.COL) {
 					if (producer instanceof LmdbNativeKernelIr.EnumerateDomain domain
@@ -3762,7 +4234,7 @@ final class LmdbNativeKernelLowering {
 						continue;
 					}
 				}
-				if (at + 1 < nested.size() && nested.get(at + 1)instanceof LmdbNativeKernelIr.Probe probe
+				if (at + 1 < nested.size() && nested.get(at + 1) instanceof LmdbNativeKernelIr.Probe probe
 						&& probe.key.kind == LmdbNativeKernelIr.Operand.COL) {
 					if (producer instanceof LmdbNativeKernelIr.EnumerateDomain domain
 							&& domain.col == probe.key.index && domain.sipDriven) {
@@ -4258,6 +4730,7 @@ final class LmdbNativeKernelLowering {
 
 		/** Aggregate-side filter lowering, retaining exact native evaluation for residual predicates. */
 		boolean lowerFilterStrict(MaskedFilter masked) {
+			reusableScalars.clear();
 			NativeBooleanFilter filter = inspectFilter(masked.filter);
 			if (unsafeBooleanNegation(filter, false)) {
 				reason = reasonPrefix + "sticky-negated-condition";
@@ -4625,7 +5098,16 @@ final class LmdbNativeKernelLowering {
 				reason = "agg:witness-nullable-outer-correlation";
 				return false;
 			}
-			placeFilter(new LmdbNativeKernelIr.Exists(negated, pipeline), witnessCols.outerDepth);
+			// An aggregate-level witness is a condition on the complete input relation. Its correlated key may have
+			// become available at an earlier depth, but placing it there would prune rows before later producer depths
+			// and
+			// change the aggregate's input domain. Witnesses lowered while descending a nested producer already observe
+			// the current depth; an outer aggregate filter is called after that descent and therefore naturally uses
+			// the
+			// final depth as its scope floor.
+			int witnessDepth = reasonPrefix.startsWith("agg:") ? Math.max(witnessCols.outerDepth, depth())
+					: witnessCols.outerDepth;
+			placeFilter(new LmdbNativeKernelIr.Exists(negated, pipeline), witnessDepth);
 			return true;
 		}
 
@@ -4872,38 +5354,45 @@ final class LmdbNativeKernelLowering {
 
 		private boolean lowerWitnessPatternPlan(PatternPlan pattern, WitnessColumns witnessCols,
 				List<Node> pipeline) {
-			if (pattern.range != null) {
+			PhysicalPattern physical = physicalPattern(pattern);
+			PatternPlan physicalPattern = physical.pattern;
+			if (physicalPattern.range != null) {
 				// The compiled range has replaced the original FILTER, so it is part of the witness semantics. Carry
 				// the exact planned bounds into a witness-local ScanQuad instead of widening the pattern to an
 				// unrestricted adjacency probe.
-				if (witnessRangeScanCompatible(pattern, witnessCols)
-						&& lowerWitnessPatternAsScan(pattern, witnessCols, pipeline)) {
-					return true;
+				if (witnessRangeScanCompatible(physicalPattern, witnessCols)
+						&& lowerWitnessPatternAsScan(physicalPattern, witnessCols, pipeline)) {
+					return appendWitnessBindings(physical, witnessCols, pipeline);
 				}
-				reason = "agg:witness-" + rangeDeclineReason(pattern).substring(reasonPrefix.length());
+				reason = "agg:witness-" + rangeDeclineReason(physicalPattern).substring(reasonPrefix.length());
 				return false;
 			}
-			if (pattern.namedContextScope || !pattern.p.isConstant() || pattern.p.hasSlot() || pattern.c.hasSlot()
-					|| pattern.c.isConstant() || pattern.contexts.isFixed() || pattern.s.bindConstant
-					|| pattern.o.bindConstant) {
+			if (physicalPattern.namedContextScope || !physicalPattern.p.isConstant() || physicalPattern.p.hasSlot()
+					|| physicalPattern.c.hasSlot() || physicalPattern.c.isConstant()
+					|| physicalPattern.contexts.isFixed()) {
 				reason = "agg:witness-pattern-guards";
 				return false;
 			}
-			if (pattern.hasRepeatedSlot()) {
+			if (physicalPattern.hasRepeatedSlot()) {
 				// Self-loop witness (?x pred ?x): expressible as a semi ProbeClose with both ends the same operand.
-				if (pattern.s.hasSlot() && pattern.o.hasSlot() && pattern.s.slot == pattern.o.slot) {
-					Operand endpoint = witnessOperand(pattern.s, witnessCols);
+				if (physicalPattern.s.hasSlot() && physicalPattern.o.hasSlot()
+						&& physicalPattern.s.slot == physicalPattern.o.slot) {
+					Operand endpoint = witnessOperand(physicalPattern.s, witnessCols);
 					if (endpoint != null) {
-						int adj = adjacency(pattern.p.constant, true, false);
+						int adj = adjacency(physicalPattern.p.constant, true, false);
 						pipeline.add(new LmdbNativeKernelIr.ProbeClose(adj, endpoint, endpoint, false,
 								LmdbNativeKernelIr.probeCloseSeekEnabled()));
-						return true;
+						return appendWitnessBindings(physical, witnessCols, pipeline);
 					}
 				}
 				reason = "agg:witness-repeated-slot";
 				return false;
 			}
-			return lowerWitnessPattern(pattern.s, pattern.p.constant, pattern.o, witnessCols, pipeline);
+			if (!lowerWitnessPattern(physicalPattern.s, physicalPattern.p.constant, physicalPattern.o, witnessCols,
+					pipeline)) {
+				return false;
+			}
+			return appendWitnessBindings(physical, witnessCols, pipeline);
 		}
 
 		/**
@@ -5061,8 +5550,10 @@ final class LmdbNativeKernelLowering {
 				AGG_RESIDUAL_LOWERINGS.incrementAndGet();
 				return true;
 			}
+			NativeBooleanFilter delegate = inspectFilter(masked.filter);
 			filterHooks.add(new LmdbNativeKernelBindings.FilterHook(masked, argSlots));
-			pipeline.add(new LmdbNativeKernelIr.FilterValue(filterHooks.size() - 1, args));
+			pipeline.add(new LmdbNativeKernelIr.FilterValue(filterHooks.size() - 1, args,
+					filterReusable(delegate), delegate.pageProof(argSlots)));
 			return true;
 		}
 
@@ -5309,6 +5800,10 @@ final class LmdbNativeKernelLowering {
 
 		Lowered buildAggregate(int[] groupSlots, AggregateSpec[] aggregates, LmdbNativeKernelIr.Having having,
 				int distinctExpected) {
+			if (aggregates.length == 0) {
+				reason = "agg:no-aggregate-outputs";
+				return null;
+			}
 			int[] groupCols = new int[groupSlots.length];
 			for (int i = 0; i < groupSlots.length; i++) {
 				ensureAggregateColumn(groupSlots[i]);
@@ -5451,9 +5946,10 @@ final class LmdbNativeKernelLowering {
 				}
 			}
 			List<Node> pipeline = new ArrayList<>(entryDepthFilters);
+			BitSet available = availableColumnsBefore(0);
 			for (int d = 0; d < nodesPerDepth.size(); d++) {
-				pipeline.addAll(nodesPerDepth.get(d));
-				pipeline.addAll(filtersPerDepth.get(d));
+				appendDepthPipeline(pipeline, nodesPerDepth.get(d), filtersPerDepth.get(d), available,
+						columnDomain(), d, barrierCountBefore(d, 0));
 			}
 			pipeline.addAll(terminalCompatibility);
 			if (columnEngineSlots.isEmpty() && scratchColumns == 0) {
@@ -5481,6 +5977,10 @@ final class LmdbNativeKernelLowering {
 			// fold (the union-root collapse compares branch heads). SIP marking and batching are then applied to the
 			// folded pipeline's remaining ordinary producer/probe pairs, so they cannot pessimize that proven
 			// sub-millisecond path.
+			if (!row.encounterOrderRequired && Arrays.stream(outputs)
+					.noneMatch(output -> output.kind == LmdbNativeKernelIr.AGG_ROW_STATE)) {
+				pipeline = orientReusableProducers(pipeline, columnCount);
+			}
 			Kernel semanticKernel = new Kernel(columnCount, pipeline, terminal);
 			List<Node> sipPipeline = new ArrayList<>(semanticKernel.pipeline);
 			markDomainDrivenEnumerations(sipPipeline);
@@ -5515,6 +6015,124 @@ final class LmdbNativeKernelLowering {
 		// Assembly
 		// ------------------------------------------------------------------
 
+		private List<Node> orientReusableProducers(List<Node> pipeline, int columns) {
+			if (!orientationReplaySafe(pipeline)) {
+				return pipeline;
+			}
+			int[] fixedReferences = new int[adjacencies.size()];
+			int[] wildcardReferences = new int[wildcardRequests.size()];
+			countOrientationViews(pipeline, fixedReferences, wildcardReferences);
+			return orientRegion(pipeline, columns, fixedReferences, wildcardReferences);
+		}
+
+		private static boolean orientationReplaySafe(List<Node> nodes) {
+			for (Node node : nodes) {
+				List<List<Node>> regions = childRegions(node);
+				// A scope boundary forbids moving instructions across it, but its own pure child regions can still
+				// select their physical orientation. Observable leaves forbid changing the surrounding encounter order.
+				if (node.reorderingBarrier() && regions.isEmpty() || node instanceof LmdbNativeKernelIr.FilterResidual
+						|| node instanceof LmdbNativeKernelIr.FilterValue filter && !filter.reusable) {
+					return false;
+				}
+				for (List<Node> region : regions) {
+					if (!orientationReplaySafe(region)) {
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
+		private static List<List<Node>> childRegions(Node node) {
+			if (node instanceof LmdbNativeKernelIr.Exists exists) {
+				return List.of(exists.pipeline);
+			}
+			if (node instanceof LmdbNativeKernelIr.Union union) {
+				return union.branches;
+			}
+			if (node instanceof LmdbNativeKernelIr.LeftGroup optional) {
+				return List.of(optional.arm);
+			}
+			if (node instanceof LmdbNativeKernelIr.LexicalFrameLeftJoin optional) {
+				return List.of(optional.left, optional.right);
+			}
+			if (node instanceof LmdbNativeKernelIr.HashBuild hash) {
+				return List.of(hash.pipeline);
+			}
+			return List.of();
+		}
+
+		private static void countOrientationViews(List<Node> nodes, int[] fixed, int[] wildcard) {
+			// Reuse the resource visitor, which already covers paths, intersections, SIP, and nested operators.
+			// An orientation change is legal only when it cannot rebind another consumer's view.
+			LmdbNativeKernelIr.Requirements references = new LmdbNativeKernelIr.Requirements() {
+				@Override
+				void adjacency(int index) {
+					fixed[index]++;
+				}
+
+				@Override
+				void wildcardView(int index) {
+					wildcard[index]++;
+				}
+			};
+			for (Node node : nodes) {
+				node.requirements(references);
+			}
+		}
+
+		private List<Node> orientRegion(List<Node> nodes, int columns, int[] fixed, int[] wildcard) {
+			List<Node> result = new ArrayList<>(nodes);
+			for (int position = 0; position < nodes.size(); position++) {
+				Node node = nodes.get(position);
+				Node replacement = node;
+				if (LmdbNativeProducerSchedule.preferNeighborRoot(nodes, position, columns)) {
+					if (node instanceof LmdbNativeKernelIr.EnumerateAdjKeys keys && !keys.sipDriven) {
+						if (keys.wildcard && wildcard[keys.adjacency] == 1) {
+							wildcardRequests.set(keys.adjacency,
+									new LmdbNativeKernelBindings.WildcardRequest(!keys.bySubject));
+							replacement = keys.reversed();
+						} else if (!keys.wildcard && fixed[keys.adjacency] == 1) {
+							var request = adjacencies.get(keys.adjacency);
+							adjacencies.set(keys.adjacency, new LmdbNativeKernelBindings.AdjacencyRequest(
+									request.predicate, !request.bySubject, request.needsKeyEnum,
+									request.needsNonEmptyKeys));
+							replacement = keys.reversed();
+						}
+					} else if (node instanceof LmdbNativeKernelIr.EnumerateWildcard enumeration
+							&& wildcard[enumeration.view] == 1) {
+						wildcardRequests.set(enumeration.view,
+								new LmdbNativeKernelBindings.WildcardRequest(!enumeration.bySubject));
+						replacement = new LmdbNativeKernelIr.EnumerateWildcard(enumeration.view, !enumeration.bySubject,
+								enumeration.demand, enumeration.valueCol, enumeration.predicateCol, enumeration.keyCol,
+								enumeration.ctxCol, enumeration.ctxMatch, enumeration.ctxExcludeDefault);
+					}
+				}
+				if (node instanceof LmdbNativeKernelIr.Exists exists) {
+					replacement = new LmdbNativeKernelIr.Exists(exists.negated,
+							orientRegion(exists.pipeline, columns, fixed, wildcard));
+				} else if (node instanceof LmdbNativeKernelIr.Union union) {
+					List<List<Node>> branches = new ArrayList<>();
+					for (List<Node> branch : union.branches) {
+						branches.add(orientRegion(branch, columns, fixed, wildcard));
+					}
+					replacement = new LmdbNativeKernelIr.Union(branches);
+				} else if (node instanceof LmdbNativeKernelIr.LeftGroup optional) {
+					replacement = new LmdbNativeKernelIr.LeftGroup(
+							orientRegion(optional.arm, columns, fixed, wildcard));
+				} else if (node instanceof LmdbNativeKernelIr.LexicalFrameLeftJoin optional) {
+					replacement = new LmdbNativeKernelIr.LexicalFrameLeftJoin(
+							orientRegion(optional.left, columns, fixed, wildcard),
+							orientRegion(optional.right, columns, fixed, wildcard), optional.problemCols);
+				} else if (node instanceof LmdbNativeKernelIr.HashBuild hash) {
+					replacement = new LmdbNativeKernelIr.HashBuild(hash.tableId, hash.keyCols, hash.payloadCols,
+							orientRegion(hash.pipeline, columns, fixed, wildcard), hash.maxRows, hash.estimatedRows);
+				}
+				result.set(position, replacement);
+			}
+			return result;
+		}
+
 		Lowered build() {
 			if (columnEngineSlots.isEmpty() || columnEngineSlots.size() > 64) {
 				return null;
@@ -5526,9 +6144,13 @@ final class LmdbNativeKernelLowering {
 			if (hashPreamble != null) {
 				pipeline.add(hashPreamble);
 			}
+			BitSet available = availableColumnsBefore(0);
+			if (hashPreamble != null) {
+				hashPreamble.produced(available);
+			}
 			for (int d = 0; d < nodesPerDepth.size(); d++) {
-				pipeline.addAll(nodesPerDepth.get(d));
-				pipeline.addAll(filtersPerDepth.get(d));
+				appendDepthPipeline(pipeline, nodesPerDepth.get(d), filtersPerDepth.get(d), available,
+						columnDomain(), d, barrierCountBefore(d, 0));
 			}
 			pipeline.addAll(terminalCompatibility);
 			markDomainDrivenEnumerations(pipeline);
@@ -5539,6 +6161,9 @@ final class LmdbNativeKernelLowering {
 			}
 			// Witness sub-pipelines (Exists rewrites under DISTINCT sinking) hold their scratch in columns past the
 			// engine-slot-backed ones; the kernel must declare those fields too.
+			if (!row.encounterOrderRequired) {
+				pipeline = orientReusableProducers(pipeline, columnEngineSlots.size() + scratchColumns);
+			}
 			Kernel kernel = new Kernel(columnEngineSlots.size() + scratchColumns, pipeline,
 					new LmdbNativeKernelIr.Emit(emitColumns, false, LmdbNativeKernelIr.OutputMods.none()));
 

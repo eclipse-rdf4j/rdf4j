@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
+
 /**
  * Attempt-local ownership for compiled native filters. Speculative plans use borrowed facades so their optimized
  * cursors can close every owner normally without closing the reusable original filter before a fallback restart.
@@ -248,12 +250,23 @@ final class NativeFilterLease {
 		}
 
 		@Override
+		public KernelTermKindProof pageProof(int[] argSlots) {
+			return entry.attempt.pageProof(argSlots);
+		}
+
+		@Override
 		public NativeBooleanFilter forkForParallelWorker() {
 			entry.used = true;
 			if (entry.recorder != null) {
 				return entry.recorder.forkForParallelWorker(entry.recorder);
 			}
 			return entry.attempt.forkForParallelWorker();
+		}
+
+		@Override
+		public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+			entry.used = true;
+			return entry.attempt.forkForParallelWorker(context);
 		}
 
 		@Override

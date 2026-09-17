@@ -119,6 +119,25 @@ final class LmdbNativeProbeDeadline {
 				LmdbNativeProbeConfig.system().bufferRows(), deadline::tripCapacity);
 	}
 
+	/**
+	 * Builds the cancellation token used only by aggregate workers. A peer stop is kept separate from the replayable
+	 * probe cancellation used by streaming rows, allowing the coordinator to classify the initiating failure after all
+	 * workers have joined.
+	 */
+	static KernelCancellation currentAggregateKernelCancellation(BooleanSupplier queryCancellation,
+			BooleanSupplier peerCancellation) {
+		LmdbNativeProbeDeadline deadline = CURRENT.get();
+		if (deadline == null) {
+			return queryCancellation == null && peerCancellation == null
+					? null
+					: new KernelCancellation(System.nanoTime() + (Long.MAX_VALUE >> 2), null, queryCancellation, -1,
+							null,
+							peerCancellation);
+		}
+		return new KernelCancellation(deadline.deadlineNanoTime, deadline::expired, queryCancellation,
+				LmdbNativeProbeConfig.system().bufferRows(), deadline::tripCapacity, peerCancellation);
+	}
+
 	/** Masked poll for sequential drain loops: call as {@code LmdbNativeProbeDeadline.poll(++tick)}. */
 	static void poll(int tick) {
 		if ((tick & 1023) != 0) {

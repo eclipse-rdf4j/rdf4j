@@ -574,7 +574,7 @@ public interface NativeLmdbQuerySource {
 	 * dynamic {@code (node, predicate)} probe, a node's predicate row — can be read by exactly the same code. A run is
 	 * a run regardless of how its handle was found.
 	 */
-	interface RunView {
+	public interface RunView {
 
 		/** Number of incidences in the run. */
 		long size(long runHandle);
@@ -861,6 +861,21 @@ public interface NativeLmdbQuerySource {
 			return NativeAdjacency.boundedKeyRunCursor(delegate, fromOrdinal, toOrdinal);
 		}
 
+		/** Physical page traversal for the currently bound predicate, or {@code null} when unavailable. */
+		default NativeAdjacency.AdjacencyPageCursor openPageCursor() {
+			return null;
+		}
+
+		/** Number of physical pages in the currently bound predicate, or {@code -1} when unavailable. */
+		default long pageCount() {
+			return -1L;
+		}
+
+		/** Bounded physical-page traversal for the currently bound predicate, or {@code null} when unavailable. */
+		default NativeAdjacency.AdjacencyPageCursor openPageCursor(long fromPage, long toPage) {
+			return null;
+		}
+
 		@Override
 		void close();
 	}
@@ -948,6 +963,17 @@ public interface NativeLmdbQuerySource {
 		 * fiber access remains page-local and allocation-free.
 		 */
 		interface AdjacencyPageCursor extends AutoCloseable {
+			/**
+			 * All possible term-kind bits, including the conservative unknown/pointer bits. The pointer representation
+			 * may resolve to any RDF term and therefore must not be used as a proof of one concrete RDF kind.
+			 */
+			int ALL_TERM_KINDS = (1 << (ValueIds.TERM_KIND_POINTER + 1)) - 1;
+
+			enum TermKindColumn {
+				ROW,
+				NEIGHBOR
+			}
+
 			boolean advance();
 
 			int rowCount();
@@ -963,6 +989,21 @@ public interface NativeLmdbQuerySource {
 				return neighborAt(0, 0);
 			}
 
+			/**
+			 * Returns a conservative possible-term-kind mask for one page column without reading row or fiber payload.
+			 * Implementations that cannot expose the immutable header facts return all RDF term kinds. Bit positions
+			 * are the values used by {@link ValueIds#termKind(long)}.
+			 *
+			 * <p>
+			 * This capability is separate from {@link #firstRow()} and {@link #firstNeighbor()}: the latter retain
+			 * their historical defaults for compatibility, while this method's default is explicitly payload-free and
+			 * unknown.
+			 */
+			default int headerTermKindMask(TermKindColumn column) {
+				Objects.requireNonNull(column, "column");
+				return ALL_TERM_KINDS;
+			}
+
 			/** Whether every quad on this page has the same context. */
 			default boolean hasCommonContext() {
 				return false;
@@ -976,6 +1017,39 @@ public interface NativeLmdbQuerySource {
 			/** Copies page-local quads from one row, including exact raw contexts. */
 			default int copyRowQuads(int rowIndex, int fromQuad, int length, long[] neighbors, long[] contexts) {
 				return -1;
+			}
+
+			/**
+			 * Copies page-local root IDs and their exact physical quad counts. The row range and both target ranges are
+			 * validated before any payload is read. Implementations that can read root metadata in batches should
+			 * override this method; the default preserves compatibility for existing page providers.
+			 *
+			 * @return the number of roots copied, or zero when {@code fromRow == rowCount()}
+			 */
+			default int copyRootCounts(int fromRow, int length, long[] rootTarget, int rootOffset, long[] countTarget,
+					int countOffset) {
+				Objects.requireNonNull(rootTarget, "rootTarget");
+				Objects.requireNonNull(countTarget, "countTarget");
+				int rows = rowCount();
+				if (rows < 0 || fromRow < 0 || length < 0 || fromRow > rows || length > rows - fromRow
+						|| rootOffset < 0 || countOffset < 0 || rootOffset > rootTarget.length - length
+						|| countOffset > countTarget.length - length) {
+					throw new IllegalArgumentException("invalid root-count batch range");
+				}
+				for (int i = 0; i < length; i++) {
+					rootTarget[rootOffset + i] = rowAt(fromRow + i);
+					countTarget[countOffset + i] = rowQuadCount(fromRow + i);
+				}
+				return length;
+			}
+
+			/**
+			 * Whether exact context payload can be copied through {@link #copyRowQuads(int, int, int, long[], long[])}.
+			 * Providers that do not implement this capability return false without inspecting a row. Consumers that
+			 * need contexts must select an exact run cursor before consuming any page roots.
+			 */
+			default boolean supportsContextAccess() {
+				return false;
 			}
 
 			long rowAt(int rowIndex);

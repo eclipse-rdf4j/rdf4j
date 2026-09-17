@@ -504,7 +504,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	@Override
 	public boolean borrowRun(long runHandle, BorrowedFactorBatch target, int lane) {
 		ensureOpen();
-		if (!(target.source()instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
+		if (!(target.source() instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
 			throw new IllegalArgumentException("factor source belongs to another snapshot");
 		owner.checkOpen();
 		if (runHandle <= 0L)
@@ -750,6 +750,31 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		}
 
 		@Override
+		public int headerTermKindMask(
+				NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor.TermKindColumn column) {
+			Objects.requireNonNull(column, "column");
+			int count = column == NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor.TermKindColumn.ROW
+					? delegate.roots()
+					: delegate.fibers();
+			if (count == 0) {
+				return 0;
+			}
+			boolean uniform = column == NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor.TermKindColumn.ROW
+					? delegate.rowsHaveUniformTermKind()
+					: delegate.neighborsHaveUniformTermKind();
+			if (!uniform) {
+				return NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor.ALL_TERM_KINDS;
+			}
+			long first = column == NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor.TermKindColumn.ROW
+					? delegate.firstRoot()
+					: delegate.firstNeighbor();
+			int termKind = ValueIds.termKind(first);
+			return termKind <= ValueIds.TERM_KIND_UNKNOWN || termKind > ValueIds.TERM_KIND_TRIPLE
+					? NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor.ALL_TERM_KINDS
+					: 1 << termKind;
+		}
+
+		@Override
 		public boolean hasCommonContext() {
 			return delegate.hasCommonContext();
 		}
@@ -762,6 +787,17 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		@Override
 		public int copyRowQuads(int rowIndex, int fromQuad, int length, long[] neighbors, long[] contexts) {
 			return delegate.copyRootQuads(rowIndex, fromQuad, length, neighbors, contexts);
+		}
+
+		@Override
+		public int copyRootCounts(int fromRow, int length, long[] rootTarget, int rootOffset, long[] countTarget,
+				int countOffset) {
+			return delegate.copyRootCounts(fromRow, length, rootTarget, rootOffset, countTarget, countOffset);
+		}
+
+		@Override
+		public boolean supportsContextAccess() {
+			return true;
 		}
 
 		@Override
@@ -1027,7 +1063,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 		@Override
 		public boolean borrow(BorrowedFactorBatch target, int lane) {
-			if (!(target.source()instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
+			if (!(target.source() instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
 				throw new IllegalArgumentException("factor source belongs to another snapshot");
 			owner.checkOpen();
 			if (!directBaseRun)

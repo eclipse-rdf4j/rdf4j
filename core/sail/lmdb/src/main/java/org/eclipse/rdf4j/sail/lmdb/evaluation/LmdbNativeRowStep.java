@@ -654,11 +654,15 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		// ORDER BY: pack slot rows into one reusable arena (keys may be unprojected), sort primitive row indexes,
 		// then project/dedup/slice in SPARQL pipeline order.
 		LmdbNativeValueCodec orderCodec = values.source.nativeValueCodec();
+		// Synthetic evaluation sources reuse the backing store codec for stored ids, but plan/runtime ids may have
+		// bits that look like the store's ordered inline encodings. Capture the authority once per evaluation so the
+		// hot comparator can keep the raw-id path exclusively for ids owned by that codec.
+		NativeTermAuthority orderAuthority = row.termAuthority();
 		PackedRowComparator comparator = (left, leftOffset, right, rightOffset) -> {
 			for (int k = 0; k < orderSlots.length; k++) {
 				long leftId = left[leftOffset + sortLayout.orderSlots[k]];
 				long rightId = right[rightOffset + sortLayout.orderSlots[k]];
-				Integer nativeCmp = orderCompare(leftId, rightId, orderCodec);
+				Integer nativeCmp = orderCompare(leftId, rightId, orderCodec, orderAuthority);
 				int cmp;
 				if (nativeCmp != null) {
 					cmp = nativeCmp;
@@ -1160,9 +1164,15 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		return values.value(id);
 	}
 
-	Integer orderCompare(long leftId, long rightId, LmdbNativeValueCodec codec) {
+	Integer orderCompare(long leftId, long rightId, LmdbNativeValueCodec codec, NativeTermAuthority authority) {
 		if (codec == null || leftId == UNKNOWN || leftId == NULL_CONTEXT_ID || rightId == UNKNOWN
 				|| rightId == NULL_CONTEXT_ID) {
+			return null;
+		}
+		// The codec belongs to the backing store. A synthetic source delegates to it for stored ids, while its PLAN
+		// and RUNTIME ids can collide with ordered-inline type bits. Those ids must use the value-semantic fallback.
+		if (authority != null && (authority.kind(leftId) != NativeIdKind.STORE
+				|| authority.kind(rightId) != NativeIdKind.STORE)) {
 			return null;
 		}
 		if (ValueIds.isOrderedInteger(leftId) && ValueIds.isOrderedInteger(rightId)) {

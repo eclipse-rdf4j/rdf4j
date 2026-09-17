@@ -164,6 +164,11 @@ final class NativeExecutionContext implements AutoCloseable {
 		return context;
 	}
 
+	/** Returns the already-created query scope without allocating one for a worker that cannot supply its factory. */
+	QueryEvaluationContext genericContextOrNull() {
+		return queryScopeOwner == this ? genericContext : queryScopeOwner.genericContextOrNull();
+	}
+
 	/**
 	 * Installs the first root authority that can map a query-scoped Value to its canonical store id. Nested native
 	 * roots share the owner and must not replace that authority with a different catalog.

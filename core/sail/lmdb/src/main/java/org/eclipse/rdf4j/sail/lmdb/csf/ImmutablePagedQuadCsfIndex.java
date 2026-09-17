@@ -4378,6 +4378,23 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			return copyRow(rowIndex, fromQuad, length, neighbors, 0, contexts, 0);
 		}
 
+		/** Copies page-local root IDs and exact physical quad counts in one bounded metadata batch. */
+		public int copyRootCounts(int fromRow, int length, long[] rootTarget, int rootOffset, long[] countTarget,
+				int countOffset) {
+			ensurePageReady();
+			Objects.requireNonNull(rootTarget, "rootTarget");
+			Objects.requireNonNull(countTarget, "countTarget");
+			int rows = rowCount();
+			if (rows < 0 || fromRow < 0 || length < 0 || fromRow > rows || length > rows - fromRow
+					|| rootOffset < 0 || countOffset < 0 || rootOffset > rootTarget.length - length
+					|| countOffset > countTarget.length - length) {
+				throw new IllegalArgumentException("invalid root-count batch range");
+			}
+			copyRows(fromRow, length, rootTarget, rootOffset);
+			copyRowQuadCounts(fromRow, length, countTarget, countOffset);
+			return length;
+		}
+
 		public long rootAt(int rowIndex) {
 			ensurePageReady();
 			return rowAt(rowIndex);

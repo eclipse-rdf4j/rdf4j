@@ -13,6 +13,8 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -21,6 +23,7 @@ import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Value;
@@ -153,6 +156,94 @@ class LmdbNativeComparisonCompilerTest {
 	}
 
 	@Test
+	void contextualCachedComparisonForkUsesWorkerCodec() {
+		LmdbNativeValueCodec compileCodec = mock(LmdbNativeValueCodec.class);
+		LmdbNativeValueCodec workerCodec = mock(LmdbNativeValueCodec.class);
+		long constant = ValueIds.createId(ValueIds.T_LITERAL, 11L);
+		long candidate = ValueIds.createId(ValueIds.T_LITERAL, 12L);
+		when(compileCodec.decode(constant)).thenReturn(decodedLiteral("constant"));
+		when(compileCodec.decode(candidate)).thenReturn(decodedLiteral("compile-source"));
+		when(workerCodec.decode(candidate)).thenReturn(decodedLiteral("constant"));
+
+		CachedCompareFilter template = new CachedCompareFilter(0, constant, false, Compare.CompareOp.EQ, true,
+				bindings -> false, compileCodec);
+		NativeBooleanFilter worker = template.forkForParallelWorker(new NativeScalarPlan.WorkerContext(
+				mock(NativeLmdbQuerySource.class), workerCodec, null));
+
+		assertThat(worker).isNotNull();
+		assertThat(worker.accept(rowWith(candidate, candidate)))
+				.as("a contextual fork must decode candidate ids with its worker codec")
+				.isTrue();
+	}
+
+	@Test
+	void contextualCombinationForkClosesLeftWhenRightForkThrows() {
+		TrackingForkFilter left = new TrackingForkFilter(false);
+		TrackingForkFilter right = new TrackingForkFilter(true);
+		BooleanCombinationFilter combination = new BooleanCombinationFilter(left, right, true);
+		NativeScalarPlan.WorkerContext context = new NativeScalarPlan.WorkerContext(
+				mock(NativeLmdbQuerySource.class), null, null);
+
+		assertThatThrownBy(() -> combination.forkForParallelWorker(context))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("right fork failed");
+		assertThat(left.forkedCloseCount.get())
+				.as("a partially constructed combination must close its already-created left fork")
+				.isEqualTo(1);
+	}
+
+	@Test
+	void legacyCombinationForkClosesLeftWhenRightForkThrows() {
+		TrackingForkFilter left = new TrackingForkFilter(false);
+		TrackingForkFilter right = new TrackingForkFilter(true);
+		BooleanCombinationFilter combination = new BooleanCombinationFilter(left, right, false);
+
+		assertThatThrownBy(combination::forkForParallelWorker)
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("right fork failed");
+		assertThat(left.forkedCloseCount.get())
+				.as("the legacy fork path must close a partially-created left fork")
+				.isEqualTo(1);
+	}
+
+	@Test
+	void contextualCombinationForkKeepsRightFailureWhenLeftForkCloseFails() {
+		IllegalStateException leftCloseFailure = new IllegalStateException("left close failed");
+		TrackingForkFilter left = new TrackingForkFilter(false, leftCloseFailure);
+		TrackingForkFilter right = new TrackingForkFilter(true);
+		BooleanCombinationFilter combination = new BooleanCombinationFilter(left, right, true);
+		NativeScalarPlan.WorkerContext context = new NativeScalarPlan.WorkerContext(
+				mock(NativeLmdbQuerySource.class), null, null);
+
+		Throwable failure = catchThrowable(() -> combination.forkForParallelWorker(context));
+
+		assertThat(failure)
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("right fork failed")
+				.satisfies(problem -> assertThat(problem.getSuppressed()).containsExactly(leftCloseFailure));
+		assertThat(left.forkedCloseCount.get())
+				.as("the left fork must be closed exactly once when right binding fails")
+				.isEqualTo(1);
+	}
+
+	@Test
+	void combinationClosePreservesFirstFailureAndClosesBothChildren() {
+		IllegalStateException leftFailure = new IllegalStateException("left close failed");
+		IllegalStateException rightFailure = new IllegalStateException("right close failed");
+		CloseFailingFilter left = new CloseFailingFilter(leftFailure);
+		CloseFailingFilter right = new CloseFailingFilter(rightFailure);
+		BooleanCombinationFilter combination = new BooleanCombinationFilter(left, right, true);
+
+		Throwable failure = catchThrowable(combination::close);
+
+		assertThat(failure)
+				.isSameAs(leftFailure)
+				.satisfies(problem -> assertThat(problem.getSuppressed()).containsExactly(rightFailure));
+		assertThat(left.closeCount).isEqualTo(1);
+		assertThat(right.closeCount).isEqualTo(1);
+	}
+
+	@Test
 	void cachedComparisonDoesNotReuseRuntimeIdVerdictAcrossEvaluations() {
 		NativeLmdbQuerySource store = mock(NativeLmdbQuerySource.class);
 		LmdbNativeValueCodec codec = new LmdbNativeValueCodec(mock(ValueStore.class));
@@ -255,6 +346,85 @@ class LmdbNativeComparisonCompilerTest {
 		row.slots[0] = source.internComputedValue(value);
 		row.recomputeBoundMask();
 		return row;
+	}
+
+	private static LmdbNativeValueCodec.DecodedValue decodedLiteral(String value) {
+		return LmdbNativeValueCodec.fromValue(SimpleValueFactory.getInstance().createLiteral(value));
+	}
+
+	private static final class TrackingForkFilter implements NativeBooleanFilter {
+		private final boolean throwOnFork;
+		private final RuntimeException closeFailure;
+		private final AtomicInteger forkedCloseCount = new AtomicInteger();
+
+		private TrackingForkFilter(boolean throwOnFork) {
+			this(throwOnFork, null);
+		}
+
+		private TrackingForkFilter(boolean throwOnFork, RuntimeException closeFailure) {
+			this.throwOnFork = throwOnFork;
+			this.closeFailure = closeFailure;
+		}
+
+		@Override
+		public boolean parallelWorkerForkable() {
+			return true;
+		}
+
+		@Override
+		public NativeBooleanFilter forkForParallelWorker() {
+			return fork();
+		}
+
+		@Override
+		public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+			return fork();
+		}
+
+		private NativeBooleanFilter fork() {
+			if (throwOnFork) {
+				throw new IllegalStateException("right fork failed");
+			}
+			return new NativeBooleanFilter() {
+				@Override
+				public boolean accept(RowState row) {
+					return true;
+				}
+
+				@Override
+				public void close() {
+					forkedCloseCount.incrementAndGet();
+					if (closeFailure != null) {
+						throw closeFailure;
+					}
+				}
+			};
+		}
+
+		@Override
+		public boolean accept(RowState row) {
+			return true;
+		}
+	}
+
+	private static final class CloseFailingFilter implements NativeBooleanFilter {
+		private final RuntimeException failure;
+		private int closeCount;
+
+		private CloseFailingFilter(RuntimeException failure) {
+			this.failure = failure;
+		}
+
+		@Override
+		public boolean accept(RowState row) {
+			return true;
+		}
+
+		@Override
+		public void close() {
+			closeCount++;
+			throw failure;
+		}
 	}
 
 	@Test

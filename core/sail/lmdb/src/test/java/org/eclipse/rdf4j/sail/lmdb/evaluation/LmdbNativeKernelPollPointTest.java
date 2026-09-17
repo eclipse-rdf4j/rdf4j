@@ -25,6 +25,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.codehaus.janino.SimpleCompiler;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPeerCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.Test;
@@ -90,6 +92,58 @@ class LmdbNativeKernelPollPointTest {
 		assertSame(KernelQueryCancelledException.INSTANCE,
 				assertThrows(KernelQueryCancelledException.class, () -> KernelRuntime.checkCancelled(simultaneous)),
 				"evaluation cancellation must not become a replayable probe decline when both signals race");
+	}
+
+	@Test
+	void terminalCancellationLatchDoesNotPollClockOrSuppliersAgain() {
+		AtomicInteger queryCalls = new AtomicInteger();
+		KernelCancellation query = new KernelCancellation(System.nanoTime() + TimeUnit.HOURS.toNanos(1L), () -> {
+			throw new AssertionError("a latched query cancellation must not poll the probe supplier");
+		}, () -> {
+			if (queryCalls.getAndIncrement() == 0) {
+				return true;
+			}
+			throw new AssertionError("a latched query cancellation must not poll the query supplier");
+		});
+
+		assertTrue(query.cancelled());
+		assertTrue(query.cancelled());
+		assertEquals(1, queryCalls.get(), "a terminal query latch must be a fast read on subsequent polls");
+
+		AtomicInteger probeCalls = new AtomicInteger();
+		KernelCancellation probe = new KernelCancellation(System.nanoTime() + TimeUnit.HOURS.toNanos(1L), () -> {
+			if (probeCalls.getAndIncrement() == 0) {
+				return true;
+			}
+			throw new AssertionError("a latched probe cancellation must not poll the probe supplier");
+		});
+		assertTrue(probe.cancelled());
+		assertTrue(probe.cancelled());
+		assertEquals(1, probeCalls.get(), "a terminal probe latch must be a fast read on subsequent polls");
+	}
+
+	@Test
+	void aggregatePeerCancellationUpgradesToQueryAndCapacitySignals() {
+		AtomicBoolean peerCancelled = new AtomicBoolean();
+		AtomicBoolean queryCancelled = new AtomicBoolean();
+		KernelCancellation aggregate = LmdbNativeProbeDeadline.currentAggregateKernelCancellation(
+				queryCancelled::get, peerCancelled::get);
+
+		peerCancelled.set(true);
+		assertSame(KernelPeerCancelledException.INSTANCE,
+				assertThrows(KernelPeerCancelledException.class, () -> KernelRuntime.checkCancelled(aggregate)),
+				"aggregate workers expose a distinct peer-stop signal");
+		queryCancelled.set(true);
+		assertSame(KernelQueryCancelledException.INSTANCE,
+				assertThrows(KernelQueryCancelledException.class, () -> KernelRuntime.checkCancelled(aggregate)),
+				"terminal query cancellation upgrades a prior peer stop");
+
+		KernelCancellation capacity = new KernelCancellation(System.nanoTime() + TimeUnit.HOURS.toNanos(1L), null,
+				() -> false, 0, null, () -> true);
+		assertSame(KernelPeerCancelledException.INSTANCE,
+				assertThrows(KernelPeerCancelledException.class,
+						() -> KernelRuntime.checkMaterializationCapacity(capacity, 0)),
+				"a peer stop racing materialization must remain distinct from a replayable probe decline");
 	}
 
 	@Test

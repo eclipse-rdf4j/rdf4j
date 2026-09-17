@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 
 /**
@@ -281,12 +282,14 @@ final class LmdbNativeParallelPipelines {
 		boolean handedOff = false;
 		Throwable primaryFailure = null;
 		try {
-			workerPlans = forkWorkerPlans(plan, workers);
 			sources = step.source.openParallelSources(sourceCount);
 			if (sources == null) {
 				return reject(step, "snapshot-unavailable");
 			}
-			ParallelRowCursor cursor = new ParallelRowCursor(step, consumerRow, root, workerPlans, sources,
+			// Keep the compiled plan as a query-thread template. Each worker binds its own copy only after its sibling
+			// source exists on that worker, so a source-bound scalar evaluator can never capture another transaction.
+			workerPlans = new MultiJoinPlan[workers];
+			ParallelRowCursor cursor = new ParallelRowCursor(step, consumerRow, root, plan, workerPlans, sources,
 					reservation, partitions, false);
 			handedOff = true;
 			cursor.start();
@@ -408,7 +411,7 @@ final class LmdbNativeParallelPipelines {
 		MultiJoinPlan[] copies = new MultiJoinPlan[workers];
 		try {
 			for (int i = 0; i < workers; i++) {
-				copies[i] = new MultiJoinPlan(forkChildren(plan.children), forkFilters(plan.filters));
+				copies[i] = forkWorkerPlan(plan, null);
 			}
 			return copies;
 		} catch (RuntimeException | Error problem) {
@@ -417,21 +420,52 @@ final class LmdbNativeParallelPipelines {
 		}
 	}
 
-	private static SlotPlan[] forkChildren(SlotPlan[] children) {
-		SlotPlan[] copies = children.clone();
-		for (int i = 0; i < copies.length; i++) {
-			if (copies[i] instanceof MultiValuePatternPlan) {
-				copies[i] = ((MultiValuePatternPlan) copies[i]).forkForParallelWorker();
+	/** Creates one worker-owned plan bound to the worker's source and evaluation scope. */
+	static MultiJoinPlan forkWorkerPlan(MultiJoinPlan plan, NativeScalarPlan.WorkerContext context) {
+		SlotPlan[] children = null;
+		MaskedFilter[] filters = null;
+		try {
+			children = forkChildren(plan.children, context);
+			filters = forkFilters(plan.filters, context);
+			return new MultiJoinPlan(children, filters);
+		} catch (RuntimeException | Error problem) {
+			Throwable cleanup = closeFilters(filters, null);
+			cleanup = closeChildren(children, cleanup);
+			if (cleanup != null && cleanup != problem) {
+				problem.addSuppressed(cleanup);
 			}
+			throw problem;
 		}
-		return copies;
 	}
 
-	private static MaskedFilter[] forkFilters(MaskedFilter[] filters) {
+	private static SlotPlan[] forkChildren(SlotPlan[] children, NativeScalarPlan.WorkerContext context) {
+		SlotPlan[] copies = new SlotPlan[children.length];
+		try {
+			for (int i = 0; i < children.length; i++) {
+				SlotPlan child = children[i];
+				copies[i] = child instanceof MultiValuePatternPlan
+						? context == null
+								? ((MultiValuePatternPlan) child).forkForParallelWorker()
+								: ((MultiValuePatternPlan) child).forkForParallelWorker(context)
+						: child;
+			}
+			return copies;
+		} catch (RuntimeException | Error problem) {
+			Throwable cleanup = closeChildren(copies, null);
+			if (cleanup != null && cleanup != problem) {
+				problem.addSuppressed(cleanup);
+			}
+			throw problem;
+		}
+	}
+
+	private static MaskedFilter[] forkFilters(MaskedFilter[] filters, NativeScalarPlan.WorkerContext context) {
 		MaskedFilter[] copies = new MaskedFilter[filters.length];
 		try {
 			for (int i = 0; i < filters.length; i++) {
-				NativeBooleanFilter copy = filters[i].filter.forkForParallelWorker();
+				NativeBooleanFilter copy = context == null
+						? filters[i].filter.forkForParallelWorker()
+						: filters[i].filter.forkForParallelWorker(context);
 				if (copy == null) {
 					throw new IllegalStateException("parallel filter preflight disagreed with worker fork");
 				}
@@ -456,10 +490,55 @@ final class LmdbNativeParallelPipelines {
 	}
 
 	static Throwable closePlanFilters(MultiJoinPlan plan, Throwable failure) {
-		return plan == null ? failure : closeFilters(plan.filters, failure);
+		if (plan == null) {
+			return failure;
+		}
+		failure = closeFilters(plan.filters, failure);
+		return closeChildren(plan.children, failure);
+	}
+
+	/**
+	 * Resolves the one query scope used by every worker-bound scalar evaluator. The compiled step's context is a
+	 * structural template; when the consumer owns an evaluation-scoped synthetic source, its execution context provides
+	 * the shared scope and lifetime. Resolving it before workers are submitted prevents each worker from creating a
+	 * different NOW/labelled-BNODE scope.
+	 */
+	private static QueryEvaluationContext resolveWorkerEvaluationContext(NativeRowsStep step, RowState consumerRow) {
+		if (step.context == null) {
+			return null;
+		}
+		if (consumerRow.source instanceof SyntheticValueSource synthetic) {
+			NativeExecutionContext executionContext = synthetic.executionContext();
+			if (executionContext != null) {
+				return executionContext.genericContext(() -> new EvaluationScopedQueryEvaluationContext(step.context));
+			}
+		}
+		return new EvaluationScopedQueryEvaluationContext(step.context);
+	}
+
+	private static Throwable closeChildren(SlotPlan[] children, Throwable failure) {
+		if (children == null) {
+			return failure;
+		}
+		for (SlotPlan child : children) {
+			if (child instanceof MultiValuePatternPlan) {
+				ValueSetFilter fallbackFilter = ((MultiValuePatternPlan) child).fallbackFilter;
+				if (fallbackFilter != null) {
+					try {
+						fallbackFilter.close();
+					} catch (RuntimeException | Error closeFailure) {
+						failure = addCleanupFailure(failure, closeFailure);
+					}
+				}
+			}
+		}
+		return failure;
 	}
 
 	private static Throwable closeFilters(MaskedFilter[] filters, Throwable failure) {
+		if (filters == null) {
+			return failure;
+		}
 		for (MaskedFilter filter : filters) {
 			if (filter == null) {
 				continue;
@@ -574,6 +653,10 @@ final class LmdbNativeParallelPipelines {
 		final NativeRowsStep step;
 		final RowState consumerRow;
 		final PatternPlan root;
+		/** Query-thread template; worker-owned copies are created after their sibling source is available. */
+		final MultiJoinPlan templatePlan;
+		/** One evaluation-scoped context shared by all worker plans; never created inside a worker. */
+		final QueryEvaluationContext workerEvaluationContext;
 		final MultiJoinPlan[] workerPlans;
 		final NativeLmdbQuerySource.ParallelSource[] sources;
 		final long[] entrySlots;
@@ -606,21 +689,29 @@ final class LmdbNativeParallelPipelines {
 		ParallelRowCursor(NativeRowsStep step, RowState consumerRow, PatternPlan root,
 				MultiJoinPlan[] workerPlans, NativeLmdbQuerySource.ParallelSource[] sources,
 				TaskReservation reservation) {
-			this(step, consumerRow, root, workerPlans, sources, reservation, null, true);
+			this(step, consumerRow, root, null, workerPlans, sources, reservation, null, true);
 		}
 
 		ParallelRowCursor(NativeRowsStep step, RowState consumerRow, PatternPlan root,
 				MultiJoinPlan[] workerPlans, NativeLmdbQuerySource.ParallelSource[] sources,
 				TaskReservation reservation, boolean start) {
-			this(step, consumerRow, root, workerPlans, sources, reservation, null, start);
+			this(step, consumerRow, root, null, workerPlans, sources, reservation, null, start);
 		}
 
 		ParallelRowCursor(NativeRowsStep step, RowState consumerRow, PatternPlan root,
 				MultiJoinPlan[] workerPlans, NativeLmdbQuerySource.ParallelSource[] sources,
 				TaskReservation reservation, LmdbRootScanPartition[] plannedPartitions, boolean start) {
+			this(step, consumerRow, root, null, workerPlans, sources, reservation, plannedPartitions, start);
+		}
+
+		ParallelRowCursor(NativeRowsStep step, RowState consumerRow, PatternPlan root, MultiJoinPlan templatePlan,
+				MultiJoinPlan[] workerPlans, NativeLmdbQuerySource.ParallelSource[] sources,
+				TaskReservation reservation, LmdbRootScanPartition[] plannedPartitions, boolean start) {
 			this.step = step;
 			this.consumerRow = consumerRow;
 			this.root = root;
+			this.templatePlan = templatePlan;
+			this.workerEvaluationContext = resolveWorkerEvaluationContext(step, consumerRow);
 			this.workerPlans = workerPlans;
 			this.sources = sources;
 			this.plannedPartitionCount = plannedPartitions != null ? plannedPartitions.length : 0;
@@ -649,8 +740,13 @@ final class LmdbNativeParallelPipelines {
 			try {
 				for (int i = 0; i < workerPlans.length; i++) {
 					int worker = i;
-					futures.add(pool().submit(
-							() -> runTask(() -> runWorker(worker), workerPlans[worker], sources[worker])));
+					futures.add(pool().submit(() -> {
+						if (templatePlan == null) {
+							runTask(() -> runWorker(worker), workerPlans[worker], sources[worker]);
+						} else {
+							runTask(worker);
+						}
+					}));
 					submitted++;
 				}
 				pumpProducer();
@@ -691,6 +787,33 @@ final class LmdbNativeParallelPipelines {
 				} catch (Throwable closeFailure) {
 					recordCleanupFailure(closeFailure);
 				} finally {
+					taskFinished();
+				}
+			}
+		}
+
+		/** Binds and owns one plan entirely inside the worker that owns its sibling source. */
+		void runTask(int worker) {
+			NativeLmdbQuerySource.ParallelSource ownedSource = sources[worker];
+			MultiJoinPlan ownedPlan = null;
+			try {
+				ownedPlan = forkWorkerPlan(templatePlan,
+						NativeScalarPlan.WorkerContext.forSource(ownedSource, workerEvaluationContext));
+				workerPlans[worker] = ownedPlan;
+				runWorker(worker, ownedPlan);
+			} catch (Throwable problem) {
+				recordTaskFailure(problem);
+			} finally {
+				Throwable filterFailure = closePlanFilters(ownedPlan, null);
+				if (filterFailure != null) {
+					recordCleanupFailure(filterFailure);
+				}
+				try {
+					ownedSource.close();
+				} catch (Throwable closeFailure) {
+					recordCleanupFailure(closeFailure);
+				} finally {
+					workerPlans[worker] = null;
 					taskFinished();
 				}
 			}
@@ -852,6 +975,10 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		void runWorker(int worker) throws IOException {
+			runWorker(worker, workerPlans[worker]);
+		}
+
+		void runWorker(int worker, MultiJoinPlan plan) throws IOException {
 			NativeLmdbQuerySource source = sources[worker];
 			RowState row = new RowState(source, step.layout, consumerRow.base, consumerRow.exactValuesMetrics,
 					consumerRow.cancellation);
@@ -862,7 +989,6 @@ final class LmdbNativeParallelPipelines {
 				throw new IllegalStateException("worker seeding diverged from the query thread");
 			}
 			row.recomputeBoundMask();
-			MultiJoinPlan plan = workerPlans[worker];
 			LmdbNativeAttemptMetrics metrics = workerMetrics[worker];
 			// must match the consumer's tryOpen order: the shared morsel root is derived.order[0]
 			MultiJoinPlan.OrderedPlan derived = LmdbNativeFactorizedRows.selectFactorizedOrder(plan,

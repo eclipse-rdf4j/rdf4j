@@ -16,9 +16,12 @@ import java.lang.reflect.Constructor;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -33,6 +36,9 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPeerCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -346,13 +352,33 @@ final class LmdbNativeJaninoCodegen {
 		if (problem instanceof ValidationException validationException) {
 			throw validationException;
 		}
-		if (problem instanceof LmdbNativeKernelBindings.PlanFailure
-				|| problem instanceof EncounterOrderFallback || problem instanceof KernelCancelledException) {
+		if (isControlOrPlanFailure(problem)) {
 			return;
 		}
 		if (failOnError()) {
 			throw new ValidationException(stage, route, problem);
 		}
+	}
+
+	private static boolean isControlOrPlanFailure(Throwable problem) {
+		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		while (problem != null && visited.add(problem)) {
+			if (problem instanceof LmdbNativeKernelBindings.PlanFailure
+					|| problem instanceof EncounterOrderFallback || problem instanceof KernelCancelledException
+					|| problem instanceof KernelQueryCancelledException
+					|| problem instanceof KernelPeerCancelledException
+					|| problem instanceof KernelRuntime.AllocationDeniedException
+					|| problem instanceof LmdbNativeKernelPartitions.ParallelKernelDecline
+					|| problem instanceof LmdbNativeProbeDeadlineExceeded) {
+				return true;
+			}
+			Throwable cause = problem.getCause();
+			if (cause == problem) {
+				break;
+			}
+			problem = cause;
+		}
+		return false;
 	}
 
 	static void rethrowValidationFailure(Throwable problem) {

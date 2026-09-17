@@ -31,6 +31,8 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -307,6 +309,42 @@ public class LmdbNativeJaninoCodegenTest {
 				LmdbNativeJaninoCodegen.ValidationException.class,
 				() -> LmdbNativeJaninoCodegen.fill(failing, new long[1], 1, "testExecution"));
 		assertEquals("execution failed", execution.getCause().getMessage());
+	}
+
+	@Test
+	public void failOnErrorPreservesAllocationRefusal() {
+		System.setProperty(FAIL_ON_ERROR_PROPERTY, "true");
+
+		KernelRuntime.AllocationDeniedException expected = new KernelRuntime.AllocationDeniedException();
+		KernelRuntime.AllocationDeniedException observed = assertThrows(
+				KernelRuntime.AllocationDeniedException.class,
+				() -> LmdbNativeJaninoCodegen.fill(throwingKernel(expected),
+						new long[1], 1, "testAllocationRefusal"));
+		assertSame(expected, observed);
+	}
+
+	@Test
+	public void failOnErrorPreservesQueryCancellation() {
+		System.setProperty(FAIL_ON_ERROR_PROPERTY, "true");
+
+		KernelQueryCancelledException queryCancellation = assertThrows(KernelQueryCancelledException.class,
+				() -> LmdbNativeJaninoCodegen.fill(throwingKernel(KernelQueryCancelledException.INSTANCE), new long[1],
+						1,
+						"testQueryCancellation"));
+		assertSame(KernelQueryCancelledException.INSTANCE, queryCancellation);
+	}
+
+	private static JaninoKernel throwingKernel(RuntimeException problem) {
+		return new JaninoKernel() {
+			@Override
+			public void bind(KernelContext context) {
+			}
+
+			@Override
+			public int fill(long[] rowBuffer, int maxRows) {
+				throw problem;
+			}
+		};
 	}
 
 	@Test

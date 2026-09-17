@@ -48,7 +48,7 @@ rows-local-star-path-service-first	false	-
 rows-local-plus-path-service-first	false	-
 rows-dynamic-predicate-service-first	false	-	wildcard
 rows-dynamic-predicate-service-resume	false	-	wildcard
-rows-dynamic-predicate-service-singleton-control	false	-	adaptive-control
+rows-dynamic-predicate-service-singleton-control	false	-
 rows-optional-missing-service-resume	false	-
 rows-identity-optional-service	false	-
 rows-identity-union-service	false	-

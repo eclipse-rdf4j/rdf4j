@@ -70,7 +70,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 10000)
+@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 30000)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
 		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true",
@@ -136,8 +136,8 @@ public class ThemeQueryBenchmark {
 	 * trials compile synchronously so their IR measurements are deterministic. Each trial restores the caller's
 	 * properties, including when running both modes in the same JVM via {@link #main}.
 	 */
-	@Param({ "auto" })
-//	@Param({  "auto","disabled" })
+//	@Param({ "auto" })
+	@Param({  "auto","disabled" })
 	public String z_z_irMode;
 
 	@Param({
@@ -146,14 +146,14 @@ public class ThemeQueryBenchmark {
 //			"2",
 //			"3",
 //			"4",
-//			"5",
+			"5",
 //			"6",
 //			"7",
 //			"8",
 //			"9",
 //			"10",
 //			"11",
-			"12"
+//			"12"
 	})
 	public int z_queryIndex;
 
@@ -168,8 +168,8 @@ public class ThemeQueryBenchmark {
 //			"PHARMA",
 //			"ADAPTIVE_FILTER_PLACEMENT",
 //			"ANALYTICS",
-//			"EXPLORATION",
-			"DATA_TRANSFORMATION"
+			"EXPLORATION",
+//			"DATA_TRANSFORMATION"
 	})
 	public String themeName;
 

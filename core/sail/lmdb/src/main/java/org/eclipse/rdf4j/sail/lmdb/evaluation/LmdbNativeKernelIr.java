@@ -17,6 +17,7 @@ import java.util.BitSet;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 
 /**
  * Kernel intermediate representation (plan: plans/lmdb-native-engine/19-kernel-ir-primitives.md). An IR tree describes
@@ -56,6 +57,7 @@ final class LmdbNativeKernelIr {
 
 	/** Physical granularity consumed or produced by a native kernel operator. */
 	enum Grain {
+		INPUT,
 		PLANE,
 		ROOT,
 		FIBER,
@@ -117,7 +119,7 @@ final class LmdbNativeKernelIr {
 
 		static AggregateProjections create(List<Node> pipeline, Terminal terminal, Kernel.AggregateStateMode mode) {
 			if ("false".equals(System.getProperty(FACTOR_MARGINALS_PROPERTY)) || pipeline.size() != 1
-					|| !(pipeline.get(0)instanceof PlanRows input) || input instanceof PlanFactors
+					|| !(pipeline.get(0) instanceof PlanRows input) || input instanceof PlanFactors
 					|| !(terminal instanceof Aggregate aggregate) || mode != Kernel.AggregateStateMode.HASHED
 					|| aggregate.outputs.length == 0)
 				return null;
@@ -245,10 +247,21 @@ final class LmdbNativeKernelIr {
 		 */
 		int originalFilterStage = -1;
 		int selectedFilterStage = -1;
+		/** Number of producer nodes already present when this filter was registered in its original scope. */
+		int originalFilterPosition = -1;
+		/** Number of observable barriers before {@link #originalFilterPosition} in the original scope. */
+		int originalFilterBarrierCount = -1;
 
 		final <T extends Node> T filterPlacement(int originalStage, int selectedStage) {
+			return filterPlacement(originalStage, selectedStage, -1, -1);
+		}
+
+		final <T extends Node> T filterPlacement(int originalStage, int selectedStage, int originalPosition,
+				int originalBarrierCount) {
 			this.originalFilterStage = originalStage;
 			this.selectedFilterStage = selectedStage;
+			this.originalFilterPosition = originalPosition;
+			this.originalFilterBarrierCount = originalBarrierCount;
 			@SuppressWarnings("unchecked")
 			T self = (T) this;
 			return self;
@@ -261,12 +274,20 @@ final class LmdbNativeKernelIr {
 		void produced(BitSet columns) {
 		}
 
+		/**
+		 * Whether a filter collected for this depth must stay on the far side of this node. Unknown or externally
+		 * backed producers override this instead of relying on a plan-shape heuristic in the scheduler.
+		 */
+		boolean reorderingBarrier() {
+			return false;
+		}
+
 		/** Folds resource references (adjacency/constant/entry/domain indices) into the kernel's requirements. */
 		abstract void requirements(Requirements requirements);
 	}
 
 	/** Aggregated resource-index maxima used by the emitter to declare fields. */
-	static final class Requirements {
+	static class Requirements {
 		int adjacencies;
 		int constants;
 		int entries;
@@ -447,6 +468,11 @@ final class LmdbNativeKernelIr {
 			return ctxCol >= 0 || ctxMatch != null || ctxExcludeDefault;
 		}
 
+		EnumerateAdjKeys reversed() {
+			return new EnumerateAdjKeys(adjacency, wildcard, runtimePredicate, !bySubject, valueCol, keyCol,
+					ctxCol, ctxMatch, ctxExcludeDefault, sipDriven, sipConsumer);
+		}
+
 		@Override
 		void key(StringBuilder key) {
 			key.append(wildcard ? "EA(w" : "EA(a")
@@ -616,6 +642,11 @@ final class LmdbNativeKernelIr {
 		}
 
 		@Override
+		boolean reorderingBarrier() {
+			return true;
+		}
+
+		@Override
 		void requirements(Requirements requirements) {
 			for (Operand input : inputs) {
 				requirements.operand(input);
@@ -676,7 +707,7 @@ final class LmdbNativeKernelIr {
 	static final String FACTOR_GUARD_PEELING_PROPERTY = "rdf4j.lmdb.janinoCodegen.factorGuardPeeling";
 
 	static PlanFactors factorPlan(Kernel kernel) {
-		return !kernel.pipeline.isEmpty() && kernel.pipeline.get(0)instanceof PlanFactors factors ? factors : null;
+		return !kernel.pipeline.isEmpty() && kernel.pipeline.get(0) instanceof PlanFactors factors ? factors : null;
 	}
 
 	/** Linear COUNT(*) channels can be folded per prefix before multiplying independent siblings. */
@@ -823,7 +854,7 @@ final class LmdbNativeKernelIr {
 
 	/** Shared by both execution tiers. Unknown or per-mapping effects conservatively reject the rewrite. */
 	private static int[] factorScalarOutputs(List<Node> pipeline, Terminal terminal) {
-		if (pipeline.isEmpty() || !(pipeline.get(0)instanceof PlanRows plan)
+		if (pipeline.isEmpty() || !(pipeline.get(0) instanceof PlanRows plan)
 				|| !(terminal instanceof Aggregate aggregate) || aggregate.outputs.length == 0)
 			return null;
 		BitSet required = new BitSet();
@@ -889,7 +920,7 @@ final class LmdbNativeKernelIr {
 
 	private static List<Node> factorizePlanCounts(List<Node> pipeline, Terminal terminal) {
 		int[] demanded = factorScalarOutputs(pipeline, terminal);
-		if (!pipeline.isEmpty() && pipeline.get(0)instanceof PlanFactors factors) {
+		if (!pipeline.isEmpty() && pipeline.get(0) instanceof PlanFactors factors) {
 			if (demanded == null)
 				throw new IllegalArgumentException("unsupported factor continuation");
 			BitSet supplied = new BitSet();
@@ -1864,6 +1895,11 @@ final class LmdbNativeKernelIr {
 				requirements.operand(arg);
 			}
 		}
+
+		@Override
+		boolean reorderingBarrier() {
+			return true;
+		}
 	}
 
 	/** Id-decidable equality/inequality guard. */
@@ -2088,13 +2124,25 @@ final class LmdbNativeKernelIr {
 	static final class FilterValue extends Node {
 		final int filterId;
 		final Operand[] args;
+		final boolean reusable;
+		final KernelTermKindProof pageProof;
 
 		FilterValue(int filterId, Operand[] args) {
+			this(filterId, args, false);
+		}
+
+		FilterValue(int filterId, Operand[] args, boolean reusable) {
+			this(filterId, args, reusable, null);
+		}
+
+		FilterValue(int filterId, Operand[] args, boolean reusable, KernelTermKindProof pageProof) {
 			if (args.length > 3) {
 				throw new IllegalArgumentException("value filters take at most 3 arguments");
 			}
 			this.filterId = filterId;
 			this.args = args;
+			this.reusable = reusable;
+			this.pageProof = pageProof;
 		}
 
 		@Override
@@ -2102,6 +2150,9 @@ final class LmdbNativeKernelIr {
 			key.append("fv(").append(filterId);
 			for (Operand arg : args) {
 				key.append(',').append(arg.token());
+			}
+			if (pageProof != null) {
+				key.append(",proof=").append(pageProof.canonicalKey());
 			}
 			key.append(");");
 		}
@@ -2112,6 +2163,11 @@ final class LmdbNativeKernelIr {
 			for (Operand arg : args) {
 				requirements.operand(arg);
 			}
+		}
+
+		@Override
+		boolean reorderingBarrier() {
+			return !reusable;
 		}
 	}
 
@@ -2185,6 +2241,11 @@ final class LmdbNativeKernelIr {
 				node.requirements(requirements);
 			}
 		}
+
+		@Override
+		boolean reorderingBarrier() {
+			return true;
+		}
 	}
 
 	/**
@@ -2256,6 +2317,11 @@ final class LmdbNativeKernelIr {
 			for (Node node : pipeline) {
 				node.requirements(requirements);
 			}
+		}
+
+		@Override
+		boolean reorderingBarrier() {
+			return true;
 		}
 	}
 
@@ -2368,6 +2434,11 @@ final class LmdbNativeKernelIr {
 				}
 			}
 		}
+
+		@Override
+		boolean reorderingBarrier() {
+			return true;
+		}
 	}
 
 	/**
@@ -2425,6 +2496,11 @@ final class LmdbNativeKernelIr {
 			for (Node node : arm) {
 				node.requirements(requirements);
 			}
+		}
+
+		@Override
+		boolean reorderingBarrier() {
+			return true;
 		}
 	}
 
@@ -2499,6 +2575,11 @@ final class LmdbNativeKernelIr {
 				node.requirements(requirements);
 			}
 		}
+
+		@Override
+		boolean reorderingBarrier() {
+			return true;
+		}
 	}
 
 	/** BIND alias: copy an operand into a column. */
@@ -2532,14 +2613,23 @@ final class LmdbNativeKernelIr {
 		final int bindId;
 		final Operand[] args;
 		final int dstCol;
+		final boolean effectful;
 
 		BindHook(int bindId, Operand[] args, int dstCol) {
+			// A closure without an explicit scalar-effect proof may capture mutable or source-bound state. Keep it
+			// behind
+			// the scheduler's reordering boundary; lowering passes false only for a plan-backed pure expression.
+			this(bindId, args, dstCol, true);
+		}
+
+		BindHook(int bindId, Operand[] args, int dstCol, boolean effectful) {
 			if (args.length > LmdbNativeAggregateCompiler.MAX_NATIVE_SLOTS) {
 				throw new IllegalArgumentException("bind arguments exceed the native slot limit");
 			}
 			this.bindId = bindId;
 			this.args = args;
 			this.dstCol = dstCol;
+			this.effectful = effectful;
 		}
 
 		@Override
@@ -2554,6 +2644,11 @@ final class LmdbNativeKernelIr {
 		@Override
 		void produced(BitSet columns) {
 			columns.set(dstCol);
+		}
+
+		@Override
+		boolean reorderingBarrier() {
+			return effectful;
 		}
 
 		@Override
@@ -3279,6 +3374,7 @@ final class LmdbNativeKernelIr {
 		final Requirements requirements;
 		final FactorCountGuards factorCountGuards;
 		final AggregateProjections aggregateProjections;
+		final LmdbNativeProducerSchedule.Index producerSchedules;
 		/** Emission choice is captured once and participates in the compiler cache identity. */
 		final boolean compiledCountSpecialization;
 		/** Shared native top-K/spill sink; capture admission in the generated shape. */
@@ -3361,7 +3457,17 @@ final class LmdbNativeKernelIr {
 			this.aggregateDistinctModes = aggregateProperties.distinctModes;
 			this.orderedInputsRequired = aggregateProperties.orderedInputsRequired;
 			this.uniqueDomainsRequired = (BitSet) aggregateProperties.uniqueDomainsRequired.clone();
+			this.producerSchedules = LmdbNativeProducerSchedule.create(this);
 			int vectorTail = vectorTailEnabled() ? findVectorTail(this.pipeline) : -1;
+			if (vectorTail >= 0) {
+				Node tailProducer = this.pipeline.get(vectorTail);
+				LmdbNativeProducerSchedule schedule = producerSchedules.get(this.pipeline, tailProducer);
+				if (schedule != null && schedule.vectorTailCompatible(this, vectorTail)) {
+					producerSchedules.removeForVectorTail(this.pipeline, tailProducer);
+				} else if (schedule != null) {
+					vectorTail = -1;
+				}
+			}
 			// Keep the established vectorized OPTIONAL tail for pure native pipelines. A delegated plan needs
 			// the resumable null-arm state instead, even when that costs a scalar tail.
 			boolean nativeOptionalTail = requirements.plans == 0 && vectorTail >= 0
@@ -3374,6 +3480,7 @@ final class LmdbNativeKernelIr {
 					? -1
 					: vectorTail;
 			StringBuilder key = new StringBuilder("ir1:");
+			producerSchedules.key(key);
 			if (aggregateProjections != null)
 				key.append("marginals1;");
 			if (boundedOrder)
@@ -3607,7 +3714,7 @@ final class LmdbNativeKernelIr {
 
 			// OPTIONAL may become a witness only when the null arm is provably rejected.
 			// Opaque value/residual hooks carry dependencies, not null-rejection guarantees.
-			if (!suffix.isEmpty() && suffix.get(0)instanceof LeftGroup group) {
+			if (!suffix.isEmpty() && suffix.get(0) instanceof LeftGroup group) {
 				BitSet armColumns = new BitSet();
 				group.produced(armColumns);
 				int filters = 0;
@@ -3647,7 +3754,7 @@ final class LmdbNativeKernelIr {
 			ArrayList<Node> rewritten = new ArrayList<>(2);
 			rewritten.add(root);
 			if (!suffix.isEmpty()) {
-				if (suffix.size() == 1 && suffix.get(0)instanceof Exists exists && !exists.negated) {
+				if (suffix.size() == 1 && suffix.get(0) instanceof Exists exists && !exists.negated) {
 					rewritten.add(exists);
 				} else {
 					rewritten.add(new Exists(false, suffix));
@@ -3787,7 +3894,7 @@ final class LmdbNativeKernelIr {
 		 * design: a node type this helper does not know counts as reading everything, so callers refuse the collapse
 		 * instead of miscompiling.
 		 */
-		private static boolean readsColumns(Node node, BitSet columns) {
+		static boolean readsColumns(Node node, BitSet columns) {
 			if (node instanceof Probe probe) {
 				return reads(probe.key, columns) || (probe.ctxMatch != null && reads(probe.ctxMatch, columns));
 			}

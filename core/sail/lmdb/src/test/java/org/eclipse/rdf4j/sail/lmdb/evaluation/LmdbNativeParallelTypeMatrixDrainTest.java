@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.TypeMatrixAggregate;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.TypeMatrixContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -92,8 +93,8 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
 				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0], new int[0],
 				List.of())
-						.withTypeMatrixRequests(new LmdbNativeKernelBindings.TypeMatrixRequest[] {
-								new LmdbNativeKernelBindings.TypeMatrixRequest(1L, 2L, new MaskedFilter[0], -1) });
+				.withTypeMatrixRequests(new LmdbNativeKernelBindings.TypeMatrixRequest[] {
+						new LmdbNativeKernelBindings.TypeMatrixRequest(1L, 2L, new MaskedFilter[0], -1) });
 		LmdbNativeKernelLowering.Lowered lowered = new LmdbNativeKernelLowering.Lowered(kernel, bindings);
 		LmdbNativeKernelBindings.BoundDomains domains = new LmdbNativeKernelBindings.BoundDomains(new long[0][],
 				new int[0], new int[0]);
@@ -127,7 +128,7 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 		}
 
 		assertThat(query.isAlive()).isFalse();
-		assertThat(queryFailure.get()).isNull();
+		assertThat(queryFailure.get()).isSameAs(KernelQueryCancelledException.INSTANCE);
 		assertThat(result.get()).isNull();
 		assertThat(slow.closedWhileWorkerActive).isFalse();
 		assertThat(slow.workerFinished).isTrue();
