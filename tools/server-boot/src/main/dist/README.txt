@@ -7,6 +7,17 @@ Usage
 2. From the unzip root, run `bin/rdf4j-server.sh`.
 3. Open `http://localhost:8080/rdf4j-workbench/` (or the port you configure).
 
+Server and Workbench share an HTTP listener that binds to `127.0.0.1` by default.
+This default also applies to local `spring-boot:run` launches and Spring Boot tests.
+To listen on all IPv4 interfaces, explicitly set `server.address=0.0.0.0` in your
+configuration, export `SERVER_ADDRESS=0.0.0.0`, or run:
+
+```
+bin/rdf4j-server.sh --server.address=0.0.0.0
+```
+
+You can also set `server.address` to a specific interface address.
+
 Directory layout
 ----------------
 - `bin/` : executable launcher script
@@ -28,6 +39,7 @@ Environment variables (can also be exported in the shell before launching):
 - `RDF4J_LOGGING_CONFIG` – alternate logback XML file (default `<dist>/config/logback-spring.xml`)
 - `RDF4J_SPRING_CONFIG` – alternate Spring Boot `application.properties` file (default `<dist>/config/application.properties`)
 - `RDF4J_SERVER_PORT` – HTTP port injected into `application.properties` (default `8080`)
+- `SERVER_ADDRESS` – HTTP bind address for Server and Workbench (default `127.0.0.1`)
 
 `config/application.properties`
 -------------------------------
