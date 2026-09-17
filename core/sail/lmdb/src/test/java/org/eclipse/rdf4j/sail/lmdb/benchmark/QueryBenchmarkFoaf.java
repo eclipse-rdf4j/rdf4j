@@ -14,11 +14,14 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -63,7 +66,7 @@ public class QueryBenchmarkFoaf extends BenchmarkBaseFoaf {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("QueryBenchmarkFoaf") // adapt to control which benchmark tests to run
+				.include("QueryBenchmarkFoaf\\.personsAndFriends") // adapt to control which benchmark tests to run
 				.forks(1)
 				.build();
 
@@ -83,6 +86,15 @@ public class QueryBenchmarkFoaf extends BenchmarkBaseFoaf {
 			connection.commit();
 		}
 		connection.close();
+
+		// print size of temporary folder
+		try (Stream<Path> paths = java.nio.file.Files.walk(file.toPath())) {
+			long folderSize = paths
+					.filter(java.nio.file.Files::isRegularFile)
+					.mapToLong(path -> path.toFile().length())
+					.sum();
+			System.out.println("Temporary folder size after data load: " + folderSize + " bytes");
+		}
 
 		connection = repository.getConnection();
 

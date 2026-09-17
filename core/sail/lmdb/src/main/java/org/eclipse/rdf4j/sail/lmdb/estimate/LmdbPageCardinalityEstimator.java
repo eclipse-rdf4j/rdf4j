@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
+import org.eclipse.rdf4j.sail.lmdb.util.EntryMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -472,19 +472,19 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	}
 
 	public long estimateEntries(long txnId, String dbName, byte[] minKey, int minKeyLength, byte[] maxKey,
-			int maxKeyLength, GroupMatcher matcher) throws IOException {
+			int maxKeyLength, EntryMatcher matcher) throws IOException {
 		return estimateEntries(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
 				matcher == null ? 0 : 1);
 	}
 
 	public long estimateEntries(long txnId, String dbName, byte[] minKey, int minKeyLength, byte[] maxKey,
-			int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
+			int maxKeyLength, EntryMatcher matcher, int residualFieldCount) throws IOException {
 		return estimateEntriesDetailed(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
 				residualFieldCount).entries;
 	}
 
 	public Estimate estimateEntriesWithQuality(long txnId, String dbName, byte[] minKey, int minKeyLength,
-			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
+			byte[] maxKey, int maxKeyLength, EntryMatcher matcher, int residualFieldCount) throws IOException {
 		RangeCountResult result = estimateEntriesDetailed(txnId, dbName, minKey, minKeyLength, maxKey,
 				maxKeyLength, matcher, residualFieldCount);
 		return new Estimate(result.entries, result.exact, result.exhaustive, result.hardLowerBound,
@@ -504,7 +504,7 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	 * but never changes matching semantics.
 	 */
 	RangeCountResult estimateEntriesDetailed(long txnId, String dbName, byte[] minKey, int minKeyLength,
-			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
+			byte[] maxKey, int maxKeyLength, EntryMatcher matcher, int residualFieldCount) throws IOException {
 		SnapshotCache snapshot = snapshot(txnId);
 		LmdbDb db = namedDb(snapshot, dbName);
 		if (db == null || db.isEmpty()) {

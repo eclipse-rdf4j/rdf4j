@@ -16,10 +16,18 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.util.lmdb.LMDB.MDB_GET_BOTH_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
+import static org.lwjgl.util.lmdb.LMDB.MDB_LAST_DUP;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
+import static org.lwjgl.util.lmdb.LMDB.MDB_PREV_DUP;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_del;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
@@ -27,12 +35,15 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 
+import org.eclipse.rdf4j.sail.lmdb.util.VarintTupleIO;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.system.Pointer;
+import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,7 +63,7 @@ final class LmdbUtil {
 	 * Percentage free space in an LMDB db before automatically resizing the map. Default is 80%.
 	 */
 	@SuppressWarnings("StaticNonFinalField")
-	public static int PERCENTAGE_FULL_TRIGGERS_RESIZE = 80;
+	static int PERCENTAGE_FULL_TRIGGERS_RESIZE = 80;
 
 	private LmdbUtil() {
 	}
@@ -182,6 +193,14 @@ final class LmdbUtil {
 	public static long getNewSize(int pageSize, long txn, long requiredSize) {
 		long nextPgno = mdbTxnMtNextPgno(txn);
 		return (nextPgno * pageSize) + requiredSize;
+	}
+
+	public static int compareRegion(ByteBuffer bb1, int startIdx1, ByteBuffer bb2, int startIdx2, int length) {
+		int result = 0;
+		for (int i = 0; result == 0 && i < length; i++) {
+			result = (bb1.get(startIdx1 + i) & 0xff) - (bb2.get(startIdx2 + i) & 0xff);
+		}
+		return result;
 	}
 
 	@FunctionalInterface

@@ -138,7 +138,7 @@ class LmdbContextIdIterator implements Closeable {
 				}
 			}
 
-			while (lastResult == MDB_SUCCESS) {
+			if (lastResult == MDB_SUCCESS) {
 				record[0] = Varint.readUnsigned(keyData.mv_data());
 				// fetch next value
 				fetchNext = true;

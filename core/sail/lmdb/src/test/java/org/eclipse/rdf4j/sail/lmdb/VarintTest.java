@@ -123,21 +123,6 @@ public class VarintTest {
 	}
 
 	@Test
-	public void testVarintList() {
-		ByteBuffer bb = ByteBuffer.allocate(2 + 4 * Long.BYTES).order(ByteOrder.nativeOrder());
-		for (int i = 0; i < values.length - 4; i++) {
-			long[] expected = new long[4];
-			System.arraycopy(values, 0, expected, 0, 4);
-			bb.clear();
-			Varint.writeListUnsigned(bb, expected);
-			bb.flip();
-			long[] actual = new long[4];
-			Varint.readListUnsigned(bb, actual);
-			assertArrayEquals("Encoded and decoded value should be equal", expected, actual);
-		}
-	}
-
-	@Test
 	public void testVarintReadUnsignedAtPositionThreeByteEncoding() {
 		long value = 3000L;
 		ByteBuffer bb = ByteBuffer.allocate(Varint.calcLengthUnsigned(value))

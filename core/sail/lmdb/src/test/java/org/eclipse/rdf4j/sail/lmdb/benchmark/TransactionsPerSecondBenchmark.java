@@ -65,7 +65,8 @@ public class TransactionsPerSecondBenchmark {
 
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
-				.include("TransactionsPerSecondBenchmark\\.") // adapt to control which benchmarks to run
+				.include("TransactionsPerSecondBenchmark\\.largerTransaction$") // adapt to control which benchmarks to
+																				// run
 				.forks(1)
 				.build();
 
