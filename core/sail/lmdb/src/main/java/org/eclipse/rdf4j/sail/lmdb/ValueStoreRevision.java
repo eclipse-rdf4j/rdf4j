@@ -89,6 +89,10 @@ public interface ValueStoreRevision {
 			return valueStore;
 		}
 
+		ValueStoreRevision getUnwrappedRevision() {
+			return revision;
+		}
+
 		@Override
 		public boolean resolveValue(long id, LmdbValue value) {
 			if (valueStore != null && valueStore.resolveValue(id, value)) {

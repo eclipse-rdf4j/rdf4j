@@ -64,7 +64,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 3)
+@Warmup(iterations = 6, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 3)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx1G" })
 @Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 2)
@@ -96,31 +96,31 @@ public class ThemeQueryBenchmark {
 	private static final String COUNT_BINDING_NAME = "count";
 
 	@Param({
-			"0",
+//			"0",
 //			"1",
 //			"2",
 //			"3",
 //			"4",
-			"5",
+//			"5",
 //			"6",
 //			"7",
 //			"8",
 //			"9",
 //			"10",
-//			"11",
-//			"12"
+			"11",
+			"12"
 	})
 	public int z_queryIndex;
 
 	@Param({
-//			"MEDICAL_RECORDS",
+			"MEDICAL_RECORDS",
 //			"SOCIAL_MEDIA",
 //			"LIBRARY",
 //			"ENGINEERING",
 //			"HIGHLY_CONNECTED",
 //			"TRAIN",
 //			"ELECTRICAL_GRID",
-			"PHARMA"
+//			"PHARMA"
 	})
 	public String themeName;
 

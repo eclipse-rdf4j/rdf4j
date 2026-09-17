@@ -26,14 +26,17 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_reset;
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.IntBuffer;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.StampedLock;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -103,10 +106,16 @@ final class TxnManager {
 	private final Set<Txn> open = ConcurrentHashMap.newKeySet();
 	/** Idle, reusable transactions; {@code null} unless {@link Mode#RESET}. */
 	private final MpmcRingBuffer<Txn> txnPool;
+	/** Retained dataset readers that currently own a transaction lease. */
+	private final Set<RetainedReadTxn> retainedReadTxns = ConcurrentHashMap.newKeySet();
 	/** One permit per read transaction that may be handed out; see class javadoc. */
 	private final Semaphore readerSlots = new Semaphore(POOL_SIZE - 1, true);
 	/** Reserved for short callbacks whose caller already holds a transaction. */
 	private final Semaphore priorityReaderSlot = new Semaphore(1, true);
+	/** Number of ordinary callers that have registered pressure on the reader budget. */
+	private final AtomicInteger ordinaryAdmissionPressure = new AtomicInteger();
+	/** Ensures shutdown wakeups do not inflate admission semaphores on repeated close calls. */
+	private final AtomicBoolean admissionClosed = new AtomicBoolean();
 
 	private final ReentrantLock readersFullLock = new ReentrantLock();
 	private final Condition readerInactive = readersFullLock.newCondition();
@@ -137,6 +146,16 @@ final class TxnManager {
 	 */
 	Txn createTxn(long txn) {
 		return new Txn(txn, /* owned= */ false, /* resetOnWrite= */ false, null);
+	}
+
+	/** Creates a lazily acquired tracked reader for one dataset-owned materializer. */
+	RetainedReadTxn createRetainedReadTxn() {
+		return createRetainedReadTxn(null);
+	}
+
+	/** Creates a lazily acquired reader with an optional transaction preparation callback. */
+	RetainedReadTxn createRetainedReadTxn(RetainedReadTxnPreparer preparer) {
+		return new RetainedReadTxn(preparer);
 	}
 
 	/**
@@ -183,6 +202,10 @@ final class TxnManager {
 				} catch (IOException | RuntimeException e) {
 					discardPooled(pooled);
 					throw e;
+				}
+				if (managerClosed) {
+					discardPooled(pooled);
+					throw new IOException("Transaction manager is closed");
 				}
 				permitConsumed = true;
 				return pooled;
@@ -255,8 +278,38 @@ final class TxnManager {
 		forEachOpen(Txn::reset);
 	}
 
-	void close() {
+	/**
+	 * Closes admission and wakes callers waiting for a reader or for readers-full recovery. Native resources remain
+	 * untouched until {@link #close()} is called by the owner while holding the manager write lock.
+	 */
+	void beginClose() {
 		managerClosed = true;
+		if (admissionClosed.compareAndSet(false, true)) {
+			// A released permit only wakes one queued waiter; a waiter that observes the closed flag returns it,
+			// allowing
+			// the next waiter to make progress. Releasing the ordinary budget also covers callers queued on the fair
+			// semaphore before shutdown begins.
+			readerSlots.release(POOL_SIZE);
+			priorityReaderSlot.release();
+			signalReaderInactive();
+		}
+	}
+
+	/** Number of ordinary admission callers currently waiting for a reader permit. */
+	int ordinaryAdmissionWaiters() {
+		return ordinaryAdmissionPressure.get();
+	}
+
+	void close() {
+		beginClose();
+
+		// Retained handles must forget their references without taking their operation gates: close() is called while
+		// the
+		// owner holds the manager write lock, and waiting for a gate here would invert the shutdown lock order.
+		for (RetainedReadTxn retained : retainedReadTxns) {
+			retained.detachForManagerClose();
+		}
+		retainedReadTxns.clear();
 
 		// Drain the idle pool first; the transactions themselves are still tracked in `open` and are aborted below.
 		if (txnPool != null) {
@@ -272,12 +325,6 @@ final class TxnManager {
 			}
 		}
 
-		// Poison both semaphores: wake admission waiters, which then fail fast in acquireReaderPermit().
-		// Permit accounting is irrelevant from here on, the manager is closed.
-		readerSlots.release(POOL_SIZE);
-		priorityReaderSlot.release();
-		signalReaderInactive();
-
 		for (Pool pool : pools) {
 			pool.close();
 		}
@@ -288,27 +335,101 @@ final class TxnManager {
 	// ---------------------------------------------------------------------------------------------
 
 	private Semaphore acquireReaderPermit(boolean priority) throws IOException {
-		Semaphore slots;
-		try {
-			if (priority && readerSlots.tryAcquire(0, TimeUnit.NANOSECONDS)) {
-				slots = readerSlots;
-			} else {
-				slots = priority ? priorityReaderSlot : readerSlots;
-				if (!slots.tryAcquire(READER_ADMISSION_TIMEOUT_NANOS, TimeUnit.NANOSECONDS)) {
-					throw new IOException("Timed out after "
-							+ TimeUnit.NANOSECONDS.toMillis(READER_ADMISSION_TIMEOUT_NANOS)
-							+ " ms waiting for a free read transaction (limit " + POOL_SIZE + ")");
-				}
+		checkNotClosed();
+		if (!priority) {
+			if (tryAcquireImmediately(readerSlots)) {
+				return readerSlots;
 			}
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IOException("Interrupted while waiting for a free read transaction", e);
+
+			// Register pressure before looking for an idle retained lease. The retained operation checks this counter
+			// on
+			// exit, so an active materializer can yield its lease to this waiter without being stolen mid-callback.
+			ordinaryAdmissionPressure.incrementAndGet();
+			try {
+				reclaimIdleRetainedTxns();
+				acquireWithTimeout(readerSlots);
+				if (managerClosed) {
+					readerSlots.release();
+					throw new IOException("Transaction manager is closed");
+				}
+				return readerSlots;
+			} finally {
+				ordinaryAdmissionPressure.decrementAndGet();
+			}
+		}
+
+		Semaphore slots;
+		if (tryAcquireImmediately(readerSlots)) {
+			slots = readerSlots;
+		} else {
+			slots = priorityReaderSlot;
+			acquireWithTimeout(slots);
 		}
 		if (managerClosed) {
 			slots.release();
 			throw new IOException("Transaction manager is closed");
 		}
 		return slots;
+	}
+
+	private boolean tryAcquireImmediately(Semaphore slots) throws IOException {
+		try {
+			return slots.tryAcquire(0, TimeUnit.NANOSECONDS);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for a free read transaction", e);
+		}
+	}
+
+	private void acquireWithTimeout(Semaphore slots) throws IOException {
+		try {
+			if (!slots.tryAcquire(READER_ADMISSION_TIMEOUT_NANOS, TimeUnit.NANOSECONDS)) {
+				throw new IOException("Timed out after "
+						+ TimeUnit.NANOSECONDS.toMillis(READER_ADMISSION_TIMEOUT_NANOS)
+						+ " ms waiting for a free read transaction (limit " + POOL_SIZE + ")");
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for a free read transaction", e);
+		}
+	}
+
+	private void reclaimIdleRetainedTxns() throws IOException {
+		for (RetainedReadTxn retained : retainedReadTxns) {
+			retained.reclaimIfIdle();
+		}
+	}
+
+	/** Closes a detached retained lease under read protection while admission remains open. */
+	private void closeDetachedRetainedTxn(Txn detached) {
+		if (detached == null || managerClosed) {
+			return;
+		}
+		long readStamp = 0L;
+		boolean interrupted = false;
+		try {
+			for (;;) {
+				if (managerClosed) {
+					return;
+				}
+				try {
+					readStamp = lockManager.readLock();
+					break;
+				} catch (InterruptedException e) {
+					interrupted = true;
+				}
+			}
+			if (!managerClosed) {
+				detached.close();
+			}
+		} finally {
+			if (readStamp != 0L) {
+				lockManager.unlockRead(readStamp);
+			}
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
 	}
 
 	/** Returns a reader permit and wakes both admission waiters and readers-full waiters. */
@@ -368,6 +489,7 @@ final class TxnManager {
 			long backoffMillis = BACKOFF_MIN_MILLIS;
 
 			while (rc == MDB_READERS_FULL) {
+				checkNotClosed();
 				if (Thread.interrupted()) {
 					Thread.currentThread().interrupt();
 					throw new IOException("Interrupted while waiting for a free LMDB reader slot");
@@ -377,6 +499,7 @@ final class TxnManager {
 				awaitReaderRelease(excluded, backoffMillis);
 				backoffMillis = Math.min(backoffMillis << 1, BACKOFF_MAX_MILLIS);
 
+				checkNotClosed();
 				rc = call.run();
 				if (rc == MDB_READERS_FULL && System.nanoTime() - deadline >= 0) {
 					break;
@@ -507,6 +630,373 @@ final class TxnManager {
 		NONE
 	}
 
+	/** Signals that a retained handle closed while a cold operation was being admitted. */
+	static final class RetainedReadTxnClosedException extends IOException {
+
+		private static final long serialVersionUID = 1L;
+
+		RetainedReadTxnClosedException() {
+			super("Retained read transaction is closed");
+		}
+	}
+
+	@FunctionalInterface
+	interface RetainedReadTxnPreparer {
+		void prepare(long txn) throws IOException;
+	}
+
+	// ---------------------------------------------------------------------------------------------
+	// retained read transaction
+	// ---------------------------------------------------------------------------------------------
+
+	/**
+	 * A dataset-owned reader lease. The native transaction is acquired lazily. Prepared read callbacks may overlap
+	 * while lifecycle transitions and native cleanup use the exclusive operation-gate stamp. Callbacks must not
+	 * recursively invoke {@link #execute} or {@link #close()} on this same handle because {@link StampedLock} is
+	 * non-reentrant. Concurrent callbacks are intended for the prewarmed normal LMDB read path; this application-level
+	 * synchronization does not claim that upstream LMDB supports arbitrary concurrent cold initialization or error-path
+	 * writes.
+	 */
+	final class RetainedReadTxn implements Closeable {
+
+		private final RetainedReadTxnPreparer preparer;
+		private final StampedLock operationGate = new StampedLock();
+		/** Published for nonblocking diagnostics and manager shutdown detachment. */
+		private volatile Txn txn;
+		/** The transaction/version for which the preparer completed successfully. */
+		private volatile Txn preparedTxn;
+		private volatile long preparedVersion = Long.MIN_VALUE;
+		private volatile boolean closed;
+		/** Set when an active lease must leave the hot path before another callback can enter. */
+		private volatile boolean retired;
+		/** Set after a callback or preparation failure until a replacement lease is prepared. */
+		private volatile boolean failed;
+
+		private RetainedReadTxn(RetainedReadTxnPreparer preparer) {
+			this.preparer = preparer;
+		}
+
+		<T> T execute(Transaction<T> transaction) throws IOException {
+			return execute(0L, transaction);
+		}
+
+		/**
+		 * Executes a callback under the manager read lock. A zero transaction uses this handle's retained lease; a
+		 * nonzero transaction is borrowed for this callback only and is never retained or closed here. Prepared
+		 * retained callbacks may overlap. The callback must not recursively invoke {@code execute} or {@code close} on
+		 * this same handle: the operation gate is a non-reentrant {@link StampedLock}.
+		 */
+		<T> T execute(long borrowedTxn, Transaction<T> transaction) throws IOException {
+			Objects.requireNonNull(transaction, "transaction must not be null");
+			return borrowedTxn == 0L ? executeRetained(transaction) : executeBorrowed(borrowedTxn, transaction);
+		}
+
+		private <T> T executeRetained(Transaction<T> transaction) throws IOException {
+			long operationStamp;
+			try {
+				operationStamp = operationGate.readLockInterruptibly();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while acquiring retained read transaction", e);
+			}
+
+			boolean needsColdPath = false;
+			try {
+				long managerStamp = acquireManagerRead("retained read lock");
+				try {
+					checkOpen();
+					Txn retained = txn;
+					if (retained != null && isReady(retained) && !retired && !failed
+							&& ordinaryAdmissionPressure.get() == 0) {
+						try (MemoryStack stack = stackPush()) {
+							return transaction.exec(stack, retained.get());
+						} catch (IOException | RuntimeException | Error e) {
+							markFailed();
+							throw e;
+						}
+					}
+					if (ordinaryAdmissionPressure.get() > 0) {
+						retired = true;
+					}
+					needsColdPath = true;
+				} finally {
+					lockManager.unlockRead(managerStamp);
+				}
+			} finally {
+				operationGate.unlockRead(operationStamp);
+				tryRetireIfNeeded();
+			}
+
+			return needsColdPath ? executeCold(transaction) : null;
+		}
+
+		private <T> T executeBorrowed(long borrowedTxn, Transaction<T> transaction) throws IOException {
+			long operationStamp;
+			try {
+				operationStamp = operationGate.writeLockInterruptibly();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while acquiring retained read transaction", e);
+			}
+			try {
+				long managerStamp = acquireManagerRead("borrowed read lock");
+				try {
+					checkOpen();
+					try (MemoryStack stack = stackPush()) {
+						return transaction.exec(stack, borrowedTxn);
+					}
+				} finally {
+					lockManager.unlockRead(managerStamp);
+				}
+			} finally {
+				operationGate.unlockWrite(operationStamp);
+				tryRetireIfNeeded();
+			}
+		}
+
+		private <T> T executeCold(Transaction<T> transaction) throws IOException {
+			long operationStamp;
+			try {
+				operationStamp = operationGate.writeLockInterruptibly();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while acquiring retained read transaction", e);
+			}
+
+			long managerStamp = 0L;
+			long readStamp = 0L;
+			try {
+				managerStamp = acquireManagerRead("retained cold read lock");
+				checkOpen();
+				Txn retained = txn;
+				if (retained != null && (retired || failed)) {
+					Txn detached = detachLeaseLocked();
+					if (detached != null) {
+						closeDetachedLease(detached, failed);
+					}
+					retained = null;
+				}
+
+				if (retained == null) {
+					Txn created = createReadTxnInternal(true);
+					try {
+						checkOpen();
+						prepare(created);
+						checkOpen();
+						retained = created;
+						txn = created;
+						retainedReadTxns.add(this);
+						publishPrepared(created);
+					} catch (IOException | RuntimeException | Error e) {
+						created.markStale();
+						created.close();
+						failed = true;
+						retired = true;
+						throw e;
+					}
+				} else if (!isReady(retained)) {
+					try {
+						if (!retained.isActive()) {
+							retained.setActive(true);
+						}
+						prepare(retained);
+						publishPrepared(retained);
+					} catch (IOException | RuntimeException | Error e) {
+						Txn detached = detachLeaseLocked();
+						if (detached != null) {
+							detached.markStale();
+							closeDetachedLease(detached, true);
+						}
+						failed = true;
+						retired = true;
+						throw e;
+					}
+				}
+
+				readStamp = operationGate.tryConvertToReadLock(operationStamp);
+				if (readStamp == 0L) {
+					throw new IllegalStateException("Could not downgrade retained operation gate to a read stamp");
+				}
+				operationStamp = 0L;
+				try (MemoryStack stack = stackPush()) {
+					return transaction.exec(stack, retained.get());
+				} catch (IOException | RuntimeException | Error e) {
+					markFailed();
+					throw e;
+				}
+			} finally {
+				if (managerStamp != 0L) {
+					lockManager.unlockRead(managerStamp);
+				}
+				if (readStamp != 0L) {
+					operationGate.unlockRead(readStamp);
+				}
+				if (operationStamp != 0L) {
+					operationGate.unlockWrite(operationStamp);
+				}
+				tryRetireIfNeeded();
+			}
+		}
+
+		private long acquireManagerRead(String description) throws IOException {
+			try {
+				return lockManager.readLock();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while acquiring " + description, e);
+			}
+		}
+
+		private void prepare(Txn retained) throws IOException {
+			if (preparer != null) {
+				preparer.prepare(retained.get());
+			}
+		}
+
+		private boolean isReady(Txn retained) {
+			return retained.isActive() && preparedTxn == retained && preparedVersion == retained.version();
+		}
+
+		private void publishPrepared(Txn retained) {
+			preparedTxn = retained;
+			preparedVersion = retained.version();
+			failed = false;
+			retired = false;
+		}
+
+		private void markFailed() {
+			failed = true;
+			retired = true;
+		}
+
+		private void tryRetireIfNeeded() {
+			if (ordinaryAdmissionPressure.get() > 0) {
+				retired = true;
+			}
+			if (!retired && !failed && !closed && !managerClosed) {
+				return;
+			}
+			long operationStamp = operationGate.tryWriteLock();
+			if (operationStamp == 0L) {
+				return;
+			}
+			try {
+				if (ordinaryAdmissionPressure.get() > 0) {
+					retired = true;
+				}
+				if (txn != null && (retired || failed || closed) && !managerClosed) {
+					Txn detached = detachLeaseLocked();
+					if (detached != null) {
+						closeDetachedRetainedTxn(detached, failed);
+					}
+				}
+			} finally {
+				operationGate.unlockWrite(operationStamp);
+			}
+		}
+
+		/** Returns a nonblocking snapshot of whether this handle currently owns a live lease. */
+		boolean hasTxn() {
+			Txn current = txn;
+			return current != null && !closed && !managerClosed && !current.closed;
+		}
+
+		@Override
+		public void close() {
+			// Publish closure before waiting for an active operation. A cold operation that is still waiting for an
+			// ordinary permit must observe this state after admission and release the lease instead of touching native
+			// data.
+			closed = true;
+			long operationStamp = operationGate.writeLock();
+			try {
+				Txn detached = detachLeaseLocked();
+				if (detached != null) {
+					closeDetachedRetainedTxn(detached, failed);
+				}
+			} finally {
+				operationGate.unlockWrite(operationStamp);
+			}
+		}
+
+		/** Detaches the volatile reference during manager cleanup without waiting for this handle's gate. */
+		private void detachForManagerClose() {
+			txn = null;
+			preparedTxn = null;
+			preparedVersion = Long.MIN_VALUE;
+			retainedReadTxns.remove(this);
+		}
+
+		/** Attempts one nonblocking idle reclamation for an ordinary admission caller. */
+		private void reclaimIfIdle() throws IOException {
+			long operationStamp = operationGate.tryWriteLock();
+			if (operationStamp == 0L) {
+				return;
+			}
+			try {
+				if (closed || managerClosed || txn == null) {
+					return;
+				}
+
+				long readStamp;
+				try {
+					readStamp = lockManager.readLock();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IOException("Interrupted while reclaiming retained read transaction", e);
+				}
+				try {
+					if (!closed && !managerClosed) {
+						Txn detached = detachLeaseLocked();
+						if (detached != null) {
+							closeDetachedLease(detached, failed);
+						}
+					}
+				} finally {
+					lockManager.unlockRead(readStamp);
+				}
+			} finally {
+				operationGate.unlockWrite(operationStamp);
+			}
+		}
+
+		private void checkOpen() throws IOException {
+			if (closed) {
+				throw new RetainedReadTxnClosedException();
+			}
+			if (managerClosed) {
+				throw new IOException("Transaction manager is closed");
+			}
+		}
+
+		/** Must be called with the {@link #operationGate} write lock held. */
+		private Txn detachLeaseLocked() {
+			Txn detached = txn;
+			txn = null;
+			preparedTxn = null;
+			preparedVersion = Long.MIN_VALUE;
+			retainedReadTxns.remove(this);
+			return detached;
+		}
+
+		private void closeDetachedLease(Txn detached, boolean resetFirst) {
+			if (resetFirst) {
+				detached.markStale();
+			}
+			if (!managerClosed) {
+				detached.close();
+			}
+		}
+
+		private void closeDetachedRetainedTxn(Txn detached, boolean resetFirst) {
+			if (resetFirst) {
+				detached.markStale();
+			}
+			if (!managerClosed) {
+				TxnManager.this.closeDetachedRetainedTxn(detached);
+			}
+		}
+	}
+
 	// ---------------------------------------------------------------------------------------------
 	// Txn
 	// ---------------------------------------------------------------------------------------------
@@ -542,6 +1032,17 @@ final class TxnManager {
 
 		long version() {
 			return version;
+		}
+
+		boolean isActive() {
+			return active;
+		}
+
+		/** Ensures a failed native callback is reset before this transaction can be pooled. */
+		synchronized void markStale() {
+			if (!closed) {
+				stale = true;
+			}
 		}
 
 		StampedLongAdderLockManager lockManager() {

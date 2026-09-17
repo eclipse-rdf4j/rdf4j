@@ -23,14 +23,21 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
+import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxreaders;
+import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,8 +46,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
@@ -50,6 +59,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBVal;
 
 public class TxnManagerTest {
 
@@ -372,6 +382,840 @@ public class TxnManagerTest {
 	}
 
 	@Test
+	void retainedReadTxnChecksShutdownBeforeNativeStart(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn();
+			long writeStamp = fixture.manager.lockManager().writeLock();
+			Future<Long> blocked = null;
+			try {
+				CountDownLatch started = new CountDownLatch(1);
+				Future<Long> blockedFuture = executor.submit(() -> {
+					started.countDown();
+					return retained.execute((stack, txn) -> txn);
+				});
+				blocked = blockedFuture;
+				assertTrue(started.await(5, TimeUnit.SECONDS));
+				assertTrue(awaitReaderActivity(fixture.manager),
+						"The retained operation must register as a reader before waiting on the manager write lock");
+				assertFalse(retained.hasTxn(),
+						"A retained operation blocked by the manager write lock must not start its native reader early");
+
+				fixture.manager.beginClose();
+				fixture.manager.lockManager().unlockWrite(writeStamp);
+				writeStamp = 0L;
+
+				ExecutionException failure = assertThrows(ExecutionException.class,
+						() -> blockedFuture.get(5, TimeUnit.SECONDS));
+				assertTrue(failure.getCause() instanceof IOException);
+				assertTrue(failure.getCause().getMessage().contains("closed"));
+				assertFalse(retained.hasTxn(), "Shutdown must prevent a native retained reader from starting");
+				retained.close();
+				fixture.manager.close();
+			} finally {
+				if (writeStamp != 0L) {
+					fixture.manager.lockManager().unlockWrite(writeStamp);
+				}
+				if (blocked != null) {
+					blocked.cancel(true);
+				}
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
+	void retainedReadTxnAcquiresLazilyAndReusesLease(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn();
+			assertFalse(retained.hasTxn(), "Creating a retained handle must not acquire a reader");
+
+			long first = retained.execute((stack, txn) -> txn);
+			assertTrue(retained.hasTxn(), "The first cold read must retain its ordinary reader lease");
+			long second = retained.execute((stack, txn) -> txn);
+			assertEquals(first, second, "Unpressured reads must reuse the retained native transaction");
+
+			retained.close();
+			assertFalse(retained.hasTxn(), "Closing a retained handle must detach its lease");
+			retained.close();
+			assertThrows(IOException.class, () -> retained.execute((stack, txn) -> txn));
+		}
+	}
+
+	@Test
+	void retainedReadTxnParticipatesInTrackedLifecycle(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn();
+			long first = retained.execute((stack, txn) -> txn);
+			long version = retained.execute((stack, txn) -> mdb_txn_id(txn));
+
+			fixture.manager.deactivate();
+			long writeTxn = beginWriteTxn(fixture.env);
+			try {
+				putLifecycleMarker(writeTxn);
+				E(mdb_txn_commit(writeTxn));
+				writeTxn = 0L;
+			} finally {
+				if (writeTxn != 0L) {
+					mdb_txn_abort(writeTxn);
+				}
+			}
+			fixture.manager.activate();
+			fixture.manager.reset();
+
+			long renewedTxn = retained.execute((stack, txn) -> txn);
+			assertEquals(first, renewedTxn,
+					"Tracked retained readers must remain reusable across map lifecycle transitions");
+			long renewedVersion = retained.execute((stack, txn) -> mdb_txn_id(txn));
+			assertTrue(renewedVersion > version,
+					"Reactivation must renew the retained reader after reset/deactivation");
+		}
+	}
+
+	@Test
+	void retainedReadTxnLifecycleTransitionsWaitForAllCallbacks(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newFixedThreadPool(3)) {
+			AtomicInteger preparations = new AtomicInteger();
+			TxnManager.RetainedReadTxn retained = fixture.manager
+					.createRetainedReadTxn(txn -> preparations.incrementAndGet());
+			retained.execute((stack, txn) -> txn);
+			CountDownLatch callbacksEntered = new CountDownLatch(2);
+			CountDownLatch releaseCallbacks = new CountDownLatch(1);
+			Future<Long> first = null;
+			Future<Long> second = null;
+			Future<?> transition = null;
+			try {
+				first = executor.submit(() -> retained.execute((stack, txn) -> {
+					callbacksEntered.countDown();
+					await(releaseCallbacks);
+					return txn;
+				}));
+				second = executor.submit(() -> retained.execute((stack, txn) -> {
+					callbacksEntered.countDown();
+					await(releaseCallbacks);
+					return txn;
+				}));
+				assertTrue(callbacksEntered.await(5, TimeUnit.SECONDS),
+						"Both readers must enter before lifecycle transition");
+
+				transition = executor.submit(() -> {
+					long writeStamp = fixture.manager.lockManager().writeLock();
+					try {
+						fixture.manager.deactivate();
+						fixture.manager.activate();
+						fixture.manager.reset();
+					} finally {
+						fixture.manager.lockManager().unlockWrite(writeStamp);
+					}
+					return null;
+				});
+				Future<?> transitionTask = transition;
+				assertThrows(TimeoutException.class, () -> transitionTask.get(200, TimeUnit.MILLISECONDS),
+						"Map lifecycle transitions must wait for every active retained callback");
+
+				releaseCallbacks.countDown();
+				assertNotEquals(0L, first.get(5, TimeUnit.SECONDS));
+				assertNotEquals(0L, second.get(5, TimeUnit.SECONDS));
+				transition.get(5, TimeUnit.SECONDS);
+				long renewed = retained.execute((stack, txn) -> txn);
+				assertNotEquals(0L, renewed);
+				assertEquals(2, preparations.get(),
+						"A deactivate/activate/reset cycle must trigger one preparation for the new version");
+			} finally {
+				releaseCallbacks.countDown();
+				if (first != null) {
+					first.cancel(true);
+				}
+				if (second != null) {
+					second.cancel(true);
+				}
+				if (transition != null) {
+					transition.cancel(true);
+				}
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
+	void retainedReadTxnPreparesOncePerLeaseVersion(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
+			AtomicInteger preparations = new AtomicInteger();
+			AtomicReference<TxnManager.RetainedReadTxn> handle = new AtomicReference<>();
+			List<Boolean> leaseVisibleDuringPreparation = new ArrayList<>();
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn(txn -> {
+				leaseVisibleDuringPreparation.add(handle.get().hasTxn());
+				preparations.incrementAndGet();
+			});
+			handle.set(retained);
+
+			long first = retained.execute((stack, txn) -> txn);
+			assertNotEquals(0L, first);
+			assertEquals(1, preparations.get(), "The first lease version must be prepared once");
+			assertFalse(leaseVisibleDuringPreparation.get(0), "The first preparation precedes lease publication");
+			long hot = retained.execute((stack, txn) -> txn);
+			assertEquals(first, hot);
+			assertEquals(1, preparations.get(), "Hot callbacks must reuse the prepared lease version");
+
+			fixture.manager.reset();
+			long renewed = retained.execute((stack, txn) -> txn);
+			assertEquals(first, renewed, "A revision change must reuse the retained native lease");
+			assertEquals(2, preparations.get(), "A revised lease must be prepared exactly once");
+			assertTrue(leaseVisibleDuringPreparation.get(1),
+					"Revision preparation must retain the published lease until preparation succeeds");
+			long repeated = retained.execute((stack, txn) -> txn);
+			assertEquals(renewed, repeated);
+			assertEquals(2, preparations.get(), "Repeated callbacks must not reprepare the same version");
+		}
+	}
+
+	@Test
+	void retainedReadTxnConcurrentFirstMissesPrepareOnlyOnce(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newFixedThreadPool(8)) {
+			AtomicInteger preparations = new AtomicInteger();
+			TxnManager.RetainedReadTxn retained = fixture.manager
+					.createRetainedReadTxn(txn -> preparations.incrementAndGet());
+			CountDownLatch ready = new CountDownLatch(8);
+			CountDownLatch start = new CountDownLatch(1);
+			CountDownLatch callbacksEntered = new CountDownLatch(8);
+			CountDownLatch releaseCallbacks = new CountDownLatch(1);
+			List<Future<Long>> reads = new ArrayList<>();
+			try {
+				for (int i = 0; i < 8; i++) {
+					reads.add(executor.submit(() -> {
+						ready.countDown();
+						await(start);
+						return retained.execute((stack, txn) -> {
+							callbacksEntered.countDown();
+							await(releaseCallbacks);
+							return txn;
+						});
+					}));
+				}
+				assertTrue(ready.await(5, TimeUnit.SECONDS), "All first-miss readers must be ready");
+				start.countDown();
+				assertTrue(callbacksEntered.await(5, TimeUnit.SECONDS),
+						"All first-miss callbacks must overlap after one preparation");
+				releaseCallbacks.countDown();
+				assertEquals(1, preparations.get(), "Concurrent first misses must share one prepared lease");
+				for (Future<Long> read : reads) {
+					assertNotEquals(0L, read.get(5, TimeUnit.SECONDS));
+				}
+				assertEquals(1, preparations.get(), "No callback may reprepare the same lease version");
+			} finally {
+				releaseCallbacks.countDown();
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
+	void retainedReadTxnIdleLeaseIsReclaimedForOrdinaryAdmission(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn();
+			retained.execute((stack, txn) -> txn);
+			fixture.hold(TxnManager.POOL_SIZE - 2);
+
+			Future<Long> ordinary = executor.submit(() -> {
+				try (TxnManager.Txn txn = fixture.manager.createReadTxn()) {
+					return txn.get();
+				}
+			});
+			long ordinaryTxn = ordinary.get(5, TimeUnit.SECONDS);
+			assertNotEquals(0L, ordinaryTxn, "Ordinary admission must reclaim an idle retained lease");
+			assertFalse(retained.hasTxn(), "Reclaimed retained handles must no longer own a lease");
+		}
+	}
+
+	@Test
+	void retainedReadTxnActiveLeaseIsReleasedAfterPressureWithoutStealingIt(@TempDir Path dataDir) throws Exception {
+		CountDownLatch release = new CountDownLatch(1);
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn();
+			CountDownLatch entered = new CountDownLatch(1);
+			Future<Long> active = null;
+			Future<Long> ordinary = null;
+			try {
+				active = executor.submit(() -> retained.execute((stack, txn) -> {
+					entered.countDown();
+					await(release);
+					return txn;
+				}));
+				assertTrue(entered.await(5, TimeUnit.SECONDS));
+				fixture.hold(TxnManager.POOL_SIZE - 2);
+
+				CountDownLatch ordinaryStarted = new CountDownLatch(1);
+				Future<Long> ordinaryFuture = executor.submit(() -> {
+					ordinaryStarted.countDown();
+					try (TxnManager.Txn txn = fixture.manager.createReadTxn()) {
+						return txn.get();
+					}
+				});
+				ordinary = ordinaryFuture;
+				assertTrue(ordinaryStarted.await(5, TimeUnit.SECONDS));
+				assertThrows(TimeoutException.class, () -> ordinaryFuture.get(200, TimeUnit.MILLISECONDS),
+						"An active retained operation must not be reclaimed while its callback is running");
+				assertTrue(retained.hasTxn(), "The active operation must still own its transaction");
+				assertTrue(fixture.manager.ordinaryAdmissionWaiters() > 0,
+						"Ordinary admission must register pressure before scanning active retained readers");
+
+				release.countDown();
+				assertNotEquals(0L, active.get(5, TimeUnit.SECONDS));
+				assertNotEquals(0L, ordinary.get(5, TimeUnit.SECONDS),
+						"The active lease must yield to ordinary admission after its operation exits");
+				assertFalse(retained.hasTxn(), "Pressure exit must detach the retained lease");
+			} finally {
+				release.countDown();
+				if (active != null) {
+					active.cancel(true);
+				}
+				if (ordinary != null) {
+					ordinary.cancel(true);
+				}
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
+	void retainedReadTxnPressureWaitsForAllActiveCallbacksBeforeRetiring(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newFixedThreadPool(4)) {
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn();
+			retained.execute((stack, txn) -> txn);
+			fixture.hold(TxnManager.POOL_SIZE - 2);
+			CountDownLatch callbacksEntered = new CountDownLatch(2);
+			CountDownLatch releaseCallbacks = new CountDownLatch(1);
+			CountDownLatch ordinaryStarted = new CountDownLatch(1);
+			CountDownLatch ordinaryAcquired = new CountDownLatch(1);
+			CountDownLatch releaseOrdinary = new CountDownLatch(1);
+			CountDownLatch thirdStarted = new CountDownLatch(1);
+			Future<Long> first = null;
+			Future<Long> second = null;
+			Future<Long> ordinary = null;
+			Future<Long> third = null;
+			try {
+				first = executor.submit(() -> retained.execute((stack, txn) -> {
+					callbacksEntered.countDown();
+					await(callbacksEntered);
+					await(releaseCallbacks);
+					return txn;
+				}));
+				second = executor.submit(() -> retained.execute((stack, txn) -> {
+					callbacksEntered.countDown();
+					await(callbacksEntered);
+					await(releaseCallbacks);
+					return txn;
+				}));
+				assertTrue(callbacksEntered.await(5, TimeUnit.SECONDS), "Both retained callbacks must be active first");
+
+				ordinary = executor.submit(() -> {
+					ordinaryStarted.countDown();
+					try (TxnManager.Txn txn = fixture.manager.createReadTxn()) {
+						ordinaryAcquired.countDown();
+						await(releaseOrdinary);
+						return txn.get();
+					}
+				});
+				assertTrue(ordinaryStarted.await(5, TimeUnit.SECONDS));
+				assertTrue(awaitOrdinaryAdmissionWaiter(fixture.manager),
+						"The ordinary reader must register pressure before the third callback starts");
+
+				third = executor.submit(() -> {
+					thirdStarted.countDown();
+					return retained.execute((stack, txn) -> txn);
+				});
+				assertTrue(thirdStarted.await(5, TimeUnit.SECONDS));
+				Future<Long> thirdTask = third;
+				assertThrows(TimeoutException.class, () -> thirdTask.get(200, TimeUnit.MILLISECONDS),
+						"A pressured third callback must wait for both active callbacks to leave");
+
+				releaseCallbacks.countDown();
+				assertNotEquals(0L, first.get(5, TimeUnit.SECONDS));
+				assertNotEquals(0L, second.get(5, TimeUnit.SECONDS));
+				assertTrue(ordinaryAcquired.await(5, TimeUnit.SECONDS),
+						"Retirement must release the lease to the queued ordinary reader");
+				releaseOrdinary.countDown();
+				assertNotEquals(0L, ordinary.get(5, TimeUnit.SECONDS));
+				assertNotEquals(0L, third.get(5, TimeUnit.SECONDS),
+						"The third callback may acquire only after the active readers retire");
+			} finally {
+				releaseCallbacks.countDown();
+				releaseOrdinary.countDown();
+				if (first != null) {
+					first.cancel(true);
+				}
+				if (second != null) {
+					second.cancel(true);
+				}
+				if (ordinary != null) {
+					ordinary.cancel(true);
+				}
+				if (third != null) {
+					third.cancel(true);
+				}
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
+	void retainedReadTxnReclamationAndCloseRaceHasNoStaleLease(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn();
+			retained.execute((stack, txn) -> txn);
+			fixture.hold(TxnManager.POOL_SIZE - 2);
+			CountDownLatch start = new CountDownLatch(1);
+			Future<Long> ordinary = executor.submit(() -> {
+				await(start);
+				try (TxnManager.Txn txn = fixture.manager.createReadTxn()) {
+					return txn.get();
+				}
+			});
+			Future<?> close = executor.submit(() -> {
+				await(start);
+				retained.close();
+				return null;
+			});
+			start.countDown();
+
+			assertNotEquals(0L, ordinary.get(5, TimeUnit.SECONDS));
+			close.get(5, TimeUnit.SECONDS);
+			retained.close();
+			assertFalse(retained.hasTxn(), "A reclamation/close race must leave no retained transaction reference");
+		}
+	}
+
+	@Test
+	void retainedReadTxnCloseCannotCloseReusedOrdinaryLease(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn();
+			long retainedNative = retained.execute((stack, txn) -> txn);
+			long retainedSnapshotId = retained.execute((stack, txn) -> mdb_txn_id(txn));
+			fixture.hold(TxnManager.POOL_SIZE - 2);
+			Future<TxnManager.Txn> ordinaryFuture = null;
+			Future<Long> priorityFuture = null;
+			TxnManager.Txn ordinaryTxn = null;
+			boolean ordinaryClosed = false;
+			try {
+				ordinaryFuture = executor.submit(fixture.manager::createReadTxn);
+				ordinaryTxn = ordinaryFuture.get(5, TimeUnit.SECONDS);
+				assertFalse(retained.hasTxn(), "Ordinary admission must detach the retained lease before reuse");
+				assertEquals(retainedNative, ordinaryTxn.get(),
+						"Ordinary admission must reuse the native lease detached from the retained handle");
+				retained.close();
+				retained.close();
+				assertEquals(retainedSnapshotId, mdb_txn_id(ordinaryTxn.get()),
+						"The ordinary transaction reclaimed from the retained handle must remain usable");
+				assertEquals(0, ordinaryReaderPermits(fixture.manager));
+
+				priorityFuture = executor.submit(() -> fixture.manager.doWithPriority((stack, txn) -> txn));
+				assertNotEquals(0L, priorityFuture.get(5, TimeUnit.SECONDS),
+						"The reserved priority slot must remain available while ordinary readers are full");
+				assertEquals(0, ordinaryReaderPermits(fixture.manager));
+
+				ordinaryTxn.close();
+				ordinaryClosed = true;
+				assertEquals(1, ordinaryReaderPermits(fixture.manager),
+						"Closing the ordinary lease must return its ordinary admission permit");
+			} finally {
+				if (!ordinaryClosed && ordinaryTxn != null) {
+					ordinaryTxn.close();
+				}
+				if (ordinaryFuture != null) {
+					ordinaryFuture.cancel(true);
+				}
+				if (priorityFuture != null) {
+					priorityFuture.cancel(true);
+				}
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
+	void retainedReadTxnBorrowedTransactionDoesNotCreateOrCloseLease(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, TxnManager.POOL_SIZE);
+		long borrowed = 0L;
+		TxnManager manager = new TxnManager(env, TxnManager.Mode.RESET);
+		try {
+			TxnManager.RetainedReadTxn retained = manager.createRetainedReadTxn();
+			long borrowedTxn = beginWriteTxn(env);
+			borrowed = borrowedTxn;
+			long borrowedResult = retained.execute(borrowedTxn, (stack, txn) -> txn);
+			assertEquals(borrowedTxn, borrowedResult);
+			assertFalse(retained.hasTxn(), "A supplied transaction must not become the retained lease");
+			assertThrows(IllegalStateException.class,
+					() -> retained.execute(borrowedTxn, (stack, txn) -> {
+						throw new IllegalStateException("borrowed callback failure");
+					}));
+			retained.close();
+			E(mdb_txn_commit(borrowed));
+			borrowed = 0L;
+		} finally {
+			manager.close();
+			if (borrowed != 0L) {
+				mdb_txn_abort(borrowed);
+			}
+			mdb_env_close(env);
+		}
+	}
+
+	@Test
+	void retainedReadTxnReleasesLeaseAfterCallbackFailure(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn();
+			IOException checked = assertThrows(IOException.class,
+					() -> retained.execute((stack, txn) -> {
+						throw new IOException("checked failure");
+					}));
+			assertEquals("checked failure", checked.getMessage());
+			assertFalse(retained.hasTxn(), "A failed callback must release the retained lease before recovery");
+
+			long txn = retained.execute((stack, nativeTxn) -> nativeTxn);
+			assertNotEquals(0L, txn);
+			assertThrows(IllegalStateException.class,
+					() -> retained.execute((stack, nativeTxn) -> {
+						throw new IllegalStateException("unchecked failure");
+					}));
+			assertFalse(retained.hasTxn(), "An unchecked callback failure must also release its retained lease");
+			long recoveredTxn = retained.execute((stack, nativeTxn) -> nativeTxn);
+			assertNotEquals(0L, recoveredTxn, "A failed retained lease must be recoverable by a later read");
+		}
+	}
+
+	@Test
+	void retainedReadTxnPreparationFailureResetsLeaseForRecovery(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
+			AtomicInteger preparations = new AtomicInteger();
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn(txn -> {
+				if (preparations.incrementAndGet() == 1) {
+					throw new IOException("preparation failure");
+				}
+			});
+
+			IOException failure = assertThrows(IOException.class, () -> retained.execute((stack, txn) -> txn));
+			assertEquals("preparation failure", failure.getMessage());
+			assertFalse(retained.hasTxn(), "A failed preparation must detach its native lease");
+			assertEquals(TxnManager.POOL_SIZE - 1, ordinaryReaderPermits(fixture.manager),
+					"A failed preparation must return its reader permit");
+
+			long recovered = retained.execute((stack, txn) -> txn);
+			assertNotEquals(0L, recovered, "A later callback must recover after preparation failure");
+			assertEquals(2, preparations.get(), "Recovery must prepare the replacement lease once");
+		}
+	}
+
+	@Test
+	void retainedReadTxnFailureWaitsForSiblingBeforeReleasingLease(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn();
+			retained.execute((stack, txn) -> txn);
+			CountDownLatch bothEntered = new CountDownLatch(2);
+			CountDownLatch releaseSibling = new CountDownLatch(1);
+			Future<Long> sibling = null;
+			Future<Long> failing = null;
+			try {
+				sibling = executor.submit(() -> retained.execute((stack, txn) -> {
+					bothEntered.countDown();
+					await(bothEntered);
+					await(releaseSibling);
+					return txn;
+				}));
+				failing = executor.submit(() -> retained.execute((stack, txn) -> {
+					bothEntered.countDown();
+					await(bothEntered);
+					throw new IllegalStateException("sibling failure");
+				}));
+
+				assertTrue(bothEntered.await(5, TimeUnit.SECONDS), "Both retained callbacks must enter before failure");
+				Future<Long> failingTask = failing;
+				ExecutionException failure = assertThrows(ExecutionException.class,
+						() -> failingTask.get(5, TimeUnit.SECONDS));
+				assertTrue(failure.getCause() instanceof IllegalStateException);
+				assertTrue(retained.hasTxn(), "A failed callback must not close a lease still used by a sibling");
+
+				releaseSibling.countDown();
+				assertNotEquals(0L, sibling.get(5, TimeUnit.SECONDS));
+				assertFalse(retained.hasTxn(), "The final sibling must retire the failed retained lease");
+				long recovered = retained.execute((stack, txn) -> txn);
+				assertNotEquals(0L, recovered,
+						"A later callback must acquire a fresh lease after sibling retirement");
+			} finally {
+				releaseSibling.countDown();
+				if (sibling != null) {
+					sibling.cancel(true);
+				}
+				if (failing != null) {
+					failing.cancel(true);
+				}
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
+	void retainedReadTxnOperationGateWaiterIsInterruptible(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			CountDownLatch preparerEntered = new CountDownLatch(1);
+			CountDownLatch releasePreparer = new CountDownLatch(1);
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn(txn -> {
+				preparerEntered.countDown();
+				await(releasePreparer);
+			});
+			Future<Long> active = null;
+			Future<Boolean> interrupted = null;
+			try {
+				active = executor.submit(() -> retained.execute((stack, txn) -> txn));
+				assertTrue(preparerEntered.await(5, TimeUnit.SECONDS));
+
+				CountDownLatch waiterEntered = new CountDownLatch(1);
+				AtomicReference<Thread> waiterThread = new AtomicReference<>();
+				Future<Boolean> interruptedFuture = executor.submit(() -> {
+					waiterThread.set(Thread.currentThread());
+					waiterEntered.countDown();
+					IOException failure = assertThrows(IOException.class,
+							() -> retained.execute((stack, txn) -> txn));
+					assertTrue(failure.getMessage().contains("Interrupted"));
+					return Thread.currentThread().isInterrupted();
+				});
+				interrupted = interruptedFuture;
+				assertTrue(waiterEntered.await(5, TimeUnit.SECONDS));
+				assertThrows(TimeoutException.class, () -> interruptedFuture.get(200, TimeUnit.MILLISECONDS),
+						"A callback must wait behind the exclusive cold initializer");
+				waiterThread.get().interrupt();
+				assertTrue(interruptedFuture.get(5, TimeUnit.SECONDS));
+
+				releasePreparer.countDown();
+				assertNotEquals(0L, active.get(5, TimeUnit.SECONDS));
+				retained.close();
+				assertEquals(TxnManager.POOL_SIZE - 1, ordinaryReaderPermits(fixture.manager),
+						"Interrupting a gate waiter must not strand the retained reader permit");
+			} finally {
+				releasePreparer.countDown();
+				if (active != null) {
+					active.cancel(true);
+				}
+				if (interrupted != null) {
+					interrupted.cancel(true);
+				}
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
+	void interruptedManagerAdmissionRetiresIdleLeaseUnderPressure(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn();
+			retained.execute((stack, txn) -> txn);
+			fixture.hold(TxnManager.POOL_SIZE - 2);
+			long writeStamp = fixture.manager.lockManager().writeLock();
+			Future<Boolean> interrupted = null;
+			Future<Long> ordinary = null;
+			CountDownLatch interruptedStarted = new CountDownLatch(1);
+			CountDownLatch ordinaryStarted = new CountDownLatch(1);
+			CountDownLatch ordinaryAcquired = new CountDownLatch(1);
+			CountDownLatch releaseOrdinary = new CountDownLatch(1);
+			AtomicReference<Thread> interruptedThread = new AtomicReference<>();
+			try {
+				interrupted = executor.submit(() -> {
+					interruptedThread.set(Thread.currentThread());
+					interruptedStarted.countDown();
+					try {
+						retained.execute((stack, txn) -> txn);
+						throw new AssertionError("The manager write lock should block this read");
+					} catch (IOException e) {
+						assertTrue(e.getMessage().contains("Interrupted"));
+						return Thread.currentThread().isInterrupted();
+					}
+				});
+				assertTrue(interruptedStarted.await(5, TimeUnit.SECONDS));
+				assertTrue(awaitReaderActivity(fixture.manager),
+						"The interrupted reader must be waiting for manager read protection");
+
+				ordinary = executor.submit(() -> {
+					ordinaryStarted.countDown();
+					try (TxnManager.Txn txn = fixture.manager.createReadTxn()) {
+						ordinaryAcquired.countDown();
+						await(releaseOrdinary);
+						return txn.get();
+					}
+				});
+				assertTrue(ordinaryStarted.await(5, TimeUnit.SECONDS));
+				assertTrue(awaitOrdinaryAdmissionWaiter(fixture.manager),
+						"The ordinary reader must register pressure while the idle lease is protected");
+
+				interruptedThread.get().interrupt();
+				assertTrue(awaitThreadStack(interruptedThread.get(), "closeDetachedRetainedTxn"),
+						"the interrupted callback must release its read stamp before retrying retirement cleanup");
+				fixture.manager.lockManager().unlockWrite(writeStamp);
+				writeStamp = 0L;
+				assertTrue(interrupted.get(5, TimeUnit.SECONDS),
+						"Interrupted manager admission must preserve the interrupt status");
+				assertTrue(ordinaryAcquired.await(5, TimeUnit.SECONDS),
+						"The interrupted gate holder must retire the idle lease for ordinary admission");
+				releaseOrdinary.countDown();
+				assertNotEquals(0L, ordinary.get(5, TimeUnit.SECONDS));
+				assertFalse(retained.hasTxn(), "Pressure retirement must detach the idle retained lease");
+				assertEquals(1, ordinaryReaderPermits(fixture.manager),
+						"The retired lease must leave one ordinary permit beside the held fixture readers");
+			} finally {
+				if (writeStamp != 0L) {
+					fixture.manager.lockManager().unlockWrite(writeStamp);
+				}
+				releaseOrdinary.countDown();
+				if (interrupted != null) {
+					interrupted.cancel(true);
+				}
+				if (ordinary != null) {
+					ordinary.cancel(true);
+				}
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
+	void retainedReadTxnCloseWaitsForActiveCallback(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newFixedThreadPool(3)) {
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn();
+			retained.execute((stack, txn) -> txn);
+			CountDownLatch callbacksEntered = new CountDownLatch(2);
+			CountDownLatch releaseFirst = new CountDownLatch(1);
+			CountDownLatch releaseLast = new CountDownLatch(1);
+			CountDownLatch firstFinished = new CountDownLatch(1);
+			CountDownLatch lastFinished = new CountDownLatch(1);
+			Future<Long> first = null;
+			Future<Long> last = null;
+			Future<?> closing = null;
+			try {
+				first = executor.submit(() -> retained.execute((stack, txn) -> {
+					callbacksEntered.countDown();
+					try {
+						await(releaseFirst);
+						return txn;
+					} finally {
+						firstFinished.countDown();
+					}
+				}));
+				last = executor.submit(() -> retained.execute((stack, txn) -> {
+					callbacksEntered.countDown();
+					try {
+						await(releaseLast);
+						return txn;
+					} finally {
+						lastFinished.countDown();
+					}
+				}));
+				assertTrue(callbacksEntered.await(5, TimeUnit.SECONDS), "Both callbacks must enter before close");
+
+				CountDownLatch closeEntered = new CountDownLatch(1);
+				Future<?> closeFuture = executor.submit(() -> {
+					closeEntered.countDown();
+					retained.close();
+					return null;
+				});
+				closing = closeFuture;
+				assertTrue(closeEntered.await(5, TimeUnit.SECONDS));
+				assertThrows(TimeoutException.class, () -> closeFuture.get(200, TimeUnit.MILLISECONDS),
+						"Closing a retained handle must wait for both active callbacks");
+				assertFalse(firstFinished.await(200, TimeUnit.MILLISECONDS),
+						"The first callback must remain in control until its release latch opens");
+				assertFalse(lastFinished.await(200, TimeUnit.MILLISECONDS),
+						"The last callback must remain in control until its release latch opens");
+
+				releaseFirst.countDown();
+				assertNotEquals(0L, first.get(5, TimeUnit.SECONDS));
+				assertTrue(firstFinished.await(5, TimeUnit.SECONDS));
+				assertThrows(TimeoutException.class, () -> closeFuture.get(200, TimeUnit.MILLISECONDS),
+						"Closing must continue waiting while the final callback is active");
+
+				releaseLast.countDown();
+				assertNotEquals(0L, last.get(5, TimeUnit.SECONDS));
+				closeFuture.get(5, TimeUnit.SECONDS);
+				assertTrue(lastFinished.await(5, TimeUnit.SECONDS));
+				assertFalse(retained.hasTxn(), "Closing must detach the retained lease after the callback exits");
+				assertEquals(TxnManager.POOL_SIZE - 1, ordinaryReaderPermits(fixture.manager),
+						"Closing after an active callback must return the retained reader permit");
+				assertThrows(IOException.class, () -> retained.execute((stack, txn) -> txn));
+			} finally {
+				releaseFirst.countDown();
+				releaseLast.countDown();
+				if (first != null) {
+					first.cancel(true);
+				}
+				if (last != null) {
+					last.cancel(true);
+				}
+				if (closing != null) {
+					closing.cancel(true);
+				}
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
+	void retainedReadTxnAdmissionIsInterruptibleAndCloseWakesWaiter(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			fixture.hold(TxnManager.POOL_SIZE - 1);
+			TxnManager.RetainedReadTxn retained = fixture.manager.createRetainedReadTxn();
+			CountDownLatch waiting = new CountDownLatch(1);
+			AtomicReference<Thread> waiterThread = new AtomicReference<>();
+			Future<Boolean> interrupted = null;
+			Future<Long> closed = null;
+			try {
+				Future<Boolean> interruptedFuture = executor.submit(() -> {
+					waiterThread.set(Thread.currentThread());
+					waiting.countDown();
+					IOException failure = assertThrows(IOException.class,
+							() -> retained.execute((stack, txn) -> txn));
+					assertTrue(failure.getMessage().contains("Interrupted"));
+					return Thread.currentThread().isInterrupted();
+				});
+				interrupted = interruptedFuture;
+				assertTrue(waiting.await(5, TimeUnit.SECONDS));
+				assertThrows(TimeoutException.class, () -> interruptedFuture.get(200, TimeUnit.MILLISECONDS));
+				waiterThread.get().interrupt();
+				assertTrue(interruptedFuture.get(5, TimeUnit.SECONDS));
+				assertFalse(retained.hasTxn());
+
+				Future<Long> closedFuture = executor.submit(() -> retained.execute((stack, txn) -> txn));
+				closed = closedFuture;
+				assertThrows(TimeoutException.class, () -> closedFuture.get(200, TimeUnit.MILLISECONDS));
+				fixture.manager.beginClose();
+				ExecutionException failure = assertThrows(ExecutionException.class,
+						() -> closedFuture.get(5, TimeUnit.SECONDS));
+				assertTrue(failure.getCause() instanceof IOException);
+				assertTrue(failure.getCause().getMessage().contains("closed"));
+				retained.close();
+				fixture.manager.close();
+				fixture.manager.close();
+			} finally {
+				if (interrupted != null) {
+					interrupted.cancel(true);
+				}
+				if (closed != null) {
+					closed.cancel(true);
+				}
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
 	void failedNativeStartReturnsReservedPermit(@TempDir Path dataDir) throws Exception {
 		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.ABORT);
 				ExecutorService executor = Executors.newSingleThreadExecutor()) {
@@ -456,5 +1300,64 @@ public class TxnManagerTest {
 			E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
 			return pp.get(0);
 		}
+	}
+
+	private static long beginWriteTxn(long env) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_txn_begin(env, NULL, 0, pp));
+			return pp.get(0);
+		}
+	}
+
+	private static void putLifecycleMarker(long txn) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			IntBuffer dbi = stack.mallocInt(1);
+			E(mdb_dbi_open(txn, (ByteBuffer) null, 0, dbi));
+			MDBVal key = MDBVal.malloc(stack);
+			MDBVal value = MDBVal.malloc(stack);
+			ByteBuffer keyBytes = stack.malloc(1).put((byte) 1);
+			ByteBuffer valueBytes = stack.malloc(1).put((byte) 2);
+			keyBytes.flip();
+			valueBytes.flip();
+			key.mv_data(keyBytes);
+			value.mv_data(valueBytes);
+			E(mdb_put(txn, dbi.get(0), key, value, 0));
+		}
+	}
+
+	private static boolean awaitReaderActivity(TxnManager manager) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		while (!manager.lockManager().isReaderActive() && System.nanoTime() < deadline) {
+			Thread.onSpinWait();
+		}
+		return manager.lockManager().isReaderActive();
+	}
+
+	private static boolean awaitOrdinaryAdmissionWaiter(TxnManager manager) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		while (manager.ordinaryAdmissionWaiters() == 0 && System.nanoTime() < deadline) {
+			Thread.onSpinWait();
+		}
+		return manager.ordinaryAdmissionWaiters() > 0;
+	}
+
+	private static boolean awaitThreadStack(Thread thread, String methodName) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		while (System.nanoTime() < deadline) {
+			for (StackTraceElement frame : thread.getStackTrace()) {
+				if (methodName.equals(frame.getMethodName())) {
+					return true;
+				}
+			}
+			Thread.onSpinWait();
+		}
+		return false;
+	}
+
+	private static int ordinaryReaderPermits(TxnManager manager) throws ReflectiveOperationException {
+		Field readerSlots = TxnManager.class.getDeclaredField("readerSlots");
+		readerSlots.setAccessible(true);
+		return ((Semaphore) readerSlots.get(manager)).availablePermits();
 	}
 }

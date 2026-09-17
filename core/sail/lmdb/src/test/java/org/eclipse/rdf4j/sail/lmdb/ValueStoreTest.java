@@ -33,14 +33,18 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -49,7 +53,10 @@ import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreSchema;
@@ -92,6 +99,41 @@ public class ValueStoreTest {
 
 	private LmdbStoreConfig hashCacheEnabledConfig() {
 		return new LmdbStoreConfig().setValueHashCacheEnabled(true);
+	}
+
+	@Test
+	public void firstUncachedDatasetValueRetainsReaderPermit() throws Exception {
+		valueStore.close();
+		LmdbStore sail = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		SailRepository repository = new SailRepository(sail);
+		repository.init();
+		try {
+			IRI subject = Values.iri("urn:dataset-materializer:subject");
+			IRI predicate = Values.iri("urn:dataset-materializer:predicate");
+			IRI object = Values.iri("urn:dataset-materializer:uncached-value");
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(subject, predicate, object);
+			}
+
+			LmdbSailStore backingStore = sail.getBackingStore();
+			ValueStore datasetValueStore = (ValueStore) backingStore.getValueFactory();
+			datasetValueStore.clearCaches();
+			try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
+					CloseableIteration<? extends Statement> statements = dataset.getStatements(null, null, null)) {
+				Statement statement = statements.next();
+				assertEquals("urn:dataset-materializer:uncached-value", statement.getObject().stringValue());
+				assertEquals("The first uncached dataset read should retain one reusable reader permit",
+						TxnManager.POOL_SIZE - 2, readerSlotsAvailable(datasetValueStore.getTxnManager()));
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static int readerSlotsAvailable(TxnManager txnManager) throws ReflectiveOperationException {
+		Field field = TxnManager.class.getDeclaredField("readerSlots");
+		field.setAccessible(true);
+		return ((Semaphore) field.get(txnManager)).availablePermits();
 	}
 
 	@Test

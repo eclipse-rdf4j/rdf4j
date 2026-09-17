@@ -23,6 +23,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NORDAHEAD;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
@@ -62,6 +63,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -75,6 +77,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
@@ -148,6 +151,7 @@ class ValueStore extends AbstractValueFactory {
 	 * Used to do the actual storage of values, once they're translated to byte arrays.
 	 */
 	private final File dir;
+	private final LmdbStoreConfig config;
 
 	/**
 	 * Properties of the store, such as version and triple indexes specification. These properties are stored in a file
@@ -251,6 +255,7 @@ class ValueStore extends AbstractValueFactory {
 	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config) throws IOException {
 		this.dir = dir;
 		this.properties = properties;
+		this.config = config;
 		this.forceSync = config.getForceSync();
 		this.noReadahead = config.getNoReadahead();
 		this.autoGrow = config.getAutoGrow();
@@ -677,6 +682,42 @@ class ValueStore extends AbstractValueFactory {
 		return revision;
 	}
 
+	ValueStoreRevision.Lazy getLazyRevision() {
+		return lazyRevision;
+	}
+
+	long currentWriterTransaction() {
+		return writeTxn != 0 && writeTxnOwner == Thread.currentThread() ? writeTxn : 0;
+	}
+
+	/**
+	 * Primes the DBI used by retained materializer reads before the transaction is published to concurrent callbacks.
+	 * The cursor itself is deliberately short-lived; only the LMDB transaction and its initialized DBI state are
+	 * retained.
+	 */
+	void prepareMaterializerTransaction(long txn) throws IOException {
+		TripleIndex index = tripleTermCspoIndex;
+		if (index == null) {
+			return;
+		}
+		long cursor = 0L;
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, index.getDB(true), pp));
+			cursor = pp.get(0);
+			MDBVal key = MDBVal.calloc(stack);
+			MDBVal value = MDBVal.calloc(stack);
+			int rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+			if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+				E(rc);
+			}
+		} finally {
+			if (cursor != 0L) {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
 	int getStoredHash(long id) {
 		Integer pendingHash;
 		synchronized (pendingHashUpdates) {
@@ -728,17 +769,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	protected byte[] getData(long id) throws IOException {
-		return readTransaction(env, (stack, txn) -> {
-			MDBVal keyData = MDBVal.calloc(stack);
-			keyData.mv_data(id2data(idBuffer(stack), id).flip());
-			MDBVal valueData = MDBVal.calloc(stack);
-			if (mdb_get(txn, dbi, keyData, valueData) == MDB_SUCCESS) {
-				byte[] valueBytes = new byte[valueData.mv_data().remaining()];
-				valueData.mv_data().get(valueBytes);
-				return valueBytes;
-			}
-			return null;
-		});
+		return readTransaction(env, (stack, txn) -> getData(id, stack, txn));
 	}
 
 	/**
@@ -798,35 +829,111 @@ class ValueStore extends AbstractValueFactory {
 	public LmdbValue getLazyValue(long id) throws IOException {
 		long stamp = revisionLock.readLock();
 		try {
-			// Check value cache
-			LmdbValue resultValue = cachedValue(id);
+			return getLazyValueForRevision(id, lazyRevision, true);
+		} finally {
+			revisionLock.unlockRead(stamp);
+		}
+	}
 
-			if (resultValue == null) {
-				int idType = ValueIds.getIdType(id);
-				switch (idType) {
-				case ValueIds.T_URI:
-					resultValue = new LmdbIRI(lazyRevision, id);
-					break;
-				case ValueIds.T_DOUBLE:
-				case ValueIds.T_LITERAL:
-					resultValue = new LmdbLiteral(lazyRevision, id);
-					break;
-				case ValueIds.T_BNODE:
-					resultValue = new LmdbBNode(lazyRevision, id);
-					break;
-				case ValueIds.T_TRIPLE:
-					resultValue = new LmdbTripleTerm(lazyRevision, id);
-					break;
-				default:
-					if (ValueIds.isInlined(id)) {
-						resultValue = new LmdbLiteral(lazyRevision, id);
-						break;
-					}
-					throw new IOException("Unsupported value with id=" + id + " and id type " + idType);
+	LmdbValue getLazyValue(long id, ValueStoreMaterializer materializer) throws IOException {
+		Objects.requireNonNull(materializer, "materializer must not be null");
+		if (!materializer.isFor(this)) {
+			throw new IllegalArgumentException("materializer belongs to another ValueStore");
+		}
+		long stamp = revisionLock.readLock();
+		try {
+			ValueStoreRevision.Lazy originalRevision = lazyRevision;
+			ValueStoreRevision detachedRevision = originalRevision.getUnwrappedRevision();
+			int idType = ValueIds.getIdType(id);
+			boolean useCache = detachedRevision == revision;
+			if (idType != ValueIds.T_TRIPLE && useCache) {
+				LmdbValue cached = cachedValue(id);
+				if (cached != null && detachedRevision.equals(cached.getValueStoreRevision())) {
+					return cached;
 				}
 			}
+			ValueStoreRevision materializedRevision = materializer.materializedRevision(originalRevision);
+			return getLazyValueForRevision(id, materializedRevision, false, true);
+		} finally {
+			revisionLock.unlockRead(stamp);
+		}
+	}
 
-			return resultValue;
+	private LmdbValue getLazyValueForRevision(long id, ValueStoreRevision targetRevision, boolean useCache)
+			throws IOException {
+		return getLazyValueForRevision(id, targetRevision, useCache, false);
+	}
+
+	private LmdbValue getLazyValueForRevision(long id, ValueStoreRevision targetRevision, boolean useCache,
+			boolean scoped) throws IOException {
+		int idType = ValueIds.getIdType(id);
+		// Scoped triple terms must bypass the shared cache: their children carry the dataset materializer.
+		LmdbValue resultValue = useCache && (!scoped || idType != ValueIds.T_TRIPLE) ? cachedValue(id) : null;
+		if (resultValue != null) {
+			if (!targetRevision.equals(resultValue.getValueStoreRevision())) {
+				resultValue = null;
+			} else {
+				return resultValue;
+			}
+		}
+
+		switch (idType) {
+		case ValueIds.T_URI:
+			return new LmdbIRI(targetRevision, id);
+		case ValueIds.T_DOUBLE:
+		case ValueIds.T_LITERAL:
+			return new LmdbLiteral(targetRevision, id);
+		case ValueIds.T_BNODE:
+			return new LmdbBNode(targetRevision, id);
+		case ValueIds.T_TRIPLE:
+			return new LmdbTripleTerm(targetRevision, id);
+		default:
+			if (ValueIds.isInlined(id)) {
+				return new LmdbLiteral(targetRevision, id);
+			}
+			throw new IOException("Unsupported value with id=" + id + " and id type " + idType);
+		}
+	}
+
+	Statement createStatement(long[] quad, ValueStoreMaterializer materializer) throws IOException {
+		Objects.requireNonNull(materializer, "materializer must not be null");
+		if (!materializer.isFor(this)) {
+			throw new IllegalArgumentException("materializer belongs to another ValueStore");
+		}
+		long stamp = revisionLock.readLock();
+		try {
+			ValueStoreRevision.Lazy originalRevision = lazyRevision;
+			ValueStoreRevision materializedRevision = materializer.materializedRevision(originalRevision);
+			boolean useCache = originalRevision.getUnwrappedRevision() == revision;
+			Resource subj = (Resource) getLazyValueForRevision(quad[TripleIndex.SUBJ_IDX], materializedRevision,
+					useCache, true);
+			IRI pred = (IRI) getLazyValueForRevision(quad[TripleIndex.PRED_IDX], materializedRevision, useCache, true);
+			Value obj = getLazyValueForRevision(quad[TripleIndex.OBJ_IDX], materializedRevision, useCache, true);
+			long contextID = quad[TripleIndex.CONTEXT_IDX];
+			Resource context = contextID == 0 ? null
+					: (Resource) getLazyValueForRevision(contextID, materializedRevision, useCache, true);
+			return createStatement(subj, pred, obj, context);
+		} finally {
+			revisionLock.unlockRead(stamp);
+		}
+	}
+
+	LmdbTripleTerm createTripleTerm(long[] quad, ValueStoreMaterializer materializer) throws IOException {
+		Objects.requireNonNull(materializer, "materializer must not be null");
+		if (!materializer.isFor(this)) {
+			throw new IllegalArgumentException("materializer belongs to another ValueStore");
+		}
+		long stamp = revisionLock.readLock();
+		try {
+			ValueStoreRevision.Lazy originalRevision = lazyRevision;
+			ValueStoreRevision materializedRevision = materializer.materializedRevision(originalRevision);
+			ValueStoreRevision detachedRevision = originalRevision.getUnwrappedRevision();
+			boolean useCache = detachedRevision == revision;
+			Resource subj = (Resource) getLazyValueForRevision(quad[TripleIndex.SUBJ_IDX], materializedRevision,
+					useCache, true);
+			IRI pred = (IRI) getLazyValueForRevision(quad[TripleIndex.PRED_IDX], materializedRevision, useCache, true);
+			Value obj = getLazyValueForRevision(quad[TripleIndex.OBJ_IDX], materializedRevision, useCache, true);
+			return new LmdbTripleTerm(detachedRevision, subj, pred, obj, quad[TripleIndex.CONTEXT_IDX]);
 		} finally {
 			revisionLock.unlockRead(stamp);
 		}
@@ -842,31 +949,47 @@ class ValueStore extends AbstractValueFactory {
 	public LmdbValue getValue(long id) throws IOException {
 		long stamp = revisionLock.readLock();
 		try {
-			// Check value cache
-			LmdbValue resultValue = cachedValue(id);
-
-			if (resultValue == null) {
-				// unpack inlined values if possible
-				if (ValueIds.isInlined(id)) {
-					Literal unpacked = Values.unpackLiteral(id, this);
-					return new LmdbLiteral(revision, unpacked.getLabel(), unpacked.getDatatype(), id);
-				}
-
-				if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
-					resultValue = id2tripleTerm(id, null);
-					cacheValue(id, resultValue);
-					return resultValue;
-				}
-
-				// Value not in cache, fetch it from file
-				byte[] data = getData(id);
-				if (data != null) {
-					resultValue = data2value(id, data, null);
-					// Store value in cache
-					cacheValue(id, resultValue);
-				}
+			// Cache and inline values are entirely local and must remain on the fast path without opening a reader.
+			LmdbValue cached = cachedValue(id);
+			if (cached != null) {
+				return cached;
 			}
-			return resultValue;
+			ValueStoreRevision targetRevision = revision;
+			ValueStoreRevision.Lazy targetLazyRevision = lazyRevision;
+			if (ValueIds.isInlined(id)) {
+				Literal unpacked = Values.unpackLiteral(id, this);
+				return new LmdbLiteral(targetRevision, unpacked.getLabel(), unpacked.getDatatype(), id);
+			}
+
+			return readTransaction(env, (stack, txn) -> {
+				// Check value cache
+				LmdbValue resultValue = cachedValue(id);
+
+				if (resultValue == null) {
+					if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+						resultValue = id2tripleTermInTransaction(id, null, targetRevision, targetLazyRevision, true,
+								stack,
+								txn);
+						if (resultValue != null) {
+							cacheValue(id, resultValue);
+						}
+						return resultValue;
+					}
+
+					// Value not in cache, fetch it from file
+					byte[] data = getData(id, stack, txn);
+					if (data != null) {
+						List<LmdbValue> cacheCandidates = new ArrayList<>(2);
+						resultValue = data2valueInTransaction(id, data, null, targetRevision, stack, txn,
+								cacheCandidates);
+						cacheCandidates.add(resultValue);
+						for (LmdbValue candidate : cacheCandidates) {
+							cacheValue(candidate.getInternalID(), candidate);
+						}
+					}
+				}
+				return resultValue;
+			});
 		} finally {
 			revisionLock.unlockRead(stamp);
 		}
@@ -888,30 +1011,156 @@ class ValueStore extends AbstractValueFactory {
 			((LmdbLiteral) value).setBaseDirection(unpacked.getBaseDirection());
 			return true;
 		}
-		// Try to get from cache
-		LmdbValue cached = cachedValue(id);
-		if (cached != null && this.getRevision().getRevisionId() == cached.getValueStoreRevision().getRevisionId()) {
-			value.setFromInitializedValue(cached);
-			return true;
-		}
-		try {
-			if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
-				value = id2tripleTerm(id, (LmdbTripleTerm) value);
-				cacheValue(id, value);
-				return true;
-			}
 
-			byte[] data = getData(id);
-			if (data != null) {
-//				System.out.println(id);
-				data2value(id, data, value);
-				cacheValue(id, value);
+		long stamp = revisionLock.readLock();
+		try {
+			ValueStoreRevision valueRevision = value.getValueStoreRevision();
+			ValueStoreRevision targetRevision = detachedRevision(valueRevision);
+			LmdbValue cached = cachedValue(id);
+			if (cached != null && targetRevision.equals(cached.getValueStoreRevision())) {
+				value.setFromInitializedValue(cached);
+				value.setInternalID(id, targetRevision);
 				return true;
 			}
+			ValueStoreRevision targetLazyRevision = lazyRevisionFor(valueRevision, targetRevision);
+
+			return readTransaction(env, (stack, txn) -> {
+				// Try to get from cache again after acquiring the native transaction.
+				LmdbValue cachedInTransaction = cachedValue(id);
+				if (cachedInTransaction != null && targetRevision.equals(cachedInTransaction.getValueStoreRevision())) {
+					value.setFromInitializedValue(cachedInTransaction);
+					value.setInternalID(id, targetRevision);
+					return true;
+				}
+
+				if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+					LmdbTripleTerm resolved = id2tripleTermInTransaction(id, (LmdbTripleTerm) value, targetRevision,
+							targetLazyRevision, true, stack, txn);
+					if (resolved != null) {
+						if (targetRevision == revision) {
+							cacheValue(id, resolved);
+						}
+						return true;
+					}
+					return false;
+				}
+
+				byte[] data = getData(id, stack, txn);
+				if (data != null) {
+					List<LmdbValue> cacheCandidates = new ArrayList<>(2);
+					data2valueInTransaction(id, data, value, targetRevision, stack, txn, cacheCandidates);
+					value.setInternalID(id, targetRevision);
+					if (targetRevision == revision) {
+						cacheCandidates.add(value);
+						for (LmdbValue candidate : cacheCandidates) {
+							cacheValue(candidate.getInternalID(), candidate);
+						}
+					}
+					return true;
+				}
+				return false;
+			});
 		} catch (IOException e) {
 			throw new SailException(e);
+		} finally {
+			revisionLock.unlockRead(stamp);
 		}
-		return false;
+	}
+
+	private static ValueStoreRevision detachedRevision(ValueStoreRevision valueRevision) {
+		return ValueStoreMaterializer.detachedRevisionOf(valueRevision);
+	}
+
+	private ValueStoreRevision lazyRevisionFor(ValueStoreRevision valueRevision,
+			ValueStoreRevision targetRevision) {
+		ValueStoreRevision.Lazy materializedOrigin = ValueStoreMaterializer.originalRevisionOf(valueRevision);
+		if (materializedOrigin != null) {
+			return materializedOrigin;
+		}
+		if (valueRevision instanceof ValueStoreRevision.Lazy) {
+			return valueRevision;
+		}
+		return targetRevision == revision ? lazyRevision : targetRevision;
+	}
+
+	boolean resolveValue(long id, LmdbValue value, ValueStoreMaterializer materializer,
+			ValueStoreRevision.Lazy originalRevision) throws IOException {
+		Objects.requireNonNull(materializer, "materializer must not be null");
+		if (!materializer.isFor(this)) {
+			throw new IllegalArgumentException("materializer belongs to another ValueStore");
+		}
+		ValueStoreRevision detachedRevision = originalRevision.getUnwrappedRevision();
+
+		// Inline values are self-contained and must not acquire a native reader.
+		if (ValueIds.isInlined(id)) {
+			Literal unpacked = Values.unpackLiteral(id, this);
+			LmdbLiteral literal = (LmdbLiteral) value;
+			literal.setLabel(unpacked.getLabel());
+			literal.setDatatype(unpacked.getDatatype());
+			literal.setBaseDirection(unpacked.getBaseDirection());
+			value.setInternalID(id, detachedRevision);
+			return true;
+		}
+
+		int idType = ValueIds.getIdType(id);
+		long stamp = revisionLock.readLock();
+		try {
+			LmdbValue cached = cachedValue(id);
+			if (idType != ValueIds.T_TRIPLE
+					&& detachedRevision == revision
+					&& cached != null
+					&& detachedRevision.equals(cached.getValueStoreRevision())) {
+				value.setFromInitializedValue(cached);
+				value.setInternalID(id, detachedRevision);
+				return true;
+			}
+		} finally {
+			revisionLock.unlockRead(stamp);
+		}
+
+		long borrowedTxn = currentWriterTransaction();
+		if (idType == ValueIds.T_TRIPLE) {
+			ValueStoreRevision materializedRevision = materializer.materializedRevision(originalRevision);
+			return materializer.execute(originalRevision, borrowedTxn, (stack, txn) -> {
+				LmdbTripleTerm tripleTerm = (LmdbTripleTerm) value;
+				boolean useCache = detachedRevision == revision;
+				return id2tripleTermInTransaction(id, tripleTerm, detachedRevision,
+						materializedRevision, useCache, stack, txn) != null;
+			});
+		}
+
+		List<LmdbValue> cacheCandidates = new ArrayList<>(2);
+		boolean resolved = materializer.execute(originalRevision, borrowedTxn, (stack, txn) -> {
+			byte[] data = getData(id, stack, txn);
+			if (data == null) {
+				return false;
+			}
+			data2valueInTransaction(id, data, value, detachedRevision, stack, txn,
+					cacheCandidates);
+			// Values published in the process-wide cache must never retain dataset ownership.
+			value.setInternalID(id, detachedRevision);
+			cacheCandidates.add(value);
+			return true;
+		});
+		if (resolved) {
+			cacheMaterializedValues(cacheCandidates, detachedRevision);
+		}
+		return resolved;
+	}
+
+	private void cacheMaterializedValues(List<LmdbValue> values,
+			ValueStoreRevision detachedRevision) {
+		long stamp = revisionLock.readLock();
+		try {
+			if (revision != detachedRevision) {
+				return;
+			}
+			for (LmdbValue value : values) {
+				cacheValue(value.getInternalID(), value);
+			}
+		} finally {
+			revisionLock.unlockRead(stamp);
+		}
 	}
 
 	private void resizeMap(long txn, long requiredSize) throws IOException {
@@ -1222,34 +1471,12 @@ class ValueStore extends AbstractValueFactory {
 
 	LmdbTripleTerm id2tripleTerm(long id, LmdbTripleTerm value) throws IOException {
 		return readTransaction(env, (stack, txn) -> {
-			final var index = tripleTermCspoIndex;
-
-			PointerBuffer pp = stack.mallocPointer(1);
-			E(mdb_cursor_open(txn, index.getDB(true), pp));
-			long cursor = pp.get(0);
-
-			MDBVal keyVal = MDBVal.malloc(stack);
-			// use calloc to get an empty data value
-			MDBVal dataVal = MDBVal.calloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			index.getMinKey(keyBuf, -1, -1, -1, id);
-			keyBuf.flip();
-			keyVal.mv_data(keyBuf);
-
-			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
-			if (rc == MDB_SUCCESS && index.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
-				long[] quad = new long[4];
-				index.keyToQuad(keyVal.mv_data(), quad);
-				if (value != null) {
-					value.setFromInitializedValue(new LmdbTripleTerm(revision, (Resource) getLazyValue(quad[0]),
-							(IRI) getLazyValue(quad[1]), getLazyValue(quad[2]), id));
-					return value;
-				} else {
-					return new LmdbTripleTerm(revision, (Resource) getLazyValue(quad[0]),
-							(IRI) getLazyValue(quad[1]), getLazyValue(quad[2]), id);
-				}
+			long stamp = revisionLock.readLock();
+			try {
+				return id2tripleTermInTransaction(id, value, revision, lazyRevision, true, stack, txn);
+			} finally {
+				revisionLock.unlockRead(stamp);
 			}
-			return null;
 		});
 	}
 
@@ -1952,8 +2179,18 @@ class ValueStore extends AbstractValueFactory {
 		ValueStoreHashFile.deleteIfPresent(dir);
 
 		clearCaches();
+		// The index handles belong to the environment that close() just released. Rebuild the list against the new
+		// environment so a retained reader can never accidentally use an old native database handle after clear().
+		tripleTermIndexes.clear();
+		tripleTermSpocIndex = null;
+		tripleTermCspoIndex = null;
+		nextId = 1L;
+		freeIdsAvailable = false;
 		open();
 		setNewRevision();
+		startTransaction(true);
+		initTermIndexes(config);
+		commit();
 	}
 
 	protected void clearCaches() {
@@ -1971,15 +2208,30 @@ class ValueStore extends AbstractValueFactory {
 	 *
 	 * @throws IOException If an I/O error occurred.
 	 */
-	public void close() throws IOException {
+	public synchronized void close() throws IOException {
 		if (env != 0) {
 			if (writeTxn == 0) {
 				flushPendingHashUpdates();
 			}
-			txnManager.close();
-			endTransaction(false, false);
-			mdb_env_close(env);
-			env = 0;
+			TxnManager manager = txnManager;
+			manager.beginClose();
+			long stamp = 0;
+			try {
+				stamp = manager.lockManager().writeLock();
+				try {
+					endTransaction(false, false);
+					manager.close();
+					mdb_env_close(env);
+					env = 0;
+				} finally {
+					if (stamp != 0) {
+						manager.lockManager().unlockWrite(stamp);
+					}
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException(e);
+			}
 		}
 		if (hashFile != null) {
 			try {
@@ -2184,52 +2436,71 @@ class ValueStore extends AbstractValueFactory {
 		return literalData;
 	}
 
-	private LmdbValue data2value(long id, byte[] data, LmdbValue value) throws IOException {
+	private byte[] getData(long id, MemoryStack stack, long txn) throws IOException {
+		MDBVal keyData = MDBVal.calloc(stack);
+		keyData.mv_data(id2data(idBuffer(stack), id).flip());
+		MDBVal valueData = MDBVal.calloc(stack);
+		int rc = mdb_get(txn, dbi, keyData, valueData);
+		if (rc == MDB_SUCCESS) {
+			byte[] valueBytes = new byte[valueData.mv_data().remaining()];
+			valueData.mv_data().get(valueBytes);
+			return valueBytes;
+		}
+		if (rc != MDB_NOTFOUND) {
+			E(rc);
+		}
+		return null;
+	}
+
+	private LmdbValue data2valueInTransaction(long id, byte[] data, LmdbValue value,
+			ValueStoreRevision targetRevision, MemoryStack stack, long txn, List<LmdbValue> cacheCandidates)
+			throws IOException {
 		return switch (data[0]) {
-		case URI_VALUE -> data2uri(id, data, (LmdbIRI) value);
-		case BNODE_VALUE -> data2bnode(id, data, (LmdbBNode) value);
-		case LITERAL_VALUE -> data2literal(id, data, (LmdbLiteral) value);
+		case URI_VALUE -> data2uriInTransaction(id, data, (LmdbIRI) value, targetRevision, stack, txn);
+		case BNODE_VALUE -> data2bnodeInTransaction(id, data, (LmdbBNode) value, targetRevision);
+		case LITERAL_VALUE -> data2literalInTransaction(id, data, (LmdbLiteral) value, targetRevision, stack, txn,
+				cacheCandidates);
 		default -> throw new IllegalArgumentException("Invalid type " + data[0] + " for value with id " + id);
 		};
 	}
 
-	private LmdbIRI data2uri(long id, byte[] data, LmdbIRI value) throws IOException {
+	private LmdbIRI data2uriInTransaction(long id, byte[] data, LmdbIRI value,
+			ValueStoreRevision targetRevision, MemoryStack stack, long txn) throws IOException {
 		ByteBuffer bb = ByteBuffer.wrap(data);
-		// skip type marker
 		bb.get();
 		long nsID = Varint.readUnsignedHeap(bb);
-		String namespace = getNamespace(nsID);
+		String namespace = getNamespace(nsID, stack, txn);
 		String localName = new String(data, bb.position(), bb.remaining(), StandardCharsets.UTF_8);
 
 		if (value == null) {
-			return new LmdbIRI(revision, namespace, localName, id);
-		} else {
-			value.setNamespaceAndIri(namespace, localName);
-//			value.setIRIString(namespace + localName);
-			return value;
+			return new LmdbIRI(targetRevision, namespace, localName, id);
 		}
+		value.setNamespaceAndIri(namespace, localName);
+		return value;
 	}
 
-	private LmdbBNode data2bnode(long id, byte[] data, LmdbBNode value) {
+	private LmdbBNode data2bnodeInTransaction(long id, byte[] data, LmdbBNode value,
+			ValueStoreRevision targetRevision) {
 		String nodeID = new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
 		if (value == null) {
-			return new LmdbBNode(revision, nodeID, id);
-		} else {
-			value.setID(nodeID);
-			return value;
+			return new LmdbBNode(targetRevision, nodeID, id);
 		}
+		value.setID(nodeID);
+		return value;
 	}
 
-	private LmdbLiteral data2literal(long id, byte[] data, LmdbLiteral value) throws IOException {
+	private LmdbLiteral data2literalInTransaction(long id, byte[] data, LmdbLiteral value,
+			ValueStoreRevision targetRevision, MemoryStack stack, long txn, List<LmdbValue> cacheCandidates)
+			throws IOException {
 		ByteBuffer bb = ByteBuffer.wrap(data);
-		// skip type marker
 		bb.get();
-		// Get datatype
 		long datatypeID = Varint.readUnsignedHeap(bb);
 		IRI datatype = null;
-		// literal without a datatype
 		if (datatypeID > 0) {
-			datatype = (IRI) getValue(datatypeID);
+			LmdbValue datatypeValue = getValueInTransaction(datatypeID, targetRevision, stack, txn, cacheCandidates);
+			if (datatypeValue != null) {
+				datatype = (IRI) datatypeValue;
+			}
 		}
 
 		int directionAndLangLength = bb.get() & 0xFF;
@@ -2242,7 +2513,6 @@ class ValueStore extends AbstractValueFactory {
 			langLength = directionAndLangLength & 0x3F;
 		}
 
-		// Get language tag
 		String lang = null;
 		if (langLength > 0) {
 			lang = new String(data, bb.position(), langLength, StandardCharsets.UTF_8);
@@ -2254,34 +2524,104 @@ class ValueStore extends AbstractValueFactory {
 		default -> Literal.BaseDirection.NONE;
 		};
 
-		// Get label
 		String label = new String(data, bb.position() + langLength, data.length - bb.position() - langLength,
 				StandardCharsets.UTF_8);
 
 		if (value == null) {
 			if (lang != null) {
-				return new LmdbLiteral(revision, label, lang, baseDirection, id);
+				return new LmdbLiteral(targetRevision, label, lang, baseDirection, id);
 			} else if (datatype != null) {
-				return new LmdbLiteral(revision, label, datatype, id);
+				return new LmdbLiteral(targetRevision, label, datatype, id);
 			} else {
-				return new LmdbLiteral(revision, label, org.eclipse.rdf4j.model.vocabulary.XSD.STRING, id);
+				return new LmdbLiteral(targetRevision, label, org.eclipse.rdf4j.model.vocabulary.XSD.STRING, id);
 			}
+		}
+
+		value.setLabel(label);
+		if (lang != null) {
+			value.setLanguage(lang);
+			value.setBaseDirection(baseDirection);
+			if (baseDirection != Literal.BaseDirection.NONE) {
+				value.setDatatype(CoreDatatype.RDF.DIRLANGSTRING);
+			} else {
+				value.setDatatype(CoreDatatype.RDF.LANGSTRING);
+			}
+		} else if (datatype != null) {
+			value.setDatatype(datatype);
 		} else {
-			value.setLabel(label);
-			if (lang != null) {
-				value.setLanguage(lang);
-				value.setBaseDirection(baseDirection);
-				if (baseDirection != Literal.BaseDirection.NONE) {
-					value.setDatatype(CoreDatatype.RDF.DIRLANGSTRING);
-				} else {
-					value.setDatatype(CoreDatatype.RDF.LANGSTRING);
+			value.setDatatype(CoreDatatype.XSD.STRING);
+		}
+		return value;
+	}
+
+	private LmdbValue getValueInTransaction(long id, ValueStoreRevision targetRevision, MemoryStack stack, long txn,
+			List<LmdbValue> cacheCandidates) throws IOException {
+		if (ValueIds.isInlined(id)) {
+			Literal unpacked = Values.unpackLiteral(id, this);
+			return new LmdbLiteral(targetRevision, unpacked.getLabel(), unpacked.getDatatype(), id);
+		}
+
+		LmdbValue cached = cachedValue(id);
+		if (cached != null && targetRevision.equals(cached.getValueStoreRevision())) {
+			return cached;
+		}
+
+		byte[] data = getData(id, stack, txn);
+		if (data == null) {
+			return null;
+		}
+		LmdbValue result = data2valueInTransaction(id, data, null, targetRevision, stack, txn, cacheCandidates);
+		if (cacheCandidates != null) {
+			cacheCandidates.add(result);
+		}
+		return result;
+	}
+
+	private LmdbTripleTerm id2tripleTermInTransaction(long id, LmdbTripleTerm value,
+			ValueStoreRevision parentRevision, ValueStoreRevision childRevision, boolean useCache, MemoryStack stack,
+			long txn) throws IOException {
+		final var index = tripleTermCspoIndex;
+		PointerBuffer pp = stack.mallocPointer(1);
+		long cursor = 0;
+		try {
+			E(mdb_cursor_open(txn, index.getDB(true), pp));
+			cursor = pp.get(0);
+
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.getMinKey(keyBuf, -1, -1, -1, id);
+			keyBuf.flip();
+			keyVal.mv_data(keyBuf);
+
+			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+			if (rc != MDB_SUCCESS) {
+				if (rc != MDB_NOTFOUND) {
+					E(rc);
 				}
-			} else if (datatype != null) {
-				value.setDatatype(datatype);
-			} else {
-				value.setDatatype(CoreDatatype.XSD.STRING);
+				return null;
 			}
+			if (!index.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
+				return null;
+			}
+
+			long[] quad = new long[4];
+			index.keyToQuad(keyVal.mv_data(), quad);
+			boolean scopedChildren = ValueStoreMaterializer.isMaterializedRevision(childRevision);
+			Resource subj = (Resource) getLazyValueForRevision(quad[0], childRevision, useCache, scopedChildren);
+			IRI pred = (IRI) getLazyValueForRevision(quad[1], childRevision, useCache, scopedChildren);
+			Value obj = getLazyValueForRevision(quad[2], childRevision, useCache, scopedChildren);
+			LmdbTripleTerm decoded = new LmdbTripleTerm(parentRevision, subj, pred, obj, id);
+			if (value == null) {
+				return decoded;
+			}
+			value.setFromInitializedValue(decoded);
+			value.setInternalID(id, parentRevision);
 			return value;
+		} finally {
+			if (cursor != 0) {
+				mdb_cursor_close(cursor);
+			}
 		}
 	}
 
@@ -2313,25 +2653,51 @@ class ValueStore extends AbstractValueFactory {
 	 *-------------------------------------*/
 
 	private String getNamespace(long id) throws IOException {
-		Object[] cached = (Object[]) PREVIOUS_NAMESPACE_HANDLE.getAcquire(this);
-		if (cached != null && (long) cached[0] == id) {
-			return (String) cached[1];
+		Object[] previous = (Object[]) PREVIOUS_NAMESPACE_HANDLE.getAcquire(this);
+		if (previous != null && (long) previous[0] == id) {
+			return (String) previous[1];
 		}
 
-		Long cacheID = id;
-		String namespace = namespaceCache.get(cacheID);
-
+		String namespace = namespaceCache.get(id);
 		if (namespace == null) {
 			byte[] namespaceData = getData(id);
 			if (namespaceData != null) {
 				namespace = data2namespace(namespaceData);
-				namespaceCache.put(cacheID, namespace);
+				namespaceCache.put(id, namespace);
 			}
 		}
-
-		PREVIOUS_NAMESPACE_HANDLE.setRelease(this, new Object[] { cacheID, namespace });
-
+		rememberNamespace(id, namespace);
 		return namespace;
+	}
+
+	private String getNamespace(long id, MemoryStack stack, long txn) throws IOException {
+		Object[] previous = (Object[]) PREVIOUS_NAMESPACE_HANDLE.getAcquire(this);
+		if (previous != null && (long) previous[0] == id) {
+			return (String) previous[1];
+		}
+
+		String namespace = namespaceCache.get(id);
+		if (namespace == null) {
+			byte[] namespaceData = getData(id, stack, txn);
+			if (namespaceData != null) {
+				namespace = data2namespace(namespaceData);
+				namespaceCache.put(id, namespace);
+			}
+		}
+		rememberNamespace(id, namespace);
+		return namespace;
+	}
+
+	private String cachedNamespace(long id) {
+		Object[] cached = (Object[]) PREVIOUS_NAMESPACE_HANDLE.getAcquire(this);
+		if (cached != null && (long) cached[0] == id) {
+			return (String) cached[1];
+		}
+		return namespaceCache.get(id);
+	}
+
+	private void rememberNamespace(long id, String namespace) {
+		PREVIOUS_NAMESPACE_HANDLE.setRelease(this, new Object[] { id, namespace });
 	}
 
 	@Override

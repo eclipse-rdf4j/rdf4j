@@ -739,7 +739,8 @@ class LmdbSailStore implements SailStore {
 	 * @return A StatementIterator that can be used to iterate over the statements that match the specified pattern.
 	 */
 	CloseableIteration<? extends Statement> createStatementIterator(
-			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
+			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, ValueStoreMaterializer materializer,
+			Resource... contexts) throws IOException {
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return IterationConstants.EMPTY_STATEMENT_ITERATION;
@@ -791,7 +792,7 @@ class LmdbSailStore implements SailStore {
 		for (long contextID : contextIDList) {
 			try {
 				RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
-				perContextIterList.add(new LmdbStatementIterator(records, valueStore));
+				perContextIterList.add(new LmdbStatementIterator(records, valueStore, materializer));
 			} catch (IOException e) {
 				System.out.println("Txn:\n" + Objects.toString(txn));
 				throw e;
@@ -803,6 +804,11 @@ class LmdbSailStore implements SailStore {
 		} else {
 			return new UnionIteration<>(perContextIterList);
 		}
+	}
+
+	CloseableIteration<? extends Statement> createStatementIterator(
+			Txn txn, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
+		return createStatementIterator(txn, subj, pred, obj, explicit, null, contexts);
 	}
 
 	long countStatementIterator(
@@ -875,6 +881,11 @@ class LmdbSailStore implements SailStore {
 	 */
 	CloseableIteration<? extends TripleTerm> createTripleTermIterator(Resource subj, IRI pred, Value obj)
 			throws IOException {
+		return createTripleTermIterator(subj, pred, obj, null);
+	}
+
+	CloseableIteration<? extends TripleTerm> createTripleTermIterator(Resource subj, IRI pred, Value obj,
+			ValueStoreMaterializer materializer) throws IOException {
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getId(subj);
@@ -899,7 +910,7 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		return new LmdbTripleTermIterator(valueStore.getTripleTerms(subjID, predID, objID), valueStore);
+		return new LmdbTripleTermIterator(valueStore.getTripleTerms(subjID, predID, objID), valueStore, materializer);
 	}
 
 	private final class LmdbSailSource extends BackingSailSource {
@@ -1637,23 +1648,36 @@ class LmdbSailStore implements SailStore {
 
 		private final boolean explicit;
 		private final Txn txn;
+		private final ValueStoreMaterializer materializer;
 		private volatile boolean closed = false;
 
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this.explicit = explicit;
+			ValueStoreMaterializer materializer = null;
+			Txn txn = null;
 			try {
-				this.txn = trackActiveTxn ? tripleStore.getTxnManager().createReadTxn()
+				txn = trackActiveTxn ? tripleStore.getTxnManager().createReadTxn()
 						: tripleStore.getTxnManager().createReadTxnUntracked();
-			} catch (IOException e) {
+				materializer = new ValueStoreMaterializer(valueStore);
+			} catch (IOException | RuntimeException e) {
+				if (txn != null) {
+					txn.close();
+				}
 				throw new SailException(e);
 			}
+			this.txn = txn;
+			this.materializer = materializer;
 		}
 
 		@Override
-		public void close() {
+		public synchronized void close() {
 			if (!closed) {
 				closed = true;
-				txn.close();
+				try {
+					materializer.close();
+				} finally {
+					txn.close();
+				}
 			}
 		}
 
@@ -1670,7 +1694,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
 			try {
-				return new LmdbContextIterator(tripleStore.getContexts(txn), valueStore);
+				return new LmdbContextIterator(tripleStore.getContexts(txn), valueStore, materializer);
 			} catch (IOException e) {
 				throw new SailException("Unable to get contexts", e);
 			}
@@ -1680,13 +1704,13 @@ class LmdbSailStore implements SailStore {
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
 			try {
-				return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
+				return createStatementIterator(txn, subj, pred, obj, explicit, materializer, contexts);
 			} catch (IOException e) {
 				try {
 					logger.warn("Failed to get statements, retrying", e);
 					// try once more before giving up
 					Thread.yield();
-					return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
+					return createStatementIterator(txn, subj, pred, obj, explicit, materializer, contexts);
 				} catch (IOException e2) {
 					throw new SailException("Unable to get statements", e);
 				}
@@ -1724,7 +1748,7 @@ class LmdbSailStore implements SailStore {
 		public CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred, Value obj)
 				throws SailException {
 			try {
-				return createTripleTermIterator(subj, pred, obj);
+				return createTripleTermIterator(subj, pred, obj, materializer);
 			} catch (IOException e) {
 				throw new SailException("Unable to get triple terms", e);
 			}
