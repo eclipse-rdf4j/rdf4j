@@ -40,13 +40,15 @@ This does not introduce another mutually exclusive query strategy. Existing nati
 
 ## Executed validation
 
-`tools/generated-keys/run.py` performs an explicit offline compilation and regression run with JDK 26. The harness compiles complete production key, resolver, context, plan, primitive kernel-table, bounded count-store, grouping-sink, ordering-sink, spill/sort and memory-manager files. It also extracts complete production CopyBinding and tuple/DISTINCT classes and the exact SyntheticValueSource ingress/scope/guard methods. Missing RDF model, plan-shell, query-source and other external APIs are explicit test doubles. `build-manifest.json` identifies every source, origin and hash. The harness compiled 51 Java files in total.
+`tools/generated-keys/run.py` performs an explicit offline compilation and regression run with JDK 25 or newer. The harness accepts both the repository source layout (`core/sail/lmdb/src/main/java/`) and the legacy standalone `java/` layout through one resolver. It compiles complete production key, resolver, context, plan, primitive kernel-table, bounded count-store, grouping-sink, ordering-sink, spill/sort and memory-manager files. It also extracts complete production CopyBinding and tuple/DISTINCT classes and the exact SyntheticValueSource ingress/scope/guard methods. Missing RDF model, plan-shell, query-source and other external APIs are explicit test doubles, including the context-aware evaluator overload used by the copied production code. `KernelPeerCancelledException` is copied from production when present and falls back to a labeled double for older source bundles. `build-manifest.json` identifies every source, origin and hash. The harness currently compiles 57 Java files in total.
 
-The final regression run passed **43,337 counted checks**. Tests include generated results that already exist in the fake dictionary and ones absent from it; forbidden membership and value-read calls; adversarial equal hashes; exact duplicate reuse; language case and output spelling; datatype/lexical distinctions; base direction; nested triples; unbound/error outputs; composite keys; forced all-bucket collisions; table growth; scalar/batch DISTINCT; real primitive IR group maps and sets; real bounded spill/sort/merge counts and COUNT DISTINCT; representative preservation; concurrent publication; page and 2^24 directory boundaries; foreign-key import; close/new evaluation; ordinary store-first/probe behavior. The real KernelGroupSink test makes the ordinary key proof and normalizer throw, verifying use of keySemantics at that boundary.
+**Historical offline snapshot:** the original regression run passed **43,337 counted checks**. Tests include generated results that already exist in the fake dictionary and ones absent from it; forbidden membership and value-read calls; adversarial equal hashes; exact duplicate reuse; language case and output spelling; datatype/lexical distinctions; base direction; nested triples; unbound/error outputs; composite keys; forced all-bucket collisions; table growth; scalar/batch DISTINCT; real primitive IR group maps and sets; real bounded spill/sort/merge counts and COUNT DISTINCT; representative preservation; concurrent publication; page and 2^24 directory boundaries; foreign-key import; close/new evaluation; ordinary store-first/probe behavior. The real KernelGroupSink test makes the ordinary key proof and normalizer throw, verifying use of keySemantics at that boundary.
 
-All 20 changed/new production Java files plus the full-repository test file were syntax-parsed as complete compilation units (21 files). Syntax parsing is not full typechecking.
+**Historical offline snapshot:** all 20 changed/new production Java files plus the full-repository test file were syntax-parsed as complete compilation units (21 files). Syntax parsing is not full typechecking.
 
-**Not executed:** a full RDF4J Maven build, actual query compilation through the planner, Janino-emitted source compilation, full-engine differential queries, the user's ThemeQueryBenchmark, or AArch64 profiling. Dependencies and a complete buildable repository are not available here. The included `integration/GeneratedValueKeysIntegrationTest.java` is intended for the normal LMDB module test tree. It exercises real RDF4J Values with forbidden dictionary access and end-to-end generic/store-first/native/interpreted/compiled-mode comparisons, including mixed keys, generated joins, subquery imports, errors and directional literals. It has been syntax-checked, not compiled or run. Do not present the offline doubles as a substitute for those tests.
+The full-repository `GeneratedValueKeysIntegrationTest` has since been compiled and passed in the normal LMDB module test tree: 11 tests, 0 failures, 0 errors and 0 skips. It uses the actual RDF4J model, LMDB store and native query path. Its differential matrix exercises `GENERIC`, `STORE_FIRST`, `LOCAL_NATIVE`, `LOCAL_INTERPRETED` and `LOCAL_COMPILED`; every non-generic mode is run twice against the generic bag result. The focused activation test also observes `NativeGeneratedKeyPlan.ACTIVATIONS` increasing for an eligible local-native query. The six-class native evidence report is retained at `logs/review-20260917/r5-native-all-six-green/REPORT.md`.
+
+**Still not executed:** the full RDF4J repository test suite, the user's ThemeQueryBenchmark, the original application query/dataset workload, or AArch64 profiling. The offline harness continues to use explicit test doubles and remains separate from the actual repository integration selector. The current 11-test result compares the configured `LOCAL_COMPILED` mode and the other listed modes against the generic result, and proves one eligible `LOCAL_NATIVE` activation; it does not prove Janino or native activation for every configured mode or query shape.
 
 ## Key-path micro-experiment
 
@@ -90,25 +92,24 @@ Mixed sources, semantic comparisons, joins and raw storage probes continue to ne
 
 ## Reproduction and deployment
 
-Apply `generated-value-keys.patch` to the root containing `java/` in the latest C2 source. The production-only patch is an alternative that omits tools/docs; do not apply both. The cumulative patch, when supplied, is against the original judges' archive, not the latest C2 tree.
+Apply `generated-value-keys.patch` to the source snapshot it names. The production-only patch is an alternative that omits tools/docs; do not apply both. The cumulative patch, when supplied, is against the original judges' archive, not the latest C2 tree. The runner accepts either the repository source layout or a legacy root containing `java/`.
 
 ```bash
 git apply --check generated-value-keys.patch
 git apply generated-value-keys.patch
-export JAVA_HOME=/path/to/jdk-26
+export JAVA_HOME=/path/to/jdk-25-or-newer
 python3 tools/generated-keys/run.py --out /tmp/generated-keys --bench --forks 5
 ```
 
 The runner refuses to replace an existing unmarked build directory. It writes an explicitly disposable build under the chosen output path.
 
-To execute full integration tests, copy the integration Java file to `core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/` in the complete project and run its normal test build. For example, with the branch's required JDK and installed dependencies:
+The full integration test is part of the normal LMDB module test source tree. Run it with the branch's required JDK and installed dependencies:
 
 ```bash
-mvn -pl core/sail/lmdb -am -Dtest=GeneratedValueKeysIntegrationTest \
-  -Dsurefire.failIfNoSpecifiedTests=false test
+python3 .codex/skills/mvnf/scripts/mvnf.py GeneratedValueKeysIntegrationTest
 ```
 
-The verification manifest records fresh patch application, byte comparison against the complete source ZIP, and rerunning the offline tests from that freshly patched tree. Full integration remains unverified until the preceding repository test runs.
+The verification manifest records fresh patch application, byte comparison against the complete source ZIP, and rerunning the offline tests from that freshly patched tree. The offline runner and the normal LMDB module test remain separate checks: the former uses explicit doubles, while the latter uses actual RDF4J dependencies.
 
 ## Primary references
 

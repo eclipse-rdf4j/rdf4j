@@ -46,7 +46,11 @@ final class AggregateSpec { final boolean distinct;final int slot;final int[] ro
 interface LmdbNativeCompiledInlineId {long id(RowState row); default boolean encounterOrderReplaySafe(){return true;} default long requiredMask(){return 0;}}
 final class LmdbNativeCompiledValue {interface Eval {LmdbNativeValueCodec.DecodedValue eval(RowState row);} final long requiredMask; final Eval evaluator;
  LmdbNativeCompiledValue(long mask,Eval e){requiredMask=mask;evaluator=e;} }
-interface NativeBindingSetValueEvaluator { NativeValueOutcome evaluate(BindingSet view); }
+/** Explicit test double for the production evaluator; the context-aware overload delegates to the legacy callback. */
+interface NativeBindingSetValueEvaluator {
+ NativeValueOutcome evaluate(BindingSet view);
+ default NativeValueOutcome evaluate(BindingSet view, NativeExecutionContext context){return evaluate(view);}
+}
 record NativeValueOutcome(Value value) {boolean isBound(){return value!=null;} }
 final class RowState {final NativeLmdbQuerySource source; final BindingSet view; final long[] slots;
  RowState(NativeLmdbQuerySource s, BindingSet b, int width){source=s;view=b;slots=new long[width];Arrays.fill(slots,-1);} }

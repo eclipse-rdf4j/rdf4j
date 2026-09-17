@@ -18,15 +18,10 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
-import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
-import static org.lwjgl.util.lmdb.LMDB.mdb_del;
-import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 
 import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -39,18 +34,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.function.IntConsumer;
 import java.util.stream.Collectors;
 
-import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.util.lmdb.MDBVal;
 
 /**
  * Low-level tests for {@link TripleStore}.
@@ -358,51 +349,90 @@ public class TripleStoreTest {
 
 	@Test
 	public void testAlignedWriteFallbackRemovesSecondaryInferredRowsForPromotions() throws Exception {
+		final long promotedSubject = 11L;
+		final long promotedPredicate = 22L;
+		final long promotedObject = 33L;
+		final long promotedContext = 44L;
+		final long inferredControlSubject = 12L;
+		final long inferredControlPredicate = 23L;
+		final long inferredControlObject = 34L;
+		final long inferredControlContext = 45L;
+		final int newRowCount = 32_768;
+
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc")
+				.setAutoGrow(true)
+				.setForceSync(true)
+				.setTripleDBSize(2L * 1024 * 1024);
 		File fallbackDir = new File(dataDir, "aligned-fallback-store");
-		fallbackDir.mkdirs();
-		try (TripleStore fallbackStore = new TripleStore(fallbackDir, new LmdbStoreConfig("spoc,ospc,psoc"), null)) {
-			long[] subj = { 11 };
-			long[] pred = { 22 };
-			long[] obj = { 33 };
-			long[] context = { 44 };
-
+		try (TripleStore fallbackStore = new TripleStore(fallbackDir, config, null)) {
 			fallbackStore.startTransaction();
-			fallbackStore.storeTriple(subj[0], pred[0], obj[0], context[0], false);
+			assertTrue(fallbackStore.storeTriple(promotedSubject, promotedPredicate, promotedObject, promotedContext,
+					false));
+			assertTrue(
+					fallbackStore.storeTriple(inferredControlSubject, inferredControlPredicate, inferredControlObject,
+							inferredControlContext, false));
 			fallbackStore.commit();
 
+			int alignedRowCount = newRowCount + 1;
+			long[] subjects = new long[alignedRowCount];
+			long[] predicates = new long[alignedRowCount];
+			long[] objects = new long[alignedRowCount];
+			long[] contexts = new long[alignedRowCount];
+			// The promoted row is first in SPOC order, so it is part of the effective prefix when aligned writes grow.
+			subjects[0] = promotedSubject;
+			predicates[0] = promotedPredicate;
+			objects[0] = promotedObject;
+			contexts[0] = promotedContext;
+			for (int i = 0; i < newRowCount; i++) {
+				subjects[i + 1] = 100_000L + i;
+				predicates[i + 1] = 55L;
+				objects[i + 1] = 200_000L;
+				contexts[i + 1] = 500L + i % 3;
+			}
+
 			fallbackStore.startTransaction();
-			TripleIndex mainIndex = getIndexes(fallbackStore).getFirst();
-			long writeTxn = getWriteTxn(fallbackStore);
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				MDBVal keyVal = MDBVal.malloc(stack);
-				MDBVal dataVal = MDBVal.calloc(stack);
-				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-				mainIndex.toKey(keyBuf, subj[0], pred[0], obj[0], context[0]);
-				keyBuf.flip();
-				keyVal.mv_data(keyBuf);
-				LmdbUtil.E(mdb_put(writeTxn, mainIndex.getDB(true), keyVal, dataVal, MDB_NOOVERWRITE));
-				assertEquals("Main inferred row should be removed before fallback replay", MDB_SUCCESS,
-						mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal));
-			}
-
-			Method fallBackFromAlignedWrite = TripleStore.class.getDeclaredMethod("fallBackFromAlignedWrite",
-					int[].class, int.class, long[].class, long[].class, long[].class, long[].class, boolean[].class,
-					int.class, int.class, boolean.class, LongIntHashMap.class, IntConsumer.class);
-			fallBackFromAlignedWrite.setAccessible(true);
-			fallBackFromAlignedWrite.invoke(fallbackStore, new int[] { 0 }, 1, subj, pred, obj, context,
-					new boolean[] { true }, 1, 1, true, new LongIntHashMap(), null);
+			long growthCountBefore = fallbackStore.getBulkMapGrowthCount();
+			fallbackStore.storeTriplesAligned(subjects, predicates, objects, contexts, alignedRowCount, true);
 			fallbackStore.commit();
+			assertTrue("aligned writes must grow the map and replay the remaining rows",
+					fallbackStore.getBulkMapGrowthCount() > growthCountBefore);
+			assertAlignedPromotionState(fallbackStore, newRowCount, promotedPredicate, promotedObject,
+					inferredControlPredicate, inferredControlObject);
+		}
 
-			try (Txn txn = fallbackStore.getTxnManager().createReadTxn()) {
-				assertEquals("PSOC inferred row should be removed after fallback replay", 0,
-						count(fallbackStore.getTriples(txn, -1, pred[0], -1, -1, false)));
-				assertEquals("OSPC inferred row should be removed after fallback replay", 0,
-						count(fallbackStore.getTriples(txn, -1, -1, obj[0], -1, false)));
-				assertEquals("PSOC explicit row should exist after fallback replay", 1,
-						count(fallbackStore.getTriples(txn, -1, pred[0], -1, -1, true)));
-				assertEquals("OSPC explicit row should exist after fallback replay", 1,
-						count(fallbackStore.getTriples(txn, -1, -1, obj[0], -1, true)));
-			}
+		try (TripleStore reopened = new TripleStore(fallbackDir, config, null)) {
+			assertAlignedPromotionState(reopened, newRowCount, promotedPredicate, promotedObject,
+					inferredControlPredicate, inferredControlObject);
+		}
+	}
+
+	private void assertAlignedPromotionState(TripleStore store, int newRowCount, long promotedPredicate,
+			long promotedObject, long inferredControlPredicate, long inferredControlObject) throws Exception {
+		try (Txn txn = store.getTxnManager().createReadTxn()) {
+			assertEquals("all new aligned rows and the promotion must be explicit", newRowCount + 1,
+					count(store.getTriples(txn, -1, -1, -1, -1, true)));
+			assertEquals("the unpromoted control row must remain the only inferred row", 1,
+					count(store.getTriples(txn, -1, -1, -1, -1, false)));
+			assertEquals("the promoted row must be present in PSOC", 1,
+					count(store.getTriples(txn, -1, promotedPredicate, -1, -1, true)));
+			assertEquals("the promoted row must have no inferred PSOC entry", 0,
+					count(store.getTriples(txn, -1, promotedPredicate, -1, -1, false)));
+			assertEquals("the promoted row must be present in OSPC", 1,
+					count(store.getTriples(txn, -1, -1, promotedObject, -1, true)));
+			assertEquals("the promoted row must have no inferred OSPC entry", 0,
+					count(store.getTriples(txn, -1, -1, promotedObject, -1, false)));
+			assertEquals("the control row must remain inferred in PSOC", 1,
+					count(store.getTriples(txn, -1, inferredControlPredicate, -1, -1, false)));
+			assertEquals("the control row must not become explicit in PSOC", 0,
+					count(store.getTriples(txn, -1, inferredControlPredicate, -1, -1, true)));
+			assertEquals("the control row must remain inferred in OSPC", 1,
+					count(store.getTriples(txn, -1, -1, inferredControlObject, -1, false)));
+			assertEquals("the control row must not become explicit in OSPC", 0,
+					count(store.getTriples(txn, -1, -1, inferredControlObject, -1, true)));
+			assertEquals("PSOC must contain every new row", newRowCount,
+					count(store.getTriples(txn, -1, 55L, -1, -1, true)));
+			assertEquals("OSPC must contain every new row", newRowCount,
+					count(store.getTriples(txn, -1, -1, 200_000L, -1, true)));
 		}
 	}
 
@@ -833,19 +863,6 @@ public class TripleStoreTest {
 		char leadingField = index.getFieldSeq()[0];
 		return Long.compare(fieldValue(leadingField, leftStatementIndex, subj, pred, obj, context),
 				fieldValue(leadingField, rightStatementIndex, subj, pred, obj, context));
-	}
-
-	@SuppressWarnings("unchecked")
-	private List<TripleIndex> getIndexes(TripleStore store) throws Exception {
-		Field indexesField = TripleStore.class.getDeclaredField("indexes");
-		indexesField.setAccessible(true);
-		return (List<TripleIndex>) indexesField.get(store);
-	}
-
-	private long getWriteTxn(TripleStore store) throws Exception {
-		Field writeTxnField = TripleStore.class.getDeclaredField("writeTxn");
-		writeTxnField.setAccessible(true);
-		return (long) writeTxnField.get(store);
 	}
 
 	private long fieldValue(char field, int statementIndex, long[] subj, long[] pred, long[] obj, long[] context) {

@@ -1042,6 +1042,8 @@ class QueryTemplateTest {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+		String compiledQueryScript = Files.readString(Path.of("src/main/webapp/scripts/query.js"),
+				StandardCharsets.UTF_8);
 		String styles = readQueryStyles();
 
 		assertThat(queryTemplate)
@@ -1052,8 +1054,10 @@ class QueryTemplateTest {
 				.contains("details.addEventListener('toggle'")
 				.contains("action: 'lmdb-properties'")
 				.contains("action: 'set-lmdb-property'")
+				.contains("headers: { 'X-RDF4J-Admin-Request': 'true' }")
 				.contains("checkbox.prop('disabled', true)")
 				.contains("checkbox.prop('checked', previous)");
+		assertThat(compiledQueryScript).contains("headers: { 'X-RDF4J-Admin-Request': 'true' }");
 		assertThat(styles)
 				.contains(".lmdb-runtime-property")
 				.contains("@media (max-width: 42rem)");

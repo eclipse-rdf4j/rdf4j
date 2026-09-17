@@ -13,13 +13,18 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
+import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
@@ -35,6 +40,7 @@ import jakarta.servlet.http.HttpServletResponse;
 class QueryServletLmdbRuntimePropertyPostTest {
 
 	private static final String MARK_JOIN = "rdf4j.lmdb.markJoin.enabled";
+	private static final String ADMIN_REQUEST_HEADER = Protocol.LMDB_ADMIN_REQUEST_HEADER;
 
 	@Test
 	void postAppliesTheRequestedRuntimeProperty() throws Exception {
@@ -45,6 +51,7 @@ class QueryServletLmdbRuntimePropertyPostTest {
 			when(request.getParameter("name")).thenReturn(MARK_JOIN);
 			when(request.getParameter("enabled")).thenReturn("true");
 			when(request.isUserInRole("rdf4j-admin")).thenReturn(true);
+			when(request.getHeader(ADMIN_REQUEST_HEADER)).thenReturn("true");
 
 			StringWriter body = new StringWriter();
 			HttpServletResponse response = mock(HttpServletResponse.class);
@@ -67,6 +74,35 @@ class QueryServletLmdbRuntimePropertyPostTest {
 	}
 
 	@Test
+	void administratorWithoutAdminRequestHeaderCannotMutateLocalRuntimeProperty() throws Exception {
+		String previous = System.getProperty(MARK_JOIN);
+		try {
+			System.setProperty(MARK_JOIN, "false");
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.getParameter("action")).thenReturn("set-lmdb-property");
+			when(request.getParameter("name")).thenReturn(MARK_JOIN);
+			when(request.getParameter("enabled")).thenReturn("true");
+			when(request.isUserInRole("rdf4j-admin")).thenReturn(true);
+
+			StringWriter body = new StringWriter();
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getWriter()).thenReturn(new PrintWriter(body));
+
+			new QueryServlet().doPost(request, response, "/transform");
+
+			verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+			assertThat(body.toString()).contains(ADMIN_REQUEST_HEADER);
+			assertThat(System.getProperty(MARK_JOIN)).isEqualTo("false");
+		} finally {
+			if (previous == null) {
+				System.clearProperty(MARK_JOIN);
+			} else {
+				System.setProperty(MARK_JOIN, previous);
+			}
+		}
+	}
+
+	@Test
 	void nonAdminCannotMutateLocalRuntimeProperty() throws Exception {
 		String previous = System.getProperty(MARK_JOIN);
 		try {
@@ -75,6 +111,7 @@ class QueryServletLmdbRuntimePropertyPostTest {
 			when(request.getParameter("action")).thenReturn("set-lmdb-property");
 			when(request.getParameter("name")).thenReturn(MARK_JOIN);
 			when(request.getParameter("enabled")).thenReturn("true");
+			when(request.getHeader(ADMIN_REQUEST_HEADER)).thenReturn("true");
 
 			StringWriter body = new StringWriter();
 			HttpServletResponse response = mock(HttpServletResponse.class);
@@ -92,6 +129,28 @@ class QueryServletLmdbRuntimePropertyPostTest {
 				System.setProperty(MARK_JOIN, previous);
 			}
 		}
+	}
+
+	@Test
+	void nonAdminCannotForwardRemoteRuntimePropertyMutation() throws Exception {
+		HTTPRepository repository = mock(HTTPRepository.class);
+		QueryServlet servlet = new QueryServlet();
+		servlet.setRepository(repository);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("action")).thenReturn("set-lmdb-property");
+		when(request.getParameter("name")).thenReturn(MARK_JOIN);
+		when(request.getParameter("enabled")).thenReturn("true");
+		when(request.getHeader(ADMIN_REQUEST_HEADER)).thenReturn("true");
+
+		StringWriter body = new StringWriter();
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+
+		servlet.doPost(request, response, "/transform");
+
+		verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+		verify(repository, never()).setLmdbRuntimeProperty(anyString(), anyBoolean());
+		assertThat(body.toString()).contains("rdf4j-admin");
 	}
 
 	@Test

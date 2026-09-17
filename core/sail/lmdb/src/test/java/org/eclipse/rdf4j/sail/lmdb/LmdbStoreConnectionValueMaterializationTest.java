@@ -99,19 +99,21 @@ class LmdbStoreConnectionValueMaterializationTest {
 		BindingSet fourthRow = row(id20);
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingSets(List.of(firstRow, secondRow, thirdRow, fourthRow));
+		List<BindingSet> assignmentRows = new ArrayList<>();
+		assignment.getBindingSets().forEach(assignmentRows::add);
 
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
 		store.init();
 		try (SailConnection connection = store.getConnection();
 				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
 						EmptyBindingSet.getInstance(), false)) {
-			assertSame(firstRow, result.next());
+			assertSame(assignmentRows.get(0), result.next());
 			assertEquals(List.of("first"), materialized);
 
-			assertSame(secondRow, result.next());
+			assertSame(assignmentRows.get(1), result.next());
 			assertEquals(List.of("first", "id10", "id20", "id30"), materialized);
-			assertSame(thirdRow, result.next());
-			assertSame(fourthRow, result.next());
+			assertSame(assignmentRows.get(2), result.next());
+			assertSame(assignmentRows.get(3), result.next());
 			assertFalse(result.hasNext());
 		} finally {
 			store.shutDown();

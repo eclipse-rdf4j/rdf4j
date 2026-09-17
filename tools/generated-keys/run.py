@@ -4,12 +4,38 @@ This is not a full RDF4J build. No LMDB/overlay I/O is simulated in timing resul
 All unchanged classes and extracted production bodies are hashed in the build manifest.
 """
 from __future__ import annotations
-import argparse, hashlib, json, os, shutil, subprocess
+import argparse, hashlib, json, os, re, shutil, subprocess
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[2]
 TOOL=Path(__file__).resolve().parent
 PKG='org/eclipse/rdf4j/sail/lmdb/evaluation/'
+MIN_JAVA_RELEASE=25
+PROJECT_SOURCE_ROOT=Path('core/sail/lmdb/src/main/java')
+LEGACY_SOURCE_ROOT=Path('java')
+REQUIRED_SOURCE=PKG+'NativeGeneratedKeyPlan.java'
+
+def resolve_source_root(root: Path) -> tuple[Path, str]:
+    root=Path(root).resolve()
+    candidates=(
+        (root/PROJECT_SOURCE_ROOT, 'repository source layout'),
+        (root/LEGACY_SOURCE_ROOT, 'legacy java source layout'),
+    )
+    for source_root,layout in candidates:
+        if (source_root/REQUIRED_SOURCE).is_file():
+            return source_root.resolve(),layout
+    expected=', '.join(str(root/relative/REQUIRED_SOURCE) for relative,_ in candidates)
+    raise FileNotFoundError(f'Could not find generated-key sources under {root}; expected {expected}')
+
+def java_major_version(java_home: Path) -> int:
+    javac=Path(java_home)/'bin/javac'
+    result=subprocess.run([str(javac),'-version'],text=True,capture_output=True)
+    if result.returncode:
+        raise RuntimeError(f'Could not query {javac}: {result.stdout}{result.stderr}')
+    match=re.search(r'(?<!\d)(\d+)(?:\.\d+)?',result.stdout+result.stderr)
+    if not match:
+        raise RuntimeError(f'Could not determine javac version from: {result.stdout}{result.stderr}')
+    return int(match.group(1))
 
 def balanced(text: str,start: int) -> int:
     depth=0; i=start; state='code'
@@ -35,8 +61,14 @@ def balanced(text: str,start: int) -> int:
 def body(text: str,decl: str) -> str:
     start=text.index(decl); return text[start:balanced(text,text.index('{',start))]
 
-def prepare(out: Path, root: Path = ROOT) -> Path:
-    ROOT = root
+def quote_argfile_argument(argument: str) -> str:
+    escaped=(argument.replace('\\','\\\\').replace('"','\\"')
+             .replace('\t','\\t').replace('\n','\\n').replace('\r','\\r').replace('\f','\\f'))
+    return f'"{escaped}"'
+
+def prepare(out: Path, root: Path = ROOT, resolved_source: tuple[Path, str] | None = None) -> Path:
+    root=Path(root).resolve()
+    source_root,source_layout=resolved_source or resolve_source_root(root)
     build=out/'build'
     marker=build/'.generated-keys-build'
     if build.exists():
@@ -57,25 +89,29 @@ def prepare(out: Path, root: Path = ROOT) -> Path:
       'NativeCountGroupStore.java','LmdbNativeSort.java','NativeSliceMath.java',
       'KernelGroupSink.java','KernelOrderSink.java',
       'codegen/KernelHooks.java','codegen/KernelRuntime.java','codegen/KernelCancellation.java',
-      'codegen/KernelCancelledException.java','codegen/KernelQueryCancelledException.java','codegen/KernelQuadCursor.java']
+      'codegen/KernelCancelledException.java','codegen/KernelQueryCancelledException.java','codegen/KernelPeerCancelledException.java',
+      'codegen/KernelQuadCursor.java']
     for name in files:
-        file=ROOT/'java'/PKG/name
-        if name == 'NativeRuntimeValueTable.java' and not file.is_file(): continue
-        write(PKG+name,file.read_text(),'complete production file: java/'+PKG+name)
-    file=ROOT/'java/org/eclipse/rdf4j/sail/lmdb/LmdbQueryMemoryManager.java'
-    write('org/eclipse/rdf4j/sail/lmdb/LmdbQueryMemoryManager.java',file.read_text(),'complete production file: '+str(file.relative_to(ROOT)))
-    text=(ROOT/'java'/PKG/'LmdbNativeRowState.java').read_text()
+        file=source_root/PKG/name
+        # Older source bundles predate the peer-cancellation signal; retain the explicitly labeled stub in that case.
+        if not file.is_file() and name in ('NativeRuntimeValueTable.java','codegen/KernelPeerCancelledException.java'):
+            continue
+        write(PKG+name,file.read_text(),f'complete production file ({source_layout}): {PKG}{name}')
+    file=source_root/'org/eclipse/rdf4j/sail/lmdb/LmdbQueryMemoryManager.java'
+    write('org/eclipse/rdf4j/sail/lmdb/LmdbQueryMemoryManager.java',file.read_text(),
+          f'complete production file ({source_layout}): org/eclipse/rdf4j/sail/lmdb/LmdbQueryMemoryManager.java')
+    text=(source_root/PKG/'LmdbNativeRowState.java').read_text()
     header='''package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.*;
 import org.eclipse.rdf4j.model.*; import org.eclipse.rdf4j.query.*;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator; import java.util.concurrent.atomic.AtomicLong;
 '''
     write(PKG+'CopyBinding.java',header+body(text,'final class CopyBinding'),'extracted complete production class from LmdbNativeRowState.java')
-    text=(ROOT/'java'/PKG/'LmdbNativePrimitiveTupleTable.java').read_text()
+    text=(source_root/PKG/'LmdbNativePrimitiveTupleTable.java').read_text()
     imports=text[:text.index('@Experimental\nfinal class PrimitiveTupleTable')]
     parts=[body(text,'final class '+n) for n in ('PrimitiveTupleTable','NativeDistinctTracker','NativeTermReferenceCache')]
     write(PKG+'PrimitiveTupleTable.java',imports+'\n\n'.join(parts),'three complete extracted production classes: LmdbNativePrimitiveTupleTable.java')
-    text=(ROOT/'java'/PKG/'LmdbSyntheticValueSource.java').read_text()
+    text=(source_root/PKG/'LmdbSyntheticValueSource.java').read_text()
     start=text.index('class SyntheticValueSource');end=text.index('\n\t@Override\n\tpublic long idOf(Value value)')
     part=text[start:end]
     for decl in ('public long idOf(Value value)','public Object valueLookupScope()', 'public Value lazyValue(long id)'):
@@ -83,7 +119,7 @@ import org.eclipse.rdf4j.sail.lmdb.RecordIterator; import java.util.concurrent.a
     part+='\n}\n'
     write(PKG+'SyntheticValueSource.java',header+part,'exact production fields/constructors/evaluation/ingress/key/probe-guard/value-resolution methods; unrelated I/O adapters omitted')
     for file in (TOOL/'src').rglob('*.java'):
-        if file.name == 'OptimizedGeneratedKeyRegression.java' and not (ROOT/'java'/PKG/'NativeRuntimeValueTable.java').is_file(): continue
+        if file.name == 'OptimizedGeneratedKeyRegression.java' and not (source_root/PKG/'NativeRuntimeValueTable.java').is_file(): continue
         write(str(file.relative_to(TOOL/'src')),file.read_text(),'test or benchmark')
     (out/'build-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     return build
@@ -91,7 +127,7 @@ import org.eclipse.rdf4j.sail.lmdb.RecordIterator; import java.util.concurrent.a
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--out',type=Path,required=True)
-    ap.add_argument('--java-home',type=Path,default=None,help='JDK 26; defaults to JAVA_HOME or javac on PATH')
+    ap.add_argument('--java-home',type=Path,default=None,help='JDK 25 or newer; defaults to JAVA_HOME or javac on PATH')
     ap.add_argument('--compile-only',action='store_true')
     ap.add_argument('--source',type=Path,default=ROOT,help='Production tree; the same local stubs/benchmarks are used for both sides')
     ap.add_argument('--bench',action='store_true')
@@ -101,15 +137,25 @@ def main():
     if a.java_home is None:
         home=os.environ.get('JAVA_HOME')
         compiler=shutil.which('javac')
-        if not home and not compiler: ap.error('Set JAVA_HOME or --java-home to JDK 26')
+        if not home and not compiler: ap.error('Set JAVA_HOME or --java-home to JDK 25 or newer')
         a.java_home=Path(home) if home else Path(compiler).resolve().parents[1]
     if not (a.java_home/'bin/javac').is_file(): ap.error('No javac under --java-home')
+    try:
+        java_version=java_major_version(a.java_home)
+    except RuntimeError as error:
+        ap.error(str(error))
+    if java_version < MIN_JAVA_RELEASE:
+        ap.error(f'JDK {MIN_JAVA_RELEASE} or newer is required; found javac {java_version}')
     a.out=a.out.resolve()
     if a.out == ROOT or a.out in ROOT.parents or a.out == TOOL: ap.error('Use a separate output directory')
-    a.out.mkdir(parents=True,exist_ok=True);build=prepare(a.out,a.source.resolve())
+    a.source=a.source.resolve()
+    resolved_source=resolve_source_root(a.source)
+    a.out.mkdir(parents=True,exist_ok=True);build=prepare(a.out,a.source,resolved_source)
     classes=build/'classes';classes.mkdir()
     sources=sorted((build/'src').rglob('*.java'))
-    args=build/'javac.args';args.write_text('\n'.join(['-d',str(classes),'--release','26']+[str(f) for f in sources]))
+    args=build/'javac.args'
+    arguments=['-d',str(classes),'--release',str(MIN_JAVA_RELEASE)]+[str(f) for f in sources]
+    args.write_text('\n'.join(quote_argfile_argument(argument) for argument in arguments))
     result=subprocess.run([str(a.java_home/'bin/javac'),'@'+str(args)],text=True,capture_output=True)
     (a.out/'compile.log').write_text(result.stdout+result.stderr)
     if result.returncode:print(result.stdout+result.stderr);raise SystemExit(result.returncode)
@@ -119,7 +165,7 @@ def main():
     result=subprocess.run(java+['org.eclipse.rdf4j.sail.lmdb.evaluation.GeneratedKeyRegression'],text=True,capture_output=True)
     (a.out/'regression.txt').write_text(result.stdout+result.stderr);print(result.stdout+result.stderr)
     if result.returncode:raise SystemExit(result.returncode)
-    if (a.source/'java'/PKG/'NativeRuntimeValueTable.java').is_file():
+    if (resolved_source[0]/PKG/'NativeRuntimeValueTable.java').is_file():
         result=subprocess.run(java+['org.eclipse.rdf4j.sail.lmdb.evaluation.OptimizedGeneratedKeyRegression'],text=True,capture_output=True)
         (a.out/'optimized-regression.txt').write_text(result.stdout+result.stderr);print(result.stdout+result.stderr)
         if result.returncode:raise SystemExit(result.returncode)

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.common.webapp.system;
 import java.io.IOException;
 import java.util.List;
 
+import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties.State;
 import org.springframework.web.servlet.ModelAndView;
@@ -24,6 +25,8 @@ import jakarta.servlet.http.HttpServletResponse;
 
 /** Process-wide, fixed-allowlist endpoint for live LMDB boolean features. */
 public class LmdbRuntimePropertiesController implements Controller {
+
+	private static final String ADMIN_ROLE = "rdf4j-admin";
 
 	@Override
 	public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -36,6 +39,12 @@ public class LmdbRuntimePropertiesController implements Controller {
 			write(response, HttpServletResponse.SC_OK, toJson(LmdbRuntimeProperties.list()));
 			break;
 		case "POST":
+			if (!isAuthorizedAdminRequest(request)) {
+				writeError(response, HttpServletResponse.SC_FORBIDDEN,
+						"The rdf4j-admin role and " + Protocol.LMDB_ADMIN_REQUEST_HEADER
+								+ ": true header are required to change LMDB runtime properties");
+				break;
+			}
 			handlePost(request, response);
 			break;
 		default:
@@ -43,6 +52,10 @@ public class LmdbRuntimePropertiesController implements Controller {
 			writeError(response, HttpServletResponse.SC_METHOD_NOT_ALLOWED, "Only GET and POST are supported");
 		}
 		return null;
+	}
+
+	private static boolean isAuthorizedAdminRequest(HttpServletRequest request) {
+		return request.isUserInRole(ADMIN_ROLE) && "true".equals(request.getHeader(Protocol.LMDB_ADMIN_REQUEST_HEADER));
 	}
 
 	private static void handlePost(HttpServletRequest request, HttpServletResponse response) throws IOException {

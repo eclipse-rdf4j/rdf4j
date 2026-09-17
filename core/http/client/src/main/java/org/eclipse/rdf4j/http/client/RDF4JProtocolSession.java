@@ -327,6 +327,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 				NameValuePair.of("enabled", Boolean.toString(enabled)));
 		HttpRequest method = applyAdditionalHeaders(
 				HttpRequests.post(Protocol.getLmdbRuntimePropertiesLocation(serverURL))
+						.header(Protocol.LMDB_ADMIN_REQUEST_HEADER, "true")
 						.header("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8")
 						.header(Protocol.ACCEPT_PARAM_NAME, "application/json")
 						.body(HttpRequestBody.ofFormData(params)))

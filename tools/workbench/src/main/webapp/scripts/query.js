@@ -2803,6 +2803,7 @@ var workbench;
                         url: 'query',
                         type: 'POST',
                         dataType: 'json',
+                        headers: { 'X-RDF4J-Admin-Request': 'true' },
                         data: { action: 'set-lmdb-property', name: property.name, enabled: String(requested) }
                     }).done(function (updated) {
                         property = updated;

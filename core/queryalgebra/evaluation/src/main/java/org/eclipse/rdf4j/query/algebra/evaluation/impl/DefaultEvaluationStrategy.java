@@ -1016,89 +1016,95 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryValueEvaluationStep prepared;
-		if (expr instanceof Var) {
-			prepared = prepare((Var) expr, context);
-		} else if (expr instanceof ValueConstant) {
-			prepared = prepare((ValueConstant) expr, context);
-		} else if (expr instanceof BNodeGenerator) {
-			prepared = prepare((BNodeGenerator) expr, context);
-		} else if (expr instanceof Bound) {
-			prepared = prepare((Bound) expr, context);
-//			return new QueryValueEvaluationStep.Minimal(this, expr);
-		} else if (expr instanceof Str) {
-			prepared = prepare((Str) expr, context);
-		} else if (expr instanceof Label) {
-			prepared = prepare((Label) expr, context);
-		} else if (expr instanceof Lang) {
-			prepared = prepare((Lang) expr, context);
-		} else if (expr instanceof LangDir) {
-			prepared = prepare((LangDir) expr, context);
-		} else if (expr instanceof StrLangDir) {
-			prepared = prepare((StrLangDir) expr, context);
-		} else if (expr instanceof HasLang) {
-			prepared = prepare((HasLang) expr, context);
-		} else if (expr instanceof HasLangDir) {
-			prepared = prepare((HasLangDir) expr, context);
-		} else if (expr instanceof LangMatches) {
-			prepared = prepare((LangMatches) expr, context);
-		} else if (expr instanceof Datatype) {
-			prepared = prepare((Datatype) expr, context);
-		} else if (expr instanceof Namespace) {
-			prepared = prepare((Namespace) expr, context);
-		} else if (expr instanceof LocalName) {
-			prepared = prepare((LocalName) expr, context);
-		} else if (expr instanceof IsResource) {
-			prepared = prepare((IsResource) expr, context);
-		} else if (expr instanceof IsTriple) {
-			prepared = prepare((IsTriple) expr, context);
-		} else if (expr instanceof IsURI) {
-			prepared = prepare((IsURI) expr, context);
-		} else if (expr instanceof IsBNode) {
-			prepared = prepare((IsBNode) expr, context);
-		} else if (expr instanceof IsLiteral) {
-			prepared = prepare((IsLiteral) expr, context);
-		} else if (expr instanceof IsNumeric) {
-			prepared = prepare((IsNumeric) expr, context);
-		} else if (expr instanceof IRIFunction) {
-			prepared = prepare((IRIFunction) expr, context);
-		} else if (expr instanceof Regex) {
-			prepared = prepare((Regex) expr, context);
-		} else if (expr instanceof Coalesce) {
-			prepared = prepare((Coalesce) expr, context);
-		} else if (expr instanceof FunctionCall) {
-			prepared = prepare((FunctionCall) expr, context);
-		} else if (expr instanceof And) {
-			prepared = prepare((And) expr, context);
-		} else if (expr instanceof Or) {
-			prepared = prepare((Or) expr, context);
-		} else if (expr instanceof Not) {
-			prepared = prepare((Not) expr, context);
-		} else if (expr instanceof SameTerm) {
-			prepared = prepare((SameTerm) expr, context);
-		} else if (expr instanceof Compare) {
-			prepared = prepare((Compare) expr, context);
-		} else if (expr instanceof MathExpr) {
-			prepared = prepare((MathExpr) expr, context);
-		} else if (expr instanceof In) {
-			prepared = prepare((In) expr, context);
-		} else if (expr instanceof CompareAny) {
-			prepared = prepare((CompareAny) expr, context);
-		} else if (expr instanceof CompareAll) {
-			prepared = prepare((CompareAll) expr, context);
-		} else if (expr instanceof Exists) {
-			prepared = prepare((Exists) expr, context);
-		} else if (expr instanceof If) {
-			prepared = prepare((If) expr, context);
-		} else if (expr instanceof ListMemberOperator) {
-			prepared = prepare((ListMemberOperator) expr, context);
-		} else if (expr instanceof ValueExprTripleRef) {
-			prepared = prepare((ValueExprTripleRef) expr, context);
-		} else if (expr instanceof TripleComponent) {
-			prepared = prepare((TripleComponent) expr, context);
-		} else if (expr == null) {
-			throw new IllegalArgumentException("expr must not be null");
-		} else {
-			throw new QueryEvaluationException("Unsupported value expr type: " + expr.getClass());
+		try {
+			if (expr instanceof Var) {
+				prepared = prepare((Var) expr, context);
+			} else if (expr instanceof ValueConstant) {
+				prepared = prepare((ValueConstant) expr, context);
+			} else if (expr instanceof BNodeGenerator) {
+				prepared = prepare((BNodeGenerator) expr, context);
+			} else if (expr instanceof Bound) {
+				prepared = prepare((Bound) expr, context);
+//				return new QueryValueEvaluationStep.Minimal(this, expr);
+			} else if (expr instanceof Str) {
+				prepared = prepare((Str) expr, context);
+			} else if (expr instanceof Label) {
+				prepared = prepare((Label) expr, context);
+			} else if (expr instanceof Lang) {
+				prepared = prepare((Lang) expr, context);
+			} else if (expr instanceof LangDir) {
+				prepared = prepare((LangDir) expr, context);
+			} else if (expr instanceof StrLangDir) {
+				prepared = prepare((StrLangDir) expr, context);
+			} else if (expr instanceof HasLang) {
+				prepared = prepare((HasLang) expr, context);
+			} else if (expr instanceof HasLangDir) {
+				prepared = prepare((HasLangDir) expr, context);
+			} else if (expr instanceof LangMatches) {
+				prepared = prepare((LangMatches) expr, context);
+			} else if (expr instanceof Datatype) {
+				prepared = prepare((Datatype) expr, context);
+			} else if (expr instanceof Namespace) {
+				prepared = prepare((Namespace) expr, context);
+			} else if (expr instanceof LocalName) {
+				prepared = prepare((LocalName) expr, context);
+			} else if (expr instanceof IsResource) {
+				prepared = prepare((IsResource) expr, context);
+			} else if (expr instanceof IsTriple) {
+				prepared = prepare((IsTriple) expr, context);
+			} else if (expr instanceof IsURI) {
+				prepared = prepare((IsURI) expr, context);
+			} else if (expr instanceof IsBNode) {
+				prepared = prepare((IsBNode) expr, context);
+			} else if (expr instanceof IsLiteral) {
+				prepared = prepare((IsLiteral) expr, context);
+			} else if (expr instanceof IsNumeric) {
+				prepared = prepare((IsNumeric) expr, context);
+			} else if (expr instanceof IRIFunction) {
+				prepared = prepare((IRIFunction) expr, context);
+			} else if (expr instanceof Regex) {
+				prepared = prepare((Regex) expr, context);
+			} else if (expr instanceof Coalesce) {
+				prepared = prepare((Coalesce) expr, context);
+			} else if (expr instanceof FunctionCall) {
+				prepared = prepare((FunctionCall) expr, context);
+			} else if (expr instanceof And) {
+				prepared = prepare((And) expr, context);
+			} else if (expr instanceof Or) {
+				prepared = prepare((Or) expr, context);
+			} else if (expr instanceof Not) {
+				prepared = prepare((Not) expr, context);
+			} else if (expr instanceof SameTerm) {
+				prepared = prepare((SameTerm) expr, context);
+			} else if (expr instanceof Compare) {
+				prepared = prepare((Compare) expr, context);
+			} else if (expr instanceof MathExpr) {
+				prepared = prepare((MathExpr) expr, context);
+			} else if (expr instanceof In) {
+				prepared = prepare((In) expr, context);
+			} else if (expr instanceof CompareAny) {
+				prepared = prepare((CompareAny) expr, context);
+			} else if (expr instanceof CompareAll) {
+				prepared = prepare((CompareAll) expr, context);
+			} else if (expr instanceof Exists) {
+				prepared = prepare((Exists) expr, context);
+			} else if (expr instanceof If) {
+				prepared = prepare((If) expr, context);
+			} else if (expr instanceof ListMemberOperator) {
+				prepared = prepare((ListMemberOperator) expr, context);
+			} else if (expr instanceof ValueExprTripleRef) {
+				prepared = prepare((ValueExprTripleRef) expr, context);
+			} else if (expr instanceof TripleComponent) {
+				prepared = prepare((TripleComponent) expr, context);
+			} else if (expr == null) {
+				throw new IllegalArgumentException("expr must not be null");
+			} else {
+				throw new QueryEvaluationException("Unsupported value expr type: " + expr.getClass());
+			}
+		} catch (ValueExprEvaluationException e) {
+			// Keep compile-time expression errors deferred for lazy/error-handling parents; Fail must remain
+			// nonconstant.
+			prepared = new QueryValueEvaluationStep.Fail(e.getMessage());
 		}
 		return wrapValueExprTelemetry(expr, prepared);
 	}

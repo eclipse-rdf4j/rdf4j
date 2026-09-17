@@ -99,6 +99,7 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		client.verify(request().withMethod("POST")
 				.withPath(path)
 				.withHeader(testHeader, testValue)
+				.withHeader(Protocol.LMDB_ADMIN_REQUEST_HEADER, "true")
 				.withHeader("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
 				.withBody("name=rdf4j.lmdb.nativeQueryEngine.enabled&enabled=false"));
 	}

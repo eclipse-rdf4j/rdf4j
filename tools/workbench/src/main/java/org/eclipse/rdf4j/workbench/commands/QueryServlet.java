@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
+import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
@@ -273,12 +274,13 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private void writeSetLmdbRuntimeProperty(WorkbenchRequest req, HttpServletResponse resp) throws IOException {
-		// TODO fix this or remove the runtime property update
-//		if (!req.isUserInRole(ADMIN_ROLE)) {
-//			writeRuntimePropertyJson(resp, HttpServletResponse.SC_FORBIDDEN,
-//					new RuntimePropertyError("The rdf4j-admin role is required to change LMDB runtime properties"));
-//			return;
-//		}
+		if (!req.isUserInRole(ADMIN_ROLE)
+				|| !"true".equals(req.getHeader(Protocol.LMDB_ADMIN_REQUEST_HEADER))) {
+			writeRuntimePropertyJson(resp, HttpServletResponse.SC_FORBIDDEN,
+					new RuntimePropertyError("The rdf4j-admin role and " + Protocol.LMDB_ADMIN_REQUEST_HEADER
+							+ ": true header are required to change LMDB runtime properties"));
+			return;
+		}
 		String enabled = req.getParameter("enabled");
 		if (!"true".equals(enabled) && !"false".equals(enabled)) {
 			writeRuntimePropertyJson(resp, HttpServletResponse.SC_BAD_REQUEST,

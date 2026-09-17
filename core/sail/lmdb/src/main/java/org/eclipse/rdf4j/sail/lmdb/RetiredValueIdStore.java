@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabaseWithTxn;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
@@ -142,6 +143,48 @@ final class RetiredValueIdStore {
 		syncBootEpoch(env);
 	}
 
+	/**
+	 * Opens the retirement databases and advances the boot epoch inside an already-owned ValueStore startup writer.
+	 * Keeping the bootstrap writes in that transaction lets the ValueStore validate the clean-close marker's native
+	 * transaction sequence without a gap in which another writer could be mistaken for startup work.
+	 */
+	void openWithTransaction(long env, long txn, boolean freshBulkLoad) throws IOException {
+		retiredByIdDbi = openDatabaseWithTxn(txn, "retired_ids", MDB_CREATE);
+		retiredSeqDbi = openDatabaseWithTxn(txn, "retired_ids_seq", MDB_CREATE);
+		metaDbi = openDatabaseWithTxn(txn, "gc_meta", MDB_CREATE);
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal keyVal = MDBVal.calloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBb = stack.malloc(1);
+			keyBb.put(BOOT_EPOCH_KEY);
+			keyVal.mv_data(keyBb.flip());
+
+			if (freshBulkLoad) {
+				bootEpoch = 1L;
+				pendingCount = 0L;
+			} else {
+				long lastEpoch = 0L;
+				int rc = mdb_get(txn, metaDbi, keyVal, dataVal);
+				if (rc == MDB_SUCCESS) {
+					lastEpoch = Varint.readUnsigned(dataVal.mv_data());
+				} else if (rc != org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND) {
+					E(rc);
+				}
+				bootEpoch = lastEpoch + 1L;
+			}
+
+			writeBootEpoch(stack, txn, keyVal, dataVal);
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txn, retiredSeqDbi, stat));
+			pendingCount = freshBulkLoad ? 0L : stat.ms_entries();
+		}
+	}
+
+	/** Forces the boot epoch durable after an outer startup transaction has committed. */
+	void syncAfterTransaction(long env) throws IOException {
+		syncBootEpoch(env);
+	}
+
 	private void openDatabases(long env) throws IOException {
 		retiredByIdDbi = openDatabase(env, "retired_ids", MDB_CREATE);
 		retiredSeqDbi = openDatabase(env, "retired_ids_seq", MDB_CREATE);
@@ -167,6 +210,14 @@ final class RetiredValueIdStore {
 
 	boolean hasPending() {
 		return pendingCount > 0;
+	}
+
+	int retiredByIdDbi() {
+		return retiredByIdDbi;
+	}
+
+	int retiredSequenceDbi() {
+		return retiredSeqDbi;
 	}
 
 	/**

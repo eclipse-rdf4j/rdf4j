@@ -19,7 +19,9 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 
 /**
  *
@@ -89,12 +91,36 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 		if (bindingSetSnapshot == null) {
 			List<BindingSet> rows = new ArrayList<>();
 			for (BindingSet bindingSet : bindingSets) {
-				rows.add(bindingSet);
+				rows.add(snapshotBindingSet(bindingSet));
 			}
 			bindingSetSnapshot = Collections.unmodifiableList(rows);
 			bindingSets = bindingSetSnapshot;
 		}
 		return bindingSetSnapshot;
+	}
+
+	private static BindingSet snapshotBindingSet(BindingSet bindingSet) {
+		List<String> names = new ArrayList<>(bindingSet.getBindingNames());
+		List<Value> values = new ArrayList<>(names.size());
+		for (String name : names) {
+			values.add(bindingSet.getValue(name));
+		}
+		return new SnapshotBindingSet(names, values);
+	}
+
+	private static final class SnapshotBindingSet extends ListBindingSet {
+
+		private final Set<String> immutableBindingNames;
+
+		private SnapshotBindingSet(List<String> names, List<? extends Value> values) {
+			super(Collections.unmodifiableList(names), Collections.unmodifiableList(values));
+			immutableBindingNames = Collections.unmodifiableSet(new LinkedHashSet<>(names));
+		}
+
+		@Override
+		public Set<String> getBindingNames() {
+			return immutableBindingNames;
+		}
 	}
 
 	private void invalidateBindingNameSets() {

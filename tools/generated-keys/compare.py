@@ -22,7 +22,7 @@ def main():
     ap.add_argument('--java-home',type=Path,default=Path(os.environ.get('JAVA_HOME','/invalid')))
     ap.add_argument('--forks',type=int,default=5);ap.add_argument('--bench',action='store_true');ap.add_argument('--memory',action='store_true');ap.add_argument('--c2',action='store_true')
     a=ap.parse_args();a.out=a.out.resolve();a.baseline=a.baseline.resolve()
-    if a.forks<1 or not (a.java_home/'bin/javac').is_file():ap.error('Positive forks and JDK 26 required')
+    if a.forks<1 or not (a.java_home/'bin/javac').is_file():ap.error('Positive forks and JDK 25 or newer required')
     a.out.mkdir(parents=True,exist_ok=True);java=a.java_home/'bin/java';built={}
     for variant,root in [('baseline',a.baseline),('current',ROOT)]:
         target=a.out/variant

@@ -4,9 +4,9 @@ Baseline: `generated-value-keys-source.zip`, not the original dictionary-resolvi
 
 ## Status
 
-The production component suites pass **975,697 counted checks** (43,337 existing plus 932,360 added). The final offline build compiles **55 Java files**: 25 complete production files, three extracted-production units, 21 explicitly labeled test doubles and six test/benchmark files. The extracted units contain complete classes/methods including the actual native DISTINCT tables, CopyBinding and the SyntheticValueSource ingress/boundary paths.
+The combined offline harness suites pass **975,697 counted checks** (the historical 43,337-check suite plus 932,360 additional checks). The final offline build compiles **57 Java files**: 27 complete production files, three extracted-production units, 21 explicitly labeled test doubles and six test/benchmark files. The extracted units contain complete classes/methods including the actual native DISTINCT tables, CopyBinding and the SyntheticValueSource ingress/boundary paths.
 
-**This is not a full RDF4J build or a production-release certification.** In particular the whole query planner, generated Janino source, model implementations, LMDB I/O and complete `LmdbNativeValueCodec` are not dependency-compiled by this offline harness. Its DecodedValue and SimpleValueFactory are explicit doubles. The changed plain-string admission method was checked against its actual fields and syntax parsed; the full-repository test exercises it using the actual model, but that JUnit test has not been compiled/executed here. No original end-to-end query benchmark or AArch64 benchmark has been run.
+**This is not a full RDF4J build or a production-release certification.** The offline harness uses explicit DecodedValue and SimpleValueFactory doubles and does not provide full planner, application-workload or AArch64 coverage. The repository's actual `GeneratedValueKeysIntegrationTest` has now compiled and passed separately in the LMDB module: 11 tests, 0 failures, 0 errors and 0 skips. It uses the actual model, LMDB store and native query path; its mode matrix covers `GENERIC`, `STORE_FIRST`, `LOCAL_NATIVE`, `LOCAL_INTERPRETED` and `LOCAL_COMPILED`, with each non-generic result repeated against the generic bag. `simpleGeneratedDistinctActivatesWithoutAnOverlay` also proves one eligible local-native activation through `NativeGeneratedKeyPlan.ACTIVATIONS`. The six-class retained report is `logs/review-20260917/r5-native-all-six-green/REPORT.md`. No original ThemeQueryBenchmark or AArch64 benchmark has been run.
 
 ## 1. Remove per-value duplication
 
@@ -128,7 +128,7 @@ It is a **shared admission account for runtime-value tables under one query owne
 
 Admission failure throws QueryEvaluationException instead of evicting live identities, dropping a grouping key, or pretending a digest is identity. Limits for pathological hash work and excessive triple nesting (256 levels) likewise fail explicitly. No dictionary fallback is introduced to work around these limits.
 
-**Generated payload spilling is still not implemented.** Spilling the primitive group table does not make this interner unbounded/disk-backed. High-cardinality long-string workloads may require a larger runtime-values budget or a future payload-spill implementation. This is an outstanding production-scale capability, not something silently hidden by the memory cap. An end-to-end JUnit test is supplied to verify that resource refusal propagates as a failed query rather than an unbound BIND; it is not executed by the offline harness.
+**Generated payload spilling is still not implemented.** Spilling the primitive group table does not make this interner unbounded/disk-backed. High-cardinality long-string workloads may require a larger runtime-values budget or a future payload-spill implementation. This is an outstanding production-scale capability, not something silently hidden by the memory cap. The repository integration selector includes a runtime-admission test that verifies resource refusal propagates as a failed query rather than an unbound BIND; the offline harness does not execute that repository test because it uses explicit doubles.
 
 `rdf4j.lmdb.generatedKeys.enabled` retains its previous meaning and defaults to true. Setting it false disables generated-only admission, but does not revert the shared runtime-table implementation for ordinary runtime IDs. Compare the baseline source tree to isolate this implementation change. No extra overlay capacity or reverseSlots setting is needed.
 
@@ -149,16 +149,16 @@ Coverage includes 180,000 seeded reference-map operations, exact and semantic sp
 Run from the updated source root:
 
 ```bash
-export JAVA_HOME=/path/to/jdk-26
+export JAVA_HOME=/path/to/jdk-25-or-newer
 python3 tools/generated-keys/run.py --out /tmp/generated-keys-tests
 python3 tools/generated-keys/compare.py   --baseline /path/to/extracted/generated-value-keys-source   --out /tmp/generated-keys-comparison --forks 5 --bench --memory --c2
 ```
 
-The runner deletes only its marked disposable build directory. Do not install any `stubs/` class into the application. Full-repository JUnit source is under `tools/generated-keys/integration/`; copy it to the matching LMDB test package and run the branch's normal build. It adds actual-model compact-string tests, conversion-shape checks and budget-failure propagation to the existing generic/native/interpreted/compiled differential coverage.
+The runner deletes only its marked disposable build directory and requires JDK 25 or newer. It resolves either the repository source layout (`core/sail/lmdb/src/main/java/`) or the legacy standalone `java/` layout. Do not install any `stubs/` class into the application. The full-repository JUnit source is wired into the LMDB module test tree and adds actual-model compact-string tests, conversion-shape checks and budget-failure propagation to the existing generic/native/interpreted/compiled differential coverage.
 
-Production changes are restricted to six files: NativeRuntimeValueTable (new), NativeExecutionContext, NativeGeneratedKeyAuthority, KernelRuntime, LmdbNativeValueCodec and LmdbSyntheticValueSource. No producer-proof broadening or new isolated query strategy is included.
+**Historical optimization snapshot:** production changes were restricted to six files: NativeRuntimeValueTable (new), NativeExecutionContext, NativeGeneratedKeyAuthority, KernelRuntime, LmdbNativeValueCodec and LmdbSyntheticValueSource. No producer-proof broadening or new isolated query strategy was included in that snapshot.
 
-Before production adoption, the full branch build, actual model/JMH workload, generated Janino execution, original query/dataset and target architecture still need validation. Multiwriter tests do not prove universal concurrency safety, and per-query admission does not protect against all server-wide concurrent memory demand. The measured improvements are established for the stated components and synthetic workloads only.
+Before production adoption, the full repository test suite, the original application query/dataset workload, the user's ThemeQueryBenchmark and the target architecture still need validation. The actual integration selector compares the configured `LOCAL_COMPILED` mode and the other listed modes against the generic result, while one eligible `LOCAL_NATIVE` query proves native activation through `NativeGeneratedKeyPlan.ACTIVATIONS`; this does not prove Janino or native activation for every configured mode or query shape. The offline measurements remain synthetic component evidence. Multiwriter tests do not prove universal concurrency safety, and per-query admission does not protect against all server-wide concurrent memory demand. The measured improvements are established for the stated components and synthetic workloads only.
 
 ## Primary references
 

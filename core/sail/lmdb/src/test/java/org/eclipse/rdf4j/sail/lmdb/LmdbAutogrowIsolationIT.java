@@ -13,7 +13,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.lwjgl.system.MemoryStack.stackPush;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_stat;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_env;
 
+import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
@@ -47,12 +53,16 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBEnvInfo;
+import org.lwjgl.util.lmdb.MDBStat;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Level;
@@ -61,8 +71,8 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 
 /**
- * Exercises actual LMDB map growth while repository readers keep transactions and partially consumed iterators open.
- * Read-committed readers renew to committed data, while pinned readers retain their initial view.
+ * Exercises reservation-driven LMDB map growth while repository readers keep transactions and partially consumed
+ * iterators open. Read-committed readers renew to committed data, while pinned readers retain their initial view.
  */
 @ResourceLock("lmdb-resize-loggers")
 class LmdbAutogrowIsolationIT {
@@ -110,6 +120,7 @@ class LmdbAutogrowIsolationIT {
 						assertThat(openResult.hasNext()).as("reader must have rows before growth").isTrue();
 						Set<Statement> seen = new HashSet<>();
 						assertKnownAndUnique(allowedStatements, seen, openResult.next());
+						reserveTripleAndValueMapsForRealGrowth(store.getBackingStore());
 						for (int round = 0; round < LIVE_TRIPLE_GROWTH_ROUNDS; round++) {
 							writer.begin(IsolationLevels.READ_COMMITTED);
 							addRows(writer, "read-committed-subject:", "read-committed-value:",
@@ -118,10 +129,10 @@ class LmdbAutogrowIsolationIT {
 						}
 
 						assertThat(resizeLogs.tripleResizeMessages())
-								.as("triple map must resize before the open reader is drained")
+								.as("triple map must record reservation-driven growth before the open reader is drained")
 								.isNotEmpty();
 						assertThat(resizeLogs.valueResizeMessages())
-								.as("value map must resize before the open reader is drained")
+								.as("value map must record reservation-driven growth before the open reader is drained")
 								.isNotEmpty();
 						while (openResult.hasNext()) {
 							assertKnownAndUnique(allowedStatements, seen, openResult.next());
@@ -145,12 +156,14 @@ class LmdbAutogrowIsolationIT {
 					}
 					reader.commit();
 					assertThat(resizeLogs.tripleResizeMessages())
-							.as("triple map must resize while reader is open; seed=%s live=%s seedGrowth=%s liveGrowth=%s",
+							.as("triple map must retain reservation-driven growth while reader is open; "
+									+ "seed=%s live=%s seedGrowth=%s liveGrowth=%s",
 									seedTripleMessages, resizeLogs.tripleMessages(), tripleGrowthAfterSeed,
 									store.getBackingStore().getTripleStore().getBulkMapGrowthCount())
 							.isNotEmpty();
 					assertThat(resizeLogs.valueResizeMessages())
-							.as("value map must resize while reader is open; seed=%s live=%s", seedValueResizeMessages,
+							.as("value map must retain reservation-driven growth while reader is open; seed=%s live=%s",
+									seedValueResizeMessages,
 									resizeLogs.valueResizeMessages())
 							.isNotEmpty();
 				}
@@ -249,6 +262,7 @@ class LmdbAutogrowIsolationIT {
 					SailRepositoryConnection writer = repository.getConnection()) {
 				assertThat(statements.hasNext()).as("direct pinned dataset must have rows before growth").isTrue();
 				statements.next();
+				reserveTripleAndValueMapsForRealGrowth(store.getBackingStore());
 				for (int round = 0; round < LIVE_TRIPLE_GROWTH_ROUNDS; round++) {
 					writer.begin(IsolationLevels.READ_COMMITTED);
 					addRows(writer, "direct-pinned-subject:", "direct-pinned-value:", round * ROWS_PER_COMMIT,
@@ -285,6 +299,7 @@ class LmdbAutogrowIsolationIT {
 					assertThat(openResult.hasNext()).as(readerIsolation + " reader must have rows before growth")
 							.isTrue();
 					openResult.next();
+					reserveTripleAndValueMapsForRealGrowth(store.getBackingStore());
 					for (int round = 0; round < LIVE_TRIPLE_GROWTH_ROUNDS; round++) {
 						writer.begin(IsolationLevels.READ_COMMITTED);
 						addRows(writer, subjectPrefix, valuePrefix, round * ROWS_PER_COMMIT, ROWS_PER_COMMIT);
@@ -292,10 +307,12 @@ class LmdbAutogrowIsolationIT {
 					}
 
 					assertThat(resizeLogs.tripleResizeMessages())
-							.as("triple map must resize while " + readerIsolation + " reader remains open")
+							.as("triple map must record reservation-driven growth while " + readerIsolation
+									+ " reader remains open")
 							.isNotEmpty();
 					assertThat(resizeLogs.valueResizeMessages())
-							.as("value map must resize while " + readerIsolation + " reader remains open")
+							.as("value map must record reservation-driven growth while " + readerIsolation
+									+ " reader remains open")
 							.isNotEmpty();
 					if (readerIsolation.isCompatibleWith(IsolationLevels.SNAPSHOT)) {
 						assertThatThrownBy(reader::size)
@@ -424,6 +441,8 @@ class LmdbAutogrowIsolationIT {
 						assertThat(readerReady.await(30, TimeUnit.SECONDS)).isTrue();
 						markPhase(phases, startedNanos, "writer-reader-ready");
 						try (SailRepositoryConnection writer = repository.getConnection()) {
+							reserveTripleAndValueMapsForRealGrowth(store.getBackingStore());
+							markPhase(phases, startedNanos, "writer-maps-reserved");
 							writer.begin(IsolationLevels.READ_COMMITTED);
 							markPhase(phases, startedNanos, "writer-transaction-begun");
 							addRows(writer, "concurrent-subject:", "concurrent-value:", 0, LIVE_TRIPLE_GROWTH_ROWS);
@@ -432,10 +451,10 @@ class LmdbAutogrowIsolationIT {
 							writer.commit();
 							markPhase(phases, startedNanos, "writer-commit-finished");
 							assertThat(resizeLogs.tripleResizeMessages())
-									.as("concurrent commit must resize the triple map before writer release")
+									.as("concurrent writer must retain reservation-driven triple map growth before release")
 									.isNotEmpty();
 							assertThat(resizeLogs.valueResizeMessages())
-									.as("concurrent commit must resize the value map before writer release")
+									.as("concurrent writer must retain reservation-driven value map growth before release")
 									.isNotEmpty();
 							markPhase(phases, startedNanos, "writer-resize-events-observed");
 						}
@@ -502,9 +521,11 @@ class LmdbAutogrowIsolationIT {
 							.isEqualTo(initialRows + LIVE_TRIPLE_GROWTH_ROWS);
 					reader.commit();
 				}
-				assertThat(resizeLogs.tripleResizeMessages()).as("concurrent commit must resize the triple map")
+				assertThat(resizeLogs.tripleResizeMessages())
+						.as("concurrent writer must retain reservation-driven triple map growth")
 						.isNotEmpty();
-				assertThat(resizeLogs.valueResizeMessages()).as("concurrent commit must resize the value map")
+				assertThat(resizeLogs.valueResizeMessages())
+						.as("concurrent writer must retain reservation-driven value map growth")
 						.isNotEmpty();
 			}
 		} finally {
@@ -577,6 +598,7 @@ class LmdbAutogrowIsolationIT {
 				Set<TripleTerm> seenTriples = new HashSet<>();
 				assertThat(seenTriples.add(triples.next())).as("the first quoted triple must be unique and known")
 						.isTrue();
+				reserveValueMapForRealGrowth((ValueStore) backing.getValueFactory());
 
 				addCommittedBatches(writer, "quoted-growth-subject:", "quoted-growth-value:");
 
@@ -588,7 +610,7 @@ class LmdbAutogrowIsolationIT {
 				assertThat(seenTriples).as("value growth must preserve every preloaded quoted triple exactly")
 						.isEqualTo(expectedTriples);
 				assertThat(resizeLogs.valueResizeMessages())
-						.as("value map must resize while the quoted-triple reader remains open")
+						.as("value map must record reservation-driven growth while the quoted-triple reader remains open")
 						.isNotEmpty();
 			}
 		} finally {
@@ -685,6 +707,54 @@ class LmdbAutogrowIsolationIT {
 			connection.commit();
 		}
 		return count;
+	}
+
+	private record MapStats(long mapSize, long lastPageNumber, int pageSize) {
+
+		@Override
+		public String toString() {
+			return "mapSize=" + mapSize + ", lastPage=" + lastPageNumber + ", highWaterBytes="
+					+ highWaterBytes() + ", pageSize=" + pageSize;
+		}
+
+		private long highWaterBytes() {
+			return Math.multiplyExact(Math.addExact(lastPageNumber, 1L), pageSize);
+		}
+	}
+
+	private static MapStats readMapStats(TxnManager txnManager) throws IOException {
+		try (Txn txn = txnManager.createReadTxn(); MemoryStack stack = stackPush()) {
+			long env = mdb_txn_env(txn.get());
+			MDBEnvInfo envInfo = MDBEnvInfo.malloc(stack);
+			E(mdb_env_info(env, envInfo));
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_env_stat(env, stat));
+			return new MapStats(envInfo.me_mapsize(), envInfo.me_last_pgno(), stat.ms_psize());
+		}
+	}
+
+	private static void reserveTripleAndValueMapsForRealGrowth(LmdbSailStore backing) throws IOException {
+		reserveTripleMapForRealGrowth(backing.getTripleStore());
+		reserveValueMapForRealGrowth((ValueStore) backing.getValueFactory());
+	}
+
+	private static void reserveTripleMapForRealGrowth(TripleStore tripleStore) throws IOException {
+		MapStats before = readMapStats(tripleStore.getTxnManager());
+		tripleStore.reserveWriteCapacity(Math.addExact(before.mapSize(), before.pageSize()));
+		assertMapCapacityIncreased("triple", before, readMapStats(tripleStore.getTxnManager()));
+	}
+
+	private static void reserveValueMapForRealGrowth(ValueStore valueStore) throws IOException {
+		MapStats before = readMapStats(valueStore.getTxnManager());
+		valueStore.reserveWriteCapacity(Math.addExact(before.mapSize(), before.pageSize()));
+		assertMapCapacityIncreased("value", before, readMapStats(valueStore.getTxnManager()));
+	}
+
+	private static void assertMapCapacityIncreased(String mapName, MapStats before, MapStats after) {
+		assertThat(after.mapSize())
+				.as("%s map capacity must increase after a measured reservation; before=%s after=%s", mapName, before,
+						after)
+				.isGreaterThan(before.mapSize());
 	}
 
 	private static LmdbStoreConfig autoGrowConfig() {

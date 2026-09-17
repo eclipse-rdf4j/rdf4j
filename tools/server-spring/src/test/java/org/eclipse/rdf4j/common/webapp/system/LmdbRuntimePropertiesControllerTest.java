@@ -17,6 +17,7 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
@@ -30,6 +31,7 @@ import jakarta.servlet.http.HttpServletResponse;
 class LmdbRuntimePropertiesControllerTest {
 
 	private static final String NATIVE_ENGINE = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String ADMIN_REQUEST_HEADER = Protocol.LMDB_ADMIN_REQUEST_HEADER;
 
 	@Test
 	void mapsTheExactExtensionlessSystemEndpoint() throws Exception {
@@ -86,16 +88,62 @@ class LmdbRuntimePropertiesControllerTest {
 	}
 
 	@Test
-	void postSucceedsWithoutAdministratorRole() throws Exception {
+	void postRejectsWithoutAdministratorRole() throws Exception {
 		String previous = System.getProperty(NATIVE_ENGINE);
 		try {
 			String requested = Boolean.toString(!Boolean.parseBoolean(previous));
 			MockHttpServletResponse response = request("POST", NATIVE_ENGINE, requested);
 
-			assertThat(response.getStatus()).isEqualTo(200);
+			assertThat(response.getStatus()).isEqualTo(403);
 			assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
-			assertThat(response.getContentAsString()).contains("\"enabled\":" + requested);
-			assertThat(System.getProperty(NATIVE_ENGINE)).isEqualTo(requested);
+			assertThat(response.getContentAsString()).contains("rdf4j-admin");
+			assertThat(System.getProperty(NATIVE_ENGINE)).isEqualTo(previous);
+		} finally {
+			restore(NATIVE_ENGINE, previous);
+		}
+	}
+
+	@Test
+	void postRejectsWithoutAdministratorRoleEvenWithAdminRequestHeader() throws Exception {
+		String previous = System.getProperty(NATIVE_ENGINE);
+		try {
+			MockHttpServletResponse response = request("POST", NATIVE_ENGINE, "true", false, "true", null);
+
+			assertThat(response.getStatus()).isEqualTo(403);
+			assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+			assertThat(response.getContentAsString()).contains("rdf4j-admin");
+			assertThat(System.getProperty(NATIVE_ENGINE)).isEqualTo(previous);
+		} finally {
+			restore(NATIVE_ENGINE, previous);
+		}
+	}
+
+	@Test
+	void postRejectsAdministratorWithoutAdminRequestHeader() throws Exception {
+		String previous = System.getProperty(NATIVE_ENGINE);
+		try {
+			MockHttpServletResponse response = request("POST", NATIVE_ENGINE, "true", true);
+
+			assertThat(response.getStatus()).isEqualTo(403);
+			assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+			assertThat(response.getContentAsString()).contains(ADMIN_REQUEST_HEADER);
+			assertThat(System.getProperty(NATIVE_ENGINE)).isEqualTo(previous);
+		} finally {
+			restore(NATIVE_ENGINE, previous);
+		}
+	}
+
+	@Test
+	void postRejectsCrossSiteMutationForAdministrator() throws Exception {
+		String previous = System.getProperty(NATIVE_ENGINE);
+		try {
+			MockHttpServletResponse response = request("POST", NATIVE_ENGINE, "true", true, null,
+					"https://evil.example");
+
+			assertThat(response.getStatus()).isEqualTo(403);
+			assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+			assertThat(response.getContentAsString()).contains(ADMIN_REQUEST_HEADER);
+			assertThat(System.getProperty(NATIVE_ENGINE)).isEqualTo(previous);
 		} finally {
 			restore(NATIVE_ENGINE, previous);
 		}
@@ -127,16 +175,21 @@ class LmdbRuntimePropertiesControllerTest {
 	}
 
 	private static MockHttpServletResponse request(String method, String name, String enabled) throws Exception {
-		return request(method, name, enabled, false);
+		return request(method, name, enabled, false, null, null);
 	}
 
 	private static MockHttpServletResponse authorizedRequest(String method, String name, String enabled)
 			throws Exception {
-		return request(method, name, enabled, true);
+		return request(method, name, enabled, true, "true", null);
 	}
 
 	private static MockHttpServletResponse request(String method, String name, String enabled, boolean administrator)
 			throws Exception {
+		return request(method, name, enabled, administrator, null, null);
+	}
+
+	private static MockHttpServletResponse request(String method, String name, String enabled, boolean administrator,
+			String adminRequestHeader, String origin) throws Exception {
 		Class<?> controllerType = Class
 				.forName("org.eclipse.rdf4j.common.webapp.system.LmdbRuntimePropertiesController");
 		Object controller = controllerType.getConstructor().newInstance();
@@ -146,6 +199,12 @@ class LmdbRuntimePropertiesControllerTest {
 		request.setMethod(method);
 		if (administrator) {
 			request.addUserRole("rdf4j-admin");
+		}
+		if (adminRequestHeader != null) {
+			request.addHeader(ADMIN_REQUEST_HEADER, adminRequestHeader);
+		}
+		if (origin != null) {
+			request.addHeader("Origin", origin);
 		}
 		if (name != null) {
 			request.addParameter("name", name);

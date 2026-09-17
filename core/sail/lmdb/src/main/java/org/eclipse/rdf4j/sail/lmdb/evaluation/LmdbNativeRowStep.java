@@ -2853,6 +2853,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 					batch.selectedCount = distinctRows.selectBatch(batch, batch.selection, batch.selectedCount);
 				}
 				batchIndex = 0;
+				if (batch.selectedCount == 0) {
+					continue;
+				}
 			}
 			int physicalRow = batch.selection[batchIndex++];
 			batch.copyToRow(physicalRow, row.slots);
