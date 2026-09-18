@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLConnection;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -30,10 +31,12 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
-import org.eclipse.rdf4j.rio.helpers.RioCompression;
+import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+import org.eclipse.rdf4j.rio.helpers.RDFInputDispatcher;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
@@ -103,24 +106,32 @@ public class AddServlet extends TransformationServlet {
 			throw new BadRequestException("No Content-Type provided");
 		}
 
-		RDFFormat format;
-		if ("autodetect".equals(contentType)) {
-			format = Rio.getParserFormatForFileName(contentFileName)
-					.orElseThrow(() -> new BadRequestException(
-							"Could not automatically determine Content-Type for content: " + contentFileName));
-		} else {
-			format = Rio.getParserFormatForMIMEType(contentType)
+		boolean autodetect = "autodetect".equals(contentType);
+		RDFFormat fallbackFormat = null;
+		if (!autodetect) {
+			fallbackFormat = Rio.getParserFormatForMIMEType(contentType)
 					.orElseThrow(() -> new BadRequestException("Unknown Content-Type: " + contentType));
 		}
 
 		try (RepositoryConnection con = repository.getConnection()) {
-			boolean transactionStarted = beginIfRequested(con, isolationLevel);
+			boolean transactionStarted = beginTransaction(con, isolationLevel);
 			try {
-				con.add(RioCompression.decompressIfDetected(stream, contentFileName), baseURI, format, context);
+				new RDFInputDispatcher(new ParserConfig()).dispatch(stream, contentFileName, fallbackFormat,
+						(input, sourceName, format) -> con.add(input, baseURI, format, context));
 				commitIfNeeded(con, transactionStarted);
+			} catch (UnsupportedRDFormatException exc) {
+				rollbackIfNeeded(con, transactionStarted);
+				if (autodetect) {
+					throw new BadRequestException(
+							"Could not automatically determine Content-Type for content: " + contentFileName, exc);
+				}
+				throw exc;
 			} catch (RDFParseException | IllegalArgumentException exc) {
 				rollbackIfNeeded(con, transactionStarted);
 				throw new BadRequestException(exc.getMessage(), exc);
+			} catch (IOException | RepositoryException exc) {
+				rollbackIfNeeded(con, transactionStarted);
+				throw exc;
 			}
 		}
 	}
@@ -131,30 +142,37 @@ public class AddServlet extends TransformationServlet {
 		if (contentType == null) {
 			throw new BadRequestException("No Content-Type provided");
 		}
-
-		RDFFormat format;
-		if ("autodetect".equals(contentType)) {
-			format = Rio.getParserFormatForFileName(url.getFile())
-					.orElseThrow(() -> new BadRequestException(
-							"Could not automatically determine Content-Type for content: " + url.getFile()));
-		} else {
-			format = Rio.getParserFormatForMIMEType(contentType)
-					.orElseThrow(() -> new BadRequestException("Unknown Content-Type: " + contentType));
+		if (!"autodetect".equals(contentType) && Rio.getParserFormatForMIMEType(contentType).isEmpty()) {
+			throw new BadRequestException("Unknown Content-Type: " + contentType);
 		}
 
 		try {
-			try (RepositoryConnection con = repository.getConnection()) {
-				boolean transactionStarted = beginIfRequested(con, isolationLevel);
-				try {
-					con.add(url, baseURI, format, context);
-					commitIfNeeded(con, transactionStarted);
-				} catch (RDFParseException | MalformedURLException | IllegalArgumentException exc) {
-					rollbackIfNeeded(con, transactionStarted);
-					throw exc;
+			URLConnection connection = url.openConnection();
+			setAcceptHeaders(connection, contentType, url.getPath());
+			try (InputStream stream = connection.getInputStream()) {
+				String effectiveBaseURI = baseURI == null ? url.toExternalForm() : baseURI;
+				add(stream, effectiveBaseURI, contentType, url.getPath(), isolationLevel, context);
+			}
+		} catch (MalformedURLException | IllegalArgumentException exc) {
+			throw new BadRequestException(exc.getMessage(), exc);
+		}
+	}
+
+	private void setAcceptHeaders(URLConnection connection, String contentType, String sourceName) {
+		if ("autodetect".equals(contentType)) {
+			RDFFormat inferredFormat = Rio.getParserFormatForFileName(sourceName).orElse(null);
+			if (inferredFormat != null) {
+				for (String mimeType : inferredFormat.getMIMETypes()) {
+					connection.addRequestProperty("Accept", mimeType);
 				}
 			}
-		} catch (RDFParseException | MalformedURLException | IllegalArgumentException exc) {
-			throw new BadRequestException(exc.getMessage(), exc);
+		} else {
+			RDFFormat format = Rio.getParserFormatForMIMEType(contentType).orElse(null);
+			if (format != null) {
+				for (String mimeType : format.getMIMETypes()) {
+					connection.addRequestProperty("Accept", mimeType);
+				}
+			}
 		}
 	}
 
@@ -196,13 +214,14 @@ public class AddServlet extends TransformationServlet {
 		return null;
 	}
 
-	private boolean beginIfRequested(RepositoryConnection connection, TransactionSetting isolationLevel)
+	private boolean beginTransaction(RepositoryConnection connection, TransactionSetting isolationLevel)
 			throws RepositoryException {
 		if (isolationLevel != null) {
 			connection.begin(isolationLevel);
-			return true;
+		} else {
+			connection.begin();
 		}
-		return false;
+		return true;
 	}
 
 	private void commitIfNeeded(RepositoryConnection connection, boolean transactionStarted)

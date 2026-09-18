@@ -21,6 +21,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.eclipse.rdf4j.common.platform.Platform;
@@ -41,6 +42,8 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.helpers.RDFInputTestFixtures;
+import org.eclipse.rdf4j.rio.helpers.RDFInputTestFixtures.RDFInputFixture;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
 import org.eclipse.rdf4j.sail.inferencer.fc.config.SchemaCachingRDFSInferencerConfig;
 import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
@@ -52,6 +55,8 @@ import org.eclipse.rdf4j.workbench.proxy.WorkbenchGateway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -64,7 +69,11 @@ import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.test.annotation.DirtiesContext;
@@ -329,6 +338,27 @@ class Rdf4jServerWorkbenchApplicationTest {
 				assertThat(result.hasNext()).isFalse();
 			}
 		});
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("supportedRdfInputs")
+	void serverAcceptsEverySupportedRdfInput(RDFInputFixture fixture) throws Exception {
+		String repoId = registerRepository("compressed", new MemoryStoreConfig());
+		HttpHeaders headers = new HttpHeaders();
+		headers.setContentType(MediaType.parseMediaType(RDFFormat.TURTLE.getDefaultMIMEType()));
+
+		ResponseEntity<Void> response = restTemplate.exchange(
+				serverUrl() + "/repositories/" + repoId + "/statements", HttpMethod.PUT,
+				new HttpEntity<>(fixture.unnamedInput(), headers), Void.class);
+
+		assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+		withRepositoryConnection(repoId, connection -> assertThat(connection.hasStatement(
+				valueFactory.createIRI(fixture.subjectIri()), valueFactory.createIRI("urn:p"),
+				valueFactory.createIRI("urn:o"), false)).isTrue());
+	}
+
+	private static Stream<RDFInputFixture> supportedRdfInputs() throws IOException {
+		return RDFInputTestFixtures.all().stream();
 	}
 
 	@Test
