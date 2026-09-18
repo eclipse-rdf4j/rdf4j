@@ -193,6 +193,7 @@
             <input type="hidden" name="explain" id="explain"/>
             <input type="hidden" name="ref" value="text"/>
             <input type="hidden" name="include-query-text" id="include-query-text" value="false"/>
+            <input type="hidden" name="query-request-id" id="query-request-id" value=""/>
             <button id="query-sidebar-toggle" type="button"
                     aria-hidden="true" tabindex="-1"
                     data-show-label="{$show-menu.label}"
@@ -378,6 +379,9 @@
                     <div class="query-form__field query-form__field--actions">
                         <input type="button" onclick="workbench.query.resetNamespaces()" value="Clear"/>
                         <input id="exec" type="submit" value="{$execute.label}"/>
+                        <input id="query-cancel" class="query-cancel" type="button"
+                               value="{$cancel.label}" onclick="workbench.query.cancelQuery()"
+                               aria-hidden="true" disabled="disabled"/>
                         <input id="explain-trigger" type="button"
                                value="{$explain-query.label}" onclick="workbench.query.runExplain(null, 'explain-trigger')"/>
                         <span id="explain-trigger-spinner" class="query-explain-spinner"
