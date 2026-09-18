@@ -19,8 +19,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.zip.GZIPOutputStream;
 import java.util.zip.ZipEntry;
@@ -31,6 +33,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.apache.commons.compress.archivers.tar.TarConstants;
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream;
 import org.apache.commons.compress.compressors.lz4.FramedLZ4CompressorOutputStream;
+import org.apache.commons.compress.compressors.lzma.LZMACompressorOutputStream;
 import org.apache.commons.compress.compressors.xz.XZCompressorOutputStream;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -92,6 +95,61 @@ class RDFInputDispatcherTest {
 		List<Terminal> terminals = dispatch(nested, "outer.zip", null);
 
 		assertThat(terminals).containsExactly(new Terminal("data.ttl", RDFFormat.TURTLE, TURTLE));
+	}
+
+	@Test
+	void explicitRootFormatWinsOverNameButMemberNamesRemainAuthoritative() throws Exception {
+		assertThat(dispatch(TURTLE, "data.nt", RDFFormat.TURTLE))
+				.containsExactly(new Terminal("data.nt", RDFFormat.TURTLE, TURTLE));
+		assertThat(dispatch(gzip(TURTLE), "data.nt.gz", RDFFormat.TURTLE))
+				.containsExactly(new Terminal("data.nt", RDFFormat.TURTLE, TURTLE));
+
+		assertThat(dispatch(tar(Map.of("data.rdf", TURTLE)), "data.tar", RDFFormat.TURTLE))
+				.containsExactly(new Terminal("data.rdf", RDFFormat.RDFXML, TURTLE));
+	}
+
+	@Test
+	void ignoresQueryAndFragmentWhenDetectingRootArchiveSuffixes() throws Exception {
+		assertThat(dispatch(TURTLE, "data.ttl?download=data.tar", RDFFormat.TURTLE))
+				.containsExactly(new Terminal("data.ttl?download=data.tar", RDFFormat.TURTLE, TURTLE));
+		assertThat(dispatch(TURTLE, "data.ttl#download=data.tar", RDFFormat.TURTLE))
+				.containsExactly(new Terminal("data.ttl#download=data.tar", RDFFormat.TURTLE, TURTLE));
+	}
+
+	@Test
+	void signatureDetectionPrecedesMisleadingCompressionSuffixes() throws Exception {
+		assertThat(dispatch(gzip(v7Tar(Map.of("data.ttl", TURTLE))), "data.tar", null))
+				.containsExactly(new Terminal("data.ttl", RDFFormat.TURTLE, TURTLE));
+		assertThat(dispatch(tar(Map.of("data.ttl", TURTLE)), "data.gz", null))
+				.containsExactly(new Terminal("data.ttl", RDFFormat.TURTLE, TURTLE));
+	}
+
+	@Test
+	void traversesSignaturelessV7TarAfterCodecDecompressionAtEveryRecursion() throws Exception {
+		byte[] archive = v7Tar(Map.of("data.ttl", TURTLE));
+
+		assertSingleTerminal(gzip(archive), "data.tar.gz");
+		assertSingleTerminal(gzip(archive), "data.tgz");
+		assertThat(dispatch(zip(Map.of("nested.tar.gz", gzip(archive))), "outer.zip", null))
+				.containsExactly(new Terminal("data.ttl", RDFFormat.TURTLE, TURTLE));
+	}
+
+	@Test
+	void preservesLiteralArchiveMemberNamesForCodecAndRdfFormatDetection() throws Exception {
+		Map<String, byte[]> literalMembers = new LinkedHashMap<>();
+		literalMembers.put("part?name.ttl", TURTLE);
+		literalMembers.put("part#name.ttl", TURTLE);
+		assertThat(dispatch(tar(literalMembers), "data.tar", null))
+				.extracting(Terminal::name)
+				.containsExactly("part?name.ttl", "part#name.ttl");
+
+		assertThat(dispatch(zip(Map.of("part?name.ttl.lzma", lzma(TURTLE))), "data.zip", null))
+				.singleElement()
+				.satisfies(terminal -> {
+					assertThat(terminal.name()).isEqualTo("part?name.ttl");
+					assertThat(terminal.format()).isEqualTo(RDFFormat.TURTLE);
+				});
+
 	}
 
 	@Test
@@ -184,6 +242,20 @@ class RDFInputDispatcherTest {
 		return output.toByteArray();
 	}
 
+	private static byte[] v7Tar(Map<String, byte[]> entries) throws IOException {
+		byte[] archive = tar(entries);
+		Arrays.fill(archive, 257, 263, (byte) 0);
+		Arrays.fill(archive, 148, 156, (byte) ' ');
+		long checksum = 0;
+		for (int i = 0; i < 512; i++) {
+			checksum += archive[i] & 0xff;
+		}
+		byte[] checksumField = String.format(Locale.ROOT, "%06o\0 ", checksum)
+				.getBytes(StandardCharsets.US_ASCII);
+		System.arraycopy(checksumField, 0, archive, 148, checksumField.length);
+		return archive;
+	}
+
 	private static byte[] tarWithNonRegularEntries() throws IOException {
 		ByteArrayOutputStream output = new ByteArrayOutputStream();
 		try (TarArchiveOutputStream tar = new TarArchiveOutputStream(output)) {
@@ -243,6 +315,14 @@ class RDFInputDispatcherTest {
 		ByteArrayOutputStream output = new ByteArrayOutputStream();
 		try (FramedLZ4CompressorOutputStream lz4 = new FramedLZ4CompressorOutputStream(output)) {
 			lz4.write(input);
+		}
+		return output.toByteArray();
+	}
+
+	private static byte[] lzma(byte[] input) throws IOException {
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		try (LZMACompressorOutputStream lzma = new LZMACompressorOutputStream(output)) {
+			lzma.write(input);
 		}
 		return output.toByteArray();
 	}

@@ -75,7 +75,8 @@ public final class RDFInputDispatcher {
 	 *
 	 * @param input          compressed, archived, or plain RDF input
 	 * @param sourceName     optional file or URL name used for suffix detection
-	 * @param fallbackFormat optional RDF format for terminal members whose name does not identify a format
+	 * @param fallbackFormat optional RDF format that takes precedence over the root input name; archive members use a
+	 *                       recognizable member name before falling back to this format
 	 * @param consumer       receives every recognized terminal RDF stream
 	 * @throws IOException if decompression or archive traversal fails
 	 */
@@ -95,7 +96,14 @@ public final class RDFInputDispatcher {
 			return dispatchZip(source, sourceName, fallbackFormat, consumer, budget, archiveDepth,
 					expandedAccountingActive);
 		}
-		if (CommonsTarSupport.isAvailable() && isTar(source, sourceName)) {
+		if (CommonsTarSupport.isAvailable() && isTarSignature(source)) {
+			long archiveDepth = enterLayer(budget, depth);
+			return dispatchTar(source, sourceName, fallbackFormat, consumer, budget, archiveDepth,
+					expandedAccountingActive);
+		}
+		boolean codecSignature = RioCompression.hasStreamSignature(source);
+		if (!codecSignature && CommonsTarSupport.isAvailable()
+				&& hasTarExtension(sourceName, archiveMember)) {
 			long archiveDepth = enterLayer(budget, depth);
 			return dispatchTar(source, sourceName, fallbackFormat, consumer, budget, archiveDepth,
 					expandedAccountingActive);
@@ -103,19 +111,21 @@ public final class RDFInputDispatcher {
 
 		InputStream compressedInput = expandedAccountingActive ? source : budget.compressed(source);
 		InputStream decompressedInput = RioCompression.decompressIfDetected(compressedInput, sourceName,
-				decoderMemoryLimitKiB);
+				decoderMemoryLimitKiB, archiveMember);
 		if (decompressedInput != compressedInput) {
 			long compressionDepth = enterLayer(budget, depth);
 			InputStream nestedInput = compressionDepth > 1 ? budget.expanded(decompressedInput) : decompressedInput;
-			return dispatch(nestedInput, RioCompression.removeCompressionExtension(sourceName), fallbackFormat,
-					consumer,
-					budget, compressionDepth, true, archiveMember);
+			return dispatch(nestedInput, RioCompression.removeCompressionExtension(sourceName, archiveMember),
+					fallbackFormat, consumer, budget, compressionDepth, true, archiveMember);
 		}
 
-		Optional<RDFFormat> detectedFormat = sourceName == null
+		String formatSourceName = archiveMember ? sourceName : sourceNameWithoutQueryOrFragment(sourceName);
+		Optional<RDFFormat> detectedFormat = formatSourceName == null
 				? Optional.empty()
-				: Rio.getParserFormatForFileName(sourceName);
-		RDFFormat format = detectedFormat.orElse(fallbackFormat);
+				: Rio.getParserFormatForFileName(formatSourceName);
+		RDFFormat format = archiveMember
+				? detectedFormat.orElse(fallbackFormat)
+				: fallbackFormat != null ? fallbackFormat : detectedFormat.orElse(null);
 		if (format == null) {
 			if (archiveMember) {
 				return 0;
@@ -215,10 +225,7 @@ public final class RDFInputDispatcher {
 				|| startsWith(signature, 0x50, 0x4b, 0x07, 0x08);
 	}
 
-	private static boolean isTar(InputStream input, String sourceName) throws IOException {
-		if (hasExtension(sourceName, "tar")) {
-			return true;
-		}
+	private static boolean isTarSignature(InputStream input) throws IOException {
 		input.mark(TAR_SIGNATURE_LENGTH);
 		byte[] signature = input.readNBytes(TAR_SIGNATURE_LENGTH);
 		input.reset();
@@ -230,12 +237,22 @@ public final class RDFInputDispatcher {
 				&& signature[261] == 'r';
 	}
 
-	private static boolean hasExtension(String sourceName, String expected) {
+	private static boolean hasTarExtension(String sourceName, boolean archiveMember) {
 		if (sourceName == null) {
 			return false;
 		}
-		return sourceName.toLowerCase(java.util.Locale.ROOT)
-				.matches(".*\\." + expected + "(?:[?#].*)?");
+		String name = archiveMember ? sourceName : sourceNameWithoutQueryOrFragment(sourceName);
+		return name.toLowerCase(java.util.Locale.ROOT).endsWith(".tar");
+	}
+
+	private static String sourceNameWithoutQueryOrFragment(String sourceName) {
+		if (sourceName == null) {
+			return null;
+		}
+		int query = sourceName.indexOf('?');
+		int fragment = sourceName.indexOf('#');
+		int end = query < 0 ? fragment : fragment < 0 ? query : Math.min(query, fragment);
+		return end < 0 ? sourceName : sourceName.substring(0, end);
 	}
 
 	private static boolean startsWith(byte[] actual, int... expected) {

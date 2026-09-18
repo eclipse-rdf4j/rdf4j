@@ -162,6 +162,11 @@ public enum RioCompression {
 
 	static InputStream decompressIfDetected(InputStream inputStream, String fileName, int decoderMemoryLimitKiB)
 			throws IOException {
+		return decompressIfDetected(inputStream, fileName, decoderMemoryLimitKiB, false);
+	}
+
+	static InputStream decompressIfDetected(InputStream inputStream, String fileName, int decoderMemoryLimitKiB,
+			boolean literalFileName) throws IOException {
 		Objects.requireNonNull(inputStream, "inputStream must not be null");
 		if (decoderMemoryLimitKiB <= 0) {
 			throw new IllegalArgumentException(MAX_DECODER_MEMORY_KIB_PROPERTY + " must be greater than zero");
@@ -176,8 +181,8 @@ public enum RioCompression {
 			return CommonsCompressSupport.decompress(additionalCompression.get(), source, decoderMemoryLimitKiB);
 		}
 
-		compression = forFileName(fileName);
-		String extension = extension(fileName);
+		compression = forFileName(fileName, literalFileName);
+		String extension = extension(fileName, literalFileName);
 		if (compression.isEmpty() && "tgz".equals(extension) && GZIP.isAvailable()) {
 			compression = Optional.of(GZIP);
 		} else if (compression.isEmpty() && "tzst".equals(extension) && ZSTD.isAvailable()) {
@@ -191,6 +196,22 @@ public enum RioCompression {
 			return CommonsCompressSupport.decompress(additionalCompression.get(), source, decoderMemoryLimitKiB);
 		}
 		return source;
+	}
+
+	/**
+	 * Checks for a supported codec signature without constructing a decoder or consuming input.
+	 *
+	 * <p>
+	 * The dispatcher calls this after making the stream markable, so the signature probe is observational and the
+	 * subsequent decoder receives the complete stream.
+	 * </p>
+	 */
+	static boolean hasStreamSignature(InputStream inputStream) throws IOException {
+		InputStream source = markable(inputStream);
+		if (forStreamSignature(source).isPresent()) {
+			return true;
+		}
+		return CommonsCompressSupport.isAvailable() && AdditionalCompression.detectSignature(source).isPresent();
 	}
 
 	public static Optional<RioCompression> forContentEncoding(String contentEncoding) {
@@ -209,17 +230,23 @@ public enum RioCompression {
 	}
 
 	public static Optional<RioCompression> forFileName(String fileName) {
+		return forFileName(fileName, false);
+	}
+
+	private static Optional<RioCompression> forFileName(String fileName, boolean literalFileName) {
 		if (fileName == null || fileName.isBlank()) {
 			return Optional.empty();
 		}
 		String normalizedFileName = fileName.toLowerCase(Locale.ROOT);
-		int fragment = normalizedFileName.indexOf('#');
-		if (fragment >= 0) {
-			normalizedFileName = normalizedFileName.substring(0, fragment);
-		}
-		int query = normalizedFileName.indexOf('?');
-		if (query >= 0) {
-			normalizedFileName = normalizedFileName.substring(0, query);
+		if (!literalFileName) {
+			int fragment = normalizedFileName.indexOf('#');
+			if (fragment >= 0) {
+				normalizedFileName = normalizedFileName.substring(0, fragment);
+			}
+			int query = normalizedFileName.indexOf('?');
+			if (query >= 0) {
+				normalizedFileName = normalizedFileName.substring(0, query);
+			}
 		}
 		int separator = Math.max(normalizedFileName.lastIndexOf('/'), normalizedFileName.lastIndexOf('\\'));
 		if (separator >= 0) {
@@ -268,11 +295,15 @@ public enum RioCompression {
 	}
 
 	static String removeCompressionExtension(String sourceName) {
+		return removeCompressionExtension(sourceName, false);
+	}
+
+	static String removeCompressionExtension(String sourceName, boolean literalFileName) {
 		if (sourceName == null) {
 			return null;
 		}
-		int suffixEnd = suffixEnd(sourceName);
-		String extension = extension(sourceName);
+		int suffixEnd = literalFileName ? sourceName.length() : suffixEnd(sourceName);
+		String extension = extension(sourceName, literalFileName);
 		if (extension == null) {
 			return sourceName;
 		}
@@ -284,7 +315,8 @@ public enum RioCompression {
 			return sourceName.substring(0, suffixEnd - extension.length() - 1) + ".tar"
 					+ sourceName.substring(suffixEnd);
 		}
-		if (forFileName(sourceName).isPresent() || AdditionalCompression.forExtension(extension).isPresent()) {
+		if (forFileName(sourceName, literalFileName).isPresent()
+				|| AdditionalCompression.forExtension(extension).isPresent()) {
 			return sourceName.substring(0, suffixEnd - extension.length() - 1) + sourceName.substring(suffixEnd);
 		}
 		return sourceName;
@@ -307,10 +339,14 @@ public enum RioCompression {
 	}
 
 	private static String extension(String fileName) {
+		return extension(fileName, false);
+	}
+
+	private static String extension(String fileName, boolean literalFileName) {
 		if (fileName == null || fileName.isBlank()) {
 			return null;
 		}
-		int end = suffixEnd(fileName);
+		int end = literalFileName ? fileName.length() : suffixEnd(fileName);
 		int separator = Math.max(fileName.lastIndexOf('/', end - 1), fileName.lastIndexOf('\\', end - 1));
 		int dot = fileName.lastIndexOf('.', end - 1);
 		if (dot <= separator || dot == end - 1) {

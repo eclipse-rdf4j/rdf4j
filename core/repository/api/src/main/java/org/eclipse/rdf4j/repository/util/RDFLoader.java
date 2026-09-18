@@ -183,7 +183,7 @@ public class RDFLoader {
 
 				}
 
-				load(in, requestURL.toExternalForm(), baseURI, dataFormat, rdfHandler);
+				load(in, requestURL.getPath(), baseURI, dataFormat, rdfHandler);
 			}
 		} while (redirected);
 	}

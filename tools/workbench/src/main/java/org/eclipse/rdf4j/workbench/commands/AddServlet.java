@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLConnection;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -113,7 +114,7 @@ public class AddServlet extends TransformationServlet {
 		}
 
 		try (RepositoryConnection con = repository.getConnection()) {
-			boolean transactionStarted = beginIfRequested(con, isolationLevel);
+			boolean transactionStarted = beginTransaction(con, isolationLevel);
 			try {
 				new RDFInputDispatcher(new ParserConfig()).dispatch(stream, contentFileName, fallbackFormat,
 						(input, sourceName, format) -> con.add(input, baseURI, format, context));
@@ -145,10 +146,33 @@ public class AddServlet extends TransformationServlet {
 			throw new BadRequestException("Unknown Content-Type: " + contentType);
 		}
 
-		try (InputStream stream = url.openStream()) {
-			add(stream, baseURI, contentType, url.getFile(), isolationLevel, context);
+		try {
+			URLConnection connection = url.openConnection();
+			setAcceptHeaders(connection, contentType, url.getPath());
+			try (InputStream stream = connection.getInputStream()) {
+				String effectiveBaseURI = baseURI == null ? url.toExternalForm() : baseURI;
+				add(stream, effectiveBaseURI, contentType, url.getPath(), isolationLevel, context);
+			}
 		} catch (MalformedURLException | IllegalArgumentException exc) {
 			throw new BadRequestException(exc.getMessage(), exc);
+		}
+	}
+
+	private void setAcceptHeaders(URLConnection connection, String contentType, String sourceName) {
+		if ("autodetect".equals(contentType)) {
+			RDFFormat inferredFormat = Rio.getParserFormatForFileName(sourceName).orElse(null);
+			if (inferredFormat != null) {
+				for (String mimeType : inferredFormat.getMIMETypes()) {
+					connection.addRequestProperty("Accept", mimeType);
+				}
+			}
+		} else {
+			RDFFormat format = Rio.getParserFormatForMIMEType(contentType).orElse(null);
+			if (format != null) {
+				for (String mimeType : format.getMIMETypes()) {
+					connection.addRequestProperty("Accept", mimeType);
+				}
+			}
 		}
 	}
 
@@ -190,13 +214,14 @@ public class AddServlet extends TransformationServlet {
 		return null;
 	}
 
-	private boolean beginIfRequested(RepositoryConnection connection, TransactionSetting isolationLevel)
+	private boolean beginTransaction(RepositoryConnection connection, TransactionSetting isolationLevel)
 			throws RepositoryException {
 		if (isolationLevel != null) {
 			connection.begin(isolationLevel);
-			return true;
+		} else {
+			connection.begin();
 		}
-		return false;
+		return true;
 	}
 
 	private void commitIfNeeded(RepositoryConnection connection, boolean transactionStarted)

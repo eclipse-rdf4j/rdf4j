@@ -26,6 +26,8 @@ import java.io.ByteArrayOutputStream;
 import java.net.ProtocolException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
@@ -54,6 +56,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockserver.client.MockServerClient;
 import org.mockserver.junit.jupiter.MockServerExtension;
 import org.mockserver.model.MediaType;
@@ -180,6 +183,45 @@ public class RDFLoaderTest {
 						RDF.TYPE,
 						FOAF.PERSON, null));
 		verify(rdfHandler).endRDF();
+	}
+
+	@Test
+	public void explicitFormatOverridesFileName(@TempDir Path tempDir) throws Exception {
+		Path input = tempDir.resolve("data.nt");
+		Files.writeString(input, "<urn:s> a <urn:C> .", StandardCharsets.UTF_8);
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+
+		rdfLoader.load(input.toFile(), "urn:base", RDFFormat.TURTLE, rdfHandler);
+
+		verify(rdfHandler).handleStatement(statement(iri("urn:s"), RDF.TYPE, iri("urn:C"), null));
+	}
+
+	@Test
+	public void URLPathSuffixDetectionIgnoresQueryAndFragment(@TempDir Path tempDir) throws Exception {
+		Path input = tempDir.resolve("data.ttl");
+		Files.writeString(input, "<urn:s> <urn:p> <urn:o> .", StandardCharsets.UTF_8);
+		URL url = new URL(input.toUri().toURL().toExternalForm() + "?download=data.tar#member");
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+
+		rdfLoader.load(url, "urn:base", RDFFormat.TURTLE, rdfHandler);
+
+		verify(rdfHandler).handleStatement(statement(iri("urn:s"), iri("urn:p"), iri("urn:o"), null));
+	}
+
+	@Test
+	public void URLNullBaseResolvesRelativeIrisAgainstSourceURL(@TempDir Path tempDir) throws Exception {
+		Path input = tempDir.resolve("data.ttl");
+		Files.writeString(input, "<relative> <urn:p> <urn:o> .", StandardCharsets.UTF_8);
+		URL url = input.toUri().toURL();
+		RDFLoader rdfLoader = new RDFLoader(new ParserConfig(), getValueFactory());
+		RDFHandler rdfHandler = mock(RDFHandler.class);
+
+		rdfLoader.load(url, null, RDFFormat.TURTLE, rdfHandler);
+
+		verify(rdfHandler).handleStatement(statement(iri(url.toURI().resolve("relative").toString()),
+				iri("urn:p"), iri("urn:o"), null));
 	}
 
 	@Test

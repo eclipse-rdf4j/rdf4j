@@ -27,6 +27,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URL;
+import java.net.URLConnection;
+import java.net.URLStreamHandler;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -34,6 +36,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import java.util.zip.GZIPOutputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
@@ -249,7 +253,7 @@ class AddServletCoverageTest {
 	}
 
 	@Test
-	void doPostSkipsTransactionsWhenIsolationLevelIsAbsent() throws Exception {
+	void doPostStartsAndRollsBackDefaultTransactionWhenIsolationLevelIsAbsent() throws Exception {
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		TestAddServlet servlet = new TestAddServlet(builder, List.of());
 		Repository repository = mock(Repository.class);
@@ -267,6 +271,7 @@ class AddServletCoverageTest {
 		when(request.getContentParameter())
 				.thenReturn(new ByteArrayInputStream("bad".getBytes(StandardCharsets.UTF_8)));
 		when(request.getContentFileName()).thenReturn("data.ttl");
+		when(connection.isActive()).thenReturn(true);
 		doThrow(new IllegalArgumentException("bad payload"))
 				.when(connection)
 				.add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
@@ -274,10 +279,146 @@ class AddServletCoverageTest {
 
 		servlet.doPost(request, response, "/transform");
 
+		verify(connection).begin();
 		verify(connection, never()).begin(any(IsolationLevel.class));
-		verify(connection, never()).rollback();
+		verify(connection).rollback();
 		verify(builder).result("bad payload", "https://example.org/base", null, "text/turtle", null, null, null);
 		verify(response, never()).sendRedirect("summary");
+	}
+
+	@Test
+	void doPostRollsBackAllArchiveMembersWhenIsolationLevelIsAbsent() throws Exception {
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		TestAddServlet servlet = new TestAddServlet(builder, List.of());
+		SailRepository repository = new SailRepository(new MemoryStore());
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+		Map<String, byte[]> members = new LinkedHashMap<>();
+		members.put("first.ttl", "<urn:first> <urn:p> <urn:o> .".getBytes(StandardCharsets.UTF_8));
+		members.put("second.ttl", "<urn:second> <urn:p> .".getBytes(StandardCharsets.UTF_8));
+
+		repository.init();
+		try {
+			servlet.setRepository(repository);
+			when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+			when(request.getParameter("Content-Type")).thenReturn("autodetect");
+			when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+			when(request.isParameterPresent("context")).thenReturn(false);
+			when(request.isParameterPresent("url")).thenReturn(false);
+			when(request.getContentParameter()).thenReturn(new ByteArrayInputStream(zip(members)));
+			when(request.getContentFileName()).thenReturn("data.zip");
+
+			servlet.doPost(request, response, "/transform");
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertThat(connection.hasStatement(SimpleValueFactory.getInstance().createIRI("urn:first"),
+						SimpleValueFactory.getInstance().createIRI("urn:p"),
+						SimpleValueFactory.getInstance().createIRI("urn:o"), false)).isFalse();
+			}
+			verify(response, never()).sendRedirect("summary");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void doPostUrlUsesRdfAcceptAndDefaultsNullBaseToSourceUrl() throws Exception {
+		AddServlet servlet = new AddServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+		URL url = mock(URL.class);
+		URLConnection urlConnection = mock(URLConnection.class);
+
+		servlet.setRepository(repository);
+		when(repository.getConnection()).thenReturn(connection);
+		when(url.getPath()).thenReturn("/data.ttl");
+		when(url.getFile()).thenReturn("/data.ttl?download=data.tar");
+		when(url.toExternalForm()).thenReturn("https://example.org/data.ttl?download=data.tar");
+		when(url.openConnection()).thenReturn(urlConnection);
+		when(urlConnection.getInputStream())
+				.thenReturn(new ByteArrayInputStream("<urn:s> <urn:p> <urn:o> .".getBytes(StandardCharsets.UTF_8)));
+		when(request.getParameter("baseURI")).thenReturn(null);
+		when(request.getParameter("Content-Type")).thenReturn("text/turtle");
+		when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+		when(request.isParameterPresent("context")).thenReturn(false);
+		when(request.isParameterPresent("url")).thenReturn(true);
+		when(request.getUrl("url")).thenReturn(url);
+		when(connection.isActive()).thenReturn(true);
+
+		servlet.doPost(request, response, "/transform");
+
+		verify(urlConnection).addRequestProperty("Accept", RDFFormat.TURTLE.getDefaultMIMEType());
+		verify(connection).add(any(InputStream.class), eq("https://example.org/data.ttl?download=data.tar"),
+				eq(RDFFormat.TURTLE), any(Resource[].class));
+		verify(connection).begin();
+		verify(connection).commit();
+		verify(response).sendRedirect("summary");
+	}
+
+	@Test
+	void doPostAutodetectUrlNegotiatesTheInferredFormatAndRestoresUrlBase() throws Exception {
+		AddServlet servlet = new AddServlet();
+		SailRepository repository = new SailRepository(new MemoryStore());
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+		List<String> requestedAccept = new ArrayList<>();
+		URL url = new URL(null, "https://example.org/data.ttl?download=data.tar", new URLStreamHandler() {
+			@Override
+			protected URLConnection openConnection(URL connectionUrl) {
+				return new URLConnection(connectionUrl) {
+					@Override
+					public void addRequestProperty(String key, String value) {
+						if ("Accept".equalsIgnoreCase(key)) {
+							requestedAccept.add(value);
+						}
+					}
+
+					@Override
+					public InputStream getInputStream() {
+						boolean rdfXmlRequested = requestedAccept.stream()
+								.anyMatch(value -> value.startsWith(RDFFormat.RDFXML.getDefaultMIMEType()));
+						String body = rdfXmlRequested
+								? "<?xml version=\"1.0\"?><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\" "
+										+ "xmlns:p=\"urn:\"><rdf:Description rdf:about=\"https://example.org/data.ttl?download=data.tar#relative\">"
+										+ "<p:p rdf:resource=\"urn:o\"/></rdf:Description></rdf:RDF>"
+								: "<#relative> <urn:p> <urn:o> .";
+						return new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8));
+					}
+
+					@Override
+					public void connect() {
+						// The in-memory connection needs no setup.
+					}
+				};
+			}
+		});
+
+		repository.init();
+		try {
+			servlet.setRepository(repository);
+			when(request.getParameter("baseURI")).thenReturn(null);
+			when(request.getParameter("Content-Type")).thenReturn("autodetect");
+			when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+			when(request.isParameterPresent("context")).thenReturn(false);
+			when(request.isParameterPresent("url")).thenReturn(true);
+			when(request.getUrl("url")).thenReturn(url);
+
+			servlet.doPost(request, response, "/transform");
+
+			assertThat(requestedAccept).containsExactlyInAnyOrderElementsOf(RDFFormat.TURTLE.getMIMETypes());
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertThat(connection.hasStatement(SimpleValueFactory.getInstance()
+						.createIRI(
+								"https://example.org/data.ttl?download=data.tar#relative"),
+						SimpleValueFactory.getInstance().createIRI("urn:p"),
+						SimpleValueFactory.getInstance().createIRI("urn:o"), false)).isTrue();
+			}
+			verify(response).sendRedirect("summary");
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	@Test
@@ -338,12 +479,14 @@ class AddServletCoverageTest {
 		when(request.isParameterPresent("context")).thenReturn(false);
 		when(request.isParameterPresent("url")).thenReturn(true);
 		when(request.getUrl("url")).thenReturn(url);
+		when(connection.isActive()).thenReturn(true);
 
 		servlet.doPost(request, response, "/transform");
 
 		verify(connection).add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
 				any(Resource[].class));
-		verify(connection, never()).commit();
+		verify(connection).begin();
+		verify(connection).commit();
 		verify(response).sendRedirect("summary");
 	}
 
@@ -452,6 +595,42 @@ class AddServletCoverageTest {
 			when(request.isParameterPresent("url")).thenReturn(false);
 			when(request.getContentParameter()).thenReturn(new ByteArrayInputStream(fixture.namedInput()));
 			when(request.getContentFileName()).thenReturn(fixture.sourceName());
+
+			servlet.doPost(request, response, "/transform");
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertThat(connection.hasStatement(SimpleValueFactory.getInstance().createIRI(fixture.subjectIri()),
+						SimpleValueFactory.getInstance().createIRI("urn:p"),
+						SimpleValueFactory.getInstance().createIRI("urn:o"), false)).isTrue();
+			}
+			verify(response).sendRedirect("summary");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void doPostPreservesLiteralArchiveMemberNamesForBrotliCodec() throws Exception {
+		RDFInputFixture fixture = supportedRdfInputs()
+				.filter(candidate -> candidate.name().equals("brotli"))
+				.findFirst()
+				.orElseThrow();
+		AddServlet servlet = new AddServlet();
+		SailRepository repository = new SailRepository(new MemoryStore());
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+
+		repository.init();
+		try {
+			servlet.setRepository(repository);
+			when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+			when(request.getParameter("Content-Type")).thenReturn("autodetect");
+			when(request.getParameter(ISOLATION_PARAM)).thenReturn("READ_COMMITTED");
+			when(request.isParameterPresent("context")).thenReturn(false);
+			when(request.isParameterPresent("url")).thenReturn(false);
+			when(request.getContentParameter()).thenReturn(new ByteArrayInputStream(
+					zip(Map.of("part#name.ttl.br", fixture.namedInput()))));
+			when(request.getContentFileName()).thenReturn("data.zip");
 
 			servlet.doPost(request, response, "/transform");
 
@@ -707,10 +886,27 @@ class AddServletCoverageTest {
 
 	private static URL url(String path, String body) throws IOException {
 		URL url = mock(URL.class);
+		URLConnection connection = mock(URLConnection.class);
 		when(url.getFile()).thenReturn("/" + path);
+		when(url.getPath()).thenReturn("/" + path);
 		when(url.openStream())
 				.thenReturn(new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
+		when(url.openConnection()).thenReturn(connection);
+		when(connection.getInputStream())
+				.thenReturn(new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
 		return url;
+	}
+
+	private static byte[] zip(Map<String, byte[]> members) throws IOException {
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		try (ZipOutputStream outputStream = new ZipOutputStream(buffer)) {
+			for (Map.Entry<String, byte[]> member : members.entrySet()) {
+				outputStream.putNextEntry(new ZipEntry(member.getKey()));
+				outputStream.write(member.getValue());
+				outputStream.closeEntry();
+			}
+		}
+		return buffer.toByteArray();
 	}
 
 	private static byte[] tar(Map<String, byte[]> members) throws IOException {
