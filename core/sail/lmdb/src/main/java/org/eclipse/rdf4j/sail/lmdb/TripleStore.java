@@ -163,6 +163,9 @@ class TripleStore implements Closeable {
 	private record DatabaseHandles(int mainDbi, int contextsDbi) {
 	}
 
+	private record PageAndMapState(int pageSize, boolean empty) {
+	}
+
 	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore) throws IOException, SailException {
 		this(dir, new StoreProperties(dir), config, valueStore);
 	}
@@ -256,8 +259,11 @@ class TripleStore implements Closeable {
 				}
 			}
 			properties.setTripleIndexes(indexSpecStr);
-		} catch (IOException | SailException e) {
-			endTransaction(false);
+		} catch (IOException e) {
+			cleanupAfterInitializationFailure(e);
+			throw e;
+		} catch (RuntimeException | Error e) {
+			cleanupAfterInitializationFailure(e);
 			throw e;
 		}
 
@@ -301,30 +307,72 @@ class TripleStore implements Closeable {
 	}
 
 	private void initializePageAndMapSize(long tripleDbSize) throws IOException {
-		// initialize page size and set map size for env
-		readTransaction(env, (stack, txn) -> {
+		// Discover page size and emptiness while active. LMDB must not resize its map while the transaction is pinned,
+		// because the native resize may invalidate the transaction's mapping.
+		PageAndMapState state = readTransaction(env, (stack, txn) -> {
 			MDBStat stat = MDBStat.malloc(stack);
 			TripleIndex mainIndex = indexes.getFirst();
-			mdb_stat(txn, mainIndex.getDB(true), stat);
+			E(mdb_stat(txn, mainIndex.getDB(true), stat));
+			return new PageAndMapState(stat.ms_psize(), stat.ms_entries() == 0);
+		});
+		pageSize = state.pageSize();
 
-			boolean isEmpty = stat.ms_entries() == 0;
-			pageSize = stat.ms_psize();
-			// align map size with page size
-			long configMapSize = (tripleDbSize / pageSize) * pageSize;
-			if (isEmpty) {
-				// this is an empty db, use configured map size
-				setMapSize(configMapSize);
-			}
+		// Align the configured size with LMDB's page size, preserving the zero-size and empty-versus-populated rules.
+		long configMapSize = (tripleDbSize / pageSize) * pageSize;
+		if (state.empty()) {
+			// This is an empty database, so use the configured map size.
+			E(setMapSize(configMapSize));
+		}
+
+		try (MemoryStack stack = stackPush()) {
 			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
-			mdb_env_info(env, info);
+			E(mdb_env_info(env, info));
 			mapSize = info.me_mapsize();
 			if (mapSize < configMapSize) {
-				// configured map size is larger than map size stored in env, increase map size
-				setMapSize(configMapSize);
-				mapSize = configMapSize;
+				// The configured map size is larger than the size stored in the environment, so increase it.
+				E(setMapSize(configMapSize));
+				E(mdb_env_info(env, info));
 			}
-			return null;
-		});
+			// LMDB may clamp the requested size, so retain the successful native value rather than the request.
+			mapSize = info.me_mapsize();
+		}
+	}
+
+	private void cleanupAfterInitializationFailure(Throwable failure) {
+		try {
+			endTransaction(false);
+		} catch (Throwable cleanupFailure) {
+			failure.addSuppressed(cleanupFailure);
+		}
+
+		if (pageEstimator != null) {
+			try {
+				pageEstimator.close();
+			} catch (Throwable cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+		}
+		for (TripleIndex index : indexes) {
+			try {
+				index.close();
+			} catch (Throwable cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+		}
+		try {
+			txnManager.close();
+		} catch (Throwable cleanupFailure) {
+			failure.addSuppressed(cleanupFailure);
+		}
+		if (env != 0) {
+			try {
+				mdb_env_close(env);
+			} catch (Throwable cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			} finally {
+				env = 0;
+			}
+		}
 	}
 
 	/**

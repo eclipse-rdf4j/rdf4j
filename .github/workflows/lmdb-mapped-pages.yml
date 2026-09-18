@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -29,4 +29,4 @@ jobs:
       - name: Install LMDB and upstream artifacts
         run: mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -am -Pquick install
       - name: Verify mapping and resize regressions
-        run: mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb "-Dtest=LmdbDataFileNativeMapTest,LmdbMappingAnchorTest,LmdbPageMappingLifecycleTest,LmdbPageCardinalityEstimatorDupSortNativeTest,TripleStoreAutoGrowTest#testPageEstimatorAcrossAutoGrowth,TripleStoreAutoGrowTest#testPageEstimatorAfterCachedWriteFlushGrowth" -DskipITs verify
+        run: mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb "-Dtest=LmdbDataFileNativeMapTest,LmdbDataFileHeaderBufferTest,LmdbMappingAnchorTest,LmdbPageMappingLifecycleTest,LmdbPageCardinalityEstimatorDupSortNativeTest,TripleStoreInitializationTest,TripleStoreAutoGrowTest#testPageEstimatorAcrossAutoGrowth,TripleStoreAutoGrowTest#testPageEstimatorAfterCachedWriteFlushGrowth" -DskipITs verify

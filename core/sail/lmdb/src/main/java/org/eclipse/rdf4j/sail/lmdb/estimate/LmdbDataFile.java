@@ -65,9 +65,6 @@ final class LmdbDataFile implements Closeable {
 	private final int mainDbi;
 	private final ByteOrder byteOrder;
 	private final int pageSize;
-	/** Current-thread-only scratch storage; {@link #close()} removes it for the calling thread. */
-	private final ThreadLocal<ByteBuffer> headerBuffer = ThreadLocal
-			.withInitial(() -> ByteBuffer.allocateDirect(LmdbFormat.PAGE_HEADER_SIZE));
 
 	LmdbDataFile(File dataFile) throws IOException {
 		this(dataFile, 0L, NO_MAIN_DBI, true);
@@ -194,20 +191,21 @@ final class LmdbDataFile implements Closeable {
 			return checkedNodeCount(pageNumber, lower, meta.pageSize());
 		}
 
-		ByteBuffer header = headerBuffer.get();
-		header.clear().limit(LmdbFormat.PAGE_HEADER_SIZE);
-		readFully(header, offset);
-		header.flip().order(meta.byteOrder());
-		long storedPageNumber = header.getLong(0);
-		if (storedPageNumber != pageNumber) {
-			throw new IOException("Page number mismatch: expected " + pageNumber + ", found " + storedPageNumber);
+		try (MemoryStack stack = stackPush()) {
+			ByteBuffer header = stack.malloc(LmdbFormat.PAGE_HEADER_SIZE);
+			readFully(header, offset);
+			header.flip().order(meta.byteOrder());
+			long storedPageNumber = header.getLong(0);
+			if (storedPageNumber != pageNumber) {
+				throw new IOException("Page number mismatch: expected " + pageNumber + ", found " + storedPageNumber);
+			}
+			int flags = LmdbFormat.unsignedShort(header, 10);
+			if ((flags & LmdbFormat.P_LEAF) == 0 || (flags & LmdbFormat.P_LEAF2) != 0) {
+				throw new IOException("Expected ordinary leaf page " + pageNumber + ", flags=0x"
+						+ Integer.toHexString(flags));
+			}
+			return checkedNodeCount(pageNumber, LmdbFormat.unsignedShort(header, 12), meta.pageSize());
 		}
-		int flags = LmdbFormat.unsignedShort(header, 10);
-		if ((flags & LmdbFormat.P_LEAF) == 0 || (flags & LmdbFormat.P_LEAF2) != 0) {
-			throw new IOException("Expected ordinary leaf page " + pageNumber + ", flags=0x"
-					+ Integer.toHexString(flags));
-		}
-		return checkedNodeCount(pageNumber, LmdbFormat.unsignedShort(header, 12), meta.pageSize());
 	}
 
 	int pageSize() {
@@ -221,7 +219,6 @@ final class LmdbDataFile implements Closeable {
 	@Override
 	public void close() throws IOException {
 		channel.close();
-		headerBuffer.remove();
 	}
 
 	/** The returned views borrow {@code readTxn}; the caller must keep it pinned until all page reads finish. */
