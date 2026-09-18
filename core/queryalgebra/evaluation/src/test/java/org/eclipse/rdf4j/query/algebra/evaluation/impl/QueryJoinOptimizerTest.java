@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -172,6 +173,316 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			assertThat(resolver.calls).isEqualTo(1);
 			assertThat(resolver.service.selectCalls).isEqualTo(1);
 		}
+	}
+
+	@Test
+	public void missingGroundGuardShortCircuitsBeforeHighFanoutConnectedPattern() throws Exception {
+		String query = "SELECT * WHERE { VALUES ?s { <urn:s1> <urn:s2> } "
+				+ "?s <urn:edge> ?o . <urn:config> <urn:enabled> true . }";
+		List<Statement> statements = new ArrayList<>();
+		for (String subject : List.of("urn:s1", "urn:s2")) {
+			for (int i = 0; i < 5_000; i++) {
+				statements.add(VF.createStatement(VF.createIRI(subject), VF.createIRI("urn:edge"),
+						VF.createIRI("urn:o" + i)));
+			}
+		}
+
+		CountingTripleSource source = new CountingTripleSource(statements);
+		List<BindingSet> results = evaluateQuery(query, source, null);
+
+		assertThat(results).isEmpty();
+		assertThat(source.statementsYielded)
+				.as("the missing ground guard must run before the connected high-fanout pattern")
+				.isZero();
+	}
+
+	@Test
+	public void optionalServiceEndpointMustBeRuntimeBoundBeforeServiceEvaluation() throws Exception {
+		String query = "SELECT * WHERE { { SELECT ?s ?endpoint WHERE { "
+				+ "VALUES ?s { <urn:s1> <urn:s2> } OPTIONAL { ?s <urn:missing> ?endpoint } } LIMIT 10 } "
+				+ "VALUES ?endpoint { <urn:service1> <urn:service2> } "
+				+ "SERVICE ?endpoint { ?s <urn:remote> <urn:object> } }";
+
+		StubServiceResolver resolver = new StubServiceResolver();
+		List<BindingSet> results = evaluateQuery(query, new CountingTripleSource(List.of()), resolver);
+
+		assertThat(results).hasSize(4);
+		assertThat(resolver.calls).isEqualTo(4);
+	}
+
+	@Test
+	public void constantBindMakesServiceEndpointReady() throws Exception {
+		String query = "SELECT * WHERE { BIND(<urn:service1> AS ?endpoint) "
+				+ "SERVICE ?endpoint { ?s <urn:remote> <urn:object> } }";
+		StubServiceResolver resolver = new StubServiceResolver();
+
+		List<BindingSet> results = evaluateQuery(query, new CountingTripleSource(List.of()), resolver);
+
+		assertThat(results).hasSize(1);
+		assertThat(resolver.calls).isEqualTo(1);
+	}
+
+	@Test
+	public void silentServiceDoesNotGuaranteeBodyBindingForLaterService() throws Exception {
+		String query = "SELECT * WHERE { { SELECT ?endpoint WHERE { "
+				+ "SERVICE SILENT <urn:failing-service> { BIND(<urn:service1> AS ?endpoint) } } } "
+				+ "VALUES ?endpoint { <urn:service1> } "
+				+ "SERVICE ?endpoint { ?s <urn:remote> <urn:object> } }";
+		StubServiceResolver resolver = new StubServiceResolver();
+		TripleSource source = new CountingTripleSource(List.of());
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		new QueryJoinOptimizer(new SilentServiceStatistics(), source).optimize(parsedQuery.getTupleExpr(), null,
+				EmptyBindingSet.getInstance());
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, resolver);
+		List<BindingSet> results = new ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = strategy.evaluate(parsedQuery.getTupleExpr(),
+				EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+
+		assertThat(results).hasSize(1);
+		assertThat(resolver.calls).isEqualTo(2);
+	}
+
+	@Test
+	public void lateralOnlyUsesGuaranteedLeftBindingsForRightInput() throws Exception {
+		MapBindingSet leftBinding = new MapBindingSet();
+		leftBinding.addBinding("s", VF.createIRI("urn:s1"));
+		BindingSetAssignment leftValues = new BindingSetAssignment();
+		leftValues.setBindingSets(List.of(leftBinding));
+		StatementPattern missing = new StatementPattern(Var.of("s"),
+				Var.of("missing", VF.createIRI("urn:missing")), Var.of("endpoint"));
+		LeftJoin nullableLeft = new LeftJoin(leftValues, missing);
+
+		StatementPattern endpointProvider = new StatementPattern(Var.of("s"),
+				Var.of("endpointPredicate", VF.createIRI("urn:endpoint")), Var.of("endpoint"));
+		StatementPattern remote = new StatementPattern(Var.of("s"), Var.of("remote", VF.createIRI("urn:remote")),
+				Var.of("object", VF.createIRI("urn:object")));
+		Service service = new Service(Var.of("endpoint"), remote, "", Map.of(), null, false);
+		Lateral lateral = new Lateral(nullableLeft, new Join(endpointProvider, service), Set.of("s", "endpoint"));
+		Lateral dependencyLateral = new Lateral(nullableLeft.clone(), service.clone(), Set.of("s", "endpoint"));
+		Object joinVisitor = buildJoinVisitor(new QueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource()));
+		assertThat(externalServiceVariables(joinVisitor, dependencyLateral))
+				.as("a nullable left binding cannot satisfy a LATERAL right input SERVICE")
+				.containsExactly("endpoint");
+		StubServiceResolver resolver = new StubServiceResolver();
+		Statement endpointStatement = VF.createStatement(VF.createIRI("urn:s1"), VF.createIRI("urn:endpoint"),
+				VF.createIRI("urn:service1"));
+		CountingTripleSource source = new CountingTripleSource(List.of(endpointStatement));
+		new QueryJoinOptimizer(new LateralEndpointStatistics(), source).optimize(lateral, null,
+				EmptyBindingSet.getInstance());
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, resolver);
+
+		List<BindingSet> results = new ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = strategy.evaluate(lateral,
+				EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+
+		assertThat(results).hasSize(1);
+		assertThat(resolver.calls).isEqualTo(1);
+	}
+
+	@Test
+	public void zeroLengthPathDoesNotGuaranteeInnerPathBindings() throws Exception {
+		MapBindingSet leftBinding = new MapBindingSet();
+		leftBinding.addBinding("s", VF.createIRI("urn:s1"));
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingSets(List.of(leftBinding));
+
+		StatementPattern pathPattern = new StatementPattern(Var.of("s"),
+				Var.of("pathPredicate", VF.createIRI("urn:path")), Var.of("pathEndpoint"));
+		ArbitraryLengthPath zeroOrMorePath = new ArbitraryLengthPath(Var.of("s"), pathPattern, Var.of("o"), 0);
+		ArbitraryLengthPath dependencyPath = new ArbitraryLengthPath(Var.of("s"),
+				new StatementPattern(Var.of("s"), Var.of("pathPredicate", VF.createIRI("urn:path")),
+						Var.of("pathEndpoint")),
+				Var.of("o"), 0);
+		Service pathEndpointService = new Service(Var.of("pathEndpoint"),
+				new StatementPattern(Var.of("s"), Var.of("remote", VF.createIRI("urn:remote")),
+						Var.of("object", VF.createIRI("urn:object"))),
+				"", Map.of(), null, false);
+		Object joinVisitor = buildJoinVisitor(new QueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource()));
+		assertThat(externalServiceVariables(joinVisitor, new Join(dependencyPath, pathEndpointService)))
+				.as("an inner path variable is not bound by a zero-length path result")
+				.containsExactly("pathEndpoint");
+		StatementPattern endpointProvider = new StatementPattern(Var.of("s"),
+				Var.of("endpointPredicate", VF.createIRI("urn:endpoint")), Var.of("endpoint"));
+		StatementPattern remote = new StatementPattern(Var.of("s"), Var.of("remote", VF.createIRI("urn:remote")),
+				Var.of("object", VF.createIRI("urn:object")));
+		Service service = new Service(Var.of("endpoint"), remote, "", Map.of(), null, false);
+		QueryRoot expression = new QueryRoot(
+				new Join(new Join(new Join(values, zeroOrMorePath), endpointProvider), service));
+
+		Statement endpointStatement = VF.createStatement(VF.createIRI("urn:s1"), VF.createIRI("urn:endpoint"),
+				VF.createIRI("urn:service1"));
+		TripleSource source = new CountingTripleSource(List.of(endpointStatement));
+		StubServiceResolver resolver = new StubServiceResolver();
+		new QueryJoinOptimizer(new ArbitraryPathStatistics(), source).optimize(expression, null,
+				EmptyBindingSet.getInstance());
+
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, resolver);
+		List<BindingSet> results = new ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = strategy.evaluate(expression,
+				EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+
+		assertThat(results).hasSize(1);
+		assertThat(resolver.calls).isEqualTo(1);
+	}
+
+	@Test
+	public void undefValuesDoNotSatisfyServiceReadiness() throws Exception {
+		String query = "SELECT * WHERE { VALUES ?endpoint { UNDEF <urn:service1> } "
+				+ "VALUES ?endpoint { <urn:service1> } "
+				+ "SERVICE ?endpoint { ?s <urn:remote> <urn:object> } }";
+		StubServiceResolver resolver = new StubServiceResolver();
+
+		List<BindingSet> results = evaluateQuery(query, new CountingTripleSource(List.of()), resolver);
+
+		assertThat(results).hasSize(2);
+		assertThat(resolver.calls).isEqualTo(2);
+	}
+
+	@Test
+	public void unionOnlyPartiallyBindingEndpointDoesNotSatisfyServiceReadiness() throws Exception {
+		String query = "SELECT * WHERE { { VALUES ?endpoint { <urn:service1> } } "
+				+ "UNION { VALUES ?other { <urn:other> } } "
+				+ "VALUES ?endpoint { <urn:service1> } "
+				+ "SERVICE ?endpoint { ?s <urn:remote> <urn:object> } }";
+		StubServiceResolver resolver = new StubServiceResolver();
+
+		List<BindingSet> results = evaluateQuery(query, new CountingTripleSource(List.of()), resolver);
+
+		assertThat(results).hasSize(2);
+		assertThat(resolver.calls).isEqualTo(2);
+	}
+
+	@Test
+	public void failingBindDoesNotSatisfyServiceReadiness() throws Exception {
+		String query = "SELECT * WHERE { OPTIONAL { BIND(STR(?missing) AS ?endpoint) FILTER(false) } "
+				+ "?source <urn:endpoint> ?endpoint . "
+				+ "SERVICE ?endpoint { ?source <urn:remote> <urn:object> } }";
+		StubServiceResolver resolver = new StubServiceResolver();
+		Statement endpointStatement = VF.createStatement(VF.createIRI("urn:s1"), VF.createIRI("urn:endpoint"),
+				VF.createIRI("urn:service1"));
+		TripleSource source = new CountingTripleSource(List.of(endpointStatement));
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		new QueryJoinOptimizer(new FailingBindServiceStatistics(), source).optimize(parsedQuery.getTupleExpr(), null,
+				EmptyBindingSet.getInstance());
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, resolver);
+		List<BindingSet> results = new ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = strategy.evaluate(parsedQuery.getTupleExpr(),
+				EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+
+		assertThat(resolver.calls).as("the provider must bind the endpoint before SERVICE").isEqualTo(1);
+		assertThat(results).hasSize(1);
+	}
+
+	@Test
+	public void directFailingBindAndSequentialOverwriteDoNotSatisfyServiceReadiness() throws Exception {
+		String query = "SELECT * WHERE { BIND(<urn:service1> AS ?alias) "
+				+ "BIND(?alias AS ?endpoint) BIND(STR(?missing) AS ?endpoint) "
+				+ "?source <urn:endpoint> ?endpoint . "
+				+ "SERVICE ?endpoint { ?source <urn:remote> <urn:object> } }";
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		new QueryJoinOptimizer(new FailingBindServiceStatistics(), new CountingTripleSource(List.of()))
+				.optimize(parsedQuery.getTupleExpr(), null, EmptyBindingSet.getInstance());
+
+		// A failed BIND installs an explicit null binding in the evaluator, so this direct case cannot
+		// produce a row after the later statement pattern. The optimizer must still wait for the genuine
+		// endpoint producer before SERVICE; the OPTIONAL/FILTER(false) test above covers the runnable case.
+		EndpointOrderVisitor orderVisitor = new EndpointOrderVisitor();
+		parsedQuery.getTupleExpr().visit(orderVisitor);
+		assertThat(orderVisitor.orderedEvents).contains("endpoint:urn:endpoint", "service");
+		assertThat(orderVisitor.orderedEvents.indexOf("endpoint:urn:endpoint"))
+				.isLessThan(orderVisitor.orderedEvents.indexOf("service"));
+	}
+
+	@Test
+	public void filterExistsLocalEndpointDoesNotSatisfyLaterService() throws Exception {
+		String query = "SELECT * WHERE { FILTER EXISTS { VALUES ?endpoint { <urn:service1> } } "
+				+ "VALUES ?endpoint { <urn:service1> } "
+				+ "SERVICE ?endpoint { ?s <urn:remote> <urn:object> } }";
+		StubServiceResolver resolver = new StubServiceResolver();
+
+		List<BindingSet> results = evaluateQuery(query, new CountingTripleSource(List.of()), resolver);
+
+		assertThat(results).hasSize(1);
+		assertThat(resolver.calls).isEqualTo(1);
+	}
+
+	@Test
+	public void legalConstPrefixedUserVariableRemainsARealJoinKey() {
+		for (String subjectVariable : List.of("s", "_const_user")) {
+			String query = "SELECT * WHERE { VALUES (?" + subjectVariable
+					+ " ?anchor) { (<urn:s1> <urn:a1>) (<urn:s2> <urn:a2>) } ?"
+					+ subjectVariable + " <urn:rare> ?o . ?anchor <urn:fanout> ?x . }";
+			QueryRoot root = optimizeWith(query, new EvaluationStatistics());
+			StatementFinder statementFinder = new StatementFinder();
+			root.visit(statementFinder);
+
+			List<String> predicates = statementFinder.getStatements()
+					.stream()
+					.map(QueryJoinOptimizerTest::predicate)
+					.collect(Collectors.toList());
+			assertThat(predicates)
+					.as("the selective rare pattern must precede the fanout for ?%s", subjectVariable)
+					.containsExactly("urn:rare", "urn:fanout");
+		}
+	}
+
+	@Test
+	public void legalConstPrefixedProjectionAliasRemainsARealJoinKey() {
+		String query = "SELECT * WHERE { VALUES ?anchor { <urn:a1> <urn:a2> } "
+				+ "{ SELECT (?s AS ?_const_user) WHERE { VALUES ?s { <urn:s1> <urn:s2> } } } "
+				+ "?_const_user <urn:rare> ?o . ?anchor <urn:fanout> ?x . }";
+		QueryRoot root = optimizeWith(query, new EvaluationStatistics());
+		StatementFinder statementFinder = new StatementFinder();
+		root.visit(statementFinder);
+
+		List<String> predicates = statementFinder.getStatements()
+				.stream()
+				.map(QueryJoinOptimizerTest::predicate)
+				.collect(Collectors.toList());
+		assertThat(predicates).containsExactly("urn:rare", "urn:fanout");
+	}
+
+	@Test
+	public void assignedValueVarWithConstPrefixedNameRemainsARealJoinKey() {
+		Var assignedProducer = Var.of("_const_assigned", VF.createIRI("urn:s1"));
+		StatementPattern disconnected = new StatementPattern(Var.of("disconnected"),
+				Var.of("disconnectedPredicate", VF.createIRI("urn:disconnected"), false, true),
+				Var.of("disconnectedObject"));
+		StatementPattern producer = new StatementPattern(assignedProducer,
+				Var.of("assignedPredicate", VF.createIRI("urn:assigned"), false, true), Var.of("assignedObject"));
+		StatementPattern consumer = new StatementPattern(Var.of("_const_assigned"),
+				Var.of("consumerPredicate", VF.createIRI("urn:fanout"), false, true), Var.of("consumerObject"));
+		assertThat(assignedProducer.isConstant()).isFalse();
+
+		QueryRoot root = new QueryRoot(new Join(new Join(disconnected, producer), consumer));
+		new QueryJoinOptimizer(new AssignedVariableStatistics(), new EmptyTripleSource()).optimize(root, null,
+				EmptyBindingSet.getInstance());
+
+		StatementFinder statementFinder = new StatementFinder();
+		root.visit(statementFinder);
+		List<String> predicates = statementFinder.getStatements()
+				.stream()
+				.map(QueryJoinOptimizerTest::predicate)
+				.collect(Collectors.toList());
+		assertThat(predicates).containsExactly("urn:assigned", "urn:fanout", "urn:disconnected");
 	}
 
 	@Test
@@ -343,53 +654,53 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void projectedSubselectBindingConnectsOuterPatternWithoutJoinEstimation() {
-		assertPriorityPatternsStartWithPrefix(
+	public void projectedSubselectBindingDoesNotOverrideCheaperDisconnectedPatternWithoutJoinEstimation() {
+		assertPriorityPatternsStartWithExpectedPattern(
 				"SELECT * WHERE { { SELECT ?seed WHERE { ?inner <urn:sub> ?seed } } "
 						+ "?seed <urn:outer-expensive> ?value . ?x <urn:outer-cheap> ?shared . "
 						+ "?shared <urn:outer-cheap2> ?z . }",
-				new ScopeAndPairwiseStatistics(false), "urn:outer-expensive");
+				new ScopeAndPairwiseStatistics(false), "urn:outer-cheap");
 	}
 
 	@Test
-	public void projectedSubselectBindingConnectsOuterPatternWithPairwiseEstimation() {
-		assertPriorityPatternsStartWithPrefix(
+	public void projectedSubselectBindingDoesNotOverrideCheaperDisconnectedPatternWithPairwiseEstimation() {
+		assertPriorityPatternsStartWithExpectedPattern(
 				"SELECT * WHERE { { SELECT ?seed WHERE { ?inner <urn:sub> ?seed } } "
 						+ "?seed <urn:outer-expensive> ?value . ?x <urn:outer-cheap> ?shared . "
 						+ "?shared <urn:outer-cheap2> ?z . }",
-				new ScopeAndPairwiseStatistics(true), "urn:outer-expensive");
+				new ScopeAndPairwiseStatistics(true), "urn:outer-cheap");
 	}
 
 	@Test
-	public void projectionAliasConnectsOuterPattern() {
+	public void projectionAliasDoesNotOverrideCheaperDisconnectedPattern() {
 		for (boolean supportsJoinEstimation : List.of(false, true)) {
-			assertPriorityPatternsStartWithPrefix(
+			assertPriorityPatternsStartWithExpectedPattern(
 					"SELECT * WHERE { { SELECT (?inner AS ?seed) WHERE { ?inner <urn:sub> ?raw } } "
 							+ "?seed <urn:outer-expensive> ?value . ?x <urn:outer-cheap> ?shared . "
 							+ "?shared <urn:outer-cheap2> ?z . }",
-					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-expensive");
+					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-cheap");
 		}
 	}
 
 	@Test
-	public void projectedBindConnectsOuterPattern() {
+	public void projectedBindDoesNotOverrideCheaperDisconnectedPattern() {
 		for (boolean supportsJoinEstimation : List.of(false, true)) {
-			assertPriorityPatternsStartWithPrefix(
+			assertPriorityPatternsStartWithExpectedPattern(
 					"SELECT * WHERE { { SELECT ?seed WHERE { ?inner <urn:sub> ?raw . BIND(?raw AS ?seed) } } "
 							+ "?seed <urn:outer-expensive> ?value . ?x <urn:outer-cheap> ?shared . "
 							+ "?shared <urn:outer-cheap2> ?z . }",
-					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-expensive");
+					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-cheap");
 		}
 	}
 
 	@Test
-	public void nestedProjectedSubselectBindingConnectsOuterPattern() {
+	public void nestedProjectedSubselectBindingDoesNotOverrideCheaperDisconnectedPattern() {
 		for (boolean supportsJoinEstimation : List.of(false, true)) {
-			assertPriorityPatternsStartWithPrefix(
+			assertPriorityPatternsStartWithExpectedPattern(
 					"SELECT * WHERE { { SELECT ?seed WHERE { { SELECT ?seed WHERE { ?inner <urn:sub> ?seed } } } } "
 							+ "?seed <urn:outer-expensive> ?value . ?x <urn:outer-cheap> ?shared . "
 							+ "?shared <urn:outer-cheap2> ?z . }",
-					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-expensive");
+					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-cheap");
 		}
 	}
 
@@ -403,19 +714,20 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 							+ "?x <urn:outer-cheap> ?shared . ?shared <urn:outer-cheap2> ?z . }",
 					new ScopeAndPairwiseStatistics(supportsJoinEstimation));
 
-			assertPrefixConnectedPatternsPrecedeDisconnected(predicates, "urn:outer-seed", "urn:outer-other");
+			assertThat(predicates).startsWith("urn:outer-cheap");
+			assertThat(predicates).contains("urn:outer-seed", "urn:outer-other");
 		}
 	}
 
 	@Test
-	public void optionalPriorityBindingConnectsOuterPattern() {
+	public void optionalPriorityBindingDoesNotOverrideCheaperDisconnectedPattern() {
 		for (boolean supportsJoinEstimation : List.of(false, true)) {
-			assertPriorityPatternsStartWithPrefix(
+			assertPriorityPatternsStartWithExpectedPattern(
 					"SELECT * WHERE { VALUES ?base { <urn:base> } OPTIONAL { "
 							+ "{ SELECT ?seed WHERE { ?inner <urn:sub> ?seed } } "
 							+ "?seed <urn:outer-expensive> ?value . ?x <urn:outer-cheap> ?shared . "
 							+ "?shared <urn:outer-cheap2> ?z . } }",
-					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-expensive");
+					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-cheap");
 		}
 	}
 
@@ -443,30 +755,30 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 							+ "?x <urn:outer-cheap> ?shared . ?shared <urn:outer-cheap2> ?z . }",
 					new ScopeAndPairwiseStatistics(supportsJoinEstimation));
 
-			assertPrefixConnectedPatternsPrecedeDisconnected(predicates, "urn:outer-seed", "urn:outer-other");
+			assertThat(predicates).startsWith("urn:outer-cheap");
+			assertThat(predicates).contains("urn:outer-seed", "urn:outer-other");
 		}
 	}
 
 	@Test
-	public void pairwiseOrderingUsesProjectedBindingAndKeepsVariableOnlyConnectedPattern() {
+	public void pairwiseOrderingUsesCheaperConstantPatternBeforeVariableOnlyConnectedPattern() {
 		List<String> predicates = optimizePriorityQuery(
 				"SELECT * WHERE { { SELECT ?seed WHERE { ?inner <urn:sub> ?seed } } "
 						+ "?seed ?outerp ?value . ?x <urn:outer-cheap> ?shared . "
 						+ "?shared <urn:outer-cheap2> ?z . }",
 				new ScopeAndPairwiseStatistics(true));
 
-		assertThat(predicates).isNotEmpty();
-		assertThat(predicates.getFirst()).isNull();
+		assertThat(predicates).startsWith("urn:outer-cheap");
 	}
 
 	@Test
-	public void sameScopeBindProviderConnectsOuterPatternInBothEstimatorModes() {
+	public void sameScopeBindProviderDoesNotOverrideCheaperDisconnectedPatternInBothEstimatorModes() {
 		for (boolean supportsJoinEstimation : List.of(false, true)) {
-			assertPriorityPatternsStartWithPrefix(
+			assertPriorityPatternsStartWithExpectedPattern(
 					"SELECT * WHERE { BIND(<urn:seed> AS ?seed) "
 							+ "?seed <urn:outer-expensive> ?value . ?x <urn:outer-cheap> ?shared . "
 							+ "?shared <urn:outer-cheap2> ?z . }",
-					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-expensive");
+					new ScopeAndPairwiseStatistics(supportsJoinEstimation), "urn:outer-cheap");
 		}
 	}
 
@@ -690,7 +1002,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void selectNextTupleExprPrefersConnectedCandidateOverCheaperCartesianCandidate() throws Exception {
+	public void selectNextTupleExprPrefersCheaperCartesianCandidateOverConnectedCandidate() throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
 		StatementPattern connected = new StatementPattern(new Var("s"),
@@ -711,6 +1023,35 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
 		Object joinVisitor = buildJoinVisitor(optimizer);
+		setBoundVars(joinVisitor, Set.of("s"));
+		Method selectNextTupleExpr = findDeclaredMethod(joinVisitor.getClass(), "selectNextTupleExpr", List.class,
+				Map.class, Map.class, Map.class);
+		selectNextTupleExpr.setAccessible(true);
+
+		TupleExpr selected = (TupleExpr) selectNextTupleExpr.invoke(joinVisitor, expressions, cardinalityMap, varsMap,
+				varFreqMap);
+
+		assertThat(getPredicateValue(selected)).isEqualTo("ex:pDisconnected");
+	}
+
+	@Test
+	public void selectNextTupleExprUsesConnectivityOnlyAsEqualCostTieBreak() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern connected = new StatementPattern(Var.of("s"),
+				Var.of("pc", vf.createIRI("ex:pConnected")), Var.of("o"));
+		StatementPattern disconnected = new StatementPattern(Var.of("x"),
+				Var.of("pd", vf.createIRI("ex:pDisconnected")), Var.of("y"));
+
+		List<TupleExpr> expressions = new ArrayList<>(List.of(disconnected, connected));
+		Map<TupleExpr, Double> cardinalityMap = Map.of(disconnected, 10.0, connected, 10.0);
+		Map<TupleExpr, List<Var>> varsMap = Map.of(disconnected, disconnected.getVarList(), connected,
+				connected.getVarList());
+		Map<Var, Integer> varFreqMap = new HashMap<>();
+		fillVarFreqMap(disconnected.getVarList(), varFreqMap);
+		fillVarFreqMap(connected.getVarList(), varFreqMap);
+
+		EqualCostStatementOptimizer optimizer = new EqualCostStatementOptimizer();
+		Object joinVisitor = optimizer.newJoinVisitorForTest();
 		setBoundVars(joinVisitor, Set.of("s"));
 		Method selectNextTupleExpr = findDeclaredMethod(joinVisitor.getClass(), "selectNextTupleExpr", List.class,
 				Map.class, Map.class, Map.class);
@@ -751,7 +1092,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void pairwiseOrderingKeepsFirstConnectedCandidateWithNonFiniteEstimate() throws Exception {
+	public void pairwiseOrderingUsesCheaperCartesianCandidateBeforeNonFiniteConnectedEstimate() throws Exception {
 		for (double estimate : List.of(Double.MAX_VALUE, Double.POSITIVE_INFINITY)) {
 			ValueFactory vf = SimpleValueFactory.getInstance();
 			StatementPattern anchor = new StatementPattern(new Var("s"),
@@ -777,13 +1118,13 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 					.map(QueryJoinOptimizerTest::getPredicateValue)
 					.collect(Collectors.toList());
 			assertThat(predicateOrder.indexOf("ex:pNonFinite"))
-					.as("a connected candidate with estimate %s remains eligible", estimate)
-					.isLessThan(predicateOrder.indexOf("ex:pDisconnected"));
+					.as("the finite cheaper candidate must precede the connected candidate with estimate %s", estimate)
+					.isGreaterThan(predicateOrder.indexOf("ex:pDisconnected"));
 		}
 	}
 
 	@Test
-	public void incomingSelectionAcceptsNonFiniteConnectedEstimate() throws Exception {
+	public void incomingSelectionUsesFiniteCheaperEstimateBeforeNonFiniteConnectedEstimate() throws Exception {
 		for (double estimate : List.of(Double.MAX_VALUE, Double.POSITIVE_INFINITY)) {
 			ValueFactory vf = SimpleValueFactory.getInstance();
 			StatementPattern connected = new StatementPattern(new Var("s"),
@@ -803,13 +1144,13 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			Deque<TupleExpr> reordered = (Deque<TupleExpr>) reorderJoinArgs.invoke(joinVisitor, ordered, Set.of("s"));
 
 			assertThat(getPredicateValue(reordered.getFirst()))
-					.as("the first incoming candidate must remain eligible at estimate %s", estimate)
-					.isEqualTo("ex:pNonFinite");
+					.as("the finite cheaper candidate must precede the connected candidate at estimate %s", estimate)
+					.isEqualTo("ex:pDisconnected");
 		}
 	}
 
 	@Test
-	public void startingSelectionAcceptsNonFiniteConnectedPair() throws Exception {
+	public void startingSelectionUsesCheaperCartesianPairBeforeNonFiniteConnectedPair() throws Exception {
 		for (double estimate : List.of(Double.MAX_VALUE, Double.POSITIVE_INFINITY)) {
 			ValueFactory vf = SimpleValueFactory.getInstance();
 			StatementPattern connectedLeft = new StatementPattern(new Var("s"),
@@ -839,13 +1180,13 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 					.map(QueryJoinOptimizerTest::getPredicateValue)
 					.collect(Collectors.toList());
 			assertThat(firstPair)
-					.as("the connected pair must remain eligible at estimate %s", estimate)
-					.containsExactlyInAnyOrder("ex:pNonFiniteStartA", "ex:pNonFiniteStartB");
+					.as("the finite cheaper pair must precede the connected pair at estimate %s", estimate)
+					.containsExactlyInAnyOrder("ex:pDisconnectedStartLeft", "ex:pDisconnectedStartRight");
 		}
 	}
 
 	@Test
-	public void reorderJoinArgsStartsWithConnectedPairBeforeCheaperCartesianPair() throws Exception {
+	public void reorderJoinArgsStartsWithCheaperCartesianPairBeforeConnectedPair() throws Exception {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
 		StatementPattern anchor = new StatementPattern(new Var("s"), new Var("pa", vf.createIRI("ex:pAnchor")),
@@ -874,7 +1215,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		List<String> predicateOrder = reordered.stream()
 				.map(QueryJoinOptimizerTest::getPredicateValue)
 				.collect(Collectors.toList());
-		assertThat(predicateOrder.subList(0, 2)).containsExactlyInAnyOrder("ex:pAnchor", "ex:pConnected");
+		assertThat(predicateOrder.subList(0, 2)).containsExactlyInAnyOrder("ex:pDisconnectedLeft",
+				"ex:pDisconnectedRight");
 
 	}
 
@@ -1007,27 +1349,11 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				.collect(Collectors.toList());
 	}
 
-	private void assertPriorityPatternsStartWithPrefix(String query, EvaluationStatistics statistics,
+	private void assertPriorityPatternsStartWithExpectedPattern(String query, EvaluationStatistics statistics,
 			String expectedFirstPredicate) {
 		List<String> predicates = optimizePriorityQuery(query, statistics);
 		assertThat(predicates).as("outer statement-pattern order").isNotEmpty();
 		assertThat(predicates.getFirst()).isEqualTo(expectedFirstPredicate);
-	}
-
-	private void assertPrefixConnectedPatternsPrecedeDisconnected(List<String> predicates, String firstPrefix,
-			String secondPrefix) {
-		int firstPrefixIndex = predicates.indexOf(firstPrefix);
-		int secondPrefixIndex = predicates.indexOf(secondPrefix);
-		int firstDisconnectedIndex = predicates.indexOf("urn:outer-cheap");
-		int secondDisconnectedIndex = predicates.indexOf("urn:outer-cheap2");
-		assertThat(firstPrefixIndex).isGreaterThanOrEqualTo(0);
-		assertThat(secondPrefixIndex).isGreaterThanOrEqualTo(0);
-		assertThat(firstDisconnectedIndex).isGreaterThanOrEqualTo(0);
-		assertThat(secondDisconnectedIndex).isGreaterThanOrEqualTo(0);
-		assertThat(firstPrefixIndex).isLessThan(firstDisconnectedIndex);
-		assertThat(firstPrefixIndex).isLessThan(secondDisconnectedIndex);
-		assertThat(secondPrefixIndex).isLessThan(firstDisconnectedIndex);
-		assertThat(secondPrefixIndex).isLessThan(secondDisconnectedIndex);
 	}
 
 	private List<TupleExpr> flattenJoinArgs(TupleExpr expr) {
@@ -1489,6 +1815,96 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		}
 	}
 
+	private static final class LateralEndpointStatistics extends EvaluationStatistics {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Service) {
+				return 1;
+			}
+			if (expr instanceof StatementPattern pattern) {
+				return switch (predicate(pattern)) {
+				case "urn:endpoint" -> 1_000_000;
+				case "urn:missing" -> 0;
+				case "urn:remote" -> 1;
+				default -> super.getCardinality(expr);
+				};
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
+	private static final class SilentServiceStatistics extends EvaluationStatistics {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Service) {
+				return 1;
+			}
+			if (expr instanceof BindingSetAssignment) {
+				return 6;
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
+	private static final class FailingBindServiceStatistics extends EvaluationStatistics {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Service) {
+				return 1;
+			}
+			if (expr instanceof StatementPattern pattern) {
+				return switch (predicate(pattern)) {
+				case "urn:endpoint" -> 1_000_000;
+				case "urn:remote" -> 1;
+				default -> super.getCardinality(expr);
+				};
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
+	private static final class ArbitraryPathStatistics extends EvaluationStatistics {
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Service) {
+				return 1;
+			}
+			if (expr instanceof ArbitraryLengthPath) {
+				return 1;
+			}
+			if (expr instanceof StatementPattern pattern) {
+				return switch (predicate(pattern)) {
+				case "urn:endpoint" -> 1_000_000;
+				case "urn:path", "urn:remote" -> 1;
+				default -> super.getCardinality(expr);
+				};
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
+	private static final class AssignedVariableStatistics extends EvaluationStatistics {
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern pattern) {
+				return switch (predicate(pattern)) {
+				case "urn:assigned" -> 1;
+				case "urn:fanout", "urn:disconnected" -> 100;
+				default -> super.getCardinality(expr);
+				};
+			}
+			if (expr instanceof Join) {
+				return 10;
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
 	private static final class JoinEstimatingStatistics extends EvaluationStatistics {
 
 		@Override
@@ -1620,6 +2036,24 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		}
 	}
 
+	private static final class EqualCostStatementOptimizer extends QueryJoinOptimizer {
+		private EqualCostStatementOptimizer() {
+			super(new EvaluationStatistics(), new EmptyTripleSource());
+		}
+
+		private Object newJoinVisitorForTest() {
+			return new EqualCostJoinVisitor();
+		}
+
+		private class EqualCostJoinVisitor extends JoinVisitor {
+			@Override
+			protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
+					Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
+				return 10;
+			}
+		}
+	}
+
 	private static final class CountingTripleSource implements TripleSource {
 		private final List<Statement> statements = new ArrayList<>(10_000);
 		private int objectBoundStatementCalls;
@@ -1633,6 +2067,10 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			for (int i = 0; i < 10_000; i++) {
 				statements.add(VF.createStatement(subject, predicate, VF.createIRI("urn:o" + i)));
 			}
+		}
+
+		private CountingTripleSource(List<Statement> statements) {
+			this.statements.addAll(statements);
 		}
 
 		@Override
@@ -1731,7 +2169,10 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		@Override
 		public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
 			calls++;
-			if (!"urn:test-service".equals(serviceUrl)) {
+			if ("urn:failing-service".equals(serviceUrl)) {
+				throw new QueryEvaluationException("configured test service failure");
+			}
+			if (!List.of("urn:test-service", "urn:service1", "urn:service2").contains(serviceUrl)) {
 				throw new QueryEvaluationException("unexpected service URL: " + serviceUrl);
 			}
 			return service;

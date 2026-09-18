@@ -443,83 +443,83 @@ public class QueryPlanRetrievalTest {
 					"   │  ╚══ BindingSetAssignment ([[s=http://example.com/A], [s=http://example.com/B], [s=http://example.com/C]]) (costEstimate=0, resultSizeEstimate=1.00)\n"
 					+
 					"   └── Join (JoinIterator) [right]\n" +
-					"      ╠══ Filter [left]\n" +
-					"      ║  ├── Compare (!=)\n" +
-					"      ║  │     Var (name=o)\n" +
-					"      ║  │     ValueConstant (value=http://example.com/Forbidden)\n" +
-					"      ║  └── StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
-					"      ║        s: Var (name=s)\n" +
-					"      ║        p: Var (name=_const_efd45947_uri, value=http://example.com/prop, anonymous)\n" +
-					"      ║        o: Var (name=o)\n" +
-					"      ╚══ Join (HashJoinIteration) [right]\n" +
-					"         ├── LeftJoin [left]\n" +
-					"         │  ╠══ Join (HashJoinIteration) [left]\n" +
-					"         │  ║  ├── Filter (new scope) [left]\n" +
-					"         │  ║  │  ╠══ And\n" +
-					"         │  ║  │  ║  ├── Compare (>)\n" +
-					"         │  ║  │  ║  │     Var (name=score)\n" +
-					"         │  ║  │  ║  │     ValueConstant (value=\"10\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"      ╠══ Filter (new scope) [left]\n" +
+					"      ║  ├── And\n" +
+					"      ║  │  ╠══ Compare (!=)\n" +
+					"      ║  │  ║  ├── FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)\n" +
+					"      ║  │  ║  │     Str\n" +
+					"      ║  │  ║  │        Var (name=o)\n" +
+					"      ║  │  ║  └── ValueConstant (value=\"bad\")\n" +
+					"      ║  │  ╚══ Not\n" +
+					"      ║  │        Exists\n" +
+					"      ║  │           StatementPattern (resultSizeEstimate=0)\n" +
+					"      ║  │              s: Var (name=s)\n" +
+					"      ║  │              p: Var (name=_const_52097_uri, value=http://example.com/deprecated, anonymous)\n"
 					+
-					"         │  ║  │  ║  └── Compare (!=)\n" +
-					"         │  ║  │  ║     ╠══ MathExpr (-)\n" +
-					"         │  ║  │  ║     ║     Var (name=score)\n" +
-					"         │  ║  │  ║     ║     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"      ║  │              o: Var (name=_const_36758e_lit_eeeee601, value=\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>, anonymous)\n"
 					+
-					"         │  ║  │  ║     ╚══ ValueConstant (value=\"0\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"      ║  └── SingletonSet\n" +
+					"      ╚══ Join (JoinIterator) [right]\n" +
+					"         ├── Filter [left]\n" +
+					"         │  ╠══ Compare (!=)\n" +
+					"         │  ║     Var (name=o)\n" +
+					"         │  ║     ValueConstant (value=http://example.com/Forbidden)\n" +
+					"         │  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+					"         │        s: Var (name=s)\n" +
+					"         │        p: Var (name=_const_efd45947_uri, value=http://example.com/prop, anonymous)\n" +
+					"         │        o: Var (name=o)\n" +
+					"         └── LeftJoin [right]\n" +
+					"            ╠══ Join (HashJoinIteration) [left]\n" +
+					"            ║  ├── Filter (new scope) [left]\n" +
+					"            ║  │  ╠══ And\n" +
+					"            ║  │  ║  ├── Compare (>)\n" +
+					"            ║  │  ║  │     Var (name=score)\n" +
+					"            ║  │  ║  │     ValueConstant (value=\"10\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"         │  ║  │  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
-					"         │  ║  │        s: Var (name=s)\n" +
-					"         │  ║  │        p: Var (name=_const_ada452e_uri, value=http://example.com/score, anonymous)\n"
+					"            ║  │  ║  └── Compare (!=)\n" +
+					"            ║  │  ║     ╠══ MathExpr (-)\n" +
+					"            ║  │  ║     ║     Var (name=score)\n" +
+					"            ║  │  ║     ║     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"         │  ║  │        o: Var (name=score)\n" +
-					"         │  ║  └── Filter (new scope) (costEstimate=6.00, resultSizeEstimate=1.00) [right]\n" +
-					"         │  ║     ╠══ Compare (<)\n" +
-					"         │  ║     ║     Var (name=score)\n" +
-					"         │  ║     ║     ValueConstant (value=\"100\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"            ║  │  ║     ╚══ ValueConstant (value=\"0\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"         │  ║     ╚══ SingletonSet\n" +
-					"         │  ╚══ Join (JoinIterator) [right]\n" +
-					"         │     ├── Filter [left]\n" +
-					"         │     │  ╠══ Regex\n" +
-					"         │     │  ║  ├── Str\n" +
-					"         │     │  ║  │     Var (name=reviewer)\n" +
-					"         │     │  ║  └── ValueConstant (value=\"^http://example\\.com/user\")\n" +
-					"         │     │  ╚══ StatementPattern (costEstimate=1.12, resultSizeEstimate=0)\n" +
-					"         │     │        s: Var (name=s)\n" +
-					"         │     │        p: Var (name=_const_f053af92_uri, value=http://example.com/reviewedBy, anonymous)\n"
+					"            ║  │  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+					"            ║  │        s: Var (name=s)\n" +
+					"            ║  │        p: Var (name=_const_ada452e_uri, value=http://example.com/score, anonymous)\n"
 					+
-					"         │     │        o: Var (name=reviewer)\n" +
-					"         │     └── Filter [right]\n" +
-					"         │        ╠══ And\n" +
-					"         │        ║  ├── Compare (<=)\n" +
-					"         │        ║  │     Var (name=lvl)\n" +
-					"         │        ║  │     ValueConstant (value=\"8\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"            ║  │        o: Var (name=score)\n" +
+					"            ║  └── Filter (new scope) (costEstimate=6.00, resultSizeEstimate=1.00) [right]\n" +
+					"            ║     ╠══ Compare (<)\n" +
+					"            ║     ║     Var (name=score)\n" +
+					"            ║     ║     ValueConstant (value=\"100\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"         │        ║  └── Compare (>=)\n" +
-					"         │        ║        Var (name=lvl)\n" +
-					"         │        ║        ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"            ║     ╚══ SingletonSet\n" +
+					"            ╚══ Join (JoinIterator) [right]\n" +
+					"               ├── Filter [left]\n" +
+					"               │  ╠══ Regex\n" +
+					"               │  ║  ├── Str\n" +
+					"               │  ║  │     Var (name=reviewer)\n" +
+					"               │  ║  └── ValueConstant (value=\"^http://example\\.com/user\")\n" +
+					"               │  ╚══ StatementPattern (costEstimate=1.12, resultSizeEstimate=0)\n" +
+					"               │        s: Var (name=s)\n" +
+					"               │        p: Var (name=_const_f053af92_uri, value=http://example.com/reviewedBy, anonymous)\n"
 					+
-					"         │        ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
-					"         │              s: Var (name=reviewer)\n" +
-					"         │              p: Var (name=_const_a78a220_uri, value=http://example.com/level, anonymous)\n"
+					"               │        o: Var (name=reviewer)\n" +
+					"               └── Filter [right]\n" +
+					"                  ╠══ And\n" +
+					"                  ║  ├── Compare (<=)\n" +
+					"                  ║  │     Var (name=lvl)\n" +
+					"                  ║  │     ValueConstant (value=\"8\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"         │              o: Var (name=lvl)\n" +
-					"         └── Filter (new scope) [right]\n" +
-					"            ╠══ And\n" +
-					"            ║  ├── Compare (!=)\n" +
-					"            ║  │  ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)\n" +
-					"            ║  │  ║     Str\n" +
-					"            ║  │  ║        Var (name=o)\n" +
-					"            ║  │  ╚══ ValueConstant (value=\"bad\")\n" +
-					"            ║  └── Not\n" +
-					"            ║        Exists\n" +
-					"            ║           StatementPattern (resultSizeEstimate=0)\n" +
-					"            ║              s: Var (name=s)\n" +
-					"            ║              p: Var (name=_const_52097_uri, value=http://example.com/deprecated, anonymous)\n"
+					"                  ║  └── Compare (>=)\n" +
+					"                  ║        Var (name=lvl)\n" +
+					"                  ║        ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"            ║              o: Var (name=_const_36758e_lit_eeeee601, value=\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>, anonymous)\n"
+					"                  ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+					"                        s: Var (name=reviewer)\n" +
+					"                        p: Var (name=_const_a78a220_uri, value=http://example.com/level, anonymous)\n"
 					+
-					"            ╚══ SingletonSet\n");
+					"                        o: Var (name=lvl)\n");
 		}
 		sailRepository.shutDown();
 	}

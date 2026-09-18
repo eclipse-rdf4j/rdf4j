@@ -36,21 +36,35 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
@@ -125,6 +139,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private Set<String> boundVars = new HashSet<>();
 		private double currentHighestCost = 1;
 		private final Map<TupleExpr, Set<String>> externalServiceVariableCache = new IdentityHashMap<>();
+		private final Map<TupleExpr, BindingInfo> bindingInfoCache = new IdentityHashMap<>();
 
 		protected JoinVisitor() {
 			super(trackResultSize);
@@ -138,7 +153,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			Set<String> origBoundVars = boundVars;
 			try {
 				boundVars = new HashSet<>(boundVars);
-				boundVars.addAll(leftJoin.getLeftArg().getBindingNames());
+				boundVars.addAll(getBindingInfo(leftJoin.getLeftArg()).guaranteedOutput);
 
 				leftJoin.getRightArg().visit(this);
 			} finally {
@@ -153,7 +168,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			Set<String> origBoundVars = boundVars;
 			try {
 				boundVars = new HashSet<>(boundVars);
-				boundVars.addAll(lateral.getRightInputBindingNames());
+				Set<String> guaranteedLeftBindings = getBindingInfo(lateral.getLeftArg()).guaranteedOutput;
+				Set<String> rightInputBindings = new HashSet<>(lateral.getRightInputBindingNames());
+				rightInputBindings.retainAll(guaranteedLeftBindings);
+				boundVars.addAll(rightInputBindings);
 
 				lateral.getRightArg().visit(this);
 			} finally {
@@ -219,7 +237,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				// Keep optimizePriorityJoin scope isolation while exposing projected or extension bindings to ordinary
 				// selection.
 				for (TupleExpr priorityArg : priorityArgs) {
-					boundVars.addAll(priorityArg.getBindingNames());
+					boundVars.addAll(getBindingInfo(priorityArg).guaranteedOutput);
 				}
 				Set<String> ordinaryEntryBoundVars = new HashSet<>(boundVars);
 
@@ -273,7 +291,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						// Recursively optimize join arguments
 						tupleExpr.visit(this);
 
-						boundVars.addAll(tupleExpr.getBindingNames());
+						boundVars.addAll(getBindingInfo(tupleExpr).guaranteedOutput);
 					}
 				}
 
@@ -437,14 +455,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 							getCard);
 					for (TupleExpr tupleExpr : reorderedRun) {
 						ret.addLast(tupleExpr);
-						prefixBindingNames.addAll(tupleExpr.getBindingNames());
+						prefixBindingNames.addAll(getBindingInfo(tupleExpr).guaranteedOutput);
 					}
 				}
 
 				if (!tupleExprs.isEmpty()) {
 					TupleExpr barrier = tupleExprs.removeFirst();
 					ret.addLast(barrier);
-					prefixBindingNames.addAll(barrier.getBindingNames());
+					prefixBindingNames.addAll(getBindingInfo(barrier).guaranteedOutput);
 				}
 			}
 
@@ -463,7 +481,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					if (bestIncoming != null) {
 						tupleExprs.remove(bestIncoming);
 						ret.addLast(bestIncoming);
-						prefixBindingNames.addAll(bestIncoming.getBindingNames());
+						prefixBindingNames.addAll(getBindingInfo(bestIncoming).guaranteedOutput);
 						continue;
 					}
 
@@ -471,68 +489,52 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					if (bestStart != null) {
 						tupleExprs.remove(bestStart);
 						ret.addLast(bestStart);
-						prefixBindingNames.addAll(bestStart.getBindingNames());
+						prefixBindingNames.addAll(getBindingInfo(bestStart).guaranteedOutput);
 						continue;
 					}
 				}
 
-				TupleExpr bestConnectedCandidate = null;
-				double bestConnectedCost = Double.MAX_VALUE;
 				TupleExpr bestCandidate = null;
-				double bestCost = Double.MAX_VALUE;
+				double bestCost = Double.POSITIVE_INFINITY;
+				boolean bestCandidateConnected = false;
 				for (TupleExpr cand : tupleExprs) {
 					boolean connectedToPrefix = connectedByRealBinding(prefixBindingNames, cand);
 					if (!connectedToPrefix && !statementPatternWithMinimumOneConstant(cand)) {
 						continue;
 					}
 
-					double candidateConnectedCost = Double.MAX_VALUE;
-					boolean hasConnectedCost = false;
-					double candidateCost = Double.MAX_VALUE;
+					double candidateCost = Double.POSITIVE_INFINITY;
+					boolean candidateConnected = connectedToPrefix;
 					for (TupleExpr prev : ret) {
 						boolean eligibleForCartesianFallback = statementPatternWithMinimumOneConstant(prev);
 						boolean connectedCandidate = connectedByRealBinding(prev, cand);
 						if (!eligibleForCartesianFallback && !connectedCandidate && !connectedToPrefix) {
 							continue;
 						}
-						double cost = getCard.apply(prev, cand);
-						if (eligibleForCartesianFallback && cost < candidateCost) {
-							candidateCost = cost;
-						}
-						if ((connectedCandidate || connectedToPrefix)
-								&& (!hasConnectedCost || cost < candidateConnectedCost)) {
-							candidateConnectedCost = cost;
-							hasConnectedCost = true;
-						}
+						candidateCost = Math.min(candidateCost, normalizeCost(getCard.apply(prev, cand)));
+						candidateConnected |= connectedCandidate || connectedToPrefix;
 					}
 
-					if (connectedToPrefix && !hasConnectedCost) {
-						candidateConnectedCost = statistics.getCardinality(cand);
-						hasConnectedCost = true;
+					if (Double.isInfinite(candidateCost) && connectedToPrefix) {
+						candidateCost = normalizeCost(statistics.getCardinality(cand));
 					}
-					if (hasConnectedCost
-							&& (bestConnectedCandidate == null || candidateConnectedCost < bestConnectedCost)) {
-						bestConnectedCost = candidateConnectedCost;
-						bestConnectedCandidate = cand;
-					}
-					if (candidateCost < bestCost) {
+
+					if (bestCandidate == null || isBetterCandidate(candidateCost, candidateConnected, bestCost,
+							bestCandidateConnected)) {
 						bestCost = candidateCost;
 						bestCandidate = cand;
+						bestCandidateConnected = candidateConnected;
 					}
 				}
 
-				if (bestConnectedCandidate != null) {
-					tupleExprs.remove(bestConnectedCandidate);
-					ret.addLast(bestConnectedCandidate);
-					prefixBindingNames.addAll(bestConnectedCandidate.getBindingNames());
-				} else if (bestCandidate != null) {
+				if (bestCandidate != null) {
 					tupleExprs.remove(bestCandidate);
 					ret.addLast(bestCandidate);
-					prefixBindingNames.addAll(bestCandidate.getBindingNames());
+					prefixBindingNames.addAll(getBindingInfo(bestCandidate).guaranteedOutput);
 				} else {
 					TupleExpr next = tupleExprs.removeFirst();
 					ret.addLast(next);
-					prefixBindingNames.addAll(next.getBindingNames());
+					prefixBindingNames.addAll(getBindingInfo(next).guaranteedOutput);
 				}
 			}
 
@@ -540,16 +542,46 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private TupleExpr selectBestIncomingCandidate(List<TupleExpr> tupleExprs, Set<String> prefixBindingNames) {
-			TupleExpr best = null;
-			double bestCost = Double.MAX_VALUE;
+			if (prefixBindingNames.isEmpty()) {
+				return null;
+			}
+
+			Map<TupleExpr, Double> cardinalityMap = new HashMap<>(tupleExprs.size());
+			Map<TupleExpr, List<Var>> varsMap = new HashMap<>(tupleExprs.size());
+			Map<Var, Integer> varFreqMap = new HashMap<>((tupleExprs.size() + 1) * 2);
 			for (TupleExpr tupleExpr : tupleExprs) {
-				if (connectedByRealBinding(prefixBindingNames, tupleExpr)) {
-					double cost = statistics.getCardinality(tupleExpr);
-					if (best == null || cost < bestCost) {
+				double cardinality = statistics.getCardinality(tupleExpr);
+				cardinalityMap.put(tupleExpr, cardinality);
+				List<Var> vars = tupleExpr instanceof ZeroLengthPath
+						? ((ZeroLengthPath) tupleExpr).getVarList()
+						: getStatementPatternVars(tupleExpr);
+				varsMap.put(tupleExpr, vars);
+				fillVarFreqMap(vars, varFreqMap);
+			}
+
+			Set<String> previousBoundVars = boundVars;
+			double previousHighestCost = currentHighestCost;
+			boundVars = new HashSet<>(prefixBindingNames);
+			currentHighestCost = 1;
+			TupleExpr best = null;
+			double bestCost = Double.POSITIVE_INFINITY;
+			boolean bestConnected = false;
+			try {
+				for (TupleExpr tupleExpr : tupleExprs) {
+					boolean connected = connectedByRealBinding(prefixBindingNames, tupleExpr);
+					if (!connected && !statementPatternWithMinimumOneConstant(tupleExpr)) {
+						continue;
+					}
+					double cost = normalizeCost(getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap));
+					if (best == null || isBetterCandidate(cost, connected, bestCost, bestConnected)) {
 						bestCost = cost;
 						best = tupleExpr;
+						bestConnected = connected;
 					}
 				}
+			} finally {
+				boundVars = previousBoundVars;
+				currentHighestCost = previousHighestCost;
 			}
 			return best;
 		}
@@ -570,7 +602,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			Map<TupleExpr, Double> singleCard = new HashMap<>(candidates.size());
 			for (TupleExpr candidate : candidates) {
-				singleCard.put(candidate, statistics.getCardinality(candidate));
+				singleCard.put(candidate, normalizeCost(statistics.getCardinality(candidate)));
 			}
 
 			List<TupleExpr> primary = new ArrayList<>(candidates);
@@ -579,13 +611,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				primary = new ArrayList<>(primary.subList(0, Math.min(3, primary.size())));
 			}
 
-			TupleExpr bestConnectedA = null;
-			TupleExpr bestConnectedB = null;
-			double bestConnectedCost = Double.MAX_VALUE;
-			boolean hasBestConnectedCost = false;
 			TupleExpr bestA = null;
 			TupleExpr bestB = null;
-			double bestCost = Double.MAX_VALUE;
+			double bestCost = Double.POSITIVE_INFINITY;
+			boolean bestPairConnected = false;
+			boolean connectedPairExamined = false;
 
 			for (TupleExpr a : primary) {
 				for (TupleExpr b : candidates) {
@@ -593,23 +623,19 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						continue;
 					}
 
-					double cost = getCard.apply(a, b);
-					if (connectedByRealBinding(a, b)
-							&& (!hasBestConnectedCost || cost < bestConnectedCost)) {
-						bestConnectedCost = cost;
-						bestConnectedA = a;
-						bestConnectedB = b;
-						hasBestConnectedCost = true;
-					}
-					if (cost < bestCost) {
+					double cost = normalizeCost(getCard.apply(a, b));
+					boolean connected = connectedByRealBinding(a, b);
+					connectedPairExamined |= connected;
+					if (bestA == null || isBetterCandidate(cost, connected, bestCost, bestPairConnected)) {
 						bestCost = cost;
 						bestA = a;
 						bestB = b;
+						bestPairConnected = connected;
 					}
 				}
 			}
 
-			if (!hasBestConnectedCost) {
+			if (!connectedPairExamined) {
 				for (int i = 0; i < candidates.size(); i++) {
 					TupleExpr a = candidates.get(i);
 					for (int j = i + 1; j < candidates.size(); j++) {
@@ -617,20 +643,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						if (!connectedByRealBinding(a, b)) {
 							continue;
 						}
-						double cost = getCard.apply(a, b);
-						if (!hasBestConnectedCost || cost < bestConnectedCost) {
-							bestConnectedCost = cost;
-							bestConnectedA = a;
-							bestConnectedB = b;
-							hasBestConnectedCost = true;
+						double cost = normalizeCost(getCard.apply(a, b));
+						if (bestA == null || isBetterCandidate(cost, true, bestCost, bestPairConnected)) {
+							bestCost = cost;
+							bestA = a;
+							bestB = b;
+							bestPairConnected = true;
 						}
 					}
 				}
-			}
-
-			if (bestConnectedA != null) {
-				bestA = bestConnectedA;
-				bestB = bestConnectedB;
 			}
 
 			if (bestA == null) {
@@ -641,6 +662,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			double cardB = singleCard.get(bestB);
 
 			return cardA <= cardB ? bestA : bestB;
+		}
+
+		private boolean isBetterCandidate(double candidateCost, boolean candidateConnected, double bestCost,
+				boolean bestConnected) {
+			int costComparison = Double.compare(normalizeCost(candidateCost), normalizeCost(bestCost));
+			return costComparison < 0 || costComparison == 0 && candidateConnected && !bestConnected;
+		}
+
+		private double normalizeCost(double cost) {
+			return Double.isNaN(cost) ? Double.POSITIVE_INFINITY : cost;
 		}
 
 		private void optimizeInNewScope(List<TupleExpr> subSelects) {
@@ -658,17 +689,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private boolean joinOnMultipleVars(TupleExpr first, TupleExpr second) {
-			Set<String> firstBindingNames = first.getBindingNames();
+			Set<String> firstBindingNames = getBindingInfo(first).mayOutput;
 			if (firstBindingNames.size() == 1) {
 				return false;
 			}
-			Set<String> secondBindingNames = second.getBindingNames();
+			Set<String> secondBindingNames = getBindingInfo(second).mayOutput;
 			if (secondBindingNames.size() == 1) {
 				return false;
 			}
 			int overlap = 0;
 			for (String firstBindingName : firstBindingNames) {
-				if (!firstBindingName.startsWith("_const_") && secondBindingNames.contains(firstBindingName)) {
+				if (secondBindingNames.contains(firstBindingName)) {
 					overlap++;
 				}
 
@@ -916,15 +947,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			if (expressions.size() == 1) {
 				TupleExpr tupleExpr = expressions.getFirst();
 				if (tupleExpr.getCostEstimate() < 0) {
-					tupleExpr.setCostEstimate(getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap));
+					tupleExpr.setCostEstimate(
+							normalizeCost(getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap)));
 				}
 				return tupleExpr;
 			}
 
-			TupleExpr connectedResult = null;
-			double lowestConnectedCost = Double.POSITIVE_INFINITY;
 			TupleExpr result = null;
 			double lowestCost = Double.POSITIVE_INFINITY;
+			boolean resultConnected = false;
 			List<TupleExpr> readyExpressions = expressions.stream()
 					.filter(this::serviceDependenciesAreReady)
 					.toList();
@@ -934,27 +965,19 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			for (TupleExpr tupleExpr : readyExpressions) {
 				// Calculate a score for this tuple expression
-				double cost = getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap);
+				double cost = normalizeCost(getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap));
 				if (cost == 0) {
 					tupleExpr.setCostEstimate(cost);
 					return tupleExpr;
 				}
 
-				if (isConnectedToBoundVars(tupleExpr) && (cost < lowestConnectedCost || connectedResult == null)) {
-					lowestConnectedCost = cost;
-					connectedResult = tupleExpr;
-				}
-
-				if (cost < lowestCost || result == null) {
+				boolean connected = isConnectedToBoundVars(tupleExpr);
+				if (result == null || isBetterCandidate(cost, connected, lowestCost, resultConnected)) {
 					// More specific path expression found
 					lowestCost = cost;
 					result = tupleExpr;
+					resultConnected = connected;
 				}
-			}
-
-			if (connectedResult != null) {
-				result = connectedResult;
-				lowestCost = lowestConnectedCost;
 			}
 
 			assert result != null;
@@ -970,6 +993,221 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			return true;
+		}
+
+		private BindingInfo getBindingInfo(TupleExpr tupleExpr) {
+			BindingInfo cached = bindingInfoCache.get(tupleExpr);
+			if (cached != null) {
+				return cached;
+			}
+
+			BindingInfo result;
+			if (tupleExpr instanceof StatementPattern statementPattern) {
+				Set<String> names = realVariableNames(statementPattern.getVarList());
+				result = new BindingInfo(names, names);
+			} else if (tupleExpr instanceof ZeroLengthPath zeroLengthPath) {
+				Set<String> names = realVariableNames(zeroLengthPath.getVarList());
+				result = new BindingInfo(names, names);
+			} else if (tupleExpr instanceof ArbitraryLengthPath path) {
+				Set<String> may = realVariableNames(path.getSubjectVar(), path.getObjectVar(), path.getContextVar());
+				Set<String> guaranteed = new HashSet<>(may);
+				if (path.getPathExpression() != null) {
+					BindingInfo pathInfo = getBindingInfo(path.getPathExpression());
+					may.addAll(pathInfo.mayOutput);
+					if (path.getMinLength() > 0) {
+						guaranteed.addAll(pathInfo.guaranteedOutput);
+					}
+				}
+				result = new BindingInfo(may, guaranteed);
+			} else if (tupleExpr instanceof TripleRef tripleRef) {
+				Set<String> names = realVariableNames(tripleRef.getVarList());
+				result = new BindingInfo(names, names);
+			} else if (tupleExpr instanceof BindingSetAssignment assignment) {
+				result = bindingInfoForAssignment(assignment);
+			} else if (tupleExpr instanceof Projection projection) {
+				result = mapProjectionInfo(getBindingInfo(projection.getArg()), projection.getProjectionElemList());
+			} else if (tupleExpr instanceof MultiProjection multiProjection) {
+				result = bindingInfoForMultiProjection(multiProjection);
+			} else if (tupleExpr instanceof Extension extension) {
+				result = bindingInfoForExtension(extension);
+			} else if (tupleExpr instanceof Filter filter) {
+				result = getBindingInfo(filter.getArg());
+			} else if (tupleExpr instanceof LeftJoin leftJoin) {
+				BindingInfo left = getBindingInfo(leftJoin.getLeftArg());
+				BindingInfo right = getBindingInfo(leftJoin.getRightArg());
+				result = new BindingInfo(union(left.mayOutput, right.mayOutput), left.guaranteedOutput);
+			} else if (tupleExpr instanceof Union union) {
+				BindingInfo left = getBindingInfo(union.getLeftArg());
+				BindingInfo right = getBindingInfo(union.getRightArg());
+				result = new BindingInfo(union(left.mayOutput, right.mayOutput), intersection(left.guaranteedOutput,
+						right.guaranteedOutput));
+			} else if (tupleExpr instanceof Intersection intersection) {
+				BindingInfo left = getBindingInfo(intersection.getLeftArg());
+				BindingInfo right = getBindingInfo(intersection.getRightArg());
+				result = new BindingInfo(intersection(left.mayOutput, right.mayOutput),
+						intersection(left.guaranteedOutput,
+								right.guaranteedOutput));
+			} else if (tupleExpr instanceof Difference difference) {
+				result = getBindingInfo(difference.getLeftArg());
+			} else if (tupleExpr instanceof Join join) {
+				BindingInfo left = getBindingInfo(join.getLeftArg());
+				BindingInfo right = getBindingInfo(join.getRightArg());
+				result = new BindingInfo(union(left.mayOutput, right.mayOutput), union(left.guaranteedOutput,
+						right.guaranteedOutput));
+			} else if (tupleExpr instanceof Lateral lateral) {
+				BindingInfo left = getBindingInfo(lateral.getLeftArg());
+				BindingInfo right = getBindingInfo(lateral.getRightArg());
+				result = new BindingInfo(union(left.mayOutput, right.mayOutput), union(left.guaranteedOutput,
+						right.guaranteedOutput));
+			} else if (tupleExpr instanceof Group group) {
+				Set<String> groupNames = new HashSet<>(group.getGroupBindingNames());
+				BindingInfo child = getBindingInfo(group.getArg());
+				Set<String> may = new HashSet<>(groupNames);
+				may.addAll(group.getAggregateBindingNames());
+				Set<String> guaranteed = new HashSet<>(child.guaranteedOutput);
+				guaranteed.retainAll(groupNames);
+				result = new BindingInfo(may, guaranteed);
+			} else if (tupleExpr instanceof TupleFunctionCall tupleFunctionCall) {
+				result = new BindingInfo(realVariableNames(tupleFunctionCall.getResultVars()), Set.of());
+			} else if (tupleExpr instanceof EmptySet || tupleExpr instanceof SingletonSet) {
+				result = new BindingInfo(Set.of(), Set.of());
+			} else if (tupleExpr instanceof Service service) {
+				BindingInfo serviceInfo = getBindingInfo(service.getServiceExpr());
+				result = service.isSilent()
+						? new BindingInfo(serviceInfo.mayOutput, Set.of())
+						: serviceInfo;
+			} else if (tupleExpr instanceof Distinct || tupleExpr instanceof Reduced || tupleExpr instanceof Slice
+					|| tupleExpr instanceof Order || tupleExpr instanceof QueryRoot) {
+				result = getBindingInfo(((org.eclipse.rdf4j.query.algebra.UnaryTupleOperator) tupleExpr).getArg());
+			} else {
+				// Unknown tuple operators may expose names with semantics that are not safe to infer here.
+				result = new BindingInfo(Set.of(), Set.of());
+			}
+
+			bindingInfoCache.put(tupleExpr, result);
+			return result;
+		}
+
+		private BindingInfo bindingInfoForAssignment(BindingSetAssignment assignment) {
+			Set<String> may = new HashSet<>();
+			Set<String> guaranteed = new HashSet<>();
+			boolean firstRow = true;
+			Iterable<BindingSet> bindingSets = assignment.getBindingSets();
+			if (bindingSets != null) {
+				for (BindingSet bindingSet : bindingSets) {
+					Set<String> rowNames = new HashSet<>();
+					for (String name : bindingSet.getBindingNames()) {
+						if (bindingSet.getValue(name) != null) {
+							rowNames.add(name);
+						}
+					}
+					may.addAll(rowNames);
+					if (firstRow) {
+						guaranteed.addAll(rowNames);
+						firstRow = false;
+					} else {
+						guaranteed.retainAll(rowNames);
+					}
+				}
+			}
+			return new BindingInfo(may, guaranteed);
+		}
+
+		private BindingInfo bindingInfoForMultiProjection(MultiProjection multiProjection) {
+			if (multiProjection.getProjections().isEmpty()) {
+				return new BindingInfo(Set.of(), Set.of());
+			}
+			BindingInfo child = getBindingInfo(multiProjection.getArg());
+			Set<String> may = new HashSet<>();
+			Set<String> guaranteed = null;
+			for (ProjectionElemList projection : multiProjection.getProjections()) {
+				Set<String> projectedMay = projection.getProjectedNamesFor(child.mayOutput);
+				Set<String> projectedGuaranteed = projection.getProjectedNamesFor(child.guaranteedOutput);
+				may.addAll(projectedMay);
+				if (guaranteed == null) {
+					guaranteed = new HashSet<>(projectedGuaranteed);
+				} else {
+					guaranteed.retainAll(projectedGuaranteed);
+				}
+			}
+			return new BindingInfo(may, guaranteed == null ? Set.of() : guaranteed);
+		}
+
+		private BindingInfo mapProjectionInfo(BindingInfo child, ProjectionElemList projection) {
+			return new BindingInfo(projection.getProjectedNamesFor(child.mayOutput),
+					projection.getProjectedNamesFor(child.guaranteedOutput));
+		}
+
+		private BindingInfo bindingInfoForExtension(Extension extension) {
+			BindingInfo child = getBindingInfo(extension.getArg());
+			Set<String> may = new HashSet<>(child.mayOutput);
+			Set<String> guaranteed = new HashSet<>(child.guaranteedOutput);
+			for (ExtensionElem element : extension.getElements()) {
+				String name = element.getName();
+				if (name == null) {
+					continue;
+				}
+				may.add(name);
+				Set<String> expressionBindings = new HashSet<>(guaranteed);
+				guaranteed.remove(name);
+				if (isGuaranteedValueExpr(element.getExpr(), expressionBindings)) {
+					guaranteed.add(name);
+				}
+			}
+			return new BindingInfo(may, guaranteed);
+		}
+
+		private boolean isGuaranteedValueExpr(ValueExpr valueExpr, Set<String> guaranteedBindings) {
+			if (valueExpr instanceof ValueConstant) {
+				return true;
+			}
+			if (valueExpr instanceof Var var) {
+				return var.hasValue() || var.getName() != null && guaranteedBindings.contains(var.getName());
+			}
+			return false;
+		}
+
+		private Set<String> realVariableNames(Iterable<Var> vars) {
+			Set<String> names = new HashSet<>();
+			for (Var var : vars) {
+				if (var != null && !var.isConstant() && var.getName() != null) {
+					names.add(var.getName());
+				}
+			}
+			return names;
+		}
+
+		private Set<String> realVariableNames(Var... vars) {
+			Set<String> names = new HashSet<>();
+			for (Var var : vars) {
+				if (var != null && !var.isConstant() && var.getName() != null) {
+					names.add(var.getName());
+				}
+			}
+			return names;
+		}
+
+		private Set<String> union(Set<String> left, Set<String> right) {
+			Set<String> result = new HashSet<>(left);
+			result.addAll(right);
+			return result;
+		}
+
+		private Set<String> intersection(Set<String> left, Set<String> right) {
+			Set<String> result = new HashSet<>(left);
+			result.retainAll(right);
+			return result;
+		}
+
+		private final class BindingInfo {
+			private final Set<String> mayOutput;
+			private final Set<String> guaranteedOutput;
+
+			private BindingInfo(Set<String> mayOutput, Set<String> guaranteedOutput) {
+				this.mayOutput = Set.copyOf(mayOutput);
+				this.guaranteedOutput = Set.copyOf(guaranteedOutput);
+			}
+
 		}
 
 		private Set<String> getExternalServiceVariables(TupleExpr tupleExpr) {
@@ -1010,7 +1248,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						collectExternalServiceVariables(join.getLeftArg(), incomingBindings));
 				Set<String> rightIncoming = incomingBindings;
 				if (join.getRightArg() instanceof Service || !isOutOfScopeForLeftArgBindings(join.getRightArg())) {
-					rightIncoming = withBindings(incomingBindings, join.getLeftArg().getBindingNames());
+					rightIncoming = withBindings(incomingBindings,
+							getBindingInfo(join.getLeftArg()).guaranteedOutput);
 				}
 				result.addAll(collectExternalServiceVariables(join.getRightArg(), rightIncoming));
 				return result;
@@ -1021,11 +1260,13 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						collectExternalServiceVariables(leftJoin.getLeftArg(), incomingBindings));
 				Set<String> rightIncoming = incomingBindings;
 				if (!TupleExprs.containsSubquery(leftJoin.getRightArg())) {
-					rightIncoming = withBindings(incomingBindings, leftJoin.getLeftArg().getBindingNames());
+					rightIncoming = withBindings(incomingBindings,
+							getBindingInfo(leftJoin.getLeftArg()).guaranteedOutput);
 				}
 				result.addAll(collectExternalServiceVariables(leftJoin.getRightArg(), rightIncoming));
 				if (leftJoin.hasCondition()) {
-					Set<String> conditionIncoming = withBindings(incomingBindings, leftJoin.getBindingNames());
+					Set<String> conditionIncoming = withBindings(incomingBindings,
+							getBindingInfo(leftJoin).guaranteedOutput);
 					result.addAll(collectExternalServiceVariables(leftJoin.getCondition(), conditionIncoming));
 				}
 				return result;
@@ -1034,7 +1275,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			if (tupleExpr instanceof Lateral lateral) {
 				Set<String> result = new HashSet<>(
 						collectExternalServiceVariables(lateral.getLeftArg(), incomingBindings));
-				Set<String> rightIncoming = withBindings(incomingBindings, lateral.getRightInputBindingNames());
+				Set<String> rightInputBindings = new HashSet<>(lateral.getRightInputBindingNames());
+				rightInputBindings.retainAll(getBindingInfo(lateral.getLeftArg()).guaranteedOutput);
+				Set<String> rightIncoming = withBindings(incomingBindings, rightInputBindings);
 				result.addAll(collectExternalServiceVariables(lateral.getRightArg(), rightIncoming));
 				return result;
 			}
@@ -1056,7 +1299,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			if (tupleExpr instanceof Filter filter) {
 				Set<String> result = new HashSet<>(
 						collectExternalServiceVariables(filter.getArg(), incomingBindings));
-				Set<String> conditionIncoming = withBindings(incomingBindings, filter.getArg().getBindingNames());
+				Set<String> conditionIncoming = withBindings(incomingBindings,
+						getBindingInfo(filter.getArg()).guaranteedOutput);
 				result.addAll(collectExternalServiceVariables(filter.getCondition(), conditionIncoming));
 				return result;
 			}
@@ -1064,10 +1308,19 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			if (tupleExpr instanceof Extension extension) {
 				Set<String> result = new HashSet<>(
 						collectExternalServiceVariables(extension.getArg(), incomingBindings));
-				Set<String> expressionIncoming = withBindings(incomingBindings, extension.getArg().getBindingNames());
+				Set<String> expressionIncoming = withBindings(incomingBindings,
+						getBindingInfo(extension.getArg()).guaranteedOutput);
 				for (ExtensionElem element : extension.getElements()) {
 					result.addAll(collectExternalServiceVariables(element.getExpr(), expressionIncoming));
-					expressionIncoming = withBindings(expressionIncoming, Set.of(element.getName()));
+					String name = element.getName();
+					if (name != null) {
+						Set<String> expressionBindings = new HashSet<>(expressionIncoming);
+						expressionIncoming = new HashSet<>(expressionIncoming);
+						expressionIncoming.remove(name);
+						if (isGuaranteedValueExpr(element.getExpr(), expressionBindings)) {
+							expressionIncoming.add(name);
+						}
+					}
 				}
 				return result;
 			}
@@ -1117,8 +1370,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			if (boundVars.isEmpty()) {
 				return false;
 			}
-			for (String bindingName : tupleExpr.getBindingNames()) {
-				if (isRealBindingName(bindingName) && boundVars.contains(bindingName)) {
+			for (String bindingName : getBindingInfo(tupleExpr).mayOutput) {
+				if (boundVars.contains(bindingName)) {
 					return true;
 				}
 			}
@@ -1137,7 +1390,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 				Set<Var> varsUsedInOtherExpressions = varFreqMap.keySet();
 
-				for (String assuredBindingName : tupleExpr.getAssuredBindingNames()) {
+				for (String assuredBindingName : getBindingInfo(tupleExpr).guaranteedOutput) {
 					if (varsUsedInOtherExpressions.contains(Var.of(assuredBindingName))) {
 						return 0;
 					}
@@ -1263,18 +1516,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				HashSet<String> allBindingNamesAbove = new HashSet<>();
 
 				for (TupleExpr orderedJoinArg : orderedJoinArgs) {
-					allBindingNamesAbove.addAll(orderedJoinArg.getBindingNames());
+					allBindingNamesAbove.addAll(getBindingInfo(orderedJoinArg).mayOutput);
 				}
 
 				if (!allBindingNamesAbove.isEmpty()) {
 
 					// Check that none of the variables used in the join are used anywhere else, e.g. is this case that
 					// join is the right arg of an effective cross join
-					Set<String> joinBindingNames = join.getBindingNames();
+					Set<String> joinBindingNames = getBindingInfo(join).mayOutput;
 					boolean crossJoin = true;
 					for (String leftBindingName : joinBindingNames) {
-						if (!leftBindingName.startsWith("_const_")
-								&& allBindingNamesAbove.contains(leftBindingName)) {
+						if (allBindingNamesAbove.contains(leftBindingName)) {
 							crossJoin = false;
 							break;
 						}
@@ -1286,6 +1538,23 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 				}
 			}
+		}
+
+		private boolean connectedByRealBinding(TupleExpr first, TupleExpr second) {
+			return connectedByRealBinding(getBindingInfo(first).mayOutput, second);
+		}
+
+		private boolean connectedByRealBinding(Set<String> firstBindingNames, TupleExpr second) {
+			if (firstBindingNames.isEmpty()) {
+				return false;
+			}
+
+			for (String bindingName : getBindingInfo(second).mayOutput) {
+				if (firstBindingNames.contains(bindingName)) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		private class StatementPatternVarCollector extends StatementPatternVisitor {
@@ -1336,28 +1605,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						&& ((StatementPattern) cand).getObjectVar().hasValue())
 				|| (((StatementPattern) cand).getContextVar() != null
 						&& ((StatementPattern) cand).getContextVar().hasValue()));
-	}
-
-	private static boolean connectedByRealBinding(TupleExpr first, TupleExpr second) {
-		Set<String> firstBindingNames = first.getBindingNames();
-		return connectedByRealBinding(firstBindingNames, second);
-	}
-
-	private static boolean connectedByRealBinding(Set<String> firstBindingNames, TupleExpr second) {
-		if (firstBindingNames.isEmpty()) {
-			return false;
-		}
-
-		for (String bindingName : second.getBindingNames()) {
-			if (isRealBindingName(bindingName) && firstBindingNames.contains(bindingName)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private static boolean isRealBindingName(String bindingName) {
-		return bindingName != null && !bindingName.startsWith("_const_");
 	}
 
 	private static int getUnionSize(Set<String> currentListNames, Set<String> candidateBindingNames) {
