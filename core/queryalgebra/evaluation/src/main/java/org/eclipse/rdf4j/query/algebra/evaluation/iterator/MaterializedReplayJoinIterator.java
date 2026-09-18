@@ -48,8 +48,10 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 	private final QueryValueEvaluationStep condition;
 	private final BindingSet bindings;
 	private final boolean leftJoin;
+	private final Object lifecycleLock = new Object();
 
-	private CloseableIteration<BindingSet> leftIter;
+	private volatile CloseableIteration<BindingSet> leftIter;
+	private volatile CloseableIteration<?> activeIteration;
 	private List<BindingSet> rightRows;
 	private BindingSet currentLeft;
 	private int candidateIndex;
@@ -159,25 +161,32 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 			return;
 		}
 		try (CloseableIteration<BindingSet> rightIter = right.evaluate(bindings)) {
-			if (stopIfCancelled()) {
+			if (!publishActive(rightIter)) {
 				return;
 			}
-			while (true) {
+			try {
 				if (stopIfCancelled()) {
 					return;
 				}
-				boolean hasNext = rightIter.hasNext();
-				if (stopIfCancelled()) {
-					return;
+				while (true) {
+					if (stopIfCancelled()) {
+						return;
+					}
+					boolean hasNext = rightIter.hasNext();
+					if (stopIfCancelled()) {
+						return;
+					}
+					if (!hasNext) {
+						break;
+					}
+					BindingSet row = rightIter.next();
+					if (stopIfCancelled()) {
+						return;
+					}
+					materialized.add(new QueryBindingSet(row));
 				}
-				if (!hasNext) {
-					break;
-				}
-				BindingSet row = rightIter.next();
-				if (stopIfCancelled()) {
-					return;
-				}
-				materialized.add(new QueryBindingSet(row));
+			} finally {
+				detachActive(rightIter);
 			}
 		}
 		if (stopIfCancelled()) {
@@ -188,14 +197,42 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 			return;
 		}
 		CloseableIteration<BindingSet> createdLeft = left.evaluate(bindings);
-		if (cancellationRequested) {
+		if (!publishLeft(createdLeft)) {
 			closeUnpublished(createdLeft);
 			close();
 			return;
 		}
-		leftIter = createdLeft;
 		if (stopIfCancelled()) {
 			return;
+		}
+	}
+
+	private boolean publishActive(CloseableIteration<?> iteration) {
+		synchronized (lifecycleLock) {
+			if (cancellationRequested) {
+				return false;
+			}
+			activeIteration = iteration;
+			return true;
+		}
+	}
+
+	private boolean publishLeft(CloseableIteration<BindingSet> iteration) {
+		synchronized (lifecycleLock) {
+			if (cancellationRequested) {
+				return false;
+			}
+			leftIter = iteration;
+			activeIteration = iteration;
+			return true;
+		}
+	}
+
+	private void detachActive(CloseableIteration<?> iteration) {
+		synchronized (lifecycleLock) {
+			if (activeIteration == iteration) {
+				activeIteration = null;
+			}
 		}
 	}
 
@@ -247,14 +284,21 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 
 	@Override
 	protected void handleClose() {
-		cancellationRequested = true;
-		CloseableIteration<BindingSet> iteration = leftIter;
-		leftIter = null;
-		currentLeft = null;
-		candidateIndex = 0;
-		currentLeftMatched = false;
-		List<BindingSet> rows = rightRows;
-		rightRows = null;
+		CloseableIteration<BindingSet> iteration;
+		List<BindingSet> rows;
+		synchronized (lifecycleLock) {
+			cancellationRequested = true;
+			iteration = leftIter;
+			leftIter = null;
+			if (activeIteration == iteration) {
+				activeIteration = null;
+			}
+			currentLeft = null;
+			candidateIndex = 0;
+			currentLeftMatched = false;
+			rows = rightRows;
+			rightRows = null;
+		}
 		if (rows != null) {
 			rows.clear();
 		}
@@ -265,7 +309,14 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 
 	@Override
 	public boolean requestCancellation() {
-		cancellationRequested = true;
+		CloseableIteration<?> iteration;
+		synchronized (lifecycleLock) {
+			cancellationRequested = true;
+			iteration = activeIteration;
+		}
+		if (iteration instanceof CooperativeCancellation cancellation) {
+			cancellation.requestCancellation();
+		}
 		return true;
 	}
 }

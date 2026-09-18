@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -191,6 +192,114 @@ class MaterializedReplayJoinIteratorCancellationTest {
 		assertEquals(0, leftOpened.get(), "cancellation must prevent publishing or opening the left operand");
 		assertNotNull(rightIteration.get());
 		assertEquals(1, rightIteration.get().closeCalls(), "the right iterator must close exactly once");
+	}
+
+	@Test
+	void timeLimitCancellationDelegatesToActiveRightOperand() throws Exception {
+		CountDownLatch rightHasNextEntered = new CountDownLatch(1);
+		CooperativeBlockingIteration rightIteration = new CooperativeBlockingIteration(rightHasNextEntered);
+		AtomicInteger leftOpened = new AtomicInteger();
+		AtomicReference<Throwable> outcome = new AtomicReference<>();
+
+		QueryEvaluationStep right = bindings -> rightIteration;
+		QueryEvaluationStep left = bindings -> {
+			leftOpened.incrementAndGet();
+			return new TrackingIteration(List.of(EmptyBindingSet.getInstance()), null, null, null);
+		};
+		MaterializedReplayJoinIterator replay = new MaterializedReplayJoinIterator(left, right, null,
+				EmptyBindingSet.getInstance(), true);
+		TestTimeLimitIteration timeout = new TestTimeLimitIteration(replay, LONG_TIME_LIMIT_MILLIS);
+		Thread worker = startWorker(timeout, outcome);
+
+		try {
+			assertTrue(rightHasNextEntered.await(WAIT_SECONDS, TimeUnit.SECONDS),
+					"right materialization must be in flight before cancellation");
+			timeout.interrupt();
+			timeout.interrupt();
+			assertTrue(rightIteration.cancellationRequested.await(WAIT_SECONDS, TimeUnit.SECONDS),
+					"timeout cancellation must reach the active right operand");
+			assertTrue(rightIteration.cancellationAccepted.get());
+			awaitWorker(worker);
+		} finally {
+			rightIteration.release.countDown();
+			timeout.close();
+			awaitWorker(worker);
+		}
+
+		assertInstanceOf(TestTimeoutException.class, outcome.get());
+		assertTrue(replay.isClosed());
+		assertEquals(0, leftOpened.get(), "cancellation during right materialization must not open the left operand");
+		assertEquals(1, rightIteration.closeCalls.get(), "the right iterator must close on the evaluation thread");
+		assertSame(worker, rightIteration.closeThread.get(), "the evaluation thread must own right iterator closure");
+	}
+
+	@Test
+	void timeLimitCancellationDelegatesToActiveLeftOperand() throws Exception {
+		CountDownLatch leftHasNextEntered = new CountDownLatch(1);
+		CooperativeBlockingIteration leftIteration = new CooperativeBlockingIteration(leftHasNextEntered);
+		TrackingIteration rightIteration = new TrackingIteration(List.of(), null, null, null);
+		AtomicReference<Throwable> outcome = new AtomicReference<>();
+
+		QueryEvaluationStep right = bindings -> rightIteration;
+		QueryEvaluationStep left = bindings -> leftIteration;
+		MaterializedReplayJoinIterator replay = new MaterializedReplayJoinIterator(left, right, null,
+				EmptyBindingSet.getInstance(), true);
+		TestTimeLimitIteration timeout = new TestTimeLimitIteration(replay, LONG_TIME_LIMIT_MILLIS);
+		Thread worker = startWorker(timeout, outcome);
+
+		try {
+			assertTrue(leftHasNextEntered.await(WAIT_SECONDS, TimeUnit.SECONDS),
+					"left evaluation must be in flight before cancellation");
+			timeout.interrupt();
+			assertTrue(leftIteration.cancellationRequested.await(WAIT_SECONDS, TimeUnit.SECONDS),
+					"timeout cancellation must reach the active left operand");
+			assertTrue(leftIteration.cancellationAccepted.get());
+			awaitWorker(worker);
+		} finally {
+			leftIteration.release.countDown();
+			timeout.close();
+			awaitWorker(worker);
+		}
+
+		assertInstanceOf(TestTimeoutException.class, outcome.get());
+		assertTrue(replay.isClosed());
+		assertEquals(1, leftIteration.closeCalls.get(), "the left iterator must close on the evaluation thread");
+		assertSame(worker, leftIteration.closeThread.get(), "the evaluation thread must own left iterator closure");
+		assertEquals(1, rightIteration.closeCalls(), "the right iterator must close exactly once");
+	}
+
+	@Test
+	void timeLimitCancellationPropagatesThroughNestedReplay() throws Exception {
+		CountDownLatch leafHasNextEntered = new CountDownLatch(1);
+		CooperativeBlockingIteration leafIteration = new CooperativeBlockingIteration(leafHasNextEntered);
+		TrackingIteration innerLeft = new TrackingIteration(List.of(), null, null, null);
+		TrackingIteration outerLeft = new TrackingIteration(List.of(), null, null, null);
+		MaterializedReplayJoinIterator inner = new MaterializedReplayJoinIterator(bindings -> innerLeft,
+				bindings -> leafIteration, null, EmptyBindingSet.getInstance(), false);
+		MaterializedReplayJoinIterator outer = new MaterializedReplayJoinIterator(bindings -> outerLeft,
+				bindings -> inner, null, EmptyBindingSet.getInstance(), false);
+		TestTimeLimitIteration timeout = new TestTimeLimitIteration(outer, LONG_TIME_LIMIT_MILLIS);
+		AtomicReference<Throwable> outcome = new AtomicReference<>();
+		Thread worker = startWorker(timeout, outcome);
+
+		try {
+			assertTrue(leafHasNextEntered.await(WAIT_SECONDS, TimeUnit.SECONDS),
+					"nested right materialization must be in flight before cancellation");
+			timeout.interrupt();
+			assertTrue(leafIteration.cancellationRequested.await(WAIT_SECONDS, TimeUnit.SECONDS),
+					"nested replay must forward cancellation to its active child");
+			awaitWorker(worker);
+		} finally {
+			leafIteration.release.countDown();
+			timeout.close();
+			awaitWorker(worker);
+		}
+
+		assertInstanceOf(TestTimeoutException.class, outcome.get());
+		assertTrue(inner.isClosed());
+		assertTrue(outer.isClosed());
+		assertEquals(1, leafIteration.closeCalls.get());
+		assertSame(worker, leafIteration.closeThread.get(), "nested leaf closure must stay on the evaluation thread");
 	}
 
 	@Test
@@ -519,6 +628,53 @@ class MaterializedReplayJoinIteratorCancellationTest {
 
 		private int closeCalls() {
 			return closeCalls.get();
+		}
+	}
+
+	private static final class CooperativeBlockingIteration extends AbstractCloseableIteration<BindingSet>
+			implements CooperativeCancellation {
+
+		private final CountDownLatch hasNextEntered;
+		private final CountDownLatch release = new CountDownLatch(1);
+		private final CountDownLatch cancellationRequested = new CountDownLatch(1);
+		private final AtomicBoolean cancellationAccepted = new AtomicBoolean();
+		private final AtomicInteger closeCalls = new AtomicInteger();
+		private final AtomicReference<Thread> closeThread = new AtomicReference<>();
+
+		private CooperativeBlockingIteration(CountDownLatch hasNextEntered) {
+			this.hasNextEntered = hasNextEntered;
+		}
+
+		@Override
+		public boolean hasNext() {
+			hasNextEntered.countDown();
+			await(release, "cooperative iteration release");
+			return false;
+		}
+
+		@Override
+		public BindingSet next() {
+			throw new NoSuchElementException();
+		}
+
+		@Override
+		public void remove() {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		protected void handleClose() {
+			closeCalls.incrementAndGet();
+			closeThread.set(Thread.currentThread());
+			release.countDown();
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			cancellationAccepted.set(true);
+			cancellationRequested.countDown();
+			release.countDown();
+			return true;
 		}
 	}
 
