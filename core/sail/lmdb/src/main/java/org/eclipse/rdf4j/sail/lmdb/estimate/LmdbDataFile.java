@@ -65,6 +65,7 @@ final class LmdbDataFile implements Closeable {
 	private final int mainDbi;
 	private final ByteOrder byteOrder;
 	private final int pageSize;
+	/** Current-thread-only scratch storage; {@link #close()} removes it for the calling thread. */
 	private final ThreadLocal<ByteBuffer> headerBuffer = ThreadLocal
 			.withInitial(() -> ByteBuffer.allocateDirect(LmdbFormat.PAGE_HEADER_SIZE));
 
@@ -225,8 +226,14 @@ final class LmdbDataFile implements Closeable {
 
 	/** The returned views borrow {@code readTxn}; the caller must keep it pinned until all page reads finish. */
 	LmdbMeta readMetaForReadTransaction(long readTxn) throws IOException {
-		LmdbMeta meta = readMetaForTxn(mdb_txn_id(readTxn));
-		return withNativeMap(meta, mappingAnchor(meta), readTxn);
+		long txnId = mdb_txn_id(readTxn);
+		return readMetaForReadTransaction(readTxn, txnId);
+	}
+
+	/** Resolves a read transaction after its ID has already been obtained by the caller. */
+	LmdbMeta readMetaForReadTransaction(long readTxn, long txnId) throws IOException {
+		LmdbMeta meta = readMetaForTxn(txnId);
+		return withNativeMap(meta, mappingAnchor(meta), readTxn, txnId);
 	}
 
 	/**
@@ -279,28 +286,22 @@ final class LmdbDataFile implements Closeable {
 		if (env == NO_NATIVE_MAP) {
 			return withMap(meta, 0L, 0L);
 		}
-		if (readTxn == 0L || mdb_txn_env(readTxn) != env) {
+		if (readTxn == 0L) {
 			throw new IOException("Read transaction does not belong to the estimator's LMDB environment");
 		}
-		if (meta.txnId() != mdb_txn_id(readTxn)) {
-			throw new IOException("No exact committed metadata for the pinned LMDB transaction");
+		return withNativeMap(meta, anchor, readTxn, mdb_txn_id(readTxn));
+	}
+
+	LmdbMeta withNativeMap(LmdbMeta meta, MappingAnchor anchor, long readTxn, long txnId) throws IOException {
+		if (env == NO_NATIVE_MAP) {
+			return withMap(meta, 0L, 0L);
 		}
+		validateBorrowedTransaction(meta, readTxn, txnId);
 		if (mainDbi == NO_MAIN_DBI || anchor == null) {
 			return withMap(meta, 0L, 0L);
 		}
 		try (MemoryStack stack = stackPush()) {
-			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
-			check(mdb_env_info(env, info));
-			long size;
-			try {
-				size = Math.multiplyExact(Math.addExact(meta.lastPage(), 1L), (long) pageSize);
-			} catch (ArithmeticException overflow) {
-				throw new IOException("LMDB snapshot size overflow", overflow);
-			}
-			if (size <= 0 || size > info.me_mapsize() || size > meta.mapSize()
-					|| anchor.fileOffset < 0 || anchor.fileOffset > size - anchor.key.length) {
-				throw new IOException("LMDB snapshot exceeds mapping bounds");
-			}
+			long size = validateMappingBounds(meta, anchor, stack);
 			PointerBuffer cursorPointer = stack.mallocPointer(1);
 			check(mdb_cursor_open(readTxn, mainDbi, cursorPointer));
 			long cursor = cursorPointer.get(0);
@@ -346,6 +347,43 @@ final class LmdbDataFile implements Closeable {
 				mdb_cursor_close(cursor);
 			}
 		}
+	}
+
+	/**
+	 * Validates a cached borrowed snapshot without reopening the cursor or querying mapping bounds. The caller must
+	 * hold the existing transaction and environment resize coordination while it uses the cached native mapping; the
+	 * matching transaction ID and mapping generation certify the bounds checked when the snapshot was discovered.
+	 */
+	void validateNativeMap(LmdbMeta meta, long readTxn, long txnId) throws IOException {
+		if (env == NO_NATIVE_MAP) {
+			return;
+		}
+		validateBorrowedTransaction(meta, readTxn, txnId);
+	}
+
+	private void validateBorrowedTransaction(LmdbMeta meta, long readTxn, long txnId) throws IOException {
+		if (readTxn == 0L || mdb_txn_env(readTxn) != env) {
+			throw new IOException("Read transaction does not belong to the estimator's LMDB environment");
+		}
+		if (meta.txnId() != txnId) {
+			throw new IOException("No exact committed metadata for the pinned LMDB transaction");
+		}
+	}
+
+	private long validateMappingBounds(LmdbMeta meta, MappingAnchor anchor, MemoryStack stack) throws IOException {
+		MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+		check(mdb_env_info(env, info));
+		long size;
+		try {
+			size = Math.multiplyExact(Math.addExact(meta.lastPage(), 1L), (long) pageSize);
+		} catch (ArithmeticException overflow) {
+			throw new IOException("LMDB snapshot size overflow", overflow);
+		}
+		if (size <= 0 || size > info.me_mapsize() || size > meta.mapSize()
+				|| anchor.fileOffset < 0 || anchor.fileOffset > size - anchor.key.length) {
+			throw new IOException("LMDB snapshot exceeds mapping bounds");
+		}
+		return size;
 	}
 
 	private static LmdbMeta withMap(LmdbMeta meta, long address, long size) {

@@ -29,4 +29,4 @@ jobs:
       - name: Install LMDB and upstream artifacts
         run: mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -am -Pquick install
       - name: Verify mapping and resize regressions
-        run: mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb "-Dtest=LmdbDataFileNativeMapTest,LmdbMappingAnchorTest,LmdbPageMappingLifecycleTest,LmdbPageCardinalityEstimatorDupSortNativeTest,TripleStoreAutoGrowTest#testPageEstimatorAcrossAutoGrowth" -DskipITs verify
+        run: mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb "-Dtest=LmdbDataFileNativeMapTest,LmdbMappingAnchorTest,LmdbPageMappingLifecycleTest,LmdbPageCardinalityEstimatorDupSortNativeTest,TripleStoreAutoGrowTest#testPageEstimatorAcrossAutoGrowth,TripleStoreAutoGrowTest#testPageEstimatorAfterCachedWriteFlushGrowth" -DskipITs verify

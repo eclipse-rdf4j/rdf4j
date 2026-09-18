@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
@@ -40,10 +41,12 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.nio.file.Path;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -53,6 +56,76 @@ import org.lwjgl.util.lmdb.MDBEnvInfo;
 import org.lwjgl.util.lmdb.MDBVal;
 
 class LmdbDataFileNativeMapTest {
+
+	@Test
+	void nativeMappingRejectsZeroReadTransactionBeforeNativeLookup(@TempDir Path directory) throws Exception {
+		long environment = NULL;
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pointer = stack.mallocPointer(1);
+			check(mdb_env_create(pointer));
+			environment = pointer.get(0);
+			check(mdb_env_set_mapsize(environment, 16L << 20));
+			check(mdb_env_open(environment, directory.toAbsolutePath().toString(), MDB_NOTLS, 0664));
+
+			IntBuffer dbi = stack.mallocInt(1);
+			check(mdb_txn_begin(environment, NULL, 0, pointer));
+			long writeTxn = pointer.get(0);
+			try {
+				check(mdb_dbi_open(writeTxn, (ByteBuffer) null, 0, dbi));
+			} catch (Throwable failure) {
+				mdb_txn_abort(writeTxn);
+				throw failure;
+			}
+			check(mdb_txn_commit(writeTxn));
+
+			check(mdb_txn_begin(environment, NULL, MDB_RDONLY, pointer));
+			long readTxn = pointer.get(0);
+			try (LmdbDataFile dataFile = new LmdbDataFile(directory.resolve("data.mdb").toFile(), environment,
+					dbi.get(0))) {
+				LmdbMeta meta = dataFile.readMetaForReadTransaction(readTxn);
+				assertThrows(IOException.class, () -> dataFile.withNativeMap(meta, null, 0L));
+			} finally {
+				mdb_txn_abort(readTxn);
+			}
+		} finally {
+			if (environment != NULL) {
+				mdb_env_close(environment);
+			}
+		}
+	}
+
+	@Test
+	void fileOnlyMappingFallsBackForZeroReadTransaction(@TempDir Path directory) throws Exception {
+		long environment = NULL;
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pointer = stack.mallocPointer(1);
+			check(mdb_env_create(pointer));
+			environment = pointer.get(0);
+			check(mdb_env_set_mapsize(environment, 16L << 20));
+			check(mdb_env_open(environment, directory.toAbsolutePath().toString(), MDB_NOTLS, 0664));
+
+			IntBuffer dbi = stack.mallocInt(1);
+			check(mdb_txn_begin(environment, NULL, 0, pointer));
+			long writeTxn = pointer.get(0);
+			try {
+				check(mdb_dbi_open(writeTxn, (ByteBuffer) null, 0, dbi));
+			} catch (Throwable failure) {
+				mdb_txn_abort(writeTxn);
+				throw failure;
+			}
+			check(mdb_txn_commit(writeTxn));
+
+			try (LmdbDataFile dataFile = new LmdbDataFile(directory.resolve("data.mdb").toFile())) {
+				LmdbMeta meta = dataFile.readMetaForTxn(1L);
+				LmdbMeta fallback = dataFile.withNativeMap(meta, null, 0L);
+				assertFalse(fallback.hasNativeMap());
+			}
+		} finally {
+			if (environment != NULL) {
+				mdb_env_close(environment);
+			}
+		}
+	}
 
 	@ParameterizedTest
 	@ValueSource(ints = { 0, MDB_WRITEMAP, MDB_NOTLS | MDB_WRITEMAP })

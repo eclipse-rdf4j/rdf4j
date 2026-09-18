@@ -31,11 +31,12 @@ import org.slf4j.LoggerFactory;
  * Transaction-aware facade around the bounded LMDB B+tree range counter.
  *
  * <p>
- * Production callers borrow an already-pinned read-only transaction with {@link #readTransaction(long)}. Each scope
- * obtains LMDB's current mapping identity through the public cursor API before using cached pages when constructed with
- * an existing main database handle. Transaction-ID-only methods remain available through positional file reads. Both
- * paths select metadata no newer than the caller's snapshot and use the same decoder and counting algorithm. Close each
- * borrowed scope before closing this estimator; an owner-thread close while a scope is active is rejected.
+ * Production callers borrow an already-pinned read-only transaction with {@link #readTransaction(long, long)}. Managed
+ * scopes reuse a verified mapping while the caller's generation is unchanged; the compatibility overload remains
+ * conservative and revalidates the native mapping for every scope. Transaction-ID-only methods remain available through
+ * positional file reads. Both paths select metadata no newer than the caller's snapshot and use the same decoder and
+ * counting algorithm. Close each borrowed scope before closing this estimator; an owner-thread close while a scope is
+ * active is rejected.
  * </p>
  */
 public final class LmdbPageCardinalityEstimator implements Closeable {
@@ -191,10 +192,10 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 
 	/**
 	 * Borrows {@code env} and an already-open main database handle for native page reads through
-	 * {@link #readTransaction(long)}. The caller must obtain the handle during serialized environment initialization
-	 * and complete that setup transaction before opening concurrent readers. The data file and environment must remain
-	 * valid until this estimator is closed. The database handle remains owned by the caller; this class never creates,
-	 * closes, or releases it.
+	 * {@link #readTransaction(long, long)}. The caller must obtain the handle during serialized environment
+	 * initialization and complete that setup transaction before opening concurrent readers. The data file and
+	 * environment must remain valid until this estimator is closed. The database handle remains owned by the caller;
+	 * this class never creates, closes, or releases it.
 	 */
 	public LmdbPageCardinalityEstimator(File dataMdbFile, long env, int mainDbi) throws IOException {
 		if (env == 0L) {
@@ -217,7 +218,29 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		if (readTxn == 0L) {
 			throw new IllegalArgumentException("A pinned read-only LMDB transaction is required");
 		}
-		return new ReadView(snapshot(mdb_txn_id(readTxn), readTxn));
+		long txnId = mdb_txn_id(readTxn);
+		return new ReadView(snapshot(txnId, readTxn, 0L, false));
+	}
+
+	/**
+	 * Borrows a stable, pinned read-only LMDB transaction using a generation supplied by the owner of the environment's
+	 * resize protocol. The creating thread must use and close the returned scope, and the caller must exclude
+	 * environment resize and close until that scope closes. The owner must advance {@code mappingGeneration} before
+	 * every potentially mapping-changing attempt, including failed and same-size attempts; the value must never be
+	 * reset, reused, or wrapped for this estimator. The old {@link #readTransaction(long)} overload remains available
+	 * when the caller cannot provide those guarantees and conservatively revalidates mapping discovery for every scope.
+	 *
+	 * <p>
+	 * A matching transaction ID and generation certify the immutable mapping bounds already checked during discovery,
+	 * so a managed cache hit validates the environment and transaction without querying map bounds again.
+	 * </p>
+	 */
+	public ReadView readTransaction(long readTxn, long mappingGeneration) throws IOException {
+		if (readTxn == 0L) {
+			throw new IllegalArgumentException("A pinned read-only LMDB transaction is required");
+		}
+		long txnId = mdb_txn_id(readTxn);
+		return new ReadView(snapshot(txnId, readTxn, mappingGeneration, true));
 	}
 
 	/** Estimates sharing one borrowed transaction and its verified mapping identity. */
@@ -592,12 +615,9 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	 */
 	RangeCountResult estimateEntriesDetailed(long txnId, String dbName, byte[] minKey, int minKeyLength,
 			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
-		SnapshotCache snapshot = snapshot(txnId, 0L);
-		try {
-			return estimateEntriesDetailed(snapshot, dbName, minKey, minKeyLength, maxKey, maxKeyLength,
+		try (ReadView view = readTransactionById(txnId)) {
+			return estimateEntriesDetailed(view.openSnapshot(), dbName, minKey, minKeyLength, maxKey, maxKeyLength,
 					matcher, residualFieldCount);
-		} finally {
-			snapshotLock.readLock().unlock();
 		}
 	}
 
@@ -622,13 +642,14 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	}
 
 	public long totalEntries(long txnId, String dbName) throws IOException {
-		SnapshotCache snapshot = snapshot(txnId, 0L);
-		try {
-			LmdbDb db = namedDb(snapshot, dbName);
+		try (ReadView view = readTransactionById(txnId)) {
+			LmdbDb db = namedDb(view.openSnapshot(), dbName);
 			return db == null ? 0 : db.entries();
-		} finally {
-			snapshotLock.readLock().unlock();
 		}
+	}
+
+	private ReadView readTransactionById(long txnId) throws IOException {
+		return new ReadView(snapshot(txnId, 0L, 0L, false));
 	}
 
 	/**
@@ -660,11 +681,13 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	}
 
 	/**
-	 * Returns a cache with the read lock held until the estimate or borrowed scope finishes. Cached native buffers are
-	 * never inspected before the public cursor API confirms their transaction and mapping identity. Snapshot
-	 * replacement does not invalidate concurrent readers: each caller pins its own LMDB transaction and mapping.
+	 * Returns a cache with the read lock held until the estimate or borrowed scope finishes. Conservative borrowed
+	 * scopes revalidate their native mapping; managed cache hits validate the pinned environment and transaction while
+	 * the caller's generation protects the native pointer and the bounds checked at discovery. Snapshot replacement
+	 * does not invalidate concurrent readers: each caller pins its own LMDB transaction and mapping.
 	 */
-	private SnapshotCache snapshot(long txnId, long readTxn) throws IOException {
+	private SnapshotCache snapshot(long txnId, long readTxn, long mappingGeneration, boolean managed)
+			throws IOException {
 		snapshotLock.readLock().lock();
 		boolean acquired = false;
 		try {
@@ -673,22 +696,41 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 			}
 			boolean borrowed = readTxn != 0L;
 			SnapshotCache cached = lastSnapshot;
-			if (cached != null && (cached.txnId != txnId || cached.borrowed != borrowed)) {
-				cached = null;
+			boolean matchingCache = cached != null
+					&& cached.matches(txnId, mappingGeneration, borrowed, managed);
+			if (matchingCache && !borrowed) {
+				acquired = true;
+				return cached;
 			}
-			LmdbMeta meta = cached == null ? dataFile.readMetaForTxn(txnId) : cached.meta;
+			if (matchingCache && managed) {
+				dataFile.validateNativeMap(cached.meta, readTxn, txnId);
+				acquired = true;
+				return cached;
+			}
+			if (matchingCache) {
+				LmdbMeta verified = dataFile.withNativeMap(cached.meta, cached.anchor, readTxn, txnId);
+				if (cached.meta.nativeMapAddress() == verified.nativeMapAddress()
+						&& cached.meta.nativeMappedSize() == verified.nativeMappedSize()) {
+					acquired = true;
+					return cached;
+				}
+				SnapshotCache refreshed = new SnapshotCache(txnId, mappingGeneration, verified, cached.anchor, borrowed,
+						managed);
+				lastSnapshot = refreshed;
+				acquired = true;
+				return refreshed;
+			}
+
+			LmdbMeta meta = dataFile.readMetaForTxn(txnId);
 			LmdbDataFile.MappingAnchor anchor = null;
 			if (borrowed) {
-				anchor = cached == null ? dataFile.mappingAnchor(meta) : cached.anchor;
-				meta = dataFile.withNativeMap(meta, anchor, readTxn);
+				anchor = dataFile.mappingAnchor(meta);
+				meta = dataFile.withNativeMap(meta, anchor, readTxn, txnId);
 			}
-			if (cached == null || cached.meta.nativeMapAddress() != meta.nativeMapAddress()
-					|| cached.meta.nativeMappedSize() != meta.nativeMappedSize()) {
-				cached = new SnapshotCache(txnId, meta, anchor, borrowed);
-				lastSnapshot = cached;
-			}
+			SnapshotCache discovered = new SnapshotCache(txnId, mappingGeneration, meta, anchor, borrowed, managed);
+			lastSnapshot = discovered;
 			acquired = true;
-			return cached;
+			return discovered;
 		} finally {
 			if (!acquired) {
 				snapshotLock.readLock().unlock();
@@ -738,20 +780,30 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		return hash;
 	}
 
-	/** All mutable caches below are valid only for one LMDB transaction ID and mapping identity. */
+	/** All mutable caches below are valid only for one LMDB transaction, generation, and backing/discovery mode. */
 	private static final class SnapshotCache {
 		final long txnId;
+		final long mappingGeneration;
 		final LmdbMeta meta;
 		final LmdbDataFile.MappingAnchor anchor;
 		final boolean borrowed;
+		final boolean managed;
 		final LmdbPageCache pageCache = new LmdbPageCache();
 		final Map<String, LmdbDb> namedDbs = new ConcurrentHashMap<>();
 
-		SnapshotCache(long txnId, LmdbMeta meta, LmdbDataFile.MappingAnchor anchor, boolean borrowed) {
+		SnapshotCache(long txnId, long mappingGeneration, LmdbMeta meta, LmdbDataFile.MappingAnchor anchor,
+				boolean borrowed, boolean managed) {
 			this.txnId = txnId;
+			this.mappingGeneration = mappingGeneration;
 			this.meta = meta;
 			this.anchor = anchor;
 			this.borrowed = borrowed;
+			this.managed = managed;
+		}
+
+		boolean matches(long txnId, long mappingGeneration, boolean borrowed, boolean managed) {
+			return this.txnId == txnId && this.mappingGeneration == mappingGeneration
+					&& this.borrowed == borrowed && this.managed == managed;
 		}
 	}
 }

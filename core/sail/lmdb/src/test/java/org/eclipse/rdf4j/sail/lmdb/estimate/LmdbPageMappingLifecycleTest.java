@@ -181,25 +181,29 @@ class LmdbPageMappingLifecycleTest {
 		}
 	}
 
-	@Test
-	void estimatesCanReadTheSameMappingConcurrently() throws Exception {
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void estimatesCanReadTheSameMappingConcurrently(boolean managed) throws Exception {
 		CountDownLatch entered = new CountDownLatch(2);
 		CountDownLatch release = new CountDownLatch(1);
 		try (Environment env = new Environment(directory, 0)) {
 			env.put(0, 32);
-			try (ReadTxn txn = env.read();
-					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
-							env.handle, env.mainDbi);
+			try (LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
+					env.handle, env.mainDbi);
 					var executor = Executors.newFixedThreadPool(2)) {
 				GroupMatcher matcher = blockingMatcher(entered, release);
 				Future<Long> first = executor.submit(() -> {
 					try (ReadTxn ownTxn = env.read()) {
-						return estimate(estimator, ownTxn.handle(), matcher);
+						return managed
+								? estimateManaged(estimator, ownTxn.handle(), matcher, 0L)
+								: estimate(estimator, ownTxn.handle(), matcher);
 					}
 				});
 				Future<Long> second = executor.submit(() -> {
 					try (ReadTxn ownTxn = env.read()) {
-						return estimate(estimator, ownTxn.handle(), matcher);
+						return managed
+								? estimateManaged(estimator, ownTxn.handle(), matcher, 0L)
+								: estimate(estimator, ownTxn.handle(), matcher);
 					}
 				});
 				try {
@@ -212,6 +216,230 @@ class LmdbPageMappingLifecycleTest {
 			}
 		} finally {
 			release.countDown();
+		}
+	}
+
+	@Test
+	void warmConservativeAndTxnIdOnlyScopesReuseAnOldPinnedSnapshotAfterUnobservedCommits() throws Exception {
+		try (Environment env = new Environment(directory, 0, GROWTH_MAP_SIZE)) {
+			env.put(0, INITIAL_ENTRY_COUNT);
+			try (ReadTxn oldTxn = env.read();
+					LmdbPageCardinalityEstimator conservativeEstimator = new LmdbPageCardinalityEstimator(
+							env.dataPath.toFile(), env.handle, env.mainDbi);
+					LmdbPageCardinalityEstimator txnIdOnlyEstimator = new LmdbPageCardinalityEstimator(
+							env.dataPath.toFile(),
+							env.handle, env.mainDbi);
+					LmdbPageCardinalityEstimator managedEstimator = new LmdbPageCardinalityEstimator(
+							env.dataPath.toFile(),
+							env.handle, env.mainDbi)) {
+				try (var conservative = conservativeEstimator.readTransaction(oldTxn.handle())) {
+					assertEquals(INITIAL_ENTRY_COUNT, conservative.totalEntries("statements"));
+				}
+				assertEquals(INITIAL_ENTRY_COUNT, txnIdOnlyEstimator.totalEntries(oldTxn.id(), "statements"));
+				try (var managed = managedEstimator.readTransaction(oldTxn.handle(), 0L)) {
+					assertEquals(INITIAL_ENTRY_COUNT, managed.totalEntries("statements"));
+				}
+
+				env.put(INITIAL_ENTRY_COUNT, INITIAL_ENTRY_COUNT + 1);
+				env.put(INITIAL_ENTRY_COUNT + 1, INITIAL_ENTRY_COUNT + 2);
+				env.put(INITIAL_ENTRY_COUNT + 2, INITIAL_ENTRY_COUNT + 3);
+
+				try (var conservative = conservativeEstimator.readTransaction(oldTxn.handle())) {
+					assertEquals(INITIAL_ENTRY_COUNT, conservative.totalEntries("statements"));
+				}
+				assertEquals(INITIAL_ENTRY_COUNT, txnIdOnlyEstimator.totalEntries(oldTxn.id(), "statements"));
+				try (var managed = managedEstimator.readTransaction(oldTxn.handle(), 0L)) {
+					assertEquals(INITIAL_ENTRY_COUNT, managed.totalEntries("statements"));
+				}
+			}
+		}
+	}
+
+	@Test
+	void managedScopesReuseAStableGenerationAndRejectAForeignWarmHit() throws Exception {
+		Path firstDirectory = Files.createDirectory(directory.resolve("managed-first"));
+		Path secondDirectory = Files.createDirectory(directory.resolve("managed-second"));
+		try (Environment first = new Environment(firstDirectory, 0);
+				Environment second = new Environment(secondDirectory, 0)) {
+			first.put(0, 32);
+			second.put(0, 32);
+			try (ReadTxn firstTxn = first.read();
+					ReadTxn secondTxn = second.read();
+					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(first.dataPath.toFile(),
+							first.handle, first.mainDbi)) {
+				assertEquals(firstTxn.id(), secondTxn.id(),
+						"The two fresh environments must expose equal transaction IDs");
+				try (var firstView = estimator.readTransaction(firstTxn.handle(), 7L)) {
+					assertEquals(32, firstView.totalEntries("statements"));
+				}
+				assertThrows(IOException.class, () -> estimator.readTransaction(secondTxn.handle(), 7L));
+				try (var secondView = estimator.readTransaction(firstTxn.handle(), 7L)) {
+					assertEquals(32, secondView.totalEntries("statements"));
+				}
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, MDB_WRITEMAP })
+	void managedAndConservativeScopesRefreshAfterGrowthAndSameSizeRemap(int flags) throws Exception {
+		try (Environment env = new Environment(directory, flags);
+				LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
+						env.handle, env.mainDbi);
+				LmdbPageCardinalityEstimator managedEstimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
+						env.handle, env.mainDbi);
+				LmdbPageCardinalityEstimator conservativeEstimator = new LmdbPageCardinalityEstimator(
+						env.dataPath.toFile(), env.handle, env.mainDbi)) {
+			env.put(0, 32);
+			long transactionId;
+			try (ReadTxn txn = env.read()) {
+				transactionId = txn.id();
+				try (var managed = estimator.readTransaction(txn.handle(), 0L)) {
+					assertEquals(32, managed.totalEntries("statements"));
+					assertEquals(10,
+							managed.estimateEntries("statements", key(0), 4, key(9), 4, null, 0));
+				}
+				assertEquals(32, totalEntries(estimator, txn.handle()));
+				assertEquals(10, estimate(estimator, txn.handle(), null));
+				try (var managed = managedEstimator.readTransaction(txn.handle(), 0L)) {
+					assertEquals(32, managed.totalEntries("statements"));
+					assertEquals(10,
+							managed.estimateEntries("statements", key(0), 4, key(9), 4, null, 0));
+				}
+				assertEquals(32, totalEntries(conservativeEstimator, txn.handle()));
+				assertEquals(10, estimate(conservativeEstimator, txn.handle(), null));
+			}
+
+			check(mdb_env_set_mapsize(env.handle, 128L << 20));
+			try (ReadTxn txn = env.read()) {
+				assertEquals(transactionId, txn.id(),
+						"Resizing without a commit must preserve the read transaction ID");
+				try (var managed = estimator.readTransaction(txn.handle(), 1L)) {
+					assertEquals(32, managed.totalEntries("statements"));
+					assertEquals(10,
+							managed.estimateEntries("statements", key(0), 4, key(9), 4, null, 0));
+				}
+				assertEquals(32, totalEntries(estimator, txn.handle()));
+				assertEquals(10, estimate(estimator, txn.handle(), null));
+				try (var managed = managedEstimator.readTransaction(txn.handle(), 1L)) {
+					assertEquals(32, managed.totalEntries("statements"));
+					assertEquals(10,
+							managed.estimateEntries("statements", key(0), 4, key(9), 4, null, 0));
+				}
+				assertEquals(32, totalEntries(conservativeEstimator, txn.handle()));
+				assertEquals(10, estimate(conservativeEstimator, txn.handle(), null));
+			}
+
+			check(mdb_env_set_mapsize(env.handle, 128L << 20));
+			try (ReadTxn txn = env.read()) {
+				assertEquals(transactionId, txn.id(), "A same-size remap must preserve the read transaction ID");
+				try (var managed = estimator.readTransaction(txn.handle(), 2L)) {
+					assertEquals(32, managed.totalEntries("statements"));
+					assertEquals(10,
+							managed.estimateEntries("statements", key(0), 4, key(9), 4, null, 0));
+				}
+				assertEquals(32, totalEntries(estimator, txn.handle()));
+				assertEquals(10, estimate(estimator, txn.handle(), null));
+				try (var managed = managedEstimator.readTransaction(txn.handle(), 2L)) {
+					assertEquals(32, managed.totalEntries("statements"));
+					assertEquals(10,
+							managed.estimateEntries("statements", key(0), 4, key(9), 4, null, 0));
+				}
+				assertEquals(32, totalEntries(conservativeEstimator, txn.handle()));
+				assertEquals(10, estimate(conservativeEstimator, txn.handle(), null));
+			}
+		}
+	}
+
+	@Test
+	void managedConservativeAndFileScopesRemainIndependent() throws Exception {
+		try (Environment env = new Environment(directory, 0)) {
+			env.put(0, 32);
+			try (ReadTxn txn = env.read();
+					LmdbPageCardinalityEstimator nativeEstimator = new LmdbPageCardinalityEstimator(
+							env.dataPath.toFile(),
+							env.handle, env.mainDbi);
+					LmdbPageCardinalityEstimator fileEstimator = new LmdbPageCardinalityEstimator(
+							env.dataPath.toFile())) {
+				try (var managed = nativeEstimator.readTransaction(txn.handle(), 11L)) {
+					assertEquals(32, managed.totalEntries("statements"));
+				}
+				assertEquals(32, totalEntries(nativeEstimator, txn.handle()));
+				try (var conservative = nativeEstimator.readTransaction(txn.handle())) {
+					assertEquals(32, conservative.totalEntries("statements"));
+				}
+				assertEquals(32, nativeEstimator.totalEntries(txn.id(), "statements"));
+				assertEquals(32, fileEstimator.totalEntries(txn.id(), "statements"));
+				try (var managed = nativeEstimator.readTransaction(txn.handle(), 11L)) {
+					assertEquals(32, managed.totalEntries("statements"));
+				}
+			}
+		}
+	}
+
+	@Test
+	void failedDiscoveryDoesNotPoisonTheNextValidManagedRead() throws Exception {
+		Path firstDirectory = Files.createDirectory(directory.resolve("valid-discovery"));
+		Path secondDirectory = Files.createDirectory(directory.resolve("failed-discovery"));
+		try (Environment first = new Environment(firstDirectory, 0);
+				Environment second = new Environment(secondDirectory, 0)) {
+			first.put(0, 32);
+			second.put(0, 32);
+			try (LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(first.dataPath.toFile(),
+					first.handle, first.mainDbi);
+					ReadTxn foreignTxn = second.read()) {
+				assertThrows(IOException.class, () -> estimator.readTransaction(foreignTxn.handle(), 3L));
+				try (ReadTxn validTxn = first.read(); var view = estimator.readTransaction(validTxn.handle(), 3L)) {
+					assertEquals(32, view.totalEntries("statements"));
+				}
+			}
+		}
+	}
+
+	@Test
+	void managedReadViewsKeepOwnerAndExceptionReleaseGuarantees() throws Exception {
+		try (Environment env = new Environment(directory, 0)) {
+			env.put(0, 32);
+			try (ReadTxn txn = env.read();
+					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
+							env.handle, env.mainDbi);
+					var view = estimator.readTransaction(txn.handle(), 5L);
+					var executor = Executors.newSingleThreadExecutor()) {
+				assertCloseRejected(estimator);
+				Future<?> wrongOwner = executor.submit(() -> assertThrows(IllegalStateException.class,
+						() -> view.totalEntries("statements")));
+				wrongOwner.get();
+				GroupMatcher failingMatcher = new GroupMatcher(key(0), new boolean[] { false, false, false, false }) {
+					@Override
+					public boolean matches(ByteBuffer candidate) {
+						throw new IllegalStateException("intentional matcher failure");
+					}
+				};
+				assertThrows(IllegalStateException.class,
+						() -> view.estimateEntries("statements", key(0), 4, key(9), 4, failingMatcher, 1));
+				view.close();
+				try (var recovered = estimator.readTransaction(txn.handle(), 5L)) {
+					assertEquals(32, recovered.totalEntries("statements"));
+				}
+			}
+		}
+	}
+
+	@Test
+	void nestedManagedSnapshotsKeepTheirPinnedCountsWithoutResize() throws Exception {
+		try (Environment env = new Environment(directory, 0, 128L << 20)) {
+			env.put(0, 32);
+			try (ReadTxn oldTxn = env.read();
+					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
+							env.handle, env.mainDbi);
+					var oldView = estimator.readTransaction(oldTxn.handle(), 0L)) {
+				assertEquals(32, oldView.totalEntries("statements"));
+				env.put(32, 64);
+				try (ReadTxn newTxn = env.read(); var newView = estimator.readTransaction(newTxn.handle(), 0L)) {
+					assertEquals(64, newView.totalEntries("statements"));
+					assertEquals(32, oldView.totalEntries("statements"));
+				}
+			}
 		}
 	}
 
@@ -260,9 +488,11 @@ class LmdbPageMappingLifecycleTest {
 		}
 	}
 
-	@Test
-	void sameThreadCloseRejectsAnActiveReadView() throws Exception {
-		ProcessResult result = runSameThreadCloseProbe(directory, "active-read-view");
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void sameThreadCloseRejectsAnActiveReadView(boolean managed) throws Exception {
+		String scenario = managed ? "active-managed-read-view" : "active-read-view";
+		ProcessResult result = runSameThreadCloseProbe(directory, scenario);
 
 		assertEquals(0, result.exitCode, result.output);
 		assertTrue(result.output.contains("ACTIVE_READ_VIEW_CLOSE_REJECTED"), result.output);
@@ -328,13 +558,14 @@ class LmdbPageMappingLifecycleTest {
 		}
 	}
 
-	private static void runActiveReadViewScenario(Path dataDir) throws Exception {
+	private static void runActiveReadViewScenario(Path dataDir, boolean managed) throws Exception {
 		try (Environment env = new Environment(dataDir, 0)) {
 			env.put(0, 32);
 			try (ReadTxn txn = env.read();
 					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
 							env.handle, env.mainDbi);
-					var view = estimator.readTransaction(txn.handle())) {
+					var view = managed ? estimator.readTransaction(txn.handle(), 0L)
+							: estimator.readTransaction(txn.handle())) {
 				System.out.println("ACTIVE_READ_VIEW_READY");
 				System.out.flush();
 				try {
@@ -413,7 +644,8 @@ class LmdbPageMappingLifecycleTest {
 			String scenario = args[0];
 			Path dataDir = Path.of(args[1]);
 			switch (scenario) {
-			case "active-read-view" -> runActiveReadViewScenario(dataDir);
+			case "active-read-view" -> runActiveReadViewScenario(dataDir, false);
+			case "active-managed-read-view" -> runActiveReadViewScenario(dataDir, true);
 			case "nested-read-views" -> runNestedReadViewsScenario(dataDir);
 			case "reentrant-callback" -> runReentrantCallbackScenario(dataDir);
 			default -> throw new IllegalArgumentException("Unknown close probe scenario: " + scenario);
@@ -559,6 +791,15 @@ class LmdbPageMappingLifecycleTest {
 		byte[] min = key(0);
 		byte[] max = key(9);
 		try (var view = estimator.readTransaction(txn)) {
+			return view.estimateEntries("statements", min, min.length, max, max.length, matcher, 1);
+		}
+	}
+
+	private static long estimateManaged(LmdbPageCardinalityEstimator estimator, long txn, GroupMatcher matcher,
+			long mappingGeneration) throws IOException {
+		byte[] min = key(0);
+		byte[] max = key(9);
+		try (var view = estimator.readTransaction(txn, mappingGeneration)) {
 			return view.estimateEntries("statements", min, min.length, max, max.length, matcher, 1);
 		}
 	}

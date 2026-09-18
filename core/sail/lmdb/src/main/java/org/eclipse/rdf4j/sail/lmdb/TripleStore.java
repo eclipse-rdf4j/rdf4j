@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabaseWithTxn;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.writeTransaction;
 import static org.lwjgl.system.MemoryStack.stackPush;
@@ -155,6 +156,7 @@ class TripleStore implements Closeable {
 	private final int[] leadingFieldRadixOffsets = new int[256];
 	private final LmdbPageCardinalityEstimator pageEstimator;
 	private final AtomicLong dataRevision = new AtomicLong();
+	private final AtomicLong mappingGeneration = new AtomicLong();
 
 	private TxnRecordCache recordCache = null;
 
@@ -202,14 +204,13 @@ class TripleStore implements Closeable {
 		// retained for page-estimator read scopes; opening it again while readers are active mutates LMDB's shared
 		// comparator state.
 		DatabaseHandles databaseHandles = writeTransaction(env, (stack, txn) -> {
-			IntBuffer mainDbiHandle = stack.mallocInt(1);
-			E(mdb_dbi_open(txn, (ByteBuffer) null, 0, mainDbiHandle));
+			int mainDbi = openDatabaseWithTxn(txn, null, 0);
 			String name = "contexts";
 			IntBuffer ip = stack.mallocInt(1);
 			if (mdb_dbi_open(txn, name, 0, ip) == MDB_NOTFOUND) {
 				E(mdb_dbi_open(txn, name, MDB_CREATE, ip));
 			}
-			return new DatabaseHandles(mainDbiHandle.get(0), ip.get(0));
+			return new DatabaseHandles(mainDbi, ip.get(0));
 		});
 		mainDbi = databaseHandles.mainDbi();
 		contextsDbi = databaseHandles.contextsDbi();
@@ -312,18 +313,34 @@ class TripleStore implements Closeable {
 			long configMapSize = (tripleDbSize / pageSize) * pageSize;
 			if (isEmpty) {
 				// this is an empty db, use configured map size
-				mdb_env_set_mapsize(env, configMapSize);
+				setMapSize(configMapSize);
 			}
 			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
 			mdb_env_info(env, info);
 			mapSize = info.me_mapsize();
 			if (mapSize < configMapSize) {
 				// configured map size is larger than map size stored in env, increase map size
-				mdb_env_set_mapsize(env, configMapSize);
+				setMapSize(configMapSize);
 				mapSize = configMapSize;
 			}
 			return null;
 		});
+	}
+
+	/**
+	 * Advances the mapping generation before every resize attempt. Callers retain their existing handling of the native
+	 * return code, while the generation remains monotonic even when LMDB rejects an attempted size.
+	 */
+	private int setMapSize(long requestedMapSize) throws IOException {
+		while (true) {
+			long current = mappingGeneration.get();
+			if (current == Long.MAX_VALUE) {
+				throw new IOException("LMDB mapping generation exhausted");
+			}
+			if (mappingGeneration.compareAndSet(current, current + 1)) {
+				return mdb_env_set_mapsize(env, requestedMapSize);
+			}
+		}
 	}
 
 	private String getIndexName(String fieldSeq) {
@@ -384,7 +401,7 @@ class TripleStore implements Closeable {
 									try {
 										txnManager.deactivate();
 										mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-										E(mdb_env_set_mapsize(env, mapSize));
+										E(setMapSize(mapSize));
 										logger.debug("resized map to {}", mapSize);
 									} finally {
 										try {
@@ -735,7 +752,8 @@ class TripleStore implements Closeable {
 
 		// Query optimization already holds the dataset's read transaction.
 		return txnManager.doWithPriority((stack, txn) -> {
-			try (LmdbPageCardinalityEstimator.ReadView view = estimator.readTransaction(txn)) {
+			long generation = mappingGeneration.get();
+			try (LmdbPageCardinalityEstimator.ReadView view = estimator.readTransaction(txn, generation)) {
 				if (bindingMask == 0) {
 					double exact = (double) view.totalEntries(explicitDbName)
 							+ view.totalEntries(inferredDbName);
@@ -1554,7 +1572,7 @@ class TripleStore implements Closeable {
 						// resize map if required
 						E(mdb_txn_commit(writeTxn));
 						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-						E(mdb_env_set_mapsize(env, mapSize));
+						E(setMapSize(mapSize));
 						logger.debug("resized map to {}", mapSize);
 						E(mdb_txn_begin(env, NULL, 0, pp));
 						writeTxn = pp.get(0);
@@ -1617,7 +1635,7 @@ class TripleStore implements Closeable {
 							try {
 								txnManager.deactivate();
 								mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-								E(mdb_env_set_mapsize(env, mapSize));
+								E(setMapSize(mapSize));
 								logger.debug("resized map to {}", mapSize);
 								// restart write transaction
 								try (MemoryStack stack = stackPush()) {
