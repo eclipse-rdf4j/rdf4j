@@ -1,6 +1,7 @@
 /// <reference path="template.ts" />
 /// <reference path="jquery.d.ts" />
 /// <reference path="queryCancelPolicy.ts" />
+/// <reference path="queryExplanationHighlighter.ts" />
 /// <reference path="yasqe.d.ts" />
 /// <reference path="yasqeHelper.ts" />
 // WARNING: Do not edit the *.js version of this file. Instead, always edit the
@@ -34,6 +35,10 @@ var workbench;
         var compareQuerySeeded = false;
         var diffNotReadyLabel = '';
         var lastDiffTriggerElement = null;
+        var explanationHighlightMode = 'syntax';
+        var EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY = 'rdf4j.workbench.query.explanation.hiddenProperties';
+        var explanationHiddenProperties = loadExplanationHiddenProperties();
+        var explanationPropertyOptionsKey = '';
         var primaryPaneState = {
             key: 'primary',
             queryId: 'query',
@@ -415,8 +420,20 @@ var workbench;
                 requestedFormat: explanation.requestedFormat,
                 responseFormat: explanation.responseFormat,
                 view: explanation.view,
-                rawContent: explanation.rawContent
+                rawContent: explanation.rawContent,
+                displayContent: explanation.displayContent,
+                lineSeparator: explanation.lineSeparator,
+                plan: explanation.plan
             };
+        }
+        function getExplanationDisplayContent(explanation) {
+            if (!explanation) {
+                return '';
+            }
+            return explanation.requestedFormat === 'text'
+                ? (typeof explanation.displayContent === 'string'
+                    ? explanation.displayContent : explanation.rawContent)
+                : explanation.rawContent;
         }
         function getStableExplanationKey(explanation) {
             if (!explanation) {
@@ -428,7 +445,9 @@ var workbench;
                 explanation.requestedFormat,
                 explanation.responseFormat,
                 explanation.view,
-                explanation.rawContent
+                explanation.rawContent,
+                explanation.lineSeparator,
+                getExplanationDisplayContent(explanation)
             ].join('||');
         }
         function getStableExplanationContentKey(explanation) {
@@ -440,7 +459,9 @@ var workbench;
                 explanation.level,
                 explanation.requestedFormat,
                 explanation.responseFormat,
-                explanation.rawContent
+                explanation.rawContent,
+                explanation.lineSeparator,
+                getExplanationDisplayContent(explanation)
             ].join('||');
         }
         function getPaneSnapshot(paneState) {
@@ -674,8 +695,8 @@ var workbench;
         function syncLegacyExplanationCache(paneKey) {
             var paneState = getPaneState(paneKey);
             var paneSnapshot = getPaneSnapshot(getPaneMachineState(paneKey));
-            paneState.latestExplanation = paneSnapshot ? paneSnapshot.rawContent : '';
-            paneState.latestExplanationFormat = paneSnapshot ? paneSnapshot.responseFormat : 'text';
+            paneState.latestExplanation = getExplanationDisplayContent(paneSnapshot);
+            paneState.latestExplanationFormat = paneSnapshot ? paneSnapshot.requestedFormat : 'text';
         }
         function dispatchQueryPageEvent(event) {
             var currentInputs = collectCurrentInputs();
@@ -1053,6 +1074,7 @@ var workbench;
             $('#compare-toggle').toggle(compareModeEnabled || primaryPaneMachineState.kind !== 'empty');
             $('#rerun-explanation').prop('disabled', primaryActionsDisabled);
             $('#explain-trigger').prop('disabled', primaryActionsDisabled);
+            syncExplanationHighlightControls();
         }
         function syncCompareSidebarState() {
             $('body').toggleClass('query-compare-mode', compareModeEnabled);
@@ -1279,7 +1301,7 @@ var workbench;
             var paneState = getPaneState(paneKey);
             lockExplanationDimensions(paneKey);
             var explanation = $('#' + paneState.explanationId);
-            explanation.text('');
+            explanation.removeClass('query-explanation--highlighted').text('');
             var normalizedFormat = (pendingFormat || paneState.latestExplanationFormat || 'text').toLowerCase();
             explanation.attr('data-format', normalizedFormat);
             paneState.latestExplanation = '';
@@ -1590,6 +1612,262 @@ var workbench;
             }
             restoreExplainButtonViewportTopIfNeeded(paneKey);
         }
+        function getSharedHotspotSummary() {
+            if (explanationHighlightMode !== 'hotspot') {
+                return null;
+            }
+            var result = null;
+            var paneKeys = ['primary', 'compare'];
+            for (var i = 0; i < paneKeys.length; i++) {
+                var explanation = getPaneDisplayExplanation(getPaneMachineState(paneKeys[i]));
+                if (!explanation || explanation.requestedFormat !== 'text' || !explanation.plan) {
+                    continue;
+                }
+                var paneHotspot = workbench.queryExplanationHighlighter.getHotspot(explanation.plan, explanation.level);
+                if (!paneHotspot) {
+                    continue;
+                }
+                if (result && result.metric !== paneHotspot.metric) {
+                    return null;
+                }
+                var paneMaximumIsGreater = !result || (paneHotspot.metric === 'resultSizeActual'
+                    ? workbench.queryExplanationHighlighter.compareJsonLong(paneHotspot.maximum, result.maximum) > 0
+                    : paneHotspot.maximum > result.maximum);
+                if (paneMaximumIsGreater) {
+                    result = {
+                        metric: paneHotspot.metric,
+                        label: paneHotspot.label,
+                        maximum: paneHotspot.maximum
+                    };
+                }
+            }
+            return result;
+        }
+        function normalizeExplanationHiddenProperties(value) {
+            if (!Array.isArray(value)) {
+                return [];
+            }
+            var result = [];
+            for (var i = 0; i < value.length; i++) {
+                if (typeof value[i] === 'string' && value[i].length && result.indexOf(value[i]) < 0) {
+                    result.push(value[i]);
+                }
+            }
+            return result;
+        }
+        function loadExplanationHiddenProperties() {
+            try {
+                var stored = window.localStorage.getItem(EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY);
+                return stored ? normalizeExplanationHiddenProperties(JSON.parse(stored)) : [];
+            }
+            catch (e) {
+                return [];
+            }
+        }
+        function persistExplanationHiddenProperties() {
+            try {
+                if (explanationHiddenProperties.length) {
+                    window.localStorage.setItem(EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY, JSON.stringify(explanationHiddenProperties));
+                }
+                else {
+                    window.localStorage.removeItem(EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY);
+                }
+            }
+            catch (e) {
+                // Ignore browsers where storage access is unavailable.
+            }
+        }
+        function getAvailableExplanationProperties() {
+            var result = [];
+            var paneKeys = ['primary', 'compare'];
+            for (var paneIndex = 0; paneIndex < paneKeys.length; paneIndex++) {
+                var explanation = getPaneDisplayExplanation(getPaneMachineState(paneKeys[paneIndex]));
+                if (!explanation || explanation.requestedFormat !== 'text' || !explanation.plan) {
+                    continue;
+                }
+                var paneProperties = workbench.queryExplanationHighlighter.getProperties(explanation.plan, explanation.level);
+                for (var propertyIndex = 0; propertyIndex < paneProperties.length; propertyIndex++) {
+                    if (result.indexOf(paneProperties[propertyIndex]) < 0) {
+                        result.push(paneProperties[propertyIndex]);
+                    }
+                }
+            }
+            return result;
+        }
+        function renderExplanationPropertyOptions(properties) {
+            var optionsElement = document.getElementById('explanation-property-options');
+            if (!optionsElement) {
+                return;
+            }
+            optionsElement.textContent = '';
+            for (var i = 0; i < properties.length; i++) {
+                var property = properties[i];
+                var option = document.createElement('label');
+                option.className = 'query-explanation-property-option';
+                option.title = property;
+                var checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = explanationHiddenProperties.indexOf(property) < 0;
+                checkbox.setAttribute('data-property-name', property);
+                checkbox.addEventListener('change', function (event) {
+                    var target = event.currentTarget;
+                    setExplanationPropertyVisible(target.getAttribute('data-property-name'), target.checked);
+                });
+                option.appendChild(checkbox);
+                option.appendChild(document.createTextNode(property));
+                optionsElement.appendChild(option);
+            }
+        }
+        function syncExplanationPropertyCheckboxes() {
+            var optionsElement = document.getElementById('explanation-property-options');
+            if (!optionsElement) {
+                return;
+            }
+            var checkboxes = optionsElement.getElementsByTagName('input');
+            for (var i = 0; i < checkboxes.length; i++) {
+                var checkbox = checkboxes[i];
+                checkbox.checked = explanationHiddenProperties.indexOf(checkbox.getAttribute('data-property-name')) < 0;
+            }
+        }
+        function syncExplanationPropertyControls() {
+            var properties = getAvailableExplanationProperties();
+            var config = $('#explanation-property-config');
+            var visible = properties.length > 0;
+            config.toggle(visible).attr('aria-hidden', visible ? 'false' : 'true');
+            if (!visible) {
+                $('#explanation-property-count').text('');
+                $('#explanation-property-options').empty();
+                explanationPropertyOptionsKey = '';
+                return;
+            }
+            var visibleCount = 0;
+            for (var i = 0; i < properties.length; i++) {
+                if (explanationHiddenProperties.indexOf(properties[i]) < 0) {
+                    visibleCount += 1;
+                }
+            }
+            $('#explanation-property-count').text(visibleCount === properties.length
+                ? 'All ' + properties.length
+                : visibleCount + ' of ' + properties.length);
+            var propertiesKey = JSON.stringify(properties);
+            if (propertiesKey !== explanationPropertyOptionsKey) {
+                renderExplanationPropertyOptions(properties);
+                explanationPropertyOptionsKey = propertiesKey;
+            }
+            else {
+                syncExplanationPropertyCheckboxes();
+            }
+        }
+        function setExplanationPropertyVisible(property, visible) {
+            if (!property) {
+                return;
+            }
+            var index = explanationHiddenProperties.indexOf(property);
+            if (visible && index >= 0) {
+                explanationHiddenProperties.splice(index, 1);
+            }
+            else if (!visible && index < 0) {
+                explanationHiddenProperties.push(property);
+            }
+            else {
+                syncExplanationPropertyControls();
+                return;
+            }
+            persistExplanationHiddenProperties();
+            lastRenderedExplanationKeys = {};
+            renderQueryPageState();
+        }
+        query_1.setExplanationPropertyVisible = setExplanationPropertyVisible;
+        function setAllExplanationPropertiesVisible(visible) {
+            if (visible) {
+                explanationHiddenProperties = [];
+            }
+            else {
+                var properties = getAvailableExplanationProperties();
+                for (var i = 0; i < properties.length; i++) {
+                    if (explanationHiddenProperties.indexOf(properties[i]) < 0) {
+                        explanationHiddenProperties.push(properties[i]);
+                    }
+                }
+            }
+            persistExplanationHiddenProperties();
+            lastRenderedExplanationKeys = {};
+            renderQueryPageState();
+        }
+        query_1.setAllExplanationPropertiesVisible = setAllExplanationPropertiesVisible;
+        function setExplanationSettingsOpen(open) {
+            $('#explanation-settings-toggle').attr('aria-expanded', open ? 'true' : 'false');
+            $('#explanation-settings-panel').prop('hidden', !open);
+        }
+        query_1.setExplanationSettingsOpen = setExplanationSettingsOpen;
+        function toggleExplanationSettings() {
+            setExplanationSettingsOpen($('#explanation-settings-toggle').attr('aria-expanded') !== 'true');
+        }
+        query_1.toggleExplanationSettings = toggleExplanationSettings;
+        function syncExplanationHighlightControls() {
+            var controlsVisible = !!queryPageState
+                && queryPageState.inputs.explainFormat === 'text'
+                && (compareModeEnabled || queryPageState.primaryPane.kind !== 'empty');
+            $('#explanation-settings')
+                .toggle(controlsVisible)
+                .attr('aria-hidden', controlsVisible ? 'false' : 'true');
+            if (!controlsVisible) {
+                setExplanationSettingsOpen(false);
+            }
+            $('#explanation-highlight-mode')
+                .toggle(controlsVisible)
+                .attr('aria-hidden', controlsVisible ? 'false' : 'true');
+            $('#explanation-highlight-syntax').prop('checked', explanationHighlightMode === 'syntax');
+            $('#explanation-highlight-hotspot').prop('checked', explanationHighlightMode === 'hotspot');
+            var hotspot = controlsVisible ? getSharedHotspotSummary() : null;
+            $('#explanation-hotspot-legend')
+                .toggle(!!hotspot)
+                .text(hotspot ? 'Heat: ' + hotspot.label : '');
+            syncExplanationPropertyControls();
+        }
+        function setExplanationHighlightMode(mode) {
+            if (mode !== 'syntax' && mode !== 'hotspot') {
+                return;
+            }
+            if (explanationHighlightMode === mode) {
+                syncExplanationHighlightControls();
+                return;
+            }
+            explanationHighlightMode = mode;
+            lastRenderedExplanationKeys = {};
+            renderQueryPageState();
+        }
+        query_1.setExplanationHighlightMode = setExplanationHighlightMode;
+        function renderHighlightedText(paneKey, explanation, sharedMaximum) {
+            var paneState = getPaneState(paneKey);
+            var explanationElement = document.getElementById(paneState.explanationId);
+            var rendered = workbench.queryExplanationHighlighter.render(explanation.plan, {
+                level: explanation.level,
+                mode: explanationHighlightMode,
+                sharedMaximum: sharedMaximum,
+                lineSeparator: explanation.lineSeparator,
+                hiddenProperties: explanationHiddenProperties,
+                namespaces: sparqlNamespaces
+            });
+            $('#' + paneState.explanationRowId).show();
+            if (paneState.explanationControlsRowId) {
+                $('#' + paneState.explanationControlsRowId).show();
+            }
+            $('#' + paneState.explanationId)
+                .empty()
+                .addClass('query-explanation--highlighted')
+                .attr('data-format', 'text');
+            explanationElement.appendChild(rendered.fragment);
+            setExplanationDisplayMode(paneKey, 'text');
+            paneState.latestExplanation = rendered.text;
+            paneState.latestExplanationFormat = 'text';
+            if (paneKey !== 'compare') {
+                updateDownloadButtonState();
+                syncPrimaryExplanationControls();
+            }
+            restoreExplainButtonViewportTopIfNeeded(paneKey);
+            clearExplanationDimensionLock(paneKey);
+        }
         function renderExplanation(paneKey, explanationText, format) {
             var paneState = getPaneState(paneKey);
             var normalizedFormat = (format || 'text').toLowerCase();
@@ -1598,10 +1876,16 @@ var workbench;
                 $('#' + paneState.explanationControlsRowId).show();
             }
             if (normalizedFormat === 'dot' || normalizedFormat === 'json') {
-                $('#' + paneState.explanationId).text('').attr('data-format', normalizedFormat);
+                $('#' + paneState.explanationId)
+                    .removeClass('query-explanation--highlighted')
+                    .text('')
+                    .attr('data-format', normalizedFormat);
             }
             else {
-                $('#' + paneState.explanationId).text(explanationText).attr('data-format', normalizedFormat);
+                $('#' + paneState.explanationId)
+                    .removeClass('query-explanation--highlighted')
+                    .text(explanationText)
+                    .attr('data-format', normalizedFormat);
             }
             setExplanationDisplayMode(paneKey, normalizedFormat);
             paneState.latestExplanation = explanationText;
@@ -1617,6 +1901,23 @@ var workbench;
             }
             clearExplanationDimensionLock(paneKey);
         }
+        function renderStableExplanation(paneKey, explanation, sharedMaximum) {
+            if (explanation.requestedFormat === 'text') {
+                if (explanation.view === 'highlightedText' && explanation.plan) {
+                    try {
+                        renderHighlightedText(paneKey, explanation, sharedMaximum);
+                        return;
+                    }
+                    catch (renderError) {
+                        renderExplanation(paneKey, getExplanationDisplayContent(explanation), 'text');
+                        return;
+                    }
+                }
+                renderExplanation(paneKey, getExplanationDisplayContent(explanation), 'text');
+                return;
+            }
+            renderExplanation(paneKey, explanation.rawContent, explanation.requestedFormat);
+        }
         function renderPanePresentation(paneKey) {
             var paneMachineState = getPaneMachineState(paneKey);
             var paneState = getPaneState(paneKey);
@@ -1627,7 +1928,11 @@ var workbench;
             var paneStatusClassName = getPaneStatusClassName(paneMachineState);
             var paneOverlayMessage = getPaneOverlayMessage(paneMachineState);
             var rowVisible = paneMachineState.kind !== 'inactive' && paneMachineState.kind !== 'empty';
-            var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation);
+            var sharedHotspot = getSharedHotspotSummary();
+            var sharedMaximum = sharedHotspot ? sharedHotspot.maximum : null;
+            var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation)
+                + '||' + explanationHighlightMode + '||' + String(sharedMaximum)
+                + '||' + JSON.stringify(explanationHiddenProperties);
             $('#' + paneState.explanationRowId).toggle(rowVisible);
             $('#' + paneState.copyButtonId).prop('disabled', !paneDisplayExplanation);
             if (!rowVisible) {
@@ -1688,7 +1993,7 @@ var workbench;
             }
             if (lastRenderedExplanationKeys[paneKey] !== renderContentKey) {
                 lastRenderedExplanationKeys[paneKey] = renderContentKey;
-                renderExplanation(paneKey, paneDisplayExplanation.rawContent, paneDisplayExplanation.responseFormat);
+                renderStableExplanation(paneKey, paneDisplayExplanation, sharedMaximum);
             }
         }
         function renderQueryPageState() {
@@ -1712,7 +2017,7 @@ var workbench;
                 if (queryPageState.diffModal.explanation === 'ready'
                     && queryPageState.primaryPane.kind === 'ready'
                     && queryPageState.comparePane.kind === 'ready') {
-                    renderDiffView('#query-diff-explanation', queryPageState.primaryPane.explanation.rawContent, queryPageState.comparePane.explanation.rawContent, diffNotReadyLabel);
+                    renderDiffView('#query-diff-explanation', getExplanationDisplayContent(queryPageState.primaryPane.explanation), getExplanationDisplayContent(queryPageState.comparePane.explanation), diffNotReadyLabel);
                 }
                 else {
                     $('#query-diff-explanation').text(diffNotReadyLabel);
@@ -1745,8 +2050,234 @@ var workbench;
             }
             return 'Explain request failed.';
         }
+        var LONG_EXPLANATION_FIELDS = Object.create(null);
+        [
+            'resultSizeActual',
+            'hasNextCallCountActual',
+            'hasNextTrueCountActual',
+            'hasNextTimeNanosActual',
+            'nextCallCountActual',
+            'nextTimeNanosActual',
+            'joinRightIteratorsCreatedActual',
+            'joinLeftBindingsConsumedActual',
+            'joinRightBindingsConsumedActual',
+            'sourceRowsScannedActual',
+            'sourceRowsMatchedActual',
+            'sourceRowsFilteredActual'
+        ].forEach(function (name) {
+            LONG_EXPLANATION_FIELDS[name] = true;
+        });
+        var DOUBLE_EXPLANATION_FIELDS = Object.create(null);
+        ['costEstimate', 'resultSizeEstimate', 'totalTimeActual', 'selfTimeActual']
+            .forEach(function (name) {
+            DOUBLE_EXPLANATION_FIELDS[name] = true;
+        });
+        function scanJsonNumberTokens(text) {
+            var result = [];
+            var inString = false;
+            var escaped = false;
+            for (var i = 0; i < text.length; i++) {
+                var character = text.charAt(i);
+                if (inString) {
+                    if (escaped) {
+                        escaped = false;
+                    }
+                    else if (character === '\\') {
+                        escaped = true;
+                    }
+                    else if (character === '"') {
+                        inString = false;
+                    }
+                    continue;
+                }
+                if (character === '"') {
+                    inString = true;
+                    continue;
+                }
+                if (character !== '-' && (character < '0' || character > '9')) {
+                    continue;
+                }
+                var start = i;
+                if (character === '-') {
+                    i++;
+                }
+                if (text.charAt(i) === '0') {
+                    i++;
+                }
+                else if (text.charAt(i) >= '1' && text.charAt(i) <= '9') {
+                    while (i < text.length && text.charAt(i) >= '0' && text.charAt(i) <= '9') {
+                        i++;
+                    }
+                }
+                else {
+                    continue;
+                }
+                if (text.charAt(i) === '.') {
+                    i++;
+                    while (i < text.length && text.charAt(i) >= '0' && text.charAt(i) <= '9') {
+                        i++;
+                    }
+                }
+                if (text.charAt(i) === 'e' || text.charAt(i) === 'E') {
+                    i++;
+                    if (text.charAt(i) === '+' || text.charAt(i) === '-') {
+                        i++;
+                    }
+                    while (i < text.length && text.charAt(i) >= '0' && text.charAt(i) <= '9') {
+                        i++;
+                    }
+                }
+                result.push({ start: start, end: i, text: text.substring(start, i) });
+                i--;
+            }
+            return result;
+        }
+        function quoteJsonNumberTokens(text, tokens) {
+            var quoted = '';
+            var cursor = 0;
+            for (var i = 0; i < tokens.length; i++) {
+                quoted += text.substring(cursor, tokens[i].start);
+                quoted += '"' + tokens[i].text + '"';
+                cursor = tokens[i].end;
+            }
+            quoted += text.substring(cursor);
+            return quoted;
+        }
+        var JSON_LONG_MAX_MAGNITUDE = '9223372036854775807';
+        var JSON_LONG_MIN_MAGNITUDE = '9223372036854775808';
+        // Keep integral decimal lexemes exact without BigInt: valid Long values are bounded to signed 64-bit
+        // magnitude before allocating expanded decimal text, and out-of-range values fall back to native Number.
+        function jsonLongFromNumberToken(value) {
+            var match = /^(-?)([0-9]+)(?:\.([0-9]+))?(?:[eE]([+-]?[0-9]+))?$/.exec(value);
+            if (!match) {
+                return Number(value);
+            }
+            var negative = match[1] === '-';
+            var magnitude = (match[2] + (match[3] || '')).replace(/^0+/, '') || '0';
+            if (magnitude === '0') {
+                return 0;
+            }
+            var exponent = match[4] ? Number(match[4]) : 0;
+            if (!isFinite(exponent)) {
+                return Number(value);
+            }
+            var decimalPlaces = match[3] ? match[3].length : 0;
+            var shift = exponent - decimalPlaces;
+            if (shift >= 0) {
+                if (shift > 19 - magnitude.length) {
+                    return Number(value);
+                }
+                magnitude += new Array(shift + 1).join('0');
+            }
+            else {
+                var removedDigits = -shift;
+                if (removedDigits >= magnitude.length
+                    || /[1-9]/.test(magnitude.substring(magnitude.length - removedDigits))) {
+                    return Number(value);
+                }
+                magnitude = magnitude.substring(0, magnitude.length - removedDigits) || '0';
+            }
+            magnitude = magnitude.replace(/^0+/, '') || '0';
+            var maximumMagnitude = negative ? JSON_LONG_MIN_MAGNITUDE : JSON_LONG_MAX_MAGNITUDE;
+            if (magnitude.length > maximumMagnitude.length
+                || (magnitude.length === maximumMagnitude.length && magnitude > maximumMagnitude)) {
+                return Number(value);
+            }
+            var canonical = magnitude === '0' ? '0' : (negative ? '-' + magnitude : magnitude);
+            var safeMagnitude = magnitude.length < 16
+                || (magnitude.length === 16 && magnitude <= '9007199254740991');
+            return safeMagnitude ? Number(canonical) : canonical;
+        }
+        function childPlanJsonKind(kind, key) {
+            if (kind === 'longMap') {
+                return 'long';
+            }
+            if (kind === 'doubleMap') {
+                return 'double';
+            }
+            if (kind === 'stringMap') {
+                return 'string';
+            }
+            if (kind !== 'node') {
+                return null;
+            }
+            if (LONG_EXPLANATION_FIELDS[key]) {
+                return 'long';
+            }
+            if (DOUBLE_EXPLANATION_FIELDS[key]) {
+                return 'double';
+            }
+            if (key === 'longMetricsActual' || key === 'longMetricsPlanned') {
+                return 'longMap';
+            }
+            if (key === 'doubleMetricsActual' || key === 'doubleMetricsPlanned') {
+                return 'doubleMap';
+            }
+            if (key === 'stringMetricsActual' || key === 'stringMetricsPlanned') {
+                return 'stringMap';
+            }
+            if (key === 'plans') {
+                return 'node';
+            }
+            return null;
+        }
+        function setHydratedPlanJsonProperty(target, key, value) {
+            if (key === '__proto__') {
+                Object.defineProperty(target, key, {
+                    configurable: true,
+                    enumerable: true,
+                    value: value,
+                    writable: true
+                });
+            }
+            else {
+                target[key] = value;
+            }
+        }
+        function hydratePlanJsonValue(value, originalValue, kind) {
+            if (typeof originalValue === 'number' && typeof value === 'string') {
+                if (kind === 'long') {
+                    return jsonLongFromNumberToken(value);
+                }
+                return Number(value);
+            }
+            if (typeof value === 'string') {
+                if ((kind === 'double' || kind === 'doubleMap')
+                    && (value === 'Infinity' || value === '-Infinity' || value === 'NaN')) {
+                    return Number(value);
+                }
+                return value;
+            }
+            if (Array.isArray(value)) {
+                var originalArray = Array.isArray(originalValue) ? originalValue : [];
+                for (var i = 0; i < value.length; i++) {
+                    value[i] = hydratePlanJsonValue(value[i], originalArray[i], kind);
+                }
+                return value;
+            }
+            if (!value || typeof value !== 'object') {
+                return value;
+            }
+            var originalObject = originalValue && typeof originalValue === 'object' ? originalValue : {};
+            var keys = Object.keys(value);
+            for (var keyIndex = 0; keyIndex < keys.length; keyIndex++) {
+                var key = keys[keyIndex];
+                var childKind = childPlanJsonKind(kind || 'node', key);
+                setHydratedPlanJsonProperty(value, key, hydratePlanJsonValue(value[key], originalObject[key], childKind));
+            }
+            return value;
+        }
+        function parsePlanJson(explanationText) {
+            var parsed = JSON.parse(explanationText);
+            var tokens = scanJsonNumberTokens(explanationText);
+            // Parse two trees: the native tree validates JSON and preserves original string-vs-number types, while
+            // the quoted-number tree preserves unsafe numeric lexemes for context-aware hydration.
+            var tokenized = JSON.parse(quoteJsonNumberTokens(explanationText, tokens));
+            return hydratePlanJsonValue(tokenized, parsed, 'node');
+        }
         function serializeExplainFormData(queryValue, level, format, serverRequestId) {
             var serializedForm = $('form[action="query"]').serializeArray();
+            var transportFormat = getNormalizedExplainFormat(format) === 'text' ? 'json' : format;
             var seenAction = false;
             var seenExplain = false;
             var seenFormat = false;
@@ -1763,7 +2294,7 @@ var workbench;
                     seenExplain = true;
                 }
                 else if (serializedForm[i].name === 'explain-format') {
-                    serializedForm[i].value = format;
+                    serializedForm[i].value = transportFormat;
                     seenFormat = true;
                 }
                 else if (serializedForm[i].name === 'infer') {
@@ -1785,7 +2316,7 @@ var workbench;
                 serializedForm.push({ name: 'explain', value: level });
             }
             if (!seenFormat) {
-                serializedForm.push({ name: 'explain-format', value: format });
+                serializedForm.push({ name: 'explain-format', value: transportFormat });
             }
             if (!seenInfer) {
                 serializedForm.push({ name: 'infer', value: 'false' });
@@ -1818,7 +2349,28 @@ var workbench;
             var responseFormat = getNormalizedExplainFormat(response.format || fallbackFormat || 'text');
             var explanationText = response.content || '';
             var explanationView = 'text';
-            if (responseFormat === 'json') {
+            var displayContent = explanationText;
+            var parsedPlan = null;
+            var lineSeparator = typeof response.lineSeparator === 'string' && response.lineSeparator.length > 0
+                ? response.lineSeparator : '\n';
+            if (signature.format === 'text' && responseFormat === 'json') {
+                if (explanationText) {
+                    try {
+                        var parsedResponse = parsePlanJson(explanationText);
+                        if (!parsedResponse || typeof parsedResponse !== 'object'
+                            || Array.isArray(parsedResponse) || typeof parsedResponse.type !== 'string') {
+                            throw new Error('JSON explanation does not contain a plan root.');
+                        }
+                        parsedPlan = parsedResponse;
+                        displayContent = workbench.queryExplanationHighlighter.format(parsedPlan, signature.level, lineSeparator).text;
+                        explanationView = 'highlightedText';
+                    }
+                    catch (parseError) {
+                        explanationView = 'text';
+                    }
+                }
+            }
+            else if (signature.format === 'json' && responseFormat === 'json') {
                 explanationView = 'jsonTree';
                 if (explanationText) {
                     try {
@@ -1838,7 +2390,10 @@ var workbench;
                 requestedFormat: signature.format,
                 responseFormat: responseFormat,
                 view: explanationView,
-                rawContent: explanationText
+                rawContent: explanationText,
+                displayContent: displayContent,
+                lineSeparator: lineSeparator,
+                plan: parsedPlan
             };
         }
         function applyExplainResponseToPane(paneKey, signature, response, fallbackFormat) {
@@ -2447,10 +3002,10 @@ var workbench;
                 return;
             }
             var primaryExplanation = queryPageState.primaryPane.explanation;
-            var format = primaryExplanation.responseFormat || $('#explain-format').val() || 'text';
+            var format = primaryExplanation.requestedFormat || $('#explain-format').val() || 'text';
             var extension = getExplanationDownloadExtension(format);
             var mimeType = getExplanationDownloadMimeType(format);
-            var blob = new Blob([primaryExplanation.rawContent], { type: mimeType + ';charset=utf-8' });
+            var blob = new Blob([getExplanationDisplayContent(primaryExplanation)], { type: mimeType + ';charset=utf-8' });
             var link = document.createElement('a');
             var selectedLevel = $('#explain-level').val() || 'query';
             link.download = 'query-explanation-' + selectedLevel.toLowerCase() + '.' + extension;
@@ -2464,7 +3019,8 @@ var workbench;
         function copyExplanation(paneKey) {
             var normalizedPaneKey = paneKey === 'compare' ? 'compare' : 'primary';
             var paneDisplayExplanation = getPaneDisplayExplanation(getPaneMachineState(normalizedPaneKey));
-            if (!paneDisplayExplanation || !paneDisplayExplanation.rawContent) {
+            var displayContent = getExplanationDisplayContent(paneDisplayExplanation);
+            if (!paneDisplayExplanation || !displayContent) {
                 return false;
             }
             if (!window.navigator
@@ -2472,7 +3028,7 @@ var workbench;
                 || typeof window.navigator.clipboard.writeText !== 'function') {
                 return false;
             }
-            return window.navigator.clipboard.writeText(paneDisplayExplanation.rawContent);
+            return window.navigator.clipboard.writeText(displayContent);
         }
         query_1.copyExplanation = copyExplanation;
         function initializeExplanationView() {
@@ -2701,6 +3257,7 @@ var workbench;
             getExplainTriggerButtonElement: getExplainTriggerButtonElement,
             getExplanationDownloadExtension: getExplanationDownloadExtension,
             getExplanationDownloadMimeType: getExplanationDownloadMimeType,
+            getExplanationDisplayContent: getExplanationDisplayContent,
             getJsonSummary: getJsonSummary,
             getNormalizedExplainFormat: getNormalizedExplainFormat,
             getNormalizedExplainLevel: getNormalizedExplainLevel,
@@ -2730,6 +3287,7 @@ var workbench;
             isJsonExpandable: isJsonExpandable,
             isPaneReadyCurrent: isPaneReadyCurrent,
             parseNumericJsonValue: parseNumericJsonValue,
+            parsePlanJson: parsePlanJson,
             persistPrimaryQueryEditorValue: persistPrimaryQueryEditorValue,
             persistPrimaryQueryValue: persistPrimaryQueryValue,
             postCancelExplain: postCancelExplain,
@@ -2742,6 +3300,7 @@ var workbench;
             renderJsonExplanationTree: renderJsonExplanationTree,
             renderJsonView: renderJsonView,
             renderQueryPageState: renderQueryPageState,
+            renderStableExplanation: renderStableExplanation,
             resetComparePaneState: resetComparePaneState,
             restorePaneStateFromPrevious: restorePaneStateFromPrevious,
             restoreExplainButtonViewportTopIfNeeded: restoreExplainButtonViewportTopIfNeeded,
@@ -2782,6 +3341,8 @@ var workbench;
                     currentQueryLn: currentQueryLn,
                     diffNotReadyLabel: diffNotReadyLabel,
                     explainServerRequestIdCounter: explainServerRequestIdCounter,
+                    explanationHighlightMode: explanationHighlightMode,
+                    explanationHiddenProperties: explanationHiddenProperties,
                     lastRenderedExplanationKeys: lastRenderedExplanationKeys,
                     pendingDotRenderKeys: pendingDotRenderKeys,
                     primaryPaneState: primaryPaneState,
@@ -2812,6 +3373,9 @@ var workbench;
                 compareQuerySeeded = false;
                 diffNotReadyLabel = '';
                 lastDiffTriggerElement = null;
+                explanationHighlightMode = 'syntax';
+                explanationHiddenProperties = loadExplanationHiddenProperties();
+                explanationPropertyOptionsKey = '';
                 primaryPaneState.latestExplanation = '';
                 primaryPaneState.latestExplanationFormat = 'text';
                 primaryPaneState.dotPanZoomInstance = null;
@@ -2853,6 +3417,9 @@ var workbench;
                 }
                 if ('explainServerRequestIdCounter' in state) {
                     explainServerRequestIdCounter = state.explainServerRequestIdCounter;
+                }
+                if ('explanationHiddenProperties' in state) {
+                    explanationHiddenProperties = normalizeExplanationHiddenProperties(state.explanationHiddenProperties);
                 }
                 if ('lastRenderedExplanationKeys' in state) {
                     lastRenderedExplanationKeys = state.lastRenderedExplanationKeys;
@@ -2989,6 +3556,27 @@ workbench.addLoad(function queryPageLoaded() {
         workbench.query.copyExplanation('compare');
     });
     $('#download-explanation').click(workbench.query.downloadExplanation);
+    $('#explanation-highlight-syntax').click(function () {
+        workbench.query.setExplanationHighlightMode('syntax');
+    });
+    $('#explanation-highlight-hotspot').click(function () {
+        workbench.query.setExplanationHighlightMode('hotspot');
+    });
+    $('#explanation-settings-toggle').click(function () {
+        workbench.query.toggleExplanationSettings();
+    });
+    $(document).click(function (event) {
+        if ($('#explanation-settings-toggle').attr('aria-expanded') === 'true'
+            && $(event.target).closest('#explanation-settings').length === 0) {
+            workbench.query.setExplanationSettingsOpen(false);
+        }
+    });
+    $('#explanation-properties-all').click(function () {
+        workbench.query.setAllExplanationPropertiesVisible(true);
+    });
+    $('#explanation-properties-none').click(function () {
+        workbench.query.setAllExplanationPropertiesVisible(false);
+    });
     // Add event handlers to the save name field to react to changes in it.
     $('#query-name').bind('keydown cut paste', workbench.query.handleNameChange);
     // Add event handlers to the query text area to react to changes in it.
@@ -3017,6 +3605,15 @@ workbench.addLoad(function queryPageLoaded() {
         }
     });
     $(document).keydown(function (event) {
+        if (event.key === 'Escape'
+            && $('#explanation-settings-toggle').attr('aria-expanded') === 'true') {
+            workbench.query.setExplanationSettingsOpen(false);
+            var settingsToggle = document.getElementById('explanation-settings-toggle');
+            if (settingsToggle) {
+                settingsToggle.focus();
+            }
+            return;
+        }
         if (event.key === 'Escape' && $('#query-diff-modal').hasClass('query-diff-modal--open')) {
             workbench.query.closeDiffModal();
         }

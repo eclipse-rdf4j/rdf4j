@@ -1,0 +1,16 @@
+{
+  "type": "CustomJoin",
+  "plans": [
+    {
+      "type": "Projection",
+      "plans": [
+        {
+          "type": "StatementPattern"
+        }
+      ]
+    },
+    {
+      "type": "StatementPattern"
+    }
+  ]
+}
