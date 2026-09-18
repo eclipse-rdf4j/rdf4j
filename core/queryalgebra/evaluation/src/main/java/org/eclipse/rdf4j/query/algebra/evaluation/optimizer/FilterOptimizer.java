@@ -40,8 +40,11 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.ContextAwareQueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.OptimizationSession;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ScopeSafeRewritePass;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ScopeSafetyMode;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -84,7 +87,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
  * @author Arjohn Kampman
  * @author Jerven Bolleman
  */
-public class FilterOptimizer implements QueryOptimizer {
+public class FilterOptimizer implements ContextAwareQueryOptimizer {
 
 	private final EvaluationStatistics statistics;
 	private final boolean mergeAdjacentFilters;
@@ -109,6 +112,13 @@ public class FilterOptimizer implements QueryOptimizer {
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		Objects.requireNonNull(tupleExpr, "tupleExpr must not be null");
 		optimizeScope(tupleExpr);
+	}
+
+	@Override
+	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationSession session) {
+		Objects.requireNonNull(tupleExpr, "tupleExpr must not be null");
+		ContextAwareQueryOptimizer.dispatch(tupleExpr, dataset, bindings, session, EnforcePolicy.REPLACE,
+				this::optimize, ScopeSafeRewritePass::filters);
 	}
 
 	/**
@@ -389,15 +399,8 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Difference node) {
-			Filter clone = new Filter();
-			clone.setCondition(filter.getCondition().clone());
-			transferScopeChange(filter, clone);
-
 			relocate(filter, node.getLeftArg());
-			relocate(clone, node.getRightArg());
-
 			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
-			FilterRelocator.optimize(clone, statistics, considerJoinPlacementCost);
 		}
 
 		@Override

@@ -66,6 +66,8 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	private Map<String, String> stringMetricsPlanned = Collections.emptyMap();
 	@JsonIgnore
 	private transient Map<Object, Object> queryModelMetadata = Collections.emptyMap();
+	@JsonIgnore
+	private transient long optimizationTag;
 
 	private double cardinality = CARDINALITY_NOT_SET;
 
@@ -142,6 +144,7 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 					: new HashMap<>(stringMetricsPlanned);
 			clone.queryModelMetadata = queryModelMetadata.isEmpty() ? Collections.emptyMap()
 					: new HashMap<>(queryModelMetadata);
+			clone.optimizationTag = optimizationTag & 0xffffffff00000000L;
 			return clone;
 		} catch (CloneNotSupportedException e) {
 			throw new RuntimeException("Query model nodes are required to be cloneable", e);
@@ -487,6 +490,17 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	@Override
 	public void clearQueryModelMetadata() {
 		queryModelMetadata = Collections.emptyMap();
+	}
+
+	@Override
+	@JsonIgnore
+	public long getOptimizationTag() {
+		return optimizationTag;
+	}
+
+	@Override
+	public void setOptimizationTag(long optimizationTag) {
+		this.optimizationTag = optimizationTag;
 	}
 
 	/**

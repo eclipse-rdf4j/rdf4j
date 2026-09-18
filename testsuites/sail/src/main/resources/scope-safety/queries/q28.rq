@@ -1,0 +1,4 @@
+SELECT * WHERE {
+  VALUES (?x ?y) { ("1" "left") }
+  OPTIONAL { VALUES (?x ?y) { ("1" "right") } }
+}

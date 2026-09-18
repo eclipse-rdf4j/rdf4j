@@ -1,0 +1,4 @@
+name,expectedStatus,notes
+values-over-null-binding,UNKNOWN,"seed-42 shrink: VALUES joined over a null-binding placeholder used to crash ArrayBindingSet direct-add under -ea"
+union-branch-order-scope-isolation,UNKNOWN,"seed-71601 remains oracle-clean; its union reorder is outside the theorem-backed certificate fragment"
+distinct-pushdown-join-commute,UNKNOWN,"seed-71603 remains oracle-clean; its join reorder is outside the theorem-backed certificate fragment"

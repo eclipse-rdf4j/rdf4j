@@ -402,7 +402,9 @@ public class TargetChainRetriever implements PlanNode {
 						.visit(new AbstractSimpleQueryModelVisitor<>(false) {
 							@Override
 							public void meet(BindingSetAssignment node) {
-								Set<String> bindingNames = node.getBindingNames();
+								// The placeholder VALUES has zero rows: derived binding names are
+								// empty, so the header must be matched via the DECLARED names.
+								Set<String> bindingNames = node.getDeclaredBindingNames();
 								if (bindingNames.equals(varNames)) {
 									node.setBindingSets(bulk);
 								}

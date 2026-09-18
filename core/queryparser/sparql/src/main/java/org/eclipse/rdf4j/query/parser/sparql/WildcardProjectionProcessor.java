@@ -15,11 +15,8 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.MalformedQueryException;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBind;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstraint;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribe;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribeQuery;
-import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLabeledTripleTerm;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperation;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperationContainer;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTProjectionElem;
@@ -110,14 +107,9 @@ public class WildcardProjectionProcessor extends AbstractASTVisitor {
 	}
 
 	private static void addQueryVars(ASTWhereClause queryBody, Node wildcardNode) throws MalformedQueryException {
-		QueryVariableCollector visitor = new QueryVariableCollector();
-
 		try {
-			// Collect variable names from query
-			queryBody.jjtAccept(visitor, null);
-
 			// Adds ASTVar nodes to the ASTProjectionElem nodes and to the parent
-			for (String varName : visitor.getVariableNames()) {
+			for (String varName : DeclaredVariableScanner.process(queryBody)) {
 				ASTVar varNode = new ASTVar(SyntaxTreeBuilderTreeConstants.JJTVAR);
 				ASTProjectionElem projectionElemNode = new ASTProjectionElem(
 						SyntaxTreeBuilderTreeConstants.JJTPROJECTIONELEM);
@@ -133,74 +125,6 @@ public class WildcardProjectionProcessor extends AbstractASTVisitor {
 
 		} catch (VisitorException e) {
 			throw new MalformedQueryException(e);
-		}
-	}
-
-	/*------------------------------------*
-	 * Inner class QueryVariableCollector *
-	 *------------------------------------*/
-
-	private static class QueryVariableCollector extends AbstractASTVisitor {
-
-		private final Set<String> variableNames = new LinkedHashSet<>();
-
-		public Set<String> getVariableNames() {
-			return variableNames;
-		}
-
-		@Override
-		public Object visit(ASTSelectQuery node, Object data) throws VisitorException {
-			// stop visitor from processing body of sub-select, only add variables
-			// from the projection
-			return visit(node.getSelect(), data);
-		}
-
-		@Override
-		public Object visit(ASTProjectionElem node, Object data) throws VisitorException {
-			// only include the actual alias from a projection element in a
-			// subselect, not any variables used as
-			// input to a function
-			String alias = node.getAlias();
-			if (alias != null) {
-				variableNames.add(alias);
-				return null;
-			} else {
-				return super.visit(node, data);
-			}
-		}
-
-		@Override
-		public Object visit(ASTBind node, Object data) throws VisitorException {
-			// only include the actual alias from a BIND
-			// exception: in case of ASTTRipleRef include its vars
-			Node first = node.jjtGetChild(0);
-			if (first instanceof ASTLabeledTripleTerm) {
-				ASTLabeledTripleTerm triple = (ASTLabeledTripleTerm) first;
-				super.visit(triple, data);
-			}
-			Node aliasNode = node.jjtGetChild(1);
-			String alias = ((ASTVar) aliasNode).getName();
-
-			if (alias != null) {
-				variableNames.add(alias);
-				return null;
-			} else {
-				return super.visit(node, data);
-			}
-		}
-
-		@Override
-		public Object visit(ASTConstraint node, Object data) throws VisitorException {
-			// ignore variables in filter expressions
-			return null;
-		}
-
-		@Override
-		public Object visit(ASTVar node, Object data) throws VisitorException {
-			if (!node.isAnonymous()) {
-				variableNames.add(node.getName());
-			}
-			return super.visit(node, data);
 		}
 	}
 
