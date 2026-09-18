@@ -681,7 +681,16 @@ public abstract class AbstractSailConnection implements SailConnection {
 		if (statementsRemoved) {
 			flushPendingUpdates();
 		}
-		long added = addStatementsInternal(statements, contexts);
+		long added;
+		try {
+			added = addStatementsInternal(statements, contexts);
+		} catch (RuntimeException | Error e) {
+			// Mark pending when bulk iteration fails: an optimized path may have buffered a prefix before the failure.
+			// Preserve the caller-managed transaction and original exception; a later read or update flushes the
+			// prefix.
+			setStatementsAdded();
+			throw e;
+		}
 		recordDataImportMetricsStatementsAdded(added);
 		if (added > 0) {
 			setStatementsAdded();
