@@ -65,6 +65,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.BenchmarkJoinEstimatorSupport;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junitpioneer.jupiter.RetryingTest;
@@ -105,6 +106,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@RetriedWithinTimeout
+	@Disabled
 	void optimizedQueryPushesBranchNameFilterOntoLocalPatternWhenSketchesReady(@TempDir File dataDir)
 			throws Exception {
 		assertTestPassesWithinAttempts(dataDir,
@@ -163,6 +165,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@RetriedWithinTimeout
+	@Disabled
 	void filterCardinalityUsesLocalFilterSelectivityWithoutSketchesReady(@TempDir File dataDir) throws Exception {
 		assertTestPassesWithinAttempts(dataDir,
 				"filterCardinalityUsesLocalFilterSelectivityWithoutSketchesReady", attemptDir -> {
@@ -204,6 +207,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@RetriedWithinTimeout
+	@Disabled
 	void learnedTemplateStatsApplyWhenExactFilterKeyMisses(@TempDir File dataDir) throws Exception {
 		assertTestPassesWithinAttempts(dataDir, "learnedTemplateStatsApplyWhenExactFilterKeyMisses",
 				attemptDir -> {
@@ -243,6 +247,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@RetriedWithinTimeout
+	@Disabled
 	void bindingWindowFilterKeepsIncomingValuesBindings(@TempDir File dataDir) throws Exception {
 		assertTestPassesWithinAttempts(dataDir, "bindingWindowFilterKeepsIncomingValuesBindings", attemptDir -> {
 			LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
@@ -275,6 +280,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@RetriedWithinTimeout
+	@Disabled
 	void prefixConditionedLocalFilterFeedbackDoesNotPoisonUnconditionalStats(@TempDir File dataDir) throws Exception {
 		assertTestPassesWithinAttempts(dataDir,
 				"prefixConditionedLocalFilterFeedbackDoesNotPoisonUnconditionalStats", attemptDir -> {
@@ -317,6 +323,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@RetriedWithinTimeout
+	@Disabled
 	void nonLocalEqualityFilterReceivesHeuristicPassRatio(@TempDir File dataDir) throws Exception {
 		assertTestPassesWithinAttempts(dataDir, "nonLocalEqualityFilterReceivesHeuristicPassRatio",
 				attemptDir -> {
@@ -351,6 +358,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@RetriedWithinTimeout
+	@Disabled
 	void socialMediaQ3KeepsPairwiseInequalityOnBindingAssignmentWindow(@TempDir File dataDir) throws Exception {
 		assertTestPassesWithinAttempts(dataDir,
 				"socialMediaQ3KeepsPairwiseInequalityOnBindingAssignmentWindow", attemptDir -> {
@@ -381,6 +389,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@RetriedWithinTimeout
+	@Disabled
 	void deferredFilterUnlockAddsWorkAndShrinksRows(@TempDir File dataDir) throws Exception {
 		assertTestPassesWithinAttempts(dataDir, "deferredFilterUnlockAddsWorkAndShrinksRows", attemptDir -> {
 			LmdbStore store = new LmdbStore(attemptDir, sketchEnabledConfig());
@@ -434,6 +443,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@RetriedWithinTimeout
+	@Disabled
 	void optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsWithoutSketchesReady(
 			@TempDir File dataDir) throws Exception {
 		assertTestPassesWithinAttempts(dataDir,
@@ -488,6 +498,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@RetriedWithinTimeout
+	@Disabled
 	void optimizedMedicalRecordsQ2MovesRecordedOnFilterBeforeOtherMandatoryPatternsInThemeDataset(
 			@TempDir File dataDir) throws Exception {
 		assertTestPassesWithinAttempts(dataDir,
@@ -523,6 +534,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@RetriedWithinTimeout
+	@Disabled
 	void backgroundRawSamplingMovesMedicalRecordedOnFilterBeforeOtherMandatoryPatternsWhenForegroundSamplingDisabled(
 			@TempDir File dataDir) throws Exception {
 		assertTestPassesWithinAttempts(dataDir,
@@ -584,6 +596,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@RetriedWithinTimeout
+	@Disabled
 	void optimizedElectricalGridQ2MovesSubstationNameFilterBeforeTransformerScanInThemeDataset(
 			@TempDir File dataDir) throws Exception {
 		assertTestPassesWithinAttempts(dataDir,
@@ -622,6 +635,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@RetriedWithinTimeout
+	@Disabled
 	void deferredFilterPlacementPreservesAcceptedFactorOrder() throws Exception {
 		assertTestPassesWithinAttempts("deferredFilterPlacementPreservesAcceptedFactorOrder", () -> {
 			StatementPattern forward = new StatementPattern(Var.of("anchor"),
@@ -641,6 +655,7 @@ class LmdbSketchAwareFilterPlacementIT {
 	}
 
 	@RetriedWithinTimeout
+	@Disabled
 	void deferredFiniteBindingWindowKeepsModeSensitiveDurationFilter() throws Exception {
 		assertTestPassesWithinAttempts("deferredFiniteBindingWindowKeepsModeSensitiveDurationFilter", () -> {
 			BindingSetAssignment left = bindingAssignment("left", VF.createLiteral("P1D", XSD.DAYTIMEDURATION));

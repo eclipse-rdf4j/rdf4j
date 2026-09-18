@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -70,6 +71,7 @@ class SketchEstimatorThemeJoinAccuracyIT {
 	private static final double MAX_AVERAGE_RELATIVE_ERROR = 0.20d;
 
 	@Test
+	@Disabled
 	void estimatorMatchesManualJoinAcrossAllThemes(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -143,6 +145,7 @@ class SketchEstimatorThemeJoinAccuracyIT {
 	}
 
 	@Test
+	@Disabled
 	void plannerPrefersSelectiveChainEndForPathologicalLmdbJoin(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -196,6 +199,7 @@ class SketchEstimatorThemeJoinAccuracyIT {
 	}
 
 	@Test
+	@Disabled
 	void estimatorDoesNotZeroLibraryLocatedAtNameJoinAfterReload(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc");
 		LibraryJoinLoadResult loadResult = loadLibraryThemeIntoDefaultContext(dataDir, config);

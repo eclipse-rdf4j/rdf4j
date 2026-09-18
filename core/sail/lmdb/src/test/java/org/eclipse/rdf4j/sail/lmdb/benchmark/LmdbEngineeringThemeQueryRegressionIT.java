@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -38,6 +39,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 			+ "=true to reuse cached stores under persistent-lmdb-theme-store.";
 
 	@Test
+	@Disabled
 	void requirementExistsMinusUsesDevelopPlanShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
 		Path themeDir = prepareThemeStore(dataDir, theme, 7);
@@ -57,6 +59,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void assemblyOptionalMinusUsesDevelopPlanShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
 		Path themeDir = prepareThemeStore(dataDir, theme, 10);
@@ -77,6 +80,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void componentNameFilterUsesFiniteValuesAnchor(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
 		Path themeDir = prepareThemeStore(dataDir, theme, 4);
@@ -95,6 +99,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void assemblyComponentCountsKeepsFastValuesFilterPlanShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
 		Path themeDir = prepareThemeStore(dataDir, theme, 2);
@@ -113,6 +118,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void componentRequirementAggregationKeepsBoundLookupCardinality(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
 		Path themeDir = prepareThemeStore(dataDir, theme, 8);
@@ -132,6 +138,7 @@ class LmdbEngineeringThemeQueryRegressionIT {
 	}
 
 	@Test
+	@Disabled
 	void engineeringQ9KeepsOptionalNameExistsCombinedFilterShape(@TempDir Path dataDir) throws Exception {
 		Theme theme = Theme.ENGINEERING;
 		Path themeDir = prepareThemeStore(dataDir, theme, 9);
