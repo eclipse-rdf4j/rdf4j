@@ -205,6 +205,11 @@ function createQueryBrowserHarness(options = {}) {
         name: 'include-query-text',
         value: 'false'
     });
+    const queryRequestId = registerElement('input', {
+        id: 'query-request-id',
+        name: 'query-request-id',
+        value: ''
+    });
     const queryName = registerElement('input', { id: 'query-name', name: 'query-name', value: options.queryName || '' });
     const savePrivate = registerElement('input', { id: 'save-private', name: 'save-private', type: 'checkbox', checked: true });
     form.formControls = [
@@ -218,6 +223,7 @@ function createQueryBrowserHarness(options = {}) {
         queryTimeout,
         infer,
         includeQueryText,
+        queryRequestId,
         queryName,
         savePrivate
     ];
@@ -229,6 +235,12 @@ function createQueryBrowserHarness(options = {}) {
     const serqlNamespaces = registerElement('pre', { id: 'SERQL-namespaces', textContent: 'using namespace ex = <http://example.com/>' });
 
     const exec = registerElement('button', { id: 'exec' });
+    const queryCancel = registerElement('button', {
+        id: 'query-cancel',
+        className: 'query-cancel',
+        disabled: true,
+        attributes: { 'aria-hidden': 'true' }
+    });
     const save = registerElement('button', { id: 'save' });
     const saveFeedback = registerElement('div', { id: 'save-feedback' });
 
@@ -326,11 +338,13 @@ function createQueryBrowserHarness(options = {}) {
         queryTimeout,
         infer,
         includeQueryText,
+        queryRequestId,
         queryName,
         savePrivate,
         sparqlNamespaces,
         serqlNamespaces,
         exec,
+        queryCancel,
         save,
         saveFeedback,
         explainTrigger,
@@ -388,6 +402,7 @@ function createQueryBrowserHarness(options = {}) {
     explainCompareCancel.onclick = () => context.workbench.query.cancelCompareExplain();
     explainLevel.onchange = () => context.workbench.query.notifyQueryPageInputChange('EXPLAIN_LEVEL_CHANGED');
     explainFormat.onchange = () => context.workbench.query.notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
+    queryCancel.onclick = () => context.workbench.query.cancelQuery();
 
     return Object.assign({}, harness, {
         getJSONRequests,

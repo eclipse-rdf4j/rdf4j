@@ -35,8 +35,24 @@ public final class AsyncExplainCoordinator {
 		}
 	}
 
+	public Handle register(String repositoryScope, String explainRequestId, Runnable remoteCancel) {
+		try {
+			return new Handle(delegate.register(repositoryScope, explainRequestId, remoteCancel));
+		} catch (IllegalStateException e) {
+			throw new IllegalStateException("Explain request already active: " + explainRequestId, e);
+		}
+	}
+
 	public boolean cancel(String explainRequestId) {
 		return delegate.cancel(explainRequestId);
+	}
+
+	public boolean cancel(String repositoryScope, String explainRequestId) {
+		return delegate.cancel(repositoryScope, explainRequestId);
+	}
+
+	public boolean cancelAsync(Handle handle) {
+		return delegate.cancelAsync(handle.delegate);
 	}
 
 	public void complete(Handle handle) {

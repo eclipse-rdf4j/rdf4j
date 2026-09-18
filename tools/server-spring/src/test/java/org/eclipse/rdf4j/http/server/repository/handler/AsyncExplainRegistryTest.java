@@ -118,4 +118,17 @@ class AsyncExplainRegistryTest {
 			executor.shutdownNow();
 		}
 	}
+
+	@Test
+	void explanationIdsAreScopedToTheirRepository() {
+		AsyncExplainCoordinator coordinator = new AsyncExplainCoordinator();
+		AsyncExplainCoordinator.Handle repositoryA = coordinator.register("repository-a", "shared-id", null);
+		AsyncExplainCoordinator.Handle repositoryB = coordinator.register("repository-b", "shared-id", null);
+
+		assertThat(coordinator.cancel("repository-a", "shared-id")).isTrue();
+		assertThat(repositoryA.isActive()).isFalse();
+		assertThat(repositoryB.isActive()).isTrue();
+		assertThat(coordinator.cancel("repository-b", "shared-id")).isTrue();
+		assertThat(repositoryB.isActive()).isFalse();
+	}
 }

@@ -222,6 +222,10 @@ class QueryTemplateTest {
 				.contains("workbench.addParam(url, 'query-request-id');")
 				.contains("form.attr('target', activeQueryResultWindowName);")
 				.contains("toggleClass('query-cancel--visible', visible)")
+				.contains("window.addEventListener('message', handleQueryResultMessage, false);")
+				.contains("event.source !== activeQueryResultWindow")
+				.contains("event.origin !== getCurrentWindowOrigin()")
+				.doesNotContain("activeQueryResultLoadHandler")
 				.containsPattern(
 						"postCancelQuery\\(queryRequestId\\);[\\s\\S]*activeQueryResultWindow\\.stop\\(\\);");
 	}
@@ -732,11 +736,18 @@ class QueryTemplateTest {
 		assertThat(graphTemplate)
 				.doesNotContain("__workbench_query_text")
 				.contains("workbench:metadata/workbench:query-text")
-				.contains("wb-query-text");
+				.contains("wb-query-text")
+				.contains("workbench:metadata/workbench:total-result-count")
+				.contains("workbench-total-result-count");
+		assertThat(tupleTemplate)
+				.contains("workbench:metadata/workbench:total-result-count")
+				.contains("workbench-total-result-count");
 		assertThat(pagingScript)
 				.contains("wb-query-text")
 				.contains("createHiddenInput('ref', 'text')")
-				.contains("createHiddenInput('query', queryText)");
+				.contains("createHiddenInput('query', queryText)")
+				.contains("workbench-total-result-count")
+				.contains("resultMetadata");
 	}
 
 	@Test

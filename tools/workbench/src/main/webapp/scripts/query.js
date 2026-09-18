@@ -28,9 +28,11 @@ var workbench;
         var activeQueryRequestId = null;
         var activeQueryResultWindow = null;
         var activeQueryResultWindowName = null;
-        var activeQueryResultLoadHandler = null;
+        var activeQueryResultCloseCheckTimer = null;
+        var queryResultMessageHandlerInstalled = false;
         var QUERY_RESULT_WINDOW_NAME_PREFIX = 'rdf4j-query-result-';
         var CANCEL_REQUEST_MAX_RETRIES = 20;
+        var QUERY_RESULT_CLOSE_CHECK_INTERVAL_MS = 250;
         var primaryExplanationPending = false;
         var activeCompareRequestId = 0;
         var activeComparePendingRequests = 0;
@@ -1844,22 +1846,91 @@ var workbench;
                 .attr('aria-hidden', visible ? 'false' : 'true')
                 .toggleClass('query-cancel--visible', visible);
         }
+        function getCurrentWindowOrigin() {
+            var origin = window.location.origin;
+            if (origin && origin !== 'null') {
+                return origin;
+            }
+            return window.location.protocol + '//' + window.location.host;
+        }
+        function handleQueryResultMessage(event) {
+            if (!activeQueryRequestId || !activeQueryResultWindow || !event
+                || event.source !== activeQueryResultWindow
+                || event.origin !== getCurrentWindowOrigin()) {
+                return;
+            }
+            var message = event.data;
+            if (!message || message.type !== 'rdf4j-query-result'
+                || message.queryRequestId !== activeQueryRequestId
+                || (message.status !== 'completed'
+                    && message.status !== 'download'
+                    && message.status !== 'error')) {
+                return;
+            }
+            clearActiveQuery(activeQueryRequestId);
+        }
+        function checkTrackedResultWindowClosed(queryRequestId, resultWindow) {
+            if (activeQueryRequestId !== queryRequestId || activeQueryResultWindow !== resultWindow) {
+                return;
+            }
+            if (resultWindow.closed) {
+                cancelQuery();
+                return;
+            }
+            if (isCompletedResultDocument(resultWindow)) {
+                clearActiveQuery(queryRequestId);
+                return;
+            }
+            activeQueryResultCloseCheckTimer = window.setTimeout(function () {
+                checkTrackedResultWindowClosed(queryRequestId, resultWindow);
+            }, QUERY_RESULT_CLOSE_CHECK_INTERVAL_MS);
+        }
+        function isCompletedResultDocument(resultWindow) {
+            try {
+                if (resultWindow.name !== activeQueryResultWindowName) {
+                    return false;
+                }
+                var resultDocument = resultWindow.document;
+                if (!resultDocument || resultDocument.readyState !== 'complete') {
+                    return false;
+                }
+                var resultLocation = resultDocument.location || resultWindow.location;
+                var resultHref = resultLocation && resultLocation.href;
+                var resultOrigin = resultLocation && resultLocation.origin;
+                if (!resultHref || resultHref === 'about:blank'
+                    || resultOrigin !== getCurrentWindowOrigin()
+                    || !resultLocation.pathname
+                    || resultLocation.pathname !== window.location.pathname) {
+                    return false;
+                }
+                var contentType = resultDocument.contentType || '';
+                return !contentType
+                    || contentType.indexOf('xml') >= 0
+                    || contentType.indexOf('html') >= 0;
+            }
+            catch (error) {
+                // Cross-origin documents and a window that is closing cannot be inspected.
+                return false;
+            }
+        }
+        function installQueryResultMessageHandler() {
+            if (queryResultMessageHandlerInstalled || !window.addEventListener) {
+                return;
+            }
+            window.addEventListener('message', handleQueryResultMessage, false);
+            queryResultMessageHandlerInstalled = true;
+        }
         function clearActiveQuery(queryRequestId) {
             if (queryRequestId && queryRequestId !== activeQueryRequestId) {
                 return;
             }
-            if (activeQueryResultWindow && activeQueryResultLoadHandler) {
-                try {
-                    activeQueryResultWindow.removeEventListener('load', activeQueryResultLoadHandler, false);
-                }
-                catch (e) {
-                    // The result window may have navigated away from this origin after finishing.
-                }
+            if (activeQueryResultCloseCheckTimer !== null) {
+                window.clearTimeout(activeQueryResultCloseCheckTimer);
             }
+            activeQueryResultCloseCheckTimer = null;
             activeQueryRequestId = null;
             activeQueryResultWindow = null;
             activeQueryResultWindowName = null;
-            activeQueryResultLoadHandler = null;
             $('#query-request-id').val('');
             setQueryCancelVisible(false);
         }
@@ -1879,21 +1950,7 @@ var workbench;
             activeQueryResultWindowName = resultWindowName;
             $('#query-request-id').val(queryRequestId);
             setQueryCancelVisible(true);
-            activeQueryResultLoadHandler = function () {
-                if (activeQueryRequestId !== queryRequestId || activeQueryResultWindow !== resultWindow) {
-                    return;
-                }
-                try {
-                    if (resultWindow.location.href === 'about:blank') {
-                        return;
-                    }
-                }
-                catch (e) {
-                    // A completed cross-origin navigation still means this tracked request is no longer loading.
-                }
-                clearActiveQuery(queryRequestId);
-            };
-            resultWindow.addEventListener('load', activeQueryResultLoadHandler, false);
+            checkTrackedResultWindowClosed(queryRequestId, resultWindow);
             return true;
         }
         function targetTrackedPostAtResultWindow() {
@@ -1909,6 +1966,7 @@ var workbench;
                 }
             }, 0);
         }
+        installQueryResultMessageHandler();
         function createStableExplanationFromResponse(signature, response, fallbackFormat) {
             var responseFormat = getNormalizedExplainFormat(response.format || fallbackFormat || 'text');
             var explanationText = response.content || '';
@@ -2891,6 +2949,7 @@ var workbench;
                     activeCompareRequestId: activeCompareRequestId,
                     activeCompareRequestSignatures: activeCompareRequestSignatures,
                     activePrimaryRequestSignature: activePrimaryRequestSignature,
+                    activeQueryRequestId: activeQueryRequestId,
                     compareModeEnabled: compareModeEnabled,
                     comparePaneState: comparePaneState,
                     compareQuerySeeded: compareQuerySeeded,
@@ -2905,6 +2964,7 @@ var workbench;
                 };
             },
             resetInternalState: function () {
+                clearActiveQuery();
                 currentQueryLn = '';
                 yasqe = null;
                 compareYasqe = null;
@@ -2919,6 +2979,10 @@ var workbench;
                 resetExplainRequestUiState('compare');
                 activeExplainRequestId = 0;
                 activeExplainJqXHR = null;
+                activeQueryRequestId = null;
+                activeQueryResultWindow = null;
+                activeQueryResultWindowName = null;
+                activeQueryResultCloseCheckTimer = null;
                 primaryExplanationPending = false;
                 activeCompareRequestId = 0;
                 activeComparePendingRequests = 0;

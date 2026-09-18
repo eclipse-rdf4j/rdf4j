@@ -116,6 +116,15 @@ test('paging helpers cover url, query, and cookie branches', () => {
     harness.document.location.href = 'http://localhost:8080/rdf4j-workbench/repositories/test/tuple?offset=3';
     assert.equal(paging.getTotalResultCount(), 11);
 
+    const resultTotalMetadata = harness.registerElement('input', {
+        id: 'workbench-total-result-count',
+        value: '37'
+    });
+    harness.document.body.appendChild(resultTotalMetadata);
+    assert.equal(paging.getTotalResultCount(), 37);
+    resultTotalMetadata.value = '';
+    assert.equal(paging.getTotalResultCount(), 11);
+
     paging.addGraphParam('Accept');
     assert.match(harness.document.location.href, /download_limit=25/);
     assert.match(harness.document.location.href, /Accept=/);

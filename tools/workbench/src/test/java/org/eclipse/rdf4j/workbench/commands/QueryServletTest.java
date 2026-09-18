@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -39,6 +40,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.io.ResourceUtil;
@@ -656,6 +658,95 @@ public class QueryServletTest {
 	}
 
 	@Test
+	public void testFailedRemoteQueryCancellationReturnsAnErrorAndCanBeRetried() throws Exception {
+		HTTPRepository repository = mock(HTTPRepository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		@SuppressWarnings("unchecked")
+		RepositoryResult<Namespace> namespaces = mock(RepositoryResult.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		CancellableOperationCoordinator queryCoordinator = new CancellableOperationCoordinator();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		AtomicInteger remoteCancelCalls = new AtomicInteger();
+		servlet.setRepository(repository);
+		servlet.substituteQueryCoordinator(queryCoordinator);
+
+		CountDownLatch queryStarted = new CountDownLatch(1);
+		CountDownLatch queryInterrupted = new CountDownLatch(1);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.getRepository()).thenReturn(repository);
+		when(connection.getNamespaces()).thenReturn(namespaces);
+		when(namespaces.hasNext()).thenReturn(false);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.evaluate()).thenAnswer(invocation -> {
+			queryStarted.countDown();
+			try {
+				new CountDownLatch(1).await();
+				return null;
+			} catch (InterruptedException e) {
+				queryInterrupted.countDown();
+				throw new RepositoryException("connection closed during cancellation", e);
+			}
+		});
+		doAnswer(invocation -> {
+			if (remoteCancelCalls.incrementAndGet() == 1) {
+				throw new RepositoryException("downstream returned HTTP 404");
+			}
+			return null;
+		}).when(repository).cancelQuery("query-retry");
+
+		WorkbenchRequest queryRequest = mock(WorkbenchRequest.class);
+		when(queryRequest.getParameter("action")).thenReturn("exec");
+		when(queryRequest.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+		when(queryRequest.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(queryRequest.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
+		when(queryRequest.isParameterPresent("query-request-id")).thenReturn(true);
+		when(queryRequest.getParameter("query-request-id")).thenReturn("query-retry");
+		when(queryRequest.getParameter("queryLn")).thenReturn("SPARQL");
+		when(queryRequest.isParameterPresent("infer")).thenReturn(false);
+		when(queryRequest.isParameterPresent("Accept")).thenReturn(false);
+		when(queryRequest.isParameterPresent("explain")).thenReturn(false);
+		when(queryRequest.getInt("offset")).thenReturn(0);
+		when(queryRequest.getInt("limit_query")).thenReturn(0);
+		when(queryRequest.getInt("know_total")).thenReturn(0);
+		when(queryRequest.getInt("query-timeout")).thenReturn(0);
+		when(queryRequest.getHeader("Accept-Encoding")).thenReturn(null);
+		when(queryRequest.getContextPath()).thenReturn("");
+
+		HttpServletResponse queryResponse = mock(HttpServletResponse.class);
+		when(queryResponse.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
+		WorkbenchRequest firstCancelRequest = mock(WorkbenchRequest.class);
+		when(firstCancelRequest.getParameter("action")).thenReturn("cancel-query");
+		when(firstCancelRequest.isParameterPresent("query-request-id")).thenReturn(true);
+		when(firstCancelRequest.getParameter("query-request-id")).thenReturn("query-retry");
+		HttpServletResponse firstCancelResponse = mock(HttpServletResponse.class);
+		WorkbenchRequest secondCancelRequest = mock(WorkbenchRequest.class);
+		when(secondCancelRequest.getParameter("action")).thenReturn("cancel-query");
+		when(secondCancelRequest.isParameterPresent("query-request-id")).thenReturn(true);
+		when(secondCancelRequest.getParameter("query-request-id")).thenReturn("query-retry");
+		HttpServletResponse secondCancelResponse = mock(HttpServletResponse.class);
+
+		try {
+			Future<?> queryFuture = executor.submit(() -> {
+				servlet.service(queryRequest, queryResponse, "/transformations");
+				return null;
+			});
+			assertThat(queryStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+			servlet.doPost(firstCancelRequest, firstCancelResponse, "/transformations");
+			verify(firstCancelResponse).sendError(eq(HttpServletResponse.SC_BAD_GATEWAY), anyString());
+			assertThat(queryInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThatCode(() -> queryFuture.get(5, TimeUnit.SECONDS)).doesNotThrowAnyException();
+
+			servlet.doPost(secondCancelRequest, secondCancelResponse, "/transformations");
+			verify(secondCancelResponse).setStatus(HttpServletResponse.SC_NO_CONTENT);
+			assertThat(remoteCancelCalls).hasValue(2);
+		} finally {
+			executor.shutdownNow();
+			queryCoordinator.shutdown();
+		}
+	}
+
+	@Test
 	public void testDownloadShouldUseGzipWhenClientAcceptsGzip() throws Exception {
 		SailRepository repository = new SailRepository(new MemoryStore());
 		repository.init();
@@ -788,6 +879,10 @@ public class QueryServletTest {
 			assertThat(responseBody)
 					.contains("<workbench:metadata>")
 					.contains("<workbench:query-text>");
+			assertThat(responseBody)
+					.contains("<workbench:query-request-id>")
+					.contains("<workbench:query-result-status>completed</workbench:query-result-status>")
+					.contains("<workbench:total-result-count>0</workbench:total-result-count>");
 			assertThat(responseBody).contains(SHORT_QUERY);
 		} finally {
 			repository.shutDown();

@@ -14,7 +14,9 @@ package org.eclipse.rdf4j.http.server.repository.handler;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -25,6 +27,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
@@ -42,6 +45,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -301,6 +305,139 @@ class DefaultQueryRequestHandlerTest {
 			assertThat(queryFuture.get(5, TimeUnit.SECONDS)).isNull();
 			verify(connection, atLeastOnce()).close();
 			verify(repository).cancelQuery("query-http");
+		} finally {
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void failedRemoteCancellationReturnsAnErrorAndCanBeRetried() throws Exception {
+		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
+		HTTPRepository repository = mock(HTTPRepository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+
+		CountDownLatch queryStarted = new CountDownLatch(1);
+		CountDownLatch queryInterrupted = new CountDownLatch(1);
+		AtomicInteger remoteCancelCalls = new AtomicInteger();
+		MockHttpServletRequest queryRequest = newRegularQueryRequest("query-retry");
+		queryRequest.setRequestURI("/repositories/repository-a");
+		MockHttpServletResponse queryResponse = new MockHttpServletResponse();
+		when(repositoryResolver.getRepositoryID(queryRequest)).thenReturn("repository-a");
+		when(repositoryResolver.getRepository(queryRequest)).thenReturn(repository);
+		when(repositoryResolver.getRepositoryConnection(queryRequest, repository)).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null)).thenReturn(tupleQuery);
+		when(tupleQuery.evaluate()).thenAnswer(invocation -> {
+			queryStarted.countDown();
+			try {
+				new CountDownLatch(1).await();
+				return mock(TupleQueryResult.class);
+			} catch (InterruptedException e) {
+				queryInterrupted.countDown();
+				throw new QueryInterruptedException("interrupted", e);
+			}
+		});
+		doAnswer(invocation -> {
+			if (remoteCancelCalls.incrementAndGet() == 1) {
+				throw new RepositoryException("downstream returned HTTP 404");
+			}
+			return null;
+		}).when(repository).cancelQuery("query-retry");
+
+		try {
+			Future<ModelAndView> queryFuture = executor
+					.submit(() -> handler.handleQueryRequest(queryRequest, RequestMethod.POST, queryResponse));
+			assertThat(queryStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+			MockHttpServletRequest firstCancelRequest = newCancelQueryRequest("query-retry");
+			firstCancelRequest.setRequestURI("/repositories/repository-a");
+			when(repositoryResolver.getRepositoryID(firstCancelRequest)).thenReturn("repository-a");
+			MockHttpServletResponse firstCancelResponse = new MockHttpServletResponse();
+			assertThat(handler.handleCancelQuery(firstCancelRequest, firstCancelResponse)).isTrue();
+			assertThat(firstCancelResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_BAD_GATEWAY);
+			assertThat(queryInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(queryFuture.get(5, TimeUnit.SECONDS)).isNull();
+
+			MockHttpServletRequest secondCancelRequest = newCancelQueryRequest("query-retry");
+			secondCancelRequest.setRequestURI("/repositories/repository-a");
+			when(repositoryResolver.getRepositoryID(secondCancelRequest)).thenReturn("repository-a");
+			MockHttpServletResponse secondCancelResponse = new MockHttpServletResponse();
+			assertThat(handler.handleCancelQuery(secondCancelRequest, secondCancelResponse)).isTrue();
+			assertThat(secondCancelResponse.getStatus()).isEqualTo(MockHttpServletResponse.SC_NO_CONTENT);
+			assertThat(remoteCancelCalls).hasValue(2);
+		} finally {
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void cancellationRequestForAnotherRepositoryDoesNotCancelSharedRequestId() throws Exception {
+		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
+		HTTPRepository repositoryA = mock(HTTPRepository.class);
+		HTTPRepository repositoryB = mock(HTTPRepository.class);
+		RepositoryConnection connectionA = mock(RepositoryConnection.class);
+		TupleQuery tupleQueryA = mock(TupleQuery.class);
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+
+		CountDownLatch queryStarted = new CountDownLatch(1);
+		CountDownLatch queryInterrupted = new CountDownLatch(1);
+		AtomicInteger repositoryARemoteCancelCalls = new AtomicInteger();
+		AtomicInteger repositoryBRemoteCancelCalls = new AtomicInteger();
+		MockHttpServletRequest queryRequestA = newRegularQueryRequest("shared-id");
+		queryRequestA.setRequestURI("/repositories/repository-a");
+		MockHttpServletResponse queryResponseA = new MockHttpServletResponse();
+		when(repositoryResolver.getRepositoryID(queryRequestA)).thenReturn("repository-a");
+		when(repositoryResolver.getRepository(queryRequestA)).thenReturn(repositoryA);
+		when(repositoryResolver.getRepositoryConnection(queryRequestA, repositoryA)).thenReturn(connectionA);
+		when(connectionA.prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null)).thenReturn(tupleQueryA);
+		when(tupleQueryA.evaluate()).thenAnswer(invocation -> {
+			queryStarted.countDown();
+			try {
+				new CountDownLatch(1).await();
+				return mock(TupleQueryResult.class);
+			} catch (InterruptedException e) {
+				queryInterrupted.countDown();
+				throw new QueryInterruptedException("interrupted", e);
+			}
+		});
+		doAnswer(invocation -> {
+			repositoryARemoteCancelCalls.incrementAndGet();
+			return null;
+		}).when(repositoryA).cancelQuery("shared-id");
+		doAnswer(invocation -> {
+			repositoryBRemoteCancelCalls.incrementAndGet();
+			return null;
+		}).when(repositoryB).cancelQuery("shared-id");
+
+		try {
+			Future<ModelAndView> queryFuture = executor
+					.submit(() -> handler.handleQueryRequest(queryRequestA, RequestMethod.POST, queryResponseA));
+			assertThat(queryStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+			MockHttpServletRequest cancelRequestB = newCancelQueryRequest("shared-id");
+			cancelRequestB.setRequestURI("/repositories/repository-b");
+			when(repositoryResolver.getRepositoryID(cancelRequestB)).thenReturn("repository-b");
+			MockHttpServletResponse cancelResponseB = new MockHttpServletResponse();
+			assertThat(handler.handleCancelQuery(cancelRequestB, cancelResponseB)).isTrue();
+			assertThat(cancelResponseB.getStatus()).isEqualTo(MockHttpServletResponse.SC_NOT_FOUND);
+			assertThat(queryFuture.isDone()).isFalse();
+			assertThat(queryInterrupted.getCount()).isEqualTo(1);
+			assertThat(repositoryARemoteCancelCalls).hasValue(0);
+			assertThat(repositoryBRemoteCancelCalls).hasValue(0);
+
+			MockHttpServletRequest cancelRequestA = newCancelQueryRequest("shared-id");
+			cancelRequestA.setRequestURI("/repositories/repository-a");
+			when(repositoryResolver.getRepositoryID(cancelRequestA)).thenReturn("repository-a");
+			MockHttpServletResponse cancelResponseA = new MockHttpServletResponse();
+			assertThat(handler.handleCancelQuery(cancelRequestA, cancelResponseA)).isTrue();
+			assertThat(cancelResponseA.getStatus()).isEqualTo(MockHttpServletResponse.SC_NO_CONTENT);
+			assertThat(queryInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(queryFuture.get(5, TimeUnit.SECONDS)).isNull();
+			assertThat(repositoryARemoteCancelCalls).hasValue(1);
+			verify(repositoryB, never()).cancelQuery("shared-id");
 		} finally {
 			executor.shutdownNow();
 		}

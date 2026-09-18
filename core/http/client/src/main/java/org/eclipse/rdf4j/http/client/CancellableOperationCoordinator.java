@@ -12,9 +12,14 @@
 package org.eclipse.rdf4j.http.client;
 
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.slf4j.Logger;
@@ -29,42 +34,126 @@ public final class CancellableOperationCoordinator {
 
 	private static final OperationScope NOOP_SCOPE = () -> {
 	};
+	/** One immediate remote attempt followed by at most twenty delayed retries. */
+	private static final int MAX_REMOTE_CANCEL_ATTEMPTS = 1 + 20;
+	/** Delay between failed remote cancellation attempts. */
+	private static final long REMOTE_CANCEL_RETRY_DELAY_MILLIS = 250L;
 
-	private final ConcurrentMap<String, Handle> handles = new ConcurrentHashMap<>();
+	private final ConcurrentMap<RequestKey, Handle> handles = new ConcurrentHashMap<>();
+	private final AtomicBoolean shutdown = new AtomicBoolean();
 
+	/**
+	 * Registers an operation without a repository scope. This overload is retained for callers that have globally
+	 * unique request identifiers.
+	 */
 	public Handle register(String requestId) {
-		return register(requestId, null);
+		return register(null, requestId, null);
 	}
 
+	/**
+	 * Registers an operation without a repository scope. This overload is retained for callers that have globally
+	 * unique request identifiers.
+	 */
 	public Handle register(String requestId, Runnable remoteCancel) {
-		String normalizedRequestId = normalizeRequestId(requestId);
-		Handle handle = new Handle(normalizedRequestId, remoteCancel);
-		Handle previous = handles.putIfAbsent(normalizedRequestId, handle);
+		return register(null, requestId, remoteCancel);
+	}
+
+	/**
+	 * Registers an operation under a repository scope. A request identifier only needs to be unique within that scope.
+	 */
+	public Handle register(String repositoryScope, String requestId, Runnable remoteCancel) {
+		if (shutdown.get()) {
+			throw new IllegalStateException("Cancellable operation coordinator is shut down");
+		}
+		RequestKey key = new RequestKey(normalizeScope(repositoryScope), normalizeRequestId(requestId));
+		Handle handle = new Handle(key, remoteCancel, this::removeHandle);
+		Handle previous = handles.putIfAbsent(key, handle);
 		if (previous != null) {
-			throw new IllegalStateException("Request already active: " + normalizedRequestId);
+			throw new IllegalStateException("Request already active: " + key.requestId());
+		}
+		if (shutdown.get()) {
+			handle.terminate();
+			throw new IllegalStateException("Cancellable operation coordinator is shut down");
 		}
 		return handle;
 	}
 
+	/**
+	 * Cancels an operation without a repository scope. This overload is retained for callers that have globally unique
+	 * request identifiers.
+	 */
 	public boolean cancel(String requestId) {
-		Handle handle = handles.remove(normalizeRequestId(requestId));
+		return cancel(null, requestId);
+	}
+
+	/**
+	 * Cancels an operation under a repository scope.
+	 *
+	 * @throws CancellationException if forwarding cancellation to the remote repository fails. The operation remains
+	 *                               registered and can be retried.
+	 */
+	public boolean cancel(String repositoryScope, String requestId) {
+		RequestKey key = new RequestKey(normalizeScope(repositoryScope), normalizeRequestId(requestId));
+		Handle handle = handles.get(key);
 		if (handle == null) {
 			return false;
 		}
-		handle.cancel();
+
+		boolean cancelled = handle.cancel();
+		if (cancelled) {
+			handles.remove(key, handle);
+		}
+		return cancelled;
+	}
+
+	/**
+	 * Reserves cancellation for an exact handle and dispatches the remote cancellation asynchronously. This is used by
+	 * response disconnect callbacks, where the caller must preserve the reservation before completing the operation but
+	 * cannot block on HTTP or connection cleanup.
+	 */
+	public boolean cancelAsync(Handle handle) {
+		Objects.requireNonNull(handle, "Handle was null");
+		CompletableFuture<Boolean> attempt = handle.reserveCancellation();
+		if (attempt == null) {
+			return false;
+		}
+		Thread.startVirtualThread(() -> {
+			try {
+				handle.executeCancellation(attempt);
+			} catch (CancellationException e) {
+				LOGGER.debug("Asynchronous operation cancellation failed for request {}", handle.getRequestId(), e);
+			} catch (Error e) {
+				LOGGER.error("Fatal error while asynchronously cancelling request {}", handle.getRequestId(), e);
+			}
+		});
 		return true;
 	}
 
 	public void complete(Handle handle) {
 		Objects.requireNonNull(handle, "Handle was null");
-		handles.remove(handle.getRequestId(), handle);
-		handle.finish();
+		if (handle.finish()) {
+			handles.remove(handle.key, handle);
+		}
 	}
 
 	public void shutdown() {
-		for (Handle handle : handles.values()) {
-			cancel(handle.getRequestId());
+		if (!shutdown.compareAndSet(false, true)) {
+			return;
 		}
+		for (Handle handle : handles.values()) {
+			handle.shutdown();
+		}
+	}
+
+	private void removeHandle(Handle handle) {
+		handles.remove(handle.key, handle);
+	}
+
+	private String normalizeScope(String repositoryScope) {
+		if (repositoryScope == null) {
+			return "";
+		}
+		return repositoryScope;
 	}
 
 	private String normalizeRequestId(String requestId) {
@@ -117,21 +206,89 @@ public final class CancellableOperationCoordinator {
 		void close();
 	}
 
-	public static final class Handle {
+	/**
+	 * Signals that remote cancellation could not be completed. The associated handle is retained so a later request can
+	 * retry the remote cancellation.
+	 */
+	public static class CancellationException extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+
+		public CancellationException(String message) {
+			super(message);
+		}
+
+		public CancellationException(String message, Throwable cause) {
+			super(message, cause);
+		}
+	}
+
+	private static final class RequestKey {
+		private final String repositoryScope;
 		private final String requestId;
+
+		private RequestKey(String repositoryScope, String requestId) {
+			this.repositoryScope = repositoryScope;
+			this.requestId = requestId;
+		}
+
+		private String repositoryScope() {
+			return repositoryScope;
+		}
+
+		private String requestId() {
+			return requestId;
+		}
+
+		@Override
+		public boolean equals(Object object) {
+			if (this == object) {
+				return true;
+			}
+			if (!(object instanceof RequestKey)) {
+				return false;
+			}
+			RequestKey other = (RequestKey) object;
+			return repositoryScope.equals(other.repositoryScope) && requestId.equals(other.requestId);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(repositoryScope, requestId);
+		}
+	}
+
+	public static final class Handle {
+		private enum State {
+			ACTIVE,
+			CANCELLING,
+			CANCEL_FAILED,
+			CANCELLED,
+			COMPLETED,
+			TERMINAL
+		}
+
+		private final RequestKey key;
 		private final Runnable remoteCancel;
+		private final Consumer<Handle> cleanup;
 		private final AtomicBoolean active = new AtomicBoolean(true);
+		private final AtomicReference<State> state = new AtomicReference<>(State.ACTIVE);
+		private final AtomicReference<CompletableFuture<Boolean>> cancellationAttempt = new AtomicReference<>();
+		private final AtomicInteger remoteCancelAttempts = new AtomicInteger();
+		private final AtomicBoolean retryLoopStarted = new AtomicBoolean();
+		private final AtomicBoolean connectionCloseStarted = new AtomicBoolean();
 
 		private volatile Thread workerThread;
 		private volatile RepositoryConnection repositoryConnection;
+		private volatile Thread retryThread;
 
-		private Handle(String requestId, Runnable remoteCancel) {
-			this.requestId = Objects.requireNonNull(requestId, "Request id was null");
+		private Handle(RequestKey key, Runnable remoteCancel, Consumer<Handle> cleanup) {
+			this.key = Objects.requireNonNull(key, "Request key was null");
 			this.remoteCancel = remoteCancel;
+			this.cleanup = Objects.requireNonNull(cleanup, "Cleanup action was null");
 		}
 
 		public String getRequestId() {
-			return requestId;
+			return key.requestId();
 		}
 
 		public boolean isActive() {
@@ -141,6 +298,9 @@ public final class CancellableOperationCoordinator {
 		private void attach(Thread workerThread, RepositoryConnection repositoryConnection) {
 			this.workerThread = workerThread;
 			this.repositoryConnection = repositoryConnection;
+			if (!active.get() && workerThread != Thread.currentThread()) {
+				workerThread.interrupt();
+			}
 		}
 
 		private void detach(Thread workerThread) {
@@ -149,35 +309,209 @@ public final class CancellableOperationCoordinator {
 			}
 		}
 
-		private void cancel() {
-			if (!active.getAndSet(false)) {
-				return;
+		private boolean cancel() {
+			while (true) {
+				State current = state.get();
+				switch (current) {
+				case ACTIVE:
+				case CANCEL_FAILED:
+					CompletableFuture<Boolean> attempt = reserveCancellation(current);
+					if (attempt != null) {
+						return executeCancellation(attempt);
+					}
+					break;
+				case CANCELLING:
+					CompletableFuture<Boolean> inFlight = cancellationAttempt.get();
+					if (inFlight != null) {
+						return awaitCancellation(inFlight);
+					}
+					Thread.onSpinWait();
+					break;
+				case CANCELLED:
+					return true;
+				case COMPLETED:
+				case TERMINAL:
+					return false;
+				default:
+					throw new AssertionError("Unknown cancellation state: " + current);
+				}
+			}
+		}
+
+		private CompletableFuture<Boolean> reserveCancellation() {
+			while (true) {
+				State current = state.get();
+				if (current != State.ACTIVE && current != State.CANCEL_FAILED) {
+					return null;
+				}
+				CompletableFuture<Boolean> attempt = reserveCancellation(current);
+				if (attempt != null) {
+					return attempt;
+				}
+			}
+		}
+
+		private CompletableFuture<Boolean> reserveCancellation(State expectedState) {
+			if (remoteCancelAttempts.get() >= MAX_REMOTE_CANCEL_ATTEMPTS) {
+				terminateIf(expectedState);
+				return null;
+			}
+			CompletableFuture<Boolean> attempt = new CompletableFuture<>();
+			if (!state.compareAndSet(expectedState, State.CANCELLING)) {
+				return null;
+			}
+			if (remoteCancelAttempts.incrementAndGet() > MAX_REMOTE_CANCEL_ATTEMPTS) {
+				terminateIf(State.CANCELLING);
+				return null;
+			}
+			cancellationAttempt.set(attempt);
+			active.set(false);
+			interruptWorker();
+			return attempt;
+		}
+
+		private boolean executeCancellation(CompletableFuture<Boolean> attempt) {
+			CancellationException remoteFailure = null;
+			Error fatalFailure = null;
+			try {
+				runRemoteCancel();
+			} catch (CancellationException e) {
+				remoteFailure = e;
+			} catch (Error e) {
+				fatalFailure = e;
 			}
 
+			// Closing can wait for a parser that is released by the remote cancellation. It is deliberately dispatched
+			// after the remote attempt and outside all lifecycle state transitions and locks.
+			try {
+				closeConnectionAsync();
+			} catch (Error e) {
+				if (fatalFailure == null) {
+					fatalFailure = e;
+				} else {
+					fatalFailure.addSuppressed(e);
+				}
+			}
+
+			if (fatalFailure != null) {
+				attempt.completeExceptionally(fatalFailure);
+				terminateIf(State.CANCELLING);
+				cancellationAttempt.compareAndSet(attempt, null);
+				throw fatalFailure;
+			}
+
+			if (remoteFailure != null) {
+				boolean stillCancelling = state.compareAndSet(State.CANCELLING, State.CANCEL_FAILED);
+				attempt.completeExceptionally(remoteFailure);
+				if (stillCancelling) {
+					if (remoteCancelAttempts.get() >= MAX_REMOTE_CANCEL_ATTEMPTS) {
+						terminateIf(State.CANCEL_FAILED);
+					} else {
+						startAutomaticRetries();
+					}
+				}
+				cancellationAttempt.compareAndSet(attempt, null);
+				throw remoteFailure;
+			}
+
+			boolean cancelled = state.compareAndSet(State.CANCELLING, State.CANCELLED);
+			attempt.complete(cancelled);
+			cancellationAttempt.compareAndSet(attempt, null);
+			if (cancelled) {
+				cleanup.accept(this);
+			}
+			return cancelled;
+		}
+
+		private boolean awaitCancellation(CompletableFuture<Boolean> attempt) {
+			try {
+				return attempt.join();
+			} catch (CompletionException e) {
+				Throwable cause = e.getCause();
+				if (cause instanceof CancellationException) {
+					throw (CancellationException) cause;
+				}
+				if (cause instanceof Error) {
+					throw (Error) cause;
+				}
+				throw e;
+			}
+		}
+
+		private void interruptWorker() {
 			Thread activeWorker = workerThread;
-			if (activeWorker != null) {
+			if (activeWorker != null && activeWorker != Thread.currentThread()) {
 				activeWorker.interrupt();
 			}
-
-			closeConnection();
-			runRemoteCancel();
 		}
 
-		private void finish() {
+		private boolean finish() {
 			active.set(false);
 			workerThread = null;
+			while (true) {
+				State current = state.get();
+				switch (current) {
+				case ACTIVE:
+					if (state.compareAndSet(State.ACTIVE, State.COMPLETED)) {
+						return true;
+					}
+					break;
+				case COMPLETED:
+				case CANCELLED:
+				case TERMINAL:
+					return true;
+				case CANCELLING:
+				case CANCEL_FAILED:
+					return false;
+				default:
+					throw new AssertionError("Unknown completion state: " + current);
+				}
+			}
 		}
 
-		private void closeConnection() {
-			RepositoryConnection connection = repositoryConnection;
-			if (connection == null) {
+		private void startAutomaticRetries() {
+			if (remoteCancelAttempts.get() >= MAX_REMOTE_CANCEL_ATTEMPTS
+					|| !retryLoopStarted.compareAndSet(false, true)) {
 				return;
 			}
-			try {
-				connection.close();
-			} catch (Exception e) {
-				LOGGER.debug("Error while closing cancellable operation repository connection", e);
+			retryThread = Thread.startVirtualThread(() -> {
+				try {
+					while (remoteCancelAttempts.get() < MAX_REMOTE_CANCEL_ATTEMPTS) {
+						Thread.sleep(REMOTE_CANCEL_RETRY_DELAY_MILLIS);
+						State current = state.get();
+						if (current == State.CANCELLED || current == State.COMPLETED || current == State.TERMINAL) {
+							return;
+						}
+						if (current != State.CANCEL_FAILED) {
+							continue;
+						}
+						try {
+							if (cancel()) {
+								return;
+							}
+						} catch (CancellationException e) {
+							// The next scheduled attempt will retry the remote cancellation.
+						}
+					}
+					terminate();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+			});
+		}
+
+		private void closeConnectionAsync() {
+			RepositoryConnection connection = repositoryConnection;
+			if (connection == null || !connectionCloseStarted.compareAndSet(false, true)) {
+				return;
 			}
+			Thread.startVirtualThread(() -> {
+				try {
+					connection.close();
+				} catch (Exception e) {
+					LOGGER.debug("Error while closing cancellable operation repository connection", e);
+				}
+			});
 		}
 
 		private void runRemoteCancel() {
@@ -186,8 +520,56 @@ public final class CancellableOperationCoordinator {
 			}
 			try {
 				remoteCancel.run();
-			} catch (Exception e) {
-				LOGGER.debug("Error while forwarding operation cancellation", e);
+			} catch (CancellationException e) {
+				throw e;
+			} catch (RuntimeException e) {
+				throw new CancellationException("Remote operation cancellation failed", e);
+			}
+		}
+
+		private void terminate() {
+			while (true) {
+				State current = state.get();
+				if (current == State.TERMINAL || current == State.CANCELLED || current == State.COMPLETED) {
+					return;
+				}
+				if (terminateIf(current)) {
+					return;
+				}
+			}
+		}
+
+		private boolean terminateIf(State expectedState) {
+			if (!state.compareAndSet(expectedState, State.TERMINAL)) {
+				return false;
+			}
+			active.set(false);
+			Thread retry = retryThread;
+			if (retry != null && retry != Thread.currentThread()) {
+				retry.interrupt();
+			}
+			cleanup.accept(this);
+			return true;
+		}
+
+		private void shutdown() {
+			Thread retry = retryThread;
+			if (retry != null && retry != Thread.currentThread()) {
+				retry.interrupt();
+			}
+			State current = state.get();
+			if (current == State.CANCEL_FAILED || current == State.TERMINAL) {
+				terminate();
+				return;
+			}
+			try {
+				cancel();
+			} catch (CancellationException e) {
+				LOGGER.warn("Unable to cancel request {} during coordinator shutdown", getRequestId(), e);
+				terminate();
+			} catch (Error e) {
+				LOGGER.error("Fatal error while cancelling request {} during coordinator shutdown", getRequestId(), e);
+				terminate();
 			}
 		}
 	}

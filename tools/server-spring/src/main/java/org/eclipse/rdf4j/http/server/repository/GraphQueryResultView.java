@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Map;
 
+import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
@@ -71,30 +72,73 @@ public class GraphQueryResultView extends QueryResultView {
 		boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);
 
 		if (!headersOnly) {
-			try (OutputStream out = response.getOutputStream()) {
-				// ensure we handle exceptions _before_ closing the stream
+			QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
+			// Keep the legacy branch for callers that do not hand off a heartbeat, including transactional responses.
+			if (heartbeat == null) {
+				try (OutputStream out = response.getOutputStream()) {
+					// ensure we handle exceptions _before_ closing the stream
+					try {
+						RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
+						GraphQueryResult graphQueryResult = (GraphQueryResult) model.get(QUERY_RESULT_KEY);
+						QueryResults.report(graphQueryResult, rdfWriter);
+					} catch (QueryInterruptedException e) {
+						if (isExplicitlyCancelled(model)) {
+							return;
+						}
+						logger.error("Query interrupted", e);
+						sendServiceUnavailable(response, e, "Query evaluation took too long");
+					} catch (QueryEvaluationException e) {
+						if (isExplicitlyCancelled(model)) {
+							return;
+						}
+						logger.error("Query evaluation error", e);
+						response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
+					} catch (RDFHandlerException e) {
+						logger.error("Serialization error", e);
+						response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
+					}
+				}
+			} else {
 				try {
-					RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
-					GraphQueryResult graphQueryResult = (GraphQueryResult) model.get(QUERY_RESULT_KEY);
+					GraphQueryResult graphQueryResult = PrefetchedQueryResults
+							.graph((GraphQueryResult) model.get(QUERY_RESULT_KEY));
+					model.put(QUERY_RESULT_KEY, graphQueryResult);
+					RDFWriter rdfWriter = (RDFWriter) model.get(RESPONSE_WRITER_KEY);
+					if (rdfWriter == null) {
+						rdfWriter = rdfWriterFactory.getWriter(heartbeat.getOutputStream());
+					}
 					QueryResults.report(graphQueryResult, rdfWriter);
+					heartbeat.complete();
 				} catch (QueryInterruptedException e) {
-					if (isExplicitlyCancelled(model)) {
-						return;
-					}
-					logger.error("Query interrupted", e);
-					sendServiceUnavailable(response, e, "Query evaluation took too long");
+					handleHeartbeatFailure(model, response, e, "Query evaluation took too long");
 				} catch (QueryEvaluationException e) {
-					if (isExplicitlyCancelled(model)) {
-						return;
-					}
-					logger.error("Query evaluation error", e);
-					response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
+					handleHeartbeatFailure(model, response, e,
+							"Query evaluation error: " + e.getMessage());
 				} catch (RDFHandlerException e) {
-					logger.error("Serialization error", e);
-					response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
+					handleHeartbeatFailure(model, response, e, "Serialization error: " + e.getMessage());
 				}
 			}
 		}
 		logEndOfRequest(request);
+	}
+
+	@SuppressWarnings("rawtypes")
+	private void handleHeartbeatFailure(Map model, HttpServletResponse response, RuntimeException exception,
+			String message) throws IOException {
+		stopResponseHeartbeat(model);
+		if (isExplicitlyCancelled(model)) {
+			abortResponseHeartbeat(model);
+			return;
+		}
+		if (responseWasCommitted(model, response)) {
+			abortResponseHeartbeat(model);
+			throw exception;
+		}
+		logger.error(message, exception);
+		if (exception instanceof QueryInterruptedException) {
+			sendServiceUnavailable(response, (QueryInterruptedException) exception, message);
+		} else {
+			response.sendError(SC_INTERNAL_SERVER_ERROR, message);
+		}
 	}
 }

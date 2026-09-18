@@ -13,8 +13,10 @@ package org.eclipse.rdf4j.http.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -25,6 +27,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Test;
@@ -113,10 +116,408 @@ class CancellableOperationCoordinatorTest {
 			assertThat(interrupted.await(5, TimeUnit.SECONDS)).isTrue();
 			assertThat(handle.isActive()).isFalse();
 			assertThat(forwarded).hasValue(1);
-			verify(connection, times(1)).close();
+			verify(connection, timeout(5000).times(1)).close();
 		} finally {
 			executor.shutdownNow();
 		}
+	}
+
+	@Test
+	void forwardsRemoteCancellationBeforeClosingTheConnection() throws Exception {
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CountDownLatch closeStarted = new CountDownLatch(1);
+		AtomicBoolean remoteRanBeforeClose = new AtomicBoolean();
+		doAnswer(invocation -> {
+			closeStarted.countDown();
+			return null;
+		}).when(connection).close();
+
+		CancellableOperationCoordinator.Handle handle = coordinator.register("request-order", () -> {
+			remoteRanBeforeClose.set(closeStarted.getCount() == 1);
+		});
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		CountDownLatch started = new CountDownLatch(1);
+
+		try {
+			Future<?> future = executor.submit(() -> {
+				try {
+					coordinator.execute(handle, connection, () -> {
+						started.countDown();
+						try {
+							new CountDownLatch(1).await();
+						} catch (InterruptedException ignored) {
+							// expected during cancellation
+						}
+						return null;
+					});
+				} finally {
+					coordinator.complete(handle);
+				}
+				return null;
+			});
+
+			assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(coordinator.cancel("request-order")).isTrue();
+			assertThat(remoteRanBeforeClose).isTrue();
+			future.get(5, TimeUnit.SECONDS);
+		} finally {
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void failedRemoteCancellationRemainsRetryable() throws Exception {
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		AtomicInteger remoteCalls = new AtomicInteger();
+		CountDownLatch completed = new CountDownLatch(1);
+		CancellableOperationCoordinator.Handle handle = coordinator.register("request-retry", () -> {
+			if (remoteCalls.incrementAndGet() == 1) {
+				throw new CancellableOperationCoordinator.CancellationException("downstream cancellation failed");
+			}
+		});
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		CountDownLatch started = new CountDownLatch(1);
+
+		try {
+			Future<?> future = executor.submit(() -> {
+				try {
+					coordinator.execute(handle, connection, () -> {
+						started.countDown();
+						try {
+							new CountDownLatch(1).await();
+						} catch (InterruptedException ignored) {
+							// expected during cancellation
+						}
+						return null;
+					});
+				} finally {
+					coordinator.complete(handle);
+					completed.countDown();
+				}
+				return null;
+			});
+
+			assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThatThrownBy(() -> coordinator.cancel("request-retry"))
+					.isInstanceOf(CancellableOperationCoordinator.CancellationException.class);
+			assertThat(handle.isActive()).isFalse();
+			assertThat(completed.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(coordinator.cancel("request-retry")).isTrue();
+			assertThat(remoteCalls).hasValue(2);
+			future.get(5, TimeUnit.SECONDS);
+		} finally {
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void failedRemoteCancellationReturnsBeforeBlockingLocalClose() throws Exception {
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CountDownLatch closeStarted = new CountDownLatch(1);
+		CountDownLatch releaseClose = new CountDownLatch(1);
+		doAnswer(invocation -> {
+			closeStarted.countDown();
+			releaseClose.await(5, TimeUnit.SECONDS);
+			return null;
+		}).when(connection).close();
+		CancellableOperationCoordinator.Handle handle = coordinator.register("request-blocking-close", () -> {
+			throw new CancellableOperationCoordinator.CancellationException("downstream unavailable");
+		});
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		CountDownLatch started = new CountDownLatch(1);
+		CountDownLatch cancelReturned = new CountDownLatch(1);
+		AtomicReference<Throwable> cancellationFailure = new AtomicReference<>();
+
+		try {
+			Future<?> worker = executor.submit(() -> {
+				try {
+					coordinator.execute(handle, connection, () -> {
+						started.countDown();
+						try {
+							new CountDownLatch(1).await();
+						} catch (InterruptedException ignored) {
+							// expected during cancellation
+						}
+						return null;
+					});
+				} finally {
+					coordinator.complete(handle);
+				}
+			});
+			assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+
+			executor.submit(() -> {
+				try {
+					coordinator.cancel("request-blocking-close");
+				} catch (Throwable e) {
+					cancellationFailure.set(e);
+				} finally {
+					cancelReturned.countDown();
+				}
+			});
+
+			assertThat(closeStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(cancelReturned.await(1, TimeUnit.SECONDS)).isTrue();
+			assertThat(cancellationFailure.get())
+					.isInstanceOf(CancellableOperationCoordinator.CancellationException.class);
+			releaseClose.countDown();
+			worker.get(5, TimeUnit.SECONDS);
+		} finally {
+			releaseClose.countDown();
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void completionDuringRemoteCancellationDoesNotEraseThePendingAttempt() throws Exception {
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		CountDownLatch remoteStarted = new CountDownLatch(1);
+		CountDownLatch releaseRemote = new CountDownLatch(1);
+		CountDownLatch allowWorkerFinish = new CountDownLatch(1);
+		AtomicInteger remoteCalls = new AtomicInteger();
+		CancellableOperationCoordinator.Handle handle = coordinator.register("request-completion-race", () -> {
+			remoteCalls.incrementAndGet();
+			remoteStarted.countDown();
+			try {
+				releaseRemote.await(5, TimeUnit.SECONDS);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		});
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		CountDownLatch operationStarted = new CountDownLatch(1);
+
+		try {
+			Future<?> worker = executor.submit(() -> {
+				try {
+					coordinator.execute(handle, connection, () -> {
+						operationStarted.countDown();
+						try {
+							allowWorkerFinish.await(5, TimeUnit.SECONDS);
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+						}
+						return null;
+					});
+				} finally {
+					coordinator.complete(handle);
+				}
+			});
+			assertThat(operationStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+			Future<Boolean> cancellation = executor.submit(() -> coordinator.cancel("request-completion-race"));
+			assertThat(remoteStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			allowWorkerFinish.countDown();
+			assertThat(worker.get(1, TimeUnit.SECONDS)).isNull();
+			assertThat(handle.isActive()).isFalse();
+
+			releaseRemote.countDown();
+			assertThat(cancellation.get(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(remoteCalls).hasValue(1);
+		} finally {
+			releaseRemote.countDown();
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void concurrentCancellationAttemptsForwardOnlyOnce() throws Exception {
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		CountDownLatch remoteStarted = new CountDownLatch(1);
+		CountDownLatch releaseRemote = new CountDownLatch(1);
+		AtomicInteger remoteCalls = new AtomicInteger();
+		coordinator.register("request-concurrent", () -> {
+			remoteCalls.incrementAndGet();
+			remoteStarted.countDown();
+			try {
+				releaseRemote.await(5, TimeUnit.SECONDS);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		});
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+
+		try {
+			Future<Boolean> first = executor.submit(() -> coordinator.cancel("request-concurrent"));
+			assertThat(remoteStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			Future<Boolean> second = executor.submit(() -> coordinator.cancel("request-concurrent"));
+			assertThat(remoteCalls).hasValue(1);
+			releaseRemote.countDown();
+			assertThat(first.get(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(second.get(5, TimeUnit.SECONDS)).isIn(true, false);
+			assertThat(remoteCalls).hasValue(1);
+		} finally {
+			releaseRemote.countDown();
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void failedCancellationIsRetriedAndEventuallyRemovedAfterBoundedAttempts() throws Exception {
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		AtomicInteger remoteCalls = new AtomicInteger();
+		CountDownLatch attempts = new CountDownLatch(21);
+		coordinator.register("request-exhausted", () -> {
+			remoteCalls.incrementAndGet();
+			attempts.countDown();
+			throw new CancellableOperationCoordinator.CancellationException("downstream unavailable");
+		});
+
+		assertThatThrownBy(() -> coordinator.cancel("request-exhausted"))
+				.isInstanceOf(CancellableOperationCoordinator.CancellationException.class);
+		assertThat(attempts.await(8, TimeUnit.SECONDS)).isTrue();
+		assertThat(remoteCalls).hasValue(21);
+		assertThat(coordinator.cancel("request-exhausted")).isFalse();
+	}
+
+	@Test
+	void remoteCancellationErrorsCompleteAsyncWaitersAndDoNotRetry() throws Exception {
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		CountDownLatch remoteStarted = new CountDownLatch(1);
+		CountDownLatch releaseRemote = new CountDownLatch(1);
+		AtomicInteger remoteCalls = new AtomicInteger();
+		CancellableOperationCoordinator.Handle handle = coordinator.register("request-error", () -> {
+			remoteCalls.incrementAndGet();
+			remoteStarted.countDown();
+			try {
+				releaseRemote.await(5, TimeUnit.SECONDS);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+			throw new AssertionError("remote cancellation failed fatally");
+		});
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+
+		try {
+			assertThat(coordinator.cancelAsync(handle)).isTrue();
+			assertThat(remoteStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			Future<Boolean> waiter = executor.submit(() -> coordinator.cancel("request-error"));
+			Future<?> shutdown = executor.submit(coordinator::shutdown);
+			releaseRemote.countDown();
+
+			assertThatThrownBy(() -> waiter.get(5, TimeUnit.SECONDS))
+					.isInstanceOf(java.util.concurrent.ExecutionException.class)
+					.hasCauseInstanceOf(AssertionError.class);
+			assertThat(shutdown.get(5, TimeUnit.SECONDS)).isNull();
+			assertThat(remoteCalls).hasValue(1);
+			assertThat(coordinator.cancel("request-error")).isFalse();
+		} finally {
+			releaseRemote.countDown();
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void concurrentCancellationCannotReserveBeyondTheBoundedRemoteAttempts() throws Exception {
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		AtomicInteger remoteCalls = new AtomicInteger();
+		CountDownLatch attempts = new CountDownLatch(21);
+		coordinator.register("request-concurrent-exhaustion", () -> {
+			remoteCalls.incrementAndGet();
+			attempts.countDown();
+			throw new CancellableOperationCoordinator.CancellationException("downstream unavailable");
+		});
+		ExecutorService executor = Executors.newFixedThreadPool(8);
+
+		try {
+			Future<?>[] callers = new Future<?>[8];
+			for (int i = 0; i < callers.length; i++) {
+				callers[i] = executor.submit(() -> {
+					try {
+						coordinator.cancel("request-concurrent-exhaustion");
+					} catch (CancellableOperationCoordinator.CancellationException ignored) {
+						// The failed attempt remains owned by the bounded retry loop.
+					}
+				});
+			}
+			for (Future<?> caller : callers) {
+				caller.get(5, TimeUnit.SECONDS);
+			}
+			assertThat(attempts.await(8, TimeUnit.SECONDS)).isTrue();
+			assertThat(remoteCalls).hasValue(21);
+			assertThat(coordinator.cancel("request-concurrent-exhaustion")).isFalse();
+		} finally {
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void shutdownPreventsRegistrationsAndRemovesFailedCancellationRetries() throws Exception {
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		AtomicInteger remoteCalls = new AtomicInteger();
+		coordinator.register("request-shutdown", () -> {
+			remoteCalls.incrementAndGet();
+			throw new CancellableOperationCoordinator.CancellationException("downstream unavailable");
+		});
+
+		assertThatThrownBy(() -> coordinator.cancel("request-shutdown"))
+				.isInstanceOf(CancellableOperationCoordinator.CancellationException.class);
+		coordinator.shutdown();
+
+		assertThat(coordinator.cancel("request-shutdown")).isFalse();
+		assertThatThrownBy(() -> coordinator.register("request-after-shutdown"))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("Cancellable operation coordinator is shut down");
+		assertThat(remoteCalls).hasValue(1);
+	}
+
+	@Test
+	void requestIdsAreScopedToTheirRepository() {
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		CancellableOperationCoordinator.Handle repositoryA = coordinator.register("repository-a", "shared-id", null);
+		CancellableOperationCoordinator.Handle repositoryB = coordinator.register("repository-b", "shared-id", null);
+
+		assertThat(coordinator.cancel("repository-a", "shared-id")).isTrue();
+		assertThat(repositoryA.isActive()).isFalse();
+		assertThat(repositoryB.isActive()).isTrue();
+		assertThat(coordinator.cancel("repository-b", "shared-id")).isTrue();
+		assertThat(repositoryB.isActive()).isFalse();
+	}
+
+	@Test
+	void repositoryScopesAreComparedExactly() {
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		CancellableOperationCoordinator.Handle first = coordinator.register("repository-a ", "shared-id", null);
+		CancellableOperationCoordinator.Handle second = coordinator.register("repository-a", "shared-id", null);
+
+		assertThat(coordinator.cancel("repository-a ", "shared-id")).isTrue();
+		assertThat(first.isActive()).isFalse();
+		assertThat(second.isActive()).isTrue();
+		assertThat(coordinator.cancel("repository-a", "shared-id")).isTrue();
+	}
+
+	@Test
+	void asynchronousCancellationReservationSurvivesCompletion() throws Exception {
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		CountDownLatch remoteStarted = new CountDownLatch(1);
+		CountDownLatch releaseRemote = new CountDownLatch(1);
+		CountDownLatch remoteFinished = new CountDownLatch(1);
+		AtomicInteger forwarded = new AtomicInteger();
+		CancellableOperationCoordinator.Handle handle = coordinator.register("request-async", () -> {
+			forwarded.incrementAndGet();
+			remoteStarted.countDown();
+			try {
+				releaseRemote.await(5, TimeUnit.SECONDS);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			} finally {
+				remoteFinished.countDown();
+			}
+		});
+
+		assertThat(coordinator.cancelAsync(handle)).isTrue();
+		coordinator.complete(handle);
+		assertThat(remoteStarted.await(5, TimeUnit.SECONDS)).isTrue();
+		assertThat(coordinator.cancelAsync(handle)).isFalse();
+
+		releaseRemote.countDown();
+		assertThat(remoteFinished.await(5, TimeUnit.SECONDS)).isTrue();
+		assertThat(forwarded).hasValue(1);
+		assertThat(coordinator.cancel("request-async")).isFalse();
 	}
 
 	@Test
