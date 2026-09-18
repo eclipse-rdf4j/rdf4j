@@ -28,9 +28,9 @@ import org.eclipse.rdf4j.sail.SailException;
  *
  * @author James Leigh
  */
-abstract class DelegatingSailDataset implements SailDataset {
+public abstract class DelegatingSailDataset implements SailDataset {
 
-	private final SailDataset delegate;
+	public final SailDataset delegate;
 
 	/**
 	 * Wraps an {@link SailDataset} delegating all calls to it.
@@ -41,6 +41,19 @@ abstract class DelegatingSailDataset implements SailDataset {
 		this.delegate = delegate;
 	}
 
+	SailDataset getDelegate() {
+		return delegate;
+	}
+
+	/**
+	 * Returns true when this wrapper is transparent for read-only statement access. The native store hooks use this to
+	 * look through close-suppression wrappers without bypassing wrappers that add semantic side effects, such as
+	 * serializable read observation.
+	 */
+	boolean isStatementAccessTransparent() {
+		return true;
+	}
+
 	@Override
 	public String toString() {
 		return delegate.toString();
@@ -49,6 +62,11 @@ abstract class DelegatingSailDataset implements SailDataset {
 	@Override
 	public void close() throws SailException {
 		delegate.close();
+	}
+
+	@Override
+	public boolean isSnapshotCurrent() {
+		return delegate.isSnapshotCurrent();
 	}
 
 	@Override
@@ -70,6 +88,16 @@ abstract class DelegatingSailDataset implements SailDataset {
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
 		return delegate.getStatements(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		return delegate.getStatementCount(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		return delegate.hasStatements(subj, pred, obj, contexts);
 	}
 
 	@Override

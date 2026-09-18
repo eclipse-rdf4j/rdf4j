@@ -84,6 +84,7 @@ final class SegmentFactor {
 
 	final TupleExpr tupleExpr;
 	final Set<String> bindingNames;
+	final Set<String> assuredBindingNames;
 	final Set<StatementPattern> containedPatterns;
 	final int firstFactorOrder;
 	final int lastFactorOrder;
@@ -96,6 +97,7 @@ final class SegmentFactor {
 			int lastFactorOrder) {
 		this.tupleExpr = tupleExpr;
 		this.bindingNames = Set.copyOf(tupleExpr.getBindingNames());
+		this.assuredBindingNames = Set.copyOf(tupleExpr.getAssuredBindingNames());
 		this.containedPatterns = DeferredFilter.identityCopy(containedPatterns);
 		this.firstFactorOrder = firstFactorOrder;
 		this.lastFactorOrder = lastFactorOrder;

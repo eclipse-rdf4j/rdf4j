@@ -18,6 +18,7 @@ import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Value;
 
 /**
  * An iterator that allows to peek at the next element without consuming it. It also allows to mark the current position
@@ -185,6 +186,24 @@ public class PeekMarkIterator<E> implements CloseableIteration<E> {
 		this.closed = true;
 		iterator.close();
 		buffer = null;
+	}
+
+	/**
+	 * Forwards the advisory seek hint to the wrapped iterator, but only while no element could still be owed to the
+	 * caller from this iterator's own state: an active mark, a pending reset, buffered elements being replayed, or a
+	 * peeked element all suppress forwarding so that mark/reset semantics stay exact.
+	 */
+	@Override
+	public void seek(Value minValue, boolean minInclusive, Value maxValue, boolean maxInclusive) {
+		if (closed || mark || resetPossible >= 0 || bufferIterator.hasNext() || next != null) {
+			return;
+		}
+		iterator.seek(minValue, minInclusive, maxValue, maxInclusive);
+	}
+
+	@Override
+	public boolean supportsSeek() {
+		return !closed && iterator.supportsSeek();
 	}
 
 	/**

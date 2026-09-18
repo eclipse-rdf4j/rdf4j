@@ -267,6 +267,19 @@ Also nested inside the `<web-app>` element are definitions of security roles. Th
 </security-role>
 ```
 
+### LMDB runtime property administration
+
+The `GET /system/lmdb/properties` endpoint remains readable, including in the default anonymous deployment. Its
+process-wide `POST` mutations require an authenticated container user in the `rdf4j-admin` role and the deliberate
+request header `X-RDF4J-Admin-Request: true`; a missing or different header is rejected with HTTP 403. Map the
+administrator accounts in the servlet containers for both Server and Workbench, and keep CORS allowlisting under
+deployment control.
+
+When Workbench proxies this operation to a remote RDF4J Server, the Workbench request must have the
+`rdf4j-admin` role and the Workbench's normal HTTP repository connection must authenticate with `rdf4j-admin` on the
+remote Server as well. The Workbench UI and RDF4J HTTP client send the required header automatically. Other clients
+must send it explicitly along with their normal authenticated request.
+
 ### User accounts
 
 Tomcat has a number of ways to manage user accounts. The different techniques are called 'realms' and the default one is called 'UserDatabaseRealm'. This is the simplest one to manage, but also the least secure, because usernames and passwords are stored in plain text.

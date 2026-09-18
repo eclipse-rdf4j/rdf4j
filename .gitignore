@@ -18,6 +18,11 @@ target/
 /logs/
 /maven-build.log
 /initial-evidence.txt
+/initial-evidence.*.txt
+/scripts/initial-evidence.txt
+/final-suite-summary.txt
+/profiles/
+/.mvnf/
 /.verify.log
 /.initial-verify.log
 /*.verify.log
@@ -25,6 +30,7 @@ target/
 /*.trace
 pom.xml.versionsBackup
 dependency-reduced-pom.xml
+dependency-reduced-pom-*.xml
 
 # GEdit generated stuff
 *.*~

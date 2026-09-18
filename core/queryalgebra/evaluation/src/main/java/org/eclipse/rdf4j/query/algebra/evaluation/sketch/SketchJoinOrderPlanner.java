@@ -98,12 +98,14 @@ final class SketchJoinOrderPlanner {
 	private final BindingSetAssignment[] bindingSetAssignments;
 	private final boolean[] bindingSetAssignmentFactors;
 	private final boolean[] smallBindingSetAssignmentFactors;
+	private final boolean[] singleBindingSetAssignmentFactors;
 	private final boolean[] subjectTypeGuardFactors;
 	private final long[] subjectVarMasks;
 	private final long factorUniverseMask;
 	private final long variableUniverseMask;
 	private final long bindingSetAssignmentFactorMask;
 	private final long smallBindingSetAssignmentFactorMask;
+	private final long singleBindingSetAssignmentFactorMask;
 	private final long subjectTypeGuardFactorMask;
 	private final long[] deferredFilterRequiredVarMasks;
 	private final long[] deferredFiltersByRequiredVariable;
@@ -231,12 +233,14 @@ final class SketchJoinOrderPlanner {
 		this.bindingSetAssignmentFactors = buildBindingSetAssignmentFactors(this.factors);
 		this.smallBindingSetAssignmentFactors = buildSmallBindingSetAssignmentFactors(this.factors,
 				this.bindingSetAssignmentFactors);
+		this.singleBindingSetAssignmentFactors = buildSingleBindingSetAssignmentFactors(this.bindingSetAssignments);
 		this.subjectVarMasks = buildSubjectVarMasks(this.factors, variableIds);
 		this.subjectTypeGuardFactors = buildSubjectTypeGuardFactors(this.factors, this.subjectVarMasks);
 		this.factorUniverseMask = factorUniverseMask(this.factors.size());
 		this.variableUniverseMask = factorUniverseMask(this.variableNames.length);
 		this.bindingSetAssignmentFactorMask = factorMask(this.bindingSetAssignmentFactors);
 		this.smallBindingSetAssignmentFactorMask = factorMask(this.smallBindingSetAssignmentFactors);
+		this.singleBindingSetAssignmentFactorMask = factorMask(this.singleBindingSetAssignmentFactors);
 		this.subjectTypeGuardFactorMask = factorMask(this.subjectTypeGuardFactors);
 		this.deferredFilterRequiredVarMasks = buildDeferredFilterRequiredVarMasks(this.deferredFilters, variableIds);
 		this.plannedFilterActionCount = computePlannedFilterActionCount(this.deferredFilters, this.factors.size());
@@ -642,6 +646,27 @@ final class SketchJoinOrderPlanner {
 		return smallAssignments;
 	}
 
+	private static boolean[] buildSingleBindingSetAssignmentFactors(BindingSetAssignment[] assignments) {
+		boolean[] singleAssignments = new boolean[assignments.length];
+		for (int i = 0; i < assignments.length; i++) {
+			singleAssignments[i] = hasExactlyOneBindingSet(assignments[i]);
+		}
+		return singleAssignments;
+	}
+
+	private static boolean hasExactlyOneBindingSet(BindingSetAssignment assignment) {
+		if (assignment == null || assignment.getBindingSets() == null) {
+			return false;
+		}
+		Iterator<BindingSet> bindingSets = assignment.getBindingSets()
+				.iterator();
+		if (!bindingSets.hasNext()) {
+			return false;
+		}
+		bindingSets.next();
+		return !bindingSets.hasNext();
+	}
+
 	private static long[] buildSubjectVarMasks(List<PlanFactor> factors, Map<String, Integer> variableIds) {
 		long[] masks = new long[factors.size()];
 		for (int i = 0; i < factors.size(); i++) {
@@ -826,6 +851,11 @@ final class SketchJoinOrderPlanner {
 		if (!isFactorActionLegal(factorIndex, initiallyBoundVarMask)) {
 			return null;
 		}
+		int firstSingleAssignment = firstLegalSingleBindingSetAssignment(singleBindingSetAssignmentFactorMask,
+				initiallyBoundVarMask);
+		if (firstSingleAssignment >= 0 && factorIndex != firstSingleAssignment) {
+			return null;
+		}
 		if (shouldDelayUnfilteredFiniteSeed(factorIndex)) {
 			return null;
 		}
@@ -915,6 +945,9 @@ final class SketchJoinOrderPlanner {
 	}
 
 	private boolean shouldDelayUnfilteredFiniteSeed(int factorIndex) {
+		if (isSingleBindingSetAssignment(factorIndex)) {
+			return false;
+		}
 		if (!isSmallBindingSetAssignment(factorIndex)) {
 			return false;
 		}
@@ -931,6 +964,17 @@ final class SketchJoinOrderPlanner {
 			}
 		}
 		return false;
+	}
+
+	private int firstLegalSingleBindingSetAssignment(long assignments, long boundVarMask) {
+		while (assignments != 0L) {
+			int assignment = Long.numberOfTrailingZeros(assignments);
+			assignments &= assignments - 1L;
+			if (isFactorActionLegal(assignment, boundVarMask)) {
+				return assignment;
+			}
+		}
+		return -1;
 	}
 
 	private boolean shouldDelayFiniteLookupGuardedSeed(int factorIndex) {
@@ -2921,10 +2965,19 @@ final class SketchJoinOrderPlanner {
 
 	private long candidateActionsMask(StatePlan plan) {
 		long candidates = candidatesMask(plan);
+		candidates = preferSingleBindingSetAssignmentCandidates(candidates);
 		candidates = delayFiniteCompletableLookupCandidates(plan, candidates);
 		candidates = delayUnfilteredFiniteAssignmentsUntilExactLookupGuards(plan, candidates);
 		candidates = preferBoundSubjectTypeGuards(plan.mask(), candidates);
 		return candidates | availableFilterActionMask(plan);
+	}
+
+	private long preferSingleBindingSetAssignmentCandidates(long candidates) {
+		long singleAssignments = candidates & singleBindingSetAssignmentFactorMask;
+		if (singleAssignments == 0L) {
+			return candidates;
+		}
+		return bit(Long.numberOfTrailingZeros(singleAssignments));
 	}
 
 	private long delayFiniteCompletableLookupCandidates(StatePlan plan, long candidates) {
@@ -2992,6 +3045,9 @@ final class SketchJoinOrderPlanner {
 		while (remaining != 0L) {
 			int assignment = Long.numberOfTrailingZeros(remaining);
 			remaining &= remaining - 1L;
+			if (isSingleBindingSetAssignment(assignment)) {
+				continue;
+			}
 			long assignmentVars = bindingVarMasks[assignment] & ~boundVarMask;
 			if (assignmentVars == 0L) {
 				continue;
@@ -4841,6 +4897,10 @@ final class SketchJoinOrderPlanner {
 
 	private boolean isSmallBindingSetAssignment(int factorIndex) {
 		return smallBindingSetAssignmentFactors[factorIndex];
+	}
+
+	private boolean isSingleBindingSetAssignment(int factorIndex) {
+		return singleBindingSetAssignmentFactors[factorIndex];
 	}
 
 	private boolean isBindingSetAssignment(int factorIndex) {

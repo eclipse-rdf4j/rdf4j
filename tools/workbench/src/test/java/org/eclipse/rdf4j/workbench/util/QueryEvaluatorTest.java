@@ -38,14 +38,45 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.http.HTTPTupleQuery;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.junit.jupiter.api.Test;
 
 import jakarta.servlet.http.HttpServletResponse;
 
 class QueryEvaluatorTest {
+
+	@Test
+	void returnsReportsFromTheSameExplanationForEveryFormat() throws Exception {
+		var report = new StrategyDecision("row/join dispatch", 123L, "normal", "batch", null, "current costs",
+				List.of(new StrategyDecision.Candidate("batch", 1, true, "Would select now", null, null)));
+		for (String format : List.of("text", "json", "dot")) {
+			RepositoryConnection connection = mock(RepositoryConnection.class);
+			TupleQuery query = mock(TupleQuery.class);
+			Explanation explanation = mock(Explanation.class);
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.getParameter("queryLn")).thenReturn("SPARQL");
+			when(request.getParameter("explain")).thenReturn("Optimized");
+			when(request.getParameter("explain-format")).thenReturn(format);
+			when(connection.prepareQuery(QueryLanguage.SPARQL, "SELECT * WHERE {?s ?p ?o}")).thenReturn(query);
+			when(query.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+			GenericPlanNode plan = new GenericPlanNode("Projection");
+			plan.setStrategyDecisions(List.of(report));
+			when(explanation.toGenericPlanNode()).thenReturn(plan);
+			when(explanation.toString()).thenReturn("text");
+			when(explanation.toJson()).thenReturn("{}");
+			when(explanation.toDot()).thenReturn("digraph {}");
+			var response = QueryEvaluator.INSTANCE.explain(connection, "SELECT * WHERE {?s ?p ?o}", request);
+			assertThat(response.getStrategyDecisions()).containsExactly(report);
+			verify(query).explain(Explanation.Level.Optimized);
+			verify(query, never()).evaluate();
+		}
+	}
 
 	private static final String BREAKER_ENABLED = "rdf4j.query.breaker.enabled";
 	private static final String BREAKER_WARN_FREE_MB = "rdf4j.query.breaker.warn.free.mb";
@@ -79,9 +110,29 @@ class QueryEvaluatorTest {
 		verify(tupleQuery).explain(Explanation.Level.Optimized);
 		verify(tupleQuery, never()).evaluate();
 		verify(builder).transform(xslPath, "query.xsl");
-		verify(builder).start("explanation", "explanation-format", "explanation-level");
-		verify(builder).result("optimized plan", "text", "Optimized");
+		verify(builder).start("explanation", "explanation-format", "explanation-level", "strategy-decisions");
+		verify(builder).result("optimized plan", "text", "Optimized", "[]");
 		verify(builder).end();
+	}
+
+	@Test
+	void shouldApplyForcedLmdbStrategyToLocalSailExplanation() throws Exception {
+		SailTupleQuery tupleQuery = mock(SailTupleQuery.class);
+
+		explainWithForcedStrategy(tupleQuery, "nestedLoop");
+
+		verify(tupleQuery).setForcedLmdbExecutionStrategy("nestedLoop");
+		verify(tupleQuery).explain(Explanation.Level.Optimized);
+	}
+
+	@Test
+	void shouldApplyForcedLmdbStrategyToRemoteHttpExplanation() throws Exception {
+		HTTPTupleQuery tupleQuery = mock(HTTPTupleQuery.class);
+
+		explainWithForcedStrategy(tupleQuery, "irKernel");
+
+		verify(tupleQuery).setForcedLmdbExecutionStrategy("irKernel");
+		verify(tupleQuery).explain(Explanation.Level.Optimized);
 	}
 
 	@Test
@@ -108,7 +159,7 @@ class QueryEvaluatorTest {
 		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
 				queryText, req, cookies, null);
 
-		verify(builder).result("digraph Explanation {}", "dot", "Optimized");
+		verify(builder).result("digraph Explanation {}", "dot", "Optimized", "[]");
 		verify(explanation).toDot();
 	}
 
@@ -135,7 +186,7 @@ class QueryEvaluatorTest {
 		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
 				queryText, req, cookies, null);
 
-		verify(builder).result("{\"plan\":\"value\"}", "json", "Optimized");
+		verify(builder).result("{\"plan\":\"value\"}", "json", "Optimized", "[]");
 		verify(explanation).toJson();
 	}
 
@@ -315,6 +366,28 @@ class QueryEvaluatorTest {
 		MapBindingSet bindingSet = new MapBindingSet();
 		bindingSet.addBinding("s", SimpleValueFactory.getInstance().createLiteral(value));
 		return bindingSet;
+	}
+
+	private static void explainWithForcedStrategy(TupleQuery tupleQuery, String strategy) throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		Explanation explanation = mock(Explanation.class);
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("explain")).thenReturn(true);
+		when(req.getParameter("explain")).thenReturn("Optimized");
+		when(req.getParameter("explain-format")).thenReturn("text");
+		when(req.getParameter("lmdb-forced-strategy")).thenReturn(strategy);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("optimized plan");
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), "/xsl", con,
+				queryText, req, cookies, null);
 	}
 
 	private void withBreakerProperties(ThrowingRunnable action) throws Exception {

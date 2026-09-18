@@ -42,7 +42,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
@@ -54,6 +53,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -692,7 +692,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			estimator.discardAndMarkForRebuild();
 
 			assertFalse(estimator.isReadyNonBlocking());
-			assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+			assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.READ_COMMITTED);
@@ -715,7 +715,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			}
 
 			assertFalse(estimator.isReadyNonBlocking());
-			assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+			assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
 		} finally {
 			repository.shutDown();
 		}

@@ -25,6 +25,55 @@ import org.junit.jupiter.api.io.TempDir;
 
 class StorePropertiesTest {
 
+	/**
+	 * Inlining changes how a value is IDENTIFIED, not merely how it is stored: with inlining on, {@code "ok"} resolves
+	 * to a deterministic {@code T_SHORTSTRING} id without ever consulting the dictionary, while with it off the same
+	 * string gets a {@code T_LITERAL} dictionary id. Opening a store under the opposite setting therefore leaves every
+	 * existing index record keyed under an id that no new lookup will ever produce — plain pattern matching silently
+	 * returns nothing. The setting must be recorded at creation and enforced on every later open.
+	 */
+	@Test
+	void openingWithTheOppositeInliningSettingIsRejected(@TempDir File dir) {
+		org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig inlined = new org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig(
+				"spoc,posc");
+		inlined.setInlineLiterals(true);
+		LmdbStore created = new LmdbStore(dir, inlined);
+		created.init();
+		created.shutDown();
+
+		org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig notInlined = new org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig(
+				"spoc,posc");
+		notInlined.setInlineLiterals(false);
+		LmdbStore reopened = new LmdbStore(dir, notInlined);
+		org.junit.jupiter.api.Assertions.assertThrows(org.eclipse.rdf4j.sail.SailException.class, reopened::init,
+				"a store created with inlining on must refuse to open with it off");
+	}
+
+	/** The converse direction, and the same-setting case which must keep working. */
+	@Test
+	void openingWithTheSameInliningSettingSucceeds(@TempDir File dir) {
+		org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig notInlined = new org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig(
+				"spoc,posc");
+		notInlined.setInlineLiterals(false);
+		LmdbStore created = new LmdbStore(dir, notInlined);
+		created.init();
+		created.shutDown();
+
+		org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig inlinedAgain = new org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig(
+				"spoc,posc");
+		inlinedAgain.setInlineLiterals(true);
+		LmdbStore mismatched = new LmdbStore(dir, inlinedAgain);
+		org.junit.jupiter.api.Assertions.assertThrows(org.eclipse.rdf4j.sail.SailException.class, mismatched::init,
+				"a store created with inlining off must refuse to open with it on");
+
+		org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig same = new org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig(
+				"spoc,posc");
+		same.setInlineLiterals(false);
+		LmdbStore reopened = new LmdbStore(dir, same);
+		assertDoesNotThrow(reopened::init, "reopening with the recorded setting must work");
+		reopened.shutDown();
+	}
+
 	@Test
 	void saveAndLoadRoundTripsPersistedValues(@TempDir File dir) {
 		StoreProperties properties = new StoreProperties(dir)
