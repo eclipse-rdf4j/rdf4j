@@ -12,9 +12,16 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -23,6 +30,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Low-level tests for {@link TripleStore}.
@@ -50,6 +59,42 @@ public class CardinalityTest {
 			count++;
 		}
 		return count;
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void cardinalityCompletesWithAllOrdinaryReadersHeld(boolean pageEstimator) throws Exception {
+		tripleStore.close();
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc")
+				.setPageCardinalityEstimator(pageEstimator), null);
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(1, 2, 3, 4, true);
+		tripleStore.storeTriple(5, 2, 6, 4, true);
+		tripleStore.storeTriple(1, 2, 3, 4, false);
+		tripleStore.commit();
+		// Admission must preserve each estimator's existing approximation, including the legacy sampler.
+		double expectedBound = tripleStore.cardinality(1, 2, 3, 4);
+		double expectedPartial = tripleStore.cardinality(1, 2, -1, -1);
+		assertTrue(expectedPartial > 0.0);
+
+		List<Txn> readers = new ArrayList<>();
+		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			try {
+				for (int i = 0; i < TxnManager.POOL_SIZE - 1; i++) {
+					readers.add(tripleStore.getTxnManager().createReadTxn());
+				}
+				Future<Double> unbound = executor.submit(() -> tripleStore.cardinality(-1, -1, -1, -1));
+				assertEquals(3.0, unbound.get(5, TimeUnit.SECONDS), 0.0);
+				Future<Double> bound = executor.submit(() -> tripleStore.cardinality(1, 2, 3, 4));
+				assertEquals(expectedBound, bound.get(5, TimeUnit.SECONDS), 0.0);
+				Future<Double> partial = executor.submit(() -> tripleStore.cardinality(1, 2, -1, -1));
+				assertEquals(expectedPartial, partial.get(5, TimeUnit.SECONDS), 0.0);
+			} finally {
+				executor.shutdownNow();
+			}
+		} finally {
+			readers.forEach(Txn::close);
+		}
 	}
 
 	private int countBoth(Txn txn, long subj, long pred, long obj, long context) throws IOException {
@@ -83,6 +128,26 @@ public class CardinalityTest {
 			assertEquals(2, exact);
 			assertEquals((double) exact, tripleStore.cardinality(1, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, 7),
 					0.0);
+		}
+	}
+
+	@Test
+	public void testLargeNonContiguousConstraintSamplesMatcherSelectivity() throws Exception {
+		int statementCount = 5_000;
+		int expectedMatches = statementCount / 5;
+		tripleStore.startTransaction();
+		for (int index = 0; index < statementCount; index++) {
+			tripleStore.storeTriple(1, 1_000 + index, index % 5 == 0 ? 7 : 8, 9, true);
+		}
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			int exact = count(tripleStore.getTriples(txn, 1, LmdbValue.UNKNOWN_ID, 7, LmdbValue.UNKNOWN_ID, true));
+			assertEquals(expectedMatches, exact);
+
+			double estimate = tripleStore.cardinality(1, LmdbValue.UNKNOWN_ID, 7, LmdbValue.UNKNOWN_ID);
+			assertTrue("Expected sampled residual matcher selectivity, got " + estimate,
+					estimate >= expectedMatches * 0.5 && estimate <= expectedMatches * 1.5);
 		}
 	}
 
