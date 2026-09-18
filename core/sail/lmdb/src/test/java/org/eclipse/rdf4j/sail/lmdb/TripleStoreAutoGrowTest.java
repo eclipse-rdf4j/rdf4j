@@ -56,6 +56,53 @@ public class TripleStoreAutoGrowTest {
 	}
 
 	@Test
+	public void testPageEstimatorAcrossAutoGrowth() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(1, 7, 11, 3, true);
+		tripleStore.commit();
+		assertEquals(1.0, tripleStore.cardinality(-1, 7, -1, -1));
+		long initialSize = new File(dataDir, "data.mdb").length();
+
+		for (int batch = 0; batch < 4; batch++) {
+			// Every batch begins with a live estimator mapping from the previous cardinality call.
+			tripleStore.startTransaction();
+			for (int item = 0; item < 10_000; item++) {
+				tripleStore.storeTriple(2L + batch * 10_000 + item, 7, 11, 3, true);
+			}
+			tripleStore.commit();
+			assertEquals(1.0 + (batch + 1) * 10_000, tripleStore.cardinality(-1, 7, -1, -1));
+			assertEquals(1.0, tripleStore.cardinality(2L + batch * 10_000, 7, -1, -1));
+		}
+		assertTrue(new File(dataDir, "data.mdb").length() > initialSize);
+	}
+
+	@Test
+	public void testPageEstimatorAfterCachedWriteFlushGrowth() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setTripleDBSize(4096 * 10);
+		File cachedStoreDir = new File(dataDir, "cached-page-estimator-growth");
+		StatementBatch batch = createBatch(100_000L, 10_000);
+		for (int i = 0; i < batch.pred.length; i++) {
+			batch.pred[i] = 7L;
+		}
+		try (TripleStore cachedStore = new TripleStore(cachedStoreDir, config, null)) {
+			cachedStore.startTransaction();
+			cachedStore.storeTriple(99_999L, 7L, 11L, 3L, true);
+			cachedStore.commit();
+			assertEquals(1.0, cachedStore.cardinality(-1, 7, -1, -1),
+					"Warm the estimator with committed data before the cached aligned write");
+			long initialSize = new File(cachedStoreDir, "data.mdb").length();
+			cachedStore.startTransaction();
+			cachedStore.storeTriplesAligned(batch.subj, batch.pred, batch.obj, batch.context, batch.subj.length, true);
+			cachedStore.commit();
+
+			assertEquals(1.0 + batch.subj.length, cachedStore.cardinality(-1, 7, -1, -1));
+			assertTrue(new File(cachedStoreDir, "data.mdb").length() > initialSize,
+					"The cached aligned write should grow the LMDB map before the estimator reads it");
+		}
+	}
+
+	@Test
 	public void testAutoGrowLargeCommits() throws Exception {
 		Random rnd = new Random(1337);
 
