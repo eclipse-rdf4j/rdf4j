@@ -149,12 +149,26 @@ test('Text explanation highlighting preserves server plaintext and toggles witho
     expect(highlightedText).toBe(plainResponse.content);
 
     const requestCountBeforeToggle = explainRequests.length;
+    const settingsPanel = page.locator('#explanation-settings-panel');
+    const settingsToggle = page.locator('#explanation-settings-toggle');
+    await settingsToggle.click();
+    await expect(settingsPanel).toBeVisible();
+    await expect(page.locator('#explanation-highlight-syntax')).toBeChecked();
+    await expect(page.locator('#explanation-highlight-hotspot')).not.toBeChecked();
     await page.locator('#explanation-highlight-hotspot').click();
-    await expect(page.locator('#explanation-highlight-hotspot')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#explanation-highlight-hotspot')).toBeChecked();
     await expect(page.locator('#explanation-hotspot-legend')).toContainText('Cost estimate');
     await expect(page.locator('#query-explanation .query-explanation-line--hotspot').first()).toBeVisible();
     expect(await page.locator('#query-explanation').textContent()).toBe(highlightedText);
     expect(explainRequests.length).toBe(requestCountBeforeToggle);
+
+    // Click an established explanation control outside Config so document-level
+    // dismissal is exercised without the open panel intercepting the click.
+    await page.locator('#explain-format').click();
+    await expect(settingsPanel).toBeHidden();
+    await settingsToggle.click();
+    await expect(settingsPanel).toBeVisible();
+    await expect(page.locator('#explanation-highlight-hotspot')).toBeChecked();
 
     await page.locator('#compare-toggle').click();
     await page.locator('#query-explanation-compare .query-explanation-line--hotspot').first().waitFor();
@@ -172,10 +186,13 @@ test('Text explanation highlighting preserves server plaintext and toggles witho
     await page.locator('#compare-toggle').click();
     await expect(page.locator('#query-explanation-row-compare')).toBeHidden();
     await page.setViewportSize({ width: 700, height: 900 });
+    await settingsToggle.click();
+    await expect(settingsPanel).toBeVisible();
     await page.locator('#explanation-highlight-syntax').click();
     await page.locator('#explanation-highlight-syntax').focus();
     await page.locator('#explanation-highlight-syntax').press('ArrowRight');
-    await expect(page.locator('#explanation-highlight-hotspot')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#explanation-highlight-hotspot')).toBeChecked();
+    await expect(page.locator('#explanation-highlight-syntax')).not.toBeChecked();
     expect(await page.evaluate(() => document.activeElement.id)).toBe('explanation-highlight-hotspot');
     expect(await page.locator('#explanation-highlight-hotspot').evaluate(element =>
         getComputedStyle(element).outlineStyle)).not.toBe('none');

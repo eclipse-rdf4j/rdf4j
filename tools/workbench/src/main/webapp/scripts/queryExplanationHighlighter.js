@@ -178,6 +178,259 @@ var workbench;
             }
             return Number.NaN;
         }
+        var LONG_MAX_TEXT = '9223372036854775807';
+        var LONG_MIN_TEXT = '-9223372036854775808';
+        var LONG_MIN_MAGNITUDE = '9223372036854775808';
+        var LONG_MODULUS = '18446744073709551616';
+        var SAFE_LONG_MAX_TEXT = '9007199254740991';
+        var TWO_TO_63 = 9223372036854775808;
+        // These helpers operate on canonical signed-64-bit decimal text and wrap every operation like Java long
+        // arithmetic before exposing a safe Number or exact decimal string to the formatter.
+        function canonicalDecimalText(value) {
+            var text;
+            if (typeof value === 'number') {
+                if (!isFinite(value) || Math.floor(value) !== value) {
+                    return null;
+                }
+                if (value === 0) {
+                    return '0';
+                }
+                text = Math.abs(value) < 1e21 ? value.toFixed(0) : String(value);
+            }
+            else if (typeof value === 'string') {
+                text = value;
+            }
+            else {
+                return null;
+            }
+            if (!/^-?[0-9]+$/.test(text)) {
+                return null;
+            }
+            var negative = text.charAt(0) === '-';
+            var magnitude = negative ? text.substring(1) : text;
+            magnitude = magnitude.replace(/^0+/, '');
+            if (!magnitude.length) {
+                return '0';
+            }
+            return negative ? '-' + magnitude : magnitude;
+        }
+        function compareMagnitudes(left, right) {
+            if (left.length !== right.length) {
+                return left.length < right.length ? -1 : 1;
+            }
+            return left < right ? -1 : (left > right ? 1 : 0);
+        }
+        function addMagnitudes(left, right) {
+            var leftIndex = left.length - 1;
+            var rightIndex = right.length - 1;
+            var carry = 0;
+            var result = '';
+            while (leftIndex >= 0 || rightIndex >= 0 || carry) {
+                var leftDigit = leftIndex >= 0 ? left.charCodeAt(leftIndex--) - 48 : 0;
+                var rightDigit = rightIndex >= 0 ? right.charCodeAt(rightIndex--) - 48 : 0;
+                var sum = leftDigit + rightDigit + carry;
+                result = String(sum % 10) + result;
+                carry = Math.floor(sum / 10);
+            }
+            return result;
+        }
+        function subtractMagnitudes(left, right) {
+            var leftIndex = left.length - 1;
+            var rightIndex = right.length - 1;
+            var borrow = 0;
+            var result = '';
+            while (leftIndex >= 0) {
+                var difference = left.charCodeAt(leftIndex--) - 48 - borrow
+                    - (rightIndex >= 0 ? right.charCodeAt(rightIndex--) - 48 : 0);
+                if (difference < 0) {
+                    difference += 10;
+                    borrow = 1;
+                }
+                else {
+                    borrow = 0;
+                }
+                result = String(difference) + result;
+            }
+            result = result.replace(/^0+/, '');
+            return result.length ? result : '0';
+        }
+        function wrapSignedLongText(value) {
+            var canonical = canonicalDecimalText(value);
+            if (canonical === null || canonical === '0') {
+                return canonical;
+            }
+            var negative = canonical.charAt(0) === '-';
+            var magnitude = negative ? canonical.substring(1) : canonical;
+            if (!negative) {
+                if (compareMagnitudes(magnitude, LONG_MAX_TEXT) <= 0) {
+                    return magnitude;
+                }
+                var positiveWrapped = subtractMagnitudes(LONG_MODULUS, magnitude);
+                return positiveWrapped === '0' ? '0' : '-' + positiveWrapped;
+            }
+            if (compareMagnitudes(magnitude, LONG_MIN_MAGNITUDE) <= 0) {
+                return '-' + magnitude;
+            }
+            var negativeWrapped = subtractMagnitudes(LONG_MODULUS, magnitude);
+            return negativeWrapped;
+        }
+        function signedLongText(value) {
+            var canonical = canonicalDecimalText(value);
+            return canonical === null ? null : wrapSignedLongText(canonical);
+        }
+        function publicLong(value) {
+            var signed = wrapSignedLongText(value);
+            if (signed === null) {
+                return null;
+            }
+            var magnitude = signed.charAt(0) === '-' ? signed.substring(1) : signed;
+            if (compareMagnitudes(magnitude, SAFE_LONG_MAX_TEXT) <= 0) {
+                return Number(signed);
+            }
+            return signed;
+        }
+        function compareSignedLongTexts(left, right) {
+            if (left === right) {
+                return 0;
+            }
+            var leftNegative = left.charAt(0) === '-';
+            var rightNegative = right.charAt(0) === '-';
+            if (leftNegative !== rightNegative) {
+                return leftNegative ? -1 : 1;
+            }
+            var leftMagnitude = leftNegative ? left.substring(1) : left;
+            var rightMagnitude = rightNegative ? right.substring(1) : right;
+            var magnitudeComparison = compareMagnitudes(leftMagnitude, rightMagnitude);
+            return leftNegative ? -magnitudeComparison : magnitudeComparison;
+        }
+        function compareJsonLong(left, right) {
+            var leftText = signedLongText(left);
+            var rightText = signedLongText(right);
+            if (leftText === null || rightText === null) {
+                return null;
+            }
+            return compareSignedLongTexts(leftText, rightText);
+        }
+        queryExplanationHighlighter.compareJsonLong = compareJsonLong;
+        function equalJsonLong(left, right) {
+            return compareJsonLong(left, right) === 0;
+        }
+        function nonNegativeLong(value) {
+            var comparison = compareJsonLong(value, 0);
+            return comparison !== null && comparison >= 0;
+        }
+        function positiveLong(value) {
+            var comparison = compareJsonLong(value, 0);
+            return comparison !== null && comparison > 0;
+        }
+        function zeroLong(value) {
+            return compareJsonLong(value, 0) === 0;
+        }
+        function addJsonLong(left, right) {
+            var leftText = signedLongText(left);
+            var rightText = signedLongText(right);
+            if (leftText === null || rightText === null) {
+                return null;
+            }
+            var leftNegative = leftText.charAt(0) === '-';
+            var rightNegative = rightText.charAt(0) === '-';
+            var leftMagnitude = leftNegative ? leftText.substring(1) : leftText;
+            var rightMagnitude = rightNegative ? rightText.substring(1) : rightText;
+            var result;
+            if (leftNegative === rightNegative) {
+                result = addMagnitudes(leftMagnitude, rightMagnitude);
+                if (leftNegative && result !== '0') {
+                    result = '-' + result;
+                }
+            }
+            else {
+                var comparison = compareMagnitudes(leftMagnitude, rightMagnitude);
+                if (comparison === 0) {
+                    result = '0';
+                }
+                else if (comparison > 0) {
+                    result = subtractMagnitudes(leftMagnitude, rightMagnitude);
+                    if (leftNegative) {
+                        result = '-' + result;
+                    }
+                }
+                else {
+                    result = subtractMagnitudes(rightMagnitude, leftMagnitude);
+                    if (rightNegative) {
+                        result = '-' + result;
+                    }
+                }
+            }
+            return publicLong(wrapSignedLongText(result));
+        }
+        function subtractJsonLong(left, right) {
+            var rightText = signedLongText(right);
+            if (rightText === null) {
+                return null;
+            }
+            var negatedRight = rightText === '0' ? '0'
+                : (rightText.charAt(0) === '-' ? rightText.substring(1) : '-' + rightText);
+            return addJsonLong(left, negatedRight);
+        }
+        function maxZeroLong(value) {
+            return maximumJsonLong(value, 0);
+        }
+        function nonNegativeLongOrZero(value) {
+            return nonNegativeLong(value) ? value : 0;
+        }
+        function minimumJsonLong(left, right) {
+            var comparison = compareJsonLong(left, right);
+            if (comparison === null) {
+                return null;
+            }
+            return publicLong(signedLongText(comparison <= 0 ? left : right));
+        }
+        function maximumJsonLong(left, right) {
+            var comparison = compareJsonLong(left, right);
+            if (comparison === null) {
+                return null;
+            }
+            return publicLong(signedLongText(comparison >= 0 ? left : right));
+        }
+        function divideMagnitude(magnitude, divisor) {
+            var quotient = '';
+            var remainder = 0;
+            for (var i = 0; i < magnitude.length; i++) {
+                var current = remainder * 10 + magnitude.charCodeAt(i) - 48;
+                var digit = Math.floor(current / divisor);
+                remainder = current - digit * divisor;
+                if (quotient.length || digit) {
+                    quotient += String(digit);
+                }
+            }
+            return quotient || '0';
+        }
+        function dividePositiveLong(value, divisor) {
+            var text = signedLongText(value);
+            if (text === null || divisor <= 0 || text.charAt(0) === '-') {
+                return null;
+            }
+            return publicLong(divideMagnitude(text, divisor));
+        }
+        function jsonLongAsNumber(value) {
+            var text = signedLongText(value);
+            return text === null ? Number.NaN : Number(text);
+        }
+        function javaRoundLong(value) {
+            if (value !== value) {
+                return '0';
+            }
+            if (value >= TWO_TO_63) {
+                return LONG_MAX_TEXT;
+            }
+            if (value <= -TWO_TO_63) {
+                return LONG_MIN_TEXT;
+            }
+            return Math.round(value).toFixed(0);
+        }
+        function javaRoundedNumber(value) {
+            return Number(javaRoundLong(value));
+        }
         function readableDouble(value) {
             var numericValue = parsedDouble(value);
             if (numericValue !== numericValue) {
@@ -187,58 +440,58 @@ var workbench;
                 return '∞';
             }
             if (numericValue > 1000000) {
-                return javaDecimal(Math.round(numericValue / 100000) / 10) + 'M';
+                return javaDecimal(javaRoundedNumber(numericValue / 100000) / 10) + 'M';
             }
             if (numericValue > 1000) {
-                return javaDecimal(Math.round(numericValue / 100) / 10) + 'K';
+                return javaDecimal(javaRoundedNumber(numericValue / 100) / 10) + 'K';
             }
             if (numericValue < 10 && numericValue > 0) {
                 return TWO_DECIMAL_FORMATTER.format(numericValue);
             }
             if (numericValue >= 0) {
-                return String(Math.round(numericValue));
+                return javaRoundLong(numericValue);
             }
             return UNKNOWN;
         }
         function readableLong(value) {
-            if (typeof value !== 'number' || value !== value) {
+            var text = signedLongText(value);
+            if (text === null) {
                 return UNKNOWN;
             }
-            if (value === Number.POSITIVE_INFINITY) {
-                return '∞';
+            if (compareJsonLong(value, 1000000) > 0) {
+                var millions = dividePositiveLong(value, 100000);
+                return javaDecimal(jsonLongAsNumber(millions) / 10) + 'M';
             }
-            if (value > 1000000) {
-                return javaDecimal(Math.floor(value / 100000) / 10) + 'M';
+            if (compareJsonLong(value, 1000) > 0) {
+                var thousands = dividePositiveLong(value, 100);
+                return javaDecimal(jsonLongAsNumber(thousands) / 10) + 'K';
             }
-            if (value > 1000) {
-                return javaDecimal(Math.floor(value / 100) / 10) + 'K';
-            }
-            if (value >= 0) {
-                return String(Math.round(value));
+            if (nonNegativeLong(value)) {
+                return text;
             }
             return UNKNOWN;
         }
         function readableNonZeroLong(value) {
-            return value === 0 ? UNKNOWN : readableLong(value);
+            return zeroLong(value) ? UNKNOWN : readableLong(value);
         }
         function readableTime(value) {
             if (typeof value !== 'number' || value !== value) {
                 return UNKNOWN;
             }
             if (value > 1000) {
-                return javaDecimal(Math.round(value / 100) / 10) + 's';
+                return javaDecimal(javaRoundedNumber(value / 100) / 10) + 's';
             }
             if (value >= 100) {
-                return String(Math.round(value)) + 'ms';
+                return javaRoundLong(value) + 'ms';
             }
             if (value >= 10) {
-                return javaDecimal(Math.round(value * 10) / 10) + 'ms';
+                return javaDecimal(javaRoundedNumber(value * 10) / 10) + 'ms';
             }
             if (value >= 1) {
-                return javaDecimal(Math.round(value * 100) / 100) + 'ms';
+                return javaDecimal(javaRoundedNumber(value * 100) / 100) + 'ms';
             }
             if (value >= 0) {
-                return javaDecimal(Math.round(value * 1000) / 1000) + 'ms';
+                return javaDecimal(javaRoundedNumber(value * 1000) / 1000) + 'ms';
             }
             return UNKNOWN;
         }
@@ -258,8 +511,8 @@ var workbench;
             var found = false;
             for (var i = 0; i < children.length; i++) {
                 var value = children[i].resultSizeActual;
-                if (typeof value === 'number' && value >= 0) {
-                    sum += value;
+                if (nonNegativeLong(value)) {
+                    sum = addJsonLong(sum, value);
                     found = true;
                 }
             }
@@ -269,7 +522,7 @@ var workbench;
             if (!isFilter(node)) {
                 return node.sourceRowsScannedActual;
             }
-            if (typeof node.sourceRowsScannedActual === 'number') {
+            if (compareJsonLong(node.sourceRowsScannedActual, 0) !== null) {
                 return node.sourceRowsScannedActual;
             }
             var children = plans(node);
@@ -279,20 +532,20 @@ var workbench;
             if (!isFilter(node)) {
                 return node.sourceRowsMatchedActual;
             }
-            return typeof node.sourceRowsMatchedActual === 'number'
+            return compareJsonLong(node.sourceRowsMatchedActual, 0) !== null
                 ? node.sourceRowsMatchedActual : node.resultSizeActual;
         }
         function sourceRowsFiltered(node, scanned, matched) {
             if (!isFilter(node)) {
                 return node.sourceRowsFilteredActual;
             }
-            if (typeof node.sourceRowsFilteredActual === 'number') {
+            if (compareJsonLong(node.sourceRowsFilteredActual, 0) !== null) {
                 return node.sourceRowsFilteredActual;
             }
-            if (typeof scanned !== 'number' || typeof matched !== 'number') {
+            if (compareJsonLong(scanned, 0) === null || compareJsonLong(matched, 0) === null) {
                 return null;
             }
-            return Math.max(0, scanned - matched);
+            return maxZeroLong(subtractJsonLong(scanned, matched));
         }
         function applicable(node, metric) {
             if (contains(JOIN_ONLY_METRICS, metric)) {
@@ -324,7 +577,8 @@ var workbench;
         function addPreferredStrings(entries, seen, source, preferred) {
             for (var i = 0; i < preferred.length; i++) {
                 var preferredName = preferred[i];
-                if (source && source[preferredName]) {
+                if (source && Object.prototype.hasOwnProperty.call(source, preferredName)
+                    && source[preferredName]) {
                     addMetric(entries, seen, preferredName, source[preferredName]);
                 }
             }
@@ -333,7 +587,8 @@ var workbench;
             var name;
             var longMetrics = node.longMetricsPlanned || {};
             for (name in longMetrics) {
-                if (Object.prototype.hasOwnProperty.call(longMetrics, name) && longMetrics[name] >= 0) {
+                if (Object.prototype.hasOwnProperty.call(longMetrics, name)
+                    && nonNegativeLong(longMetrics[name])) {
                     addMetric(entries, seen, name, readableLong(longMetrics[name]));
                 }
             }
@@ -359,11 +614,14 @@ var workbench;
                     continue;
                 }
                 var longValue = longMetrics[name];
+                var longComparison = compareJsonLong(longValue, 0);
                 if ((!runtimeTelemetry && !isOptimizerMetric(name)) || longValue === null
-                    || (longValue <= 0 && !isOptimizerMetric(name)) || !applicable(node, name)) {
+                    || (longComparison === null && !isOptimizerMetric(name))
+                    || (longComparison !== null && longComparison <= 0 && !isOptimizerMetric(name))
+                    || !applicable(node, name)) {
                     continue;
                 }
-                if (name === 'outputRowsActual' && longValue === node.resultSizeActual) {
+                if (name === 'outputRowsActual' && equalJsonLong(longValue, node.resultSizeActual)) {
                     continue;
                 }
                 addMetric(entries, seen, name, readableLong(longValue));
@@ -396,10 +654,11 @@ var workbench;
             }
         }
         function ratio(numerator, denominator) {
-            if (typeof numerator !== 'number' || typeof denominator !== 'number' || denominator <= 0) {
+            if (compareJsonLong(numerator, 0) === null || compareJsonLong(denominator, 0) === null
+                || compareJsonLong(denominator, 0) <= 0) {
                 return null;
             }
-            return numerator / denominator;
+            return jsonLongAsNumber(numerator) / jsonLongAsNumber(denominator);
         }
         function approximatelyOne(value) {
             return typeof value === 'number' && Math.abs(value - 1) < 1e-9;
@@ -410,18 +669,19 @@ var workbench;
             var scanned = sourceRowsScanned(node);
             var matched = sourceRowsMatched(node);
             var filtered = sourceRowsFiltered(node, scanned, matched);
-            var hideInput = typeof inputRows === 'number' && typeof outputRows === 'number'
-                && !isFilter(node) && !isJoin(node) && inputRows === outputRows;
+            var hideInput = equalJsonLong(inputRows, outputRows)
+                && !isFilter(node) && !isJoin(node);
             if (!hideInput) {
                 addMetric(entries, seen, 'inputRowsActual', readableLong(inputRows));
             }
-            if (typeof inputRows === 'number' && typeof outputRows === 'number') {
-                var dropped = Math.max(0, inputRows - outputRows);
-                if (dropped > 0) {
+            if (compareJsonLong(inputRows, 0) !== null && compareJsonLong(outputRows, 0) !== null) {
+                var dropped = maxZeroLong(subtractJsonLong(inputRows, outputRows));
+                if (positiveLong(dropped)) {
                     addMetric(entries, seen, 'rowsDroppedActual', readableLong(dropped));
                 }
                 var selectivity = ratio(outputRows, inputRows);
-                var expansion = ratio(outputRows, Math.max(1, inputRows));
+                var expansionDenominator = compareJsonLong(inputRows, 1) < 0 ? 1 : inputRows;
+                var expansion = ratio(outputRows, expansionDenominator);
                 if (!approximatelyOne(selectivity) && !(isJoin(node) && selectivity === expansion)) {
                     addMetric(entries, seen, 'selectivityActual', readableDouble(selectivity));
                 }
@@ -429,17 +689,18 @@ var workbench;
                     addMetric(entries, seen, 'expansionFactorActual', readableDouble(expansion));
                 }
             }
-            if (typeof outputRows === 'number' && typeof node.totalTimeActual === 'number'
+            if (compareJsonLong(outputRows, 0) !== null && typeof node.totalTimeActual === 'number'
                 && node.totalTimeActual > 0) {
-                addMetric(entries, seen, 'throughputRowsPerSecActual', readableDouble(outputRows * 1000 / node.totalTimeActual));
+                addMetric(entries, seen, 'throughputRowsPerSecActual', readableDouble(jsonLongAsNumber(outputRows) * 1000 / node.totalTimeActual));
             }
             var qErrors = [];
             var children = plans(node);
             for (var i = 0; i < children.length; i++) {
                 var estimate = parsedDouble(children[i].resultSizeEstimate);
                 var actual = children[i].resultSizeActual;
-                if (estimate > 0 && typeof actual === 'number' && actual > 0) {
-                    qErrors.push(Math.max(estimate / actual, actual / estimate));
+                if (estimate > 0 && positiveLong(actual)) {
+                    var actualNumber = jsonLongAsNumber(actual);
+                    qErrors.push(Math.max(estimate / actualNumber, actualNumber / estimate));
                 }
             }
             if (qErrors.length) {
@@ -464,21 +725,18 @@ var workbench;
             if (costEstimate > 0 && typeof node.totalTimeActual === 'number' && node.totalTimeActual > 0) {
                 addMetric(entries, seen, 'costErrorRatio', readableDouble(node.totalTimeActual / costEstimate));
             }
-            if (typeof node.hasNextCallCountActual === 'number'
-                && typeof node.hasNextTrueCountActual === 'number') {
-                addMetric(entries, seen, 'hasNextFalseCountActual', readableLong(Math.max(0, node.hasNextCallCountActual - node.hasNextTrueCountActual)));
+            if (compareJsonLong(node.hasNextCallCountActual, 0) !== null
+                && compareJsonLong(node.hasNextTrueCountActual, 0) !== null) {
+                addMetric(entries, seen, 'hasNextFalseCountActual', readableLong(maxZeroLong(subtractJsonLong(node.hasNextCallCountActual, node.hasNextTrueCountActual))));
             }
-            if (typeof node.hasNextCallCountActual === 'number' && node.hasNextCallCountActual > 0
-                && typeof node.nextCallCountActual === 'number') {
-                addMetric(entries, seen, 'nextPerHasNextRatioActual', readableDouble(node.nextCallCountActual / node.hasNextCallCountActual));
+            if (positiveLong(node.hasNextCallCountActual) && compareJsonLong(node.nextCallCountActual, 0) !== null) {
+                addMetric(entries, seen, 'nextPerHasNextRatioActual', readableDouble(ratio(node.nextCallCountActual, node.hasNextCallCountActual)));
             }
-            if (typeof node.hasNextCallCountActual === 'number' && node.hasNextCallCountActual > 0
-                && typeof node.hasNextTimeNanosActual === 'number') {
-                addMetric(entries, seen, 'avgHasNextNanosActual', readableDouble(node.hasNextTimeNanosActual / node.hasNextCallCountActual));
+            if (positiveLong(node.hasNextCallCountActual) && compareJsonLong(node.hasNextTimeNanosActual, 0) !== null) {
+                addMetric(entries, seen, 'avgHasNextNanosActual', readableDouble(jsonLongAsNumber(node.hasNextTimeNanosActual) / jsonLongAsNumber(node.hasNextCallCountActual)));
             }
-            if (typeof node.nextCallCountActual === 'number' && node.nextCallCountActual > 0
-                && typeof node.nextTimeNanosActual === 'number') {
-                addMetric(entries, seen, 'avgNextNanosActual', readableDouble(node.nextTimeNanosActual / node.nextCallCountActual));
+            if (positiveLong(node.nextCallCountActual) && compareJsonLong(node.nextTimeNanosActual, 0) !== null) {
+                addMetric(entries, seen, 'avgNextNanosActual', readableDouble(jsonLongAsNumber(node.nextTimeNanosActual) / jsonLongAsNumber(node.nextCallCountActual)));
             }
             var longMetrics = node.longMetricsActual || {};
             if (isJoin(node)) {
@@ -486,36 +744,33 @@ var workbench;
                 var rightRows = node.joinRightBindingsConsumedActual;
                 addMetric(entries, seen, 'leftRowsProbedActual', readableLong(leftRows));
                 addMetric(entries, seen, 'rightRowsScannedActual', readableLong(rightRows));
-                if (typeof leftRows === 'number' && leftRows > 0 && typeof rightRows === 'number') {
-                    addMetric(entries, seen, 'avgRightRowsPerLeftActual', readableDouble(rightRows / leftRows));
+                if (positiveLong(leftRows) && compareJsonLong(rightRows, 0) !== null) {
+                    addMetric(entries, seen, 'avgRightRowsPerLeftActual', readableDouble(ratio(rightRows, leftRows)));
                 }
                 var leftRowsWithMatch = longMetrics.leftRowsWithMatchActual;
-                if (typeof leftRowsWithMatch !== 'number'
-                    && typeof node.joinRightIteratorsCreatedActual === 'number'
-                    && typeof longMetrics.emptyRightProbeCountActual === 'number') {
-                    leftRowsWithMatch = Math.max(0, node.joinRightIteratorsCreatedActual - longMetrics.emptyRightProbeCountActual);
+                if (compareJsonLong(leftRowsWithMatch, 0) === null
+                    && compareJsonLong(node.joinRightIteratorsCreatedActual, 0) !== null
+                    && compareJsonLong(longMetrics.emptyRightProbeCountActual, 0) !== null) {
+                    leftRowsWithMatch = maxZeroLong(subtractJsonLong(node.joinRightIteratorsCreatedActual, longMetrics.emptyRightProbeCountActual));
                 }
-                if (typeof leftRows === 'number' && leftRows > 0 && typeof leftRowsWithMatch === 'number') {
-                    addMetric(entries, seen, 'joinMatchRateActual', readableDouble(leftRowsWithMatch / leftRows));
+                if (positiveLong(leftRows) && compareJsonLong(leftRowsWithMatch, 0) !== null) {
+                    addMetric(entries, seen, 'joinMatchRateActual', readableDouble(ratio(leftRowsWithMatch, leftRows)));
                 }
-                if (typeof leftRows === 'number' && leftRows > 0 && typeof outputRows === 'number') {
-                    addMetric(entries, seen, 'joinOutputPerLeftActual', readableDouble(outputRows / leftRows));
+                if (positiveLong(leftRows) && compareJsonLong(outputRows, 0) !== null) {
+                    addMetric(entries, seen, 'joinOutputPerLeftActual', readableDouble(ratio(outputRows, leftRows)));
                 }
-                if (isLeftJoin(node) && typeof node.joinRightIteratorsCreatedActual === 'number'
-                    && typeof leftRowsWithMatch === 'number') {
-                    addMetric(entries, seen, 'leftJoinNullExtendedRowsActual', readableLong(Math.max(0, node.joinRightIteratorsCreatedActual - leftRowsWithMatch)));
+                if (isLeftJoin(node) && compareJsonLong(node.joinRightIteratorsCreatedActual, 0) !== null
+                    && compareJsonLong(leftRowsWithMatch, 0) !== null) {
+                    addMetric(entries, seen, 'leftJoinNullExtendedRowsActual', readableLong(maxZeroLong(subtractJsonLong(node.joinRightIteratorsCreatedActual, leftRowsWithMatch))));
                 }
             }
-            if (isFilter(node) && typeof scanned === 'number' && scanned > 0 && typeof filtered === 'number') {
-                addMetric(entries, seen, 'filterRejectRateActual', readableDouble(filtered / scanned));
+            if (isFilter(node) && positiveLong(scanned) && compareJsonLong(filtered, 0) !== null) {
+                addMetric(entries, seen, 'filterRejectRateActual', readableDouble(ratio(filtered, scanned)));
             }
-            if (isService(node) && typeof longMetrics.remoteRequestCountActual === 'number'
-                && longMetrics.remoteRequestCountActual > 0) {
-                var typedRequests = Math.max(0, longMetrics.remoteAskRequestCountActual || 0)
-                    + Math.max(0, longMetrics.remoteSelectRequestCountActual || 0)
-                    + Math.max(0, longMetrics.remoteEvaluateRequestCountActual || 0);
-                var retries = Math.max(0, longMetrics.remoteRequestCountActual - typedRequests);
-                if (retries > 0) {
+            if (isService(node) && positiveLong(longMetrics.remoteRequestCountActual)) {
+                var typedRequests = addJsonLong(addJsonLong(nonNegativeLongOrZero(longMetrics.remoteAskRequestCountActual), nonNegativeLongOrZero(longMetrics.remoteSelectRequestCountActual)), nonNegativeLongOrZero(longMetrics.remoteEvaluateRequestCountActual));
+                var retries = maxZeroLong(subtractJsonLong(longMetrics.remoteRequestCountActual, typedRequests));
+                if (positiveLong(retries)) {
                     addMetric(entries, seen, 'remoteRetryCountActual', readableLong(retries));
                 }
             }
@@ -531,41 +786,40 @@ var workbench;
                 else if (startsWithType(node, 'Intersection')) {
                     addMetric(entries, seen, 'overlapRowsActual', readableLong(outputRows));
                 }
-                else if (startsWithType(node, 'Difference') && typeof left === 'number'
-                    && typeof outputRows === 'number') {
-                    addMetric(entries, seen, 'overlapRowsActual', readableLong(Math.max(0, left - outputRows)));
+                else if (startsWithType(node, 'Difference') && compareJsonLong(left, 0) !== null
+                    && compareJsonLong(outputRows, 0) !== null) {
+                    addMetric(entries, seen, 'overlapRowsActual', readableLong(maxZeroLong(subtractJsonLong(left, outputRows))));
                 }
             }
-            if (isDistinctLike(node) && typeof inputRows === 'number' && inputRows > 0
-                && typeof outputRows === 'number') {
-                var duplicates = Math.max(0, inputRows - outputRows);
+            if (isDistinctLike(node) && positiveLong(inputRows) && compareJsonLong(outputRows, 0) !== null) {
+                var duplicates = maxZeroLong(subtractJsonLong(inputRows, outputRows));
                 addMetric(entries, seen, 'duplicatesRemovedActual', readableLong(duplicates));
-                addMetric(entries, seen, 'dedupRateActual', readableDouble(duplicates / inputRows));
+                addMetric(entries, seen, 'dedupRateActual', readableDouble(ratio(duplicates, inputRows)));
             }
-            if (isSlice(node) && children.length && typeof children[0].resultSizeActual === 'number'
-                && typeof outputRows === 'number') {
+            if (isSlice(node) && children.length && compareJsonLong(children[0].resultSizeActual, 0) !== null
+                && compareJsonLong(outputRows, 0) !== null) {
                 var offsetMatch = /offset=([0-9]+)/.exec(planType(node));
-                var offset = offsetMatch ? Number(offsetMatch[1]) : 0;
+                var offset = offsetMatch ? offsetMatch[1] : 0;
                 var childRows = children[0].resultSizeActual;
-                var skipped = Math.min(offset, childRows);
+                var skipped = minimumJsonLong(offset, childRows);
                 addMetric(entries, seen, 'rowsSkippedByOffsetActual', readableLong(skipped));
-                addMetric(entries, seen, 'rowsDroppedByLimitActual', readableLong(Math.max(0, childRows - skipped - outputRows)));
+                addMetric(entries, seen, 'rowsDroppedByLimitActual', readableLong(maxZeroLong(subtractJsonLong(subtractJsonLong(childRows, skipped), outputRows))));
             }
             if (isGroup(node)) {
-                var groups = typeof longMetrics.groupsCreatedActual === 'number'
+                var groups = compareJsonLong(longMetrics.groupsCreatedActual, 0) !== null
                     ? longMetrics.groupsCreatedActual : outputRows;
                 addMetric(entries, seen, 'groupsCreatedActual', readableLong(groups));
-                if (typeof inputRows === 'number' && typeof groups === 'number' && groups > 0) {
-                    addMetric(entries, seen, 'avgGroupSizeActual', readableDouble(inputRows / groups));
+                if (compareJsonLong(inputRows, 0) !== null && positiveLong(groups)) {
+                    addMetric(entries, seen, 'avgGroupSizeActual', readableDouble(ratio(inputRows, groups)));
                 }
             }
-            if (isAccess(node) && typeof scanned === 'number' && scanned > 0 && typeof matched === 'number') {
-                addMetric(entries, seen, 'indexHitRateActual', readableDouble(matched / scanned));
+            if (isAccess(node) && positiveLong(scanned) && compareJsonLong(matched, 0) !== null) {
+                addMetric(entries, seen, 'indexHitRateActual', readableDouble(ratio(matched, scanned)));
             }
         }
         function metrics(node, level) {
             var entries = [];
-            var seen = {};
+            var seen = Object.create(null);
             var runtimeTelemetry = level === 'Telemetry';
             addMetric(entries, seen, 'costEstimate', readableDouble(node.costEstimate));
             addMetric(entries, seen, 'resultSizeEstimate', readableDouble(node.resultSizeEstimate));
@@ -741,24 +995,52 @@ var workbench;
                 node: line.node
             };
         }
-        function prefixLine(line, prefix, kind) {
-            var result = copyLine(line);
-            result.tokens.unshift(token(prefix, kind));
+        function splitPhysicalLines(line, lineSeparator) {
+            var result = [{ tokens: [], node: line.node }];
+            for (var tokenIndex = 0; tokenIndex < line.tokens.length; tokenIndex++) {
+                var sourceToken = line.tokens[tokenIndex];
+                var parts = sourceToken.text.split(lineSeparator);
+                for (var partIndex = 0; partIndex < parts.length; partIndex++) {
+                    if (parts[partIndex].length) {
+                        result[result.length - 1].tokens.push(token(parts[partIndex], sourceToken.kind));
+                    }
+                    if (partIndex + 1 < parts.length) {
+                        result.push({ tokens: [], node: line.node });
+                    }
+                }
+            }
             return result;
         }
-        function appendJoinSide(line, side) {
-            var result = copyLine(line);
-            result.tokens.push(token(' [' + side + ']', 'join-side'));
+        function prefixLines(line, prefix, kind, lineSeparator) {
+            var lines = splitPhysicalLines(line, lineSeparator);
+            for (var i = 0; i < lines.length; i++) {
+                lines[i].tokens.unshift(token(prefix, kind));
+            }
+            return lines;
+        }
+        function dropTrailingEmptyLines(lines) {
+            var end = lines.length;
+            while (end > 1 && lines[end - 1].tokens.length === 0) {
+                end--;
+            }
+            return lines.slice(0, end);
+        }
+        function appendJoinSide(lines, side) {
+            var result = lines.slice();
+            if (result.length) {
+                result[0] = copyLine(result[0]);
+                result[0].tokens.push(token(' [' + side + ']', 'join-side'));
+            }
             return result;
         }
-        function formatLines(node, depth, ordered, level, hiddenProperties) {
+        function formatLines(node, depth, ordered, level, lineSeparator, hiddenProperties) {
             var result = [];
             if (node.timedOut) {
                 result.push(textLine('Timed out while retrieving explanation! Explanation may be incomplete!'));
                 result.push(textLine('You can change the timeout by setting .setMaxExecutionTime(...) on your query.'));
                 result.push(textLine(''));
             }
-            result.push(nodeLine(node, level, hiddenProperties));
+            result = result.concat(splitPhysicalLines(nodeLine(node, level, hiddenProperties), lineSeparator));
             var children = displayPlans(node, ordered);
             var hasNestedChild = false;
             for (var childIndex = 0; childIndex < children.length; childIndex++) {
@@ -773,33 +1055,41 @@ var workbench;
                 var horizontal = even ? '══' : '──';
                 var vertical = even ? '║' : '│';
                 var end = even ? '╚' : '└';
-                var leftLines = formatLines(children[0], depth + 1, false, level, hiddenProperties);
-                var rightLines = formatLines(children[1], depth + 1, false, level, hiddenProperties);
+                var leftLines = dropTrailingEmptyLines(formatLines(children[0], depth + 1, false, level, lineSeparator, hiddenProperties));
+                var rightLines = dropTrailingEmptyLines(formatLines(children[1], depth + 1, false, level, lineSeparator, hiddenProperties));
                 if (leftLines.length) {
-                    var firstLeft = prefixLine(leftLines[0], start + horizontal + ' ', 'connector');
-                    result.push(hasJoinSideLabels(node) ? appendJoinSide(firstLeft, 'left') : firstLeft);
+                    var firstLeft = prefixLines(leftLines[0], start + horizontal + ' ', 'connector', lineSeparator);
+                    result.push.apply(result, hasJoinSideLabels(node)
+                        ? appendJoinSide(firstLeft, 'left') : firstLeft);
                     for (var leftIndex = 1; leftIndex < leftLines.length; leftIndex++) {
-                        result.push(prefixLine(leftLines[leftIndex], vertical + '  ', 'connector'));
+                        result.push.apply(result, prefixLines(leftLines[leftIndex], vertical + '  ', 'connector', lineSeparator));
                     }
                 }
                 if (rightLines.length) {
-                    var firstRight = prefixLine(rightLines[0], end + horizontal + ' ', 'connector');
-                    result.push(hasJoinSideLabels(node) ? appendJoinSide(firstRight, 'right') : firstRight);
+                    var firstRight = prefixLines(rightLines[0], end + horizontal + ' ', 'connector', lineSeparator);
+                    result.push.apply(result, hasJoinSideLabels(node)
+                        ? appendJoinSide(firstRight, 'right') : firstRight);
                     for (var rightIndex = 1; rightIndex < rightLines.length; rightIndex++) {
-                        result.push(prefixLine(rightLines[rightIndex], '   ', 'connector'));
+                        result.push.apply(result, prefixLines(rightLines[rightIndex], '   ', 'connector', lineSeparator));
                     }
                 }
             }
             else {
                 for (childIndex = 0; childIndex < children.length; childIndex++) {
                     var child = children[childIndex];
-                    var childLines = formatLines(child, depth + 1, isProjectionElemList(child) && !isMultiProjection(node), level, hiddenProperties);
+                    var childLines = dropTrailingEmptyLines(formatLines(child, depth + 1, isProjectionElemList(child) && !isMultiProjection(node), level, lineSeparator, hiddenProperties));
                     for (var lineIndex = 0; lineIndex < childLines.length; lineIndex++) {
                         var childLine = childLines[lineIndex];
+                        var childPrefixLines;
                         if (startsWithType(node, 'StatementPattern') && startsWithType(child, 'Var')) {
-                            childLine = prefixLine(childLine, (SPOC[childIndex] || '') + ': ', 'variable-label');
+                            childPrefixLines = prefixLines(childLine, (SPOC[childIndex] || '') + ': ', 'variable-label', lineSeparator);
                         }
-                        result.push(prefixLine(childLine, '   ', 'connector'));
+                        else {
+                            childPrefixLines = [childLine];
+                        }
+                        for (var childPrefixIndex = 0; childPrefixIndex < childPrefixLines.length; childPrefixIndex++) {
+                            result.push.apply(result, prefixLines(childPrefixLines[childPrefixIndex], '   ', 'connector', lineSeparator));
+                        }
                     }
                 }
             }
@@ -816,10 +1106,10 @@ var workbench;
             return prefix.charAt(prefix.length - 1) === ':' ? prefix.substring(0, prefix.length - 1) : prefix;
         }
         function namespaceCandidates(namespaces) {
-            var candidatesByPrefix = {};
+            var candidatesByPrefix = Object.create(null);
             var prefix;
             for (prefix in DEFAULT_NAMESPACES) {
-                if (DEFAULT_NAMESPACES.hasOwnProperty(prefix)) {
+                if (Object.prototype.hasOwnProperty.call(DEFAULT_NAMESPACES, prefix)) {
                     candidatesByPrefix[prefix] = {
                         prefix: prefix,
                         namespace: DEFAULT_NAMESPACES[prefix],
@@ -828,7 +1118,7 @@ var workbench;
                 }
             }
             for (prefix in namespaces) {
-                if (namespaces.hasOwnProperty(prefix) && typeof namespaces[prefix] === 'string'
+                if (Object.prototype.hasOwnProperty.call(namespaces, prefix) && typeof namespaces[prefix] === 'string'
                     && namespaces[prefix].length > 0) {
                     var normalized = normalizedPrefix(prefix);
                     candidatesByPrefix[normalized] = {
@@ -840,7 +1130,7 @@ var workbench;
             }
             var result = [];
             for (prefix in candidatesByPrefix) {
-                if (candidatesByPrefix.hasOwnProperty(prefix)) {
+                if (Object.prototype.hasOwnProperty.call(candidatesByPrefix, prefix)) {
                     result.push(candidatesByPrefix[prefix]);
                 }
             }
@@ -890,7 +1180,7 @@ var workbench;
         function format(plan, level, lineSeparator, hiddenProperties) {
             var effectiveLevel = level || 'Optimized';
             var separator = effectiveLineSeparator(lineSeparator);
-            var lines = formatLines(plan || {}, 0, isProjectionElemList(plan || {}), effectiveLevel, hiddenProperties);
+            var lines = formatLines(plan || {}, 0, isProjectionElemList(plan || {}), effectiveLevel, separator, hiddenProperties);
             var text = '';
             for (var i = 0; i < lines.length; i++) {
                 text += lineText(lines[i]) + separator;
@@ -940,18 +1230,28 @@ var workbench;
             return null;
         }
         function finiteNonNegative(value) {
-            return typeof value === 'number' && isFinite(value) && value >= 0;
+            if (typeof value === 'number') {
+                return isFinite(value) && value >= 0;
+            }
+            return nonNegativeLong(value);
         }
         function getHotspot(plan, level) {
             var selected = hotspotMetric(level);
             if (!selected) {
                 return null;
             }
-            var maximum = -1;
+            var maximum = null;
             function visit(node) {
                 var value = node ? node[selected.metric] : null;
-                if (finiteNonNegative(value)) {
-                    maximum = Math.max(maximum, value);
+                if (selected.metric === 'resultSizeActual') {
+                    if (nonNegativeLong(value)
+                        && (maximum === null || compareJsonLong(value, maximum) > 0)) {
+                        maximum = publicLong(signedLongText(value));
+                    }
+                }
+                else if (finiteNonNegative(value)
+                    && (maximum === null || value > maximum)) {
+                    maximum = value;
                 }
                 var children = plans(node || {});
                 for (var i = 0; i < children.length; i++) {
@@ -959,7 +1259,7 @@ var workbench;
                 }
             }
             visit(plan || {});
-            return maximum < 0 ? null : {
+            return maximum === null ? null : {
                 metric: selected.metric,
                 label: selected.label,
                 maximum: maximum
@@ -980,8 +1280,16 @@ var workbench;
             var formatted = format(plan, options.level, separator, options.hiddenProperties);
             var hotspot = options.mode === 'hotspot' ? getHotspot(plan, options.level) : null;
             var localMaximum = hotspot ? hotspot.maximum : 0;
-            var sharedMaximum = finiteNonNegative(options.sharedMaximum)
-                ? Math.max(localMaximum, options.sharedMaximum) : localMaximum;
+            var sharedMaximum = localMaximum;
+            if (hotspot && hotspot.metric === 'resultSizeActual') {
+                if (nonNegativeLong(options.sharedMaximum)
+                    && compareJsonLong(options.sharedMaximum, localMaximum) > 0) {
+                    sharedMaximum = publicLong(signedLongText(options.sharedMaximum));
+                }
+            }
+            else if (finiteNonNegative(options.sharedMaximum)) {
+                sharedMaximum = Math.max(localMaximum, options.sharedMaximum);
+            }
             var fragment = document.createDocumentFragment();
             for (var lineIndex = 0; lineIndex < formatted.lines.length; lineIndex++) {
                 var formattedLine = formatted.lines[lineIndex];
@@ -989,8 +1297,14 @@ var workbench;
                 lineElement.className = 'query-explanation-line';
                 if (hotspot && formattedLine.node) {
                     var value = formattedLine.node[hotspot.metric];
-                    if (finiteNonNegative(value)) {
-                        var intensity = sharedMaximum > 0 ? value / sharedMaximum : 0;
+                    var valueIsValid = hotspot.metric === 'resultSizeActual'
+                        ? nonNegativeLong(value) : finiteNonNegative(value);
+                    if (valueIsValid) {
+                        var valueNumber = hotspot.metric === 'resultSizeActual'
+                            ? jsonLongAsNumber(value) : value;
+                        var sharedNumber = hotspot.metric === 'resultSizeActual'
+                            ? jsonLongAsNumber(sharedMaximum) : sharedMaximum;
+                        var intensity = sharedNumber > 0 ? valueNumber / sharedNumber : 0;
                         lineElement.classList.add('query-explanation-line--hotspot');
                         lineElement.setAttribute('data-heat', intensity.toFixed(3));
                         lineElement.style.backgroundColor = heatColor(intensity);

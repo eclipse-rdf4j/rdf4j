@@ -23,8 +23,11 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.junit.jupiter.api.Test;
 
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 class QueryExplanationHighlightContractTest {
 
@@ -42,7 +45,10 @@ class QueryExplanationHighlightContractTest {
 		for (Path jsonFixture : fixtures) {
 			String fixtureName = jsonFixture.getFileName().toString().replaceFirst("\\.json$", "");
 			String levelName = fixtureName.substring(0, fixtureName.indexOf('-'));
-			GenericPlanNode plan = OBJECT_MAPPER.readValue(Files.readString(jsonFixture), GenericPlanNode.class);
+			GenericPlanNode plan = OBJECT_MAPPER.treeToValue(
+					normalizeTextualFixtureValues(
+						OBJECT_MAPPER.readTree(Files.readString(jsonFixture, StandardCharsets.UTF_8))),
+					GenericPlanNode.class);
 			plan.applyExplanationLevel(Explanation.Level.valueOf(levelName));
 			String expected = Files.readString(FIXTURE_DIRECTORY.resolve(fixtureName + ".txt"),
 					StandardCharsets.UTF_8)
@@ -51,5 +57,29 @@ class QueryExplanationHighlightContractTest {
 
 			assertEquals(expected, plan.toString(), fixtureName);
 		}
+	}
+
+	private static JsonNode normalizeTextualFixtureValues(JsonNode node) {
+		if (node == null || node.isNull() || (node.isValueNode() && !node.isTextual())) {
+			return node;
+		}
+		if (node.isTextual()) {
+			String platformText = node.textValue()
+					.replace("\r\n", "\n")
+					.replace("\n", System.lineSeparator());
+			return OBJECT_MAPPER.getNodeFactory().stringNode(platformText);
+		}
+		if (node.isArray()) {
+			ArrayNode normalized = OBJECT_MAPPER.createArrayNode();
+			for (JsonNode child : node) {
+				normalized.add(normalizeTextualFixtureValues(child));
+			}
+			return normalized;
+		}
+		ObjectNode normalized = OBJECT_MAPPER.createObjectNode();
+		for (String propertyName : node.propertyNames()) {
+			normalized.set(propertyName, normalizeTextualFixtureValues(node.get(propertyName)));
+		}
+		return normalized;
 	}
 }

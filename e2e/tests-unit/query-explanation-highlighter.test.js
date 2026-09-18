@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
+const { createQueryBrowserHarness } = require('./query-browser-harness.js');
 const { createScriptHarness } = require('./script-harness.js');
 
 function createHighlighterHarness() {
@@ -80,6 +81,61 @@ test('matches Java decimal rounding and scientific notation', () => {
         result.text,
         'Join (costEstimate=2.68)\n'
             + '   StatementPattern (costEstimate=1.0E7M)\n'
+    );
+});
+
+test('matches Java saturated rounding for very large doubles', () => {
+    const { highlighter } = createHighlighterHarness();
+    const result = highlighter.format({
+        type: 'Join',
+        costEstimate: 1e30,
+        totalTimeActual: 1e30
+    });
+
+    assert.equal(
+        result.text,
+        'Join (costEstimate=9.223372036854776E17M, totalTimeActual=9.223372036854776E17s)\n'
+    );
+});
+
+test('splits multiline plan details before applying ordinary and binary prefixes', () => {
+    const { highlighter } = createHighlighterHarness();
+    const lineSeparator = '\r\n';
+    const plan = {
+        type: 'Join',
+        algorithm: `hash${lineSeparator}join`,
+        costEstimate: 12.5,
+        plans: [
+            {
+                type: 'StatementPattern',
+                stringMetricsActual: {
+                    indexName: `spoc${lineSeparator}posc`
+                },
+                plans: [
+                    { type: `Var (name=s, value=first${lineSeparator}second)` }
+                ]
+            },
+            {
+                type: `Filter${lineSeparator}${lineSeparator}continued${lineSeparator}`,
+                plans: [
+                    { type: 'StatementPattern', resultSizeEstimate: 2000 }
+                ]
+            }
+        ]
+    };
+
+    assert.equal(
+        highlighter.format(plan, 'Optimized', lineSeparator).text,
+        `Join (hash${lineSeparator}join) (costEstimate=13)${lineSeparator}`
+            + `╠══ StatementPattern (indexName=spoc [left]${lineSeparator}`
+            + `║  posc)${lineSeparator}`
+            + `║     s: Var (name=s, value=first${lineSeparator}`
+            + `║     s: second)${lineSeparator}`
+            + `╚══ Filter [right]${lineSeparator}`
+            + `   ${lineSeparator}`
+            + `   continued${lineSeparator}`
+            + `   ${lineSeparator}`
+            + `      StatementPattern (resultSizeEstimate=2.0K)${lineSeparator}`
     );
 });
 
@@ -172,6 +228,37 @@ test('compacts default and repository IRIs without changing the legacy plaintext
     );
 });
 
+test('compacts namespaces whose prefixes collide with object properties', () => {
+    const { harness, highlighter } = createHighlighterHarness();
+    const namespace = 'http://example.org/';
+
+    for (const [prefix, expectedPrefix] of [
+        ['hasOwnProperty', 'hasOwnProperty'],
+        ['hasOwnProperty:', 'hasOwnProperty'],
+        ['__proto__', '__proto__'],
+        ['__proto__:', '__proto__'],
+        ['constructor', 'constructor'],
+        ['constructor:', 'constructor']
+    ]) {
+        const namespaces = JSON.parse(`{"${prefix}":"${namespace}"}`);
+        const result = highlighter.render({
+            type: 'Var (name=o, value=http://example.org/Thing)'
+        }, {
+            level: 'Optimized',
+            mode: 'syntax',
+            namespaces
+        });
+        const target = harness.document.createElement('pre');
+        target.appendChild(result.fragment);
+
+        assert.equal(
+            target.textContent,
+            `Var (name=o, value=${expectedPrefix}:Thing)\n`,
+            prefix
+        );
+    }
+});
+
 test('selects adaptive hotspot metrics and accepts a shared maximum', () => {
     const { highlighter } = createHighlighterHarness();
     const plan = {
@@ -207,8 +294,67 @@ test('selects adaptive hotspot metrics and accepts a shared maximum', () => {
     assert.equal(result.sharedMaximum, 20);
 });
 
+test('keeps large actual-row values exact for hotspot maxima and shared scales', () => {
+    const { highlighter } = createHighlighterHarness();
+    const plan = {
+        type: 'Join',
+        resultSizeActual: '9007199254799999',
+        plans: [{ type: 'StatementPattern', resultSizeActual: '9007199254799998' }]
+    };
+
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(highlighter.getHotspot(plan, 'Telemetry'))),
+        { metric: 'resultSizeActual', label: 'Actual rows', maximum: '9007199254799999' }
+    );
+
+    const result = highlighter.render(plan, {
+        level: 'Telemetry',
+        mode: 'hotspot',
+        sharedMaximum: '9007199254800001'
+    });
+    assert.equal(result.maximum, '9007199254799999');
+    assert.equal(result.sharedMaximum, '9007199254800001');
+});
+
+test('matches Java long overflow and missing counter defaults in telemetry', () => {
+    const { highlighter } = createHighlighterHarness();
+    const overflowingService = highlighter.format({
+        type: 'Service',
+        longMetricsActual: {
+            remoteRequestCountActual: '9223372036854775807',
+            remoteAskRequestCountActual: '9223372036854775807',
+            remoteSelectRequestCountActual: 1
+        }
+    }, 'Telemetry');
+    assert.equal(
+        overflowingService.text,
+        'Service (remoteRequestCountActual=9.2233720368547E12M, '
+            + 'remoteAskRequestCountActual=9.2233720368547E12M, '
+            + 'remoteSelectRequestCountActual=1)\n'
+    );
+
+    const missingTypedCounter = highlighter.format({
+        type: 'Service',
+        longMetricsActual: { remoteRequestCountActual: 5 }
+    }, 'Telemetry');
+    assert.equal(missingTypedCounter.text,
+        'Service (remoteRequestCountActual=5, remoteRetryCountActual=5)\n');
+});
+
+test('wraps a negative LongMin overflow before formatting it', () => {
+    const { highlighter } = createHighlighterHarness();
+    const result = highlighter.format({
+        type: 'Join',
+        resultSizeActual: '-9223372036854775809'
+    }, 'Telemetry');
+
+    assert.equal(result.text, 'Join (resultSizeActual=9.2233720368547E12M)\n');
+});
+
 test('matches the Java formatter for every shared plan fixture', () => {
     const { highlighter } = createHighlighterHarness();
+    const parserHarness = createQueryBrowserHarness();
+    const parsePlanJson = parserHarness.context.workbench.query.testing.parsePlanJson;
     const fixtureDirectory = path.resolve(
         __dirname,
         '../../tools/workbench/src/test/resources/query-explanation-highlighter'
@@ -220,7 +366,7 @@ test('matches the Java formatter for every shared plan fixture', () => {
     for (const fixtureFile of fixtureFiles) {
         const fixtureName = fixtureFile.replace(/\.json$/, '');
         const level = fixtureName.substring(0, fixtureName.indexOf('-'));
-        const plan = JSON.parse(fs.readFileSync(path.join(fixtureDirectory, fixtureFile), 'utf8'));
+        const plan = parsePlanJson(fs.readFileSync(path.join(fixtureDirectory, fixtureFile), 'utf8'));
         const expected = fs.readFileSync(path.join(fixtureDirectory, fixtureName + '.txt'), 'utf8');
 
         assert.equal(highlighter.format(plan, level).text, expected, fixtureName);

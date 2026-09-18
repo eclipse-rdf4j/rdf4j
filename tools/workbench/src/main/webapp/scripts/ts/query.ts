@@ -2044,7 +2044,10 @@ module workbench {
                 if (result && result.metric !== paneHotspot.metric) {
                     return null;
                 }
-                if (!result || paneHotspot.maximum > result.maximum) {
+                var paneMaximumIsGreater = !result || (paneHotspot.metric === 'resultSizeActual'
+                    ? queryExplanationHighlighter.compareJsonLong(paneHotspot.maximum, result.maximum) > 0
+                    : paneHotspot.maximum > result.maximum);
+                if (paneMaximumIsGreater) {
                     result = {
                         metric: paneHotspot.metric,
                         label: paneHotspot.label,
@@ -2260,7 +2263,8 @@ module workbench {
             renderQueryPageState();
         }
 
-        function renderHighlightedText(paneKey: string, explanation: StableExplanation, sharedMaximum: number) {
+        function renderHighlightedText(paneKey: string, explanation: StableExplanation,
+                                       sharedMaximum: queryExplanationHighlighter.JsonLong) {
             var paneState = getPaneState(paneKey);
             var explanationElement = <HTMLElement>document.getElementById(paneState.explanationId);
             var rendered = queryExplanationHighlighter.render(explanation.plan, {
@@ -2325,7 +2329,7 @@ module workbench {
         }
 
         function renderStableExplanation(paneKey: PaneKey, explanation: StableExplanation,
-                                         sharedMaximum: number) {
+                                         sharedMaximum: queryExplanationHighlighter.JsonLong) {
             if (explanation.requestedFormat === 'text') {
                 if (explanation.view === 'highlightedText' && explanation.plan) {
                     try {
@@ -2493,6 +2497,241 @@ module workbench {
             return 'Explain request failed.';
         }
 
+        interface JsonNumberToken {
+            start: number;
+            end: number;
+            text: string;
+        }
+
+        var LONG_EXPLANATION_FIELDS: { [name: string]: boolean } = Object.create(null);
+        [
+            'resultSizeActual',
+            'hasNextCallCountActual',
+            'hasNextTrueCountActual',
+            'hasNextTimeNanosActual',
+            'nextCallCountActual',
+            'nextTimeNanosActual',
+            'joinRightIteratorsCreatedActual',
+            'joinLeftBindingsConsumedActual',
+            'joinRightBindingsConsumedActual',
+            'sourceRowsScannedActual',
+            'sourceRowsMatchedActual',
+            'sourceRowsFilteredActual'
+        ].forEach(function(name: string): void {
+            LONG_EXPLANATION_FIELDS[name] = true;
+        });
+        var DOUBLE_EXPLANATION_FIELDS: { [name: string]: boolean } = Object.create(null);
+        ['costEstimate', 'resultSizeEstimate', 'totalTimeActual', 'selfTimeActual']
+            .forEach(function(name: string): void {
+                DOUBLE_EXPLANATION_FIELDS[name] = true;
+            });
+
+        function scanJsonNumberTokens(text: string): JsonNumberToken[] {
+            var result: JsonNumberToken[] = [];
+            var inString = false;
+            var escaped = false;
+            for (var i = 0; i < text.length; i++) {
+                var character = text.charAt(i);
+                if (inString) {
+                    if (escaped) {
+                        escaped = false;
+                    } else if (character === '\\') {
+                        escaped = true;
+                    } else if (character === '"') {
+                        inString = false;
+                    }
+                    continue;
+                }
+                if (character === '"') {
+                    inString = true;
+                    continue;
+                }
+                if (character !== '-' && (character < '0' || character > '9')) {
+                    continue;
+                }
+                var start = i;
+                if (character === '-') {
+                    i++;
+                }
+                if (text.charAt(i) === '0') {
+                    i++;
+                } else if (text.charAt(i) >= '1' && text.charAt(i) <= '9') {
+                    while (i < text.length && text.charAt(i) >= '0' && text.charAt(i) <= '9') {
+                        i++;
+                    }
+                } else {
+                    continue;
+                }
+                if (text.charAt(i) === '.') {
+                    i++;
+                    while (i < text.length && text.charAt(i) >= '0' && text.charAt(i) <= '9') {
+                        i++;
+                    }
+                }
+                if (text.charAt(i) === 'e' || text.charAt(i) === 'E') {
+                    i++;
+                    if (text.charAt(i) === '+' || text.charAt(i) === '-') {
+                        i++;
+                    }
+                    while (i < text.length && text.charAt(i) >= '0' && text.charAt(i) <= '9') {
+                        i++;
+                    }
+                }
+                result.push({ start: start, end: i, text: text.substring(start, i) });
+                i--;
+            }
+            return result;
+        }
+
+        function quoteJsonNumberTokens(text: string, tokens: JsonNumberToken[]): string {
+            var quoted = '';
+            var cursor = 0;
+            for (var i = 0; i < tokens.length; i++) {
+                quoted += text.substring(cursor, tokens[i].start);
+                quoted += '"' + tokens[i].text + '"';
+                cursor = tokens[i].end;
+            }
+            quoted += text.substring(cursor);
+            return quoted;
+        }
+
+        var JSON_LONG_MAX_MAGNITUDE = '9223372036854775807';
+        var JSON_LONG_MIN_MAGNITUDE = '9223372036854775808';
+
+        // Keep integral decimal lexemes exact without BigInt: valid Long values are bounded to signed 64-bit
+        // magnitude before allocating expanded decimal text, and out-of-range values fall back to native Number.
+        function jsonLongFromNumberToken(value: string): queryExplanationHighlighter.JsonLong {
+            var match = /^(-?)([0-9]+)(?:\.([0-9]+))?(?:[eE]([+-]?[0-9]+))?$/.exec(value);
+            if (!match) {
+                return Number(value);
+            }
+            var negative = match[1] === '-';
+            var magnitude = (match[2] + (match[3] || '')).replace(/^0+/, '') || '0';
+            if (magnitude === '0') {
+                return 0;
+            }
+            var exponent = match[4] ? Number(match[4]) : 0;
+            if (!isFinite(exponent)) {
+                return Number(value);
+            }
+            var decimalPlaces = match[3] ? match[3].length : 0;
+            var shift = exponent - decimalPlaces;
+            if (shift >= 0) {
+                if (shift > 19 - magnitude.length) {
+                    return Number(value);
+                }
+                magnitude += new Array(shift + 1).join('0');
+            } else {
+                var removedDigits = -shift;
+                if (removedDigits >= magnitude.length
+                    || /[1-9]/.test(magnitude.substring(magnitude.length - removedDigits))) {
+                    return Number(value);
+                }
+                magnitude = magnitude.substring(0, magnitude.length - removedDigits) || '0';
+            }
+            magnitude = magnitude.replace(/^0+/, '') || '0';
+            var maximumMagnitude = negative ? JSON_LONG_MIN_MAGNITUDE : JSON_LONG_MAX_MAGNITUDE;
+            if (magnitude.length > maximumMagnitude.length
+                || (magnitude.length === maximumMagnitude.length && magnitude > maximumMagnitude)) {
+                return Number(value);
+            }
+            var canonical = magnitude === '0' ? '0' : (negative ? '-' + magnitude : magnitude);
+            var safeMagnitude = magnitude.length < 16
+                || (magnitude.length === 16 && magnitude <= '9007199254740991');
+            return safeMagnitude ? Number(canonical) : canonical;
+        }
+
+        function childPlanJsonKind(kind: string, key: string): string {
+            if (kind === 'longMap') {
+                return 'long';
+            }
+            if (kind === 'doubleMap') {
+                return 'double';
+            }
+            if (kind === 'stringMap') {
+                return 'string';
+            }
+            if (kind !== 'node') {
+                return null;
+            }
+            if (LONG_EXPLANATION_FIELDS[key]) {
+                return 'long';
+            }
+            if (DOUBLE_EXPLANATION_FIELDS[key]) {
+                return 'double';
+            }
+            if (key === 'longMetricsActual' || key === 'longMetricsPlanned') {
+                return 'longMap';
+            }
+            if (key === 'doubleMetricsActual' || key === 'doubleMetricsPlanned') {
+                return 'doubleMap';
+            }
+            if (key === 'stringMetricsActual' || key === 'stringMetricsPlanned') {
+                return 'stringMap';
+            }
+            if (key === 'plans') {
+                return 'node';
+            }
+            return null;
+        }
+
+        function setHydratedPlanJsonProperty(target: any, key: string, value: any): void {
+            if (key === '__proto__') {
+                Object.defineProperty(target, key, {
+                    configurable: true,
+                    enumerable: true,
+                    value: value,
+                    writable: true
+                });
+            } else {
+                target[key] = value;
+            }
+        }
+
+        function hydratePlanJsonValue(value: any, originalValue: any, kind?: string): any {
+            if (typeof originalValue === 'number' && typeof value === 'string') {
+                if (kind === 'long') {
+                    return jsonLongFromNumberToken(value);
+                }
+                return Number(value);
+            }
+            if (typeof value === 'string') {
+                if ((kind === 'double' || kind === 'doubleMap')
+                    && (value === 'Infinity' || value === '-Infinity' || value === 'NaN')) {
+                    return Number(value);
+                }
+                return value;
+            }
+            if (Array.isArray(value)) {
+                var originalArray = Array.isArray(originalValue) ? originalValue : [];
+                for (var i = 0; i < value.length; i++) {
+                    value[i] = hydratePlanJsonValue(value[i], originalArray[i], kind);
+                }
+                return value;
+            }
+            if (!value || typeof value !== 'object') {
+                return value;
+            }
+            var originalObject = originalValue && typeof originalValue === 'object' ? originalValue : {};
+            var keys = Object.keys(value);
+            for (var keyIndex = 0; keyIndex < keys.length; keyIndex++) {
+                var key = keys[keyIndex];
+                var childKind = childPlanJsonKind(kind || 'node', key);
+                setHydratedPlanJsonProperty(value, key,
+                    hydratePlanJsonValue(value[key], originalObject[key], childKind));
+            }
+            return value;
+        }
+
+        function parsePlanJson(explanationText: string): any {
+            var parsed = JSON.parse(explanationText);
+            var tokens = scanJsonNumberTokens(explanationText);
+            // Parse two trees: the native tree validates JSON and preserves original string-vs-number types, while
+            // the quoted-number tree preserves unsafe numeric lexemes for context-aware hydration.
+            var tokenized = JSON.parse(quoteJsonNumberTokens(explanationText, tokens));
+            return hydratePlanJsonValue(tokenized, parsed, 'node');
+        }
+
         function serializeExplainFormData(queryValue: string, level: string, format: string, serverRequestId: string): string {
             var serializedForm: any[] = <any[]>$('form[action="query"]').serializeArray();
             var transportFormat = getNormalizedExplainFormat(format) === 'text' ? 'json' : format;
@@ -2576,7 +2815,7 @@ module workbench {
             if (signature.format === 'text' && responseFormat === 'json') {
                 if (explanationText) {
                     try {
-                        var parsedResponse = JSON.parse(explanationText);
+                        var parsedResponse = parsePlanJson(explanationText);
                         if (!parsedResponse || typeof parsedResponse !== 'object'
                                 || Array.isArray(parsedResponse) || typeof parsedResponse.type !== 'string') {
                             throw new Error('JSON explanation does not contain a plan root.');
@@ -3579,6 +3818,7 @@ module workbench {
             isJsonExpandable: isJsonExpandable,
             isPaneReadyCurrent: isPaneReadyCurrent,
             parseNumericJsonValue: parseNumericJsonValue,
+            parsePlanJson: parsePlanJson,
             persistPrimaryQueryEditorValue: persistPrimaryQueryEditorValue,
             persistPrimaryQueryValue: persistPrimaryQueryValue,
             postCancelExplain: postCancelExplain,
