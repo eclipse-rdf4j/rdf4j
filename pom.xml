@@ -92,7 +92,7 @@
 		<jetty.version>12.1.10</jetty.version>
 		<netty.version>4.2.15.Final</netty.version>
 		<opentelemetry.version>1.63.0</opentelemetry.version>
-		<bouncycastle.version>1.84</bouncycastle.version>
+		<bouncycastle.version>1.85</bouncycastle.version>
 		<testcontainers.version>2.0.5</testcontainers.version>
 		<mockito.javaagent>-javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar</mockito.javaagent>
 		<argLine />
