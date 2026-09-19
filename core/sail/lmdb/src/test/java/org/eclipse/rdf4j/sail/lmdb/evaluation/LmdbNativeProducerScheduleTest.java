@@ -27,12 +27,15 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Aggregate;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.AggregateOutput;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.BindAlias;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.BindHook;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Emit;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateAdjKeys;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterCompareId;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterValue;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.LeftGroup;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
@@ -167,6 +170,98 @@ class LmdbNativeProducerScheduleTest {
 		}
 	}
 
+	@ParameterizedTest(name = "compiled={0}")
+	@ValueSource(booleans = { false, true })
+	void scheduledProbeReusesOneBoundCursorAcrossRepeatedContextFilteredRows(boolean compiled) throws Exception {
+		Adjacency source = new Adjacency(new long[] { 10, 20 },
+				new long[][] { { 100, 100, 100, 101 }, { 200, 201 } },
+				new long[][] { { 7, 7, 0, 7 }, { 7, 0 } });
+		long[] domain = { 10, 20, 10, 30, 20, 10 };
+		List<Node> pipeline = List.of(new EnumerateDomain(0, 0),
+				new Probe(0, Operand.col(0), 1, 2, Operand.constant(0), true),
+				new BindAlias(Operand.col(1), 3),
+				new FilterCompareId(true, Operand.col(3), Operand.constant(1)));
+		Kernel ir = new Kernel(4, pipeline, emit(0, 1, 2, 3));
+		assertNotNull(ir.producerSchedules.forNode(ir.pipeline.get(1)), "the probe must use a scheduled projection");
+
+		assertEquals(List.of("[10, 100, 7, 100]", "[10, 100, 7, 100]", "[20, 200, 7, 200]",
+				"[10, 100, 7, 100]", "[10, 100, 7, 100]", "[20, 200, 7, 200]",
+				"[10, 100, 7, 100]", "[10, 100, 7, 100]"),
+				runDomain(ir, new NativeAdjacency[] { source }, new long[] { 7, 101 }, domain, compiled));
+		assertEquals(1, source.boundCursorOpens, "one bound cursor must own this producer site");
+		assertEquals(domain.length, source.boundCursorBinds, "each activation must rebind the site cursor");
+		assertEquals(1, source.boundCursorCloses, "the site cursor must close exactly once with the kernel");
+		assertEquals(0, source.genericFinds, "scheduled probes must not reopen generic run lookups per activation");
+	}
+
+	@ParameterizedTest(name = "compiled={0}")
+	@ValueSource(booleans = { false, true })
+	void rebindingClosesThePreviousProjectionOwnerBeforeUsingNewContextAndLedger(boolean compiled) throws Exception {
+		List<Node> pipeline = List.of(new EnumerateDomain(0, 0),
+				new Probe(0, Operand.col(0), 1, 2, Operand.constant(0), true),
+				new BindAlias(Operand.col(1), 3),
+				new FilterCompareId(true, Operand.col(3), Operand.constant(1)));
+		Kernel ir = new Kernel(4, pipeline, emit(0, 1, 2, 3));
+		assertNotNull(ir.producerSchedules.forNode(ir.pipeline.get(1)));
+		JaninoKernel execution = compiled ? KernelCompilationTestSupport.compile(ir)
+				: LmdbNativeKernelInterpreter.forRows(ir);
+		Adjacency first = new Adjacency(new long[] { 10L }, new long[][] { { 100L } }, new long[][] { { 7L } });
+		Adjacency second = new Adjacency(new long[] { 20L }, new long[][] { { 200L } }, new long[][] { { 9L } });
+		LmdbQueryMemoryManager firstManager = LmdbQueryMemoryManager.createForTesting(1_000_000L, 1_000_000L);
+		LmdbQueryMemoryManager secondManager = LmdbQueryMemoryManager.createForTesting(1_000_000L, 1_000_000L);
+		try (LmdbQueryMemoryManager.QueryLedger firstLedger = firstManager.openQuery();
+				LmdbQueryMemoryManager.QueryLedger secondLedger = secondManager.openQuery()) {
+			execution.bind(new KernelContext(new NativeAdjacency[] { first }, new long[] { 7L, 101L }, new long[0],
+					new long[][] { { 10L } }, new CountingHooks()).withMemoryLedger(firstLedger));
+			assertEquals(List.of("[10, 100, 7, 100]"), fillRows(execution, ir.stride()));
+			assertTrue(firstLedger.usedBytes() > 0L, "the first owner keeps its admission after activation close");
+
+			execution.bind(new KernelContext(new NativeAdjacency[] { second }, new long[] { 9L, 201L }, new long[0],
+					new long[][] { { 20L } }, new CountingHooks()).withMemoryLedger(secondLedger));
+			assertEquals(0L, firstLedger.usedBytes(), "rebind must release the previous ledger reservation");
+			assertEquals(List.of("[20, 200, 9, 200]"), fillRows(execution, ir.stride()));
+			assertTrue(secondLedger.usedBytes() > 0L, "the new owner must charge the new ledger");
+		} finally {
+			execution.close();
+		}
+		assertEquals(1, first.boundCursorCloses, "the previous bound source must close once during rebind");
+		assertEquals(1, second.boundCursorCloses, "the current bound source must close once at kernel close");
+		assertEquals(0L, firstManager.usedBytes());
+		assertEquals(0L, secondManager.usedBytes());
+	}
+
+	@ParameterizedTest(name = "compiled={0}")
+	@ValueSource(booleans = { false, true })
+	void nestedScheduledProbesKeepIndependentBoundCursorOwners(boolean compiled) throws Exception {
+		Adjacency first = new Adjacency(new long[] { 10, 20 }, new long[][] { { 100 }, { 200 } },
+				new long[][] { { 1 }, { 1 } });
+		Adjacency second = new Adjacency(new long[] { 10, 20 }, new long[][] { { 1000 }, { 2000 } },
+				new long[][] { { 2 }, { 2 } });
+		List<Node> firstArm = List.of(new Probe(0, Operand.col(0), 1), new BindAlias(Operand.col(1), 2));
+		List<Node> secondArm = List.of(new Probe(1, Operand.col(0), 3), new BindAlias(Operand.col(3), 4));
+		LeftGroup firstOptional = new LeftGroup(firstArm);
+		LeftGroup secondOptional = new LeftGroup(secondArm);
+		Kernel ir = new Kernel(5,
+				List.of(new EnumerateDomain(0, 0), firstOptional, secondOptional), emit(0, 1, 2, 3, 4));
+		assertNotNull(ir.producerSchedules.get(firstOptional.arm, firstOptional.arm.get(0)),
+				"the first nested probe must use a scheduled projection");
+		assertNotNull(ir.producerSchedules.get(secondOptional.arm, secondOptional.arm.get(0)),
+				"the second nested probe must use a scheduled projection");
+
+		assertEquals(List.of("[10, 100, 100, 1000, 1000]", "[99, -1, -1, -1, -1]",
+				"[20, 200, 200, 2000, 2000]"),
+				runDomain(ir, new NativeAdjacency[] { first, second }, new long[0], new long[] { 10, 99, 20 },
+						compiled));
+		assertEquals(1, first.boundCursorOpens, "the first nested site must own one cursor");
+		assertEquals(3, first.boundCursorBinds);
+		assertEquals(1, first.boundCursorCloses);
+		assertEquals(0, first.genericFinds);
+		assertEquals(1, second.boundCursorOpens, "the second nested site must own a distinct cursor");
+		assertEquals(3, second.boundCursorBinds);
+		assertEquals(1, second.boundCursorCloses);
+		assertEquals(0, second.genericFinds);
+	}
+
 	@Test
 	void vectorTailSelectionPreservesEarlierAndReusableProjectionWork() {
 		String previous = System.getProperty(LmdbNativeKernelIr.VECTOR_TAIL_PROPERTY);
@@ -269,6 +364,37 @@ class LmdbNativeProducerScheduleTest {
 		}
 	}
 
+	private static List<String> runDomain(Kernel ir, NativeAdjacency[] sources, long[] constants, long[] domain,
+			boolean compiled) throws Exception {
+		JaninoKernel execution = compiled ? KernelCompilationTestSupport.compile(ir)
+				: ir.terminal instanceof Aggregate ? LmdbNativeKernelInterpreter.forAggregate(ir)
+						: LmdbNativeKernelInterpreter.forRows(ir);
+		assertNotNull(execution);
+		try {
+			execution.bind(new KernelContext(sources, constants, new long[0], new long[][] { domain },
+					new CountingHooks()));
+			List<String> rows = new ArrayList<>();
+			long[] buffer = new long[ir.stride()];
+			while (execution.fill(buffer, 1) > 0) {
+				rows.add(Arrays.toString(buffer));
+				assertTrue(rows.size() < 100, "cursor did not advance across a single-row pause");
+			}
+			return rows;
+		} finally {
+			execution.close();
+		}
+	}
+
+	private static List<String> fillRows(JaninoKernel execution, int stride) {
+		List<String> rows = new ArrayList<>();
+		long[] buffer = new long[stride];
+		while (execution.fill(buffer, 1) > 0) {
+			rows.add(Arrays.toString(buffer));
+			assertTrue(rows.size() < 100, "cursor did not advance across a single-row pause");
+		}
+		return rows;
+	}
+
 	private static final class CountingHooks implements KernelHooks {
 		int rootCalls;
 		int fiberCalls;
@@ -321,6 +447,10 @@ class LmdbNativeProducerScheduleTest {
 		final long[][] neighbors;
 		final long[][] contexts;
 		final int[] payloadReads;
+		int boundCursorOpens;
+		int boundCursorBinds;
+		int boundCursorCloses;
+		int genericFinds;
 
 		Adjacency(long[] roots, long[][] neighbors, long[][] contexts) {
 			this.roots = roots;
@@ -331,6 +461,11 @@ class LmdbNativeProducerScheduleTest {
 
 		@Override
 		public long find(long key) {
+			genericFinds++;
+			return handleFor(key);
+		}
+
+		private long handleFor(long key) {
 			int index = Arrays.binarySearch(roots, key);
 			return index < 0 ? NOT_FOUND : index + 1L;
 		}
@@ -410,6 +545,53 @@ class LmdbNativeProducerScheduleTest {
 					int count = Math.min(length, contexts[index].length - Math.toIntExact(offset));
 					System.arraycopy(contexts[index], Math.toIntExact(offset), target, targetOffset, count);
 					return count;
+				}
+			};
+		}
+
+		@Override
+		public BoundRunCursor openBoundRunCursor() {
+			boundCursorOpens++;
+			return new BoundRunCursor() {
+				long handle;
+
+				@Override
+				public long bind(long key) {
+					boundCursorBinds++;
+					handle = handleFor(key);
+					return handle > 0L ? size(handle) : handle;
+				}
+
+				@Override
+				public long neighborAt(long offset) {
+					return Adjacency.this.neighborAt(handle, offset);
+				}
+
+				@Override
+				public long contextAt(long offset) {
+					return Adjacency.this.contextAt(handle, offset);
+				}
+
+				@Override
+				public int copyNeighbors(long offset, int length, long[] target, int targetOffset) {
+					int index = Math.toIntExact(handle - 1L);
+					int count = Math.min(length, neighbors[index].length - Math.toIntExact(offset));
+					payloadReads[index] += count;
+					System.arraycopy(neighbors[index], Math.toIntExact(offset), target, targetOffset, count);
+					return count;
+				}
+
+				@Override
+				public int copyContexts(long offset, int length, long[] target, int targetOffset) {
+					int index = Math.toIntExact(handle - 1L);
+					int count = Math.min(length, contexts[index].length - Math.toIntExact(offset));
+					System.arraycopy(contexts[index], Math.toIntExact(offset), target, targetOffset, count);
+					return count;
+				}
+
+				@Override
+				public void close() {
+					boundCursorCloses++;
 				}
 			};
 		}

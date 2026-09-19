@@ -401,6 +401,12 @@ final class LmdbNativeKernelEmitter {
 			}
 		}
 
+		private static boolean reusableProjection(LmdbNativeProducerSchedule schedule) {
+			Node producer = schedule.producer;
+			return producer instanceof Probe || producer instanceof ProbeVariable
+					|| producer instanceof EnumeratePredicates;
+		}
+
 		private static List<FilterValue> projectionProofs(LmdbNativeProducerSchedule schedule) {
 			List<FilterValue> result = new ArrayList<>();
 			IdentityHashMap<FilterValue, Boolean> seen = new IdentityHashMap<>();
@@ -736,10 +742,10 @@ final class LmdbNativeKernelEmitter {
 					|| aggregate.mods.limit >= 0
 					|| aggregate.mods.offset != 0
 					|| kernel.pipeline.size() != 2
-					|| !(kernel.pipeline.get(0) instanceof EnumerateAdjKeys root)
+					|| !(kernel.pipeline.get(0)instanceof EnumerateAdjKeys root)
 					|| root.valueCol >= 0
 					|| root.ctxActive()
-					|| !(kernel.pipeline.get(1) instanceof Exists exists)
+					|| !(kernel.pipeline.get(1)instanceof Exists exists)
 					|| exists.negated) {
 				return null;
 			}
@@ -1137,6 +1143,9 @@ final class LmdbNativeKernelEmitter {
 					.append("    private final KernelWorkCounters workCounters = new KernelWorkCounters();\n");
 			for (ProjectionSite site : projectionSites) {
 				source.append("    private KernelProjectionCursor ppCursor")
+						.append(site.id)
+						.append(";\n")
+						.append("    private KernelProjectionCursor.Owner ppOwner")
 						.append(site.id)
 						.append(";\n")
 						.append("    private KernelProjectionCursor.Program ppProgram")
@@ -1955,6 +1964,8 @@ final class LmdbNativeKernelEmitter {
 						.append(site.id)
 						.append("(); } catch (RuntimeException cleanup) { if (closeFailure == null) closeFailure = cleanup; else closeFailure.addSuppressed(cleanup); }\n")
 						.append("        catch (Error cleanup) { if (closeFailure == null) closeFailure = cleanup; else closeFailure.addSuppressed(cleanup); }\n");
+				emitCloseResource(source, "ppOwner" + site.id);
+				source.append("        ppProgram").append(site.id).append(" = null;\n");
 			}
 			if (kernel.boundedOrder)
 				emitCloseResource(source, "orderedRows");
@@ -3594,6 +3605,8 @@ final class LmdbNativeKernelEmitter {
 			}
 
 			if (kernel.resumable && !booleanMode) {
+				// advance() restores the newly produced event; only a pending event resumed after downstream execution
+				// needs another restore before it is consumed again.
 				body.append(indent)
 						.append("for (;;) {\n")
 						.append(indent)
@@ -3617,11 +3630,13 @@ final class LmdbNativeKernelEmitter {
 						.append(siteId)
 						.append(" = true;\n")
 						.append(indent)
-						.append("    }\n")
+						.append("    } else {\n")
 						.append(indent)
-						.append("    ppCursor")
+						.append("        ppCursor")
 						.append(siteId)
-						.append(".restore();\n");
+						.append(".restore();\n")
+						.append(indent)
+						.append("    }\n");
 				if (continuationMethod != null) {
 					body.append(indent).append("    ").append(continuationMethod).append("();\n");
 				} else {
@@ -3647,11 +3662,7 @@ final class LmdbNativeKernelEmitter {
 			body.append(indent)
 					.append("while (ppCursor")
 					.append(siteId)
-					.append(".advance()) {\n")
-					.append(indent)
-					.append("    ppCursor")
-					.append(siteId)
-					.append(".restore();\n");
+					.append(".advance()) {\n");
 			if (booleanMode) {
 				if (continuationMethod != null) {
 					body.append(indent)
@@ -3710,6 +3721,21 @@ final class LmdbNativeKernelEmitter {
 			}
 			if (schedule.weightedNumeric) {
 				source.append("        if (!hooks.supportsWeightedNumericAggregates()) return null;\n");
+			}
+			boolean reusable = reusableProjection(schedule);
+			if (reusable) {
+				source.append("        if (ppOwner")
+						.append(id)
+						.append(" == null) {\n")
+						.append("            ppOwner")
+						.append(id)
+						.append(" = KernelProjectionCursor.Owner.open(context.groupMemoryLedger(), ")
+						.append(schedule.retainedColumns())
+						.append(");\n")
+						.append("            if (ppOwner")
+						.append(id)
+						.append(" == null) return null;\n")
+						.append("        }\n");
 			}
 			source.append("        if (ppProgram")
 					.append(id)
@@ -3888,13 +3914,23 @@ final class LmdbNativeKernelEmitter {
 			}
 			source.append("            };\n        }\n")
 					.append("        ppCursor")
-					.append(id)
-					.append(" = KernelProjectionCursor.open(")
-					.append(projectionSourceExpression(schedule))
-					.append(", ppProgram")
-					.append(id)
-					.append(", ")
-					.append(schedule.outputMask)
+					.append(id);
+			if (reusable) {
+				source.append(" = ppOwner")
+						.append(id)
+						.append(".activate(")
+						.append(projectionSourceExpression(schedule, id))
+						.append(", ppProgram")
+						.append(id)
+						.append(", ");
+			} else {
+				source.append(" = KernelProjectionCursor.open(")
+						.append(projectionSourceExpression(schedule, id))
+						.append(", ppProgram")
+						.append(id)
+						.append(", ");
+			}
+			source.append(schedule.outputMask)
 					.append(", ")
 					.append(schedule.programMask())
 					.append(", ")
@@ -3905,9 +3941,9 @@ final class LmdbNativeKernelEmitter {
 					.append(schedule.layout.contextMatch() == null ? "-1L" : schedule.layout.contextMatch().token())
 					.append(", ")
 					.append(schedule.layout.excludeDefault())
-					.append(", cancel, context.groupMemoryLedger(), ")
-					.append(schedule.retainedColumns())
-					.append(");\n")
+					.append(reusable ? ", cancel);\n" : ", cancel, context.groupMemoryLedger(), ")
+					.append(reusable ? "" : Integer.toString(schedule.retainedColumns()))
+					.append(reusable ? "" : ");\n")
 					.append("        return ppCursor")
 					.append(id)
 					.append(";\n    }\n\n");
@@ -3980,7 +4016,7 @@ final class LmdbNativeKernelEmitter {
 			}
 		}
 
-		private String projectionSourceExpression(LmdbNativeProducerSchedule schedule) {
+		private String projectionSourceExpression(LmdbNativeProducerSchedule schedule, int siteId) {
 			Node producer = schedule.producer;
 			if (producer instanceof EnumerateAdjKeys keys) {
 				return keys.wildcard
@@ -3992,20 +4028,41 @@ final class LmdbNativeKernelEmitter {
 				return "KernelProjectionCursor.wildcard(wa" + wildcard.view + ")";
 			}
 			if (producer instanceof Probe probe) {
+				if (reusableProjection(schedule)) {
+					return "KernelProjectionCursor.probe(ppOwner" + siteId + ", "
+							+ boundRunCursorExpression(probe) + ", " + probe.key.token() + ")";
+				}
 				return "KernelProjectionCursor.probe(a" + probe.adjacency + ", " + probe.key.token() + ")";
 			}
 			if (producer instanceof ProbeVariable probe) {
-				return "KernelProjectionCursor.dynamic(dy" + probe.view + ", " + probe.key.token() + ", "
-						+ probe.predicate.token() + ")";
+				return reusableProjection(schedule)
+						? "KernelProjectionCursor.dynamic(ppOwner" + siteId + ", dy" + probe.view + ", "
+								+ probe.key.token() + ", " + probe.predicate.token() + ")"
+						: "KernelProjectionCursor.dynamic(dy" + probe.view + ", " + probe.key.token() + ", "
+								+ probe.predicate.token() + ")";
 			}
 			if (producer instanceof EnumeratePredicates predicates) {
-				return predicates.wildcard
-						? "KernelProjectionCursor.predicates(wa" + predicates.view + ", " + predicates.key.token() + ")"
+				if (predicates.wildcard) {
+					return reusableProjection(schedule)
+							? "KernelProjectionCursor.predicates(ppOwner" + siteId + ", wa" + predicates.view + ", "
+									+ predicates.key.token() + ")"
+							: "KernelProjectionCursor.predicates(wa" + predicates.view + ", " + predicates.key.token()
+									+ ")";
+				}
+				return reusableProjection(schedule)
+						? "KernelProjectionCursor.predicates(ppOwner" + siteId + ", np" + predicates.view + ", "
+								+ predicates.key.token() + ")"
 						: "KernelProjectionCursor.predicates(np" + predicates.view + ", " + predicates.key.token()
 								+ ")";
 			}
 			throw new IllegalStateException("scheduled producer has no physical source: "
 					+ producer.getClass().getSimpleName());
+		}
+
+		private String boundRunCursorExpression(Node probe) {
+			String cursor = "ar" + boundRunCursorId(probe);
+			return flatRootExistsShape == null ? cursor
+					: "(flatDecoded ? dr" + boundRunCursorId(probe) + " : " + cursor + ")";
 		}
 
 		private String projectionArgumentMask(LmdbNativeProducerSchedule schedule, Operand argument, int siteId) {
@@ -8578,7 +8635,7 @@ final class LmdbNativeKernelEmitter {
 			LmdbNativeKernelIr.FactorCountGuards spec = kernel.factorCountGuards;
 			for (long rest = region; rest != 0L; rest &= rest - 1L) {
 				int guard = Long.numberOfTrailingZeros(rest);
-				if (spec.guards[guard] instanceof FilterCompareId filter && filter.negated
+				if (spec.guards[guard]instanceof FilterCompareId filter && filter.negated
 						&& Long.bitCount(spec.dependencies[guard]) == 2)
 					return true;
 			}

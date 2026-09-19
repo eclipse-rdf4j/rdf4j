@@ -14,16 +14,18 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
+import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /**
- * Cooperative deadline flag polled from inside generated kernels, the kernel interpreter, and sequential drain loops
- * during a deadline-bounded probe execution. The deadline is an absolute {@link System#nanoTime()} value; once a poll
- * observes expiry (or {@link #cancel()} is called, or the optional {@code extra} supplier — a parallel worker group's
- * cancelled flag — reports true) the state latches and every later poll is a cheap volatile read. Poll sites mask their
- * tick counter so the clock is read at most once per 1024 iterations.
+ * Cooperative cancellation state polled from inside generated kernels, the kernel interpreter, and sequential drain
+ * loops. Deadline-bounded probes use an absolute {@link System#nanoTime()} value; ordinary execution tokens created by
+ * {@link #forOrdinaryExecution(BooleanSupplier, BooleanSupplier, BooleanSupplier)} have no elapsed-time deadline. Once
+ * a poll observes expiry (or {@link #cancel()} is called, or the optional {@code extra} supplier — a parallel worker
+ * group's cancelled flag — reports true) the state latches and every later poll is a cheap volatile read. Generated
+ * poll sites generally mask their tick counter, while physical boundary checks may poll directly.
  */
 @Experimental
 @InternalUseOnly
@@ -38,6 +40,8 @@ public final class KernelCancellation {
 	private final BooleanSupplier extra;
 	private final BooleanSupplier queryCancellation;
 	private final BooleanSupplier peerCancellation;
+	private final LongSupplier clock;
+	private final boolean deadlineEnabled;
 	/** Maximum rows a probe may privately materialize, or {@code -1} outside a bounded probe. */
 	private final int materializationRowLimit;
 	/**
@@ -78,12 +82,45 @@ public final class KernelCancellation {
 	 */
 	public KernelCancellation(long deadlineNanoTime, BooleanSupplier extra, BooleanSupplier queryCancellation,
 			int materializationRowLimit, Runnable capacityNotifier, BooleanSupplier peerCancellation) {
+		this(deadlineNanoTime, extra, queryCancellation, materializationRowLimit, capacityNotifier, peerCancellation,
+				System::nanoTime);
+	}
+
+	KernelCancellation(long deadlineNanoTime, BooleanSupplier extra, BooleanSupplier queryCancellation,
+			int materializationRowLimit, Runnable capacityNotifier, BooleanSupplier peerCancellation,
+			LongSupplier clock) {
+		this(deadlineNanoTime, extra, queryCancellation, materializationRowLimit, capacityNotifier, peerCancellation,
+				clock,
+				true);
+	}
+
+	private KernelCancellation(long deadlineNanoTime, BooleanSupplier extra, BooleanSupplier queryCancellation,
+			int materializationRowLimit, Runnable capacityNotifier, BooleanSupplier peerCancellation,
+			LongSupplier clock,
+			boolean deadlineEnabled) {
 		this.deadlineNanoTime = deadlineNanoTime;
 		this.extra = extra;
 		this.queryCancellation = queryCancellation;
 		this.peerCancellation = peerCancellation;
+		this.clock = clock;
+		this.deadlineEnabled = deadlineEnabled;
 		this.materializationRowLimit = materializationRowLimit;
 		this.capacityNotifier = capacityNotifier;
+	}
+
+	/**
+	 * Creates the cancellation token used by ordinary execution when no probe deadline is scoped. It retains the same
+	 * supplier ordering and terminal latching behavior as a deadline-bounded token without polling elapsed time.
+	 */
+	@InternalUseOnly
+	public static KernelCancellation forOrdinaryExecution(BooleanSupplier extra,
+			BooleanSupplier queryCancellation, BooleanSupplier peerCancellation) {
+		return forOrdinaryExecution(extra, queryCancellation, peerCancellation, System::nanoTime);
+	}
+
+	static KernelCancellation forOrdinaryExecution(BooleanSupplier extra, BooleanSupplier queryCancellation,
+			BooleanSupplier peerCancellation, LongSupplier clock) {
+		return new KernelCancellation(0L, extra, queryCancellation, -1, null, peerCancellation, clock, false);
 	}
 
 	public boolean cancelled() {
@@ -103,7 +140,8 @@ public final class KernelCancellation {
 		if (queryCancellation != null && queryCancellation.getAsBoolean()) {
 			return latch(QUERY_CANCELLED);
 		}
-		if (System.nanoTime() - deadlineNanoTime >= 0L || (extra != null && extra.getAsBoolean())) {
+		if ((deadlineEnabled && clock.getAsLong() - deadlineNanoTime >= 0L)
+				|| (extra != null && extra.getAsBoolean())) {
 			return latch(PROBE_CANCELLED);
 		}
 		if (peerCancellation != null && peerCancellation.getAsBoolean()) {

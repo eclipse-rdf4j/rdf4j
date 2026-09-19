@@ -108,8 +108,26 @@ final class LmdbNativeParallelKernelAggregate {
 	private static final String VALUE_FILTER_EVALUATIONS_METRIC = "nativeIrParallelValueFilterEvaluationsActual";
 	private static final String WORKER_COUNTERS_METRIC = "nativeIrParallelWorkerCountersActual";
 	private static final String DECLINE_REASON_METRIC = "nativeIrParallelDeclineReasonActual";
+	private static final int DISTINCT_EXPECTED_FLOOR = 16;
 
 	private LmdbNativeParallelKernelAggregate() {
+	}
+
+	/**
+	 * Computes the initial DISTINCT set estimate for one parallel partition. The planner estimate is query-wide, so an
+	 * ungrouped worker starts with its proportional share; skewed partitions remain exact because the ordinary set
+	 * growth path is unchanged. Grouped aggregates retain the original estimate because each group owns an independent
+	 * set. The calculation deliberately uses floating-point division instead of multiplying the two integer inputs,
+	 * which keeps large partition counts overflow-safe.
+	 */
+	static int partitionDistinctExpected(int originalExpected, boolean grouped, long segmentUnits, long totalUnits) {
+		if (grouped || originalExpected <= DISTINCT_EXPECTED_FLOOR || segmentUnits <= 0L || totalUnits <= 0L
+				|| segmentUnits >= totalUnits) {
+			return originalExpected;
+		}
+		long scaled = (long) Math.ceil((double) originalExpected * (double) segmentUnits / (double) totalUnits);
+		long bounded = Math.max(DISTINCT_EXPECTED_FLOOR, Math.min((long) originalExpected, scaled));
+		return (int) bounded;
 	}
 
 	static boolean enabled() {
@@ -806,6 +824,8 @@ final class LmdbNativeParallelKernelAggregate {
 		ConcurrentLinkedQueue<LmdbRootScanPartition> scanQueue = rootScan >= 0
 				? new ConcurrentLinkedQueue<>(Arrays.asList(scanPartitions))
 				: null;
+		long totalPartitionUnits = rootScan >= 0 ? scanPartitions.length
+				: partitionPlan == null ? rootKeys : partitionPlan.unitCount();
 		long[][] initialRanges = new long[threads][];
 		LmdbRootScanPartition[] initialScanPartitions = new LmdbRootScanPartition[threads];
 		for (int worker = 0; worker < threads; worker++) {
@@ -858,7 +878,7 @@ final class LmdbNativeParallelKernelAggregate {
 							telemetry.workerReady(worker);
 							return telemetry.runActive(worker, () -> runWorker(lowered, workerAggregate, rootAdjacency,
 									rootDomain, rootWildcard, rootNodeDomainIntersection, rootScan, partitionPlan,
-									domains, source,
+									totalPartitionUnits, domains, source,
 									emitter, initialRanges[worker], initialScanPartitions[worker], ranges, scanQueue,
 									kernelFactory, failure, peerStop, worker, telemetry, row.memoryScope, memory));
 						} catch (Throwable t) {
@@ -1178,7 +1198,7 @@ final class LmdbNativeParallelKernelAggregate {
 			Aggregate aggregate, int rootAdjacency,
 			int rootDomain, int rootWildcard, int rootNodeDomainIntersection, int rootScan,
 			LmdbNativeKernelPartitions.PartitionPlan partitionPlan,
-			LmdbNativeKernelBindings.BoundDomains domains,
+			long totalPartitionUnits, LmdbNativeKernelBindings.BoundDomains domains,
 			NativeLmdbQuerySource source, NativeGroupIteration emitter,
 			long[] initialRange, LmdbRootScanPartition initialScanPartition,
 			Queue<long[]> ranges, Queue<LmdbRootScanPartition> scanQueue, Supplier<JaninoKernel> kernelFactory,
@@ -1281,6 +1301,10 @@ final class LmdbNativeParallelKernelAggregate {
 					}
 					LmdbNativeKernelHooks hooks = null;
 					try {
+						long segmentUnits = rootScan >= 0 ? 1L
+								: segment == null ? range[1] - range[0] : segment.to() - segment.from();
+						int segmentDistinctExpected = partitionDistinctExpected(bindings.distinctExpected,
+								aggregate.groupCols.length > 0, segmentUnits, totalPartitionUnits);
 						// Hooks stay per segment: the numeric and distinct sidecars are indexed by the kernel
 						// instance's
 						// group ordinals, which restart at zero for every window; only the forked filter array is per
@@ -1293,7 +1317,7 @@ final class LmdbNativeParallelKernelAggregate {
 						hooks = bindings.needsHooks() || workerNeedsHooks
 								? new LmdbNativeKernelHooks(workerRow, bindings,
 										forkedHooks != null ? forkedHooks : bindings.filterHooks,
-										forkedBinds != null ? forkedBinds : bindings.bindHooks)
+										forkedBinds != null ? forkedBinds : bindings.bindHooks, segmentDistinctExpected)
 								: null;
 						if (hooks != null) {
 							// Worker-side MIN/MAX winners must order under the consumer's strict/extended mode too.

@@ -25,7 +25,11 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class KernelAdjacencyCursorTest {
 
@@ -240,6 +244,102 @@ class KernelAdjacencyCursorTest {
 		assertTrue(adjacency.maxFiberBatch <= 256);
 	}
 
+	@ParameterizedTest(name = "path={0}")
+	@ValueSource(strings = { "single", "resolved", "bound" })
+	void singletonRunUsesScalarFiberAccessWithoutBatchCopy(String path) {
+		RunFixture adjacency = new RunFixture(List.of(
+				new Run(41L, new long[] { 401L }, new long[] { 17L })));
+		try (RunCursorHandle handle = openRunHandle(adjacency, 41L, path)) {
+			KernelAdjacencyCursor cursor = handle.cursor();
+			assertTrue(cursor.advanceRoot());
+			assertEquals(41L, cursor.rootId());
+			assertEquals(1L, cursor.rootQuadCount());
+			assertEquals(-1L, cursor.rootFiberCount());
+			assertTrue(cursor.advanceFiber());
+			assertEquals(401L, cursor.neighborId());
+			assertEquals(1L, cursor.contextMultiplicity());
+			assertTrue(cursor.advanceContext());
+			assertEquals(17L, cursor.contextId());
+			assertFalse(cursor.advanceContext());
+			assertFalse(cursor.advanceFiber());
+			assertFalse(cursor.advanceRoot());
+		}
+		assertEquals(1, adjacency.neighborAtCalls,
+				"a singleton run should read its one neighbor directly");
+		assertEquals(0, adjacency.neighborCopyCalls,
+				"a singleton run should not populate the neighbor batch");
+		assertEquals(List.of(), adjacency.neighborCopyLengths);
+	}
+
+	@ParameterizedTest(name = "path={0}")
+	@ValueSource(strings = { "single", "resolved", "bound" })
+	void twoQuadSameNeighborRunRetainsBulkFiberMultiplicity(String path) {
+		RunFixture adjacency = new RunFixture(List.of(
+				new Run(42L, new long[] { 402L, 402L }, new long[] { 18L, 19L })));
+		try (RunCursorHandle handle = openRunHandle(adjacency, 42L, path)) {
+			KernelAdjacencyCursor cursor = handle.cursor();
+			assertTrue(cursor.advanceRoot());
+			assertTrue(cursor.advanceFiber());
+			assertEquals(402L, cursor.neighborId());
+			assertEquals(2L, cursor.contextMultiplicity());
+			assertTrue(cursor.advanceContext());
+			assertEquals(18L, cursor.contextId());
+			assertTrue(cursor.advanceContext());
+			assertEquals(19L, cursor.contextId());
+			assertFalse(cursor.advanceContext());
+			assertFalse(cursor.advanceFiber());
+		}
+		assertEquals(1, adjacency.neighborCopyCalls,
+				"a multi-quad fiber should continue through the bulk copy path");
+		assertEquals(List.of(2), adjacency.neighborCopyLengths);
+	}
+
+	@ParameterizedTest(name = "path={0}")
+	@ValueSource(strings = { "single", "resolved", "bound" })
+	void singletonRunChecksCancellationBeforeReadingPayload(String path) {
+		RunFixture adjacency = new RunFixture(List.of(
+				new Run(43L, new long[] { 403L }, new long[] { 20L })));
+		KernelCancellation cancellation = new KernelCancellation(System.nanoTime() + 3_600_000_000_000L);
+		try (RunCursorHandle handle = openRunHandle(adjacency, 43L, path, cancellation)) {
+			KernelAdjacencyCursor cursor = handle.cursor();
+			assertTrue(cursor.advanceRoot());
+			cancellation.cancel();
+			assertThrows(KernelCancelledException.class, cursor::advanceFiber);
+		}
+		assertEquals(0, adjacency.neighborAtCalls);
+		assertEquals(0, adjacency.neighborCopyCalls);
+	}
+
+	@ParameterizedTest(name = "path={0}")
+	@ValueSource(strings = { "single", "resolved", "bound" })
+	void runFiberCopyRetainsFirstShortFiberBeforeBatchCrossingFiber(String path) {
+		long[] neighbors = new long[302];
+		long[] contexts = new long[302];
+		neighbors[0] = 501L;
+		Arrays.fill(neighbors, 1, neighbors.length - 1, 502L);
+		neighbors[neighbors.length - 1] = 503L;
+		RunFixture adjacency = new RunFixture(List.of(new Run(44L, neighbors, contexts)));
+		try (RunCursorHandle handle = openRunHandle(adjacency, 44L, path)) {
+			KernelAdjacencyCursor cursor = handle.cursor();
+			assertTrue(cursor.advanceRoot());
+			assertEquals(44L, cursor.rootId());
+			assertEquals(302L, cursor.rootQuadCount());
+			assertTrue(cursor.advanceFiber());
+			assertEquals(501L, cursor.neighborId());
+			assertEquals(1L, cursor.contextMultiplicity());
+			assertTrue(cursor.advanceFiber());
+			assertEquals(502L, cursor.neighborId());
+			assertEquals(300L, cursor.contextMultiplicity());
+			assertTrue(cursor.advanceFiber());
+			assertEquals(503L, cursor.neighborId());
+			assertEquals(1L, cursor.contextMultiplicity());
+			assertFalse(cursor.advanceFiber());
+		}
+		assertEquals(2, adjacency.neighborCopyCalls);
+		assertEquals(List.of(256, 1), adjacency.neighborCopyLengths);
+		assertEquals(List.of(256, 1), adjacency.neighborCopyCounts);
+	}
+
 	@Test
 	void cancellationIsCheckedBeforeTheNextPhysicalAdvance() {
 		PageFixture pages = new PageFixture(List.of(Page.accepted(1L, new long[] { 2L }, new long[] { 3L })));
@@ -377,6 +477,88 @@ class KernelAdjacencyCursorTest {
 		assertEquals(0, view.sourceCloses);
 		assertEquals(1, view.neighborCopyCalls);
 		assertEquals(2, view.contextCopyCalls);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 2, 256, 257 })
+	void resolvedRunUsesOnlyItsBoundedPayloadBudgetAndReleasesIt(int runLength) {
+		long[] neighbors = new long[runLength];
+		long[] contexts = new long[runLength];
+		for (int i = 0; i < runLength; i++) {
+			neighbors[i] = 500L + i;
+			contexts[i] = 600L + i;
+		}
+		RunFixture view = new RunFixture(List.of(new Run(41L, neighbors, contexts)));
+		// The cursor owns six primitive payload lanes. Each lane is bounded by the exact run length, up to one scan
+		// batch.
+		long boundedPayloadBytes = 6L * Math.min(runLength, 256) * Long.BYTES;
+		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(boundedPayloadBytes,
+				boundedPayloadBytes);
+
+		try (LmdbQueryMemoryManager.QueryLedger ledger = manager.openQuery()) {
+			KernelAdjacencyCursor cursor = KernelAdjacencyCursor.openRun(view, 41L, 1L, null, ledger);
+			assertNotNull(cursor, "an exact run must fit its bounded payload budget");
+			try (cursor) {
+				assertTrue(cursor.advanceRoot());
+				assertEquals(runLength, cursor.rootQuadCount());
+				long fibers = 0L;
+				while (cursor.advanceFiber()) {
+					assertEquals(500L + fibers, cursor.neighborId());
+					assertEquals(1L, cursor.contextMultiplicity());
+					assertTrue(cursor.advanceContext());
+					assertEquals(600L + fibers, cursor.contextId());
+					assertFalse(cursor.advanceContext());
+					fibers++;
+				}
+				assertEquals(runLength, fibers);
+				assertFalse(cursor.advanceRoot());
+			}
+			assertEquals(0L, ledger.usedBytes(), "closing the exact-run cursor must release its claim");
+		}
+		assertEquals(0, view.sourceCloses, "the resolved RunView remains owned by its caller");
+	}
+
+	@Test
+	void resolvedEmptyRunNeedsNoPayloadClaimAndEmitsNoFiber() {
+		RunFixture view = new RunFixture(List.of(new Run(41L, new long[0], new long[0])));
+		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(1L, 1L);
+
+		try (LmdbQueryMemoryManager.QueryLedger ledger = manager.openQuery()) {
+			KernelAdjacencyCursor cursor = KernelAdjacencyCursor.openRun(view, 41L, 1L, null, ledger);
+			assertNotNull(cursor);
+			try (cursor) {
+				assertTrue(cursor.advanceRoot());
+				assertEquals(0L, cursor.rootQuadCount());
+				assertFalse(cursor.advanceFiber());
+				assertEquals(0L, cursor.rootFiberCount());
+				assertFalse(cursor.advanceRoot());
+			}
+			assertEquals(0L, ledger.usedBytes());
+		}
+		assertEquals(0, view.sourceCloses);
+	}
+
+	@Test
+	void resolvedRunRejectsNegativeSizeBeforeOpeningCursor() {
+		RunView negative = new RunView() {
+			@Override
+			public long size(long runHandle) {
+				return -1L;
+			}
+
+			@Override
+			public long neighborAt(long runHandle, long runOffset) {
+				return 0L;
+			}
+
+			@Override
+			public long contextAt(long runHandle, long runOffset) {
+				return 0L;
+			}
+		};
+
+		assertThrows(IllegalStateException.class,
+				() -> KernelAdjacencyCursor.openRun(negative, 41L, 1L, null, null));
 	}
 
 	private record Page(long root, long[] neighbors, long[] contexts, boolean common, long commonContext,
@@ -827,13 +1009,63 @@ class KernelAdjacencyCursorTest {
 	private record Run(long key, long[] neighbors, long[] contexts) {
 	}
 
+	private static RunCursorHandle openRunHandle(RunFixture view, long root, String path) {
+		return openRunHandle(view, root, path, null);
+	}
+
+	private static RunCursorHandle openRunHandle(RunFixture view, long root, String path,
+			KernelCancellation cancellation) {
+		if ("single".equals(path)) {
+			return new RunCursorHandle(KernelAdjacencyCursor.openRun(view, root, 1L, cancellation, null), null, null);
+		}
+		KernelAdjacencyCursor.ReusableRunOwner owner = new KernelAdjacencyCursor.ReusableRunOwner();
+		if ("resolved".equals(path)) {
+			return new RunCursorHandle(owner.activateResolved(view, root, 1L, view.size(1L), cancellation), owner,
+					null);
+		}
+		if ("bound".equals(path)) {
+			BoundRunCursor bound = view.openBoundRunCursor();
+			long runSize = bound.bind(root);
+			return new RunCursorHandle(owner.activateBound(bound, root, runSize, cancellation), owner, bound);
+		}
+		owner.close();
+		throw new IllegalArgumentException("unknown run path: " + path);
+	}
+
+	private record RunCursorHandle(KernelAdjacencyCursor cursor, KernelAdjacencyCursor.ReusableRunOwner owner,
+			BoundRunCursor bound) implements AutoCloseable {
+		@Override
+		public void close() {
+			if (owner == null) {
+				cursor.close();
+				return;
+			}
+			try {
+				owner.release(cursor);
+			} finally {
+				try {
+					owner.close();
+				} finally {
+					if (bound != null) {
+						bound.close();
+					}
+				}
+			}
+		}
+	}
+
 	private static final class RunFixture implements NativeAdjacency {
 		private final List<Run> runs;
 		private int maxFiberBatch;
+		private int fiberCopyCalls;
+		private final List<Integer> fiberCopyLengths = new java.util.ArrayList<>();
 		private int keyCursorOpens;
 		private int sourceCloses;
 		private int neighborCopyCalls;
+		private final List<Integer> neighborCopyLengths = new java.util.ArrayList<>();
+		private final List<Integer> neighborCopyCounts = new java.util.ArrayList<>();
 		private int contextCopyCalls;
+		private int neighborAtCalls;
 
 		RunFixture(List<Run> runs) {
 			this.runs = runs;
@@ -851,6 +1083,7 @@ class KernelAdjacencyCursorTest {
 
 		@Override
 		public long neighborAt(long runHandle, long runOffset) {
+			neighborAtCalls++;
 			return run(runHandle).neighbors()[(int) runOffset];
 		}
 
@@ -862,9 +1095,11 @@ class KernelAdjacencyCursorTest {
 		@Override
 		public int copyNeighbors(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
 			neighborCopyCalls++;
+			neighborCopyLengths.add(length);
 			Run run = run(runHandle);
 			int from = Math.toIntExact(runOffset);
 			int copied = Math.min(length, run.neighbors().length - from);
+			neighborCopyCounts.add(copied);
 			System.arraycopy(run.neighbors(), from, target, targetOffset, copied);
 			return copied;
 		}
@@ -882,6 +1117,39 @@ class KernelAdjacencyCursorTest {
 		@Override
 		public void close() {
 			sourceCloses++;
+		}
+
+		@Override
+		public BoundRunCursor openBoundRunCursor() {
+			return new BoundRunCursor() {
+				private long handle;
+
+				@Override
+				public long bind(long key) {
+					handle = handleFor(key);
+					return handle > 0L ? size(handle) : handle;
+				}
+
+				@Override
+				public long neighborAt(long offset) {
+					return RunFixture.this.neighborAt(handle, offset);
+				}
+
+				@Override
+				public long contextAt(long offset) {
+					return RunFixture.this.contextAt(handle, offset);
+				}
+
+				@Override
+				public int copyNeighbors(long offset, int length, long[] target, int targetOffset) {
+					return RunFixture.this.copyNeighbors(handle, offset, length, target, targetOffset);
+				}
+
+				@Override
+				public int copyContexts(long offset, int length, long[] target, int targetOffset) {
+					return RunFixture.this.copyContexts(handle, offset, length, target, targetOffset);
+				}
+			};
 		}
 
 		@Override
@@ -941,6 +1209,8 @@ class KernelAdjacencyCursorTest {
 				@Override
 				public int copyFibers(long runOffset, int length, long[] neighborTarget, int neighborOffset,
 						long[] multiplicityTarget, int multiplicityOffset) {
+					fiberCopyCalls++;
+					fiberCopyLengths.add(length);
 					maxFiberBatch = Math.max(maxFiberBatch, length);
 					List<Fiber> fibers = fibersOf(current().neighbors());
 					int from = (int) runOffset;
@@ -962,6 +1232,15 @@ class KernelAdjacencyCursorTest {
 
 		private Run run(long handle) {
 			return runs.get(Math.toIntExact(handle - 1L));
+		}
+
+		private long handleFor(long key) {
+			for (int i = 0; i < runs.size(); i++) {
+				if (runs.get(i).key() == key) {
+					return i + 1L;
+				}
+			}
+			return NOT_FOUND;
 		}
 	}
 }

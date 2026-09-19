@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -79,6 +80,7 @@ public class LmdbNativeKernelScanPartitionTest {
 
 	private static final String[] PROPERTIES = {
 			LmdbNativeJaninoCodegen.ENABLED_PROPERTY,
+			LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY,
 			"rdf4j.lmdb.nativeQueryEngine.enabled",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
 			"rdf4j.lmdb.janinoCodegen.wildcardPredicates",
@@ -107,6 +109,7 @@ public class LmdbNativeKernelScanPartitionTest {
 			previousProperties.put(property, System.getProperty(property));
 		}
 		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
+		System.setProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, "true");
 		System.setProperty("rdf4j.lmdb.parallel.startupWork", "1.0E15");
 		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
 		System.setProperty("rdf4j.lmdb.orderedFactorizedRows.enabled", "false");
@@ -193,14 +196,13 @@ public class LmdbNativeKernelScanPartitionTest {
 		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
 		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
 
+		assertEquals(expected, rows("SELECT (COUNT(?o) AS ?c) WHERE { ?s ?p ?o }"),
+				"automatic route must preserve aggregate results");
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
-		for (int round = 0; round < 200
-				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertEquals(expected, rows("SELECT (COUNT(?o) AS ?c) WHERE { ?s ?p ?o }"), "parity on round " + round);
-		}
+		assertEquals(expected, rows("SELECT (COUNT(?o) AS ?c) WHERE { ?s ?p ?o }", "irAggregateParallel"));
 		assertTrue(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() > parallelBefore,
 				"a scan-rooted aggregate must range-partition its root rather than decline to a single thread");
-		assertEquals(expected, rows("SELECT (COUNT(?o) AS ?c) WHERE { ?s ?p ?o }"));
+		assertEquals(expected, rows("SELECT (COUNT(?o) AS ?c) WHERE { ?s ?p ?o }", "irAggregateParallel"));
 		String telemetry = explanation("SELECT (COUNT(?o) AS ?c) WHERE { ?s ?p ?o }");
 		assertTrue(telemetry.contains("irAggregateParallelInterpreted="), telemetry);
 		assertTrue(telemetry.contains("irAggregateWildcardInterpreted="), telemetry);
@@ -220,11 +222,9 @@ public class LmdbNativeKernelScanPartitionTest {
 		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
 		System.setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
 
+		assertEquals(sorted(expected), sorted(rows(ROWS_SCAN_JOIN)), "automatic route must preserve row results");
 		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
-		for (int round = 0; round < 200
-				&& LmdbNativeParallelKernelRows.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertEquals(sorted(rows(ROWS_SCAN_JOIN)), sorted(expected), "parity on round " + round);
-		}
+		assertEquals(sorted(rows(ROWS_SCAN_JOIN, "irKernelParallel")), sorted(expected));
 		assertTrue(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get() > parallelBefore,
 				() -> "a scan-rooted row kernel must range-partition its root rather than decline to a single thread"
 						+ " (planned=" + LmdbNativeKernelExecution.PLANNED.get() + ", opened="
@@ -232,7 +232,7 @@ public class LmdbNativeKernelScanPartitionTest {
 						+ LmdbNativeKernelExecution.DECLINED.get() + ", compilations="
 						+ LmdbNativeJaninoCodegen.COMPILATIONS.get() + ", compileFailures="
 						+ LmdbNativeJaninoCodegen.COMPILE_FAILURES.get() + ")\n" + explanation(ROWS_SCAN_JOIN));
-		assertEquals(sorted(rows(ROWS_SCAN_JOIN)), sorted(expected));
+		assertEquals(sorted(rows(ROWS_SCAN_JOIN, "irKernelParallel")), sorted(expected));
 		String telemetry = explanation(ROWS_SCAN_JOIN);
 		assertTrue(telemetry.contains("irKernelParallelInterpreted="), telemetry);
 		assertTrue(telemetry.contains("irKernelWildcardInterpreted="), telemetry);
@@ -245,9 +245,17 @@ public class LmdbNativeKernelScanPartitionTest {
 	}
 
 	private List<String> rows(String query) {
+		return rows(query, null);
+	}
+
+	private List<String> rows(String query, String forcedStrategy) {
 		List<String> rendered = new ArrayList<>();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			try (var result = conn.prepareTupleQuery(query).evaluate()) {
+			SailTupleQuery preparedQuery = (SailTupleQuery) conn.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			try (var result = preparedQuery.evaluate()) {
 				while (result.hasNext()) {
 					var bindings = result.next();
 					List<String> parts = new ArrayList<>();

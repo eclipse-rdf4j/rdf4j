@@ -121,6 +121,17 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings,
 			LmdbNativeKernelBindings.FilterHook[] filterHooks,
 			LmdbNativeKernelBindings.BindHook[] bindHooks) {
+		this(liveRow, bindings, filterHooks, bindHooks, bindings.distinctExpected);
+	}
+
+	/**
+	 * Worker variant with an explicit initial DISTINCT capacity. Parallel partitions use a local estimate for ungrouped
+	 * DISTINCT channels while retaining the binding's original estimate for grouped channels and all non-partitioned
+	 * callers.
+	 */
+	LmdbNativeKernelHooks(RowState liveRow, LmdbNativeKernelBindings bindings,
+			LmdbNativeKernelBindings.FilterHook[] filterHooks,
+			LmdbNativeKernelBindings.BindHook[] bindHooks, int distinctExpected) {
 		this.source = liveRow.source;
 		this.memory = new HookMemory(liveRow.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
 		try {
@@ -130,7 +141,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			this.scratchWritePrevious = new long[8];
 			this.scratch = new RowState(liveRow.source, liveRow.layout, liveRow.base, liveRow.exactValuesMetrics,
 					liveRow.cancellation);
-			this.keyHooks = scratch.keyAuthority() instanceof NativeGeneratedKeyAuthority generated
+			this.keyHooks = scratch.keyAuthority()instanceof NativeGeneratedKeyAuthority generated
 					? new NativeGeneratedKeyHooks(this, generated)
 					: this;
 			this.scratch.inheritDecodedInputAccounting(liveRow);
@@ -166,7 +177,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			this.numericCounts = new long[aggregateCount][];
 			this.numericErrors = new boolean[aggregateCount][];
 			this.distinctSets = new KernelRuntime.LongHashSet[aggregateCount][];
-			this.distinctExpected = bindings.distinctExpected;
+			this.distinctExpected = distinctExpected;
 			boolean hasNumericAggregate = false;
 			for (int i = 0; i < aggregateCount; i++) {
 				AggregateSpec spec = bindings.groupLayout.outs[i].spec;

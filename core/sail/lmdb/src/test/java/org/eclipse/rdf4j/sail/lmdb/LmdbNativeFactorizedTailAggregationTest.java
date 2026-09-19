@@ -258,8 +258,9 @@ public class LmdbNativeFactorizedTailAggregationTest {
 		// depth — it must attach to its branch and filter candidate quads there instead of
 		// disqualifying the whole factorization (a single filter just reorders into the prefix)
 		String query = star("(COUNT(?s) AS ?c)", "  FILTER(?a != ex:a9)\n  FILTER(?b != ex:b1)\n");
-		assertSameAsGeneric(query);
-		assertThat(strategy(query))
+		// Pin both executions to the eligibility under test; adaptive ranking is covered separately.
+		assertSameAsGeneric(query, "factorizedTail");
+		assertThat(strategy(query, "factorizedTail"))
 				.as("a branch-local filter should attach to its branch instead of disqualifying the tail")
 				.startsWith("factorizedTail");
 	}
@@ -423,8 +424,8 @@ public class LmdbNativeFactorizedTailAggregationTest {
 				+ "  ?s ex:p1 ?a .\n"
 				+ "  ?s ex:pn ?n .\n"
 				+ "}";
-		assertSameAsGeneric(query);
-		assertThat(strategy(query))
+		assertSameAsGeneric(query, "factorizedTail");
+		assertThat(strategy(query, "factorizedTail"))
 				.as("value-typed aggregates over branch slots should ride the factorized tail")
 				.startsWith("factorizedTail");
 	}
@@ -439,8 +440,8 @@ public class LmdbNativeFactorizedTailAggregationTest {
 				+ "  ?s ex:p1 ?a .\n"
 				+ "  ?s ex:p2 ?b .\n"
 				+ "} GROUP BY ?s";
-		assertSameAsGeneric(query);
-		assertThat(strategy(query))
+		assertSameAsGeneric(query, "factorizedTail");
+		assertThat(strategy(query, "factorizedTail"))
 				.as("prefix-slot value aggregates should use the serial chunk prefix and factorized counting branches")
 				.startsWith("factorizedTail(prefix=chunkPipeline,");
 	}
@@ -492,8 +493,8 @@ public class LmdbNativeFactorizedTailAggregationTest {
 				+ "  ?s ex:p1 ?a .\n"
 				+ "  ?s ex:p2 ?b .\n"
 				+ "} GROUP BY ?s";
-		assertSameAsGeneric(query);
-		assertThat(strategy(query))
+		assertSameAsGeneric(query, "factorizedTail");
+		assertThat(strategy(query, "factorizedTail"))
 				.as("exact prefix-slot AVG should use the serial chunk prefix and factorized counting branches")
 				.startsWith("factorizedTail(prefix=chunkPipeline,");
 	}
@@ -672,8 +673,8 @@ public class LmdbNativeFactorizedTailAggregationTest {
 				+ "  ?s ex:p1 ?a .\n"
 				+ "  ?s ex:p2 ?b .\n"
 				+ "}";
-		assertSameAsGeneric(query);
-		assertThat(strategy(query))
+		assertSameAsGeneric(query, "factorizedTail");
+		assertThat(strategy(query, "factorizedTail"))
 				.as("an OPTIONAL binding only unconsumed slots must not disqualify trailing branches")
 				.startsWith("factorizedTail");
 	}
@@ -714,8 +715,16 @@ public class LmdbNativeFactorizedTailAggregationTest {
 	}
 
 	private String strategy(String query) {
+		return strategy(query, null);
+	}
+
+	private String strategy(String query, String forcedStrategy) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			String strategy = findStrategy(conn.prepareTupleQuery(query)
+			SailTupleQuery preparedQuery = (SailTupleQuery) conn.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			String strategy = findStrategy(preparedQuery
 					.explain(Explanation.Level.Telemetry)
 					.toGenericPlanNode());
 			assertThat(strategy).as("expected a nativeExecutionPath metric in the explanation").isNotNull();
