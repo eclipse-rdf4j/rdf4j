@@ -70,7 +70,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 4, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 3000)
+@Warmup(iterations = 4, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 1000)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
 		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true",
@@ -159,8 +159,8 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
 //			"ENGINEERING",
 //			"HIGHLY_CONNECTED",
 //			"TRAIN",

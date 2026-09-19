@@ -156,7 +156,7 @@ class LmdbNativeScalarPlanTest {
 				.isEqualTo(EffectClass.SIDE_EFFECTING_OR_UNSUPPORTED);
 		assertThat(
 				planOf(new FunctionCall("urn:rdf4j:test:unknown-function", new Str(new Var("value")))).workerBindable())
-				.isFalse();
+						.isFalse();
 		assertThat(planOf(new FunctionCall(org.eclipse.rdf4j.model.vocabulary.FN.LOWER_CASE.stringValue(),
 				new FunctionCall(new Rand().getURI()))).effect()).isEqualTo(EffectClass.VOLATILE);
 	}

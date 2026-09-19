@@ -115,9 +115,7 @@ public final class KernelTermKindProof {
 	public static int maskForId(long id) {
 		int kind = ValueIds.termKind(id);
 		return switch (kind) {
-		case ValueIds.TERM_KIND_IRI, ValueIds.TERM_KIND_LITERAL, ValueIds.TERM_KIND_BNODE,
-				ValueIds.TERM_KIND_TRIPLE ->
-			1 << kind;
+		case ValueIds.TERM_KIND_IRI, ValueIds.TERM_KIND_LITERAL, ValueIds.TERM_KIND_BNODE, ValueIds.TERM_KIND_TRIPLE -> 1 << kind;
 		default -> ALL_TERM_KINDS;
 		};
 	}

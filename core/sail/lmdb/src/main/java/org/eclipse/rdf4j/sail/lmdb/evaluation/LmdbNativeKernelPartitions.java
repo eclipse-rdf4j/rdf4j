@@ -144,7 +144,7 @@ final class LmdbNativeKernelPartitions {
 		while (start < pipeline.size() && pipeline.get(start) instanceof LmdbNativeKernelIr.HashBuild) {
 			start++;
 		}
-		if (start >= pipeline.size() || !(pipeline.get(start) instanceof EnumerateAdjKeys keys) || keys.wildcard) {
+		if (start >= pipeline.size() || !(pipeline.get(start)instanceof EnumerateAdjKeys keys) || keys.wildcard) {
 			return -1;
 		}
 		EnumerateAdjKeys root = (EnumerateAdjKeys) pipeline.get(start);
@@ -195,7 +195,7 @@ final class LmdbNativeKernelPartitions {
 		while (start < pipeline.size() && pipeline.get(start) instanceof HashBuild) {
 			start++;
 		}
-		if (start >= pipeline.size() || !(pipeline.get(start) instanceof EnumerateNodeDomainIntersection root)) {
+		if (start >= pipeline.size() || !(pipeline.get(start)instanceof EnumerateNodeDomainIntersection root)) {
 			return -1;
 		}
 		return readsResourceElsewhere(pipeline, root, root.view, RequirementKind.NODE_DOMAIN_INTERSECTION) ? -1

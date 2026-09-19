@@ -983,12 +983,13 @@ final class LmdbNativeKernelBindings {
 				hooks, scanner, plans, distinctExpected,
 				variablePredicateViews.nodePredicates(), variablePredicateViews.dynamics(),
 				variablePredicateViews.wildcards())
-				.withMemoryLedgerSupplier(() -> row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()))
-				.withCancellation(peerCancellation == null
-						? LmdbNativeProbeDeadline.currentKernelCancellation(row.cancellation::isCancellationRequested,
-								workerCancellation)
-						: LmdbNativeProbeDeadline.currentAggregateKernelCancellation(
-								row.cancellation::isCancellationRequested, peerCancellation));
+						.withMemoryLedgerSupplier(() -> row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()))
+						.withCancellation(peerCancellation == null
+								? LmdbNativeProbeDeadline.currentKernelCancellation(
+										row.cancellation::isCancellationRequested,
+										workerCancellation)
+								: LmdbNativeProbeDeadline.currentAggregateKernelCancellation(
+										row.cancellation::isCancellationRequested, peerCancellation));
 	}
 
 	/** Runtime wrapper that isolates an interpreted producer from the row receiving generated-kernel output. */

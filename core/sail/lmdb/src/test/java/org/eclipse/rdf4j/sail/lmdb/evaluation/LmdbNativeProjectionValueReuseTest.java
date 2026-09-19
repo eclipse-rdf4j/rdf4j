@@ -55,7 +55,7 @@ class LmdbNativeProjectionValueReuseTest {
 		assertEquals("nb", compiler.compileValue(new Lang(new Var("value"))).evaluator.eval(row).label());
 		assertEquals(Integer.toString(label.length()), compiler.compileValue(
 				new FunctionCall(FN.STRING_LENGTH.stringValue(), new Str(new Var("value")))).evaluator.eval(row)
-				.label());
+						.label());
 		verify(codec, times(1)).decodeAssured(42L);
 	}
 

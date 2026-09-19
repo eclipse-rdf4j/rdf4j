@@ -622,8 +622,8 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
 				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0], new int[0],
 				List.of())
-				.withTypeMatrixRequests(new LmdbNativeKernelBindings.TypeMatrixRequest[] {
-						new LmdbNativeKernelBindings.TypeMatrixRequest(1L, 2L, new MaskedFilter[0], -1) });
+						.withTypeMatrixRequests(new LmdbNativeKernelBindings.TypeMatrixRequest[] {
+								new LmdbNativeKernelBindings.TypeMatrixRequest(1L, 2L, new MaskedFilter[0], -1) });
 		return new LmdbNativeKernelLowering.Lowered(kernel, bindings);
 	}
 

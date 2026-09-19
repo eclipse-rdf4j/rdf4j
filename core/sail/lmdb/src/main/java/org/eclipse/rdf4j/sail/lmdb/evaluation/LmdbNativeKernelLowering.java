@@ -1057,9 +1057,9 @@ final class LmdbNativeKernelLowering {
 				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
 				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0], new int[0],
 				List.of(), layout, false)
-				.withTypeMatrixRequests(new LmdbNativeKernelBindings.TypeMatrixRequest[] {
-						new LmdbNativeKernelBindings.TypeMatrixRequest(plan.subjectTypePredicate,
-								plan.objectTypePredicate, plan.predicateFilters, plan.edgePredicateSlot) });
+						.withTypeMatrixRequests(new LmdbNativeKernelBindings.TypeMatrixRequest[] {
+								new LmdbNativeKernelBindings.TypeMatrixRequest(plan.subjectTypePredicate,
+										plan.objectTypePredicate, plan.predicateFilters, plan.edgePredicateSlot) });
 		return new Lowered(kernel, bindings);
 	}
 
@@ -1112,11 +1112,11 @@ final class LmdbNativeKernelLowering {
 				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
 				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0],
 				new int[] { aggregate.slot }, List.of(), layout, false)
-				.withNodeDomainIntersectionRequests(
-						new LmdbNativeKernelBindings.NodeDomainIntersectionRequest[] {
-								new LmdbNativeKernelBindings.NodeDomainIntersectionRequest(
-										outerField == TripleIndex.SUBJ_IDX,
-										existsField == TripleIndex.SUBJ_IDX) });
+						.withNodeDomainIntersectionRequests(
+								new LmdbNativeKernelBindings.NodeDomainIntersectionRequest[] {
+										new LmdbNativeKernelBindings.NodeDomainIntersectionRequest(
+												outerField == TripleIndex.SUBJ_IDX,
+												existsField == TripleIndex.SUBJ_IDX) });
 		return new Lowered(kernel, bindings);
 	}
 
@@ -4212,7 +4212,7 @@ final class LmdbNativeKernelLowering {
 			for (int at = 0; at < nested.size(); at++) {
 				Node producer = nested.get(at);
 				if (at + 1 < nested.size()
-						&& nested.get(at + 1) instanceof LmdbNativeKernelIr.EnumeratePredicates wildcard
+						&& nested.get(at + 1)instanceof LmdbNativeKernelIr.EnumeratePredicates wildcard
 						&& wildcard.wildcard && wildcard.target == null
 						&& wildcard.key.kind == LmdbNativeKernelIr.Operand.COL) {
 					if (producer instanceof LmdbNativeKernelIr.EnumerateDomain domain
@@ -4234,7 +4234,7 @@ final class LmdbNativeKernelLowering {
 						continue;
 					}
 				}
-				if (at + 1 < nested.size() && nested.get(at + 1) instanceof LmdbNativeKernelIr.Probe probe
+				if (at + 1 < nested.size() && nested.get(at + 1)instanceof LmdbNativeKernelIr.Probe probe
 						&& probe.key.kind == LmdbNativeKernelIr.Operand.COL) {
 					if (producer instanceof LmdbNativeKernelIr.EnumerateDomain domain
 							&& domain.col == probe.key.index && domain.sipDriven) {

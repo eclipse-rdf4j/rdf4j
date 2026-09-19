@@ -504,7 +504,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	@Override
 	public boolean borrowRun(long runHandle, BorrowedFactorBatch target, int lane) {
 		ensureOpen();
-		if (!(target.source() instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
+		if (!(target.source()instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
 			throw new IllegalArgumentException("factor source belongs to another snapshot");
 		owner.checkOpen();
 		if (runHandle <= 0L)
@@ -1063,7 +1063,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 
 		@Override
 		public boolean borrow(BorrowedFactorBatch target, int lane) {
-			if (!(target.source() instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
+			if (!(target.source()instanceof LmdbBorrowedAdjacencySource owner) || owner.view != readView)
 				throw new IllegalArgumentException("factor source belongs to another snapshot");
 			owner.checkOpen();
 			if (!directBaseRun)

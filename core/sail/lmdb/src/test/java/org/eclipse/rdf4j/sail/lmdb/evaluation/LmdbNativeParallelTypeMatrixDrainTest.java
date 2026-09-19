@@ -93,8 +93,8 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 				new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
 				new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0], new int[0],
 				List.of())
-				.withTypeMatrixRequests(new LmdbNativeKernelBindings.TypeMatrixRequest[] {
-						new LmdbNativeKernelBindings.TypeMatrixRequest(1L, 2L, new MaskedFilter[0], -1) });
+						.withTypeMatrixRequests(new LmdbNativeKernelBindings.TypeMatrixRequest[] {
+								new LmdbNativeKernelBindings.TypeMatrixRequest(1L, 2L, new MaskedFilter[0], -1) });
 		LmdbNativeKernelLowering.Lowered lowered = new LmdbNativeKernelLowering.Lowered(kernel, bindings);
 		LmdbNativeKernelBindings.BoundDomains domains = new LmdbNativeKernelBindings.BoundDomains(new long[0][],
 				new int[0], new int[0]);

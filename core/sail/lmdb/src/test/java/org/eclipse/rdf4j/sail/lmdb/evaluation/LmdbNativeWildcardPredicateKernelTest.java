@@ -607,9 +607,9 @@ class LmdbNativeWildcardPredicateKernelTest {
 	private static FixtureWildcard fixtureWithPages(long root, long uri, long literal) {
 		return new FixtureWildcard(new Plane(ValueIds.createId(ValueIds.T_URI, 4L), new long[] { root },
 				new long[][] { { uri, literal } }, new long[][] { { 0L, 0L } }))
-				.withPages(
-						PageSpec.single(root, uri, 0L, ValueIds.TERM_KIND_IRI),
-						PageSpec.single(root, literal, 0L, ValueIds.TERM_KIND_LITERAL));
+						.withPages(
+								PageSpec.single(root, uri, 0L, ValueIds.TERM_KIND_IRI),
+								PageSpec.single(root, literal, 0L, ValueIds.TERM_KIND_LITERAL));
 	}
 
 	private static FixtureWildcard wideFixture(int width) {
