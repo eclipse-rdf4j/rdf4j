@@ -13,20 +13,24 @@ package org.eclipse.rdf4j.tools.serverboot;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedConstruction;
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.boot.ExitCodeEvent;
 import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.support.GenericApplicationContext;
@@ -87,7 +91,8 @@ class SignalShutdownHandlerTest {
 		AtomicInteger exitCode = new AtomicInteger(Integer.MIN_VALUE);
 
 		try (MockedConstruction<Thread> ignored = mockConstruction(Thread.class)) {
-			SignalShutdownHandler.shutdownAndExit(context, "OutOfMemoryError", 1, exitCode::set);
+			SignalShutdownHandler.shutdownAndExit(context, "OutOfMemoryError", 1, exitCode::set,
+					Runtime.getRuntime()::halt, SignalShutdownHandler.Trigger.OUT_OF_MEMORY);
 		}
 
 		assertThat(exitCode).hasValue(1);
@@ -109,49 +114,124 @@ class SignalShutdownHandlerTest {
 	}
 
 	@Test
-	void requestsEmergencyTerminationWhenWatchdogThreadCannotStart() {
+	void preservesSyntheticSpringFailureStatusWhenSignalFallbackIsZero() {
+		ConfigurableApplicationContext context = mock(ConfigurableApplicationContext.class);
+		when(context.getBeansOfType(ExitCodeGenerator.class))
+				.thenThrow(new IllegalStateException("simulated exit-code lookup failure"));
+		when(context.isActive()).thenReturn(true);
 		AtomicInteger exitCode = new AtomicInteger(Integer.MIN_VALUE);
 
+		try (MockedConstruction<Thread> ignored = mockConstruction(Thread.class)) {
+			SignalShutdownHandler.shutdownAndExit(context, "SIGTERM", 0, exitCode::set);
+		}
+
+		assertThat(exitCode).as("Spring's synthetic close-failure status must not be lost").hasValue(1);
+	}
+
+	@Test
+	void continuesGracefulSignalShutdownWhenWatchdogThreadCannotStart() {
+		AtomicInteger exitCode = new AtomicInteger(Integer.MIN_VALUE);
+		AtomicInteger emergencyStatus = new AtomicInteger(Integer.MIN_VALUE);
+
 		try (MockedConstruction<Thread> ignored = mockConstruction(Thread.class,
-				(thread, context) -> doThrow(new OutOfMemoryError("simulated native thread exhaustion"))
+				(thread, context) -> doThrow(new IllegalStateException("simulated watchdog startup failure"))
 						.when(thread)
 						.start())) {
 			Throwable thrown = catchThrowable(
-					() -> SignalShutdownHandler.shutdownAndExit(null, "SIGTERM", 0, exitCode::set, exitCode::set));
+					() -> SignalShutdownHandler.shutdownAndExit(null, "SIGTERM", 0, exitCode::set,
+							emergencyStatus::set));
 			assertThat(thrown).isNull();
 		}
 
 		assertThat(exitCode).hasValue(0);
+		assertThat(emergencyStatus).hasValue(Integer.MIN_VALUE);
 	}
 
 	@Test
-	void requestsTerminationBeforeGracefulShutdownWhenWatchdogThreadCannotStart() {
-		ConfigurableApplicationContext context = mock(ConfigurableApplicationContext.class);
-		when(context.getBeansOfType(ExitCodeGenerator.class)).thenReturn(Map.of());
-		when(context.isActive()).thenReturn(true);
-		AtomicBoolean terminationRequested = new AtomicBoolean();
-		doAnswer(invocation -> {
-			if (!terminationRequested.get()) {
-				throw new AssertionError("graceful close started before termination was requested");
-			}
-			return null;
-		}).when(context).close();
+	void preservesSpringExitStatusWhenSignalWatchdogCannotStart() {
+		GenericApplicationContext context = contextWithExitCode(3);
+		AtomicInteger exitCode = new AtomicInteger(Integer.MIN_VALUE);
+		AtomicInteger emergencyStatus = new AtomicInteger(Integer.MIN_VALUE);
 
 		try (MockedConstruction<Thread> ignored = mockConstruction(Thread.class,
-				(thread, constructionContext) -> doThrow(new OutOfMemoryError("simulated native thread exhaustion"))
-						.when(thread)
-						.start())) {
+				(thread, constructionContext) -> doThrow(
+						new IllegalStateException("simulated watchdog startup failure"))
+								.when(thread)
+								.start())) {
 			Throwable thrown = catchThrowable(
-					() -> SignalShutdownHandler.shutdownAndExit(context, "SIGTERM", 0,
-							ignoredStatus -> {
-							}, ignoredStatus -> terminationRequested.set(true)));
+					() -> SignalShutdownHandler.shutdownAndExit(context, "SIGTERM", 0, exitCode::set,
+							emergencyStatus::set));
 
 			assertThat(thrown).isNull();
-			assertThat(ignored.constructed()).hasSize(1);
 		}
 
-		assertThat(terminationRequested).isTrue();
-		verify(context, never()).close();
+		assertThat(context.isActive()).isFalse();
+		assertThat(exitCode).hasValue(3);
+		assertThat(emergencyStatus).hasValue(Integer.MIN_VALUE);
+	}
+
+	@Test
+	void hangingContextShutdownPreservesFailureStatusInForkedJvm() throws Exception {
+		assertHangingContextShutdownPreservesSpringStatus("hanging-context-zero", 0);
+	}
+
+	@Test
+	void hangingContextShutdownPreservesNegativeSpringStatusWithOutOfMemoryFallback() throws Exception {
+		assertHangingContextShutdownPreservesSpringStatus("hanging-context-one", 1);
+	}
+
+	@Test
+	void hangingShutdownHookPreservesFailureStatusInForkedJvm() throws Exception {
+		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		Path outputFile = probeOutputFile("hanging-hook");
+		Process process = new ProcessBuilder(javaBinary, "-cp", System.getProperty("java.class.path"),
+				HangingHookProbe.class.getName())
+						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
+						.start();
+		try {
+			boolean exited = process.waitFor(20, TimeUnit.SECONDS);
+			String output = readProbeOutput(outputFile);
+			assertThat(exited).as("forked shutdown probe output file %s: %s", outputFile, output).isTrue();
+			assertThat(process.exitValue()).as("forked shutdown probe output file %s: %s", outputFile, output)
+					.isEqualTo(9);
+		} finally {
+			stopProbe(process);
+		}
+	}
+
+	public static final class HangingShutdownProbe {
+		public static void main(String[] args) {
+			GenericApplicationContext context = new GenericApplicationContext();
+			context.registerBean("exitCodeGenerator", ExitCodeGenerator.class, () -> () -> -7);
+			context.registerBean("blockingDestroy", DisposableBean.class, () -> () -> {
+				while (true) {
+					LockSupport.park();
+				}
+			});
+			context.addApplicationListener(event -> {
+				if (event instanceof ExitCodeEvent exitCodeEvent) {
+					System.out.println("SPRING_EXIT_EVENT=" + exitCodeEvent.getExitCode());
+					System.out.flush();
+				}
+			});
+			context.refresh();
+			int fallbackStatus = args.length == 0 ? 0 : Integer.parseInt(args[0]);
+			SignalShutdownHandler.shutdownAndExit(context, "forked-hang", fallbackStatus, System::exit,
+					Runtime.getRuntime()::halt);
+		}
+	}
+
+	public static final class HangingHookProbe {
+		public static void main(String[] args) {
+			Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+				while (true) {
+					LockSupport.park();
+				}
+			}, "hanging-shutdown-hook"));
+			SignalShutdownHandler.shutdownAndExit(null, "forked-hook-hang", 9, System::exit,
+					Runtime.getRuntime()::halt);
+		}
 	}
 
 	@Test
@@ -164,10 +244,11 @@ class SignalShutdownHandlerTest {
 						.when(thread)
 						.start())) {
 			Throwable thrown = catchThrowable(
-					() -> SignalShutdownHandler.shutdownAndExit(null, "SIGTERM", 7, exitCode::set, ignoredStatus -> {
-						haltAttempts.incrementAndGet();
-						throw new IllegalStateException("simulated emergency halt failure");
-					}));
+					() -> SignalShutdownHandler.shutdownAndExit(null, "OutOfMemoryError", 7, exitCode::set,
+							ignoredStatus -> {
+								haltAttempts.incrementAndGet();
+								throw new IllegalStateException("simulated emergency halt failure");
+							}, SignalShutdownHandler.Trigger.OUT_OF_MEMORY));
 
 			assertThat(thrown).isNull();
 		}
@@ -185,18 +266,66 @@ class SignalShutdownHandlerTest {
 						.when(thread)
 						.start())) {
 			Throwable first = catchThrowable(
-					() -> SignalShutdownHandler.shutdownAndExit(null, "SIGTERM", 0,
+					() -> SignalShutdownHandler.shutdownAndExit(null, "OutOfMemoryError", 1,
 							ignoredExit -> shutdownCount.incrementAndGet(),
-							ignoredExit -> shutdownCount.incrementAndGet()));
+							ignoredExit -> shutdownCount.incrementAndGet(),
+							SignalShutdownHandler.Trigger.OUT_OF_MEMORY));
 			Throwable second = catchThrowable(
-					() -> SignalShutdownHandler.shutdownAndExit(null, "SIGTERM", 0,
+					() -> SignalShutdownHandler.shutdownAndExit(null, "OutOfMemoryError", 1,
 							ignoredExit -> shutdownCount.incrementAndGet(),
-							ignoredExit -> shutdownCount.incrementAndGet()));
+							ignoredExit -> shutdownCount.incrementAndGet(),
+							SignalShutdownHandler.Trigger.OUT_OF_MEMORY));
 			assertThat(first).isNull();
 			assertThat(second).isNull();
 		}
 
 		assertThat(shutdownCount).hasValue(2);
+	}
+
+	private static Path probeOutputFile(String probeName) throws Exception {
+		Path directory = Path.of("target", "review-repair-probes");
+		Files.createDirectories(directory);
+		return directory.resolve(probeName + "-" + UUID.randomUUID() + ".log");
+	}
+
+	private static void assertHangingContextShutdownPreservesSpringStatus(String probeName, int fallbackStatus)
+			throws Exception {
+		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		Path outputFile = probeOutputFile(probeName);
+		Process process = new ProcessBuilder(javaBinary, "-cp", System.getProperty("java.class.path"),
+				HangingShutdownProbe.class.getName(), Integer.toString(fallbackStatus))
+						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
+						.start();
+		try {
+			boolean exited = process.waitFor(20, TimeUnit.SECONDS);
+			String output = readProbeOutput(outputFile);
+			assertThat(output).as("forked shutdown probe output file %s", outputFile).contains("SPRING_EXIT_EVENT=-7");
+			assertThat(exited).as("forked shutdown probe output file %s: %s", outputFile, output).isTrue();
+			// Unix process status exposes the low byte of System.exit(-7), while the event proves that Spring's signed
+			// status was captured before the blocking context close.
+			assertThat(process.exitValue()).as("forked shutdown probe output file %s: %s", outputFile, output)
+					.isEqualTo((-7) & 0xff);
+		} finally {
+			stopProbe(process);
+		}
+	}
+
+	private static String readProbeOutput(Path outputFile) throws Exception {
+		return Files.exists(outputFile) ? Files.readString(outputFile, StandardCharsets.UTF_8) : "<no output file>";
+	}
+
+	private static void stopProbe(Process process) throws Exception {
+		if (!process.isAlive()) {
+			return;
+		}
+		process.destroy();
+		if (!process.waitFor(5, TimeUnit.SECONDS)) {
+			process.destroyForcibly();
+			boolean terminated = process.waitFor(5, TimeUnit.SECONDS);
+			assertThat(terminated).as("forced shutdown probe did not terminate").isTrue();
+		}
+		assertThat(process.isAlive()).as("shutdown probe remained alive during cleanup").isFalse();
 	}
 
 	private static GenericApplicationContext contextWithExitCode(int exitCode) {

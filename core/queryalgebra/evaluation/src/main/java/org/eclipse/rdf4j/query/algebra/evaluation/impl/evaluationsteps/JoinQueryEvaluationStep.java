@@ -14,15 +14,21 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -35,19 +41,45 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MaterializedReplayJoi
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
-public class JoinQueryEvaluationStep implements QueryEvaluationStep {
+public class JoinQueryEvaluationStep implements QueryEvaluationStep, QueryEvaluationStep.ScopedResultWrapper {
 
 	private static final double MAX_BOUND_STATEMENT_GUARD_LEFT_ROWS = 512.0d;
 
-	private final Function<BindingSet, CloseableIteration<BindingSet>> eval;
+	private Function<BindingSet, CloseableIteration<BindingSet>> eval;
+	private ScopedEvaluationStep scopedEvaluation;
 	private final BoundStatementPatternGuardJoinIteration.GuardCounter guardCounter;
 
 	public JoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context) {
+		this(strategy, join, context, null);
+	}
+
+	/**
+	 * Creates a join evaluation step, optionally validating a planned merge order against the backing statement source.
+	 * The source is supplied by the default strategy when it is available; callers that only have an evaluation
+	 * strategy retain the original constructor and use the order metadata already attached to the algebra nodes.
+	 */
+	public JoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context,
+			AvailableStatementOrder statementOrder) {
+		this(strategy, join, context, statementOrder, null, null);
+	}
+
+	/**
+	 * Creates a join step from children that have already been prepared by the strategy. The overload is used by the
+	 * scope-aware preparation protocol so the children are compiled exactly once and any strategy-specific wrappers are
+	 * retained.
+	 */
+	public JoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context,
+			AvailableStatementOrder statementOrder, QueryEvaluationStep preparedLeft,
+			QueryEvaluationStep preparedRight) {
 		// efficient computation of a SERVICE join using vectored evaluation
 		// TODO maybe we can create a ServiceJoin node already in the parser?
 		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime();
-		QueryEvaluationStep leftRaw = strategy.precompile(join.getLeftArg(), context);
-		QueryEvaluationStep rightRaw = strategy.precompile(join.getRightArg(), context);
+		clearUnsupportedStatementOrders(join, statementOrder);
+		Var mergeJoinOrder = selectMergeJoinOrder(join, context, statementOrder);
+		QueryEvaluationStep leftRaw = preparedLeft == null ? strategy.precompile(join.getLeftArg(), context)
+				: preparedLeft;
+		QueryEvaluationStep rightRaw = preparedRight == null ? strategy.precompile(join.getRightArg(), context)
+				: preparedRight;
 		QueryEvaluationStep leftPrepared = JoinMetricsTracking
 				.wrapLeftInput(leftRaw, join, join.getLeftArg(), runtimeTelemetryTrackingActive);
 		QueryEvaluationStep rightPrepared = JoinMetricsTracking
@@ -57,17 +89,18 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		BoundStatementPatternGuardJoinIteration.GuardCounter rightGuardCounter = getGuardCounter(join.getRightArg(),
 				rightRaw);
 		guardCounter = combineGuardCounters(leftGuardCounter, rightGuardCounter);
+		boolean rightDiscardable = QueryEvaluationUtility.canDiscardWithoutEvaluation(join.getRightArg(),
+				join.getLeftArg());
+		Service service = join.getRightArg()instanceof Service candidate ? candidate : null;
+		final BiFunction<CloseableIteration<BindingSet>, BindingSet, CloseableIteration<BindingSet>> serviceJoinFactory = service == null
+				? null
+				: (left, bindings) -> openServiceJoin(left, service, bindings, strategy, !rightDiscardable);
 		// A discarded or never-opened right operand may not suppress an observable query-fatal error (for
 		// example a failed non-silent SERVICE nested in the right operand). When the right operand is
 		// fatal-capable, the specialized fast paths below are skipped and the hash/nested-loop paths guarantee
 		// that the right operand is evaluated even when the left operand turns out to be empty.
-		boolean rightDiscardable = QueryEvaluationUtility.canDiscardWithoutEvaluation(join.getRightArg(),
-				join.getLeftArg());
-		if (join.getRightArg() instanceof Service) {
-			boolean invokeWhenLeftEmpty = !rightDiscardable;
-			eval = bindings -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
-					(Service) join.getRightArg(), bindings,
-					strategy, invokeWhenLeftEmpty);
+		if (service != null) {
+			eval = bindings -> serviceJoinFactory.apply(leftPrepared.evaluate(bindings), bindings);
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
@@ -80,7 +113,8 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 								joinAttributes, context));
 			}
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
-		} else if (!QueryEvaluationUtility.usesMappingParameterizedEvaluation(join.getRightArg())
+		} else if (!QueryEvaluationUtility.usesMappingParameterizedEvaluation(join.getRightArg(),
+				QueryEvaluationUtility.getActualOutputBindingNames(join.getLeftArg()))
 				&& (!QueryEvaluationUtility.isRepeatable(join.getRightArg())
 						|| !QueryEvaluationUtility.permitsBindingInjection(join.getRightArg(),
 								join.getLeftArg().getBindingNames()))) {
@@ -95,9 +129,9 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			eval = bindings -> new MaterializedReplayJoinIterator(leftPrepared, rightPrepared, null, bindings,
 					false, Set.of(), joinAttributes);
 			join.setAlgorithm(MaterializedReplayJoinIterator.class.getSimpleName());
-		} else if (rightDiscardable && join.isMergeJoin() && context.getComparator() != null) {
+		} else if (rightDiscardable && mergeJoinOrder != null) {
 			eval = bindings -> InnerMergeJoinIterator.getInstance(leftPrepared, rightPrepared, bindings,
-					context.getComparator(), context.getValue(join.getOrder().getName()), context);
+					context.getComparator(), context.getValue(mergeJoinOrder.getName()), context);
 			join.setAlgorithm(InnerMergeJoinIterator.class.getSimpleName());
 		} else if (rightDiscardable && !runtimeTelemetryTrackingActive
 				&& leftRaw instanceof StatementPatternQueryEvaluationStep
@@ -143,6 +177,130 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			}
 			join.setAlgorithm(JoinIterator.class.getSimpleName());
 		}
+
+		/*
+		 * Keep the scope-aware wrapper on the prepared join itself as well as on the default strategy's dispatch path.
+		 * A few embedders construct this evaluation step directly, bypassing DefaultEvaluationStrategy.prepare(Join).
+		 * The children have already been prepared above, so installing this wrapper here does not perform a second
+		 * strategy traversal. Nested prepared joins expose the same delegate through adapt(), allowing one owner to be
+		 * shared across the composition.
+		 */
+		Function<BindingSet, CloseableIteration<BindingSet>> ordinaryEvaluation = eval;
+		QueryEvaluationStep scoped = ScopedEvaluationStep.join(join, ordinaryEvaluation::apply, leftPrepared,
+				rightPrepared, context, serviceJoinFactory);
+		if (scoped instanceof ScopedEvaluationStep scopedStep) {
+			scopedEvaluation = scopedStep;
+			eval = scopedStep::evaluate;
+		} else {
+			eval = scoped::evaluate;
+		}
+	}
+
+	ScopedEvaluationStep scopedDelegate() {
+		return scopedEvaluation;
+	}
+
+	@Override
+	public QueryEvaluationStep withResultWrapper(
+			Function<CloseableIteration<BindingSet>, CloseableIteration<BindingSet>> wrapper) {
+		if (getClass() != JoinQueryEvaluationStep.class) {
+			return bindings -> QueryEvaluationStep.applyWrapper(evaluate(bindings), wrapper);
+		}
+		if (scopedEvaluation != null) {
+			return QueryEvaluationStep.wrap(scopedEvaluation, wrapper);
+		}
+		return bindings -> QueryEvaluationStep.applyWrapper(evaluate(bindings), wrapper);
+	}
+
+	@Override
+	public QueryEvaluationStep withProducerWrapper(
+			Function<CloseableIteration<BindingSet>, CloseableIteration<BindingSet>> wrapper) {
+		if (getClass() != JoinQueryEvaluationStep.class) {
+			return bindings -> QueryEvaluationStep.applyWrapper(evaluate(bindings), wrapper);
+		}
+		if (scopedEvaluation != null) {
+			return QueryEvaluationStep.withProducerWrapper(scopedEvaluation, wrapper);
+		}
+		return bindings -> QueryEvaluationStep.applyWrapper(evaluate(bindings), wrapper);
+	}
+
+	/**
+	 * Order hints are attached to statement patterns by the join optimizer before evaluation strategy preparation. A
+	 * hint is only executable when the actual triple source supports that pattern's order. Clear unsupported leaf hints
+	 * before child preparation, otherwise {@link StatementPatternQueryEvaluationStep} captures the stale order and
+	 * later invokes the optional ordered TripleSource API unconditionally. Recurse through tuple operators without
+	 * resetting a parent subtree: a valid nested merge/replay plan must keep its own supported leaf orders.
+	 */
+	private static void clearUnsupportedStatementOrders(TupleExpr expression,
+			AvailableStatementOrder statementOrder) {
+		if (statementOrder == null) {
+			return;
+		}
+		if (expression instanceof StatementPattern pattern) {
+			Var order = pattern.getOrder();
+			if (order != null && !pattern.getSupportedOrders(statementOrder).contains(order)) {
+				pattern.setOrder(null);
+			}
+			return;
+		}
+		if (expression instanceof UnaryTupleOperator unary) {
+			clearUnsupportedStatementOrders(unary.getArg(), statementOrder);
+		} else if (expression instanceof BinaryTupleOperator binary) {
+			clearUnsupportedStatementOrders(binary.getLeftArg(), statementOrder);
+			clearUnsupportedStatementOrders(binary.getRightArg(), statementOrder);
+		}
+	}
+
+	private static Var selectMergeJoinOrder(Join join, QueryEvaluationContext context,
+			AvailableStatementOrder statementOrder) {
+		if (!join.isMergeJoin() || context.getComparator() == null) {
+			return null;
+		}
+
+		TupleExpr left = join.getLeftArg();
+		TupleExpr right = join.getRightArg();
+		Var leftOrder = getAdvertisedOrder(left);
+		Var rightOrder = getAdvertisedOrder(right);
+		if (leftOrder == null || !leftOrder.equals(rightOrder)) {
+			return null;
+		}
+
+		String orderName = leftOrder.getName();
+		String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
+		if (orderName == null || joinAttributes.length != 1 || !orderName.equals(joinAttributes[0])
+				|| !left.getAssuredBindingNames().contains(orderName)
+				|| !right.getAssuredBindingNames().contains(orderName)) {
+			return null;
+		}
+
+		if (statementOrder != null
+				&& (!supportsOrder(left, statementOrder, leftOrder)
+						|| !supportsOrder(right, statementOrder, rightOrder))) {
+			return null;
+		}
+		return leftOrder;
+	}
+
+	private static Var getAdvertisedOrder(TupleExpr expression) {
+		// BindingSetAssignment and unknown tuple extensions deliberately do not implement an order contract. Avoid
+		// calling their default getOrder() method: it throws UnsupportedOperationException by design.
+		if (!(expression instanceof StatementPattern || expression instanceof UnaryTupleOperator
+				|| expression instanceof BinaryTupleOperator)) {
+			return null;
+		}
+		try {
+			return expression.getOrder();
+		} catch (UnsupportedOperationException e) {
+			return null;
+		}
+	}
+
+	private static boolean supportsOrder(TupleExpr expression, AvailableStatementOrder statementOrder, Var order) {
+		try {
+			return expression.getSupportedOrders(statementOrder).stream().anyMatch(order::equals);
+		} catch (UnsupportedOperationException e) {
+			return false;
+		}
 	}
 
 	/**
@@ -153,7 +311,20 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	 */
 	static CloseableIteration<BindingSet> withGuaranteedRightEvaluation(QueryEvaluationStep rightPrepared,
 			BindingSet bindings, Function<QueryEvaluationStep, CloseableIteration<BindingSet>> open) {
+		return withGuaranteedRightEvaluation(rightPrepared, rightPrepared, bindings, open);
+	}
+
+	/**
+	 * Variant used by scoped MINUS/INTERSECT evaluation. The ordinary right step retains its physical iterator and
+	 * binding semantics, while the fallback probe step may use a progressive owner cursor so an empty left operand does
+	 * not drain a remote or otherwise unbounded right result merely to observe a query-fatal error.
+	 */
+	static CloseableIteration<BindingSet> withGuaranteedRightEvaluation(QueryEvaluationStep rightPrepared,
+			QueryEvaluationStep probeRightPrepared, BindingSet bindings,
+			Function<QueryEvaluationStep, CloseableIteration<BindingSet>> open) {
 		AtomicBoolean rightEvaluated = new AtomicBoolean();
+		AtomicBoolean cancelled = new AtomicBoolean();
+		AtomicReference<ProbeState> activeProbe = new AtomicReference<>();
 		QueryEvaluationStep trackedRight = bs -> {
 			rightEvaluated.set(true);
 			return rightPrepared.evaluate(bs);
@@ -166,11 +337,59 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 				if (inner.hasNext()) {
 					return inner.next();
 				}
+				if (cancelled.get() || Thread.currentThread().isInterrupted()) {
+					if (!cancelled.get()) {
+						close();
+					}
+					return null;
+				}
 				if (rightEvaluated.compareAndSet(false, true)) {
-					try (CloseableIteration<BindingSet> right = rightPrepared.evaluate(bindings)) {
+					if (cancelled.get() || Thread.currentThread().isInterrupted()) {
+						if (!cancelled.get()) {
+							close();
+						}
+						return null;
+					}
+					CloseableIteration<BindingSet> right = probeRightPrepared.evaluate(bindings);
+					if (cancelled.get() || Thread.currentThread().isInterrupted()) {
+						Throwable closeFailure = closeProbe(right);
+						if (closeFailure != null) {
+							throwAsUnchecked(closeFailure);
+						}
+						return null;
+					}
+					ProbeState probe = new ProbeState(right);
+					if (!publishProbe(activeProbe, probe, cancelled)) {
+						return null;
+					}
+					if (!probe.claim(cancelled)) {
+						Throwable closeFailure = probe.close();
+						activeProbe.compareAndSet(probe, null);
+						if (closeFailure != null) {
+							throwAsUnchecked(closeFailure);
+						}
+						return null;
+					}
+					Throwable probeFailure = null;
+					try {
 						// a bounded probe: opening the operand and asking for its first solution surfaces a
 						// failed invocation without consuming the whole (possibly unbounded) result
-						right.hasNext();
+						probe.iteration.hasNext();
+					} catch (RuntimeException | Error failure) {
+						probeFailure = failure;
+						throw failure;
+					} finally {
+						Throwable closeFailure = probe.close();
+						activeProbe.compareAndSet(probe, null);
+						if (closeFailure != null) {
+							if (probeFailure != null) {
+								if (closeFailure != probeFailure) {
+									probeFailure.addSuppressed(closeFailure);
+								}
+							} else {
+								throwAsUnchecked(closeFailure);
+							}
+						}
 					}
 				}
 				return null;
@@ -178,9 +397,123 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 
 			@Override
 			protected void handleClose() {
-				inner.close();
+				cancelled.set(true);
+				Throwable failure = null;
+				try {
+					inner.close();
+				} catch (RuntimeException | Error closeFailure) {
+					failure = closeFailure;
+				}
+				ProbeState probe = activeProbe.get();
+				if (probe != null) {
+					Throwable closeFailure = probe.close();
+					if (failure == null) {
+						failure = closeFailure;
+					} else if (closeFailure != null && closeFailure != failure) {
+						failure.addSuppressed(closeFailure);
+					}
+				}
+				if (failure instanceof RuntimeException closeFailure) {
+					throw closeFailure;
+				}
+				if (failure instanceof Error closeFailure) {
+					throw closeFailure;
+				}
 			}
 		};
+	}
+
+	private static boolean publishProbe(AtomicReference<ProbeState> activeProbe,
+			ProbeState probe, AtomicBoolean cancelled) {
+		if (cancelled.get()) {
+			throwProbeCloseFailure(probe);
+			return false;
+		}
+		if (!activeProbe.compareAndSet(null, probe)) {
+			throwProbeCloseFailure(probe);
+			return false;
+		}
+		return true;
+	}
+
+	private static void throwProbeCloseFailure(ProbeState probe) {
+		Throwable failure = probe.close();
+		if (failure != null) {
+			throwAsUnchecked(failure);
+		}
+	}
+
+	private static Throwable closeProbe(CloseableIteration<BindingSet> probe) {
+		try {
+			probe.close();
+			return null;
+		} catch (Throwable failure) {
+			return failure;
+		}
+	}
+
+	private static final class ProbeState {
+		private final CloseableIteration<BindingSet> iteration;
+		private boolean closed;
+
+		private ProbeState(CloseableIteration<BindingSet> iteration) {
+			this.iteration = iteration;
+		}
+
+		private synchronized boolean claim(AtomicBoolean cancelled) {
+			if (closed || cancelled.get() || Thread.currentThread().isInterrupted()) {
+				return false;
+			}
+			return true;
+		}
+
+		private Throwable close() {
+			synchronized (this) {
+				if (closed) {
+					return null;
+				}
+				closed = true;
+			}
+			return closeProbe(iteration);
+		}
+	}
+
+	private static CloseableIteration<BindingSet> openServiceJoin(CloseableIteration<BindingSet> left,
+			Service service, BindingSet bindings, EvaluationStrategy strategy, boolean invokeWhenLeftEmpty) {
+		try {
+			return new ServiceJoinIterator(left, service, bindings, strategy, invokeWhenLeftEmpty);
+		} catch (Throwable failure) {
+			failure = closeIteration(left, failure);
+			throwAsUnchecked(failure);
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		}
+	}
+
+	private static Throwable closeIteration(CloseableIteration<?> iteration, Throwable primary) {
+		if (iteration == null) {
+			return primary;
+		}
+		try {
+			iteration.close();
+		} catch (Throwable closeFailure) {
+			if (primary == null) {
+				return closeFailure;
+			}
+			if (closeFailure != primary) {
+				primary.addSuppressed(closeFailure);
+			}
+		}
+		return primary;
+	}
+
+	private static void throwAsUnchecked(Throwable failure) {
+		if (failure instanceof RuntimeException exception) {
+			throw exception;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		throw new QueryEvaluationException(failure);
 	}
 
 	@Override
@@ -189,7 +522,8 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
-		return TupleExprs.isVariableScopeChange(expr) || TupleExprs.containsSubquery(expr);
+		return (TupleExprs.isVariableScopeChange(expr) && !QueryEvaluationUtility.isServiceOwnedScope(expr))
+				|| QueryEvaluationUtility.containsLocalSubquery(expr);
 	}
 
 	private static boolean isNoNewBindingStatementGuard(Join join) {

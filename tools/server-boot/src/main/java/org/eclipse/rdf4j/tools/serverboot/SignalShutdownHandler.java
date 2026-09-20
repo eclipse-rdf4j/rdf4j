@@ -33,7 +33,13 @@ final class SignalShutdownHandler implements AutoCloseable {
 
 	private final AtomicBoolean triggered = new AtomicBoolean(false);
 	private final AtomicReference<ConfigurableApplicationContext> contextRef = new AtomicReference<>();
+	private final AtomicReference<ShutdownCoordinator> coordinatorRef = new AtomicReference<>();
 	private final List<Registration> registrations;
+
+	enum Trigger {
+		SIGNAL,
+		OUT_OF_MEMORY
+	}
 
 	static SignalShutdownHandler register(String... signalNames) {
 		return new SignalShutdownHandler(signalNames);
@@ -65,12 +71,23 @@ final class SignalShutdownHandler implements AutoCloseable {
 		contextRef.set(context);
 	}
 
+	void attachCoordinator(ShutdownCoordinator coordinator) {
+		coordinatorRef.set(coordinator);
+	}
+
 	private void handleSignal(String signalName) {
 		if (!triggered.compareAndSet(false, true)) {
 			return;
 		}
-		logger.info("SIG{} received; initiating graceful shutdown.", signalName);
-		shutdownAndExit(contextRef.get(), "SIG" + signalName, 0, System::exit, Runtime.getRuntime()::halt);
+		String reason = "SIG" + signalName;
+		ShutdownCoordinator coordinator = coordinatorRef.get();
+		if (coordinator != null) {
+			coordinator.requestSignal(reason);
+			logger.info("SIG{} received; initiating graceful shutdown.", signalName);
+		} else {
+			logger.info("SIG{} received; initiating graceful shutdown.", signalName);
+			shutdownAndExit(contextRef.get(), reason, 0, System::exit, Runtime.getRuntime()::halt, Trigger.SIGNAL);
+		}
 	}
 
 	/**
@@ -86,43 +103,27 @@ final class SignalShutdownHandler implements AutoCloseable {
 	 */
 	static void shutdownAndExit(ConfigurableApplicationContext context, String reason, int exitStatus,
 			IntConsumer exit) {
-		shutdownAndExit(context, reason, exitStatus, exit, Runtime.getRuntime()::halt);
+		shutdownAndExit(context, reason, exitStatus, exit, Runtime.getRuntime()::halt, Trigger.SIGNAL);
 	}
 
 	static void shutdownAndExit(ConfigurableApplicationContext context, String reason, int exitStatus,
 			IntConsumer exit, IntConsumer emergencyHalt) {
-		try {
-			startDelayedSystemExitThread(reason, exit);
-		} catch (RuntimeException | Error watchdogFailure) {
-			try {
-				requestEmergencyTermination(exitStatus, emergencyHalt, exit);
-			} catch (RuntimeException | Error emergencyFailure) {
-				watchdogFailure.addSuppressed(emergencyFailure);
-				throw watchdogFailure;
-			}
-			return;
-		}
+		shutdownAndExit(context, reason, exitStatus, exit, emergencyHalt, Trigger.SIGNAL);
+	}
 
-		int exitCode = exitStatus;
+	static void shutdownAndExit(ConfigurableApplicationContext context, String reason, int exitStatus,
+			IntConsumer exit, IntConsumer emergencyHalt, boolean outOfMemory) {
+		shutdownAndExit(context, reason, exitStatus, exit, emergencyHalt,
+				outOfMemory ? Trigger.OUT_OF_MEMORY : Trigger.SIGNAL);
+	}
+
+	static void shutdownAndExit(ConfigurableApplicationContext context, String reason, int exitStatus,
+			IntConsumer exit, IntConsumer emergencyHalt, Trigger trigger) {
+		ShutdownCoordinator coordinator = new ShutdownCoordinator(context, exit, emergencyHalt);
 		try {
-			if (context != null) {
-				int springExitCode = SpringApplication.exit(context, () -> exitStatus);
-				exitCode = springExitCode != 0 ? springExitCode : exitStatus;
-				if (context.isActive()) {
-					context.close();
-				}
-				logger.info("Application context closed after {}, exit status {}", reason, exitCode);
-			} else {
-				logger.warn("{} before application context became available; shutting down immediately.", reason);
-			}
-		} catch (Throwable e) {
-			logger.warn("Error while shutting down after {}", reason, e);
+			coordinator.requestSynchronously(reason, exitStatus, trigger == Trigger.OUT_OF_MEMORY);
 		} finally {
-			try {
-				exit.accept(exitCode);
-			} catch (SecurityException e) {
-				logger.error("System.exit({}) blocked by security manager after {}", exitCode, reason, e);
-			}
+			coordinator.close();
 		}
 	}
 
@@ -143,29 +144,9 @@ final class SignalShutdownHandler implements AutoCloseable {
 		}
 	}
 
-	private static void startDelayedSystemExitThread(String reason, IntConsumer exit) {
-		// Start a thread that will forcibly exit the JVM after a delay, in case spring-boot hangs during shutdown
-		Thread thread = new Thread(() -> {
-			try {
-				// Give logging a moment to flush
-				Thread.sleep(10_000); // Forcibly exit after 10 seconds
-				try {
-					logger.error("Spring application did not exit cleanly after " + reason + "; forcing JVM shutdown.");
-					exit.accept(1);
-				} catch (SecurityException e) {
-					logger.error("System.exit({}) blocked by security manager after {}", 1, reason, e);
-				}
-			} catch (InterruptedException e) {
-				// ignore
-			}
-			logger.info("Exiting JVM after {}", reason);
-		}, "SignalShutdownHandler-Exit");
-		thread.setDaemon(true);
-		thread.start();
-	}
-
 	@Override
 	public void close() {
+		coordinatorRef.set(null);
 		for (Registration registration : registrations) {
 			Signal.handle(registration.signal, registration.previousHandler);
 		}

@@ -13,29 +13,47 @@ package org.eclipse.rdf4j.repository.sparql.federation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BindingSetReplayException;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -43,16 +61,33 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
+import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.parser.ParsedQuery;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * SPARQL defines a constant-IRI SERVICE as ONE logical {@code Invocation} producing one result multiset; a failed
@@ -112,12 +147,123 @@ public class RepositoryFederatedServiceSemanticsTest {
 		return values;
 	}
 
+	private static void assertParsedMixedShape(String query, int minimumUnions, boolean requiresFilter,
+			boolean requiresOptional) {
+		ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		assertMixedShape(parsed.getTupleExpr(), minimumUnions, requiresFilter, requiresOptional, "parsed");
+	}
+
+	private void assertOptimizedMixedShape(String query, int minimumUnions, boolean requiresFilter,
+			boolean requiresOptional) {
+		try (RepositoryConnection conn = localRepo.getConnection()) {
+			Object optimized = conn.prepareTupleQuery(query).explain(Explanation.Level.Optimized).tupleExpr();
+			assertTrue(optimized instanceof TupleExpr, "the optimized explanation must expose a tuple expression");
+			assertMixedShape((TupleExpr) optimized, minimumUnions, requiresFilter, requiresOptional, "optimized");
+		}
+	}
+
+	private static void assertMixedShape(TupleExpr tupleExpr, int minimumUnions, boolean requiresFilter,
+			boolean requiresOptional, String planStage) {
+		int[] unions = { 0 };
+		int[] filters = { 0 };
+		int[] optionals = { 0 };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof Union) {
+					unions[0]++;
+				} else if (node instanceof Filter) {
+					filters[0]++;
+				} else if (node instanceof LeftJoin) {
+					optionals[0]++;
+				}
+				super.meetNode(node);
+			}
+		});
+		assertTrue(unions[0] >= minimumUnions,
+				planStage + " plan must retain the nested UNION witness used by this regression");
+		assertEquals(requiresFilter, filters[0] > 0,
+				planStage + " plan must retain the nonconstant FILTER wrapper used by this regression");
+		assertEquals(requiresOptional, optionals[0] > 0,
+				planStage + " plan must retain the OPTIONAL wrapper used by this regression");
+	}
+
+	private static void assertNonRepeatableMixedRows(List<BindingSet> rows, int branchCount) {
+		assertEquals(2 * branchCount, rows.size(),
+				"the mixed expression must preserve both input mappings and all UNION/OPTIONAL branches");
+		Map<Value, Integer> rowsBySeed = new HashMap<>();
+		Set<Value> independentValues = new HashSet<>();
+		Set<Value> correlatedValues = new HashSet<>();
+		Map<Value, Set<Value>> correlatedByInput = new HashMap<>();
+		Set<Value> inputValues = Set.of(vf.createLiteral("one"), vf.createLiteral("two"));
+		int correlatedRows = 0;
+		for (BindingSet row : rows) {
+			Value input = row.getValue("x");
+			Value seed = row.getValue("seed");
+			Value value = row.getValue("u");
+			assertNotNull(input, "the outer input variable must survive every branch");
+			assertTrue(inputValues.contains(input), "every branch must retain one of the original input values");
+			assertNotNull(seed, "the non-repeatable outer seed must survive every branch");
+			assertNotNull(value, "every mixed branch must produce ?u");
+			rowsBySeed.merge(seed, 1, Integer::sum);
+			if (value.stringValue().endsWith("_processed")) {
+				correlatedRows++;
+				correlatedValues.add(value);
+				correlatedByInput.computeIfAbsent(input, ignored -> new HashSet<>()).add(value);
+			} else {
+				independentValues.add(value);
+			}
+		}
+		assertEquals(2, rowsBySeed.size(), "the two input UUID seeds must remain distinct");
+		assertEquals(Set.of(branchCount), new HashSet<>(rowsBySeed.values()),
+				"each seed must receive every branch exactly once");
+		assertEquals(2, correlatedRows, "the correlated SERVICE branch must run once per input mapping");
+		assertEquals(Set.of(vf.createLiteral("one_processed"), vf.createLiteral("two_processed")), correlatedValues,
+				"the correlated branch must see the matching outer input value");
+		assertEquals(Map.of(vf.createLiteral("one"), Set.of(vf.createLiteral("one_processed")),
+				vf.createLiteral("two"), Set.of(vf.createLiteral("two_processed"))), correlatedByInput,
+				"each correlated output must retain the value from its own input mapping");
+		assertEquals(branchCount - 1, independentValues.size(),
+				"each independent branch must be evaluated once for the whole join scope");
+	}
+
 	private static String values16(String varName) {
 		StringBuilder sb = new StringBuilder("VALUES ?").append(varName).append(" {");
 		for (int i = 1; i <= 16; i++) {
 			sb.append(" ").append(i);
 		}
 		return sb.append(" } ").toString();
+	}
+
+	private static String valuesCount(String varName, int count) {
+		StringBuilder sb = new StringBuilder("VALUES ?").append(varName).append(" {");
+		for (int i = 1; i <= count; i++) {
+			sb.append(" ").append(i);
+		}
+		return sb.append(" } ").toString();
+	}
+
+	private static String stringValuesCount(String varName, int count) {
+		StringBuilder sb = new StringBuilder("VALUES ?").append(varName).append(" {");
+		for (int i = 1; i <= count; i++) {
+			sb.append(" 'row-").append(i).append("'");
+		}
+		return sb.append(" } ").toString();
+	}
+
+	@Test
+	public void emptyUnlimitedRowIdxInputClosesSourceAndDeletesReplaySpool() throws Exception {
+		runReplayCleanupChild("empty");
+	}
+
+	@Test
+	public void earlyCloseOfUnlimitedRowIdxResultClosesSourceAndDeletesReplaySpool() throws Exception {
+		runReplayCleanupChild("early-close");
+	}
+
+	@Test
+	public void silentRowIdxFallbackClosesReplaySpoolAfterPassingThroughInput() throws Exception {
+		runReplayCleanupChild("silent-fallback");
 	}
 
 	/**
@@ -127,7 +273,8 @@ public class RepositoryFederatedServiceSemanticsTest {
 	 */
 	@Test
 	public void moreBindingsThanBlockSizeIsStillOneInvocation() {
-		RepositoryFederatedService service = new RepositoryFederatedService(serviceRepo, false);
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		RepositoryFederatedService service = new RepositoryFederatedService(countedRepository, false);
 		service.setPartitionToleranceDeclared(false);
 		useService(service);
 
@@ -137,6 +284,7 @@ public class RepositoryFederatedServiceSemanticsTest {
 		assertEquals(16, rows.size());
 		assertEquals(1, distinctValues(rows, "u").size(),
 				"one logical Invocation produces one fresh UUID for all input rows");
+		assertEquals(1, countedRepository.tupleEvaluations.get());
 	}
 
 	/** Control: within the single-request limit the pushdown path is also one invocation. */
@@ -149,6 +297,710 @@ public class RepositoryFederatedServiceSemanticsTest {
 
 		assertEquals(3, rows.size());
 		assertEquals(1, distinctValues(rows, "u").size());
+	}
+
+	@Test
+	public void malformedGeneratedValuesAreParsedBeforeOpeningRepositoryConnection() {
+		try (RepositoryConnection conn = serviceRepo.getConnection()) {
+			conn.add(iri("s1"), iri("p"), vf.createLiteral("o1"));
+		}
+
+		RecordingRepository recording = new RecordingRepository(serviceRepo);
+		MalformedValuesService service = new MalformedValuesService(recording);
+		useService(service);
+		Service serviceNode = new Service(Var.of("serviceRef", iri("dummy")),
+				new StatementPattern(Var.of("x"), Var.of("predicate", iri("p")), Var.of("o")),
+				"{ ?x <urn:test:p> ?o }", Map.of(), null, false);
+
+		List<BindingSet> rows = new ArrayList<>();
+		List<BindingSet> inputs = List.of(binding("x", iri("s1")), binding("x", iri("s1")));
+		try (CloseableIteration<BindingSet> result = service.evaluate(serviceNode,
+				new CloseableIteratorIteration<>(inputs.iterator()), serviceNode.getBaseURI())) {
+			while (result.hasNext()) {
+				rows.add(result.next());
+			}
+		}
+
+		assertEquals(2, rows.size(), "the valid local fallback must preserve duplicate input mappings");
+		assertTrue(service.malformedQuery.contains("VALUES"));
+		assertThrows(MalformedQueryException.class,
+				() -> QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, service.malformedQuery,
+						serviceNode.getBaseURI()));
+		assertEquals(1, recording.connectionsOpened.get(),
+				"only the valid fallback invocation may open a repository connection");
+		assertTrue(recording.preparedQueries.stream()
+				.noneMatch(query -> query.contains(MalformedValuesService.MALFORMED_VALUES_SUFFIX)),
+				"the malformed generated VALUES query must be rejected before repository preparation");
+	}
+
+	@ParameterizedTest(name = "{0} input bindings")
+	@ValueSource(ints = { 1, 14, 15, 16, 31 })
+	public void independentSubselectNestedInJoinUsesOneRemoteEvaluation(int inputCount) {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		RepositoryFederatedService service = new RepositoryFederatedService(countedRepository, false);
+		useService(service);
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { " + valuesCount("x", inputCount)
+				+ " SERVICE <urn:dummy> { SELECT ?u WHERE { BIND(UUID() AS ?u) } } }");
+
+		assertEquals(inputCount, rows.size());
+		assertEquals(1, distinctValues(rows, "u").size(),
+				"an independent subselect must observe one remote Invocation");
+		assertEquals(1, countedRepository.tupleEvaluations.get(),
+				"independent subselects must not be evaluated once per input block");
+	}
+
+	@ParameterizedTest(name = "non-SILENT ordinary BIND with {0} input bindings")
+	@ValueSource(ints = { 1, 14, 15, 16, 31 })
+	public void unlimitedOrdinaryBindPreservesInputCorrelation(int inputCount) {
+		assertUnlimitedOrdinaryBindPreservesInputCorrelation(inputCount, false);
+	}
+
+	@ParameterizedTest(name = "SILENT ordinary BIND with {0} input bindings")
+	@ValueSource(ints = { 1, 14, 15, 16, 31 })
+	public void unlimitedSilentOrdinaryBindPreservesInputCorrelation(int inputCount) {
+		assertUnlimitedOrdinaryBindPreservesInputCorrelation(inputCount, true);
+	}
+
+	private void assertUnlimitedOrdinaryBindPreservesInputCorrelation(int inputCount, boolean silent) {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		RepositoryFederatedService service = new RepositoryFederatedService(countedRepository, false);
+		service.setBoundJoinBlockSize(0);
+		useService(service);
+
+		String silentClause = silent ? "SILENT " : "";
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { " + stringValuesCount("x", inputCount)
+				+ "SERVICE " + silentClause
+				+ "<urn:dummy> { BIND(CONCAT(?x, '_processed') AS ?u) } }");
+
+		assertEquals(inputCount, rows.size(), "the ordinary BIND must preserve every input mapping");
+		assertEquals(inputCount, distinctValues(rows, "x").size(),
+				"each generated input value must remain distinct after the remote join");
+		for (BindingSet row : rows) {
+			Value input = row.getValue("x");
+			Value processed = row.getValue("u");
+			assertNotNull(input);
+			assertNotNull(processed, "the remote BIND must see the constrained input value");
+			assertEquals(input.stringValue() + "_processed", processed.stringValue());
+		}
+		assertEquals(1, countedRepository.tupleEvaluations.get(),
+				"bound-join block size zero must keep one constrained remote invocation");
+	}
+
+	@Test
+	public void unlimitedOrdinaryBindPreservesDuplicateAndUndefinedInputs() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		RepositoryFederatedService service = new RepositoryFederatedService(countedRepository, false);
+		service.setBoundJoinBlockSize(0);
+		useService(service);
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?tag ?u WHERE { VALUES (?x ?tag) { "
+				+ "('dup' 'first') ('dup' 'second') (UNDEF 'missing') } "
+				+ "SERVICE <urn:dummy> { BIND(CONCAT(?x, '_processed') AS ?u) } }");
+
+		assertEquals(3, rows.size(), "duplicate and UNDEF input mappings must both survive");
+		Map<String, BindingSet> rowsByTag = new HashMap<>();
+		for (BindingSet row : rows) {
+			rowsByTag.put(row.getValue("tag").stringValue(), row);
+		}
+		assertEquals(Set.of("first", "second", "missing"), rowsByTag.keySet());
+		BindingSet first = rowsByTag.get("first");
+		BindingSet second = rowsByTag.get("second");
+		assertNotNull(first, "the first duplicate input row must be retained");
+		assertNotNull(second, "the second duplicate input row must be retained");
+		assertNotNull(first.getValue("u"), "the first duplicate row must receive the processed value");
+		assertNotNull(second.getValue("u"), "the second duplicate row must receive the processed value");
+		assertEquals("dup_processed", first.getValue("u").stringValue());
+		assertEquals("dup_processed", second.getValue("u").stringValue());
+		assertFalse(rowsByTag.get("missing").hasBinding("u"),
+				"an UNDEF input must preserve the ordinary BIND expression error as an unbound output");
+		assertEquals(1, countedRepository.tupleEvaluations.get());
+	}
+
+	@Test
+	public void unlimitedIndependentSubselectRemainsOneRemoteEvaluation() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		RepositoryFederatedService service = new RepositoryFederatedService(countedRepository, false);
+		service.setBoundJoinBlockSize(0);
+		useService(service);
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { " + stringValuesCount("x", 31)
+				+ "SERVICE <urn:dummy> { SELECT ?u WHERE { BIND(UUID() AS ?u) } } }");
+
+		assertEquals(31, rows.size());
+		assertEquals(1, distinctValues(rows, "u").size(),
+				"an ordinary independent subselect must still be evaluated once");
+		assertEquals(1, countedRepository.tupleEvaluations.get());
+	}
+
+	@Test
+	public void joinedSubselectInsideServiceUsesOneRemoteEvaluation() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { " + valuesCount("x", 16)
+				+ " SERVICE <urn:dummy> { { SELECT ?u WHERE { BIND(UUID() AS ?u) } LIMIT 1 } . "
+				+ "VALUES ?marker { 1 } } }");
+
+		assertEquals(16, rows.size());
+		assertEquals(1, distinctValues(rows, "u").size(),
+				"a subselect joined with another service operand must observe one Invocation");
+		assertEquals(1, countedRepository.tupleEvaluations.get(),
+				"a joined independent subselect must not be evaluated once per input block");
+	}
+
+	@Test
+	public void bnodeInputsInLaterBlocksUseOneIndependentFallbackDownload() {
+		try (RepositoryConnection conn = serviceRepo.getConnection()) {
+			for (int i = 1; i <= 43; i++) {
+				conn.add(iri("s" + i), iri("p"), vf.createLiteral("value" + i));
+			}
+			conn.add(vf.createBNode("late-one"), iri("p"), vf.createLiteral("late-one-value"));
+			conn.add(vf.createBNode("late-two"), iri("p"), vf.createLiteral("late-two-value"));
+		}
+
+		List<BindingSet> inputs = new ArrayList<>(45);
+		for (int i = 1; i <= 15; i++) {
+			inputs.add(binding("x", iri("s" + i)));
+		}
+		inputs.add(binding("x", vf.createBNode("late-one")));
+		for (int i = 16; i <= 29; i++) {
+			inputs.add(binding("x", iri("s" + i)));
+		}
+		inputs.add(binding("x", vf.createBNode("late-two")));
+		for (int i = 30; i <= 43; i++) {
+			inputs.add(binding("x", iri("s" + i)));
+		}
+
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		RepositoryFederatedService service = new RepositoryFederatedService(countedRepository, false);
+		service.setBoundJoinBlockSize(15);
+		useService(service);
+		Service serviceNode = new Service(Var.of("serviceRef", iri("dummy")),
+				new StatementPattern(Var.of("x"), Var.of("predicate", iri("p")), Var.of("o")),
+				"{ ?x <urn:test:p> ?o }", Map.of(), null, false);
+
+		List<BindingSet> rows = new ArrayList<>();
+		try (CloseableIteration<BindingSet> result = service.evaluate(serviceNode,
+				new CloseableIteratorIteration<>(inputs.iterator()), serviceNode.getBaseURI())) {
+			while (result.hasNext()) {
+				rows.add(result.next());
+			}
+		}
+
+		assertEquals(45, rows.size());
+		assertTrue(rows.stream()
+				.anyMatch(row -> row.getValue("x") != null && row.getValue("o") != null
+						&& row.getValue("x").isBNode()
+						&& "late-one-value".equals(row.getValue("o").stringValue())));
+		assertTrue(rows.stream()
+				.anyMatch(row -> row.getValue("x") != null && row.getValue("o") != null
+						&& row.getValue("x").isBNode()
+						&& "late-two-value".equals(row.getValue("o").stringValue())));
+		assertTrue(rows.stream()
+				.anyMatch(row -> row.getValue("x") != null && row.getValue("o") != null
+						&& "urn:test:s1".equals(row.getValue("x").stringValue())
+						&& "value1".equals(row.getValue("o").stringValue())));
+		assertEquals(2, countedRepository.tupleEvaluations.get(),
+				"the first constrained block and one shared fallback must cover all three blocks");
+	}
+
+	@ParameterizedTest(name = "BNode fallback block size {0}")
+	@ValueSource(ints = { 1, 14, 15, 16, 31 })
+	public void bnodeInputsInLaterBlocksUseOneFallbackAcrossBatchSizes(int blockSize) {
+		int safeRowsPerSide = blockSize;
+		int totalRows = safeRowsPerSide * 3 + 2;
+		try (RepositoryConnection conn = serviceRepo.getConnection()) {
+			for (int i = 0; i < safeRowsPerSide * 3; i++) {
+				conn.add(iri("batch-s" + i), iri("p"), vf.createLiteral("batch-value" + i));
+			}
+			conn.add(vf.createBNode("batch-late-one"), iri("p"), vf.createLiteral("batch-late-one-value"));
+			conn.add(vf.createBNode("batch-late-two"), iri("p"), vf.createLiteral("batch-late-two-value"));
+		}
+
+		List<BindingSet> inputs = new ArrayList<>(totalRows);
+		for (int i = 0; i < safeRowsPerSide; i++) {
+			inputs.add(binding("x", iri("batch-s" + i)));
+		}
+		inputs.add(binding("x", vf.createBNode("batch-late-one")));
+		for (int i = safeRowsPerSide; i < safeRowsPerSide * 2; i++) {
+			inputs.add(binding("x", iri("batch-s" + i)));
+		}
+		inputs.add(binding("x", vf.createBNode("batch-late-two")));
+		for (int i = safeRowsPerSide * 2; i < safeRowsPerSide * 3; i++) {
+			inputs.add(binding("x", iri("batch-s" + i)));
+		}
+
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		RepositoryFederatedService service = new RepositoryFederatedService(countedRepository, false);
+		service.setBoundJoinBlockSize(blockSize);
+		useService(service);
+		Service serviceNode = new Service(Var.of("serviceRef", iri("dummy")),
+				new StatementPattern(Var.of("x"), Var.of("predicate", iri("p")), Var.of("o")),
+				"{ ?x <urn:test:p> ?o }", Map.of(), null, false);
+
+		List<BindingSet> rows = new ArrayList<>();
+		try (CloseableIteration<BindingSet> result = service.evaluate(serviceNode,
+				new CloseableIteratorIteration<>(inputs.iterator()), serviceNode.getBaseURI())) {
+			while (result.hasNext()) {
+				rows.add(result.next());
+			}
+		}
+
+		assertEquals(totalRows, rows.size(), "all input rows must be covered after the shared fallback starts");
+		assertTrue(rows.stream().anyMatch(row -> "batch-late-one-value".equals(row.getValue("o").stringValue())));
+		assertTrue(rows.stream().anyMatch(row -> "batch-late-two-value".equals(row.getValue("o").stringValue())));
+		assertEquals(2, countedRepository.tupleEvaluations.get(),
+				"one constrained request and one invocation-owned fallback must cover later blocks");
+	}
+
+	@Test
+	public void jaggedInputBindingsUseFullCompatibleMappingForReturnedIndex() {
+		addServiceData(2);
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?y WHERE { VALUES (?x ?y) {"
+				+ " (<urn:test:s1> UNDEF) (UNDEF \"val2\") }"
+				+ " SERVICE <urn:dummy> { ?x <urn:test:p> ?y } }");
+
+		assertEquals(2, rows.size(), "each jagged input row must retain only compatible remote mappings");
+		assertTrue(rows.stream()
+				.anyMatch(row -> row.getValue("x") != null && row.getValue("y") != null
+						&& "urn:test:s1".equals(row.getValue("x").stringValue())
+						&& "val1".equals(row.getValue("y").stringValue())));
+		assertTrue(rows.stream()
+				.anyMatch(row -> row.getValue("x") != null && row.getValue("y") != null
+						&& "urn:test:s2".equals(row.getValue("x").stringValue())
+						&& "val2".equals(row.getValue("y").stringValue())));
+		assertEquals(1, countedRepository.tupleEvaluations.get());
+	}
+
+	@Test
+	public void explicitSubselectRowIdxProjectionOptsIntoCorrelation() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'one' 'two' } "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } }");
+
+		assertEquals(2, rows.size());
+		assertEquals(Set.of(vf.createLiteral("one_processed"), vf.createLiteral("two_processed")),
+				distinctValues(rows, "u"));
+		assertEquals(1, countedRepository.tupleEvaluations.get(),
+				"an explicit subselect projection is the opt-in for row correlation");
+	}
+
+	@Test
+	public void explicitSubselectRowIdxProjectionWithUnlimitedBlockSizeRetainsCorrelation() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		RepositoryFederatedService service = new RepositoryFederatedService(countedRepository, false);
+		service.setBoundJoinBlockSize(0);
+		useService(service);
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'one' 'two' } "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } }");
+
+		assertEquals(2, rows.size());
+		assertEquals(Set.of(vf.createLiteral("one_processed"), vf.createLiteral("two_processed")),
+				distinctValues(rows, "u"));
+		assertEquals(1, countedRepository.tupleEvaluations.get(),
+				"an explicit row-index projection retains row correlation when block size is unlimited");
+	}
+
+	@Test
+	public void ordinarySubselectPrivateBindReadStaysIndependentWithoutRowIdx() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'one' 'two' } "
+				+ "SERVICE <urn:dummy> { SELECT ?u WHERE { BIND(CONCAT(?x, '_processed') AS ?u) } } }");
+
+		assertEquals(2, rows.size(),
+				"an independent private subselect preserves its singleton error row for each outer input");
+		assertEquals(Set.of(vf.createLiteral("one"), vf.createLiteral("two")), distinctValues(rows, "x"));
+		for (BindingSet row : rows) {
+			assertFalse(row.hasBinding("u"), "the private BIND expression error leaves ?u unbound");
+		}
+		assertEquals(1, countedRepository.tupleEvaluations.get(),
+				"the ordinary private subselect must be evaluated independently once");
+	}
+
+	@Test
+	public void explicitRowIdxOptsIntoPrivateSubselectBindRead() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'one' 'two' } "
+				+ "SERVICE <urn:dummy> { SELECT ?u ?__rowIdx WHERE { "
+				+ "BIND(CONCAT(?x, '_processed') AS ?u) } } }");
+
+		assertEquals(2, rows.size(), "the explicit row-index projection opts into the correlated subselect");
+		assertEquals(Set.of(vf.createLiteral("one_processed"), vf.createLiteral("two_processed")),
+				distinctValues(rows, "u"));
+		assertEquals(1, countedRepository.tupleEvaluations.get(),
+				"the explicit row-index contract keeps the private BIND read correlated in one request");
+	}
+
+	@Test
+	public void filteredExplicitSubselectRowIdxServiceStaysAfterValuesInput() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'one' 'two' } { "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } "
+				+ "FILTER(BOUND(?u)) } }");
+
+		assertEquals(2, rows.size(), "a wrapper around SERVICE must retain the correlated input scope");
+		assertEquals(Set.of(vf.createLiteral("one_processed"), vf.createLiteral("two_processed")),
+				distinctValues(rows, "u"));
+	}
+
+	@Test
+	public void stackedFiltersAroundServiceRetainInputScope() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'one' 'two' } { { "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "FILTER(BOUND(?u)) FILTER(STRLEN(STR(?u)) > 0) } }");
+
+		assertEquals(2, rows.size(), "stacked filters must preserve the SERVICE input scope");
+		assertEquals(Set.of(vf.createLiteral("one_processed"), vf.createLiteral("two_processed")),
+				distinctValues(rows, "u"));
+	}
+
+	@Test
+	public void conjunctiveFilterAroundServiceRetainsInputScope() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'one' 'two' } { { "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "FILTER(BOUND(?u) && STRLEN(STR(?u)) > 0) } }");
+
+		assertEquals(2, rows.size(), "a conjunctive filter must preserve the SERVICE input scope");
+		assertEquals(Set.of(vf.createLiteral("one_processed"), vf.createLiteral("two_processed")),
+				distinctValues(rows, "u"));
+	}
+
+	@Test
+	public void serviceBranchesInsideUnionRetainInputScope() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'one' 'two' } { { "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "UNION { SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "FILTER(BOUND(?u)) } }");
+
+		assertEquals(4, rows.size(), "UNION must retain both SERVICE branch mappings and their multiplicity");
+		assertEquals(Set.of(vf.createLiteral("one_processed"), vf.createLiteral("two_processed")),
+				distinctValues(rows, "u"));
+	}
+
+	@Test
+	public void mixedUnionKeepsCorrelatedServiceAndIndependentLocalSubqueryScopes() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'one' 'two' } { { "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "UNION { SELECT ?u WHERE { BIND(UUID() AS ?u) } LIMIT 1 } } }");
+
+		assertEquals(4, rows.size(), "both UNION branches must retain their input multiplicity");
+		Set<Value> independentValues = new HashSet<>();
+		int correlatedRows = 0;
+		for (BindingSet row : rows) {
+			Value value = row.getValue("u");
+			assertNotNull(value);
+			if (value.stringValue().endsWith("_processed")) {
+				correlatedRows++;
+			} else {
+				independentValues.add(value);
+			}
+		}
+		assertEquals(2, correlatedRows);
+		assertEquals(1, independentValues.size(), "the local UUID subquery must be evaluated once");
+	}
+
+	@Test
+	public void mixedUnionKeepsCorrelatedServiceAndIndependentVolatileBindScope() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'one' 'two' } { { "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "UNION { BIND(UUID() AS ?u) } } }");
+
+		assertEquals(4, rows.size(), "both UNION branches must retain their input multiplicity");
+		Set<Value> volatileValues = new HashSet<>();
+		int correlatedRows = 0;
+		for (BindingSet row : rows) {
+			Value value = row.getValue("u");
+			assertNotNull(value);
+			if (value.stringValue().endsWith("_processed")) {
+				correlatedRows++;
+			} else {
+				volatileValues.add(value);
+			}
+		}
+		assertEquals(2, correlatedRows);
+		assertEquals(1, volatileValues.size(), "the volatile UNION branch must be evaluated independently once");
+	}
+
+	@Test
+	public void nonRepeatableOuterSeedKeepsCorrelatedServiceAndIndependentSubselectScopes() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?seed ?u WHERE { VALUES ?x { 'one' 'two' } "
+				+ "BIND(UUID() AS ?seed) { { "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "UNION { SELECT ?u WHERE { BIND(UUID() AS ?u) } LIMIT 1 } } }");
+
+		assertEquals(4, rows.size(), "the non-repeatable outer seed must retain both UNION branches");
+		Map<Value, Integer> rowsBySeed = new HashMap<>();
+		Set<Value> independentValues = new HashSet<>();
+		int correlatedRows = 0;
+		for (BindingSet row : rows) {
+			Value seed = row.getValue("seed");
+			Value value = row.getValue("u");
+			assertNotNull(seed);
+			assertNotNull(value);
+			rowsBySeed.merge(seed, 1, Integer::sum);
+			if (value.stringValue().endsWith("_processed")) {
+				correlatedRows++;
+			} else {
+				independentValues.add(value);
+			}
+		}
+		assertEquals(2, rowsBySeed.size(), "the outer UUID seed must retain its two input mappings");
+		assertEquals(Set.of(2), new HashSet<>(rowsBySeed.values()),
+				"each outer seed must receive one row from each UNION branch");
+		assertEquals(2, correlatedRows);
+		assertEquals(1, independentValues.size(),
+				"the local subselect must be evaluated once even when UNION distribution is unsafe");
+	}
+
+	@Test
+	public void nonRepeatableOuterSeedKeepsCorrelatedServiceAndIndependentVolatileSibling() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?seed ?u WHERE { VALUES ?x { 'one' 'two' } "
+				+ "BIND(UUID() AS ?seed) { { "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "UNION { BIND(UUID() AS ?u) } } }");
+
+		assertEquals(4, rows.size(), "the non-repeatable outer seed must retain both UNION branches");
+		Map<Value, Integer> rowsBySeed = new HashMap<>();
+		Set<Value> independentValues = new HashSet<>();
+		int correlatedRows = 0;
+		for (BindingSet row : rows) {
+			Value seed = row.getValue("seed");
+			Value value = row.getValue("u");
+			assertNotNull(seed);
+			assertNotNull(value);
+			rowsBySeed.merge(seed, 1, Integer::sum);
+			if (value.stringValue().endsWith("_processed")) {
+				correlatedRows++;
+			} else {
+				independentValues.add(value);
+			}
+		}
+		assertEquals(2, rowsBySeed.size(), "the outer UUID seed must retain its two input mappings");
+		assertEquals(Set.of(2), new HashSet<>(rowsBySeed.values()),
+				"each outer seed must receive one row from each UNION branch");
+		assertEquals(2, correlatedRows);
+		assertEquals(1, independentValues.size(),
+				"the volatile sibling must be evaluated independently once");
+	}
+
+	@Test
+	public void nonRepeatableOuterSeedKeepsMixedUnionUnderNonConstantFilter() {
+		String query = "SELECT ?x ?seed ?u WHERE { VALUES ?x { 'one' 'two' } "
+				+ "BIND(UUID() AS ?seed) { { { SERVICE <urn:dummy> { "
+				+ "SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "UNION { SELECT ?u WHERE { BIND(UUID() AS ?u) } LIMIT 1 } } "
+				+ "FILTER(STRLEN(STR(?u)) > 0) } }";
+		assertParsedMixedShape(query, 1, true, false);
+
+		useService(new RepositoryFederatedService(serviceRepo, false));
+		assertOptimizedMixedShape(query, 1, true, false);
+
+		List<BindingSet> rows = evaluate(query);
+		assertNonRepeatableMixedRows(rows, 2);
+	}
+
+	@Test
+	public void nonRepeatableOuterSeedKeepsMixedUnionUnderNonConstantFilterWithVolatileSibling() {
+		String query = "SELECT ?x ?seed ?u WHERE { VALUES ?x { 'one' 'two' } "
+				+ "BIND(UUID() AS ?seed) { { { SERVICE <urn:dummy> { "
+				+ "SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "UNION { BIND(UUID() AS ?u) } } FILTER(STRLEN(STR(?u)) > 0) } }";
+		assertParsedMixedShape(query, 1, true, false);
+
+		useService(new RepositoryFederatedService(serviceRepo, false));
+		assertOptimizedMixedShape(query, 1, true, false);
+
+		List<BindingSet> rows = evaluate(query);
+		assertNonRepeatableMixedRows(rows, 2);
+	}
+
+	@Test
+	public void nonRepeatableOuterSeedKeepsThreeArmUnionWhenMappingBranchIsNested() {
+		String query = "SELECT ?x ?seed ?u WHERE { VALUES ?x { 'one' 'two' } "
+				+ "BIND(UUID() AS ?seed) { { { SERVICE <urn:dummy> { "
+				+ "SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "UNION { SELECT ?u WHERE { BIND(UUID() AS ?u) } LIMIT 1 } } "
+				+ "UNION { BIND(UUID() AS ?u) } } }";
+		assertParsedMixedShape(query, 2, false, false);
+
+		useService(new RepositoryFederatedService(serviceRepo, false));
+		assertOptimizedMixedShape(query, 2, false, false);
+
+		List<BindingSet> rows = evaluate(query);
+		assertNonRepeatableMixedRows(rows, 3);
+	}
+
+	@Test
+	public void nonRepeatableOuterSeedKeepsThreeArmUnionWhenIndependentBranchesAreNested() {
+		String query = "SELECT ?x ?seed ?u WHERE { VALUES ?x { 'one' 'two' } "
+				+ "BIND(UUID() AS ?seed) { { SERVICE <urn:dummy> { "
+				+ "SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "UNION { { SELECT ?u WHERE { BIND(UUID() AS ?u) } LIMIT 1 } "
+				+ "UNION { BIND(UUID() AS ?u) } } } }";
+		assertParsedMixedShape(query, 2, false, false);
+
+		useService(new RepositoryFederatedService(serviceRepo, false));
+		assertOptimizedMixedShape(query, 2, false, false);
+
+		List<BindingSet> rows = evaluate(query);
+		assertNonRepeatableMixedRows(rows, 3);
+	}
+
+	@Test
+	public void nonRepeatableOuterSeedKeepsMixedOptionalWithIndependentSubselect() {
+		String query = "SELECT ?x ?seed ?u WHERE { VALUES ?x { 'one' 'two' } "
+				+ "BIND(UUID() AS ?seed) OPTIONAL { { SERVICE <urn:dummy> { "
+				+ "SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "UNION { SELECT ?u WHERE { BIND(UUID() AS ?u) } LIMIT 1 } } }";
+		assertParsedMixedShape(query, 1, false, true);
+
+		useService(new RepositoryFederatedService(serviceRepo, false));
+		assertOptimizedMixedShape(query, 1, false, true);
+
+		List<BindingSet> rows = evaluate(query);
+		assertNonRepeatableMixedRows(rows, 2);
+	}
+
+	@Test
+	public void nonRepeatableOuterSeedKeepsMixedOptionalWithVolatileSibling() {
+		String query = "SELECT ?x ?seed ?u WHERE { VALUES ?x { 'one' 'two' } "
+				+ "BIND(UUID() AS ?seed) OPTIONAL { { SERVICE <urn:dummy> { "
+				+ "SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "UNION { BIND(UUID() AS ?u) } } }";
+		assertParsedMixedShape(query, 1, false, true);
+
+		useService(new RepositoryFederatedService(serviceRepo, false));
+		assertOptimizedMixedShape(query, 1, false, true);
+
+		List<BindingSet> rows = evaluate(query);
+		assertNonRepeatableMixedRows(rows, 2);
+	}
+
+	@Test
+	public void existsFilterUsingServiceOutputRetainsInputScope() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'one' 'two' } { { "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "FILTER(EXISTS { VALUES ?probe { 1 } FILTER(BOUND(?u)) }) } }");
+
+		assertEquals(2, rows.size(), "EXISTS must observe the actual SERVICE output binding");
+		assertEquals(Set.of(vf.createLiteral("one_processed"), vf.createLiteral("two_processed")),
+				distinctValues(rows, "u"));
+	}
+
+	@Test
+	public void notExistsFilterUsingServiceOutputRetainsInputScope() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'one' 'two' } { { "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } "
+				+ "FILTER(NOT EXISTS { VALUES ?probe { 1 } FILTER(!BOUND(?u)) }) } }");
+
+		assertEquals(2, rows.size(), "NOT EXISTS must observe the actual SERVICE output binding");
+		assertEquals(Set.of(vf.createLiteral("one_processed"), vf.createLiteral("two_processed")),
+				distinctValues(rows, "u"));
+	}
+
+	@Test
+	public void variableServiceEndpointIsBoundBeforeAStatementFreeRowIdxService() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?endpoint WHERE { "
+				+ "SERVICE ?endpoint { SELECT ?__rowIdx WHERE { } } "
+				+ "VALUES ?endpoint { <urn:dummy> <urn:dummy> } }");
+
+		assertEquals(2, rows.size(), "a variable SERVICE endpoint must be evaluated with each endpoint binding");
+		assertEquals(Set.of(vf.createIRI("urn:dummy")), distinctValues(rows, "endpoint"));
+		assertEquals(2, countedRepository.tupleEvaluations.get());
+	}
+
+	@Test
+	public void directOptionalServiceRetainsInputScope() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'one' 'two' } OPTIONAL { "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } } }");
+
+		assertEquals(2, rows.size(), "a direct OPTIONAL SERVICE must retain the correlated input scope");
+		assertEquals(Set.of(vf.createLiteral("one_processed"), vf.createLiteral("two_processed")),
+				distinctValues(rows, "u"));
+	}
+
+	@Test
+	public void wrappedOptionalServiceRetainsInputScope() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'one' 'two' } OPTIONAL { { "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { } } "
+				+ "FILTER(BOUND(?u)) } } }");
+
+		assertEquals(2, rows.size(), "a wrapper around OPTIONAL SERVICE must retain the correlated input scope");
+		assertEquals(Set.of(vf.createLiteral("one_processed"), vf.createLiteral("two_processed")),
+				distinctValues(rows, "u"));
+	}
+
+	@Test
+	public void localSubqueryContainingServiceRemainsIndependent() {
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
+
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'outer-one' 'outer-two' } "
+				+ "{ SELECT ?u WHERE { SERVICE <urn:dummy> { SELECT (UUID() AS ?u) WHERE { } } } LIMIT 1 } }");
+
+		assertEquals(2, rows.size(), "a local subquery containing SERVICE must retain its own scope");
+		assertEquals(1, distinctValues(rows, "u").size(),
+				"the independent local subquery must be evaluated once for the outer join");
+		assertEquals(1, countedRepository.tupleEvaluations.get());
+	}
+
+	@Test
+	public void ordinaryLocalSubqueryRetainsPriorityAndScope() {
+		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { VALUES ?x { 'outer-one' 'outer-two' } "
+				+ "{ SELECT ?u WHERE { BIND(COALESCE(?x, 'inner') AS ?u) } LIMIT 1 } }");
+
+		assertEquals(2, rows.size());
+		assertEquals(Set.of(vf.createLiteral("inner")), distinctValues(rows, "u"),
+				"an ordinary local subquery remains a separate scope and is evaluated once");
 	}
 
 	/**
@@ -222,9 +1074,9 @@ public class RepositoryFederatedServiceSemanticsTest {
 		}
 	}
 
-	/** Closing a lazy SILENT result before reading it must close the source without invoking hasNext. */
+	/** Closing a lazy direct SILENT result before reading it must leave an unopened source untouched. */
 	@Test
-	public void silentServiceCloseBeforeConsumptionClosesRemote() throws Exception {
+	public void silentServiceCloseBeforeConsumptionLeavesRemoteUnopened() throws Exception {
 		ResultControl control = new ResultControl(ResultMode.BLOCK);
 		addServiceData(1);
 		useService(new RepositoryFederatedService(new ControlledRepository(serviceRepo, control), false));
@@ -239,8 +1091,15 @@ public class RepositoryFederatedServiceSemanticsTest {
 			evaluation = executor.submit((Callable<TupleQueryResult>) query::evaluate);
 			result = evaluation.get(2, TimeUnit.SECONDS);
 
+			assertEquals(0, control.hasNextCalls.get(),
+					"evaluation must not consume the direct remote result before returning");
+			boolean remoteOpened = control.remoteOpened.get();
 			result.close();
-			await(control.closed, "remote result close");
+			if (remoteOpened) {
+				await(control.closed, "remote result close after early close");
+			}
+			assertFalse(control.remoteOpened.get(),
+					"closing an unread direct SILENT SELECT should not open its remote source");
 			assertEquals(0, control.hasNextCalls.get(), "closing before consumption must not read the remote result");
 		} finally {
 			control.release();
@@ -252,6 +1111,31 @@ public class RepositoryFederatedServiceSemanticsTest {
 			}
 			shutdownExecutor(executor);
 			conn.close();
+		}
+	}
+
+	/** The direct federated API must close an already-open remote result without reading its first row. */
+	@ParameterizedTest(name = "silent={0}")
+	@ValueSource(booleans = { true, false })
+	public void directSelectClosesOpenedRemoteWithoutConsumption(boolean silent) throws Exception {
+		ResultControl control = new ResultControl(ResultMode.BLOCK);
+		addServiceData(1);
+		RepositoryFederatedService service = new RepositoryFederatedService(
+				new ControlledRepository(serviceRepo, control), false);
+		Service serviceNode = new Service(Var.of("serviceRef", iri("dummy")),
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				"{ ?s ?p ?o }", Map.of(), null, silent);
+		try {
+			try (CloseableIteration<BindingSet> result = service.select(serviceNode, Set.of("s"),
+					new QueryBindingSet(), serviceNode.getBaseURI())) {
+				assertTrue(control.remoteOpened.get(), "select must open the controlled remote result");
+				assertEquals(0, control.hasNextCalls.get(), "closing must happen before the first remote pull");
+			}
+			await(control.closed, "direct remote result close");
+			assertEquals(0, control.hasNextCalls.get(), "direct close must not consume a remote row");
+		} finally {
+			control.release();
+			service.shutdown();
 		}
 	}
 
@@ -344,6 +1228,304 @@ public class RepositoryFederatedServiceSemanticsTest {
 		}
 	}
 
+	@Test
+	public void silentBufferingServiceResultStreamsLargeRowsWithinBoundedMemory() throws Exception {
+		String javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		String probeId = UUID.randomUUID().toString();
+		Path outputDirectory = Path.of("target", "review-repair-probes");
+		Files.createDirectories(outputDirectory);
+		Path outputFile = outputDirectory.resolve("silent-buffer-memory-" + probeId + ".log").toAbsolutePath();
+		Path tempDirectory = Files.createTempDirectory("rdf4j-silent-buffer-memory-" + probeId + "-");
+		Process process = new ProcessBuilder(javaExecutable, "-Xmx64m", "-Djava.io.tmpdir=" + tempDirectory, "-cp",
+				System.getProperty("java.class.path"), SilentBufferMemoryChild.class.getName(),
+				tempDirectory.toString())
+						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
+						.start();
+		boolean finished = false;
+		try {
+			finished = process.waitFor(60, TimeUnit.SECONDS);
+			if (!finished) {
+				process.destroyForcibly();
+				assertTrue(process.waitFor(5, TimeUnit.SECONDS), "the silent-buffer child could not be terminated");
+			}
+			String output = Files.readString(outputFile, StandardCharsets.UTF_8);
+			assertTrue(finished, "the bounded silent-buffer child did not finish; output: " + output);
+			assertEquals(0, process.exitValue(),
+					"the silent-buffer child must stream rows without heap exhaustion: " + output);
+			assertTrue(output.contains("bufferedRows=" + SilentBufferMemoryChild.ROW_COUNT),
+					"the child must verify every generated row: " + output);
+			try (java.util.stream.Stream<Path> temporaryFiles = Files.list(tempDirectory)) {
+				assertTrue(temporaryFiles.findAny().isEmpty(),
+						"temporary replay files must be removed after the silent result closes: " + tempDirectory);
+			}
+		} finally {
+			if (process.isAlive()) {
+				process.destroyForcibly();
+				process.waitFor(5, TimeUnit.SECONDS);
+			}
+		}
+	}
+
+	@Test
+	public void unlimitedExplicitRowIdxReattachesLargeIrrelevantInputWithinBoundedMemory() throws Exception {
+		runUnlimitedMemoryChild("row-index");
+	}
+
+	@Test
+	public void unlimitedOrdinaryBindReattachesLargeIrrelevantInputWithinBoundedMemory() throws Exception {
+		runUnlimitedMemoryChild("ordinary-bind");
+	}
+
+	private void runUnlimitedMemoryChild(String mode) throws Exception {
+		String javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		String probeId = UUID.randomUUID().toString();
+		Path outputDirectory = Path.of("target", "review-repair-probes");
+		Files.createDirectories(outputDirectory);
+		Path outputFile = outputDirectory.resolve("unlimited-" + mode + "-memory-" + probeId + ".log")
+				.toAbsolutePath();
+		Path tempDirectory = Files.createTempDirectory("rdf4j-unlimited-" + mode + "-memory-" + probeId + "-");
+		Process process = new ProcessBuilder(javaExecutable, "-Xmx64m", "-Djava.io.tmpdir=" + tempDirectory, "-cp",
+				System.getProperty("java.class.path"), ExplicitRowIdxMemoryChild.class.getName(),
+				tempDirectory.toString(), mode)
+						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
+						.start();
+		boolean finished = false;
+		try {
+			finished = process.waitFor(60, TimeUnit.SECONDS);
+			if (!finished) {
+				process.destroyForcibly();
+				assertTrue(process.waitFor(5, TimeUnit.SECONDS),
+						"the " + mode + " child could not be terminated");
+			}
+			String output = Files.readString(outputFile, StandardCharsets.UTF_8);
+			assertTrue(finished, "the " + mode + " child did not finish; output: " + output);
+			assertEquals(0, process.exitValue(),
+					"the " + mode + " child must spill irrelevant input instead of exhausting the heap: " + output);
+			assertTrue(output.contains("reattachedRows=" + ExplicitRowIdxMemoryChild.ROW_COUNT),
+					"the child must verify every reattached input row: " + output);
+			assertTrue(output.contains("remoteEvaluations=1"),
+					"the " + mode + " path must use one remote request: " + output);
+			try (Stream<Path> temporaryFiles = Files.list(tempDirectory)) {
+				assertTrue(temporaryFiles.findAny().isEmpty(),
+						"temporary replay files must be removed after the " + mode + " result closes: "
+								+ tempDirectory);
+			}
+		} finally {
+			if (process.isAlive()) {
+				process.destroyForcibly();
+				process.waitFor(5, TimeUnit.SECONDS);
+			}
+		}
+	}
+
+	/** Runs the actual repository-backed SILENT select path in a fixed-heap JVM. */
+	static final class SilentBufferMemoryChild {
+
+		private static final int ROW_COUNT = 128;
+		private static final int PAYLOAD_LENGTH = 1024 * 1024;
+
+		public static void main(String[] args) throws Exception {
+			if (args.length != 1 || !Files.isDirectory(Path.of(args[0]))) {
+				throw new AssertionError("missing silent-buffer temp directory");
+			}
+			SailRepository delegate = new SailRepository(new MemoryStore());
+			GeneratedRowsRepository repository = new GeneratedRowsRepository(delegate);
+			repository.init();
+			RepositoryFederatedService service = new RepositoryFederatedService(repository, false);
+			Service serviceNode = new Service(Var.of("serviceRef", iri("dummy")),
+					new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+					"{ ?s ?p ?o }", Map.of(), null, true);
+			long count = 0;
+			try (CloseableIteration<BindingSet> result = service.select(serviceNode, Set.of("s", "payload"),
+					org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(), serviceNode.getBaseURI())) {
+				while (result.hasNext()) {
+					BindingSet row = result.next();
+					Value payload = row.getValue("payload");
+					if (payload == null || !matchesPayload(payload.stringValue(), (int) count)) {
+						throw new AssertionError("generated payload changed at row " + count);
+					}
+					count++;
+				}
+			}
+			service.shutdown();
+			repository.shutDown();
+			if (count != ROW_COUNT) {
+				throw new AssertionError("expected " + ROW_COUNT + " buffered rows, got " + count);
+			}
+			System.out.println("bufferedRows=" + count + ", payloadLength=" + PAYLOAD_LENGTH);
+		}
+
+		private static String payload(int row) {
+			char[] characters = new char[PAYLOAD_LENGTH];
+			Arrays.fill(characters, 'x');
+			String marker = Integer.toString(row);
+			marker.getChars(0, marker.length(), characters, 0);
+			return new String(characters);
+		}
+
+		private static boolean matchesPayload(String value, int row) {
+			if (value.length() != PAYLOAD_LENGTH) {
+				return false;
+			}
+			String marker = Integer.toString(row);
+			for (int i = 0; i < marker.length(); i++) {
+				if (value.charAt(i) != marker.charAt(i)) {
+					return false;
+				}
+			}
+			for (int i = marker.length(); i < value.length(); i++) {
+				if (value.charAt(i) != 'x') {
+					return false;
+				}
+			}
+			return true;
+		}
+	}
+
+	/** Exercises the unlimited explicit row-index path without making the generated VALUES query itself large. */
+	static final class ExplicitRowIdxMemoryChild {
+
+		private static final int ROW_COUNT = 96;
+		private static final int PAYLOAD_LENGTH = 1024 * 1024;
+
+		public static void main(String[] args) throws Exception {
+			if ((args.length != 1 && args.length != 2) || !Files.isDirectory(Path.of(args[0]))) {
+				throw new AssertionError("missing row-index temp directory");
+			}
+			boolean ordinaryBind = args.length == 2 && "ordinary-bind".equals(args[1]);
+			if (args.length == 2 && !ordinaryBind && !"row-index".equals(args[1])) {
+				throw new AssertionError("unknown row-index child mode: " + args[1]);
+			}
+			SailRepository delegate = new SailRepository(new MemoryStore());
+			delegate.init();
+			CountingRepository repository = new CountingRepository(delegate);
+			RepositoryFederatedService service = new RepositoryFederatedService(repository, false);
+			service.setBoundJoinBlockSize(0);
+			Service serviceNode = serviceNode(false, ordinaryBind);
+			long count = 0;
+			boolean[] seenRows = new boolean[ROW_COUNT];
+			try (CloseableIteration<BindingSet> result = service.evaluate(serviceNode, new LargeInputIteration(),
+					serviceNode.getBaseURI())) {
+				while (result.hasNext()) {
+					BindingSet row = result.next();
+					int rowNumber = Integer.parseInt(row.getValue("x").stringValue().substring("row-".length()));
+					Value processed = row.getValue("u");
+					Value payload = row.getValue("payload");
+					if (rowNumber < 0 || rowNumber >= ROW_COUNT || seenRows[rowNumber]
+							|| processed == null || !processed.stringValue().equals("row-" + rowNumber + "_processed")
+							|| payload == null || !matchesPayload(payload.stringValue(), rowNumber)) {
+						throw new AssertionError(
+								"row correlation, multiplicity, or irrelevant input reattachment changed at row "
+										+ count);
+					}
+					seenRows[rowNumber] = true;
+					count++;
+				}
+			}
+			int remoteEvaluations = repository.tupleEvaluations.get();
+			service.shutdown();
+			repository.shutDown();
+			if (count != ROW_COUNT) {
+				throw new AssertionError("expected " + ROW_COUNT + " reattached rows, got " + count);
+			}
+			for (int row = 0; row < ROW_COUNT; row++) {
+				if (!seenRows[row]) {
+					throw new AssertionError("missing reattached row " + row);
+				}
+			}
+			if (remoteEvaluations != 1) {
+				throw new AssertionError("expected one remote evaluation, got " + remoteEvaluations);
+			}
+			System.out.println("reattachedRows=" + count + ", remoteEvaluations=" + remoteEvaluations
+					+ ", payloadLength=" + PAYLOAD_LENGTH);
+		}
+
+		private static Service serviceNode() {
+			return serviceNode(false);
+		}
+
+		private static Service serviceNode(boolean silent) {
+			return serviceNode(silent, false);
+		}
+
+		private static Service serviceNode(boolean silent, boolean ordinaryBind) {
+			String servicePattern = ordinaryBind
+					? "BIND(CONCAT(?x, '_processed') AS ?u)"
+					: "SELECT (CONCAT(?x, '_processed') AS ?u) ?__rowIdx WHERE { }";
+			String query = "SELECT ?x ?u WHERE { SERVICE " + (silent ? "SILENT " : "") + "<urn:dummy> { "
+					+ servicePattern + " } }";
+			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+			Service[] service = new Service[1];
+			parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Service node) {
+					service[0] = node;
+				}
+			});
+			if (service[0] == null) {
+				throw new AssertionError("service node missing from row-index query");
+			}
+			return service[0];
+		}
+
+		private static boolean matchesPayload(String value, int row) {
+			if (value.length() != PAYLOAD_LENGTH) {
+				return false;
+			}
+			String marker = Integer.toString(row);
+			for (int i = 0; i < marker.length(); i++) {
+				if (value.charAt(i) != marker.charAt(i)) {
+					return false;
+				}
+			}
+			for (int i = marker.length(); i < value.length(); i++) {
+				if (value.charAt(i) != 'x') {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private static String payload(int row) {
+			char[] characters = new char[PAYLOAD_LENGTH];
+			Arrays.fill(characters, 'x');
+			String marker = Integer.toString(row);
+			marker.getChars(0, marker.length(), characters, 0);
+			return new String(characters);
+		}
+
+		private static final class LargeInputIteration implements CloseableIteration<BindingSet> {
+			private int row;
+
+			@Override
+			public boolean hasNext() {
+				return row < ROW_COUNT;
+			}
+
+			@Override
+			public BindingSet next() {
+				if (!hasNext()) {
+					throw new NoSuchElementException();
+				}
+				QueryBindingSet binding = new QueryBindingSet();
+				binding.addBinding("x", vf.createLiteral("row-" + row));
+				binding.addBinding("payload", vf.createLiteral(payload(row++)));
+				return binding;
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public void close() {
+			}
+		}
+	}
+
 	/**
 	 * A user variable named {@code ?__rowIdx} must not collide with the synthetic row-correlation variable of the
 	 * VALUES pushdown.
@@ -354,7 +1536,8 @@ public class RepositoryFederatedServiceSemanticsTest {
 			conn.add(iri("s1"), iri("p"), vf.createLiteral("o1"));
 			conn.add(iri("s2"), iri("p"), vf.createLiteral("o2"));
 		}
-		useService(new RepositoryFederatedService(serviceRepo, false));
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		useService(new RepositoryFederatedService(countedRepository, false));
 
 		List<BindingSet> rows = evaluate("SELECT ?__rowIdx ?o WHERE { "
 				+ "VALUES ?__rowIdx { <urn:test:s1> <urn:test:s2> } "
@@ -362,10 +1545,358 @@ public class RepositoryFederatedServiceSemanticsTest {
 
 		assertEquals(2, rows.size());
 		assertEquals(2, distinctValues(rows, "o").size());
+		assertEquals(1, countedRepository.tupleEvaluations.get(),
+				"an ordinary user variable must not opt into row-correlated subselect evaluation");
 		for (BindingSet row : rows) {
 			String subject = row.getValue("__rowIdx").stringValue();
 			String object = row.getValue("o").stringValue();
 			assertEquals(subject.endsWith("s1") ? "o1" : "o2", object);
+		}
+	}
+
+	@Test
+	public void returnedRowIndexMergesTheFullCompatibleInputBinding() {
+		QueryBindingSet input = new QueryBindingSet();
+		input.addBinding("x", vf.createLiteral("same"));
+		input.addBinding("tag", vf.createLiteral("input"));
+		QueryBindingSet remote = new QueryBindingSet();
+		remote.addBinding("__rowIdx", vf.createLiteral(0));
+		remote.addBinding("x", vf.createLiteral("same"));
+		remote.addBinding("remote", vf.createLiteral("output"));
+
+		try (CloseableIteration<BindingSet> converted = new ServiceJoinConversionIteration(
+				new CloseableIteratorIteration<>(List.of(remote).iterator()), List.of(input))) {
+			assertTrue(converted.hasNext());
+			BindingSet merged = converted.next();
+			assertEquals("same", merged.getValue("x").stringValue());
+			assertEquals("input", merged.getValue("tag").stringValue());
+			assertEquals("output", merged.getValue("remote").stringValue());
+			assertFalse(converted.hasNext());
+		}
+	}
+
+	@Test
+	public void returnedRowIndexRejectsConflictingSharedBindings() {
+		QueryBindingSet input = new QueryBindingSet();
+		input.addBinding("x", vf.createLiteral("input"));
+		input.addBinding("tag", vf.createLiteral("input"));
+		QueryBindingSet remote = new QueryBindingSet();
+		remote.addBinding("__rowIdx", vf.createLiteral(0));
+		remote.addBinding("x", vf.createLiteral("different"));
+
+		try (CloseableIteration<BindingSet> converted = new ServiceJoinConversionIteration(
+				new CloseableIteratorIteration<>(List.of(remote).iterator()), List.of(input))) {
+			assertFalse(converted.hasNext(), "a returned index does not override compatible-mapping semantics");
+		}
+	}
+
+	@Test
+	public void returnedRowIndexRejectsNonNumericValueAsQueryEvaluationException() {
+		assertInvalidRowIndex(vf.createIRI("urn:test:not-an-index"),
+				List.of(binding("tag", vf.createLiteral("input"))));
+	}
+
+	@Test
+	public void returnedRowIndexRejectsInvalidNumericLexicalFormAsQueryEvaluationException() {
+		assertInvalidRowIndex(vf.createLiteral("1.0"), List.of(binding("tag", vf.createLiteral("input"))));
+	}
+
+	@Test
+	public void returnedRowIndexRejectsNegativeValueAsQueryEvaluationException() {
+		assertInvalidRowIndex(vf.createLiteral(-1), List.of(binding("tag", vf.createLiteral("input"))));
+	}
+
+	@Test
+	public void returnedRowIndexRejectsOutOfRangeValueAsQueryEvaluationException() {
+		assertInvalidRowIndex(vf.createLiteral(1), List.of(binding("tag", vf.createLiteral("input"))));
+	}
+
+	@Test
+	public void silentSuccessfulExhaustionPropagatesRemoteCleanupFailure() {
+		ResultControl control = new ResultControl(ResultMode.CLEANUP_ERROR);
+		useService(new RepositoryFederatedService(new ControlledRepository(serviceRepo, control), false));
+
+		RepositoryConnection conn = localRepo.getConnection();
+		TupleQueryResult result = null;
+		try {
+			result = conn.prepareTupleQuery("SELECT ?s WHERE { SERVICE SILENT <urn:dummy> { ?s ?p ?o } }").evaluate();
+			control.release();
+			QueryEvaluationException failure = assertThrows(QueryEvaluationException.class, result::hasNext);
+			assertSame(control.cleanupError, failure);
+			await(control.closed, "remote result close after successful exhaustion");
+		} finally {
+			if (result != null) {
+				result.close();
+			}
+			conn.close();
+		}
+	}
+
+	@Test
+	public void silentIndependentSubselectExhaustionPropagatesRemoteCleanupFailure() {
+		ResultControl control = new ResultControl(ResultMode.CLEANUP_ERROR);
+		useService(new RepositoryFederatedService(new ControlledRepository(serviceRepo, control), false));
+
+		RepositoryConnection conn = localRepo.getConnection();
+		TupleQueryResult result = null;
+		try {
+			result = conn.prepareTupleQuery(
+					"SELECT ?s WHERE { SERVICE SILENT <urn:dummy> { SELECT ?s WHERE { ?s ?p ?o } } }")
+					.evaluate();
+			control.release();
+			QueryEvaluationException failure = assertThrows(QueryEvaluationException.class, result::hasNext);
+			assertSame(control.cleanupError, failure,
+					"independent-subselect cleanup failures are local and cannot become SILENT pass-through");
+			await(control.closed, "remote result close after independent-subselect exhaustion");
+		} finally {
+			if (result != null) {
+				result.close();
+			}
+			conn.close();
+		}
+	}
+
+	@Test
+	public void silentBatchedConversionExhaustionPropagatesRemoteCleanupFailure() {
+		ResultControl control = new ResultControl(ResultMode.CLEANUP_ERROR);
+		useService(new RepositoryFederatedService(new ControlledRepository(serviceRepo, control), false));
+
+		RepositoryConnection conn = localRepo.getConnection();
+		TupleQueryResult result = null;
+		try {
+			result = conn.prepareTupleQuery("SELECT ?s WHERE { VALUES ?s { <urn:test:s1> <urn:test:s2> } "
+					+ "SERVICE SILENT <urn:dummy> { ?s ?p ?o } }").evaluate();
+			control.release();
+			QueryEvaluationException failure = assertThrows(QueryEvaluationException.class, result::hasNext);
+			assertSame(control.cleanupError, failure,
+					"a batched conversion close failure is local and cannot become SILENT pass-through");
+			await(control.closed, "remote result close after batched conversion exhaustion");
+		} finally {
+			if (result != null) {
+				result.close();
+			}
+			conn.close();
+		}
+	}
+
+	@Test
+	public void silentBatchedConversionExhaustionWithManagedConnectionPropagatesRemoteCleanupFailure() {
+		ResultControl control = new ResultControl(ResultMode.CLEANUP_ERROR);
+		RepositoryFederatedService service = new RepositoryFederatedService(
+				new ControlledRepository(serviceRepo, control), false);
+		service.setUseFreshConnection(false);
+		useService(service);
+
+		RepositoryConnection conn = localRepo.getConnection();
+		TupleQueryResult result = null;
+		try {
+			result = conn.prepareTupleQuery("SELECT ?s WHERE { VALUES ?s { <urn:test:s1> <urn:test:s2> } "
+					+ "SERVICE SILENT <urn:dummy> { ?s ?p ?o } }").evaluate();
+			control.release();
+			QueryEvaluationException failure = assertThrows(QueryEvaluationException.class, result::hasNext);
+			assertSame(control.cleanupError, failure,
+					"managed connections must preserve conversion cleanup failures as local errors");
+			await(control.closed, "remote result close after managed-connection exhaustion");
+		} finally {
+			if (result != null) {
+				result.close();
+			}
+			conn.close();
+		}
+	}
+
+	@Test
+	public void silentSelfClosingLateRemoteErrorFallsBackInsteadOfLookingLikeCleanup() {
+		addServiceData(1);
+		ResultControl control = new ResultControl(ResultMode.SELF_CLOSING_LATE_ERROR);
+		useService(new RepositoryFederatedService(new ControlledRepository(serviceRepo, control), false));
+
+		RepositoryConnection conn = localRepo.getConnection();
+		TupleQueryResult result = null;
+		try {
+			result = conn.prepareTupleQuery("SELECT ?s WHERE { VALUES ?s { <urn:test:s1> <urn:test:s2> } "
+					+ "SERVICE SILENT <urn:dummy> { ?s ?p ?o } }").evaluate();
+			control.release();
+			List<BindingSet> rows = QueryResults.asList(result);
+			assertEquals(2, rows.size(),
+					"a remote error after self-closing must remain a SILENT endpoint failure");
+			assertEquals(Set.of(iri("s1"), iri("s2")), distinctValues(rows, "s"));
+			await(control.closed, "self-closing remote result");
+		} finally {
+			if (result != null) {
+				result.close();
+			}
+			conn.close();
+		}
+	}
+
+	@Test
+	public void topLevelProjectionDoesNotConsumeRemoteBeforeEvaluateReturns() throws Exception {
+		addServiceData(1);
+		ResultControl control = new ResultControl(ResultMode.BLOCK);
+		useService(new RepositoryFederatedService(new ControlledRepository(serviceRepo, control), false));
+
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		RepositoryConnection conn = localRepo.getConnection();
+		AtomicReference<TupleQueryResult> returnedResult = new AtomicReference<>();
+		Future<TupleQueryResult> future = executor.submit(() -> {
+			TupleQueryResult evaluated = conn.prepareTupleQuery(
+					"SELECT ?s WHERE { VALUES ?s { <urn:test:s1> <urn:test:s2> } "
+							+ "SERVICE SILENT <urn:dummy> { ?s ?p ?o } }")
+					.evaluate();
+			returnedResult.set(evaluated);
+			control.evaluationReturned.set(true);
+			return evaluated;
+		});
+		TupleQueryResult result = null;
+		try {
+			try {
+				result = future.get(5, TimeUnit.SECONDS);
+			} catch (TimeoutException e) {
+				throw new AssertionError("query evaluation must return before remote result consumption", e);
+			}
+			assertFalse(control.consumedBeforeEvaluationReturned.get());
+			control.release();
+			List<BindingSet> rows = QueryResults.asList(result);
+			assertEquals(1, rows.size());
+			assertEquals(Set.of(iri("s1")), distinctValues(rows, "s"));
+			result.close();
+			returnedResult.compareAndSet(result, null);
+		} finally {
+			control.release();
+			if (!future.isDone()) {
+				future.cancel(true);
+			}
+			shutdownExecutor(executor);
+			TupleQueryResult lateResult = returnedResult.getAndSet(null);
+			if (lateResult != null) {
+				lateResult.close();
+			}
+			conn.close();
+		}
+	}
+
+	@Test
+	public void topLevelProjectionCanCloseBeforeRemoteConsumption() throws Exception {
+		ResultControl control = new ResultControl(ResultMode.BLOCK);
+		useService(new RepositoryFederatedService(new ControlledRepository(serviceRepo, control), false));
+
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		RepositoryConnection conn = localRepo.getConnection();
+		AtomicReference<TupleQueryResult> returnedResult = new AtomicReference<>();
+		Future<TupleQueryResult> future = executor.submit(() -> {
+			TupleQueryResult evaluated = conn.prepareTupleQuery(
+					"SELECT ?s WHERE { VALUES ?s { <urn:test:s1> <urn:test:s2> } "
+							+ "SERVICE SILENT <urn:dummy> { ?s ?p ?o } }")
+					.evaluate();
+			returnedResult.set(evaluated);
+			control.evaluationReturned.set(true);
+			return evaluated;
+		});
+		TupleQueryResult result = null;
+		try {
+			result = future.get(5, TimeUnit.SECONDS);
+			assertFalse(control.consumedBeforeEvaluationReturned.get());
+			assertEquals(0, control.hasNextCalls.get());
+			result.close();
+			// A deferred evaluator may never open the remote result; if it did, early close must release it here.
+			if (control.remoteOpened.get()) {
+				await(control.closed, "remote result close after early top-level projection close");
+			}
+			returnedResult.compareAndSet(result, null);
+		} finally {
+			control.release();
+			if (!future.isDone()) {
+				future.cancel(true);
+			}
+			shutdownExecutor(executor);
+			TupleQueryResult lateResult = returnedResult.getAndSet(null);
+			if (lateResult != null) {
+				lateResult.close();
+			}
+			conn.close();
+		}
+	}
+
+	@Test
+	public void silentBatchedLateRemoteErrorFallsBackToTheWholeInput() {
+		addServiceData(1);
+		ResultControl control = new ResultControl(ResultMode.LATE_ERROR);
+		useService(new RepositoryFederatedService(new ControlledRepository(serviceRepo, control), false));
+
+		RepositoryConnection conn = localRepo.getConnection();
+		TupleQueryResult result = null;
+		try {
+			result = conn.prepareTupleQuery("SELECT ?s WHERE { VALUES ?s { <urn:test:s1> <urn:test:s2> } "
+					+ "SERVICE SILENT <urn:dummy> { ?s ?p ?o } }").evaluate();
+			control.release();
+			List<BindingSet> rows = QueryResults.asList(result);
+			assertEquals(2, rows.size(),
+					"a late endpoint failure must discard partial conversion rows and pass through both inputs");
+			assertEquals(Set.of(iri("s1"), iri("s2")), distinctValues(rows, "s"));
+			await(control.closed, "remote result close after late remote error");
+		} finally {
+			if (result != null) {
+				result.close();
+			}
+			conn.close();
+		}
+	}
+
+	@Test
+	public void localJoinReplacesNullPlaceholderWithRemoteValueOnFirstAndReplayRows() throws Exception {
+		try (RepositoryConnection conn = serviceRepo.getConnection()) {
+			conn.add(iri("remote-subject"), iri("p"), vf.createLiteral("remote-object"));
+			conn.add(iri("remote-subject-2"), iri("p"), vf.createLiteral("remote-object-2"));
+		}
+
+		RepositoryFederatedService service = new RepositoryFederatedService(serviceRepo, false);
+		service.setBoundJoinBlockSize(0);
+		useService(service);
+		Service serviceNode = parsedService("SELECT ?x ?o WHERE { SERVICE SILENT <urn:dummy> { "
+				+ "SELECT ?x ?o WHERE { ?x <urn:test:p> ?o } } }");
+		SPARQLQueryBindingSet first = new SPARQLQueryBindingSet();
+		first.setBinding("x", null);
+		SPARQLQueryBindingSet duplicate = new SPARQLQueryBindingSet();
+		duplicate.setBinding("x", null);
+
+		List<BindingSet> rows = new ArrayList<>();
+		try (CloseableIteration<BindingSet> result = service.evaluate(serviceNode,
+				new CloseableIteratorIteration<>(List.<BindingSet>of(first, duplicate).iterator()),
+				serviceNode.getBaseURI())) {
+			while (result.hasNext()) {
+				rows.add(result.next());
+			}
+		}
+
+		assertEquals(4, rows.size(), "both remote rows must survive streaming and replay for both input rows");
+		Map<String, Integer> values = new HashMap<>();
+		for (BindingSet row : rows) {
+			String value = row.getValue("x").stringValue() + "|" + row.getValue("o").stringValue();
+			values.merge(value, 1, Integer::sum);
+		}
+		assertEquals(Map.of("urn:test:remote-subject|remote-object", 2,
+				"urn:test:remote-subject-2|remote-object-2", 2), values,
+				"each null-placeholder input must be joined with each remote subject/object");
+	}
+
+	@Test
+	public void silentLocalReplayStorageFailureIsNotConvertedToPassThrough() {
+		ResultControl control = new ResultControl(ResultMode.LOCAL_STORAGE_ERROR);
+		useService(new RepositoryFederatedService(new ControlledRepository(serviceRepo, control), false));
+
+		RepositoryConnection conn = localRepo.getConnection();
+		TupleQueryResult result = null;
+		try {
+			result = conn.prepareTupleQuery("SELECT ?s WHERE { SERVICE SILENT <urn:dummy> { ?s ?p ?o } }").evaluate();
+			BindingSetReplayException failure = assertThrows(BindingSetReplayException.class, result::hasNext);
+			assertSame(control.localStorageError, failure);
+			await(control.closed, "remote result close after local replay failure");
+		} finally {
+			if (result != null) {
+				result.close();
+			}
+			conn.close();
 		}
 	}
 
@@ -378,7 +1909,8 @@ public class RepositoryFederatedServiceSemanticsTest {
 				conn.add(iri("s" + i), iri("p"), vf.createLiteral(java.math.BigInteger.valueOf(i)));
 			}
 		}
-		RepositoryFederatedService service = new RepositoryFederatedService(serviceRepo, false);
+		CountingRepository countedRepository = new CountingRepository(serviceRepo);
+		RepositoryFederatedService service = new RepositoryFederatedService(countedRepository, false);
 		service.setPartitionToleranceDeclared(true);
 		service.setBoundJoinBlockSize(5);
 		useService(service);
@@ -388,6 +1920,8 @@ public class RepositoryFederatedServiceSemanticsTest {
 
 		assertEquals(16, rows.size());
 		assertEquals(16, distinctValues(rows, "s").size());
+		assertEquals(4, countedRepository.tupleEvaluations.get(),
+				"declared partition tolerance must preserve the configured five-row blocks");
 	}
 
 	private void addServiceData(int statements) {
@@ -398,8 +1932,194 @@ public class RepositoryFederatedServiceSemanticsTest {
 		}
 	}
 
+	private static Service parsedService(String query) {
+		ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		Service[] service = new Service[1];
+		parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Service node) {
+				if (service[0] == null) {
+					service[0] = node;
+				}
+			}
+		});
+		assertNotNull(service[0], "service node missing from query");
+		return service[0];
+	}
+
+	private static QueryBindingSet binding(String name, Value value) {
+		QueryBindingSet binding = new QueryBindingSet();
+		binding.addBinding(name, value);
+		return binding;
+	}
+
+	private static void assertInvalidRowIndex(Value rowIndex, List<BindingSet> inputs) {
+		QueryBindingSet remote = binding("__rowIdx", rowIndex);
+		try (CloseableIteration<BindingSet> converted = new ServiceJoinConversionIteration(
+				new CloseableIteratorIteration<>(List.of(remote).iterator()), inputs)) {
+			assertThrows(QueryEvaluationException.class, () -> {
+				while (converted.hasNext()) {
+					converted.next();
+				}
+			});
+		}
+	}
+
+	private static void assertNoTemporaryFiles(Path directory) throws Exception {
+		try (Stream<Path> files = Files.list(directory)) {
+			assertTrue(files.findAny().isEmpty(), "replay resources must be removed from " + directory);
+		}
+	}
+
+	private static void runReplayCleanupChild(String mode) throws Exception {
+		String javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		String probeId = UUID.randomUUID().toString();
+		Path outputDirectory = Path.of("target", "review-repair-probes");
+		Files.createDirectories(outputDirectory);
+		Path outputFile = outputDirectory.resolve("replay-cleanup-" + mode + "-" + probeId + ".log")
+				.toAbsolutePath();
+		Path tempDirectory = Files.createTempDirectory("rdf4j-replay-cleanup-" + mode + "-" + probeId + "-");
+		Process process = new ProcessBuilder(javaExecutable, "-Xmx64m", "-Djava.io.tmpdir=" + tempDirectory, "-cp",
+				System.getProperty("java.class.path"), ReplayCleanupChild.class.getName(), tempDirectory.toString(),
+				mode)
+						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
+						.start();
+		boolean finished = false;
+		try {
+			finished = process.waitFor(60, TimeUnit.SECONDS);
+			if (!finished) {
+				process.destroyForcibly();
+				assertTrue(process.waitFor(5, TimeUnit.SECONDS), "the replay-cleanup child could not be terminated");
+			}
+			String output = Files.exists(outputFile) ? Files.readString(outputFile, StandardCharsets.UTF_8) : "";
+			assertTrue(finished, "the replay-cleanup child did not finish; output: " + output);
+			assertEquals(0, process.exitValue(), "the replay-cleanup child failed: " + output);
+			assertTrue(output.contains("mode=" + mode + ", sourceClosed=1,"),
+					"the child must verify source ownership: " + output);
+			assertTrue(output.contains("cleaned=true"),
+					"the child must verify replay cleanup: " + output);
+			if (!"empty".equals(mode)) {
+				assertTrue(output.contains("ownedSpool=true"),
+						"the child must observe a real spool before closing the owned result: " + output);
+			}
+			assertNoTemporaryFiles(tempDirectory);
+		} finally {
+			if (process.isAlive()) {
+				process.destroyForcibly();
+				process.waitFor(5, TimeUnit.SECONDS);
+			}
+		}
+	}
+
 	private static IRI iri(String local) {
 		return vf.createIRI("urn:test:" + local);
+	}
+
+	private static final class TrackingBindingIteration implements CloseableIteration<BindingSet> {
+		private final List<BindingSet> rows;
+		private final AtomicInteger closeCount = new AtomicInteger();
+		private int index;
+
+		private TrackingBindingIteration(List<BindingSet> rows) {
+			this.rows = rows;
+		}
+
+		@Override
+		public boolean hasNext() {
+			return index < rows.size();
+		}
+
+		@Override
+		public BindingSet next() {
+			if (!hasNext()) {
+				throw new NoSuchElementException();
+			}
+			return rows.get(index++);
+		}
+
+		@Override
+		public void remove() {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public void close() {
+			closeCount.incrementAndGet();
+		}
+	}
+
+	/** Runs replay-owner cleanup in a fresh JVM so the configured temporary directory is authoritative. */
+	static final class ReplayCleanupChild {
+		public static void main(String[] args) throws Exception {
+			if (args.length != 2 || !Files.isDirectory(Path.of(args[0]))) {
+				throw new AssertionError("missing replay-cleanup temp directory");
+			}
+			Path tempDirectory = Path.of(args[0]);
+			String mode = args[1];
+			SailRepository serviceRepo = new SailRepository(new MemoryStore());
+			serviceRepo.init();
+			ResultControl control = "silent-fallback".equals(mode) ? new ResultControl(ResultMode.CANCELLATION) : null;
+			RepositoryFederatedService service = new RepositoryFederatedService(
+					control == null ? serviceRepo : new ControlledRepository(serviceRepo, control), false);
+			service.setBoundJoinBlockSize(0);
+			TrackingBindingIteration input = "empty".equals(mode)
+					? new TrackingBindingIteration(List.of())
+					: new TrackingBindingIteration(List.of(
+							binding("x", vf.createLiteral("one")), binding("x", vf.createLiteral("two"))));
+			CloseableIteration<BindingSet> result = null;
+			boolean ownedSpool = false;
+			boolean cleaned = false;
+			try {
+				result = service.evaluate(ExplicitRowIdxMemoryChild.serviceNode("silent-fallback".equals(mode)), input,
+						null);
+				if ("empty".equals(mode)) {
+					if (result.hasNext()) {
+						throw new AssertionError("empty row-index input produced a result");
+					}
+				} else {
+					ownedSpool = hasTemporaryFiles(tempDirectory);
+					if (!ownedSpool) {
+						throw new AssertionError("no replay spool existed while the result was owned");
+					}
+					if ("silent-fallback".equals(mode)) {
+						List<BindingSet> rows = QueryResults.asList(result);
+						if (rows.size() != 2 || !Set.of(vf.createLiteral("one"), vf.createLiteral("two"))
+								.equals(distinctValues(rows, "x"))) {
+							throw new AssertionError("SILENT fallback did not preserve both input mappings");
+						}
+						await(control.closed, "remote result close after row-index SILENT fallback");
+					} else {
+						result.close();
+						result = null;
+					}
+				}
+			} finally {
+				if (result != null) {
+					result.close();
+				}
+				if (control != null) {
+					control.release();
+				}
+				cleaned = !hasTemporaryFiles(tempDirectory);
+				if (input.closeCount.get() != 1) {
+					throw new AssertionError("expected one source close, got " + input.closeCount.get());
+				}
+				if (!cleaned) {
+					throw new AssertionError("replay resources remained after result close");
+				}
+				service.shutdown();
+				serviceRepo.shutDown();
+			}
+			System.out.println("mode=" + mode + ", sourceClosed=" + input.closeCount.get()
+					+ ", ownedSpool=" + ownedSpool + ", cleaned=" + cleaned);
+		}
+
+		private static boolean hasTemporaryFiles(Path directory) throws Exception {
+			try (Stream<Path> files = Files.list(directory)) {
+				return files.findAny().isPresent();
+			}
+		}
 	}
 
 	/**
@@ -474,6 +2194,217 @@ public class RepositoryFederatedServiceSemanticsTest {
 		@Override
 		public void evaluate(TupleQueryResultHandler handler) {
 			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public void setBinding(String name, Value value) {
+			delegate.setBinding(name, value);
+		}
+
+		@Override
+		public void removeBinding(String name) {
+			delegate.removeBinding(name);
+		}
+
+		@Override
+		public void clearBindings() {
+			delegate.clearBindings();
+		}
+
+		@Override
+		public BindingSet getBindings() {
+			return delegate.getBindings();
+		}
+
+		@Override
+		public void setDataset(Dataset dataset) {
+			delegate.setDataset(dataset);
+		}
+
+		@Override
+		public Dataset getDataset() {
+			return delegate.getDataset();
+		}
+
+		@Override
+		public void setIncludeInferred(boolean includeInferred) {
+			delegate.setIncludeInferred(includeInferred);
+		}
+
+		@Override
+		public boolean getIncludeInferred() {
+			return delegate.getIncludeInferred();
+		}
+
+		@Override
+		public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
+			delegate.setMaxExecutionTime(maxExecutionTimeSeconds);
+		}
+
+		@Override
+		public int getMaxExecutionTime() {
+			return delegate.getMaxExecutionTime();
+		}
+
+		@Override
+		public void setMaxQueryTime(int maxQueryTime) {
+			delegate.setMaxQueryTime(maxQueryTime);
+		}
+
+		@Override
+		public int getMaxQueryTime() {
+			return delegate.getMaxQueryTime();
+		}
+	}
+
+	private static final class GeneratedRowsRepository extends RepositoryWrapper {
+
+		private GeneratedRowsRepository(SailRepository delegate) {
+			super(delegate);
+		}
+
+		@Override
+		public RepositoryConnection getConnection() {
+			RepositoryConnection delegate = super.getConnection();
+			return new RepositoryConnectionWrapper(this, delegate) {
+
+				@Override
+				public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI) {
+					return new GeneratedRowsTupleQuery(getDelegate().prepareTupleQuery(ql, query, baseURI));
+				}
+			};
+		}
+	}
+
+	private static final class GeneratedRowsTupleQuery extends CountingTupleQuery {
+
+		private GeneratedRowsTupleQuery(TupleQuery delegate) {
+			super(delegate, new AtomicInteger());
+		}
+
+		@Override
+		public TupleQueryResult evaluate() {
+			return new GeneratedRowsTupleQueryResult();
+		}
+	}
+
+	private static final class GeneratedRowsTupleQueryResult implements TupleQueryResult {
+
+		private int row;
+
+		@Override
+		public List<String> getBindingNames() {
+			return List.of("s", "payload");
+		}
+
+		@Override
+		public boolean hasNext() {
+			return row < SilentBufferMemoryChild.ROW_COUNT;
+		}
+
+		@Override
+		public BindingSet next() {
+			if (!hasNext()) {
+				throw new NoSuchElementException();
+			}
+			QueryBindingSet result = new QueryBindingSet();
+			result.addBinding("s", vf.createIRI("urn:test:generated-" + row));
+			result.addBinding("payload", vf.createLiteral(SilentBufferMemoryChild.payload(row++)));
+			return result;
+		}
+
+		@Override
+		public void remove() {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public void close() {
+		}
+	}
+
+	private static final class CountingRepository extends RepositoryWrapper {
+
+		private final AtomicInteger tupleEvaluations = new AtomicInteger();
+
+		private CountingRepository(SailRepository delegate) {
+			super(delegate);
+		}
+
+		@Override
+		public RepositoryConnection getConnection() {
+			RepositoryConnection delegate = super.getConnection();
+			return new RepositoryConnectionWrapper(this, delegate) {
+
+				@Override
+				public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI) {
+					TupleQuery prepared = getDelegate().prepareTupleQuery(ql, query, baseURI);
+					return new CountingTupleQuery(prepared, tupleEvaluations);
+				}
+			};
+		}
+	}
+
+	private static final class RecordingRepository extends RepositoryWrapper {
+
+		private final AtomicInteger connectionsOpened = new AtomicInteger();
+		private final List<String> preparedQueries = new CopyOnWriteArrayList<>();
+
+		private RecordingRepository(SailRepository delegate) {
+			super(delegate);
+		}
+
+		@Override
+		public RepositoryConnection getConnection() {
+			connectionsOpened.incrementAndGet();
+			RepositoryConnection delegate = super.getConnection();
+			return new RepositoryConnectionWrapper(this, delegate) {
+
+				@Override
+				public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI) {
+					preparedQueries.add(query);
+					return getDelegate().prepareTupleQuery(ql, query, baseURI);
+				}
+			};
+		}
+	}
+
+	private static final class MalformedValuesService extends RepositoryFederatedService {
+
+		private static final String MALFORMED_VALUES_SUFFIX = " MALFORMED_VALUES_SENTINEL(";
+		private volatile String malformedQuery;
+
+		private MalformedValuesService(RecordingRepository repository) {
+			super(repository, false);
+		}
+
+		@Override
+		protected String insertValuesClause(String queryString, String valuesClause, String rowIdxVar) {
+			malformedQuery = queryString + valuesClause + MALFORMED_VALUES_SUFFIX;
+			return malformedQuery;
+		}
+	}
+
+	private static class CountingTupleQuery implements TupleQuery {
+
+		private final TupleQuery delegate;
+		private final AtomicInteger tupleEvaluations;
+
+		protected CountingTupleQuery(TupleQuery delegate, AtomicInteger tupleEvaluations) {
+			this.delegate = delegate;
+			this.tupleEvaluations = tupleEvaluations;
+		}
+
+		@Override
+		public TupleQueryResult evaluate() throws QueryEvaluationException {
+			tupleEvaluations.incrementAndGet();
+			return delegate.evaluate();
+		}
+
+		@Override
+		public void evaluate(TupleQueryResultHandler handler)
+				throws QueryEvaluationException, TupleQueryResultHandlerException {
+			delegate.evaluate(handler);
 		}
 
 		@Override
@@ -644,7 +2575,11 @@ public class RepositoryFederatedServiceSemanticsTest {
 	private enum ResultMode {
 		BLOCK,
 		CANCELLATION,
-		ERROR
+		ERROR,
+		LATE_ERROR,
+		SELF_CLOSING_LATE_ERROR,
+		CLEANUP_ERROR,
+		LOCAL_STORAGE_ERROR
 	}
 
 	private static final class ResultControl {
@@ -654,7 +2589,14 @@ public class RepositoryFederatedServiceSemanticsTest {
 		private final CountDownLatch release = new CountDownLatch(1);
 		private final CountDownLatch closed = new CountDownLatch(1);
 		private final AtomicInteger hasNextCalls = new AtomicInteger();
+		private final AtomicBoolean evaluationReturned = new AtomicBoolean();
+		private final AtomicBoolean consumedBeforeEvaluationReturned = new AtomicBoolean();
+		private final AtomicBoolean remoteOpened = new AtomicBoolean();
 		private final AssertionError error = new AssertionError("remote result error");
+		private final QueryEvaluationException lateError = new QueryEvaluationException("late remote result error");
+		private final QueryEvaluationException cleanupError = new QueryEvaluationException("remote result close error");
+		private final BindingSetReplayException localStorageError = new BindingSetReplayException(
+				"local replay storage error");
 
 		private ResultControl(ResultMode mode) {
 			this.mode = mode;
@@ -674,6 +2616,7 @@ public class RepositoryFederatedServiceSemanticsTest {
 		private ControlledTupleQueryResult(TupleQueryResult delegate, ResultControl control) {
 			this.delegate = delegate;
 			this.control = control;
+			control.remoteOpened.set(true);
 		}
 
 		@Override
@@ -683,14 +2626,28 @@ public class RepositoryFederatedServiceSemanticsTest {
 
 		@Override
 		public boolean hasNext() throws QueryEvaluationException {
+			if (!control.evaluationReturned.get()) {
+				control.consumedBeforeEvaluationReturned.set(true);
+			}
 			int call = control.hasNextCalls.incrementAndGet();
 			if (control.mode == ResultMode.ERROR) {
 				control.started.countDown();
 				throw control.error;
 			}
+			if (control.mode == ResultMode.LOCAL_STORAGE_ERROR) {
+				control.started.countDown();
+				throw control.localStorageError;
+			}
 			if (control.mode == ResultMode.CANCELLATION) {
 				control.started.countDown();
 				throw new QueryInterruptedException("remote result cancelled");
+			}
+			if ((control.mode == ResultMode.LATE_ERROR || control.mode == ResultMode.SELF_CLOSING_LATE_ERROR)
+					&& call > 1) {
+				if (control.mode == ResultMode.SELF_CLOSING_LATE_ERROR) {
+					close();
+				}
+				throw control.lateError;
 			}
 			if (call == 1) {
 				control.started.countDown();
@@ -725,6 +2682,9 @@ public class RepositoryFederatedServiceSemanticsTest {
 				} finally {
 					control.release();
 					control.closed.countDown();
+				}
+				if (control.mode == ResultMode.CLEANUP_ERROR) {
+					throw control.cleanupError;
 				}
 			}
 		}

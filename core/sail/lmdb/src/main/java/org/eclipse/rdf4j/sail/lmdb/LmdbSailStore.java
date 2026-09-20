@@ -24,6 +24,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -277,6 +279,7 @@ class LmdbSailStore implements SailStore {
 	 */
 	abstract static class StatefulOperation implements Operation {
 		volatile boolean finished = false;
+		volatile Throwable failure;
 	}
 
 	private final NamespaceStore namespaceStore;
@@ -469,12 +472,28 @@ class LmdbSailStore implements SailStore {
 				valueStore.rollback();
 			} finally {
 				if (multiThreadingActive) {
-					while (!opQueue.add(ROLLBACK_TRANSACTION)) {
-						if (tripleStoreException != null) {
-							throw wrapTripleStoreException();
-						} else {
-							Thread.yield();
+					if (!asyncTransactionFinished) {
+						while (!opQueue.add(ROLLBACK_TRANSACTION)) {
+							if (tripleStoreException != null) {
+								throw wrapTripleStoreException();
+							} else {
+								Thread.yield();
+							}
 						}
+						// Do not publish the next transaction until the native writer has consumed this rollback.
+						// Otherwise the
+						// old writer can clear nextTransactionAsync after the new transaction has set it and then
+						// retire with the
+						// new operation queue entries still pending.
+						while (!asyncTransactionFinished) {
+							if (tripleStoreException != null) {
+								throw wrapTripleStoreException();
+							}
+							Thread.onSpinWait();
+						}
+					}
+					if (tripleStoreException != null) {
+						throw wrapTripleStoreException();
 					}
 				} else {
 					tripleStore.rollback();
@@ -487,6 +506,7 @@ class LmdbSailStore implements SailStore {
 			tripleStoreException = null;
 			discardEstimatorStateTouchedByOpenTransaction();
 			storeTxnStarted.set(false);
+			multiThreadingActive = false;
 			sinkStoreAccessLock.unlock();
 		}
 	}
@@ -818,7 +838,16 @@ class LmdbSailStore implements SailStore {
 	 */
 	boolean supportsPrefixRun(int[] prefixFields, boolean subjBound, boolean predBound, boolean objBound,
 			boolean contextBound) {
-		return tripleStore.prefixRunPlan(prefixFields, subjBound, predBound, objBound, contextBound) != null;
+		return preparePrefixRunPlan(prefixFields, subjBound, predBound, objBound, contextBound) != null;
+	}
+
+	/**
+	 * Captures the immutable index choice for a prefix-run evaluation. A caller that keeps this plan must pass it to
+	 * the plan-taking scan overload instead of re-planning after a lazy result has been returned.
+	 */
+	LmdbPrefixRunPlan preparePrefixRunPlan(int[] prefixFields, boolean subjBound, boolean predBound, boolean objBound,
+			boolean contextBound) {
+		return tripleStore.prefixRunPlan(prefixFields, subjBound, predBound, objBound, contextBound);
 	}
 
 	/**
@@ -826,22 +855,12 @@ class LmdbSailStore implements SailStore {
 	 * among the statements matching the supplied pattern. The scan owns a read transaction that is released by
 	 * {@link LmdbPrefixRunScan#close()}.
 	 *
-	 * @param context      the context to match, or {@code null} to match statements in all contexts
-	 * @param countRunRows whether the number of matching statements per prefix combination must be reported
+	 * @param context the context to match, or {@code null} to match statements in all contexts
 	 * @return the scan, or {@code null} when no index supports the prefix-run (see {@link #supportsPrefixRun})
 	 */
 	LmdbPrefixRunScan openPrefixRunScan(boolean explicit, int[] prefixFields, Resource subj, IRI pred, Value obj,
-			Resource context, boolean countRunRows) throws IOException {
-		return openPrefixRunScan(null, explicit, prefixFields, subj, pred, obj, context, countRunRows);
-	}
-
-	/**
-	 * Opens a read transaction for
-	 * {@link #openPrefixRunScan(Txn, boolean, int[], Resource, IRI, Value, Resource, boolean)}; several scans sharing
-	 * it read one snapshot. The caller closes it after closing the scans.
-	 */
-	Txn createReadTxn() throws IOException {
-		return tripleStore.getTxnManager().createReadTxn();
+			Resource context) throws IOException {
+		return openPrefixRunScan(null, explicit, prefixFields, subj, pred, obj, context);
 	}
 
 	/**
@@ -854,15 +873,24 @@ class LmdbSailStore implements SailStore {
 	}
 
 	/**
-	 * See {@link #openPrefixRunScan(boolean, int[], Resource, IRI, Value, Resource, boolean)}.
+	 * See {@link #openPrefixRunScan(boolean, int[], Resource, IRI, Value, Resource)}.
 	 *
 	 * @param sharedTxn a read transaction owned by the caller and kept open while the scan is used, so that several
 	 *                  scans read the same snapshot; {@code null} to let the scan own a fresh transaction
 	 */
 	LmdbPrefixRunScan openPrefixRunScan(Txn sharedTxn, boolean explicit, int[] prefixFields, Resource subj, IRI pred,
-			Value obj, Resource context, boolean countRunRows) throws IOException {
-		LmdbPrefixRunPlan plan = tripleStore.prefixRunPlan(prefixFields, subj != null, pred != null, obj != null,
+			Value obj, Resource context) throws IOException {
+		LmdbPrefixRunPlan plan = preparePrefixRunPlan(prefixFields, subj != null, pred != null, obj != null,
 				context != null);
+		return openPrefixRunScan(sharedTxn, plan, explicit, prefixFields, subj, pred, obj, context);
+	}
+
+	/**
+	 * Opens a prefix-run scan using a plan captured before a lazy evaluation was exposed. The supplied plan is never
+	 * recomputed, so mutable configuration changes cannot turn an accepted prefix-run into a late fallback.
+	 */
+	LmdbPrefixRunScan openPrefixRunScan(Txn sharedTxn, LmdbPrefixRunPlan plan, boolean explicit, int[] prefixFields,
+			Resource subj, IRI pred, Value obj, Resource context) throws IOException {
 		if (plan == null) {
 			return null;
 		}
@@ -901,15 +929,41 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 		Txn txn = sharedTxn != null ? sharedTxn : tripleStore.getTxnManager().createReadTxnUntracked();
+		LmdbPrefixRunCursor cursor = null;
 		try {
-			LmdbPrefixRunIterator cursor = tripleStore.getPrefixRuns(txn, plan, subjID, predID, objID, contextID,
-					explicit, countRunRows);
+			cursor = tripleStore.getPrefixRuns(txn, plan, subjID, predID, objID, contextID,
+					explicit);
 			return new LmdbPrefixRunScan(sharedTxn != null ? null : txn, cursor, valueStore);
 		} catch (IOException | RuntimeException e) {
-			if (sharedTxn == null) {
-				txn.close();
-			}
+			closePrefixRunResources(cursor, txn, sharedTxn == null, e);
 			throw e;
+		} catch (Error e) {
+			closePrefixRunResources(cursor, txn, sharedTxn == null, e);
+			throw e;
+		}
+	}
+
+	private static void closePrefixRunResources(LmdbPrefixRunCursor cursor, Txn txn, boolean ownsTxn,
+			Throwable failure) {
+		if (cursor != null) {
+			try {
+				cursor.close();
+			} catch (Throwable cleanupFailure) {
+				addSuppressed(failure, cleanupFailure);
+			}
+		}
+		if (ownsTxn) {
+			try {
+				txn.close();
+			} catch (Throwable cleanupFailure) {
+				addSuppressed(failure, cleanupFailure);
+			}
+		}
+	}
+
+	private static void addSuppressed(Throwable primary, Throwable secondary) {
+		if (primary != secondary) {
+			primary.addSuppressed(secondary);
 		}
 	}
 
@@ -1189,7 +1243,7 @@ class LmdbSailStore implements SailStore {
 			sinkStoreAccessLock.lock();
 			boolean activeTxn = storeTxnStarted.get();
 			try {
-				if (multiThreadingActive) {
+				if (activeTxn && multiThreadingActive) {
 					while (!opQueue.add(COMMIT_TRANSACTION)) {
 						if (tripleStoreException != null) {
 							throw wrapTripleStoreException();
@@ -1202,7 +1256,7 @@ class LmdbSailStore implements SailStore {
 				try {
 					namespaceStore.sync();
 				} finally {
-					if (multiThreadingActive) {
+					if (activeTxn && multiThreadingActive) {
 						while (!asyncTransactionFinished) {
 							if (tripleStoreException != null) {
 								throw wrapTripleStoreException();
@@ -1544,7 +1598,10 @@ class LmdbSailStore implements SailStore {
 													if (!running.get()) {
 														logger.warn(
 																"LmdbSailStore was closed while active transaction was waiting for the next operation. Forcing a rollback!");
-														rollback();
+														tripleStore.rollback();
+														nextTransactionAsync = false;
+														asyncTransactionFinished = true;
+														break;
 													} else if (Thread.interrupted()) {
 														throw new InterruptedException();
 													} else {
@@ -1647,8 +1704,8 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		private long removeStatements(long subj, long pred, long obj, boolean explicit, long[] contexts)
-				throws IOException {
+		private long removeStatements(long subj, long pred, long obj, boolean explicit, long[] contexts,
+				RemovalNotificationHandoff notifications) throws IOException {
 			long[] removeCount = { 0 };
 			try {
 				for (long contextId : contexts) {
@@ -1656,7 +1713,11 @@ class LmdbSailStore implements SailStore {
 						removeCount[0]++;
 						if (explicit) {
 							try {
-								queueEstimatorRemove(quadToStatement(quad));
+								if (notifications != null) {
+									notifications.publish(quad);
+								} else if (sketchBasedJoinEstimator != null) {
+									queueEstimatorRemove(quadToStatement(quad));
+								}
 							} catch (IOException e) {
 								throw new UncheckedIOException(e);
 							}
@@ -1675,12 +1736,69 @@ class LmdbSailStore implements SailStore {
 			return removeCount[0];
 		}
 
+		/**
+		 * Transfers removed quads from the asynchronous triple-store writer to the ValueStore transaction owner. The
+		 * native writer may not safely decode dictionary entries that were created by the caller but are not committed
+		 * yet, so the owner performs the RDF conversion while the writer only transports the fixed-size IDs.
+		 */
+		private final class RemovalNotificationHandoff {
+			private static final int CAPACITY = 256;
+			private final BlockingQueue<long[]> pending = new ArrayBlockingQueue<>(CAPACITY);
+			private volatile IOException failure;
+			private volatile boolean cancelled;
+
+			void publish(long[] quad) throws IOException {
+				long[] copy = quad.clone();
+				for (;;) {
+					if (cancelled) {
+						throw failure != null ? failure : new IOException("Removed-quad handoff was cancelled");
+					}
+					try {
+						if (pending.offer(copy, 10, TimeUnit.MILLISECONDS)) {
+							return;
+						}
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new IOException("Interrupted while handing off removed quads", e);
+					}
+				}
+			}
+
+			void drainAvailable() throws IOException {
+				for (;;) {
+					if (Thread.interrupted()) {
+						Thread.currentThread().interrupt();
+						IOException interrupted = new IOException("Interrupted while decoding removed quads");
+						failure = interrupted;
+						cancelled = true;
+						throw interrupted;
+					}
+					long[] quad = pending.poll();
+					if (quad == null) {
+						return;
+					}
+					try {
+						queueEstimatorRemove(quadToStatement(quad));
+					} catch (IOException e) {
+						failure = e;
+						cancelled = true;
+						throw e;
+					}
+				}
+			}
+
+			void cancel() {
+				cancelled = true;
+			}
+		}
+
 		private long removeStatements(Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
 				throws SailException {
 			Objects.requireNonNull(contexts,
 					"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 			sinkStoreAccessLock.lock();
+			RemovalNotificationHandoff notifications = null;
 			try {
 				startTransaction(false);
 				final long subjID;
@@ -1729,13 +1847,22 @@ class LmdbSailStore implements SailStore {
 				}
 
 				if (multiThreadingActive) {
+					if (explicit && sketchBasedJoinEstimator != null) {
+						notifications = new RemovalNotificationHandoff();
+					}
+					final RemovalNotificationHandoff activeNotifications = notifications;
 					long[] removeCount = new long[1];
 					StatefulOperation removeOp = new StatefulOperation() {
 						@Override
 						public void execute() throws Exception {
+							Throwable failure = null;
 							try {
-								removeCount[0] = removeStatements(subjID, predID, objID, explicit, contextIds);
+								removeCount[0] = removeStatements(subjID, predID, objID, explicit, contextIds,
+										activeNotifications);
+							} catch (Exception | Error e) {
+								failure = e;
 							} finally {
+								this.failure = failure;
 								finished = true;
 							}
 						}
@@ -1750,26 +1877,92 @@ class LmdbSailStore implements SailStore {
 					}
 
 					while (!removeOp.finished) {
+						if (notifications != null) {
+							notifications.drainAvailable();
+						}
+						if (Thread.interrupted()) {
+							Thread.currentThread().interrupt();
+							throw new SailException("Interrupted while removing statements");
+						}
 						if (tripleStoreException != null) {
 							throw wrapTripleStoreException();
 						} else {
 							Thread.yield();
 						}
 					}
+					if (notifications != null) {
+						notifications.drainAvailable();
+					}
+					if (removeOp.failure != null) {
+						Throwable failure = removeOp.failure;
+						if (failure instanceof IOException e) {
+							throw e;
+						}
+						if (failure instanceof RuntimeException e) {
+							throw e;
+						}
+						if (failure instanceof Error e) {
+							throw e;
+						}
+						throw new IOException(failure);
+					}
+					if (tripleStoreException != null) {
+						throw wrapTripleStoreException();
+					}
 					return removeCount[0];
 				} else {
-					return removeStatements(subjID, predID, objID, explicit, contextIds);
+					return removeStatements(subjID, predID, objID, explicit, contextIds, null);
 				}
 			} catch (IOException e) {
-				rollback();
-				discardEstimatorUpdatesIfTouched();
+				if (notifications != null) {
+					notifications.cancel();
+				}
+				try {
+					rollback();
+				} catch (Throwable rollbackFailure) {
+					e.addSuppressed(rollbackFailure);
+				}
+				try {
+					discardEstimatorUpdatesIfTouched();
+				} catch (Throwable cleanupFailure) {
+					e.addSuppressed(cleanupFailure);
+				}
 				throw new SailException(e);
 			} catch (RuntimeException e) {
-				rollback();
-				discardEstimatorUpdatesIfTouched();
+				if (notifications != null) {
+					notifications.cancel();
+				}
+				try {
+					rollback();
+				} catch (Throwable rollbackFailure) {
+					e.addSuppressed(rollbackFailure);
+				}
+				try {
+					discardEstimatorUpdatesIfTouched();
+				} catch (Throwable cleanupFailure) {
+					e.addSuppressed(cleanupFailure);
+				}
 				logger.error("Encountered an unexpected problem while trying to remove statements", e);
 				throw e;
+			} catch (Error e) {
+				if (notifications != null) {
+					notifications.cancel();
+				}
+				try {
+					rollback();
+				} catch (Throwable rollbackFailure) {
+					e.addSuppressed(rollbackFailure);
+				}
+				try {
+					discardEstimatorUpdatesIfTouched();
+				} catch (Throwable cleanupFailure) {
+					e.addSuppressed(cleanupFailure);
+				}
+				throw e;
 			} finally {
+				if (notifications != null) {
+					notifications.cancel();
+				}
 				sinkStoreAccessLock.unlock();
 			}
 		}
@@ -1850,7 +2043,7 @@ class LmdbSailStore implements SailStore {
 					Thread.yield();
 					return createStatementIterator(txn, subj, pred, obj, explicit, contexts);
 				} catch (IOException e2) {
-					throw new SailException("Unable to get statements", e);
+					throw retryFailure("Unable to get statements", e, e2);
 				}
 			}
 		}
@@ -1866,7 +2059,7 @@ class LmdbSailStore implements SailStore {
 					Thread.yield();
 					return countStatementIterator(txn, subj, pred, obj, explicit, contexts);
 				} catch (IOException e2) {
-					throw new SailException("Unable to count statements", e);
+					throw retryFailure("Unable to count statements", e, e2);
 				}
 			}
 		}
@@ -1882,9 +2075,17 @@ class LmdbSailStore implements SailStore {
 					Thread.yield();
 					return hasStatementIterator(txn, subj, pred, obj, explicit, contexts);
 				} catch (IOException e2) {
-					throw new SailException("Unable to check statements", e);
+					throw retryFailure("Unable to check statements", e, e2);
 				}
 			}
+		}
+
+		private SailException retryFailure(String message, IOException first, IOException second) {
+			SailException failure = new SailException(message, first);
+			if (first != second) {
+				failure.addSuppressed(second);
+			}
+			return failure;
 		}
 
 		@Override

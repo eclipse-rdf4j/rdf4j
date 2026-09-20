@@ -144,6 +144,18 @@ public class LmdbPrefixRunQueryTest {
 	}
 
 	@Test
+	public void ordinaryStatementPatternKeepsPrefixRunDisabled() {
+		openRepository("spoc,posc,ospc");
+
+		long before = LmdbPrefixRunPlan.OPENED.get();
+		assertThat(values("SELECT ?p WHERE { ?s ?p ?o }", "p")).containsExactly(EX + "knows", EX + "knows",
+				EX + "knows", EX + "likes", EX + "likes", EX + "tag", RDF.TYPE.stringValue(), RDF.TYPE.stringValue(),
+				RDF.TYPE.stringValue(), RDF.TYPE.stringValue(), RDF.TYPE.stringValue());
+
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isEqualTo(before);
+	}
+
+	@Test
 	public void countDistinctTypeUsesPrefixRun() {
 		openRepository("spoc,posc,ospc");
 
@@ -166,6 +178,26 @@ public class LmdbPrefixRunQueryTest {
 			assertThat(LmdbPrefixRunPlan.OPENED.get()).isEqualTo(before);
 			assertThat(result.hasNext()).isTrue();
 		}
+		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
+	}
+
+	@Test
+	public void countDistinctKeepsAcceptedPlanWhenPropertyChangesBeforeConsumption() {
+		System.setProperty(LmdbPrefixRunPlan.ENABLED_PROPERTY, "true");
+		openRepository("spoc,posc,ospc");
+
+		long before = LmdbPrefixRunPlan.OPENED.get();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			TupleQuery query = conn.prepareTupleQuery("SELECT (COUNT(DISTINCT ?p) AS ?c) WHERE { ?s ?p ?o }");
+			var result = query.evaluate();
+			System.setProperty(LmdbPrefixRunPlan.ENABLED_PROPERTY, "false");
+			try (result) {
+				assertThat(QueryResults.asList(result)).singleElement()
+						.extracting(bs -> ((Literal) bs.getValue("c")).longValue())
+						.isEqualTo(4L);
+			}
+		}
+
 		assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
 	}
 
@@ -639,8 +671,17 @@ public class LmdbPrefixRunQueryTest {
 
 		@Override
 		LmdbPrefixRunScan openPrefixRunScan(Txn sharedTxn, boolean explicit, int[] prefixFields, Resource subj,
-				IRI pred,
-				Value obj, Resource context, boolean countRunRows) throws IOException {
+				IRI pred, Value obj, Resource context) throws IOException {
+			return blockOpen(sharedTxn);
+		}
+
+		@Override
+		LmdbPrefixRunScan openPrefixRunScan(Txn sharedTxn, LmdbPrefixRunPlan plan, boolean explicit, int[] prefixFields,
+				Resource subj, IRI pred, Value obj, Resource context) throws IOException {
+			return blockOpen(sharedTxn);
+		}
+
+		private LmdbPrefixRunScan blockOpen(Txn sharedTxn) throws IOException {
 			openEntered.countDown();
 			try {
 				if (!openRelease.await(10, TimeUnit.SECONDS)) {
@@ -678,12 +719,29 @@ public class LmdbPrefixRunQueryTest {
 
 		@Override
 		LmdbPrefixRunScan openPrefixRunScan(Txn sharedTxn, boolean explicit, int[] prefixFields, Resource subj,
-				IRI pred, Value obj, Resource context, boolean countRunRows) throws IOException {
+				IRI pred, Value obj, Resource context) throws IOException {
+			return openWithReplacement(sharedTxn,
+					() -> super.openPrefixRunScan(sharedTxn, explicit, prefixFields, subj, pred, obj, context));
+		}
+
+		@Override
+		LmdbPrefixRunScan openPrefixRunScan(Txn sharedTxn, LmdbPrefixRunPlan plan, boolean explicit, int[] prefixFields,
+				Resource subj, IRI pred, Value obj, Resource context) throws IOException {
+			return openWithReplacement(sharedTxn,
+					() -> super.openPrefixRunScan(sharedTxn, plan, explicit, prefixFields, subj, pred, obj, context));
+		}
+
+		private LmdbPrefixRunScan openWithReplacement(Txn sharedTxn, ScanOpener opener) throws IOException {
 			if (++scanOpens == 2) {
 				replaceWithStateB();
 				replacementDone = true;
 			}
-			return super.openPrefixRunScan(sharedTxn, explicit, prefixFields, subj, pred, obj, context, countRunRows);
+			return opener.open();
+		}
+
+		@FunctionalInterface
+		private interface ScanOpener {
+			LmdbPrefixRunScan open() throws IOException;
 		}
 
 		private void replaceWithStateB() {

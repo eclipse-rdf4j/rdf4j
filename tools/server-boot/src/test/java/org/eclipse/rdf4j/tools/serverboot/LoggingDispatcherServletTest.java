@@ -15,15 +15,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.verify;
 
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedConstruction;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -36,6 +41,9 @@ import org.springframework.web.servlet.handler.SimpleUrlHandlerMapping;
 import org.springframework.web.servlet.mvc.Controller;
 import org.springframework.web.servlet.mvc.SimpleControllerHandlerAdapter;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.AppenderBase;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -133,14 +141,296 @@ class LoggingDispatcherServletTest {
 		}
 	}
 
+	@Test
+	void startsNonDaemonGracefulWorkerForOutOfMemory() throws Exception {
+		OutOfMemoryError outOfMemoryError = new OutOfMemoryError("simulated heap exhaustion");
+		GenericWebApplicationContext rootContext = new GenericWebApplicationContext();
+		rootContext.refresh();
+
+		GenericWebApplicationContext servletContext = new GenericWebApplicationContext();
+		servletContext.setParent(rootContext);
+		Controller controller = (request, response) -> {
+			throw outOfMemoryError;
+		};
+		servletContext.registerBean("handlerMapping", SimpleUrlHandlerMapping.class,
+				() -> new SimpleUrlHandlerMapping(Map.of("/oom", controller)));
+		servletContext.registerBean("handlerAdapter", SimpleControllerHandlerAdapter.class,
+				SimpleControllerHandlerAdapter::new);
+		HandlerExceptionResolver resolver = (request, response, handler, exception) -> new ModelAndView();
+		servletContext.registerBean("handlerExceptionResolver", HandlerExceptionResolver.class, () -> resolver);
+
+		MockServletContext mockServletContext = new MockServletContext();
+		TestLoggingDispatcherServlet servlet = new TestLoggingDispatcherServlet();
+		servlet.setApplicationContext(servletContext);
+		servlet.init(new MockServletConfig(mockServletContext, "rdf4jServer"));
+		try (MockedConstruction<Thread> threads = mockConstruction(Thread.class)) {
+			MockHttpServletRequest request = new MockHttpServletRequest(mockServletContext, "POST", "/oom");
+			request.setServletPath("/oom");
+
+			assertThat(catchThrowable(() -> servlet.dispatch(request, new MockHttpServletResponse())))
+					.isSameAs(outOfMemoryError);
+			assertThat(threads.constructed()).hasSize(1);
+			Thread gracefulWorker = threads.constructed().get(0);
+			verify(gracefulWorker).setDaemon(false);
+			verify(gracefulWorker).start();
+		} finally {
+			servlet.destroy();
+			servletContext.close();
+			rootContext.close();
+		}
+	}
+
+	@Test
+	void concurrentOutOfMemoryRequestsStartOnlyOneShutdown() throws Exception {
+		OutOfMemoryError outOfMemoryError = new OutOfMemoryError("simulated heap exhaustion");
+		GenericWebApplicationContext rootContext = new GenericWebApplicationContext();
+		rootContext.refresh();
+
+		GenericWebApplicationContext servletContext = new GenericWebApplicationContext();
+		servletContext.setParent(rootContext);
+		Controller rawOutOfMemoryController = (request, response) -> {
+			throw outOfMemoryError;
+		};
+		Controller wrappedOutOfMemoryController = (request, response) -> {
+			throw new IllegalStateException("wrapped dispatch failure", outOfMemoryError);
+		};
+		servletContext.registerBean("handlerMapping", SimpleUrlHandlerMapping.class,
+				() -> new SimpleUrlHandlerMapping(Map.of(
+						"/rdf4j-server/protocol", rawOutOfMemoryController,
+						"/rdf4j-workbench/repositories", wrappedOutOfMemoryController)));
+		servletContext.registerBean("handlerAdapter", SimpleControllerHandlerAdapter.class,
+				SimpleControllerHandlerAdapter::new);
+		HandlerExceptionResolver resolver = (request, response, handler, exception) -> new ModelAndView();
+		servletContext.registerBean("handlerExceptionResolver", HandlerExceptionResolver.class, () -> resolver);
+
+		MockServletContext mockServletContext = new MockServletContext();
+		TestLoggingDispatcherServlet servlet = new TestLoggingDispatcherServlet();
+		servlet.setApplicationContext(servletContext);
+		servlet.init(new MockServletConfig(mockServletContext, "rdf4jServer"));
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		CountDownLatch ready = new CountDownLatch(2);
+		CountDownLatch start = new CountDownLatch(1);
+		try {
+			Future<Throwable> first = submitOutOfMemoryDispatch(executor, ready, start, servlet, mockServletContext,
+					"/rdf4j-server/protocol");
+			Future<Throwable> second = submitOutOfMemoryDispatch(executor, ready, start, servlet, mockServletContext,
+					"/rdf4j-workbench/repositories");
+
+			assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+			start.countDown();
+			assertThat(first.get(5, TimeUnit.SECONDS)).isSameAs(outOfMemoryError);
+			assertThat(second.get(5, TimeUnit.SECONDS)).isSameAs(outOfMemoryError);
+			assertThat(servlet.firstExit.await(10, TimeUnit.SECONDS)).isTrue();
+			assertThat(servlet.additionalExit.await(2, TimeUnit.SECONDS))
+					.as("concurrent OOM requests must share one termination callback")
+					.isFalse();
+			assertThat(servlet.exitCalls).hasValue(1);
+		} finally {
+			executor.shutdownNow();
+			executor.awaitTermination(5, TimeUnit.SECONDS);
+			servlet.destroy();
+			servletContext.close();
+			rootContext.close();
+		}
+	}
+
+	@Test
+	void recordsTerminationBeforeLoggingOutOfMemory() throws Exception {
+		OutOfMemoryError outOfMemoryError = new OutOfMemoryError("simulated heap exhaustion");
+		GenericWebApplicationContext rootContext = new GenericWebApplicationContext();
+		rootContext.refresh();
+
+		GenericWebApplicationContext servletContext = new GenericWebApplicationContext();
+		servletContext.setParent(rootContext);
+		Controller controller = (request, response) -> {
+			throw outOfMemoryError;
+		};
+		servletContext.registerBean("handlerMapping", SimpleUrlHandlerMapping.class,
+				() -> new SimpleUrlHandlerMapping(Map.of("/oom", controller)));
+		servletContext.registerBean("handlerAdapter", SimpleControllerHandlerAdapter.class,
+				SimpleControllerHandlerAdapter::new);
+		HandlerExceptionResolver resolver = (request, response, handler, exception) -> new ModelAndView();
+		servletContext.registerBean("handlerExceptionResolver", HandlerExceptionResolver.class, () -> resolver);
+
+		MockServletContext mockServletContext = new MockServletContext();
+		AtomicBoolean terminationRequested = new AtomicBoolean();
+		TestLoggingDispatcherServlet servlet = new TestLoggingDispatcherServlet(terminationRequested);
+		servlet.setApplicationContext(servletContext);
+		servlet.init(new MockServletConfig(mockServletContext, "rdf4jServer"));
+		Logger logger = (Logger) LoggerFactory.getLogger(LoggingDispatcherServlet.class);
+		Logger rootLogger = logger.getLoggerContext().getLogger(Logger.ROOT_LOGGER_NAME);
+		AtomicBoolean oomLogObserved = new AtomicBoolean();
+		AtomicBoolean oomLoggedBeforeTermination = new AtomicBoolean();
+		AppenderBase<ILoggingEvent> appender = new AppenderBase<>() {
+			@Override
+			protected void append(ILoggingEvent event) {
+				if (event.getFormattedMessage().contains("OutOfMemoryError while dispatching")) {
+					oomLogObserved.set(true);
+					oomLoggedBeforeTermination.set(!terminationRequested.get());
+				}
+			}
+		};
+		appender.setContext(rootLogger.getLoggerContext());
+		appender.start();
+		rootLogger.addAppender(appender);
+		try (MockedConstruction<Thread> ignored = mockConstruction(Thread.class,
+				(thread, context) -> doThrow(new OutOfMemoryError("simulated native thread exhaustion"))
+						.when(thread)
+						.start())) {
+			try {
+				MockHttpServletRequest request = new MockHttpServletRequest(mockServletContext, "POST", "/oom");
+				request.setServletPath("/oom");
+				assertThat(catchThrowable(() -> servlet.dispatch(request, new MockHttpServletResponse())))
+						.isSameAs(outOfMemoryError);
+			} finally {
+				rootLogger.detachAppender(appender);
+				appender.stop();
+				servlet.destroy();
+				servletContext.close();
+				rootContext.close();
+			}
+		}
+
+		assertThat(oomLogObserved).as("OOM shutdown must emit its diagnostic log event").isTrue();
+		assertThat(oomLoggedBeforeTermination).as("OOM logging must observe termination state").isFalse();
+	}
+
+	@Test
+	void stillRequestsTerminationWhenOutOfMemoryDiagnosticLoggingFails() throws Exception {
+		OutOfMemoryError outOfMemoryError = new OutOfMemoryError("simulated heap exhaustion");
+		GenericWebApplicationContext rootContext = new GenericWebApplicationContext();
+		rootContext.refresh();
+
+		GenericWebApplicationContext servletContext = new GenericWebApplicationContext();
+		servletContext.setParent(rootContext);
+		Controller controller = (request, response) -> {
+			throw outOfMemoryError;
+		};
+		servletContext.registerBean("handlerMapping", SimpleUrlHandlerMapping.class,
+				() -> new SimpleUrlHandlerMapping(Map.of("/oom", controller)));
+		servletContext.registerBean("handlerAdapter", SimpleControllerHandlerAdapter.class,
+				SimpleControllerHandlerAdapter::new);
+		HandlerExceptionResolver resolver = (request, response, handler, exception) -> new ModelAndView();
+		servletContext.registerBean("handlerExceptionResolver", HandlerExceptionResolver.class, () -> resolver);
+
+		MockServletContext mockServletContext = new MockServletContext();
+		TestLoggingDispatcherServlet servlet = new TestLoggingDispatcherServlet();
+		servlet.setApplicationContext(servletContext);
+		servlet.init(new MockServletConfig(mockServletContext, "rdf4jServer"));
+		Logger dispatcherLogger = (Logger) LoggerFactory.getLogger(LoggingDispatcherServlet.class);
+		AtomicBoolean logAttempted = new AtomicBoolean();
+		AppenderBase<ILoggingEvent> failingAppender = new AppenderBase<>() {
+			@Override
+			protected void append(ILoggingEvent event) {
+				if (event.getFormattedMessage().contains("OutOfMemoryError while dispatching")) {
+					logAttempted.set(true);
+					throw new OutOfMemoryError("simulated diagnostic logger exhaustion");
+				}
+			}
+		};
+		failingAppender.setContext(dispatcherLogger.getLoggerContext());
+		failingAppender.start();
+		dispatcherLogger.addAppender(failingAppender);
+		try {
+			MockHttpServletRequest request = new MockHttpServletRequest(mockServletContext, "POST", "/oom");
+			request.setServletPath("/oom");
+
+			Throwable thrown = catchThrowable(() -> servlet.dispatch(request, new MockHttpServletResponse()));
+
+			assertThat(thrown).isSameAs(outOfMemoryError);
+			assertThat(logAttempted).as("the diagnostic appender must be exercised").isTrue();
+			assertThat(servlet.exited.await(10, TimeUnit.SECONDS))
+					.as("a diagnostic logger failure must not prevent termination")
+					.isTrue();
+			assertThat(servlet.exitStatus).hasValue(1);
+		} finally {
+			dispatcherLogger.detachAppender(failingAppender);
+			failingAppender.stop();
+			servlet.destroy();
+			servletContext.close();
+			rootContext.close();
+		}
+	}
+
+	@Test
+	void preservesOriginalOutOfMemoryErrorWhenDiagnosticLoggerRethrowsIt() throws Exception {
+		OutOfMemoryError outOfMemoryError = new OutOfMemoryError("simulated heap exhaustion");
+		GenericWebApplicationContext rootContext = new GenericWebApplicationContext();
+		rootContext.refresh();
+
+		GenericWebApplicationContext servletContext = new GenericWebApplicationContext();
+		servletContext.setParent(rootContext);
+		Controller controller = (request, response) -> {
+			throw outOfMemoryError;
+		};
+		servletContext.registerBean("handlerMapping", SimpleUrlHandlerMapping.class,
+				() -> new SimpleUrlHandlerMapping(Map.of("/oom", controller)));
+		servletContext.registerBean("handlerAdapter", SimpleControllerHandlerAdapter.class,
+				SimpleControllerHandlerAdapter::new);
+		HandlerExceptionResolver resolver = (request, response, handler, exception) -> new ModelAndView();
+		servletContext.registerBean("handlerExceptionResolver", HandlerExceptionResolver.class, () -> resolver);
+
+		MockServletContext mockServletContext = new MockServletContext();
+		TestLoggingDispatcherServlet servlet = new TestLoggingDispatcherServlet();
+		servlet.setApplicationContext(servletContext);
+		servlet.init(new MockServletConfig(mockServletContext, "rdf4jServer"));
+		Logger dispatcherLogger = (Logger) LoggerFactory.getLogger(LoggingDispatcherServlet.class);
+		AtomicBoolean logAttempted = new AtomicBoolean();
+		AppenderBase<ILoggingEvent> rethrowingAppender = new AppenderBase<>() {
+			@Override
+			protected void append(ILoggingEvent event) {
+				if (event.getFormattedMessage().contains("OutOfMemoryError while dispatching")) {
+					logAttempted.set(true);
+					throw outOfMemoryError;
+				}
+			}
+		};
+		rethrowingAppender.setContext(dispatcherLogger.getLoggerContext());
+		rethrowingAppender.start();
+		dispatcherLogger.addAppender(rethrowingAppender);
+		try {
+			MockHttpServletRequest request = new MockHttpServletRequest(mockServletContext, "POST", "/oom");
+			request.setServletPath("/oom");
+
+			Throwable thrown = catchThrowable(() -> servlet.dispatch(request, new MockHttpServletResponse()));
+
+			assertThat(thrown).as("diagnostic logging must not replace the original OOM").isSameAs(outOfMemoryError);
+			assertThat(logAttempted).as("the diagnostic appender must be exercised").isTrue();
+			assertThat(servlet.exited.await(10, TimeUnit.SECONDS))
+					.as("a logger rethrow must not prevent termination")
+					.isTrue();
+		} finally {
+			dispatcherLogger.detachAppender(rethrowingAppender);
+			rethrowingAppender.stop();
+			servlet.destroy();
+			servletContext.close();
+			rootContext.close();
+		}
+	}
+
+	private static Future<Throwable> submitOutOfMemoryDispatch(ExecutorService executor, CountDownLatch ready,
+			CountDownLatch start, TestLoggingDispatcherServlet servlet, MockServletContext mockServletContext,
+			String path) {
+		return executor.submit(() -> {
+			ready.countDown();
+			start.await();
+			MockHttpServletRequest request = new MockHttpServletRequest(mockServletContext, "POST", path);
+			request.setServletPath(path);
+			return catchThrowable(() -> servlet.dispatch(request, new MockHttpServletResponse()));
+		});
+	}
+
 	private static final class TestLoggingDispatcherServlet extends LoggingDispatcherServlet {
 
 		private static final long serialVersionUID = 1L;
 
 		private final CountDownLatch exited = new CountDownLatch(1);
 		private final CountDownLatch halted = new CountDownLatch(1);
+		private final CountDownLatch firstExit = new CountDownLatch(1);
+		private final CountDownLatch additionalExit = new CountDownLatch(1);
 		private final AtomicInteger exitStatus = new AtomicInteger(-1);
 		private final AtomicInteger haltStatus = new AtomicInteger(-1);
+		private final AtomicInteger exitCalls = new AtomicInteger();
 		private final AtomicBoolean terminationRequested;
 
 		private TestLoggingDispatcherServlet() {
@@ -158,6 +448,11 @@ class LoggingDispatcherServletTest {
 		@Override
 		protected void exitJvm(int status) {
 			terminationRequested.set(true);
+			if (exitCalls.incrementAndGet() == 1) {
+				firstExit.countDown();
+			} else {
+				additionalExit.countDown();
+			}
 			exitStatus.compareAndSet(-1, status);
 			exited.countDown();
 		}

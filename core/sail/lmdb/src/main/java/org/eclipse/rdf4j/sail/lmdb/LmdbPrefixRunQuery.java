@@ -76,6 +76,15 @@ final class LmdbPrefixRunQuery {
 	 */
 	static CloseableIteration<BindingSet> evaluateDistinct(LmdbSailStore store, TupleExpr tupleExpr,
 			boolean explicit) throws IOException {
+		PreparedDistinct plan = prepareDistinct(store, tupleExpr, explicit);
+		return plan == null ? null : plan.open();
+	}
+
+	/**
+	 * Parses a DISTINCT shape and captures its index choice without opening a transaction, cursor, or snapshot. Callers
+	 * that need to hold a snapshot branch open must complete this preparation before acquiring that branch.
+	 */
+	static PreparedDistinct prepareDistinct(LmdbSailStore store, TupleExpr tupleExpr, boolean explicit) {
 		TupleExpr expr = unwrapRoot(tupleExpr);
 		if (!(expr instanceof Distinct) && !(expr instanceof Reduced)) {
 			return null;
@@ -119,43 +128,97 @@ final class LmdbPrefixRunQuery {
 			bindingFields.add(field);
 		}
 		int[] prefixFields = distinctFields.stream().mapToInt(Integer::intValue).toArray();
-		LmdbPrefixRunScan scan = store.openPrefixRunScan(explicit, prefixFields, fields.subj, fields.pred, fields.obj,
-				fields.context, false);
-		if (scan == null) {
+		LmdbPrefixRunPlan plan = store.preparePrefixRunPlan(prefixFields, fields.subj != null, fields.pred != null,
+				fields.obj != null, fields.context != null);
+		if (plan == null) {
 			return null;
 		}
-		LmdbPrefixRunBatch batch = new LmdbPrefixRunBatch(scan);
 		String[] names = bindingNames.toArray(new String[0]);
 		int[] nameFields = bindingFields.stream().mapToInt(Integer::intValue).toArray();
-		return new LookAheadIteration<>() {
-			@Override
-			protected BindingSet getNextElement() throws QueryEvaluationException {
-				try {
-					if (!batch.next()) {
-						return null;
-					}
-					long[] quad = batch.currentQuad();
-					if (quad == null) {
-						return null;
-					}
-					QueryBindingSet result = new QueryBindingSet(names.length);
-					for (int i = 0; i < names.length; i++) {
-						Value value = scan.getValue(quad, nameFields[i]);
-						if (value != null) {
-							result.addBinding(names[i], value);
+		return new PreparedDistinct(store, explicit, plan, prefixFields, fields.subj, fields.pred, fields.obj,
+				fields.context, names, nameFields);
+	}
+
+	static final class PreparedDistinct {
+		private final LmdbSailStore store;
+		private final boolean explicit;
+		private final LmdbPrefixRunPlan plan;
+		private final int[] prefixFields;
+		private final Resource subj;
+		private final IRI pred;
+		private final Value obj;
+		private final Resource context;
+		private final String[] names;
+		private final int[] nameFields;
+
+		private PreparedDistinct(LmdbSailStore store, boolean explicit, LmdbPrefixRunPlan plan, int[] prefixFields,
+				Resource subj, IRI pred, Value obj, Resource context, String[] names, int[] nameFields) {
+			this.store = store;
+			this.explicit = explicit;
+			this.plan = plan;
+			this.prefixFields = Arrays.copyOf(prefixFields, prefixFields.length);
+			this.subj = subj;
+			this.pred = pred;
+			this.obj = obj;
+			this.context = context;
+			this.names = names;
+			this.nameFields = nameFields;
+		}
+
+		CloseableIteration<BindingSet> open() throws IOException {
+			LmdbPrefixRunScan scan = store.openPrefixRunScan(null, plan, explicit, prefixFields, subj, pred, obj,
+					context);
+			if (scan == null) {
+				return null;
+			}
+			LmdbPrefixRunBatch batch = null;
+			try {
+				batch = new LmdbPrefixRunBatch(scan);
+				LmdbPrefixRunBatch ownedBatch = batch;
+				return new LookAheadIteration<>() {
+					@Override
+					protected BindingSet getNextElement() throws QueryEvaluationException {
+						try {
+							if (!ownedBatch.next()) {
+								return null;
+							}
+							long[] quad = ownedBatch.currentQuad();
+							if (quad == null) {
+								return null;
+							}
+							QueryBindingSet result = new QueryBindingSet(names.length);
+							for (int i = 0; i < names.length; i++) {
+								Value value = scan.getValue(quad, nameFields[i]);
+								if (value != null) {
+									result.addBinding(names[i], value);
+								}
+							}
+							return result;
+						} catch (IOException e) {
+							throw new QueryEvaluationException(e);
 						}
 					}
-					return result;
-				} catch (IOException e) {
-					throw new QueryEvaluationException(e);
-				}
-			}
 
-			@Override
-			protected void handleClose() throws QueryEvaluationException {
-				batch.close();
+					@Override
+					protected void handleClose() throws QueryEvaluationException {
+						ownedBatch.close();
+					}
+				};
+			} catch (RuntimeException | Error failure) {
+				try {
+					if (batch != null) {
+						batch.close();
+					} else {
+						scan.close();
+					}
+				} catch (RuntimeException | Error cleanupFailure) {
+					if (cleanupFailure != failure) {
+						failure.addSuppressed(cleanupFailure);
+					}
+				}
+				throw failure;
 			}
-		};
+		}
 	}
 
 	/**
@@ -184,6 +247,7 @@ final class LmdbPrefixRunQuery {
 		private final PatternFields fields;
 		private final List<String> names;
 		private final int[] countFields;
+		private final Map<Integer, LmdbPrefixRunPlan> prefixPlans;
 		private final Object resourceLock = new Object();
 
 		private Txn txn;
@@ -192,7 +256,8 @@ final class LmdbPrefixRunQuery {
 		private boolean closed;
 
 		private DistinctCountPlan(LmdbSailStore store, TupleExpr tupleExpr, boolean explicit, ValueFactory valueFactory,
-				PatternFields fields, List<String> names, int[] countFields) {
+				PatternFields fields, List<String> names, int[] countFields,
+				Map<Integer, LmdbPrefixRunPlan> prefixPlans) {
 			this.store = store;
 			this.tupleExpr = tupleExpr;
 			this.explicit = explicit;
@@ -200,6 +265,7 @@ final class LmdbPrefixRunQuery {
 			this.fields = fields;
 			this.names = names;
 			this.countFields = countFields;
+			this.prefixPlans = prefixPlans;
 		}
 
 		static DistinctCountPlan create(LmdbSailStore store, TupleExpr tupleExpr, boolean explicit, ValueFactory vf) {
@@ -240,14 +306,19 @@ final class LmdbPrefixRunQuery {
 				names.add(elem.getName());
 				countFields.add(field);
 			}
+			Map<Integer, LmdbPrefixRunPlan> prefixPlans = new HashMap<>();
 			for (int field : countFields) {
-				if (!store.supportsPrefixRun(new int[] { field }, fields.subj != null, fields.pred != null,
-						fields.obj != null, fields.context != null)) {
+				LmdbPrefixRunPlan plan = prefixPlans.computeIfAbsent(field,
+						ignored -> store.preparePrefixRunPlan(new int[] { field }, fields.subj != null,
+								fields.pred != null,
+								fields.obj != null, fields.context != null));
+				if (plan == null) {
 					return null;
 				}
 			}
 			int[] fieldsArray = countFields.stream().mapToInt(Integer::intValue).toArray();
-			return new DistinctCountPlan(store, tupleExpr, explicit, vf, fields, List.copyOf(names), fieldsArray);
+			return new DistinctCountPlan(store, tupleExpr, explicit, vf, fields, List.copyOf(names), fieldsArray,
+					Map.copyOf(prefixPlans));
 		}
 
 		TupleExpr rewrite(BooleanSupplier cancelled) throws IOException {
@@ -337,8 +408,9 @@ final class LmdbPrefixRunQuery {
 			LmdbPrefixRunBatch batch = null;
 			boolean installed = false;
 			try {
-				scan = store.openPrefixRunScan(localTxn, explicit, new int[] { field }, fields.subj, fields.pred,
-						fields.obj, fields.context, false);
+				scan = store.openPrefixRunScan(localTxn, prefixPlans.get(field), explicit, new int[] { field },
+						fields.subj,
+						fields.pred, fields.obj, fields.context);
 				if (scan == null) {
 					throw new IllegalStateException("Prefix-run support was checked before opening the scan");
 				}

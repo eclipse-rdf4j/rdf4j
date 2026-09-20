@@ -18,6 +18,8 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.web.servlet.DispatcherServlet;
 import org.springframework.web.servlet.ModelAndView;
 
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -26,6 +28,36 @@ class LoggingDispatcherServlet extends DispatcherServlet {
 	private static final long serialVersionUID = 1L;
 
 	private static final Logger logger = LoggerFactory.getLogger(LoggingDispatcherServlet.class);
+
+	private final ShutdownCoordinator sharedShutdownCoordinator;
+	private ShutdownCoordinator ownedShutdownCoordinator;
+
+	LoggingDispatcherServlet() {
+		this(null);
+	}
+
+	LoggingDispatcherServlet(ShutdownCoordinator sharedShutdownCoordinator) {
+		this.sharedShutdownCoordinator = sharedShutdownCoordinator;
+	}
+
+	@Override
+	public void init(ServletConfig config) throws ServletException {
+		super.init(config);
+		if (sharedShutdownCoordinator == null) {
+			ownedShutdownCoordinator = new ShutdownCoordinator(findRootContext(), this::exitJvm, this::haltJvm);
+		}
+	}
+
+	@Override
+	public void destroy() {
+		try {
+			super.destroy();
+		} finally {
+			if (ownedShutdownCoordinator != null) {
+				ownedShutdownCoordinator.close();
+			}
+		}
+	}
 
 	@Override
 	protected void doDispatch(HttpServletRequest request, HttpServletResponse response) throws Exception {
@@ -43,14 +75,16 @@ class LoggingDispatcherServlet extends DispatcherServlet {
 		try {
 			super.doDispatch(request, response);
 		} catch (Exception | OutOfMemoryError throwable) {
-			OutOfMemoryError outOfMemoryError = findOutOfMemoryError(throwable);
+			OutOfMemoryError outOfMemoryError = OutOfMemoryErrorSupport.find(throwable);
 			if (outOfMemoryError == null) {
 				throw throwable;
 			}
 			try {
 				shutdownServer(outOfMemoryError);
 			} catch (RuntimeException | Error shutdownFailure) {
-				outOfMemoryError.addSuppressed(shutdownFailure);
+				if (shutdownFailure != outOfMemoryError) {
+					outOfMemoryError.addSuppressed(shutdownFailure);
+				}
 			}
 			throw outOfMemoryError;
 		}
@@ -59,50 +93,60 @@ class LoggingDispatcherServlet extends DispatcherServlet {
 	@Override
 	protected ModelAndView processHandlerException(HttpServletRequest request, HttpServletResponse response,
 			Object handler, Exception exception) throws Exception {
-		if (findOutOfMemoryError(exception) != null) {
+		if (OutOfMemoryErrorSupport.find(exception) != null) {
 			throw exception;
 		}
 		return super.processHandlerException(request, response, handler, exception);
 	}
 
-	private static OutOfMemoryError findOutOfMemoryError(Throwable throwable) {
-		Throwable cause = throwable;
-		for (int depth = 0; cause != null && depth < 100; depth++) {
-			if (cause instanceof OutOfMemoryError outOfMemoryError) {
-				return outOfMemoryError;
+	private void shutdownServer(OutOfMemoryError outOfMemoryError) throws Exception {
+		Throwable shutdownFailure = null;
+		try {
+			ShutdownCoordinator coordinator = sharedShutdownCoordinator != null
+					? sharedShutdownCoordinator
+					: ownedShutdownCoordinator;
+			if (coordinator != null) {
+				coordinator.requestOutOfMemory("OutOfMemoryError");
+			} else {
+				// A servlet created outside the application wiring still has a bounded emergency fallback. Production
+				// wiring
+				// creates the coordinator during healthy startup, so this branch is only for embedding and test
+				// containers.
+				SignalShutdownHandler.requestEmergencyTermination(1, this::haltJvm, this::exitJvm);
 			}
-			cause = cause.getCause();
+		} catch (RuntimeException | Error startFailure) {
+			shutdownFailure = startFailure;
 		}
-		return null;
+
+		try {
+			// Publish the shutdown state before emitting the diagnostic event. An appender may itself exhaust memory,
+			// but it
+			// must not prevent the coordinator from being armed or replace the original out-of-memory error.
+			logger.error("OutOfMemoryError while dispatching a request; shutting down the server", outOfMemoryError);
+		} catch (RuntimeException | Error loggingFailure) {
+			if (shutdownFailure == null) {
+				shutdownFailure = loggingFailure;
+			} else if (shutdownFailure != loggingFailure) {
+				shutdownFailure.addSuppressed(loggingFailure);
+			}
+		}
+		if (shutdownFailure != null) {
+			if (shutdownFailure instanceof RuntimeException runtimeException) {
+				throw runtimeException;
+			}
+			if (shutdownFailure instanceof Error error) {
+				throw error;
+			}
+			throw new ServletException(shutdownFailure);
+		}
 	}
 
-	private void shutdownServer(OutOfMemoryError outOfMemoryError) {
-		logger.error("OutOfMemoryError while dispatching a request; shutting down the server", outOfMemoryError);
+	private ConfigurableApplicationContext findRootContext() {
 		ApplicationContext context = getWebApplicationContext();
 		while (context != null && context.getParent() != null) {
 			context = context.getParent();
 		}
-		ConfigurableApplicationContext rootContext = context instanceof ConfigurableApplicationContext configurable
-				? configurable
-				: null;
-		// Shut down on a dedicated thread: this request thread still holds the servlet allocation, which the
-		// container's graceful shutdown would otherwise wait for, and the JVM must exit with a failure status
-		// (forced after a delay) even if closing the context hangs under memory pressure.
-		try {
-			Thread thread = new Thread(
-					() -> SignalShutdownHandler.shutdownAndExit(rootContext, "OutOfMemoryError", 1, this::exitJvm,
-							this::haltJvm),
-					"rdf4j-oom-shutdown");
-			thread.setDaemon(true);
-			thread.start();
-		} catch (RuntimeException | Error startFailure) {
-			try {
-				SignalShutdownHandler.requestEmergencyTermination(1, this::haltJvm, this::exitJvm);
-			} catch (RuntimeException | Error shutdownFailure) {
-				outOfMemoryError.addSuppressed(shutdownFailure);
-			}
-			outOfMemoryError.addSuppressed(startFailure);
-		}
+		return context instanceof ConfigurableApplicationContext configurable ? configurable : null;
 	}
 
 	/**

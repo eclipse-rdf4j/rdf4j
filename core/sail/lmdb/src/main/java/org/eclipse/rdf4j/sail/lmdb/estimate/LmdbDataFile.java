@@ -140,6 +140,30 @@ final class LmdbDataFile implements Closeable {
 	}
 
 	/**
+	 * Returns only metadata for the exact pinned transaction. A valid LMDB metadata pair may no longer retain that
+	 * transaction after several copy-on-write commits; callers that still hold the native read transaction can then use
+	 * LMDB's own cursor view instead of treating a newer page tree as the old snapshot.
+	 *
+	 * @return the exact metadata, or {@code null} when no valid metadata page describes the pinned transaction
+	 * @throws IOException when neither metadata page is valid
+	 */
+	LmdbMeta readExactMetaForTxn(long pinnedTxnId) throws IOException {
+		LmdbMeta meta0 = readMetaPage(0);
+		LmdbMeta meta1 = readMetaPage(1);
+		if (meta0 == null && meta1 == null) {
+			throw new IOException("Invalid LMDB metadata while looking for pinned txn " + pinnedTxnId + " in "
+					+ dataFile);
+		}
+		if (meta0 != null && meta0.txnId() == pinnedTxnId) {
+			return meta0;
+		}
+		if (meta1 != null && meta1.txnId() == pinnedTxnId) {
+			return meta1;
+		}
+		return null;
+	}
+
+	/**
 	 * Reads and validates a page belonging to {@code meta}. The native mapping is the zero-copy fast path; positional
 	 * file IO is retained for tests and as a safe fallback when the mapping captured with the snapshot is unavailable.
 	 */
@@ -191,6 +215,17 @@ final class LmdbDataFile implements Closeable {
 
 	int pageSize() {
 		return pageSize;
+	}
+
+	boolean hasNativeEnvironment() {
+		return env != NO_NATIVE_MAP;
+	}
+
+	/** Verifies that a borrowed native transaction belongs to this data file's LMDB environment. */
+	void validateReadTransaction(long readTxn) throws IOException {
+		if (env != NO_NATIVE_MAP && (readTxn == 0L || mdb_txn_env(readTxn) != env)) {
+			throw new IOException("Read transaction does not belong to the estimator's LMDB environment");
+		}
 	}
 
 	ByteOrder byteOrder() {

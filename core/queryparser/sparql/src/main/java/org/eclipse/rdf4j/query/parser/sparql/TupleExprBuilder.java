@@ -370,24 +370,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	/**
-	 * Maps the given ValueExpr to a Var for use as a component of a triple term construction.
-	 * <ul>
-	 * <li>If the supplied ValueExpr is a {@link Var}, the object itself is returned.</li>
-	 * <li>If it is a {@link ValueConstant}, a constant variable is created via
-	 * {@link TupleExprs#createConstVar(Value)}.</li>
-	 * <li>Otherwise, an anonymous variable is created and the expression is registered as a pending
-	 * {@link ExtensionElem} on the current graph pattern, so that the expression is evaluated at runtime over the group
-	 * (or, inside a BIND, over the patterns preceding the BIND) and its result bound to the returned var.</li>
-	 * </ul>
-	 *
-	 * @param expr the ValueExpr to map to a Var
-	 * @return a Var representing the given expression
-	 * @throws IllegalArgumentException if the supplied ValueExpr is null
-	 * @throws VisitorException         if the expression is not a variable or constant and the current group graph
-	 *                                  pattern has already been built (SELECT, GROUP BY, HAVING and ORDER BY
-	 *                                  expressions), where the component could not be bound
+	 * Maps a simple triple-term component to a variable. Expression-valued components are handled as function arguments
+	 * by {@link #visit(ASTTripleFunc, Object)} before this method is called.
 	 */
-	private Var toVar(ValueExpr expr) throws VisitorException {
+	private Var toVar(ValueExpr expr) {
 		if (expr instanceof Var) {
 			return (Var) expr;
 		} else if (expr instanceof ValueConstant) {
@@ -395,17 +381,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr is null");
 		}
-		if (graphPattern.isBuilt()) {
-			// the WHERE group has already been turned into algebra; an extension registered now would never be
-			// applied and the component variable would silently stay unbound
-			throw new VisitorException(
-					"Expression-valued triple term components are only supported inside a group graph pattern (use BIND): "
-							+ expr);
-		}
-
-		Var var = createAnonVar();
-		graphPattern.addPendingExtensionElem(new ExtensionElem(expr, var.getName()));
-		return var;
+		throw new IllegalArgumentException("expr is a: " + expr.getClass());
 	}
 
 	/**
@@ -3203,9 +3179,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	private ValueExpr tripleComponent(ValueExpr tripleTermExpr, TripleComponent.Role role, String functionUri)
 			throws VisitorException {
-		if (tripleTermExpr instanceof Var || tripleTermExpr instanceof ValueConstant
-				|| tripleTermExpr instanceof TripleRef
-				|| tripleTermExpr instanceof ReifiedTripleRef) {
+		if (tripleTermExpr instanceof Var || tripleTermExpr instanceof ValueConstant) {
 			return new TripleComponent(mapValueExprToVar(tripleTermExpr), role);
 		}
 		FunctionCall functionCall = new FunctionCall(functionUri);

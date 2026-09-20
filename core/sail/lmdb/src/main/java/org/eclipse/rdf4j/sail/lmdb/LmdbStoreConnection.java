@@ -222,44 +222,108 @@ public class LmdbStoreConnection extends SailSourceConnection {
 			// open) are invisible to a direct index scan
 			return null;
 		}
+		// Prepare both lazy count and DISTINCT shapes before opening any snapshot branch. Preparation captures the
+		// exact
+		// index plan without native resources; opening the scan later must not re-read mutable configuration such as
+		// the
+		// prefix-run property.
+		CloseableIteration<BindingSet> counts = LmdbPrefixRunQuery.evaluateDistinctCounts(store, tupleExpr, true,
+				lmdbStore.getValueFactory(), rewritten -> {
+					try {
+						return super.evaluateInternal(rewritten, dataset, bindings, includeInferred);
+					} catch (SailException e) {
+						throw new QueryEvaluationException(e);
+					}
+				});
+		LmdbPrefixRunQuery.PreparedDistinct distinctPlan = counts == null
+				? LmdbPrefixRunQuery.prepareDistinct(store, tupleExpr, true)
+				: null;
+		if (counts == null && distinctPlan == null) {
+			return null;
+		}
+
 		// Keep an ordinary branch dataset open for the whole lazy result. Its observer prevents a concurrent commit
 		// from flushing the shared auto-flush branch to the backing store while this direct scan is reading it.
-		SailSource snapshotBranch = ((SnapshotSailStore) snapshotStore).getExplicitSailSourceForSnapshot();
+		SailSource snapshotBranch = null;
 		SailDataset snapshot = null;
+		CloseableIteration<BindingSet> result = counts;
 		boolean handedOff = false;
+		Throwable failure = null;
 		try {
+			snapshotBranch = ((SnapshotSailStore) snapshotStore).getExplicitSailSourceForSnapshot();
 			snapshot = snapshotBranch.dataset(getIsolationLevel());
-			CloseableIteration<BindingSet> distinct = LmdbPrefixRunQuery.evaluateDistinct(store, tupleExpr, true);
-			if (distinct != null) {
-				handedOff = true;
-				return interlock(distinct, snapshot, snapshotBranch);
+			if (counts == null) {
+				result = distinctPlan.open();
 			}
-			CloseableIteration<BindingSet> counts = LmdbPrefixRunQuery.evaluateDistinctCounts(store, tupleExpr, true,
-					lmdbStore.getValueFactory(), rewritten -> {
-						try {
-							return super.evaluateInternal(rewritten, dataset, bindings, includeInferred);
-						} catch (SailException e) {
-							throw new QueryEvaluationException(e);
-						}
-					});
-			if (counts != null) {
+			if (result != null) {
+				CloseableIteration<BindingSet> interlocked = interlock(result, snapshot, snapshotBranch);
 				handedOff = true;
-				return interlock(counts, snapshot, snapshotBranch);
+				return interlocked;
 			}
 			return null;
 		} catch (IOException e) {
+			failure = e;
 			throw new SailException(e);
+		} catch (RuntimeException e) {
+			failure = e;
+			throw e;
+		} catch (Error e) {
+			failure = e;
+			throw e;
 		} finally {
 			if (!handedOff) {
-				try {
-					if (snapshot != null) {
-						snapshot.close();
-					}
-				} finally {
-					snapshotBranch.close();
-				}
+				closeUnhandedPrefixResult(result, snapshot, snapshotBranch, failure);
 			}
 		}
+	}
+
+	private static void closeUnhandedPrefixResult(CloseableIteration<BindingSet> result, SailDataset snapshot,
+			SailSource snapshotBranch, Throwable primaryFailure) {
+		Throwable cleanupFailure = null;
+		try {
+			if (result != null) {
+				result.close();
+			}
+		} catch (RuntimeException | Error e) {
+			cleanupFailure = e;
+		}
+		try {
+			if (snapshot != null) {
+				snapshot.close();
+			}
+		} catch (RuntimeException | Error e) {
+			cleanupFailure = appendCleanupFailure(cleanupFailure, e);
+		}
+		try {
+			if (snapshotBranch != null) {
+				snapshotBranch.close();
+			}
+		} catch (RuntimeException | Error e) {
+			cleanupFailure = appendCleanupFailure(cleanupFailure, e);
+		}
+		if (cleanupFailure == null) {
+			return;
+		}
+		if (primaryFailure != null) {
+			if (cleanupFailure != primaryFailure) {
+				primaryFailure.addSuppressed(cleanupFailure);
+			}
+			return;
+		}
+		if (cleanupFailure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		throw (Error) cleanupFailure;
+	}
+
+	private static Throwable appendCleanupFailure(Throwable current, Throwable additional) {
+		if (current == null) {
+			return additional;
+		}
+		if (current != additional) {
+			current.addSuppressed(additional);
+		}
+		return current;
 	}
 
 	private boolean isSlowQueryLoggingActive() {

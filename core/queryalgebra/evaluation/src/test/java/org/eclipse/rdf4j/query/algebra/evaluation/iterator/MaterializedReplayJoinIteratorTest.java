@@ -14,25 +14,241 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
 class MaterializedReplayJoinIteratorTest {
+
+	@Test
+	void initializationFailureIsTerminalAndDoesNotReevaluateRight() {
+		AtomicInteger rightEvaluationCount = new AtomicInteger();
+		AtomicBoolean leftOpened = new AtomicBoolean();
+		QueryEvaluationException failure = new QueryEvaluationException("right evaluation failed");
+		QueryEvaluationStep left = ignored -> {
+			leftOpened.set(true);
+			return new TrackingIteration(new CountDownLatch(0));
+		};
+		QueryEvaluationStep right = ignored -> {
+			rightEvaluationCount.incrementAndGet();
+			throw failure;
+		};
+		MaterializedReplayJoinIterator iterator = new MaterializedReplayJoinIterator(left, right, null,
+				EmptyBindingSet.getInstance(), false, Set.of(), new String[] { "join" });
+
+		QueryEvaluationException first = assertThrows(QueryEvaluationException.class, iterator::hasNext);
+		QueryEvaluationException second = assertThrows(QueryEvaluationException.class, iterator::hasNext);
+
+		assertSame(failure, first);
+		assertSame(failure, second);
+		assertEquals(1, rightEvaluationCount.get(), "a failed initialization must not re-evaluate the right operand");
+		assertFalse(leftOpened.get(), "a right initialization failure must not open the left operand");
+		iterator.close();
+	}
+
+	@Test
+	void rightDrainFailureIsTerminalAndPreservesCleanupFailure() {
+		AtomicInteger rightEvaluationCount = new AtomicInteger();
+		AtomicInteger rightCloseCount = new AtomicInteger();
+		AtomicBoolean leftOpened = new AtomicBoolean();
+		QueryEvaluationException drainFailure = new QueryEvaluationException("right drain failed");
+		QueryEvaluationException closeFailure = new QueryEvaluationException("right close failed");
+		QueryEvaluationStep left = ignored -> {
+			leftOpened.set(true);
+			return new TrackingIteration(new CountDownLatch(0));
+		};
+		QueryEvaluationStep right = ignored -> {
+			rightEvaluationCount.incrementAndGet();
+			return new CloseableIteration<>() {
+				@Override
+				public boolean hasNext() {
+					throw drainFailure;
+				}
+
+				@Override
+				public BindingSet next() {
+					throw new AssertionError("the failing right iteration has no row");
+				}
+
+				@Override
+				public void close() {
+					rightCloseCount.incrementAndGet();
+					throw closeFailure;
+				}
+			};
+		};
+		MaterializedReplayJoinIterator iterator = new MaterializedReplayJoinIterator(left, right, null,
+				EmptyBindingSet.getInstance(), false, Set.of(), new String[] { "join" });
+
+		QueryEvaluationException first = assertThrows(QueryEvaluationException.class, iterator::hasNext);
+		QueryEvaluationException second = assertThrows(QueryEvaluationException.class, iterator::hasNext);
+
+		assertSame(drainFailure, first);
+		assertSame(drainFailure, second);
+		assertEquals(1, rightEvaluationCount.get(), "a failed right drain must not be retried");
+		assertEquals(1, rightCloseCount.get(), "the failed right iteration must be closed exactly once");
+		assertEquals(1, first.getSuppressed().length);
+		assertSame(closeFailure, first.getSuppressed()[0], "right cleanup failure must remain suppressed");
+		assertFalse(leftOpened.get(), "a right initialization failure must not open the left operand");
+		iterator.close();
+	}
+
+	@Test
+	void leftEvaluationFailureIsTerminalAndDoesNotReevaluateEitherOperand() {
+		AtomicInteger leftEvaluationCount = new AtomicInteger();
+		AtomicInteger rightEvaluationCount = new AtomicInteger();
+		AtomicInteger rightCloseCount = new AtomicInteger();
+		QueryEvaluationException failure = new QueryEvaluationException("left evaluation failed");
+		QueryEvaluationStep left = ignored -> {
+			leftEvaluationCount.incrementAndGet();
+			throw failure;
+		};
+		QueryEvaluationStep right = ignored -> {
+			rightEvaluationCount.incrementAndGet();
+			return new CloseableIteration<>() {
+				@Override
+				public boolean hasNext() {
+					return false;
+				}
+
+				@Override
+				public BindingSet next() {
+					throw new AssertionError("the right iteration is empty");
+				}
+
+				@Override
+				public void close() {
+					rightCloseCount.incrementAndGet();
+				}
+			};
+		};
+		MaterializedReplayJoinIterator iterator = new MaterializedReplayJoinIterator(left, right, null,
+				EmptyBindingSet.getInstance(), false, Set.of(), new String[] { "join" });
+
+		QueryEvaluationException first = assertThrows(QueryEvaluationException.class, iterator::hasNext);
+		QueryEvaluationException second = assertThrows(QueryEvaluationException.class, iterator::hasNext);
+
+		assertSame(failure, first);
+		assertSame(failure, second);
+		assertEquals(1, rightEvaluationCount.get());
+		assertEquals(1, rightCloseCount.get());
+		assertEquals(1, leftEvaluationCount.get(), "a failed left evaluation must not be retried");
+		iterator.close();
+	}
+
+	@Test
+	void postInitializationLeftFailureClosesOwnedResourcesAndPreservesSuppressedCleanup() {
+		QueryEvaluationException leftFailure = new QueryEvaluationException("left hasNext failed");
+		QueryEvaluationException closeFailure = new QueryEvaluationException("left close failed");
+		AtomicInteger leftCloseCount = new AtomicInteger();
+		QueryEvaluationStep left = ignored -> new CloseableIteration<>() {
+			@Override
+			public boolean hasNext() {
+				throw leftFailure;
+			}
+
+			@Override
+			public BindingSet next() {
+				throw new AssertionError("the failing left iteration has no row");
+			}
+
+			@Override
+			public void close() {
+				leftCloseCount.incrementAndGet();
+				throw closeFailure;
+			}
+		};
+		MaterializedReplayJoinIterator iterator = new MaterializedReplayJoinIterator(left,
+				ignored -> singleRightIteration(), null, EmptyBindingSet.getInstance(), false, Set.of(),
+				new String[] { "join" });
+
+		try {
+			QueryEvaluationException actual = assertThrows(QueryEvaluationException.class, iterator::hasNext);
+			assertSame(leftFailure, actual);
+			assertEquals(1, leftCloseCount.get(), "a post-initialization left failure must close the left iteration");
+			assertEquals(1, actual.getSuppressed().length);
+			assertSame(closeFailure, actual.getSuppressed()[0]);
+		} finally {
+			try {
+				iterator.close();
+			} catch (QueryEvaluationException ignored) {
+				// The cleanup exception was already asserted as suppressed on the primary failure.
+			}
+		}
+	}
+
+	@Test
+	void postInitializationConditionErrorClosesLeftAndPreservesSuppressedCleanup() {
+		AssertionError conditionFailure = new AssertionError("condition failed");
+		QueryEvaluationException closeFailure = new QueryEvaluationException("left close failed");
+		AtomicInteger leftCloseCount = new AtomicInteger();
+		QueryEvaluationStep left = ignored -> new CloseableIteration<>() {
+			private boolean available = true;
+
+			@Override
+			public boolean hasNext() {
+				return available;
+			}
+
+			@Override
+			public BindingSet next() {
+				available = false;
+				return row("join", "left");
+			}
+
+			@Override
+			public void close() {
+				leftCloseCount.incrementAndGet();
+				throw closeFailure;
+			}
+		};
+		QueryValueEvaluationStep condition = ignored -> {
+			throw conditionFailure;
+		};
+		MaterializedReplayJoinIterator iterator = new MaterializedReplayJoinIterator(left,
+				ignored -> singleRightIteration("left"), condition, EmptyBindingSet.getInstance(), false, Set.of(),
+				new String[] { "join" });
+
+		try {
+			AssertionError actual = assertThrows(AssertionError.class, iterator::hasNext);
+			assertSame(conditionFailure, actual);
+			assertEquals(1, leftCloseCount.get(), "a fatal condition error must close the left iteration");
+			assertEquals(1, actual.getSuppressed().length);
+			assertSame(closeFailure, actual.getSuppressed()[0]);
+		} finally {
+			try {
+				iterator.close();
+			} catch (QueryEvaluationException ignored) {
+				// The cleanup exception was already asserted as suppressed on the primary failure.
+			}
+		}
+	}
 
 	@Test
 	void closesLeftIterationWhenCancellationRacesItsLateInitialization() throws Exception {
@@ -290,7 +506,191 @@ class MaterializedReplayJoinIteratorTest {
 		assertFalse(rightOpened.get(), "a closed iterator must not open the right operand");
 	}
 
+	@Test
+	void replayedJoinOverwritesLeftNullPlaceholderWithRightBinding() throws Exception {
+		QueryBindingSet leftRow = new QueryBindingSet();
+		leftRow.setBinding("x", null);
+		Value rightValue = SimpleValueFactory.getInstance().createIRI("urn:test:right");
+		QueryBindingSet rightRow = new QueryBindingSet();
+		rightRow.addBinding("x", rightValue);
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(List.of(leftRow).iterator());
+		QueryEvaluationStep right = ignored -> new CloseableIteratorIteration<>(List.of(rightRow).iterator());
+
+		try (MaterializedReplayJoinIterator iteration = new MaterializedReplayJoinIterator(left, right, null,
+				EmptyBindingSet.getInstance(), false, Set.of(), new String[] { "x" })) {
+			assertTrue(iteration.hasNext());
+			assertEquals(rightValue, iteration.next().getValue("x"));
+			assertFalse(iteration.hasNext());
+		}
+	}
+
+	@Test
+	void replayedOptionalOverwritesLeftNullPlaceholderWithRightBinding() throws Exception {
+		QueryBindingSet leftRow = new QueryBindingSet();
+		leftRow.setBinding("x", null);
+		Value rightValue = SimpleValueFactory.getInstance().createIRI("urn:test:right");
+		QueryBindingSet rightRow = new QueryBindingSet();
+		rightRow.addBinding("x", rightValue);
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(List.of(leftRow).iterator());
+		QueryEvaluationStep right = ignored -> new CloseableIteratorIteration<>(List.of(rightRow).iterator());
+
+		try (MaterializedReplayJoinIterator iteration = new MaterializedReplayJoinIterator(left, right, null,
+				EmptyBindingSet.getInstance(), true, Set.of(), new String[] { "x" })) {
+			assertTrue(iteration.hasNext());
+			assertEquals(rightValue, iteration.next().getValue("x"));
+			assertFalse(iteration.hasNext());
+		}
+	}
+
+	@Test
+	void replayedOptionalReimposesEntryBindingWhenLeftRetainsNullProblemVariable() throws Exception {
+		QueryBindingSet entryBindings = new QueryBindingSet();
+		Value entryValue = SimpleValueFactory.getInstance().createLiteral("entry");
+		entryBindings.addBinding("optionalOnly", entryValue);
+		QueryBindingSet leftRow = new QueryBindingSet();
+		leftRow.setBinding("x", null);
+		leftRow.setBinding("optionalOnly", null);
+		Value rightValue = SimpleValueFactory.getInstance().createIRI("urn:test:right");
+		QueryBindingSet rightRow = new QueryBindingSet();
+		rightRow.addBinding("x", rightValue);
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(List.of(leftRow).iterator());
+		QueryEvaluationStep right = ignored -> new CloseableIteratorIteration<>(List.of(rightRow).iterator());
+
+		try (MaterializedReplayJoinIterator iteration = new MaterializedReplayJoinIterator(left, right, null,
+				entryBindings, true, Set.of("optionalOnly"), new String[] { "x" })) {
+			assertTrue(iteration.hasNext());
+			BindingSet result = iteration.next();
+			assertEquals(rightValue, result.getValue("x"));
+			assertEquals(entryValue, result.getValue("optionalOnly"));
+			assertFalse(iteration.hasNext());
+		}
+	}
+
+	@Test
+	void replayConsumerStreamsLargeRightOperandWithinBoundedMemory() throws Exception {
+		String javaExecutable = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		String probeId = UUID.randomUUID().toString();
+		Path outputDirectory = Path.of("target", "review-repair-probes");
+		Files.createDirectories(outputDirectory);
+		Path outputFile = outputDirectory.resolve("replay-memory-" + probeId + ".log").toAbsolutePath();
+		Path tempDirectory = Files.createTempDirectory("rdf4j-replay-memory-" + probeId + "-");
+		Process process = new ProcessBuilder(javaExecutable, "-Xmx64m", "-Djava.io.tmpdir=" + tempDirectory, "-cp",
+				System.getProperty("java.class.path"), ReplayMemoryChild.class.getName(), tempDirectory.toString())
+						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
+						.start();
+		try {
+			boolean finished = process.waitFor(60, TimeUnit.SECONDS);
+			if (!finished) {
+				process.destroyForcibly();
+				assertTrue(process.waitFor(5, TimeUnit.SECONDS), "the replay child could not be terminated");
+			}
+			String output = Files.readString(outputFile, StandardCharsets.UTF_8);
+			assertTrue(finished, "the bounded replay child did not finish; output: " + output);
+			assertEquals(0, process.exitValue(),
+					"the replay child must stream its output without heap exhaustion: " + output);
+			try (Stream<Path> temporaryFiles = Files.list(tempDirectory)) {
+				assertTrue(temporaryFiles.findAny().isEmpty(),
+						"replay spill files must be removed after the cursor closes: " + tempDirectory);
+			}
+		} finally {
+			if (process.isAlive()) {
+				process.destroyForcibly();
+				process.waitFor(5, TimeUnit.SECONDS);
+			}
+		}
+	}
+
+	/**
+	 * Runs in a separate, fixed-heap JVM so the regression cannot exhaust the test runner's heap. The right side emits
+	 * more than the default replay budget in distinct large values; the result is consumed one row at a time.
+	 */
+	static final class ReplayMemoryChild {
+
+		private static final int ROW_COUNT = 128;
+		private static final int PAYLOAD_LENGTH = 1024 * 1024;
+
+		public static void main(String[] args) {
+			if (args.length != 1 || !Files.isDirectory(Path.of(args[0]))) {
+				throw new AssertionError("missing replay temp directory");
+			}
+			SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+			Value key = valueFactory.createIRI("urn:test:key");
+			QueryBindingSet leftRow = new QueryBindingSet();
+			leftRow.addBinding("join", key);
+			QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(Set.of(leftRow).iterator());
+			QueryEvaluationStep right = ignored -> new CloseableIteration<>() {
+				private int row;
+
+				@Override
+				public boolean hasNext() {
+					return row < ROW_COUNT;
+				}
+
+				@Override
+				public BindingSet next() {
+					QueryBindingSet result = new QueryBindingSet();
+					result.addBinding("join", key);
+					result.addBinding("payload", valueFactory.createLiteral(payload(row++)));
+					return result;
+				}
+
+				@Override
+				public void close() {
+				}
+			};
+
+			long count = 0;
+			try (CloseableIteration<BindingSet> iteration = new MaterializedReplayJoinIterator(left, right, null,
+					EmptyBindingSet.getInstance(), false, Set.of(), new String[] { "join" })) {
+				while (iteration.hasNext()) {
+					BindingSet result = iteration.next();
+					if (!key.equals(result.getValue("join"))
+							|| result.getValue("payload") == null
+							|| !matchesPayload(result.getValue("payload").stringValue(), (int) count)) {
+						throw new AssertionError("replayed row changed payload or order at row " + count);
+					}
+					count++;
+				}
+			}
+			if (count != ROW_COUNT) {
+				throw new AssertionError("expected " + ROW_COUNT + " replayed rows, got " + count);
+			}
+			System.out.println("replayedRows=" + count + ", payloadLength=" + PAYLOAD_LENGTH);
+		}
+
+		private static String payload(int row) {
+			char[] characters = new char[PAYLOAD_LENGTH];
+			Arrays.fill(characters, 'x');
+			String marker = Integer.toString(row);
+			marker.getChars(0, marker.length(), characters, 0);
+			return new String(characters);
+		}
+
+		private static boolean matchesPayload(String value, int row) {
+			if (value.length() != PAYLOAD_LENGTH) {
+				return false;
+			}
+			String marker = Integer.toString(row);
+			for (int i = 0; i < marker.length(); i++) {
+				if (value.charAt(i) != marker.charAt(i)) {
+					return false;
+				}
+			}
+			for (int i = marker.length(); i < value.length(); i++) {
+				if (value.charAt(i) != 'x') {
+					return false;
+				}
+			}
+			return true;
+		}
+	}
+
 	private static CloseableIteration<BindingSet> singleRightIteration() {
+		return singleRightIteration("right");
+	}
+
+	private static CloseableIteration<BindingSet> singleRightIteration(String joinValue) {
 		return new CloseableIteration<>() {
 			private boolean rowAvailable = true;
 
@@ -303,7 +703,7 @@ class MaterializedReplayJoinIteratorTest {
 			public BindingSet next() {
 				rowAvailable = false;
 				QueryBindingSet row = new QueryBindingSet();
-				row.addBinding("join", SimpleValueFactory.getInstance().createLiteral("right"));
+				row.addBinding("join", SimpleValueFactory.getInstance().createLiteral(joinValue));
 				return row;
 			}
 
@@ -311,6 +711,12 @@ class MaterializedReplayJoinIteratorTest {
 			public void close() {
 			}
 		};
+	}
+
+	private static QueryBindingSet row(String name, String value) {
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding(name, SimpleValueFactory.getInstance().createLiteral(value));
+		return row;
 	}
 
 	private static void await(CountDownLatch latch) {

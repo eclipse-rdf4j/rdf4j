@@ -35,13 +35,19 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -49,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -184,7 +191,277 @@ public class QueryEvaluationUtility {
 	 */
 	public static boolean canDiscardWithoutEvaluation(TupleExpr right, TupleExpr left) {
 		return canDiscardWithoutEvaluation(right)
-				|| !Collections.disjoint(right.getBindingNames(), left.getBindingNames());
+				|| !Collections.disjoint(getActualBindingNames(right), getActualOutputNames(left));
+	}
+
+	private static Set<String> getActualBindingNames(TupleExpr expression) {
+		ActualBindingNamesCollector collector = new ActualBindingNamesCollector(true);
+		expression.visit(collector);
+		return collector.bindingNames;
+	}
+
+	private static Set<String> getActualOutputNames(TupleExpr expression) {
+		ActualBindingNamesCollector collector = new ActualBindingNamesCollector(false);
+		expression.visit(collector);
+		return collector.bindingNames;
+	}
+
+	/**
+	 * Returns the names that are actually exported by a tuple expression. This differs from a raw
+	 * {@link TupleExpr#getBindingNames()} walk for scoped operators and for variables whose values are embedded in the
+	 * algebra. A {@link Var} marked {@link Var#isConstant()} is an embedded literal or other pattern constraint and is
+	 * not exported. A named fixed-value {@code Var} with {@code isConstant() == false} remains a real output binding,
+	 * as produced by operators that bind an existing user variable to a known value.
+	 *
+	 * @param expression the tuple expression to inspect
+	 * @return the expression's exported, non-constant binding names
+	 */
+	public static Set<String> getActualOutputBindingNames(TupleExpr expression) {
+		return Set.copyOf(getActualOutputNames(expression));
+	}
+
+	/**
+	 * Returns whether a tuple expression contains a local subquery projection. A projection inside a SERVICE body
+	 * belongs to the remote query scope and must not make the enclosing join operand look like a local scope barrier.
+	 *
+	 * @param expression the tuple expression to inspect
+	 * @return {@code true} when a subquery projection is visible in the local tuple scope
+	 */
+	public static boolean containsLocalSubquery(TupleExpr expression) {
+		return Service.containsLocalSubquery(expression);
+	}
+
+	/**
+	 * Returns whether a tuple scope is owned by a SERVICE occurrence. Filters, groups and other tuple wrappers around a
+	 * SERVICE retain the mapping-parameterized SERVICE evaluation semantics; a local projection remains an independent
+	 * scope even when it contains a SERVICE descendant.
+	 *
+	 * @param expression tuple expression to inspect
+	 * @return {@code true} when the current tuple scope contains a SERVICE and no local subquery boundary
+	 */
+	public static boolean isServiceOwnedScope(TupleExpr expression) {
+		return Service.isServiceOwnedScope(expression);
+	}
+
+	/**
+	 * Collects variables that can either be visible in a tuple result or be read while evaluating it. A plain
+	 * {@link Var} walk is insufficient here: VALUES and extension/projection aliases do not have corresponding Var
+	 * nodes, while the source variables of a subquery projection are outside that subquery's scope. Input dependencies
+	 * are unbound reads, while tuple outputs follow each operator's runtime contract. A named fixed-value Var is an
+	 * output when {@link Var#isConstant()} is false; a true constant Var is an embedded literal or pattern constraint.
+	 * When dependency collection is enabled, unbound reads are added alongside those outputs.
+	 */
+	private static final class ActualBindingNamesCollector extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private final Set<String> bindingNames = new HashSet<>();
+		private final boolean includeDependencies;
+
+		private ActualBindingNamesCollector(boolean includeDependencies) {
+			this.includeDependencies = includeDependencies;
+		}
+
+		@Override
+		public void meet(Var node) {
+			if (includeDependencies) {
+				addInputVariable(node);
+			}
+		}
+
+		@Override
+		public void meet(StatementPattern node) {
+			for (Var variable : node.getVarList()) {
+				addTupleVariable(variable);
+			}
+		}
+
+		@Override
+		public void meet(Filter node) {
+			if (includeDependencies) {
+				super.meet(node);
+			} else {
+				// Filter conditions are value expressions. Their nested EXISTS/NOT EXISTS tuple expressions are
+				// evaluated as predicates and do not add bindings to the filtered tuple result.
+				node.getArg().visit(this);
+			}
+		}
+
+		@Override
+		public void meet(LeftJoin node) {
+			if (includeDependencies) {
+				super.meet(node);
+			} else {
+				// A left-join condition is a value expression and contributes no tuple bindings.
+				node.getLeftArg().visit(this);
+				node.getRightArg().visit(this);
+			}
+		}
+
+		@Override
+		public void meet(Difference node) {
+			if (includeDependencies) {
+				super.meet(node);
+			} else {
+				// MINUS exposes only the left argument's bindings.
+				node.getLeftArg().visit(this);
+			}
+		}
+
+		@Override
+		public void meet(Intersection node) {
+			if (includeDependencies) {
+				super.meet(node);
+			} else {
+				// INTERSECT exposes only names present in both child results. Keep each child scope separate so names
+				// from the right side cannot be mistaken for bindings exported by the intersection.
+				Set<String> commonNames = getActualOutputNames(node.getLeftArg());
+				commonNames.retainAll(getActualOutputNames(node.getRightArg()));
+				bindingNames.addAll(commonNames);
+			}
+		}
+
+		@Override
+		public void meet(org.eclipse.rdf4j.query.algebra.Order node) {
+			if (includeDependencies) {
+				super.meet(node);
+			} else {
+				// ORDER expressions are evaluated for ordering and do not become tuple bindings.
+				node.getArg().visit(this);
+			}
+		}
+
+		@Override
+		public void meet(Exists node) {
+			if (includeDependencies) {
+				super.meet(node);
+			}
+		}
+
+		@Override
+		public void meet(TripleRef node) {
+			for (Var variable : node.getVarList()) {
+				addTupleVariable(variable);
+			}
+		}
+
+		@Override
+		public void meet(ArbitraryLengthPath node) {
+			addTupleVariable(node.getSubjectVar());
+			addTupleVariable(node.getObjectVar());
+			addTupleVariable(node.getContextVar());
+			if (node.getPathExpression() != null) {
+				node.getPathExpression().visit(this);
+			}
+		}
+
+		@Override
+		public void meet(ZeroLengthPath node) {
+			addTupleVariable(node.getSubjectVar());
+			addTupleVariable(node.getObjectVar());
+			addTupleVariable(node.getContextVar());
+		}
+
+		private void addTupleVariable(Var variable) {
+			if (variable != null) {
+				if (!variable.isConstant()) {
+					bindingNames.add(variable.getName());
+				}
+				if (includeDependencies) {
+					addInputVariable(variable);
+				}
+			}
+		}
+
+		private void addInputVariable(Var variable) {
+			if (variable != null && !variable.hasValue()) {
+				bindingNames.add(variable.getName());
+			}
+		}
+
+		@Override
+		public void meet(BindingSetAssignment node) {
+			// VALUES columns are visible outputs even though VALUES has no Var nodes.
+			bindingNames.addAll(node.getBindingNames());
+		}
+
+		@Override
+		public void meet(Extension node) {
+			// Extension targets are visible outputs; the argument and expressions are visited for their dependencies.
+			for (ExtensionElem element : node.getElements()) {
+				bindingNames.add(element.getName());
+			}
+			if (includeDependencies) {
+				super.meet(node);
+			} else {
+				node.getArg().visit(this);
+			}
+		}
+
+		@Override
+		public void meet(Projection node) {
+			// A subquery is a scope boundary. Only its projected names escape to the containing expression.
+			bindingNames.addAll(node.getBindingNames());
+			if (includeDependencies && !node.isSubquery()) {
+				super.meet(node);
+			}
+		}
+
+		@Override
+		public void meet(MultiProjection node) {
+			bindingNames.addAll(node.getBindingNames());
+			if (includeDependencies) {
+				super.meet(node);
+			}
+		}
+
+		@Override
+		public void meet(Group node) {
+			bindingNames.addAll(node.getBindingNames());
+			if (includeDependencies) {
+				super.meet(node);
+			}
+		}
+
+		@Override
+		public void meet(Service node) {
+			if (includeDependencies) {
+				// Service.getServiceInputBindingNames stops at ordinary remote subquery scopes and opts into the full
+				// applicable projection only for the explicit row-index extension. Do not use getServiceVars here: that
+				// set
+				// is intentionally broad because it is also used to construct the remote query text.
+				bindingNames.addAll(node.getServiceInputBindingNames());
+				// A fatal SERVICE is also correlated by names it exports from VALUES/BIND or statement patterns. Those
+				// outputs are not input dependencies, but an empty left operand makes their join result irrelevant.
+				bindingNames.addAll(node.getServiceOutputBindingNames());
+			} else {
+				bindingNames.addAll(node.getServiceOutputBindingNames());
+			}
+		}
+
+		@Override
+		public void meetOther(QueryModelNode node) {
+			if (node instanceof TupleFunctionCall tupleFunctionCall) {
+				for (Var resultVariable : tupleFunctionCall.getResultVars()) {
+					addTupleVariable(resultVariable);
+				}
+				if (includeDependencies) {
+					for (ValueExpr argument : tupleFunctionCall.getArgs()) {
+						argument.visit(this);
+					}
+				}
+			} else if (node instanceof TripleRef tripleRef) {
+				for (Var variable : tripleRef.getVarList()) {
+					addTupleVariable(variable);
+				}
+			} else if (node instanceof TupleExpr tupleExpr) {
+				// Unknown tuple extensions must retain their declared outputs, even when they expose no Var children.
+				bindingNames.addAll(tupleExpr.getBindingNames());
+				if (includeDependencies) {
+					tupleExpr.visitChildren(this);
+				}
+			} else {
+				super.meetOther(node);
+			}
+		}
 	}
 
 	/**
@@ -274,14 +551,36 @@ public class QueryEvaluationUtility {
 	 * correlated evaluation path and must never reroute these subtrees through independent-evaluation replay.
 	 */
 	public static boolean usesMappingParameterizedEvaluation(TupleExpr subtree) {
-		MappingParameterizedCollector collector = new MappingParameterizedCollector();
+		MappingParameterizedCollector collector = new MappingParameterizedCollector(null);
+		subtree.visit(collector);
+		return collector.mappingParameterized;
+	}
+
+	/**
+	 * Returns whether a subtree contains a mapping-parameterized operator that can observe one of the supplied outer
+	 * binding names. A SERVICE with no shared dependency is independently evaluable from the enclosing mapping even
+	 * though SERVICE is generally mapping-parameterized; retaining that distinction lets a parent join evaluate the
+	 * independent invocation once and replay its result. Paths, LATERAL and tuple extensions remain conservative
+	 * barriers.
+	 *
+	 * @param subtree           the subtree being classified
+	 * @param outerBindingNames names available from the enclosing left mapping
+	 * @return whether mapping-parameterized evaluation depends on the enclosing mapping
+	 */
+	public static boolean usesMappingParameterizedEvaluation(TupleExpr subtree, Set<String> outerBindingNames) {
+		MappingParameterizedCollector collector = new MappingParameterizedCollector(outerBindingNames);
 		subtree.visit(collector);
 		return collector.mappingParameterized;
 	}
 
 	private static final class MappingParameterizedCollector extends AbstractQueryModelVisitor<RuntimeException> {
 
+		private final Set<String> outerBindingNames;
 		private boolean mappingParameterized;
+
+		private MappingParameterizedCollector(Set<String> outerBindingNames) {
+			this.outerBindingNames = outerBindingNames;
+		}
 
 		@Override
 		public void meet(ZeroLengthPath node) {
@@ -295,7 +594,10 @@ public class QueryEvaluationUtility {
 
 		@Override
 		public void meet(Service node) {
-			mappingParameterized = true;
+			if (outerBindingNames == null
+					|| !Collections.disjoint(node.getServiceInputBindingNames(), outerBindingNames)) {
+				mappingParameterized = true;
+			}
 		}
 
 		@Override
@@ -311,6 +613,13 @@ public class QueryEvaluationUtility {
 			// evaluations are not established as observationally equivalent, so the correlated path is kept.
 			// Refinement candidate: prove seeded == unseeded + join for each triple-term source.
 			mappingParameterized = true;
+		}
+
+		@Override
+		public void meet(Exists node) {
+			// EXISTS and NOT EXISTS are scalar predicates. Their tuple expression is evaluated in the bindings visible
+			// to the FILTER and does not make the enclosing tuple operand mapping-parameterized. Keep traversal of the
+			// predicate for QueryFatalErrorCollector and binding-dependency analysis, which have separate contracts.
 		}
 
 		@Override

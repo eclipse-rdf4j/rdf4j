@@ -49,10 +49,6 @@ final class LmdbPrefixRunScan implements AutoCloseable {
 		return cursor.quad();
 	}
 
-	long runRowCount() {
-		return cursor.runRowCount();
-	}
-
 	/**
 	 * Resolves the given field of the current representative statement.
 	 *

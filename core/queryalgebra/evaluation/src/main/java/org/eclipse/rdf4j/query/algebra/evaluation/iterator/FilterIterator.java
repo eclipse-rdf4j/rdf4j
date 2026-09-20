@@ -22,6 +22,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
@@ -49,12 +50,17 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedEvaluationProbe;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ProbeBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ProbeBlocked;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
-public class FilterIterator extends FilterIteration<BindingSet> implements IndexReportingIterator {
+public class FilterIterator extends FilterIteration<BindingSet>
+		implements IndexReportingIterator, ScopedEvaluationProbe.Status {
 
 	private final QueryValueEvaluationStep condition;
 	private final EvaluationStrategy strategy;
@@ -73,6 +79,8 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private long exprEvalTimeNanosActual;
 	private long recordedPassedCount;
 	private long recordedFilteredCount;
+	private final CloseableIteration<? extends BindingSet> source;
+	private boolean probeBlocked;
 
 	public static QueryEvaluationStep supply(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context) {
@@ -104,12 +112,36 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			retain = Function.identity();
 		}
 
-		return (bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain, evaluationStatistics);
+		QueryEvaluationStep ordinary = bindings -> new FilterIterator(filter, arg.evaluate(bindings), ves, strategy,
+				retain, evaluationStatistics);
+		return ScopedEvaluationStep.preparedUnary(filter, ordinary, filter.getArg(), arg,
+				preparedChild -> bindings -> new FilterIterator(filter, preparedChild.evaluate(bindings), ves, strategy,
+						retain, evaluationStatistics));
 	}
 
-	private static QueryEvaluationStep supplyFilteredBindingSetAssignmentJoin(Filter filter,
-			EvaluationStrategy strategy,
-			QueryEvaluationContext context, EvaluationStatistics evaluationStatistics) {
+	/**
+	 * Builds the ordinary filter step from children that the evaluation strategy has already prepared. This keeps the
+	 * strategy's scalar preparation and filter scope-retention rules intact when a surrounding scoped template needs to
+	 * reopen only the tuple child.
+	 */
+	@InternalUseOnly
+	public static QueryEvaluationStep supplyPrepared(Filter filter, EvaluationStrategy strategy,
+			QueryEvaluationContext context, EvaluationStatistics evaluationStatistics, QueryEvaluationStep arg,
+			QueryValueEvaluationStep condition) {
+		Function<BindingSet, BindingSet> retain;
+		if (!isPartOfSubQuery(filter)) {
+			retain = canEvaluateConditionAgainstInputBindings(filter) ? Function.identity()
+					: buildRetainFunction(filter, context);
+		} else {
+			retain = Function.identity();
+		}
+		return bindings -> new FilterIterator(filter, arg.evaluate(bindings), condition, strategy, retain,
+				evaluationStatistics);
+	}
+
+	/** Returns whether the filter can use the prepared VALUES-assignment join specialization. */
+	@InternalUseOnly
+	public static boolean isFilteredBindingSetAssignmentJoinCandidate(Filter filter, EvaluationStrategy strategy) {
 		if (filter.isRuntimeTelemetryEnabled()
 				|| strategy.isTrackResultSize()
 				|| strategy.isTrackTime()
@@ -118,34 +150,44 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 				|| join.isRuntimeTelemetryEnabled()
 				|| !(join.getRightArg()instanceof BindingSetAssignment assignment)
 				|| assignment.isRuntimeTelemetryEnabled()) {
-			return null;
+			return false;
 		}
 
 		Set<String> conditionBindingNames = VarNameCollector.process(filter.getCondition());
-		if (conditionBindingNames.isEmpty()
-				|| !filter.getArg().getBindingNames().containsAll(conditionBindingNames)
-				|| !containsAny(assignment.getBindingNames(), conditionBindingNames)
-				|| containsSubQueryValueOperator(filter.getCondition())) {
-			return null;
-		}
+		return !conditionBindingNames.isEmpty()
+				&& filter.getArg().getBindingNames().containsAll(conditionBindingNames)
+				&& containsAny(assignment.getBindingNames(), conditionBindingNames)
+				&& !containsSubQueryValueOperator(filter.getCondition());
+	}
 
-		QueryValueEvaluationStep condition;
-		try {
-			condition = strategy.precompile(filter.getCondition(), context);
-		} catch (QueryEvaluationException e) {
-			return QueryEvaluationStep.EMPTY;
-		}
+	/**
+	 * Builds the VALUES-assignment specialization from a strategy-prepared left child and condition. The returned step
+	 * is intentionally shaped like the original specialization so collection, direct-comparison, and feedback hooks
+	 * remain unchanged.
+	 */
+	@InternalUseOnly
+	public static QueryEvaluationStep supplyPreparedFilteredBindingSetAssignmentJoin(Filter filter,
+			EvaluationStrategy strategy, QueryEvaluationContext context, EvaluationStatistics evaluationStatistics,
+			QueryEvaluationStep leftPrepared, QueryValueEvaluationStep condition) {
+		Join join = (Join) filter.getArg();
+		BindingSetAssignment assignment = (BindingSetAssignment) join.getRightArg();
 		FilteredBindingSetAssignmentJoinIteration.DirectCondition directCondition = directCondition(
-				filter.getCondition(),
-				context,
-				strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
-
+				filter.getCondition(), context, strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
 		List<BindingSet> assignmentRows = bindingRows(assignment);
-		QueryEvaluationStep leftPrepared = strategy.precompile(join.getLeftArg(), context);
 		Map<String, FilteredBindingSetAssignmentJoinIteration.BindingNameAccess> bindingNamesByName = bindingNameAccess(
 				assignment, context);
 		boolean recordFilterOutcomes = shouldRecordFilterOutcomes(filter, evaluationStatistics);
 		join.setAlgorithm(FilteredBindingSetAssignmentJoinIteration.class.getSimpleName());
+		return createPreparedFilteredBindingSetAssignmentJoin(filter, strategy, context, evaluationStatistics,
+				leftPrepared, condition, directCondition, assignmentRows, bindingNamesByName, recordFilterOutcomes);
+	}
+
+	private static QueryEvaluationStep createPreparedFilteredBindingSetAssignmentJoin(Filter filter,
+			EvaluationStrategy strategy, QueryEvaluationContext context, EvaluationStatistics evaluationStatistics,
+			QueryEvaluationStep leftPrepared, QueryValueEvaluationStep condition,
+			FilteredBindingSetAssignmentJoinIteration.DirectCondition directCondition, List<BindingSet> assignmentRows,
+			Map<String, FilteredBindingSetAssignmentJoinIteration.BindingNameAccess> bindingNamesByName,
+			boolean recordFilterOutcomes) {
 		return bindings -> {
 			if (assignmentRows.isEmpty()) {
 				return QueryEvaluationStep.EMPTY_ITERATION;
@@ -158,6 +200,39 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 					directCondition, strategy, context::createBindingSet, bindingNamesByName, evaluationStatistics,
 					recordFilterOutcomes);
 		};
+	}
+
+	private static QueryEvaluationStep supplyFilteredBindingSetAssignmentJoin(Filter filter,
+			EvaluationStrategy strategy,
+			QueryEvaluationContext context, EvaluationStatistics evaluationStatistics) {
+		if (!isFilteredBindingSetAssignmentJoinCandidate(filter, strategy)) {
+			return null;
+		}
+
+		QueryValueEvaluationStep condition;
+		try {
+			condition = strategy.precompile(filter.getCondition(), context);
+		} catch (QueryEvaluationException e) {
+			return QueryEvaluationStep.EMPTY;
+		}
+		Join join = (Join) filter.getArg();
+		QueryEvaluationStep leftPrepared = strategy.precompile(join.getLeftArg(), context);
+		BindingSetAssignment assignment = (BindingSetAssignment) join.getRightArg();
+		FilteredBindingSetAssignmentJoinIteration.DirectCondition directCondition = directCondition(
+				filter.getCondition(), context, strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
+		List<BindingSet> assignmentRows = bindingRows(assignment);
+		Map<String, FilteredBindingSetAssignmentJoinIteration.BindingNameAccess> bindingNamesByName = bindingNameAccess(
+				assignment, context);
+		boolean recordFilterOutcomes = shouldRecordFilterOutcomes(filter, evaluationStatistics);
+		join.setAlgorithm(FilteredBindingSetAssignmentJoinIteration.class.getSimpleName());
+		QueryEvaluationStep ordinary = createPreparedFilteredBindingSetAssignmentJoin(filter, strategy, context,
+				evaluationStatistics, leftPrepared, condition, directCondition, assignmentRows, bindingNamesByName,
+				recordFilterOutcomes);
+		return ScopedEvaluationStep.preparedUnary(filter, ordinary, join.getLeftArg(), leftPrepared,
+				preparedChild -> createPreparedFilteredBindingSetAssignmentJoin(filter, strategy, context,
+						evaluationStatistics, preparedChild, condition, directCondition, assignmentRows,
+						bindingNamesByName,
+						recordFilterOutcomes));
 	}
 
 	private static FilteredBindingSetAssignmentJoinIteration.DirectCondition directCondition(ValueExpr condition,
@@ -242,6 +317,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	public FilterIterator(Filter filter, CloseableIteration<BindingSet> iter, QueryValueEvaluationStep condition,
 			EvaluationStrategy strategy, EvaluationStatistics evaluationStatistics) throws QueryEvaluationException {
 		super(iter);
+		this.source = iter;
 		this.filterNode = filter;
 		this.evaluationStatistics = evaluationStatistics;
 		this.runtimeTelemetryEnabled = filter != null && filter.isRuntimeTelemetryEnabled();
@@ -254,9 +330,12 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			} else {
 				final Set<String> bindingNames = filterScopeBindingNames(filter);
 				this.retain = (bs) -> {
-					QueryBindingSet nbs = new QueryBindingSet(bs);
+					BindingSet rawBindings = bs instanceof ProbeBindingSet probeBindings
+							? probeBindings.rawBindings()
+							: bs;
+					QueryBindingSet nbs = new QueryBindingSet(rawBindings);
 					nbs.retainAll(bindingNames);
-					return nbs;
+					return ProbeBindingSet.retain(bs, nbs, bindingNames);
 				};
 			}
 		} else {
@@ -269,6 +348,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			EvaluationStatistics evaluationStatistics)
 			throws QueryEvaluationException {
 		super(iter);
+		this.source = iter;
 		this.filterNode = filterNode;
 		this.evaluationStatistics = evaluationStatistics;
 		this.runtimeTelemetryEnabled = filterNode != null && filterNode.isRuntimeTelemetryEnabled();
@@ -299,13 +379,16 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			setBinding[i] = (bs, nbs) -> nbs.setBinding(bindingName, getValue.apply(bs));
 		}
 		return (bs) -> {
+			BindingSet rawBindings = bs instanceof ProbeBindingSet probeBindings
+					? probeBindings.rawBindings()
+					: bs;
 			MutableBindingSet nbs = context.createBindingSet();
 			for (int i = 0; i < hasBinding.length; i++) {
-				if (hasBinding[i].test(bs)) {
-					setBinding[i].accept(bs, nbs);
+				if (hasBinding[i].test(rawBindings)) {
+					setBinding[i].accept(rawBindings, nbs);
 				}
 			}
-			return nbs;
+			return ProbeBindingSet.retain(bs, nbs, bindingNames);
 		};
 	}
 
@@ -398,11 +481,22 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 				recordedFilteredCount++;
 			}
 			return false;
+		} catch (ProbeBlocked blocked) {
+			// A blocked scalar branch is not an expression error. FilterIteration continues with later tuple rows,
+			// while
+			// this status prevents a completion-sensitive parent from treating the filtered input as complete.
+			probeBlocked = true;
+			return false;
 		} finally {
 			if (runtimeTelemetryEnabled) {
 				exprEvalTimeNanosActual += Math.max(0L, System.nanoTime() - started);
 			}
 		}
+	}
+
+	@Override
+	public ScopedEvaluationProbe.Completion probeCompletion() {
+		return probeBlocked ? ScopedEvaluationProbe.Completion.BLOCKED : ScopedEvaluationProbe.completionOf(source);
 	}
 
 	public static boolean isPartOfSubQuery(QueryModelNode node) {

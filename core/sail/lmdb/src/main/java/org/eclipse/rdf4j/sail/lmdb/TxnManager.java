@@ -642,7 +642,6 @@ final class TxnManager {
 					return true;
 				}
 				// already reclaimed by close(); permit accounting is done there
-				closed = true;
 				return false;
 			case NONE:
 				// the caller takes over responsibility for the native transaction

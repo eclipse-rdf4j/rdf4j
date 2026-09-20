@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -40,7 +41,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /**
- * Rewrites safe RDF-term equality IN filters into a finite VALUES semijoin anchor.
+ * Rewrites safe finite RDF-term filters into a VALUES semijoin anchor.
  */
 final class FilterInValuesOptimizer implements QueryOptimizer {
 
@@ -48,13 +49,20 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new Visitor());
+		tupleExpr.visit(new Visitor(false));
+	}
+
+	void optimizeSameTermDisjunction(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		tupleExpr.visit(new Visitor(true));
 	}
 
 	private static final class Visitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
-		private Visitor() {
+		private final boolean disjunctionOnly;
+
+		private Visitor(boolean disjunctionOnly) {
 			super(false);
+			this.disjunctionOnly = disjunctionOnly;
 		}
 
 		@Override
@@ -64,9 +72,16 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 				return;
 			}
 
-			BindingSetAssignment assignment = safeValuesAnchor(filter.getCondition());
+			BindingSetAssignment assignment = disjunctionOnly
+					? safeSameTermDisjunctionAnchor(filter.getCondition())
+					: safeValuesAnchor(filter.getCondition());
+			TupleExpr argument = filter.getArg();
+			Set<String> bindingNames = assignment == null ? Set.of() : assignment.getBindingNames();
 			if (assignment == null
-					|| !filter.getArg().getAssuredBindingNames().containsAll(assignment.getBindingNames())) {
+					|| !argument.getAssuredBindingNames().containsAll(bindingNames)
+					|| !QueryEvaluationUtility.getActualOutputBindingNames(argument).containsAll(bindingNames)
+					|| !QueryEvaluationUtility.isRepeatable(argument)
+					|| !QueryEvaluationUtility.canDiscardWithoutEvaluation(argument)) {
 				return;
 			}
 
@@ -74,7 +89,7 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 			// the cloned argument, so the argument must additionally satisfy the binding-injection contract
 			// for the VALUES variables (an Extend target collision or an expression observing the injected
 			// name would change results).
-			if (!QueryEvaluationUtility.permitsBindingInjection(filter.getArg(), assignment.getBindingNames())) {
+			if (!QueryEvaluationUtility.permitsBindingInjection(argument, bindingNames)) {
 				return;
 			}
 
@@ -83,7 +98,7 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 			}
 
 			invalidateAncestorMergeJoins(filter);
-			filter.replaceWith(new Join(assignment, filter.getArg().clone()));
+			filter.replaceWith(new Join(assignment, argument.clone()));
 		}
 	}
 
@@ -144,7 +159,68 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 		if (condition instanceof SameTerm sameTerm) {
 			return singleValueAnchor(sameTerm.getLeftArg(), sameTerm.getRightArg());
 		}
+		if (condition instanceof Or or) {
+			return sameTermOrAnchor(or);
+		}
 		return null;
+	}
+
+	private static BindingSetAssignment safeSameTermDisjunctionAnchor(ValueExpr condition) {
+		return condition instanceof Or or ? sameTermOrAnchor(or) : null;
+	}
+
+	private static BindingSetAssignment sameTermOrAnchor(Or disjunction) {
+		SameTermValues values = new SameTermValues();
+		if (!collectSameTermValues(disjunction, values) || values.values.isEmpty()
+				|| values.values.size() > MAX_VALUES) {
+			return null;
+		}
+		return valuesAnchor(values.bindingName, values.values);
+	}
+
+	private static boolean collectSameTermValues(ValueExpr expression, SameTermValues values) {
+		if (expression instanceof Or or) {
+			return collectSameTermValues(or.getLeftArg(), values)
+					&& collectSameTermValues(or.getRightArg(), values);
+		}
+		if (!(expression instanceof SameTerm sameTerm)) {
+			return false;
+		}
+
+		Var variable;
+		Value value;
+		if (sameTerm.getLeftArg()instanceof Var leftVar && !leftVar.hasValue()
+				&& (value = constantValue(sameTerm.getRightArg())) != null) {
+			variable = leftVar;
+		} else if (sameTerm.getRightArg()instanceof Var rightVar && !rightVar.hasValue()
+				&& (value = constantValue(sameTerm.getLeftArg())) != null) {
+			variable = rightVar;
+		} else {
+			return false;
+		}
+
+		if (variable.getName() == null
+				|| (values.bindingName != null && !values.bindingName.equals(variable.getName()))) {
+			return false;
+		}
+		values.bindingName = variable.getName();
+		values.values.add(value);
+		return values.values.size() <= MAX_VALUES;
+	}
+
+	private static Value constantValue(ValueExpr expression) {
+		if (expression instanceof ValueConstant valueConstant) {
+			return valueConstant.getValue();
+		}
+		if (expression instanceof Var var && var.hasValue()) {
+			return var.getValue();
+		}
+		return null;
+	}
+
+	private static final class SameTermValues {
+		private String bindingName;
+		private final LinkedHashSet<Value> values = new LinkedHashSet<>();
 	}
 
 	private static BindingSetAssignment listValuesAnchor(ListMemberOperator operator) {
@@ -189,6 +265,11 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 		List<BindingSet> mergedBindingSets = new ArrayList<>();
 		for (BindingSet bindingSet : existingAssignment.getBindingSets()) {
 			Value value = bindingSet.getValue(bindingName);
+			// An UNDEF entry does not constrain the later join. The filter must remain in place so the assuring operand
+			// can bind the variable before the finite-value condition is evaluated.
+			if (value == null) {
+				return true;
+			}
 			if (allowedValues.contains(value)) {
 				mergedBindingSets.add(bindingSet);
 			}

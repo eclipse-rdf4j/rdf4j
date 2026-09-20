@@ -190,10 +190,10 @@ class LmdbUnionFilterDistributorTest {
 		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(namePattern, targetValues)),
 				List.of(filter), Set.of());
 
-		Join join = assertInstanceOf(Join.class, root);
+		Filter rootFilter = assertInstanceOf(Filter.class, root);
+		Join join = assertInstanceOf(Join.class, rootFilter.getArg());
 		assertInstanceOf(StatementPattern.class, join.getLeftArg());
-		Filter assignmentFilter = assertInstanceOf(Filter.class, join.getRightArg());
-		assertInstanceOf(BindingSetAssignment.class, assignmentFilter.getArg());
+		assertInstanceOf(BindingSetAssignment.class, join.getRightArg());
 	}
 
 	@Test
@@ -213,10 +213,10 @@ class LmdbUnionFilterDistributorTest {
 		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(namePattern, targetValues)),
 				List.of(filter), Set.of());
 
-		Join join = assertInstanceOf(Join.class, root);
+		Filter rootFilter = assertInstanceOf(Filter.class, root);
+		Join join = assertInstanceOf(Join.class, rootFilter.getArg());
 		assertInstanceOf(StatementPattern.class, join.getLeftArg());
-		Filter assignmentFilter = assertInstanceOf(Filter.class, join.getRightArg());
-		assertInstanceOf(BindingSetAssignment.class, assignmentFilter.getArg());
+		assertInstanceOf(BindingSetAssignment.class, join.getRightArg());
 	}
 
 	@Test
@@ -238,9 +238,9 @@ class LmdbUnionFilterDistributorTest {
 		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(typePattern, namePattern, targetValues)),
 				List.of(filter), Set.of());
 
-		Join rootJoin = assertInstanceOf(Join.class, root);
-		Filter assignmentFilter = assertInstanceOf(Filter.class, rootJoin.getRightArg());
-		assertInstanceOf(BindingSetAssignment.class, assignmentFilter.getArg());
+		Filter rootFilter = assertInstanceOf(Filter.class, root);
+		Join rootJoin = assertInstanceOf(Join.class, rootFilter.getArg());
+		assertInstanceOf(BindingSetAssignment.class, rootJoin.getRightArg());
 	}
 
 	@Test
@@ -264,9 +264,9 @@ class LmdbUnionFilterDistributorTest {
 		TupleExpr root = placer.buildSegmentRoot(new ArrayDeque<>(List.of(scopedBranch, targetValues)),
 				List.of(filter), Set.of());
 
-		Join rootJoin = assertInstanceOf(Join.class, root);
-		Filter assignmentFilter = assertInstanceOf(Filter.class, rootJoin.getRightArg());
-		assertInstanceOf(BindingSetAssignment.class, assignmentFilter.getArg());
+		Filter rootFilter = assertInstanceOf(Filter.class, root);
+		Join rootJoin = assertInstanceOf(Join.class, rootFilter.getArg());
+		assertInstanceOf(BindingSetAssignment.class, rootJoin.getRightArg());
 	}
 
 	@Test

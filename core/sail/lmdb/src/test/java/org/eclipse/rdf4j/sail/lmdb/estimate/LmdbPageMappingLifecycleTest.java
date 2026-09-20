@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
@@ -43,9 +44,12 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.IntBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -254,6 +258,81 @@ class LmdbPageMappingLifecycleTest {
 	}
 
 	@Test
+	void closeWaitsForAgedBorrowedReadScopes() throws Exception {
+		CountDownLatch entered = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		try (Environment env = new Environment(directory, 0)) {
+			env.put(0, 32);
+			try (ReadTxn txn = env.read();
+					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
+							env.handle);
+					var executor = Executors.newSingleThreadExecutor()) {
+				for (int batch = 1; batch <= 4; batch++) {
+					env.put(batch * 32, (batch + 1) * 32);
+				}
+
+				Future<Long> reader = executor
+						.submit(() -> estimate(estimator, txn.handle(), blockingMatcher(entered, release)));
+				CompletableFuture<Void> closed = new CompletableFuture<>();
+				Thread closer = new Thread(() -> {
+					try {
+						estimator.close();
+						closed.complete(null);
+					} catch (Throwable failure) {
+						closed.completeExceptionally(failure);
+					}
+				});
+				try {
+					assertTrue(entered.await(10, TimeUnit.SECONDS));
+					closer.start();
+					// An aged read transaction uses the native fallback scope. Close must still wait for its cursor
+					// read.
+					while (closer.isAlive() && closer.getState() != Thread.State.WAITING
+							&& closer.getState() != Thread.State.BLOCKED) {
+						Thread.onSpinWait();
+					}
+					assertFalse(closed.isDone(), "Close must wait until the fallback read finishes");
+				} finally {
+					release.countDown();
+				}
+				assertEquals(10, reader.get());
+				closed.get();
+				closer.join();
+				assertThrows(IOException.class, () -> totalEntries(estimator, txn.handle()));
+			}
+		} finally {
+			release.countDown();
+		}
+	}
+
+	@Test
+	void rejectsAgedReadTransactionFromAnotherEnvironment() throws Exception {
+		Path ownerDirectory = directory.resolve("owner");
+		Path foreignDirectory = directory.resolve("foreign");
+		Files.createDirectories(ownerDirectory);
+		Files.createDirectories(foreignDirectory);
+		try (Environment owner = new Environment(ownerDirectory, 0);
+				Environment foreign = new Environment(foreignDirectory, 0)) {
+			owner.put(0, 32);
+			foreign.put(0, 32);
+			try (ReadTxn foreignTxn = foreign.read();
+					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(owner.dataPath.toFile(),
+							owner.handle);
+					LmdbDataFile file = new LmdbDataFile(owner.dataPath.toFile(), owner.handle)) {
+				for (int batch = 1; batch <= 6; batch++) {
+					owner.put(batch * 32, (batch + 1) * 32);
+				}
+				assertNull(file.readExactMetaForTxn(foreignTxn.id()),
+						"The foreign transaction must exercise the aged metadata fallback");
+				IOException failure = assertThrows(IOException.class,
+						() -> totalEntries(estimator, foreignTxn.handle()));
+				assertTrue(failure.getMessage().contains("environment"),
+						"Foreign transaction rejection should identify the environment mismatch");
+			}
+		}
+	}
+
+	@Test
 	void nativeAndLegacyCachesKeepTheirOwnBackingMemory() throws Exception {
 		try (Environment env = new Environment(directory, 0)) {
 			env.put(0, 32);
@@ -332,6 +411,125 @@ class LmdbPageMappingLifecycleTest {
 				file.close();
 				assertEquals(meta.txnId(), txn.id());
 				assertEquals(page.pgno, page.buffer.getLong(0));
+			}
+		}
+	}
+
+	@Test
+	void reopensPinnedReadViewAfterSeveralCommitsUsingItsOriginalSnapshot() throws Exception {
+		try (Environment env = new Environment(directory, 0)) {
+			env.put(0, 32);
+			try (ReadTxn oldTxn = env.read();
+					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
+							env.handle)) {
+				try (var initialView = estimator.readTransaction(oldTxn.handle())) {
+					assertEquals(32, initialView.totalEntries("statements"));
+				}
+
+				for (int batch = 1; batch <= 4; batch++) {
+					env.put(batch * 32, (batch + 1) * 32);
+					try (ReadTxn newTxn = env.read(); var newView = estimator.readTransaction(newTxn.handle())) {
+						assertEquals((batch + 1) * 32, newView.totalEntries("statements"));
+					}
+				}
+
+				try (var reopenedView = estimator.readTransaction(oldTxn.handle())) {
+					assertEquals(32, reopenedView.totalEntries("statements"));
+					assertEquals(10,
+							reopenedView.estimateEntries("statements", key(0), 4, key(9), 4, null, 0));
+				}
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 1 })
+	void exactReadAcceptsOneValidMetadataPage(int expectedValidMetaPage) throws Exception {
+		Path sourceDirectory = directory.resolve("single-valid-source-" + expectedValidMetaPage);
+		Files.createDirectories(sourceDirectory);
+		Path fixture = directory.resolve("single-valid-meta-" + expectedValidMetaPage + ".mdb");
+		Path bothValidFixture = directory.resolve("both-valid-meta-" + expectedValidMetaPage + ".mdb");
+		long pinnedTxnId;
+		int validMetaPage;
+		int pageSize;
+		ByteOrder byteOrder;
+		try (Environment env = new Environment(sourceDirectory, 0)) {
+			pinnedTxnId = -1L;
+			validMetaPage = -1;
+			pageSize = -1;
+			byteOrder = null;
+			for (int batch = 0; batch < 8 && pinnedTxnId < 0L; batch++) {
+				env.put(batch * 32, (batch + 1) * 32);
+				try (ReadTxn txn = env.read();
+						LmdbDataFile file = new LmdbDataFile(env.dataPath.toFile(), env.handle)) {
+					LmdbMeta meta = file.readMetaForReadTransaction(txn.handle());
+					if (meta.metaPage() == expectedValidMetaPage) {
+						pinnedTxnId = meta.txnId();
+						validMetaPage = meta.metaPage();
+						pageSize = meta.pageSize();
+						byteOrder = meta.byteOrder();
+					}
+				}
+			}
+		}
+		assertEquals(expectedValidMetaPage, validMetaPage, "The fixture must exercise the requested metadata page");
+
+		Files.copy(sourceDirectory.resolve("data.mdb"), fixture);
+		Files.copy(sourceDirectory.resolve("data.mdb"), bothValidFixture);
+		try (LmdbDataFile file = new LmdbDataFile(bothValidFixture.toFile())) {
+			assertNull(file.readExactMetaForTxn(Long.MAX_VALUE),
+					"A valid pair without the pinned transaction is unavailable");
+		}
+
+		int invalidMetaPage = validMetaPage == 0 ? 1 : 0;
+		invalidateMetaPage(fixture, invalidMetaPage, pageSize, byteOrder);
+
+		try (LmdbDataFile file = new LmdbDataFile(fixture.toFile())) {
+			assertNull(file.readExactMetaForTxn(Long.MAX_VALUE),
+					"A one-valid-page fixture without the pinned transaction is unavailable");
+			LmdbMeta exact = file.readExactMetaForTxn(pinnedTxnId);
+			assertEquals(validMetaPage, exact.metaPage());
+			assertEquals(pinnedTxnId, exact.txnId());
+		}
+	}
+
+	@Test
+	void exactReadRejectsTwoInvalidMetadataPages() throws Exception {
+		Path sourceDirectory = directory.resolve("both-invalid-source");
+		Files.createDirectories(sourceDirectory);
+		Path fixture = directory.resolve("both-invalid-meta.mdb");
+		int pageSize;
+		ByteOrder byteOrder;
+		try (Environment env = new Environment(sourceDirectory, 0)) {
+			env.put(0, 32);
+			try (LmdbDataFile file = new LmdbDataFile(env.dataPath.toFile(), env.handle);
+					ReadTxn txn = env.read()) {
+				LmdbMeta meta = file.readMetaForReadTransaction(txn.handle());
+				pageSize = meta.pageSize();
+				byteOrder = meta.byteOrder();
+			}
+		}
+
+		Files.copy(sourceDirectory.resolve("data.mdb"), fixture);
+		invalidateMetaPage(fixture, 0, pageSize, byteOrder);
+		invalidateMetaPage(fixture, 1, pageSize, byteOrder);
+
+		try (LmdbDataFile file = new LmdbDataFile(fixture.toFile())) {
+			assertThrows(IOException.class, () -> file.readExactMetaForTxn(2L));
+		}
+	}
+
+	private static void invalidateMetaPage(Path fixture, int metaPage, int pageSize, ByteOrder byteOrder)
+			throws IOException {
+		long flagsOffset = (long) metaPage * pageSize + 10;
+		ByteBuffer invalidFlags = ByteBuffer.allocate(Short.BYTES).order(byteOrder).putShort((short) 0);
+		invalidFlags.flip();
+		try (FileChannel channel = FileChannel.open(fixture, StandardOpenOption.WRITE)) {
+			while (invalidFlags.hasRemaining()) {
+				int written = channel.write(invalidFlags, flagsOffset + invalidFlags.position());
+				if (written <= 0) {
+					throw new IOException("No progress while invalidating one LMDB metadata page");
+				}
 			}
 		}
 	}

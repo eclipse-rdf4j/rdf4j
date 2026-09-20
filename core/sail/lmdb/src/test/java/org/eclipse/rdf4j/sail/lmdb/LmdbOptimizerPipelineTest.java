@@ -39,13 +39,20 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -69,6 +76,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceCheck
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
@@ -174,10 +182,17 @@ class LmdbOptimizerPipelineTest {
 				new LmdbQueryOptimizerPipeline(strategy, tripleSource, new EvaluationStatistics()).getOptimizers());
 
 		int filterIndex = indexOf(optimizers, FilterOptimizer.class);
+		QueryOptimizer filterInValues = StandardQueryOptimizerPipeline.FILTER_IN_VALUES_OPTIMIZER;
+		int filterInValuesIndex = optimizers.indexOf(filterInValues);
+		int filterSimplifierIndex = indexOf(optimizers, LmdbFilterSimplifierOptimizer.class);
 		int sketchIndex = indexOf(optimizers, LmdbSketchJoinOptimizer.class);
 
 		assertTrue(filterIndex >= 0);
+		assertTrue(filterInValuesIndex > filterSimplifierIndex,
+				"the shared finite-filter stage follows LMDB filter simplification");
 		assertTrue(sketchIndex >= 0);
+		assertTrue(filterInValuesIndex > sketchIndex,
+				"the shared finite-filter stage follows sketch planning");
 		assertTrue(filterIndex < sketchIndex);
 		assertTrue(optimizers.stream().anyMatch(LmdbFilterSimplifierOptimizer.class::isInstance));
 		assertFalse(optimizers.stream().anyMatch(BindingSetAssignmentInlinerOptimizer.class::isInstance));
@@ -187,7 +202,8 @@ class LmdbOptimizerPipelineTest {
 		assertFalse(optimizers.subList(sketchIndex + 1, optimizers.size())
 				.stream()
 				.anyMatch(IterativeEvaluationOptimizer.class::isInstance));
-		assertEquals(List.of(OrderLimitOptimizer.class), nonCheckerOptimizerTypesAfter(optimizers, sketchIndex));
+		assertEquals(List.of(OrderLimitOptimizer.class),
+				nonCheckerOptimizerTypesAfter(optimizers, filterInValuesIndex));
 		assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
 	}
 
@@ -253,6 +269,77 @@ class LmdbOptimizerPipelineTest {
 		assertTrue(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
 	}
 
+	@Test
+	void lmdbPipelineRetainsProviderPrefixForRowCorrelatedService() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		TupleExpr tupleExpr = parseTupleExpr("SELECT ?var ?output WHERE { "
+				+ "SERVICE <urn:provider> { SELECT ?var { ?s ?p ?var } } "
+				+ "SERVICE <urn:consumer> { SELECT (CONCAT(?var, '_processed') AS ?output) ?__rowIdx WHERE { } } "
+				+ "}");
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics()).getOptimizers()) {
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		}
+
+		List<Service> services = new ArrayList<>();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Service node) {
+				services.add(node);
+			}
+		});
+		Service provider = services.stream()
+				.filter(service -> !service.hasRowIndexProjection())
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("missing provider SERVICE"));
+		Service consumer = services.stream()
+				.filter(service -> service.hasRowIndexProjection())
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("missing row-correlated SERVICE"));
+		assertTrue(provider.getServiceOutputBindingNames().contains("var"));
+		assertFalse(provider.hasRowIndexProjection());
+		assertTrue(consumer.hasRowIndexProjection());
+		assertTrue(consumer.getServiceInputBindingNames().contains("var"));
+		assertConsumerHasProviderPrefix(consumer, "var");
+	}
+
+	@Test
+	void lmdbPipelineAnchorsExactSameTermOrForBnodeAndIri() {
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Value bnode = valueFactory.createBNode("finite-bnode");
+		Value iri = valueFactory.createIRI("urn:finite:iri");
+		Filter filter = new Filter(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new Or(new SameTerm(Var.of("o"), new ValueConstant(bnode)),
+						new SameTerm(new ValueConstant(iri), Var.of("o"))));
+		QueryRoot root = new QueryRoot(filter);
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
+
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, new EmptyTripleSource(),
+				new EvaluationStatistics()).getOptimizers()) {
+			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
+		}
+
+		List<BindingSetAssignment> anchors = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof BindingSetAssignment assignment) {
+					anchors.add(assignment);
+				}
+				super.meetNode(node);
+			}
+		});
+		assertEquals(1, anchors.size(), "the LMDB pipeline should share finite SameTerm anchoring");
+		assertEquals(Set.of("o"), anchors.getFirst().getBindingNames());
+		List<Value> actualValues = new ArrayList<>();
+		for (BindingSet bindingSet : anchors.getFirst().getBindingSets()) {
+			actualValues.add(bindingSet.getValue("o"));
+		}
+		assertEquals(List.of(bnode, iri), actualValues);
+	}
+
 	private static List<QueryOptimizer> optimizers(Iterable<QueryOptimizer> optimizers) {
 		return StreamSupport.stream(optimizers.spliterator(), false)
 				.collect(Collectors.toList());
@@ -279,6 +366,22 @@ class LmdbOptimizerPipelineTest {
 	private static TupleExpr parseTupleExpr(String query) {
 		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		return parsedQuery.getTupleExpr();
+	}
+
+	private static void assertConsumerHasProviderPrefix(Service consumer, String... expectedProviderNames) {
+		QueryModelNode child = consumer;
+		for (QueryModelNode current = consumer.getParentNode(); current != null; current = current.getParentNode()) {
+			if (current instanceof Join join) {
+				assertSame(join.getRightArg(), child,
+						"the first ancestor JOIN must invoke the row-correlated SERVICE on its right");
+				assertTrue(QueryEvaluationUtility.getActualOutputBindingNames(join.getLeftArg())
+						.containsAll(Set.of(expectedProviderNames)),
+						"consumer's immediate invocation prefix must provide its expected inputs");
+				return;
+			}
+			child = current;
+		}
+		fail("row-correlated SERVICE must be the right side of a provider prefix JOIN");
 	}
 
 	private static StatementPattern firstStatementPattern(IRI predicate) {

@@ -206,12 +206,8 @@ public class ValueComparator implements Comparator<Value> {
 		private static CalendarSortKey create(Literal literal, CoreDatatype.XSD datatype) {
 			String label = literal.getLabel();
 			Literal.BaseDirection baseDirection = literal.getBaseDirection();
-			if (!XMLDatatypeUtil.isValidValue(label, datatype)) {
-				return invalid(datatype, label, baseDirection);
-			}
-
 			try {
-				XMLGregorianCalendar localStart = XMLDatatypeUtil.parseCalendar(label);
+				XMLGregorianCalendar localStart = XMLDatatypeUtil.parseValidatedCalendar(label, datatype);
 				int timezoneMinutes = localStart.getTimezone();
 				boolean timezoneDefined = timezoneMinutes != DatatypeConstants.FIELD_UNDEFINED;
 				Duration extent = canonicalizeLocalStart(localStart, datatype);
@@ -306,9 +302,8 @@ public class ValueComparator implements Comparator<Value> {
 		}
 
 		private static CalendarBoundary normalizeWithTimezone(XMLGregorianCalendar value, int timezoneMinutes) {
-			XMLGregorianCalendar copy = (XMLGregorianCalendar) value.clone();
-			copy.setTimezone(timezoneMinutes);
-			return CalendarBoundary.from(copy.normalize());
+			value.setTimezone(timezoneMinutes);
+			return CalendarBoundary.from(value.normalize());
 		}
 
 		private int compareStrict(CalendarSortKey right) {

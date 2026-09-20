@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ProjectionRemovalOpt
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctionOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
 
 final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
@@ -51,6 +52,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private static final ProjectionRemovalOptimizer PROJECTION_REMOVAL_OPTIMIZER = new ProjectionRemovalOptimizer();
 	private static final IterativeEvaluationOptimizer ITERATIVE_EVALUATION_OPTIMIZER = new IterativeEvaluationOptimizer();
 	private static final OrderLimitOptimizer ORDER_LIMIT_OPTIMIZER = new OrderLimitOptimizer();
+	private static final QueryOptimizer FILTER_IN_VALUES = StandardQueryOptimizerPipeline.FILTER_IN_VALUES_OPTIMIZER;
 
 	private final EvaluationStrategy strategy;
 	private final TripleSource tripleSource;
@@ -71,8 +73,9 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,
-				// DisjunctiveConstraintOptimizer is excluded: its split is not multiset-preserving for
-				// non-disjoint disjuncts. See that class's javadoc.
+				// DisjunctiveConstraintOptimizer remains a compatibility facade. Its safe finite SameTerm OR analysis
+				// is
+				// shared by FILTER_IN_VALUES below; running both would duplicate the pass.
 				SAME_TERM_FILTER_OPTIMIZER,
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,
@@ -81,6 +84,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				new LmdbFilterSimplifierOptimizer(evaluationStatistics),
 				new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
+				FILTER_IN_VALUES,
 				ORDER_LIMIT_OPTIMIZER);
 
 		if (assertsEnabled) {

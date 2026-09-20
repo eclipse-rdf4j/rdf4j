@@ -15,16 +15,22 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 class LmdbJoinPlanSupportTest {
@@ -106,6 +112,26 @@ class LmdbJoinPlanSupportTest {
 		assertEquals(1.0d, unknown.getUpper95PassRatio(), 1.0e-12d);
 		assertEquals(1.0d, unknown.getPlanningPassRatio(), 1.0e-12d);
 		assertEquals(0.0d, unknown.getConfidenceScore(), 1.0e-12d);
+	}
+
+	@Test
+	void serviceSubselectsRemainJoinOrderSeparatorsForSketchPlanning() {
+		String query = "SELECT ?x ?output WHERE { "
+				+ "SERVICE <urn:dummy> { SELECT ?x { ?s ?p ?x } } "
+				+ "SERVICE <urn:dummy> { SELECT (CONCAT(?x, '_processed') AS ?output) ?__rowIdx WHERE { } } "
+				+ "}";
+		TupleExpr tupleExpr = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		List<Service> services = new ArrayList<>();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Service node) {
+				services.add(node);
+			}
+		});
+
+		assertEquals(2, services.size());
+		assertTrue(services.stream().anyMatch(service -> service.hasRowIndexProjection()));
+		assertTrue(services.stream().allMatch(LmdbJoinPlanSupport::isJoinOrderSeparator));
 	}
 
 	@Test

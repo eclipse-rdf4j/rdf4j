@@ -30,9 +30,7 @@ class LmdbPrefixRunBatchTest {
 			assertThat(batch.fillNext()).isTrue();
 			assertThat(batch.size()).isEqualTo(128);
 			assertThat(batch.quadAt(0)).containsExactly(0L, 1L, 2L, 3L);
-			assertThat(batch.runRowCountAt(0)).isEqualTo(1L);
 			assertThat(batch.quadAt(127)).containsExactly(127L, 128L, 129L, 130L);
-			assertThat(batch.runRowCountAt(127)).isEqualTo(1L);
 
 			assertThat(batch.fillNext()).isTrue();
 			assertThat(batch.size()).isEqualTo(1);
@@ -125,11 +123,6 @@ class LmdbPrefixRunBatchTest {
 		@Override
 		public long[] quad() {
 			return quad;
-		}
-
-		@Override
-		public long runRowCount() {
-			return 1;
 		}
 
 		@Override

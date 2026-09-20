@@ -48,11 +48,6 @@ interface LmdbPrefixRunCursor extends AutoCloseable {
 		}
 
 		@Override
-		public long runRowCount() {
-			return 0L;
-		}
-
-		@Override
 		public long getSourceRowsScannedActual() {
 			return 0L;
 		}
@@ -91,9 +86,6 @@ interface LmdbPrefixRunCursor extends AutoCloseable {
 	 */
 	long[] quad();
 
-	/** Number of matching statements in the current run, or 1 when run rows are not counted. */
-	long runRowCount();
-
 	long getSourceRowsScannedActual();
 
 	long getSourceRowsMatchedActual();
@@ -114,9 +106,6 @@ interface LmdbPrefixRunCursor extends AutoCloseable {
  * their bound value or zero) and seeks straight to it. Long, dense runs therefore cost roughly one B-tree seek per
  * distinct prefix instead of a visit to every statement, while short runs never pay for a seek that would be slower
  * than simply stepping past them.
- * <p>
- * In counting mode ({@code countRunRows}) every row of a run is visited so that {@link #runRowCount()} reports the
- * number of matching statements per prefix.
  */
 final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 
@@ -132,7 +121,6 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 	private final StampedLongAdderLockManager txnLockManager;
 	private final long txn;
 	private final int dbi;
-	private final boolean countRunRows;
 	private final Pool pool;
 	private final MDBVal keyData;
 	private final MDBVal valueData;
@@ -150,15 +138,13 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 	private boolean hasSeekTarget;
 	/** Whether the LMDB cursor rests on a fetched, not yet classified key (the first row after a stepped-over run). */
 	private boolean positioned;
-	private long runRowCount;
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
 	private long sourceRowsFilteredActual;
 	private long emittedPrefixes;
-	private long countedRunRows;
 
 	LmdbPrefixRunIterator(LmdbPrefixRunPlan plan, Txn txnRef, long subj, long pred, long obj, long context,
-			boolean explicit, boolean countRunRows) throws IOException {
+			boolean explicit) throws IOException {
 		this.plan = plan;
 		this.index = plan.index();
 		this.txnRef = txnRef;
@@ -167,8 +153,6 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 		this.boundValues[TripleIndex.PRED_IDX] = pred > 0 ? pred : -1;
 		this.boundValues[TripleIndex.OBJ_IDX] = obj > 0 ? obj : -1;
 		this.boundValues[TripleIndex.CONTEXT_IDX] = context >= 0 ? context : -1;
-		this.countRunRows = countRunRows;
-
 		Pool acquiredPool = null;
 		MDBVal acquiredKeyData = null;
 		MDBVal acquiredValueData = null;
@@ -269,17 +253,9 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 				int matchStatus = classify(quad);
 				if (matchStatus == TripleIndex.KEY_MATCH) {
 					sourceRowsMatchedActual++;
-					runRowCount = 1;
 					prepareNextSeekTarget();
-					if (countRunRows) {
-						countCurrentRun();
-					} else {
-						advancePastCurrentRun();
-					}
+					advancePastCurrentRun();
 					emittedPrefixes++;
-					if (countRunRows) {
-						countedRunRows += runRowCount;
-					}
 					return true;
 				}
 				sourceRowsFilteredActual++;
@@ -302,11 +278,6 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 	@Override
 	public long[] quad() {
 		return quad;
-	}
-
-	@Override
-	public long runRowCount() {
-		return runRowCount;
 	}
 
 	@Override
@@ -378,34 +349,6 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 				positioned = true;
 				return;
 			}
-		}
-	}
-
-	/**
-	 * Walks the current run row by row, counting matching statements. Leaves the cursor {@link #positioned} on the
-	 * first key of a different prefix, or marks the scan exhausted at the end of the index.
-	 */
-	private void countCurrentRun() throws IOException {
-		while (true) {
-			int rc = step();
-			if (rc == MDB_NOTFOUND) {
-				hasSeekTarget = false;
-				return;
-			}
-			if (rc != MDB_SUCCESS) {
-				E(rc);
-			}
-			int matchStatus = classify(scratchQuad);
-			if (!samePrefix(scratchQuad, quad)) {
-				positioned = true;
-				return;
-			}
-			if (matchStatus != TripleIndex.KEY_MATCH) {
-				sourceRowsFilteredActual++;
-				continue;
-			}
-			sourceRowsMatchedActual++;
-			runRowCount++;
 		}
 	}
 
@@ -494,12 +437,19 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 		if (!closed) {
 			long writeStamp = 0L;
 			boolean writeLocked = false;
-			if (maybeCalledAsync && ownerThread != Thread.currentThread()) {
-				try {
-					writeStamp = txnLockManager.writeLock();
-					writeLocked = true;
-				} catch (InterruptedException e) {
-					throw new SailException(e);
+			boolean interrupted = false;
+			if (maybeCalledAsync) {
+				for (;;) {
+					try {
+						writeStamp = txnLockManager.writeLock();
+						writeLocked = true;
+						break;
+					} catch (InterruptedException e) {
+						// Cursor cleanup must complete even when an owner cancels a close while a reader still holds
+						// the
+						// transaction lock. The interrupt is restored after native resources and the lock are released.
+						interrupted = true;
+					}
 				}
 			}
 			try {
@@ -513,12 +463,14 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 					pool.free(seekKeyBuf);
 					LmdbPrefixRunPlan.ROWS_SCANNED.addAndGet(sourceRowsScannedActual);
 					LmdbPrefixRunPlan.PREFIXES_EMITTED.addAndGet(emittedPrefixes);
-					LmdbPrefixRunPlan.RUN_ROWS_COUNTED.addAndGet(countedRunRows);
 				}
 			} finally {
 				closed = true;
 				if (writeLocked) {
 					txnLockManager.unlockWrite(writeStamp);
+				}
+				if (interrupted) {
+					Thread.currentThread().interrupt();
 				}
 			}
 		}

@@ -75,6 +75,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import jakarta.servlet.DispatcherType;
 
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @ContextConfiguration(initializers = Rdf4jServerWorkbenchApplicationTest.IsolatedAppDataInitializer.class)
@@ -106,6 +107,10 @@ class Rdf4jServerWorkbenchApplicationTest {
 	@Autowired
 	@Qualifier("cacheFilter")
 	private FilterRegistrationBean<CacheFilter> cacheFilter;
+
+	@Autowired
+	@Qualifier("outOfMemoryShutdownFilter")
+	private FilterRegistrationBean<OutOfMemoryShutdownFilter> outOfMemoryShutdownFilter;
 
 	private ListAppender<ILoggingEvent> loggingAppender;
 	private Logger loggingFilterLogger;
@@ -211,6 +216,13 @@ class Rdf4jServerWorkbenchApplicationTest {
 		assertThat(serverPrefixForwardFilter.isAsyncSupported()).isTrue();
 		assertThat(workbenchRedirectFilter.isAsyncSupported()).isTrue();
 		assertThat(cacheFilter.isAsyncSupported()).isTrue();
+	}
+
+	@Test
+	void outOfMemoryBoundaryCoversErrorAndAsyncDispatches() {
+		assertThat(outOfMemoryShutdownFilter.determineDispatcherTypes())
+				.as("the earliest OOM boundary must receive secondary servlet dispatches")
+				.contains(DispatcherType.REQUEST, DispatcherType.ASYNC, DispatcherType.ERROR);
 	}
 
 	@Test

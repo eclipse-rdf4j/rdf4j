@@ -23,7 +23,6 @@ final class LmdbPrefixRunBatch implements AutoCloseable {
 
 	private final LmdbPrefixRunScan scan;
 	private final long[][] quads = new long[MAX_RESULTS][];
-	private final long[] runRowCounts = new long[MAX_RESULTS];
 	private volatile boolean closed;
 	private int size;
 	private int position;
@@ -57,7 +56,6 @@ final class LmdbPrefixRunBatch implements AutoCloseable {
 				quads[size] = row;
 			}
 			System.arraycopy(scan.quad(), 0, row, 0, row.length);
-			runRowCounts[size] = scan.runRowCount();
 			size++;
 		}
 		if (closed || size == 0) {
@@ -108,16 +106,6 @@ final class LmdbPrefixRunBatch implements AutoCloseable {
 			throw new IndexOutOfBoundsException(index);
 		}
 		return quads[index];
-	}
-
-	synchronized long runRowCountAt(int index) {
-		if (closed) {
-			throw new IllegalStateException("Prefix-run batch is closed");
-		}
-		if (index < 0 || index >= size) {
-			throw new IndexOutOfBoundsException(index);
-		}
-		return runRowCounts[index];
 	}
 
 	@Override

@@ -21,17 +21,45 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.Collections;
 import java.util.Optional;
+import java.util.Set;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Intersection;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -87,6 +115,265 @@ public class QueryEvaluationUtilityTest {
 	private Literal arg1unknown;
 
 	private Literal arg2unknown;
+
+	@Test
+	public void canDiscardDoesNotTreatConstantVarsAsCorrelation() {
+		Value constantValue = f.createIRI("urn:constant");
+		Var rightConstant = Var.of("_const_shared", constantValue, true, true);
+		Var leftConstant = Var.of("_const_shared", constantValue, true, true);
+		Service right = service(new StatementPattern(rightConstant, Var.of("rightPredicate"), Var.of("rightObject")));
+		StatementPattern left = new StatementPattern(leftConstant, Var.of("leftPredicate"), Var.of("leftObject"));
+
+		assertFalse(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"constant-valued Vars are constraints, not shared join variables");
+	}
+
+	@Test
+	public void canDiscardKeepsRealUserVariablesEvenWhenNameLooksSynthetic() {
+		Service right = service(new StatementPattern(Var.of("_const_user"), Var.of("rightPredicate"),
+				Var.of("rightObject")));
+		StatementPattern left = new StatementPattern(Var.of("_const_user"), Var.of("leftPredicate"),
+				Var.of("leftObject"));
+
+		assertTrue(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"a real user variable keeps the right operand correlated regardless of its spelling");
+	}
+
+	@Test
+	public void canDiscardKeepsPreboundNamedVariablesAsCorrelation() {
+		Value preboundValue = f.createIRI("urn:prebound");
+		Service right = service(new StatementPattern(Var.of("shared", preboundValue), Var.of("rightPredicate"),
+				Var.of("rightObject")));
+		StatementPattern left = new StatementPattern(Var.of("shared"), Var.of("leftPredicate"),
+				Var.of("leftObject"));
+
+		assertTrue(QueryEvaluationUtility.getActualOutputBindingNames(right).contains("shared"),
+				"a named non-constant Var with a value is emitted as a statement-pattern binding");
+		assertTrue(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"a named prebound output keeps a fatal SERVICE correlated with the left operand");
+	}
+
+	@Test
+	public void canDiscardRetainsValuesAndBindOutputs() {
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(Collections.singletonList(binding("value", "left")));
+
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingSets(Collections.singletonList(binding("value", "right")));
+		Service valuesService = service(values);
+		assertTrue(QueryEvaluationUtility.canDiscardWithoutEvaluation(valuesService, left),
+				"VALUES columns are visible join outputs even though they have no Var nodes");
+
+		Extension extension = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(f.createIRI("urn:value")), "value"));
+		Service bindService = service(extension);
+		assertTrue(QueryEvaluationUtility.canDiscardWithoutEvaluation(bindService, left),
+				"BIND targets are visible join outputs");
+	}
+
+	@Test
+	public void canDiscardDoesNotUseHiddenSubqueryVariablesAsCorrelation() {
+		ProjectionElemList projectionElems = new ProjectionElemList(new ProjectionElem("visible"));
+		Projection projection = new Projection(
+				new StatementPattern(Var.of("hidden"), Var.of("predicate"), Var.of("visible")), projectionElems, true);
+		Service right = service(projection);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(Collections.singletonList(binding("hidden", "left")));
+
+		assertFalse(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"variables hidden by a subquery projection do not correlate its outer join");
+	}
+
+	@Test
+	public void canDiscardDoesNotUsePrivateSubquerySourceExpressionAsCorrelation() {
+		ProjectionElem projectionElem = new ProjectionElem("visible");
+		projectionElem.setSourceExpression(new ExtensionElem(Var.of("hidden"), "visible"));
+		Projection projection = new Projection(new SingletonSet(), new ProjectionElemList(projectionElem), true);
+		Service right = service(projection);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(Collections.singletonList(binding("hidden", "left")));
+
+		assertFalse(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"a private subquery source expression does not correlate the enclosing SERVICE");
+	}
+
+	@Test
+	public void mappingParameterizedServiceIgnoresProjectedRemoteOutput() {
+		Projection projection = new Projection(new SingletonSet(),
+				new ProjectionElemList(new ProjectionElem("outer")), true);
+		Service service = service(projection);
+
+		assertTrue(service.getServiceOutputBindingNames().contains("outer"),
+				"the projected name is part of the remote result scope");
+		assertTrue(service.getServiceInputBindingNames().isEmpty(),
+				"a normal remote projection has no enclosing mapping dependency");
+		assertFalse(QueryEvaluationUtility.usesMappingParameterizedEvaluation(service, Set.of("outer")),
+				"a projected remote output does not make the SERVICE depend on an outer mapping");
+	}
+
+	@Test
+	public void mappingParameterizedServiceUsesExplicitRowIndexInputDependency() {
+		StatementPattern pattern = new StatementPattern(Var.of("outer"),
+				Var.of("predicate", f.createIRI("urn:predicate"), true, true),
+				Var.of("object", f.createIRI("urn:object"), true, true));
+		Projection projection = new Projection(pattern,
+				new ProjectionElemList(new ProjectionElem("__rowIdx")), true);
+		Service service = service(projection);
+
+		assertTrue(service.getServiceInputBindingNames().contains("outer"),
+				"the explicit row-index projection opts its source into mapping dependencies");
+		assertTrue(QueryEvaluationUtility.usesMappingParameterizedEvaluation(service, Set.of("outer")),
+				"an explicit row-index source dependency remains mapping-parameterized");
+	}
+
+	@Test
+	public void canDiscardRecognizesServiceEndpointDependency() {
+		Service right = new Service(Var.of("endpoint"), new SingletonSet(), "{ }", Collections.emptyMap(), null, false);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(Collections.singletonList(binding("endpoint", "http://example.com/service")));
+
+		assertTrue(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"a variable SERVICE endpoint is an input dependency of the right operand");
+	}
+
+	@Test
+	public void canDiscardRecognizesExpressionDependencies() {
+		Service right = service(new Filter(new SingletonSet(),
+				new Compare(Var.of("external"), new ValueConstant(f.createIRI("urn:value")), CompareOp.EQ)));
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(Collections.singletonList(binding("external", "left")));
+
+		assertTrue(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"variables read by right-side expressions are input dependencies");
+	}
+
+	@Test
+	public void canDiscardDoesNotUseUnboundExpressionVarsFromLeft() {
+		Service right = new Service(Var.of("endpoint"), new SingletonSet(), "{ }", Collections.emptyMap(), null, false);
+		Filter left = new Filter(new SingletonSet(),
+				new Compare(Var.of("endpoint"), new ValueConstant(f.createIRI("urn:value")), CompareOp.EQ));
+
+		assertFalse(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"a variable read only by a left FILTER is not an exported left binding");
+	}
+
+	@Test
+	public void canDiscardDoesNotUseHiddenGroupVarsFromLeft() {
+		Service right = new Service(Var.of("hidden"), new SingletonSet(), "{ }", Collections.emptyMap(), null, false);
+		Group left = new Group(new StatementPattern(Var.of("hidden"), Var.of("predicate"), Var.of("object")));
+
+		assertFalse(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"variables hidden by grouping are not exported left bindings");
+	}
+
+	@Test
+	public void canDiscardDoesNotUseHiddenMultiProjectionVarsFromLeft() {
+		Service right = new Service(Var.of("hidden"), new SingletonSet(), "{ }", Collections.emptyMap(), null, false);
+		MultiProjection left = new MultiProjection(
+				new StatementPattern(Var.of("hidden"), Var.of("predicate"), Var.of("visible")),
+				Collections.singletonList(new ProjectionElemList(new ProjectionElem("visible"))));
+
+		assertFalse(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"variables hidden by multi-projection are not exported left bindings");
+	}
+
+	@Test
+	public void canDiscardUsesOnlyDifferenceLeftOutputs() {
+		Service right = new Service(Var.of("hidden"), new SingletonSet(), "{ }", Collections.emptyMap(), null, false);
+		Difference left = new Difference(new SingletonSet(),
+				new StatementPattern(Var.of("hidden"), Var.of("predicate"), Var.of("object")));
+
+		assertFalse(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"MINUS exposes only its left argument's bindings");
+	}
+
+	@Test
+	public void canDiscardUsesOnlyIntersectionOutputs() {
+		Service right = new Service(Var.of("hidden"), new SingletonSet(), "{ }", Collections.emptyMap(), null, false);
+		Intersection left = new Intersection(new SingletonSet(),
+				new StatementPattern(Var.of("hidden"), Var.of("predicate"), Var.of("object")));
+
+		assertFalse(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"an intersection exposes only bindings present in both child results");
+	}
+
+	@Test
+	public void canDiscardDoesNotUseExistsVariablesFromLeftJoinCondition() {
+		Service right = new Service(Var.of("hidden"), new SingletonSet(), "{ }", Collections.emptyMap(), null, false);
+		LeftJoin left = new LeftJoin(new SingletonSet(), new SingletonSet(),
+				new Exists(new StatementPattern(Var.of("hidden"), Var.of("predicate"), Var.of("object"))));
+
+		assertFalse(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"variables inside a left-join condition do not become tuple bindings");
+	}
+
+	@Test
+	public void canDiscardDoesNotUseExistsVariablesFromLeftCondition() {
+		Service right = new Service(Var.of("hidden"), new SingletonSet(), "{ }", Collections.emptyMap(), null, false);
+		Filter left = new Filter(new SingletonSet(),
+				new Exists(new StatementPattern(Var.of("hidden"), Var.of("predicate"), Var.of("object"))));
+
+		assertFalse(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"variables inside an EXISTS condition do not become left tuple bindings");
+	}
+
+	@Test
+	public void canDiscardDoesNotUseNotExistsVariablesFromLeftCondition() {
+		Service right = new Service(Var.of("hidden"), new SingletonSet(), "{ }", Collections.emptyMap(), null, false);
+		Filter left = new Filter(new SingletonSet(), new Not(
+				new Exists(new StatementPattern(Var.of("hidden"), Var.of("predicate"), Var.of("object")))));
+
+		assertFalse(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"variables inside a NOT EXISTS condition do not become left tuple bindings");
+	}
+
+	@Test
+	public void canDiscardTrustsDeclaredOutputsOfUnknownTupleExtensions() {
+		Service right = new Service(Var.of("hidden"), new SingletonSet(), "{ }", Collections.emptyMap(), null, false);
+		TupleExpr left = new DeclaredTupleExtension(
+				new StatementPattern(Var.of("hidden"), Var.of("predicate"), Var.of("object")));
+
+		assertFalse(QueryEvaluationUtility.canDiscardWithoutEvaluation(right, left),
+				"unknown tuple extensions expose only their declared outputs");
+	}
+
+	private Service service(org.eclipse.rdf4j.query.algebra.TupleExpr expression) {
+		return new Service(Var.of("serviceRef", f.createIRI("http://example.com/service")), expression,
+				"{ ?s ?p ?o }", Collections.emptyMap(), null, false);
+	}
+
+	private static BindingSet binding(String name, String value) {
+		QueryBindingSet binding = new QueryBindingSet();
+		binding.addBinding(name, SimpleValueFactory.getInstance().createLiteral(value));
+		return binding;
+	}
+
+	private static final class DeclaredTupleExtension extends UnaryTupleOperator {
+
+		private DeclaredTupleExtension(TupleExpr arg) {
+			super(arg);
+		}
+
+		@Override
+		public Set<String> getBindingNames() {
+			return Collections.singleton("declared");
+		}
+
+		@Override
+		public Set<String> getAssuredBindingNames() {
+			return getBindingNames();
+		}
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visitor.meetOther(this);
+		}
+
+		@Override
+		public DeclaredTupleExtension clone() {
+			return (DeclaredTupleExtension) super.clone();
+		}
+	}
 
 	@BeforeEach
 	public void setUp() {

@@ -68,12 +68,206 @@ public class LateralScopeTest extends AbstractComplianceTest {
 		try (TupleQueryResult result = tq.evaluate()) {
 			List<BindingSet> results = QueryResults.asList(result);
 			assertThat(results).hasSize(3);
-			assertThat(results).allSatisfy(bs -> assertThat(bs.getValue("label").stringValue()).isEqualTo("Label 1"));
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example.org/subject1");
+				assertThat(bs.getValue("label").stringValue()).isEqualTo("Label 1");
+			});
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example.org/subject2");
+				assertThat(bs.getValue("label").stringValue()).isEqualTo("Label 1");
+			});
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example.org/subject3");
+				assertThat(bs.getValue("label").stringValue()).isEqualTo("Label 1");
+			});
+		}
+	}
+
+	private void testOrdinaryOptionalDoesNotUseLateralScope(RepositoryConnection conn) throws Exception {
+		String data = "@prefix ex: <http://example.org/> .\n"
+				+ "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n"
+				+ "\n"
+				+ "ex:subject1 ex:predicate ex:object1 ; rdfs:label \"Label 1\" .\n"
+				+ "ex:subject2 ex:predicate ex:object2 ; rdfs:label \"Label 2\" .\n"
+				+ "ex:subject3 ex:predicate ex:object3 .\n";
+
+		String query = "PREFIX ex: <http://example.org/>\n"
+				+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+				+ "SELECT * {\n"
+				+ "  ?s ex:predicate ?o .\n"
+				+ "  OPTIONAL { ?s rdfs:label ?label }\n"
+				+ "}\n";
+
+		conn.add(new StringReader(data), "", RDFFormat.TURTLE);
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+			List<BindingSet> results = QueryResults.asList(result);
+			assertThat(results).hasSize(3);
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example.org/subject1");
+				assertThat(bs.getValue("label").stringValue()).isEqualTo("Label 1");
+			});
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example.org/subject2");
+				assertThat(bs.getValue("label").stringValue()).isEqualTo("Label 2");
+			});
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example.org/subject3");
+				assertThat(bs.getValue("label")).isNull();
+			});
+		}
+	}
+
+	private void testOptionalInLateralLeftSubtreeDoesNotInheritOwnInputs(RepositoryConnection conn)
+			throws Exception {
+		String data = "@prefix ex: <http://example.org/> .\n"
+				+ "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n"
+				+ "ex:subject1 ex:predicate ex:object1 ; rdfs:label \"Label 1\" .\n"
+				+ "ex:subject2 ex:predicate ex:object2 ; rdfs:label \"Label 2\" .\n";
+
+		String query = "PREFIX ex: <http://example.org/>\n"
+				+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+				+ "SELECT * {\n"
+				+ "  VALUES ?s { ex:subject2 }\n"
+				+ "  {\n"
+				+ "    OPTIONAL {\n"
+				+ "      SELECT ?s ?label { ?s rdfs:label ?label } ORDER BY ?label LIMIT 1\n"
+				+ "    }\n"
+				+ "    LATERAL { VALUES ?marker { true } }\n"
+				+ "  }\n"
+				+ "}\n";
+
+		conn.add(new StringReader(data), "", RDFFormat.TURTLE);
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+			List<BindingSet> results = QueryResults.asList(result);
+			assertThat(results).isEmpty();
+		}
+	}
+
+	private void testOrdinaryOptionalInsideLateralUsesOuterInput(RepositoryConnection conn) throws Exception {
+		String data = "@prefix ex: <http://example.org/> .\n"
+				+ "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n"
+				+ "ex:subject1 ex:predicate ex:object1 ; rdfs:label \"Label 1\" .\n"
+				+ "ex:subject2 ex:predicate ex:object2 ; rdfs:label \"Label 2\" .\n"
+				+ "ex:subject3 ex:predicate ex:object3 .\n";
+
+		String query = "PREFIX ex: <http://example.org/>\n"
+				+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+				+ "SELECT * {\n"
+				+ "  ?s ex:predicate ?o .\n"
+				+ "  LATERAL {\n"
+				+ "    OPTIONAL {\n"
+				+ "      ?s rdfs:label ?label .\n"
+				+ "      FILTER(?s != ex:subject2)\n"
+				+ "    }\n"
+				+ "  }\n"
+				+ "}\n";
+
+		conn.add(new StringReader(data), "", RDFFormat.TURTLE);
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+			List<BindingSet> results = QueryResults.asList(result);
+			assertThat(results).hasSize(3);
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example.org/subject1");
+				assertThat(bs.getValue("label").stringValue()).isEqualTo("Label 1");
+			});
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example.org/subject2");
+				assertThat(bs.getValue("label")).isNull();
+			});
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example.org/subject3");
+				assertThat(bs.getValue("label")).isNull();
+			});
+		}
+	}
+
+	private void testOptionalConditionUsesEnclosingLateralInput(RepositoryConnection conn) throws Exception {
+		String data = "@prefix ex: <http://example.org/> .\n"
+				+ "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n"
+				+ "ex:subject1 ex:predicate ex:object1 ; rdfs:label \"Label 1\" .\n"
+				+ "ex:subject2 ex:predicate ex:object2 ; rdfs:label \"Label 2\" .\n"
+				+ "ex:subject3 ex:predicate ex:object3 .\n";
+
+		String query = "PREFIX ex: <http://example.org/>\n"
+				+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+				+ "SELECT * {\n"
+				+ "  ?s ex:predicate ?o .\n"
+				+ "  LATERAL {\n"
+				+ "    OPTIONAL {\n"
+				+ "      ?t rdfs:label ?label .\n"
+				+ "      FILTER(sameTerm(?t, ?s))\n"
+				+ "    }\n"
+				+ "  }\n"
+				+ "}\n";
+
+		conn.add(new StringReader(data), "", RDFFormat.TURTLE);
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+			List<BindingSet> results = QueryResults.asList(result);
+			assertThat(results).hasSize(3);
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example.org/subject1");
+				assertThat(bs.getValue("label")).isNotNull();
+				assertThat(bs.getValue("label").stringValue()).isEqualTo("Label 1");
+			});
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example.org/subject2");
+				assertThat(bs.getValue("label")).isNotNull();
+				assertThat(bs.getValue("label").stringValue()).isEqualTo("Label 2");
+			});
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example.org/subject3");
+				assertThat(bs.getValue("label")).isNull();
+			});
+		}
+	}
+
+	private void testNestedLateralProjectedSubSelectRetainsInputs(RepositoryConnection conn) throws Exception {
+		String data = "@prefix ex: <http://example.org/> .\n"
+				+ "\n"
+				+ "ex:subject1 ex:predicate ex:object1 ; ex:left ex:left1 .\n"
+				+ "ex:left1 ex:right ex:right1 .\n"
+				+ "ex:subject2 ex:predicate ex:object2 ; ex:left ex:left2 .\n"
+				+ "ex:left2 ex:right ex:right2 .\n";
+
+		String query = "PREFIX ex: <http://example.org/>\n"
+				+ "SELECT * {\n"
+				+ "  ?s ex:predicate ?o .\n"
+				+ "  LATERAL {\n"
+				+ "    ?s ex:left ?left .\n"
+				+ "    LATERAL {\n"
+				+ "      OPTIONAL { SELECT ?left ?right { ?left ex:right ?right } LIMIT 1 }\n"
+				+ "    }\n"
+				+ "  }\n"
+				+ "}\n";
+
+		conn.add(new StringReader(data), "", RDFFormat.TURTLE);
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+			List<BindingSet> results = QueryResults.asList(result);
+			assertThat(results).hasSize(2);
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example.org/subject1");
+				assertThat(bs.getValue("left").stringValue()).isEqualTo("http://example.org/left1");
+				assertThat(bs.getValue("right").stringValue()).isEqualTo("http://example.org/right1");
+			});
+			assertThat(results).anySatisfy(bs -> {
+				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example.org/subject2");
+				assertThat(bs.getValue("left").stringValue()).isEqualTo("http://example.org/left2");
+				assertThat(bs.getValue("right").stringValue()).isEqualTo("http://example.org/right2");
+			});
 		}
 	}
 
 	public Stream<DynamicTest> tests() {
 		return Stream.of(makeTest("LateralSubSelectWithSiblingFilterDoesNotSeeHiddenOuterVariable",
-				this::testLateralSubSelectWithSiblingFilterDoesNotSeeHiddenOuterVariable));
+				this::testLateralSubSelectWithSiblingFilterDoesNotSeeHiddenOuterVariable),
+				makeTest("OrdinaryOptionalDoesNotUseLateralScope", this::testOrdinaryOptionalDoesNotUseLateralScope),
+				makeTest("OptionalInLateralLeftSubtreeDoesNotInheritOwnInputs",
+						this::testOptionalInLateralLeftSubtreeDoesNotInheritOwnInputs),
+				makeTest("OrdinaryOptionalInsideLateralUsesOuterInput",
+						this::testOrdinaryOptionalInsideLateralUsesOuterInput),
+				makeTest("OptionalConditionUsesEnclosingLateralInput",
+						this::testOptionalConditionUsesEnclosingLateralInput),
+				makeTest("NestedLateralProjectedSubSelectRetainsInputs",
+						this::testNestedLateralProjectedSubSelectRetainsInputs));
 	}
 }

@@ -39,6 +39,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
@@ -175,6 +176,54 @@ public class TxnManagerTest {
 				}
 				currentLease.close();
 			}
+		}
+	}
+
+	@Test
+	void closeRaceAbortsTheNativeReaderBeforeItsSlotIsReused(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 1);
+		try {
+			for (int attempt = 0; attempt < 256; attempt++) {
+				TxnManager manager = new TxnManager(env, TxnManager.Mode.ABORT);
+				TxnManager.Txn lease = manager.createReadTxn();
+				CountDownLatch ready = new CountDownLatch(2);
+				CountDownLatch go = new CountDownLatch(1);
+				FutureTask<Void> managerClose = new FutureTask<>(() -> {
+					ready.countDown();
+					await(go);
+					manager.close();
+					return null;
+				});
+				FutureTask<Void> leaseClose = new FutureTask<>(() -> {
+					ready.countDown();
+					await(go);
+					lease.close();
+					return null;
+				});
+				Thread managerCloser = Thread.ofPlatform().start(managerClose);
+				Thread leaseCloser = Thread.ofPlatform().start(leaseClose);
+
+				assertTrue(ready.await(5, TimeUnit.SECONDS));
+				go.countDown();
+				managerClose.get(5, TimeUnit.SECONDS);
+				leaseClose.get(5, TimeUnit.SECONDS);
+				managerCloser.join(5_000);
+				leaseCloser.join(5_000);
+				assertFalse(managerCloser.isAlive(), "manager close must complete");
+				assertFalse(leaseCloser.isAlive(), "lease close must complete");
+
+				try (MemoryStack stack = stackPush()) {
+					PointerBuffer pp = stack.mallocPointer(1);
+					int rc = mdb_txn_begin(env, NULL, MDB_RDONLY, pp);
+					assertEquals(org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS, rc,
+							"the close race must not leak the environment's only reader slot");
+					if (rc == org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS) {
+						mdb_txn_abort(pp.get(0));
+					}
+				}
+			}
+		} finally {
+			mdb_env_close(env);
 		}
 	}
 

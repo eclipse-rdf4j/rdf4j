@@ -3690,8 +3690,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (prefixBindingNames.containsAll(conditionBindingNames)
 					|| !availableNames.containsAll(conditionBindingNames)
 					|| Collections.disjoint(assignmentBindingNames, conditionBindingNames)
-					|| (!assignmentBindingNames.containsAll(conditionBindingNames)
-							&& containsNotEquals(deferredFilter.condition))) {
+					|| !assignmentBindingNames.containsAll(conditionBindingNames)) {
 				return null;
 			}
 			join.setRightArg(applyFilter(join.getRightArg(), deferredFilter, "bindingPrefix"));
@@ -3704,20 +3703,6 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				bindingNames.addAll(plannerBindingNames(pattern.getBindingNames()));
 			}
 			return bindingNames;
-		}
-
-		private boolean containsNotEquals(ValueExpr condition) {
-			boolean[] contains = { false };
-			condition.visit(new AbstractSimpleQueryModelVisitor<>() {
-				@Override
-				public void meet(Compare node) {
-					if (node.getOperator() == Compare.CompareOp.NE) {
-						contains[0] = true;
-					}
-					super.meet(node);
-				}
-			});
-			return contains[0];
 		}
 
 		private Join createJoin(TupleExpr left, TupleExpr right) {
