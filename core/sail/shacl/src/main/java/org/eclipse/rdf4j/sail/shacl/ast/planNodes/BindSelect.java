@@ -70,7 +70,6 @@ public class BindSelect implements PlanNode {
 	private final List<String> varNames;
 	private final ConstraintComponent.Scope scope;
 	private final String prefixes;
-	private List<BindingSetAssignment> dynamicValuesAssignments;
 	private StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
@@ -105,32 +104,34 @@ public class BindSelect implements PlanNode {
 
 	}
 
-	private void updateQuery(TupleExpr parsedQuery, List<BindingSet> newBindindingset,
+	private List<BindingSetAssignment> findDynamicValuesAssignments(TupleExpr parsedQuery,
 			Set<String> expectedBindingNames) {
+		List<BindingSetAssignment> dynamicValuesAssignments = new ArrayList<>();
 		try {
-			if (dynamicValuesAssignments == null) {
-				dynamicValuesAssignments = new ArrayList<>();
-				parsedQuery
-						.visit(new AbstractQueryModelVisitor<Exception>() {
-							@Override
-							public void meet(BindingSetAssignment node) throws Exception {
-								if (node.getBindingNames().equals(expectedBindingNames)
-										&& isEmpty(node.getBindingSets())) {
-									dynamicValuesAssignments.add(node);
-								}
-								super.meet(node);
+			parsedQuery
+					.visit(new AbstractQueryModelVisitor<Exception>() {
+						@Override
+						public void meet(BindingSetAssignment node) throws Exception {
+							if (node.getBindingNames().equals(expectedBindingNames)
+									&& isEmpty(node.getBindingSets())) {
+								dynamicValuesAssignments.add(node);
 							}
-						});
-			}
-
-			if (dynamicValuesAssignments.isEmpty()) {
-				throw new IllegalStateException("Could not find the VALUES injection point in the query");
-			}
-			for (BindingSetAssignment dynamicValuesAssignment : dynamicValuesAssignments) {
-				dynamicValuesAssignment.setBindingSets(newBindindingset);
-			}
+							super.meet(node);
+						}
+					});
 		} catch (Exception e) {
 			throw new RuntimeException(e);
+		}
+		if (dynamicValuesAssignments.isEmpty()) {
+			throw new IllegalStateException("Could not find the VALUES injection point in the query");
+		}
+		return dynamicValuesAssignments;
+	}
+
+	private void updateQuery(List<BindingSetAssignment> dynamicValuesAssignments,
+			List<BindingSet> newBindindingset) {
+		for (BindingSetAssignment dynamicValuesAssignment : dynamicValuesAssignments) {
+			dynamicValuesAssignment.setBindingSets(newBindindingset);
 		}
 	}
 
@@ -148,10 +149,10 @@ public class BindSelect implements PlanNode {
 			List<ValidationTuple> bulk;
 
 			TupleExpr parsedQuery = null;
+			List<BindingSetAssignment> dynamicValuesAssignments = null;
 
 			@Override
 			protected void init() {
-				dynamicValuesAssignments = null;
 				iterator = source.iterator();
 				bulk = new ArrayList<>(bulkSize);
 
@@ -253,7 +254,10 @@ public class BindSelect implements PlanNode {
 							})
 							.collect(toCollection(ArrayList::new));
 
-					updateQuery(parsedQuery, bindingSets, varNamesSet);
+					if (dynamicValuesAssignments == null) {
+						dynamicValuesAssignments = findDynamicValuesAssignments(parsedQuery, varNamesSet);
+					}
+					updateQuery(dynamicValuesAssignments, bindingSets);
 
 					bindingSet = connection.evaluate(parsedQuery, dataset,
 							EmptyBindingSet.getInstance(), includeInferredStatements);
