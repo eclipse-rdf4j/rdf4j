@@ -42,7 +42,8 @@ final class LmdbNativeMorselChecks {
 		}
 		System.out.printf("PASS %,d assertions; %,d stress repetitions; %.3f s; %s%n", assertions.get(),
 				repetitions, (System.nanoTime() - started) / 1e9, System.getProperty("java.runtime.version"));
-		System.out.println("Compiled unchanged production range dispatcher, exchange/lifetime and cancellation token. No integration seams.");
+		System.out.println(
+				"Compiled unchanged production range dispatcher, exchange/lifetime and cancellation token. No integration seams.");
 	}
 
 	static void check(boolean condition, String message) {
@@ -152,8 +153,8 @@ final class LmdbNativeMorselChecks {
 			AtomicInteger exited = new AtomicInteger();
 			AtomicIntegerArray seen = new AtomicIntegerArray(2048);
 			LmdbNativeMorselRange range = new LmdbNativeMorselRange(seen.length(), 17);
-			try (LmdbNativeMorselExecutor<LmdbNativeMorselRange.Range> execution =
-					new LmdbNativeMorselExecutor<>(4, 1 + test % 7, parent)) {
+			try (LmdbNativeMorselExecutor<LmdbNativeMorselRange.Range> execution = new LmdbNativeMorselExecutor<>(4,
+					1 + test % 7, parent)) {
 				execution.start(pool, (worker, e) -> {
 					try {
 						for (LmdbNativeMorselRange.Range r; (r = range.claim(null)) != null;)
@@ -221,7 +222,8 @@ final class LmdbNativeMorselChecks {
 			}
 		});
 		try {
-			while (execution.take() != null) { }
+			while (execution.take() != null) {
+			}
 			execution.finish();
 			throw new AssertionError("worker failure was hidden");
 		} catch (IOException observed) {
@@ -254,7 +256,8 @@ final class LmdbNativeMorselChecks {
 				execution.start(rejecting, (index, e) -> {
 					running.countDown();
 					try {
-						while (e.emit(1)) { }
+						while (e.emit(1)) {
+						}
 					} finally {
 						exited.incrementAndGet();
 					}
@@ -286,7 +289,8 @@ final class LmdbNativeMorselChecks {
 				check(failure.getSuppressed().length == 1, "secondary worker failure retained");
 			}
 		}
-		System.out.println("PASS early close, checked worker failures, concurrent failures and partial submission cleanup");
+		System.out.println(
+				"PASS early close, checked worker failures, concurrent failures and partial submission cleanup");
 	}
 
 	static void interruptedClose(ExecutorService pool) throws Exception {
@@ -297,7 +301,8 @@ final class LmdbNativeMorselChecks {
 		execution.start(pool, (index, e) -> {
 			running.countDown();
 			try {
-				while (e.emit(1)) { }
+				while (e.emit(1)) {
+				}
 			} finally {
 				exited.incrementAndGet();
 			}

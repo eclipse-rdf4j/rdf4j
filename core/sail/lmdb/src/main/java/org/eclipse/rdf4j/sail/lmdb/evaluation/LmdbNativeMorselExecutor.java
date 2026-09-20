@@ -13,8 +13,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Bounded exchange and worker lifetime for a morsel pipeline. A task is finished only after its finally block,
- * never merely because a Future was cancelled. The caller owns the pool and the sibling snapshots.
+ * Bounded exchange and worker lifetime for a morsel pipeline. A task is finished only after its finally block, never
+ * merely because a Future was cancelled. The caller owns the pool and the sibling snapshots.
  */
 final class LmdbNativeMorselExecutor<T> implements AutoCloseable {
 	@FunctionalInterface

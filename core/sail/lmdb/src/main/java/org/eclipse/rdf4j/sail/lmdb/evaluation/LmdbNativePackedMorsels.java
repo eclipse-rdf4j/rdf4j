@@ -36,7 +36,8 @@ import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
  * packed runtimes, scalar evaluators and aggregate state across claims. A root occurrence and all its OPTIONAL arms
  * stay together. Only final projected ID/weight pages cross threads; borrowed factors never outlive their worker.
  *
- * <p>Partitioning distributes only along the additive left spine: UNION arms, row-local FILTER/BIND, and the mandatory
+ * <p>
+ * Partitioning distributes only along the additive left spine: UNION arms, row-local FILTER/BIND, and the mandatory
  * left input of JOIN/OPTIONAL. DISTINCT, sorted merges, lexical scopes and effectful expressions are barriers. A UNION
  * arm without a splittable root becomes one whole-pipeline task, never a lost arm. The existing packed serial path
  * remains authoritative whenever a proof, a snapshot, a memory reservation or a task reservation is unavailable.
@@ -196,7 +197,8 @@ final class LmdbNativePackedMorsels {
 		} else {
 			MultiJoinPlan anchor = plan instanceof MultiJoinPlan multi ? multi
 					: plan instanceof PatternPlan pattern
-							? new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]) : null;
+							? new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0])
+							: null;
 			SlotPlan template = continuation.apply(anchor == null ? plan : anchor);
 			MultiJoinPlan specialized = anchor == null ? null : specialize(anchor, row);
 			Plan packed = specialized == null ? null
@@ -411,7 +413,8 @@ final class LmdbNativePackedMorsels {
 			MaskedFilter[] owned = new MaskedFilter[multi.filters.length];
 			for (int i = 0; i < owned.length; i++) {
 				MaskedFilter filter = multi.filters[i];
-				owned[i] = new MaskedFilter(forkFilter(filter.filter), filter.mask, filter.adaptive, filter.plannedDepth);
+				owned[i] = new MaskedFilter(forkFilter(filter.filter), filter.mask, filter.adaptive,
+						filter.plannedDepth);
 			}
 			return new MultiJoinPlan(children, owned);
 		}
@@ -495,8 +498,11 @@ final class LmdbNativePackedMorsels {
 				memberships = new int[layout.size()][];
 				for (int p = 0; p < updates.length; p++) {
 					updates[p] = layout.channels(p);
-					memberships[p] = Arrays.stream(updates[p]).map(i -> membership.specChannels[i])
-							.filter(i -> i >= 0).distinct().toArray();
+					memberships[p] = Arrays.stream(updates[p])
+							.map(i -> membership.specChannels[i])
+							.filter(i -> i >= 0)
+							.distinct()
+							.toArray();
 				}
 			} else {
 				long demand = 0L;
@@ -745,7 +751,8 @@ final class LmdbNativePackedMorsels {
 										if (page == null) {
 											page = free.poll();
 											if (page == null)
-												throw new IllegalStateException("bounded packed page ownership was lost");
+												throw new IllegalStateException(
+														"bounded packed page ownership was lost");
 										}
 										page.append(input, columns[0]);
 										if (page.rows == page.capacity) {

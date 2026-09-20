@@ -49,8 +49,8 @@ final class LmdbNativeMorselRange {
 
 	/**
 	 * First boundary after the equal-valued run straddling cut. Galloping plus binary search bounds work
-	 * logarithmically even when millions of duplicate contexts belong to one root. Values are opaque longs;
-	 * their signedness is irrelevant because only equality is used.
+	 * logarithmically even when millions of duplicate contexts belong to one root. Values are opaque longs; their
+	 * signedness is irrelevant because only equality is used.
 	 */
 	static long afterDuplicates(LongUnaryOperator valueAt, long cut, long size) {
 		if (cut <= 0L || cut >= size)

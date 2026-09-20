@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -30,6 +31,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -76,6 +78,15 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	@Test
+	void benchmarkForkPassesForcedStrategyAsSystemProperty() {
+		Fork fork = ThemeQueryBenchmark.class.getAnnotation(Fork.class);
+
+		assertTrue(fork != null && Arrays.asList(fork.jvmArgs())
+				.contains("-D" + ThemeQueryBenchmark.FORCED_EXECUTION_STRATEGY_PROPERTY + "=packedFtreeAggregate"),
+				"the forced strategy must be a JVM system property, not a bare launcher argument");
+	}
+
+	@Test
 	void cachedStoreMetadataRequiresCurrentDatasetRevision() {
 		Properties properties = new Properties();
 		assertFalse(ThemeQueryBenchmark.hasCurrentDatasetRevision(properties));
@@ -85,6 +96,33 @@ class ThemeQueryBenchmarkSmokeIT {
 
 		properties.setProperty(ThemeQueryBenchmark.DATASET_REVISION_PROPERTY, "theme-data-v3-data-transformation");
 		assertTrue(ThemeQueryBenchmark.hasCurrentDatasetRevision(properties));
+	}
+
+	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void forcedStrategyPropertyIsAppliedToBenchmarkQueries() throws Exception {
+		String forcedStrategyProperty = ThemeQueryBenchmark.FORCED_EXECUTION_STRATEGY_PROPERTY;
+		String previousForcedStrategy = System.getProperty(forcedStrategyProperty);
+		String previousProfiling = System.getProperty(PROFILING_PROPERTY);
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
+		benchmark.z_queryIndex = 0;
+		boolean initialized = false;
+		try {
+			System.setProperty(forcedStrategyProperty, "not-a-real-strategy");
+			System.setProperty(PROFILING_PROPERTY, "true");
+			benchmark.setup();
+			initialized = true;
+			QueryEvaluationException queryEvaluationException = assertThrows(QueryEvaluationException.class,
+					benchmark::executeQuery);
+			System.out.println(queryEvaluationException);
+		} finally {
+			if (initialized) {
+				benchmark.tearDown();
+			}
+			restoreProperty(forcedStrategyProperty, previousForcedStrategy);
+			restoreProperty(PROFILING_PROPERTY, previousProfiling);
+		}
 	}
 
 	@ParameterizedTest

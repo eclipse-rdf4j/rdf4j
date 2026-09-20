@@ -4542,8 +4542,10 @@ final class LmdbNativePackedFtree {
 						position -> a.neighborAt(handle, position), cut, domain.expectedTotal);
 			}
 			LmdbNativeMorselRange.Range range = ranges.claim(boundary);
-			return range == null ? null : new RootPartition(domain.kind, domain.seed, range.from(), range.to(),
-					domain.expectedTotal, domain.values, domain.multiplicities, domain.coveredPattern).openFor(worker);
+			return range == null ? null
+					: new RootPartition(domain.kind, domain.seed, range.from(), range.to(),
+							domain.expectedTotal, domain.values, domain.multiplicities, domain.coveredPattern)
+									.openFor(worker);
 		}
 	}
 

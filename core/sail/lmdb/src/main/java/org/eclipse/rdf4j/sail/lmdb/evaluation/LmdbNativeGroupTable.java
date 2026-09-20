@@ -150,7 +150,6 @@ final class NativeGroupTable implements AutoCloseable {
 		return new NativeGroupTable(groupSlots, aggregates, ctx, channels, mode, rowMetrics, bounded);
 	}
 
-
 	/** Worker-owned states must merge before finalization; direct-add spill tables use a different protocol. */
 	static NativeGroupTable createParallel(int[] groups, AggregateSpec[] aggregates, AggContext context,
 			AggregateDistinctChannels channels) {

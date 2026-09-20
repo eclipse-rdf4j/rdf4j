@@ -81,7 +81,8 @@ class LmdbNativePackedMorselsTest {
 		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
-				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER).setDirectAdjacencyMaxBytes(1L << 30));
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyMaxBytes(1L << 30));
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
@@ -145,14 +146,17 @@ class LmdbNativePackedMorselsTest {
 	static Stream<String> aggregateQueries() {
 		return Stream.of(
 				"SELECT (COUNT(*) AS ?n) (SUM(?p) AS ?sp) (SUM(?q) AS ?sq) WHERE { " + STAR + " }",
-				"SELECT ?r (COUNT(*) AS ?n) (COUNT(?r) AS ?nr) WHERE { " + STAR + " OPTIONAL { ?s ex:r ?r } } GROUP BY ?r",
+				"SELECT ?r (COUNT(*) AS ?n) (COUNT(?r) AS ?nr) WHERE { " + STAR
+						+ " OPTIONAL { ?s ex:r ?r } } GROUP BY ?r",
 				"SELECT ?key (COUNT(*) AS ?n) (SUM(?p) AS ?sp) (SUM(?q) AS ?sq) (AVG(?p) AS ?ap) WHERE { "
 						+ COMPOSED + " } GROUP BY ?key",
 				"SELECT ?key (COUNT(DISTINCT ?p) AS ?n) (SUM(DISTINCT ?p) AS ?sp) (AVG(DISTINCT ?p) AS ?ap) WHERE { "
 						+ COMPOSED + " } GROUP BY ?key",
 				"SELECT ?key ?p (COUNT(*) AS ?n) (COUNT(?r) AS ?nr) WHERE { " + COMPOSED + " } GROUP BY ?key ?p",
-				"SELECT ?key ?p (SUM(?q) AS ?sq) (COUNT(DISTINCT ?s) AS ?ns) WHERE { " + COMPOSED + " } GROUP BY ?key ?p",
-				"SELECT ?bad (COUNT(*) AS ?n) WHERE { { " + STAR + " BIND(1/0 AS ?bad) } UNION { " + STAR + " } } GROUP BY ?bad",
+				"SELECT ?key ?p (SUM(?q) AS ?sq) (COUNT(DISTINCT ?s) AS ?ns) WHERE { " + COMPOSED
+						+ " } GROUP BY ?key ?p",
+				"SELECT ?bad (COUNT(*) AS ?n) WHERE { { " + STAR + " BIND(1/0 AS ?bad) } UNION { " + STAR
+						+ " } } GROUP BY ?bad",
 				"SELECT (COUNT(*) AS ?n) (COUNT(DISTINCT ?s) AS ?ns) WHERE { GRAPH ?g { ?s ex:named ?n } ?s a ex:Root }",
 				"SELECT (COUNT(DISTINCT *) AS ?n) WHERE { " + COMPOSED + " }",
 				"SELECT (COUNT(*) AS ?n) (SUM(?p) AS ?sp) WHERE { " + STAR + " FILTER(?p > 100) }"
@@ -195,7 +199,8 @@ class LmdbNativePackedMorselsTest {
 		assertSameBag("SELECT ?s (COUNT(*) AS ?n) (COUNT(DISTINCT ?v) AS ?nv) WHERE { " + input + " } GROUP BY ?s",
 				"packedftreeaggregate", null);
 		assertTrue(LmdbNativePackedMorsels.AGGREGATE_RUNS.get() > before, "forced packed aggregate stayed sequential");
-		assertTrue(LmdbNativePackedMorsels.MORSELS.get() - morsels > 16, "work remained a fixed four ranges per worker");
+		assertTrue(LmdbNativePackedMorsels.MORSELS.get() - morsels > 16,
+				"work remained a fixed four ranges per worker");
 	}
 
 	@Test
@@ -238,7 +243,8 @@ class LmdbNativePackedMorselsTest {
 	void volatileBindIsNotReplayedByWorkers() {
 		long before = LmdbNativePackedMorsels.AGGREGATE_RUNS.get();
 		BindingSet result = evaluate("SELECT (COUNT(*) AS ?n) (COUNT(DISTINCT ?u) AS ?nu) WHERE { "
-				+ "{ ?s a ex:Root } UNION { ?s a ex:Root } BIND(UUID() AS ?u) }", "packedftreeaggregate", null).getFirst();
+				+ "{ ?s a ex:Root } UNION { ?s a ex:Root } BIND(UUID() AS ?u) }", "packedftreeaggregate", null)
+						.getFirst();
 		assertEquals(256, ((Literal) result.getValue("n")).longValue());
 		assertEquals(256, ((Literal) result.getValue("nu")).longValue());
 		assertEquals(before, LmdbNativePackedMorsels.AGGREGATE_RUNS.get());
@@ -283,8 +289,12 @@ class LmdbNativePackedMorselsTest {
 	private static List<String> canonical(List<BindingSet> rows) {
 		List<String> result = new ArrayList<>(rows.size());
 		for (BindingSet row : rows)
-			result.add(row.getBindingNames().stream().sorted().filter(name -> row.getValue(name) != null)
-					.map(name -> name + '=' + row.getValue(name)).collect(Collectors.joining(";", "[", "]")));
+			result.add(row.getBindingNames()
+					.stream()
+					.sorted()
+					.filter(name -> row.getValue(name) != null)
+					.map(name -> name + '=' + row.getValue(name))
+					.collect(Collectors.joining(";", "[", "]")));
 		result.sort(String::compareTo);
 		return result;
 	}
