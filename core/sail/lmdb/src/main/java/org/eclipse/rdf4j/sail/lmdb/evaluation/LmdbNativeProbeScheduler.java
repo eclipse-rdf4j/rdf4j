@@ -23,12 +23,13 @@ import java.util.function.LongSupplier;
  * Per-store probe scheduler state, keyed (variant, regime). This is the single owner of cooldown, dormancy and
  * quarantine — the answer to "may this arm be probed now, and is its price trustworthy?". One deadline timeout at a
  * decision-useful boundary fulfills the arm's exploration obligation and starts an exponential wall-clock cooldown
- * (base times 2^strikes); a second same-epoch timeout parks the arm until the regime epoch changes; a severe miss (a
- * censoring or completion above the arm's previously settled 99% bound) quarantines it. Expiry is wall-clock —
- * {@code System.nanoTime} values are meaningless across processes and this state is persisted by the sidecar — and
- * epoch-scoped: a regime-epoch bump (index finished building, drift detected) revives rejected arms lazily at the next
- * lookup. Nothing here re-probes on a fixed count: further probes are justified by posterior value, never by a
- * completed-run quota.
+ * (base times 2^strikes); a first timeout of a flight with no completed observation uses the short cold-start retry
+ * interval, because compilation and worker startup can consume that first deadline. A second same-epoch timeout parks
+ * the arm until the regime epoch changes; a severe miss (a censoring or completion above the arm's previously settled
+ * 99% bound) quarantines it. Expiry is wall-clock — {@code System.nanoTime} values are meaningless across processes and
+ * this state is persisted by the sidecar — and epoch-scoped: a regime-epoch bump (index finished building, drift
+ * detected) revives rejected arms lazily at the next lookup. Nothing here re-probes on a fixed count: further probes
+ * are justified by posterior value, never by a completed-run quota.
  * <p>
  * One outcome deliberately carries no penalty at all: {@link #capacityExceeded} — a probe stopped by the private
  * row-buffer ceiling rather than by the clock — rests the arm without a strike, because filling a buffer is a fact
@@ -63,6 +64,7 @@ final class LmdbNativeProbeScheduler {
 	private static final long MAX_STRIKE_SHIFT = 6L;
 
 	private final long cooldownBaseMillis;
+	private final long coldStartCooldownMillis;
 	private final LongSupplier wallMillis;
 	/* Both policy and ownership are guarded by this scheduler, never by independent map operations. */
 	private final Map<Key, Entry> entries = new HashMap<>();
@@ -73,18 +75,34 @@ final class LmdbNativeProbeScheduler {
 		private final Key key;
 		private final long epoch;
 		private final boolean legacy;
+		private final boolean coldStart;
 
-		private Flight(Key key, long epoch, boolean legacy) {
+		private Flight(Key key, long epoch, boolean legacy, boolean coldStart) {
 			this.key = key;
 			this.epoch = epoch;
 			this.legacy = legacy;
+			this.coldStart = coldStart;
 		}
+
+		boolean coldStart() {
+			return coldStart;
+		}
+	}
+
+	/**
+	 * A deadline overshoot proves that the arm is not promptly cancellable, regardless of whether its first run also
+	 * included one-time compilation or worker-startup costs. Cold-start status only changes the retry cooldown for an
+	 * ordinary censor; it must not weaken the cancellation-safety quarantine.
+	 */
+	static boolean shouldQuarantine(boolean deadlineOvershot) {
+		return deadlineOvershot;
 	}
 
 	LmdbNativeProbeScheduler(LmdbNativeProbeConfig config, LongSupplier wallMillis) {
 		this.cooldownBaseMillis = config.cooldownBaseMillis();
-		if (cooldownBaseMillis <= 0) {
-			throw new IllegalArgumentException("positive cooldown required");
+		this.coldStartCooldownMillis = config.coldStartCooldownMillis();
+		if (cooldownBaseMillis <= 0 || coldStartCooldownMillis <= 0) {
+			throw new IllegalArgumentException("positive cooldowns required");
 		}
 		this.wallMillis = Objects.requireNonNull(wallMillis, "wallMillis");
 	}
@@ -131,23 +149,33 @@ final class LmdbNativeProbeScheduler {
 
 	/** Atomic admission, with capacity and ALL policy gates rechecked at the linearization point. */
 	synchronized Flight tryBeginProbe(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
-		return begin(variant, regime, epoch, false);
+		return begin(variant, regime, epoch, false, false);
+	}
+
+	/**
+	 * Atomic admission with the model's evidence state attached to the flight. A prediction with no completed exact
+	 * observations is still cold even when a persisted scheduler entry exists for the arm.
+	 */
+	synchronized Flight tryBeginProbe(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch,
+			boolean coldStart) {
+		return begin(variant, regime, epoch, false, coldStart);
 	}
 
 	/* Compatibility for existing package clients. Production dispatch uses the ownership-token API. */
 	synchronized boolean beginProbe(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch) {
-		return begin(variant, regime, epoch, true) != null;
+		return begin(variant, regime, epoch, true, false) != null;
 	}
 
 	private Flight begin(LmdbNativePhysicalVariantKey variant, LmdbNativeRegimeKey regime, long epoch,
-			boolean legacy) {
+			boolean legacy, boolean coldStart) {
 		Key key = new Key(variant, regime);
 		Entry previous = entries.get(key);
 		if ((previous == null && entries.size() >= MAX_ENTRIES)
 				|| !eligible(state(key, epoch, wallMillis.getAsLong()))) {
 			return null;
 		}
-		Flight flight = new Flight(key, epoch, legacy);
+		boolean firstObservation = coldStart || previous == null || previous.epoch < epoch;
+		Flight flight = new Flight(key, epoch, legacy, firstObservation);
 		flights.put(key, flight);
 		entries.put(key, new Entry(State.PROBING, 0L,
 				previous == null || previous.epoch < epoch ? 0 : previous.strikes, epoch));
@@ -209,7 +237,7 @@ final class LmdbNativeProbeScheduler {
 		Key key = new Key(variant, regime);
 		releaseLegacy(key, epoch);
 		if (decisivelyBad) {
-			strike(key, epoch, false);
+			strike(key, epoch, false, false);
 		} else {
 			put(key, new Entry(State.ACTIVE, 0L, 0, epoch));
 		}
@@ -219,7 +247,7 @@ final class LmdbNativeProbeScheduler {
 			boolean severeMiss) {
 		Key key = new Key(variant, regime);
 		releaseLegacy(key, epoch);
-		strike(key, epoch, severeMiss);
+		strike(key, epoch, severeMiss, false);
 	}
 
 	/** Buffer capacity is not a timing strike and cannot escalate dormancy by itself. */
@@ -239,7 +267,7 @@ final class LmdbNativeProbeScheduler {
 
 	synchronized void censored(Flight flight, boolean severeMiss) {
 		if (release(flight)) {
-			censored(flight.key.variant(), flight.key.regime(), flight.epoch, severeMiss);
+			strike(flight.key, flight.epoch, severeMiss, flight.coldStart);
 		}
 	}
 
@@ -293,7 +321,7 @@ final class LmdbNativeProbeScheduler {
 		return entries.size();
 	}
 
-	private void strike(Key key, long epoch, boolean severeMiss) {
+	private void strike(Key key, long epoch, boolean severeMiss, boolean coldStart) {
 		Entry previous = entries.get(key);
 		if (previous != null && previous.epoch > epoch) {
 			return;
@@ -305,15 +333,20 @@ final class LmdbNativeProbeScheduler {
 		} else if (strikes >= 2) {
 			put(key, new Entry(State.DORMANT_UNTIL_EPOCH, 0L, strikes, epoch));
 		} else {
-			put(key, new Entry(State.COOLDOWN, deadline(1L << Math.min(MAX_STRIKE_SHIFT, strikes - 1)),
+			long baseMillis = coldStart ? coldStartCooldownMillis : cooldownBaseMillis;
+			put(key, new Entry(State.COOLDOWN, deadline(baseMillis, 1L << Math.min(MAX_STRIKE_SHIFT, strikes - 1)),
 					strikes, epoch));
 		}
 	}
 
 	private long deadline(long multiplier) {
-		long duration = cooldownBaseMillis > Long.MAX_VALUE / multiplier
+		return deadline(cooldownBaseMillis, multiplier);
+	}
+
+	private long deadline(long baseMillis, long multiplier) {
+		long duration = baseMillis > Long.MAX_VALUE / multiplier
 				? Long.MAX_VALUE
-				: cooldownBaseMillis * multiplier;
+				: baseMillis * multiplier;
 		long now = wallMillis.getAsLong();
 		return now > Long.MAX_VALUE - duration ? Long.MAX_VALUE : now + duration;
 	}

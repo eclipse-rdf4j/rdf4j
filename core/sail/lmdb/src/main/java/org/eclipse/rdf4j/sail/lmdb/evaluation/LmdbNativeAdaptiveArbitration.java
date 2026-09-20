@@ -28,7 +28,11 @@ final class LmdbNativeAdaptiveArbitration {
 		T open(LmdbNativeCostObservation observation) throws Exception;
 	}
 
-	record Candidate<T> (LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener) {
+	record Candidate<T> (LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener, boolean probeable) {
+		Candidate(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener) {
+			this(estimate, staticPreference, opener, true);
+		}
+
 		Candidate {
 			Objects.requireNonNull(estimate, "estimate");
 			Objects.requireNonNull(opener, "opener");
@@ -262,10 +266,19 @@ final class LmdbNativeAdaptiveArbitration {
 	static final long CONFIRMATION_FLOOR = 5L;
 
 	/**
+	 * A first engine-IR observation may include code generation and worker startup. Require one additional observation
+	 * before allowing that observation to settle a competing engine-IR arm.
+	 */
+	static final long COLD_START_CONFIRMATION_FLOOR = 2L;
+
+	/**
 	 * Whether this arm still owes mandatory exploration.
 	 * <p>
 	 * An arm that has never executed always does — that is the pre-existing must-try contract, and its first run is
-	 * mandatory rather than value-optional because a starved arm can never earn the evidence that would let it win.
+	 * mandatory rather than value-optional because a starved arm can never earn the evidence that would let it win. An
+	 * arm with exact-variant censoring but zero completed runs remains in the same cold state: a right-censored first
+	 * run can be dominated by compilation, worker startup, or cancellation overshoot and must not make the useful-bound
+	 * gate permanently reject the arm before it has produced one completed timing.
 	 * <p>
 	 * An arm that HAS executed still does while it carries fewer than {@link #CONFIRMATION_FLOOR} completed
 	 * measurements AND those measurements price it below the incumbent (2026-09-01: a query run four times went slow,
@@ -288,8 +301,16 @@ final class LmdbNativeAdaptiveArbitration {
 				|| candidate.exactCompletedCount() >= CONFIRMATION_FLOOR) {
 			return false;
 		}
+		if (candidate.exactCompletedCount() == 0L) {
+			return true;
+		}
 		if (LmdbNativeStrategyPreference.parallelIrFamily(candidateFamily)
 				&& LmdbNativeStrategyPreference.serialIrFamily(incumbentFamily)) {
+			return true;
+		}
+		if (LmdbNativeStrategyPreference.engineIrFamily(candidateFamily)
+				&& LmdbNativeStrategyPreference.engineIrFamily(incumbentFamily)
+				&& candidate.exactCompletedCount() < COLD_START_CONFIRMATION_FLOOR) {
 			return true;
 		}
 		return incumbent.uniformlyPriceable() && candidate.expectedNanos() < incumbent.expectedNanos();
@@ -412,6 +433,14 @@ final class LmdbNativeAdaptiveArbitration {
 			if (rival == incumbent || rival.candidate == incumbent.candidate) {
 				continue;
 			}
+			if (!rival.candidate.probeable()) {
+				// A structural fallback must remain available as a normal candidate. It cannot be used as a trial
+				// because
+				// a censored or declined probe removes the trial from this dispatch and could leave no legal plan.
+				traceProbe("skipped " + rival.candidate.estimate.variantKey().strategyFamily()
+						+ ": structural fallback is not probeable");
+				continue;
+			}
 			LmdbNativeCostPrediction prediction = rival.prediction;
 			LmdbNativePhysicalVariantKey key = rival.candidate.estimate.variantKey();
 			if (LmdbNativeAttemptMetrics.PATH_NESTED_LOOP.equals(key.strategyFamily())) {
@@ -512,7 +541,9 @@ final class LmdbNativeAdaptiveArbitration {
 			return null;
 		}
 		LmdbNativePhysicalVariantKey bestKey = intent.trial().estimate().variantKey();
-		LmdbNativeProbeScheduler.Flight flight = scheduler.tryBeginProbe(bestKey, intent.regime(), intent.epoch());
+		boolean coldStart = intent.trialPrediction().exactCompletedCount() == 0L;
+		LmdbNativeProbeScheduler.Flight flight = scheduler.tryBeginProbe(bestKey, intent.regime(), intent.epoch(),
+				coldStart);
 		if (flight == null) {
 			// single-flight: a concurrent query is already probing this arm — its evidence will arrive shortly
 			context.queryBudget().release();

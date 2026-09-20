@@ -74,7 +74,7 @@ class LmdbNativeFastRunLatchTest {
 	/** A store trained through the hand-built estimates the policy-level tests hand to {@code choose}. */
 	private static Fixture policyFixture() {
 		LmdbNativeProbeConfig config = new LmdbNativeProbeConfig(true, 0.05, 1.25, 0.8, 0.1, 500_000_000L, 500_000L,
-				10_000_000L, 4_096, 1, 0, 0L, 30_000L, 0.02);
+				10_000_000L, 4_096, 1, 0, 0L, 30_000L, 100L, 0.02);
 		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel(null, LmdbNativePosteriorConfig.defaults(),
 				config,
 				() -> 1_000_000L, () -> 1_000_000_000L);

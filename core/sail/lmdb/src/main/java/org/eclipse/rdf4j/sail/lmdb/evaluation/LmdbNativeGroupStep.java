@@ -917,6 +917,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		boolean typeMatrixIr = LmdbNativeKernelLowering.typeMatrixAggregate(arg, groupSlots, aggregates,
 				LmdbNativeKernelLowering.recognizeHaving(havingCondition, aggregates));
 		boolean typeMatrixOwned = typeMatrixIr && typeMatrix != null && base.isEmpty();
+		/*
+		 * Price the structural matrix once while the source is open. The same quote is used by the matrix fallback and
+		 * the IR variants; recomputing it from a terminal fallback after a deadline can observe a closed source.
+		 */
+		final LmdbNativeWork typeMatrixWork = typeMatrix != null && (base.isEmpty() || typeMatrixIr)
+				? typeMatrix.estimateWork()
+				: LmdbNativeWork.UNKNOWN;
 		if (typeMatrixOwned) {
 			directMultiJoin = null;
 		}
@@ -952,7 +959,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			}
 			if (typeMatrix != null && base.isEmpty()) {
 				arbiter.offer(() -> estimatedProposal(this::evaluateTypeMatrixFallback,
-						LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX, typeMatrix.estimateWork()));
+						LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX, typeMatrixWork, typeMatrixOwned));
 			}
 			if (existsIntersection != null) {
 				arbiter.offer(() -> estimatedProposal(() -> {
@@ -1094,7 +1101,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 						candidateWork = intersectionWork;
 					}
 				} else if (typeMatrixIr && typeMatrix != null) {
-					LmdbNativeWork physicalTypeMatrixWork = typeMatrix.estimateWork();
+					LmdbNativeWork physicalTypeMatrixWork = typeMatrixWork;
 					if (physicalTypeMatrixWork.known()) {
 						candidateWork = physicalTypeMatrixWork;
 					}
@@ -1159,11 +1166,20 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				}, LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS,
 						arg.estimateWork(row, row.boundMask())));
 			}
+			AggContext sequentialContext = replaySafe ? new AggContext(source, strictCompare, true) : aggContext;
 			if (!typeMatrixOwned) {
-				AggContext sequentialContext = replaySafe ? new AggContext(source, strictCompare, true) : aggContext;
 				arbiter.offer(() -> estimatedProposal(
 						() -> evaluateSequential(row, sequentialContext, metrics),
 						LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, arg.estimateWork(row, row.boundMask())));
+			} else {
+				/*
+				 * The type matrix is the structural terminal for this shape. It is already in the adaptive frontier as
+				 * a normal candidate, but the explicit terminal registration remains a last-resort retry if its opener
+				 * declines. Its quote was captured before execution so that this retry never estimates against a closed
+				 * source.
+				 */
+				arbiter.terminalFallback(() -> estimatedProposal(this::evaluateTypeMatrixFallback,
+						LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX, typeMatrixWork));
 			}
 
 			if (LmdbNativeStrategyPreview.active()) {
@@ -1203,8 +1219,14 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	private static LmdbNativeStrategyProposal<List<BindingSet>> estimatedProposal(
 			LmdbNativeStrategyProposal.Opener<List<BindingSet>> opener, String tag, LmdbNativeWork estimatedWork) {
-		return new LmdbNativeStrategyProposal<>(opener, estimatedWork, tag, () -> {
-		});
+		return estimatedProposal(opener, tag, estimatedWork, true);
+	}
+
+	private static LmdbNativeStrategyProposal<List<BindingSet>> estimatedProposal(
+			LmdbNativeStrategyProposal.Opener<List<BindingSet>> opener, String tag, LmdbNativeWork estimatedWork,
+			boolean probeable) {
+		return new LmdbNativeStrategyProposal<>(opener, estimatedWork, LmdbNativeWork.ZERO, Double.NaN, tag, () -> {
+		}, probeable);
 	}
 
 	private static LmdbNativeStrategyProposal<List<BindingSet>> estimatedProposal(

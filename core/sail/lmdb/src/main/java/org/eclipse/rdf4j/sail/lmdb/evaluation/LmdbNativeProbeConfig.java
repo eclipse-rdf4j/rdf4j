@@ -19,6 +19,9 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
  * trials and actual deadline overshoots can create debt; this is not an unconditional alpha bound on charged runtime.
  * {@code gamma} is the displacement speed margin the probe deadline is derived from: a rival only deserves a deadline
  * of {@code incumbentExpected / gamma} — running longer could not justify a switch anyway.
+ * {@code coldStartCooldownMillis} is the short retry interval after the first censored probe of an arm with no
+ * completed observation; the first attempt may include compilation and worker startup, so it must not be parked for the
+ * normal settled-arm cooldown.
  */
 record LmdbNativeProbeConfig(
 		boolean enabled,
@@ -34,6 +37,7 @@ record LmdbNativeProbeConfig(
 		int minSpacingDecisions,
 		long minSpacingNanos,
 		long cooldownBaseMillis,
+		long coldStartCooldownMillis,
 		double minimumProbeWinProbability) {
 
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.adaptiveProbe.enabled";
@@ -52,14 +56,15 @@ record LmdbNativeProbeConfig(
 				positiveInt(PREFIX + "bufferRows", 4_096),
 				positiveInt(PREFIX + "maxPerQuery", 1),
 				positiveInt(PREFIX + "minSpacingDecisions", 4),
-				scaledPositive(PREFIX + "minSpacingMillis", 250L, 1_000_000L),
+				scaledPositive(PREFIX + "minSpacingMillis", 10L, 1_000_000L),
 				positiveLong(PREFIX + "cooldownBaseMillis", 30_000L),
+				positiveLong(PREFIX + "coldStartCooldownMillis", 100L),
 				unitFraction(PREFIX + "minWinProbability", 0.02));
 	}
 
 	static LmdbNativeProbeConfig defaults() {
 		return new LmdbNativeProbeConfig(true, 0.05, 1.25, 0.8, 0.1, 500_000_000L, 500_000L, 10_000_000L, 4_096, 1, 4,
-				250_000_000L, 30_000L, 0.02);
+				10_000_000L, 30_000L, 100L, 0.02);
 	}
 
 	double eta() {

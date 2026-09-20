@@ -217,6 +217,19 @@ class LmdbSketchJoinOptimizerTest {
 	}
 
 	@Test
+	void fallbackUsesMoreConstrainedStatementPatternAsAnchorWhenPlannerRejects() {
+		StatementPattern handledBy = new StatementPattern(new Var("enc"),
+				new Var("handledBy", VF.createIRI("urn:handledBy")), new Var("practitioner"));
+		StatementPattern encounterType = new StatementPattern(new Var("enc"), new Var("type", RDF.TYPE),
+				new Var("encounterType", VF.createIRI("urn:Encounter")));
+		QueryRoot root = new QueryRoot(new Join(handledBy, encounterType));
+
+		new LmdbSketchJoinOptimizer(PlanningStatistics.rejected(), false).optimize(root, null, null);
+
+		assertEquals(List.of(encounterType, handledBy), joinArgs(root.getArg()));
+	}
+
+	@Test
 	void movesLeftJoinLocalFilterIntoPlannedLeftSegment() {
 		StatementPattern first = statementPattern("s1", "p1", "o1");
 		StatementPattern second = statementPattern("s2", "p2", "o2");

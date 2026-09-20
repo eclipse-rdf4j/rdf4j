@@ -1055,7 +1055,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				return arg;
 			}
 			TupleExpr left = cloneArg ? arg.clone() : arg;
-			return createJoin(left, subQuery.clone());
+			Join join = createJoin(left, subQuery.clone());
+			join.setVariableScopeChange(true);
+			return join;
 		}
 
 		private boolean isNoNewBindingExistsProbe(TupleExpr subQuery, Set<String> argAssuredBindings) {
@@ -1122,6 +1124,18 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Join join) {
+			if (TupleExprs.isVariableScopeChange(join)) {
+				Set<String> originalBoundVars = boundVars;
+				try {
+					boundVars = new HashSet<>(boundVars);
+					join.getLeftArg().visit(this);
+					boundVars.addAll(plannerBindingNames(join.getLeftArg().getBindingNames()));
+					join.getRightArg().visit(this);
+				} finally {
+					boundVars = originalBoundVars;
+				}
+				return;
+			}
 			optimizeJoinReplacement(join, join, List.of());
 		}
 
@@ -2731,7 +2745,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 								true);
 					}
 				}
-				return locallySelectiveFallbackOrder(segment);
+				return locallySelectiveFallbackOrder(segment, boundBeforeSegment);
 			}
 			JoinOrderPlanner.JoinOrderPlan selectedPlan = selectiveLocalFilterPrefixPlan(segment, boundBeforeSegment,
 					plannerFilters, segmentFilters, plan.get(), algorithm, planner)
@@ -2890,9 +2904,106 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 					&& (contextVar == null || isFixedOrBoundPatternVar(contextVar, boundNames));
 		}
 
-		private OrderedSegment locallySelectiveFallbackOrder(List<TupleExpr> segment) {
-			return new OrderedSegment(new ArrayDeque<>(hoistSingleBindingSetAssignments(segment, segment)), Map.of(),
-					false);
+		private OrderedSegment locallySelectiveFallbackOrder(List<TupleExpr> segment, Set<String> boundBeforeSegment) {
+			List<TupleExpr> remaining = new ArrayList<>(segment);
+			List<TupleExpr> ordered = new ArrayList<>(segment.size());
+			Set<String> bound = new HashSet<>(boundBeforeSegment);
+			while (!remaining.isEmpty()) {
+				TupleExpr selected = remaining.getFirst();
+				for (int i = 1; i < remaining.size(); i++) {
+					TupleExpr candidate = remaining.get(i);
+					if (isBetterFallbackCandidate(candidate, selected, bound)) {
+						selected = candidate;
+					}
+				}
+				remaining.remove(selected);
+				ordered.add(selected);
+				bound.addAll(plannerBindingNames(selected.getBindingNames()));
+			}
+			List<TupleExpr> orderedWithAssignments = hoistSingleBindingSetAssignments(ordered, segment);
+			return new OrderedSegment(new ArrayDeque<>(orderedWithAssignments), Map.of(), false);
+		}
+
+		private boolean isBetterFallbackCandidate(TupleExpr candidate, TupleExpr incumbent, Set<String> bound) {
+			boolean candidateIsFiniteProvider = isFiniteBindingProvider(candidate, incumbent);
+			boolean incumbentIsFiniteProvider = isFiniteBindingProvider(incumbent, candidate);
+			if (candidateIsFiniteProvider != incumbentIsFiniteProvider) {
+				return candidateIsFiniteProvider;
+			}
+
+			boolean candidateProvidesRequiredBinding = providesRequiredBinding(candidate, incumbent, bound);
+			boolean incumbentProvidesRequiredBinding = providesRequiredBinding(incumbent, candidate, bound);
+			if (candidateProvidesRequiredBinding != incumbentProvidesRequiredBinding) {
+				return candidateProvidesRequiredBinding;
+			}
+
+			boolean candidateUsesExistingBinding = usesExistingBinding(candidate, bound);
+			boolean incumbentUsesExistingBinding = usesExistingBinding(incumbent, bound);
+			if (candidateUsesExistingBinding != incumbentUsesExistingBinding) {
+				return candidateUsesExistingBinding;
+			}
+
+			int candidatePrefixLength = fallbackAccessPrefixLength(candidate, bound);
+			int incumbentPrefixLength = fallbackAccessPrefixLength(incumbent, bound);
+			if (candidatePrefixLength != incumbentPrefixLength) {
+				return candidatePrefixLength > incumbentPrefixLength;
+			}
+
+			return normalizedFallbackCardinality(candidate) < normalizedFallbackCardinality(incumbent);
+		}
+
+		private boolean isFiniteBindingProvider(TupleExpr provider, TupleExpr consumer) {
+			return provider instanceof BindingSetAssignment
+					&& !Collections.disjoint(plannerBindingNames(provider.getBindingNames()),
+							plannerBindingNames(consumer.getBindingNames()));
+		}
+
+		private boolean providesRequiredBinding(TupleExpr provider, TupleExpr consumer, Set<String> bound) {
+			Set<String> requiredBindings = plannerBindingNames(consumer.getBindingNames());
+			requiredBindings.removeAll(bound);
+			if (requiredBindings.isEmpty()) {
+				return false;
+			}
+			Set<String> providedBindings = plannerBindingNames(provider.getBindingNames());
+			return !Collections.disjoint(requiredBindings, providedBindings);
+		}
+
+		private boolean usesExistingBinding(TupleExpr tupleExpr, Set<String> bound) {
+			return !Collections.disjoint(bound, plannerBindingNames(VarNameCollector.process(tupleExpr)));
+		}
+
+		private int fallbackAccessPrefixLength(TupleExpr tupleExpr, Set<String> bound) {
+			StatementPattern statementPattern = singleStatementPattern(tupleExpr);
+			if (statementPattern == null) {
+				return 0;
+			}
+			if (statistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
+				return lmdbStatistics.fallbackAccessPrefixLength(statementPattern, bound);
+			}
+			return fallbackBoundComponentCount(statementPattern, bound);
+		}
+
+		private int fallbackBoundComponentCount(StatementPattern statementPattern, Set<String> bound) {
+			int count = 0;
+			if (isFixedOrBoundPatternVar(statementPattern.getSubjectVar(), bound)) {
+				count++;
+			}
+			if (isFixedOrBoundPatternVar(statementPattern.getPredicateVar(), bound)) {
+				count++;
+			}
+			if (isFixedOrBoundPatternVar(statementPattern.getObjectVar(), bound)) {
+				count++;
+			}
+			if (statementPattern.getContextVar() != null
+					&& isFixedOrBoundPatternVar(statementPattern.getContextVar(), bound)) {
+				count++;
+			}
+			return count;
+		}
+
+		private double normalizedFallbackCardinality(TupleExpr tupleExpr) {
+			double cardinality = statistics.getCardinality(tupleExpr);
+			return Double.isFinite(cardinality) && cardinality >= 0.0d ? cardinality : Double.POSITIVE_INFINITY;
 		}
 
 		private List<TupleExpr> hoistSingleBindingSetAssignments(List<TupleExpr> orderedArgs,

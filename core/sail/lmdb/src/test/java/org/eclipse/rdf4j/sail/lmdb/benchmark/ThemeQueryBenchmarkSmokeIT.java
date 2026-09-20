@@ -395,6 +395,39 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	@Test
+	void explainQueryPlacesEncounterTypeBeforeHandledByForMedicalRecordsQueryTwo() throws Exception {
+		String previousDirectAdjacency = System.getProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY);
+		try {
+			System.setProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY, Boolean.TRUE.toString());
+			ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+			benchmark.themeName = Theme.MEDICAL_RECORDS.name();
+			benchmark.z_queryIndex = 2;
+			benchmark.z_z_irMode = "auto";
+
+			benchmark.setup();
+			try {
+				assertBenchmarkQueryCount(benchmark, Theme.MEDICAL_RECORDS, 2, 4);
+				TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
+				List<String> mandatoryLeafOrder = collectMandatoryLeafOrder(optimized);
+				int typeIndex = mandatoryLeafOrder.indexOf(MEDICAL_TYPE_LABEL);
+				int handledByIndex = mandatoryLeafOrder.indexOf(MEDICAL_HANDLED_BY_LABEL);
+				assertTrue(typeIndex >= 0 && handledByIndex >= 0 && typeIndex < handledByIndex,
+						"Expected q2 to use the two-constant Encounter type lookup before the predicate-only handledBy lookup; order="
+								+ mandatoryLeafOrder);
+				StatementPattern typePattern = findPatternByLabel(optimized, MEDICAL_TYPE_LABEL);
+				StatementPattern handledByPattern = findPatternByLabel(optimized, MEDICAL_HANDLED_BY_LABEL);
+				assertTrue(typePattern.getCostEstimate() > handledByPattern.getCostEstimate(),
+						"Expected the reordered q2 patterns to carry costs for the reordered bindings; type="
+								+ typePattern.getCostEstimate() + ", handledBy=" + handledByPattern.getCostEstimate());
+			} finally {
+				benchmark.tearDown();
+			}
+		} finally {
+			restoreProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY, previousDirectAdjacency);
+		}
+	}
+
+	@Test
 	void explainQueryPlacesUnusedMedicalQ5SingletonValuesFirst() throws Exception {
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
 		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
@@ -597,6 +630,20 @@ class ThemeQueryBenchmarkSmokeIT {
 			return labelForLeaf(unaryTupleOperator.getArg());
 		}
 		return null;
+	}
+
+	private static StatementPattern findPatternByLabel(TupleExpr optimized, String expectedLabel) {
+		List<StatementPattern> matches = new ArrayList<>(1);
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (matches.isEmpty() && expectedLabel.equals(labelFor(node))) {
+					matches.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		return matches.isEmpty() ? null : matches.getFirst();
 	}
 
 	private static boolean isRecordedOnFilter(Filter filter) {

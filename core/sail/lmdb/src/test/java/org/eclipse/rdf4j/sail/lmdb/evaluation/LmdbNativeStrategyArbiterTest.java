@@ -148,6 +148,24 @@ public class LmdbNativeStrategyArbiterTest {
 	}
 
 	@Test
+	public void terminalFallbackRunsAfterEveryOrdinaryCandidateDeclines() throws IOException {
+		AtomicInteger fallbackOpens = new AtomicInteger();
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
+			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> null, LmdbNativeWork.exact(1), "specialist",
+					() -> {
+					}));
+			arbiter.terminalFallback(() -> new LmdbNativeStrategyProposal<>(() -> {
+				fallbackOpens.incrementAndGet();
+				return "fallback";
+			}, LmdbNativeWork.exact(100), "typeMatrix", () -> {
+			}));
+
+			assertThat(arbiter.select()).isEqualTo("fallback");
+		}
+		assertThat(fallbackOpens).hasValue(1);
+	}
+
+	@Test
 	public void probeBufferClosesTheInputWhenRowProductionFails() {
 		AtomicBoolean closed = new AtomicBoolean();
 		RuntimeException failure = new RuntimeException("injected row failure");

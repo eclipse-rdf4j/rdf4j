@@ -55,6 +55,11 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	 */
 	final LmdbNativeWork work;
 	final String tag;
+	/**
+	 * Whether this proposal may be consumed as an adaptive experiment. Structural fallbacks remain ordinary ranked
+	 * candidates, but probing them would be able to remove the only legal execution path from a dispatch.
+	 */
+	final boolean probeable;
 	private final Runnable releaseIfUnused;
 	private boolean opened;
 	private boolean closed;
@@ -74,24 +79,32 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	private LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, double estCost, String tag,
 			Runnable releaseIfUnused) {
-		this(opener, work, LmdbNativeWork.ZERO, Double.NaN, estCost, tag, releaseIfUnused);
+		this(opener, work, LmdbNativeWork.ZERO, Double.NaN, estCost, tag, releaseIfUnused, true);
 	}
 
 	/** Full form, for strategies that know what they pay up front and how many rows they expect to emit. */
 	LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, LmdbNativeWork startupWork, double estRows,
 			String tag, Runnable releaseIfUnused) {
 		this(opener, work, startupWork, estRows, work.known() ? work.high() : Double.POSITIVE_INFINITY, tag,
-				releaseIfUnused);
+				releaseIfUnused, true);
+	}
+
+	/** Full form with an explicit adaptive-probe policy. */
+	LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, LmdbNativeWork startupWork, double estRows,
+			String tag, Runnable releaseIfUnused, boolean probeable) {
+		this(opener, work, startupWork, estRows, work.known() ? work.high() : Double.POSITIVE_INFINITY, tag,
+				releaseIfUnused, probeable);
 	}
 
 	private LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, LmdbNativeWork startupWork,
-			double estRows, double estCost, String tag, Runnable releaseIfUnused) {
+			double estRows, double estCost, String tag, Runnable releaseIfUnused, boolean probeable) {
 		this.opener = opener;
 		this.work = work;
 		this.startupWork = startupWork == null ? LmdbNativeWork.ZERO : startupWork;
 		this.estRows = estRows;
 		this.estCost = estCost;
 		this.tag = tag;
+		this.probeable = probeable;
 		this.releaseIfUnused = releaseIfUnused;
 	}
 
