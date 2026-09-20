@@ -35,7 +35,11 @@ final class LmdbNativePackedAlgebraAggregate {
 		} else {
 			NativeFilterLease lease = new NativeFilterLease();
 			try {
-				results = collect(lease.borrow(plan), row, groupSlots, aggregates, owner, false);
+				SlotPlan attempt = lease.borrow(plan);
+				results = LmdbNativePackedMorsels.tryAggregate(attempt, row, groupSlots, aggregates, owner,
+						explainTarget);
+				if (results == null)
+					results = collect(attempt, row, groupSlots, aggregates, owner, false);
 				lease.commit();
 			} catch (EncounterOrderFallback fallback) {
 				Throwable realFailure = EncounterOrderFallback.realFailure(fallback);

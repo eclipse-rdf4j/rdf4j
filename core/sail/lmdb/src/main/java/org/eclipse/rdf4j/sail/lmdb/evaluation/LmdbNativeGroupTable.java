@@ -150,6 +150,16 @@ final class NativeGroupTable implements AutoCloseable {
 		return new NativeGroupTable(groupSlots, aggregates, ctx, channels, mode, rowMetrics, bounded);
 	}
 
+
+	/** Worker-owned states must merge before finalization; direct-add spill tables use a different protocol. */
+	static NativeGroupTable createParallel(int[] groups, AggregateSpec[] aggregates, AggContext context,
+			AggregateDistinctChannels channels) {
+		NativeGroupTable table = create(groups, aggregates, context, channels, true, false);
+		table.boundedAllowed = false;
+		table.initializeUnbounded();
+		return table;
+	}
+
 	/**
 	 * A table for {@link FactorizedTail#groupsByTail()} mode, where the tail itself keys the map by its branch values
 	 * (single-slot keys by construction) through {@link #longGroups()}.

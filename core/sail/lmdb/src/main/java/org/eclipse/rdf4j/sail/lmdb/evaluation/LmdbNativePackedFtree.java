@@ -155,7 +155,10 @@ final class LmdbNativePackedFtree {
 		if (!LmdbNativeFactorAlgebra.candidate(input))
 			return null;
 		return new LmdbNativeStrategyProposal<>(() -> {
-			FactorizedRowCursor rows = LmdbNativeFactorProjections.openRows(input, row, retainedSlots, !distinct);
+			FactorizedRowCursor rows = LmdbNativePackedMorsels.tryRows(input, row, retainedSlots, distinct,
+					explainTarget);
+			if (rows == null)
+				rows = LmdbNativeFactorProjections.openRows(input, row, retainedSlots, !distinct);
 			if (row.runtimePlan != null)
 				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, new SlotPlan[] { input });
 			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE);
@@ -224,7 +227,10 @@ final class LmdbNativePackedFtree {
 		}
 		LmdbNativeWork work = plan.estimateRowWork(row.source);
 		return new LmdbNativeStrategyProposal<>(() -> {
-			PackedRowCursor cursor = PackedRowCursor.open(plan, row);
+			FactorizedRowCursor cursor = LmdbNativePackedMorsels.tryRows(multiJoin, row, retainedSlots, distinct,
+					explainTarget);
+			if (cursor == null)
+				cursor = PackedRowCursor.open(plan, row);
 			if (cursor == null) {
 				LmdbNativeAttemptMetrics.recordDecline(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
 						"adjacency-unavailable");
@@ -319,7 +325,7 @@ final class LmdbNativePackedFtree {
 		}
 	}
 
-	private static MultiJoinPlan specializeEntry(MultiJoinPlan input, RowState row) {
+	static MultiJoinPlan specializeEntry(MultiJoinPlan input, RowState row) {
 		if ((input.producedMask() & row.boundMask()) == 0L)
 			return input;
 		SlotPlan[] children = new SlotPlan[input.children.length];
@@ -469,14 +475,45 @@ final class LmdbNativePackedFtree {
 				return null;
 			}
 		}
+		NativeFilterLease parallelLease = new NativeFilterLease();
+		try {
+			List<BindingSet> parallel = LmdbNativePackedMorsels.tryAggregate(parallelLease.borrow(multiJoin), row,
+					groupSlots, aggregates, owner, explainTarget);
+			if (parallel != null) {
+				parallelLease.commit();
+				if (row.runtimePlan != null)
+					row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
+							multiJoin.children);
+				LmdbNativeExplain.recordExecutionPath(explainTarget,
+						LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
+				return parallel;
+			}
+			parallelLease.discard();
+		} catch (EncounterOrderFallback fallback) {
+			// The enclosing native aggregate dispatcher owns the ordered replay; no group escaped this attempt.
+			Throwable real = EncounterOrderFallback.realFailure(fallback);
+			if (real == null)
+				parallelLease.discard();
+			else
+				parallelLease.abort(real);
+			throw fallback;
+		} catch (IOException | RuntimeException | Error problem) {
+			parallelLease.abort(problem);
+			throw problem;
+		}
 		try (Runtime runtime = Runtime.open(plan, row)) {
 			if (runtime == null) {
 				return null;
 			}
 			AggContext context = new AggContext(row.source, owner.strictCompare, true, true);
-			List<BindingSet> result = groupSlots.length == 0
-					? evaluateUngrouped(runtime, plan, row, aggregates, owner, context)
-					: evaluateGrouped(multiJoin, runtime, plan, row, groupSlots, aggregates, owner, context);
+			List<BindingSet> result;
+			try {
+				result = groupSlots.length == 0
+						? evaluateUngrouped(runtime, plan, row, aggregates, owner, context)
+						: evaluateGrouped(multiJoin, runtime, plan, row, groupSlots, aggregates, owner, context);
+			} finally {
+				context.close();
+			}
 			if (row.runtimePlan != null) {
 				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
 						multiJoin.children);
@@ -3249,7 +3286,12 @@ final class LmdbNativePackedFtree {
 				}
 				return runtime;
 			} catch (Throwable t) {
-				runtime.close();
+				try {
+					runtime.close();
+				} catch (Throwable closing) {
+					if (closing != t)
+						t.addSuppressed(closing);
+				}
 				throw t;
 			}
 		}
@@ -3376,6 +3418,26 @@ final class LmdbNativePackedFtree {
 				}
 				return partitions;
 			}
+			return null;
+		}
+
+		/** Read-only planning. The returned descriptor contains no query-thread cursor or native address. */
+		RootMorsels planRootMorsels(long rows) throws IOException {
+			if (exhausted || chunksStarted || rootSeed == null)
+				return null;
+			if (roots instanceof RunRootProducer run)
+				return new RootMorsels(RootPartition.runRange(rootSeed, 0L, run.size, run.size), rows,
+						run.ordered);
+			if (roots instanceof KeyRootProducer) {
+				NativeLmdbQuerySource.NativeAdjacency a = adjacency(rootSeed.pattern.p.constant,
+						rootSeed.bySubjectForVariableKey);
+				if (a == null || !a.supportsKeyEnumeration())
+					return null;
+				long total = a.keyCount();
+				return new RootMorsels(RootPartition.keyRange(rootSeed, 0L, total, total), rows, false);
+			}
+			if (roots instanceof ScanRootProducer scan)
+				return new RootMorsels(RootPartition.arrayRange(scan, 0, scan.values.length), rows, false);
 			return null;
 		}
 
@@ -4451,6 +4513,37 @@ final class LmdbNativePackedFtree {
 				throw new PackedParallelDecline("worker run diverged from the partition plan");
 			}
 			return new RunRootProducer(a, handle, seed.pattern, from, to);
+		}
+	}
+
+	/** Dynamic root-domain claims shared by workers; all storage access remains worker-confined. */
+	static final class RootMorsels {
+		final RootPartition domain;
+		final LmdbNativeMorselRange ranges;
+		final boolean ordered;
+
+		RootMorsels(RootPartition domain, long rows, boolean ordered) {
+			this.domain = domain;
+			this.ranges = new LmdbNativeMorselRange(domain.expectedTotal, rows);
+			this.ordered = ordered;
+		}
+
+		RootProducer claim(Runtime worker) throws IOException {
+			java.util.function.LongUnaryOperator boundary = null;
+			if (ordered) {
+				NativeLmdbQuerySource.NativeAdjacency a = worker.adjacency(domain.seed.pattern.p.constant,
+						domain.seed.bySubjectForConstantKey);
+				if (a == null)
+					throw new PackedParallelDecline("worker root adjacency unavailable");
+				long handle = a.find(domain.seed.constantNeighbor);
+				if (handle <= 0L || a.size(handle) != domain.expectedTotal)
+					throw new PackedParallelDecline("worker root snapshot differs from the morsel domain");
+				boundary = cut -> LmdbNativeMorselRange.afterDuplicates(
+						position -> a.neighborAt(handle, position), cut, domain.expectedTotal);
+			}
+			LmdbNativeMorselRange.Range range = ranges.claim(boundary);
+			return range == null ? null : new RootPartition(domain.kind, domain.seed, range.from(), range.to(),
+					domain.expectedTotal, domain.values, domain.multiplicities, domain.coveredPattern).openFor(worker);
 		}
 	}
 
@@ -6633,6 +6726,7 @@ final class LmdbNativePackedFtree {
 		final Plan plan;
 		final RowState row;
 		final Runtime runtime;
+		final boolean ownsRuntime;
 		final FactorEnvironment factors;
 		final int mark;
 		Chunk chunk;
@@ -6641,6 +6735,11 @@ final class LmdbNativePackedFtree {
 		int tick;
 
 		GroupedRowCursor(Plan plan, RowState row, Runtime runtime) {
+			this(plan, row, runtime, true);
+		}
+
+		GroupedRowCursor(Plan plan, RowState row, Runtime runtime, boolean ownsRuntime) {
+			this.ownsRuntime = ownsRuntime;
 			this.plan = plan;
 			this.row = row;
 			this.runtime = runtime;
@@ -6717,7 +6816,8 @@ final class LmdbNativePackedFtree {
 			closed = true;
 			factors.clear();
 			try {
-				runtime.close();
+				if (ownsRuntime)
+					runtime.close();
 			} finally {
 				row.rollback(mark);
 			}
