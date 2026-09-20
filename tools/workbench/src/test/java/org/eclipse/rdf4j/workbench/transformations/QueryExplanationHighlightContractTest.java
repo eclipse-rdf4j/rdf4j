@@ -47,7 +47,7 @@ class QueryExplanationHighlightContractTest {
 			String levelName = fixtureName.substring(0, fixtureName.indexOf('-'));
 			GenericPlanNode plan = OBJECT_MAPPER.treeToValue(
 					normalizeTextualFixtureValues(
-						OBJECT_MAPPER.readTree(Files.readString(jsonFixture, StandardCharsets.UTF_8))),
+							OBJECT_MAPPER.readTree(Files.readString(jsonFixture, StandardCharsets.UTF_8))),
 					GenericPlanNode.class);
 			plan.applyExplanationLevel(Explanation.Level.valueOf(levelName));
 			String expected = Files.readString(FIXTURE_DIRECTORY.resolve(fixtureName + ".txt"),
