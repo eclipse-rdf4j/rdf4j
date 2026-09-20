@@ -408,6 +408,8 @@ public class QueryServletTest {
 
 		verify(request, never()).startAsync(any(), any());
 		assertThat(body.toString()).contains("\"content\":\"plan\"");
+		String escapedLineSeparator = System.lineSeparator().replace("\r", "\\r").replace("\n", "\\n");
+		assertThat(body.toString()).contains("\"lineSeparator\":\"" + escapedLineSeparator + "\"");
 	}
 
 	@Test
