@@ -1219,7 +1219,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		// possibility of an alternative winning, so honoring a forced strategy requires skipping them.
 		String forcedStrategy = forcedExecutionStrategyName();
 		if (LmdbNativeFactorAlgebra.candidate(arg) && !SlotPlan.encounterOrderReplaySafe(arg)
-				&& (forcedStrategy == null || LmdbNativeAttemptMetrics.PATH_PACKED_FTREE.equals(forcedStrategy))) {
+				&& LmdbNativeAttemptMetrics.PATH_PACKED_FTREE.equals(forcedStrategy)) {
 			LmdbNativeStrategyArbiter.logDirect(originalExpr, "row/join serial dispatch",
 					LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
 					"Effectful bag algebra is evaluated once, without speculative replay");
@@ -1330,8 +1330,16 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 					LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN,
 					estimatedRows(row)));
 		}
-		arbiter.offer(
-				() -> LmdbNativePackedFtree.proposeRows(arg, row, retainedSlots, distinct, originalExpr));
+		// Automatic packed rows are priced only for direct MultiJoinPlan inputs. A composed factor tree remains
+		// available
+		// when the caller explicitly forces packedFtree, but otherwise falls through to the ordinary native/IR ladder.
+		if (multiJoin != null) {
+			arbiter.offer(
+					() -> LmdbNativePackedFtree.proposeRows(multiJoin, row, retainedSlots, distinct, originalExpr));
+		} else if (LmdbNativeAttemptMetrics.PATH_PACKED_FTREE.equals(forcedExecutionStrategyName())) {
+			arbiter.offer(
+					() -> LmdbNativePackedFtree.proposeRows(arg, row, retainedSlots, distinct, originalExpr));
+		}
 		arbiter.offer(() -> proposeFactorized(row, multiJoin, correlatedEntry, retainedSlots));
 		arbiter.offer(() -> proposeBatch(row, multiJoin, correlatedEntry));
 		arbiter.offer(() -> wrapCursorProposal(row, LmdbNativeParallelPipelines.propose(this, row),

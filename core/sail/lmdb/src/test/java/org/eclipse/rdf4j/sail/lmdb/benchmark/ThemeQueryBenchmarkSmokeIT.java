@@ -125,6 +125,32 @@ class ThemeQueryBenchmarkSmokeIT {
 		}
 	}
 
+	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void forcedPackedAggregateMedicalQ0ReturnsExpectedCount() throws Exception {
+		String forcedStrategyProperty = ThemeQueryBenchmark.FORCED_EXECUTION_STRATEGY_PROPERTY;
+		String previousForcedStrategy = System.getProperty(forcedStrategyProperty);
+		String previousProfiling = System.getProperty(PROFILING_PROPERTY);
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
+		benchmark.z_queryIndex = 0;
+		benchmark.z_z_irMode = "auto";
+		boolean initialized = false;
+		try {
+			System.setProperty(forcedStrategyProperty, "packedFtreeAggregate");
+			System.setProperty(PROFILING_PROPERTY, "true");
+			benchmark.setup();
+			initialized = true;
+			assertBenchmarkQueryCount(benchmark, Theme.MEDICAL_RECORDS, 0, 1);
+		} finally {
+			if (initialized) {
+				benchmark.tearDown();
+			}
+			restoreProperty(forcedStrategyProperty, previousForcedStrategy);
+			restoreProperty(PROFILING_PROPERTY, previousProfiling);
+		}
+	}
+
 	@ParameterizedTest
 	@CsvSource({
 			"disabled, MEDICAL_RECORDS, true",

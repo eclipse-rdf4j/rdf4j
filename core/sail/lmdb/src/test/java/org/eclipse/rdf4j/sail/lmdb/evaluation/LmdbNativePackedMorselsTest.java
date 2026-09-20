@@ -166,13 +166,13 @@ class LmdbNativePackedMorselsTest {
 	@ParameterizedTest
 	@MethodSource("rowQueries")
 	void rowBagsMatchGeneric(String query) {
-		assertSameBag(query, "packedftree", null);
+		assertSameBag(query, "packedFtree", null);
 	}
 
 	@ParameterizedTest
 	@MethodSource("aggregateQueries")
 	void aggregateBagsMatchGeneric(String query) {
-		assertSameBag(query, "packedftreeaggregate", null);
+		assertSameBag(query, "packedFtreeAggregate", null);
 	}
 
 	@ParameterizedTest
@@ -180,11 +180,11 @@ class LmdbNativePackedMorselsTest {
 	void generatedValueKeysAndIndependentMarginalsWithBothCodegenSettings(boolean codegen) {
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(codegen));
 		String body = " WHERE { " + STAR + " ?s ex:label ?label . BIND(LCASE(?label) AS ?key) }";
-		assertSameBag("SELECT DISTINCT ?key" + body, "packedftree", null);
+		assertSameBag("SELECT DISTINCT ?key" + body, "packedFtree", null);
 		assertSameBag("SELECT ?key (COUNT(*) AS ?n) (COUNT(DISTINCT ?s) AS ?ns) (SUM(?p) AS ?sp) (SUM(?q) AS ?sq)"
-				+ body + " GROUP BY ?key", "packedftreeaggregate", null);
+				+ body + " GROUP BY ?key", "packedFtreeAggregate", null);
 		assertSameBag("SELECT ?s ?other WHERE { " + STAR
-				+ " ?s ex:label ?label . BIND(LCASE(?label) AS ?key) ?other ex:tag ?key }", "packedftree", null);
+				+ " ?s ex:label ?label . BIND(LCASE(?label) AS ?key) ?other ex:tag ?key }", "packedFtree", null);
 	}
 
 	@Test
@@ -192,12 +192,12 @@ class LmdbNativePackedMorselsTest {
 		// Every possible root of this BGP has 128 distinct values, independent of join-order selection.
 		String input = "?s a ex:Root; ex:u ?u; ex:v ?v .";
 		long before = LmdbNativePackedMorsels.ROW_RUNS.get();
-		assertSameBag("SELECT ?s ?u ?v WHERE { " + input + " }", "packedftree", null);
+		assertSameBag("SELECT ?s ?u ?v WHERE { " + input + " }", "packedFtree", null);
 		assertTrue(LmdbNativePackedMorsels.ROW_RUNS.get() > before, "forced packed rows stayed sequential");
 		before = LmdbNativePackedMorsels.AGGREGATE_RUNS.get();
 		long morsels = LmdbNativePackedMorsels.MORSELS.get();
 		assertSameBag("SELECT ?s (COUNT(*) AS ?n) (COUNT(DISTINCT ?v) AS ?nv) WHERE { " + input + " } GROUP BY ?s",
-				"packedftreeaggregate", null);
+				"packedFtreeAggregate", null);
 		assertTrue(LmdbNativePackedMorsels.AGGREGATE_RUNS.get() > before, "forced packed aggregate stayed sequential");
 		assertTrue(LmdbNativePackedMorsels.MORSELS.get() - morsels > 16,
 				"work remained a fixed four ranges per worker");
@@ -207,13 +207,13 @@ class LmdbNativePackedMorselsTest {
 	void globalOrderOffsetAndLimitRemainOutsideWorkers() {
 		String query = "SELECT DISTINCT ?p ?key WHERE { " + COMPOSED + " } ORDER BY ?p ?key OFFSET 3 LIMIT 11";
 		List<BindingSet> expected = generic(query, null);
-		List<BindingSet> actual = evaluate(query, "packedftree", null);
+		List<BindingSet> actual = evaluate(query, "packedFtree", null);
 		assertEquals(expected.size(), actual.size());
 		for (int i = 0; i < expected.size(); i++)
 			assertEquals(canonical(List.of(expected.get(i))), canonical(List.of(actual.get(i))));
 		assertSameBag("SELECT ?key (COUNT(*) AS ?n) WHERE { " + COMPOSED
 				+ " } GROUP BY ?key HAVING(COUNT(*) > 10) ORDER BY DESC(?n) ?key LIMIT 4 OFFSET 1",
-				"packedftreeaggregate", null);
+				"packedFtreeAggregate", null);
 	}
 
 	@Test
@@ -222,28 +222,28 @@ class LmdbNativePackedMorselsTest {
 		for (int repeat = 0; repeat < 12; repeat++) {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(PREFIX + query);
-				prepared.setForcedLmdbExecutionStrategy("packedftree");
+				prepared.setForcedLmdbExecutionStrategy("packedFtree");
 				try (var result = prepared.evaluate()) {
 					assertTrue(result.hasNext());
 					result.next();
 				}
 			}
 		}
-		assertSameBag(query, "packedftree", null);
-		assertSameBag(query, "packedftree", repository.getValueFactory().createIRI(EX, "s4"));
+		assertSameBag(query, "packedFtree", null);
+		assertSameBag(query, "packedFtree", repository.getValueFactory().createIRI(EX, "s4"));
 	}
 
 	@Test
 	void orderSensitiveArithmeticCanFallBackBeforePublishing() {
 		assertSameBag("SELECT (SUM(?x) AS ?sum) (AVG(?x) AS ?avg) WHERE { "
-				+ "{ ?s ex:floating ?x } UNION { ?s ex:floating ?x } }", "packedftreeaggregate", null);
+				+ "{ ?s ex:floating ?x } UNION { ?s ex:floating ?x } }", "packedFtreeAggregate", null);
 	}
 
 	@Test
 	void volatileBindIsNotReplayedByWorkers() {
 		long before = LmdbNativePackedMorsels.AGGREGATE_RUNS.get();
 		BindingSet result = evaluate("SELECT (COUNT(*) AS ?n) (COUNT(DISTINCT ?u) AS ?nu) WHERE { "
-				+ "{ ?s a ex:Root } UNION { ?s a ex:Root } BIND(UUID() AS ?u) }", "packedftreeaggregate", null)
+				+ "{ ?s a ex:Root } UNION { ?s a ex:Root } BIND(UUID() AS ?u) }", "packedFtreeAggregate", null)
 						.getFirst();
 		assertEquals(256, ((Literal) result.getValue("n")).longValue());
 		assertEquals(256, ((Literal) result.getValue("nu")).longValue());
@@ -255,9 +255,9 @@ class LmdbNativePackedMorselsTest {
 		System.setProperty(MASTER, "false");
 		long rows = LmdbNativePackedMorsels.ROW_RUNS.get();
 		long aggregates = LmdbNativePackedMorsels.AGGREGATE_RUNS.get();
-		assertSameBag("SELECT * WHERE { " + COMPOSED + " }", "packedftree", null);
+		assertSameBag("SELECT * WHERE { " + COMPOSED + " }", "packedFtree", null);
 		assertSameBag("SELECT ?key (COUNT(*) AS ?n) WHERE { " + COMPOSED + " } GROUP BY ?key",
-				"packedftreeaggregate", null);
+				"packedFtreeAggregate", null);
 		assertEquals(rows, LmdbNativePackedMorsels.ROW_RUNS.get());
 		assertEquals(aggregates, LmdbNativePackedMorsels.AGGREGATE_RUNS.get());
 	}

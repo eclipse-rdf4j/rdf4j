@@ -165,13 +165,13 @@ class LmdbNativePackedAlgebraTest {
 	@ParameterizedTest(name = "packed rows: {0}")
 	@MethodSource("rowQueries")
 	void rowsMatchGeneric(String query) {
-		assertSameBag(query, "packedftree", null);
+		assertSameBag(query, "packedFtree", null);
 	}
 
 	@ParameterizedTest(name = "packed aggregate: {0}")
 	@MethodSource("aggregateQueries")
 	void aggregatesMatchGeneric(String query) {
-		assertSameBag(query, "packedftreeaggregate", null);
+		assertSameBag(query, "packedFtreeAggregate", null);
 	}
 
 	@ParameterizedTest
@@ -181,8 +181,8 @@ class LmdbNativePackedAlgebraTest {
 		String body = " WHERE { ?s ex:p ?p . ?s ex:q ?q OPTIONAL { ?s ex:label ?l } "
 				+ "BIND(LCASE(COALESCE(?l, 'EMPTY')) AS ?key) }";
 		assertSameBag("SELECT ?key (COUNT(*) AS ?n) (SUM(?p) AS ?sp) (SUM(?q) AS ?sq)"
-				+ body + " GROUP BY ?key", "packedftreeaggregate", null);
-		assertSameBag("SELECT DISTINCT ?key" + body, "packedftree", null);
+				+ body + " GROUP BY ?key", "packedFtreeAggregate", null);
+		assertSameBag("SELECT DISTINCT ?key" + body, "packedFtree", null);
 	}
 
 	@Test
@@ -191,24 +191,24 @@ class LmdbNativePackedAlgebraTest {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			Value bound = connection.getValueFactory().createIRI(EX, "s2");
 			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(PREFIX + query);
-			prepared.setForcedLmdbExecutionStrategy("packedftree");
+			prepared.setForcedLmdbExecutionStrategy("packedFtree");
 			try (var result = prepared.evaluate()) {
 				assertTrue(result.hasNext());
 				result.next(); // Deliberately do not drain.
 			}
-			assertSameBag(query, "packedftree", bound);
-			assertSameBag(query, "packedftree", null);
+			assertSameBag(query, "packedFtree", bound);
+			assertSameBag(query, "packedFtree", null);
 		}
 	}
 
 	@Test
 	void uuidRunsOncePerLogicalDuplicateNotPerFactorPrefix() {
 		String body = " WHERE { { ?s ex:p ?p } UNION { ?s ex:p ?p } BIND(UUID() AS ?u) }";
-		List<BindingSet> rows = evaluate("SELECT ?u" + body, "packedftree", null);
+		List<BindingSet> rows = evaluate("SELECT ?u" + body, "packedFtree", null);
 		assertEquals(20, rows.size());
 		assertEquals(20, rows.stream().map(r -> r.getValue("u")).collect(Collectors.toSet()).size());
 		BindingSet count = evaluate("SELECT (COUNT(*) AS ?n) (COUNT(DISTINCT ?u) AS ?nu)" + body,
-				"packedftreeaggregate", null).getFirst();
+				"packedFtreeAggregate", null).getFirst();
 		assertEquals(20, ((Literal) count.getValue("n")).longValue());
 		assertEquals(20, ((Literal) count.getValue("nu")).longValue());
 	}
@@ -217,7 +217,7 @@ class LmdbNativePackedAlgebraTest {
 	void groupConcatPreservesAllLogicalCopiesWithoutAssumingAnUnspecifiedOrder() {
 		String query = "SELECT (GROUP_CONCAT(?tag; separator=',') AS ?tags) WHERE { "
 				+ "{ ?s ex:tag ?tag } UNION { ?s ex:tag ?tag } OPTIONAL { ?s ex:r ?r } }";
-		BindingSet result = evaluate(query, "packedftreeaggregate", null).getFirst();
+		BindingSet result = evaluate(query, "packedFtreeAggregate", null).getFirst();
 		List<String> members = java.util.Arrays.stream(result.getValue("tags").stringValue().split(","))
 				.sorted()
 				.toList();
@@ -235,7 +235,7 @@ class LmdbNativePackedAlgebraTest {
 		} finally {
 			System.setProperty(NATIVE, "true");
 		}
-		List<BindingSet> actual = evaluate(query, "packedftree", null);
+		List<BindingSet> actual = evaluate(query, "packedFtree", null);
 		assertEquals(expected.size(), actual.size());
 		for (int i = 0; i < expected.size(); i++)
 			assertEquals(canonical(List.of(expected.get(i))), canonical(List.of(actual.get(i))));
@@ -244,9 +244,9 @@ class LmdbNativePackedAlgebraTest {
 	@Test
 	void telemetryConfirmsBothForcedFamiliesRatherThanGenericFallback() {
 		assertPath("SELECT * WHERE { ?s ex:p ?p OPTIONAL { ?s ex:r ?r } BIND(?p + 1 AS ?x) }",
-				"packedftree", "packedFtree");
+				"packedFtree", "packedFtree");
 		assertPath("SELECT (COUNT(*) AS ?n) WHERE { ?s ex:p ?p OPTIONAL { ?s ex:r ?r } BIND(?p + 1 AS ?x) }",
-				"packedftreeaggregate", "packedFtreeAggregate");
+				"packedFtreeAggregate", "packedFtreeAggregate");
 	}
 
 	private void assertPath(String query, String forced, String expected) {

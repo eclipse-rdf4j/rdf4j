@@ -174,21 +174,6 @@ final class LmdbNativePackedFtree {
 				: LmdbNativePackedAlgebraAggregate.evaluate(input, row, groups, aggregates, owner, explainTarget);
 	}
 
-	static boolean projectionAggregateCandidate(SlotPlan input, RowState row, int[] groups,
-			AggregateSpec[] aggregates) {
-		if (input instanceof MultiJoinPlan multi && !LmdbNativeFactorAlgebra.candidate(input))
-			return projectionAggregateCandidate(multi, row, groups, aggregates);
-		if (!LmdbNativeFactorAlgebra.candidate(input) || row.encounterOrderRequired
-				|| !SlotPlan.encounterOrderReplaySafe(input)
-				|| "false".equals(System.getProperty(LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY)))
-			return false;
-		for (AggregateSpec spec : aggregates)
-			if (spec.rowSlots != null || spec.kind == AggKind.SAMPLE || spec.kind == AggKind.GROUP_CONCAT
-					|| spec.kind == AggKind.CUSTOM)
-				return false;
-		return true;
-	}
-
 	static LmdbNativeWork estimateAggregateWork(MultiJoinPlan multiJoin, RowState row, int[] groupSlots,
 			AggregateSpec[] aggregates) {
 		if (!enabled() || multiJoin == null) {

@@ -1025,13 +1025,24 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				arbiter.offer(() -> estimatedProposal(() -> evaluateWcoj(row),
 						LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN));
 			}
-			if (!typeMatrixOwned && LmdbNativePackedFtree.enabled()
-					&& (arg instanceof MultiJoinPlan || LmdbNativeFactorAlgebra.candidate(arg))) {
-				arbiter.offer(() -> estimatedProposal(
-						() -> LmdbNativePackedFtree.tryEvaluateAggregate(arg, row, groupSlots, aggregates, this,
-								explainTarget),
-						LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
-						LmdbNativePackedFtree.estimateAggregateWork(arg, row, groupSlots, aggregates)));
+			// Only direct MultiJoinPlan inputs have an automatic packed aggregate estimate. Composed factor algebra is
+			// retained for an explicit packedFtreeAggregate request until nested reopening has a reusable cost model.
+			if (!typeMatrixOwned && LmdbNativePackedFtree.enabled()) {
+				if (arg instanceof MultiJoinPlan packedPlan) {
+					arbiter.offer(() -> estimatedProposal(
+							() -> LmdbNativePackedFtree.tryEvaluateAggregate(packedPlan, row, groupSlots, aggregates,
+									this,
+									explainTarget),
+							LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
+							LmdbNativePackedFtree.estimateAggregateWork(packedPlan, row, groupSlots, aggregates)));
+				} else if (LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE.equals(forcedExecutionStrategy)
+						&& LmdbNativeFactorAlgebra.candidate(arg)) {
+					arbiter.offer(() -> estimatedProposal(
+							() -> LmdbNativePackedFtree.tryEvaluateAggregate(arg, row, groupSlots, aggregates, this,
+									explainTarget),
+							LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
+							LmdbNativePackedFtree.estimateAggregateWork(arg, row, groupSlots, aggregates)));
+				}
 			}
 			if (!typeMatrixOwned && factorized != null) {
 				MultiJoinPlan.OrderedPlan factorizedDerived = factorizedSelection.derived;

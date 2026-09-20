@@ -202,6 +202,63 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
+	void composedQ0AggregateDeclinesAutomaticSharedFactorProjectionLowering() {
+		String key = LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY;
+		String previous = System.getProperty(key);
+		try {
+			System.setProperty(key, "true");
+			SlotPlan patient = pattern(Term.slot(0), Term.constant(PRED + 128));
+			MultiJoinPlan encounter = new MultiJoinPlan(new SlotPlan[] {
+					pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)) }, new MaskedFilter[0]);
+			SlotPlan recentEncounter = new ExtensionPlan(encounter,
+					new CopyBinding[] { CopyBinding.slot(3, 2) });
+			SlotPlan filtered = new FilterPlan(new LeftJoinPlan(patient, recentEncounter), ignored -> true, 1L << 3);
+			SlotPlan q0Shape = new LeftJoinPlan(filtered, pattern(Term.slot(0), Term.slot(4)));
+			var lowered = LmdbNativeKernelLowering.lowerAggregate(q0Shape, freshFiveSlotRow(), new int[0],
+					new AggregateSpec[] { AggregateSpec.slot("count", 0, true, AggKind.COUNT) }, null);
+
+			assertNotNull(lowered);
+			assertNotEquals("agg:shared-factor-projections", lowered.planBridgeReason,
+					"composed Q0-shaped plans must not enter the automatic projection bridge");
+			assertNull(lowered.kernel.aggregateProjections,
+					"composed Q0-shaped plans must not expose shared factor projections");
+		} finally {
+			restoreProperty(key, previous);
+		}
+	}
+
+	@Test
+	void composedAggregateOperatorsDeclineAutomaticSharedFactorProjectionLowering() {
+		String key = LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY;
+		String previous = System.getProperty(key);
+		try {
+			System.setProperty(key, "true");
+			MultiJoinPlan branch = new MultiJoinPlan(new SlotPlan[] {
+					pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)) }, new MaskedFilter[0]);
+			List<SlotPlan> composedPlans = List.of(
+					new FilterPlan(branch, ignored -> true, 0L),
+					new ExtensionPlan(branch, new CopyBinding[] { CopyBinding.slot(3, 2) }),
+					new JoinPlan(branch, pattern(Term.slot(0), Term.slot(3))),
+					new LeftJoinPlan(branch, pattern(Term.slot(0), Term.slot(3))),
+					new UnionPlan(branch, pattern(Term.slot(0), Term.slot(3))),
+					new MinusPlan(branch, pattern(Term.slot(0), Term.slot(3)), 1L),
+					new FilterPlan(branch, new ExistsFilter(pattern(Term.slot(1), Term.slot(3))), -1L));
+			for (SlotPlan composed : composedPlans) {
+				var lowered = LmdbNativeKernelLowering.lowerAggregate(composed, freshFiveSlotRow(), new int[0],
+						new AggregateSpec[] { AggregateSpec.slot("count", 0, true, AggKind.COUNT) }, null);
+				assertNotNull(lowered);
+				assertNotEquals("agg:shared-factor-projections", lowered.planBridgeReason,
+						"composed plan entered the automatic projection bridge: "
+								+ composed.getClass().getSimpleName());
+				assertNull(lowered.kernel.aggregateProjections,
+						"composed plan exposed shared factor projections: " + composed.getClass().getSimpleName());
+			}
+		} finally {
+			restoreProperty(key, previous);
+		}
+	}
+
+	@Test
 	void singleGlobalDistinctRetainsExistingWitnessLoweringPreference() {
 		MultiJoinPlan tree = new MultiJoinPlan(new SlotPlan[] {
 				pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(0), Term.slot(2)),
