@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
 
 /**
- * Packed arbitrary-f-tree execution for LMDB basic graph-pattern joins.
+ * Packed arbitrary-f-tree execution for LMDB basic graph-pattern regions and composable bag algebra.
  * <p>
  * This is deliberately a physical representation, not another tail rewrite. An unrestricted terminal can retain a
  * snapshot-owned borrowed group and exact summary per parent; a materialized variable owns a packed vector. A
@@ -57,8 +57,9 @@ import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
  * (including constant endpoint restrictions, named/default graph restrictions, duplicate statement multiplicity and
  * cyclic constraints). Tree edges expand packed child vectors; additional relations to already-bound ancestors are
  * enforced by ordered multi-way intersections. Variable-predicate and other unsupported shapes remain owned by the
- * general kernel paths. A speculative native strategy always declines before changing result semantics when its
- * physical invariants cannot be proved.
+ * general kernel paths. OPTIONAL, UNION and BIND compose these regions through {@link LmdbNativeFactorAlgebra} and
+ * share demand-projected aggregate readers rather than becoming artificial BGP tree edges. A speculative native
+ * strategy always declines before changing result semantics when its physical invariants cannot be proved.
  */
 @Experimental
 final class LmdbNativePackedFtree {
@@ -138,6 +139,52 @@ final class LmdbNativePackedFtree {
 
 	/** Test observability: incremented whenever a grouped aggregate runs through the partition-parallel path. */
 	static final AtomicLong PARALLEL_GROUP_RUNS = new AtomicLong();
+
+	static LmdbNativeWork estimateAggregateWork(SlotPlan plan, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates) {
+		return plan instanceof MultiJoinPlan multi && !LmdbNativeFactorAlgebra.candidate(plan)
+				? estimateAggregateWork(multi, row, groupSlots, aggregates)
+				: LmdbNativeFactorAlgebra.candidate(plan) ? plan.estimateWork(row, row.boundMask())
+						: LmdbNativeWork.UNKNOWN;
+	}
+
+	static LmdbNativeStrategyProposal<NativeUnorderedInput> proposeRows(SlotPlan input, RowState row,
+			int[] retainedSlots, boolean distinct, TupleExpr explainTarget) {
+		if (input instanceof MultiJoinPlan multi && !LmdbNativeFactorAlgebra.candidate(input))
+			return proposeRows(multi, row, retainedSlots, distinct, explainTarget);
+		if (!LmdbNativeFactorAlgebra.candidate(input))
+			return null;
+		return new LmdbNativeStrategyProposal<>(() -> {
+			FactorizedRowCursor rows = LmdbNativeFactorProjections.openRows(input, row, retainedSlots, !distinct);
+			if (row.runtimePlan != null)
+				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, new SlotPlan[] { input });
+			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE);
+			return NativeUnorderedInput.rows(row, rows);
+		}, input.estimateWork(row, row.boundMask()), LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, () -> {
+		});
+	}
+
+	static List<BindingSet> tryEvaluateAggregate(SlotPlan input, RowState row, int[] groups,
+			AggregateSpec[] aggregates, NativeGroupIteration owner, TupleExpr explainTarget) throws IOException {
+		return input instanceof MultiJoinPlan multi && !LmdbNativeFactorAlgebra.candidate(input)
+				? tryEvaluateAggregate(multi, row, groups, aggregates, owner, explainTarget)
+				: LmdbNativePackedAlgebraAggregate.evaluate(input, row, groups, aggregates, owner, explainTarget);
+	}
+
+	static boolean projectionAggregateCandidate(SlotPlan input, RowState row, int[] groups,
+			AggregateSpec[] aggregates) {
+		if (input instanceof MultiJoinPlan multi && !LmdbNativeFactorAlgebra.candidate(input))
+			return projectionAggregateCandidate(multi, row, groups, aggregates);
+		if (!LmdbNativeFactorAlgebra.candidate(input) || row.encounterOrderRequired
+				|| !SlotPlan.encounterOrderReplaySafe(input)
+				|| "false".equals(System.getProperty(LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY)))
+			return false;
+		for (AggregateSpec spec : aggregates)
+			if (spec.rowSlots != null || spec.kind == AggKind.SAMPLE || spec.kind == AggKind.GROUP_CONCAT
+					|| spec.kind == AggKind.CUSTOM)
+				return false;
+		return true;
+	}
 
 	static LmdbNativeWork estimateAggregateWork(MultiJoinPlan multiJoin, RowState row, int[] groupSlots,
 			AggregateSpec[] aggregates) {
@@ -232,6 +279,65 @@ final class LmdbNativePackedFtree {
 			}
 			throw failure;
 		}
+	}
+
+	/**
+	 * A BGP region inside a larger bag-algebra plan. Unlike the borrowed-only transport hook, a region may export
+	 * packed scalar prefixes when no terminal supports borrowing. The same runtime is retained; it is not opened
+	 * speculatively a second time. Correlation is specialized to fixed endpoint restrictions before f-tree planning.
+	 */
+	static LmdbNativeFactorCursor openLeaf(MultiJoinPlan input, RowState row) throws IOException {
+		if (!enabled() || row.encounterOrderRequired)
+			return null;
+		if (row.source instanceof SyntheticValueSource values) {
+			for (SlotPlan child : input.children) {
+				if (child instanceof PatternPlan pattern && values.anySynthetic(pattern.s.lookup(row.slots),
+						pattern.p.lookup(row.slots), pattern.o.lookup(row.slots), pattern.c.lookup(row.slots)))
+					return null;
+			}
+			// anySynthetic also rejects unresolved terminal keys. Such keys belong to the terminal value authority,
+			// never an adjacency key; a storage-absent generated value uses the ordinary native no-match probe.
+		}
+		MultiJoinPlan join = specializeEntry(input, row);
+		if (join == null)
+			return null;
+		Plan plan = Planner.plan(join, row, LmdbNativeAggregateCompiler.slotsOf(join.producedMask()));
+		if (plan == null)
+			return null;
+		Runtime runtime = null;
+		try {
+			runtime = Runtime.open(plan, row);
+			return runtime == null ? null : new GroupedRowCursor(plan, row, runtime);
+		} catch (PackedDecline unsupported) {
+			if (runtime != null)
+				runtime.close();
+			return null;
+		} catch (IOException | RuntimeException | Error failure) {
+			if (runtime != null)
+				LmdbNativeFactorAlgebra.closeSuppressing(runtime, failure);
+			throw failure;
+		}
+	}
+
+	private static MultiJoinPlan specializeEntry(MultiJoinPlan input, RowState row) {
+		if ((input.producedMask() & row.boundMask()) == 0L)
+			return input;
+		SlotPlan[] children = new SlotPlan[input.children.length];
+		for (int i = 0; i < children.length; i++) {
+			if (!(input.children[i]instanceof PatternPlan pattern))
+				return null;
+			children[i] = new PatternPlan(specialize(pattern.s, row), specialize(pattern.p, row),
+					specialize(pattern.o, row), specialize(pattern.c, row), pattern.contexts,
+					pattern.namedContextScope, pattern.statementOrder, pattern.indexName, pattern.range,
+					pattern.staticEstimate);
+		}
+		return new MultiJoinPlan(children, input.filters);
+	}
+
+	private static Term specialize(Term term, RowState row) {
+		if (term.hasSlot() && !term.isConstant() && row.slots[term.slot] != UNKNOWN)
+			return Term.constantSlot(term.slot, row.slots[term.slot]);
+		return term;
 	}
 
 	/** Structural admission shared with IR lowering; does not open storage or inspect user values. */

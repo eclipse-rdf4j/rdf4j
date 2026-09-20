@@ -952,8 +952,8 @@ final class LmdbNativeKernelLowering {
 		// The physical grouped producer is independent of execution tier. Preserve its
 		// hierarchy for branching BGPs instead of replacing it with scalar IR probes. Other
 		// shortcuts above retain precedence; unsupported/effectful shapes keep their old path.
-		if (!preferScans && !scanVariablePredicates && arg instanceof MultiJoinPlan multi
-				&& LmdbNativePackedFtree.projectionAggregateCandidate(multi, row, groupSlots, aggregates)) {
+		if (!preferScans && !scanVariablePredicates
+				&& LmdbNativePackedFtree.projectionAggregateCandidate(arg, row, groupSlots, aggregates)) {
 			Lowered projected = lowerAggregateWithPlanProducer(arg, row, groupSlots, aggregates, having);
 			if (projected != null && (projected.kernel.aggregateProjections != null
 					|| LmdbNativeKernelIr.weightedPlanCount(projected.kernel)))

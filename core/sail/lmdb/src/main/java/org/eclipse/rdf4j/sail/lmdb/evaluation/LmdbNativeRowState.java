@@ -572,6 +572,7 @@ final class RowState implements LmdbNativeSlotReader {
 final class ExactValuesAggregateCursor implements FactorizedRowCursor {
 	private final RowCursor delegate;
 	private final ExactValuesRuntimeMetrics metrics;
+	private long weight;
 
 	ExactValuesAggregateCursor(RowCursor delegate, ExactValuesRuntimeMetrics metrics) {
 		this.delegate = delegate;
@@ -583,8 +584,8 @@ final class ExactValuesAggregateCursor implements FactorizedRowCursor {
 		if (!delegate.next()) {
 			return false;
 		}
-		metrics.recordMatchedRows(
-				delegate instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L);
+		weight = delegate instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
+		metrics.recordMatchedRows(weight);
 		return true;
 	}
 
@@ -595,7 +596,7 @@ final class ExactValuesAggregateCursor implements FactorizedRowCursor {
 
 	@Override
 	public long multiplicity() {
-		return delegate instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
+		return weight;
 	}
 }
 

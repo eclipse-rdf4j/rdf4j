@@ -58,3 +58,8 @@ These steps are explained in more detail in the [Contributor
 guidelines](https://github.com/eclipse/rdf4j/blob/main/CONTRIBUTING.md).
 
 You can find more detailed information about our development and release processes in the [Developer Workflow and Project Management](https://rdf4j.org/documentation/developer/) documentation.
+
+## Packed f-tree algebra update
+
+See [PACKED-ALGEBRA.md](PACKED-ALGEBRA.md) for the OPTIONAL / UNION / BIND implementation, aggregate projections,
+reproducible isolated checks, and the explicit limitations of the validation performed on this source bundle.

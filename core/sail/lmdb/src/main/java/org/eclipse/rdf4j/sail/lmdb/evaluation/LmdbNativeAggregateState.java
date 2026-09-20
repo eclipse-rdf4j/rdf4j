@@ -141,7 +141,7 @@ enum AggKind {
 	 * Custom aggregate (completion plan M5): a third-party {@code AggregateFunction}/{@code AggregateNAryFunction}
 	 * resolved from the custom-aggregate registries and driven exactly as the generic {@code GroupIterator} drives it —
 	 * per-row over a {@link RowBindingSetView}, with a fresh collector and DISTINCT predicate per group. Serial-path
-	 * only: the parallel, factorized, packed and kernel tiers decline, degrading to the serial native group step.
+	 * only: parallel and leaf-only factorized tiers decline; composed packed algebra uses a serial native boundary.
 	 */
 	CUSTOM
 }
@@ -280,7 +280,8 @@ final class AggregateSpec {
 	/**
 	 * COUNT(DISTINCT *) (M-F3): counts distinct full visible solution mappings — names, bound status and term identity
 	 * over {@code rowSlots}. Empty mappings are skipped; failed BIND assignments still occupy a mapping even though
-	 * their values remain unbound. Serial-path only: every specialized strategy declines this shape.
+	 * their values remain unbound. Requires full logical mappings: composed packed algebra uses its serial aggregate
+	 * boundary.
 	 */
 	static AggregateSpec starDistinct(String name, int[] rowSlots) {
 		return new AggregateSpec(name, -1, NULL_CONTEXT_ID, true, AggKind.COUNT, null, rowSlots);
@@ -338,7 +339,7 @@ final class AggregateSpec {
 		return true;
 	}
 
-	/** True when any spec is the COUNT(DISTINCT *) full-row shape, which only the serial group step can answer. */
+	/** True when any spec is the COUNT(DISTINCT *) full-row shape, which requires complete logical mappings. */
 	static boolean anyFullRowDistinct(AggregateSpec[] specs) {
 		for (AggregateSpec spec : specs) {
 			if (spec.distinct && spec.rowSlots != null) {
@@ -718,99 +719,129 @@ final class AggState {
 	}
 
 	void add(RowState row) {
-		for (int channel = 0; channel < distinctChannels.channelCount(); channel++) {
-			long value = distinctChannels.slots[channel] >= 0
-					? row.slots[distinctChannels.slots[channel]]
-					: distinctChannels.constants[channel];
-			if (value == UNKNOWN || value == NULL_CONTEXT_ID) {
-				channelFresh[channel] = false;
+		for (int channel = 0; channel < distinctChannels.channelCount(); channel++)
+			prepareDistinctChannel(channel, row);
+		for (int i = 0; i < specs.length; i++)
+			addOne(i, row);
+	}
+
+	/**
+	 * Adds only the consumers of one marginal projection. Shared DISTINCT channels are prepared once, then every
+	 * interested aggregate observes the same freshness result. Unrelated constant/wildcard channels are not touched.
+	 * The caller has already tested existence and supplies exact weight only when an eligible consumer observes it.
+	 */
+	void addProjected(RowState row, long weight, int[] indices, int[] membershipChannels) {
+		if (weight <= 0L)
+			throw new IllegalArgumentException("Nonpositive marginal contribution");
+		for (int channel : membershipChannels)
+			prepareDistinctChannel(channel, row);
+		for (int i : indices) {
+			AggregateSpec spec = specs[i];
+			if (spec.rowSlots != null || spec.custom != null || spec.kind == AggKind.GROUP_CONCAT
+					|| spec.kind == AggKind.SAMPLE)
+				throw new IllegalArgumentException("Order-sensitive or full-row aggregate in a marginal projection");
+			if (!spec.hasInput(row))
 				continue;
-			}
-			channelFresh[channel] = switch (distinctChannels.modes[channel]) {
-			case HASH -> channelSets[channel].add(value);
-			case MONOTONIC -> {
-				boolean fresh = !channelInitialized[channel]
-						|| !sameRdfTerm(channelLastIds[channel], value);
-				channelInitialized[channel] = true;
-				channelLastIds[channel] = value;
-				yield fresh;
-			}
-			case CONSTANT_ONCE -> {
-				boolean fresh = !channelInitialized[channel];
-				channelInitialized[channel] = true;
-				yield fresh;
-			}
-			};
+			if (spec.distinct)
+				addOne(i, row);
+			else
+				addWeighted(i, spec.value(row), weight);
 		}
-		for (int i = 0; i < specs.length; i++) {
-			if (specs[i].rowSlots != null) {
-				// RDF4J's wildcard collector skips the empty solution mapping. DISTINCT keeps one copy of every
-				// remaining full visible mapping.
-				if (!specs[i].hasInput(row)) {
-					continue;
-				}
-				if (!specs[i].distinct || rowDistinct[i].add(row.slots)) {
-					counts[i]++;
-				}
-				continue;
+	}
+
+	private void prepareDistinctChannel(int channel, RowState row) {
+		long value = distinctChannels.slots[channel] >= 0
+				? row.slots[distinctChannels.slots[channel]]
+				: distinctChannels.constants[channel];
+		if (value == UNKNOWN || value == NULL_CONTEXT_ID) {
+			channelFresh[channel] = false;
+			return;
+		}
+		channelFresh[channel] = switch (distinctChannels.modes[channel]) {
+		case HASH -> channelSets[channel].add(value);
+		case MONOTONIC -> {
+			boolean fresh = !channelInitialized[channel]
+					|| !sameRdfTerm(channelLastIds[channel], value);
+			channelInitialized[channel] = true;
+			channelLastIds[channel] = value;
+			yield fresh;
+		}
+		case CONSTANT_ONCE -> {
+			boolean fresh = !channelInitialized[channel];
+			channelInitialized[channel] = true;
+			yield fresh;
+		}
+		};
+	}
+
+	private void addOne(int i, RowState row) {
+		if (specs[i].rowSlots != null) {
+			// RDF4J's wildcard collector skips the empty solution mapping. DISTINCT keeps one copy of every
+			// remaining full visible mapping.
+			if (!specs[i].hasInput(row)) {
+				return;
 			}
-			if (specs[i].custom != null) {
-				if (ctx.encounterOrderChanging) {
-					throw EncounterOrderFallback.customAggregateOrder();
-				}
-				specs[i].custom.process(row.view, customPredicates[i], customCollectors[i], ctx);
-				continue;
-			}
-			long value = specs[i].value(row);
-			if (!specs[i].isWildcardCount() && (value == UNKNOWN || value == NULL_CONTEXT_ID)) {
-				continue;
-			}
-			int channel = distinctChannels.specChannels[i];
-			if (channel >= 0 && !channelFresh[channel]) {
-				continue;
-			}
-			switch (specs[i].kind) {
-			case COUNT:
+			if (!specs[i].distinct || rowDistinct[i].add(row.slots)) {
 				counts[i]++;
-				break;
-			case SUM:
-				if (!deferredDistinctValueAggregate(i)) {
-					addSum(i, value);
-				}
-				break;
-			case AVG:
-				if (!deferredDistinctValueAggregate(i)) {
-					addAvg(i, value);
-				}
-				break;
-			case MIN:
-				addExtreme(i, value, true);
-				break;
-			case MAX:
-				addExtreme(i, value, false);
-				break;
-			case SAMPLE:
-				if (extremes[i] == null) {
-					// first eligible value of the group wins; materialization cost is once per group
-					extremes[i] = ctx.value(value);
-				}
-				break;
-			case GROUP_CONCAT: {
-				if (ctx.encounterOrderChanging) {
-					throw EncounterOrderFallback.groupConcatOrder();
-				}
-				Value concatValue = ctx.value(value);
-				if (concatValue != null) {
-					if (concats[i] == null) {
-						concats[i] = new StringBuilder();
-					} else {
-						concats[i].append(specs[i].separator);
-					}
-					concats[i].append(concatValue.stringValue());
-				}
-				break;
 			}
+			return;
+		}
+		if (specs[i].custom != null) {
+			if (ctx.encounterOrderChanging) {
+				throw EncounterOrderFallback.customAggregateOrder();
 			}
+			specs[i].custom.process(row.view, customPredicates[i], customCollectors[i], ctx);
+			return;
+		}
+		long value = specs[i].value(row);
+		if (!specs[i].isWildcardCount() && (value == UNKNOWN || value == NULL_CONTEXT_ID)) {
+			return;
+		}
+		int channel = distinctChannels.specChannels[i];
+		if (channel >= 0 && !channelFresh[channel]) {
+			return;
+		}
+		switch (specs[i].kind) {
+		case COUNT:
+			counts[i]++;
+			break;
+		case SUM:
+			if (!deferredDistinctValueAggregate(i)) {
+				addSum(i, value);
+			}
+			break;
+		case AVG:
+			if (!deferredDistinctValueAggregate(i)) {
+				addAvg(i, value);
+			}
+			break;
+		case MIN:
+			addExtreme(i, value, true);
+			break;
+		case MAX:
+			addExtreme(i, value, false);
+			break;
+		case SAMPLE:
+			if (extremes[i] == null) {
+				// first eligible value of the group wins; materialization cost is once per group
+				extremes[i] = ctx.value(value);
+			}
+			break;
+		case GROUP_CONCAT: {
+			if (ctx.encounterOrderChanging) {
+				throw EncounterOrderFallback.groupConcatOrder();
+			}
+			Value concatValue = ctx.value(value);
+			if (concatValue != null) {
+				if (concats[i] == null) {
+					concats[i] = new StringBuilder();
+				} else {
+					concats[i].append(specs[i].separator);
+				}
+				concats[i].append(concatValue.stringValue());
+			}
+			break;
+		}
 		}
 	}
 

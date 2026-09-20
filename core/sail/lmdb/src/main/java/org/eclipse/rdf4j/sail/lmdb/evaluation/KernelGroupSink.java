@@ -41,8 +41,9 @@ public final class KernelGroupSink implements AutoCloseable {
 		this.havingColumn = havingOutput < 0 ? -1 : groupWidth + havingOutput;
 		this.havingOp = havingOp;
 		this.havingValue = havingValue;
+		// Failed BIND and an absent UNION-arm binding are the same unbound group key.
 		store = new NativeCountGroupStore(groupWidth, distinct,
-				context.hooks == null ? id -> id : context.hooks.keySemantics()::canonicalTermKey,
+				id -> id == 0L ? -1L : context.hooks == null ? id : context.hooks.keySemantics().canonicalTermKey(id),
 				context.cancellation, context.groupMemoryLedger());
 		if (orderKeys != null)
 			store.unorderedOutput();

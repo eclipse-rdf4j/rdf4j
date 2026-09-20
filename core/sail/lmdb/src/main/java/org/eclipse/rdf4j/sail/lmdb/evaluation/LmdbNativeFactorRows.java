@@ -93,9 +93,8 @@ final class LmdbNativeFactorRows {
 		RowState scratch = row.fork();
 		LmdbNativeFactorCursor input = openDemanded(plan, scratch, demanded);
 		if (input == null) {
-			// OPTIONAL/computed BIND do not yet export arbitrary borrowed subtrees, but the
-			// existing wildcard pipeline can transport their exact projected multiplicities.
-			// Retain that shared physical path instead of falling straight back to scalar rows.
+			// Physical leaves that do not export grouped relations can still use the wildcard pipeline's
+			// exact projected multiplicities. Keep that local path before falling back to scalar rows.
 			RowCursor weighted = LmdbWildcardPredicateBatch.openWeightedProjection(plan, scratch, slots, READ_WINDOW);
 			if (weighted == null)
 				return null;
@@ -118,7 +117,7 @@ final class LmdbNativeFactorRows {
 		return new Flattened(expand(input, row, -1L), row);
 	}
 
-	private static LmdbNativeFactorCursor expand(LmdbNativeFactorCursor input, RowState row, long demanded) {
+	static LmdbNativeFactorCursor expand(LmdbNativeFactorCursor input, RowState row, long demanded) {
 		return input.mayHaveFactors() ? new Expanded(input, row, demanded) : input;
 	}
 

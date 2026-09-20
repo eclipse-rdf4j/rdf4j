@@ -56,7 +56,7 @@ interface SlotPlan {
 	/** Shared chunk-owned aggregate marginals. Null declines before advancing the source. */
 	default NativeFactorProjections openProjections(RowState row, int[][] outputSlots, boolean[] exactWeights)
 			throws IOException {
-		return null;
+		return LmdbNativeFactorProjections.open(this, row, outputSlots, exactWeights);
 	}
 
 	long producedMask();

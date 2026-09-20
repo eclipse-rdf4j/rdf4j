@@ -1218,6 +1218,18 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		// reported in detail: these two fast paths open unconditionally with no cost competition and no
 		// possibility of an alternative winning, so honoring a forced strategy requires skipping them.
 		String forcedStrategy = forcedExecutionStrategyName();
+		if (LmdbNativeFactorAlgebra.candidate(arg) && !SlotPlan.encounterOrderReplaySafe(arg)
+				&& (forcedStrategy == null || LmdbNativeAttemptMetrics.PATH_PACKED_FTREE.equals(forcedStrategy))) {
+			LmdbNativeStrategyArbiter.logDirect(originalExpr, "row/join serial dispatch",
+					LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
+					"Effectful bag algebra is evaluated once, without speculative replay");
+			try (LmdbNativeStrategyProposal<NativeUnorderedInput> proposal = LmdbNativePackedFtree.proposeRows(
+					arg, row, retainedSlots, distinct, originalExpr)) {
+				if (proposal == null)
+					throw new IllegalStateException("Admitted packed bag algebra has no row proposal");
+				return proposal.open();
+			}
+		}
 		if (forcedStrategy == null && !correlatedEntry
 				&& LmdbWildcardPredicateBatch.ownsExistenceParallelRound(arg, row)) {
 			LmdbNativeStrategyProposal<NativeUnorderedInput> wildcardExists = proposeBatch(row, null, false);
@@ -1319,7 +1331,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 					estimatedRows(row)));
 		}
 		arbiter.offer(
-				() -> LmdbNativePackedFtree.proposeRows(multiJoin, row, retainedSlots, distinct, originalExpr));
+				() -> LmdbNativePackedFtree.proposeRows(arg, row, retainedSlots, distinct, originalExpr));
 		arbiter.offer(() -> proposeFactorized(row, multiJoin, correlatedEntry, retainedSlots));
 		arbiter.offer(() -> proposeBatch(row, multiJoin, correlatedEntry));
 		arbiter.offer(() -> wrapCursorProposal(row, LmdbNativeParallelPipelines.propose(this, row),

@@ -632,6 +632,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	void explainStrategies(RowState row) {
 		if (requiresSerialDispatch()) {
+			if (LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE.equals(forcedExecutionStrategy)
+					&& LmdbNativeFactorAlgebra.candidate(arg)) {
+				LmdbNativeStrategyPreview.direct("GROUP BY serial dispatch",
+						LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
+						"Composed packed bag algebra with one serial value authority", null);
+				return;
+			}
 			boolean interpreted = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED.equals(forcedExecutionStrategy)
 					|| !LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE.equals(forcedExecutionStrategy)
 							&& !LmdbNativeJaninoCodegen.enabled();
@@ -676,6 +683,18 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	private List<BindingSet> evaluateInitialized(RowState row) {
 		if (requiresSerialDispatch()) {
+			if (LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE.equals(forcedExecutionStrategy)) {
+				try {
+					List<BindingSet> packed = LmdbNativePackedFtree.tryEvaluateAggregate(arg, row, groupSlots,
+							aggregates, this, explainTarget);
+					if (packed != null)
+						return packed;
+				} catch (IOException failure) {
+					throw new QueryEvaluationException(failure);
+				}
+				throw new QueryEvaluationException("LMDB execution strategy '"
+						+ forcedExecutionStrategy + "' could not bind the serial packed aggregate");
+			}
 			boolean forceInterpreted = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED
 					.equals(forcedExecutionStrategy);
 			boolean forceCompiled = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE.equals(forcedExecutionStrategy);
@@ -1007,12 +1026,12 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 						LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN));
 			}
 			if (!typeMatrixOwned && LmdbNativePackedFtree.enabled()
-					&& originalArg instanceof MultiJoinPlan packedPlan) {
+					&& (arg instanceof MultiJoinPlan || LmdbNativeFactorAlgebra.candidate(arg))) {
 				arbiter.offer(() -> estimatedProposal(
-						() -> LmdbNativePackedFtree.tryEvaluateAggregate(packedPlan, row, groupSlots, aggregates, this,
+						() -> LmdbNativePackedFtree.tryEvaluateAggregate(arg, row, groupSlots, aggregates, this,
 								explainTarget),
 						LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
-						LmdbNativePackedFtree.estimateAggregateWork(packedPlan, row, groupSlots, aggregates)));
+						LmdbNativePackedFtree.estimateAggregateWork(arg, row, groupSlots, aggregates)));
 			}
 			if (!typeMatrixOwned && factorized != null) {
 				MultiJoinPlan.OrderedPlan factorizedDerived = factorizedSelection.derived;
