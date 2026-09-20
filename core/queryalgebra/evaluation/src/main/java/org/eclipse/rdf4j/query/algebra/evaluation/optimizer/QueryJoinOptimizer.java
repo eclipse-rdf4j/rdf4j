@@ -27,17 +27,22 @@ import java.util.function.BiFunction;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
@@ -46,6 +51,12 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Intersection;
+import org.eclipse.rdf4j.query.algebra.IsBNode;
+import org.eclipse.rdf4j.query.algebra.IsLiteral;
+import org.eclipse.rdf4j.query.algebra.IsNumeric;
+import org.eclipse.rdf4j.query.algebra.IsResource;
+import org.eclipse.rdf4j.query.algebra.IsTriple;
+import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -60,9 +71,11 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -652,6 +665,32 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						}
 					}
 				}
+			} else if (primary.size() < candidates.size()) {
+				// The bounded primary list covers pairs involving one of the cheapest starts. Once a connected pair has
+				// been found there, also inspect the remaining candidates: a selective connected pair can be cheaper
+				// than
+				// every pair involving a primary start.
+				Set<TupleExpr> primarySet = Collections.newSetFromMap(new IdentityHashMap<>());
+				primarySet.addAll(primary);
+				for (int i = 0; i < candidates.size(); i++) {
+					TupleExpr a = candidates.get(i);
+					if (primarySet.contains(a)) {
+						continue;
+					}
+					for (int j = i + 1; j < candidates.size(); j++) {
+						TupleExpr b = candidates.get(j);
+						if (primarySet.contains(b) || !connectedByRealBinding(a, b)) {
+							continue;
+						}
+						double cost = normalizeCost(getCard.apply(a, b));
+						if (isBetterCandidate(cost, true, bestCost, bestPairConnected)) {
+							bestCost = cost;
+							bestA = a;
+							bestB = b;
+							bestPairConnected = true;
+						}
+					}
+				}
 			}
 
 			if (bestA == null) {
@@ -1011,14 +1050,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			} else if (tupleExpr instanceof ArbitraryLengthPath path) {
 				Set<String> may = realVariableNames(path.getSubjectVar(), path.getObjectVar(), path.getContextVar());
 				Set<String> guaranteed = new HashSet<>(may);
+				Map<String, Set<ValueKind>> guaranteedValueKinds = new HashMap<>();
 				if (path.getPathExpression() != null) {
 					BindingInfo pathInfo = getBindingInfo(path.getPathExpression());
 					may.addAll(pathInfo.mayOutput);
 					if (path.getMinLength() > 0) {
 						guaranteed.addAll(pathInfo.guaranteedOutput);
+						guaranteedValueKinds.putAll(pathInfo.guaranteedValueKinds);
 					}
 				}
-				result = new BindingInfo(may, guaranteed);
+				result = new BindingInfo(may, guaranteed, guaranteedValueKinds);
 			} else if (tupleExpr instanceof TripleRef tripleRef) {
 				Set<String> names = realVariableNames(tripleRef.getVarList());
 				result = new BindingInfo(names, names);
@@ -1031,34 +1072,38 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			} else if (tupleExpr instanceof Extension extension) {
 				result = bindingInfoForExtension(extension);
 			} else if (tupleExpr instanceof Filter filter) {
-				result = getBindingInfo(filter.getArg());
+				result = bindingInfoForFilter(filter);
 			} else if (tupleExpr instanceof LeftJoin leftJoin) {
 				BindingInfo left = getBindingInfo(leftJoin.getLeftArg());
 				BindingInfo right = getBindingInfo(leftJoin.getRightArg());
-				result = new BindingInfo(union(left.mayOutput, right.mayOutput), left.guaranteedOutput);
+				result = new BindingInfo(union(left.mayOutput, right.mayOutput), left.guaranteedOutput,
+						retainValueKinds(left.guaranteedValueKinds, left.guaranteedOutput));
 			} else if (tupleExpr instanceof Union union) {
 				BindingInfo left = getBindingInfo(union.getLeftArg());
 				BindingInfo right = getBindingInfo(union.getRightArg());
-				result = new BindingInfo(union(left.mayOutput, right.mayOutput), intersection(left.guaranteedOutput,
-						right.guaranteedOutput));
+				Set<String> guaranteed = intersection(left.guaranteedOutput, right.guaranteedOutput);
+				result = new BindingInfo(union(left.mayOutput, right.mayOutput), guaranteed,
+						mergeValueKindsForUnion(left, right, guaranteed));
 			} else if (tupleExpr instanceof Intersection intersection) {
 				BindingInfo left = getBindingInfo(intersection.getLeftArg());
 				BindingInfo right = getBindingInfo(intersection.getRightArg());
-				result = new BindingInfo(intersection(left.mayOutput, right.mayOutput),
-						intersection(left.guaranteedOutput,
-								right.guaranteedOutput));
+				Set<String> guaranteed = intersection(left.guaranteedOutput, right.guaranteedOutput);
+				result = new BindingInfo(intersection(left.mayOutput, right.mayOutput), guaranteed,
+						mergeValueKindsForJoin(left, right, guaranteed));
 			} else if (tupleExpr instanceof Difference difference) {
 				result = getBindingInfo(difference.getLeftArg());
 			} else if (tupleExpr instanceof Join join) {
 				BindingInfo left = getBindingInfo(join.getLeftArg());
 				BindingInfo right = getBindingInfo(join.getRightArg());
-				result = new BindingInfo(union(left.mayOutput, right.mayOutput), union(left.guaranteedOutput,
-						right.guaranteedOutput));
+				Set<String> guaranteed = union(left.guaranteedOutput, right.guaranteedOutput);
+				result = new BindingInfo(union(left.mayOutput, right.mayOutput), guaranteed,
+						mergeValueKindsForJoin(left, right, guaranteed));
 			} else if (tupleExpr instanceof Lateral lateral) {
 				BindingInfo left = getBindingInfo(lateral.getLeftArg());
 				BindingInfo right = getBindingInfo(lateral.getRightArg());
-				result = new BindingInfo(union(left.mayOutput, right.mayOutput), union(left.guaranteedOutput,
-						right.guaranteedOutput));
+				Set<String> guaranteed = union(left.guaranteedOutput, right.guaranteedOutput);
+				result = new BindingInfo(union(left.mayOutput, right.mayOutput), guaranteed,
+						mergeValueKindsForJoin(left, right, guaranteed));
 			} else if (tupleExpr instanceof Group group) {
 				Set<String> groupNames = new HashSet<>(group.getGroupBindingNames());
 				BindingInfo child = getBindingInfo(group.getArg());
@@ -1066,7 +1111,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				may.addAll(group.getAggregateBindingNames());
 				Set<String> guaranteed = new HashSet<>(child.guaranteedOutput);
 				guaranteed.retainAll(groupNames);
-				result = new BindingInfo(may, guaranteed);
+				result = new BindingInfo(may, guaranteed, retainValueKinds(child.guaranteedValueKinds, guaranteed));
 			} else if (tupleExpr instanceof TupleFunctionCall tupleFunctionCall) {
 				result = new BindingInfo(realVariableNames(tupleFunctionCall.getResultVars()), Set.of());
 			} else if (tupleExpr instanceof EmptySet || tupleExpr instanceof SingletonSet) {
@@ -1091,14 +1136,23 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private BindingInfo bindingInfoForAssignment(BindingSetAssignment assignment) {
 			Set<String> may = new HashSet<>();
 			Set<String> guaranteed = new HashSet<>();
+			Map<String, Set<ValueKind>> valueKinds = new HashMap<>();
+			Set<String> unknownValueKinds = new HashSet<>();
 			boolean firstRow = true;
 			Iterable<BindingSet> bindingSets = assignment.getBindingSets();
 			if (bindingSets != null) {
 				for (BindingSet bindingSet : bindingSets) {
 					Set<String> rowNames = new HashSet<>();
 					for (String name : bindingSet.getBindingNames()) {
-						if (bindingSet.getValue(name) != null) {
+						Value value = bindingSet.getValue(name);
+						if (value != null) {
 							rowNames.add(name);
+							ValueKind kind = valueKind(value);
+							if (kind == ValueKind.UNKNOWN) {
+								unknownValueKinds.add(name);
+							} else {
+								valueKinds.computeIfAbsent(name, ignored -> new HashSet<>()).add(kind);
+							}
 						}
 					}
 					may.addAll(rowNames);
@@ -1110,7 +1164,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 				}
 			}
-			return new BindingInfo(may, guaranteed);
+			valueKinds.keySet().removeAll(unknownValueKinds);
+			return new BindingInfo(may, guaranteed, retainValueKinds(valueKinds, guaranteed));
 		}
 
 		private BindingInfo bindingInfoForMultiProjection(MultiProjection multiProjection) {
@@ -1120,28 +1175,43 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			BindingInfo child = getBindingInfo(multiProjection.getArg());
 			Set<String> may = new HashSet<>();
 			Set<String> guaranteed = null;
+			Map<String, Set<ValueKind>> guaranteedValueKinds = null;
 			for (ProjectionElemList projection : multiProjection.getProjections()) {
 				Set<String> projectedMay = projection.getProjectedNamesFor(child.mayOutput);
 				Set<String> projectedGuaranteed = projection.getProjectedNamesFor(child.guaranteedOutput);
 				may.addAll(projectedMay);
+				Map<String, Set<ValueKind>> projectedValueKinds = projectValueKinds(child.guaranteedValueKinds,
+						projection, projectedGuaranteed);
 				if (guaranteed == null) {
 					guaranteed = new HashSet<>(projectedGuaranteed);
+					guaranteedValueKinds = projectedValueKinds;
 				} else {
 					guaranteed.retainAll(projectedGuaranteed);
+					guaranteedValueKinds.keySet().retainAll(projectedValueKinds.keySet());
+					for (String name : guaranteedValueKinds.keySet()) {
+						Set<ValueKind> kinds = new HashSet<>(guaranteedValueKinds.get(name));
+						kinds.addAll(projectedValueKinds.get(name));
+						guaranteedValueKinds.put(name, kinds);
+					}
 				}
 			}
-			return new BindingInfo(may, guaranteed == null ? Set.of() : guaranteed);
+			Set<String> guaranteedNames = guaranteed == null ? Set.of() : guaranteed;
+			return new BindingInfo(may, guaranteedNames,
+					guaranteedValueKinds == null ? Map.of() : guaranteedValueKinds);
 		}
 
 		private BindingInfo mapProjectionInfo(BindingInfo child, ProjectionElemList projection) {
 			return new BindingInfo(projection.getProjectedNamesFor(child.mayOutput),
-					projection.getProjectedNamesFor(child.guaranteedOutput));
+					projection.getProjectedNamesFor(child.guaranteedOutput),
+					projectValueKinds(child.guaranteedValueKinds, projection,
+							projection.getProjectedNamesFor(child.guaranteedOutput)));
 		}
 
 		private BindingInfo bindingInfoForExtension(Extension extension) {
 			BindingInfo child = getBindingInfo(extension.getArg());
 			Set<String> may = new HashSet<>(child.mayOutput);
 			Set<String> guaranteed = new HashSet<>(child.guaranteedOutput);
+			Map<String, Set<ValueKind>> guaranteedValueKinds = new HashMap<>(child.guaranteedValueKinds);
 			for (ExtensionElem element : extension.getElements()) {
 				String name = element.getName();
 				if (name == null) {
@@ -1149,22 +1219,130 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 				may.add(name);
 				Set<String> expressionBindings = new HashSet<>(guaranteed);
+				Map<String, Set<ValueKind>> expressionValueKinds = new HashMap<>(guaranteedValueKinds);
 				guaranteed.remove(name);
-				if (isGuaranteedValueExpr(element.getExpr(), expressionBindings)) {
+				guaranteedValueKinds.remove(name);
+				if (isGuaranteedValueExpr(element.getExpr(), expressionBindings, expressionValueKinds)) {
 					guaranteed.add(name);
+					Set<ValueKind> resultKinds = guaranteedValueKinds(element.getExpr(), expressionBindings,
+							expressionValueKinds);
+					if (resultKinds != null) {
+						guaranteedValueKinds.put(name, resultKinds);
+					}
 				}
 			}
-			return new BindingInfo(may, guaranteed);
+			return new BindingInfo(may, guaranteed, guaranteedValueKinds);
+		}
+
+		private BindingInfo bindingInfoForFilter(Filter filter) {
+			BindingInfo child = getBindingInfo(filter.getArg());
+			Set<String> guaranteed = new HashSet<>(child.guaranteedOutput);
+			Map<String, Set<ValueKind>> guaranteedValueKinds = new HashMap<>(child.guaranteedValueKinds);
+			applyFilterFacts(filter.getCondition(), child.mayOutput, guaranteed, guaranteedValueKinds);
+			return new BindingInfo(child.mayOutput, guaranteed, guaranteedValueKinds);
+		}
+
+		private void applyFilterFacts(ValueExpr condition, Set<String> mayOutput, Set<String> guaranteed,
+				Map<String, Set<ValueKind>> guaranteedValueKinds) {
+			if (condition instanceof And and) {
+				applyFilterFacts(and.getLeftArg(), mayOutput, guaranteed, guaranteedValueKinds);
+				applyFilterFacts(and.getRightArg(), mayOutput, guaranteed, guaranteedValueKinds);
+				return;
+			}
+			if (condition instanceof Bound bound) {
+				addFilterBindingFact(bound.getArg(), mayOutput, guaranteed, null, guaranteedValueKinds);
+				return;
+			}
+			if (condition instanceof IsBNode || condition instanceof IsLiteral || condition instanceof IsNumeric
+					|| condition instanceof IsResource || condition instanceof IsTriple || condition instanceof IsURI) {
+				Set<ValueKind> kinds = switch (condition) {
+				case IsBNode ignored -> Set.of(ValueKind.BNODE);
+				case IsLiteral ignored -> Set.of(ValueKind.LITERAL);
+				case IsNumeric ignored -> Set.of(ValueKind.LITERAL);
+				case IsResource ignored -> Set.of(ValueKind.IRI, ValueKind.BNODE);
+				case IsTriple ignored -> Set.of(ValueKind.TRIPLE);
+				case IsURI ignored -> Set.of(ValueKind.IRI);
+				default -> Set.of();
+				};
+				addFilterBindingFact(((UnaryValueOperator) condition).getArg(), mayOutput, guaranteed, kinds,
+						guaranteedValueKinds);
+			}
+		}
+
+		private void addFilterBindingFact(ValueExpr expression, Set<String> mayOutput, Set<String> guaranteed,
+				Set<ValueKind> valueKinds, Map<String, Set<ValueKind>> guaranteedValueKinds) {
+			if (!(expression instanceof Var var) || var.hasValue() || var.getName() == null
+					|| !mayOutput.contains(var.getName())) {
+				return;
+			}
+			guaranteed.add(var.getName());
+			if (valueKinds != null) {
+				guaranteedValueKinds.put(var.getName(), valueKinds);
+			}
 		}
 
 		private boolean isGuaranteedValueExpr(ValueExpr valueExpr, Set<String> guaranteedBindings) {
+			return isGuaranteedValueExpr(valueExpr, guaranteedBindings, Map.of());
+		}
+
+		private boolean isGuaranteedValueExpr(ValueExpr valueExpr, Set<String> guaranteedBindings,
+				Map<String, Set<ValueKind>> guaranteedValueKinds) {
 			if (valueExpr instanceof ValueConstant) {
+				return true;
+			}
+			if (valueExpr instanceof Bound) {
 				return true;
 			}
 			if (valueExpr instanceof Var var) {
 				return var.hasValue() || var.getName() != null && guaranteedBindings.contains(var.getName());
 			}
+			if (valueExpr instanceof IsBNode || valueExpr instanceof IsLiteral || valueExpr instanceof IsNumeric
+					|| valueExpr instanceof IsResource || valueExpr instanceof IsTriple || valueExpr instanceof IsURI) {
+				return isGuaranteedValueExpr(((UnaryValueOperator) valueExpr).getArg(), guaranteedBindings,
+						guaranteedValueKinds);
+			}
+			if (valueExpr instanceof Str) {
+				Set<ValueKind> kinds = guaranteedValueKinds(((Str) valueExpr).getArg(), guaranteedBindings,
+						guaranteedValueKinds);
+				return kinds != null && kinds.stream().allMatch(this::strAccepts);
+			}
 			return false;
+		}
+
+		private Set<ValueKind> guaranteedValueKinds(ValueExpr valueExpr, Set<String> guaranteedBindings,
+				Map<String, Set<ValueKind>> guaranteedValueKinds) {
+			if (valueExpr instanceof ValueConstant valueConstant) {
+				return Set.of(valueKind(valueConstant.getValue()));
+			}
+			if (valueExpr instanceof Var var) {
+				if (var.hasValue()) {
+					return Set.of(valueKind(var.getValue()));
+				}
+				if (var.getName() != null && guaranteedBindings.contains(var.getName())) {
+					return guaranteedValueKinds.get(var.getName());
+				}
+				return null;
+			}
+			if (valueExpr instanceof Bound || valueExpr instanceof IsBNode || valueExpr instanceof IsLiteral
+					|| valueExpr instanceof IsNumeric || valueExpr instanceof IsResource
+					|| valueExpr instanceof IsTriple
+					|| valueExpr instanceof IsURI) {
+				return isGuaranteedValueExpr(valueExpr, guaranteedBindings, guaranteedValueKinds)
+						? Set.of(ValueKind.LITERAL)
+						: null;
+			}
+			if (valueExpr instanceof Str str) {
+				Set<ValueKind> argumentKinds = guaranteedValueKinds(str.getArg(), guaranteedBindings,
+						guaranteedValueKinds);
+				return argumentKinds != null && argumentKinds.stream().allMatch(this::strAccepts)
+						? Set.of(ValueKind.LITERAL)
+						: null;
+			}
+			return null;
+		}
+
+		private boolean strAccepts(ValueKind kind) {
+			return kind == ValueKind.IRI || kind == ValueKind.LITERAL || kind == ValueKind.TRIPLE;
 		}
 
 		private Set<String> realVariableNames(Iterable<Var> vars) {
@@ -1199,13 +1377,108 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return result;
 		}
 
+		private Map<String, Set<ValueKind>> retainValueKinds(Map<String, Set<ValueKind>> valueKinds,
+				Set<String> names) {
+			Map<String, Set<ValueKind>> result = new HashMap<>();
+			for (String name : names) {
+				Set<ValueKind> kinds = valueKinds.get(name);
+				if (kinds != null) {
+					result.put(name, Set.copyOf(kinds));
+				}
+			}
+			return result;
+		}
+
+		private Map<String, Set<ValueKind>> mergeValueKindsForJoin(BindingInfo left, BindingInfo right,
+				Set<String> guaranteed) {
+			Map<String, Set<ValueKind>> result = new HashMap<>();
+			for (String name : guaranteed) {
+				Set<ValueKind> leftKinds = left.guaranteedValueKinds.get(name);
+				Set<ValueKind> rightKinds = right.guaranteedValueKinds.get(name);
+				if (leftKinds == null && rightKinds == null) {
+					continue;
+				}
+				Set<ValueKind> kinds = new HashSet<>();
+				if (leftKinds != null) {
+					kinds.addAll(leftKinds);
+				}
+				if (rightKinds != null) {
+					kinds.addAll(rightKinds);
+				}
+				result.put(name, kinds);
+			}
+			return result;
+		}
+
+		private Map<String, Set<ValueKind>> mergeValueKindsForUnion(BindingInfo left, BindingInfo right,
+				Set<String> guaranteed) {
+			Map<String, Set<ValueKind>> result = new HashMap<>();
+			for (String name : guaranteed) {
+				Set<ValueKind> leftKinds = left.guaranteedValueKinds.get(name);
+				Set<ValueKind> rightKinds = right.guaranteedValueKinds.get(name);
+				if (leftKinds != null && rightKinds != null) {
+					Set<ValueKind> kinds = new HashSet<>(leftKinds);
+					kinds.addAll(rightKinds);
+					result.put(name, kinds);
+				}
+			}
+			return result;
+		}
+
+		private Map<String, Set<ValueKind>> projectValueKinds(Map<String, Set<ValueKind>> valueKinds,
+				ProjectionElemList projection, Set<String> projectedNames) {
+			Map<String, Set<ValueKind>> result = new HashMap<>();
+			for (var projectionElem : projection.getElements()) {
+				String projectedName = projectionElem.getProjectionAlias().orElse(projectionElem.getName());
+				if (!projectedNames.contains(projectedName)) {
+					continue;
+				}
+				Set<ValueKind> kinds = valueKinds.get(projectionElem.getName());
+				if (kinds != null) {
+					result.put(projectedName, kinds);
+				}
+			}
+			return result;
+		}
+
+		private ValueKind valueKind(Value value) {
+			if (value instanceof IRI) {
+				return ValueKind.IRI;
+			}
+			if (value instanceof BNode) {
+				return ValueKind.BNODE;
+			}
+			if (value instanceof Literal) {
+				return ValueKind.LITERAL;
+			}
+			if (value instanceof TripleTerm) {
+				return ValueKind.TRIPLE;
+			}
+			return ValueKind.UNKNOWN;
+		}
+
+		private enum ValueKind {
+			IRI,
+			BNODE,
+			LITERAL,
+			TRIPLE,
+			UNKNOWN
+		}
+
 		private final class BindingInfo {
 			private final Set<String> mayOutput;
 			private final Set<String> guaranteedOutput;
+			private final Map<String, Set<ValueKind>> guaranteedValueKinds;
 
 			private BindingInfo(Set<String> mayOutput, Set<String> guaranteedOutput) {
+				this(mayOutput, guaranteedOutput, Map.of());
+			}
+
+			private BindingInfo(Set<String> mayOutput, Set<String> guaranteedOutput,
+					Map<String, Set<ValueKind>> guaranteedValueKinds) {
 				this.mayOutput = Set.copyOf(mayOutput);
 				this.guaranteedOutput = Set.copyOf(guaranteedOutput);
+				this.guaranteedValueKinds = Map.copyOf(retainValueKinds(guaranteedValueKinds, this.guaranteedOutput));
 			}
 
 		}
@@ -1573,6 +1846,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				} else {
 					vars.addAll(node.getVarList());
 				}
+			}
+
+			@Override
+			public void meet(Difference node) throws Exception {
+				// MINUS exports only its left argument. Traversing the right argument here would make right-only
+				// variables
+				// look like ordinary outer join bindings during cost-based reordering.
+				node.getLeftArg().visit(this);
 			}
 
 			public List<Var> getVars() {

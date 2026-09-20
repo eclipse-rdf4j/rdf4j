@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -19,10 +20,13 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -37,18 +41,39 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.IsTriple;
+import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.IndependentJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
@@ -174,20 +199,224 @@ class QueryJoinOptimizerAdversarialTest {
 	}
 
 	@Test
-	void differenceRightVariablesAreIncorrectlyExposedAsOuterCostConnections() {
+	void differenceRightVariablesDoNotEnterOuterCostVariables() throws Exception {
 		Difference difference = new Difference(
 				constantPattern("left", "urn:difference-left", "urn:left"),
 				constantPattern("hidden", "urn:difference-right", "urn:right"));
-		StatementPattern hiddenConsumer = constantPattern("hidden", "urn:hidden-consumer", "urn:consumer");
-		StatementPattern cheap = constantPattern("cheap", "urn:cheap", "urn:cheap-object");
+		Object visitor = buildJoinVisitor(new QueryJoinOptimizer(new DifferenceCostStatistics(), emptyTripleSource()));
+		Method getStatementPatternVars = findDeclaredMethod(visitor.getClass(), "getStatementPatternVars",
+				TupleExpr.class);
+		getStatementPatternVars.setAccessible(true);
+		@SuppressWarnings("unchecked")
+		List<Var> vars = (List<Var>) getStatementPatternVars.invoke(visitor, difference);
 
-		QueryRoot root = new QueryRoot(new Join(new Join(difference, hiddenConsumer), cheap));
-		new QueryJoinOptimizer(new DifferenceCostStatistics(), emptyTripleSource()).optimize(root, null, null);
+		assertThat(vars).extracting(Var::getName)
+				.as("MINUS right-only variables must not enter outer cost variables")
+				.containsExactly("left", "p", "o");
+	}
 
-		List<TupleExpr> leaves = flattenJoinLeaves(root.getArg());
-		assertThat(predicate(leaves.getFirst()))
-				.as("a MINUS right-only variable must not make its consumer appear connected")
-				.isNotEqualTo("urn:hidden-consumer");
+	@Test
+	void typePredicatesRequireGuaranteedOperandsAndKnownStrInputs() throws Exception {
+		Object visitor = buildJoinVisitor(new QueryJoinOptimizer(new EvaluationStatistics(), emptyTripleSource()));
+		Method getBindingInfo = findDeclaredMethod(visitor.getClass(), "getBindingInfo", TupleExpr.class);
+		getBindingInfo.setAccessible(true);
+
+		Extension unboundOperand = new Extension(new SingletonSet(),
+				new ExtensionElem(new IsURI(Var.of("unbound")), "iri"));
+		assertThat(guaranteedOutput(getBindingInfo.invoke(visitor, unboundOperand)))
+				.as("a type predicate must not expose a value when its operand can be unbound")
+				.doesNotContain("iri");
+
+		Extension nestedUnboundOperand = new Extension(new SingletonSet(),
+				new ExtensionElem(new IsTriple(new IsURI(Var.of("unbound"))), "triple"));
+		assertThat(guaranteedOutput(getBindingInfo.invoke(visitor, nestedUnboundOperand)))
+				.as("nested type predicates must retain the operand guarantee requirement")
+				.doesNotContain("triple");
+
+		MapBindingSet valuesRow = new MapBindingSet();
+		valuesRow.addBinding("a", VF.createIRI("urn:a"));
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingSets(List.of(valuesRow));
+		Extension knownIri = new Extension(values, new ExtensionElem(new Str(Var.of("a")), "text"));
+		assertThat(guaranteedOutput(getBindingInfo.invoke(visitor, knownIri)))
+				.as("STR over a statically known supported RDF value is a guaranteed output")
+				.contains("text");
+	}
+
+	@Test
+	void guaranteedValueKindsSurviveSequentialBindsAndProjection() throws Exception {
+		Object visitor = buildJoinVisitor(new QueryJoinOptimizer(new EvaluationStatistics(), emptyTripleSource()));
+		Method getBindingInfo = findDeclaredMethod(visitor.getClass(), "getBindingInfo", TupleExpr.class);
+		getBindingInfo.setAccessible(true);
+
+		BindingSetAssignment values = bindingAssignment("a", VF.createIRI("urn:a"));
+		Extension firstBind = new Extension(values, new ExtensionElem(new Str(Var.of("a")), "b"));
+		Extension secondBind = new Extension(firstBind, new ExtensionElem(new Str(Var.of("b")), "c"));
+		assertThat(guaranteedOutput(getBindingInfo.invoke(visitor, secondBind)))
+				.as("sequential BINDs must retain the guaranteed kinds of their inputs")
+				.contains("a", "b", "c");
+		Projection projection = new Projection(secondBind,
+				new ProjectionElemList(new ProjectionElem("c", "projected")));
+		Extension projectedBind = new Extension(projection,
+				new ExtensionElem(new Str(Var.of("projected")), "d"));
+
+		assertThat(guaranteedOutput(getBindingInfo.invoke(visitor, projectedBind)))
+				.as("known value kinds must survive sequential BINDs and projection aliases")
+				.containsExactlyInAnyOrder("projected", "d");
+	}
+
+	@Test
+	void unionOfKnownAndUnsupportedKindsDoesNotGuaranteeStr() throws Exception {
+		Object visitor = buildJoinVisitor(new QueryJoinOptimizer(new EvaluationStatistics(), emptyTripleSource()));
+		Method getBindingInfo = findDeclaredMethod(visitor.getClass(), "getBindingInfo", TupleExpr.class);
+		getBindingInfo.setAccessible(true);
+
+		Union union = new Union(bindingAssignment("a", VF.createIRI("urn:a")),
+				bindingAssignment("a", VF.createBNode("blank")));
+		Extension bind = new Extension(union, new ExtensionElem(new Str(Var.of("a")), "text"));
+
+		assertThat(guaranteedOutput(getBindingInfo.invoke(visitor, bind)))
+				.as("a UNION branch with an unsupported STR input must remain conservative")
+				.doesNotContain("text");
+	}
+
+	@Test
+	void optionalValueKindsDoNotBecomeGuaranteed() throws Exception {
+		Object visitor = buildJoinVisitor(new QueryJoinOptimizer(new EvaluationStatistics(), emptyTripleSource()));
+		Method getBindingInfo = findDeclaredMethod(visitor.getClass(), "getBindingInfo", TupleExpr.class);
+		getBindingInfo.setAccessible(true);
+
+		LeftJoin optional = new LeftJoin(bindingAssignment("a", VF.createIRI("urn:a")),
+				bindingAssignment("optional", VF.createIRI("urn:optional")));
+		Extension bind = new Extension(optional, new ExtensionElem(new Str(Var.of("optional")), "text"));
+
+		assertThat(guaranteedOutput(getBindingInfo.invoke(visitor, bind)))
+				.as("OPTIONAL bindings must not be treated as present for every output row")
+				.doesNotContain("text");
+	}
+
+	@Test
+	void nullableValuesRemainJoinCompatibleWhenDifferenceIsNested() throws Exception {
+		MapBindingSet unbound = new MapBindingSet();
+		MapBindingSet bound = new MapBindingSet();
+		bound.addBinding("x", VF.createIRI("urn:a"));
+		BindingSetAssignment values = bindingAssignment(List.<BindingSet>of(unbound, bound));
+		StatementPattern left = new StatementPattern(Var.of("subject"),
+				Var.of("predicate", VF.createIRI("urn:left"), false, true), Var.of("x"));
+		Difference difference = new Difference(left, new SingletonSet());
+		QueryRoot root = new QueryRoot(new Join(values, difference));
+
+		List<Statement> statements = List.of(
+				VF.createStatement(VF.createIRI("urn:subject"), VF.createIRI("urn:left"), VF.createIRI("urn:a")));
+
+		assertThat(evaluate(root, new ListTripleSource(statements)))
+				.as("an UNDEF join key must remain compatible with every right binding")
+				.hasSize(2);
+	}
+
+	@Test
+	void nullableValuesDoNotGuaranteeNestedExtensionResults() throws Exception {
+		Object visitor = buildJoinVisitor(new QueryJoinOptimizer(new EvaluationStatistics(), emptyTripleSource()));
+		Method getBindingInfo = findDeclaredMethod(visitor.getClass(), "getBindingInfo", TupleExpr.class);
+		getBindingInfo.setAccessible(true);
+
+		MapBindingSet unbound = new MapBindingSet();
+		MapBindingSet bound = new MapBindingSet();
+		bound.addBinding("x", VF.createIRI("urn:a"));
+		Extension extension = new Extension(bindingAssignment(List.<BindingSet>of(unbound, bound)),
+				new ExtensionElem(new Str(Var.of("x")), "text"));
+
+		assertThat(guaranteedOutput(getBindingInfo.invoke(visitor, extension)))
+				.as("an extension that errors for an UNDEF row must not be treated as a guaranteed result")
+				.doesNotContain("text");
+	}
+
+	@Test
+	void extensionOverwriteCannotAuthorizeHashJoinForNullableOutput() throws Exception {
+		StatementPattern leftPattern = new StatementPattern(Var.of("leftSubject"),
+				Var.of("leftPredicate", VF.createIRI("urn:left"), false, true), Var.of("x"));
+		Extension left = new Extension(leftPattern,
+				new ExtensionElem(new Str(Var.of("missing")), "x"));
+		StatementPattern rightPattern = new StatementPattern(Var.of("rightSubject"),
+				Var.of("rightPredicate", VF.createIRI("urn:right"), false, true), Var.of("x"));
+		Difference right = new Difference(rightPattern, new SingletonSet());
+		QueryRoot root = new QueryRoot(new Join(left, right));
+
+		List<Statement> statements = List.of(
+				VF.createStatement(VF.createIRI("urn:left-subject"), VF.createIRI("urn:left"),
+						VF.createIRI("urn:value")),
+				VF.createStatement(VF.createIRI("urn:right-subject"), VF.createIRI("urn:right"),
+						VF.createIRI("urn:value")));
+
+		assertThat(evaluate(root, new ListTripleSource(statements)))
+				.as("an Extension error that clears an overwritten join key must retain compatible unbound rows")
+				.hasSize(1);
+	}
+
+	@Test
+	void independentJoinClosesLeftWhenRightEvaluationFails() {
+		AtomicBoolean leftClosed = new AtomicBoolean();
+		QueryEvaluationStep left = bindings -> new AbstractCloseableIteration<BindingSet>() {
+			private boolean returned;
+
+			@Override
+			public boolean hasNext() {
+				return !returned;
+			}
+
+			@Override
+			public BindingSet next() {
+				returned = true;
+				return EmptyBindingSet.getInstance();
+			}
+
+			@Override
+			protected void handleClose() {
+				leftClosed.set(true);
+			}
+		};
+		QueryEvaluationStep right = bindings -> {
+			throw new QueryEvaluationException("right evaluation failed");
+		};
+
+		IndependentJoinIteration iteration = new IndependentJoinIteration(left, right, EmptyBindingSet.getInstance());
+		assertThatThrownBy(iteration::hasNext)
+				.isInstanceOf(QueryEvaluationException.class)
+				.hasMessage("right evaluation failed");
+		assertThat(leftClosed).as("the left iteration must close when RHS materialization fails").isTrue();
+	}
+
+	@Test
+	void independentJoinDefersRightEvaluationUntilItHasALeftRow() {
+		AtomicBoolean rightEvaluated = new AtomicBoolean();
+		AtomicBoolean leftClosed = new AtomicBoolean();
+		QueryEvaluationStep left = bindings -> new AbstractCloseableIteration<BindingSet>() {
+			@Override
+			public boolean hasNext() {
+				return false;
+			}
+
+			@Override
+			public BindingSet next() {
+				throw new IllegalStateException("empty left iteration");
+			}
+
+			@Override
+			protected void handleClose() {
+				leftClosed.set(true);
+			}
+		};
+		QueryEvaluationStep right = bindings -> {
+			rightEvaluated.set(true);
+			return new CloseableIteratorIteration<>(List.of(EmptyBindingSet.getInstance()).iterator());
+		};
+
+		IndependentJoinIteration iteration = new IndependentJoinIteration(left, right,
+				EmptyBindingSet.getInstance());
+		assertThat(rightEvaluated).as("RHS evaluation must wait until a left row exists").isFalse();
+		iteration.close();
+		assertThat(leftClosed).as("closing before consumption must close the left iteration").isTrue();
+		assertThat(rightEvaluated).as("closing before consumption must not evaluate the RHS").isFalse();
 	}
 
 	@Test
@@ -285,6 +514,231 @@ class QueryJoinOptimizerAdversarialTest {
 				.containsExactlyInAnyOrderElementsOf(expected);
 	}
 
+	@Test
+	void minusRightEvaluationUsesOnlySharedOutputBindings() throws Exception {
+		String query = "SELECT * WHERE { VALUES ?outer { <urn:a> } "
+				+ "{ ?subject <urn:minus-left> ?left "
+				+ "MINUS { ?subject <urn:minus-right> ?outer } } }";
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		List<Statement> statements = List.of(
+				VF.createStatement(VF.createIRI("urn:subject"), VF.createIRI("urn:minus-left"),
+						VF.createIRI("urn:left")),
+				VF.createStatement(VF.createIRI("urn:subject"), VF.createIRI("urn:minus-right"),
+						VF.createIRI("urn:b")));
+
+		List<BindingSet> actual = evaluate(parsed.getTupleExpr(), new ListTripleSource(statements));
+
+		assertThat(actual)
+				.as("an outer binding for a right-only variable must not suppress the RHS row")
+				.isEmpty();
+	}
+
+	@Test
+	void directMinusInitialBindingsDoNotCreateComparisonDomain() throws Exception {
+		Difference difference = new Difference(
+				constantPattern("subject", "urn:minus-left", "urn:left"),
+				new StatementPattern(Var.of("rightSubject"),
+						Var.of("predicate", VF.createIRI("urn:minus-right"), false, true),
+						Var.of("outer")));
+		List<Statement> statements = List.of(
+				VF.createStatement(VF.createIRI("urn:subject"), VF.createIRI("urn:minus-left"),
+						VF.createIRI("urn:left")),
+				VF.createStatement(VF.createIRI("urn:right-subject"), VF.createIRI("urn:minus-right"),
+						VF.createIRI("urn:a")));
+		MapBindingSet incoming = new MapBindingSet();
+		incoming.addBinding("outer", VF.createIRI("urn:a"));
+
+		List<BindingSet> actual = evaluate(difference, new ListTripleSource(statements), incoming);
+
+		assertThat(actual)
+				.as("incoming bindings must not create a MINUS comparison variable absent from the left output")
+				.hasSize(1);
+	}
+
+	@Test
+	void directMinusPreservesIncomingBindingRequiredByRhsService() throws Exception {
+		IRI endpoint = VF.createIRI("urn:test-service");
+		StatementPattern left = new StatementPattern(Var.of("left"),
+				Var.of("leftPredicate", VF.createIRI("urn:left"), false, true),
+				Var.of("leftObject", VF.createIRI("urn:left-object"), false, true));
+		StatementPattern serviceBody = new StatementPattern(Var.of("endpoint"),
+				Var.of("servicePredicate", VF.createIRI("urn:remote"), false, true), Var.of("remote"));
+		Service service = new Service(Var.of("endpoint"), serviceBody, "", Map.of(), null, false);
+		Difference difference = new Difference(left, service);
+
+		FederatedService federatedService = new FederatedService() {
+			@Override
+			public boolean ask(Service service, BindingSet bindings, String baseUri) {
+				return true;
+			}
+
+			@Override
+			public CloseableIteration<BindingSet> select(Service service, Set<String> projectionVars,
+					BindingSet bindings, String baseUri) {
+				assertThat(bindings.getValue("endpoint")).as("SERVICE must receive its incoming endpoint")
+						.isEqualTo(endpoint);
+				MapBindingSet result = new MapBindingSet();
+				result.addBinding("endpoint", endpoint);
+				result.addBinding("remote", VF.createIRI("urn:remote-result"));
+				return new CloseableIteratorIteration<>(List.of(result).iterator());
+			}
+
+			@Override
+			public CloseableIteration<BindingSet> evaluate(Service service,
+					CloseableIteration<BindingSet> bindings, String baseUri) {
+				return bindings;
+			}
+
+			@Override
+			public boolean isInitialized() {
+				return true;
+			}
+
+			@Override
+			public void initialize() {
+			}
+
+			@Override
+			public void shutdown() {
+			}
+		};
+		FederatedServiceResolver resolver = serviceUrl -> federatedService;
+
+		MapBindingSet incoming = new MapBindingSet();
+		incoming.addBinding("endpoint", endpoint);
+		List<Statement> statements = List.of(
+				VF.createStatement(VF.createIRI("urn:left-subject"), VF.createIRI("urn:left"),
+						VF.createIRI("urn:left-object")));
+		assertThat(evaluate(difference, new ListTripleSource(statements), incoming, resolver)).hasSize(1);
+	}
+
+	@Test
+	void correlatedExistsPreservesOuterBindingsNeededByMinusRight() throws Exception {
+		String query = "SELECT * WHERE { VALUES ?outer { <urn:target> } "
+				+ "FILTER(EXISTS { { ?shared <urn:left> <urn:value> } "
+				+ "MINUS { ?shared <urn:right> ?outer } }) }";
+		List<Statement> statements = List.of(
+				VF.createStatement(VF.createIRI("urn:shared"), VF.createIRI("urn:left"), VF.createIRI("urn:value")),
+				VF.createStatement(VF.createIRI("urn:shared"), VF.createIRI("urn:right"), VF.createIRI("urn:other")));
+
+		assertThat(evaluate(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr(),
+				new ListTripleSource(statements)))
+						.hasSize(1);
+	}
+
+	@Test
+	void lateralMinusKeepsDeclaredRightInputBindings() throws Exception {
+		MapBindingSet outerRow = new MapBindingSet();
+		outerRow.addBinding("outer", VF.createIRI("urn:target"));
+		BindingSetAssignment leftValues = new BindingSetAssignment();
+		leftValues.setBindingSets(List.of(outerRow));
+
+		Difference difference = new Difference(
+				constantPattern("shared", "urn:left", "urn:value"),
+				new StatementPattern(Var.of("shared"),
+						Var.of("rightPredicate", VF.createIRI("urn:right"), false, true), Var.of("outer")));
+		Lateral lateral = new Lateral(leftValues, difference, Set.of("outer"));
+		List<Statement> statements = List.of(
+				VF.createStatement(VF.createIRI("urn:shared"), VF.createIRI("urn:left"), VF.createIRI("urn:value")),
+				VF.createStatement(VF.createIRI("urn:shared"), VF.createIRI("urn:right"), VF.createIRI("urn:target")));
+
+		assertThat(evaluate(lateral, new ListTripleSource(statements))).isEmpty();
+	}
+
+	@Test
+	void nullableMinusLeftDoesNotTreatAnOuterBindingAsItsOutput() throws Exception {
+		LeftJoin nullableLeft = new LeftJoin(
+				constantPattern("left", "urn:left", "urn:value"),
+				new StatementPattern(Var.of("shared"),
+						Var.of("optionalPredicate", VF.createIRI("urn:optional"), false, true),
+						Var.of("optionalValue", VF.createIRI("urn:value"), false, true)));
+		Difference difference = new Difference(nullableLeft,
+				constantPattern("shared", "urn:right", "urn:value"));
+		StatementPattern consumer = constantPattern("shared", "urn:consumer", "urn:consumer-value");
+		QueryRoot root = new QueryRoot(new Join(consumer, difference));
+		List<Statement> statements = List.of(
+				VF.createStatement(VF.createIRI("urn:left-subject"), VF.createIRI("urn:left"),
+						VF.createIRI("urn:value")),
+				VF.createStatement(VF.createIRI("urn:shared-subject"), VF.createIRI("urn:right"),
+						VF.createIRI("urn:value")),
+				VF.createStatement(VF.createIRI("urn:shared-subject"), VF.createIRI("urn:consumer"),
+						VF.createIRI("urn:consumer-value")));
+
+		List<BindingSet> results = evaluate(root, new ListTripleSource(statements));
+		assertThat(results).hasSize(1);
+		assertThat(results.getFirst().getValue("left")).isEqualTo(VF.createIRI("urn:left-subject"));
+	}
+
+	@Test
+	void minusScopeBarrierSurvivesTransparentFilterWrapper() throws Exception {
+		Difference difference = new Difference(
+				constantPattern("left", "urn:left", "urn:value"),
+				constantPattern("hidden", "urn:right", "urn:value"));
+		Filter wrapped = new Filter(difference, new ValueConstant(org.eclipse.rdf4j.model.impl.BooleanLiteral.TRUE));
+		StatementPattern consumer = constantPattern("hidden", "urn:consumer", "urn:consumer-value");
+		QueryRoot root = new QueryRoot(new Join(consumer, wrapped));
+		List<Statement> statements = List.of(
+				VF.createStatement(VF.createIRI("urn:left-subject"), VF.createIRI("urn:left"),
+						VF.createIRI("urn:value")),
+				VF.createStatement(VF.createIRI("urn:hidden-subject"), VF.createIRI("urn:right"),
+						VF.createIRI("urn:value")),
+				VF.createStatement(VF.createIRI("urn:hidden-subject"), VF.createIRI("urn:consumer"),
+						VF.createIRI("urn:consumer-value")));
+
+		assertThat(evaluate(root, new ListTripleSource(statements))).hasSize(1);
+	}
+
+	@Test
+	void outerFilterMustNotBeRelocatedIntoMinusRightArg() throws Exception {
+		String query = "SELECT * WHERE { "
+				+ "{ ?x <urn:minus-left-x> <urn:left> . ?y <urn:minus-left-y> <urn:a> } "
+				+ "MINUS { ?y <urn:minus-right-y> <urn:a> } "
+				+ "FILTER(?x = <urn:left-subject>) }";
+		List<Statement> statements = List.of(
+				VF.createStatement(VF.createIRI("urn:left-subject"), VF.createIRI("urn:minus-left-x"),
+						VF.createIRI("urn:left")),
+				VF.createStatement(VF.createIRI("urn:y-subject"), VF.createIRI("urn:minus-left-y"),
+						VF.createIRI("urn:a")),
+				VF.createStatement(VF.createIRI("urn:y-subject"), VF.createIRI("urn:minus-right-y"),
+						VF.createIRI("urn:a")));
+		ParsedTupleQuery unoptimizedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		List<BindingSet> expected = evaluate(unoptimizedQuery.getTupleExpr(), new ListTripleSource(statements));
+
+		ParsedTupleQuery optimizedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new ListTripleSource(statements), null);
+		TupleExpr optimized = strategy.optimize(optimizedQuery.getTupleExpr(), null, EmptyBindingSet.getInstance());
+		List<BindingSet> actual = evaluate(optimized, new ListTripleSource(statements));
+
+		assertThat(expected).isEmpty();
+		assertThat(actual)
+				.as("an outer MINUS filter must remain scoped to the MINUS result")
+				.containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	void valuesInMinusLeftMustNotBeInlinedIntoMinusRightScope() throws Exception {
+		String query = "SELECT * WHERE { "
+				+ "{ VALUES ?value { <urn:one> } . ?subject <urn:minus-left> ?left } "
+				+ "MINUS { ?subject <urn:minus-right> ?right . FILTER(?value = <urn:one>) } }";
+		List<Statement> statements = List.of(
+				VF.createStatement(VF.createIRI("urn:subject"), VF.createIRI("urn:minus-left"),
+						VF.createIRI("urn:left")),
+				VF.createStatement(VF.createIRI("urn:subject"), VF.createIRI("urn:minus-right"),
+						VF.createIRI("urn:right")));
+		ParsedTupleQuery unoptimizedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		List<BindingSet> expected = evaluate(unoptimizedQuery.getTupleExpr(), new ListTripleSource(statements));
+
+		ParsedTupleQuery optimizedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new ListTripleSource(statements), null);
+		TupleExpr optimized = strategy.optimize(optimizedQuery.getTupleExpr(), null, EmptyBindingSet.getInstance());
+		List<BindingSet> actual = evaluate(optimized, new ListTripleSource(statements));
+
+		assertThat(expected).hasSize(1);
+		assertThat(actual)
+				.as("VALUES bindings from MINUS left must not become RHS filter inputs")
+				.containsExactlyInAnyOrderElementsOf(expected);
+	}
+
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("computedBindCases")
 	void computedBindOutputCanBeMissedAsAConnectedCostOpportunity(String expression, Value expectedValue)
@@ -334,8 +788,10 @@ class QueryJoinOptimizerAdversarialTest {
 
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("computedBindCases")
-	void standardPipelineCanMissAStatementProducedTotalBindCostOpportunity(String expression, Value expectedValue)
+	void standardPipelinePreservesStatementProducedBindResults(String expression, Value expectedValue)
 			throws Exception {
+		// A statement pattern may bind a blank node or another unsupported value, so STR is not a universal cost
+		// guarantee here.
 		String query = "SELECT * WHERE { ?source <urn:source> ?a . BIND(" + expression + " AS ?b) "
 				+ "?x <urn:cheap> ?y . ?s <urn:q> ?b . }";
 		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
@@ -350,6 +806,29 @@ class QueryJoinOptimizerAdversarialTest {
 				bindPipelineFixtureStatements(expectedValue));
 		ParsedTupleQuery idealParsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
 				"SELECT * WHERE { ?source <urn:source> ?a . BIND(" + expression + " AS ?b) "
+						+ "?s <urn:q> ?b . ?x <urn:cheap> ?y . }",
+				null);
+		List<BindingSet> idealResults = evaluate(idealParsed.getTupleExpr(), idealSource);
+
+		assertThat(optimizedResults).containsExactlyInAnyOrderElementsOf(idealResults);
+	}
+
+	@Test
+	void standardPipelineUsesStatementProducedIsIriAsTotalBindCostOpportunity() throws Exception {
+		String query = "SELECT * WHERE { ?source <urn:source> ?a . BIND(isIRI(?a) AS ?b) "
+				+ "?x <urn:cheap> ?y . ?s <urn:q> ?b . }";
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		CountingListTripleSource optimizedSource = new CountingListTripleSource(
+				bindPipelineFixtureStatements(VF.createLiteral("true", XSD.BOOLEAN)));
+		DefaultEvaluationStrategy optimizer = new DefaultEvaluationStrategy(optimizedSource, null, null, 0,
+				new BindPipelineStatistics());
+		TupleExpr optimized = optimizer.optimize(parsed.getTupleExpr(), null, EmptyBindingSet.getInstance());
+		List<BindingSet> optimizedResults = evaluate(optimized, optimizedSource);
+
+		CountingListTripleSource idealSource = new CountingListTripleSource(
+				bindPipelineFixtureStatements(VF.createLiteral("true", XSD.BOOLEAN)));
+		ParsedTupleQuery idealParsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?source <urn:source> ?a . BIND(isIRI(?a) AS ?b) "
 						+ "?s <urn:q> ?b . ?x <urn:cheap> ?y . }",
 				null);
 		List<BindingSet> idealResults = evaluate(idealParsed.getTupleExpr(), idealSource);
@@ -519,10 +998,27 @@ class QueryJoinOptimizerAdversarialTest {
 		return predicates;
 	}
 
+	@SuppressWarnings("unchecked")
+	private static Set<String> guaranteedOutput(Object bindingInfo) throws Exception {
+		Field guaranteedOutput = bindingInfo.getClass().getDeclaredField("guaranteedOutput");
+		guaranteedOutput.setAccessible(true);
+		return (Set<String>) guaranteedOutput.get(bindingInfo);
+	}
+
 	private static List<BindingSet> evaluate(TupleExpr expression, TripleSource source) throws Exception {
-		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		return evaluate(expression, source, EmptyBindingSet.getInstance());
+	}
+
+	private static List<BindingSet> evaluate(TupleExpr expression, TripleSource source, BindingSet bindings)
+			throws Exception {
+		return evaluate(expression, source, bindings, null);
+	}
+
+	private static List<BindingSet> evaluate(TupleExpr expression, TripleSource source, BindingSet bindings,
+			FederatedServiceResolver resolver) throws Exception {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, resolver);
 		List<BindingSet> results = new ArrayList<>();
-		try (CloseableIteration<BindingSet> iteration = strategy.evaluate(expression, EmptyBindingSet.getInstance())) {
+		try (CloseableIteration<BindingSet> iteration = strategy.evaluate(expression, bindings)) {
 			while (iteration.hasNext()) {
 				results.add(iteration.next());
 			}
@@ -532,6 +1028,18 @@ class QueryJoinOptimizerAdversarialTest {
 
 	private static TripleSource emptyTripleSource() {
 		return new EmptyTripleSource();
+	}
+
+	private static BindingSetAssignment bindingAssignment(String name, Value value) {
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding(name, value);
+		return bindingAssignment(List.<BindingSet>of(row));
+	}
+
+	private static BindingSetAssignment bindingAssignment(List<BindingSet> rows) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(rows);
+		return assignment;
 	}
 
 	private static Object buildJoinVisitor(QueryJoinOptimizer optimizer) throws Exception {

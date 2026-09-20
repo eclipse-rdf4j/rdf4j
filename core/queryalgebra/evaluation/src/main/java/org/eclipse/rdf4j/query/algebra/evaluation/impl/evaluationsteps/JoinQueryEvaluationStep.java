@@ -17,7 +17,9 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -27,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.IndependentJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -58,6 +61,16 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					(Service) join.getRightArg(), bindings,
 					strategy);
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
+		} else if (containsDifferenceInCurrentScope(join.getRightArg())) {
+			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
+			if (canHashJoinWithPossiblyUnboundRows(join, joinAttributes)) {
+				eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
+						joinAttributes, context);
+				join.setAlgorithm(HashJoinIteration.class.getSimpleName());
+			} else {
+				eval = bindings -> new IndependentJoinIteration(leftPrepared, rightPrepared, bindings);
+				join.setAlgorithm(IndependentJoinIteration.class.getSimpleName());
+			}
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
 			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
@@ -114,7 +127,34 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
-		return TupleExprs.isVariableScopeChange(expr) || TupleExprs.containsSubquery(expr);
+		return TupleExprs.isVariableScopeChange(expr) || TupleExprs.containsSubquery(expr)
+				|| containsDifferenceInCurrentScope(expr);
+	}
+
+	private static boolean containsDifferenceInCurrentScope(TupleExpr expr) {
+		if (expr instanceof Difference) {
+			return true;
+		}
+		if (expr instanceof Service || expr instanceof Lateral) {
+			return false;
+		}
+		for (TupleExpr child : TupleExprs.getChildren(expr)) {
+			if (containsDifferenceInCurrentScope(child)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean canHashJoinWithPossiblyUnboundRows(Join join, String[] joinAttributes) {
+		Set<String> leftAssured = join.getLeftArg().getAssuredBindingNames();
+		Set<String> rightAssured = join.getRightArg().getAssuredBindingNames();
+		for (String name : joinAttributes) {
+			if (!leftAssured.contains(name) || !rightAssured.contains(name)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static boolean isNoNewBindingStatementGuard(Join join) {
