@@ -70,6 +70,7 @@ public class BindSelect implements PlanNode {
 	private final List<String> varNames;
 	private final ConstraintComponent.Scope scope;
 	private final String prefixes;
+	private List<BindingSetAssignment> dynamicValuesAssignments;
 	private StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
@@ -104,26 +105,37 @@ public class BindSelect implements PlanNode {
 
 	}
 
-	private void updateQuery(TupleExpr parsedQuery, List<BindingSet> newBindindingset, int expectedSize) {
+	private void updateQuery(TupleExpr parsedQuery, List<BindingSet> newBindindingset,
+			Set<String> expectedBindingNames) {
 		try {
-
-			parsedQuery
-					.visit(new AbstractQueryModelVisitor<Exception>() {
-						@Override
-						public void meet(BindingSetAssignment node) throws Exception {
-							Set<String> bindingNames = node.getBindingNames();
-							if (bindingNames.size() == expectedSize) { // TODO consider checking if bindingnames is
-								// equal to
-								// vars
-								node.setBindingSets(newBindindingset);
+			if (dynamicValuesAssignments == null) {
+				dynamicValuesAssignments = new ArrayList<>();
+				parsedQuery
+						.visit(new AbstractQueryModelVisitor<Exception>() {
+							@Override
+							public void meet(BindingSetAssignment node) throws Exception {
+								if (node.getBindingNames().equals(expectedBindingNames)
+										&& isEmpty(node.getBindingSets())) {
+									dynamicValuesAssignments.add(node);
+								}
+								super.meet(node);
 							}
-							super.meet(node);
-						}
+						});
+			}
 
-					});
+			if (dynamicValuesAssignments.isEmpty()) {
+				throw new IllegalStateException("Could not find the VALUES injection point in the query");
+			}
+			for (BindingSetAssignment dynamicValuesAssignment : dynamicValuesAssignments) {
+				dynamicValuesAssignment.setBindingSets(newBindindingset);
+			}
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
+	}
+
+	private boolean isEmpty(Iterable<BindingSet> bindingSets) {
+		return bindingSets == null || !bindingSets.iterator().hasNext();
 	}
 
 	@Override
@@ -139,6 +151,7 @@ public class BindSelect implements PlanNode {
 
 			@Override
 			protected void init() {
+				dynamicValuesAssignments = null;
 				iterator = source.iterator();
 				bulk = new ArrayList<>(bulkSize);
 
@@ -240,7 +253,7 @@ public class BindSelect implements PlanNode {
 							})
 							.collect(toCollection(ArrayList::new));
 
-					updateQuery(parsedQuery, bindingSets, targetChainSize);
+					updateQuery(parsedQuery, bindingSets, varNamesSet);
 
 					bindingSet = connection.evaluate(parsedQuery, dataset,
 							EmptyBindingSet.getInstance(), includeInferredStatements);

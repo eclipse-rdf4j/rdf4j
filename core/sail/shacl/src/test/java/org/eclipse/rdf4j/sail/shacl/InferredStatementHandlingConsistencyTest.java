@@ -119,6 +119,99 @@ class InferredStatementHandlingConsistencyTest {
 	}
 
 	@Test
+	void bindSelectShouldOnlyReplaceItsDynamicValuesAssignment() {
+		MemoryStore memoryStore = new MemoryStore();
+		memoryStore.init();
+
+		try (SailConnection connection = memoryStore.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.addStatement(TARGET, P, O);
+			connection.commit();
+			connection.begin(IsolationLevels.NONE);
+
+			ShaclSailConnection.Settings transactionSettings = new ShaclSailConnection.Settings(false, true, false,
+					IsolationLevels.NONE);
+			try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(connection, null, null, null, new Stats(),
+					null,
+					false, transactionSettings, true)) {
+				PlanNode source = new SingletonPlanNode(
+						new ValidationTuple(O, ConstraintComponent.Scope.nodeShape, false, ALL_CONTEXTS));
+
+				SparqlFragment query = SparqlFragment.bgp(List.of(),
+						"VALUES ( ?target_0000000000 ) { ( <urn:target> ) }\n"
+								+ "?target_0000000000 <urn:p> ?target_0000000001 .",
+						false);
+
+				BindSelect bindSelect = new BindSelect(
+						connection,
+						ALL_CONTEXTS,
+						query,
+						List.of(new StatementMatcher.Variable<>("target_0000000000"),
+								new StatementMatcher.Variable<>("target_0000000001")),
+						source,
+						List.of("target_0000000000", "target_0000000001"),
+						ConstraintComponent.Scope.nodeShape,
+						10,
+						EffectiveTarget.Extend.left,
+						false,
+						connectionsGroup);
+
+				Assertions.assertEquals(1, countTuples(bindSelect));
+			}
+			connection.rollback();
+		} finally {
+			memoryStore.shutDown();
+		}
+	}
+
+	@Test
+	void bindSelectShouldNotReplaceStaticValuesWithTheSameBindingNames() {
+		MemoryStore memoryStore = new MemoryStore();
+		memoryStore.init();
+
+		try (SailConnection connection = memoryStore.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.addStatement(TARGET, P, O);
+			connection.addStatement(O, P, O);
+			connection.commit();
+			connection.begin(IsolationLevels.NONE);
+
+			ShaclSailConnection.Settings transactionSettings = new ShaclSailConnection.Settings(false, true, false,
+					IsolationLevels.NONE);
+			try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(connection, null, null, null, new Stats(),
+					null,
+					false, transactionSettings, true)) {
+				PlanNode source = new SingletonPlanNode(
+						new ValidationTuple(O, ConstraintComponent.Scope.nodeShape, false, ALL_CONTEXTS));
+
+				SparqlFragment query = SparqlFragment.bgp(List.of(),
+						"VALUES ( ?target_0000000000 ) { ( <urn:target> ) }\n"
+								+ "?target_0000000000 <urn:p> ?target_0000000001 .",
+						false);
+
+				BindSelect bindSelect = new BindSelect(
+						connection,
+						ALL_CONTEXTS,
+						query,
+						List.of(new StatementMatcher.Variable<>("target_0000000000"),
+								new StatementMatcher.Variable<>("target_0000000001")),
+						source,
+						List.of("target_0000000000", "target_0000000001"),
+						ConstraintComponent.Scope.nodeShape,
+						10,
+						EffectiveTarget.Extend.right,
+						false,
+						connectionsGroup);
+
+				Assertions.assertEquals(0, countTuples(bindSelect));
+			}
+			connection.rollback();
+		} finally {
+			memoryStore.shutDown();
+		}
+	}
+
+	@Test
 	void filterByPredicateObjectShouldIncludeInferredTypeStatementsWhenReasonerEnabled() {
 		try (TestSailContext context = TestSailContext.withInferredTypeFromDomain()) {
 			try (ConnectionsGroup connectionsGroup = context.connectionsGroup(true, new RdfsSubClassOfReasoner())) {
