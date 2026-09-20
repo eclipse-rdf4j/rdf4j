@@ -18,7 +18,7 @@ The change is demonstrated by the adversarial optimizer tests in `core/queryalge
 - [done] (2026-09-20) Added non-null binding-set guarantee and extension-overwrite regressions; red evidence is in `logs/mvnf/20260920-184703-verify.log` and `logs/mvnf/20260920-184732-verify.log`, and focused greens are in `184855`, `184933`, and `185009`.
 - [done] (2026-09-20) Validate every optimizer and evaluation pipeline variant, update the audit with confirmed and refuted findings, and prepare the review-ready fix commit.
 - [done] (2026-09-20) Run module and backend gates, including the standard evaluation, query algebra model, MemoryStore, LMDB, lateral, and binding inliner suites.
-- [in_progress] Format, inspect the exact staged scope, commit, push, and report final evidence.
+- [done] (2026-09-20) Format, inspect the exact staged scope, commit, push, and report final evidence.
 
 ## Surprises & Discoveries
 
@@ -41,7 +41,7 @@ The change is demonstrated by the adversarial optimizer tests in `core/queryalge
 
 ## Outcomes & Retrospective
 
-The focused, module, and backend gates are green. The final adversarial class has 33 passing tests. The query-algebra model module has 50 passing tests and one existing skip; the evaluation module has 909 passing tests and one existing skip; the full LMDB module has 1199 passing tests and 102 existing skips. The audit records every original invocation, the refuted inliner hypothesis, the reclassified untyped STR cost premise, and the O(left rows times right rows) nullable-key fallback tradeoff. The exact fix commit and pushed SHA remain to be recorded after final formatting and staged-scope review.
+The focused, module, and backend gates are green. The final adversarial class has 33 passing tests. The query-algebra model module has 50 passing tests and one existing skip; the evaluation module has 909 passing tests and one existing skip; the full LMDB module has 1199 passing tests and 102 existing skips. The audit records every original invocation, the refuted inliner hypothesis, the reclassified untyped STR cost premise, and the O(left rows times right rows) nullable-key fallback tradeoff. Implementation commit `fc9e900716d519df73b08bc56db5680ab4810591` was pushed to `GH-5906-query-join-connected-order`; a fetch of the remote branch resolves to the same SHA and the tracked worktree is clean.
 
 ## Context and Orientation
 
@@ -87,4 +87,4 @@ Initial publication: commit `a7eb18ba25` (`GH-5906 add adversarial optimizer cov
 
 The public algebra interface remains `TupleExpr.getBindingNames()` and `TupleExpr.getAssuredBindingNames()`. `BindingSetAssignment` must retain its existing setters and iterable input contract. `MinusQueryEvaluationStep` retains its legacy constructor and adds only internal metadata for the prepared Difference path. `IndependentJoinIteration` consumes two `QueryEvaluationStep` instances and one incoming `BindingSet`, returns a `CloseableIteration<BindingSet>`, evaluates the RHS at most once after the first left row, and closes resources on normal close and RHS failure. No new external dependency is required.
 
-Plan update (2026-09-20): added the non-null ListBindingSet and Extension overwrite findings after their red regressions, documented the service/correlation boundary and O(left times right) fallback cost, and recorded the refuted BindingSetAssignment inliner hypothesis.
+Plan update (2026-09-20): added the non-null ListBindingSet and Extension overwrite findings after their red regressions, documented the service/correlation boundary and O(left times right) fallback cost, recorded the refuted BindingSetAssignment inliner hypothesis, and finalized the published implementation SHA after remote verification.
