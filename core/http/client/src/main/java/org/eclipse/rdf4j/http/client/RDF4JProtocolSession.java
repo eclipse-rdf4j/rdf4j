@@ -868,8 +868,10 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	}
 
 	/**
-	 * Requests cancellation of a non-transactional regular query previously submitted with the supplied request id.
-	 * Cancellation is idempotent: the server also returns success for an unknown or completed id.
+	 * Requests cancellation of a non-transactional regular query previously submitted with the supplied request id. The
+	 * server acknowledges cancellation with HTTP 204 when the id identifies an active operation. It returns HTTP 404
+	 * when no matching active operation is registered, including when the query is unknown or has already completed; in
+	 * those cases this method raises a {@link RepositoryException}.
 	 *
 	 * @param queryRequestId client-generated query request identifier
 	 */
