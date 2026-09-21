@@ -78,6 +78,7 @@ class AsyncExplainRegistryTest {
 			future.get(5, TimeUnit.SECONDS);
 			assertThat(interrupted.await(5, TimeUnit.SECONDS)).isTrue();
 			assertThat(handle.isActive()).isFalse();
+			// Future#get only waits for the operation worker; connection cleanup runs on a separate virtual thread.
 			verify(connection, timeout(5000).times(1)).close();
 		} finally {
 			executor.shutdownNow();
