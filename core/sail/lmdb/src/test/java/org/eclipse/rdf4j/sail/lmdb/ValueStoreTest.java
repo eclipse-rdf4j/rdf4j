@@ -18,12 +18,23 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.lwjgl.util.lmdb.LMDB.MDB_BAD_TXN;
+import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_stat;
+import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_env;
 
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -31,8 +42,10 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -65,6 +78,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBEnvInfo;
+import org.lwjgl.util.lmdb.MDBStat;
 
 /**
  * Low-level tests for {@link ValueStore}.
@@ -92,6 +108,402 @@ public class ValueStoreTest {
 
 	private LmdbStoreConfig hashCacheEnabledConfig() {
 		return new LmdbStoreConfig().setValueHashCacheEnabled(true);
+	}
+
+	@Test
+	public void transactionRetainsResolvedValueIdsAfterRegularCacheEviction() throws Exception {
+		CountingValueStore countingValueStore = new CountingValueStore(new File(dataDir, "transaction-value-cache"),
+				new LmdbStoreConfig());
+		try {
+			SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+			Value firstValue = valueFactory.createBNode("transaction-repeated-value");
+
+			countingValueStore.startTransaction(true);
+			long firstId = countingValueStore.storeValue(firstValue);
+			countingValueStore.clearCaches();
+			int lookupsBeforeRepeat = countingValueStore.readTransactionCount;
+
+			long repeatedId = countingValueStore
+					.storeValue(valueFactory.createBNode("transaction-repeated-value"));
+
+			assertEquals(firstId, repeatedId);
+			assertEquals("an active transaction should retain the resolved ID", lookupsBeforeRepeat,
+					countingValueStore.readTransactionCount);
+			countingValueStore.commit();
+		} finally {
+			countingValueStore.close();
+		}
+	}
+
+	@Test
+	public void transactionRetainsNamespaceIdsAfterRegularCacheEviction() throws Exception {
+		CountingValueStore countingValueStore = new CountingValueStore(
+				new File(dataDir, "transaction-namespace-cache"), new LmdbStoreConfig());
+		try {
+			SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+			String namespace = "urn:transaction:shared-namespace:";
+
+			countingValueStore.startTransaction(true);
+			countingValueStore.storeValue(valueFactory.createIRI(namespace, "first"));
+			countingValueStore.clearCaches();
+			int lookupsBeforeSecondIri = countingValueStore.readTransactionCount;
+
+			countingValueStore.storeValue(valueFactory.createIRI(namespace, "second"));
+
+			assertEquals("only the new IRI should require a native lookup", lookupsBeforeSecondIri + 1,
+					countingValueStore.readTransactionCount);
+			countingValueStore.commit();
+		} finally {
+			countingValueStore.close();
+		}
+	}
+
+	@Test
+	public void rollbackInvalidatesUncommittedValuesAndPreservesCommittedLazyValues() throws Exception {
+		valueStore.close();
+		valueStore = createValueStore(hashCacheEnabledConfig());
+
+		IRI committed = Values.iri("urn:rollback:committed");
+		valueStore.startTransaction(true);
+		long committedId = valueStore.storeValue(committed);
+		valueStore.commit();
+		valueStore.clearCaches();
+		LmdbValue committedLazy = valueStore.getLazyValue(committedId);
+
+		IRI rolledBackIri = Values.iri(RDF.NAMESPACE, "rollback");
+		Literal rolledBackLiteral = valueStore.createLiteral(
+				"rollback literal whose lexical form is intentionally too large for inline storage");
+		TripleTerm nestedTriple = valueStore.createTripleTerm(rolledBackIri, RDF.TYPE, rolledBackLiteral);
+		TripleTerm rolledBackTriple = valueStore.createTripleTerm(rolledBackIri, RDF.TYPE, nestedTriple);
+
+		valueStore.startTransaction(true);
+		long rolledBackIriId = valueStore.storeValue(rolledBackIri);
+		long rolledBackLiteralId = valueStore.storeValue(rolledBackLiteral);
+		long rolledBackTripleId = valueStore.storeValue(rolledBackTriple);
+		assertNotEquals(LmdbValue.UNKNOWN_ID, rolledBackIriId);
+		assertNotEquals(LmdbValue.UNKNOWN_ID, rolledBackLiteralId);
+		assertNotEquals(LmdbValue.UNKNOWN_ID, rolledBackTripleId);
+		assertEquals(rolledBackIri, valueStore.getValue(rolledBackIriId));
+		LmdbIRI rolledBackInitialized = (LmdbIRI) valueStore.getValue(rolledBackIriId);
+		assertEquals(rolledBackIri.stringValue(), rolledBackInitialized.stringValue());
+
+		valueStore.rollback();
+
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(rolledBackIri));
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(Values.iri(RDF.NAMESPACE, "rollback")));
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(rolledBackLiteral));
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(rolledBackTriple));
+		assertNull(valueStore.getValue(rolledBackIriId));
+		assertEquals(0, valueStore.getStoredHash(rolledBackIriId));
+		assertEquals(committed.stringValue(), committedLazy.stringValue());
+		assertEquals(rolledBackIri.stringValue(), rolledBackInitialized.stringValue());
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(rolledBackInitialized));
+
+		valueStore.close();
+		valueStore = createValueStore(hashCacheEnabledConfig());
+		assertNull(valueStore.getValue(rolledBackIriId));
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(rolledBackIri));
+	}
+
+	@Test
+	public void writerOwnerGetLazyValueMaterializesUncommittedValuesBeforeRollback() throws Exception {
+		valueStore.close();
+		valueStore = createValueStore(hashCacheEnabledConfig());
+
+		IRI rolledBackIri = Values.iri(RDF.NAMESPACE, "rollback-lazy");
+		Literal rolledBackLiteral = valueStore.createLiteral(
+				"rollback lazy literal whose lexical form is intentionally too large for inline storage");
+		TripleTerm nestedTriple = valueStore.createTripleTerm(rolledBackIri, RDF.TYPE, rolledBackLiteral);
+		TripleTerm rolledBackTriple = valueStore.createTripleTerm(rolledBackIri, RDF.TYPE, nestedTriple);
+
+		valueStore.startTransaction(true);
+		long rolledBackIriId = valueStore.storeValue(rolledBackIri);
+		long rolledBackLiteralId = valueStore.storeValue(rolledBackLiteral);
+		long rolledBackTripleId = valueStore.storeValue(rolledBackTriple);
+		valueStore.clearCaches();
+
+		LmdbIRI retainedIri = (LmdbIRI) valueStore.getLazyValue(rolledBackIriId);
+		LmdbLiteral retainedLiteral = (LmdbLiteral) valueStore.getLazyValue(rolledBackLiteralId);
+		LmdbTripleTerm retainedTriple = (LmdbTripleTerm) valueStore.getLazyValue(rolledBackTripleId);
+
+		valueStore.rollback();
+
+		assertEquals(rolledBackIri.stringValue(), retainedIri.stringValue());
+		assertEquals(rolledBackLiteral.getLabel(), retainedLiteral.getLabel());
+		assertEquals(rolledBackIri.stringValue(), retainedTriple.getSubject().stringValue());
+		TripleTerm retainedNestedTriple = (TripleTerm) retainedTriple.getObject();
+		assertEquals(rolledBackIri.stringValue(), retainedNestedTriple.getSubject().stringValue());
+		assertEquals(rolledBackLiteral.getLabel(), ((Literal) retainedNestedTriple.getObject()).getLabel());
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(retainedIri));
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(retainedLiteral));
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(retainedTriple));
+	}
+
+	@Test
+	public void writerOwnerGetValueMaterializesUncommittedTripleComponentsBeforeRollback() throws Exception {
+		valueStore.close();
+		valueStore = createValueStore(hashCacheEnabledConfig());
+
+		IRI rolledBackIri = Values.iri(RDF.NAMESPACE, "rollback-get-value");
+		Literal rolledBackLiteral = valueStore.createLiteral(
+				"rollback getValue literal whose lexical form is intentionally too large for inline storage");
+		TripleTerm nestedTriple = valueStore.createTripleTerm(rolledBackIri, RDF.TYPE, rolledBackLiteral);
+		TripleTerm rolledBackTriple = valueStore.createTripleTerm(rolledBackIri, RDF.TYPE, nestedTriple);
+
+		valueStore.startTransaction(true);
+		long rolledBackIriId = valueStore.storeValue(rolledBackIri);
+		long rolledBackLiteralId = valueStore.storeValue(rolledBackLiteral);
+		long rolledBackTripleId = valueStore.storeValue(rolledBackTriple);
+		valueStore.clearCaches();
+
+		LmdbTripleTerm retainedTriple = (LmdbTripleTerm) valueStore.getValue(rolledBackTripleId);
+
+		valueStore.rollback();
+
+		assertEquals(rolledBackIri.stringValue(), retainedTriple.getSubject().stringValue());
+		assertEquals(rolledBackLiteral.getLabel(), ((TripleTerm) retainedTriple.getObject()).getObject().stringValue());
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(rolledBackIri));
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(rolledBackLiteral));
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(rolledBackTriple));
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(retainedTriple));
+	}
+
+	@Test
+	public void writerOwnerResolveValueMaterializesUncommittedTripleComponentsBeforeRollback() throws Exception {
+		valueStore.close();
+		valueStore = createValueStore(hashCacheEnabledConfig());
+
+		IRI rolledBackIri = Values.iri(RDF.NAMESPACE, "rollback-resolve-value");
+		Literal rolledBackLiteral = valueStore.createLiteral(
+				"rollback resolveValue literal whose lexical form is intentionally too large for inline storage");
+		TripleTerm nestedTriple = valueStore.createTripleTerm(rolledBackIri, RDF.TYPE, rolledBackLiteral);
+		TripleTerm rolledBackTriple = valueStore.createTripleTerm(rolledBackIri, RDF.TYPE, nestedTriple);
+
+		valueStore.startTransaction(true);
+		long rolledBackTripleId = valueStore.storeValue(rolledBackTriple);
+		valueStore.clearCaches();
+
+		LmdbTripleTerm retainedTriple = new LmdbTripleTerm(valueStore.getRevision(), rolledBackTripleId);
+		assertTrue(valueStore.resolveValue(rolledBackTripleId, retainedTriple));
+
+		valueStore.rollback();
+
+		assertEquals(rolledBackIri.stringValue(), retainedTriple.getSubject().stringValue());
+		assertEquals(rolledBackLiteral.getLabel(), ((TripleTerm) retainedTriple.getObject()).getObject().stringValue());
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(retainedTriple));
+	}
+
+	@Test
+	public void rollbackDoesNotLetAReusedIdAliasARetainedValue() throws Exception {
+		valueStore.close();
+		valueStore = createValueStore(hashCacheEnabledConfig());
+
+		valueStore.startTransaction(true);
+		valueStore.storeValue(RDF.TYPE);
+		valueStore.commit();
+
+		valueStore.startTransaction(true);
+		long recyclableId = valueStore.storeValue(Values.bnode("rollback-recyclable"));
+		valueStore.commit();
+		long recyclableRevisionId = valueStore.getRevision().getRevisionId();
+		valueStore.clearCaches();
+
+		valueStore.startTransaction(true);
+		valueStore.gcIds(Collections.singleton(recyclableId), new HashSet<>());
+		valueStore.commit();
+		valueStore.clearCaches();
+		valueStore.unusedRevisionIds.add(recyclableRevisionId);
+		valueStore.forceEvictionOfValues();
+		valueStore.startTransaction(true);
+		valueStore.commit();
+
+		IRI rolledBackIri = Values.iri(RDF.NAMESPACE, "rollback-reused");
+		valueStore.startTransaction(true);
+		long rolledBackId = valueStore.storeValue(rolledBackIri);
+		assertEquals("the existing namespace must leave the freed value slot for the IRI",
+				ValueIds.getValue(recyclableId), ValueIds.getValue(rolledBackId));
+		LmdbIRI retained = (LmdbIRI) valueStore.getValue(rolledBackId);
+		assertEquals(rolledBackIri.stringValue(), retained.stringValue());
+		valueStore.rollback();
+
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(rolledBackIri));
+		assertNull(valueStore.getValue(rolledBackId));
+		assertEquals(rolledBackIri.stringValue(), retained.stringValue());
+
+		IRI replacement = Values.iri(RDF.NAMESPACE, "rollback-replacement");
+		valueStore.startTransaction(true);
+		long replacementId = valueStore.storeValue(replacement);
+		valueStore.commit();
+		assertEquals(rolledBackId, replacementId);
+		assertEquals(replacement, valueStore.getValue(replacementId));
+		assertEquals(rolledBackIri.stringValue(), retained.stringValue());
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(retained));
+	}
+
+	@Test
+	public void rollbackPreservesNamespaceLookupsAcrossReopen() throws Exception {
+		valueStore.close();
+		valueStore = createValueStore(hashCacheEnabledConfig());
+
+		IRI committed = Values.iri("urn:committed:namespace:", "preserved");
+		valueStore.startTransaction(true);
+		long committedId = valueStore.storeValue(committed);
+		valueStore.commit();
+		valueStore.clearCaches();
+		assertEquals(committed, valueStore.getValue(committedId));
+
+		String rolledBackNamespace = "urn:rolled-back:namespace:";
+		IRI rolledBack = Values.iri(rolledBackNamespace, "discarded");
+		valueStore.startTransaction(true);
+		long rolledBackId = valueStore.storeValue(rolledBack);
+		LmdbIRI retained = (LmdbIRI) valueStore.getValue(rolledBackId);
+		assertEquals(rolledBack.stringValue(), retained.stringValue());
+		valueStore.rollback();
+
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(rolledBack));
+		assertEquals(rolledBack.stringValue(), retained.stringValue());
+		assertEquals(committed, valueStore.getValue(committedId));
+
+		IRI secondNamespace = Values.iri("urn:replacement:namespace:", "persisted");
+		IRI replacement = Values.iri(rolledBackNamespace, "replacement");
+		valueStore.startTransaction(true);
+		long secondNamespaceId = valueStore.storeValue(secondNamespace);
+		long replacementId = valueStore.storeValue(replacement);
+		valueStore.commit();
+
+		assertEquals(secondNamespace, valueStore.getValue(secondNamespaceId));
+		assertNotEquals(secondNamespaceId, replacementId);
+		assertEquals(replacement, valueStore.getValue(replacementId));
+		assertEquals(rolledBack.stringValue(), retained.stringValue());
+
+		valueStore.close();
+		valueStore = createValueStore(hashCacheEnabledConfig());
+		assertEquals(committed, valueStore.getValue(committedId));
+		assertEquals(replacement, valueStore.getValue(replacementId));
+		assertEquals(secondNamespace, valueStore.getValue(secondNamespaceId));
+		assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(rolledBack));
+		assertEquals(rolledBack.stringValue(), retained.stringValue());
+	}
+
+	@Test
+	public void failedNativeCommitInvalidatesUncommittedValuesInAnIsolatedProcess() throws Exception {
+		File childDataDir = new File(dataDir, "failed-native-commit-child");
+		Path probeDirectory = Path.of("target", "review-repair-probes");
+		Files.createDirectories(probeDirectory);
+		Path outputFile = probeDirectory.resolve("failed-native-commit-" + UUID.randomUUID() + ".log");
+		String javaBinary = new File(System.getProperty("java.home"), "bin/java").getAbsolutePath();
+		Process process = new ProcessBuilder(javaBinary, "-cp", System.getProperty("java.class.path"),
+				FailedNativeCommitProbe.class.getName(), childDataDir.getAbsolutePath())
+						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
+						.start();
+		try {
+			boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+			if (!finished) {
+				process.destroyForcibly();
+				boolean exited = process.waitFor(5, TimeUnit.SECONDS);
+				fail("failed-native-commit probe timed out (exited=" + exited + ", output file=" + outputFile + "):\n"
+						+ readProbeOutput(outputFile));
+			}
+			String output = readProbeOutput(outputFile);
+			assertEquals("failed-native-commit probe output file " + outputFile + ":\n" + output, 0,
+					process.exitValue());
+			assertTrue("the probe must observe a write MAP_FULL (output file " + outputFile + "):\n" + output,
+					output.contains("PROBE_WRITE_MAP_FULL=" + mdb_strerror(MDB_MAP_FULL)));
+			assertTrue("the probe must observe the native poisoned commit failure (output file " + outputFile + "):\n"
+					+ output,
+					output.contains("PROBE_COMMIT_FAILURE=" + mdb_strerror(MDB_BAD_TXN)));
+			assertTrue(
+					"the probe must complete rollback and reopen checks (output file " + outputFile + "):\n" + output,
+					output.contains("PROBE_ROLLBACK_REOPEN_OK"));
+		} finally {
+			if (process.isAlive()) {
+				process.destroyForcibly();
+				process.waitFor(5, TimeUnit.SECONDS);
+			}
+		}
+	}
+
+	@Test
+	public void gcThenGrowthInTheSameWriterDoesNotDeadlock() throws Exception {
+		File childDataDir = new File(dataDir, "gc-then-growth-child");
+		Path probeDirectory = Path.of("target", "review-repair-probes");
+		Files.createDirectories(probeDirectory);
+		Path outputFile = probeDirectory.resolve("gc-then-growth-" + UUID.randomUUID() + ".log");
+		String javaBinary = new File(System.getProperty("java.home"), "bin/java").getAbsolutePath();
+		Process process = new ProcessBuilder(javaBinary, "-cp", System.getProperty("java.class.path"),
+				GcThenGrowthProbe.class.getName(), childDataDir.getAbsolutePath())
+						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
+						.start();
+		try {
+			boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+			if (!finished) {
+				String threadDump = captureThreadDump(process, outputFile);
+				process.destroyForcibly();
+				boolean exited = process.waitFor(5, TimeUnit.SECONDS);
+				String output = readProbeOutput(outputFile);
+				if (!exited || process.isAlive()) {
+					fail("gc-then-growth probe could not be forcibly terminated (output file=" + outputFile
+							+ ", thread dump=" + threadDump + "):\n" + output);
+				}
+				fail("gc-then-growth probe timed out (output file=" + outputFile + ", thread dump=" + threadDump
+						+ "):\n" + output);
+			}
+			String output = readProbeOutput(outputFile);
+			assertEquals("gc-then-growth probe output file " + outputFile + ":\n" + output, 0,
+					process.exitValue());
+			assertTrue("the probe must complete a same-writer GC followed by map growth (output file " + outputFile
+					+ "):\n" + output, output.contains("PROBE_GC_THEN_GROW_OK"));
+		} finally {
+			if (process.isAlive()) {
+				process.destroyForcibly();
+				if (!process.waitFor(5, TimeUnit.SECONDS) || process.isAlive()) {
+					fail("gc-then-growth probe remained alive during cleanup (output file=" + outputFile + ")");
+				}
+			}
+		}
+	}
+
+	private static String captureThreadDump(Process process, Path outputFile) {
+		Path threadDumpFile = outputFile.resolveSibling(outputFile.getFileName() + ".threads");
+		File jcmd = new File(System.getProperty("java.home"), "bin/jcmd");
+		Process dump = null;
+		try {
+			dump = new ProcessBuilder(jcmd.getAbsolutePath(), Long.toString(process.pid()), "Thread.print")
+					.redirectErrorStream(true)
+					.redirectOutput(threadDumpFile.toFile())
+					.start();
+			boolean finished = dump.waitFor(5, TimeUnit.SECONDS);
+			if (!finished) {
+				dump.destroyForcibly();
+				if (!dump.waitFor(5, TimeUnit.SECONDS)) {
+					return "unavailable (jcmd did not exit; file=" + threadDumpFile + ")";
+				}
+			}
+			return threadDumpFile + ":\n" + readProbeOutput(threadDumpFile);
+		} catch (IOException e) {
+			return "unavailable (" + e + ")";
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return "unavailable (interrupted while running jcmd)";
+		} finally {
+			if (dump != null && dump.isAlive()) {
+				dump.destroyForcibly();
+			}
+		}
+	}
+
+	private static String readProbeOutput(Path outputFile) throws IOException {
+		return Files.exists(outputFile) ? Files.readString(outputFile, StandardCharsets.UTF_8) : "";
+	}
+
+	@Test
+	public void transactionValueCacheLimitScalesWithHeap() {
+		assertEquals(4 * 1024, ValueStore.calculateTransactionValueCacheLimit(1));
+		assertEquals(128 * 1024, ValueStore.calculateTransactionValueCacheLimit(512L * 1024 * 1024));
+		assertEquals(512 * 1024, ValueStore.calculateTransactionValueCacheLimit(2L * 1024 * 1024 * 1024));
+		assertEquals(1024 * 1024, ValueStore.calculateTransactionValueCacheLimit(Long.MAX_VALUE));
 	}
 
 	@Test
@@ -523,6 +935,95 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void smallMapGrowthWritesEveryConfiguredTripleTermIndex() throws Exception {
+		valueStore.close();
+		String indexSpecs = "spoc,cspo,ospc,cpos";
+		long configuredMapSize = 2L * 1024 * 1024;
+		LmdbStoreConfig config = new LmdbStoreConfig()
+				.setTripleTermIndexes(indexSpecs)
+				.setValueDBSize(configuredMapSize)
+				.setAutoGrow(true)
+				.setValueHashCacheEnabled(false);
+		File growthDir = new File(dataDir, "triple-term-growth");
+		MapObservingValueStore growthStore = new MapObservingValueStore(growthDir, config);
+		valueStore = growthStore;
+
+		List<Resource> subjects = new ArrayList<>();
+		List<IRI> predicates = new ArrayList<>();
+		List<Value> objects = new ArrayList<>();
+		// Keep the committed seed below the active writer's minimum-free-space watermark. The term loop
+		// must cross that watermark through real configured-index writes.
+		for (int i = 0; i < 48; i++) {
+			subjects.add(Values.bnode("triple-term-growth-subject-" + i + "-" + "s".repeat(256)));
+			predicates.add(Values.iri("urn:triple-term-growth:predicate:" + i + "-" + "p".repeat(256)));
+			objects.add(Values.bnode("triple-term-growth-object-" + i + "-" + "o".repeat(256)));
+		}
+
+		growthStore.startTransaction(true);
+		for (Resource subject : subjects) {
+			growthStore.storeValue(subject);
+		}
+		for (IRI predicate : predicates) {
+			growthStore.storeValue(predicate);
+		}
+		for (Value object : objects) {
+			growthStore.storeValue(object);
+		}
+		growthStore.commit();
+
+		growthStore.startTransaction(true);
+		MapUsage initialUsage = growthStore.observeMapUsage();
+		assertFalse("the committed seed must start below the active writer resize watermark: " + initialUsage,
+				initialUsage.resizeRequired());
+		List<Long> storedTermIds = new ArrayList<>();
+		TripleTerm grownTripleTerm = null;
+		long grownTripleTermId = LmdbValue.UNKNOWN_ID;
+		MapUsage usageBeforeGrowth = null;
+		MapUsage usageAfterGrowth = null;
+		for (int i = 0; i < 20_000; i++) {
+			TripleTerm candidate = growthStore.createTripleTerm(
+					subjects.get(i % subjects.size()),
+					predicates.get((i / subjects.size()) % predicates.size()),
+					objects.get((i / (subjects.size() * predicates.size())) % objects.size()));
+			MapUsage before = growthStore.observeMapUsage();
+			long candidateId = growthStore.storeValue(candidate);
+			MapUsage after = growthStore.observeMapUsage();
+			storedTermIds.add(candidateId);
+			if (after.mapSize() > before.mapSize()) {
+				grownTripleTerm = candidate;
+				grownTripleTermId = candidateId;
+				usageBeforeGrowth = before;
+				usageAfterGrowth = after;
+				break;
+			}
+		}
+		assertNotNull("a triple-term insert must cross the active writer resize watermark", grownTripleTerm);
+		assertNotNull(usageBeforeGrowth);
+		assertNotNull(usageAfterGrowth);
+		assertTrue("the map must grow while inserting the triple term: before=" + usageBeforeGrowth.mapSize()
+				+ ", after=" + usageAfterGrowth.mapSize(),
+				usageAfterGrowth.mapSize() > usageBeforeGrowth.mapSize());
+		growthStore.commit();
+
+		Map<String, LmdbStore.LmdbDatabaseStats> stats = growthStore.getLmdbStats();
+		for (String fieldSeq : indexSpecs.split(",")) {
+			String databaseName = "term-" + fieldSeq + "term-" + fieldSeq;
+			LmdbStore.LmdbDatabaseStats indexStats = stats.get(databaseName);
+			assertNotNull("missing configured triple-term index " + databaseName, indexStats);
+			assertEquals("every triple term must be present in every configured index", storedTermIds.size(),
+					indexStats.entries());
+		}
+
+		growthStore.close();
+		valueStore = new MapObservingValueStore(growthDir, config);
+		LmdbTripleTerm storedTripleTerm = (LmdbTripleTerm) valueStore.getValue(grownTripleTermId);
+		assertNotNull(storedTripleTerm);
+		assertEquals(grownTripleTerm.getSubject().stringValue(), storedTripleTerm.getSubject().stringValue());
+		assertEquals(grownTripleTerm.getPredicate().stringValue(), storedTripleTerm.getPredicate().stringValue());
+		assertEquals(grownTripleTerm.getObject().stringValue(), storedTripleTerm.getObject().stringValue());
+	}
+
+	@Test
 	public void testLazyTripleTermDoesNotInitializeAfterRestart() throws Exception {
 		TripleTerm tripleTerm = valueStore.createTripleTerm(RDF.TYPE, RDFS.SUBCLASSOF, RDFS.CLASS);
 		long id = storeValueAndReopen(tripleTerm, new LmdbStoreConfig());
@@ -642,6 +1143,182 @@ public class ValueStoreTest {
 		Field initializedField = value.getClass().getDeclaredField("initialized");
 		initializedField.setAccessible(true);
 		return initializedField.getBoolean(value);
+	}
+
+	private static MapUsage mapUsage(long txn, MemoryStack stack) throws IOException {
+		long environment = mdb_txn_env(txn);
+		MDBEnvInfo environmentInfo = MDBEnvInfo.malloc(stack);
+		MDBStat environmentStats = MDBStat.malloc(stack);
+		assertEquals(MDB_SUCCESS, mdb_env_info(environment, environmentInfo));
+		assertEquals(MDB_SUCCESS, mdb_env_stat(environment, environmentStats));
+		long pageSize = environmentStats.ms_psize();
+		long usedBytes = (environmentInfo.me_last_pgno() + 1L) * pageSize;
+		return new MapUsage(environmentInfo.me_mapsize(), usedBytes, pageSize,
+				LmdbUtil.requiresResize(environmentInfo.me_mapsize(), pageSize, txn, 0L));
+	}
+
+	private record MapUsage(long mapSize, long usedBytes, long pageSize, boolean resizeRequired) {
+	}
+
+	private static final class MapObservingValueStore extends ValueStore {
+
+		private boolean observeMapUsage;
+		private MapUsage lastMapUsage;
+
+		private MapObservingValueStore(File dir, LmdbStoreConfig config) throws IOException {
+			super(dir, config);
+		}
+
+		@Override
+		<T> T readTransaction(long env, LmdbUtil.Transaction<T> transaction) throws IOException {
+			return super.readTransaction(env, (stack, txn) -> {
+				if (observeMapUsage) {
+					lastMapUsage = mapUsage(txn, stack);
+				}
+				return transaction.exec(stack, txn);
+			});
+		}
+
+		private MapUsage observeMapUsage() throws IOException {
+			observeMapUsage = true;
+			lastMapUsage = null;
+			try {
+				getLmdbStats();
+				assertNotNull("map observer must run on the active transaction", lastMapUsage);
+				return lastMapUsage;
+			} finally {
+				observeMapUsage = false;
+			}
+		}
+	}
+
+	private static final class CountingValueStore extends ValueStore {
+
+		private int readTransactionCount;
+
+		private CountingValueStore(File dir, LmdbStoreConfig config) throws IOException {
+			super(dir, config);
+		}
+
+		@Override
+		<T> T readTransaction(long env, LmdbUtil.Transaction<T> transaction) throws IOException {
+			readTransactionCount++;
+			return super.readTransaction(env, transaction);
+		}
+	}
+
+	public static final class FailedNativeCommitProbe {
+
+		private static final String ID_PREFIX = "failed-native-commit-";
+		private static final String ID_SUFFIX = "x".repeat(8192);
+
+		private FailedNativeCommitProbe() {
+		}
+
+		public static void main(String[] args) throws Exception {
+			File dataDir = new File(args[0]);
+			LmdbStoreConfig config = new LmdbStoreConfig()
+					.setValueDBSize(500_000)
+					.setAutoGrow(false)
+					.setValueHashCacheEnabled(false);
+			ValueStore store = new ValueStore(dataDir, config);
+			List<String> values = new ArrayList<>();
+			List<Long> ids = new ArrayList<>();
+			IOException writeFailure = null;
+			store.startTransaction(true);
+			for (int i = 0; i < 2_000; i++) {
+				String valueId = ID_PREFIX + i + ID_SUFFIX;
+				try {
+					values.add(valueId);
+					ids.add(store.storeValue(Values.bnode(valueId)));
+				} catch (IOException e) {
+					writeFailure = e;
+					break;
+				}
+			}
+			if (!hasNativeError(writeFailure, MDB_MAP_FULL)) {
+				throw new AssertionError("expected write MAP_FULL, got " + writeFailure);
+			}
+			System.out.println("PROBE_WRITE_MAP_FULL=" + writeFailure.getMessage());
+
+			IOException commitFailure = null;
+			try {
+				store.commit();
+			} catch (IOException e) {
+				commitFailure = e;
+			}
+			if (!hasNativeError(commitFailure, MDB_BAD_TXN)) {
+				throw new AssertionError("expected commit BAD_TXN, got " + commitFailure);
+			}
+			System.out.println("PROBE_COMMIT_FAILURE=" + commitFailure.getMessage());
+
+			store.rollback();
+			for (int i = 0; i < ids.size(); i++) {
+				if (store.getValue(ids.get(i)) != null) {
+					throw new AssertionError("an uncommitted value survived failed commit and rollback");
+				}
+				if (store.getId(Values.bnode(values.get(i))) != LmdbValue.UNKNOWN_ID) {
+					throw new AssertionError("an uncommitted value ID survived failed commit and rollback");
+				}
+			}
+			store.close();
+
+			ValueStore reopened = new ValueStore(dataDir, config);
+			try {
+				for (long id : ids) {
+					if (reopened.getValue(id) != null) {
+						throw new AssertionError("an uncommitted value survived reopen");
+					}
+				}
+			} finally {
+				reopened.close();
+			}
+			System.out.println("PROBE_ROLLBACK_REOPEN_OK");
+		}
+
+		private static boolean hasNativeError(IOException failure, int errorCode) {
+			return failure != null && mdb_strerror(errorCode).equals(failure.getMessage());
+		}
+	}
+
+	public static final class GcThenGrowthProbe {
+
+		private static final String SEED_SUFFIX = "s".repeat(8192);
+		private static final String GROWTH_SUFFIX = "g".repeat(8192);
+
+		private GcThenGrowthProbe() {
+		}
+
+		public static void main(String[] args) throws Exception {
+			File dataDir = new File(args[0]);
+			LmdbStoreConfig config = new LmdbStoreConfig()
+					.setValueDBSize(500_000)
+					.setAutoGrow(true)
+					.setValueHashCacheEnabled(false);
+			ValueStore store = new ValueStore(dataDir, config);
+			try {
+				store.startTransaction(true);
+				long recyclableId = store.storeValue(Values.bnode("gc-then-growth-seed-" + SEED_SUFFIX));
+				for (int i = 0; i < 96; i++) {
+					store.storeValue(Values.bnode("gc-then-growth-seed-" + i + SEED_SUFFIX));
+				}
+				store.commit();
+				System.out.println("PROBE_GC_SEED_COMMITTED");
+
+				store.startTransaction(true);
+				store.gcIds(Collections.singleton(recyclableId), new HashSet<>());
+				System.out.println("PROBE_GC_COMPLETED");
+				store.clearCaches();
+				System.out.println("PROBE_GC_BEFORE_GROWTH");
+				for (int i = 0; i < 512; i++) {
+					store.storeValue(Values.bnode("gc-then-growth-new-" + i + GROWTH_SUFFIX));
+				}
+				store.commit();
+				System.out.println("PROBE_GC_THEN_GROW_OK");
+			} finally {
+				store.close();
+			}
+		}
 	}
 
 	@AfterEach

@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ProbeBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -148,7 +149,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				}
 			}
 
-			return HAS_BINDING_FALSE;
+			return bs -> bs instanceof ProbeBindingSet probeBindings && probeBindings.hasBinding(variableName);
 		}
 
 		assert variableName != null && !variableName.isEmpty();
@@ -176,6 +177,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		@Override
 		public boolean test(BindingSet bs) {
+			if (bs instanceof ProbeBindingSet probeBindings) {
+				return probeBindings.hasBinding(variableName);
+			}
 			if (bs.isEmpty()) {
 				return false;
 			}
@@ -202,7 +206,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				}
 			}
 
-			return GET_BINDING_NULL;
+			return bs -> bs instanceof ProbeBindingSet probeBindings
+					? probeBindings.getBinding(variableName)
+					: null;
 		}
 
 		Function<ArrayBindingSet, Binding> directAccessForVariable = defaultArrayBindingSet
@@ -210,6 +216,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		if (directAccessForVariable != null) {
 			return (bs) -> {
+				if (bs instanceof ProbeBindingSet probeBindings) {
+					return probeBindings.getBinding(variableName);
+				}
 				if (bs.isEmpty()) {
 					return null;
 				} else if (bs instanceof ArrayBindingSet) {
@@ -238,7 +247,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				}
 			}
 
-			return GET_VALUE_NULL;
+			return bs -> bs instanceof ProbeBindingSet probeBindings
+					? probeBindings.getValue(variableName)
+					: null;
 		}
 
 		Function<ArrayBindingSet, Value> directAccessForVariable = defaultArrayBindingSet
@@ -266,6 +277,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		@Override
 		public Value apply(BindingSet bs) {
+			if (bs instanceof ProbeBindingSet probeBindings) {
+				return probeBindings.getValue(variableName);
+			}
 			if (bs.isEmpty()) {
 				return null;
 			}
@@ -343,6 +357,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 	@Override
 	public ArrayBindingSet createBindingSet(BindingSet bindings) {
+		if (bindings instanceof ProbeBindingSet probeBindings) {
+			bindings = probeBindings.rawBindings();
+		}
 		if (bindings instanceof ArrayBindingSet) {
 			return new ArrayBindingSet((ArrayBindingSet) bindings, allVariables, sortedBindingNamesCache);
 		} else if (bindings == EmptyBindingSet.getInstance()) {

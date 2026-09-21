@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptim
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CompareOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstraintSplitterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
@@ -32,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ProjectionRemovalOpt
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctionOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
 
 final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
@@ -46,13 +46,13 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private static final BindingAssignerOptimizer BINDING_ASSIGNER = new BindingAssignerOptimizer();
 	private static final CompareOptimizer COMPARE_OPTIMIZER = new CompareOptimizer();
 	private static final ConjunctiveConstraintSplitterOptimizer CONJUNCTIVE_CONSTRAINT_SPLITTER = new ConjunctiveConstraintSplitterOptimizer();
-	private static final DisjunctiveConstraintOptimizer DISJUNCTIVE_CONSTRAINT_OPTIMIZER = new DisjunctiveConstraintOptimizer();
 	private static final SameTermFilterOptimizer SAME_TERM_FILTER_OPTIMIZER = new SameTermFilterOptimizer();
 	private static final UnionScopeChangeOptimizer UNION_SCOPE_CHANGE_OPTIMIZER = new UnionScopeChangeOptimizer();
 	private static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer();
 	private static final ProjectionRemovalOptimizer PROJECTION_REMOVAL_OPTIMIZER = new ProjectionRemovalOptimizer();
 	private static final IterativeEvaluationOptimizer ITERATIVE_EVALUATION_OPTIMIZER = new IterativeEvaluationOptimizer();
 	private static final OrderLimitOptimizer ORDER_LIMIT_OPTIMIZER = new OrderLimitOptimizer();
+	private static final QueryOptimizer FILTER_IN_VALUES = StandardQueryOptimizerPipeline.FILTER_IN_VALUES_OPTIMIZER;
 
 	private final EvaluationStrategy strategy;
 	private final TripleSource tripleSource;
@@ -73,7 +73,9 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,
-				DISJUNCTIVE_CONSTRAINT_OPTIMIZER,
+				// DisjunctiveConstraintOptimizer remains a compatibility facade. Its safe finite SameTerm OR analysis
+				// is
+				// shared by FILTER_IN_VALUES below; running both would duplicate the pass.
 				SAME_TERM_FILTER_OPTIMIZER,
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,
@@ -82,6 +84,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				new LmdbFilterSimplifierOptimizer(evaluationStatistics),
 				new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
+				FILTER_IN_VALUES,
 				ORDER_LIMIT_OPTIMIZER);
 
 		if (assertsEnabled) {

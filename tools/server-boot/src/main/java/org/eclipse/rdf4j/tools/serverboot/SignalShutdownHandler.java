@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntConsumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +33,13 @@ final class SignalShutdownHandler implements AutoCloseable {
 
 	private final AtomicBoolean triggered = new AtomicBoolean(false);
 	private final AtomicReference<ConfigurableApplicationContext> contextRef = new AtomicReference<>();
+	private final AtomicReference<ShutdownCoordinator> coordinatorRef = new AtomicReference<>();
 	private final List<Registration> registrations;
+
+	enum Trigger {
+		SIGNAL,
+		OUT_OF_MEMORY
+	}
 
 	static SignalShutdownHandler register(String... signalNames) {
 		return new SignalShutdownHandler(signalNames);
@@ -64,62 +71,82 @@ final class SignalShutdownHandler implements AutoCloseable {
 		contextRef.set(context);
 	}
 
+	void attachCoordinator(ShutdownCoordinator coordinator) {
+		coordinatorRef.set(coordinator);
+	}
+
 	private void handleSignal(String signalName) {
 		if (!triggered.compareAndSet(false, true)) {
 			return;
 		}
+		String reason = "SIG" + signalName;
+		ShutdownCoordinator coordinator = coordinatorRef.get();
+		if (coordinator != null) {
+			coordinator.requestSignal(reason);
+			logger.info("SIG{} received; initiating graceful shutdown.", signalName);
+		} else {
+			logger.info("SIG{} received; initiating graceful shutdown.", signalName);
+			shutdownAndExit(contextRef.get(), reason, 0, System::exit, Runtime.getRuntime()::halt, Trigger.SIGNAL);
+		}
+	}
 
-		startDelayedSystemExitThread(signalName);
+	/**
+	 * Shuts the application down and exits the JVM: runs {@link SpringApplication#exit} (exit-code generators and the
+	 * {@code ExitCodeEvent}), closes {@code context}, then exits with the nonzero status returned by Spring, or
+	 * {@code exitStatus} when Spring returns zero. A daemon watchdog forces the exit after 10 seconds should the
+	 * shutdown hang.
+	 *
+	 * @param context    the root application context, or {@code null} when it is not (yet) available
+	 * @param reason     what triggered the shutdown, for logging (for example {@code SIGTERM})
+	 * @param exitStatus the fallback JVM exit status when Spring returns zero
+	 * @param exit       performs the JVM exit ({@code System::exit} in production; injectable for tests)
+	 */
+	static void shutdownAndExit(ConfigurableApplicationContext context, String reason, int exitStatus,
+			IntConsumer exit) {
+		shutdownAndExit(context, reason, exitStatus, exit, Runtime.getRuntime()::halt, Trigger.SIGNAL);
+	}
 
-		logger.info("SIG{} received; initiating graceful shutdown.", signalName);
-		ConfigurableApplicationContext context = contextRef.get();
-		int exitCode = 0;
+	static void shutdownAndExit(ConfigurableApplicationContext context, String reason, int exitStatus,
+			IntConsumer exit, IntConsumer emergencyHalt) {
+		shutdownAndExit(context, reason, exitStatus, exit, emergencyHalt, Trigger.SIGNAL);
+	}
+
+	static void shutdownAndExit(ConfigurableApplicationContext context, String reason, int exitStatus,
+			IntConsumer exit, IntConsumer emergencyHalt, boolean outOfMemory) {
+		shutdownAndExit(context, reason, exitStatus, exit, emergencyHalt,
+				outOfMemory ? Trigger.OUT_OF_MEMORY : Trigger.SIGNAL);
+	}
+
+	static void shutdownAndExit(ConfigurableApplicationContext context, String reason, int exitStatus,
+			IntConsumer exit, IntConsumer emergencyHalt, Trigger trigger) {
+		ShutdownCoordinator coordinator = new ShutdownCoordinator(context, exit, emergencyHalt);
 		try {
-			if (context != null) {
-				exitCode = SpringApplication.exit(context, () -> 0);
-				if (context.isActive()) {
-					context.close();
-				}
-				logger.info("Application context closed after SIG{}, exit status {}", signalName, exitCode);
-			} else {
-				logger.warn("SIG{} received before application context became available; shutting down immediately.",
-						signalName);
-			}
-		} catch (Throwable e) {
-			logger.warn("Error while shutting down after SIG{}", signalName, e);
+			coordinator.requestSynchronously(reason, exitStatus, trigger == Trigger.OUT_OF_MEMORY);
 		} finally {
+			coordinator.close();
+		}
+	}
+
+	/**
+	 * Requests termination without allocating a thread. The emergency halt is attempted first because JVM shutdown
+	 * hooks may also need resources that are unavailable after a thread-start failure.
+	 */
+	static void requestEmergencyTermination(int exitStatus, IntConsumer emergencyHalt, IntConsumer exit) {
+		try {
+			emergencyHalt.accept(exitStatus);
+		} catch (RuntimeException | Error haltFailure) {
 			try {
-				System.exit(exitCode);
-			} catch (SecurityException e) {
-				logger.error("System.exit({}) blocked by security manager after SIG{}", exitCode, signalName, e);
+				exit.accept(exitStatus);
+			} catch (RuntimeException | Error exitFailure) {
+				haltFailure.addSuppressed(exitFailure);
+				throw haltFailure;
 			}
 		}
 	}
 
-	private static void startDelayedSystemExitThread(String signalName) {
-		// Start a thread that will forcibly exit the JVM after a delay, in case spring-boot hangs during shutdown
-		Thread thread = new Thread(() -> {
-			try {
-				// Give logging a moment to flush
-				Thread.sleep(10_000); // Forcibly exit after 10 seconds
-				try {
-					logger.error("Spring application did not exit cleanly after SIG" + signalName
-							+ "; forcing JVM shutdown.");
-					System.exit(1);
-				} catch (SecurityException e) {
-					logger.error("System.exit({}) blocked by security manager after SIG{}", 1, signalName, e);
-				}
-			} catch (InterruptedException e) {
-				// ignore
-			}
-			logger.info("Exiting JVM after SIG{}", signalName);
-		}, "SignalShutdownHandler-Exit");
-		thread.setDaemon(true);
-		thread.start();
-	}
-
 	@Override
 	public void close() {
+		coordinatorRef.set(null);
 		for (Registration registration : registrations) {
 			Signal.handle(registration.signal, registration.previousHandler);
 		}

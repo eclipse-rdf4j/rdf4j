@@ -338,14 +338,14 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Join join) {
-			if (join.getLeftArg().getBindingNames().containsAll(filterVars)) {
+			if (canRelocateInto(join.getLeftArg(), join.getRightArg())) {
 				if (shouldKeepFilterAtJoin(join, join.getLeftArg())) {
 					relocate(filter, join);
 				} else {
 					// All required vars are bound by the left expr
 					join.getLeftArg().visit(this);
 				}
-			} else if (join.getRightArg().getBindingNames().containsAll(filterVars)) {
+			} else if (canRelocateInto(join.getRightArg(), join.getLeftArg())) {
 				if (shouldKeepFilterAtJoin(join, join.getRightArg())) {
 					relocate(filter, join);
 				} else {
@@ -367,7 +367,8 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(LeftJoin leftJoin) {
-			if (leftJoin.getLeftArg().getBindingNames().containsAll(filterVars)) {
+			// the optional operand can still bind a variable the left operand binds only on some solutions
+			if (canRelocateInto(leftJoin.getLeftArg(), leftJoin.getRightArg())) {
 				leftJoin.getLeftArg().visit(this);
 			} else {
 				relocate(filter, leftJoin);
@@ -467,6 +468,28 @@ public class FilterOptimizer implements QueryOptimizer {
 				newFilterArg.replaceWith(filter);
 				filter.setArg(newFilterArg);
 			}
+		}
+
+		/**
+		 * Whether the filter may relocate into {@code arg}. Relocating a filter into one side of a join is only unsound
+		 * for a variable the argument does not bind on every solution while the other side can still bind it: the
+		 * relocated filter then errors on the unbound variable and drops solutions the full join result would produce.
+		 * {@code getAssuredBindingNames()} contains exactly the variables bound on every solution, including the
+		 * intersection across rows of a {@link BindingSetAssignment}. Variables nothing else can bind (a filter on an
+		 * optional-only variable, for example) keep the historical union-based placement: dropping early equals
+		 * dropping late.
+		 */
+		private boolean canRelocateInto(TupleExpr arg, TupleExpr otherSide) {
+			if (!arg.getBindingNames().containsAll(filterVars)) {
+				return false;
+			}
+			Set<String> assured = arg.getAssuredBindingNames();
+			for (String var : filterVars) {
+				if (!assured.contains(var) && otherSide.getBindingNames().contains(var)) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		private boolean shouldKeepFilterAtJoin(Join join, TupleExpr candidateArg) {

@@ -382,7 +382,7 @@ final class LmdbDeferredFilterPlacer {
 				&& !prefixBindingNames.containsAll(conditionBindingNames)
 				&& containsAllInUnion(prefixBindingNames, assignmentBindingNames, conditionBindingNames)
 				&& !Collections.disjoint(assignmentBindingNames, conditionBindingNames)
-				&& canApplySplitPrefixFilter(deferredFilter, assignmentBindingNames, conditionBindingNames);
+				&& assignmentBindingNames.containsAll(conditionBindingNames);
 	}
 
 	private boolean containsAllInUnion(Set<String> firstNames, Set<String> secondNames, Set<String> requiredNames) {
@@ -396,26 +396,6 @@ final class LmdbDeferredFilterPlacer {
 
 	private Set<String> conditionBindingNames(DeferredFilter deferredFilter) {
 		return deferredFilter.conditionVars;
-	}
-
-	private boolean canApplySplitPrefixFilter(DeferredFilter deferredFilter, Set<String> assignmentBindingNames,
-			Set<String> conditionBindingNames) {
-		return assignmentBindingNames.containsAll(conditionBindingNames)
-				|| !containsNotEquals(deferredFilter.condition);
-	}
-
-	private boolean containsNotEquals(ValueExpr condition) {
-		boolean[] contains = { false };
-		condition.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(Compare node) {
-				if (node.getOperator() == Compare.CompareOp.NE) {
-					contains[0] = true;
-				}
-				super.meet(node);
-			}
-		});
-		return contains[0];
 	}
 
 	private TupleExpr applyCompatibleLocalDeferredFilters(TupleExpr tupleExpr, List<DeferredFilter> deferredFilters) {

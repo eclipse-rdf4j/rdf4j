@@ -99,10 +99,10 @@ final class TxnManager {
 	private final long env;
 	private final Mode mode;
 
-	/** All live read transactions owned by this manager (identity semantics: Txn does not override equals). */
-	private final Set<Txn> open = ConcurrentHashMap.newKeySet();
+	/** All live native read transactions owned by this manager. */
+	private final Set<TxnState> open = ConcurrentHashMap.newKeySet();
 	/** Idle, reusable transactions; {@code null} unless {@link Mode#RESET}. */
-	private final MpmcRingBuffer<Txn> txnPool;
+	private final MpmcRingBuffer<TxnState> txnPool;
 	/** One permit per read transaction that may be handed out; see class javadoc. */
 	private final Semaphore readerSlots = new Semaphore(POOL_SIZE - 1, true);
 	/** Reserved for short callbacks whose caller already holds a transaction. */
@@ -136,7 +136,7 @@ final class TxnManager {
 	 * transaction: closing it is a no-op, it is not tracked for reset/activate and it does not consume a reader permit.
 	 */
 	Txn createTxn(long txn) {
-		return new Txn(txn, /* owned= */ false, /* resetOnWrite= */ false, null);
+		return new Txn(txn);
 	}
 
 	/**
@@ -150,7 +150,7 @@ final class TxnManager {
 	 * Creates a read-only transaction that is <em>untracked</em> for reset semantics.
 	 * <p>
 	 * Untracked readers survive {@link #reset()} so that long-lived refresh readers are not invalidated on every write
-	 * commit; they are only marked {@link Txn#stale} and renewed lazily. They still participate in
+	 * commit; they are only marked {@code stale} and renewed lazily. They still participate in
 	 * {@link #deactivate()}/{@link #activate()} to remain safe during map resize.
 	 */
 	Txn createReadTxnUntracked() throws IOException {
@@ -176,30 +176,35 @@ final class TxnManager {
 		try {
 			// Fast path: recycle an idle reader. The permit guarantees that either the pool is non-empty or that
 			// starting a new transaction stays within POOL_SIZE.
-			Txn pooled = pollPooled();
+			TxnState pooled = pollPooled();
 			if (pooled != null) {
 				try {
-					pooled.reuse(resetOnWrite, readerPermit);
+					pooled.reuse(resetOnWrite);
 				} catch (IOException | RuntimeException e) {
 					discardPooled(pooled);
 					throw e;
 				}
 				permitConsumed = true;
-				return pooled;
+				Txn lease = new Txn(pooled, readerPermit);
+				if (managerClosed) {
+					lease.close();
+					throw new IOException("Transaction manager is closed");
+				}
+				return lease;
 			}
 
 			checkNotClosed();
-			Txn txn = new Txn(startReadTxn(), /* owned= */ true, resetOnWrite, readerPermit);
-			open.add(txn);
+			TxnState state = new TxnState(startReadTxn(), resetOnWrite);
+			open.add(state);
 			if (managerClosed) {
 				// lost the race against close(): do not leak the native transaction
-				if (open.remove(txn)) {
-					txn.abortAndMarkClosed();
+				if (open.remove(state)) {
+					state.abortAndMarkClosed();
 				}
 				throw new IOException("Transaction manager is closed");
 			}
 			permitConsumed = true;
-			return txn;
+			return new Txn(state, readerPermit);
 		} finally {
 			if (!permitConsumed) {
 				releaseReaderPermit(readerPermit);
@@ -252,7 +257,7 @@ final class TxnManager {
 
 	/** Marks all tracked transactions as pointing to outdated data. */
 	void reset() throws IOException {
-		forEachOpen(Txn::reset);
+		forEachOpen(TxnState::reset);
 	}
 
 	void close() {
@@ -266,9 +271,9 @@ final class TxnManager {
 			}
 		}
 
-		for (Txn txn : open) {
-			if (open.remove(txn)) {
-				txn.abortAndMarkClosed();
+		for (TxnState state : open) {
+			if (open.remove(state)) {
+				state.abortAndMarkClosed();
 			}
 		}
 
@@ -318,7 +323,7 @@ final class TxnManager {
 	}
 
 	/** Destroys a transaction that was just polled from the pool (its permit is held by the caller). */
-	private void discardPooled(Txn pooled) {
+	private void discardPooled(TxnState pooled) {
 		if (open.remove(pooled)) {
 			pooled.abortAndMarkClosed();
 		}
@@ -336,7 +341,7 @@ final class TxnManager {
 		}
 	}
 
-	private void renewReadTxn(long txn, Txn excluded) throws IOException {
+	private void renewReadTxn(long txn, TxnState excluded) throws IOException {
 		int rc = withReadersFullRetry(excluded, () -> mdb_txn_renew(txn));
 		if (rc != MDB_SUCCESS) {
 			E(rc);
@@ -355,7 +360,7 @@ final class TxnManager {
 	 * This deals with the <em>environment-wide</em> reader table (shared with other processes / managers), which is a
 	 * different resource than {@link #readerSlots}.
 	 */
-	private int withReadersFullRetry(Txn excluded, NativeCall call) throws IOException {
+	private int withReadersFullRetry(TxnState excluded, NativeCall call) throws IOException {
 		int rc = call.run();
 		if (rc != MDB_READERS_FULL) {
 			return rc;
@@ -411,7 +416,7 @@ final class TxnManager {
 		if (txnPool == null) {
 			return;
 		}
-		Txn txn;
+		TxnState txn;
 		boolean aborted = false;
 		while ((txn = txnPool.poll()) != null) {
 			if (open.remove(txn)) {
@@ -424,7 +429,7 @@ final class TxnManager {
 		}
 	}
 
-	private void awaitReaderRelease(Txn excluded, long timeoutMillis) throws IOException {
+	private void awaitReaderRelease(TxnState excluded, long timeoutMillis) throws IOException {
 		readersFullLock.lock();
 		try {
 			if (hasTrackedReaders(excluded)) {
@@ -438,7 +443,7 @@ final class TxnManager {
 		}
 	}
 
-	private boolean hasTrackedReaders(Txn excluded) {
+	private boolean hasTrackedReaders(TxnState excluded) {
 		int size = open.size();
 		return (excluded != null && open.contains(excluded)) ? size > 1 : size > 0;
 	}
@@ -462,7 +467,7 @@ final class TxnManager {
 
 	@FunctionalInterface
 	private interface TxnAction {
-		void apply(Txn txn) throws IOException;
+		void apply(TxnState txn) throws IOException;
 	}
 
 	/**
@@ -471,7 +476,7 @@ final class TxnManager {
 	 */
 	private void forEachOpen(TxnAction action) throws IOException {
 		IOException failure = null;
-		for (Txn txn : open) {
+		for (TxnState txn : open) {
 			try {
 				action.apply(txn);
 			} catch (IOException e) {
@@ -487,11 +492,11 @@ final class TxnManager {
 		}
 	}
 
-	private Txn pollPooled() {
+	private TxnState pollPooled() {
 		return txnPool != null ? txnPool.poll() : null;
 	}
 
-	private boolean offerPooled(Txn txn) {
+	private boolean offerPooled(TxnState txn) {
 		return txnPool != null && !managerClosed && txnPool.offer(txn);
 	}
 
@@ -508,16 +513,16 @@ final class TxnManager {
 	}
 
 	// ---------------------------------------------------------------------------------------------
-	// Txn
+	// Txn state and leases
 	// ---------------------------------------------------------------------------------------------
 
-	final class Txn implements Closeable {
+	/**
+	 * Native transaction state that may be parked and reused. It is never exposed as a caller-owned handle: every
+	 * {@link #createReadTxnInternal(boolean, boolean)} call creates a new {@link Txn} lease around the state.
+	 */
+	private final class TxnState {
 
 		private final long txn;
-		/** {@code false} for foreign transactions wrapped via {@link TxnManager#createTxn(long)}. */
-		private final boolean owned;
-		/** The admission semaphore for this lease; may change when this transaction is recycled. */
-		private Semaphore readerPermit;
 		private final Pool valuePool = pools[POOL_ROTATION.getAndIncrement() & (CACHED_POOLS - 1)];
 
 		private volatile long version;
@@ -529,48 +534,9 @@ final class TxnManager {
 		private volatile boolean resetOnWrite;
 		private volatile boolean stale;
 
-		private Txn(long txn, boolean owned, boolean resetOnWrite, Semaphore readerPermit) {
+		private TxnState(long txn, boolean resetOnWrite) {
 			this.txn = txn;
-			this.owned = owned;
 			this.resetOnWrite = resetOnWrite;
-			this.readerPermit = readerPermit;
-		}
-
-		long get() {
-			return txn;
-		}
-
-		long version() {
-			return version;
-		}
-
-		StampedLongAdderLockManager lockManager() {
-			return lockManager;
-		}
-
-		Pool getValuePool() {
-			return valuePool;
-		}
-
-		@Override
-		public void close() {
-			if (!owned) {
-				return; // foreign transaction: not ours to abort, no permit involved
-			}
-			boolean releasePermit;
-			Semaphore permit;
-			synchronized (this) {
-				if (closed || idle) {
-					return;
-				}
-				permit = readerPermit;
-				releasePermit = release();
-			}
-			if (releasePermit) {
-				releaseReaderPermit(permit);
-			} else {
-				signalReaderInactive();
-			}
 		}
 
 		/** Marks this transaction as pointing to outdated data. */
@@ -609,13 +575,15 @@ final class TxnManager {
 		// -- internals, all called with the monitor held -------------------------------------------
 
 		/** Prepares a pooled transaction for reuse. */
-		private synchronized void reuse(boolean resetOnWrite, Semaphore readerPermit) throws IOException {
+		private synchronized void reuse(boolean resetOnWrite) throws IOException {
+			if (closed || managerClosed) {
+				throw new IOException("Transaction manager is closed");
+			}
 			if (stale) {
 				resetNative();
 				stale = false;
 			}
 			this.resetOnWrite = resetOnWrite;
-			this.readerPermit = readerPermit;
 			this.idle = false;
 			this.closed = false;
 			activate();
@@ -648,12 +616,12 @@ final class TxnManager {
 		/**
 		 * Either parks this transaction in the reuse pool or aborts it, depending on {@link Mode}.
 		 *
-		 * @return {@code true} if the caller must return this transaction's reader permit. This is the case for every
-		 *         normal completion - pooling <em>and</em> aborting - because the permit represents the right to hold a
-		 *         transaction, not the existence of the native transaction. It is only {@code false} if somebody else
-		 *         (i.e. {@link TxnManager#close()}) already took ownership of this transaction.
+		 * @return {@code true} if the caller must return its reader permit. This is the case for every normal
+		 *         completion - pooling and aborting - because the permit represents the right to hold a transaction,
+		 *         not the existence of the native transaction. It is only {@code false} if somebody else (i.e.
+		 *         {@link TxnManager#close()}) already took ownership of this transaction.
 		 */
-		private boolean release() {
+		private synchronized boolean release() {
 			switch (mode) {
 			case RESET:
 				// keep the LMDB reader (and stay tracked in `open`) for reuse, but hand back the permit
@@ -674,7 +642,6 @@ final class TxnManager {
 					return true;
 				}
 				// already reclaimed by close(); permit accounting is done there
-				closed = true;
 				return false;
 			case NONE:
 				// the caller takes over responsibility for the native transaction
@@ -697,9 +664,77 @@ final class TxnManager {
 
 		@Override
 		public String toString() {
-			return "Txn{txn=" + txn + ", version=" + version + ", active=" + active + ", idle=" + idle
+			return "TxnState{txn=" + txn + ", version=" + version + ", active=" + active + ", idle=" + idle
 					+ ", resetOnWrite=" + resetOnWrite + ", stale=" + stale + ", closed=" + closed + "}";
 		}
+	}
 
+	/**
+	 * A caller-owned lease over a native transaction state. Leases are never reused, even when their state is pooled.
+	 */
+	final class Txn implements Closeable {
+
+		private final TxnState state;
+		private final long foreignTxn;
+		private final boolean owned;
+		private final Semaphore readerPermit;
+		private final Pool foreignValuePool;
+		private boolean closed;
+
+		private Txn(long foreignTxn) {
+			this.state = null;
+			this.foreignTxn = foreignTxn;
+			this.owned = false;
+			this.readerPermit = null;
+			this.foreignValuePool = pools[POOL_ROTATION.getAndIncrement() & (CACHED_POOLS - 1)];
+		}
+
+		private Txn(TxnState state, Semaphore readerPermit) {
+			this.state = state;
+			this.foreignTxn = 0L;
+			this.owned = true;
+			this.readerPermit = readerPermit;
+			this.foreignValuePool = null;
+		}
+
+		long get() {
+			return state == null ? foreignTxn : state.txn;
+		}
+
+		long version() {
+			return state == null ? 0L : state.version;
+		}
+
+		StampedLongAdderLockManager lockManager() {
+			return lockManager;
+		}
+
+		Pool getValuePool() {
+			return state == null ? foreignValuePool : state.valuePool;
+		}
+
+		@Override
+		public void close() {
+			if (!owned) {
+				return; // foreign transaction: not ours to abort, no permit involved
+			}
+			synchronized (this) {
+				if (closed) {
+					return;
+				}
+				closed = true;
+			}
+			boolean releasePermit = state.release();
+			if (releasePermit) {
+				releaseReaderPermit(readerPermit);
+			} else {
+				signalReaderInactive();
+			}
+		}
+
+		@Override
+		public String toString() {
+			return state == null ? "Txn{txn=" + foreignTxn + ", foreign=true}" : state.toString();
+		}
 	}
 }

@@ -17,9 +17,9 @@ import java.nio.ByteOrder;
  * Immutable metadata for one LMDB snapshot.
  *
  * <p>
- * The native-map fields are zero when the estimator is used through its file-only constructor. They are captured
- * together with the selected meta page and are used only for zero-copy page views; snapshot correctness still comes
- * from the pinned transaction id and the selected LMDB meta page.
+ * The native-map fields identify LMDB's existing mapping, recovered from a public cursor-returned key pointer and its
+ * file offset. They are zero for transaction-ID-only readers. The caller's pinned read-only transaction protects the
+ * underlying pages; the estimator revalidates the mapping identity before reusing cached native views.
  * </p>
  */
 record LmdbMeta(int metaPage, long txnId, int pageSize, long mapSize, long lastPage, LmdbDb freeDb, LmdbDb mainDb,

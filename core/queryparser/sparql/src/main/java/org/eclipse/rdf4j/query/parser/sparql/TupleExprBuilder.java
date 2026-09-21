@@ -111,7 +111,6 @@ import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -371,39 +370,18 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	/**
-	 * Maps the given ValueExpr to a Var for use as a component of a triple term construction.
-	 * <ul>
-	 * <li>If the supplied ValueExpr is a {@link Var}, the object itself is returned.</li>
-	 * <li>If it is a {@link ValueConstant}, a constant variable is created via
-	 * {@link TupleExprs#createConstVar(Value)}.</li>
-	 * <li>If it is a {@link UnaryValueOperator} (e.g. {@link Str}, {@link Lang}, {@link Datatype}), an anonymous
-	 * variable is created and the expression is registered as an {@link ExtensionElem} on the current graph pattern, so
-	 * that the expression is evaluated at runtime and its result bound to the returned var.</li>
-	 * </ul>
-	 *
-	 * @param expr the ValueExpr to map to a Var
-	 * @return a Var representing the given expression
-	 * @throws IllegalArgumentException if the supplied ValueExpr is null or of an unexpected type
+	 * Maps a simple triple-term component to a variable. Expression-valued components are handled as function arguments
+	 * by {@link #visit(ASTTripleFunc, Object)} before this method is called.
 	 */
 	private Var toVar(ValueExpr expr) {
 		if (expr instanceof Var) {
 			return (Var) expr;
 		} else if (expr instanceof ValueConstant) {
 			return TupleExprs.createConstVar(((ValueConstant) expr).getValue());
-		} else if (expr instanceof UnaryValueOperator) {
-			Var var = createAnonVar();
-			// Add to the current graph pattern's extension elements list,
-			// not as a new isolated Extension node
-			graphPattern.addRequiredTE(
-					new Extension(
-							graphPattern.buildTupleExpr(), // wrap the EXISTING pattern, not SingletonSet
-							new ExtensionElem(expr, var.getName())
-					)
-			);
-			return var;
-		} else {
-			throw new IllegalArgumentException("Unexpected expression type: " + expr.getClass().getName());
+		} else if (expr == null) {
+			throw new IllegalArgumentException("expr is null");
 		}
+		throw new IllegalArgumentException("expr is a: " + expr.getClass());
 	}
 
 	/**
@@ -2388,27 +2366,27 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public LangDir visit(ASTLangDirFunc node, Object data) throws VisitorException {
-		ValueExpr arg = mapValueExprToVar(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new LangDir(arg);
 	}
 
 	@Override
 	public StrLangDir visit(ASTStrLangDirFunc node, Object data) throws VisitorException {
-		ValueExpr lexicalFormArg = mapValueExprToVar(node.jjtGetChild(0).jjtAccept(this, null));
-		ValueExpr langArg = mapValueExprToVar(node.jjtGetChild(1).jjtAccept(this, null));
-		ValueExpr dirArg = mapValueExprToVar(node.jjtGetChild(2).jjtAccept(this, null));
+		ValueExpr lexicalFormArg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr langArg = castToValueExpr(node.jjtGetChild(1).jjtAccept(this, null));
+		ValueExpr dirArg = castToValueExpr(node.jjtGetChild(2).jjtAccept(this, null));
 		return new StrLangDir(lexicalFormArg, langArg, dirArg);
 	}
 
 	@Override
 	public HasLang visit(ASTHasLangFunc node, Object data) throws VisitorException {
-		ValueExpr arg = mapValueExprToVar(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new HasLang(arg);
 	}
 
 	@Override
 	public HasLangDir visit(ASTHasLangDirFunc node, Object data) throws VisitorException {
-		ValueExpr arg = mapValueExprToVar(node.jjtGetChild(0).jjtAccept(this, null));
+		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));
 		return new HasLangDir(arg);
 	}
 
@@ -2738,6 +2716,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Object visit(ASTBind node, Object data) throws VisitorException {
+		// triple term component expressions registered while parsing THIS bind expression are bound by the bind
+		// itself (over the preceding patterns), like the bind's own expression
+		int pendingExtensionElemsBefore = graphPattern.getPendingExtensionElemCount();
 		// bind expression
 		Object child0 = node.jjtGetChild(0).jjtAccept(this, data);
 		ValueExpr ve;
@@ -2779,6 +2760,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		TupleExpr arg = graphPattern.buildJoinFromRequiredTEs();
 		// apply optionals, if any
 		arg = graphPattern.buildOptionalTE(arg);
+		arg = graphPattern.applyPendingExtensionElems(arg, pendingExtensionElemsBefore);
 
 		// check if alias is not previously used in the BGP
 		if (arg.getBindingNames().contains(alias)) {
@@ -3146,16 +3128,26 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	@Override
-	public ValueExprTripleRef visit(ASTTripleFunc node, Object data) throws VisitorException {
-		// Visit the 3 child expressions
-		ValueExpr subjectExpr = castToValueExpr(node.getSubj().jjtAccept(this, data));
-		ValueExpr predicateExpr = castToValueExpr(node.getPred().jjtAccept(this, data));
-		ValueExpr objectExpr = castToValueExpr(node.getObj().jjtAccept(this, data));
+	public ValueExpr visit(ASTTripleFunc node, Object data) throws VisitorException {
+		ValueExpr subject = castToValueExpr(node.getSubj().jjtAccept(this, data));
+		ValueExpr predicate = castToValueExpr(node.getPred().jjtAccept(this, data));
+		ValueExpr object = castToValueExpr(node.getObj().jjtAccept(this, data));
 
-		// Map each ValueExpr to a Var (same as how triple terms are built in the AST visitor)
-		Var s = toVar(subjectExpr);
-		Var p = toVar(predicateExpr);
-		Var o = toVar(objectExpr);
+		if (!isSimpleTripleComponent(subject) || !isSimpleTripleComponent(predicate)
+				|| !isSimpleTripleComponent(object)) {
+			// Keep arbitrary expressions as function arguments so their surrounding expression controls evaluation and
+			// scope. This is required for nested TRIPLE calls and IF/COALESCE short-circuiting in every query clause.
+			FunctionCall functionCall = new FunctionCall(RDF.STATEMENT.stringValue());
+			functionCall.addArg(subject);
+			functionCall.addArg(predicate);
+			functionCall.addArg(object);
+			return functionCall;
+		}
+
+		// Preserve the existing variable/constant lowering for the compact triple-reference representation.
+		Var s = toVar(subject);
+		Var p = toVar(predicate);
+		Var o = toVar(object);
 
 		// Create a fresh anonymous variable to hold the result triple term
 		Var exprVar = createAnonVar();
@@ -3163,25 +3155,36 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		return new ValueExprTripleRef(exprVar.getName(), s, p, o);
 	}
 
-	@Override
-	public TripleComponent visit(ASTSubjectFunc node, Object data) throws VisitorException {
-		var tripleTermExpr = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));
-		Var tripleTermVar = mapValueExprToVar(tripleTermExpr);
-		return new TripleComponent(tripleTermVar, SUBJECT);
+	private boolean isSimpleTripleComponent(ValueExpr expr) {
+		return expr instanceof Var || expr instanceof ValueConstant;
 	}
 
 	@Override
-	public TripleComponent visit(ASTPredicateFunc node, Object data) throws VisitorException {
+	public ValueExpr visit(ASTSubjectFunc node, Object data) throws VisitorException {
 		var tripleTermExpr = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));
-		Var tripleTermVar = mapValueExprToVar(tripleTermExpr);
-		return new TripleComponent(tripleTermVar, PREDICATE);
+		return tripleComponent(tripleTermExpr, SUBJECT, RDF.SUBJECT.stringValue());
 	}
 
 	@Override
-	public TripleComponent visit(ASTObjectFunc node, Object data) throws VisitorException {
+	public ValueExpr visit(ASTPredicateFunc node, Object data) throws VisitorException {
 		var tripleTermExpr = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));
-		Var tripleTermVar = mapValueExprToVar(tripleTermExpr);
-		return new TripleComponent(tripleTermVar, OBJECT);
+		return tripleComponent(tripleTermExpr, PREDICATE, RDF.PREDICATE.stringValue());
+	}
+
+	@Override
+	public ValueExpr visit(ASTObjectFunc node, Object data) throws VisitorException {
+		var tripleTermExpr = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));
+		return tripleComponent(tripleTermExpr, OBJECT, RDF.OBJECT.stringValue());
+	}
+
+	private ValueExpr tripleComponent(ValueExpr tripleTermExpr, TripleComponent.Role role, String functionUri)
+			throws VisitorException {
+		if (tripleTermExpr instanceof Var || tripleTermExpr instanceof ValueConstant) {
+			return new TripleComponent(mapValueExprToVar(tripleTermExpr), role);
+		}
+		FunctionCall functionCall = new FunctionCall(functionUri);
+		functionCall.addArg(tripleTermExpr);
+		return functionCall;
 	}
 
 	protected TripleRef constructTripleRefFromAST(ASTTripleTerm node) throws VisitorException {

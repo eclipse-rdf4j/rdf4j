@@ -19,6 +19,7 @@ import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
+import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NORDAHEAD;
@@ -32,7 +33,9 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
+import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
@@ -43,6 +46,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxreaders;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
+import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
@@ -52,6 +56,7 @@ import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -68,6 +73,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.StampedLock;
 import java.util.zip.CRC32;
 
+import org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
@@ -132,6 +138,9 @@ class ValueStore extends AbstractValueFactory {
 	 * Maximum size of keys before hashing is used (size of two long values)
 	 */
 	private static final int MAX_KEY_SIZE = 16;
+	private static final int MIN_TRANSACTION_VALUE_CACHE_SIZE = 4 * 1024;
+	private static final int MAX_TRANSACTION_VALUE_CACHE_SIZE = 1024 * 1024;
+	private static final long TRANSACTION_VALUE_CACHE_BYTES_PER_ENTRY = 4 * 1024L;
 
 	private static final VarHandle PREVIOUS_NAMESPACE_HANDLE;
 
@@ -178,6 +187,10 @@ class ValueStore extends AbstractValueFactory {
 	 * namespace.
 	 */
 	private final ConcurrentCache<String, Long> namespaceIDCache;
+	private final ObjectLongHashMap<Value> transactionValueIds = new ObjectLongHashMap<>();
+	private final ObjectLongHashMap<String> transactionNamespaceIds = new ObjectLongHashMap<>();
+	private final int transactionValueCacheLimit = calculateTransactionValueCacheLimit(
+			Runtime.getRuntime().maxMemory());
 	private final Map<Long, Long> refCountsTxCache = new HashMap<>();
 	private final ConcurrentHashMap<Value, Long> commonVocabulary = new ConcurrentHashMap<>();
 	/**
@@ -243,6 +256,10 @@ class ValueStore extends AbstractValueFactory {
 	private final boolean inlineLiterals;
 
 	private final ThreadLocal<Boolean> hasReadLock = new ThreadLocal<>();
+	private final ThreadLocal<Integer> revisionReadLockDepth = new ThreadLocal<>();
+	private final ThreadLocal<Long> revisionReadLockStamp = new ThreadLocal<>();
+	private final ThreadLocal<Boolean> failedTransactionCleanup = new ThreadLocal<>();
+	private final ThreadLocal<Throwable> failedTransactionFailure = new ThreadLocal<>();
 
 	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
 		this(dir, new StoreProperties(dir), config);
@@ -258,66 +275,109 @@ class ValueStore extends AbstractValueFactory {
 		this.valueEvictionInterval = config.getValueEvictionInterval();
 		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
 		this.inlineLiterals = config.getInlineLiterals();
-		open();
+		try {
+			open();
 
-		int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
-		valueCache = new LmdbValue[cacheSize];
-		valueCacheId = new long[cacheSize];
-		valueCacheMask = cacheSize - 1;
-		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
-		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
-		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
-		setNewRevision();
+			int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
+			valueCache = new LmdbValue[cacheSize];
+			valueCacheId = new long[cacheSize];
+			valueCacheMask = cacheSize - 1;
+			valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
+			namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
+			namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
+			setNewRevision();
 
-		startTransaction(true);
-		initTermIndexes(config);
-		commit();
+			startTransaction(true);
+			initTermIndexes(config);
+			commit();
 
-		// read maximum id from store
-		readTransaction(env, (stack, txn) -> {
-			long cursor = 0;
-			PointerBuffer pp = stack.mallocPointer(1);
+			// read maximum id from store
+			readTransaction(env, (stack, txn) -> {
+				long cursor = 0;
+				PointerBuffer pp = stack.mallocPointer(1);
 
-			MDBVal keyData = MDBVal.calloc(stack);
-			MDBVal valueData = MDBVal.calloc(stack);
-			for (int lookupDbi : new int[] { dbi, freeDbi }) {
-				try {
-					E(mdb_cursor_open(txn, lookupDbi, pp));
-					cursor = pp.get(0);
+				MDBVal keyData = MDBVal.calloc(stack);
+				MDBVal valueData = MDBVal.calloc(stack);
+				for (int lookupDbi : new int[] { dbi, freeDbi }) {
+					try {
+						E(mdb_cursor_open(txn, lookupDbi, pp));
+						cursor = pp.get(0);
 
-					// set cursor after max ID
-					keyData.mv_data(stack.bytes(new byte[] { ID_KEY, (byte) 0xFF }));
-					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-					if (rc != MDB_SUCCESS) {
-						// directly go to last value
-						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
-					} else {
-						// go to previous value of selected key
-						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
+						// set cursor after max ID
+						keyData.mv_data(stack.bytes(new byte[] { ID_KEY, (byte) 0xFF }));
+						int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+						if (rc != MDB_SUCCESS) {
+							// directly go to last value
+							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
+						} else {
+							// go to previous value of selected key
+							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
+						}
+						if (rc == MDB_SUCCESS && keyData.mv_data().get(0) == ID_KEY) {
+							nextId = Math.max(nextId, ValueIds.getValue(data2id(keyData.mv_data())) + 1);
+						}
+					} finally {
+						if (cursor != 0) {
+							mdb_cursor_close(cursor);
+						}
 					}
-					if (rc == MDB_SUCCESS && keyData.mv_data().get(0) == ID_KEY) {
-						nextId = Math.max(nextId, ValueIds.getValue(data2id(keyData.mv_data())) + 1);
+				}
+				try {
+					cursor = 0;
+					E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), pp));
+					cursor = pp.get(0);
+					if (mdb_cursor_get(cursor, keyData, valueData, MDB_LAST) == MDB_SUCCESS) {
+						nextId = Math.max(nextId, ValueIds.getValue(Varint.readUnsigned(keyData.mv_data())) + 1);
 					}
 				} finally {
 					if (cursor != 0) {
 						mdb_cursor_close(cursor);
 					}
 				}
+				return null;
+			});
+		} catch (IOException | RuntimeException | Error failure) {
+			closeAfterConstructorFailure(failure);
+			throw failure;
+		}
+	}
+
+	private void closeAfterConstructorFailure(Throwable primaryFailure) {
+		try {
+			if (txnManager != null) {
+				txnManager.close();
 			}
+		} catch (Throwable cleanupFailure) {
+			addSuppressed(primaryFailure, cleanupFailure);
+		}
+		long transaction = writeTxn;
+		writeTxn = 0;
+		writeTxnOwner = null;
+		if (transaction != 0) {
 			try {
-				cursor = 0;
-				E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), pp));
-				cursor = pp.get(0);
-				if (mdb_cursor_get(cursor, keyData, valueData, MDB_LAST) == MDB_SUCCESS) {
-					nextId = Math.max(nextId, ValueIds.getValue(Varint.readUnsigned(keyData.mv_data())) + 1);
-				}
-			} finally {
-				if (cursor != 0) {
-					mdb_cursor_close(cursor);
-				}
+				mdb_txn_abort(transaction);
+			} catch (Throwable cleanupFailure) {
+				addSuppressed(primaryFailure, cleanupFailure);
 			}
-			return null;
-		});
+		}
+		if (env != 0) {
+			try {
+				mdb_env_close(env);
+			} catch (Throwable cleanupFailure) {
+				addSuppressed(primaryFailure, cleanupFailure);
+			} finally {
+				env = 0;
+			}
+		}
+		if (hashFile != null) {
+			try {
+				hashFile.close();
+			} catch (Throwable cleanupFailure) {
+				addSuppressed(primaryFailure, cleanupFailure);
+			} finally {
+				hashFile = null;
+			}
+		}
 	}
 
 	private void openHashFileQuietly() {
@@ -476,32 +536,44 @@ class ValueStore extends AbstractValueFactory {
 
 	private void initTermIndexes(LmdbStoreConfig config) throws IOException {
 		try {
-			String indexSpecStr = config.getTripleIndexes();
 			String tripleTermIndexSpecStr = config.getTripleTermIndexes();
+			String persistedTermIndexSpecStr = tripleTermIndexSpecStr;
+			Set<String> defaultTermIndexSpecs = TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES);
 			if (!properties.isLoaded()) {
 				// newly created lmdb store
 				Set<String> termIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
-				termIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
+				termIndexSpecs.addAll(defaultTermIndexSpecs);
 				initTripleTermIndexes(termIndexSpecs);
+				persistedTermIndexSpecStr = String.join(",", TripleIndex.orderIndexSpecs(termIndexSpecs));
 			} else {
 				// Initialize existing indexes
 				Set<String> termIndexSpecs = getTripleTermIndexSpecs();
+				// Older stores persisted only the requested indexes even though the mandatory indexes were created as
+				// well.
+				// Keep those existing topologies visible when reopening with a blank configuration.
+				termIndexSpecs.addAll(defaultTermIndexSpecs);
 				initTripleTermIndexes(termIndexSpecs);
 
 				// Compare the existing triple term indexes with the requested indexes
 				Set<String> reqTermIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
-				reqTermIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
-				if (reqTermIndexSpecs.isEmpty()) {
+				reqTermIndexSpecs.addAll(defaultTermIndexSpecs);
+				if (tripleTermIndexSpecStr == null || tripleTermIndexSpecStr.isBlank()) {
 					// No indexes specified, use the existing ones
-					indexSpecStr = properties.getTripleTermIndexes();
+					persistedTermIndexSpecStr = String.join(",", TripleIndex.orderIndexSpecs(termIndexSpecs));
 				} else if (!reqTermIndexSpecs.equals(termIndexSpecs)) {
 					// Set of indexes needs to be changed
+					// Commit the existing DBI handles before reindex opens a committed source reader. The source cursor
+					// must
+					// never observe wrappers that were opened only in the constructor's setup writer.
+					commit();
 					reindex(termIndexSpecs, reqTermIndexSpecs);
+					persistedTermIndexSpecStr = String.join(",", TripleIndex.orderIndexSpecs(reqTermIndexSpecs));
+				} else {
+					persistedTermIndexSpecStr = String.join(",", TripleIndex.orderIndexSpecs(termIndexSpecs));
 				}
 			}
 
-			properties.setTripleIndexes(indexSpecStr);
-			properties.setTripleTermIndexes(tripleTermIndexSpecStr);
+			properties.setTripleTermIndexes(persistedTermIndexSpecStr);
 		} catch (IOException | SailException e) {
 			throw e;
 		}
@@ -527,77 +599,297 @@ class ValueStore extends AbstractValueFactory {
 			currentIndexes.put(new String(index.getFieldSeq()), index);
 		}
 
-		// Determine the set of newly added indexes and initialize these using an
-		// existing index as source
 		Set<String> addedIndexSpecs = new HashSet<>(newIndexSpecs);
 		addedIndexSpecs.removeAll(currentIndexSpecs);
-
-		if (!addedIndexSpecs.isEmpty()) {
-			TripleIndex sourceIndex = tripleTermIndexes.getFirst();
-			try (MemoryStack stack = stackPush()) {
-				MDBVal keyValue = MDBVal.calloc(stack);
-				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-				keyValue.mv_data(keyBuf);
-				MDBVal dataValue = MDBVal.calloc(stack);
-				for (String fieldSeq : addedIndexSpecs) {
-					logger.debug("Initializing new index '{}'...", fieldSeq);
-
-					TripleIndex addedIndex = new TripleIndex("term-" + fieldSeq, fieldSeq, false, env, writeTxn);
-					RecordIterator[] sourceIter = { null };
-					try {
-						sourceIter[0] = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1,
-								true, txnManager.createTxn(writeTxn));
-
-						RecordIterator it = sourceIter[0];
-						long[] quad;
-						while ((quad = it.next()) != null) {
-							keyBuf.clear();
-							addedIndex.toKey(keyBuf, quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
-									quad[TripleIndex.OBJ_IDX],
-									quad[TripleIndex.CONTEXT_IDX]);
-							keyBuf.flip();
-
-							resizeMap(writeTxn, 0L);
-							E(mdb_put(writeTxn, addedIndex.getDB(true), keyValue, dataValue, 0));
-						}
-					} finally {
-						if (sourceIter[0] != null) {
-							sourceIter[0].close();
-						}
-					}
-
-					currentIndexes.put(fieldSeq, addedIndex);
-				}
-			}
-
-			logger.debug("New index(es) initialized");
-		}
-
-		// Determine the set of removed indexes
 		Set<String> removedIndexSpecs = new HashSet<>(currentIndexSpecs);
 		removedIndexSpecs.removeAll(newIndexSpecs);
 
-		List<Throwable> removedIndexExceptions = new ArrayList<>();
-		// Delete files for removed indexes
-		for (String fieldSeq : removedIndexSpecs) {
+		if (addedIndexSpecs.isEmpty() && removedIndexSpecs.isEmpty()) {
+			return;
+		}
+		if (writeTxn == 0) {
+			startTransaction(false);
+		}
+
+		/*
+		 * A source cursor must never be backed by the writer transaction. A map resize commits (and therefore consumes)
+		 * that writer, which invalidates such a cursor. Each attempt stages every new index in one writer and scans a
+		 * committed source snapshot. If a put or drop needs more map space, the whole attempt is aborted and replayed
+		 * from the beginning after the map has grown.
+		 */
+		while (true) {
+			Map<String, TripleIndex> stagedIndexes = new LinkedHashMap<>();
+			boolean dropAttempted = false;
+			boolean nativeCommitSucceeded = false;
 			try {
-				TripleIndex removedIndex = currentIndexes.remove(fieldSeq);
-				removedIndex.destroy(writeTxn);
-				logger.debug("Deleted file(s) for removed {} index", fieldSeq);
-			} catch (Throwable e) {
-				removedIndexExceptions.add(e);
+				for (String fieldSeq : TripleIndex.orderIndexSpecs(addedIndexSpecs)) {
+					logger.debug("Initializing new index '{}'...", fieldSeq);
+					stagedIndexes.put(fieldSeq,
+							new TripleIndex("term-" + fieldSeq, fieldSeq, false, env, writeTxn));
+				}
+
+				if (!stagedIndexes.isEmpty()) {
+					populateStagedTermIndexes(tripleTermIndexes.getFirst(), stagedIndexes.values());
+				}
+
+				// Keep the source index available until every staged index has been fully populated. A capacity check
+				// before
+				// each drop prevents the usual MAP_FULL case from deleting a DBI before the attempt can be retried.
+				for (String fieldSeq : removalOrder(removedIndexSpecs)) {
+					ensureReindexCapacity();
+					TripleIndex removedIndex = currentIndexes.get(fieldSeq);
+					dropAttempted = true;
+					dropReindexIndex(removedIndex);
+					logger.debug("Deleted file(s) for removed {} index", fieldSeq);
+				}
+
+				Map<String, TripleIndex> resultIndexes = new HashMap<>(currentIndexes);
+				resultIndexes.putAll(stagedIndexes);
+				for (String fieldSeq : removedIndexSpecs) {
+					resultIndexes.remove(fieldSeq);
+				}
+
+				ensureReindexCapacity();
+				/*
+				 * Commit the topology attempt here, while the source and staged DBI handles are still known to belong
+				 * to this attempt. A commit can itself report MAP_FULL after consuming the writer, so a failed commit
+				 * must restart from the unchanged committed source before installing the staged wrappers.
+				 */
+				commitNativeTransaction();
+				nativeCommitSucceeded = true;
+				installTermIndexes(newIndexSpecs, resultIndexes);
+				txnManager.reset();
+				startTransaction(false);
+				return;
+			} catch (IOException | RuntimeException | Error failure) {
+				if (nativeCommitSucceeded) {
+					// The new topology is durable. Do not abort or reopen the old DBI wrappers after a post-commit
+					// failure.
+					throw failure;
+				}
+				if (!abortReindexWriter(failure)) {
+					// Native ownership could not be restored, so no retry can safely use the environment.
+					throw failure;
+				}
+				if (dropAttempted) {
+					try {
+						reopenCurrentTermIndexesAfterAbortedDrop(currentIndexSpecs, currentIndexes);
+					} catch (IOException | RuntimeException | Error reopenFailure) {
+						addSuppressed(failure, reopenFailure);
+						throw failure;
+					}
+				}
+				if (!isMapFull(failure) || !autoGrow) {
+					throw failure;
+				}
+
+				try {
+					growMapAfterReindexFailure();
+					startTransaction(false);
+				} catch (IOException | RuntimeException | Error recoveryFailure) {
+					addSuppressed(failure, recoveryFailure);
+					throw failure;
+				}
 			}
 		}
+	}
 
-		if (!removedIndexExceptions.isEmpty()) {
-			throw new IOException(removedIndexExceptions.getFirst());
+	private void reopenCurrentTermIndexesAfterAbortedDrop(Set<String> currentIndexSpecs,
+			Map<String, TripleIndex> currentIndexes)
+			throws IOException {
+		Map<String, TripleIndex> reopenedIndexes = new LinkedHashMap<>();
+		boolean nativeCommitSucceeded = false;
+		try {
+			startTransaction(false);
+			try (MemoryStack stack = stackPush()) {
+				IntBuffer dbiBuffer = stack.mallocInt(1);
+				for (String fieldSeq : TripleIndex.orderIndexSpecs(currentIndexSpecs)) {
+					TripleIndex index = currentIndexes.get(fieldSeq);
+					if (index == null) {
+						throw new IllegalStateException("Missing current triple-term index " + fieldSeq);
+					}
+					int rc = mdb_dbi_open(writeTxn, index.getName(true), 0, dbiBuffer);
+					if (rc != MDB_SUCCESS) {
+						throw new IOException("Could not reopen term index '" + fieldSeq + "': " + mdb_strerror(rc));
+					}
+					reopenedIndexes.put(fieldSeq,
+							new TripleIndex("term-" + fieldSeq, fieldSeq, false, env, writeTxn));
+					dbiBuffer.clear();
+				}
+			}
+			commitNativeTransaction();
+			nativeCommitSucceeded = true;
+			installTermIndexes(currentIndexSpecs, reopenedIndexes);
+			currentIndexes.clear();
+			currentIndexes.putAll(reopenedIndexes);
+			txnManager.reset();
+		} catch (IOException | RuntimeException | Error failure) {
+			if (!nativeCommitSucceeded) {
+				abortReindexWriter(failure);
+			}
+			throw failure;
 		}
+	}
 
-		// Update the indexes using the specified index order
+	private List<String> removalOrder(Set<String> removedIndexSpecs) {
+		List<String> ordered = new ArrayList<>(removedIndexSpecs);
+		String sourceFieldSeq = new String(tripleTermIndexes.getFirst().getFieldSeq());
+		ordered.sort((left, right) -> {
+			if (left.equals(sourceFieldSeq)) {
+				return right.equals(sourceFieldSeq) ? 0 : 1;
+			}
+			return right.equals(sourceFieldSeq) ? -1 : left.compareTo(right);
+		});
+		return ordered;
+	}
+
+	private void populateStagedTermIndexes(TripleIndex sourceIndex, Collection<TripleIndex> stagedIndexes)
+			throws IOException {
+		try (Txn sourceTxn = txnManager.createReadTxn();
+				RecordIterator source = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1, true, sourceTxn);
+				MemoryStack stack = stackPush()) {
+			MDBVal keyValue = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			MDBVal dataValue = MDBVal.calloc(stack);
+
+			long[] quad;
+			while ((quad = source.next()) != null) {
+				for (TripleIndex stagedIndex : stagedIndexes) {
+					ensureReindexCapacity();
+					keyBuf.clear();
+					stagedIndex.toKey(keyBuf, quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
+							quad[TripleIndex.OBJ_IDX], quad[TripleIndex.CONTEXT_IDX]);
+					keyBuf.flip();
+					keyValue.mv_data(keyBuf);
+					int rc = mdb_put(writeTxn, stagedIndex.getDB(true), keyValue, dataValue, 0);
+					if (rc == MDB_MAP_FULL) {
+						throw new ReindexMapFullException();
+					}
+					E(rc);
+				}
+			}
+		}
+	}
+
+	private void ensureReindexCapacity() throws ReindexMapFullException {
+		if (autoGrow && LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0L)) {
+			throw new ReindexMapFullException();
+		}
+	}
+
+	private void dropReindexIndex(TripleIndex index) throws IOException {
+		int explicitResult = mdb_drop(writeTxn, index.getDB(true), true);
+		if (explicitResult != MDB_SUCCESS) {
+			if (explicitResult == MDB_MAP_FULL) {
+				throw new ReindexMapFullException();
+			}
+			throw new IOException(mdb_strerror(explicitResult));
+		}
+	}
+
+	private void installTermIndexes(Set<String> indexSpecs, Map<String, TripleIndex> indexes) {
 		tripleTermIndexes.clear();
-		for (String fieldSeq : newIndexSpecs) {
-			tripleTermIndexes.add(currentIndexes.remove(fieldSeq));
+		tripleTermSpocIndex = null;
+		tripleTermCspoIndex = null;
+		for (String fieldSeq : TripleIndex.orderIndexSpecs(indexSpecs)) {
+			TripleIndex index = indexes.get(fieldSeq);
+			if (index == null) {
+				throw new IllegalStateException("Missing triple-term index " + fieldSeq);
+			}
+			tripleTermIndexes.add(index);
+			switch (fieldSeq) {
+			case "spoc" -> tripleTermSpocIndex = index;
+			case "cspo" -> tripleTermCspoIndex = index;
+			default -> {
+			}
+			}
 		}
+	}
+
+	private boolean abortReindexWriter(Throwable primaryFailure) {
+		boolean restored = true;
+		long transaction = writeTxn;
+		try {
+			if (transaction != 0) {
+				mdb_txn_abort(transaction);
+			}
+		} catch (RuntimeException | Error cleanupFailure) {
+			restored = false;
+			addSuppressed(primaryFailure, cleanupFailure);
+		} finally {
+			writeTxn = 0;
+			writeTxnOwner = null;
+		}
+		try {
+			clearTransactionValueCaches();
+		} catch (RuntimeException | Error cleanupFailure) {
+			restored = false;
+			addSuppressed(primaryFailure, cleanupFailure);
+		}
+		return restored;
+	}
+
+	private void growMapAfterReindexFailure() throws IOException {
+		var lockManager = txnManager.lockManager();
+		long stamp;
+		try {
+			stamp = lockManager.writeLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while growing the value-store map", e);
+		}
+		boolean deactivationAttempted = false;
+		Throwable failure = null;
+		try {
+			deactivationAttempted = true;
+			txnManager.deactivate();
+			long oldMapSize = mapSize;
+			long newMapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0L);
+			logger.info("Resizing value-store map from {} to {} while rebuilding triple-term indexes", oldMapSize,
+					newMapSize);
+			E(mdb_env_set_mapsize(env, newMapSize));
+			mapSize = newMapSize;
+		} catch (Throwable e) {
+			failure = e;
+		} finally {
+			if (deactivationAttempted) {
+				try {
+					txnManager.activate();
+				} catch (Throwable e) {
+					if (failure == null) {
+						failure = e;
+					} else {
+						addSuppressed(failure, e);
+					}
+				}
+			}
+			try {
+				lockManager.unlockWrite(stamp);
+			} catch (Throwable e) {
+				if (failure == null) {
+					failure = e;
+				} else {
+					addSuppressed(failure, e);
+				}
+			}
+		}
+		if (failure != null) {
+			rethrowValueStoreFailure(failure);
+		}
+	}
+
+	private static boolean isMapFull(Throwable failure) {
+		for (Throwable current = failure; current != null; current = current.getCause()) {
+			if (current instanceof ReindexMapFullException
+					|| current instanceof IOException && mdb_strerror(MDB_MAP_FULL).equals(current.getMessage())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static final class ReindexMapFullException extends IOException {
+		private static final long serialVersionUID = 1L;
 	}
 
 	private long nextId(byte valueType) throws IOException {
@@ -671,6 +963,53 @@ class ValueStore extends AbstractValueFactory {
 	private void setNewRevision() {
 		revision = new ValueStoreRevision.Default(this);
 		lazyRevision = new ValueStoreRevision.Lazy(revision);
+	}
+
+	private long acquireRevisionReadLock() {
+		Integer depth = revisionReadLockDepth.get();
+		if (depth == null) {
+			long stamp = revisionLock.readLock();
+			revisionReadLockDepth.set(1);
+			revisionReadLockStamp.set(stamp);
+			return stamp;
+		}
+		revisionReadLockDepth.set(depth + 1);
+		return 0;
+	}
+
+	private void releaseRevisionReadLock(long stamp) {
+		Integer depth = revisionReadLockDepth.get();
+		long heldStamp = revisionReadLockStamp.get() == null ? stamp : revisionReadLockStamp.get();
+		if (depth == null || depth == 1) {
+			revisionReadLockDepth.remove();
+			revisionReadLockStamp.remove();
+		} else {
+			revisionReadLockDepth.set(depth - 1);
+		}
+		if (depth == null || depth == 1) {
+			if (heldStamp != 0) {
+				revisionLock.unlockRead(heldStamp);
+			}
+		}
+		if (depth != null && depth == 1 && failedTransactionCleanup.get() != null) {
+			Throwable primaryFailure = failedTransactionFailure.get();
+			failedTransactionCleanup.remove();
+			try {
+				long cleanupStamp = revisionLock.writeLock();
+				try {
+					clearFailedTransactionState();
+				} finally {
+					revisionLock.unlockWrite(cleanupStamp);
+				}
+			} catch (RuntimeException | Error cleanupFailure) {
+				if (primaryFailure == null) {
+					throw cleanupFailure;
+				}
+				addSuppressed(primaryFailure, cleanupFailure);
+			} finally {
+				failedTransactionFailure.remove();
+			}
+		}
 	}
 
 	ValueStoreRevision getRevision() {
@@ -796,40 +1135,52 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public LmdbValue getLazyValue(long id) throws IOException {
-		long stamp = revisionLock.readLock();
+		long stamp = acquireRevisionReadLock();
 		try {
-			// Check value cache
-			LmdbValue resultValue = cachedValue(id);
-
-			if (resultValue == null) {
-				int idType = ValueIds.getIdType(id);
-				switch (idType) {
-				case ValueIds.T_URI:
-					resultValue = new LmdbIRI(lazyRevision, id);
-					break;
-				case ValueIds.T_DOUBLE:
-				case ValueIds.T_LITERAL:
-					resultValue = new LmdbLiteral(lazyRevision, id);
-					break;
-				case ValueIds.T_BNODE:
-					resultValue = new LmdbBNode(lazyRevision, id);
-					break;
-				case ValueIds.T_TRIPLE:
-					resultValue = new LmdbTripleTerm(lazyRevision, id);
-					break;
-				default:
-					if (ValueIds.isInlined(id)) {
-						resultValue = new LmdbLiteral(lazyRevision, id);
-						break;
-					}
-					throw new IOException("Unsupported value with id=" + id + " and id type " + idType);
+			if (isWriteTransactionOwner()) {
+				// A writer can read its uncommitted dictionary entries. Materialize those entries before returning so a
+				// retained RDF value remains valid when the writer later rolls back.
+				LmdbValue eagerValue = getValueInternal(id, true, false);
+				if (eagerValue != null) {
+					return eagerValue;
 				}
 			}
-
-			return resultValue;
+			return getLazyValueInternal(id);
 		} finally {
-			revisionLock.unlockRead(stamp);
+			releaseRevisionReadLock(stamp);
 		}
+	}
+
+	private LmdbValue getLazyValueInternal(long id) throws IOException {
+		// Check value cache
+		LmdbValue resultValue = cachedValue(id);
+
+		if (resultValue == null) {
+			int idType = ValueIds.getIdType(id);
+			switch (idType) {
+			case ValueIds.T_URI:
+				resultValue = new LmdbIRI(lazyRevision, id);
+				break;
+			case ValueIds.T_DOUBLE:
+			case ValueIds.T_LITERAL:
+				resultValue = new LmdbLiteral(lazyRevision, id);
+				break;
+			case ValueIds.T_BNODE:
+				resultValue = new LmdbBNode(lazyRevision, id);
+				break;
+			case ValueIds.T_TRIPLE:
+				resultValue = new LmdbTripleTerm(lazyRevision, id);
+				break;
+			default:
+				if (ValueIds.isInlined(id)) {
+					resultValue = new LmdbLiteral(lazyRevision, id);
+					break;
+				}
+				throw new IOException("Unsupported value with id=" + id + " and id type " + idType);
+			}
+		}
+
+		return resultValue;
 	}
 
 	/**
@@ -840,36 +1191,48 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public LmdbValue getValue(long id) throws IOException {
-		long stamp = revisionLock.readLock();
+		long stamp = acquireRevisionReadLock();
 		try {
-			// Check value cache
-			LmdbValue resultValue = cachedValue(id);
-
-			if (resultValue == null) {
-				// unpack inlined values if possible
-				if (ValueIds.isInlined(id)) {
-					Literal unpacked = Values.unpackLiteral(id, this);
-					return new LmdbLiteral(revision, unpacked.getLabel(), unpacked.getDatatype(), id);
-				}
-
-				if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
-					resultValue = id2tripleTerm(id, null);
-					cacheValue(id, resultValue);
-					return resultValue;
-				}
-
-				// Value not in cache, fetch it from file
-				byte[] data = getData(id);
-				if (data != null) {
-					resultValue = data2value(id, data, null);
-					// Store value in cache
-					cacheValue(id, resultValue);
-				}
+			if (isWriteTransactionOwner()) {
+				// A writer can read uncommitted dictionary entries. Bypass unresolved cache entries and materialize
+				// nested
+				// values so a value retained across rollback keeps its RDF identity.
+				return getValueInternal(id, true, false);
 			}
-			return resultValue;
+			return getValueInternal(id, false, true);
 		} finally {
-			revisionLock.unlockRead(stamp);
+			releaseRevisionReadLock(stamp);
 		}
+	}
+
+	private LmdbValue getValueInternal(long id, boolean eagerTripleComponents, boolean useCache) throws IOException {
+		// Check value cache unless the writer-owner path explicitly needs to bypass an unresolved cached wrapper.
+		LmdbValue resultValue = useCache ? cachedValue(id) : null;
+
+		if (resultValue == null) {
+			// unpack inlined values if possible
+			if (ValueIds.isInlined(id)) {
+				Literal unpacked = Values.unpackLiteral(id, this);
+				return new LmdbLiteral(revision, unpacked.getLabel(), unpacked.getDatatype(), id);
+			}
+
+			if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+				resultValue = id2tripleTermInternal(id, null, eagerTripleComponents);
+				if (resultValue != null) {
+					cacheValue(id, resultValue);
+				}
+				return resultValue;
+			}
+
+			// Value not in cache, fetch it from file
+			byte[] data = getData(id);
+			if (data != null) {
+				resultValue = data2value(id, data, null, eagerTripleComponents);
+				// Store value in cache
+				cacheValue(id, resultValue);
+			}
+		}
+		return resultValue;
 	}
 
 	/**
@@ -880,87 +1243,143 @@ class ValueStore extends AbstractValueFactory {
 	 * @return <code>true</code> if value could be successfully resolved, else <code>false</code>
 	 */
 	public boolean resolveValue(long id, LmdbValue value) {
-		// unpack inlined values if possible
-		if (ValueIds.isInlined(id)) {
-			Literal unpacked = Values.unpackLiteral(id, this);
-			((LmdbLiteral) value).setLabel(unpacked.getLabel());
-			((LmdbLiteral) value).setDatatype(unpacked.getDatatype());
-			((LmdbLiteral) value).setBaseDirection(unpacked.getBaseDirection());
-			return true;
-		}
-		// Try to get from cache
-		LmdbValue cached = cachedValue(id);
-		if (cached != null && this.getRevision().getRevisionId() == cached.getValueStoreRevision().getRevisionId()) {
-			value.setFromInitializedValue(cached);
-			return true;
-		}
+		long stamp = acquireRevisionReadLock();
 		try {
-			if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
-				value = id2tripleTerm(id, (LmdbTripleTerm) value);
-				cacheValue(id, value);
+			boolean eagerTripleComponents = isWriteTransactionOwner();
+			// unpack inlined values if possible
+			if (ValueIds.isInlined(id)) {
+				Literal unpacked = Values.unpackLiteral(id, this);
+				((LmdbLiteral) value).setLabel(unpacked.getLabel());
+				((LmdbLiteral) value).setDatatype(unpacked.getDatatype());
+				((LmdbLiteral) value).setBaseDirection(unpacked.getBaseDirection());
 				return true;
 			}
+			// Try to get from cache
+			LmdbValue cached = cachedValue(id);
+			if (!eagerTripleComponents && cached != null
+					&& this.getRevision().getRevisionId() == cached.getValueStoreRevision().getRevisionId()) {
+				value.setFromInitializedValue(cached);
+				return true;
+			}
+			try {
+				if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+					value = id2tripleTermInternal(id, (LmdbTripleTerm) value, eagerTripleComponents);
+					cacheValue(id, value);
+					return true;
+				}
 
-			byte[] data = getData(id);
-			if (data != null) {
-//				System.out.println(id);
-				data2value(id, data, value);
-				cacheValue(id, value);
-				return true;
+				byte[] data = getData(id);
+				if (data != null) {
+					// System.out.println(id);
+					data2value(id, data, value, eagerTripleComponents);
+					cacheValue(id, value);
+					return true;
+				}
+			} catch (IOException e) {
+				throw new SailException(e);
 			}
-		} catch (IOException e) {
-			throw new SailException(e);
+		} finally {
+			releaseRevisionReadLock(stamp);
 		}
 		return false;
 	}
 
 	private void resizeMap(long txn, long requiredSize) throws IOException {
-		if (autoGrow) {
-			if (LmdbUtil.requiresResize(mapSize, pageSize, txn, requiredSize)) {
-				// map is full, resize
-				requiredSize = LmdbUtil.getNewSize(pageSize, txn, requiredSize);
+		if (!autoGrow || !LmdbUtil.requiresResize(mapSize, pageSize, txn, requiredSize)) {
+			return;
+		}
 
-				var lockManager = txnManager.lockManager();
-				boolean readLocked = hasReadLock.get() != null;
-				if (readLocked) {
-					lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
+		long newRequiredSize = LmdbUtil.getNewSize(pageSize, txn, requiredSize);
+		if (revisionReadLockDepth.get() != null) {
+			// The logical lookup owns a revision read scope. Unwind it completely before acquiring the revision write
+			// lock;
+			// the caller retries from fresh native handles after the resize has published the new revision.
+			throw new ResizeRequiredException(newRequiredSize);
+		}
+		resizeMapAfterRevisionReadScope(newRequiredSize);
+	}
+
+	private void resizeMapAfterRevisionReadScope(long requiredSize) throws IOException {
+		var lockManager = txnManager.lockManager();
+		boolean readLocked = hasReadLock.get() != null;
+		if (readLocked) {
+			lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
+		}
+
+		long revisionStamp = revisionLock.writeLock();
+		long managerStamp = 0;
+		boolean deactivationAttempted = false;
+		Throwable failure = null;
+		try {
+			try {
+				managerStamp = lockManager.writeLock();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				failure = new IOException("Interrupted while acquiring the value-store resize lock", e);
+			}
+
+			if (failure == null) {
+				boolean activeWriteTxn = writeTxn != 0;
+				if (activeWriteTxn) {
+					endTransactionWithRevisionWrite();
 				}
-				long stamp;
-				try {
-					stamp = lockManager.writeLock();
-				} catch (InterruptedException e) {
-					throw new IOException(e);
+
+				deactivationAttempted = true;
+				txnManager.deactivate();
+				long oldMapSize = mapSize;
+				mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, requiredSize);
+				logger.info("Resizing map from {} to {}", oldMapSize, mapSize);
+				E(mdb_env_set_mapsize(env, mapSize));
+
+				if (!activeWriteTxn && invalidateRevisionOnCommit) {
+					publishInvalidatedRevision();
+					invalidateRevisionOnCommit = false;
 				}
-
+				if (activeWriteTxn) {
+					startTransaction(false);
+				}
+			}
+		} catch (IOException | RuntimeException | Error e) {
+			failure = e;
+		} finally {
+			if (deactivationAttempted) {
 				try {
-					boolean activeWriteTxn = writeTxn != 0;
-					if (activeWriteTxn) {
-						endTransaction(true, true);
-					}
-					txnManager.deactivate();
-
-					long oldMapSize = mapSize;
-					mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, requiredSize);
-
-					logger.info("Resizing map from {} to {}", oldMapSize, mapSize);
-
-					E(mdb_env_set_mapsize(env, mapSize));
-					if (activeWriteTxn) {
-						startTransaction(false);
-					}
-
 					txnManager.activate();
-				} finally {
-					lockManager.unlockWrite(stamp);
-					if (readLocked) {
-						try {
-							lockManager.readLock();
-						} catch (InterruptedException e) {
-							throw new IOException(e);
-						}
+				} catch (Throwable e) {
+					if (failure == null) {
+						failure = e;
+					} else {
+						failure.addSuppressed(e);
 					}
 				}
 			}
+			if (managerStamp != 0) {
+				try {
+					lockManager.unlockWrite(managerStamp);
+				} catch (Throwable e) {
+					if (failure == null) {
+						failure = e;
+					} else {
+						failure.addSuppressed(e);
+					}
+				}
+			}
+			revisionLock.unlockWrite(revisionStamp);
+			if (readLocked) {
+				try {
+					lockManager.readLock();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					if (failure == null) {
+						failure = new IOException("Interrupted while restoring the value-store read lock", e);
+					} else {
+						failure.addSuppressed(e);
+					}
+				}
+			}
+		}
+		if (failure != null) {
+			rethrowValueStoreFailure(failure);
 		}
 	}
 
@@ -1221,6 +1640,16 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	LmdbTripleTerm id2tripleTerm(long id, LmdbTripleTerm value) throws IOException {
+		long stamp = acquireRevisionReadLock();
+		try {
+			return id2tripleTermInternal(id, value, isWriteTransactionOwner());
+		} finally {
+			releaseRevisionReadLock(stamp);
+		}
+	}
+
+	private LmdbTripleTerm id2tripleTermInternal(long id, LmdbTripleTerm value, boolean eagerComponents)
+			throws IOException {
 		return readTransaction(env, (stack, txn) -> {
 			final var index = tripleTermCspoIndex;
 
@@ -1240,13 +1669,20 @@ class ValueStore extends AbstractValueFactory {
 			if (rc == MDB_SUCCESS && index.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
 				long[] quad = new long[4];
 				index.keyToQuad(keyVal.mv_data(), quad);
+				Resource subject = (Resource) (eagerComponents
+						? getValueInternal(quad[0], true, false)
+						: getLazyValueInternal(quad[0]));
+				IRI predicate = (IRI) (eagerComponents
+						? getValueInternal(quad[1], true, false)
+						: getLazyValueInternal(quad[1]));
+				LmdbValue object = eagerComponents
+						? getValueInternal(quad[2], true, false)
+						: getLazyValueInternal(quad[2]);
 				if (value != null) {
-					value.setFromInitializedValue(new LmdbTripleTerm(revision, (Resource) getLazyValue(quad[0]),
-							(IRI) getLazyValue(quad[1]), getLazyValue(quad[2]), id));
+					value.setFromInitializedValue(new LmdbTripleTerm(revision, subject, predicate, object, id));
 					return value;
 				} else {
-					return new LmdbTripleTerm(revision, (Resource) getLazyValue(quad[0]),
-							(IRI) getLazyValue(quad[1]), getLazyValue(quad[2]), id);
+					return new LmdbTripleTerm(revision, subject, predicate, object, id);
 				}
 			}
 			return null;
@@ -1254,52 +1690,107 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	long findTripleTermId(long subj, long pred, long obj, boolean create) throws IOException {
+		for (;;) {
+			try {
+				return findTripleTermIdInternal(subj, pred, obj, create);
+			} catch (ResizeRequiredException e) {
+				if (revisionReadLockDepth.get() != null) {
+					throw e;
+				}
+				resizeMapAfterRevisionReadScope(e.requiredSize);
+			}
+		}
+	}
+
+	private long findTripleTermIdInternal(long subj, long pred, long obj, boolean create) throws IOException {
 		return readTransaction(env, (stack, txn) -> {
 			final TripleIndex mainIndex = tripleTermSpocIndex;
 
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_cursor_open(txn, mainIndex.getDB(true), pp));
 			long cursor = pp.get(0);
+			try {
+				MDBVal keyVal = MDBVal.malloc(stack);
+				// use calloc to get an empty data value
+				MDBVal dataVal = MDBVal.calloc(stack);
+				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				mainIndex.getMinKey(keyBuf, subj, pred, obj, -1);
+				keyBuf.flip();
+				keyVal.mv_data(keyBuf);
 
-			MDBVal keyVal = MDBVal.malloc(stack);
-			// use calloc to get an empty data value
-			MDBVal dataVal = MDBVal.calloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			mainIndex.getMinKey(keyBuf, subj, pred, obj, -1);
-			keyBuf.flip();
-			keyVal.mv_data(keyBuf);
-
-			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
-			if (rc == MDB_SUCCESS && mainIndex.createMatcher(subj, pred, obj, -1).matches(keyVal.mv_data())) {
-				var bb = keyVal.mv_data();
-				return Varint.readUnsigned(bb, Varint.calcLengthUnsigned(subj) + Varint.calcLengthUnsigned(pred) +
-						Varint.calcLengthUnsigned(obj));
-			}
-
-			if (!create) {
-				return LmdbValue.UNKNOWN_ID;
-			}
-
-			return writeTransaction((stack2, writeTxn) -> {
-				incrementRefCount(stack2, writeTxn, subj);
-				incrementRefCount(stack2, writeTxn, pred);
-				incrementRefCount(stack2, writeTxn, obj);
-
-				long id = nextId(TRIPLE_VALUE);
-				for (TripleIndex index : tripleTermIndexes) {
-					keyBuf.clear();
-					index.toKey(keyBuf, subj, pred, obj, id);
-					keyBuf.flip();
-
-					// update buffer positions in MDBVal
-					keyVal.mv_data(keyBuf);
-
-					resizeMap(writeTxn, 0L);
-					E(mdb_put(writeTxn, index.getDB(true), keyVal, dataVal, 0));
+				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+				if (rc == MDB_SUCCESS && mainIndex.createMatcher(subj, pred, obj, -1).matches(keyVal.mv_data())) {
+					var bb = keyVal.mv_data();
+					return Varint.readUnsigned(bb, Varint.calcLengthUnsigned(subj) + Varint.calcLengthUnsigned(pred) +
+							Varint.calcLengthUnsigned(obj));
 				}
-				return id;
-			});
+
+				if (!create) {
+					return LmdbValue.UNKNOWN_ID;
+				}
+
+				// The mutation path may abort this active writer on a native failure. Close the lookup cursor before
+				// that
+				// ownership transition so the outer cleanup cannot close a cursor owned by an already-consumed
+				// transaction.
+				mdb_cursor_close(cursor);
+				cursor = 0;
+				try {
+					return writeTransaction((stack2, writeTxn) -> {
+						// Check capacity before allocating an ID or changing any reference count. A resize during the
+						// index loop
+						// would commit the partially populated writer before retrying and leave the remaining indexes
+						// absent.
+						resizeMap(writeTxn, tripleTermIndexWriteSize(stack2, subj, pred, obj));
+
+						incrementRefCount(stack2, writeTxn, subj);
+						incrementRefCount(stack2, writeTxn, pred);
+						incrementRefCount(stack2, writeTxn, obj);
+
+						long id = nextId(TRIPLE_VALUE);
+						for (TripleIndex index : tripleTermIndexes) {
+							keyBuf.clear();
+							index.toKey(keyBuf, subj, pred, obj, id);
+							keyBuf.flip();
+
+							// update buffer positions in MDBVal
+							keyVal.mv_data(keyBuf);
+
+							E(mdb_put(writeTxn, index.getDB(true), keyVal, dataVal, 0));
+						}
+						return id;
+					});
+				} catch (ResizeRequiredException e) {
+					throw e;
+				} catch (IOException | RuntimeException | Error failure) {
+					// A native put can fail after an earlier index was written. Abandon the whole active writer so a
+					// caller cannot
+					// commit a partially populated triple-term topology.
+					if (writeTxn != 0) {
+						abandonFailedWriteTransaction(failure);
+					}
+					throw failure;
+				}
+			} finally {
+				if (cursor != 0) {
+					mdb_cursor_close(cursor);
+				}
+			}
 		});
+	}
+
+	private long tripleTermIndexWriteSize(MemoryStack stack, long subj, long pred, long obj) {
+		ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+		long requiredSize = 0L;
+		for (TripleIndex index : tripleTermIndexes) {
+			keyBuf.clear();
+			// The new ID is not allocated until after this check. Long.MAX_VALUE gives the maximum varint width for the
+			// fourth key component without mutating the ID allocator.
+			index.toKey(keyBuf, subj, pred, obj, Long.MAX_VALUE);
+			requiredSize = Math.addExact(requiredSize, keyBuf.position());
+			requiredSize = Math.addExact(requiredSize, 2L + Long.BYTES);
+		}
+		return requiredSize;
 	}
 
 	public RecordIterator getTripleTerms(long subj, long pred, long obj) throws IOException {
@@ -1438,6 +1929,20 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public long getId(Value value, boolean create) throws IOException {
+		for (;;) {
+			try {
+				return getIdInternal(value, create);
+			} catch (ResizeRequiredException e) {
+				if (revisionReadLockDepth.get() != null) {
+					// A nested value or triple-term lookup must unwind to the outermost logical lookup before resizing.
+					throw e;
+				}
+				resizeMapAfterRevisionReadScope(e.requiredSize);
+			}
+		}
+	}
+
+	private long getIdInternal(Value value, boolean create) throws IOException {
 		// Try to get the internal ID from the value itself
 		boolean isOwnValue = isOwnValue(value);
 		if (isOwnValue) {
@@ -1450,7 +1955,15 @@ class ValueStore extends AbstractValueFactory {
 			}
 		}
 
-		long stamp = revisionLock.readLock();
+		long transactionId = getTransactionValueId(value);
+		if (transactionId != LmdbValue.UNKNOWN_ID) {
+			if (isOwnValue) {
+				((LmdbValue) value).setInternalID(transactionId, revision);
+			}
+			return transactionId;
+		}
+
+		long stamp = acquireRevisionReadLock();
 		try {
 			// Check cache
 			Long cachedID = valueIDCache.get(value);
@@ -1460,6 +1973,7 @@ class ValueStore extends AbstractValueFactory {
 
 			if (cachedID != null) {
 				long id = cachedID;
+				cacheTransactionValueId(value, id);
 				if (isOwnValue) {
 					// Store id in value for fast access in any consecutive calls
 					((LmdbValue) value).setInternalID(id, revision);
@@ -1505,6 +2019,7 @@ class ValueStore extends AbstractValueFactory {
 			}
 
 			if (id != LmdbValue.UNKNOWN_ID) {
+				cacheTransactionValueId(value, id);
 				if (isOwnValue) {
 					// Store id in value for fast access in any consecutive calls
 					((LmdbValue) value).setInternalID(id, revision);
@@ -1527,7 +2042,7 @@ class ValueStore extends AbstractValueFactory {
 				return id;
 			}
 		} finally {
-			revisionLock.unlockRead(stamp);
+			releaseRevisionReadLock(stamp);
 		}
 		return LmdbValue.UNKNOWN_ID;
 	}
@@ -1820,6 +2335,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	public void startTransaction(boolean resize) throws IOException {
+		clearTransactionValueCaches();
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
 
@@ -1853,45 +2369,212 @@ class ValueStore extends AbstractValueFactory {
 	 * Closes the snapshot and the DB iterator if any was opened in the current transaction
 	 */
 	void endTransaction(boolean commit, boolean autoGrow) throws IOException {
-		if (writeTxn != 0) {
-			if (commit) {
-				if (!autoGrow) {
-					try (MemoryStack stack = stackPush()) {
-						updateRefCounts(stack, writeTxn);
-					}
-					refCountsTxCache.clear();
+		Throwable failure = null;
+		try {
+			endTransactionInternal(commit, autoGrow, false);
+		} catch (IOException | RuntimeException | Error e) {
+			failure = e;
+			throw e;
+		} finally {
+			try {
+				clearTransactionValueCaches();
+			} catch (RuntimeException | Error cleanupFailure) {
+				if (failure == null) {
+					throw cleanupFailure;
 				}
-				if (invalidateRevisionOnCommit) {
-					long stamp = revisionLock.writeLock();
-					try {
-						E(mdb_txn_commit(writeTxn));
-						flushPendingHashUpdates();
-						long revisionId = lazyRevision.getRevisionId();
-						cleaner.register(lazyRevision, () -> {
-							synchronized (unusedRevisionIds) {
-								unusedRevisionIds.add(revisionId);
-							}
-							if (nextValueEvictionTime < 0) {
-								nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
-							}
-						});
-						setNewRevision();
-						clearCaches();
-					} finally {
+				addSuppressed(failure, cleanupFailure);
+			}
+		}
+	}
+
+	private void endTransactionWithRevisionWrite() throws IOException {
+		Throwable failure = null;
+		try {
+			endTransactionInternal(true, true, true);
+		} catch (IOException | RuntimeException | Error e) {
+			failure = e;
+			throw e;
+		} finally {
+			try {
+				clearTransactionValueCaches();
+			} catch (RuntimeException | Error cleanupFailure) {
+				if (failure == null) {
+					throw cleanupFailure;
+				}
+				addSuppressed(failure, cleanupFailure);
+			}
+		}
+	}
+
+	private void endTransactionInternal(boolean commit, boolean autoGrow, boolean revisionWriteHeld)
+			throws IOException {
+		if (writeTxn == 0) {
+			return;
+		}
+
+		if (!commit) {
+			long stamp = revisionWriteHeld ? 0 : revisionLock.writeLock();
+			try {
+				try {
+					mdb_txn_abort(writeTxn);
+				} finally {
+					writeTxn = 0;
+					writeTxnOwner = null;
+				}
+				clearFailedTransactionState();
+			} finally {
+				if (!revisionWriteHeld) {
+					revisionLock.unlockWrite(stamp);
+				}
+			}
+			invalidateRevisionOnCommit = false;
+			return;
+		}
+
+		boolean nativeCommitSucceeded = false;
+		try {
+			if (!autoGrow) {
+				try (MemoryStack stack = stackPush()) {
+					updateRefCounts(stack, writeTxn);
+				}
+				refCountsTxCache.clear();
+			}
+			if (invalidateRevisionOnCommit) {
+				long stamp = revisionWriteHeld ? 0 : revisionLock.writeLock();
+				try {
+					commitNativeTransaction();
+					nativeCommitSucceeded = true;
+					flushPendingHashUpdates();
+					publishInvalidatedRevision();
+				} finally {
+					if (!revisionWriteHeld) {
 						revisionLock.unlockWrite(stamp);
 					}
-				} else {
-					E(mdb_txn_commit(writeTxn));
-					flushPendingHashUpdates();
 				}
 			} else {
-				refCountsTxCache.clear();
-				mdb_txn_abort(writeTxn);
-				clearPendingHashUpdates();
+				commitNativeTransaction();
+				nativeCommitSucceeded = true;
+				flushPendingHashUpdates();
 			}
+		} catch (IOException | RuntimeException | Error failure) {
+			if (!nativeCommitSucceeded) {
+				abandonFailedWriteTransaction(failure, revisionWriteHeld);
+			}
+			throw failure;
+		} finally {
+			invalidateRevisionOnCommit = false;
+		}
+	}
+
+	private void publishInvalidatedRevision() {
+		long revisionId = lazyRevision.getRevisionId();
+		cleaner.register(lazyRevision, () -> {
+			synchronized (unusedRevisionIds) {
+				unusedRevisionIds.add(revisionId);
+			}
+			if (nextValueEvictionTime < 0) {
+				nextValueEvictionTime = System.currentTimeMillis() + this.valueEvictionInterval;
+			}
+		});
+		setNewRevision();
+		clearCaches();
+	}
+
+	private void commitNativeTransaction() throws IOException {
+		long transaction = writeTxn;
+		int rc;
+		try {
+			rc = mdb_txn_commit(transaction);
+		} finally {
+			// mdb_txn_commit consumes the handle even when it returns an error. Never let a later rollback or close
+			// abort
+			// that stale native pointer.
 			writeTxn = 0;
 			writeTxnOwner = null;
-			invalidateRevisionOnCommit = false;
+		}
+		E(rc);
+	}
+
+	private void clearFailedTransactionState() {
+		refCountsTxCache.clear();
+		clearPendingHashUpdates();
+		setNewRevision();
+		clearCaches();
+	}
+
+	private void abandonFailedWriteTransaction(Throwable primaryFailure) {
+		abandonFailedWriteTransaction(primaryFailure, false);
+	}
+
+	private void abandonFailedWriteTransaction(Throwable primaryFailure, boolean revisionWriteHeld) {
+		try {
+			long transaction = writeTxn;
+			try {
+				if (transaction != 0) {
+					mdb_txn_abort(transaction);
+				}
+			} finally {
+				// Abort and commit both consume the native handle. Do not let a cleanup failure leave a stale handle
+				// behind.
+				writeTxn = 0;
+				writeTxnOwner = null;
+			}
+		} catch (RuntimeException | Error cleanupFailure) {
+			addSuppressed(primaryFailure, cleanupFailure);
+		}
+
+		try {
+			requestFailedTransactionCleanup(primaryFailure, revisionWriteHeld);
+		} catch (RuntimeException | Error cleanupFailure) {
+			addSuppressed(primaryFailure, cleanupFailure);
+		}
+	}
+
+	private void requestFailedTransactionCleanup(Throwable primaryFailure, boolean revisionWriteHeld) {
+		if (revisionWriteHeld) {
+			clearFailedTransactionState();
+			return;
+		}
+		if (revisionReadLockDepth.get() != null) {
+			failedTransactionCleanup.set(Boolean.TRUE);
+			failedTransactionFailure.set(primaryFailure);
+			return;
+		}
+		long stamp = revisionLock.writeLock();
+		try {
+			clearFailedTransactionState();
+		} finally {
+			revisionLock.unlockWrite(stamp);
+		}
+	}
+
+	private static void addSuppressed(Throwable primaryFailure, Throwable cleanupFailure) {
+		if (primaryFailure != cleanupFailure) {
+			primaryFailure.addSuppressed(cleanupFailure);
+		}
+	}
+
+	private static void rethrowValueStoreFailure(Throwable failure) throws IOException {
+		if (failure instanceof IOException e) {
+			throw e;
+		}
+		if (failure instanceof RuntimeException e) {
+			throw e;
+		}
+		if (failure instanceof Error e) {
+			throw e;
+		}
+		throw new IOException(failure);
+	}
+
+	private static final class ResizeRequiredException extends IOException {
+		private static final long serialVersionUID = 1L;
+
+		private final long requiredSize;
+
+		private ResizeRequiredException(long requiredSize) {
+			super("Value-store map resize required");
+			this.requiredSize = requiredSize;
 		}
 	}
 
@@ -2184,11 +2867,12 @@ class ValueStore extends AbstractValueFactory {
 		return literalData;
 	}
 
-	private LmdbValue data2value(long id, byte[] data, LmdbValue value) throws IOException {
+	private LmdbValue data2value(long id, byte[] data, LmdbValue value, boolean eagerTripleComponents)
+			throws IOException {
 		return switch (data[0]) {
 		case URI_VALUE -> data2uri(id, data, (LmdbIRI) value);
 		case BNODE_VALUE -> data2bnode(id, data, (LmdbBNode) value);
-		case LITERAL_VALUE -> data2literal(id, data, (LmdbLiteral) value);
+		case LITERAL_VALUE -> data2literal(id, data, (LmdbLiteral) value, eagerTripleComponents);
 		default -> throw new IllegalArgumentException("Invalid type " + data[0] + " for value with id " + id);
 		};
 	}
@@ -2220,7 +2904,8 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private LmdbLiteral data2literal(long id, byte[] data, LmdbLiteral value) throws IOException {
+	private LmdbLiteral data2literal(long id, byte[] data, LmdbLiteral value, boolean eagerTripleComponents)
+			throws IOException {
 		ByteBuffer bb = ByteBuffer.wrap(data);
 		// skip type marker
 		bb.get();
@@ -2229,7 +2914,7 @@ class ValueStore extends AbstractValueFactory {
 		IRI datatype = null;
 		// literal without a datatype
 		if (datatypeID > 0) {
-			datatype = (IRI) getValue(datatypeID);
+			datatype = (IRI) getValueInternal(datatypeID, eagerTripleComponents, !eagerTripleComponents);
 		}
 
 		int directionAndLangLength = bb.get() & 0xFF;
@@ -2290,8 +2975,16 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private long getNamespaceID(String namespace, boolean create) throws IOException {
+		if (isWriteTransactionOwner()) {
+			long transactionId = transactionNamespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID);
+			if (transactionId != LmdbValue.UNKNOWN_ID) {
+				return transactionId;
+			}
+		}
+
 		Long cacheID = namespaceIDCache.get(namespace);
 		if (cacheID != null) {
+			cacheTransactionNamespaceId(namespace, cacheID);
 			return cacheID;
 		}
 
@@ -2302,10 +2995,53 @@ class ValueStore extends AbstractValueFactory {
 
 		long id = findId(namespaceData, create);
 		if (id != LmdbValue.UNKNOWN_ID) {
+			cacheTransactionNamespaceId(namespace, id);
 			namespaceIDCache.put(namespace, id);
 		}
 
 		return id;
+	}
+
+	static int calculateTransactionValueCacheLimit(long maxHeapBytes) {
+		long heapScaledLimit = maxHeapBytes / TRANSACTION_VALUE_CACHE_BYTES_PER_ENTRY;
+		return (int) Math.clamp(heapScaledLimit, MIN_TRANSACTION_VALUE_CACHE_SIZE,
+				MAX_TRANSACTION_VALUE_CACHE_SIZE);
+	}
+
+	private boolean isWriteTransactionOwner() {
+		return writeTxn != 0 && writeTxnOwner == Thread.currentThread();
+	}
+
+	private long getTransactionValueId(Value value) {
+		if (!isWriteTransactionOwner()) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		return transactionValueIds.getIfAbsent(value, LmdbValue.UNKNOWN_ID);
+	}
+
+	private void cacheTransactionValueId(Value value, long id) {
+		if (isWriteTransactionOwner() && transactionValueIds.size() < transactionValueCacheLimit) {
+			transactionValueIds.put(value, id);
+		}
+	}
+
+	private void cacheTransactionNamespaceId(String namespace, long id) {
+		if (isWriteTransactionOwner() && transactionNamespaceIds.size() < transactionValueCacheLimit) {
+			transactionNamespaceIds.put(namespace, id);
+		}
+	}
+
+	private void clearTransactionValueCaches() {
+		boolean compactValueIds = transactionValueIds.size() > MIN_TRANSACTION_VALUE_CACHE_SIZE;
+		boolean compactNamespaceIds = transactionNamespaceIds.size() > MIN_TRANSACTION_VALUE_CACHE_SIZE;
+		transactionValueIds.clear();
+		transactionNamespaceIds.clear();
+		if (compactValueIds) {
+			transactionValueIds.compact();
+		}
+		if (compactNamespaceIds) {
+			transactionNamespaceIds.compact();
+		}
 	}
 
 	/*-------------------------------------*

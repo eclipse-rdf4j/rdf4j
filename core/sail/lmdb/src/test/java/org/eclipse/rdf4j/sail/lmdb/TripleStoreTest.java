@@ -13,7 +13,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
@@ -24,12 +27,20 @@ import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
+import java.nio.channels.ClosedByInterruptException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermission;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntConsumer;
 import java.util.stream.Collectors;
 
@@ -37,6 +48,7 @@ import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -62,6 +74,226 @@ public class TripleStoreTest {
 			count++;
 		}
 		return count;
+	}
+
+	@Test
+	public void alignedBatchReusesMainIndexWriteCursor() throws Exception {
+		long[] subj = { 1, 2, 3 };
+		long[] pred = { 4, 4, 4 };
+		long[] obj = { 5, 6, 7 };
+		long[] context = { 0, 0, 0 };
+
+		tripleStore.startTransaction();
+		try {
+			tripleStore.storeTriplesAligned(subj, pred, obj, context, subj.length, true);
+
+			Field cursorsField = TripleStore.class.getDeclaredField("explicitAlignedWriteCursors");
+			cursorsField.setAccessible(true);
+			long[] cursors = (long[]) cursorsField.get(tripleStore);
+			assertTrue("the main index should retain a write cursor for the transaction", cursors[0] != 0);
+			assertTrue("the secondary index should retain a write cursor for the transaction", cursors[1] != 0);
+		} finally {
+			tripleStore.rollback();
+		}
+	}
+
+	@Test
+	public void alignedBatchRejectsCountBeyondAnyInputArray() throws Exception {
+		tripleStore.startTransaction();
+		try {
+			assertThrows(IllegalArgumentException.class,
+					() -> tripleStore.storeTriplesAligned(new long[] { 1 }, new long[] { 2, 3 }, new long[] { 4, 5 },
+							new long[] { 6, 7 }, 2, true));
+			assertThrows(IllegalArgumentException.class,
+					() -> tripleStore.storeTriplesAligned(new long[] { 1, 2 }, new long[] { 3 }, new long[] { 4, 5 },
+							new long[] { 6, 7 }, 2, true));
+			assertThrows(IllegalArgumentException.class,
+					() -> tripleStore.storeTriplesAligned(new long[] { 1, 2 }, new long[] { 3, 4 }, new long[] { 5 },
+							new long[] { 6, 7 }, 2, true));
+			assertThrows(IllegalArgumentException.class,
+					() -> tripleStore.storeTriplesAligned(new long[] { 1, 2 }, new long[] { 3, 4 }, new long[] { 5, 6 },
+							new long[] { 7 }, 2, true));
+			assertThrows(IllegalArgumentException.class,
+					() -> tripleStore.storeTriplesAligned(new long[] { 1 }, new long[] { 2 }, new long[] { 3 },
+							new long[] { 4 }, -1, true));
+		} finally {
+			tripleStore.rollback();
+		}
+	}
+
+	@Test
+	public void journalRollbackDiscardsWritesAndTemporaryFile() throws Exception {
+		tripleStore.startTransaction();
+		assertTrue(tripleStore.storeTriple(101L, 102L, 103L, 104L, true));
+		tripleStore.rollback();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertEquals(0, count(tripleStore.getTriples(txn, -1, -1, -1, -1, true)));
+		}
+		try (var files = Files.list(dataDir.toPath())) {
+			assertTrue(files.noneMatch(path -> path.getFileName().toString().endsWith(".journal")));
+		}
+	}
+
+	@Test
+	public void interruptedJournalAppendRollsBackAndReopens() throws Exception {
+		AtomicReference<Throwable> workerFailure = new AtomicReference<>();
+		AtomicReference<Boolean> journalAbsentBeforeRollback = new AtomicReference<>();
+		AtomicReference<Throwable> journalObservationFailure = new AtomicReference<>();
+		Thread writer = new Thread(() -> {
+			Throwable failure = null;
+			try {
+				tripleStore.startTransaction();
+				assertTrue(tripleStore.storeTriple(401L, 402L, 403L, 404L, true));
+				try (var files = Files.list(dataDir.toPath())) {
+					assertTrue("the acknowledged seed must have a journal file",
+							files.anyMatch(path -> path.getFileName().toString().endsWith(".journal")));
+				}
+				Thread.currentThread().interrupt();
+				tripleStore.storeTriple(411L, 412L, 413L, 414L, true);
+				failure = new AssertionError("interrupted journal append unexpectedly completed");
+			} catch (Throwable thrown) {
+				failure = thrown;
+			} finally {
+				Thread.interrupted();
+				try (var files = Files.list(dataDir.toPath())) {
+					journalAbsentBeforeRollback.set(
+							files.noneMatch(path -> path.getFileName().toString().endsWith(".journal")));
+				} catch (Throwable observationFailure) {
+					journalObservationFailure.set(observationFailure);
+					if (failure == null) {
+						failure = observationFailure;
+					} else if (failure != observationFailure) {
+						failure.addSuppressed(observationFailure);
+					}
+				}
+				try {
+					tripleStore.rollback();
+				} catch (Throwable cleanupFailure) {
+					if (failure == null) {
+						failure = cleanupFailure;
+					} else if (failure != cleanupFailure) {
+						failure.addSuppressed(cleanupFailure);
+					}
+				}
+				workerFailure.set(failure);
+			}
+		}, "interrupted-triple-store-writer");
+		try {
+			writer.start();
+			writer.join(TimeUnit.SECONDS.toMillis(5));
+			assertFalse("interrupted triple-store writer did not terminate", writer.isAlive());
+			assertInstanceOf(ClosedByInterruptException.class, workerFailure.get());
+			assertTrue("journal observation failed: " + journalObservationFailure.get(),
+					journalObservationFailure.get() == null);
+			assertTrue("the append failure must discard the journal before safety rollback",
+					Boolean.TRUE.equals(journalAbsentBeforeRollback.get()));
+		} finally {
+			if (writer.isAlive()) {
+				writer.interrupt();
+				writer.join(TimeUnit.SECONDS.toMillis(5));
+			}
+		}
+
+		try (var files = Files.list(dataDir.toPath())) {
+			assertTrue(files.noneMatch(path -> path.getFileName().toString().endsWith(".journal")));
+		}
+		tripleStore.startTransaction();
+		assertTrue(tripleStore.storeTriple(421L, 422L, 423L, 424L, true));
+		tripleStore.commit();
+		tripleStore.close();
+
+		try (TripleStore reopened = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
+				Txn txn = reopened.getTxnManager().createReadTxn()) {
+			try (RecordIterator seed = reopened.getTriples(txn, 401L, 402L, 403L, 404L, true)) {
+				assertEquals(0, count(seed));
+			}
+			try (RecordIterator failed = reopened.getTriples(txn, 411L, 412L, 413L, 414L, true)) {
+				assertEquals(0, count(failed));
+			}
+			try (RecordIterator control = reopened.getTriples(txn, 421L, 422L, 423L, 424L, true)) {
+				assertEquals(1, count(control));
+			}
+		}
+	}
+
+	@Test
+	public void journalFailureClosesSourceIteratorBeforeAbortingWriter() throws Exception {
+		tripleStore.startTransaction();
+		RecordIterator delegate = tripleStore.getTriples(tripleStore.getTxnManager().createTxn(tripleStore.writeTxn),
+				-1, -1, -1, -1, true);
+		IllegalStateException sourceFailure = new IllegalStateException("source iterator failed");
+		boolean[] closeObservedLiveWriter = { false };
+		boolean[] closed = { false };
+		RecordIterator failingIterator = new RecordIterator() {
+			@Override
+			public long[] next() {
+				throw sourceFailure;
+			}
+
+			@Override
+			public void close() {
+				if (closed[0]) {
+					return;
+				}
+				closed[0] = true;
+				closeObservedLiveWriter[0] = tripleStore.writeTxn != 0;
+				if (closeObservedLiveWriter[0]) {
+					delegate.close();
+				}
+			}
+		};
+
+		RuntimeException thrown = assertThrows(RuntimeException.class,
+				() -> tripleStore.removeTriples(failingIterator, true, null));
+		assertSame("the source failure must remain the primary exception", sourceFailure, thrown);
+		assertTrue("the source iterator must be closed after the journal failure", closed[0]);
+		assertTrue("the source iterator must close before its writer is aborted", closeObservedLiveWriter[0]);
+
+		tripleStore.rollback();
+		tripleStore.startTransaction();
+		assertTrue(tripleStore.storeTriple(201L, 202L, 203L, 204L, true));
+		tripleStore.commit();
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertEquals(1, count(tripleStore.getTriples(txn, 201L, 202L, 203L, 204L, true)));
+		}
+	}
+
+	@Test
+	public void journalCleanupFailureDoesNotUndoCommittedTransaction() throws Exception {
+		Assumptions.assumeTrue(Files.getFileAttributeView(dataDir.toPath(), PosixFileAttributeView.class) != null,
+				"requires a POSIX file system to force journal disposal failure");
+		tripleStore.startTransaction();
+		assertTrue(tripleStore.storeTriple(111L, 112L, 113L, 114L, true));
+
+		Path journalPath;
+		try (var files = Files.list(dataDir.toPath())) {
+			journalPath = files.filter(path -> path.getFileName().toString().endsWith(".journal"))
+					.findFirst()
+					.orElseThrow(() -> new AssertionError("journal file was not created before commit"));
+		}
+		Set<PosixFilePermission> originalPermissions = Files.getPosixFilePermissions(dataDir.toPath());
+		Set<PosixFilePermission> readOnlyPermissions = EnumSet.copyOf(originalPermissions);
+		readOnlyPermissions.remove(PosixFilePermission.OWNER_WRITE);
+		readOnlyPermissions.remove(PosixFilePermission.GROUP_WRITE);
+		readOnlyPermissions.remove(PosixFilePermission.OTHERS_WRITE);
+		Files.setPosixFilePermissions(dataDir.toPath(), readOnlyPermissions);
+		try {
+			Assumptions.assumeFalse(Files.isWritable(dataDir.toPath()),
+					"the file system ignored the read-only directory permissions");
+			tripleStore.commit();
+		} finally {
+			Files.setPosixFilePermissions(dataDir.toPath(), originalPermissions);
+		}
+
+		assertTrue("the failed disposal should leave a retryable journal artifact", Files.exists(journalPath));
+		tripleStore.close();
+		assertFalse("explicit close should retry deferred journal disposal", Files.exists(journalPath));
+
+		try (TripleStore reopened = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
+				Txn txn = reopened.getTxnManager().createReadTxn()) {
+			assertEquals(1, count(reopened.getTriples(txn, 111L, 112L, 113L, 114L, true)));
+		}
 	}
 
 	@Test
@@ -120,7 +352,10 @@ public class TripleStoreTest {
 	public void testAlignedWriteFallbackRemovesSecondaryInferredRowsForPromotions() throws Exception {
 		File fallbackDir = new File(dataDir, "aligned-fallback-store");
 		fallbackDir.mkdirs();
-		try (TripleStore fallbackStore = new TripleStore(fallbackDir, new LmdbStoreConfig("spoc,ospc,psoc"), null)) {
+		// This test directly exercises the legacy record-cache fallback helper. Journal-backed auto-growth recovery is
+		// covered by TripleStoreMapFullRecoveryTest and intentionally rejects direct fallback entry.
+		try (TripleStore fallbackStore = new TripleStore(fallbackDir,
+				new LmdbStoreConfig("spoc,ospc,psoc").setAutoGrow(false), null)) {
 			long[] subj = { 11 };
 			long[] pred = { 22 };
 			long[] obj = { 33 };

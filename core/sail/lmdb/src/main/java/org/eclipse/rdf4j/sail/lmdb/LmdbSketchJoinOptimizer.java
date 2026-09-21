@@ -2350,7 +2350,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			for (int i = 0; i < joinArgs.size(); i++) {
 				TupleExpr joinArg = joinArgs.get(i);
 				if (!(joinArg instanceof BindingSetAssignment assignment)
-						|| assignment.getAssuredBindingNames().size() < 2) {
+						|| assignment.getBindingNames().size() < 2) {
 					continue;
 				}
 				List<BindingSetAssignment> split = splitCartesianAssignment(assignment);
@@ -2364,7 +2364,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private List<BindingSetAssignment> splitCartesianAssignment(BindingSetAssignment assignment) {
-			List<String> bindingNames = new ArrayList<>(assignment.getAssuredBindingNames());
+			// every column takes part in the split; a column with an UNDEF row (a non-assured name) is caught by
+			// the null check below and prevents the split
+			List<String> bindingNames = new ArrayList<>(assignment.getBindingNames());
 			List<BindingSet> rows = new ArrayList<>();
 			Map<String, LinkedHashSet<Value>> valuesByName = new LinkedHashMap<>();
 			for (String bindingName : bindingNames) {
@@ -3688,8 +3690,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			if (prefixBindingNames.containsAll(conditionBindingNames)
 					|| !availableNames.containsAll(conditionBindingNames)
 					|| Collections.disjoint(assignmentBindingNames, conditionBindingNames)
-					|| (!assignmentBindingNames.containsAll(conditionBindingNames)
-							&& containsNotEquals(deferredFilter.condition))) {
+					|| !assignmentBindingNames.containsAll(conditionBindingNames)) {
 				return null;
 			}
 			join.setRightArg(applyFilter(join.getRightArg(), deferredFilter, "bindingPrefix"));
@@ -3702,20 +3703,6 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				bindingNames.addAll(plannerBindingNames(pattern.getBindingNames()));
 			}
 			return bindingNames;
-		}
-
-		private boolean containsNotEquals(ValueExpr condition) {
-			boolean[] contains = { false };
-			condition.visit(new AbstractSimpleQueryModelVisitor<>() {
-				@Override
-				public void meet(Compare node) {
-					if (node.getOperator() == Compare.CompareOp.NE) {
-						contains[0] = true;
-					}
-					super.meet(node);
-				}
-			});
-			return contains[0];
 		}
 
 		private Join createJoin(TupleExpr left, TupleExpr right) {

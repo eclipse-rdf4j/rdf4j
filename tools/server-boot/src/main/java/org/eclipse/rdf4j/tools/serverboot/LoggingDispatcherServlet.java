@@ -13,8 +13,13 @@ package org.eclipse.rdf4j.tools.serverboot;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.web.servlet.DispatcherServlet;
+import org.springframework.web.servlet.ModelAndView;
 
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -23,6 +28,36 @@ class LoggingDispatcherServlet extends DispatcherServlet {
 	private static final long serialVersionUID = 1L;
 
 	private static final Logger logger = LoggerFactory.getLogger(LoggingDispatcherServlet.class);
+
+	private final ShutdownCoordinator sharedShutdownCoordinator;
+	private ShutdownCoordinator ownedShutdownCoordinator;
+
+	LoggingDispatcherServlet() {
+		this(null);
+	}
+
+	LoggingDispatcherServlet(ShutdownCoordinator sharedShutdownCoordinator) {
+		this.sharedShutdownCoordinator = sharedShutdownCoordinator;
+	}
+
+	@Override
+	public void init(ServletConfig config) throws ServletException {
+		super.init(config);
+		if (sharedShutdownCoordinator == null) {
+			ownedShutdownCoordinator = new ShutdownCoordinator(findRootContext(), this::exitJvm, this::haltJvm);
+		}
+	}
+
+	@Override
+	public void destroy() {
+		try {
+			super.destroy();
+		} finally {
+			if (ownedShutdownCoordinator != null) {
+				ownedShutdownCoordinator.close();
+			}
+		}
+	}
 
 	@Override
 	protected void doDispatch(HttpServletRequest request, HttpServletResponse response) throws Exception {
@@ -37,6 +72,94 @@ class LoggingDispatcherServlet extends DispatcherServlet {
 				request.getServletPath(),
 				request.getContextPath(),
 				request.getPathInfo());
-		super.doDispatch(request, response);
+		try {
+			super.doDispatch(request, response);
+		} catch (Exception | OutOfMemoryError throwable) {
+			OutOfMemoryError outOfMemoryError = OutOfMemoryErrorSupport.find(throwable);
+			if (outOfMemoryError == null) {
+				throw throwable;
+			}
+			try {
+				shutdownServer(outOfMemoryError);
+			} catch (RuntimeException | Error shutdownFailure) {
+				if (shutdownFailure != outOfMemoryError) {
+					outOfMemoryError.addSuppressed(shutdownFailure);
+				}
+			}
+			throw outOfMemoryError;
+		}
+	}
+
+	@Override
+	protected ModelAndView processHandlerException(HttpServletRequest request, HttpServletResponse response,
+			Object handler, Exception exception) throws Exception {
+		if (OutOfMemoryErrorSupport.find(exception) != null) {
+			throw exception;
+		}
+		return super.processHandlerException(request, response, handler, exception);
+	}
+
+	private void shutdownServer(OutOfMemoryError outOfMemoryError) throws Exception {
+		Throwable shutdownFailure = null;
+		try {
+			ShutdownCoordinator coordinator = sharedShutdownCoordinator != null
+					? sharedShutdownCoordinator
+					: ownedShutdownCoordinator;
+			if (coordinator != null) {
+				coordinator.requestOutOfMemory("OutOfMemoryError");
+			} else {
+				// A servlet created outside the application wiring still has a bounded emergency fallback. Production
+				// wiring
+				// creates the coordinator during healthy startup, so this branch is only for embedding and test
+				// containers.
+				SignalShutdownHandler.requestEmergencyTermination(1, this::haltJvm, this::exitJvm);
+			}
+		} catch (RuntimeException | Error startFailure) {
+			shutdownFailure = startFailure;
+		}
+
+		try {
+			// Publish the shutdown state before emitting the diagnostic event. An appender may itself exhaust memory,
+			// but it
+			// must not prevent the coordinator from being armed or replace the original out-of-memory error.
+			logger.error("OutOfMemoryError while dispatching a request; shutting down the server", outOfMemoryError);
+		} catch (RuntimeException | Error loggingFailure) {
+			if (shutdownFailure == null) {
+				shutdownFailure = loggingFailure;
+			} else if (shutdownFailure != loggingFailure) {
+				shutdownFailure.addSuppressed(loggingFailure);
+			}
+		}
+		if (shutdownFailure != null) {
+			if (shutdownFailure instanceof RuntimeException runtimeException) {
+				throw runtimeException;
+			}
+			if (shutdownFailure instanceof Error error) {
+				throw error;
+			}
+			throw new ServletException(shutdownFailure);
+		}
+	}
+
+	private ConfigurableApplicationContext findRootContext() {
+		ApplicationContext context = getWebApplicationContext();
+		while (context != null && context.getParent() != null) {
+			context = context.getParent();
+		}
+		return context instanceof ConfigurableApplicationContext configurable ? configurable : null;
+	}
+
+	/**
+	 * Exits the JVM with the given status. Overridable for tests.
+	 */
+	protected void exitJvm(int status) {
+		System.exit(status);
+	}
+
+	/**
+	 * Immediately halts the JVM with the given status. Overridable for tests.
+	 */
+	protected void haltJvm(int status) {
+		Runtime.getRuntime().halt(status);
 	}
 }

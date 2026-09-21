@@ -39,6 +39,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
@@ -103,6 +104,125 @@ public class TxnManagerTest {
 				}
 			}
 			waiter.join(TimeUnit.SECONDS.toMillis(5));
+			mdb_env_close(env);
+		}
+	}
+
+	@Test
+	void staleCloseAfterPooledReuseCannotReleaseCurrentBorrow(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
+			TxnManager.Txn firstLease = fixture.manager.createReadTxn();
+			firstLease.close();
+			TxnManager.Txn currentLease = fixture.manager.createReadTxn();
+			CountDownLatch started = new CountDownLatch(1);
+			CountDownLatch acquired = new CountDownLatch(1);
+			AtomicReference<TxnManager.Txn> waiterTxn = new AtomicReference<>();
+			AtomicReference<Throwable> waiterFailure = new AtomicReference<>();
+			Thread waiter = null;
+
+			try {
+				// A late close of the old lease must not return the current lease's permit or native state.
+				firstLease.close();
+				fixture.hold(TxnManager.POOL_SIZE - 2);
+				waiter = Thread.ofPlatform().start(() -> {
+					started.countDown();
+					try {
+						waiterTxn.set(fixture.manager.createReadTxn());
+					} catch (Throwable e) {
+						waiterFailure.set(e);
+					} finally {
+						acquired.countDown();
+					}
+				});
+
+				assertTrue(started.await(5, TimeUnit.SECONDS));
+				assertFalse(acquired.await(200, TimeUnit.MILLISECONDS),
+						"A stale close must not make the current borrow appear available");
+			} finally {
+				currentLease.close();
+				if (waiter != null) {
+					waiter.join(TimeUnit.SECONDS.toMillis(5));
+				}
+				if (waiterTxn.get() != null) {
+					waiterTxn.get().close();
+				}
+			}
+
+			assertTrue(waiterFailure.get() == null, () -> "Unexpected waiter failure: " + waiterFailure.get());
+		}
+	}
+
+	@Test
+	void staleCloseAfterPooledReuseCannotAliasTheNextNativeBorrow(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
+			TxnManager.Txn firstLease = fixture.manager.createReadTxn();
+			long firstHandle = firstLease.get();
+			firstLease.close();
+
+			TxnManager.Txn currentLease = fixture.manager.createReadTxn();
+			TxnManager.Txn nextLease = null;
+			try {
+				assertEquals(firstHandle, currentLease.get(),
+						"The second borrow should reuse the pooled native reader");
+				// This is the old caller's reference after the pool has reset its shared wrapper for currentLease.
+				firstLease.close();
+
+				nextLease = fixture.manager.createReadTxn();
+				assertNotEquals(currentLease.get(), nextLease.get(),
+						"A stale close must not return the current native reader to the pool");
+			} finally {
+				if (nextLease != null) {
+					nextLease.close();
+				}
+				currentLease.close();
+			}
+		}
+	}
+
+	@Test
+	void closeRaceAbortsTheNativeReaderBeforeItsSlotIsReused(@TempDir Path dataDir) throws Exception {
+		long env = openEnv(dataDir, 1);
+		try {
+			for (int attempt = 0; attempt < 256; attempt++) {
+				TxnManager manager = new TxnManager(env, TxnManager.Mode.ABORT);
+				TxnManager.Txn lease = manager.createReadTxn();
+				CountDownLatch ready = new CountDownLatch(2);
+				CountDownLatch go = new CountDownLatch(1);
+				FutureTask<Void> managerClose = new FutureTask<>(() -> {
+					ready.countDown();
+					await(go);
+					manager.close();
+					return null;
+				});
+				FutureTask<Void> leaseClose = new FutureTask<>(() -> {
+					ready.countDown();
+					await(go);
+					lease.close();
+					return null;
+				});
+				Thread managerCloser = Thread.ofPlatform().start(managerClose);
+				Thread leaseCloser = Thread.ofPlatform().start(leaseClose);
+
+				assertTrue(ready.await(5, TimeUnit.SECONDS));
+				go.countDown();
+				managerClose.get(5, TimeUnit.SECONDS);
+				leaseClose.get(5, TimeUnit.SECONDS);
+				managerCloser.join(5_000);
+				leaseCloser.join(5_000);
+				assertFalse(managerCloser.isAlive(), "manager close must complete");
+				assertFalse(leaseCloser.isAlive(), "lease close must complete");
+
+				try (MemoryStack stack = stackPush()) {
+					PointerBuffer pp = stack.mallocPointer(1);
+					int rc = mdb_txn_begin(env, NULL, MDB_RDONLY, pp);
+					assertEquals(org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS, rc,
+							"the close race must not leak the environment's only reader slot");
+					if (rc == org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS) {
+						mdb_txn_abort(pp.get(0));
+					}
+				}
+			}
+		} finally {
 			mdb_env_close(env);
 		}
 	}

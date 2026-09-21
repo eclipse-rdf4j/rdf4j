@@ -67,6 +67,7 @@ public class Rdf4jServerWorkbenchApplication {
 		SignalShutdownHandler signalShutdownHandler = SignalShutdownHandler.register("INT", "TERM");
 		ConfigurableApplicationContext context = application.run(args);
 		signalShutdownHandler.attachContext(context);
+		signalShutdownHandler.attachCoordinator(context.getBean(ShutdownCoordinator.class));
 	}
 
 	static void ensureAppDataDirAccessible() {
@@ -112,6 +113,11 @@ public class Rdf4jServerWorkbenchApplication {
 		return new WebappResourceExtractor();
 	}
 
+	@Bean(destroyMethod = "close")
+	ShutdownCoordinator shutdownCoordinator(ConfigurableApplicationContext context) {
+		return new ShutdownCoordinator(context, System::exit, Runtime.getRuntime()::halt);
+	}
+
 	@Bean
 	TomcatServletWebServerFactory tomcatFactory(WebappResourceExtractor extractor) {
 		TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
@@ -133,8 +139,9 @@ public class Rdf4jServerWorkbenchApplication {
 	}
 
 	@Bean
-	ServletRegistrationBean<DispatcherServlet> rdf4jServerServlet(ApplicationContext parentContext) {
-		DispatcherServlet dispatcherServlet = new LoggingDispatcherServlet();
+	ServletRegistrationBean<DispatcherServlet> rdf4jServerServlet(ApplicationContext parentContext,
+			ShutdownCoordinator shutdownCoordinator) {
+		DispatcherServlet dispatcherServlet = new LoggingDispatcherServlet(shutdownCoordinator);
 		dispatcherServlet.setContextClass(ServerXmlWebApplicationContext.class);
 		dispatcherServlet.setContextConfigLocation(String.join(",",
 				"classpath:/rdf4j/server-webapp/WEB-INF/common-webapp-servlet.xml",
@@ -201,6 +208,18 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.addUrlPatterns("/rdf4j-server", "/rdf4j-server/*", "/rdf4j-workbench", "/rdf4j-workbench/*");
 		registration.setName("ServerPrefixForwardFilter");
 		registration.setOrder(1000);
+		registration.setAsyncSupported(true);
+		return registration;
+	}
+
+	@Bean
+	FilterRegistrationBean<OutOfMemoryShutdownFilter> outOfMemoryShutdownFilter(
+			ShutdownCoordinator shutdownCoordinator) {
+		FilterRegistrationBean<OutOfMemoryShutdownFilter> registration = new FilterRegistrationBean<>(
+				new OutOfMemoryShutdownFilter(shutdownCoordinator));
+		registration.addUrlPatterns("/*");
+		registration.setName("outOfMemoryShutdownFilter");
+		registration.setOrder(Integer.MIN_VALUE);
 		registration.setAsyncSupported(true);
 		return registration;
 	}

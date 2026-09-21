@@ -28,17 +28,20 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /**
- * Rewrites safe RDF-term equality IN filters into a finite VALUES semijoin anchor.
+ * Rewrites safe finite RDF-term filters into a VALUES semijoin anchor.
  */
 final class FilterInValuesOptimizer implements QueryOptimizer {
 
@@ -46,13 +49,20 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new Visitor());
+		tupleExpr.visit(new Visitor(false));
+	}
+
+	void optimizeSameTermDisjunction(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		tupleExpr.visit(new Visitor(true));
 	}
 
 	private static final class Visitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
-		private Visitor() {
+		private final boolean disjunctionOnly;
+
+		private Visitor(boolean disjunctionOnly) {
 			super(false);
+			this.disjunctionOnly = disjunctionOnly;
 		}
 
 		@Override
@@ -62,9 +72,24 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 				return;
 			}
 
-			BindingSetAssignment assignment = safeValuesAnchor(filter.getCondition());
+			BindingSetAssignment assignment = disjunctionOnly
+					? safeSameTermDisjunctionAnchor(filter.getCondition())
+					: safeValuesAnchor(filter.getCondition());
+			TupleExpr argument = filter.getArg();
+			Set<String> bindingNames = assignment == null ? Set.of() : assignment.getBindingNames();
 			if (assignment == null
-					|| !filter.getArg().getAssuredBindingNames().containsAll(assignment.getBindingNames())) {
+					|| !argument.getAssuredBindingNames().containsAll(bindingNames)
+					|| !QueryEvaluationUtility.getActualOutputBindingNames(argument).containsAll(bindingNames)
+					|| !QueryEvaluationUtility.isRepeatable(argument)
+					|| !QueryEvaluationUtility.canDiscardWithoutEvaluation(argument)) {
+				return;
+			}
+
+			// The rewritten Join(VALUES, arg) may be executed as a bind join that pushes each VALUES row into
+			// the cloned argument, so the argument must additionally satisfy the binding-injection contract
+			// for the VALUES variables (an Extend target collision or an expression observing the injected
+			// name would change results).
+			if (!QueryEvaluationUtility.permitsBindingInjection(argument, bindingNames)) {
 				return;
 			}
 
@@ -72,7 +97,51 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 				return;
 			}
 
-			filter.replaceWith(new Join(assignment, filter.getArg().clone()));
+			invalidateAncestorMergeJoins(filter);
+			filter.replaceWith(new Join(assignment, argument.clone()));
+		}
+	}
+
+	/**
+	 * This optimizer runs after physical join planning. Introducing an unordered VALUES input changes the ordering
+	 * contract of every containing join, so an ancestor merge-join hint derived from the old subtree is no longer
+	 * valid. Descendant hints remain valid because their inputs are unchanged. The statement orders a demoted merge
+	 * join pushed into its operands are reset too: left in place they would force ordered statement iteration and
+	 * disable the direct-lookup cache for a join that no longer merges.
+	 */
+	private static void invalidateAncestorMergeJoins(QueryModelNode rewrittenNode) {
+		Join outermostDemoted = null;
+		for (QueryModelNode parent = rewrittenNode.getParentNode(); parent != null; parent = parent.getParentNode()) {
+			if (parent instanceof Join join && join.isMergeJoin()) {
+				join.setMergeJoin(false);
+				outermostDemoted = join;
+			}
+		}
+		if (outermostDemoted != null) {
+			resetStaleOrders(outermostDemoted);
+		}
+	}
+
+	private static void resetStaleOrders(Join outermostDemoted) {
+		// remember the orders of the merge joins that stay valid below (outermost first), clear everything the
+		// demoted joins pushed down, then re-apply the valid orders so that inner hints keep their ordered inputs
+		List<Join> validMergeJoins = new ArrayList<>();
+		outermostDemoted.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
+			@Override
+			public void meet(Join join) {
+				if (join != outermostDemoted && join.isMergeJoin()) {
+					validMergeJoins.add(join);
+				}
+				super.meet(join);
+			}
+		});
+		List<Var> validOrders = new ArrayList<>(validMergeJoins.size());
+		for (Join join : validMergeJoins) {
+			validOrders.add(join.getOrder());
+		}
+		outermostDemoted.setOrder(null);
+		for (int i = 0; i < validMergeJoins.size(); i++) {
+			validMergeJoins.get(i).setOrder(validOrders.get(i));
 		}
 	}
 
@@ -90,7 +159,68 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 		if (condition instanceof SameTerm sameTerm) {
 			return singleValueAnchor(sameTerm.getLeftArg(), sameTerm.getRightArg());
 		}
+		if (condition instanceof Or or) {
+			return sameTermOrAnchor(or);
+		}
 		return null;
+	}
+
+	private static BindingSetAssignment safeSameTermDisjunctionAnchor(ValueExpr condition) {
+		return condition instanceof Or or ? sameTermOrAnchor(or) : null;
+	}
+
+	private static BindingSetAssignment sameTermOrAnchor(Or disjunction) {
+		SameTermValues values = new SameTermValues();
+		if (!collectSameTermValues(disjunction, values) || values.values.isEmpty()
+				|| values.values.size() > MAX_VALUES) {
+			return null;
+		}
+		return valuesAnchor(values.bindingName, values.values);
+	}
+
+	private static boolean collectSameTermValues(ValueExpr expression, SameTermValues values) {
+		if (expression instanceof Or or) {
+			return collectSameTermValues(or.getLeftArg(), values)
+					&& collectSameTermValues(or.getRightArg(), values);
+		}
+		if (!(expression instanceof SameTerm sameTerm)) {
+			return false;
+		}
+
+		Var variable;
+		Value value;
+		if (sameTerm.getLeftArg()instanceof Var leftVar && !leftVar.hasValue()
+				&& (value = constantValue(sameTerm.getRightArg())) != null) {
+			variable = leftVar;
+		} else if (sameTerm.getRightArg()instanceof Var rightVar && !rightVar.hasValue()
+				&& (value = constantValue(sameTerm.getLeftArg())) != null) {
+			variable = rightVar;
+		} else {
+			return false;
+		}
+
+		if (variable.getName() == null
+				|| (values.bindingName != null && !values.bindingName.equals(variable.getName()))) {
+			return false;
+		}
+		values.bindingName = variable.getName();
+		values.values.add(value);
+		return values.values.size() <= MAX_VALUES;
+	}
+
+	private static Value constantValue(ValueExpr expression) {
+		if (expression instanceof ValueConstant valueConstant) {
+			return valueConstant.getValue();
+		}
+		if (expression instanceof Var var && var.hasValue()) {
+			return var.getValue();
+		}
+		return null;
+	}
+
+	private static final class SameTermValues {
+		private String bindingName;
+		private final LinkedHashSet<Value> values = new LinkedHashSet<>();
 	}
 
 	private static BindingSetAssignment listValuesAnchor(ListMemberOperator operator) {
@@ -135,12 +265,21 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 		List<BindingSet> mergedBindingSets = new ArrayList<>();
 		for (BindingSet bindingSet : existingAssignment.getBindingSets()) {
 			Value value = bindingSet.getValue(bindingName);
+			// An UNDEF entry does not constrain the later join. The filter must remain in place so the assuring operand
+			// can bind the variable before the finite-value condition is evaluated.
+			if (value == null) {
+				return true;
+			}
 			if (allowedValues.contains(value)) {
 				mergedBindingSets.add(bindingSet);
 			}
 		}
 
 		if (mergedBindingSets.isEmpty()) {
+			if (!QueryEvaluationUtility.canDiscardWithoutEvaluation(filter.getArg())) {
+				// skip the merge: the empty result may not suppress a query-fatal error in the argument
+				return false;
+			}
 			filter.replaceWith(new EmptySet());
 			return true;
 		}

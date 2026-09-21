@@ -75,7 +75,8 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,
 				CONJUNCTIVE_CONSTRAINT_SPLITTER,
-				DISJUNCTIVE_CONSTRAINT_OPTIMIZER,
+				// DISJUNCTIVE_CONSTRAINT_OPTIMIZER is a compatibility facade. Its safe finite SameTerm OR
+				// analysis is shared by FILTER_IN_VALUES_OPTIMIZER below; running both would duplicate the pass.
 				SAME_TERM_FILTER_OPTIMIZER,
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,
