@@ -16,32 +16,511 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+/**
+ * Transaction-aware facade around the bounded LMDB B+tree range counter.
+ *
+ * <p>
+ * Callers supply the ID of the already-pinned LMDB read transaction. This class selects the newest valid meta page no
+ * newer than that transaction, resolves the requested named database from that same snapshot, and shares decoded pages
+ * only among estimates for that snapshot. When the transaction ID or native mapping changes, {@link #snapshot(long)}
+ * installs a fresh cache. This is the boundary that keeps low-level page reads consistent with the logical query view.
+ * </p>
+ *
+ * <p>
+ * The production constructor receives the open LMDB environment so reads can be zero-copy views of LMDB's native map.
+ * The file-only constructor intentionally follows the same decoder through positional channel reads and exists for
+ * standalone callers and tests. Both paths must produce identical estimates.
+ * </p>
+ */
 public final class LmdbPageCardinalityEstimator implements Closeable {
+	private static final Logger logger = LoggerFactory.getLogger(LmdbPageCardinalityEstimator.class);
+	private static final int STATEMENT_COMPONENT_COUNT = 4;
+	private static final int BINDING_SHAPE_COUNT = 1 << STATEMENT_COMPONENT_COUNT;
+
+	/**
+	 * Estimate and reliability evidence used by {@code TripleStore} to decide whether another physical index is worth
+	 * reading.
+	 *
+	 * @param entries                      rounded point estimate, clamped to the hard bounds
+	 * @param exact                        whether the point estimate is known exactly
+	 * @param exhaustive                   whether the selected structural plan was completely measured
+	 * @param hardLowerBound               records proven to match
+	 * @param hardUpperBound               greatest count still permitted by exact metadata and measurements
+	 * @param effectiveSampleSize          concentration-adjusted number of independent leaf observations
+	 * @param effectiveSampleFraction      effective sample size divided by the number of probes
+	 * @param sampledMassFraction          fraction of the estimate contributed by sampled rather than exact mass
+	 * @param relativeStandardError        conservative relative sampling error estimate
+	 * @param disagreement                 largest multiplicative disagreement among independent evidence streams
+	 * @param physicalPilotDisagreement    physical-range estimate versus the residual pilot's range estimate
+	 * @param pilotFinalDisagreement       residual pilot estimate versus the final residual estimate
+	 * @param directRatioDisagreement      directly weighted matches versus physical mass times sampled match ratio
+	 * @param lowEffectiveSample           whether repeated or concentrated probes weakened effective coverage
+	 * @param disagreementDetected         whether any evidence streams exceeded the disagreement threshold
+	 * @param additionalEvidenceUsed       whether a conditional confirmation stream was read
+	 * @param secondaryEvidenceRecommended whether a separate index layout should corroborate this result
+	 * @param physicalProbeBudgetUsed      requested probes for physical range mass
+	 * @param residualPilotProbeBudgetUsed requested probes for the residual pilot
+	 * @param residualFinalProbeBudgetUsed requested probes for the selected residual budget
+	 * @param conditionalProbeBudgetUsed   requested probes for conditional confirmations
+	 */
+	public record Estimate(
+			long entries,
+			boolean exact,
+			boolean exhaustive,
+			long hardLowerBound,
+			long hardUpperBound,
+			double effectiveSampleSize,
+			double effectiveSampleFraction,
+			double sampledMassFraction,
+			double relativeStandardError,
+			double disagreement,
+			double physicalPilotDisagreement,
+			double pilotFinalDisagreement,
+			double directRatioDisagreement,
+			boolean lowEffectiveSample,
+			boolean disagreementDetected,
+			boolean additionalEvidenceUsed,
+			boolean secondaryEvidenceRecommended,
+			int physicalProbeBudgetUsed,
+			int residualPilotProbeBudgetUsed,
+			int residualFinalProbeBudgetUsed,
+			int conditionalProbeBudgetUsed) {
+	}
+
+	/**
+	 * Precomputed description of how one logical statement-pattern shape maps to one physical LMDB index layout.
+	 * Components in {@code prefixComponentMask} form the contiguous B-tree range; the remaining bound components are
+	 * residual predicates checked by the matcher.
+	 */
+	public record IndexShape(int prefixLength, int prefixComponentMask, int residualFieldCount) {
+		public long rangeSubject(long subject) {
+			return rangeValue(0, subject);
+		}
+
+		public long rangePredicate(long predicate) {
+			return rangeValue(1, predicate);
+		}
+
+		public long rangeObject(long object) {
+			return rangeValue(2, object);
+		}
+
+		public long rangeContext(long context) {
+			return rangeValue(3, context);
+		}
+
+		private long rangeValue(int component, long value) {
+			return (prefixComponentMask & (1 << component)) != 0 ? value : -1L;
+		}
+	}
+
+	/** Reliability summary for one logical result, possibly combined across databases or physical layouts. */
+	public record CardinalityEstimate(double entries, boolean exact, double hardLowerBound,
+			double hardUpperBound, double effectiveSampleSize, double effectiveSampleFraction,
+			double sampledMassFraction, double relativeStandardError, double disagreement,
+			boolean additionalEvidenceUsed, boolean secondaryEvidenceRecommended) {
+
+		public static CardinalityEstimate exact(double entries) {
+			return new CardinalityEstimate(entries, true, entries, entries, Double.POSITIVE_INFINITY, 1.0d,
+					0.0d, 0.0d, 1.0d, false, false);
+		}
+
+		public static CardinalityEstimate unqualified(double entries) {
+			return new CardinalityEstimate(entries, false, 0.0d, Double.POSITIVE_INFINITY, 0.0d, 0.0d,
+					1.0d, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, false, false);
+		}
+	}
+
+	private record IndexLayout(char leadingField, IndexShape[] shapes, int[] residualLayoutScores) {
+	}
+
+	static final class IndexConfiguration {
+		private final IndexLayout[] layouts;
+		private final int[] primaryIndexes;
+		private final int[] secondaryIndexes;
+
+		private IndexConfiguration(IndexLayout[] layouts, int[] primaryIndexes, int[] secondaryIndexes) {
+			this.layouts = layouts;
+			this.primaryIndexes = primaryIndexes;
+			this.secondaryIndexes = secondaryIndexes;
+		}
+
+		int primaryIndex(int bindingMask) {
+			return primaryIndexes[validateBindingMask(bindingMask)];
+		}
+
+		int secondaryIndex(int bindingMask) {
+			return secondaryIndexes[validateBindingMask(bindingMask)];
+		}
+
+		IndexShape indexShape(int index, int bindingMask) {
+			if (index < 0 || index >= layouts.length) {
+				throw new IllegalArgumentException("Invalid index layout: " + index);
+			}
+			return layouts[index].shapes()[validateBindingMask(bindingMask)];
+		}
+	}
 
 	private final LmdbDataFile dataFile;
+	/** Most recently used snapshot; safe publication lets concurrent readers reuse its thread-safe caches. */
 	private volatile SnapshotCache lastSnapshot;
+	private IndexConfiguration indexConfiguration;
 
+	/** File-channel fallback constructor, retained for compatibility and standalone tests. */
 	public LmdbPageCardinalityEstimator(File dataMdbFile) throws IOException {
-		this.dataFile = new LmdbDataFile(dataMdbFile);
+		this(dataMdbFile, 0L);
+	}
+
+	/**
+	 * Native-map constructor used by {@code TripleStore}. The environment handle lets page reads use LMDB's existing
+	 * mapping without copying pages through {@link java.nio.channels.FileChannel}.
+	 */
+	public LmdbPageCardinalityEstimator(File dataMdbFile, long env) throws IOException {
+		this.dataFile = new LmdbDataFile(dataMdbFile, env);
+	}
+
+	/**
+	 * Configures the immutable physical statement-index layouts used by this store. Selection is precomputed for all 16
+	 * logical binding shapes so the optimizer path performs only array lookups.
+	 */
+	public void configureIndexes(List<String> fieldSequences) {
+		indexConfiguration = createIndexConfiguration(fieldSequences);
+	}
+
+	static IndexConfiguration createIndexConfiguration(List<String> fieldSequences) {
+		if (fieldSequences.isEmpty()) {
+			throw new IllegalArgumentException("At least one LMDB statement index is required");
+		}
+
+		IndexLayout[] configuredLayouts = new IndexLayout[fieldSequences.size()];
+		for (int index = 0; index < fieldSequences.size(); index++) {
+			configuredLayouts[index] = createIndexLayout(fieldSequences.get(index));
+		}
+
+		int[] configuredPrimaryIndexes = new int[BINDING_SHAPE_COUNT];
+		int[] configuredSecondaryIndexes = new int[BINDING_SHAPE_COUNT];
+		for (int bindingMask = 0; bindingMask < BINDING_SHAPE_COUNT; bindingMask++) {
+			int primaryIndex = selectPrimaryIndex(configuredLayouts, bindingMask);
+			configuredPrimaryIndexes[bindingMask] = primaryIndex;
+			configuredSecondaryIndexes[bindingMask] = selectSecondaryIndex(configuredLayouts, primaryIndex,
+					bindingMask);
+		}
+
+		return new IndexConfiguration(configuredLayouts, configuredPrimaryIndexes, configuredSecondaryIndexes);
+	}
+
+	public static int bindingMask(long subject, long predicate, long object, long context) {
+		return (subject >= 0 ? 1 : 0)
+				| (predicate >= 0 ? 1 << 1 : 0)
+				| (object >= 0 ? 1 << 2 : 0)
+				| (context >= 0 ? 1 << 3 : 0);
+	}
+
+	public int primaryIndex(int bindingMask) {
+		return configuredIndexes().primaryIndex(bindingMask);
+	}
+
+	/** Returns {@code -1} when a separate physical layout would not add useful evidence. */
+	public int secondaryIndex(int bindingMask) {
+		return configuredIndexes().secondaryIndex(bindingMask);
+	}
+
+	public IndexShape indexShape(int index, int bindingMask) {
+		return configuredIndexes().indexShape(index, bindingMask);
+	}
+
+	private IndexConfiguration configuredIndexes() {
+		if (indexConfiguration == null) {
+			throw new IllegalStateException("LMDB statement indexes have not been configured");
+		}
+		return indexConfiguration;
+	}
+
+	/** Adds reliability evidence for disjoint explicit and inferred databases. */
+	public static CardinalityEstimate combineDatabaseEstimates(Estimate first, Estimate second) {
+		double entries = (double) first.entries() + second.entries();
+		if (first.exact() && second.exact()) {
+			return CardinalityEstimate.exact(entries);
+		}
+
+		double hardLower = (double) first.hardLowerBound() + second.hardLowerBound();
+		double hardUpper = (double) first.hardUpperBound() + second.hardUpperBound();
+		double firstSigma = first.exact() ? 0.0d
+				: first.entries() * finiteQuality(first.relativeStandardError(), 1.0d);
+		double secondSigma = second.exact() ? 0.0d
+				: second.entries() * finiteQuality(second.relativeStandardError(), 1.0d);
+		double relativeStandardError = entries > 0.0d
+				? Math.hypot(firstSigma, secondSigma) / entries
+				: Math.max(finiteQuality(first.relativeStandardError(), 0.0d),
+						finiteQuality(second.relativeStandardError(), 0.0d));
+		double effectiveSampleSize = combinedEffectiveSampleSize(entries, first, second);
+		double effectiveSampleFraction = weightedQualityAverage(first.entries(), first.effectiveSampleFraction(),
+				second.entries(), second.effectiveSampleFraction(), 1.0d);
+		double sampledMassFraction = weightedQualityAverage(first.entries(), first.sampledMassFraction(),
+				second.entries(), second.sampledMassFraction(), 0.0d);
+		double disagreement = Math.max(first.disagreement(), second.disagreement());
+		boolean secondaryRecommended = first.secondaryEvidenceRecommended()
+				|| second.secondaryEvidenceRecommended() || first.lowEffectiveSample()
+				|| second.lowEffectiveSample() || first.disagreement() > 6.25d
+				|| second.disagreement() > 6.25d;
+		return new CardinalityEstimate(entries, false, hardLower, hardUpper, effectiveSampleSize,
+				effectiveSampleFraction, sampledMassFraction, relativeStandardError, disagreement,
+				first.additionalEvidenceUsed() || second.additionalEvidenceUsed(), secondaryRecommended);
+	}
+
+	/** Reconciles estimates of the same logical result obtained from different physical index layouts. */
+	public static CardinalityEstimate combineIndexEstimates(CardinalityEstimate first, CardinalityEstimate second) {
+		if (!Double.isFinite(first.entries()) || first.entries() < 0.0d) {
+			return second;
+		}
+		if (!Double.isFinite(second.entries()) || second.entries() < 0.0d) {
+			return first;
+		}
+		if (first.exact()) {
+			return first;
+		}
+		if (second.exact()) {
+			return second;
+		}
+
+		double firstWeight = layoutQualityWeight(first);
+		double secondWeight = layoutQualityWeight(second);
+		double firstFraction = firstWeight + secondWeight > 0.0d
+				? firstWeight / (firstWeight + secondWeight)
+				: 0.5d;
+		double layoutDisagreement = multiplicativeLayoutDisagreement(first.entries(), second.entries());
+		if (layoutDisagreement > 2.5d) {
+			firstFraction = Math.max(0.35d, Math.min(0.65d, firstFraction));
+		}
+		double combined = Math.expm1(Math.log1p(first.entries()) * firstFraction
+				+ Math.log1p(second.entries()) * (1.0d - firstFraction));
+
+		double hardLower = Math.max(first.hardLowerBound(), second.hardLowerBound());
+		double hardUpper = Math.min(first.hardUpperBound(), second.hardUpperBound());
+		if (hardLower <= hardUpper) {
+			combined = Math.max(hardLower, Math.min(hardUpper, combined));
+		} else {
+			logger.debug("Page-estimator layout hard bounds disagree: first=[{},{}], second=[{},{}]",
+					first.hardLowerBound(), first.hardUpperBound(), second.hardLowerBound(), second.hardUpperBound());
+			return firstWeight >= secondWeight ? first : second;
+		}
+
+		double combinedEffective = firstWeight + secondWeight;
+		double combinedRse = Math.min(first.relativeStandardError(), second.relativeStandardError());
+		return new CardinalityEstimate(combined, false, hardLower, hardUpper, combinedEffective,
+				Math.max(first.effectiveSampleFraction(), second.effectiveSampleFraction()),
+				Math.min(first.sampledMassFraction(), second.sampledMassFraction()), combinedRse,
+				Math.max(Math.max(first.disagreement(), second.disagreement()), layoutDisagreement), true, false);
+	}
+
+	private static IndexLayout createIndexLayout(String fieldSequence) {
+		if (fieldSequence.length() != STATEMENT_COMPONENT_COUNT) {
+			throw new IllegalArgumentException("Invalid LMDB statement index: " + fieldSequence);
+		}
+
+		int[] components = new int[STATEMENT_COMPONENT_COUNT];
+		int seenComponents = 0;
+		for (int position = 0; position < components.length; position++) {
+			int component = componentIndex(fieldSequence.charAt(position));
+			int componentBit = 1 << component;
+			if ((seenComponents & componentBit) != 0) {
+				throw new IllegalArgumentException("Duplicate component in LMDB statement index: " + fieldSequence);
+			}
+			seenComponents |= componentBit;
+			components[position] = component;
+		}
+
+		IndexShape[] shapes = new IndexShape[BINDING_SHAPE_COUNT];
+		int[] residualLayoutScores = new int[BINDING_SHAPE_COUNT];
+		for (int bindingMask = 0; bindingMask < BINDING_SHAPE_COUNT; bindingMask++) {
+			int prefixLength = 0;
+			int prefixComponentMask = 0;
+			int residualLayoutScore = 0;
+			for (int position = 0; position < components.length; position++) {
+				int componentBit = 1 << components[position];
+				if ((bindingMask & componentBit) != 0) {
+					residualLayoutScore += 1 << ((components.length - position - 1) * 4);
+					if (prefixLength == position) {
+						prefixLength++;
+						prefixComponentMask |= componentBit;
+					}
+				}
+			}
+			shapes[bindingMask] = new IndexShape(prefixLength, prefixComponentMask,
+					Integer.bitCount(bindingMask) - prefixLength);
+			residualLayoutScores[bindingMask] = residualLayoutScore;
+		}
+		return new IndexLayout(fieldSequence.charAt(0), shapes, residualLayoutScores);
+	}
+
+	private static int componentIndex(char field) {
+		return switch (field) {
+		case 's' -> 0;
+		case 'p' -> 1;
+		case 'o' -> 2;
+		case 'c' -> 3;
+		default -> throw new IllegalArgumentException("Invalid LMDB statement-index component: " + field);
+		};
+	}
+
+	private static int selectPrimaryIndex(IndexLayout[] layouts, int bindingMask) {
+		int bestIndex = -1;
+		int bestPrefix = -1;
+		int bestResidualLayoutScore = Integer.MIN_VALUE;
+		for (int index = 0; index < layouts.length; index++) {
+			IndexLayout layout = layouts[index];
+			int prefix = layout.shapes()[bindingMask].prefixLength();
+			int residualLayoutScore = layout.residualLayoutScores()[bindingMask];
+			if (prefix > bestPrefix || prefix == bestPrefix && residualLayoutScore > bestResidualLayoutScore) {
+				bestIndex = index;
+				bestPrefix = prefix;
+				bestResidualLayoutScore = residualLayoutScore;
+			}
+		}
+		return bestIndex;
+	}
+
+	private static int selectSecondaryIndex(IndexLayout[] layouts, int primaryIndex, int bindingMask) {
+		if (bindingMask == 0 || layouts[primaryIndex].shapes()[bindingMask].prefixLength() != 0) {
+			return -1;
+		}
+
+		char primaryLeadingField = layouts[primaryIndex].leadingField();
+		int bestIndex = -1;
+		boolean bestHasDifferentLeadingField = false;
+		int bestScore = Integer.MIN_VALUE;
+		for (int index = 0; index < layouts.length; index++) {
+			IndexLayout candidate = layouts[index];
+			if (index == primaryIndex || candidate.shapes()[bindingMask].prefixLength() != 0) {
+				continue;
+			}
+			boolean differentLeadingField = candidate.leadingField() != primaryLeadingField;
+			int score = candidate.residualLayoutScores()[bindingMask];
+			if (bestIndex == -1 || differentLeadingField && !bestHasDifferentLeadingField
+					|| differentLeadingField == bestHasDifferentLeadingField && score > bestScore) {
+				bestIndex = index;
+				bestHasDifferentLeadingField = differentLeadingField;
+				bestScore = score;
+			}
+		}
+		return bestIndex;
+	}
+
+	private static int validateBindingMask(int bindingMask) {
+		if ((bindingMask & ~(BINDING_SHAPE_COUNT - 1)) != 0) {
+			throw new IllegalArgumentException("Invalid binding mask: " + bindingMask);
+		}
+		return bindingMask;
+	}
+
+	private static double layoutQualityWeight(CardinalityEstimate estimate) {
+		double effective = Double.isFinite(estimate.effectiveSampleSize())
+				? Math.max(1.0d, estimate.effectiveSampleSize())
+				: 1_000_000.0d;
+		double fraction = Math.max(0.05d, Math.min(1.0d, estimate.effectiveSampleFraction()));
+		double rse = finiteQuality(estimate.relativeStandardError(), 1.0d);
+		double disagreement = Math.max(1.0d, finiteQuality(estimate.disagreement(), 100.0d));
+		double weight = effective * fraction / ((1.0d + effective * rse * rse) * Math.sqrt(disagreement));
+		if (estimate.secondaryEvidenceRecommended()) {
+			weight *= 0.5d;
+		}
+		return Math.max(0.01d, weight);
+	}
+
+	private static double combinedEffectiveSampleSize(double total, Estimate first, Estimate second) {
+		if (total <= 0.0d) {
+			return Math.min(first.effectiveSampleSize(), second.effectiveSampleSize());
+		}
+		double denominator = effectiveVarianceDenominator(first) + effectiveVarianceDenominator(second);
+		return denominator <= 0.0d ? Double.POSITIVE_INFINITY : total * total / denominator;
+	}
+
+	private static double effectiveVarianceDenominator(Estimate estimate) {
+		if (estimate.exact() || estimate.entries() <= 0L) {
+			return 0.0d;
+		}
+		double effective = Math.max(1.0d, finiteQuality(estimate.effectiveSampleSize(), 1.0d));
+		return (double) estimate.entries() * estimate.entries() / effective;
+	}
+
+	private static double weightedQualityAverage(long firstEntries, double firstValue, long secondEntries,
+			double secondValue, double emptyValue) {
+		double total = (double) firstEntries + secondEntries;
+		if (total <= 0.0d) {
+			return emptyValue;
+		}
+		return (firstEntries * finiteQuality(firstValue, emptyValue)
+				+ secondEntries * finiteQuality(secondValue, emptyValue)) / total;
+	}
+
+	private static double finiteQuality(double value, double fallback) {
+		return Double.isFinite(value) && value >= 0.0d ? value : fallback;
+	}
+
+	private static double multiplicativeLayoutDisagreement(double first, double second) {
+		double left = Math.max(0.0d, first) + 1.0d;
+		double right = Math.max(0.0d, second) + 1.0d;
+		return Math.max(left / right, right / left);
 	}
 
 	public long estimateEntries(long txnId, String dbName, byte[] minKey, int minKeyLength, byte[] maxKey,
-			int maxKeyLength,
-			GroupMatcher matcher) throws IOException {
+			int maxKeyLength, GroupMatcher matcher) throws IOException {
+		return estimateEntries(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
+				matcher == null ? 0 : 1);
+	}
+
+	public long estimateEntries(long txnId, String dbName, byte[] minKey, int minKeyLength, byte[] maxKey,
+			int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
+		return estimateEntriesDetailed(txnId, dbName, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
+				residualFieldCount).entries;
+	}
+
+	public Estimate estimateEntriesWithQuality(long txnId, String dbName, byte[] minKey, int minKeyLength,
+			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
+		RangeCountResult result = estimateEntriesDetailed(txnId, dbName, minKey, minKeyLength, maxKey,
+				maxKeyLength, matcher, residualFieldCount);
+		return new Estimate(result.entries, result.exact, result.exhaustive, result.hardLowerBound,
+				result.hardUpperBound, result.effectiveSampleSize, result.effectiveSampleFraction,
+				result.sampledMassFraction, result.relativeStandardError, result.disagreement,
+				result.physicalPilotDisagreement, result.pilotFinalDisagreement,
+				result.directRatioDisagreement, result.lowEffectiveSample, result.disagreementDetected,
+				result.additionalEvidenceUsed, result.secondaryEvidenceRecommended,
+				result.physicalProbeBudgetUsed, result.residualPilotProbeBudgetUsed,
+				result.residualFinalProbeBudgetUsed, result.conditionalProbeBudgetUsed);
+	}
+
+	/**
+	 * Resolves {@code dbName} and estimates the inclusive range {@code [minKey, maxKey]}. A null matcher means that the
+	 * key range expresses the complete predicate. Otherwise, {@code residualFieldCount} describes how many bound RDF
+	 * statement fields the matcher must check after the contiguous index prefix; it guides bounded evidence allocation
+	 * but never changes matching semantics.
+	 */
+	RangeCountResult estimateEntriesDetailed(long txnId, String dbName, byte[] minKey, int minKeyLength,
+			byte[] maxKey, int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
 		SnapshotCache snapshot = snapshot(txnId);
 		LmdbDb db = namedDb(snapshot, dbName);
 		if (db == null || db.isEmpty()) {
-			return 0;
+			RangeCountResult empty = new RangeCountResult();
+			empty.exact = true;
+			empty.exhaustive = true;
+			empty.hardLowerBound = 0L;
+			empty.hardUpperBound = 0L;
+			empty.mode = RangeCountResult.Mode.EXACT_EMPTY;
+			return empty;
 		}
 
-		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta);
-		RangeCountResult result = counter.countRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher);
-		return result.entries;
+		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta, snapshot.pageCache,
+				stableDatabaseIdentity(dbName));
+		return counter.estimateRange(db, minKey, minKeyLength, maxKey, maxKeyLength, matcher,
+				Math.max(0, residualFieldCount));
 	}
 
 	public long totalEntries(long txnId, String dbName) throws IOException {
@@ -55,9 +534,13 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		dataFile.close();
 	}
 
+	/**
+	 * Returns a cache tied to {@code txnId} and the current native mapping. Races may construct equivalent caches; the
+	 * last volatile publication wins, and no cache can leak across a transaction or remap boundary.
+	 */
 	private SnapshotCache snapshot(long txnId) throws IOException {
 		SnapshotCache cached = lastSnapshot;
-		if (cached != null && cached.txnId == txnId) {
+		if (cached != null && cached.txnId == txnId && dataFile.isNativeMapCurrent(cached.meta)) {
 			return cached;
 		}
 		LmdbMeta meta = dataFile.readMetaForTxn(txnId);
@@ -66,23 +549,24 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		return refreshed;
 	}
 
+	/** Reads a named database descriptor from LMDB's main database, then caches it only inside this snapshot. */
 	private LmdbDb namedDb(SnapshotCache snapshot, String dbName) throws IOException {
 		LmdbDb cached = snapshot.namedDbs.get(dbName);
 		if (cached != null) {
 			return cached;
 		}
 
-		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta);
+		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta, snapshot.pageCache,
+				stableDatabaseIdentity("<main>"));
 		RangeCountResult lookupStats = new RangeCountResult();
-
 		byte[] key = dbName.getBytes(StandardCharsets.UTF_8);
 		byte[] keyWithTerminator = new byte[key.length + 1];
 		System.arraycopy(key, 0, keyWithTerminator, 0, key.length);
 
 		byte[] value = counter.findValueByExactKey(snapshot.meta.mainDb(), key, key.length, lookupStats);
 		if (value == null) {
-			value = counter.findValueByExactKey(snapshot.meta.mainDb(), keyWithTerminator, keyWithTerminator.length,
-					lookupStats);
+			value = counter.findValueByExactKey(snapshot.meta.mainDb(), keyWithTerminator,
+					keyWithTerminator.length, lookupStats);
 		}
 		if (value == null) {
 			return null;
@@ -94,9 +578,24 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		return existing == null ? parsed : existing;
 	}
 
+	/**
+	 * Stable logical identity mixed into sampling seeds. Page numbers are deliberately excluded because LMDB
+	 * copy-on-write commits can renumber physical pages without changing the requested logical range.
+	 */
+	private long stableDatabaseIdentity(String dbName) {
+		long hash = 0xcbf29ce484222325L;
+		for (int index = 0; index < dbName.length(); index++) {
+			hash ^= dbName.charAt(index);
+			hash *= 0x100000001b3L;
+		}
+		return hash;
+	}
+
+	/** All mutable caches below are valid only for one LMDB transaction ID and mapping identity. */
 	private static final class SnapshotCache {
 		final long txnId;
 		final LmdbMeta meta;
+		final LmdbPageCache pageCache = new LmdbPageCache();
 		final Map<String, LmdbDb> namedDbs = new ConcurrentHashMap<>();
 
 		SnapshotCache(long txnId, LmdbMeta meta) {
@@ -104,5 +603,4 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 			this.meta = meta;
 		}
 	}
-
 }

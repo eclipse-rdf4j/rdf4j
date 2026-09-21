@@ -11,6 +11,8 @@ module workbench {
 
         var KT = 'know_total';
 
+        var RESULT_TOTAL_COUNT_ID = 'workbench-total-result-count';
+
         var OFFSET = 'offset';
 
         export var LIMIT = 'limit';
@@ -339,6 +341,13 @@ module workbench {
          */
         export function getTotalResultCount() {
             var total_result_count = 0;
+            var resultMetadata = document.getElementById(RESULT_TOTAL_COUNT_ID) as HTMLInputElement;
+            if (resultMetadata && resultMetadata.value) {
+                var resultMetadataCount = parseInt(resultMetadata.value, 10);
+                if (!isNaN(resultMetadataCount)) {
+                    return resultMetadataCount;
+                }
+            }
             var s_trc = workbench.paging.getQueryParameter(KT);
             if (s_trc.length == 0) {
                 s_trc = workbench.getCookie('total_result_count');

@@ -11,6 +11,7 @@ function createLocation(initialHref) {
     function apply(nextHref) {
         const parsed = new URL(nextHref, 'http://localhost:8080');
         location._href = parsed.href;
+        location.origin = parsed.origin;
         location.pathname = parsed.pathname;
         location.search = parsed.search;
     }
@@ -348,6 +349,59 @@ class FakeElement {
     }
 }
 
+class FakeWindow {
+    constructor(name, initialHref) {
+        this.name = name || '';
+        this.location = createLocation(initialHref || 'about:blank');
+        this.closed = false;
+        this.eventHandlers = new Map();
+        this.stopCount = 0;
+    }
+
+    addEventListener(type, handler) {
+        if (!this.eventHandlers.has(type)) {
+            this.eventHandlers.set(type, []);
+        }
+        this.eventHandlers.get(type).push(handler);
+    }
+
+    removeEventListener(type, handler) {
+        if (!this.eventHandlers.has(type)) {
+            return;
+        }
+        if (!handler) {
+            this.eventHandlers.delete(type);
+            return;
+        }
+        this.eventHandlers.set(type, this.eventHandlers.get(type).filter((candidate) => candidate !== handler));
+    }
+
+    dispatchEvent(event) {
+        const normalizedEvent = typeof event === 'string'
+            ? { type: event }
+            : Object.assign({}, event);
+        const handlers = this.eventHandlers.get(normalizedEvent.type) || [];
+        handlers.slice().forEach((handler) => handler.call(this, normalizedEvent));
+        const propertyHandler = this['on' + normalizedEvent.type];
+        if (typeof propertyHandler === 'function') {
+            propertyHandler.call(this, normalizedEvent);
+        }
+        return true;
+    }
+
+    trigger(type, event = {}) {
+        return this.dispatchEvent(Object.assign({ type }, event));
+    }
+
+    close() {
+        this.closed = true;
+    }
+
+    stop() {
+        this.stopCount += 1;
+    }
+}
+
 class FakeDocument {
     constructor(initialHref) {
         this.elements = [];
@@ -470,6 +524,12 @@ class FakeDocument {
 
     createTextNode(text) {
         return createTextNode(this, text);
+    }
+
+    createDocumentFragment() {
+        const fragment = new FakeElement(this, 'document-fragment');
+        fragment.nodeType = 11;
+        return fragment;
     }
 
     getElementById(id) {
@@ -1031,6 +1091,7 @@ module.exports = {
     FakeDocument,
     FakeElement,
     FakeTimerQueue,
+    FakeWindow,
     JQueryCollection,
     createJQuery,
     createLocation,

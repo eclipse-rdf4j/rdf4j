@@ -1,0 +1,9 @@
+{
+  "type": "ProjectionElemList",
+  "timedOut": true,
+  "plans": [
+    { "type": "ProjectionElem \"d\"" },
+    { "type": "ProjectionElem \"a\"" },
+    { "type": "ProjectionElem \"code<script>\"" }
+  ]
+}
