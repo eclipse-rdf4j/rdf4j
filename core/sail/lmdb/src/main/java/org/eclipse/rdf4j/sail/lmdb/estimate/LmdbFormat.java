@@ -13,11 +13,27 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 import java.nio.ByteBuffer;
 
+/**
+ * LMDB file-format constants and primitive decoding helpers used by the page estimator.
+ *
+ * <p>
+ * These offsets mirror LMDB's C structs ({@code MDB_page}, {@code MDB_meta}, {@code MDB_db}, and {@code MDB_node}) for
+ * the supported data-file versions. They are not an RDF4J-owned serialization format. Any change here therefore needs
+ * to be checked against the corresponding LMDB source layout and exercised with native LMDB files in both supported
+ * byte orders; changing an offset to accommodate one fixture can corrupt every subsequent read.
+ */
 final class LmdbFormat {
 
 	static final int MDB_MAGIC = 0xBEEFC0DE;
 	static final int MDB_DATA_VERSION = 1;
 	static final int MDB_DATA_VERSION_DEVEL = 999;
+
+	static final int MDB_REVERSEKEY = 0x02;
+	static final int MDB_DUPSORT = 0x04;
+	static final int MDB_INTEGERKEY = 0x08;
+	static final int MDB_DUPFIXED = 0x10;
+	static final int MDB_INTEGERDUP = 0x20;
+	static final int MDB_REVERSEDUP = 0x40;
 
 	static final int P_BRANCH = 0x01;
 	static final int P_LEAF = 0x02;

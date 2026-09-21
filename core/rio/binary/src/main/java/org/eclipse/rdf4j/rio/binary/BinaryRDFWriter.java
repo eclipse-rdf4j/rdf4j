@@ -57,6 +57,7 @@ import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 
 /**
  * A {@link RDFWriter} for the binary RDF format.
@@ -102,6 +103,7 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements ByteSink {
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
 		Set<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
+		result.add(BasicWriterSettings.RDF_OUTPUT_VERSION);
 		result.add(BinaryRDFWriterSettings.VERSION);
 		result.add(BinaryRDFWriterSettings.BUFFER_SIZE);
 		result.add(BinaryRDFWriterSettings.CHARSET);
@@ -316,7 +318,13 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements ByteSink {
 		if (language.isPresent()) {
 			out.writeByte(LANG_LITERAL_VALUE);
 			writeString(label);
-			writeString(language.get());
+
+			Literal.BaseDirection baseDirection = literal.getBaseDirection();
+			if (baseDirection != Literal.BaseDirection.NONE) {
+				writeString(language.get() + baseDirection);
+			} else {
+				writeString(language.get());
+			}
 		} else if (datatype.equals(XSD.STRING)) {
 			out.writeByte(PLAIN_LITERAL_VALUE);
 			writeString(label);

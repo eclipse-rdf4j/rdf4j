@@ -135,6 +135,27 @@ with `http://rdf4j.org/config/sail/lmdb#sketchEstimatorEnabled` set to `true`.
 [] lmdb:sketchEstimatorEnabled true .
 ```
 
+## Cardinality estimation
+
+The LMDB Store normally estimates statement-pattern cardinalities by reading a bounded number of pages from the
+selected LMDB index. This avoids scanning the complete matching range while giving the query optimizer structural
+information about the B-tree. If page inspection cannot produce a safe estimate, the store automatically falls back to
+the cursor-sampling estimator used by RDF4J 5.3.2.
+
+For diagnosis or emergency compatibility, start the JVM with the following system property before creating the store:
+
+```text
+-Dorg.eclipse.rdf4j.sail.lmdb.disablePageWalkingEstimator=true
+```
+
+This bypasses page walking and uses the complete RDF4J 5.3.2 estimation path, including its index-selection rules and
+cursor sampler. The property is read when each LMDB store is opened; restart or reopen the store after changing it.
+Omitting the property, or setting it to any value other than `true`, leaves page walking enabled.
+
+`LmdbStoreConfig.setPageCardinalityEstimator(false)` also selects the complete RDF4J 5.3.2 estimation path. The system
+property provides the same compatibility behavior as an operational override when changing repository configuration is
+not practical.
+
 ## Required storage space, RAM size and disk performance
 You can expect a footprint of around 120 - 130 bytes per quad when using the LMDB store
 with 3 indexes (like spoc, ospc and psoc).

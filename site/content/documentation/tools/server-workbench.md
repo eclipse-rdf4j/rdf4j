@@ -124,6 +124,54 @@ followed by a `systemctl daemon-reload` and `systemctl restart tomcat9.service` 
 ReadWritePaths=/var/rdf4j/
 ```
 
+### OpenTelemetry Tracing
+
+RDF4J Server can optionally be instrumented with [OpenTelemetry](https://opentelemetry.io/) tracing, recording one span per SPARQL query/update evaluated against a repository. This is entirely opt-in: with no configuration, RDF4J Server behaves exactly as before, with zero overhead. For general background on RDF4J's OpenTelemetry support (the underlying module, its configuration options, and programmatic use outside of Server/Workbench), see [Observability using OpenTelemetry](/documentation/programming/observability/).
+
+Server-side, tracing every repository served by RDF4J Server's repository manager is gated by a single system property:
+
+```
+org.eclipse.rdf4j.opentelemetry.enabled=true
+```
+
+Disabled by default. This can be set like any other RDF4J system property, e.g. via `JAVA_OPTS`/`CATALINA_OPTS` (see "Application directory configuration" above), or, in the Docker images, via `RDF4J_OPTS` as shown below. The remaining tracing behaviour (whether query text is captured, truncation length, `db.system.name`, ...) is configured via the system properties listed in [Observability using OpenTelemetry](/documentation/programming/observability/#configuration).
+
+#### Enabling tracing in the Docker images
+
+The `docker/` Dockerfiles for both Tomcat and Jetty bundle the [OpenTelemetry Java agent](https://github.com/open-telemetry/opentelemetry-java-instrumentation) and can activate it purely through environment variables - no image rebuild required.
+
+| Variable                       | Effect                                                                                                                   |
+|---------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT`   | Presence of this variable is what switches tracing on. Set it to the OTLP endpoint of your collector/backend (e.g. `http://otel-collector:4318`). If unset, the agent is never attached and there is no overhead. |
+| `OTEL_SERVICE_NAME`             | The `service.name` reported for spans. Defaults to `rdf4j`.                                                              |
+| `RDF4J_OPTS`                    | Extra JVM options (typically further `-D` system properties, see above) appended on top of the image's own defaults, without having to repeat them. |
+
+Example `docker-compose.yml` snippet:
+
+```yaml
+services:
+  rdf4j:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=rdf4j
+      - RDF4J_OPTS=-Dorg.eclipse.rdf4j.opentelemetry.enabled=true -Dorg.eclipse.rdf4j.opentelemetry.captureQueryText=true
+      - OTEL_INSTRUMENTATION_SERVLET_ENABLED=false
+      - OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED=false
+      - OTEL_INSTRUMENTATION_LOGBACK_MDC_ENABLED=false
+      - OTEL_LOGS_EXPORTER=none
+```
+
+**Required for RDF4J Server/Workbench.** Any other OpenTelemetry Java agent behaviour (individual instrumentation modules, sampling, ...) is configured the standard OpenTelemetry way, via further `OTEL_*` environment variables that the agent reads directly - but the four settings below are not optional tuning, they work around two agent/instrumentation bugs that otherwise break RDF4J Server when the agent is attached. Set all four:
+
+```
+OTEL_INSTRUMENTATION_SERVLET_ENABLED=false
+OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED=false
+OTEL_INSTRUMENTATION_LOGBACK_MDC_ENABLED=false
+OTEL_LOGS_EXPORTER=none
+```
+
+- `OTEL_INSTRUMENTATION_SERVLET_ENABLED=false` - **without this, RDF4J Server responses can come back empty/corrupted.** The generic Servlet auto-instrumentation interferes with RDF4J Server's manually-streamed, chunked binary query result responses - observed as an HTTP 200 response with the correct headers but a zero-byte body (e.g. on `GET /repositories`). Repository/query spans (the actual purpose of this module) are unaffected by disabling this, since those come from RDF4J's own instrumentation, not the generic Servlet instrumentation.
+- `OTEL_LOGS_EXPORTER=none`, `OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED=false`, `OTEL_INSTRUMENTATION_LOGBACK_MDC_ENABLED=false` - **without these, RDF4J Server/Workbench can crash with a `NoSuchFieldError` while logging.** RDF4J Server and Workbench are deployed as two separate WARs, each bundling their own copy of `logback-classic`; the agent's logback instrumentation injects a virtual field onto the shared `LoggingEvent` class, which is not consistent across the two WARs' isolated classloaders and throws at runtime. RDF4J does not emit any OpenTelemetry log records, so disabling all three has no downside.
 
 ### Repository Configuration
 

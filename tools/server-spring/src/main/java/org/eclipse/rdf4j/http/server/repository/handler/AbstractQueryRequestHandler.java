@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
+import org.eclipse.rdf4j.repository.DelegatingRepository;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -444,6 +445,11 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 	}
 
 	private Runnable createRemoteExplainCancelAction(Repository repository, String explainRequestId) {
+		// unwrap delegating repositories (e.g. OpenTelemetry's TracingRepository) to find the actual HTTPRepository
+		while (repository instanceof DelegatingRepository && !(repository instanceof HTTPRepository)) {
+			repository = ((DelegatingRepository) repository).getDelegate();
+		}
+
 		if (!(repository instanceof HTTPRepository)) {
 			return null;
 		}
@@ -461,6 +467,11 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 	}
 
 	private Runnable createRemoteQueryCancelAction(Repository repository, String queryRequestId) {
+		// unwrap delegating repositories (e.g. OpenTelemetry's TracingRepository) to find the actual HTTPRepository
+		while (repository instanceof DelegatingRepository && !(repository instanceof HTTPRepository)) {
+			repository = ((DelegatingRepository) repository).getDelegate();
+		}
+
 		if (!(repository instanceof HTTPRepository)) {
 			return null;
 		}
