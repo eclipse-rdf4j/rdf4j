@@ -93,6 +93,12 @@ class RioCompressionTest {
 		assertDecompressesSuffix(snappy(TURTLE), "data.ttl.sz");
 		assertDecompressesSuffix(snappy(TURTLE), "data.ttl.snappy");
 		assertDecompressesSuffix(unixCompressTurtle(), "data.ttl.Z");
+		assertDecompressesSuffix(unixCompressTurtle(), "data.ttl.taz");
+	}
+
+	@Test
+	void normalizesTarUnixCompressAliasAfterDecompression() {
+		assertThat(RioCompression.removeCompressionExtension("data.taz")).isEqualTo("data.tar");
 	}
 
 	@Test

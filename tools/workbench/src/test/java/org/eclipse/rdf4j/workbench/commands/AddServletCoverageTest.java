@@ -13,7 +13,9 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -51,6 +53,8 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.util.RDFLoaderSettings;
+import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.helpers.RDFInputTestFixtures;
@@ -128,7 +132,7 @@ class AddServletCoverageTest {
 	void doPostAddsUrlContentWithContextAndCommits() throws Exception {
 		AddServlet servlet = new AddServlet();
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 		Resource context = SimpleValueFactory.getInstance().createIRI("urn:ctx");
@@ -158,7 +162,7 @@ class AddServletCoverageTest {
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		TestAddServlet servlet = new TestAddServlet(builder, List.of("READ_COMMITTED"));
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 		Resource context = SimpleValueFactory.getInstance().createIRI("urn:ctx");
@@ -217,7 +221,7 @@ class AddServletCoverageTest {
 		WorkbenchRequest autodetectRequest = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 
 		autodetectServlet.setRepository(repository);
 		when(repository.getConnection()).thenReturn(connection);
@@ -257,7 +261,7 @@ class AddServletCoverageTest {
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		TestAddServlet servlet = new TestAddServlet(builder, List.of());
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 
@@ -325,7 +329,7 @@ class AddServletCoverageTest {
 	void doPostUrlUsesRdfAcceptAndDefaultsNullBaseToSourceUrl() throws Exception {
 		AddServlet servlet = new AddServlet();
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 		URL url = mock(URL.class);
@@ -422,13 +426,148 @@ class AddServletCoverageTest {
 	}
 
 	@Test
+	void doPostAutodetectUrlRequestsAllParserFormatsForCompressedNames() throws Exception {
+		AddServlet servlet = new AddServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mockConnection();
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+		URL url = mock(URL.class);
+		URLConnection urlConnection = mock(URLConnection.class);
+
+		servlet.setRepository(repository);
+		when(repository.getConnection()).thenReturn(connection);
+		when(url.getPath()).thenReturn("/data.tar.gz");
+		when(url.toExternalForm()).thenReturn("https://example.org/data.tar.gz");
+		when(url.openConnection()).thenReturn(urlConnection);
+		when(urlConnection.getInputStream()).thenReturn(new ByteArrayInputStream(
+				gzip(tar(Map.of("data.ttl", "<urn:s> <urn:p> <urn:o> .".getBytes(StandardCharsets.UTF_8))))));
+		when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+		when(request.getParameter("Content-Type")).thenReturn("autodetect");
+		when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+		when(request.isParameterPresent("context")).thenReturn(false);
+		when(request.isParameterPresent("url")).thenReturn(true);
+		when(request.getUrl("url")).thenReturn(url);
+		when(connection.isActive()).thenReturn(true);
+
+		servlet.doPost(request, response, "/transform");
+
+		verify(urlConnection, atLeastOnce()).addRequestProperty(eq("Accept"),
+				argThat(value -> value.contains(RDFFormat.TURTLE.getDefaultMIMEType())));
+		verify(connection).add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
+				any(Resource[].class));
+		verify(response).sendRedirect("summary");
+	}
+
+	@Test
+	void doPostAutodetectUrlUsesResponseMimeTypeForExtensionlessUrls() throws Exception {
+		AddServlet servlet = new AddServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mockConnection();
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+		URL url = mock(URL.class);
+		URLConnection urlConnection = mock(URLConnection.class);
+
+		servlet.setRepository(repository);
+		when(repository.getConnection()).thenReturn(connection);
+		when(url.getPath()).thenReturn("/download");
+		when(url.toExternalForm()).thenReturn("https://example.org/download");
+		when(url.openConnection()).thenReturn(urlConnection);
+		when(urlConnection.getInputStream()).thenReturn(new ByteArrayInputStream(
+				"<urn:s> <urn:p> <urn:o> .".getBytes(StandardCharsets.UTF_8)));
+		when(urlConnection.getContentType()).thenReturn("text/turtle; charset=UTF-8");
+		when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+		when(request.getParameter("Content-Type")).thenReturn("autodetect");
+		when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+		when(request.isParameterPresent("context")).thenReturn(false);
+		when(request.isParameterPresent("url")).thenReturn(true);
+		when(request.getUrl("url")).thenReturn(url);
+		when(connection.isActive()).thenReturn(true);
+
+		servlet.doPost(request, response, "/transform");
+
+		verify(connection).add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
+				any(Resource[].class));
+		verify(response).sendRedirect("summary");
+	}
+
+	@Test
+	void doPostAutodetectUrlUsesRedirectedFinalPathWhenResponseMimeTypeIsMissing() throws Exception {
+		AddServlet servlet = new AddServlet();
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mockConnection();
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+		URL url = mock(URL.class);
+		URL finalUrl = mock(URL.class);
+		URLConnection urlConnection = mock(URLConnection.class);
+
+		servlet.setRepository(repository);
+		when(repository.getConnection()).thenReturn(connection);
+		when(url.getPath()).thenReturn("/download");
+		when(url.toExternalForm()).thenReturn("https://example.org/download");
+		when(url.openConnection()).thenReturn(urlConnection);
+		when(urlConnection.getURL()).thenReturn(finalUrl);
+		when(finalUrl.getPath()).thenReturn("/data.ttl");
+		when(urlConnection.getInputStream()).thenReturn(
+				new ByteArrayInputStream("<urn:s> <urn:p> <urn:o> .".getBytes(StandardCharsets.UTF_8)));
+		when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+		when(request.getParameter("Content-Type")).thenReturn("autodetect");
+		when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+		when(request.isParameterPresent("context")).thenReturn(false);
+		when(request.isParameterPresent("url")).thenReturn(true);
+		when(request.getUrl("url")).thenReturn(url);
+
+		servlet.doPost(request, response, "/transform");
+
+		verify(connection).add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
+				any(Resource[].class));
+		verify(response).sendRedirect("summary");
+	}
+
+	@Test
+	void doPostUsesConnectionParserConfigAndMapsInputLimitsToUploadError() throws Exception {
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		TestAddServlet servlet = new TestAddServlet(builder, List.of());
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mockConnection();
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+		ParserConfig parserConfig = new ParserConfig().set(RDFLoaderSettings.MAX_ARCHIVE_ENTRIES, 1L);
+		Map<String, byte[]> members = new LinkedHashMap<>();
+		members.put("first.ttl", "<urn:first> <urn:p> <urn:o> .".getBytes(StandardCharsets.UTF_8));
+		members.put("second.ttl", "<urn:second> <urn:p> <urn:o> .".getBytes(StandardCharsets.UTF_8));
+
+		servlet.setRepository(repository);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.getParserConfig()).thenReturn(parserConfig);
+		when(connection.isActive()).thenReturn(true);
+		when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+		when(request.getParameter("Content-Type")).thenReturn("autodetect");
+		when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+		when(request.isParameterPresent("context")).thenReturn(false);
+		when(request.isParameterPresent("url")).thenReturn(false);
+		when(request.getContentParameter()).thenReturn(new ByteArrayInputStream(zip(members)));
+		when(request.getContentFileName()).thenReturn("data.zip");
+
+		servlet.doPost(request, response, "/transform");
+
+		verify(connection).rollback();
+		verify(builder).result("RDF input decompression limit exceeded: archive entry count 2 exceeds 1",
+				"https://example.org/base", null, "autodetect", null, null, null);
+		verify(response).setStatus(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+		verify(response, never()).sendRedirect("summary");
+	}
+
+	@Test
 	void doPostRejectsUnknownUrlFormats() throws Exception {
 		TupleResultBuilder autodetectBuilder = mock(TupleResultBuilder.class);
 		TestAddServlet autodetectServlet = new TestAddServlet(autodetectBuilder, List.of());
 		WorkbenchRequest autodetectRequest = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		URL unknownUrl = url("data", "<urn:s> <urn:p> <urn:o> .");
 
 		autodetectServlet.setRepository(repository);
@@ -466,7 +605,7 @@ class AddServletCoverageTest {
 	void doPostAddsUrlContentWithoutContextWhenIsolationIsAbsent() throws Exception {
 		AddServlet servlet = new AddServlet();
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 		URL url = url("data.ttl", "<urn:s> <urn:p> <urn:o> .");
@@ -516,7 +655,7 @@ class AddServletCoverageTest {
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		TestAddServlet servlet = new TestAddServlet(builder, List.of("READ_COMMITTED"));
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 		Resource context = SimpleValueFactory.getInstance().createIRI("urn:ctx");
@@ -550,7 +689,7 @@ class AddServletCoverageTest {
 	void doPostDecompressesUploadedStreamFromFilenameBeforeParsing() throws Exception {
 		AddServlet servlet = new AddServlet();
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 		String turtle = "<urn:s> <urn:p> <urn:o> .";
@@ -653,7 +792,7 @@ class AddServletCoverageTest {
 	void doPostDispatchesMixedTarMembersInOneTransaction() throws Exception {
 		AddServlet servlet = new AddServlet();
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 		Map<String, byte[]> members = new LinkedHashMap<>();
@@ -693,7 +832,7 @@ class AddServletCoverageTest {
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		TestAddServlet servlet = new TestAddServlet(builder, List.of("READ_COMMITTED"));
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 		Map<String, byte[]> members = new LinkedHashMap<>();
@@ -734,7 +873,7 @@ class AddServletCoverageTest {
 	void doPostAddsStreamContentWithContextWhenTransactionBecomesInactive() throws Exception {
 		AddServlet servlet = new AddServlet();
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 		Resource context = SimpleValueFactory.getInstance().createIRI("urn:ctx");
@@ -764,7 +903,7 @@ class AddServletCoverageTest {
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		TestAddServlet servlet = new TestAddServlet(builder, List.of());
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = stubResponse();
 		URL url = url("data.ttl", "<urn:s> <urn:p> <urn:o> .");
@@ -876,10 +1015,20 @@ class AddServletCoverageTest {
 		return response;
 	}
 
+	private static RepositoryConnection mockConnection() {
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		when(connection.getParserConfig()).thenReturn(new ParserConfig());
+		return connection;
+	}
+
 	private static byte[] gzip(String body) throws IOException {
+		return gzip(body.getBytes(StandardCharsets.UTF_8));
+	}
+
+	private static byte[] gzip(byte[] body) throws IOException {
 		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
 		try (GZIPOutputStream outputStream = new GZIPOutputStream(buffer)) {
-			outputStream.write(body.getBytes(StandardCharsets.UTF_8));
+			outputStream.write(body);
 		}
 		return buffer.toByteArray();
 	}

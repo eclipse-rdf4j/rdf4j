@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -41,6 +42,7 @@ import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.RDFParserFactory;
 import org.eclipse.rdf4j.rio.RDFParserRegistry;
+import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -89,12 +91,51 @@ class RDFInputDispatcherTest {
 	}
 
 	@Test
+	void traversesUnixCompressedV7TarUsingTazAlias() throws Exception {
+		byte[] compressedArchive = Base64.getDecoder()
+				.decode(
+						"H52QZMLQCeOCDh02ABIqXMiwocOHECNKnEgRAIyLMGzQoGERI8aOHmGADAljRoyRJEVevEEjhg0AIERWnEmzps2bOHPqhJgS5cWdQIMKHUp0Jo86ctzomOMDxNGkOuA0far0TVMXRbNq3cq1q9evYMOKHUu2rNmzaNOqXcu2rdu3cOPKnUu3rt27eIUC");
+
+		assertSingleTerminal(compressedArchive, "DATA.TAZ?download=true#member");
+	}
+
+	@Test
 	void traversesNestedZipAndTarContainers() throws Exception {
 		byte[] nested = zip(Map.of("nested.tar", tar(Map.of("data.ttl", TURTLE))));
 
 		List<Terminal> terminals = dispatch(nested, "outer.zip", null);
 
 		assertThat(terminals).containsExactly(new Terminal("data.ttl", RDFFormat.TURTLE, TURTLE));
+	}
+
+	@Test
+	void keepsCallerOwnedArchiveStreamsOpen() throws Exception {
+		for (byte[] archive : List.of(zip(Map.of("data.ttl", TURTLE)), tar(Map.of("data.ttl", TURTLE)))) {
+			CloseTrackingInputStream input = new CloseTrackingInputStream(archive);
+
+			new RDFInputDispatcher(new ParserConfig()).dispatch(input, "data.archive", null,
+					(stream, name, format) -> stream.readAllBytes());
+
+			assertThat(input.closed).as("archive input remains caller-owned").isFalse();
+		}
+	}
+
+	@Test
+	void keepsCallerOwnedPlainCompressedAndFailedStreamsOpen() throws Exception {
+		CloseTrackingInputStream plain = new CloseTrackingInputStream(TURTLE);
+		new RDFInputDispatcher(new ParserConfig()).dispatch(plain, "data.ttl", null,
+				(stream, name, format) -> stream.readAllBytes());
+		assertThat(plain.closed).as("plain input remains caller-owned").isFalse();
+
+		CloseTrackingInputStream compressed = new CloseTrackingInputStream(gzip(TURTLE));
+		new RDFInputDispatcher(new ParserConfig()).dispatch(compressed, "data.ttl.gz", null,
+				(stream, name, format) -> stream.readAllBytes());
+		assertThat(compressed.closed).as("compressed input remains caller-owned").isFalse();
+
+		CloseTrackingInputStream failed = new CloseTrackingInputStream(TURTLE);
+		assertThatThrownBy(() -> new RDFInputDispatcher(new ParserConfig()).dispatch(failed, "data.unknown", null,
+				(stream, name, format) -> stream.readAllBytes())).isInstanceOf(UnsupportedRDFormatException.class);
+		assertThat(failed.closed).as("failed input remains caller-owned").isFalse();
 	}
 
 	@Test
@@ -332,6 +373,19 @@ class RDFInputDispatcherTest {
 		System.arraycopy(first, 0, result, 0, first.length);
 		System.arraycopy(second, 0, result, first.length, second.length);
 		return result;
+	}
+
+	private static final class CloseTrackingInputStream extends ByteArrayInputStream {
+		private boolean closed;
+
+		private CloseTrackingInputStream(byte[] data) {
+			super(data);
+		}
+
+		@Override
+		public void close() {
+			closed = true;
+		}
 	}
 
 	private static RDFParserFactory factory(RDFFormat format) {

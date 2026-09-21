@@ -85,7 +85,10 @@ public final class RDFInputDispatcher {
 		Objects.requireNonNull(input, "input must not be null");
 		Objects.requireNonNull(consumer, "consumer must not be null");
 		Budget budget = new Budget(parserConfig);
-		dispatch(input, sourceName, fallbackFormat, consumer, budget, 0, false, false);
+		// Archive and decoder wrappers may close their immediate input when they finish. Keep ownership of the
+		// caller-provided stream outside that wrapper chain while still allowing the wrappers themselves to release
+		// their resources.
+		dispatch(new UncloseableInputStream(input), sourceName, fallbackFormat, consumer, budget, 0, false, false);
 	}
 
 	private int dispatch(InputStream input, String sourceName, RDFFormat fallbackFormat, EntryConsumer consumer,

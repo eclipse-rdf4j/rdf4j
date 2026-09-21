@@ -311,7 +311,7 @@ public enum RioCompression {
 			return sourceName.substring(0, suffixEnd - extension.length() - 1) + ".tar"
 					+ sourceName.substring(suffixEnd);
 		}
-		if (Set.of("tbz", "tbz2", "txz", "tlz", "tlz4", "tsz", "tzst").contains(extension)) {
+		if (Set.of("tbz", "tbz2", "txz", "tlz", "tlz4", "tsz", "tzst", "taz").contains(extension)) {
 			return sourceName.substring(0, suffixEnd - extension.length() - 1) + ".tar"
 					+ sourceName.substring(suffixEnd);
 		}
@@ -391,7 +391,7 @@ public enum RioCompression {
 		LZMA("lzma", Set.of("lzma", "tlz")),
 		LZ4("lz4-framed", Set.of("lz4", "tlz4")),
 		SNAPPY("snappy-framed", Set.of("sz", "snappy", "tsz")),
-		Z("z", Set.of("z"));
+		Z("z", Set.of("z", "taz"));
 
 		private final String commonsName;
 		private final Set<String> extensions;

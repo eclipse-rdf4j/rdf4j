@@ -31,11 +31,12 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.rio.RDFParserRegistry;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+import org.eclipse.rdf4j.rio.helpers.RDFInputDecompressionLimitException;
 import org.eclipse.rdf4j.rio.helpers.RDFInputDispatcher;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
@@ -80,6 +81,9 @@ public class AddServlet extends TransformationServlet {
 			resp.sendRedirect("summary");
 		} catch (BadRequestException exc) {
 			logger.warn(exc.toString(), exc);
+			if (decompressionLimit(exc) != null) {
+				resp.setStatus(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+			}
 			TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 			builder.transform(xslPath, "add.xsl");
 			builder.start("error-message", "baseURI", CONTEXT, "Content-Type", ISOLATION_LEVEL_PARAM,
@@ -116,7 +120,7 @@ public class AddServlet extends TransformationServlet {
 		try (RepositoryConnection con = repository.getConnection()) {
 			boolean transactionStarted = beginTransaction(con, isolationLevel);
 			try {
-				new RDFInputDispatcher(new ParserConfig()).dispatch(stream, contentFileName, fallbackFormat,
+				new RDFInputDispatcher(con.getParserConfig()).dispatch(stream, contentFileName, fallbackFormat,
 						(input, sourceName, format) -> con.add(input, baseURI, format, context));
 				commitIfNeeded(con, transactionStarted);
 			} catch (UnsupportedRDFormatException exc) {
@@ -126,7 +130,17 @@ public class AddServlet extends TransformationServlet {
 							"Could not automatically determine Content-Type for content: " + contentFileName, exc);
 				}
 				throw exc;
-			} catch (RDFParseException | IllegalArgumentException exc) {
+			} catch (RDFInputDecompressionLimitException exc) {
+				rollbackIfNeeded(con, transactionStarted);
+				throw new BadRequestException(exc.getMessage(), exc);
+			} catch (RDFParseException exc) {
+				rollbackIfNeeded(con, transactionStarted);
+				RDFInputDecompressionLimitException limit = decompressionLimit(exc);
+				if (limit != null) {
+					throw new BadRequestException(limit.getMessage(), limit);
+				}
+				throw new BadRequestException(exc.getMessage(), exc);
+			} catch (IllegalArgumentException exc) {
 				rollbackIfNeeded(con, transactionStarted);
 				throw new BadRequestException(exc.getMessage(), exc);
 			} catch (IOException | RepositoryException exc) {
@@ -151,7 +165,21 @@ public class AddServlet extends TransformationServlet {
 			setAcceptHeaders(connection, contentType, url.getPath());
 			try (InputStream stream = connection.getInputStream()) {
 				String effectiveBaseURI = baseURI == null ? url.toExternalForm() : baseURI;
-				add(stream, effectiveBaseURI, contentType, url.getPath(), isolationLevel, context);
+				URL sourceURL = connection.getURL();
+				String sourceName = sourceURL == null ? url.getPath() : sourceURL.getPath();
+				String effectiveContentType = contentType;
+				if ("autodetect".equals(contentType)) {
+					String responseContentType = connection.getContentType();
+					if (responseContentType != null) {
+						int separator = responseContentType.indexOf(';');
+						String responseMimeType = separator < 0 ? responseContentType
+								: responseContentType.substring(0, separator);
+						if (Rio.getParserFormatForMIMEType(responseMimeType.trim()).isPresent()) {
+							effectiveContentType = responseMimeType.trim();
+						}
+					}
+				}
+				add(stream, effectiveBaseURI, effectiveContentType, sourceName, isolationLevel, context);
 			}
 		} catch (MalformedURLException | IllegalArgumentException exc) {
 			throw new BadRequestException(exc.getMessage(), exc);
@@ -165,6 +193,11 @@ public class AddServlet extends TransformationServlet {
 				for (String mimeType : inferredFormat.getMIMETypes()) {
 					connection.addRequestProperty("Accept", mimeType);
 				}
+			} else {
+				for (String acceptParam : RDFFormat.getAcceptParams(RDFParserRegistry.getInstance().getKeys(), true,
+						null)) {
+					connection.addRequestProperty("Accept", acceptParam);
+				}
 			}
 		} else {
 			RDFFormat format = Rio.getParserFormatForMIMEType(contentType).orElse(null);
@@ -174,6 +207,15 @@ public class AddServlet extends TransformationServlet {
 				}
 			}
 		}
+	}
+
+	private static RDFInputDecompressionLimitException decompressionLimit(Throwable failure) {
+		for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+			if (cause instanceof RDFInputDecompressionLimitException) {
+				return (RDFInputDecompressionLimitException) cause;
+			}
+		}
+		return null;
 	}
 
 	@Override
