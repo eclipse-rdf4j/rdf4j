@@ -590,7 +590,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Difference node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		return new MinusQueryEvaluationStep(precompile(node.getLeftArg(), context),
-				precompile(node.getRightArg(), context));
+				precompile(node.getRightArg(), context), node.getLeftArg(), node.getRightArg());
 	}
 
 	protected QueryEvaluationStep prepare(Group node, QueryEvaluationContext context) throws QueryEvaluationException {

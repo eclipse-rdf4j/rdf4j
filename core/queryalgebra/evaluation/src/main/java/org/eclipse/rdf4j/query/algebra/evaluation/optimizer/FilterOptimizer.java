@@ -389,15 +389,15 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Difference node) {
-			Filter clone = new Filter();
-			clone.setCondition(filter.getCondition().clone());
-			transferScopeChange(filter, clone);
-
-			relocate(filter, node.getLeftArg());
-			relocate(clone, node.getRightArg());
-
-			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
-			FilterRelocator.optimize(clone, statistics, considerJoinPlacementCost);
+			if (node.getLeftArg().getBindingNames().containsAll(filterVars)) {
+				// A filter over MINUS may be pushed into the left argument when all of its variables are left-visible.
+				// It
+				// must never be cloned into the right argument: an unbound right-side variable makes the filter error
+				// and
+				// changes whether a compatible right row removes the left row.
+				relocate(filter, node.getLeftArg());
+				FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
+			}
 		}
 
 		@Override

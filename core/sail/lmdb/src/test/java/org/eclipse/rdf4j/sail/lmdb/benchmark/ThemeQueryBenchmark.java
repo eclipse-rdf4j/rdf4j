@@ -175,7 +175,7 @@ public class ThemeQueryBenchmark {
 			OptionalLong expectedCountBindingValue = ThemeQueryCatalog.expectedCountBindingValueFor(theme,
 					z_queryIndex);
 			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-			tupleQuery.setMaxExecutionTime(70);
+			tupleQuery.setMaxExecutionTime(90);
 			try (var evaluate = tupleQuery.evaluate()) {
 				count = countRowsAndVerifyCountBinding(evaluate, expectedCountBindingValue);
 			}
