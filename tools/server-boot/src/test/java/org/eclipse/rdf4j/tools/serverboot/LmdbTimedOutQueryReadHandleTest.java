@@ -55,6 +55,7 @@ import org.springframework.test.context.ContextConfiguration;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.IThrowableProxy;
 import ch.qos.logback.core.read.ListAppender;
 
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
@@ -74,6 +75,7 @@ class LmdbTimedOutQueryReadHandleTest {
 			+ "  ?s3 ex:p ?o3 .\n"
 			+ "}";
 	private static final String HEALTH_QUERY = "ASK { ?s ?p ?o }";
+	private static final String ERROR_LOGGING_FILTER_LOGGER = ErrorLoggingFilter.class.getName();
 	private static final String TUPLE_QUERY_RESULT_VIEW_LOGGER = "org.eclipse.rdf4j.http.server.repository.TupleQueryResultView";
 
 	@LocalServerPort
@@ -306,6 +308,7 @@ class LmdbTimedOutQueryReadHandleTest {
 	private void attachLogAppender() {
 		logAppender = new ListAppender<>();
 		logAppender.start();
+		attachLogger(ERROR_LOGGING_FILTER_LOGGER);
 		attachLogger("org.eclipse.rdf4j.sail.lmdb.LmdbUtil");
 		attachLogger("org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStatistics");
 		attachLogger(TUPLE_QUERY_RESULT_VIEW_LOGGER);
@@ -330,11 +333,21 @@ class LmdbTimedOutQueryReadHandleTest {
 
 	private long serverTimeoutLogEvents() {
 		return logAppender.list.stream()
-				.filter(event -> TUPLE_QUERY_RESULT_VIEW_LOGGER.equals(event.getLoggerName()))
-				.filter(event -> event.getThrowableProxy() != null)
-				.filter(event -> QueryInterruptedException.class.getName()
-						.equals(event.getThrowableProxy().getClassName()))
+				.filter(event -> ERROR_LOGGING_FILTER_LOGGER.equals(event.getLoggerName())
+						|| TUPLE_QUERY_RESULT_VIEW_LOGGER.equals(event.getLoggerName()))
+				.filter(event -> containsQueryInterruptedException(event.getThrowableProxy()))
 				.count();
+	}
+
+	private boolean containsQueryInterruptedException(IThrowableProxy throwableProxy) {
+		IThrowableProxy current = throwableProxy;
+		while (current != null) {
+			if (QueryInterruptedException.class.getName().equals(current.getClassName())) {
+				return true;
+			}
+			current = current.getCause();
+		}
+		return false;
 	}
 
 	private List<String> lmdbReaderHandleLogEvents() {
