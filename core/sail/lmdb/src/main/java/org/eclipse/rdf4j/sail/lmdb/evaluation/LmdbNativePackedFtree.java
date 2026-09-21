@@ -1819,6 +1819,86 @@ final class LmdbNativePackedFtree {
 					fixedSlots, fixedValues, choice.depthSum);
 		}
 
+		/**
+		 * Rebinds one already admitted physical topology to worker-owned filters without repeating cost planning.
+		 *
+		 * <p>
+		 * Worker sources may expose different estimate availability, but the morsel ranges were built from the parent
+		 * topology. Replanning here could select a different root and make those ranges invalid. Node and seed metadata
+		 * therefore retain the parent's ordinals, orientations, and selected root seed; only filter and witness
+		 * placement is rebuilt over the worker-owned filter facades.
+		 */
+		static Plan rebindForWorker(Plan parent, MultiJoinPlan workerPlan) {
+			if (parent == null || workerPlan == null) {
+				return null;
+			}
+			NodePlan[] nodes = new NodePlan[parent.nodes.length];
+			for (NodePlan original : parent.nodes) {
+				nodes[original.ordinal] = new NodePlan(original.ordinal, original.slot);
+			}
+			for (NodePlan original : parent.nodes) {
+				NodePlan rebound = nodes[original.ordinal];
+				rebound.depth = original.depth;
+				rebound.parent = original.parent == null ? null : nodes[original.parent.ordinal];
+				rebound.children = new NodePlan[original.children.length];
+				for (int i = 0; i < original.children.length; i++) {
+					rebound.children[i] = nodes[original.children[i].ordinal];
+				}
+				rebound.primary = copyEdge(original.primary);
+				rebound.constraintEdges = copyEdges(original.constraintEdges);
+				rebound.unary = copyUnary(original.unary);
+				RootSeed[] seeds = new RootSeed[original.seeds.length];
+				RootSeed selected = null;
+				for (int i = 0; i < original.seeds.length; i++) {
+					seeds[i] = copySeed(original.seeds[i]);
+					if (original.seeds[i] == original.seed) {
+						selected = seeds[i];
+					}
+				}
+				rebound.seeds = seeds;
+				rebound.seed = selected == null ? copySeed(original.seed) : selected;
+			}
+			ConstantPattern[] constants = new ConstantPattern[parent.constants.length];
+			for (int i = 0; i < constants.length; i++) {
+				ConstantPattern constant = parent.constants[i];
+				constants[i] = new ConstantPattern(constant.pattern, constant.subject, constant.object);
+			}
+			Plan rebound = new Plan(workerPlan, nodes[parent.root.ordinal], nodes, constants, parent.variableMask,
+					parent.fixedSlots.clone(), parent.fixedValues.clone(), parent.structuralScore);
+			if (!placeFilters(workerPlan.filters, rebound.bySlot, rebound.root)) {
+				return null;
+			}
+			return rebound;
+		}
+
+		private static EdgePlan copyEdge(EdgePlan edge) {
+			return edge == null ? null : new EdgePlan(edge.pattern, edge.keySlot, edge.valueSlot, edge.keyIsSubject);
+		}
+
+		private static EdgePlan[] copyEdges(EdgePlan[] edges) {
+			EdgePlan[] copies = new EdgePlan[edges.length];
+			for (int i = 0; i < copies.length; i++) {
+				copies[i] = copyEdge(edges[i]);
+			}
+			return copies;
+		}
+
+		private static UnaryPlan[] copyUnary(UnaryPlan[] unary) {
+			UnaryPlan[] copies = new UnaryPlan[unary.length];
+			for (int i = 0; i < copies.length; i++) {
+				UnaryPlan original = unary[i];
+				copies[i] = new UnaryPlan(original.pattern, original.slot, original.constantNeighbor,
+						original.variableIsSubject);
+			}
+			return copies;
+		}
+
+		private static RootSeed copySeed(RootSeed seed) {
+			return seed == null ? null
+					: new RootSeed(seed.pattern, seed.variableIsKey, seed.bySubjectForVariableKey,
+							seed.bySubjectForConstantKey, seed.constantNeighbor);
+		}
+
 		private static boolean admissiblePattern(PatternPlan pattern) {
 			if (!pattern.p.isConstant() || pattern.range != null || pattern.statementOrder != null
 					|| pattern.contexts.isEmpty() || pattern.hasRepeatedSlot()) {

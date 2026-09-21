@@ -183,6 +183,7 @@ class LmdbAdjacencyStartupConcurrencyTest {
 				releaseScan.countDown();
 			}
 			writer.get(30, TimeUnit.SECONDS);
+			adjacency.awaitCommitCleanupForTest();
 			assertThat(adjacency.backlogBytes()).isZero();
 			assertThat(adjacency.publishedStateForTest().appliedRevision())
 					.isEqualTo(adjacency.snapshotMetrics().currentDataRevision);
@@ -267,6 +268,7 @@ class LmdbAdjacencyStartupConcurrencyTest {
 				adjacency.triggerBuild();
 			}
 			assertThat(sail.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS)).isTrue();
+			adjacency.awaitCommitCleanupForTest();
 			assertThat(adjacency.backlogBytes()).isZero();
 			try (var connection = repository.getConnection()) {
 				assertThat(connection.size()).isEqualTo(outcome.equals("interruption") ? 2 : 3);
@@ -366,6 +368,10 @@ class LmdbAdjacencyStartupConcurrencyTest {
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
 					.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 					.setDirectAdjacencyBuildOnStart(false)
+					// These LMDB maps are separate from the direct-adjacency byte limit; preallocate them so this
+					// cutover workload does not invalidate its pinned readers through ordinary map growth.
+					.setTripleDBSize(128L * 1024 * 1024)
+					.setValueDBSize(128L * 1024 * 1024)
 					.setDirectAdjacencyMaxBytes(1L << 30);
 			sail = new LmdbStore(dataDir, config);
 			repository = new SailRepository(sail);

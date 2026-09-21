@@ -191,7 +191,7 @@ final class LmdbNativePackedMorsels {
 						chain = new FilterPlan(chain, multi.filters[f].filter, multi.filters[f].mask);
 			}
 			if (chain == null)
-				jobs.add(new Job(continuation.apply(plan), null, null, null, -1));
+				jobs.add(new Job(continuation.apply(plan), null, null, null, null));
 			else
 				split(chain, row, continuation, jobs);
 		} else {
@@ -215,8 +215,7 @@ final class LmdbNativePackedMorsels {
 						throw new QueryEvaluationException("packed morsel planning cleanup failed", decline);
 				}
 			}
-			jobs.add(new Job(template, morsels == null ? null : anchor, specialized, morsels,
-					packed == null ? -1 : packed.root.slot));
+			jobs.add(new Job(template, morsels == null ? null : anchor, specialized, morsels, packed));
 		}
 	}
 
@@ -243,15 +242,16 @@ final class LmdbNativePackedMorsels {
 		final MultiJoinPlan anchor;
 		final MultiJoinPlan specialized;
 		final RootMorsels morsels;
-		final int rootSlot;
+		/** The exact parent physical plan whose root domain produced {@link #morsels}. */
+		final Plan packed;
 		final AtomicBoolean once = new AtomicBoolean();
 
-		Job(SlotPlan template, MultiJoinPlan anchor, MultiJoinPlan specialized, RootMorsels morsels, int rootSlot) {
+		Job(SlotPlan template, MultiJoinPlan anchor, MultiJoinPlan specialized, RootMorsels morsels, Plan packed) {
 			this.template = template;
 			this.anchor = anchor;
 			this.specialized = specialized;
 			this.morsels = morsels;
-			this.rootSlot = rootSlot;
+			this.packed = packed;
 		}
 
 		boolean exhausted() {
@@ -360,8 +360,8 @@ final class LmdbNativePackedMorsels {
 		SlotPlan fork(SlotPlan input) throws IOException {
 			if (input == job.anchor) {
 				MultiJoinPlan owned = forkMulti(job.specialized);
-				Plan packed = LmdbNativePackedFtree.Planner.plan(owned, row, slotsOf(owned.producedMask()));
-				if (packed == null || packed.root.slot != job.rootSlot)
+				Plan packed = LmdbNativePackedFtree.Planner.rebindForWorker(job.packed, owned);
+				if (packed == null || packed.root.slot != job.packed.root.slot)
 					throw new QueryEvaluationException("packed worker root differs from the planned morsel domain");
 				Runtime runtime = Runtime.openForWorker(packed, row);
 				if (runtime == null)

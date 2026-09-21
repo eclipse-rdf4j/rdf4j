@@ -480,26 +480,23 @@ class LmdbNativeGeneratedQueryCoverageTest {
 				if (openedKernels() > 0L) {
 					counts.opened++;
 				} else if (declinedKernels() > 0L) {
-					Set<String> reasons = declineReasons(query.sparql());
+					Set<StrategyDecline> declines = declineReasons(query.sparql());
 					// Explain evaluates a freshly prepared query. Its extra open may cross the async compilation
 					// threshold and engage the kernel that the immediately preceding execution only scheduled. Re-read
 					// the counters after collecting telemetry so one query cannot be classified from two different
 					// specialization states.
 					if (openedKernels() > 0L) {
 						counts.opened++;
-					} else if (reasons.isEmpty()) {
+					} else if (declines.isEmpty()) {
 						failures.add(query.category() + " had an unclassified kernel decline\n" + query.sparql());
-					} else if (reasons.stream().allMatch(NON_CAPABILITY_REASONS::contains)) {
+					} else if (serialDeclinesAreNonCapability(declines)) {
 						counts.noOpportunity++;
+						recordDeclines(counts, declines);
 					} else {
 						counts.capabilityDecline++;
 						capabilityDeclines.add("index=" + total + " category=" + query.category() + " reasons="
-								+ reasons + "\n" + query.sparql() + "\n---\n");
-						for (String reason : reasons) {
-							if (!NON_CAPABILITY_REASONS.contains(reason)) {
-								counts.declineReasons.merge(reason, 1, Integer::sum);
-							}
-						}
+								+ declines + "\n" + query.sparql() + "\n---\n");
+						recordDeclines(counts, declines);
 					}
 				} else {
 					counts.noAttempt++;
@@ -529,6 +526,23 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		assertThat(coverage.values().stream().mapToInt(count -> count.opened).sum())
 				.as("the shared corpus must exercise compiled Janino kernels")
 				.isPositive();
+	}
+
+	@Test
+	void strategyAwareDeclineClassificationRequiresSerialEvidence() {
+		assertThat(serialDeclinesAreNonCapability(Set.of(
+				new StrategyDecline("irKernel", "outranked"),
+				new StrategyDecline("irKernelParallel", "plan-producer"))))
+						.as("a parallel admission decline must not disqualify an eligible serial strategy")
+						.isTrue();
+		assertThat(serialDeclinesAreNonCapability(Set.of(
+				new StrategyDecline("irKernel", "plan-producer"),
+				new StrategyDecline("irKernelParallel", "outranked"))))
+						.as("a serial plan-producer decline is a capability failure")
+						.isFalse();
+		assertThat(serialDeclinesAreNonCapability(Set.of(new StrategyDecline("irKernelParallel", "plan-producer"))))
+				.as("parallel-only evidence does not establish serial eligibility")
+				.isFalse();
 	}
 
 	@Test
@@ -566,12 +580,11 @@ class LmdbNativeGeneratedQueryCoverageTest {
 			}
 			long opened = openedKernels();
 			if (opened == 0L) {
-				Set<String> reasons = declineReasons(query.sparql());
-				if (openedKernels() == 0L
-						&& (reasons.isEmpty() || !NON_CAPABILITY_REASONS.containsAll(reasons))) {
+				Set<StrategyDecline> declines = declineReasons(query.sparql());
+				if (openedKernels() == 0L && !serialDeclinesAreNonCapability(declines)) {
 					failures.add(
 							candidate.label() + " was neither opened nor an eligible semantic-tier proposal; reasons="
-									+ reasons + "\nQUERY:\n" + query.sparql());
+									+ declines + "\nQUERY:\n" + query.sparql());
 				}
 			}
 		}
@@ -593,7 +606,7 @@ class LmdbNativeGeneratedQueryCoverageTest {
 
 			List<String> actual = nativeRowsUntilClassified(query, true);
 			String explain = explain(query);
-			Set<String> reasons = declineReasons(query);
+			Set<StrategyDecline> declines = declineReasons(query);
 
 			assertThat(actual).as("generated query %s answer parity", entry.getKey())
 					.containsExactlyElementsOf(expected);
@@ -603,9 +616,9 @@ class LmdbNativeGeneratedQueryCoverageTest {
 			assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore)
 					.as("generated query %s must not use a generic island\n%s", entry.getKey(), explain)
 					.isZero();
-			assertThat(openedKernels() > 0L || (!reasons.isEmpty() && NON_CAPABILITY_REASONS.containsAll(reasons)))
+			assertThat(openedKernels() > 0L || serialDeclinesAreNonCapability(declines))
 					.as("generated query %s must open a specialized kernel or decline explicitly; reasons=%s\n%s",
-							entry.getKey(), reasons, explain)
+							entry.getKey(), declines, explain)
 					.isTrue();
 		}
 	}
@@ -696,13 +709,13 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
 		resetMetricsOnly();
 		List<String> actual = nativeRowsUntilClassified(query, true);
-		Set<String> reasons = declineReasons(query);
+		Set<StrategyDecline> declines = declineReasons(query);
 
 		assertThat(actual).containsExactlyElementsOf(expected);
 		assertThat(plannedKernels()).as("a pure general expression BIND must be planned natively").isPositive();
-		assertThat(openedKernels() > 0L || (!reasons.isEmpty() && NON_CAPABILITY_REASONS.containsAll(reasons)))
+		assertThat(openedKernels() > 0L || serialDeclinesAreNonCapability(declines))
 				.as("a pure CONCAT BIND must open a specialization or explicitly remain semantic native; reasons=%s",
-						reasons)
+						declines)
 				.isTrue();
 		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore).isZero();
 		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore).isZero();
@@ -749,11 +762,11 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
 		resetMetricsOnly();
 		List<String> actual = nativeRowsUntilClassified(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY, true);
-		Set<String> reasons = declineReasons(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY);
+		Set<StrategyDecline> declines = declineReasons(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY);
 		assertThat(plannedKernels()).as("OPTIONAL UNION query must be recognized by a Janino kernel").isPositive();
-		assertThat(openedKernels() > 0L || (!reasons.isEmpty() && NON_CAPABILITY_REASONS.containsAll(reasons)))
+		assertThat(openedKernels() > 0L || serialDeclinesAreNonCapability(declines))
 				.as("stateful OPTIONAL must open a specialized kernel or explicitly remain semantic native; reasons=%s",
-						reasons)
+						declines)
 				.isTrue();
 		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore)
 				.as("stateful OPTIONAL must not use a generic host")
@@ -864,8 +877,8 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		return result;
 	}
 
-	private Set<String> declineReasons(String query) {
-		Set<String> reasons = new LinkedHashSet<>();
+	private Set<StrategyDecline> declineReasons(String query) {
+		Set<StrategyDecline> declines = new LinkedHashSet<>();
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			org.eclipse.rdf4j.query.TupleQuery prepared = connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
 			prepared.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
@@ -875,11 +888,38 @@ class LmdbNativeGeneratedQueryCoverageTest {
 				String strategy = matcher.group(1);
 				if (LmdbNativeAttemptMetrics.EXECUTION_PATH_VOCABULARY.contains(strategy)
 						&& (strategy.startsWith("irKernel") || strategy.startsWith("irAggregate"))) {
-					reasons.add(matcher.group(2));
+					declines.add(new StrategyDecline(strategy, matcher.group(2)));
 				}
 			}
 		}
-		return reasons;
+		return declines;
+	}
+
+	private static boolean serialDeclinesAreNonCapability(Set<StrategyDecline> declines) {
+		boolean hasSerialEvidence = false;
+		for (StrategyDecline decline : declines) {
+			if (!serialIrFamily(decline.strategy())) {
+				continue;
+			}
+			hasSerialEvidence = true;
+			if (!NON_CAPABILITY_REASONS.contains(decline.reason())) {
+				return false;
+			}
+		}
+		return hasSerialEvidence;
+	}
+
+	private static boolean serialIrFamily(String strategy) {
+		return (strategy.startsWith("irKernel") || strategy.startsWith("irAggregate"))
+				&& !parallelIrFamily(strategy);
+	}
+
+	private static boolean parallelIrFamily(String strategy) {
+		return strategy.contains("Parallel");
+	}
+
+	private static void recordDeclines(CoverageCounts counts, Set<StrategyDecline> declines) {
+		declines.forEach(decline -> counts.declineReasons.merge(decline.toString(), 1, Integer::sum));
 	}
 
 	private String explain(String query) {
@@ -950,7 +990,7 @@ class LmdbNativeGeneratedQueryCoverageTest {
 				.forEach(count -> count.declineReasons
 						.forEach((reason, number) -> reasons.merge(reason, number, Integer::sum)));
 		if (!reasons.isEmpty()) {
-			out.append("\n-- capability declines --\n");
+			out.append("\n-- strategy decline records --\n");
 			reasons.forEach((reason, number) -> out.append(String.format("%6d  %s%n", number, reason)));
 		}
 		return out.toString();
@@ -993,6 +1033,13 @@ class LmdbNativeGeneratedQueryCoverageTest {
 
 		int accounted() {
 			return opened + capabilityDecline + noOpportunity + noAttempt + externalService + nonTuple;
+		}
+	}
+
+	private record StrategyDecline(String strategy, String reason) {
+		@Override
+		public String toString() {
+			return strategy + ":" + reason;
 		}
 	}
 

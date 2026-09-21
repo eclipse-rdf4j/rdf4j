@@ -47,6 +47,7 @@ public class LmdbAdjacencySemijoinTest {
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String SEMIJOIN_FLAG = "rdf4j.lmdb.adjacencySemijoin.enabled";
 	private static final String LEFTJOIN_MIN_PROBES = "rdf4j.lmdb.leftjoin.hash.minProbes";
+	private static final String PACKED_ALGEBRA_FLAG = "rdf4j.lmdb.packedFtree.algebra.enabled";
 	private static final String JANINO_FLAG = "rdf4j.lmdb.janinoCodegen.enabled";
 	private static final String KERNEL_INTERPRETER_FLAG = "rdf4j.lmdb.kernelInterpreter.enabled";
 	private static final int PERSONS = 80;
@@ -239,19 +240,42 @@ public class LmdbAdjacencySemijoinTest {
 		System.setProperty(NATIVE_FLAG, "true");
 		System.setProperty(LEFTJOIN_MIN_PROBES, "0");
 		System.setProperty(SEMIJOIN_FLAG, "false");
-		List<String> expected = rows(query);
-		long buildsWithFlagOff = JoinDispatchTestAccess.leftJoinHashBuilds();
-		assertThat(rows(query)).isEqualTo(expected);
-		buildsWithFlagOff = JoinDispatchTestAccess.leftJoinHashBuilds() - buildsWithFlagOff;
-		assertThat(buildsWithFlagOff)
-				.as("the payload hash layer must engage on this shape with the semijoin flag off")
-				.isGreaterThan(0L);
+		String previousPackedAlgebra = System.getProperty(PACKED_ALGEBRA_FLAG);
+		List<String> expected;
+		try {
+			/*
+			 * The counter below belongs to the legacy payload probe. Isolate its physical-path assertion from the
+			 * packed factor algebra, which can answer the same workload without opening that probe.
+			 */
+			System.setProperty(PACKED_ALGEBRA_FLAG, "false");
+			expected = rows(query);
+			long buildsWithFlagOff = JoinDispatchTestAccess.leftJoinHashBuilds();
+			assertThat(rows(query)).isEqualTo(expected);
+			buildsWithFlagOff = JoinDispatchTestAccess.leftJoinHashBuilds() - buildsWithFlagOff;
+			assertThat(buildsWithFlagOff)
+					.as("the payload hash layer must engage on this shape with the semijoin flag off")
+					.isGreaterThan(0L);
 
-		System.setProperty(SEMIJOIN_FLAG, "true");
-		long buildsBefore = JoinDispatchTestAccess.leftJoinHashBuilds();
-		assertThat(rows(query)).isEqualTo(expected);
-		assertThat(JoinDispatchTestAccess.leftJoinHashBuilds())
-				.as("an adjacency-cache-backed probe must not duplicate itself into a query-local hash layer")
-				.isEqualTo(buildsBefore);
+			System.setProperty(SEMIJOIN_FLAG, "true");
+			long buildsBefore = JoinDispatchTestAccess.leftJoinHashBuilds();
+			assertThat(rows(query)).isEqualTo(expected);
+			assertThat(JoinDispatchTestAccess.leftJoinHashBuilds())
+					.as("an adjacency-cache-backed probe must not duplicate itself into a query-local hash layer")
+					.isEqualTo(buildsBefore);
+
+			// Keep semantic coverage for the packed route as well: both semijoin settings must preserve the same rows.
+			System.setProperty(PACKED_ALGEBRA_FLAG, "true");
+			System.setProperty(SEMIJOIN_FLAG, "false");
+			assertThat(rows(query)).isEqualTo(expected);
+			System.setProperty(SEMIJOIN_FLAG, "true");
+			assertThat(rows(query)).isEqualTo(expected);
+		} finally {
+			if (previousPackedAlgebra == null) {
+				System.clearProperty(PACKED_ALGEBRA_FLAG);
+			} else {
+				System.setProperty(PACKED_ALGEBRA_FLAG, previousPackedAlgebra);
+			}
+		}
+
 	}
 }

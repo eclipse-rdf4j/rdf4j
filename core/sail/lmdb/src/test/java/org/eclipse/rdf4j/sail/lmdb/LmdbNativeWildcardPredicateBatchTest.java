@@ -48,6 +48,7 @@ class LmdbNativeWildcardPredicateBatchTest {
 	private static final String ADJACENCY_AGGREGATE_PROPERTY = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
 	private static final String NATIVE_BATCH_PROPERTY = "rdf4j.lmdb.nativeBatch.enabled";
 	private static final String NATIVE_BATCH_ROWS_PROPERTY = "rdf4j.lmdb.nativeBatch.rows";
+	private static final String PACKED_ALGEBRA_PROPERTY = "rdf4j.lmdb.packedFtree.algebra.enabled";
 	private static final String PARALLEL_PROPERTY = "rdf4j.lmdb.parallel.enabled";
 	private static final String PARALLEL_MIN_WORK_PROPERTY = "rdf4j.lmdb.parallel.minWorkEstimate";
 	private static final String PARALLEL_STARTUP_WORK_PROPERTY = "rdf4j.lmdb.parallel.startupWork";
@@ -677,13 +678,28 @@ class LmdbNativeWildcardPredicateBatchTest {
 	}
 
 	@Test
+	void computedTypeGroupPreservesResultsWithPackedAlgebraInInterpretedIr(@TempDir File dataDir) {
+		assertComputedTypeGroupUsesPackedAlgebra(dataDir, "irAggregateInterpreted");
+	}
+
+	@Test
 	void computedTypeGroupKeepsWeightedWildcardsInCompiledIr(@TempDir File dataDir) {
 		assertComputedTypeGroupUsesWeightedInput(dataDir, "irAggregate");
 	}
 
 	@Test
+	void computedTypeGroupPreservesResultsWithPackedAlgebraInCompiledIr(@TempDir File dataDir) {
+		assertComputedTypeGroupUsesPackedAlgebra(dataDir, "irAggregate");
+	}
+
+	@Test
 	void computedTypeGroupKeepsWeightedWildcardsWithoutIr(@TempDir File dataDir) {
 		assertComputedTypeGroupUsesWeightedInput(dataDir, null);
+	}
+
+	@Test
+	void computedTypeGroupPreservesResultsWithPackedAlgebraWithoutIr(@TempDir File dataDir) {
+		assertComputedTypeGroupUsesPackedAlgebra(dataDir, null);
 	}
 
 	@ParameterizedTest
@@ -729,24 +745,11 @@ class LmdbNativeWildcardPredicateBatchTest {
 		String synchronous = System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
 		try {
 			for (int i = 0; i < queries.size(); i++) {
-				long folded = LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded();
-				try (RepositoryConnection connection = repository.getConnection()) {
-					SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(queries.get(i));
-					if (!"withoutIr".equals(strategy)) {
-						prepared.setForcedLmdbExecutionStrategy(strategy);
-					}
-					List<String> actual = QueryResults.asList(prepared.evaluate())
-							.stream()
-							.map(LmdbNativeWildcardPredicateBatchTest::canonicalRow)
-							.sorted()
-							.toList();
-					assertThat(actual).as("%s: %s", strategy, queries.get(i))
-							.containsExactlyElementsOf(expected.get(i));
-				}
+				List<String> actual = executeComputedWildcardQuery(queries.get(i), strategy);
+				assertThat(actual).as("%s: %s", strategy, queries.get(i))
+						.containsExactlyElementsOf(expected.get(i));
 				if (i == 0) {
-					assertThat(LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded())
-							.as("a failed group-key expression must retain the weighted wildcard producer")
-							.isGreaterThan(folded);
+					assertComputedWildcardFolding(queries.get(i), strategy, expected.get(i));
 				}
 			}
 		} finally {
@@ -759,6 +762,16 @@ class LmdbNativeWildcardPredicateBatchTest {
 	}
 
 	private void assertComputedTypeGroupUsesWeightedInput(File dataDir, String strategy) {
+		// The fold counter belongs to the legacy FactorizingBatchCursor. The packed factor algebra preserves
+		// multiplicity without entering that cursor, so telemetry assertions must scope the legacy path explicitly.
+		withPackedAlgebra(false, () -> assertComputedTypeGroup(dataDir, strategy, true));
+	}
+
+	private void assertComputedTypeGroupUsesPackedAlgebra(File dataDir, String strategy) {
+		withPackedAlgebra(true, () -> assertComputedTypeGroup(dataDir, strategy, false));
+	}
+
+	private void assertComputedTypeGroup(File dataDir, String strategy, boolean assertWeightedWildcardFolding) {
 		open(dataDir, true);
 		try (RepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
@@ -817,10 +830,12 @@ class LmdbNativeWildcardPredicateBatchTest {
 					previous = count;
 				}
 			}
-			assertThat(LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded())
-					.as("computed grouping must execute the weighted wildcard path, not only a native fallback%n%s",
-							explain(query))
-					.isGreaterThan(folded);
+			if (assertWeightedWildcardFolding) {
+				assertThat(LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded())
+						.as("computed grouping must execute the weighted wildcard path, not only a native fallback%n%s",
+								explain(query))
+						.isGreaterThan(folded);
+			}
 		} finally {
 			if (synchronous == null) {
 				System.clearProperty("rdf4j.lmdb.janinoCodegen.synchronous");
@@ -831,6 +846,46 @@ class LmdbNativeWildcardPredicateBatchTest {
 				System.clearProperty("rdf4j.lmdb.janinoCodegen.weightedComputedGroups");
 			} else {
 				System.setProperty("rdf4j.lmdb.janinoCodegen.weightedComputedGroups", projection);
+			}
+		}
+	}
+
+	private void assertComputedWildcardFolding(String query, String strategy, List<String> expected) {
+		withPackedAlgebra(false, () -> {
+			long folded = LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded();
+			assertThat(executeComputedWildcardQuery(query, strategy))
+					.as("%s: %s", strategy, query)
+					.containsExactlyElementsOf(expected);
+			assertThat(LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded())
+					.as("a failed group-key expression must retain the weighted wildcard producer")
+					.isGreaterThan(folded);
+		});
+	}
+
+	private List<String> executeComputedWildcardQuery(String query, String strategy) {
+		try (RepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (!"withoutIr".equals(strategy)) {
+				prepared.setForcedLmdbExecutionStrategy(strategy);
+			}
+			return QueryResults.asList(prepared.evaluate())
+					.stream()
+					.map(LmdbNativeWildcardPredicateBatchTest::canonicalRow)
+					.sorted()
+					.toList();
+		}
+	}
+
+	private void withPackedAlgebra(boolean enabled, Runnable action) {
+		String previous = System.getProperty(PACKED_ALGEBRA_PROPERTY);
+		try {
+			System.setProperty(PACKED_ALGEBRA_PROPERTY, Boolean.toString(enabled));
+			action.run();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(PACKED_ALGEBRA_PROPERTY);
+			} else {
+				System.setProperty(PACKED_ALGEBRA_PROPERTY, previous);
 			}
 		}
 	}

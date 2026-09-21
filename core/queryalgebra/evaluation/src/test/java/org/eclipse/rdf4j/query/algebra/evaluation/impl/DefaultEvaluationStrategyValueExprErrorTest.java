@@ -20,6 +20,7 @@ import java.util.List;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -122,6 +124,71 @@ class DefaultEvaluationStrategyValueExprErrorTest {
 				() -> strategy.precompile(expression, context()));
 
 		assertThat(step.evaluate(EmptyBindingSet.getInstance())).isEqualTo(value("fallback"));
+	}
+
+	@Test
+	void failedBindCoalesceUsesFallbackValue() throws Exception {
+		DefaultEvaluationStrategy strategy = strategy();
+		ParsedQuery query = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"SELECT ?row ?ok WHERE { VALUES ?row { 1 } BIND(1 / 0 AS ?bad) "
+						+ "BIND(COALESCE(?bad, 7) AS ?ok) }",
+				null);
+
+		List<BindingSet> results = QueryResults.asList(
+				strategy.precompile(query.getTupleExpr()).evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(results).hasSize(1);
+		assertThat(results.get(0).getValue("ok")).isEqualTo(VF.createLiteral("7", XSD.INTEGER));
+	}
+
+	@Test
+	void failedBindSameTermRemainsUnbound() throws Exception {
+		DefaultEvaluationStrategy strategy = strategy();
+		ParsedQuery query = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"SELECT ?row ?same WHERE { VALUES ?row { 1 } BIND(1 / 0 AS ?bad) "
+						+ "BIND(SAMETERM(?bad, 7) AS ?same) }",
+				null);
+
+		List<BindingSet> results = QueryResults.asList(
+				strategy.precompile(query.getTupleExpr()).evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(results).hasSize(1);
+		assertThat(results.get(0).hasBinding("same")).isFalse();
+	}
+
+	@Test
+	void failedBindBoundRemainsFalse() throws Exception {
+		DefaultEvaluationStrategy strategy = strategy();
+		ParsedQuery query = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"SELECT ?row ?isBound WHERE { VALUES ?row { 1 } BIND(1 / 0 AS ?bad) "
+						+ "BIND(BOUND(?bad) AS ?isBound) }",
+				null);
+
+		List<BindingSet> results = QueryResults.asList(
+				strategy.precompile(query.getTupleExpr()).evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(results).hasSize(1);
+		assertThat(results.get(0).getValue("isBound")).isEqualTo(VF.createLiteral(false));
+	}
+
+	@Test
+	void varWithNullMarkerErrorsForQueryAndArrayBindingSets() throws Exception {
+		DefaultEvaluationStrategy strategy = strategy();
+		QueryValueEvaluationStep step = strategy.precompile(new Var("bad"), context());
+
+		QueryBindingSet queryBindings = new QueryBindingSet();
+		queryBindings.setBinding("bad", null);
+		ArrayBindingSet arrayBindings = new ArrayBindingSet("bad");
+		arrayBindings.setBinding("bad", null);
+
+		assertThatThrownBy(() -> step.evaluate(queryBindings)).isInstanceOf(ValueExprEvaluationException.class);
+		assertThatThrownBy(() -> step.evaluate(arrayBindings)).isInstanceOf(ValueExprEvaluationException.class);
+
+		Value boundValue = value("bound");
+		queryBindings.setBinding("bad", boundValue);
+		arrayBindings.setBinding("bad", boundValue);
+		assertThat(step.evaluate(queryBindings)).isEqualTo(boundValue);
+		assertThat(step.evaluate(arrayBindings)).isEqualTo(boundValue);
 	}
 
 	@Test

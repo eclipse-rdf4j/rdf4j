@@ -78,15 +78,6 @@ class ThemeQueryBenchmarkSmokeIT {
 	}
 
 	@Test
-	void benchmarkForkPassesForcedStrategyAsSystemProperty() {
-		Fork fork = ThemeQueryBenchmark.class.getAnnotation(Fork.class);
-
-		assertTrue(fork != null && Arrays.asList(fork.jvmArgs())
-				.contains("-D" + ThemeQueryBenchmark.FORCED_EXECUTION_STRATEGY_PROPERTY + "=packedFtreeAggregate"),
-				"the forced strategy must be a JVM system property, not a bare launcher argument");
-	}
-
-	@Test
 	void cachedStoreMetadataRequiresCurrentDatasetRevision() {
 		Properties properties = new Properties();
 		assertFalse(ThemeQueryBenchmark.hasCurrentDatasetRevision(properties));

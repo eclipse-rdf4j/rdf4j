@@ -6,6 +6,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -23,7 +24,9 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
@@ -59,6 +62,26 @@ class LmdbNativePackedMorselsTest {
 	private static final String STAR = "?s a ex:Root; ex:p ?p; ex:q ?q . ";
 	private static final String COMPOSED = "{ " + STAR + " } UNION { " + STAR + " } "
 			+ "OPTIONAL { ?s ex:r ?r } BIND(COALESCE(?r, 0) AS ?key) ";
+	/*
+	 * Numeric value ordering leaves equal values with different RDF datatypes tied, so paginated checks need explicit
+	 * datatype and lexical-value tie-breakers while retaining the original RDF terms.
+	 */
+	private static final String KEY_TIE_BREAKERS = " STR(DATATYPE(?key)) STR(?key)";
+	private static final String NAMED_GRAPH_ROW_QUERY = "SELECT ?s ?g ?n WHERE { GRAPH ?g { ?s ex:named ?n } ?s a ex:Root }";
+	private static final String NAMED_GRAPH_AGGREGATE_QUERY = "SELECT (COUNT(*) AS ?n) (COUNT(DISTINCT ?s) AS ?ns) WHERE { "
+			+ "GRAPH ?g { ?s ex:named ?namedValue } ?s a ex:Root }";
+	private static final String RANGE_AGGREGATE_QUERY = "SELECT (COUNT(*) AS ?n) (SUM(?p) AS ?sp) WHERE { " + STAR
+			+ "FILTER(?p > 100) }";
+	private static final List<String> DISTINCT_EXTENSION_DEPENDENCY_QUERIES = List.of(
+			"SELECT DISTINCT ?p ?key WHERE { ?s a ex:Root; ex:p ?p . OPTIONAL { ?s ex:r ?r } "
+					+ "BIND(COALESCE(?r, 0) AS ?key) }",
+			"SELECT DISTINCT ?p ?key WHERE { ?s a ex:Root; ex:p ?p . OPTIONAL { ?s ex:r ?r } "
+					+ "BIND(COALESCE(?r, 0) AS ?base) BIND(?base + 1 AS ?key) }",
+			"SELECT DISTINCT ?p ?key WHERE { { ?s a ex:Root; ex:p ?p . } UNION { ?s a ex:Root; ex:p ?p . } "
+					+ "OPTIONAL { { ?s ex:r ?r } UNION { ?s ex:missing ?r } } "
+					+ "BIND(COALESCE(?r, 0) AS ?key) }");
+	private static final String DISTINCT_EXTENSION_ORDERED_QUERY = "SELECT DISTINCT ?p ?key WHERE { " + COMPOSED
+			+ " } ORDER BY ?p ?key" + KEY_TIE_BREAKERS + " OFFSET 3 LIMIT 11";
 
 	@TempDir
 	File directory;
@@ -138,8 +161,7 @@ class LmdbNativePackedMorselsTest {
 				"SELECT * WHERE { " + STAR + " OPTIONAL { { ?s ex:r ?x } UNION { ?s ex:missing ?x } } }",
 				"SELECT * WHERE { { " + STAR + " } UNION { BIND(123 AS ?only) } }",
 				"SELECT ?s ?p ?r WHERE { " + STAR + " OPTIONAL { ?s ex:r ?r FILTER(?r > 100) } }",
-				"SELECT ?s ?bad ?ok WHERE { " + STAR + " BIND(1/0 AS ?bad) BIND(COALESCE(?bad, 7) AS ?ok) }",
-				"SELECT ?s ?g ?n WHERE { GRAPH ?g { ?s ex:named ?n } ?s a ex:Root }"
+				"SELECT ?s ?bad ?ok WHERE { " + STAR + " BIND(1/0 AS ?bad) BIND(COALESCE(?bad, 7) AS ?ok) }"
 		);
 	}
 
@@ -157,9 +179,7 @@ class LmdbNativePackedMorselsTest {
 						+ " } GROUP BY ?key ?p",
 				"SELECT ?bad (COUNT(*) AS ?n) WHERE { { " + STAR + " BIND(1/0 AS ?bad) } UNION { " + STAR
 						+ " } } GROUP BY ?bad",
-				"SELECT (COUNT(*) AS ?n) (COUNT(DISTINCT ?s) AS ?ns) WHERE { GRAPH ?g { ?s ex:named ?n } ?s a ex:Root }",
-				"SELECT (COUNT(DISTINCT *) AS ?n) WHERE { " + COMPOSED + " }",
-				"SELECT (COUNT(*) AS ?n) (SUM(?p) AS ?sp) WHERE { " + STAR + " FILTER(?p > 100) }"
+				"SELECT (COUNT(DISTINCT *) AS ?n) WHERE { " + COMPOSED + " }"
 		);
 	}
 
@@ -173,6 +193,37 @@ class LmdbNativePackedMorselsTest {
 	@MethodSource("aggregateQueries")
 	void aggregateBagsMatchGeneric(String query) {
 		assertSameBag(query, "packedFtreeAggregate", null);
+	}
+
+	@Test
+	void namedGraphPackedForcingIsRejectedButNormalDispatchMatchesGeneric() {
+		assertNamedGraphCase(NAMED_GRAPH_ROW_QUERY, "packedFtree");
+		assertNamedGraphCase(NAMED_GRAPH_AGGREGATE_QUERY, "packedFtreeAggregate");
+	}
+
+	@Test
+	void rangeAggregatePackedForcingIsRejectedButNormalDispatchMatchesGeneric() {
+		assertRangePlanIsPresent(RANGE_AGGREGATE_QUERY);
+		assertNamedGraphCase(RANGE_AGGREGATE_QUERY, "packedFtreeAggregate");
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void packedDistinctRetainsOptionalExtensionDependencies(boolean parallel) {
+		String previousParallel = System.getProperty(MASTER);
+		try {
+			System.setProperty(MASTER, Boolean.toString(parallel));
+			for (String query : DISTINCT_EXTENSION_DEPENDENCY_QUERIES)
+				assertSameBag(query, "packedFtree", null);
+			List<BindingSet> expected = generic(DISTINCT_EXTENSION_ORDERED_QUERY, null);
+			List<BindingSet> actual = evaluate(DISTINCT_EXTENSION_ORDERED_QUERY, "packedFtree", null);
+			assertEquals(canonicalInOrder(expected), canonicalInOrder(actual), DISTINCT_EXTENSION_ORDERED_QUERY);
+		} finally {
+			if (previousParallel == null)
+				System.clearProperty(MASTER);
+			else
+				System.setProperty(MASTER, previousParallel);
+		}
 	}
 
 	@ParameterizedTest
@@ -205,14 +256,16 @@ class LmdbNativePackedMorselsTest {
 
 	@Test
 	void globalOrderOffsetAndLimitRemainOutsideWorkers() {
-		String query = "SELECT DISTINCT ?p ?key WHERE { " + COMPOSED + " } ORDER BY ?p ?key OFFSET 3 LIMIT 11";
+		String query = "SELECT DISTINCT ?p ?key WHERE { " + COMPOSED + " } ORDER BY ?p ?key" + KEY_TIE_BREAKERS
+				+ " OFFSET 3 LIMIT 11";
 		List<BindingSet> expected = generic(query, null);
 		List<BindingSet> actual = evaluate(query, "packedFtree", null);
 		assertEquals(expected.size(), actual.size());
 		for (int i = 0; i < expected.size(); i++)
 			assertEquals(canonical(List.of(expected.get(i))), canonical(List.of(actual.get(i))));
 		assertSameBag("SELECT ?key (COUNT(*) AS ?n) WHERE { " + COMPOSED
-				+ " } GROUP BY ?key HAVING(COUNT(*) > 10) ORDER BY DESC(?n) ?key LIMIT 4 OFFSET 1",
+				+ " } GROUP BY ?key HAVING(COUNT(*) > 10) ORDER BY DESC(?n) ?key" + KEY_TIE_BREAKERS
+				+ " LIMIT 4 OFFSET 1",
 				"packedFtreeAggregate", null);
 	}
 
@@ -266,6 +319,26 @@ class LmdbNativePackedMorselsTest {
 		assertEquals(canonical(generic(query, subject)), canonical(evaluate(query, forced, subject)), query);
 	}
 
+	private void assertForcedStrategyRejected(String query, String forced) {
+		QueryEvaluationException failure = assertThrows(QueryEvaluationException.class,
+				() -> evaluate(query, forced, null));
+		assertTrue(failure.getMessage().contains("'" + forced + "'"), failure::getMessage);
+		assertTrue(failure.getMessage().contains("could not be forced"), failure::getMessage);
+	}
+
+	private void assertNamedGraphCase(String query, String forced) {
+		assertSameBag(query, null, null);
+		assertForcedStrategyRejected(query, forced);
+	}
+
+	private void assertRangePlanIsPresent(String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(PREFIX + query);
+			String explanation = prepared.explain(Explanation.Level.Optimized).toString();
+			assertTrue(explanation.contains("range="), explanation);
+		}
+	}
+
 	private List<BindingSet> generic(String query, Value subject) {
 		System.setProperty(NATIVE, "false");
 		try {
@@ -289,13 +362,25 @@ class LmdbNativePackedMorselsTest {
 	private static List<String> canonical(List<BindingSet> rows) {
 		List<String> result = new ArrayList<>(rows.size());
 		for (BindingSet row : rows)
-			result.add(row.getBindingNames()
-					.stream()
-					.sorted()
-					.filter(name -> row.getValue(name) != null)
-					.map(name -> name + '=' + row.getValue(name))
-					.collect(Collectors.joining(";", "[", "]")));
+			result.add(canonicalRow(row));
 		result.sort(String::compareTo);
 		return result;
 	}
+
+	private static List<String> canonicalInOrder(List<BindingSet> rows) {
+		List<String> result = new ArrayList<>(rows.size());
+		for (BindingSet row : rows)
+			result.add(canonicalRow(row));
+		return result;
+	}
+
+	private static String canonicalRow(BindingSet row) {
+		return row.getBindingNames()
+				.stream()
+				.sorted()
+				.filter(name -> row.getValue(name) != null)
+				.map(name -> name + '=' + row.getValue(name))
+				.collect(Collectors.joining(";", "[", "]"));
+	}
+
 }

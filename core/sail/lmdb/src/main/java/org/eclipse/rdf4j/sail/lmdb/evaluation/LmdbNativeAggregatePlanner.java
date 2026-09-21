@@ -21,6 +21,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -1935,7 +1936,19 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		if (expr instanceof Extension) {
 			Extension extension = (Extension) expr;
-			SlotPlan arg = compileTupleOrIsland(extension.getArg(), duplicateInsensitive);
+			Set<String> previousRequired = requiredAggregateNames;
+			HashSet<String> extensionRequired = new HashSet<>(previousRequired);
+			// BIND inputs must keep duplicate-insensitive OPTIONAL pruning sound when the expression observes them.
+			for (ExtensionElem elem : extension.getElements()) {
+				extensionRequired.addAll(VarNameCollector.process(elem.getExpr()));
+			}
+			requiredAggregateNames = extensionRequired;
+			SlotPlan arg;
+			try {
+				arg = compileTupleOrIsland(extension.getArg(), duplicateInsensitive);
+			} finally {
+				requiredAggregateNames = previousRequired;
+			}
 			if (arg == null) {
 				return null;
 			}

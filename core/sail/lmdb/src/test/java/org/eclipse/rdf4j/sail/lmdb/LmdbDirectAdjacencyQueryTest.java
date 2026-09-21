@@ -2127,10 +2127,19 @@ class LmdbDirectAdjacencyQueryTest {
 		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
 		openPreferStore("spco,spoc,posc");
 		direct.pauseApplierForTest(true);
+		CountDownLatch pendingPublished = new CountDownLatch(1);
+		CountDownLatch releaseQueueAdmission = new CountDownLatch(1);
+		Runnable previousQueueAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
+		direct.beforeApplyQueueAdmissionForTest = () -> {
+			pendingPublished.countDown();
+			awaitQueueAdmissionRelease(releaseQueueAdmission);
+		};
 		try {
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.add(F.createIRI("http://example.org/unrelated"), P2, O2);
 			}
+			awaitPendingPublication(pendingPublished);
+			releaseQueueAdmission.countDown();
 			try (var dataset = dataset()) {
 				assertThat(backing.getTripleStore().getIndexName(s1, p1, -1, -1)).isEqualTo("spco");
 				assertThat(dataset.source.indexName(s1, p1, -1, -1)).isEqualTo("direct-spoc");
@@ -2140,6 +2149,8 @@ class LmdbDirectAdjacencyQueryTest {
 				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
 			}
 		} finally {
+			releaseQueueAdmission.countDown();
+			direct.beforeApplyQueueAdmissionForTest = previousQueueAdmissionHook;
 			direct.pauseApplierForTest(false);
 		}
 	}

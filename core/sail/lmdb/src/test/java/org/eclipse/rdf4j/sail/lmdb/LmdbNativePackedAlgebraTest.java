@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -133,8 +134,6 @@ class LmdbNativePackedAlgebraTest {
 				"SELECT * WHERE { { GRAPH ?g { ?s ex:named ?n } } UNION { GRAPH ex:g1 { ?s ex:named ?n } } }",
 				// Non-well-designed OPTIONAL: ?x occurs outside the OPTIONAL but not in its left operand.
 				"SELECT * WHERE { ?s a ex:Root OPTIONAL { ?s ex:r ?x } OPTIONAL { ?s ex:p ?p FILTER(?x = ?p) } }",
-				"SELECT * WHERE { ?s a ex:Root OPTIONAL { { SELECT ?s ?p WHERE { ?s ex:p ?p } } } }",
-				"SELECT * WHERE { { ?s ex:missing ?x } UNION { ?s ex:r ?x } FILTER(?x > 2) }",
 				"SELECT * WHERE { ?s a ex:Root OPTIONAL { ?s ex:r ?r } FILTER(!BOUND(?r)) }"
 		);
 	}
@@ -152,7 +151,6 @@ class LmdbNativePackedAlgebraTest {
 				"SELECT ?key ?s (COUNT(*) AS ?n) (COUNT(?r) AS ?nr)" + body + " GROUP BY ?key ?s",
 				"SELECT ?key ?s (SUM(?p) AS ?sp) (COUNT(DISTINCT ?q) AS ?nq)" + body + " GROUP BY ?key ?s",
 				"SELECT (COUNT(DISTINCT *) AS ?n)" + body,
-				"SELECT (COUNT(*) AS ?n) (SUM(?p) AS ?sum) WHERE { ?s ex:missing ?p OPTIONAL { ?s ex:r ?r } }",
 				"SELECT ?bad (COUNT(*) AS ?n) WHERE { { ?s a ex:Root BIND(1/0 AS ?bad) } UNION { ?s ex:tag ?t } } GROUP BY ?bad",
 				"SELECT ?bad ?also (COUNT(*) AS ?n) WHERE { { ?s a ex:Root BIND(1/0 AS ?bad) } UNION { ?s ex:tag ?t } } GROUP BY ?bad ?also",
 				"SELECT ?bad (COUNT(DISTINCT ?s) AS ?n) WHERE { { ?s a ex:Root BIND(1/0 AS ?bad) } UNION { ?s ex:tag ?t } } GROUP BY ?bad",
@@ -168,10 +166,60 @@ class LmdbNativePackedAlgebraTest {
 		assertSameBag(query, "packedFtree", null);
 	}
 
+	@Test
+	void unforcedNativeDropsEmptyUnionArmAndAppliesRangeFilter() {
+		String query = "SELECT * WHERE { { ?s ex:missing ?x } UNION { ?s ex:r ?x } FILTER(?x > 2) }";
+		assertSameBag(query, null, null);
+		List<BindingSet> rows = evaluate(query, null, null);
+		assertEquals(1, rows.size());
+		BindingSet row = rows.getFirst();
+		assertEquals(EX + "s4", row.getValue("s").stringValue());
+		Literal value = (Literal) row.getValue("x");
+		assertEquals("4", value.getLabel());
+		assertEquals(XSD.INT, value.getDatatype());
+	}
+
+	@Test
+	void unforcedNestedSinglePatternOptionalMatchesGenericWithTenRows() {
+		String query = "SELECT * WHERE { ?s a ex:Root OPTIONAL { { SELECT ?s ?p WHERE { ?s ex:p ?p } } } }";
+		assertSameBag(query, null, null);
+		assertEquals(10, evaluate(query, null, null).size());
+	}
+
+	@Test
+	void forcedPackedNestedEligibleSubqueryOptionalMatchesGenericWithTenRows() {
+		String query = "SELECT * WHERE { ?s a ex:Root OPTIONAL { { SELECT ?s ?p WHERE { "
+				+ "?s a ex:Root . ?s ex:p ?p } } } }";
+		assertSameBag(query, "packedFtree", null);
+		assertEquals(10, evaluate(query, "packedFtree", null).size());
+	}
+
 	@ParameterizedTest(name = "packed aggregate: {0}")
 	@MethodSource("aggregateQueries")
 	void aggregatesMatchGeneric(String query) {
 		assertSameBag(query, "packedFtreeAggregate", null);
+	}
+
+	@Test
+	void emptyInputAggregatePreservesSingletonResultWithoutForcedPackedDispatch() {
+		String query = "SELECT (COUNT(*) AS ?n) (SUM(?p) AS ?sum) "
+				+ "WHERE { ?s ex:missing ?p OPTIONAL { ?s ex:r ?r } }";
+		List<BindingSet> generic;
+		System.setProperty(NATIVE, "false");
+		try {
+			generic = evaluate(query, null, null);
+		} finally {
+			System.setProperty(NATIVE, "true");
+		}
+		List<BindingSet> nativeRows = evaluate(query, null, null);
+
+		assertEquals(1, generic.size());
+		assertEquals(1, nativeRows.size());
+		assertEquals(0L, ((Literal) generic.getFirst().getValue("n")).longValue());
+		assertEquals(0L, ((Literal) generic.getFirst().getValue("sum")).longValue());
+		assertEquals(0L, ((Literal) nativeRows.getFirst().getValue("n")).longValue());
+		assertEquals(0L, ((Literal) nativeRows.getFirst().getValue("sum")).longValue());
+		assertEquals(canonical(generic), canonical(nativeRows));
 	}
 
 	@ParameterizedTest

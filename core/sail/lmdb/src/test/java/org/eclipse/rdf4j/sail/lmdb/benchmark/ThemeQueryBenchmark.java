@@ -139,8 +139,8 @@ public class ThemeQueryBenchmark {
 	 * trials compile synchronously so their IR measurements are deterministic. Each trial restores the caller's
 	 * properties, including when running both modes in the same JVM via {@link #main}.
 	 */
-	@Param({ "auto" })
-//	@Param({  "auto","disabled" })
+//	@Param({ "auto" })
+	@Param({  "auto","disabled" })
 	public String z_z_irMode;
 
 	@Param({

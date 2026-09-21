@@ -1023,6 +1023,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			barrier = maintenanceExecutor.submit(() -> {
 			});
 		} catch (RejectedExecutionException closedExecutor) {
+			if (!closed) {
+				throw closedExecutor;
+			}
 			return;
 		}
 		try {
@@ -1033,6 +1036,33 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		} catch (ExecutionException | TimeoutException failure) {
 			throw new IllegalStateException("adaptive acceleration did not complete", failure);
 		}
+	}
+
+	/**
+	 * Waits for test writers that have already finished their commits to retire preparation output and queued drains.
+	 * Call only after test writers have finished and no new work can be submitted; this is stronger than public
+	 * readiness, which promises an exact published revision but not completion of resource cleanup.
+	 */
+	void awaitCommitCleanupForTest() {
+		Future<?> barrier;
+		try {
+			barrier = preparationExecutor.submit(() -> {
+			});
+		} catch (RejectedExecutionException closedExecutor) {
+			if (!closed) {
+				throw closedExecutor;
+			}
+			return;
+		}
+		try {
+			barrier.get(30, TimeUnit.SECONDS);
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("interrupted while awaiting direct adjacency commit cleanup", interrupted);
+		} catch (ExecutionException | TimeoutException failure) {
+			throw new IllegalStateException("direct adjacency commit cleanup did not complete", failure);
+		}
+		awaitAdaptiveAccelerationForTest();
 	}
 
 	private void awaitSynchronousMaintenance(Future<?> future, String operation) {

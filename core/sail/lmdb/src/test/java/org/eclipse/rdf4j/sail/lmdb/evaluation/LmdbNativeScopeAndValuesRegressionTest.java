@@ -114,11 +114,45 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 	}
 
 	@Test
-	public void emptyOptionalSubselectDoesNotCreateSyntheticOuterRow() {
+	public void emptyOptionalSubselectRetainsOuterSingletonRow() {
 		String query = "PREFIX : <" + EX + ">\n"
 				+ "SELECT ?visibility WHERE {\n"
 				+ "  OPTIONAL { SELECT ?var WHERE { :missing a :MyType . BIND(:missing AS ?var) } }\n"
 				+ "  BIND(IF(BOUND(?var), 'VISIBLE', 'HIDDEN') AS ?visibility)\n"
+				+ "}";
+
+		List<String> generic = rows(query, false, null, null);
+		assertThat(rows(query, true, null, null))
+				.as("native plan:\n%s", explain(query))
+				.isEqualTo(generic);
+		assertThat(generic).containsExactly("[visibility=\"HIDDEN\"]");
+	}
+
+	@Test
+	public void nestedOptionalSubselectRetainsOuterSingletonRow() {
+		String query = "PREFIX : <" + EX + ">\n"
+				+ "SELECT ?visibility WHERE {\n"
+				+ "  OPTIONAL {\n"
+				+ "    SELECT ?var WHERE {\n"
+				+ "      OPTIONAL { :missing a :MyType . BIND(:missing AS ?var) }\n"
+				+ "    }\n"
+				+ "  }\n"
+				+ "  BIND(IF(BOUND(?var), 'VISIBLE', 'HIDDEN') AS ?visibility)\n"
+				+ "}";
+
+		List<String> generic = rows(query, false, null, null);
+		assertThat(rows(query, true, null, null))
+				.as("native plan:\n%s", explain(query))
+				.isEqualTo(generic);
+		assertThat(generic).containsExactly("[visibility=\"HIDDEN\"]");
+	}
+
+	@Test
+	public void emptyLeftOptionalDoesNotInventRows() {
+		String query = "PREFIX : <" + EX + ">\n"
+				+ "SELECT ?s ?visibility WHERE {\n"
+				+ "  { SELECT ?s WHERE { :missing a :MyType . BIND(:missing AS ?s) } }\n"
+				+ "  OPTIONAL { VALUES ?visibility { 'VISIBLE' } }\n"
 				+ "}";
 
 		List<String> generic = rows(query, false, null, null);
