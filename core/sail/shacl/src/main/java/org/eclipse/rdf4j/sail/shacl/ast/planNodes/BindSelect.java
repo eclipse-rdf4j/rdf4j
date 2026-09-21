@@ -104,26 +104,39 @@ public class BindSelect implements PlanNode {
 
 	}
 
-	private void updateQuery(TupleExpr parsedQuery, List<BindingSet> newBindindingset, int expectedSize) {
+	private List<BindingSetAssignment> findDynamicValuesAssignments(TupleExpr parsedQuery,
+			Set<String> expectedBindingNames) {
+		List<BindingSetAssignment> dynamicValuesAssignments = new ArrayList<>();
 		try {
-
 			parsedQuery
 					.visit(new AbstractQueryModelVisitor<Exception>() {
 						@Override
 						public void meet(BindingSetAssignment node) throws Exception {
-							Set<String> bindingNames = node.getBindingNames();
-							if (bindingNames.size() == expectedSize) { // TODO consider checking if bindingnames is
-								// equal to
-								// vars
-								node.setBindingSets(newBindindingset);
+							if (node.getBindingNames().equals(expectedBindingNames)
+									&& isEmpty(node.getBindingSets())) {
+								dynamicValuesAssignments.add(node);
 							}
 							super.meet(node);
 						}
-
 					});
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
+		if (dynamicValuesAssignments.isEmpty()) {
+			throw new IllegalStateException("Could not find the VALUES injection point in the query");
+		}
+		return dynamicValuesAssignments;
+	}
+
+	private void updateQuery(List<BindingSetAssignment> dynamicValuesAssignments,
+			List<BindingSet> newBindindingset) {
+		for (BindingSetAssignment dynamicValuesAssignment : dynamicValuesAssignments) {
+			dynamicValuesAssignment.setBindingSets(newBindindingset);
+		}
+	}
+
+	private boolean isEmpty(Iterable<BindingSet> bindingSets) {
+		return bindingSets == null || !bindingSets.iterator().hasNext();
 	}
 
 	@Override
@@ -136,6 +149,7 @@ public class BindSelect implements PlanNode {
 			List<ValidationTuple> bulk;
 
 			TupleExpr parsedQuery = null;
+			List<BindingSetAssignment> dynamicValuesAssignments = null;
 
 			@Override
 			protected void init() {
@@ -240,7 +254,10 @@ public class BindSelect implements PlanNode {
 							})
 							.collect(toCollection(ArrayList::new));
 
-					updateQuery(parsedQuery, bindingSets, targetChainSize);
+					if (dynamicValuesAssignments == null) {
+						dynamicValuesAssignments = findDynamicValuesAssignments(parsedQuery, varNamesSet);
+					}
+					updateQuery(dynamicValuesAssignments, bindingSets);
 
 					bindingSet = connection.evaluate(parsedQuery, dataset,
 							EmptyBindingSet.getInstance(), includeInferredStatements);
