@@ -15,6 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.lwjgl.system.MemoryStack.stackPush;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 
 import java.io.File;
@@ -32,6 +35,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.lwjgl.util.lmdb.MDBEnvInfo;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Logger;
@@ -61,7 +65,7 @@ public class TripleStoreAutoGrowTest {
 		tripleStore.storeTriple(1, 7, 11, 3, true);
 		tripleStore.commit();
 		assertEquals(1.0, tripleStore.cardinality(-1, 7, -1, -1));
-		long initialSize = new File(dataDir, "data.mdb").length();
+		long initialMapSize = mapSize(tripleStore);
 
 		for (int batch = 0; batch < 4; batch++) {
 			// Every batch begins with a live estimator mapping from the previous cardinality call.
@@ -73,7 +77,8 @@ public class TripleStoreAutoGrowTest {
 			assertEquals(1.0 + (batch + 1) * 10_000, tripleStore.cardinality(-1, 7, -1, -1));
 			assertEquals(1.0, tripleStore.cardinality(2L + batch * 10_000, 7, -1, -1));
 		}
-		assertTrue(new File(dataDir, "data.mdb").length() > initialSize);
+		assertTrue(mapSize(tripleStore) > initialMapSize,
+				"The auto-growing writes should increase the native LMDB map size");
 	}
 
 	@Test
@@ -81,25 +86,33 @@ public class TripleStoreAutoGrowTest {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
 		config.setTripleDBSize(4096 * 10);
 		File cachedStoreDir = new File(dataDir, "cached-page-estimator-growth");
-		StatementBatch batch = createBatch(100_000L, 10_000);
-		for (int i = 0; i < batch.pred.length; i++) {
-			batch.pred[i] = 7L;
-		}
 		try (TripleStore cachedStore = new TripleStore(cachedStoreDir, config, null)) {
 			cachedStore.startTransaction();
 			cachedStore.storeTriple(99_999L, 7L, 11L, 3L, true);
 			cachedStore.commit();
 			assertEquals(1.0, cachedStore.cardinality(-1, 7, -1, -1),
 					"Warm the estimator with committed data before the cached aligned write");
-			long initialSize = new File(cachedStoreDir, "data.mdb").length();
+			long initialMapSize = mapSize(cachedStore);
+			StatementBatch batch = createBatch(100_000L, batchSizeForMapGrowth(initialMapSize));
+			for (int i = 0; i < batch.pred.length; i++) {
+				batch.pred[i] = 7L;
+			}
 			cachedStore.startTransaction();
 			cachedStore.storeTriplesAligned(batch.subj, batch.pred, batch.obj, batch.context, batch.subj.length, true);
 			cachedStore.commit();
 
+			assertTrue(mapSize(cachedStore) > initialMapSize,
+					"The cached aligned write should grow the native LMDB map before the estimator reads it");
 			assertEquals(1.0 + batch.subj.length, cachedStore.cardinality(-1, 7, -1, -1));
-			assertTrue(new File(cachedStoreDir, "data.mdb").length() > initialSize,
-					"The cached aligned write should grow the LMDB map before the estimator reads it");
 		}
+	}
+
+	private static int batchSizeForMapGrowth(long mapSize) {
+		// Every aligned key contains these four varints at a minimum. The subject and object IDs increase
+		// from these values, while the predicate stays 7 and the context is always at least 1. Therefore,
+		// this many records exceeds the complete current map with one index before LMDB node overhead.
+		int minimumKeyLength = Varint.calcListLengthUnsigned(100_000L, 7L, 200_000L, 1L);
+		return Math.toIntExact(mapSize / minimumKeyLength + 1);
 	}
 
 	@Test
@@ -313,6 +326,14 @@ public class TripleStoreAutoGrowTest {
 
 	private static long currentCapacityUsage(TripleStore store) throws Exception {
 		return LmdbUtil.getNewSize(getPageSize(store), getLongField(store, "writeTxn"), 0);
+	}
+
+	private static long mapSize(TripleStore store) {
+		try (var stack = stackPush()) {
+			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+			assertEquals(MDB_SUCCESS, mdb_env_info(store.env, info));
+			return info.me_mapsize();
+		}
 	}
 
 	private static int getPageSize(TripleStore store) throws Exception {
