@@ -18,7 +18,7 @@ Acceptance is a focused regression test that fails before the production change 
 - [x] Implement costed lowering order with binding mask.
 - [x] Run focused and LMDB module verification gates.
 - [x] Re-run warmed q6–q9 and forced strategies.
-- [in_progress] Review, commit, and push `GH-0000`.
+- [x] Review, commit, and push `GH-0000`.
 
 ## Surprises & Discoveries
 
@@ -36,7 +36,7 @@ Acceptance is a focused regression test that fails before the production change 
 
 ## Outcomes & Retrospective
 
-The focused reproduction failed before the production edit with the unbound encounter enumeration first; it passes in `logs/mvnf/20260921-212018-verify.log`, and the expanded lowering class is 126/126 green in `logs/mvnf/20260921-215238-verify.log`. The LMDB gate is 6,215/6,215 green with 119 skipped in `logs/mvnf/20260921-213120-verify.log`; its Medical Records q0–q12 smoke evidence is retained in `/tmp/rdf4j-theme-medical-baseline/module-medical-q0-q12.txt`. The final isolated warmed runs are `final-warmed-q6.log` through `final-warmed-q9.log`; q8 is 3.504 ms/op with `domainDrivenRows: 0`. Forced q8 serial and parallel runs are `final-forced-serial-q8.log` (3.135 ms/op) and `final-forced-parallel-q8.log` (8.759 ms/op). The final JFR is `final-q8.jfr`; its query-thread samples are led by projection/adjoining access rather than domain enumeration. Commit and push remain outstanding.
+The focused reproduction failed before the production edit with the unbound encounter enumeration first; it passes in `logs/mvnf/20260921-212018-verify.log`, and the expanded lowering class is 126/126 green in `logs/mvnf/20260921-215238-verify.log`. The LMDB gate is 6,215/6,215 green with 119 skipped in `logs/mvnf/20260921-213120-verify.log`; its Medical Records q0–q12 smoke evidence is retained in `/tmp/rdf4j-theme-medical-baseline/module-medical-q0-q12.txt`. The final isolated warmed runs are `final-warmed-q6.log` through `final-warmed-q9.log`; q8 is 3.504 ms/op with `domainDrivenRows: 0`. Forced q8 serial and parallel runs are `final-forced-serial-q8.log` (3.135 ms/op) and `final-forced-parallel-q8.log` (8.759 ms/op). The final JFR is `final-q8.jfr`; its query-thread samples are led by projection/adjoining access rather than domain enumeration. Commit `a9b3ed5f96` was pushed to `origin/optimize-lmdb`, leaving the branch clean.
 
 ## Context and Orientation
 
