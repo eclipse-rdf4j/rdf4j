@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.http.server.repository.handler;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -68,6 +69,7 @@ class QueryResponseHeartbeatHandlerTest {
 		TupleQuery query = mock(TupleQuery.class);
 		CountDownLatch evaluationStarted = new CountDownLatch(1);
 		CountDownLatch evaluationInterrupted = new CountDownLatch(1);
+		CountDownLatch remoteCancellation = new CountDownLatch(1);
 		AtomicReference<String> requestId = new AtomicReference<>();
 
 		MockHttpServletRequest request = newQueryRequest();
@@ -75,6 +77,10 @@ class QueryResponseHeartbeatHandlerTest {
 		when(resolver.getRepository(request)).thenReturn(repository);
 		when(resolver.getRepositoryID(request)).thenReturn("repository");
 		when(resolver.getRepositoryConnection(request, repository)).thenReturn(connection);
+		doAnswer(invocation -> {
+			remoteCancellation.countDown();
+			return null;
+		}).when(repository).cancelQuery(anyString());
 		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY, null)).thenReturn(query);
 		when(query.evaluate()).thenAnswer(invocation -> {
 			requestId.set(QueryRequestContext.getQueryRequestId());
@@ -94,6 +100,7 @@ class QueryResponseHeartbeatHandlerTest {
 		assertThat(result).isNull();
 		assertThat(requestId).isNotNull();
 		assertThat(requestId.get()).isNotBlank();
+		assertThat(remoteCancellation.await(10, TimeUnit.SECONDS)).isTrue();
 		verify(repository).cancelQuery(requestId.get());
 		verify(connection, org.mockito.Mockito.atLeastOnce()).close();
 	}
