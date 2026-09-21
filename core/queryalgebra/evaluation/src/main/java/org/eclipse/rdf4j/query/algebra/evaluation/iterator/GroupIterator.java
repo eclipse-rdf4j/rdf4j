@@ -66,7 +66,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunctionFactory;
@@ -352,31 +351,11 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 	}
 
 	private List<Entry> emptySolutionSpecialCase(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates) {
-		// no solutions, but if we are not explicitly grouping and aggregates are
-		// present, we still need to process them to produce a zero-result.
+		// An implicit group exists even without input rows. Finalize its untouched
+		// collectors: evaluating a fabricated empty binding set would incorrectly
+		// contribute constant expressions to SUM, AVG, MIN, MAX, SAMPLE and GROUP_CONCAT.
 		if (group.getGroupBindingNames().isEmpty()) {
-			if (group.getGroupElements().isEmpty()) {
-				final Entry entry = new Entry(null, null, null);
-				return List.of(entry);
-			} else {
-				List<AggregateCollector> collectors = makeCollectors(aggregates);
-				List<Predicate<?>> predicates = new ArrayList<>(aggregates.size());
-				for (var ag : aggregates) {
-					if (ag.agg instanceof WildCardCountAggregate) {
-						predicates.add(ALWAYS_TRUE_BINDING_SET);
-					} else if (ag.agg instanceof CountAggregate) {
-						// Counts are special, because they always return a number related to the number of solutions.
-						// which in the empty case should be 0. So we should never accept a value here.
-						// Even in the case that the Count is of a constant value.
-						predicates.add(ALWAYS_FALSE_VALUE);
-					} else {
-						predicates.add(ag.makePotentialDistinctTest.get());
-					}
-				}
-				final Entry entry = new Entry(null, collectors, predicates);
-				entry.addSolution(EmptyBindingSet.getInstance(), aggregates);
-				return List.of(entry);
-			}
+			return List.of(new Entry(null, makeCollectors(aggregates), List.of()));
 		}
 		return Collections.emptyList();
 	}
@@ -450,7 +429,6 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private static final Predicate<BindingSet> ALWAYS_TRUE_BINDING_SET = t -> true;
 	private static final Predicate<Value> ALWAYS_TRUE_VALUE = t -> true;
-	private static final Predicate<Value> ALWAYS_FALSE_VALUE = t -> false;
 	private static final Supplier<Predicate<Value>> ALWAYS_TRUE_VALUE_SUPPLIER = () -> ALWAYS_TRUE_VALUE;
 	private static final Supplier<Predicate<List<Value>>> ALWAYS_TRUE_TUPLE_VALUE_SUPPLIER = () -> t -> true;
 
@@ -765,7 +743,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		public void processAggregate(BindingSet s, Predicate<BindingSet> distinctValue, CountCollector agv)
 				throws QueryEvaluationException {
 			// wildcard count
-			if (!s.isEmpty() && distinctValue.test(s)) {
+			if (distinctValue.test(s)) {
 				agv.value++;
 			}
 		}
