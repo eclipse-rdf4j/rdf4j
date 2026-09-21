@@ -10,7 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb.inlined;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.junit.jupiter.api.Test;
 
