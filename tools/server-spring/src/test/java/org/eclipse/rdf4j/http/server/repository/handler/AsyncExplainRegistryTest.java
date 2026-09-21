@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
 import java.util.concurrent.CountDownLatch;
@@ -77,7 +78,7 @@ class AsyncExplainRegistryTest {
 			future.get(5, TimeUnit.SECONDS);
 			assertThat(interrupted.await(5, TimeUnit.SECONDS)).isTrue();
 			assertThat(handle.isActive()).isFalse();
-			verify(connection).close();
+			verify(connection, timeout(5000).times(1)).close();
 		} finally {
 			executor.shutdownNow();
 		}
