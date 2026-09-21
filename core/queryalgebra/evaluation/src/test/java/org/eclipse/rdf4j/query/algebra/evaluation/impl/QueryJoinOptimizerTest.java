@@ -1264,7 +1264,6 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		root.visit(lateralFinder);
 		Join lateralRight = (Join) lateralFinder.getLateral().getRightArg();
 		assertThat(getPredicateValue(lateralRight.getLeftArg())).isEqualTo("ex:pBound");
-		assertThat(getPredicateValue(lateralRight.getLeftArg())).isEqualTo("ex:pBound");
 	}
 
 	@Override

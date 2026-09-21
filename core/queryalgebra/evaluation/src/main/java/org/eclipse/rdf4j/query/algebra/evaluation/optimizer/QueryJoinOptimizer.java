@@ -1508,12 +1508,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			if (tupleExpr instanceof Service service) {
+				Set<String> result = new HashSet<>();
 				Var serviceRef = service.getServiceRef();
 				if (serviceRef != null && !serviceRef.hasValue() && serviceRef.getName() != null
 						&& !incomingBindings.contains(serviceRef.getName())) {
-					return Set.of(serviceRef.getName());
+					result.add(serviceRef.getName());
 				}
-				return Set.of();
+				// A nested SERVICE ?inner inside the service expression is evaluated by the remote endpoint with the
+				// bindings supplied by this join, so its endpoint variable is an external dependency too.
+				result.addAll(collectExternalServiceVariables(service.getServiceExpr(), incomingBindings));
+				return result;
 			}
 
 			if (tupleExpr instanceof Join join) {
