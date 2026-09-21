@@ -165,6 +165,77 @@ final class MultiJoinPlan implements SlotPlan {
 	}
 
 	/**
+	 * Derives a lowering order with bindings that the generated kernel has already guaranteed at this depth. The
+	 * ordinary algebra compiler builds a {@code MultiJoinPlan} before native lowering allocates columns for an
+	 * enclosing OPTIONAL or join, so its cached order can start a correlated child with an unbound key. This method
+	 * re-plans only from the declared bound mask and the existing work model; an uncertain estimate keeps the compiler
+	 * order. It is deliberately uncached because the lowering mask includes columns owned by the current builder.
+	 */
+	OrderedPlan derivedPlanForLowering(RowState row, long guaranteedMask) {
+		long initialBoundMask = row.boundMask() | guaranteedMask;
+		long loweringOnlyMask = guaranteedMask & ~row.boundMask();
+		if (loweringOnlyMask == 0L || children.length < 2) {
+			return derive(initialBoundMask, false);
+		}
+		SlotPlan[] order = costedLoweringOrder(row, initialBoundMask);
+		return placeFilters(order, initialBoundMask, 0);
+	}
+
+	/**
+	 * Improves the compiler order with a bounded local search. Each accepted adjacent swap strictly dominates the
+	 * current complete chain under the existing work model, so the lowering never follows an estimate-only ranking.
+	 * Filter placement is checked before a swap is accepted; a candidate that delays any filter is discarded. Unknown
+	 * intervals keep the compiler order, and the finite pass bound prevents planning cost from growing exponentially.
+	 */
+	private SlotPlan[] costedLoweringOrder(RowState row, long initialBoundMask) {
+		OrderedPlan incumbent = derive(initialBoundMask, false);
+		SlotPlan[] order = incumbent.order.clone();
+		LmdbNativeWork currentWork = LmdbNativeWork.chain(order, order.length, row, initialBoundMask).work();
+		if (!currentWork.known()) {
+			return order;
+		}
+
+		for (int pass = 0; pass < order.length; pass++) {
+			boolean improved = false;
+			for (int index = 0; index + 1 < order.length; index++) {
+				SlotPlan[] candidate = order.clone();
+				SlotPlan child = candidate[index];
+				candidate[index] = candidate[index + 1];
+				candidate[index + 1] = child;
+				if (!preservesFilterPlacement(candidate, initialBoundMask, incumbent.filterDepth)) {
+					continue;
+				}
+				LmdbNativeWork candidateWork = LmdbNativeWork.chain(candidate, candidate.length, row,
+						initialBoundMask).work();
+				if (candidateWork.beats(currentWork)) {
+					order = candidate;
+					currentWork = candidateWork;
+					improved = true;
+				}
+			}
+			if (!improved) {
+				break;
+			}
+		}
+		return order;
+	}
+
+	private boolean preservesFilterPlacement(SlotPlan[] candidate, long initialBoundMask,
+			int[] incumbentFilterDepth) {
+		if (filters.length == 0) {
+			return true;
+		}
+		int[] candidateFilterDepth = new MultiJoinPlan(candidate, filters)
+				.derive(initialBoundMask, false).filterDepth;
+		for (int i = 0; i < incumbentFilterDepth.length; i++) {
+			if (candidateFilterDepth[i] > incumbentFilterDepth[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
 	 * The ordered physical plan the factorized strategies plan against: unconsumed patterns are sunk to a trailing
 	 * suffix so the factorized tail split can claim them as per-key branches. Sinking only moves patterns later;
 	 * single-branch filters move with their producer, while filters tying multiple prospective branches keep those

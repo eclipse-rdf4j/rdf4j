@@ -2291,7 +2291,7 @@ final class LmdbNativeKernelLowering {
 				if (tryLowerCyclicCore(multiJoin, row)) {
 					return lowerRegisteredFilters(multiFilters);
 				}
-				SlotPlan[] order = multiJoin.derivedPlan(row).order;
+				SlotPlan[] order = multiJoin.derivedPlanForLowering(row, availableBindings()).order;
 				// Under DISTINCT sinking (plan 32 M4), branches whose fresh variables are all projected away
 				// contribute existence only — they lower to Exists semijoins AFTER the spine has produced their
 				// anchor variables, instead of multiplying rows the DISTINCT would collapse anyway.
@@ -2387,6 +2387,25 @@ final class LmdbNativeKernelLowering {
 			}
 			reason = reasonPrefix + (top ? "unsupported:" : "child:") + plan.getClass().getSimpleName();
 			return false;
+		}
+
+		/** Returns the bindings that can be read safely by a new producer at the current lowering depth. */
+		long availableBindings() {
+			long available = 0L;
+			for (int slot = 0; slot < slotColumn.length; slot++) {
+				if (((hiddenSlotMask >>> slot) & 1L) != 0L) {
+					continue;
+				}
+				if (((entryMask >>> slot) & 1L) == 0L && ((assuredMask >>> slot) & 1L) == 0L
+						&& slotColumn[slot] < 0) {
+					continue;
+				}
+				Operand operand = slotOperand(slot);
+				if (operand != null && !operandMaybeNull(operand)) {
+					available |= 1L << slot;
+				}
+			}
+			return available;
 		}
 
 		/**
