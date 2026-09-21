@@ -56,6 +56,8 @@ public class ValueIds {
 	public static final int T_UNSIGNEDSHORT = 34;
 	public static final int T_UNSIGNEDBYTE = 35;
 
+	public static final long NULL_CONTEXT = createId(T_URI, 0);
+
 	/**
 	 * Returns the type section of the given id.
 	 *

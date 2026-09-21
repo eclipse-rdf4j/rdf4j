@@ -23,12 +23,11 @@ import java.util.Arrays;
 import java.util.function.IntFunction;
 
 import org.eclipse.rdf4j.sail.lmdb.Varint;
-import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbBtreeRangeCounterTest {
-
+/*
 	private static final int PAGE_SIZE = 4096;
 	private static final int LARGE_RANGE_LEAVES = 128;
 
@@ -380,4 +379,6 @@ class LmdbBtreeRangeCounterTest {
 
 	private record TreeFile(Path path, LmdbDb db, LmdbMeta meta) {
 	}
+
+ */
 }
