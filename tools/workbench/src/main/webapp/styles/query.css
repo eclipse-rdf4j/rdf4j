@@ -168,6 +168,14 @@
     }
 }
 
+.query-cancel {
+    display: none;
+}
+
+.query-cancel--visible {
+    display: inline-block;
+}
+
 #query,
 #query-compare {
     width: 100%;

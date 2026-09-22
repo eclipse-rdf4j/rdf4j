@@ -4,6 +4,9 @@ services:
     environment:
       - APP_LOGGING_LEVEL=${APP_LOGGING_LEVEL}
       - APP_SERVER=${APP_SERVER:-tomcat}
+      # set OTEL_EXPORTER_OTLP_ENDPOINT to enable OpenTelemetry tracing, e.g. http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-rdf4j-server}
     ports:
       - 127.0.0.1:8080:8080
     build:

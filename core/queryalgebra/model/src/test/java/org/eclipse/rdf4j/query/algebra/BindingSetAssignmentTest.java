@@ -50,7 +50,8 @@ class BindingSetAssignmentTest {
 
 		assertThat(assignment.getBindingNames())
 				.containsExactlyInAnyOrder("declaredFirst", "declaredSecond");
-		assertThat(assignment.getAssuredBindingNames()).isEmpty();
+		assertThat(assignment.getAssuredBindingNames())
+				.containsExactlyInAnyOrder("declaredFirst", "declaredSecond");
 	}
 
 	@Test

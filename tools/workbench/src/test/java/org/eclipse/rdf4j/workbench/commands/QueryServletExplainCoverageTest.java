@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.http.HTTPQueryEvaluationException;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
@@ -96,12 +97,15 @@ class QueryServletExplainCoverageTest {
 	void trackedExplainRejectsDuplicateRequestIds() throws Exception {
 		QueryServlet servlet = new QueryServlet();
 		AsyncExplainCoordinator coordinator = new AsyncExplainCoordinator();
+		HTTPRepository repository = mock(HTTPRepository.class);
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		StringWriter body = new StringWriter();
 		WorkbenchRequest request = mockExplainRequest(true, "duplicate-request");
 
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
-		coordinator.register("duplicate-request", null);
+		when(repository.getRepositoryURL()).thenReturn("https://example.org/rdf4j/repositories/duplicate");
+		servlet.setRepository(repository);
+		coordinator.register("https://example.org/rdf4j/repositories/duplicate", "duplicate-request", null);
 		servlet.substituteAsyncExplainCoordinator(coordinator);
 
 		try {

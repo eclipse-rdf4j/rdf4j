@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.LiteralUtilException;
@@ -83,6 +84,17 @@ public class TupleResultBuilder {
 	public TupleResultBuilder bool(boolean result) throws QueryResultHandlerException {
 		out.handleBoolean(result);
 		return this;
+	}
+
+	/**
+	 * Starts response heartbeats using the format, writer configuration, and supported settings of the actual result
+	 * writer selected for this builder. This must be called before any result event is sent to the builder.
+	 *
+	 * @param heartbeat response heartbeat that wraps the stream supplied to this builder
+	 * @return {@code true} when the selected writer supports safe heartbeat probing
+	 */
+	public boolean startResponseHeartbeat(QueryResponseHeartbeat heartbeat) {
+		return heartbeat.start(out);
 	}
 
 	public TupleResultBuilder metadata(String name, Object value) {

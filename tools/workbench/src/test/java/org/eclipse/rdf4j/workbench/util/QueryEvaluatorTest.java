@@ -29,8 +29,10 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryPressureState;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
@@ -43,6 +45,7 @@ import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.http.HTTPTupleQuery;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.junit.jupiter.api.Test;
@@ -238,6 +241,7 @@ class QueryEvaluatorTest {
 		when(req.getInt("offset")).thenReturn(0);
 		when(req.getInt("know_total")).thenReturn(0);
 		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
 		when(tupleQueryResult.getBindingNames()).thenReturn(List.of("s"));
 		when(tupleQueryResult.hasNext()).thenReturn(false);
@@ -278,6 +282,7 @@ class QueryEvaluatorTest {
 		when(req.getInt("offset")).thenReturn(0);
 		when(req.getInt("know_total")).thenReturn(0);
 		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
 
 		withBreakerProperties("0", "0", "0", () -> {
@@ -314,13 +319,14 @@ class QueryEvaluatorTest {
 		when(req.getInt("know_total")).thenReturn(25);
 		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(initialQuery);
 		when(con.prepareQuery(QueryLanguage.SPARQL, pagedQueryText)).thenReturn(pagedQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
 		when(pagedQuery.evaluate()).thenReturn(tupleQueryResult);
 		when(tupleQueryResult.getBindingNames()).thenReturn(List.of("s"));
 		when(tupleQueryResult.hasNext()).thenReturn(false);
 		when(tupleQueryResult.iterator()).thenReturn(List.<BindingSet>of().iterator());
 
 		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
-				queryText, req, cookies, null);
+				queryText, req, cookies, queryText);
 
 		verify(initialQuery).setIncludeInferred(true);
 		verify(initialQuery).setMaxExecutionTime(12);
@@ -328,6 +334,7 @@ class QueryEvaluatorTest {
 		verify(pagedQuery).setMaxExecutionTime(12);
 		verify(pagedQuery).evaluate();
 		verify(cookies).addTotalResultCountCookie(req, resp, 25);
+		verify(builder).metadata("total-result-count", 25);
 	}
 
 	@Test
@@ -353,6 +360,7 @@ class QueryEvaluatorTest {
 		when(req.getInt("download_limit")).thenReturn(2);
 		when(req.getInt("know_total")).thenReturn(0);
 		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
 
 		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
@@ -388,6 +396,10 @@ class QueryEvaluatorTest {
 
 		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), "/xsl", con,
 				queryText, req, cookies, null);
+	}
+
+	private static RepositoryResult<Namespace> emptyNamespaces() {
+		return new RepositoryResult<>(new CloseableIteratorIteration<>(List.<Namespace>of().iterator()));
 	}
 
 	private void withBreakerProperties(ThrowingRunnable action) throws Exception {

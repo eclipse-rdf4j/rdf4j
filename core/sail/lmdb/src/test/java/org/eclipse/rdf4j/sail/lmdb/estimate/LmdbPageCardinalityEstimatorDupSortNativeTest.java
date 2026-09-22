@@ -38,8 +38,9 @@ import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.nio.file.Path;
 
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBVal;
@@ -48,9 +49,11 @@ class LmdbPageCardinalityEstimatorDupSortNativeTest {
 
 	private static final int LARGE_DUPLICATE_COUNT = 2_000;
 
-	@Test
-	void countsRealLmdbDupSortAndDupFixedDatabases(@TempDir Path directory) throws Exception {
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void countsRealLmdbDupSortAndDupFixedDatabases(boolean mapped, @TempDir Path directory) throws Exception {
 		long environment = 0;
+		int mainDbi = -1;
 		int dupSortDbi = -1;
 		int dupFixedDbi = -1;
 		try {
@@ -67,6 +70,8 @@ class LmdbPageCardinalityEstimatorDupSortNativeTest {
 				boolean writeTxnOpen = true;
 				try {
 					IntBuffer dbi = stack.mallocInt(1);
+					check(mdb_dbi_open(writeTxn, (ByteBuffer) null, 0, dbi));
+					mainDbi = dbi.get(0);
 					check(mdb_dbi_open(writeTxn, "dups", MDB_CREATE | MDB_DUPSORT, dbi));
 					dupSortDbi = dbi.get(0);
 					check(mdb_dbi_open(writeTxn, "dupfixed", MDB_CREATE | MDB_DUPSORT | MDB_DUPFIXED, dbi));
@@ -90,14 +95,15 @@ class LmdbPageCardinalityEstimatorDupSortNativeTest {
 
 				check(mdb_txn_begin(environment, NULL, MDB_RDONLY, pointer));
 				long readTxn = pointer.get(0);
-				try (LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(
-						directory.resolve("data.mdb").toFile())) {
-					long txnId = mdb_txn_id(readTxn);
+				try (LmdbPageCardinalityEstimator estimator = mapped
+						? new LmdbPageCardinalityEstimator(directory.resolve("data.mdb").toFile(), environment, mainDbi)
+						: new LmdbPageCardinalityEstimator(directory.resolve("data.mdb").toFile())) {
+					long txn = mapped ? readTxn : mdb_txn_id(readTxn);
 					long expected = 8L + LARGE_DUPLICATE_COUNT;
-					assertEquals(expected, estimate(estimator, txnId, "dups", 10, 30));
-					assertEquals(7, estimate(estimator, txnId, "dups", 20, 20));
-					assertEquals(expected, estimate(estimator, txnId, "dupfixed", 10, 30));
-					assertEquals(7, estimate(estimator, txnId, "dupfixed", 20, 20));
+					assertEquals(expected, estimate(estimator, txn, mapped, "dups", 10, 30));
+					assertEquals(7, estimate(estimator, txn, mapped, "dups", 20, 20));
+					assertEquals(expected, estimate(estimator, txn, mapped, "dupfixed", 10, 30));
+					assertEquals(7, estimate(estimator, txn, mapped, "dupfixed", 20, 20));
 				} finally {
 					mdb_txn_abort(readTxn);
 				}
@@ -115,11 +121,16 @@ class LmdbPageCardinalityEstimatorDupSortNativeTest {
 		}
 	}
 
-	private static long estimate(LmdbPageCardinalityEstimator estimator, long txnId, String databaseName,
+	private static long estimate(LmdbPageCardinalityEstimator estimator, long txn, boolean mapped, String databaseName,
 			int minimum, int maximum) throws IOException {
 		byte[] minKey = statementKey(minimum);
 		byte[] maxKey = statementKey(maximum);
-		return estimator.estimateEntries(txnId, databaseName, minKey, minKey.length, maxKey, maxKey.length, null);
+		if (mapped) {
+			try (var view = estimator.readTransaction(txn)) {
+				return view.estimateEntries(databaseName, minKey, minKey.length, maxKey, maxKey.length, null, 0);
+			}
+		}
+		return estimator.estimateEntries(txn, databaseName, minKey, minKey.length, maxKey, maxKey.length, null);
 	}
 
 	private static void putDuplicates(MemoryStack stack, long txn, int dbi, int keyOrdinal, int duplicateCount,
