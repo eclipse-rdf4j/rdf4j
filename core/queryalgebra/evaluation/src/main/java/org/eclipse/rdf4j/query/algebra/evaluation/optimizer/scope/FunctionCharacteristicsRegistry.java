@@ -14,15 +14,77 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope;
 import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionCharacteristics;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionCharacteristics.FailureBehavior;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionCharacteristicsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Day;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Hours;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Minutes;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Month;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Seconds;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Timezone;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Tz;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Year;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.MD5;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.SHA1;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.SHA256;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.SHA384;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.SHA512;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Abs;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Ceil;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Floor;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Rand;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Round;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.STRUUID;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.StrDt;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.StrLang;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.UUID;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Concat;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Contains;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.EncodeForUri;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.LowerCase;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Replace;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrAfter;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrBefore;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrEnds;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrLen;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrStarts;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Substring;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.UpperCase;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.triple.IsTripleFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.triple.StatementFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.triple.TripleObjectFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.triple.TriplePredicateFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.triple.TripleSubjectFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.BooleanCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.ByteCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.DateCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.DateTimeCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.DecimalCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.DoubleCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.FloatCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.IntCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.IntegerCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.LongCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.NegativeIntegerCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.NonNegativeIntegerCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.NonPositiveIntegerCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.PositiveIntegerCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.ShortCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.StringCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedByteCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedIntCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedLongCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedShortCast;
 
 /** Query-bootstrap classification with a fail-closed default for custom functions. */
-final class FunctionCharacteristicsRegistry {
+@InternalUseOnly
+public final class FunctionCharacteristicsRegistry {
 
 	private FunctionCharacteristicsRegistry() {
 	}
@@ -46,6 +108,24 @@ final class FunctionCharacteristicsRegistry {
 				: FunctionCharacteristics.unknown();
 	}
 
+	/**
+	 * Returns whether a function is safe to relocate or duplicate without an explicit caller policy.
+	 *
+	 * <p>
+	 * Custom functions must provide explicit characteristics. Package names alone do not establish that a function is
+	 * shipped or pure.
+	 * </p>
+	 */
+	public static boolean isSafeForRelocationAndDuplication(Function function) {
+		if (function == null || function.mustReturnDifferentResult() || isNow(function)) {
+			return false;
+		}
+		if (function instanceof FunctionCharacteristicsProvider provider) {
+			return hasSafeCharacteristics(provider.characteristics());
+		}
+		return isShippedFunction(function);
+	}
+
 	static boolean isExplicitlyClassified(Function function) {
 		return function instanceof FunctionCharacteristicsProvider
 				|| isNow(function)
@@ -53,42 +133,84 @@ final class FunctionCharacteristicsRegistry {
 				|| isShippedFunction(function);
 	}
 
-	private static final Set<String> DATETIME_FUNCTIONS = Set.of(
-			"Day", "Hours", "Minutes", "Month", "Now", "Seconds", "Timezone", "Tz", "Year");
-	private static final Set<String> HASH_FUNCTIONS = Set.of("MD5", "SHA1", "SHA256", "SHA384", "SHA512");
-	private static final Set<String> NUMERIC_FUNCTIONS = Set.of("Abs", "Ceil", "Floor", "Rand", "Round");
-	private static final Set<String> RDF_TERM_FUNCTIONS = Set.of("StrDt", "StrLang", "STRUUID", "UUID");
-	private static final Set<String> STRING_FUNCTIONS = Set.of(
-			"Concat", "Contains", "EncodeForUri", "LowerCase", "Replace", "StrAfter", "StrBefore", "StrEnds",
-			"StrLen", "StrStarts", "Substring", "UpperCase");
-	private static final Set<String> XSD_FUNCTIONS = Set.of(
-			"BooleanCast", "ByteCast", "DateCast", "DateTimeCast", "DecimalCast", "DoubleCast", "FloatCast",
-			"IntCast", "IntegerCast", "LongCast", "NegativeIntegerCast", "NonNegativeIntegerCast",
-			"NonPositiveIntegerCast", "PositiveIntegerCast", "ShortCast", "StringCast", "UnsignedByteCast",
-			"UnsignedIntCast", "UnsignedLongCast", "UnsignedShortCast");
-	private static final Set<String> TRIPLE_FUNCTIONS = Set.of(
-			"IsTripleFunction", "StatementFunction", "TripleObjectFunction", "TriplePredicateFunction",
-			"TripleSubjectFunction");
+	private static final Set<Class<? extends Function>> SHIPPED_FUNCTION_CLASSES = Set.of(
+			Day.class,
+			Hours.class,
+			Minutes.class,
+			Month.class,
+			Now.class,
+			Seconds.class,
+			Timezone.class,
+			Tz.class,
+			Year.class,
+			MD5.class,
+			SHA1.class,
+			SHA256.class,
+			SHA384.class,
+			SHA512.class,
+			Abs.class,
+			Ceil.class,
+			Floor.class,
+			Rand.class,
+			Round.class,
+			StrDt.class,
+			StrLang.class,
+			STRUUID.class,
+			UUID.class,
+			Concat.class,
+			Contains.class,
+			EncodeForUri.class,
+			LowerCase.class,
+			Replace.class,
+			StrAfter.class,
+			StrBefore.class,
+			StrEnds.class,
+			StrLen.class,
+			StrStarts.class,
+			Substring.class,
+			UpperCase.class,
+			IsTripleFunction.class,
+			StatementFunction.class,
+			TripleObjectFunction.class,
+			TriplePredicateFunction.class,
+			TripleSubjectFunction.class,
+			BooleanCast.class,
+			ByteCast.class,
+			DateCast.class,
+			DateTimeCast.class,
+			DecimalCast.class,
+			DoubleCast.class,
+			FloatCast.class,
+			IntCast.class,
+			IntegerCast.class,
+			LongCast.class,
+			NegativeIntegerCast.class,
+			NonNegativeIntegerCast.class,
+			NonPositiveIntegerCast.class,
+			PositiveIntegerCast.class,
+			ShortCast.class,
+			StringCast.class,
+			UnsignedByteCast.class,
+			UnsignedIntCast.class,
+			UnsignedLongCast.class,
+			UnsignedShortCast.class);
 
 	private static boolean isNow(Function function) {
-		return function.getClass()
-				.getPackageName()
-				.equals("org.eclipse.rdf4j.query.algebra.evaluation.function.datetime")
-				&& function.getClass().getSimpleName().equals("Now");
+		return function.getClass() == Now.class;
 	}
 
 	private static boolean isShippedFunction(Function function) {
-		String packageName = function.getClass().getPackageName();
-		String simpleName = function.getClass().getSimpleName();
-		return switch (packageName) {
-		case "org.eclipse.rdf4j.query.algebra.evaluation.function.datetime" -> DATETIME_FUNCTIONS.contains(simpleName);
-		case "org.eclipse.rdf4j.query.algebra.evaluation.function.hash" -> HASH_FUNCTIONS.contains(simpleName);
-		case "org.eclipse.rdf4j.query.algebra.evaluation.function.numeric" -> NUMERIC_FUNCTIONS.contains(simpleName);
-		case "org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm" -> RDF_TERM_FUNCTIONS.contains(simpleName);
-		case "org.eclipse.rdf4j.query.algebra.evaluation.function.string" -> STRING_FUNCTIONS.contains(simpleName);
-		case "org.eclipse.rdf4j.query.algebra.evaluation.function.triple" -> TRIPLE_FUNCTIONS.contains(simpleName);
-		case "org.eclipse.rdf4j.query.algebra.evaluation.function.xsd" -> XSD_FUNCTIONS.contains(simpleName);
-		default -> false;
-		};
+		return SHIPPED_FUNCTION_CLASSES.contains(function.getClass());
+	}
+
+	private static boolean hasSafeCharacteristics(FunctionCharacteristics characteristics) {
+		return characteristics != null
+				&& (characteristics.stability() == FunctionCharacteristics.Stability.DETERMINISTIC
+						|| characteristics.stability() == FunctionCharacteristics.Stability.QUERY_STABLE)
+				&& characteristics.sideEffects() == FunctionCharacteristics.SideEffects.NONE
+				&& characteristics
+						.invocationPartitioning() == FunctionCharacteristics.InvocationPartitioning.INSENSITIVE
+				&& characteristics.rowIdentity() == FunctionCharacteristics.RowIdentity.INSENSITIVE
+				&& characteristics.failureBehavior() != FailureBehavior.EXTERNAL_OR_UNKNOWN;
 	}
 }

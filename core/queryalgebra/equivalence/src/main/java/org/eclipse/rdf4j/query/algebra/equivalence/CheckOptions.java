@@ -18,6 +18,7 @@ import java.util.Locale;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.FunctionCharacteristicsRegistry;
 
 /**
  * Immutable controls for proof and counterexample search.
@@ -261,13 +262,10 @@ public final class CheckOptions {
 		}
 
 		private static boolean defaultFunctionPolicy(String uri, Function function) {
-			if (uri == null || function == null || isKnownVolatileFunction(uri)) {
+			if (uri == null || isKnownVolatileFunction(uri)) {
 				return false;
 			}
-			Package functionPackage = function.getClass().getPackage();
-			String packageName = functionPackage == null ? "" : functionPackage.getName();
-			return packageName.startsWith("org.eclipse.rdf4j.query.algebra.evaluation.function.")
-					&& !function.mustReturnDifferentResult();
+			return FunctionCharacteristicsRegistry.isSafeForRelocationAndDuplication(function);
 		}
 	}
 }

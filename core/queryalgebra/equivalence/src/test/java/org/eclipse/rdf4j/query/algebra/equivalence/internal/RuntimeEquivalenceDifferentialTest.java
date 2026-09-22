@@ -32,6 +32,8 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -50,8 +52,10 @@ import org.eclipse.rdf4j.query.algebra.equivalence.EquivalenceResult;
 import org.eclipse.rdf4j.query.algebra.equivalence.EvaluationCase;
 import org.eclipse.rdf4j.query.algebra.equivalence.EvaluationOutcome;
 import org.eclipse.rdf4j.query.algebra.equivalence.ObservationMode;
+import org.eclipse.rdf4j.query.algebra.equivalence.ProofKernel;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.custom.StatefulCustomFunction;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.junit.jupiter.api.Test;
@@ -88,6 +92,60 @@ class RuntimeEquivalenceDifferentialTest {
 			EquivalenceResult proof = new AlgebraEquivalenceChecker(options).check(duplicateInput, singleInput);
 
 			assertFalse(proof.isEquivalent(), proof::getReason);
+		});
+	}
+
+	@Test
+	void setObservationDoesNotProveIdempotenceForStatefulCustomFunction() {
+		StatefulCustomFunction function = new StatefulCustomFunction();
+		withFunction(function, () -> {
+			TupleExpr singleInput = new Extension(
+					new SingletonSet(),
+					new ExtensionElem(new FunctionCall(function.getURI()), "value"));
+			TupleExpr duplicateInput = new Union(singleInput.clone(), singleInput.clone());
+
+			function.reset();
+			EvaluationOutcome duplicateOutcome = evaluate(duplicateInput);
+			function.reset();
+			EvaluationOutcome singleOutcome = evaluate(singleInput);
+			assertFalse(
+					duplicateOutcome.sameAs(singleOutcome, ObservationMode.SET),
+					() -> "stateful custom function outputs differ by call count: " + duplicateOutcome);
+
+			CheckOptions options = CheckOptions.builder()
+					.observationMode(ObservationMode.SET)
+					.boundedCounterexampleSearch(false)
+					.build();
+			EquivalenceResult proof = new AlgebraEquivalenceChecker(options).check(duplicateInput, singleInput);
+			assertFalse(proof.isEquivalent(), proof::getReason);
+		});
+	}
+
+	@Test
+	void defaultProofKernelRejectsCustomFunctionCertificatesWithoutExplicitPurityPolicy() {
+		StatefulCustomFunction function = new StatefulCustomFunction();
+		withFunction(function, () -> {
+			TupleExpr singleInput = new Extension(
+					new SingletonSet(),
+					new ExtensionElem(new FunctionCall(function.getURI()), "value"));
+			TupleExpr duplicateInput = new Union(singleInput.clone(), singleInput.clone());
+			CheckOptions producerOptions = CheckOptions.builder()
+					.observationMode(ObservationMode.SET)
+					.boundedCounterexampleSearch(false)
+					.functionSafetyPolicy((uri, registeredFunction) -> true)
+					.build();
+			EquivalenceResult producerResult = new AlgebraEquivalenceChecker(producerOptions)
+					.check(duplicateInput, singleInput);
+			assertTrue(producerResult.isEquivalent(), producerResult::getReason);
+
+			CheckOptions defaultVerifierOptions = CheckOptions.builder()
+					.observationMode(ObservationMode.SET)
+					.boundedCounterexampleSearch(false)
+					.build();
+			assertFalse(new ProofKernel(defaultVerifierOptions).verify(
+					duplicateInput,
+					singleInput,
+					producerResult.getEvidence().orElseThrow()));
 		});
 	}
 
@@ -178,31 +236,28 @@ class RuntimeEquivalenceDifferentialTest {
 	}
 
 	@Test
-	void runtimeJoinDoesNotCommuteAcrossMinusThatInheritsLeftBindings() {
-		TupleExpr valuesFirst = new Join(repeatedValues("x", 1), unitMinusUnit());
-		TupleExpr minusFirst = new Join(unitMinusUnit(), repeatedValues("x", 1));
+	void minusDoesNotTreatIncomingBindingsAsOperandOutputs() {
+		MapBindingSet initialBindings = new MapBindingSet();
+		initialBindings.setBinding("x", VF.createLiteral("value"));
+		EvaluationCase evaluationCase = EvaluationCase.builder("incoming binding outside MINUS operand domains")
+				.initialBindings(initialBindings)
+				.build();
+		TupleExpr original = new Difference(repeatedValues(1), new SingletonSet());
+		TupleExpr candidate = repeatedValues(1);
 
-		EvaluationOutcome valuesFirstOutcome = evaluate(valuesFirst);
-		EvaluationOutcome minusFirstOutcome = evaluate(minusFirst);
-
-		// With ?x inherited, both singleton mappings contain the same ?x and
-		// MINUS removes the left one. At top level both mappings are empty, share
-		// no variable, and MINUS keeps the left one.
-		assertTrue(valuesFirstOutcome.isEmpty(), valuesFirstOutcome::toString);
-		assertFalse(minusFirstOutcome.isEmpty(), minusFirstOutcome::toString);
-		assertFalse(
-				valuesFirstOutcome.sameAs(minusFirstOutcome, ObservationMode.BAG),
-				() -> "directional join plans unexpectedly agreed: "
-						+ valuesFirstOutcome + " versus " + minusFirstOutcome);
+		EvaluationOutcome originalOutcome = evaluate(original, evaluationCase);
+		EvaluationOutcome candidateOutcome = evaluate(candidate, evaluationCase);
+		assertTrue(
+				originalOutcome.sameAs(candidateOutcome, ObservationMode.BAG),
+				() -> "input bindings created a false shared MINUS domain: "
+						+ originalOutcome + " versus " + candidateOutcome);
 
 		CheckOptions options = CheckOptions.builder()
 				.contextMode(ContextMode.ALL_BINDINGS)
 				.boundedCounterexampleSearch(false)
 				.build();
-		EquivalenceResult proof = new AlgebraEquivalenceChecker(options).check(valuesFirst, minusFirst);
-
-		// Fails on the submitted code: the checker returns EQUIVALENT.
-		assertFalse(proof.isEquivalent(), () -> "unsound proof: " + proof.getReason());
+		EquivalenceResult proof = new AlgebraEquivalenceChecker(options).check(original, candidate);
+		assertFalse(proof.isNotEquivalent(), () -> "false MINUS counterexample: " + proof);
 	}
 
 	@Test
@@ -215,9 +270,9 @@ class RuntimeEquivalenceDifferentialTest {
 
 		EvaluationOutcome originalOutcome = evaluate(original);
 		EvaluationOutcome candidateOutcome = evaluate(candidate);
-		assertFalse(
+		assertTrue(
 				originalOutcome.sameAs(candidateOutcome, ObservationMode.BAG),
-				() -> "directional join operands produced the same BAG outcome: " + originalOutcome);
+				() -> "unit MINUS changed a join result: " + originalOutcome + " versus " + candidateOutcome);
 
 		CheckOptions options = CheckOptions.builder()
 				.contextMode(ContextMode.TOP_LEVEL_EMPTY)
@@ -225,7 +280,7 @@ class RuntimeEquivalenceDifferentialTest {
 				.build();
 		EquivalenceResult proof = new AlgebraEquivalenceChecker(options).check(original, candidate);
 
-		assertFalse(proof.isEquivalent(), proof::getReason);
+		assertFalse(proof.isNotEquivalent(), () -> "false join counterexample: " + proof);
 	}
 
 	@Test
@@ -240,9 +295,9 @@ class RuntimeEquivalenceDifferentialTest {
 
 		EvaluationOutcome originalOutcome = evaluate(original);
 		EvaluationOutcome candidateOutcome = evaluate(candidate);
-		assertFalse(
+		assertTrue(
 				originalOutcome.sameAs(candidateOutcome, ObservationMode.BAG),
-				() -> "directional OPTIONAL operands produced the same BAG outcome: " + originalOutcome);
+				() -> "unit MINUS changed an OPTIONAL result: " + originalOutcome + " versus " + candidateOutcome);
 
 		CheckOptions options = CheckOptions.builder()
 				.contextMode(ContextMode.TOP_LEVEL_EMPTY)
@@ -250,7 +305,7 @@ class RuntimeEquivalenceDifferentialTest {
 				.build();
 		EquivalenceResult proof = new AlgebraEquivalenceChecker(options).check(original, candidate);
 
-		assertFalse(proof.isEquivalent(), proof::getReason);
+		assertFalse(proof.isNotEquivalent(), () -> "false OPTIONAL counterexample: " + proof);
 	}
 
 	@Test
@@ -464,8 +519,11 @@ class RuntimeEquivalenceDifferentialTest {
 	}
 
 	private static EvaluationOutcome evaluate(TupleExpr expression) {
-		EvaluationAttempt attempt = new Rdf4jEvaluator()
-				.evaluate(expression, EvaluationCase.builder("empty dataset").build(), 10);
+		return evaluate(expression, EvaluationCase.builder("empty dataset").build());
+	}
+
+	private static EvaluationOutcome evaluate(TupleExpr expression, EvaluationCase evaluationCase) {
+		EvaluationAttempt attempt = new Rdf4jEvaluator().evaluate(expression, evaluationCase, 10);
 		assertTrue(attempt.isComplete(), attempt::getIncompleteReason);
 		EvaluationOutcome outcome = attempt.getOutcome().orElseThrow();
 		assertFalse(outcome.hasError(), outcome::toString);
