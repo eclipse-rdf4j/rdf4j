@@ -113,13 +113,21 @@ public final class RDFInputDispatcher {
 		}
 
 		InputStream compressedInput = expandedAccountingActive ? source : budget.compressed(source);
-		InputStream decompressedInput = RioCompression.decompressIfDetected(compressedInput, sourceName,
+		InputStream decoderSource = new UncloseableInputStream(compressedInput);
+		InputStream decompressedInput = RioCompression.decompressIfDetected(decoderSource, sourceName,
 				decoderMemoryLimitKiB, archiveMember);
-		if (decompressedInput != compressedInput) {
-			long compressionDepth = enterLayer(budget, depth);
-			InputStream nestedInput = compressionDepth > 1 ? budget.expanded(decompressedInput) : decompressedInput;
-			return dispatch(nestedInput, RioCompression.removeCompressionExtension(sourceName, archiveMember),
-					fallbackFormat, consumer, budget, compressionDepth, true, archiveMember);
+		if (decompressedInput != decoderSource) {
+			try (InputStream decoder = decompressedInput) {
+				long compressionDepth = enterLayer(budget, depth);
+				InputStream nestedInput = compressionDepth > 1 ? budget.expanded(decompressedInput) : decompressedInput;
+				InputStream recursiveInput = nonClosingMarkable(nestedInput);
+				int terminalCount = dispatch(recursiveInput,
+						RioCompression.removeCompressionExtension(sourceName, archiveMember), fallbackFormat, consumer,
+						budget,
+						compressionDepth, true, archiveMember);
+				drain(recursiveInput);
+				return terminalCount;
+			}
 		}
 
 		String formatSourceName = archiveMember ? sourceName : sourceNameWithoutQueryOrFragment(sourceName);
@@ -153,11 +161,10 @@ public final class RDFInputDispatcher {
 						terminalCount += dispatch(entryInput, entry.getName(), fallbackFormat, consumer, budget, depth,
 								true, true);
 					}
-				} catch (RDFParseException e) {
-					throw memberParseException(e, entry.getName());
-				} finally {
 					drain(entryInput);
 					zipInput.closeEntry();
+				} catch (RDFParseException e) {
+					throw memberParseException(e, entry.getName());
 				}
 			}
 		}
@@ -179,10 +186,9 @@ public final class RDFInputDispatcher {
 						terminalCount += dispatch(entryInput, entryName, fallbackFormat, consumer, budget, depth, true,
 								true);
 					}
+					drain(entryInput);
 				} catch (RDFParseException e) {
 					throw memberParseException(e, entryName);
-				} finally {
-					drain(entryInput);
 				}
 			}
 		}
@@ -217,6 +223,13 @@ public final class RDFInputDispatcher {
 
 	private static InputStream markable(InputStream input) {
 		return input.markSupported() ? input : new BufferedInputStream(input, INPUT_BUFFER_SIZE);
+	}
+
+	private static InputStream nonClosingMarkable(InputStream input) {
+		InputStream nonClosing = new UncloseableInputStream(input);
+		return nonClosing.markSupported()
+				? nonClosing
+				: new UncloseableInputStream(new BufferedInputStream(nonClosing, INPUT_BUFFER_SIZE));
 	}
 
 	private static boolean isZip(InputStream input) throws IOException {

@@ -110,7 +110,11 @@ class RDFInputDispatcherTest {
 
 	@Test
 	void keepsCallerOwnedArchiveStreamsOpen() throws Exception {
-		for (byte[] archive : List.of(zip(Map.of("data.ttl", TURTLE)), tar(Map.of("data.ttl", TURTLE)))) {
+		for (byte[] archive : List.of(
+				zip(Map.of("data.ttl", TURTLE)),
+				tar(Map.of("data.ttl", TURTLE)),
+				zip(Map.of("data.ttl.gz", gzip(TURTLE))),
+				tar(Map.of("data.ttl.gz", gzip(TURTLE))))) {
 			CloseTrackingInputStream input = new CloseTrackingInputStream(archive);
 
 			new RDFInputDispatcher(new ParserConfig()).dispatch(input, "data.archive", null,
@@ -136,6 +140,18 @@ class RDFInputDispatcherTest {
 		assertThatThrownBy(() -> new RDFInputDispatcher(new ParserConfig()).dispatch(failed, "data.unknown", null,
 				(stream, name, format) -> stream.readAllBytes())).isInstanceOf(UnsupportedRDFormatException.class);
 		assertThat(failed.closed).as("failed input remains caller-owned").isFalse();
+	}
+
+	@Test
+	void keepsCallerOwnedStreamOpenWhenNestingLimitFails() throws Exception {
+		ParserConfig config = new ParserConfig().set(new LongRioSetting(
+				"org.eclipse.rdf4j.rio.loader.max_nesting_depth", "test", 8L), 1L);
+		CloseTrackingInputStream input = new CloseTrackingInputStream(gzip(tar(Map.of("data.ttl", TURTLE))));
+
+		assertThatThrownBy(() -> new RDFInputDispatcher(config).dispatch(input, "data.tar.gz", null,
+				(stream, name, format) -> stream.readAllBytes()))
+						.isInstanceOf(RDFInputDecompressionLimitException.class);
+		assertThat(input.closed).as("limited input remains caller-owned").isFalse();
 	}
 
 	@Test
@@ -233,6 +249,132 @@ class RDFInputDispatcherTest {
 	}
 
 	@Test
+	void continuesAfterEarlyReturnFromCompressedArchiveMembers() throws Exception {
+		for (String archiveName : List.of("data.zip", "data.tar")) {
+			for (String secondName : List.of("second.ttl.gz", "second.ttl")) {
+				Map<String, byte[]> entries = new LinkedHashMap<>();
+				entries.put("first.ttl.gz", gzip(concat(TURTLE, new byte[32 * 1024])));
+				entries.put(secondName, secondName.endsWith(".gz") ? gzip(TURTLE) : TURTLE);
+				List<String> names = new ArrayList<>();
+				byte[] archive = archiveName.endsWith(".zip") ? zip(entries) : tar(entries);
+
+				new RDFInputDispatcher(new ParserConfig()).dispatch(new ByteArrayInputStream(archive), archiveName,
+						null,
+						(input, name, format) -> {
+							names.add(name);
+							assertThat(input.read()).isNotNegative();
+						});
+
+				assertThat(names).containsExactly("first.ttl", "second.ttl");
+			}
+		}
+	}
+
+	@Test
+	void accountsForUnreadCompressedArchiveMemberTails() throws Exception {
+		ParserConfig config = maxExpandedBytesConfig(2L * 1024 * 1024);
+		byte[] paddedMember = gzip(new byte[4 * 1024 * 1024]);
+
+		assertThatThrownBy(() -> new RDFInputDispatcher(config).dispatch(
+				new ByteArrayInputStream(zip(Map.of("data.ttl.gz", paddedMember))), "data.zip", null,
+				(input, name, format) -> assertThat(input.read()).isNotNegative()))
+						.isInstanceOf(RDFInputDecompressionLimitException.class)
+						.hasMessageStartingWith("RDF input decompression limit exceeded: expanded bytes");
+	}
+
+	@Test
+	void accountsForUnreadCompressedTarMemberTails() throws Exception {
+		ParserConfig config = maxExpandedBytesConfig(2L * 1024 * 1024);
+		byte[] paddedMember = gzip(new byte[4 * 1024 * 1024]);
+
+		assertThatThrownBy(() -> new RDFInputDispatcher(config).dispatch(
+				new ByteArrayInputStream(tar(Map.of("data.ttl.gz", paddedMember))), "data.tar", null,
+				(input, name, format) -> assertThat(input.read()).isNotNegative()))
+						.isInstanceOf(RDFInputDecompressionLimitException.class)
+						.hasMessageStartingWith("RDF input decompression limit exceeded: expanded bytes");
+	}
+
+	@Test
+	void accountsForUnreadTailsAcrossNestedCodecLayers() throws Exception {
+		ParserConfig config = maxExpandedBytesConfig(2L * 1024 * 1024);
+		byte[] nestedCodecs = gzip(gzip(new byte[4 * 1024 * 1024]));
+
+		assertThatThrownBy(() -> new RDFInputDispatcher(config).dispatch(
+				new ByteArrayInputStream(zip(Map.of("data.ttl.gz", nestedCodecs))), "data.zip", null,
+				(input, name, format) -> assertThat(input.read()).isNotNegative()))
+						.isInstanceOf(RDFInputDecompressionLimitException.class)
+						.hasMessageStartingWith("RDF input decompression limit exceeded: expanded bytes");
+	}
+
+	@Test
+	void accountsForUnreadTailAgainstExpansionRatio() throws Exception {
+		ParserConfig config = new ParserConfig()
+				.set(new LongRioSetting("org.eclipse.rdf4j.rio.loader.max_expanded_bytes", "test", Long.MAX_VALUE),
+						Long.MAX_VALUE)
+				.set(new LongRioSetting("org.eclipse.rdf4j.rio.loader.max_expansion_ratio", "test", 100L), 100L)
+				.set(new LongRioSetting("org.eclipse.rdf4j.rio.loader.expansion_ratio_grace_bytes", "test", 0L), 0L);
+		byte[] paddedMember = gzip(new byte[4 * 1024 * 1024]);
+
+		assertThatThrownBy(() -> new RDFInputDispatcher(config).dispatch(
+				new ByteArrayInputStream(zip(Map.of("data.ttl.gz", paddedMember))), "data.zip", null,
+				(input, name, format) -> assertThat(input.read()).isNotNegative()))
+						.isInstanceOf(RDFInputDecompressionLimitException.class)
+						.hasMessageStartingWith("RDF input decompression limit exceeded: expansion ratio");
+	}
+
+	@Test
+	void continuesAfterEarlyReturnFromCompressedArchiveInsideCodec() throws Exception {
+		for (String sourceName : List.of("data.zip.gz", "data.tar.gz")) {
+			Map<String, byte[]> entries = new LinkedHashMap<>();
+			entries.put("first.ttl", TURTLE);
+			entries.put("second.ttl", TURTLE);
+			byte[] archive = sourceName.endsWith(".zip.gz")
+					? zip(entries)
+					: tar(entries);
+			List<String> names = new ArrayList<>();
+			new RDFInputDispatcher(new ParserConfig()).dispatch(new ByteArrayInputStream(gzip(archive)), sourceName,
+					null,
+					(input, name, format) -> {
+						names.add(name);
+						assertThat(input.read()).isNotNegative();
+					});
+			assertThat(names).containsExactly("first.ttl", "second.ttl");
+		}
+	}
+
+	@Test
+	void propagatesCorruptionInUnreadDecodedTail() throws Exception {
+		byte[] firstMember = gzip(concat(TURTLE, new byte[8 * 1024]));
+		byte[] corruptMember = gzip(TURTLE);
+		corruptMember[corruptMember.length - 1] ^= 1;
+
+		assertThatThrownBy(() -> new RDFInputDispatcher(new ParserConfig()).dispatch(
+				new ByteArrayInputStream(zip(Map.of("data.ttl.gz", concat(firstMember, corruptMember)))), "data.zip",
+				null,
+				(input, name, format) -> assertThat(input.read()).isNotNegative()))
+						.isInstanceOf(IOException.class)
+						.hasMessageContaining("Corrupt GZIP trailer");
+	}
+
+	@Test
+	void preservesPrimaryParserFailureWithoutDrainingDecodedTail() throws Exception {
+		byte[] corruptMember = gzip(TURTLE);
+		corruptMember[corruptMember.length - 1] ^= 1;
+		byte[] member = concat(gzip(concat(TURTLE, new byte[8 * 1024])), corruptMember);
+		CloseTrackingInputStream source = new CloseTrackingInputStream(zip(Map.of("data.ttl.gz", member)));
+
+		assertThatThrownBy(() -> new RDFInputDispatcher(new ParserConfig()).dispatch(
+				source, "data.zip", null,
+				(stream, name, format) -> {
+					stream.read();
+					throw new RDFParseException("primary parser failure");
+				}))
+						.isInstanceOf(RDFParseException.class)
+						.hasMessage("primary parser failure in data.ttl.gz");
+		assertThat(source.closed).as("failed input remains caller-owned").isFalse();
+	}
+
+	@Test
 	void enforcesAggregateArchiveEntryLimitAcrossContainers() throws Exception {
 		ParserConfig config = new ParserConfig().set(new LongRioSetting(
 				"org.eclipse.rdf4j.rio.loader.max_archive_entries", "test", 50_000L), 1L);
@@ -262,6 +404,17 @@ class RDFInputDispatcherTest {
 		new RDFInputDispatcher(new ParserConfig()).dispatch(new ByteArrayInputStream(input), sourceName, fallback,
 				(stream, name, format) -> terminals.add(new Terminal(name, format, stream.readAllBytes())));
 		return terminals;
+	}
+
+	private static ParserConfig maxExpandedBytesConfig(long maxExpandedBytes) {
+		return new ParserConfig()
+				.set(new LongRioSetting("org.eclipse.rdf4j.rio.loader.max_expanded_bytes", "test", maxExpandedBytes),
+						maxExpandedBytes)
+				.set(new LongRioSetting("org.eclipse.rdf4j.rio.loader.max_expansion_ratio", "test", 200L),
+						Long.MAX_VALUE)
+				.set(new LongRioSetting("org.eclipse.rdf4j.rio.loader.expansion_ratio_grace_bytes", "test",
+						1024L * 1024),
+						Long.MAX_VALUE);
 	}
 
 	private static void assertSingleTerminal(byte[] input, String sourceName) throws Exception {
