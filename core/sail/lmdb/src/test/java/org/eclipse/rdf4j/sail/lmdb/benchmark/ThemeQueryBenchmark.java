@@ -144,15 +144,15 @@ public class ThemeQueryBenchmark {
 	public String z_z_irMode;
 
 	@Param({
-//			"0",
+			"0",
 //			"1",
 //			"2",
 //			"3",
 //			"4",
 //			"5",
-			"6",
-			"7",
-			"8",
+//			"6",
+//			"7",
+//			"8",
 //			"9",
 //			"10",
 //			"11",

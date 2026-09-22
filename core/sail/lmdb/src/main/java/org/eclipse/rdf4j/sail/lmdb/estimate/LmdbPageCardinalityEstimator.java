@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
@@ -654,22 +655,24 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	 */
 	public long[] estimateEntryRanks(long txnId, String dbName, byte[][] ascendingKeys) throws IOException {
 		long[] ranks = new long[ascendingKeys.length];
-		SnapshotCache snapshot = snapshot(txnId, 0L, 0L, false);
-		LmdbDb db = namedDb(snapshot, dbName);
-		if (db == null || db.isEmpty()) {
-			return ranks;
-		}
+		try (ReadView view = readTransactionById(txnId)) {
+			SnapshotCache snapshot = view.openSnapshot();
+			LmdbDb db = namedDb(snapshot, dbName);
+			if (db == null || db.isEmpty()) {
+				return ranks;
+			}
 
-		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta);
-		long entries = db.entries();
-		long previous = 0;
-		for (int i = 0; i < ascendingKeys.length; i++) {
-			byte[] key = ascendingKeys[i];
-			double fraction = counter.estimateRankFraction(db, key, key.length);
-			// The per-key approximation is independent, so monotonicity has to be imposed rather than assumed.
-			long rank = Math.min(entries, Math.max(previous, Math.round(fraction * entries)));
-			ranks[i] = rank;
-			previous = rank;
+			LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta);
+			long entries = db.entries();
+			long previous = 0;
+			for (int i = 0; i < ascendingKeys.length; i++) {
+				byte[] key = ascendingKeys[i];
+				double fraction = counter.estimateRankFraction(db, key, key.length);
+				// The per-key approximation is independent, so monotonicity has to be imposed rather than assumed.
+				long rank = Math.min(entries, Math.max(previous, Math.round(fraction * entries)));
+				ranks[i] = rank;
+				previous = rank;
+			}
 		}
 		return ranks;
 	}
