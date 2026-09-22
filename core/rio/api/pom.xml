@@ -99,6 +99,16 @@
 			<artifactId>commons-io</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-compress</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.tukaani</groupId>
+			<artifactId>xz</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 	<build>
 		<plugins>

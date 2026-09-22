@@ -33,9 +33,17 @@ module workbench {
         var pendingDotRenderKeys: { [key: string]: string } = {};
         var activePrimaryRequestSignature: RequestSignature = null;
         var activeCompareRequestSignatures: { [key: string]: RequestSignature } = {};
-        var explainServerRequestIdCounter = 0;
+        var requestIdCounter = 0;
         var activeExplainRequestId = 0;
         var activeExplainJqXHR: JQueryXHR = null;
+        var activeQueryRequestId: string = null;
+        var activeQueryResultWindow: Window = null;
+        var activeQueryResultWindowName: string = null;
+        var activeQueryResultCloseCheckTimer: number = null;
+        var queryResultMessageHandlerInstalled = false;
+        var QUERY_RESULT_WINDOW_NAME_PREFIX = 'rdf4j-query-result-';
+        var CANCEL_REQUEST_MAX_RETRIES = 20;
+        var QUERY_RESULT_CLOSE_CHECK_INTERVAL_MS = 250;
         var primaryExplanationPending = false;
         var activeCompareRequestId = 0;
         var activeComparePendingRequests = 0;
@@ -550,7 +558,7 @@ module workbench {
             var currentInputs = collectCurrentInputs();
             return {
                 requestId: requestId,
-                serverRequestId: generateExplainServerRequestId(),
+                serverRequestId: generateRequestId(),
                 pane: paneKey,
                 source: source,
                 queryHash: getPaneQueryHashFromInputs(paneKey, currentInputs),
@@ -560,11 +568,11 @@ module workbench {
             };
         }
 
-        function createFallbackExplainServerRequestId(): string {
-            explainServerRequestIdCounter += 1;
+        function createFallbackRequestId(): string {
+            requestIdCounter += 1;
 
             var timestampPart = ('000000000000' + Date.now().toString(16)).slice(-12);
-            var counterPart = ('00000000' + explainServerRequestIdCounter.toString(16)).slice(-8);
+            var counterPart = ('00000000' + requestIdCounter.toString(16)).slice(-8);
             var randomPart = '';
             var cryptoObject: any = (<any>window).crypto || (<any>window).msCrypto;
 
@@ -586,12 +594,12 @@ module workbench {
                 + '-' + randomPart.substring(10, 16) + counterPart.substring(0, 6);
         }
 
-        function generateExplainServerRequestId(): string {
+        function generateRequestId(): string {
             var cryptoObject: any = (<any>window).crypto || (<any>window).msCrypto;
             if (cryptoObject && cryptoObject.randomUUID) {
                 return cryptoObject.randomUUID();
             }
-            return createFallbackExplainServerRequestId();
+            return createFallbackRequestId();
         }
 
         function createInitialQueryPageState(): QueryPageState {
@@ -2789,16 +2797,173 @@ module workbench {
             ]);
         }
 
+        function postCancellationWithRetry(data: string, remainingRetries?: number) {
+            var retriesRemaining = remainingRetries === undefined
+                ? CANCEL_REQUEST_MAX_RETRIES : remainingRetries;
+            $.ajax({
+                url: 'query',
+                type: 'POST',
+                data: data
+            }).fail(function() {
+                if (retriesRemaining > 0) {
+                    postCancellationWithRetry(data, retriesRemaining - 1);
+                }
+            });
+        }
+
         function postCancelExplain(serverRequestId: string) {
             if (!serverRequestId) {
                 return;
             }
-            $.ajax({
-                url: 'query',
-                type: 'POST',
-                data: serializeCancelExplainFormData(serverRequestId)
-            });
+            postCancellationWithRetry(serializeCancelExplainFormData(serverRequestId));
         }
+
+        function postCancelQuery(queryRequestId: string) {
+            if (!queryRequestId) {
+                return;
+            }
+            postCancellationWithRetry($.param([
+                { name: 'action', value: 'cancel-query' },
+                { name: 'query-request-id', value: queryRequestId }
+            ]));
+        }
+
+        function setQueryCancelVisible(visible: boolean) {
+            $('#query-cancel')
+                .prop('disabled', !visible)
+                .attr('aria-hidden', visible ? 'false' : 'true')
+                .toggleClass('query-cancel--visible', visible);
+        }
+
+        function getCurrentWindowOrigin(): string {
+            var origin = window.location.origin;
+            if (origin && origin !== 'null') {
+                return origin;
+            }
+            return window.location.protocol + '//' + window.location.host;
+        }
+
+        function handleQueryResultMessage(event: any) {
+            if (!activeQueryRequestId || !activeQueryResultWindow || !event
+                    || event.source !== activeQueryResultWindow
+                    || event.origin !== getCurrentWindowOrigin()) {
+                return;
+            }
+            var message = event.data;
+            if (!message || message.type !== 'rdf4j-query-result'
+                    || message.queryRequestId !== activeQueryRequestId
+                    || (message.status !== 'completed'
+                        && message.status !== 'download'
+                        && message.status !== 'error')) {
+                return;
+            }
+            clearActiveQuery(activeQueryRequestId);
+        }
+
+        function checkTrackedResultWindowClosed(queryRequestId: string, resultWindow: Window) {
+            if (activeQueryRequestId !== queryRequestId || activeQueryResultWindow !== resultWindow) {
+                return;
+            }
+            if (resultWindow.closed) {
+                cancelQuery();
+                return;
+            }
+            if (isCompletedResultDocument(resultWindow)) {
+                clearActiveQuery(queryRequestId);
+                return;
+            }
+            activeQueryResultCloseCheckTimer = window.setTimeout(function() {
+                checkTrackedResultWindowClosed(queryRequestId, resultWindow);
+            }, QUERY_RESULT_CLOSE_CHECK_INTERVAL_MS);
+        }
+
+        function isCompletedResultDocument(resultWindow: Window): boolean {
+            try {
+                if (resultWindow.name !== activeQueryResultWindowName) {
+                    return false;
+                }
+                var resultDocument: any = (<any>resultWindow).document;
+                if (!resultDocument || resultDocument.readyState !== 'complete') {
+                    return false;
+                }
+                var resultLocation: any = resultDocument.location || (<any>resultWindow).location;
+                var resultHref: string = resultLocation && resultLocation.href;
+                var resultOrigin: string = resultLocation && resultLocation.origin;
+                if (!resultHref || resultHref === 'about:blank'
+                        || resultOrigin !== getCurrentWindowOrigin()
+                        || !resultLocation.pathname
+                        || resultLocation.pathname !== window.location.pathname) {
+                    return false;
+                }
+                var contentType: string = resultDocument.contentType || '';
+                return !contentType
+                    || contentType.indexOf('xml') >= 0
+                    || contentType.indexOf('html') >= 0;
+            } catch (error) {
+                // Cross-origin documents and a window that is closing cannot be inspected.
+                return false;
+            }
+        }
+
+        function installQueryResultMessageHandler() {
+            if (queryResultMessageHandlerInstalled || !window.addEventListener) {
+                return;
+            }
+            window.addEventListener('message', handleQueryResultMessage, false);
+            queryResultMessageHandlerInstalled = true;
+        }
+
+        function clearActiveQuery(queryRequestId?: string) {
+            if (queryRequestId && queryRequestId !== activeQueryRequestId) {
+                return;
+            }
+            if (activeQueryResultCloseCheckTimer !== null) {
+                window.clearTimeout(activeQueryResultCloseCheckTimer);
+            }
+            activeQueryResultCloseCheckTimer = null;
+            activeQueryRequestId = null;
+            activeQueryResultWindow = null;
+            activeQueryResultWindowName = null;
+            $('#query-request-id').val('');
+            setQueryCancelVisible(false);
+        }
+
+        function beginTrackedQuery(): boolean {
+            if (activeQueryRequestId) {
+                cancelQuery();
+            }
+
+            var queryRequestId = generateRequestId();
+            var resultWindowName = QUERY_RESULT_WINDOW_NAME_PREFIX + queryRequestId;
+            var resultWindow = window.open('', resultWindowName);
+            if (!resultWindow) {
+                alert('The query result window was blocked. Allow pop-ups for this site and try again.');
+                return false;
+            }
+
+            activeQueryRequestId = queryRequestId;
+            activeQueryResultWindow = resultWindow;
+            activeQueryResultWindowName = resultWindowName;
+            $('#query-request-id').val(queryRequestId);
+            setQueryCancelVisible(true);
+            checkTrackedResultWindowClosed(queryRequestId, resultWindow);
+            return true;
+        }
+
+        function targetTrackedPostAtResultWindow() {
+            var form = $('form[action="query"]');
+            var previousTarget = form.attr('target');
+            form.attr('target', activeQueryResultWindowName);
+            window.setTimeout(function() {
+                if (previousTarget) {
+                    form.attr('target', previousTarget);
+                } else {
+                    form.removeAttr('target');
+                }
+            }, 0);
+        }
+
+        installQueryResultMessageHandler();
 
         function createStableExplanationFromResponse(
             signature: RequestSignature,
@@ -3361,6 +3526,9 @@ module workbench {
                 clearExplainSelection();
                 ajaxSave(false);
             } else {
+                if (!beginTrackedQuery()) {
+                    return false;
+                }
                 var url: string[] = [];
                 url[url.length] = 'query';
                 if (document.all) {
@@ -3376,6 +3544,7 @@ module workbench {
                 workbench.addParam(url, 'infer');
                 workbench.addParam(url, 'explain');
                 workbench.addParam(url, 'explain-format');
+                workbench.addParam(url, 'query-request-id');
                 var href = url.join('');
                 var loc = document.location;
                 var currentBaseLength = loc.href.length - loc.pathname.length
@@ -3389,16 +3558,29 @@ module workbench {
                     alert("Due to its length, your query will be posted in the request body. "
                         + "It won't be possible to use a bookmark for the results page.");
                     $('#include-query-text').val('true');
+                    targetTrackedPostAtResultWindow();
                     allowPageToSubmitForm = true;
                 } else {
                     // GET using the constructed URL, method exits here
-                    document.location.href = href;
+                    activeQueryResultWindow.location.href = href;
                 }
             }
 
             // Value returned to form submit event. If not true, prevents normal form
             // submission.
             return allowPageToSubmitForm;
+        }
+
+        export function cancelQuery() {
+            var queryRequestId = activeQueryRequestId;
+            if (!queryRequestId) {
+                return;
+            }
+            postCancelQuery(queryRequestId);
+            if (activeQueryResultWindow && !activeQueryResultWindow.closed) {
+                activeQueryResultWindow.stop();
+            }
+            clearActiveQuery(queryRequestId);
         }
 
         export function runExplain(level?: string, buttonId?: string) {
@@ -3767,7 +3949,8 @@ module workbench {
             createDiffModalState: createDiffModalState,
             createEmptyQueryPageInputs: createEmptyQueryPageInputs,
             createErrorPaneState: createErrorPaneState,
-            createFallbackExplainServerRequestId: createFallbackExplainServerRequestId,
+            createFallbackExplainServerRequestId: createFallbackRequestId,
+            createFallbackRequestId: createFallbackRequestId,
             createInitialQueryPageState: createInitialQueryPageState,
             createJsonScalarElement: createJsonScalarElement,
             createJsonTreeNode: createJsonTreeNode,
@@ -3782,7 +3965,8 @@ module workbench {
             finishCompareExplainRequest: finishCompareExplainRequest,
             finishComparePrimaryExplainWaitState: finishComparePrimaryExplainWaitState,
             finishExplainRequest: finishExplainRequest,
-            generateExplainServerRequestId: generateExplainServerRequestId,
+            generateExplainServerRequestId: generateRequestId,
+            generateRequestId: generateRequestId,
             getEventSignatureForPane: getEventSignatureForPane,
             getExplainErrorMessage: getExplainErrorMessage,
             getExplainTriggerButtonElement: getExplainTriggerButtonElement,
@@ -3822,6 +4006,8 @@ module workbench {
             persistPrimaryQueryEditorValue: persistPrimaryQueryEditorValue,
             persistPrimaryQueryValue: persistPrimaryQueryValue,
             postCancelExplain: postCancelExplain,
+            postCancelQuery: postCancelQuery,
+            postCancellationWithRetry: postCancellationWithRetry,
             refreshVisibleQueryEditors: refreshVisibleQueryEditors,
             reduceDiffModalState: reduceDiffModalState,
             reducePaneState: reducePaneState,
@@ -3865,13 +4051,14 @@ module workbench {
                     activeCompareRequestId: activeCompareRequestId,
                     activeCompareRequestSignatures: activeCompareRequestSignatures,
                     activePrimaryRequestSignature: activePrimaryRequestSignature,
+                    activeQueryRequestId: activeQueryRequestId,
                     compareModeEnabled: compareModeEnabled,
                     comparePaneState: comparePaneState,
                     compareQuerySeeded: compareQuerySeeded,
                     compareSidebarOpen: compareSidebarOpen,
                     currentQueryLn: currentQueryLn,
                     diffNotReadyLabel: diffNotReadyLabel,
-                    explainServerRequestIdCounter: explainServerRequestIdCounter,
+                    explainServerRequestIdCounter: requestIdCounter,
                     explanationHighlightMode: explanationHighlightMode,
                     explanationHiddenProperties: explanationHiddenProperties,
                     lastRenderedExplanationKeys: lastRenderedExplanationKeys,
@@ -3881,6 +4068,7 @@ module workbench {
                 };
             },
             resetInternalState: function() {
+                clearActiveQuery();
                 currentQueryLn = '';
                 yasqe = null;
                 compareYasqe = null;
@@ -3890,11 +4078,15 @@ module workbench {
                 pendingDotRenderKeys = {};
                 activePrimaryRequestSignature = null;
                 activeCompareRequestSignatures = {};
-                explainServerRequestIdCounter = 0;
+				requestIdCounter = 0;
                 resetExplainRequestUiState('primary');
                 resetExplainRequestUiState('compare');
                 activeExplainRequestId = 0;
                 activeExplainJqXHR = null;
+                activeQueryRequestId = null;
+                activeQueryResultWindow = null;
+                activeQueryResultWindowName = null;
+                activeQueryResultCloseCheckTimer = null;
                 primaryExplanationPending = false;
                 activeCompareRequestId = 0;
                 activeComparePendingRequests = 0;
@@ -3947,7 +4139,7 @@ module workbench {
                     diffNotReadyLabel = state.diffNotReadyLabel;
                 }
                 if ('explainServerRequestIdCounter' in state) {
-                    explainServerRequestIdCounter = state.explainServerRequestIdCounter;
+                    requestIdCounter = state.explainServerRequestIdCounter;
                 }
                 if ('explanationHiddenProperties' in state) {
                     explanationHiddenProperties = normalizeExplanationHiddenProperties(

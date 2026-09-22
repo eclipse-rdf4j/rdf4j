@@ -13,17 +13,21 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -129,5 +133,57 @@ public class TestTransactionControllerErrorHandling {
 				// transaction may already be deregistered by controller rollback
 			}
 		}
+	}
+
+	@Test
+	public void shouldMapInputDecompressionLimitToPayloadTooLarge() throws Exception {
+		String setting = "org.eclipse.rdf4j.rio.loader.max_nesting_depth";
+		String previous = System.getProperty(setting);
+		Transaction txn = null;
+		boolean registered = false;
+		try {
+			System.setProperty(setting, "0");
+			txn = new Transaction(repository);
+			ActiveTransactionRegistry.INSTANCE.register(txn);
+			registered = true;
+			UUID transactionId = txn.getID();
+			request.setRequestURI("/repositories/" + repositoryID + "/transactions/" + transactionId);
+			request.setPathInfo(repositoryID + "/transactions/" + transactionId);
+			request.setMethod(HttpMethod.PUT.name());
+			request.setParameter(Protocol.ACTION_PARAM_NAME, "ADD");
+			request.setContentType(RDFFormat.TURTLE.getDefaultMIMEType());
+			request.setContent(zipWithTurtle());
+
+			TransactionController transactionController = new TransactionController();
+			ClientHTTPException exception = assertThrows(ClientHTTPException.class,
+					() -> transactionController.handleRequestInternal(request, response));
+
+			Assertions.assertEquals(413, exception.getStatusCode());
+		} finally {
+			if (txn != null) {
+				try {
+					txn.close();
+				} finally {
+					if (registered) {
+						ActiveTransactionRegistry.INSTANCE.deregister(txn);
+					}
+				}
+			}
+			if (previous == null) {
+				System.clearProperty(setting);
+			} else {
+				System.setProperty(setting, previous);
+			}
+		}
+	}
+
+	private static byte[] zipWithTurtle() throws IOException {
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		try (ZipOutputStream zip = new ZipOutputStream(output)) {
+			zip.putNextEntry(new ZipEntry("data.ttl"));
+			zip.write("<urn:s> <urn:p> <urn:o> .".getBytes(StandardCharsets.UTF_8));
+			zip.closeEntry();
+		}
+		return output.toByteArray();
 	}
 }

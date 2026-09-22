@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 import static jakarta.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import static jakarta.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
 import static jakarta.servlet.http.HttpServletResponse.SC_NOT_ACCEPTABLE;
+import static jakarta.servlet.http.HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE;
 import static jakarta.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE;
 import static org.eclipse.rdf4j.http.protocol.Protocol.BINDING_PREFIX;
 import static org.eclipse.rdf4j.http.protocol.Protocol.CONTEXT_PARAM_NAME;
@@ -88,6 +89,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFWriterFactory;
 import org.eclipse.rdf4j.rio.RDFWriterRegistry;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.helpers.RDFInputDecompressionLimitException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
@@ -290,10 +292,23 @@ public class TransactionController extends AbstractController implements Disposa
 			if (e instanceof ClientHTTPException) {
 				throw (ClientHTTPException) e;
 			} else {
+				RDFInputDecompressionLimitException limit = decompressionLimit(e);
+				if (limit != null) {
+					throw new ClientHTTPException(SC_REQUEST_ENTITY_TOO_LARGE, limit.getMessage(), limit);
+				}
 				throw new ServerHTTPException(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
 						"Transaction handling error: " + e.getMessage(), e);
 			}
 		}
+	}
+
+	private static RDFInputDecompressionLimitException decompressionLimit(Throwable failure) {
+		for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+			if (cause instanceof RDFInputDecompressionLimitException) {
+				return (RDFInputDecompressionLimitException) cause;
+			}
+		}
+		return null;
 	}
 
 	private ModelAndView getSize(Transaction transaction, HttpServletRequest request, HttpServletResponse response)
@@ -374,6 +389,14 @@ public class TransactionController extends AbstractController implements Disposa
 		if (request.getParameter(Protocol.CANCEL_EXPLAIN_PARAM_NAME) != null) {
 			throw new ClientHTTPException(SC_BAD_REQUEST,
 					"Canceling query explanations is not supported for transaction requests.");
+		}
+		if (request.getParameter(Protocol.CANCEL_QUERY_PARAM_NAME) != null) {
+			throw new ClientHTTPException(SC_BAD_REQUEST,
+					"Canceling queries is not supported for transaction requests.");
+		}
+		if (request.getParameter(Protocol.QUERY_REQUEST_ID_PARAM_NAME) != null) {
+			throw new ClientHTTPException(SC_BAD_REQUEST,
+					"Tracked queries are not supported for transaction requests.");
 		}
 
 		View view = null;

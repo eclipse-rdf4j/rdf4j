@@ -85,6 +85,16 @@ For Jetty, it's just a matter of copying the war-files to `$JETTY_BASE\webapps`
 
 After you have deployed the RDF4J Workbench webapp, you should be able to access it, by default, at path `http://localhost:8080/rdf4j-workbench`. You can point your browser at this location to verify that the deployment succeeded.
 
+### Compressed RDF input
+
+RDF4J Server RDF upload endpoints and Workbench's **Add** upload accept RDF input compressed with gzip, zlib/deflate, BZip2, XZ, LZMA, framed LZ4, framed Snappy (`.sz` or `.snappy`), Unix compress (`.Z`), Brotli, or Zstandard. Compression is detected from a reliable stream signature when one exists and otherwise from the file-name suffix. The supplied Server and Workbench applications include the optional archive decoder libraries; using `RDFLoader` in an embedded application does not add those libraries as transitive runtime dependencies.
+
+ZIP and TAR archives are traversed recursively. This includes conventional compressed TAR names such as `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, and `.tar.zst`. Directories and special TAR entries are ignored. Regular members whose names identify an RDF format are parsed independently; unknown terminal members are skipped during automatic format detection, and an archive with no recognized RDF member is rejected. When an explicit RDF format is supplied, it is also used as the fallback for unnamed or otherwise unknown regular members.
+
+These formats are automatic RDF input decoding, not additional HTTP content codings. The accepted `Content-Encoding` values and response compression negotiation are unchanged.
+
+Decoder allocation is limited to 64 MiB by default. Set the Java system property `org.eclipse.rdf4j.rio.compression.maxDecoderMemoryKiB` to a positive KiB value to change that limit. The aggregate ZIP-and-TAR entry limit is 50,000 and can be configured with `org.eclipse.rdf4j.rio.loader.max_archive_entries`; the existing ZIP-specific limit remains in force as well.
+
 ### Configuring RDF4J Workbench for UTF-8 Support
 
 #### UTF-8 in the Request URI (GET)
@@ -426,7 +436,9 @@ Data may be added to or removed from current repository using any of the sidebar
 
 ### Add
 
-The “Add” page allows you to specify a URL with RDF data, a local file on on your client system, or to enter serialized RDF data into its text area for loading into the present repository. It is also possible to specify the Base URI and a Context for the triples. Think of the Context as a 4th element of each RDF statement, specifying a graph within the repository. You may specify one of eight serialization formats, or select “auto-detect” to let the server do a best guess at the format.
+The “Add” page allows you to specify a URL with RDF data, a local file on your client system, or to enter serialized RDF data into its text area for loading into the present repository. It is also possible to specify the Base URI and a Context for the triples. Think of the Context as a 4th element of each RDF statement, specifying a graph within the repository. You may specify one of eight serialization formats, or select “auto-detect” to let the server do a best guess at the format.
+
+Local files (and URLs that serve compressed bytes) may be gzip-compressed for faster transfer, for example `data.ttl.gz` or `data.rdf.gzip`. Workbench decompresses the stream automatically before parsing. With auto-detect, the RDF format is taken from the name after the compression suffix (`ttl` in `data.ttl.gz`). Gzip is always available; deflate, zstd, and brotli are used when the matching library is on the classpath. Zip archives (`.zip` with multiple entries) are not unpacked here.
 
 #### Remove
 
@@ -484,6 +496,18 @@ The two other action buttons are “Save Query” and “Execute”:
 
 - “Save Query” is only enabled when a name has been entered into the adjacent text field. Once clicked, your query is saved under the given name. An option to back out or overwrite is given if the name already exists. Saved queries are associated with the current repository and user name. If the “Save privately (do not share)” option is checked, then the saved query will only be visible to the current user.
 - “Execute” attempts to execute the given query text, and then you are presented with a query results page. Values are clickable, and clicking on a value brings you to its “Explore” page. Similar display options are presented as the “Explore” page, as well.
+
+#### Cancelling long-running queries
+
+For an ordinary, non-transactional query, Workbench keeps the query page available while the result is rendered in a separate result window. The page shows a Cancel action while the query is active. Closing the result window requests cancellation. A result document signals completion or failure to the query page; downloads cannot reliably signal completion, so the Cancel action should remain available until the result window is closed or another terminal result signal is received.
+
+Cancellation identifiers are scoped to a repository. Clients do not need to supply an identifier for automatic cancellation; Server generates and registers one for the request. In a deployment with multiple RDF4J Server instances, a cancellation request that reaches an instance that does not own the query can return `404`, while cancellation of an active query on the owning instance returns `204`. Workbench retries failed cancellation requests a bounded number of times. When an HTTP-backed repository forwards cancellation to another RDF4J Server, a downstream failure is reported as `502` so the request can be retried instead of being acknowledged as successful.
+
+For supported result formats, RDF4J Server and Workbench can flush one ASCII space approximately every second while evaluation is waiting for the first result. The probe uses the negotiated writer's response stream and stops before the first byte written by the serializer. XML declarations are omitted before probing when the selected XML writer supports that setting. The supported formats are SPARQL Results JSON and XML, JSON-LD, NDJSON-LD, RDF/JSON, Turtle, N3, TriG, N-Triples, N-Quads, RDF/XML, and TriX; RDF/XML and TriX require the actual XML writer to support omitting its processing instruction. See the [SPARQL Results JSON](https://www.w3.org/TR/sparql11-results-json/), [SPARQL Results XML](https://www.w3.org/TR/sparql11-results-xml/), [JSON-LD 1.1](https://www.w3.org/TR/json-ld11/), and [RDF 1.1 Turtle](https://www.w3.org/TR/turtle/) specifications for the relevant grammars.
+
+Heartbeats are excluded for binary formats, CSV, TSV, XLSX, plain boolean responses, unknown formats, invalid requests, and `HEAD` responses. Proxy and TCP buffering can delay when a disconnected client is detected. The first heartbeat flush commits the response status and headers even when the serializer buffers ordinary bytes. Before that commitment, an evaluation or validation failure can use the normal HTTP error response. A failed response write triggers cancellation. After commitment, a query or evaluation failure terminates or invalidates the response body but does not necessarily invoke cancellation; the status may remain `200`, and the client must not treat an incomplete body as a successful empty result.
+
+This cancellation and disconnect handling does not apply to transaction-bound queries. A transaction connection may own pending updates and other work, so closing it to stop one result could invalidate the entire transaction.
 
 ### Working with Saved Queries
 

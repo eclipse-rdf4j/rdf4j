@@ -207,8 +207,8 @@ class QueryTemplateTest {
 	void explainUiShouldDisableButtonsAndShowDelayedSpinnerForSlowResponses() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
-		String queryStyles = readQueryStyles();
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
 
 		assertThat(queryStyles)
 				.contains(".query-explain-spinner")
@@ -250,6 +250,59 @@ class QueryTemplateTest {
 				.contains("hidePrimaryExplainCancelButtons();")
 				.contains("activeExplainJqXHR.abort();")
 				.contains("textStatus !== 'abort'");
+	}
+
+	@Test
+	void regularQueryUiShouldKeepControllerPageAndCancelTrackedResultWindow() throws IOException {
+		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
+				StandardCharsets.UTF_8);
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+		String queryStyles = readQueryStyles();
+
+		assertThat(queryTemplate)
+				.contains("name=\"query-request-id\" id=\"query-request-id\"")
+				.contains("id=\"query-cancel\" class=\"query-cancel\"")
+				.contains("onclick=\"workbench.query.cancelQuery()\"");
+		assertThat(queryStyles)
+				.contains(".query-cancel")
+				.contains(".query-cancel--visible");
+
+		assertThat(queryScript)
+				.contains("var activeQueryRequestId: string = null;")
+				.contains("var CANCEL_REQUEST_MAX_RETRIES = 20;")
+				.contains("function postCancellationWithRetry(data: string, remainingRetries?: number)")
+				.contains("postCancellationWithRetry(serializeCancelExplainFormData(serverRequestId));")
+				.contains("function postCancelQuery(queryRequestId: string)")
+				.contains("postCancellationWithRetry($.param([")
+				.contains("var queryRequestId = generateRequestId();")
+				.contains("var resultWindowName = QUERY_RESULT_WINDOW_NAME_PREFIX + queryRequestId;")
+				.contains("window.open('', resultWindowName)")
+				.contains("workbench.addParam(url, 'query-request-id');")
+				.contains("form.attr('target', activeQueryResultWindowName);")
+				.contains("toggleClass('query-cancel--visible', visible)")
+				.contains("window.addEventListener('message', handleQueryResultMessage, false);")
+				.contains("event.source !== activeQueryResultWindow")
+				.contains("event.origin !== getCurrentWindowOrigin()")
+				.doesNotContain("activeQueryResultLoadHandler")
+				.containsPattern(
+						"postCancelQuery\\(queryRequestId\\);[\\s\\S]*activeQueryResultWindow\\.stop\\(\\);");
+	}
+
+	@Test
+	void queryCancellationShouldBoundRetriesAndGenerateFreshCrossTabSafeIds() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.contains("var CANCEL_REQUEST_MAX_RETRIES = 20;")
+				.contains("var retriesRemaining = remainingRetries === undefined")
+				.contains("? CANCEL_REQUEST_MAX_RETRIES : remainingRetries;")
+				.contains("if (retriesRemaining > 0)")
+				.contains("postCancellationWithRetry(data, retriesRemaining - 1);")
+				.containsPattern(
+						"function createRequestSignature\\([\\s\\S]*serverRequestId: generateRequestId\\(\\)")
+				.containsPattern(
+						"function beginTrackedQuery\\(\\): boolean \\{[\\s\\S]*var queryRequestId = generateRequestId\\(\\);[\\s\\S]*QUERY_RESULT_WINDOW_NAME_PREFIX \\+ queryRequestId")
+				.doesNotContain("var QUERY_RESULT_WINDOW_NAME = 'rdf4j-query-result';");
 	}
 
 	@Test
@@ -853,11 +906,18 @@ class QueryTemplateTest {
 		assertThat(graphTemplate)
 				.doesNotContain("__workbench_query_text")
 				.contains("workbench:metadata/workbench:query-text")
-				.contains("wb-query-text");
+				.contains("wb-query-text")
+				.contains("workbench:metadata/workbench:total-result-count")
+				.contains("workbench-total-result-count");
+		assertThat(tupleTemplate)
+				.contains("workbench:metadata/workbench:total-result-count")
+				.contains("workbench-total-result-count");
 		assertThat(pagingScript)
 				.contains("wb-query-text")
 				.contains("createHiddenInput('ref', 'text')")
-				.contains("createHiddenInput('query', queryText)");
+				.contains("createHiddenInput('query', queryText)")
+				.contains("workbench-total-result-count")
+				.contains("resultMetadata");
 	}
 
 	@Test
