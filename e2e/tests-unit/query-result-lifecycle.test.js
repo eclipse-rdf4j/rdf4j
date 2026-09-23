@@ -13,130 +13,112 @@ function submitQuery(options = {}) {
     harness.runPageLoad();
     harness.setValue('action', 'exec');
     const submittedByPost = harness.context.workbench.query.doSubmit();
-    const resultWindow = harness.openedWindows[0];
-    assert.ok(resultWindow);
     assert.equal(harness.getProperty('query-request-id', 'value'), requestId);
     assert.equal(harness.getProperty('query-cancel', 'disabled'), false);
     assert.equal(submittedByPost, !!options.longQuery);
-    return { harness, resultWindow };
+    return { harness, requestId, submittedByPost };
 }
 
-test('result document completion clears the active GET query and cancel control', () => {
-    const { harness, resultWindow } = submitQuery();
+test('short query GET navigates the current document without opening a popup', () => {
+    const { harness } = submitQuery();
 
-    harness.emitResultMessage(resultWindow, {
-        type: 'rdf4j-query-result',
-        queryRequestId: 'query-1',
-        status: 'completed'
-    });
-
-    assert.equal(harness.getProperty('query-request-id', 'value'), '');
-    assert.equal(harness.getProperty('query-cancel', 'disabled'), true);
-    assert.equal(harness.hasClass('query-cancel', 'query-cancel--visible'), false);
+    assert.equal(harness.openedWindows.length, 0);
+    assert.equal(harness.document.location.pathname, '/query');
+    assert.match(harness.document.location.search, /action=exec/);
+    assert.match(harness.document.location.search, /query-request-id=query-1/);
 });
 
-test('result document completion clears a long-query POST target', () => {
-    const { harness, resultWindow } = submitQuery({
+test('long query POST stays on the current form without a named target', () => {
+    const { harness } = submitQuery({
         query: 'x'.repeat(3000),
         longQuery: true
     });
+    const form = harness.document.querySelectorAll('form[action="query"]')[0];
 
-    assert.equal(harness.getProperty('query-request-id', 'value'), 'query-1');
-    assert.equal(harness.getProperty('query-cancel', 'disabled'), false);
-    assert.equal(harness.getAttribute('query-cancel', 'aria-hidden'), 'false');
+    assert.equal(harness.openedWindows.length, 0);
+    assert.equal(harness.getProperty('include-query-text', 'value'), 'true');
+    assert.equal(form.getAttribute('target'), undefined);
+    form.submit();
+    assert.equal(harness.document.lastSubmittedForm, form);
+    assert.equal(form.submitCount, 1);
+});
 
-    harness.emitResultMessage(resultWindow, {
-        type: 'rdf4j-query-result',
-        queryRequestId: 'query-1',
-        status: 'completed'
+test('repeated execution cancels the prior request and tracks a fresh request id', () => {
+    const { harness } = submitQuery({
+        serverRequestIds: ['query-1', 'query-2']
     });
 
-    assert.equal(harness.getProperty('query-request-id', 'value'), '');
-    assert.equal(harness.getProperty('query-cancel', 'disabled'), true);
-});
+    harness.context.workbench.query.doSubmit();
 
-test('result notifications require the active window, origin, and request id', () => {
-    const { harness, resultWindow } = submitQuery();
-    const unrelatedWindow = harness.openedWindows[0] === resultWindow
-        ? { closed: false }
-        : harness.openedWindows[0];
-    const message = {
-        type: 'rdf4j-query-result',
-        queryRequestId: 'query-1',
-        status: 'completed'
-    };
-
-    harness.emitResultMessage(unrelatedWindow, message);
-    harness.emitResultMessage(resultWindow, Object.assign({}, message, { queryRequestId: 'stale-query' }));
-    harness.emitResultMessage(resultWindow, message, 'http://attacker.invalid');
-
-    assert.equal(harness.getProperty('query-request-id', 'value'), 'query-1');
+    const cancelRequests = harness.requestsByAction('cancel-query');
+    assert.equal(cancelRequests.length, 1);
+    assert.equal(cancelRequests[0].params.get('query-request-id'), 'query-1');
+    assert.equal(harness.getProperty('query-request-id', 'value'), 'query-2');
     assert.equal(harness.getProperty('query-cancel', 'disabled'), false);
-
-    harness.emitResultMessage(resultWindow, message);
-    assert.equal(harness.getProperty('query-request-id', 'value'), '');
+    assert.equal(harness.openedWindows.length, 0);
 });
 
-test('closing the result window clears the active query after the lifecycle check', () => {
-    const { harness, resultWindow } = submitQuery();
+test('cancellation stops the current navigation before posting backend cancellation', () => {
+    const events = [];
+    const observedRequests = [];
+    let stopInProgress = false;
+    let stopCalls = 0;
+    const harness = createQueryBrowserHarness({
+        serverRequestIds: ['query-1'],
+        onAjaxRequest(request) {
+            observedRequests.push(request);
+            if (request.action === 'cancel-query') {
+                events.push('cancel-request');
+                if (stopInProgress) {
+                    request.jqXHR.abort();
+                }
+            }
+        },
+        window: {
+            stop() {
+                events.push('stop');
+                stopCalls += 1;
+                stopInProgress = true;
+                observedRequests
+                    .filter((request) => request.action === 'cancel-query' && !request.aborted && !request.completed)
+                    .forEach((request) => request.jqXHR.abort());
+                stopInProgress = false;
+            }
+        }
+    });
 
-    resultWindow.close();
-    harness.advanceTimers(250);
+    harness.runPageLoad();
+    harness.setValue('action', 'exec');
+    assert.equal(harness.context.workbench.query.doSubmit(), false);
+    harness.click('query-cancel');
 
-    assert.equal(harness.requestsByAction('cancel-query').length, 1);
-    assert.equal(
-        harness.requestsByAction('cancel-query')[0].params.get('query-request-id'),
-        'query-1'
-    );
+    const cancelRequests = observedRequests.filter((request) => request.action === 'cancel-query');
+    assert.equal(stopCalls, 1);
+    assert.equal(events[0], 'stop');
+    assert.equal(cancelRequests.length, 1);
+    assert.equal(cancelRequests[0].params.get('query-request-id'), 'query-1');
+    assert.equal(cancelRequests[0].aborted, false);
     assert.equal(harness.getProperty('query-request-id', 'value'), '');
     assert.equal(harness.getProperty('query-cancel', 'disabled'), true);
 });
 
-test('a completed same-origin XML error document clears a tracked query without cancellation', () => {
-    const { harness, resultWindow } = submitQuery();
+test('page lifecycle events clear stale query cancellation state', () => {
+    const { harness } = submitQuery({
+        serverRequestIds: ['query-1', 'query-2']
+    });
 
-    resultWindow.location.href = 'http://localhost:8080/rdf4j-workbench/repositories/test/query?error=true';
-    resultWindow.document = {
-        readyState: 'complete',
-        location: resultWindow.location,
-        contentType: 'application/xml'
-    };
-    harness.advanceTimers(250);
-
-    assert.equal(harness.requestsByAction('cancel-query').length, 0);
+    harness.window.trigger('pagehide');
     assert.equal(harness.getProperty('query-request-id', 'value'), '');
     assert.equal(harness.getProperty('query-cancel', 'disabled'), true);
-});
+    assert.equal(harness.hasClass('query-cancel', 'query-cancel--visible'), false);
 
-test('a completed attachment document keeps cancellation available until the user closes it', () => {
-    const { harness, resultWindow } = submitQuery();
+    harness.setValue('action', 'exec');
+    harness.context.workbench.query.doSubmit();
+    assert.equal(harness.getProperty('query-request-id', 'value'), 'query-2');
 
-    resultWindow.location.href = 'http://localhost:8080/rdf4j-workbench/repositories/test/query?download=true';
-    resultWindow.document = {
-        readyState: 'complete',
-        location: resultWindow.location,
-        contentType: 'text/csv'
-    };
-    harness.advanceTimers(250);
-
-    assert.equal(harness.requestsByAction('cancel-query').length, 0);
-    assert.equal(harness.getProperty('query-request-id', 'value'), 'query-1');
-    resultWindow.close();
-    harness.advanceTimers(250);
-    assert.equal(harness.requestsByAction('cancel-query').length, 1);
-});
-
-test('error and download result notifications both finish the active query', () => {
-    for (const status of ['error', 'download']) {
-        const { harness, resultWindow } = submitQuery({ serverRequestIds: [`query-${status}`] });
-        harness.emitResultMessage(resultWindow, {
-            type: 'rdf4j-query-result',
-            queryRequestId: `query-${status}`,
-            status
-        });
-        assert.equal(harness.getProperty('query-request-id', 'value'), '', status);
-        assert.equal(harness.getProperty('query-cancel', 'disabled'), true, status);
-    }
+    harness.window.trigger('pageshow');
+    assert.equal(harness.getProperty('query-request-id', 'value'), '');
+    assert.equal(harness.getProperty('query-cancel', 'disabled'), true);
 });
 
 test('result page script posts a terminal message from the result document to its opener', () => {

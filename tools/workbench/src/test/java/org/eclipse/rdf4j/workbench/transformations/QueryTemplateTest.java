@@ -253,7 +253,7 @@ class QueryTemplateTest {
 	}
 
 	@Test
-	void regularQueryUiShouldKeepControllerPageAndCancelTrackedResultWindow() throws IOException {
+	void regularQueryUiShouldSubmitInCurrentWindowAndKeepCancellationControls() throws IOException {
 		String queryTemplate = Files.readString(Path.of("src/main/webapp/transformations/query.xsl"),
 				StandardCharsets.UTF_8);
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
@@ -275,17 +275,30 @@ class QueryTemplateTest {
 				.contains("function postCancelQuery(queryRequestId: string)")
 				.contains("postCancellationWithRetry($.param([")
 				.contains("var queryRequestId = generateRequestId();")
-				.contains("var resultWindowName = QUERY_RESULT_WINDOW_NAME_PREFIX + queryRequestId;")
-				.contains("window.open('', resultWindowName)")
 				.contains("workbench.addParam(url, 'query-request-id');")
-				.contains("form.attr('target', activeQueryResultWindowName);")
+				.contains("document.location.href = href")
 				.contains("toggleClass('query-cancel--visible', visible)")
-				.contains("window.addEventListener('message', handleQueryResultMessage, false);")
-				.contains("event.source !== activeQueryResultWindow")
-				.contains("event.origin !== getCurrentWindowOrigin()")
-				.doesNotContain("activeQueryResultLoadHandler")
+				.contains("window.addEventListener('pagehide'")
+				.contains("window.addEventListener('pageshow'")
+				.doesNotContain("window.open('', resultWindowName)")
+				.doesNotContain("activeQueryResultWindow")
+				.doesNotContain("form.attr('target', activeQueryResultWindowName)")
 				.containsPattern(
-						"postCancelQuery\\(queryRequestId\\);[\\s\\S]*activeQueryResultWindow\\.stop\\(\\);");
+						"window\\.stop\\(\\);[\\s\\S]*postCancelQuery\\(queryRequestId\\);");
+	}
+
+	@Test
+	void regularQueryShouldSubmitInCurrentWindowWithoutOpeningPopup() throws IOException {
+		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
+
+		assertThat(queryScript)
+				.doesNotContain("window.open('', resultWindowName)")
+				.contains("document.location.href = href")
+				.contains("if (pathLength > 2048 || urlLength > 2083)")
+				.contains("$('#include-query-text').val('true');")
+				.contains("allowPageToSubmitForm = true;")
+				.doesNotContain("query result window was blocked")
+				.doesNotContain("form.attr('target', activeQueryResultWindowName)");
 	}
 
 	@Test
@@ -301,7 +314,9 @@ class QueryTemplateTest {
 				.containsPattern(
 						"function createRequestSignature\\([\\s\\S]*serverRequestId: generateRequestId\\(\\)")
 				.containsPattern(
-						"function beginTrackedQuery\\(\\): boolean \\{[\\s\\S]*var queryRequestId = generateRequestId\\(\\);[\\s\\S]*QUERY_RESULT_WINDOW_NAME_PREFIX \\+ queryRequestId")
+						"function beginTrackedQuery\\(\\): boolean \\{[\\s\\S]*var queryRequestId = generateRequestId\\(\\);[\\s\\S]*activeQueryRequestId = queryRequestId")
+				.doesNotContain("window.open(")
+				.doesNotContain("QUERY_RESULT_WINDOW_NAME_PREFIX")
 				.doesNotContain("var QUERY_RESULT_WINDOW_NAME = 'rdf4j-query-result';");
 	}
 
