@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -73,6 +74,22 @@ class BindingSetAssignmentQueryEvaluationStepTest {
 		});
 		assertThat(parent.valueReadCount("b")).isZero();
 		assertThat(parent.hasBindingReadCount("b")).isEqualTo(1);
+	}
+
+	@Test
+	void duplicateEmptyRowsPreserveEveryOverlappingParentCandidate() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("x"));
+		assignment.setBindingSets(List.of(EmptyBindingSet.getInstance(), EmptyBindingSet.getInstance()));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		for (String value : List.of("first", "second")) {
+			MapBindingSet parent = new MapBindingSet();
+			parent.addBinding("x", SimpleValueFactory.getInstance().createLiteral(value));
+
+			assertThat(results(step.evaluate(parent))).containsExactly(parent, parent);
+		}
 	}
 
 	private static List<BindingSet> results(CloseableIteration<BindingSet> iteration) {

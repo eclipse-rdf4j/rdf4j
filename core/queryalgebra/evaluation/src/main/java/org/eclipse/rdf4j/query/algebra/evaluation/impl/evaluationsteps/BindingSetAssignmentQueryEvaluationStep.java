@@ -102,12 +102,9 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 						MutableBindingSet nextResult = null;
 						while (nextResult == null && assignments.hasNext()) {
 							final BindingSet assignedBindings = assignments.next();
+							nextResult = bsMaker.apply(bindings);
 
 							for (String name : assignedBindings.getBindingNames()) {
-								if (nextResult == null) {
-									nextResult = bsMaker.apply(bindings);
-								}
-
 								final Value assignedValue = assignedBindings.getValue(name);
 								if (assignedValue != null) {
 									BindingNameAccess bindingName = bindingNamesByName.get(name);

@@ -15,6 +15,7 @@ import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 import org.eclipse.rdf4j.query.BindingSet;
 
@@ -22,6 +23,14 @@ import org.eclipse.rdf4j.query.BindingSet;
  *
  */
 public class BindingSetAssignment extends AbstractQueryModelNode implements TupleExpr {
+
+	/**
+	 * Marker for a materialized binding source whose rows and values remain stable for the duration of query
+	 * optimization and evaluation, and whose iterator can be obtained repeatedly.
+	 */
+	@InternalUseOnly
+	public interface RepeatableBindingSetSource extends Iterable<BindingSet> {
+	}
 
 	private Set<String> bindingNames;
 

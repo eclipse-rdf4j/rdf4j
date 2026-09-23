@@ -32,7 +32,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.IndependentJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OutputFacts;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 
@@ -63,7 +67,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
 		} else if (containsDifferenceInCurrentScope(join.getRightArg())) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
-			if (canHashJoinWithPossiblyUnboundRows(join, joinAttributes)) {
+			if (canHashJoinWithGuaranteedOutputs(join, joinAttributes)) {
 				eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
 						joinAttributes, context);
 				join.setAlgorithm(HashJoinIteration.class.getSimpleName());
@@ -73,9 +77,14 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			}
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
-			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
-					joinAttributes, context);
-			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
+			if (canHashJoinWithGuaranteedOutputs(join, joinAttributes)) {
+				eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
+						joinAttributes, context);
+				join.setAlgorithm(HashJoinIteration.class.getSimpleName());
+			} else {
+				eval = bindings -> new IndependentJoinIteration(leftPrepared, rightPrepared, bindings);
+				join.setAlgorithm(IndependentJoinIteration.class.getSimpleName());
+			}
 		} else if (join.isMergeJoin() && context.getComparator() != null) {
 			eval = bindings -> InnerMergeJoinIterator.getInstance(leftPrepared, rightPrepared, bindings,
 					context.getComparator(), context.getValue(join.getOrder().getName()), context);
@@ -146,11 +155,25 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		return false;
 	}
 
-	private static boolean canHashJoinWithPossiblyUnboundRows(Join join, String[] joinAttributes) {
-		Set<String> leftAssured = join.getLeftArg().getAssuredBindingNames();
-		Set<String> rightAssured = join.getRightArg().getAssuredBindingNames();
+	private static boolean canHashJoinWithGuaranteedOutputs(Join join, String[] joinAttributes) {
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(join,
+				EmptyBindingSet.getInstance());
+		ReadOnlyContext leftInput = analysis.contextAt(join.getLeftArg());
+		ReadOnlyContext rightInput = analysis.contextAt(join.getRightArg());
+		OutputFacts leftFacts = analysis.outputFacts(join.getLeftArg(), leftInput);
+		OutputFacts rightFacts = analysis.outputFacts(join.getRightArg(), rightInput);
+		if (!leftFacts.possibleOutputsKnown() || !leftFacts.guaranteedOutputsKnown()
+				|| !rightFacts.possibleOutputsKnown() || !rightFacts.guaranteedOutputsKnown()) {
+			return false;
+		}
+		Set<String> commonOutputs = new LinkedHashSet<>(leftFacts.possibleOutputs());
+		commonOutputs.retainAll(rightFacts.possibleOutputs());
+		Set<String> joinAttributeSet = Set.of(joinAttributes);
+		if (!joinAttributeSet.containsAll(commonOutputs)) {
+			return false;
+		}
 		for (String name : joinAttributes) {
-			if (!leftAssured.contains(name) || !rightAssured.contains(name)) {
+			if (!leftFacts.guaranteedOutputs().contains(name) || !rightFacts.guaranteedOutputs().contains(name)) {
 				return false;
 			}
 		}

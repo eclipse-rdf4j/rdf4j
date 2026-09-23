@@ -14,15 +14,27 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Set;
 import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.KindAwareVarProvider;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -35,6 +47,8 @@ import org.eclipse.rdf4j.query.algebra.WithVarProvider;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 public class QueryModelTreeToGenericPlanNodeTest {
@@ -161,6 +175,134 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(hashPlan.getStringMetricsActual()).isNull();
 		assertThat(statementPattern(hashPlan, 1).getPlans().get(0).getStringMetricsActual())
 				.containsEntry("bindingState", "unbound");
+	}
+
+	@Test
+	public void annotatesNullableJoinInputAsPossiblyBound() {
+		BindingSetAssignment left = bindingSetAssignment(
+				bindingSet("x"),
+				EmptyBindingSet.getInstance());
+		Join join = new Join(left, pattern("x", "p", "o"));
+		join.setAlgorithm("JoinIterator");
+
+		GenericPlanNode plan = explain(join);
+		GenericPlanNode rightPattern = plan.getPlans().get(1);
+
+		assertBindingState(rightPattern, "x", "possibly bound");
+	}
+
+	@Test
+	public void annotatesNullableOptionalConditionInputAsPossiblyBound() {
+		LeftJoin leftJoin = new LeftJoin(
+				bindingSetAssignment(EmptyBindingSet.getInstance()),
+				bindingSetAssignment(bindingSet("x"), EmptyBindingSet.getInstance()),
+				new Bound(Var.of("x")));
+
+		GenericPlanNode plan = explain(leftJoin);
+		GenericPlanNode condition = findFirstPlan(plan, node -> node.getType().startsWith("Bound"));
+
+		assertBindingState(condition, "x", "possibly bound");
+	}
+
+	@Test
+	public void annotatesOrderKeyUsingTheOrderInput() {
+		Order order = new Order(pattern("s", "p", "o"), new OrderElem(Var.of("o")));
+
+		GenericPlanNode plan = explain(order);
+		GenericPlanNode orderElem = findFirstPlan(plan, node -> node.getType().startsWith("OrderElem"));
+
+		assertBindingState(orderElem, "o", "bound");
+	}
+
+	@Test
+	public void annotatesNonconstantVarWithValueAsBound() {
+		StatementPattern pattern = new StatementPattern(
+				Var.of("x", SimpleValueFactory.getInstance().createIRI("urn:x")),
+				Var.of("p"),
+				Var.of("o"));
+
+		GenericPlanNode plan = explain(pattern);
+
+		assertBindingState(plan, "x", "bound");
+	}
+
+	@Test
+	public void annotatesUnknownUnaryChildAsUnknownRatherThanUnbound() {
+		DescribeOperator describe = new DescribeOperator(pattern("x", "p", "o"));
+
+		GenericPlanNode plan = explain(describe);
+		GenericPlanNode childPattern = findFirstPlan(plan, node -> node.getType().startsWith("StatementPattern"));
+
+		assertBindingState(childPattern, "x", "unknown");
+	}
+
+	@Test
+	public void preservesApiNamesButNotSiblingNamesAcrossSubqueryScope() {
+		Projection subquery = new Projection(
+				pattern("x", "p", "api"),
+				new ProjectionElemList(new ProjectionElem("x"), new ProjectionElem("api")),
+				true);
+		Join join = new Join(bindingSetAssignment(bindingSet("x")), subquery);
+		join.setAlgorithm("JoinIterator");
+
+		GenericPlanNode plan = explain(join, Set.of("api"));
+		GenericPlanNode subqueryPlan = plan.getPlans().get(1);
+		GenericPlanNode childPattern = findFirstPlan(subqueryPlan,
+				node -> node.getType().startsWith("StatementPattern"));
+
+		assertBindingState(childPattern, "x", "unbound");
+		assertBindingState(childPattern, "api", "bound");
+	}
+
+	@Test
+	public void distinguishesIndependentAndGuardedJoinRightInputs() {
+		Join independentJoin = new Join(bindingSetAssignment(bindingSet("x")), pattern("x", "p", "o"));
+		independentJoin.setAlgorithm("IndependentJoinIteration");
+		Join guardedJoin = new Join(bindingSetAssignment(bindingSet("x")), pattern("x", "p", "o"));
+		guardedJoin.setAlgorithm("BoundStatementPatternJoinIteration");
+		Join guardedFallbackJoin = new Join(bindingSetAssignment(bindingSet("x")), pattern("x", "p", "o"));
+		guardedFallbackJoin.setAlgorithm("BoundStatementPatternGuardJoinIteration");
+		Join serviceJoin = new Join(bindingSetAssignment(bindingSet("x")), pattern("x", "p", "o"));
+		serviceJoin.setAlgorithm("ServiceJoinIterator");
+
+		GenericPlanNode independentPlan = explain(independentJoin);
+		GenericPlanNode guardedPlan = explain(guardedJoin);
+		GenericPlanNode guardedFallbackPlan = explain(guardedFallbackJoin);
+		GenericPlanNode servicePlan = explain(serviceJoin);
+
+		assertBindingState(independentPlan.getPlans().get(1), "x", "unbound");
+		assertBindingState(guardedPlan.getPlans().get(1), "x", "bound");
+		assertBindingState(guardedFallbackPlan.getPlans().get(1), "x", "bound");
+		assertBindingState(servicePlan.getPlans().get(1), "x", "bound");
+	}
+
+	@Test
+	public void unknownNamedJoinAlgorithmDoesNotAssertUnbound() {
+		Join join = new Join(bindingSetAssignment(bindingSet("x")), pattern("x", "p", "o"));
+		join.setAlgorithm("ExtensionJoinIteration");
+
+		GenericPlanNode plan = explain(join);
+
+		assertBindingState(plan.getPlans().get(1), "x", "unknown");
+	}
+
+	@Test
+	public void annotatesAggregateHavingAndOrderAtTheirEvaluationPhases() {
+		Group group = new Group(bindingSetAssignment(bindingSet("x")));
+		group.addGroupBindingName("x");
+		group.addGroupElement(new GroupElem("count", new Count(Var.of("x"))));
+		Filter having = new Filter(group, new And(new Bound(Var.of("x")), new Bound(Var.of("count"))));
+		Order order = new Order(having, new OrderElem(Var.of("count")));
+
+		GenericPlanNode plan = explain(order);
+		GenericPlanNode groupElement = findFirstPlan(plan,
+				node -> node.getType().startsWith("GroupElem") && node.getType().contains("count"));
+		GenericPlanNode havingFilter = findFirstPlan(plan, node -> node.getType().startsWith("Filter"));
+		GenericPlanNode orderElem = findFirstPlan(plan, node -> node.getType().startsWith("OrderElem"));
+
+		assertBindingState(groupElement, "x", "bound");
+		assertBindingState(havingFilter, "count", "possibly bound");
+		assertBindingState(orderElem, "count", "bound");
 	}
 
 	@Test
@@ -352,6 +494,40 @@ public class QueryModelTreeToGenericPlanNodeTest {
 
 	private static GenericPlanNode rightSubjectVar(GenericPlanNode join) {
 		return statementPattern(join, 1).getPlans().get(0);
+	}
+
+	private static GenericPlanNode explain(TupleExpr tupleExpr) {
+		return explain(tupleExpr, Set.of());
+	}
+
+	private static GenericPlanNode explain(TupleExpr tupleExpr, Set<String> incomingBindingNames) {
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr,
+				incomingBindingNames);
+		tupleExpr.visit(converter);
+		return converter.getGenericPlanNode();
+	}
+
+	private static BindingSetAssignment bindingSetAssignment(BindingSet... bindingSets) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(bindingSets));
+		return assignment;
+	}
+
+	private static BindingSet bindingSet(String name) {
+		MapBindingSet bindingSet = new MapBindingSet(1);
+		bindingSet.addBinding(name, SimpleValueFactory.getInstance().createIRI("urn:" + name));
+		return bindingSet;
+	}
+
+	private static StatementPattern pattern(String subject, String predicate, String object) {
+		return new StatementPattern(Var.of(subject), Var.of(predicate), Var.of(object));
+	}
+
+	private static void assertBindingState(GenericPlanNode root, String name, String state) {
+		GenericPlanNode variable = findFirstPlan(root,
+				node -> node.getType().startsWith("Var") && node.getType().contains("name=" + name));
+		assertThat(variable).isNotNull();
+		assertThat(variable.getStringMetricActual(TelemetryMetricNames.BINDING_STATE)).isEqualTo(state);
 	}
 
 	private static GenericPlanNode convertWithLevel(Explanation.Level level) {
