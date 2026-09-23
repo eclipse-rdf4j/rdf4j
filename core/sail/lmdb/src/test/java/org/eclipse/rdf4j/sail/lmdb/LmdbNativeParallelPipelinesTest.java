@@ -294,8 +294,8 @@ public class LmdbNativeParallelPipelinesTest {
 
 		assertThatThrownBy(() -> LmdbNativeParallelPipelines.forkWorkerPlan(plan,
 				new NativeScalarPlan.WorkerContext(source, null, null)))
-				.isInstanceOf(IllegalStateException.class)
-				.hasMessage("worker fork failed");
+						.isInstanceOf(IllegalStateException.class)
+						.hasMessage("worker fork failed");
 		assertThat(first.templateCloseCount)
 				.as("a failed worker bind must leave the immutable template filter open")
 				.hasValue(0);
@@ -654,8 +654,8 @@ public class LmdbNativeParallelPipelinesTest {
 		assertThat(derived.order[0]).isSameAs(root);
 		assertThat(LmdbNativeFactorizedRows.tryCreateFromExternalRoot(plan, derived, planningRow,
 				planningRow.boundMask(), new int[] { 0, 1 }, false))
-				.as("the repeated-slot suffix is deliberately outside flat-bag factorization")
-				.isNull();
+						.as("the repeated-slot suffix is deliberately outside flat-bag factorization")
+						.isNull();
 
 		RowState sequentialRow = emptyNativeRow(source, layout);
 		List<String> sequential = readNativeRows(plan.open(sequentialRow), sequentialRow);

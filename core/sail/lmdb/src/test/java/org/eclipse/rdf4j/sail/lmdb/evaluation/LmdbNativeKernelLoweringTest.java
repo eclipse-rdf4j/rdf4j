@@ -1675,10 +1675,10 @@ class LmdbNativeKernelLoweringTest {
 				new LmdbNativeKernelIr.BindAlias(LmdbNativeKernelIr.Operand.col(0), 2));
 		LmdbNativeKernelIr.Node blocked = new LmdbNativeKernelIr.FilterCompareId(false,
 				LmdbNativeKernelIr.Operand.col(2), LmdbNativeKernelIr.Operand.col(0))
-				.filterPlacement(0, 0, 1, 0);
+						.filterPlacement(0, 0, 1, 0);
 		LmdbNativeKernelIr.Node ready = new LmdbNativeKernelIr.FilterCompareId(false,
 				LmdbNativeKernelIr.Operand.col(0), LmdbNativeKernelIr.Operand.col(0))
-				.filterPlacement(0, 0, 1, 0);
+						.filterPlacement(0, 0, 1, 0);
 		List<LmdbNativeKernelIr.Node> pipeline = new ArrayList<>();
 		BitSet available = new BitSet();
 		available.set(0);
@@ -1698,10 +1698,10 @@ class LmdbNativeKernelLoweringTest {
 				new LmdbNativeKernelIr.BindAlias(LmdbNativeKernelIr.Operand.col(0), 2));
 		LmdbNativeKernelIr.Node opaque = new LmdbNativeKernelIr.FilterValue(0,
 				new LmdbNativeKernelIr.Operand[] { LmdbNativeKernelIr.Operand.col(2) }, false)
-				.filterPlacement(0, 0, 1, 0);
+						.filterPlacement(0, 0, 1, 0);
 		LmdbNativeKernelIr.Node ready = new LmdbNativeKernelIr.FilterCompareId(false,
 				LmdbNativeKernelIr.Operand.col(0), LmdbNativeKernelIr.Operand.col(0))
-				.filterPlacement(0, 0, 1, 0);
+						.filterPlacement(0, 0, 1, 0);
 		List<LmdbNativeKernelIr.Node> pipeline = new ArrayList<>();
 		BitSet available = new BitSet();
 		available.set(0);

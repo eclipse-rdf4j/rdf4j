@@ -295,6 +295,11 @@ public final class ValueOverlayRegistry implements AutoCloseable {
 			history.removeFirst().close();
 	}
 
+	/**
+	 * Fire-and-forget: maintenanceExecutor never touches the live LMDB env, so shutdownNow() without awaitTermination
+	 * is safe here. ValueStore's own startup-warmup executor is separate and does await termination, since that task
+	 * holds an open native read transaction.
+	 */
 	@Override
 	public synchronized void close() {
 		if (!closed) {

@@ -80,7 +80,14 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.BooleanSupplier;
@@ -784,9 +791,19 @@ public class ValueStore extends AbstractValueFactory {
 	private record DictionaryLookupScope(Object generation, long snapshotId) {
 	}
 
+	private static final String VALUE_OVERLAY_WARMUP_THREAD_NAME = "rdf4j-value-overlay-warmup";
+
 	// An optional exact-read-view accelerator. It owns compressed copies, not LMDB page addresses.
 	private volatile ValueOverlayRegistry compressedValues = ValueOverlayRegistry.configured();
 	private ValueOverlayRegistry.Mutation compressedValueMutation;
+	private volatile ExecutorService valueOverlayWarmupExecutor;
+	private volatile CompletableFuture<Void> valueOverlayWarmupFuture;
+	/**
+	 * Test-only interleaving hook: runs once, on the warm-up thread, immediately after the dictionary read cursor opens
+	 * inside warmCompressedValueOverlay (the read transaction is held open at this point) and before any record is
+	 * scanned. Installed only via the package-private test constructor; production construction leaves it null.
+	 */
+	private final Runnable duringValueOverlayWarmupScanForTest;
 	private Thread writeTxnOwner;
 	private final boolean forceSync;
 	private final boolean noReadahead;
@@ -853,6 +870,16 @@ public class ValueStore extends AbstractValueFactory {
 
 	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, boolean deferAuxiliaryDatabases)
 			throws IOException {
+		this(dir, properties, config, deferAuxiliaryDatabases, null);
+	}
+
+	/**
+	 * Test-only seam: installs the value-overlay warm-up scan hook before any initialization runs, so there is no race
+	 * between construction (which may schedule the warm-up asynchronously) and hook installation from the test thread.
+	 */
+	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, boolean deferAuxiliaryDatabases,
+			Runnable duringValueOverlayWarmupScanForTest) throws IOException {
+		this.duringValueOverlayWarmupScanForTest = duringValueOverlayWarmupScanForTest;
 		this.dir = dir;
 		this.properties = properties;
 		this.storeConfig = config;
@@ -2571,6 +2598,10 @@ public class ValueStore extends AbstractValueFactory {
 				PointerBuffer handle = stack.mallocPointer(1);
 				E(mdb_cursor_open(txn, dbi, handle));
 				long cursor = handle.get(0);
+				Runnable hook = duringValueOverlayWarmupScanForTest;
+				if (hook != null) {
+					hook.run();
+				}
 				try {
 					MDBVal key = MDBVal.malloc(stack);
 					MDBVal value = MDBVal.malloc(stack);
@@ -2625,22 +2656,117 @@ public class ValueStore extends AbstractValueFactory {
 		return warmCompressedValueOverlay(options, () -> Thread.currentThread().isInterrupted());
 	}
 
-	/** Opt-in startup warming: never hidden in getId/getValue and never schedules a background rebuild. */
-	private void warmConfiguredValueOverlay() throws IOException {
+	/**
+	 * Opt-in startup warming: schedules the dictionary scan on a dedicated daemon thread so Sail initialization never
+	 * blocks on it. The overlay stays hidden in getId/getValue (see borrowValueOverlay) until it publishes; reads and
+	 * writes proceed against plain LMDB in the meantime, exactly as when the overlay is disabled. Use
+	 * awaitValueOverlayReady(...) for a deterministic point after which the warm-up has definitely finished
+	 * (successfully, refused for capacity, or cancelled by a concurrent close/write).
+	 */
+	private void warmConfiguredValueOverlay() {
 		String budgetText = System.getProperty("rdf4j.lmdb.valueOverlay.maxBytes", "0");
-		long budget = Long.parseLong(budgetText);
+		long budget;
+		try {
+			budget = Long.parseLong(budgetText);
+		} catch (NumberFormatException e) {
+			logger.warn("Ignoring invalid rdf4j.lmdb.valueOverlay.maxBytes value '{}': using LMDB", budgetText, e);
+			return;
+		}
 		if (budget == 0) {
 			return;
 		}
 		int reverseSlots = Integer.parseInt(System.getProperty("rdf4j.lmdb.valueOverlay.reverseSlots", "1048576"));
 		CompressedValueOverlay.Options options = new CompressedValueOverlay.Options(budget, reverseSlots,
 				32, 64 << 10, 1 << 20, true, true);
+		ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
+			Thread thread = new Thread(r, VALUE_OVERLAY_WARMUP_THREAD_NAME);
+			thread.setDaemon(true);
+			return thread;
+		});
+		valueOverlayWarmupExecutor = executor;
+		valueOverlayWarmupFuture = CompletableFuture.runAsync(() -> {
+			try {
+				CompressedValueOverlay.Stats stats = warmCompressedValueOverlay(options);
+				logger.info("Compressed ValueStore overlay: {}", stats);
+			} catch (OverlayCapacityException e) {
+				// This optional accelerator must not prevent a larger authoritative store from opening.
+				logger.warn("Compressed ValueStore overlay did not fit its native budget; using LMDB", e);
+			} catch (CancellationException e) {
+				// Expected/benign: the store closed or a write transaction began before the scan finished.
+				logger.debug("Compressed ValueStore overlay warm-up was cancelled; using LMDB", e);
+			} catch (IOException | RuntimeException e) {
+				logger.warn("Compressed ValueStore overlay warm-up failed; using LMDB", e);
+			} catch (Error e) {
+				logger.error("Compressed ValueStore overlay warm-up failed with an unrecoverable error; using LMDB",
+						e);
+				throw e;
+			}
+		}, executor);
+	}
+
+	/**
+	 * Waits for an automatically scheduled startup value-overlay warm-up to finish (successfully, refused for capacity,
+	 * or cancelled). Returns {@code true} once the background task has completed and the overlay is currently
+	 * populated; returns {@code false} on timeout, when no automatic warm-up was ever scheduled (feature disabled), or
+	 * when the warm-up finished without installing a usable overlay. Never starts a build.
+	 */
+	@InternalUseOnly
+	public boolean awaitValueOverlayReady(long timeout, TimeUnit unit) throws InterruptedException {
+		Objects.requireNonNull(unit, "unit");
+		if (timeout < 0L) {
+			throw new IllegalArgumentException("timeout must be non-negative");
+		}
+		CompletableFuture<Void> future = valueOverlayWarmupFuture;
+		if (future == null) {
+			return compressedValues.isPopulated();
+		}
 		try {
-			CompressedValueOverlay.Stats stats = warmCompressedValueOverlay(options);
-			logger.info("Compressed ValueStore overlay: {}", stats);
-		} catch (OverlayCapacityException e) {
-			// This optional accelerator must not prevent a larger authoritative store from opening.
-			logger.warn("Compressed ValueStore overlay did not fit its native budget; using LMDB", e);
+			future.get(timeout, unit);
+		} catch (TimeoutException | ExecutionException | CancellationException e) {
+			// ExecutionException/CancellationException are defensive only: the task above never rethrows.
+			return compressedValues.isPopulated();
+		}
+		return compressedValues.isPopulated();
+	}
+
+	/** Test/diagnostic-only: true while the automatic warm-up executor exists and its task has not finished. */
+	boolean isValueOverlayWarmupInProgress() {
+		CompletableFuture<Void> future = valueOverlayWarmupFuture;
+		return future != null && !future.isDone();
+	}
+
+	/**
+	 * Ensures a background startup value-overlay warm-up (see warmConfiguredValueOverlay) has fully exited before the
+	 * native environment is closed. beginValueLookupMutation() (called immediately before this, in close()) already
+	 * flipped the generation token, which the builder observes at record granularity via poll(), so this normally
+	 * returns almost immediately; the bounded wait and shutdownNow() fallback only guard against a stuck native call.
+	 */
+	private void awaitAndStopValueOverlayWarmup() {
+		ExecutorService executor = valueOverlayWarmupExecutor;
+		valueOverlayWarmupExecutor = null;
+		valueOverlayWarmupFuture = null;
+		if (executor == null) {
+			return;
+		}
+		executor.shutdown();
+		boolean interrupted = false;
+		try {
+			if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+				logger.warn("Value overlay warm-up did not stop within 60 seconds; interrupting it before closing "
+						+ "the native LMDB environment");
+				executor.shutdownNow();
+				if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+					logger.warn("Value overlay warm-up did not stop after being interrupted; "
+							+ "proceeding to close the native LMDB environment regardless");
+				}
+			}
+		} catch (InterruptedException e) {
+			interrupted = true;
+			executor.shutdownNow();
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
 	}
 
@@ -6231,6 +6357,7 @@ public class ValueStore extends AbstractValueFactory {
 	 */
 	public void close() throws IOException {
 		beginValueLookupMutation();
+		awaitAndStopValueOverlayWarmup();
 		if (env != 0) {
 			if (writeTxn == 0) {
 				flushPendingHashUpdates();

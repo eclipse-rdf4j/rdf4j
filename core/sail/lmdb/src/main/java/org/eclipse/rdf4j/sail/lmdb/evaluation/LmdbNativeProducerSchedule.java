@@ -438,11 +438,7 @@ final class LmdbNativeProducerSchedule {
 			return false;
 		}
 		return switch (output.kind) {
-		case LmdbNativeKernelIr.AGG_COUNT_STAR, LmdbNativeKernelIr.AGG_COUNT,
-				LmdbNativeKernelIr.AGG_COUNT_DISTINCT, LmdbNativeKernelIr.AGG_SUM, LmdbNativeKernelIr.AGG_AVG,
-				LmdbNativeKernelIr.AGG_SUM_DISTINCT, LmdbNativeKernelIr.AGG_AVG_DISTINCT,
-				LmdbNativeKernelIr.AGG_MIN_ID, LmdbNativeKernelIr.AGG_MAX_ID ->
-			true;
+		case LmdbNativeKernelIr.AGG_COUNT_STAR, LmdbNativeKernelIr.AGG_COUNT, LmdbNativeKernelIr.AGG_COUNT_DISTINCT, LmdbNativeKernelIr.AGG_SUM, LmdbNativeKernelIr.AGG_AVG, LmdbNativeKernelIr.AGG_SUM_DISTINCT, LmdbNativeKernelIr.AGG_AVG_DISTINCT, LmdbNativeKernelIr.AGG_MIN_ID, LmdbNativeKernelIr.AGG_MAX_ID -> true;
 		default -> false;
 		};
 	}

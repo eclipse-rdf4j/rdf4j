@@ -119,7 +119,7 @@ final class LmdbNativeKernelIr {
 
 		static AggregateProjections create(List<Node> pipeline, Terminal terminal, Kernel.AggregateStateMode mode) {
 			if ("false".equals(System.getProperty(FACTOR_MARGINALS_PROPERTY)) || pipeline.size() != 1
-					|| !(pipeline.get(0) instanceof PlanRows input) || input instanceof PlanFactors
+					|| !(pipeline.get(0)instanceof PlanRows input) || input instanceof PlanFactors
 					|| !(terminal instanceof Aggregate aggregate) || mode != Kernel.AggregateStateMode.HASHED
 					|| aggregate.outputs.length == 0)
 				return null;
@@ -707,7 +707,7 @@ final class LmdbNativeKernelIr {
 	static final String FACTOR_GUARD_PEELING_PROPERTY = "rdf4j.lmdb.janinoCodegen.factorGuardPeeling";
 
 	static PlanFactors factorPlan(Kernel kernel) {
-		return !kernel.pipeline.isEmpty() && kernel.pipeline.get(0) instanceof PlanFactors factors ? factors : null;
+		return !kernel.pipeline.isEmpty() && kernel.pipeline.get(0)instanceof PlanFactors factors ? factors : null;
 	}
 
 	/** Linear COUNT(*) channels can be folded per prefix before multiplying independent siblings. */
@@ -854,7 +854,7 @@ final class LmdbNativeKernelIr {
 
 	/** Shared by both execution tiers. Unknown or per-mapping effects conservatively reject the rewrite. */
 	private static int[] factorScalarOutputs(List<Node> pipeline, Terminal terminal) {
-		if (pipeline.isEmpty() || !(pipeline.get(0) instanceof PlanRows plan)
+		if (pipeline.isEmpty() || !(pipeline.get(0)instanceof PlanRows plan)
 				|| !(terminal instanceof Aggregate aggregate) || aggregate.outputs.length == 0)
 			return null;
 		BitSet required = new BitSet();
@@ -920,7 +920,7 @@ final class LmdbNativeKernelIr {
 
 	private static List<Node> factorizePlanCounts(List<Node> pipeline, Terminal terminal) {
 		int[] demanded = factorScalarOutputs(pipeline, terminal);
-		if (!pipeline.isEmpty() && pipeline.get(0) instanceof PlanFactors factors) {
+		if (!pipeline.isEmpty() && pipeline.get(0)instanceof PlanFactors factors) {
 			if (demanded == null)
 				throw new IllegalArgumentException("unsupported factor continuation");
 			BitSet supplied = new BitSet();
@@ -3714,7 +3714,7 @@ final class LmdbNativeKernelIr {
 
 			// OPTIONAL may become a witness only when the null arm is provably rejected.
 			// Opaque value/residual hooks carry dependencies, not null-rejection guarantees.
-			if (!suffix.isEmpty() && suffix.get(0) instanceof LeftGroup group) {
+			if (!suffix.isEmpty() && suffix.get(0)instanceof LeftGroup group) {
 				BitSet armColumns = new BitSet();
 				group.produced(armColumns);
 				int filters = 0;
@@ -3754,7 +3754,7 @@ final class LmdbNativeKernelIr {
 			ArrayList<Node> rewritten = new ArrayList<>(2);
 			rewritten.add(root);
 			if (!suffix.isEmpty()) {
-				if (suffix.size() == 1 && suffix.get(0) instanceof Exists exists && !exists.negated) {
+				if (suffix.size() == 1 && suffix.get(0)instanceof Exists exists && !exists.negated) {
 					rewritten.add(exists);
 				} else {
 					rewritten.add(new Exists(false, suffix));

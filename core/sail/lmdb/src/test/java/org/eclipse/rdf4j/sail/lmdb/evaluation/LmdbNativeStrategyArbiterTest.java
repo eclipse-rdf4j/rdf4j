@@ -513,11 +513,11 @@ public class LmdbNativeStrategyArbiterTest {
 		assertThat(winner(List.of(
 				proposal(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, 100D),
 				proposal(LmdbNativeAttemptMetrics.PATH_BATCH, 100D))))
-				.isEqualTo(LmdbNativeAttemptMetrics.PATH_BATCH);
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_BATCH);
 		assertThat(winner(List.of(
 				proposal(LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, 100D),
 				proposal(LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL, 100D))))
-				.isEqualTo(LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL);
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL);
 	}
 
 	@Test
@@ -525,9 +525,9 @@ public class LmdbNativeStrategyArbiterTest {
 		assertThat(winner(List.of(
 				proposal(LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS, 100D),
 				proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 100D))))
-				.as("unified arbitration must preserve the aggregate ladder: after prefix-run and WCOJ guards, "
-						+ "the generated aggregate ran before ordered DISTINCT")
-				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
+						.as("unified arbitration must preserve the aggregate ladder: after prefix-run and WCOJ guards, "
+								+ "the generated aggregate ran before ordered DISTINCT")
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
 	}
 
 	@Test
@@ -535,7 +535,7 @@ public class LmdbNativeStrategyArbiterTest {
 		assertThat(winner(List.of(
 				proposal(LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS, 100D),
 				proposal(LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE, 100D))))
-				.isEqualTo(LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE);
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE);
 	}
 
 	@Test
@@ -543,11 +543,11 @@ public class LmdbNativeStrategyArbiterTest {
 		assertThat(winner(List.of(
 				proposal(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS, 100D),
 				proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 100D))))
-				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
 		assertThat(winner(List.of(
 				proposal(LmdbNativeAttemptMetrics.PATH_WCOJ, 100D),
 				proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 100D))))
-				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
 	}
 
 	@Test
@@ -555,7 +555,7 @@ public class LmdbNativeStrategyArbiterTest {
 		assertThat(winner(List.of(
 				proposal(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, 10D),
 				proposal(LmdbNativeAttemptMetrics.PATH_BATCH, 100D))))
-				.isEqualTo(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
 	}
 
 	// ---------------------------------------------------------------- exploration

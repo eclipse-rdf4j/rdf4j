@@ -475,7 +475,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		return adaptiveDecision(candidates, sliceRows, model, probeContext, hedgeContext, null);
 	}
 
-	private record PreviewQuotes<T>(LmdbNativeAdaptiveCostModel.PricingBatch batch,
+	private record PreviewQuotes<T> (LmdbNativeAdaptiveCostModel.PricingBatch batch,
 			Map<LmdbNativeStrategyProposal<T>, LmdbNativeCostPrediction> predictions,
 			Map<LmdbNativeStrategyProposal<T>, LmdbNativeWork> costs) {
 	}
@@ -1808,10 +1808,10 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		}
 	}
 
-	private record AdaptiveCandidate<T>(int index, LmdbNativeAdaptiveArbitration.Candidate<T> candidate) {
+	private record AdaptiveCandidate<T> (int index, LmdbNativeAdaptiveArbitration.Candidate<T> candidate) {
 	}
 
-	private record AdaptiveDecision<T>(int index, LmdbNativeAdaptiveArbitration.DispatchPlan<T> plan,
+	private record AdaptiveDecision<T> (int index, LmdbNativeAdaptiveArbitration.DispatchPlan<T> plan,
 			int fallbackIndex, String reason) {
 		private static <T> AdaptiveDecision<T> empty() {
 			return new AdaptiveDecision<>(-1, null, -1, "no candidates");

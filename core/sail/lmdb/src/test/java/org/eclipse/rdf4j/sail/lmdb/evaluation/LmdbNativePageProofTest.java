@@ -12,15 +12,15 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePageProof.ALL_TERM_KINDS;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePageProof.Outcome.ERROR;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePageProof.Outcome.FALSE;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePageProof.Outcome.TRUE;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePageProof.and;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePageProof.not;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePageProof.or;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePageProof.possibleOutcomes;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePageProof.possibleTermKinds;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePageProof.termKindFilterOutcomes;
-import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePageProof.Outcome.ERROR;
-import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePageProof.Outcome.FALSE;
-import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePageProof.Outcome.TRUE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;

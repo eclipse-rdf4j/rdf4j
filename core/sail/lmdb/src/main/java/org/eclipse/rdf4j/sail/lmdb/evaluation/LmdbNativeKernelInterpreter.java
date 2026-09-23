@@ -2317,7 +2317,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 		Op next = build(nodes, idx + 1, terminal, booleanMode);
 		if (!booleanMode && nodes == kernel.pipeline && idx == nodes.size() - 1
-				&& nodes.get(idx) instanceof Intersect intersection && LmdbNativeKernelIr.intersectionCountTail(kernel))
+				&& nodes.get(idx)instanceof Intersect intersection && LmdbNativeKernelIr.intersectionCountTail(kernel))
 			return buildIntersect(intersection, next, true);
 		return buildNode(nodes.get(idx), next, booleanMode);
 	}

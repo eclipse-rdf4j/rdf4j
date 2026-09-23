@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.concurrent.atomic.LongAdder;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -706,6 +707,8 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 				}
 				int offset = row * 4;
 				if (++scanned % 10_000_000 == 0 && logger.isInfoEnabled()) {
+					if (Thread.currentThread().isInterrupted())
+						throw new SailException("Adjacency index building was interrupted");
 					logger.info(outgoing ? "scanOutgoing: {}" : "scanIncoming: {}",
 							outgoing ? scannedOut.sum() : scannedIn.sum());
 				}

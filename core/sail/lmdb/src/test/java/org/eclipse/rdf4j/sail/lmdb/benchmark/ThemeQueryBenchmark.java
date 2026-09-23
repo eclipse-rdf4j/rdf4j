@@ -74,6 +74,7 @@ import org.openjdk.jmh.runner.options.TimeValue;
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
 		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true",
+		"-Drdf4j.lmdb.themeQueryBenchmark.waitForValueOverlay=true",
 		"-Drdf4j.lmdb.janinoCodegen.factorGuardPeeling=true"
 
 		, "-Drdf4j.lmdb.valueOverlay.maxBytes=1073741824", "-Drdf4j.lmdb.valueOverlay.retained.maxBytes=268435455",
@@ -127,8 +128,11 @@ public class ThemeQueryBenchmark {
 	static final String WAIT_FOR_SKETCHES_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForSketchesTimeoutSeconds";
 	static final String WAIT_FOR_DIRECT_ADJACENCY_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency";
 	static final String WAIT_FOR_DIRECT_ADJACENCY_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacencyTimeoutSeconds";
+	static final String WAIT_FOR_VALUE_OVERLAY_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForValueOverlay";
+	static final String WAIT_FOR_VALUE_OVERLAY_TIMEOUT_SECONDS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.waitForValueOverlayTimeoutSeconds";
 	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 60L;
 	private static final long DEFAULT_WAIT_FOR_DIRECT_ADJACENCY_TIMEOUT_SECONDS = 300L;
+	private static final long DEFAULT_WAIT_FOR_VALUE_OVERLAY_TIMEOUT_SECONDS = 300L;
 
 	/**
 	 * Matched control for IR execution. Disabled trials use neither compiled nor interpreted IR kernels or fragments.
@@ -137,7 +141,7 @@ public class ThemeQueryBenchmark {
 	 * properties, including when running both modes in the same JVM via {@link #main}.
 	 */
 //	@Param({ "auto" })
-	@Param({  "auto","disabled" })
+	@Param({ "auto", "disabled" })
 	public String z_z_irMode;
 
 	@Param({
@@ -250,6 +254,9 @@ public class ThemeQueryBenchmark {
 
 			waitForDirectAdjacencyIfEnabled();
 			System.out.println("waitForDirectAdjacencyIfEnabled: " + stopWatch);
+
+			waitForValueOverlayIfEnabled();
+			System.out.println("waitForValueOverlayIfEnabled: " + stopWatch);
 
 			if (QueryPlanCapture.isCaptureEnabled()) {
 				captureQueryPlanSnapshot();
@@ -438,6 +445,25 @@ public class ThemeQueryBenchmark {
 			throw new IOException("Interrupted while waiting for LMDB direct adjacency", e);
 		}
 		System.out.println("LMDB direct adjacency is exact for the benchmark trial.");
+	}
+
+	private void waitForValueOverlayIfEnabled() throws IOException {
+		if (!Boolean.parseBoolean(System.getProperty(WAIT_FOR_VALUE_OVERLAY_PROPERTY, "false"))) {
+			return;
+		}
+		repository.init();
+		long timeoutSeconds = Long.getLong(WAIT_FOR_VALUE_OVERLAY_TIMEOUT_SECONDS_PROPERTY,
+				DEFAULT_WAIT_FOR_VALUE_OVERLAY_TIMEOUT_SECONDS);
+		try {
+			if (!store.awaitValueOverlayReady(timeoutSeconds, TimeUnit.SECONDS)) {
+				throw new IOException(
+						"LMDB value overlay did not become ready within " + timeoutSeconds + " seconds");
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for LMDB value overlay", e);
+		}
+		System.out.println("LMDB value overlay is ready for the benchmark trial.");
 	}
 
 	private void ensureSketchesAvailable(File storeDirectory) throws IOException {

@@ -1279,6 +1279,11 @@ class LmdbSailStore implements SailStore {
 		return directAdjacency;
 	}
 
+	/** Package-private for tests and readiness diagnostics (see LmdbStore.awaitValueOverlayReady). */
+	ValueStore valueStore() {
+		return valueStore;
+	}
+
 	private void discardEstimatorStateTouchedByOpenTransaction() {
 		if (estimatorTouchedSinceStoreTxnStart.getAndSet(false) && sketchBasedJoinEstimator != null) {
 			sketchBasedJoinEstimator.discardAndMarkForRebuild();

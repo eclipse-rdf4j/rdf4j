@@ -316,7 +316,7 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 		}
 		SyntheticValueSource source = new SyntheticValueSource(new NumericParallelSource(values),
 				PlanValueCatalog.EMPTY)
-				.forEvaluation();
+						.forEvaluation();
 		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(64L << 20, 64L << 20);
 		LmdbNativeHashJoin.queryMemoryOverride = manager;
 		ExecutorService workers = Executors.newFixedThreadPool(2);

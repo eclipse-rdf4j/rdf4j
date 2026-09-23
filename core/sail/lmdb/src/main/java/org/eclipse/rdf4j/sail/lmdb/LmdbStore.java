@@ -678,6 +678,23 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	/**
+	 * Waits for an automatically scheduled startup value-overlay warm-up to finish. Returns {@code false} when the
+	 * overlay feature is disabled, refused for capacity, cancelled, or the timeout expires.
+	 */
+	@InternalUseOnly
+	public boolean awaitValueOverlayReady(long timeout, TimeUnit unit) throws InterruptedException {
+		Objects.requireNonNull(unit, "unit");
+		if (timeout < 0L) {
+			throw new IllegalArgumentException("timeout must be non-negative");
+		}
+		LmdbSailStore current = backingStore;
+		if (current == null) {
+			throw new IllegalStateException("LMDB store is not initialized");
+		}
+		return current.valueStore().awaitValueOverlayReady(timeout, unit);
+	}
+
+	/**
 	 * Returns the number of owning query datasets that engaged exact direct-adjacency fan-out statistics since this
 	 * store was initialized. Multiple estimates within one dataset count as one coarse diagnostic event.
 	 */
