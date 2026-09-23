@@ -322,6 +322,7 @@ class QueryEvaluatorCoverageTest {
 		when(request.isParameterPresent("Accept")).thenReturn(false);
 		when(request.isParameterPresent("infer")).thenReturn(true);
 		when(request.getParameter("infer")).thenReturn("true");
+		when(request.getParameter("embedded")).thenReturn("true");
 		when(request.getInt("offset")).thenReturn(0);
 		when(request.getInt("limit_query")).thenReturn(0);
 		when(request.getInt("know_total")).thenReturn(0);
@@ -335,6 +336,8 @@ class QueryEvaluatorCoverageTest {
 				"transformations", connection, queryText, request, cookies, queryText);
 
 		verify(builder).metadata("query-text", queryText);
+		verify(builder).metadata("query-language", "SPARQL");
+		verify(builder).metadata("embedded", true);
 		verify(builder).metadata("infer", true);
 		verify(builder).metadata("query-timeout", "7");
 	}
@@ -355,6 +358,7 @@ class QueryEvaluatorCoverageTest {
 		when(request.isParameterPresent("download_limit")).thenReturn(false);
 		when(request.getParameter("Accept")).thenReturn("application/sparql-results+json");
 		when(request.isParameterPresent("infer")).thenReturn(false);
+		when(request.getParameter("embedded")).thenReturn("true");
 		when(request.getInt("offset")).thenReturn(0);
 		when(request.getInt("limit_query")).thenReturn(5);
 		when(request.getInt("query-timeout")).thenReturn(0);
@@ -385,6 +389,7 @@ class QueryEvaluatorCoverageTest {
 		when(request.isParameterPresent("explain")).thenReturn(false);
 		when(request.isParameterPresent("Accept")).thenReturn(false);
 		when(request.isParameterPresent("infer")).thenReturn(false);
+		when(request.getParameter("embedded")).thenReturn("true");
 		when(request.getInt("offset")).thenReturn(0);
 		when(request.getInt("limit_query")).thenReturn(0);
 		when(request.getInt("query-timeout")).thenReturn(0);
@@ -399,6 +404,7 @@ class QueryEvaluatorCoverageTest {
 
 		verify(builder).metadata("query-request-id", "boolean-1");
 		verify(builder).metadata("query-result-status", "completed");
+		verify(builder).metadata("embedded", true);
 	}
 
 	@Test

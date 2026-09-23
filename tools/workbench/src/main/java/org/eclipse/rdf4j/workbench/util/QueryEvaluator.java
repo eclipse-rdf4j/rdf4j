@@ -70,6 +70,8 @@ public final class QueryEvaluator {
 
 	private static final String METADATA_QUERY_TEXT = "query-text";
 
+	private static final String METADATA_QUERY_LANGUAGE = "query-language";
+
 	private static final String METADATA_INFER = "infer";
 
 	private static final String METADATA_QUERY_TIMEOUT = "query-timeout";
@@ -77,6 +79,8 @@ public final class QueryEvaluator {
 	public static final String METADATA_QUERY_REQUEST_ID = "query-request-id";
 
 	public static final String METADATA_QUERY_RESULT_STATUS = "query-result-status";
+
+	private static final String METADATA_EMBEDDED = "embedded";
 
 	public static final String METADATA_TOTAL_RESULT_COUNT = "total-result-count";
 
@@ -630,6 +634,9 @@ public final class QueryEvaluator {
 
 	private void addWorkbenchMetadata(TupleResultBuilder builder, WorkbenchRequest req, String responseQueryText) {
 		String queryRequestId = QueryRequestContext.getQueryRequestId();
+		if (Boolean.parseBoolean(req.getParameter(METADATA_EMBEDDED))) {
+			builder.metadata(METADATA_EMBEDDED, true);
+		}
 		if (queryRequestId != null) {
 			builder.metadata(METADATA_QUERY_REQUEST_ID, queryRequestId);
 			builder.metadata(METADATA_QUERY_RESULT_STATUS, "completed");
@@ -637,6 +644,10 @@ public final class QueryEvaluator {
 		if (responseQueryText != null) {
 			String queryTimeout = req.getParameter("query-timeout");
 			builder.metadata(METADATA_QUERY_TEXT, responseQueryText);
+			String queryLanguage = req.getParameter("queryLn");
+			if (queryLanguage != null) {
+				builder.metadata(METADATA_QUERY_LANGUAGE, queryLanguage);
+			}
 			builder.metadata(METADATA_INFER,
 					req.isParameterPresent("infer") ? Boolean.parseBoolean(req.getParameter("infer")) : false);
 			builder.metadata(METADATA_QUERY_TIMEOUT,

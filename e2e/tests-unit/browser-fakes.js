@@ -93,6 +93,7 @@ class FakeElement {
         this.checked = !!options.checked;
         this.selected = !!options.selected;
         this.disabled = !!options.disabled;
+        this.hidden = !!options.hidden;
         this.readOnly = !!options.readOnly;
         this.visible = options.visible !== undefined ? options.visible : true;
         this.attributes = new Map();
@@ -129,6 +130,9 @@ class FakeElement {
         }
         if (this.disabled) {
             this.attributes.set('disabled', 'disabled');
+        }
+        if (this.hidden) {
+            this.attributes.set('hidden', 'hidden');
         }
         if (this.readOnly) {
             this.attributes.set('readonly', 'readonly');
@@ -203,8 +207,13 @@ class FakeElement {
             this.selected = normalizedValue !== 'false';
         } else if (name === 'disabled') {
             this.disabled = normalizedValue !== 'false';
+        } else if (name === 'hidden') {
+            this.hidden = normalizedValue !== 'false';
         } else if (name === 'readonly') {
             this.readOnly = normalizedValue !== 'false';
+        }
+        if (name === 'name' && this.contentWindow) {
+            this.contentWindow.name = normalizedValue;
         }
     }
 
@@ -222,6 +231,8 @@ class FakeElement {
             this.selected = false;
         } else if (name === 'disabled') {
             this.disabled = false;
+        } else if (name === 'hidden') {
+            this.hidden = false;
         } else if (name === 'readonly') {
             this.readOnly = false;
         }
@@ -303,6 +314,7 @@ class FakeElement {
         this.children = this.children.filter((candidate) => candidate !== child);
         this.formControls = this.formControls.filter((candidate) => candidate !== child);
         child.parentNode = null;
+        this.ownerDocument.untrack(child);
         return child;
     }
 
@@ -519,7 +531,11 @@ class FakeDocument {
     }
 
     createElement(tagName) {
-        return this.track(new FakeElement(this, tagName));
+        const element = new FakeElement(this, tagName);
+        if (String(tagName).toLowerCase() === 'iframe') {
+            element.contentWindow = new FakeWindow('', 'about:blank');
+        }
+        return this.track(element);
     }
 
     createTextNode(text) {
@@ -534,6 +550,15 @@ class FakeDocument {
 
     getElementById(id) {
         return this.elementsById.get(id) || null;
+    }
+
+    untrack(node) {
+        this.elements = this.elements.filter((element) => element !== node);
+        for (const [id, element] of this.elementsById.entries()) {
+            if (element === node) {
+                this.elementsById.delete(id);
+            }
+        }
     }
 
     getElementsByTagName(tagName) {

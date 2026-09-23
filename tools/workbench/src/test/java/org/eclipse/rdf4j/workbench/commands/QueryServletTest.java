@@ -863,6 +863,7 @@ public class QueryServletTest {
 			when(request.getParameter("queryLn")).thenReturn("SPARQL");
 			when(request.isParameterPresent("infer")).thenReturn(false);
 			when(request.isParameterPresent("Accept")).thenReturn(false);
+			when(request.getParameter("embedded")).thenReturn("true");
 			when(request.isParameterPresent("explain")).thenReturn(false);
 			when(request.getInt("offset")).thenReturn(0);
 			when(request.getInt("limit_query")).thenReturn(0);
@@ -880,12 +881,58 @@ public class QueryServletTest {
 			String responseBody = outputStream.asString();
 			assertThat(responseBody)
 					.contains("<workbench:metadata>")
+					.contains("<workbench:embedded>true</workbench:embedded>")
 					.contains("<workbench:query-text>");
 			assertThat(responseBody)
 					.contains("<workbench:query-request-id>")
 					.contains("<workbench:query-result-status>completed</workbench:query-result-status>")
 					.contains("<workbench:total-result-count>0</workbench:total-result-count>");
 			assertThat(responseBody).contains(SHORT_QUERY);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void testEmbeddedEmptyQueryShouldCompleteWithRequestMetadata() throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			CookieHandler cookieHandler = mock(CookieHandler.class);
+			servlet.setCookieHandler(cookieHandler);
+			servlet.setRepository(repository);
+			servlet.writeQueryCookie = true;
+
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.getParameter("action")).thenReturn("exec");
+			when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+			when(request.getParameter(QueryServlet.QUERY)).thenReturn("");
+			when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+			when(request.getParameter("queryLn")).thenReturn("SPARQL");
+			when(request.isParameterPresent("infer")).thenReturn(false);
+			when(request.isParameterPresent("Accept")).thenReturn(false);
+			when(request.getParameter("embedded")).thenReturn("true");
+			when(request.isParameterPresent("query-request-id")).thenReturn(true);
+			when(request.getParameter("query-request-id")).thenReturn("empty-query-1");
+			when(request.isParameterPresent("explain")).thenReturn(false);
+			when(request.getInt("offset")).thenReturn(0);
+			when(request.getInt("limit_query")).thenReturn(0);
+			when(request.getInt("know_total")).thenReturn(0);
+			when(request.getInt("query-timeout")).thenReturn(0);
+			when(request.getHeader("Accept-Encoding")).thenReturn(null);
+			when(request.getContextPath()).thenReturn("");
+
+			ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getOutputStream()).thenReturn(outputStream);
+
+			servlet.service(request, response, "/transformations");
+
+			String responseBody = outputStream.asString();
+			assertThat(responseBody)
+					.contains("<workbench:embedded>true</workbench:embedded>")
+					.contains("<workbench:query-request-id>empty-query-1</workbench:query-request-id>")
+					.contains("<workbench:query-result-status>completed</workbench:query-result-status>");
 		} finally {
 			repository.shutDown();
 		}

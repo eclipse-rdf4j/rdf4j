@@ -11,6 +11,42 @@
 		select="document(sparql:sparql/sparql:head/sparql:link[@href='info']/@href)" />
 
 	<xsl:template match="/">
+		<xsl:choose>
+			<xsl:when test="/sparql:sparql/workbench:metadata/workbench:embedded = 'true'">
+				<html xml:lang="en" lang="en">
+					<head>
+						<title>
+							<xsl:value-of select="$workbench.title" />
+							-
+							<xsl:value-of select="$title" />
+						</title>
+						<link title="Default" rel="stylesheet" type="text/css"
+							href="../../styles/default/print.css" media="print" />
+						<link title="Default" rel="stylesheet" type="text/css"
+							href="../../styles/default/screen.css" media="screen" />
+						<link title="Basic" rel="alternate stylesheet" type="text/css"
+							href="../../styles/basic/all.css" media="all" />
+					</head>
+					<body>
+						<div id="query-result-embedded" class="query-result-embedded">
+							<div id="rdf4j-query-result" hidden="hidden"
+								data-query-request-id="{/sparql:sparql/workbench:metadata/workbench:query-request-id}"
+								data-query-result-status="{/sparql:sparql/workbench:metadata/workbench:query-result-status}"
+								data-query-language="{/sparql:sparql/workbench:metadata/workbench:query-language}"
+								data-query-infer="{/sparql:sparql/workbench:metadata/workbench:infer}"
+								data-query-timeout="{/sparql:sparql/workbench:metadata/workbench:query-timeout}"
+								data-query-embedded="true"></div>
+							<script src="../../scripts/template.js" type="text/javascript"></script>
+							<script src="../../scripts/jquery-1.11.0.min.js" type="text/javascript"></script>
+							<xsl:apply-templates />
+							<xsl:if test="/sparql:sparql/workbench:metadata/workbench:query-request-id">
+								<script src="../../scripts/queryResult.js" type="text/javascript"></script>
+							</xsl:if>
+						</div>
+					</body>
+				</html>
+			</xsl:when>
+			<xsl:otherwise>
 		<html xml:lang="en" lang="en">
 			<head>
 				<title>
@@ -137,6 +173,8 @@
 				</div>
 			</body>
 		</html>
+			</xsl:otherwise>
+		</xsl:choose>
 	</xsl:template>
 
 	<xsl:template name="navigation">

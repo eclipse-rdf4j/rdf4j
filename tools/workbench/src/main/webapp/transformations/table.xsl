@@ -5,10 +5,13 @@
  ]>
 <xsl:stylesheet version="1.0"
 	xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
-	xmlns:sparql="http://www.w3.org/2005/sparql-results#" xmlns:q="http://www.openrdf.org/schema/qname#"
+	xmlns:sparql="http://www.w3.org/2005/sparql-results#"
+	xmlns:workbench="https://rdf4j.org/schema/workbench#" xmlns:q="http://www.openrdf.org/schema/qname#"
 	xmlns="http://www.w3.org/1999/xhtml">
 
 	<xsl:include href="url-encode.xsl" />
+
+	<xsl:variable name="embedded" select="/sparql:sparql/workbench:metadata/workbench:embedded = 'true'" />
 
 	<xsl:template match="sparql:sparql">
 		<table class="data">
@@ -80,6 +83,9 @@
 						<xsl:with-param name="str" select="$resource" />
 					</xsl:call-template>
 				</xsl:attribute>
+				<xsl:if test="$embedded">
+					<xsl:attribute name="target">_parent</xsl:attribute>
+				</xsl:if>
 				<xsl:value-of select="$resource" />
 			</a>
 			<xsl:if test="$url != string('')">
@@ -110,6 +116,9 @@
 					</xsl:otherwise>
 				</xsl:choose>
 			</xsl:attribute>
+			<xsl:if test="$embedded">
+				<xsl:attribute name="target">_parent</xsl:attribute>
+			</xsl:if>
 			<xsl:value-of select="$literal/text()" />
 		</a>
 	</xsl:template>

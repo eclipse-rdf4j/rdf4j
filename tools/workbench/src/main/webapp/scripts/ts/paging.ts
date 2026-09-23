@@ -81,8 +81,82 @@ module workbench {
                 form.appendChild(createHiddenInput('ref', 'text'));
                 return;
             }
+            if (isEmbeddedResultPage()) {
+                return;
+            }
             addCookieToFormIfPresent(form, 'query');
             addCookieToFormIfPresent(form, 'ref');
+        }
+
+        function isEmbeddedResultPage(): boolean {
+            var marker = document.getElementById('rdf4j-query-result');
+            return !!marker && marker.getAttribute('data-query-embedded') === 'true';
+        }
+
+        function getEmbeddedResultMetadata(name: string): string {
+            var marker = document.getElementById('rdf4j-query-result');
+            if (!marker) {
+                return '';
+            }
+            return marker.getAttribute('data-query-' + name) || '';
+        }
+
+        function addEmbeddedQueryOptionsToForm(form: HTMLFormElement, limitOverride?: string) {
+            var queryLanguage = getEmbeddedResultMetadata('language');
+            var infer = getEmbeddedResultMetadata('infer');
+            var queryTimeout = getEmbeddedResultMetadata('timeout');
+            if (queryLanguage) {
+                form.appendChild(createHiddenInput('queryLn', queryLanguage));
+            }
+            if (infer) {
+                form.appendChild(createHiddenInput('infer', infer));
+            }
+            if (queryTimeout) {
+                form.appendChild(createHiddenInput('query-timeout', queryTimeout));
+            }
+            if (typeof limitOverride === 'string') {
+                form.appendChild(createHiddenInput('limit_query', limitOverride));
+            } else {
+                addElementValueToFormIfPresent(form, 'limit_query');
+            }
+        }
+
+        function addQueryOptionsToForm(form: HTMLFormElement, limitOverride?: string) {
+            if (isEmbeddedResultPage()) {
+                addEmbeddedQueryOptionsToForm(form, limitOverride);
+                return;
+            }
+            addCookieToFormIfPresent(form, 'owner');
+            addCookieToFormIfPresent(form, 'queryLn');
+            addCookieToFormIfPresent(form, 'infer');
+            addCookieToFormIfPresent(form, 'limit_query');
+            addCookieToFormIfPresent(form, 'query-timeout');
+        }
+
+        function notifyParent(message: any) {
+            if (!isEmbeddedResultPage() || !window.parent || window.parent === window
+                    || typeof window.parent.postMessage !== 'function') {
+                return;
+            }
+            var targetOrigin = window.location.origin;
+            if (!targetOrigin || targetOrigin === 'null') {
+                targetOrigin = window.location.protocol + '//' + window.location.host;
+            }
+            window.parent.postMessage(message, targetOrigin);
+        }
+
+        function addEmbeddedRequestToForm(form: HTMLFormElement, name: string): boolean {
+            if (!isEmbeddedResultPage() || name === 'Accept') {
+                return false;
+            }
+            var queryRequestId = workbench.generateRequestId();
+            form.appendChild(createHiddenInput('query-request-id', queryRequestId));
+            form.appendChild(createHiddenInput('embedded', 'true'));
+            notifyParent({
+                type: 'rdf4j-query-start',
+                queryRequestId: queryRequestId
+            });
+            return true;
         }
 
         function submitGraphParamRequest(name: string, value: string) {
@@ -93,15 +167,15 @@ module workbench {
 
             form.appendChild(createHiddenInput('action', 'exec'));
             addQueryReferenceToForm(form);
-            addCookieToFormIfPresent(form, 'owner');
-            addCookieToFormIfPresent(form, 'queryLn');
-            addCookieToFormIfPresent(form, 'infer');
-            addCookieToFormIfPresent(form, 'limit_query');
-            addCookieToFormIfPresent(form, 'query-timeout');
+            var limitOverride = isEmbeddedResultPage() && name === 'limit_query';
+            addQueryOptionsToForm(form, limitOverride ? value : undefined);
+            addEmbeddedRequestToForm(form, name);
             if (name == 'Accept') {
                 addElementValueToFormIfPresent(form, 'download_limit');
             }
-            form.appendChild(createHiddenInput(name, value));
+            if (!limitOverride) {
+                form.appendChild(createHiddenInput(name, value));
+            }
 
             document.body.appendChild(form);
             form.submit();
@@ -116,15 +190,15 @@ module workbench {
 
             form.appendChild(createHiddenInput('action', 'exec'));
             addQueryReferenceToForm(form);
-            addCookieToFormIfPresent(form, 'owner');
-            addCookieToFormIfPresent(form, 'queryLn');
-            addCookieToFormIfPresent(form, 'infer');
-            addCookieToFormIfPresent(form, 'limit_query');
-            addCookieToFormIfPresent(form, 'query-timeout');
+            var limitOverride = isEmbeddedResultPage() && name === 'limit_query';
+            addQueryOptionsToForm(form, limitOverride ? value : undefined);
+            addEmbeddedRequestToForm(form, name);
             if (!hasQueryParameter(KT) || 'false' == getQueryParameter(KT)) {
                 form.appendChild(createHiddenInput(KT, String(getTotalResultCount())));
             }
-            form.appendChild(createHiddenInput(name, value));
+            if (!limitOverride) {
+                form.appendChild(createHiddenInput(name, value));
+            }
 
             document.body.appendChild(form);
             form.submit();
@@ -138,6 +212,10 @@ module workbench {
         export function addGraphParam(name: string) {
             var value = <string>$('#' + name).val();
             var url = document.location.href;
+            if (isEmbeddedResultPage() && name !== 'Accept') {
+                submitGraphParamRequest(name, value);
+                return;
+            }
             if (url.match(/query$/)) { // looking at POST query results?
                 submitGraphParamRequest(name, value);
                 return;
@@ -193,7 +271,7 @@ module workbench {
          * @param {number} value The value of the query parameter.
          */
         export function addPagingParam(name: string, value: number) {
-            if (document.location.pathname.match(/\/query$/)) {
+            if (isEmbeddedResultPage() || document.location.pathname.match(/\/query$/)) {
                 submitPagingParamRequest(name, String(value));
                 return;
             }

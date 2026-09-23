@@ -451,6 +451,18 @@
                 </div>
             </div>
         </form>
+        <section id="query-results" class="query-results" aria-busy="false"
+                 aria-labelledby="query-results-heading">
+            <h2 id="query-results-heading">
+                <xsl:value-of select="$query-result.title"/>
+            </h2>
+            <div id="query-results-loading" class="query-results__loading" hidden="hidden"
+                 role="status" aria-live="polite">Loading query results...</div>
+            <div id="query-results-status" class="query-results__status" role="status"
+                 aria-live="polite"></div>
+            <iframe id="query-results-frame" name="query-results-frame" class="query-results__frame"
+                    title="Query results" hidden="hidden"></iframe>
+        </section>
         <div id="query-diff-modal" class="query-diff-modal" aria-hidden="true">
             <div class="query-diff-modal__dialog" role="dialog" aria-modal="true"
                  aria-labelledby="query-diff-modal-title">

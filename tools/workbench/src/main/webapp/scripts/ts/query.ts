@@ -33,10 +33,13 @@ module workbench {
         var pendingDotRenderKeys: { [key: string]: string } = {};
         var activePrimaryRequestSignature: RequestSignature = null;
         var activeCompareRequestSignatures: { [key: string]: RequestSignature } = {};
-        var requestIdCounter = 0;
         var activeExplainRequestId = 0;
         var activeExplainJqXHR: JQueryXHR = null;
         var activeQueryRequestId: string = null;
+        var RESULT_FRAME_ID = 'query-results-frame';
+        var RESULT_LOADING_ID = 'query-results-loading';
+        var RESULT_STATUS_ID = 'query-results-status';
+        var EMBEDDED_RESULT_PARAM = 'embedded';
         var CANCEL_REQUEST_MAX_RETRIES = 20;
         var primaryExplanationPending = false;
         var activeCompareRequestId = 0;
@@ -562,38 +565,8 @@ module workbench {
             };
         }
 
-        function createFallbackRequestId(): string {
-            requestIdCounter += 1;
-
-            var timestampPart = ('000000000000' + Date.now().toString(16)).slice(-12);
-            var counterPart = ('00000000' + requestIdCounter.toString(16)).slice(-8);
-            var randomPart = '';
-            var cryptoObject: any = (<any>window).crypto || (<any>window).msCrypto;
-
-            if (cryptoObject && cryptoObject.getRandomValues) {
-                var buffer = new Uint16Array(4);
-                cryptoObject.getRandomValues(buffer);
-                for (var i = 0; i < buffer.length; i++) {
-                    randomPart += ('0000' + buffer[i].toString(16)).slice(-4);
-                }
-            } else {
-                while (randomPart.length < 16) {
-                    randomPart += ('00000000' + Math.floor(Math.random() * 0xffffffff).toString(16)).slice(-8);
-                }
-                randomPart = randomPart.substring(0, 16);
-            }
-
-            return timestampPart + '-' + randomPart.substring(0, 4) + '-4'
-                + randomPart.substring(4, 7) + '-a' + randomPart.substring(7, 10)
-                + '-' + randomPart.substring(10, 16) + counterPart.substring(0, 6);
-        }
-
         function generateRequestId(): string {
-            var cryptoObject: any = (<any>window).crypto || (<any>window).msCrypto;
-            if (cryptoObject && cryptoObject.randomUUID) {
-                return cryptoObject.randomUUID();
-            }
-            return createFallbackRequestId();
+            return workbench.generateRequestId();
         }
 
         function createInitialQueryPageState(): QueryPageState {
@@ -2829,6 +2802,180 @@ module workbench {
                 .toggleClass('query-cancel--visible', visible);
         }
 
+        function getResultFrame(): HTMLIFrameElement {
+            return <HTMLIFrameElement>document.getElementById(RESULT_FRAME_ID);
+        }
+
+        function setResultLoading(loading: boolean) {
+            var loadingElement = document.getElementById(RESULT_LOADING_ID);
+            if (loadingElement) {
+                loadingElement.hidden = !loading;
+            }
+            var resultsElement = document.getElementById('query-results');
+            if (resultsElement) {
+                resultsElement.setAttribute('aria-busy', loading ? 'true' : 'false');
+            }
+            var frame = getResultFrame();
+            if (frame && loading) {
+                frame.hidden = false;
+            }
+        }
+
+        function setResultStatus(message: string) {
+            var statusElement = document.getElementById(RESULT_STATUS_ID);
+            if (statusElement) {
+                statusElement.textContent = message || '';
+            }
+        }
+
+        function stopResultFrame(frame: HTMLIFrameElement) {
+            try {
+                if (frame && frame.contentWindow && typeof frame.contentWindow.stop === 'function') {
+                    frame.contentWindow.stop();
+                }
+            } catch (e) {
+                // A redirect can make the result document cross-origin before cleanup runs.
+            }
+        }
+
+        function getResultFrameLocation(frame: HTMLIFrameElement): string {
+            try {
+                if (!frame || !frame.contentWindow || !frame.contentWindow.location) {
+                    return '';
+                }
+                return frame.contentWindow.location.href || '';
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function getResultFrameMarker(frame: HTMLIFrameElement): HTMLElement {
+            try {
+                return frame && frame.contentDocument
+                    ? frame.contentDocument.getElementById('rdf4j-query-result') : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function failResultFrameLoad(frame: HTMLIFrameElement) {
+            if (frame !== getResultFrame() || !activeQueryRequestId) {
+                return;
+            }
+            setResultLoading(false);
+            setResultStatus('Unable to load query results.');
+            clearActiveQuery();
+        }
+
+        function handleResultFrameLoad(frame: HTMLIFrameElement) {
+            if (frame !== getResultFrame()) {
+                return;
+            }
+            var location = getResultFrameLocation(frame);
+            if (location === null || location === 'about:blank' || !location) {
+                if (location === null) {
+                    failResultFrameLoad(frame);
+                }
+                return;
+            }
+            if (!activeQueryRequestId) {
+                setResultLoading(false);
+                return;
+            }
+            var marker = getResultFrameMarker(frame);
+            if (!marker) {
+                failResultFrameLoad(frame);
+                return;
+            }
+            var markerRequestId = $.trim(marker.getAttribute('data-query-request-id') || '');
+            if (!markerRequestId) {
+                failResultFrameLoad(frame);
+                return;
+            }
+            if (markerRequestId !== activeQueryRequestId) {
+                return;
+            }
+            setResultLoading(false);
+            if (marker.getAttribute('data-query-result-status') === 'error') {
+                setResultStatus('Query execution failed.');
+            }
+            clearActiveQuery(markerRequestId || undefined);
+        }
+
+        function installResultFrameHandlers(frame: HTMLIFrameElement) {
+            if (!frame || !frame.addEventListener) {
+                return;
+            }
+            frame.addEventListener('load', function() {
+                handleResultFrameLoad(frame);
+            }, false);
+            frame.addEventListener('error', function() {
+                failResultFrameLoad(frame);
+            }, false);
+        }
+
+        function replaceResultFrame(stopOldFrame: boolean = true): HTMLIFrameElement {
+            var oldFrame = getResultFrame();
+            var parent = oldFrame && oldFrame.parentNode;
+            if (!parent) {
+                return oldFrame;
+            }
+            if (stopOldFrame) {
+                stopResultFrame(oldFrame);
+            }
+            var frame = <HTMLIFrameElement>document.createElement('iframe');
+            frame.id = RESULT_FRAME_ID;
+            frame.name = RESULT_FRAME_ID;
+            frame.title = 'Query results';
+            frame.className = 'query-results__frame';
+            frame.hidden = true;
+            parent.removeChild(oldFrame);
+            parent.appendChild(frame);
+            installResultFrameHandlers(frame);
+            return frame;
+        }
+
+        function handleResultMessage(event: MessageEvent) {
+            if (event.origin !== window.location.origin) {
+                return;
+            }
+            var frame = getResultFrame();
+            if (!frame || event.source !== frame.contentWindow) {
+                return;
+            }
+            var data = event.data || {};
+            var queryRequestId = typeof data.queryRequestId === 'string' ? $.trim(data.queryRequestId) : '';
+            if (!queryRequestId) {
+                return;
+            }
+            if (data.type === 'rdf4j-query-start') {
+                activeQueryRequestId = queryRequestId;
+                $('#query-request-id').val(queryRequestId);
+                setQueryCancelVisible(true);
+                setResultStatus('');
+                setResultLoading(true);
+                return;
+            }
+            if (data.type !== 'rdf4j-query-result' || queryRequestId !== activeQueryRequestId) {
+                return;
+            }
+            setResultLoading(false);
+            if (data.status === 'error') {
+                setResultStatus('Query execution failed.');
+            }
+            clearActiveQuery(queryRequestId);
+        }
+
+        function installResultMessageHandler() {
+            if (window.addEventListener) {
+                window.addEventListener('message', handleResultMessage, false);
+                var frame = getResultFrame();
+                if (frame) {
+                    installResultFrameHandlers(frame);
+                }
+            }
+        }
+
         function clearActiveQuery(queryRequestId?: string) {
             if (queryRequestId && queryRequestId !== activeQueryRequestId) {
                 return;
@@ -2843,26 +2990,38 @@ module workbench {
                 return;
             }
             window.addEventListener('pagehide', function() {
+                stopResultFrame(getResultFrame());
+                setResultLoading(false);
                 clearActiveQuery();
             }, false);
             window.addEventListener('pageshow', function() {
+                stopResultFrame(getResultFrame());
+                setResultLoading(false);
                 clearActiveQuery();
             }, false);
         }
 
         function beginTrackedQuery(): boolean {
-            if (activeQueryRequestId) {
+            var hadActiveQuery = !!activeQueryRequestId;
+            if (hadActiveQuery) {
                 cancelQuery();
             }
 
+            var frame = replaceResultFrame(!hadActiveQuery);
+            if (!frame) {
+                return false;
+            }
             var queryRequestId = generateRequestId();
             activeQueryRequestId = queryRequestId;
             $('#query-request-id').val(queryRequestId);
             setQueryCancelVisible(true);
+            setResultStatus('');
+            setResultLoading(true);
             return true;
         }
 
         installQueryPageLifecycleHandlers();
+        installResultMessageHandler();
 
         function createStableExplanationFromResponse(
             signature: RequestSignature,
@@ -3419,54 +3578,96 @@ module workbench {
             //if yasqe is instantiated, make sure we save the value to the textarea
             if (yasqe) yasqe.save();
             $('#include-query-text').val('false');
-            var allowPageToSubmitForm = false;
             var save = ($('#action').val() == 'save');
             if (save) {
                 clearExplainSelection();
                 ajaxSave(false);
-            } else {
-                if (!beginTrackedQuery()) {
-                    return false;
-                }
-                var url: string[] = [];
-                url[url.length] = 'query';
-                if (document.all) {
-                    url[url.length] = ';';
-                } else {
-                    url[url.length] = '?';
-                }
-                workbench.addParam(url, 'action');
-                workbench.addParam(url, 'queryLn');
-                workbench.addParam(url, 'query');
-                workbench.addParam(url, 'limit_query');
-                workbench.addParam(url, 'query-timeout');
-                workbench.addParam(url, 'infer');
-                workbench.addParam(url, 'explain');
-                workbench.addParam(url, 'explain-format');
-                workbench.addParam(url, 'query-request-id');
-                var href = url.join('');
-                var loc = document.location;
-                var currentBaseLength = loc.href.length - loc.pathname.length
-                    - loc.search.length;
-                var pathLength = href.length;
-                var urlLength = pathLength + currentBaseLength;
-
-                // Published Internet Explorer restrictions on URL length, which are the
-                // most restrictive of the major browsers.
-                if (pathLength > 2048 || urlLength > 2083) {
-                    alert("Due to its length, your query will be posted in the request body. "
-                        + "It won't be possible to use a bookmark for the results page.");
-                    $('#include-query-text').val('true');
-                    allowPageToSubmitForm = true;
-                } else {
-                    // GET using the constructed URL, method exits here
-                    document.location.href = href;
-                }
+                return false;
             }
 
-            // Value returned to form submit event. If not true, prevents normal form
-            // submission.
-            return allowPageToSubmitForm;
+            var queryElement = <HTMLTextAreaElement>document.getElementById('query');
+            if (!queryElement || !$.trim(queryElement.value)) {
+                var hadActiveQuery = !!activeQueryRequestId;
+                if (hadActiveQuery) {
+                    cancelQuery();
+                }
+                var emptyFrame = replaceResultFrame(!hadActiveQuery);
+                if (emptyFrame) {
+                    emptyFrame.hidden = true;
+                }
+                setResultLoading(false);
+                setResultStatus('Enter a query to see results.');
+                clearActiveQuery();
+                return false;
+            }
+            if (!beginTrackedQuery()) {
+                return false;
+            }
+
+            var url: string[] = [];
+            url[url.length] = 'query';
+            if (document.all) {
+                url[url.length] = ';';
+            } else {
+                url[url.length] = '?';
+            }
+            workbench.addParam(url, 'action');
+            workbench.addParam(url, 'queryLn');
+            workbench.addParam(url, 'query');
+            workbench.addParam(url, 'limit_query');
+            workbench.addParam(url, 'query-timeout');
+            workbench.addParam(url, 'infer');
+            workbench.addParam(url, 'explain');
+            workbench.addParam(url, 'explain-format');
+            workbench.addParam(url, 'query-request-id');
+            url[url.length] = EMBEDDED_RESULT_PARAM + '=true&';
+            var href = url.join('').replace(/&$/, '');
+            var loc = document.location;
+            var currentBaseLength = loc.href.length - loc.pathname.length
+                - loc.search.length;
+            var pathLength = href.length;
+            var urlLength = pathLength + currentBaseLength;
+            var frame = getResultFrame();
+            if (!frame) {
+                clearActiveQuery();
+                return false;
+            }
+
+            if (pathLength > 2048 || urlLength > 2083) {
+                $('#include-query-text').val('true');
+                var temporaryForm = <HTMLFormElement>document.createElement('form');
+                temporaryForm.method = 'post';
+                temporaryForm.action = 'query';
+                temporaryForm.setAttribute('target', frame.name || RESULT_FRAME_ID);
+                temporaryForm.style.display = 'none';
+                var serializedForm: any[] = <any[]>$('form[action="query"]').serializeArray();
+                var hasEmbedded = false;
+                for (var i = 0; i < serializedForm.length; i++) {
+                    var serializedInput = <HTMLInputElement>document.createElement('input');
+                    serializedInput.type = 'hidden';
+                    serializedInput.name = serializedForm[i].name;
+                    serializedInput.value = serializedForm[i].value;
+                    temporaryForm.appendChild(serializedInput);
+                    if (serializedForm[i].name === EMBEDDED_RESULT_PARAM) {
+                        hasEmbedded = true;
+                    }
+                }
+                if (!hasEmbedded) {
+                    var embeddedInput = <HTMLInputElement>document.createElement('input');
+                    embeddedInput.type = 'hidden';
+                    embeddedInput.name = EMBEDDED_RESULT_PARAM;
+                    embeddedInput.value = 'true';
+                    temporaryForm.appendChild(embeddedInput);
+                }
+                document.body.appendChild(temporaryForm);
+                temporaryForm.submit();
+                document.body.removeChild(temporaryForm);
+                return false;
+            }
+
+            frame.src = href;
+            frame.hidden = false;
+            return false;
         }
 
         export function cancelQuery() {
@@ -3474,9 +3675,11 @@ module workbench {
             if (!queryRequestId) {
                 return;
             }
-            window.stop();
+            stopResultFrame(getResultFrame());
             postCancelQuery(queryRequestId);
             clearActiveQuery(queryRequestId);
+            setResultLoading(false);
+            setResultStatus('Query cancelled.');
         }
 
         export function runExplain(level?: string, buttonId?: string) {
@@ -3845,8 +4048,8 @@ module workbench {
             createDiffModalState: createDiffModalState,
             createEmptyQueryPageInputs: createEmptyQueryPageInputs,
             createErrorPaneState: createErrorPaneState,
-            createFallbackExplainServerRequestId: createFallbackRequestId,
-            createFallbackRequestId: createFallbackRequestId,
+            createFallbackExplainServerRequestId: generateRequestId,
+            createFallbackRequestId: generateRequestId,
             createInitialQueryPageState: createInitialQueryPageState,
             createJsonScalarElement: createJsonScalarElement,
             createJsonTreeNode: createJsonTreeNode,
@@ -3954,7 +4157,6 @@ module workbench {
                     compareSidebarOpen: compareSidebarOpen,
                     currentQueryLn: currentQueryLn,
                     diffNotReadyLabel: diffNotReadyLabel,
-                    explainServerRequestIdCounter: requestIdCounter,
                     explanationHighlightMode: explanationHighlightMode,
                     explanationHiddenProperties: explanationHiddenProperties,
                     lastRenderedExplanationKeys: lastRenderedExplanationKeys,
@@ -3974,7 +4176,6 @@ module workbench {
                 pendingDotRenderKeys = {};
                 activePrimaryRequestSignature = null;
                 activeCompareRequestSignatures = {};
-				requestIdCounter = 0;
                 resetExplainRequestUiState('primary');
                 resetExplainRequestUiState('compare');
                 activeExplainRequestId = 0;
@@ -4030,9 +4231,6 @@ module workbench {
                 }
                 if ('diffNotReadyLabel' in state) {
                     diffNotReadyLabel = state.diffNotReadyLabel;
-                }
-                if ('explainServerRequestIdCounter' in state) {
-                    requestIdCounter = state.explainServerRequestIdCounter;
                 }
                 if ('explanationHiddenProperties' in state) {
                     explanationHiddenProperties = normalizeExplanationHiddenProperties(

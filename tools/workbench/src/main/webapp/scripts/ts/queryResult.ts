@@ -13,8 +13,9 @@
 (function() {
     var marker: HTMLElement = document.getElementById('rdf4j-query-result');
     var queryRequestId: string = marker && marker.getAttribute('data-query-request-id');
-    var openerWindow: Window = window.opener;
-    if (!queryRequestId || !openerWindow || typeof openerWindow.postMessage !== 'function') {
+    var embedded = window.parent && window.parent !== window;
+    var targetWindow: Window = embedded ? window.parent : window.opener;
+    if (!queryRequestId || !targetWindow || typeof targetWindow.postMessage !== 'function') {
         return;
     }
 
@@ -24,10 +25,10 @@
             targetOrigin = window.location.protocol + '//' + window.location.host;
         }
         try {
-            if (openerWindow.closed) {
+            if (targetWindow.closed) {
                 return;
             }
-            openerWindow.postMessage({
+            targetWindow.postMessage({
                 type: 'rdf4j-query-result',
                 queryRequestId: queryRequestId,
                 status: marker.getAttribute('data-query-result-status') || 'completed'

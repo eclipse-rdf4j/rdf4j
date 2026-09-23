@@ -63,6 +63,62 @@ class QueryResultTemplateTest {
 	}
 
 	@Test
+	void embeddedTupleResultsShouldOmitTheDuplicateWorkbenchShell() throws Exception {
+		String html = transform("tuple.xsl", embeddedQueryResultXml(), infoXml());
+
+		assertThat(html)
+				.contains("<html")
+				.contains("<head")
+				.contains("<body")
+				.doesNotContain("id=\"header\"")
+				.doesNotContain("id=\"navigation\"")
+				.doesNotContain("id=\"footer\"")
+				.contains("class=\"data\"")
+				.contains("scripts/queryResult.js")
+				.contains("data-query-request-id=\"query-1\"")
+				.contains("data-query-language=\"SPARQL\"")
+				.contains("data-query-infer=\"false\"")
+				.contains("data-query-timeout=\"17\"")
+				.contains("target=\"_parent\"");
+	}
+
+	@Test
+	void embeddedGraphAndBooleanResultsShouldOmitTheDuplicateWorkbenchShell() throws Exception {
+		String graphHtml = transform("graph.xsl", embeddedQueryResultXml(), infoXml());
+		String booleanHtml = transform("boolean.xsl", embeddedBooleanResultXml(), infoXml());
+
+		assertThat(graphHtml).contains("<html")
+				.contains("<head")
+				.contains("<body")
+				.doesNotContain("id=\"header\"")
+				.contains("class=\"data\"");
+		assertThat(booleanHtml).contains("<html")
+				.contains("<head")
+				.contains("<body")
+				.doesNotContain("id=\"header\"")
+				.contains("class=\"queryResult\"");
+	}
+
+	@Test
+	void embeddedEmptyAndErrorResultsShouldRenderOnlyTheResultMessage() throws Exception {
+		String emptyHtml = transform("query-result-empty.xsl", embeddedQueryResultXml(), infoXml());
+		String errorHtml = transform("query-result-error.xsl", embeddedErrorResultXml(), infoXml());
+
+		assertThat(emptyHtml).contains("<html")
+				.contains("<head")
+				.contains("<body")
+				.doesNotContain("id=\"query\"")
+				.contains("class=\"query-result-empty\"")
+				.contains("No query submitted.");
+		assertThat(errorHtml).contains("<html")
+				.contains("<head")
+				.contains("<body")
+				.doesNotContain("id=\"query\"")
+				.contains("class=\"query-result-error\"")
+				.contains("malformed query");
+	}
+
+	@Test
 	void savedQueriesPageShouldCarryStoredQueryTimeoutIntoExecuteAndEditActions() throws Exception {
 		String html = transform("saved-queries.xsl", savedQueriesXml(), infoXml());
 
@@ -126,6 +182,7 @@ class QueryResultTemplateTest {
 		xml.append("  </sparql:results>\n");
 		xml.append("  <workbench:metadata>\n");
 		xml.append("    <workbench:query-text>").append(QUERY_TEXT).append("</workbench:query-text>\n");
+		xml.append("    <workbench:query-language>SPARQL</workbench:query-language>\n");
 		xml.append("    <workbench:infer>false</workbench:infer>\n");
 		xml.append("    <workbench:query-timeout>17</workbench:query-timeout>\n");
 		xml.append("    <workbench:query-request-id>query-1</workbench:query-request-id>\n");
@@ -134,6 +191,36 @@ class QueryResultTemplateTest {
 		xml.append("  </workbench:metadata>\n");
 		xml.append("</sparql:sparql>\n");
 		return xml.toString();
+	}
+
+	private static String embeddedQueryResultXml() {
+		return queryResultXml().replace("  <workbench:metadata>\n",
+				"  <workbench:metadata>\n    <workbench:embedded>true</workbench:embedded>\n");
+	}
+
+	private static String embeddedBooleanResultXml() {
+		return "<?xml version=\"1.0\"?>\n"
+				+ "<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\" "
+				+ "xmlns:workbench=\"https://rdf4j.org/schema/workbench#\">\n"
+				+ "  <sparql:head><sparql:link href=\"info\"/></sparql:head>\n"
+				+ "  <sparql:boolean>true</sparql:boolean>\n"
+				+ "  <workbench:metadata><workbench:embedded>true</workbench:embedded>"
+				+ "<workbench:query-request-id>query-boolean</workbench:query-request-id>"
+				+ "<workbench:query-result-status>completed</workbench:query-result-status></workbench:metadata>\n"
+				+ "</sparql:sparql>\n";
+	}
+
+	private static String embeddedErrorResultXml() {
+		return "<?xml version=\"1.0\"?>\n"
+				+ "<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\" "
+				+ "xmlns:workbench=\"https://rdf4j.org/schema/workbench#\">\n"
+				+ "  <sparql:head><sparql:link href=\"info\"/></sparql:head>\n"
+				+ "  <sparql:results><sparql:result><sparql:binding name=\"error-message\">"
+				+ "<sparql:literal>malformed query</sparql:literal></sparql:binding></sparql:result></sparql:results>\n"
+				+ "  <workbench:metadata><workbench:embedded>true</workbench:embedded>"
+				+ "<workbench:query-request-id>query-error</workbench:query-request-id>"
+				+ "<workbench:query-result-status>error</workbench:query-result-status></workbench:metadata>\n"
+				+ "</sparql:sparql>\n";
 	}
 
 	private static String savedQueriesXml() {

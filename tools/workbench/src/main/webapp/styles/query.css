@@ -86,6 +86,27 @@
     display: inline-block;
 }
 
+.query-results {
+    margin-top: 1.5rem;
+}
+
+.query-results__loading,
+.query-results__status {
+    margin: 0.5rem 0;
+}
+
+.query-results__loading[hidden] {
+    display: none;
+}
+
+.query-results__frame {
+    border: 0;
+    height: 70vh;
+    max-height: 50rem;
+    min-height: 24rem;
+    width: 100%;
+}
+
 #query,
 #query-compare {
     width: 100%;

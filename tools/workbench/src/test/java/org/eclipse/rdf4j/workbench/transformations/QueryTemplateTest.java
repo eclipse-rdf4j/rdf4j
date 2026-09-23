@@ -261,6 +261,8 @@ class QueryTemplateTest {
 
 		assertThat(queryTemplate)
 				.contains("name=\"query-request-id\" id=\"query-request-id\"")
+				.contains("id=\"query-results-frame\"")
+				.contains("id=\"query-results-loading\"")
 				.contains("id=\"query-cancel\" class=\"query-cancel\"")
 				.contains("onclick=\"workbench.query.cancelQuery()\"");
 		assertThat(queryStyles)
@@ -276,7 +278,8 @@ class QueryTemplateTest {
 				.contains("postCancellationWithRetry($.param([")
 				.contains("var queryRequestId = generateRequestId();")
 				.contains("workbench.addParam(url, 'query-request-id');")
-				.contains("document.location.href = href")
+				.contains("frame.src = href")
+				.contains("temporaryForm.setAttribute('target', frame.name || RESULT_FRAME_ID);")
 				.contains("toggleClass('query-cancel--visible', visible)")
 				.contains("window.addEventListener('pagehide'")
 				.contains("window.addEventListener('pageshow'")
@@ -284,7 +287,7 @@ class QueryTemplateTest {
 				.doesNotContain("activeQueryResultWindow")
 				.doesNotContain("form.attr('target', activeQueryResultWindowName)")
 				.containsPattern(
-						"window\\.stop\\(\\);[\\s\\S]*postCancelQuery\\(queryRequestId\\);");
+						"stopResultFrame\\(getResultFrame\\(\\)\\);[\\s\\S]*postCancelQuery\\(queryRequestId\\);");
 	}
 
 	@Test
@@ -293,10 +296,11 @@ class QueryTemplateTest {
 
 		assertThat(queryScript)
 				.doesNotContain("window.open('', resultWindowName)")
-				.contains("document.location.href = href")
+				.contains("frame.src = href")
 				.contains("if (pathLength > 2048 || urlLength > 2083)")
 				.contains("$('#include-query-text').val('true');")
-				.contains("allowPageToSubmitForm = true;")
+				.contains("temporaryForm.setAttribute('target', frame.name || RESULT_FRAME_ID);")
+				.doesNotContain("allowPageToSubmitForm = true;")
 				.doesNotContain("query result window was blocked")
 				.doesNotContain("form.attr('target', activeQueryResultWindowName)");
 	}
@@ -471,7 +475,7 @@ class QueryTemplateTest {
 				.contains("aria-label=\"{$diff.label}\"")
 				.containsPattern(
 						"class=\"query-explanation-controls-row-class\"[\\s\\S]*id=\"download-explanation\"[\\s\\S]*id=\"compare-toggle\"")
-				.containsPattern("</form>\\s*<div id=\"query-diff-modal\"")
+				.containsPattern("</form>\\s*<section id=\"query-results\"[\\s\\S]*<div id=\"query-diff-modal\"")
 				.doesNotContainPattern("id=\"save\"[\\s\\S]*id=\"compare-toggle\"[\\s\\S]*id=\"query-name\"")
 				.doesNotContain("id=\"compare-explain-format\"")
 				.doesNotContain("id=\"compare-explain-level\"");

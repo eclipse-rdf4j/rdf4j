@@ -101,6 +101,8 @@ public class QueryServlet extends TransformationServlet {
 
 	private static final String QUERY_REQUEST_ID = "query-request-id";
 
+	private static final String EMBEDDED = "embedded";
+
 	private static final String EXPLAIN_TIMEOUT_MESSAGE = "Query explanation took too long";
 
 	private static final String[] EDIT_PARAMS = new String[] { QUERY_LN, QUERY, INFER, LIMIT, QUERY_TIMEOUT };
@@ -988,8 +990,16 @@ public class QueryServlet extends TransformationServlet {
 			}
 		}
 		if (query.isEmpty()) {
-			builder.transform(xslPath, "query.xsl");
+			builder.transform(xslPath, isEmbeddedRequest(req) ? "query-result-empty.xsl" : "query.xsl");
 			builder.start();
+			if (isEmbeddedRequest(req)) {
+				builder.metadata(EMBEDDED, true);
+				String queryRequestId = handle == null ? getQueryRequestId(req) : handle.getRequestId();
+				if (queryRequestId != null) {
+					builder.metadata(QueryEvaluator.METADATA_QUERY_REQUEST_ID, queryRequestId);
+					builder.metadata(QueryEvaluator.METADATA_QUERY_RESULT_STATUS, "completed");
+				}
+			}
 			builder.link(Arrays.asList(INFO, "namespaces"));
 			builder.end();
 		} else {
@@ -1027,9 +1037,13 @@ public class QueryServlet extends TransformationServlet {
 		}
 		OutputStream writerOutput = responseHeartbeat == null ? out : responseHeartbeat.getOutputStream();
 		TupleResultBuilder builder = getTupleResultBuilder(req, resp, writerOutput);
-		builder.transform(xslPath, "query.xsl");
+		boolean embedded = isEmbeddedRequest(req);
+		builder.transform(xslPath, embedded ? "query-result-error.xsl" : "query.xsl");
 		builder.start("error-message");
 		builder.link(Arrays.asList(INFO, "namespaces"));
+		if (embedded) {
+			builder.metadata(EMBEDDED, true);
+		}
 		String queryRequestId = handle == null ? getQueryRequestId(req) : handle.getRequestId();
 		if (queryRequestId != null) {
 			builder.metadata(QueryEvaluator.METADATA_QUERY_REQUEST_ID, queryRequestId);
@@ -1040,6 +1054,10 @@ public class QueryServlet extends TransformationServlet {
 		if (responseHeartbeat != null) {
 			responseHeartbeat.complete();
 		}
+	}
+
+	private boolean isEmbeddedRequest(WorkbenchRequest req) {
+		return Boolean.parseBoolean(req.getParameter(EMBEDDED));
 	}
 
 	private void applyRetryAfter(HttpServletResponse response,

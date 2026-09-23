@@ -164,11 +164,30 @@ function createQueryBrowserHarness(options = {}) {
     });
     selectedUser.appendChild(selectedUserSpan);
     const queryFormContainer = registerElement('div', { className: 'query-form' });
+    const queryResults = registerElement('section', { id: 'query-results' });
+    const queryResultsLoading = registerElement('div', {
+        id: 'query-results-loading',
+        hidden: true,
+        attributes: { 'aria-live': 'polite', role: 'status' }
+    });
+    const queryResultsStatus = registerElement('div', {
+        id: 'query-results-status',
+        attributes: { 'aria-live': 'polite', role: 'status' }
+    });
+    const queryResultsFrame = document.createElement('iframe');
+    queryResultsFrame.setAttribute('id', 'query-results-frame');
+    queryResultsFrame.setAttribute('name', 'query-results-frame');
+    queryResultsFrame.setAttribute('title', 'Query results');
+    queryResultsFrame.hidden = true;
+    queryResults.appendChild(queryResultsLoading);
+    queryResults.appendChild(queryResultsStatus);
+    queryResults.appendChild(queryResultsFrame);
     document.body.appendChild(navigation);
     document.body.appendChild(titleHeading);
     document.body.appendChild(noScriptMessage);
     document.body.appendChild(selectedUser);
     document.body.appendChild(queryFormContainer);
+    document.body.appendChild(queryResults);
 
     const form = registerElement('form', {
         attributes: {
@@ -456,6 +475,7 @@ function createQueryBrowserHarness(options = {}) {
     if (!context.Diff) {
         harness.runScript('tools/workbench/src/main/webapp/scripts/diff.min.js');
     }
+    harness.runScript('tools/workbench/src/main/webapp/scripts/template.js');
     harness.runScript('tools/workbench/src/main/webapp/scripts/queryCancelPolicy.js');
     harness.runScript('tools/workbench/src/main/webapp/scripts/queryExplanationHighlighter.js');
     harness.runScript('tools/workbench/src/main/webapp/scripts/query.js');
@@ -477,6 +497,9 @@ function createQueryBrowserHarness(options = {}) {
         getJSONRequests,
         pendingGetJSONRequests,
         pendingExplainRequests,
+        getResultFrame() {
+            return document.getElementById('query-results-frame');
+        },
         yasqeState: yasqe.state,
         requestsByAction(action) {
             return harness.ajaxRequests.filter((request) => request.action === action);

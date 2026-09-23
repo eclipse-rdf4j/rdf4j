@@ -70,13 +70,15 @@ test('query utilities cover namespace reset, name validation, query language swi
     harness.context.workbench.query.setQueryValue('SELECT * WHERE {?s ?p ?o}');
     assert.equal(harness.context.workbench.query.doSubmit(), false);
     assert.equal(harness.openedWindows.length, 0);
-    assert.match(harness.document.location.href, /action=exec/);
+    assert.equal(harness.document.location.pathname, '/rdf4j-workbench/repositories/test/query');
+    assert.match(harness.getResultFrame().src, /action=exec/);
     assert.equal(harness.getProperty('include-query-text', 'value'), 'false');
 
     harness.context.workbench.query.setQueryValue('x'.repeat(3000));
-    assert.equal(harness.context.workbench.query.doSubmit(), true);
+    assert.equal(harness.context.workbench.query.doSubmit(), false);
     assert.equal(harness.getProperty('include-query-text', 'value'), 'true');
-    assert.match(harness.alerts[harness.alerts.length - 1], /Due to its length/);
+    assert.equal(harness.alerts.length, 0);
+    assert.equal(harness.document.lastSubmittedForm.getAttribute('target'), 'query-results-frame');
 });
 
 test('query explain flow covers success, error, download, and legacy change notifications', () => {
