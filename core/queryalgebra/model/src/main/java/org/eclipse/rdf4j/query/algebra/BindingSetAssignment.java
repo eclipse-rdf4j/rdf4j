@@ -31,6 +31,8 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	/** Names declared by the VALUES tuple header, when one was supplied. */
 	private Set<String> bindingNames;
 
+	private boolean bindingNamesExplicit;
+
 	private Iterable<BindingSet> bindingSets;
 	private List<BindingSet> bindingSetSnapshot;
 	private Set<String> possibleBindingNames;
@@ -76,8 +78,14 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 				}
 			}
 		}
+		if (assured == null) {
+			assured = new LinkedHashSet<>();
+			if (bindingNamesExplicit && bindingNames != null) {
+				assured.addAll(bindingNames);
+			}
+		}
 		possibleBindingNames = immutableNames(possible);
-		assuredBindingNames = assured == null ? Set.of() : immutableNames(assured);
+		assuredBindingNames = immutableNames(assured);
 	}
 
 	private static Set<String> immutableNames(LinkedHashSet<String> names) {
@@ -192,6 +200,7 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 		this.bindingNames = bindingNames == null
 				? null
 				: immutableNames(new LinkedHashSet<>(bindingNames));
+		this.bindingNamesExplicit = bindingNames != null;
 		invalidateBindingNameSets();
 	}
 
@@ -201,6 +210,9 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 	public void setBindingSets(Iterable<BindingSet> bindingSets) {
 		this.bindingSets = bindingSets;
 		this.bindingSetSnapshot = null;
+		if (!bindingNamesExplicit) {
+			this.bindingNames = null;
+		}
 		invalidateBindingNameSets();
 	}
 

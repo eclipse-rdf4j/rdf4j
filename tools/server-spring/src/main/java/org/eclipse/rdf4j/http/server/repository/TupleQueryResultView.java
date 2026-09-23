@@ -19,6 +19,7 @@ import java.io.OutputStream;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -75,45 +76,95 @@ public class TupleQueryResultView extends QueryResultView {
 
 		final Boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);
 		if (headersOnly == null || !headersOnly.booleanValue()) {
-			try (OutputStream out = response.getOutputStream()) {
-				// ensure we handle exceptions _before_ closing the stream
-				try {
-					TupleQueryResultWriter qrWriter = qrWriterFactory.getWriter(out);
-					TupleQueryResult tupleQueryResult = (TupleQueryResult) model.get(QUERY_RESULT_KEY);
-
-					if (qrWriter.getSupportedSettings().contains(BasicQueryWriterSettings.JSONP_CALLBACK)) {
-						String parameter = request.getParameter(DEFAULT_JSONP_CALLBACK_PARAMETER);
-
-						if (parameter != null) {
-							parameter = parameter.trim();
-
-							if (parameter.isEmpty()) {
-								parameter = BasicQueryWriterSettings.JSONP_CALLBACK.getDefaultValue();
-							}
-
-							// check callback function name is a valid javascript function
-							// name
-							if (!JSONP_VALIDATOR.matcher(parameter).matches()) {
-								throw new IOException("Callback function name was invalid");
-							}
-
-							qrWriter.getWriterConfig().set(BasicQueryWriterSettings.JSONP_CALLBACK, parameter);
+			QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
+			// Keep the legacy branch for callers that do not hand off a heartbeat, including transactional responses.
+			if (heartbeat == null) {
+				try (OutputStream out = response.getOutputStream()) {
+					// ensure we handle exceptions _before_ closing the stream
+					try {
+						TupleQueryResultWriter qrWriter = qrWriterFactory.getWriter(out);
+						configureWriter(qrWriter, request);
+						TupleQueryResult tupleQueryResult = (TupleQueryResult) model.get(QUERY_RESULT_KEY);
+						QueryResults.report(tupleQueryResult, qrWriter);
+					} catch (QueryInterruptedException e) {
+						if (isExplicitlyCancelled(model)) {
+							return;
 						}
+						logger.error("Query interrupted", e);
+						sendServiceUnavailable(response, e, "Query evaluation took too long");
+					} catch (QueryEvaluationException e) {
+						if (isExplicitlyCancelled(model)) {
+							return;
+						}
+						logger.error("Query evaluation error", e);
+						response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
+					} catch (TupleQueryResultHandlerException e) {
+						logger.error("Serialization error", e);
+						response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
 					}
-
+				}
+			} else {
+				try {
+					TupleQueryResult tupleQueryResult = PrefetchedQueryResults
+							.tuple((TupleQueryResult) model.get(QUERY_RESULT_KEY));
+					model.put(QUERY_RESULT_KEY, tupleQueryResult);
+					TupleQueryResultWriter qrWriter = (TupleQueryResultWriter) model.get(RESPONSE_WRITER_KEY);
+					if (qrWriter == null) {
+						qrWriter = qrWriterFactory.getWriter(heartbeat.getOutputStream());
+						configureWriter(qrWriter, request);
+					}
 					QueryResults.report(tupleQueryResult, qrWriter);
+					heartbeat.complete();
 				} catch (QueryInterruptedException e) {
-					logger.error("Query interrupted", e);
-					sendServiceUnavailable(response, e, "Query evaluation took too long");
+					handleHeartbeatFailure(model, response, e, "Query evaluation took too long");
 				} catch (QueryEvaluationException e) {
-					logger.error("Query evaluation error", e);
-					response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
+					handleHeartbeatFailure(model, response, e,
+							"Query evaluation error: " + e.getMessage());
 				} catch (TupleQueryResultHandlerException e) {
-					logger.error("Serialization error", e);
-					response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
+					handleHeartbeatFailure(model, response, e, "Serialization error: " + e.getMessage());
 				}
 			}
 		}
 		logEndOfRequest(request);
+	}
+
+	public static void configureWriter(TupleQueryResultWriter writer, HttpServletRequest request) throws IOException {
+		if (!writer.getSupportedSettings().contains(BasicQueryWriterSettings.JSONP_CALLBACK)) {
+			return;
+		}
+
+		String parameter = request.getParameter(DEFAULT_JSONP_CALLBACK_PARAMETER);
+		if (parameter == null) {
+			return;
+		}
+
+		parameter = parameter.trim();
+		if (parameter.isEmpty()) {
+			parameter = BasicQueryWriterSettings.JSONP_CALLBACK.getDefaultValue();
+		}
+		if (!JSONP_VALIDATOR.matcher(parameter).matches()) {
+			throw new IOException("Callback function name was invalid");
+		}
+		writer.getWriterConfig().set(BasicQueryWriterSettings.JSONP_CALLBACK, parameter);
+	}
+
+	@SuppressWarnings("rawtypes")
+	private void handleHeartbeatFailure(Map model, HttpServletResponse response, RuntimeException exception,
+			String message) throws IOException {
+		stopResponseHeartbeat(model);
+		if (isExplicitlyCancelled(model)) {
+			abortResponseHeartbeat(model);
+			return;
+		}
+		if (responseWasCommitted(model, response)) {
+			abortResponseHeartbeat(model);
+			throw exception;
+		}
+		logger.error(message, exception);
+		if (exception instanceof QueryInterruptedException) {
+			sendServiceUnavailable(response, (QueryInterruptedException) exception, message);
+		} else {
+			response.sendError(SC_INTERNAL_SERVER_ERROR, message);
+		}
 	}
 }

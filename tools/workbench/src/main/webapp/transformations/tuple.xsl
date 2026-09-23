@@ -31,6 +31,10 @@
 
 	<xsl:template match="sparql:sparql">
 		<xsl:call-template name="query-duration" />
+		<xsl:if test="/sparql:sparql/workbench:metadata/workbench:total-result-count">
+			<input type="hidden" id="workbench-total-result-count"
+				value="{/sparql:sparql/workbench:metadata/workbench:total-result-count}" />
+		</xsl:if>
 		<xsl:if test="/sparql:sparql/workbench:metadata/workbench:query-text">
 			<textarea id="wb-query-text" style="display:none;"><xsl:value-of
 				select="/sparql:sparql/workbench:metadata/workbench:query-text" /></textarea>

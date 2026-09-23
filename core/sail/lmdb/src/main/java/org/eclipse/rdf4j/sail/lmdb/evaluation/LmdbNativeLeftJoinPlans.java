@@ -83,7 +83,15 @@ final class LeftJoinPlan implements SlotPlan {
 	}
 
 	@Override
+	public LmdbNativeFactorCursor openFactors(RowState row) throws IOException {
+		return LmdbNativeFactorAlgebra.tryOpen(this, row);
+	}
+
+	@Override
 	public RowCursor open(RowState row) throws IOException {
+		LmdbNativeFactorCursor grouped = openFactors(row);
+		if (grouped != null)
+			return LmdbNativeFactorRows.asRows(grouped, row);
 		if (lexicalProblemSlots != null) {
 			return new LexicalFrameLeftJoinCursor(left, right, lexicalProblemSlots, row);
 		}

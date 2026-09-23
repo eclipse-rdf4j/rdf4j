@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Locale;
@@ -29,8 +30,11 @@ import java.util.zip.GZIPOutputStream;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
+import org.eclipse.rdf4j.http.client.CancellableOperationCoordinator;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
+import org.eclipse.rdf4j.http.client.QueryRequestContext;
+import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -99,7 +103,13 @@ public class QueryServlet extends TransformationServlet {
 	private static final String LMDB_FORCED_STRATEGY = "lmdb-forced-strategy";
 	private static final String ADMIN_ROLE = "rdf4j-admin";
 
+	private static final String ACTION_CANCEL_QUERY = "cancel-query";
+
+	private static final String EXPLAIN = "explain";
+
 	private static final String EXPLAIN_REQUEST_ID = "explain-request-id";
+
+	private static final String QUERY_REQUEST_ID = "query-request-id";
 
 	private static final String EXPLAIN_TIMEOUT_MESSAGE = "Query explanation took too long";
 
@@ -114,6 +124,8 @@ public class QueryServlet extends TransformationServlet {
 	private QueryStorage storage;
 
 	private AsyncExplainCoordinator asyncExplainCoordinator = new AsyncExplainCoordinator();
+
+	private CancellableOperationCoordinator queryCoordinator = new CancellableOperationCoordinator();
 
 	protected boolean writeQueryCookie;
 
@@ -136,6 +148,10 @@ public class QueryServlet extends TransformationServlet {
 
 	protected void substituteAsyncExplainCoordinator(AsyncExplainCoordinator asyncExplainCoordinator) {
 		this.asyncExplainCoordinator = asyncExplainCoordinator;
+	}
+
+	protected void substituteQueryCoordinator(CancellableOperationCoordinator queryCoordinator) {
+		this.queryCoordinator = queryCoordinator;
 	}
 
 	/**
@@ -178,6 +194,7 @@ public class QueryServlet extends TransformationServlet {
 	@Override
 	public void destroy() {
 		this.asyncExplainCoordinator.shutdown();
+		this.queryCoordinator.shutdown();
 		this.storage.shutdown();
 		super.destroy();
 	}
@@ -383,7 +400,8 @@ public class QueryServlet extends TransformationServlet {
 
 		final AsyncExplainCoordinator.Handle handle;
 		try {
-			handle = asyncExplainCoordinator.register(explainRequestId, createRemoteCancelAction(explainRequestId));
+			handle = asyncExplainCoordinator.register(getRepositoryReference(), explainRequestId,
+					createRemoteCancelAction(explainRequestId));
 		} catch (IllegalStateException e) {
 			writeExplainErrorResponse(resp, HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
 			return;
@@ -505,6 +523,25 @@ public class QueryServlet extends TransformationServlet {
 				httpRepository.cancelQueryExplanation(explainRequestId);
 			} catch (RepositoryException e) {
 				LOGGER.debug("Remote explain cancellation failed for request {}", explainRequestId, e);
+				throw new CancellableOperationCoordinator.CancellationException(
+						"Remote explain cancellation failed for request " + explainRequestId, e);
+			}
+		};
+	}
+
+	private Runnable createRemoteQueryCancelAction(String queryRequestId) {
+		if (!(repository instanceof HTTPRepository)) {
+			return null;
+		}
+
+		HTTPRepository httpRepository = (HTTPRepository) repository;
+		return () -> {
+			try {
+				httpRepository.cancelQuery(queryRequestId);
+			} catch (RepositoryException e) {
+				LOGGER.debug("Remote query cancellation failed for request {}", queryRequestId, e);
+				throw new CancellableOperationCoordinator.CancellationException(
+						"Remote query cancellation failed for request " + queryRequestId, e);
 			}
 		};
 	}
@@ -515,6 +552,7 @@ public class QueryServlet extends TransformationServlet {
 		jsonObject.put("format", explainQueryResult.getFormat());
 		jsonObject.put("content", explainQueryResult.getContent());
 		jsonObject.set("strategyDecisions", mapper.valueToTree(explainQueryResult.getStrategyDecisions()));
+		jsonObject.put("lineSeparator", System.lineSeparator());
 		writeExplainJsonResponse(resp, HttpServletResponse.SC_OK, jsonObject);
 	}
 
@@ -556,30 +594,147 @@ public class QueryServlet extends TransformationServlet {
 
 	private void handleStandardBrowserRequest(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
 			throws IOException, RDF4JException, QueryResultHandlerException {
-		boolean shouldWriteQueryCookie = shouldWriteQueryCookie(req.getParameter(QUERY));
-		cacheLongQueryReferenceIfNeeded(req, resp, shouldWriteQueryCookie);
-		boolean downloadResponse = setContentType(req, resp);
-		OutputStream out = getResponseOutputStream(req, resp, downloadResponse);
+		CancellableOperationCoordinator.Handle handle = null;
+		String queryRequestId = null;
+		if (req.isParameterPresent(QUERY_REQUEST_ID)) {
+			queryRequestId = getQueryRequestId(req);
+			if (queryRequestId == null) {
+				resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: " + QUERY_REQUEST_ID);
+				return;
+			}
+		} else if (shouldRegisterInternalQuery(req)) {
+			queryRequestId = UUID.randomUUID().toString();
+		}
+		if (queryRequestId != null) {
+			try {
+				handle = queryCoordinator.register(getRepositoryReference(), queryRequestId,
+						createRemoteQueryCancelAction(queryRequestId));
+			} catch (IllegalStateException e) {
+				resp.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+				return;
+			}
+		}
+
+		OutputStream out = null;
+		QueryResponseHeartbeat[] responseHeartbeat = new QueryResponseHeartbeat[1];
+		boolean responseCompleted = false;
 		try {
-			service(req, resp, out, xslPath);
+			boolean shouldWriteQueryCookie = shouldWriteQueryCookie(req.getParameter(QUERY));
+			cacheLongQueryReferenceIfNeeded(req, resp, shouldWriteQueryCookie);
+			boolean downloadResponse = setContentType(req, resp);
+			out = getResponseOutputStream(req, resp, downloadResponse);
+			service(req, resp, out, xslPath, handle, responseHeartbeat);
+			responseCompleted = handle == null || handle.isActive();
 		} catch (BadRequestException | HTTPQueryEvaluationException exc) {
+			stopResponseHeartbeat(responseHeartbeat[0]);
+			if (isCancelled(handle)) {
+				return;
+			}
 			LOGGER.warn(exc.toString(), exc);
-			writeBrowserErrorResponse(req, resp, out, xslPath, exc.getMessage());
+			if (hasCommittedResponse(responseHeartbeat[0], resp)) {
+				return;
+			}
+			writeBrowserErrorResponse(req, resp, out, xslPath, handle, responseHeartbeat[0], exc.getMessage());
+			responseCompleted = true;
 		} catch (QueryInterruptedException exc) {
+			stopResponseHeartbeat(responseHeartbeat[0]);
+			if (isCancelled(handle)) {
+				return;
+			}
 			LOGGER.warn(exc.toString(), exc);
+			if (hasCommittedResponse(responseHeartbeat[0], resp)) {
+				return;
+			}
 			QueryCircuitBreaker.CircuitBreakerException breakerException = QueryCircuitBreaker
 					.asCircuitBreakerException(exc);
 			if (breakerException != null) {
 				applyRetryAfter(resp, breakerException);
 				resp.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-				writeBrowserErrorResponse(req, resp, out, xslPath, breakerException.getMessage());
+				writeBrowserErrorResponse(req, resp, out, xslPath, handle, responseHeartbeat[0],
+						breakerException.getMessage());
+				responseCompleted = true;
 			} else {
 				resp.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-				writeBrowserErrorResponse(req, resp, out, xslPath, "Query evaluation took too long");
+				writeBrowserErrorResponse(req, resp, out, xslPath, handle, responseHeartbeat[0],
+						"Query evaluation took too long");
+				responseCompleted = true;
 			}
+		} catch (RDF4JException | IOException exc) {
+			stopResponseHeartbeat(responseHeartbeat[0]);
+			if (isCancelled(handle)) {
+				return;
+			}
+			if (hasCommittedResponse(responseHeartbeat[0], resp)) {
+				String requestId = handle == null ? "untracked" : handle.getRequestId();
+				LOGGER.warn("Query response failed after commitment for request {}", requestId, exc);
+				return;
+			}
+			throw exc;
 		} finally {
-			flushResponseOutputStream(out);
+			stopResponseHeartbeat(responseHeartbeat[0]);
+			boolean responseWasCommitted = hasCommittedResponse(responseHeartbeat[0], resp);
+			if (!responseCompleted && responseHeartbeat[0] != null) {
+				responseHeartbeat[0].abort();
+			}
+			try {
+				if (responseCompleted || responseWasCommitted) {
+					try {
+						if (out != null) {
+							flushResponseOutputStream(out);
+						}
+					} catch (IOException e) {
+						if (responseCompleted && !isCancelled(handle)) {
+							throw e;
+						}
+						LOGGER.debug("Unable to finish an unsuccessful query response", e);
+					}
+				}
+			} finally {
+				if (handle != null) {
+					queryCoordinator.complete(handle);
+				}
+			}
 		}
+	}
+
+	private boolean shouldRegisterInternalQuery(WorkbenchRequest req) {
+		if (!req.isParameterPresent(QUERY)) {
+			return false;
+		}
+		String queryParameter = req.getParameter(QUERY);
+		return queryParameter != null && !queryParameter.isBlank();
+	}
+
+	private QueryResponseHeartbeat createQueryResponseHeartbeat(OutputStream out,
+			CancellableOperationCoordinator.Handle handle) {
+		return new QueryResponseHeartbeat(out, getQueryResponseHeartbeatInterval(), () -> {
+			if (handle != null) {
+				queryCoordinator.cancelAsync(handle);
+			}
+		});
+	}
+
+	/**
+	 * Returns the delay between response probes. The default keeps transport overhead low while allowing deployments to
+	 * tune the response lifecycle for their transport.
+	 */
+	protected Duration getQueryResponseHeartbeatInterval() {
+		return QueryResponseHeartbeat.DEFAULT_INTERVAL;
+	}
+
+	private boolean hasCommittedResponse(QueryResponseHeartbeat responseHeartbeat, HttpServletResponse response) {
+		return responseHeartbeat != null && responseHeartbeat.hasProbed()
+				|| response != null && response.isCommitted();
+	}
+
+	private void stopResponseHeartbeat(QueryResponseHeartbeat responseHeartbeat) {
+		if (responseHeartbeat != null) {
+			responseHeartbeat.stop();
+		}
+	}
+
+	private boolean isCancelled(CancellableOperationCoordinator.Handle handle) {
+		return handle != null && !handle.isActive();
 	}
 
 	private OutputStream getResponseOutputStream(WorkbenchRequest req, HttpServletResponse resp,
@@ -714,9 +869,30 @@ public class QueryServlet extends TransformationServlet {
 			if (explainRequestId == null) {
 				resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: " + EXPLAIN_REQUEST_ID);
 				return;
-			} else {
-				asyncExplainCoordinator.cancel(explainRequestId);
-				resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+			}
+			try {
+				if (asyncExplainCoordinator.cancel(getRepositoryReference(), explainRequestId)) {
+					resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+				} else {
+					resp.sendError(HttpServletResponse.SC_NOT_FOUND);
+				}
+			} catch (CancellableOperationCoordinator.CancellationException e) {
+				resp.sendError(HttpServletResponse.SC_BAD_GATEWAY, e.getMessage());
+			}
+		} else if (ACTION_CANCEL_QUERY.equals(action)) {
+			final String queryRequestId = getQueryRequestId(req);
+			if (queryRequestId == null) {
+				resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: " + QUERY_REQUEST_ID);
+				return;
+			}
+			try {
+				if (queryCoordinator.cancel(getRepositoryReference(), queryRequestId)) {
+					resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+				} else {
+					resp.sendError(HttpServletResponse.SC_NOT_FOUND);
+				}
+			} catch (CancellableOperationCoordinator.CancellationException e) {
+				resp.sendError(HttpServletResponse.SC_BAD_GATEWAY, e.getMessage());
 			}
 		} else {
 			throw new BadRequestException("POST with unexpected action parameter value: " + action);
@@ -792,6 +968,18 @@ public class QueryServlet extends TransformationServlet {
 		return explainRequestId.isEmpty() ? null : explainRequestId;
 	}
 
+	private String getQueryRequestId(WorkbenchRequest req) {
+		if (!req.isParameterPresent(QUERY_REQUEST_ID)) {
+			return null;
+		}
+		String queryRequestId = req.getParameter(QUERY_REQUEST_ID);
+		if (queryRequestId == null) {
+			return null;
+		}
+		queryRequestId = queryRequestId.trim();
+		return queryRequestId.isEmpty() ? null : queryRequestId;
+	}
+
 	private String getRepositoryReference() {
 		if (repository instanceof HTTPRepository) {
 			return ((HTTPRepository) repository).getRepositoryURL();
@@ -848,32 +1036,77 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private void service(final WorkbenchRequest req, final HttpServletResponse resp, final OutputStream out,
-			final String xslPath)
+			final String xslPath, CancellableOperationCoordinator.Handle handle,
+			QueryResponseHeartbeat[] responseHeartbeat)
 			throws BadRequestException, RDF4JException, UnsupportedQueryResultFormatException, IOException {
 		try (RepositoryConnection con = repository.getConnection()) {
 			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
-			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, out);
+			if (handle != null) {
+				try {
+					queryCoordinator.execute(handle, con,
+							currentHandle -> QueryRequestContext.activate(currentHandle.getRequestId())::close,
+							() -> {
+								try {
+									evaluateQuery(req, resp, out, xslPath, con, handle, responseHeartbeat);
+								} catch (Exception e) {
+									throw new TrackedQueryExecutionException(e);
+								}
+								return null;
+							});
+				} catch (TrackedQueryExecutionException e) {
+					Throwable cause = e.getCause();
+					if (cause instanceof IOException) {
+						throw (IOException) cause;
+					}
+					if (cause instanceof BadRequestException) {
+						throw (BadRequestException) cause;
+					}
+					if (cause instanceof RuntimeException) {
+						throw (RuntimeException) cause;
+					}
+					throw e;
+				}
+				return;
+			}
+			evaluateQuery(req, resp, out, xslPath, con, handle, responseHeartbeat);
+		}
+	}
+
+	private void evaluateQuery(final WorkbenchRequest req, final HttpServletResponse resp, final OutputStream out,
+			final String xslPath, RepositoryConnection con, CancellableOperationCoordinator.Handle handle,
+			QueryResponseHeartbeat[] responseHeartbeat)
+			throws BadRequestException, RDF4JException, UnsupportedQueryResultFormatException, IOException {
+		String query = getQueryText(req);
+		QueryResponseHeartbeat heartbeat = null;
+		OutputStream writerOutput = out;
+		if (!query.isEmpty() && !req.isParameterPresent(EXPLAIN) && !"HEAD".equalsIgnoreCase(req.getMethod())) {
+			heartbeat = createQueryResponseHeartbeat(out, handle);
+			responseHeartbeat[0] = heartbeat;
+			writerOutput = heartbeat.getOutputStream();
+		}
+
+		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, writerOutput);
+		if (query.isEmpty() || req.isParameterPresent(EXPLAIN)) {
 			for (Namespace ns : Iterations.asList(con.getNamespaces())) {
 				builder.prefix(ns.getPrefix(), ns.getName());
 			}
-			String query = getQueryText(req);
-			if (query.isEmpty()) {
-				builder.transform(xslPath, "query.xsl");
-				builder.start();
-				builder.link(Arrays.asList(INFO, "namespaces"));
-				builder.end();
-			} else {
-				try {
-					EVAL.extractQueryAndEvaluate(builder, resp, out, xslPath, con, query, req, this.cookies,
-							getResponseQueryText(req, query), getRepositoryReference());
-				} catch (MalformedQueryException exc) {
-					throw new BadRequestException(exc.getMessage(), exc);
-				} catch (HTTPQueryEvaluationException exc) {
-					if (exc.getCause() instanceof MalformedQueryException) {
-						throw new BadRequestException(exc.getCause().getMessage(), exc);
-					}
-					throw exc;
+		}
+		if (query.isEmpty()) {
+			builder.transform(xslPath, "query.xsl");
+			builder.start();
+			builder.link(Arrays.asList(INFO, "namespaces"));
+			builder.end();
+		} else {
+			try {
+				EVAL.extractQueryAndEvaluate(builder, resp, writerOutput, xslPath, con, query, req, this.cookies,
+						getResponseQueryText(req, query), getRepositoryReference(), heartbeat);
+			} catch (MalformedQueryException exc) {
+				throw new BadRequestException(exc.getMessage(), exc);
+			} catch (HTTPQueryEvaluationException exc) {
+				if (exc.getCause() instanceof MalformedQueryException) {
+					throw new BadRequestException(exc.getCause().getMessage(), exc);
 				}
+				throw exc;
 			}
 		}
 	}
@@ -891,13 +1124,26 @@ public class QueryServlet extends TransformationServlet {
 	}
 
 	private void writeBrowserErrorResponse(WorkbenchRequest req, HttpServletResponse resp, OutputStream out,
-			String xslPath, String message) throws IOException, QueryResultHandlerException {
-		TupleResultBuilder builder = getTupleResultBuilder(req, resp, out);
+			String xslPath, CancellableOperationCoordinator.Handle handle, QueryResponseHeartbeat responseHeartbeat,
+			String message) throws IOException, QueryResultHandlerException {
+		if (responseHeartbeat != null) {
+			responseHeartbeat.stop();
+		}
+		OutputStream writerOutput = responseHeartbeat == null ? out : responseHeartbeat.getOutputStream();
+		TupleResultBuilder builder = getTupleResultBuilder(req, resp, writerOutput);
 		builder.transform(xslPath, "query.xsl");
 		builder.start("error-message");
 		builder.link(Arrays.asList(INFO, "namespaces"));
+		String queryRequestId = handle == null ? getQueryRequestId(req) : handle.getRequestId();
+		if (queryRequestId != null) {
+			builder.metadata(QueryEvaluator.METADATA_QUERY_REQUEST_ID, queryRequestId);
+			builder.metadata(QueryEvaluator.METADATA_QUERY_RESULT_STATUS, "error");
+		}
 		builder.result(message);
 		builder.end();
+		if (responseHeartbeat != null) {
+			responseHeartbeat.complete();
+		}
 	}
 
 	private void applyRetryAfter(HttpServletResponse response,
@@ -964,6 +1210,14 @@ public class QueryServlet extends TransformationServlet {
 
 	private boolean isSavedQueryReference(WorkbenchRequest req) {
 		return req.isParameterPresent(REF) && "id".equals(req.getParameter(REF));
+	}
+
+	private static final class TrackedQueryExecutionException extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+
+		private TrackedQueryExecutionException(Exception cause) {
+			super(cause);
+		}
 	}
 
 }

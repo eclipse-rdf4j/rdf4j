@@ -21,6 +21,16 @@ final class NativeCancellationToken {
 	 */
 	private final Thread evaluationThread = Thread.currentThread();
 	private volatile boolean cancellationRequested;
+	private final NativeCancellationToken parent;
+
+	NativeCancellationToken() {
+		this(null);
+	}
+
+	/** A pipeline can stop its workers without cancelling its enclosing query or a later fallback. */
+	NativeCancellationToken(NativeCancellationToken parent) {
+		this.parent = parent;
+	}
 
 	void requestCancellation() {
 		cancellationRequested = true;
@@ -28,7 +38,8 @@ final class NativeCancellationToken {
 
 	boolean isCancellationRequested() {
 		if (!cancellationRequested
-				&& (evaluationThread.isInterrupted() || Thread.currentThread().isInterrupted())) {
+				&& (parent != null && parent.isCancellationRequested()
+						|| evaluationThread.isInterrupted() || Thread.currentThread().isInterrupted())) {
 			cancellationRequested = true;
 		}
 		return cancellationRequested;

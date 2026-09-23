@@ -57,24 +57,203 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		KernelAdjacencyCursor open(Predicate<AdjacencyPageCursor> proof, boolean contexts,
 				KernelCancellation cancellation);
 
+		/** Releases one physical plane. Reusable sources return the cursor to their owner instead of closing it. */
+		default void release(KernelAdjacencyCursor cursor) {
+			cursor.close();
+		}
+
 		@Override
 		default void close() {
+		}
+	}
+
+	/**
+	 * Retains one projection's physical scratch and memory admission across correlated logical activations. The owner
+	 * is worker-confined: a caller must close the current activation before binding another source to it, and must
+	 * finally close the owner when the kernel is discarded or rebound.
+	 */
+	@InternalUseOnly
+	public static final class Owner implements AutoCloseable {
+		private final KernelAdjacencyCursor.ReusableRunOwner physical = new KernelAdjacencyCursor.ReusableRunOwner();
+		private final LmdbQueryMemoryManager.Reservation reservation;
+		private KernelProjectionCursor active;
+		private KernelProjectionCursor reusable;
+		private Source reusableSource;
+		private boolean closed;
+
+		private Owner(LmdbQueryMemoryManager.Reservation reservation) {
+			this.reservation = reservation;
+		}
+
+		/** Admits one reusable projection owner before any source lookup or scalar program execution. */
+		public static Owner open(LmdbQueryMemoryManager.QueryLedger ledger, int retainedColumns) {
+			LmdbQueryMemoryManager.Reservation reservation = null;
+			try {
+				if (ledger != null) {
+					reservation = ledger.reserve(Math.addExact(BUFFER_BYTES,
+							Math.multiplyExact((long) retainedColumns, Long.BYTES)), null);
+					if (reservation == null) {
+						return null;
+					}
+				}
+				return new Owner(reservation);
+			} catch (RuntimeException | Error failure) {
+				if (reservation != null) {
+					try {
+						reservation.close();
+					} catch (RuntimeException | Error cleanup) {
+						if (cleanup != failure) {
+							failure.addSuppressed(cleanup);
+						}
+					}
+				}
+				throw failure;
+			}
+		}
+
+		/** Opens one logical activation. The returned cursor must be closed before another activation is opened. */
+		public KernelProjectionCursor activate(Source source, Program program, int outputs, int programs,
+				boolean contextObserved, boolean contextMatch, long wantedContext, boolean excludeDefault,
+				KernelCancellation cancellation) {
+			Objects.requireNonNull(source, "source");
+			Objects.requireNonNull(program, "program");
+			if (closed) {
+				throw new IllegalStateException("projection owner is closed");
+			}
+			if (active != null) {
+				throw new IllegalStateException("projection owner already has an active cursor");
+			}
+			KernelProjectionCursor result = reusable;
+			if (result == null) {
+				result = new KernelProjectionCursor(source, program, outputs, programs,
+						contextObserved, contextMatch, wantedContext, excludeDefault, cancellation, null, this);
+				reusable = result;
+			} else {
+				result.resetActivation(source, program, outputs, programs, contextObserved, contextMatch, wantedContext,
+						excludeDefault, cancellation);
+			}
+			active = result;
+			try {
+				if (!source.advance()) {
+					result.sourceDone = true;
+					return result;
+				}
+				result.cursor = result.openPlane();
+				if (result.cursor == null) {
+					result.closeActivation();
+					return null;
+				}
+				return result;
+			} catch (RuntimeException | Error failure) {
+				try {
+					result.closeActivation();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+				throw failure;
+			}
+		}
+
+		private KernelAdjacencyCursor activateBound(NativeAdjacency.BoundRunCursor bound, long root, long runSize,
+				KernelCancellation cancellation) {
+			return physical.activateBound(bound, root, runSize, cancellation);
+		}
+
+		private KernelAdjacencyCursor activateResolved(RunView view, long root, long handle, long runSize,
+				KernelCancellation cancellation) {
+			return physical.activateResolved(view, root, handle, runSize, cancellation);
+		}
+
+		private void release(KernelAdjacencyCursor cursor) {
+			physical.release(cursor);
+		}
+
+		private void ensureAvailable() {
+			if (closed) {
+				throw new IllegalStateException("projection owner is closed");
+			}
+			if (active != null) {
+				throw new IllegalStateException("projection owner already has an active cursor");
+			}
+		}
+
+		private Source prepareBoundSource(NativeAdjacency.BoundRunCursor bound, long root) {
+			ensureAvailable();
+			if (reusableSource == null) {
+				reusableSource = new BoundSource(this, bound, root);
+			} else if (reusableSource instanceof BoundSource source) {
+				source.configure(bound, root);
+			} else {
+				throw new IllegalStateException("projection owner source kind changed");
+			}
+			return reusableSource;
+		}
+
+		private Source preparePlaneSource(NativeAdjacency fixed, NativeLmdbQuerySource.DynamicAdjacency dynamic,
+				NativeLmdbQuerySource.WildcardAdjacency wildcard, NativeLmdbQuerySource.NodePredicates predicates,
+				long root, long requestedPredicate, boolean boundRoot) {
+			ensureAvailable();
+			if (reusableSource == null) {
+				reusableSource = new PlaneSource(fixed, dynamic, wildcard, predicates, root, requestedPredicate,
+						boundRoot,
+						this);
+			} else if (reusableSource instanceof PlaneSource source) {
+				source.configure(fixed, dynamic, wildcard, predicates, root, requestedPredicate, boundRoot);
+			} else {
+				throw new IllegalStateException("projection owner source kind changed");
+			}
+			return reusableSource;
+		}
+
+		private void activationClosed(KernelProjectionCursor cursor) {
+			if (active == cursor) {
+				active = null;
+			}
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			Throwable failure = null;
+			KernelProjectionCursor owned = active;
+			if (owned != null) {
+				try {
+					owned.closeActivation();
+				} catch (Throwable problem) {
+					failure = problem;
+				}
+			}
+			failure = KernelRuntime.closeResource(physical, failure);
+			failure = KernelRuntime.closeResource(reservation, failure);
+			active = null;
+			if (reusable != null) {
+				reusable.clearOwnerReferences();
+				reusable = null;
+			}
+			reusableSource = null;
+			KernelRuntime.rethrowCloseFailure(failure);
 		}
 	}
 
 	// One physical batch, a possible bounded node-predicate row, and retained scalar columns. The reservation stays
 	// live across planes so growing aggregate state cannot revoke buffers after rows have already been emitted.
 	private static final long BUFFER_BYTES = 6L * 256L * Long.BYTES + 512L;
-	private final Source source;
-	private final Program program;
-	private final int outputs;
-	private final int programs;
-	private final boolean contextObserved;
-	private final boolean contextMatch;
-	private final long wantedContext;
-	private final boolean excludeDefault;
-	private final KernelCancellation cancellation;
+	private Source source;
+	private Program program;
+	private int outputs;
+	private int programs;
+	private boolean contextObserved;
+	private boolean contextMatch;
+	private long wantedContext;
+	private boolean excludeDefault;
+	private KernelCancellation cancellation;
 	private final LmdbQueryMemoryManager.Reservation reservation;
+	private final Owner owner;
 	private KernelAdjacencyCursor cursor;
 	private boolean initialized;
 	private boolean planeReady;
@@ -100,7 +279,7 @@ public final class KernelProjectionCursor implements AutoCloseable {
 
 	private KernelProjectionCursor(Source source, Program program, int outputs, int programs,
 			boolean contextObserved, boolean contextMatch, long wantedContext, boolean excludeDefault,
-			KernelCancellation cancellation, LmdbQueryMemoryManager.Reservation reservation) {
+			KernelCancellation cancellation, LmdbQueryMemoryManager.Reservation reservation, Owner owner) {
 		this.source = source;
 		this.program = program;
 		this.outputs = outputs;
@@ -111,6 +290,58 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		this.excludeDefault = excludeDefault;
 		this.cancellation = cancellation;
 		this.reservation = reservation;
+		this.owner = owner;
+	}
+
+	private void resetActivation(Source source, Program program, int outputs, int programs, boolean contextObserved,
+			boolean contextMatch, long wantedContext, boolean excludeDefault, KernelCancellation cancellation) {
+		if (!closed) {
+			throw new IllegalStateException("projection cursor activation is still open");
+		}
+		this.source = Objects.requireNonNull(source, "source");
+		this.program = Objects.requireNonNull(program, "program");
+		this.outputs = outputs;
+		this.programs = programs;
+		this.contextObserved = contextObserved;
+		this.contextMatch = contextMatch;
+		this.wantedContext = wantedContext;
+		this.excludeDefault = excludeDefault;
+		this.cancellation = cancellation;
+		this.cursor = null;
+		this.initialized = false;
+		this.planeReady = false;
+		this.rootReady = false;
+		this.fiberReady = false;
+		this.sourceDone = false;
+		this.closed = false;
+		this.rootExit = false;
+		this.fiberExit = false;
+		this.rootWeight = 0L;
+		this.fiberWeight = 0L;
+		this.remainingRows = 0L;
+		this.virtualRowPollTick = 0;
+		this.grain = INPUT;
+		this.weight = 0L;
+		this.pagesVisited = 0L;
+		this.pagesSkipped = 0L;
+		this.rootsVisited = 0L;
+		this.fibersVisited = 0L;
+		this.contextsVisited = 0L;
+		this.completedNeighborValues = 0L;
+		this.completedContextValues = 0L;
+	}
+
+	private void clearOwnerReferences() {
+		if (activeOwnerCursor()) {
+			throw new IllegalStateException("cannot clear an active projection owner cursor");
+		}
+		source = null;
+		program = null;
+		cancellation = null;
+	}
+
+	private boolean activeOwnerCursor() {
+		return !closed || cursor != null;
 	}
 
 	/** Returns null, without consuming rows or running a program, if this source or memory budget cannot admit it. */
@@ -131,7 +362,7 @@ public final class KernelProjectionCursor implements AutoCloseable {
 				}
 			}
 			result = new KernelProjectionCursor(source, program, outputs, programs, contextObserved,
-					contextMatch, wantedContext, excludeDefault, cancellation, reservation);
+					contextMatch, wantedContext, excludeDefault, cancellation, reservation, null);
 			if (source.advance()) {
 				result.cursor = result.openPlane();
 				if (result.cursor == null) {
@@ -376,12 +607,12 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		if (owned != null) {
 			completedNeighborValues += owned.neighborValuesCopied();
 			completedContextValues += owned.contextValuesCopied();
-			owned.close();
+			source.release(owned);
 		}
 	}
 
-	@Override
-	public void close() {
+	/** Ends one logical activation while leaving a reusable owner's admission and physical scratch live. */
+	public void closeActivation() {
 		if (closed) {
 			return;
 		}
@@ -392,21 +623,26 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		} catch (Throwable problem) {
 			failure = problem;
 		}
-		for (AutoCloseable owned : new AutoCloseable[] { source, reservation }) {
-			if (owned != null) {
-				try {
-					owned.close();
-				} catch (Throwable cleanup) {
-					if (failure == null) {
-						failure = cleanup;
-					} else if (cleanup != failure) {
-						failure.addSuppressed(cleanup);
-					}
-				}
+		try {
+			source.close();
+		} catch (Throwable cleanup) {
+			if (failure == null) {
+				failure = cleanup;
+			} else if (cleanup != failure) {
+				failure.addSuppressed(cleanup);
 			}
 		}
-		cursor = null;
+		if (owner != null) {
+			owner.activationClosed(this);
+		} else {
+			failure = KernelRuntime.closeResource(reservation, failure);
+		}
 		KernelRuntime.rethrowCloseFailure(failure);
+	}
+
+	@Override
+	public void close() {
+		closeActivation();
 	}
 
 	public static Source fixed(NativeAdjacency view) {
@@ -417,8 +653,20 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		return new PlaneSource(view, null, null, null, root, -1L, true);
 	}
 
+	/** Creates a one-plane source which reuses the ordinary bound cursor owned by the same kernel site. */
+	public static Source probe(Owner owner, NativeAdjacency.BoundRunCursor bound, long root) {
+		return Objects.requireNonNull(owner, "owner").prepareBoundSource(bound, root);
+	}
+
 	public static Source dynamic(NativeLmdbQuerySource.DynamicAdjacency view, long root, long predicate) {
 		return predicate == -1L ? emptySource() : new PlaneSource(null, view, null, null, root, predicate, true);
+	}
+
+	/** Creates a dynamic one-plane source backed by the owner's reusable run adapter. */
+	public static Source dynamic(Owner owner, NativeLmdbQuerySource.DynamicAdjacency view, long root, long predicate) {
+		return predicate == -1L ? emptySource()
+				: Objects.requireNonNull(owner, "owner")
+						.preparePlaneSource(null, view, null, null, root, predicate, true);
 	}
 
 	public static Source wildcard(NativeLmdbQuerySource.WildcardAdjacency view) {
@@ -433,38 +681,51 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		return new PlaneSource(null, null, view, null, root, -1L, true);
 	}
 
+	/** Creates a node-predicate source whose resolved runs reuse the owner's physical batch. */
+	public static Source predicates(Owner owner, NativeLmdbQuerySource.WildcardAdjacency view, long root) {
+		return Objects.requireNonNull(owner, "owner").preparePlaneSource(null, null, view, null, root, -1L, true);
+	}
+
 	public static Source predicates(NativeLmdbQuerySource.NodePredicates view, long root) {
 		return new PlaneSource(null, null, null, view, root, -1L, true);
 	}
 
-	private static Source emptySource() {
-		return new Source() {
-			@Override
-			public boolean advance() {
-				return false;
-			}
-
-			@Override
-			public long predicate() {
-				return -1L;
-			}
-
-			@Override
-			public KernelAdjacencyCursor open(Predicate<AdjacencyPageCursor> proof, boolean contexts,
-					KernelCancellation cancellation) {
-				throw new IllegalStateException("empty source has no current plane");
-			}
-		};
+	/** Creates a node-predicate source whose resolved runs reuse the owner's physical batch. */
+	public static Source predicates(Owner owner, NativeLmdbQuerySource.NodePredicates view, long root) {
+		return Objects.requireNonNull(owner, "owner").preparePlaneSource(null, null, null, view, root, -1L, true);
 	}
 
+	private static Source emptySource() {
+		return EMPTY_SOURCE;
+	}
+
+	private static final Source EMPTY_SOURCE = new Source() {
+		@Override
+		public boolean advance() {
+			return false;
+		}
+
+		@Override
+		public long predicate() {
+			return -1L;
+		}
+
+		@Override
+		public KernelAdjacencyCursor open(Predicate<AdjacencyPageCursor> proof, boolean contexts,
+				KernelCancellation cancellation) {
+			throw new IllegalStateException("empty source has no current plane");
+		}
+	};
+
 	private static final class PlaneSource implements Source {
-		private final NativeAdjacency fixed;
-		private final NativeLmdbQuerySource.DynamicAdjacency dynamic;
-		private final NativeLmdbQuerySource.WildcardAdjacency wildcard;
-		private final NativeLmdbQuerySource.NodePredicates predicates;
-		private final long root;
-		private final long requestedPredicate;
-		private final boolean boundRoot;
+		private NativeAdjacency fixed;
+		private NativeLmdbQuerySource.DynamicAdjacency dynamic;
+		private NativeLmdbQuerySource.WildcardAdjacency wildcard;
+		private NativeLmdbQuerySource.NodePredicates predicates;
+		private long root;
+		private long requestedPredicate;
+		private boolean boundRoot;
+		private final Owner owner;
 		private final long[] key = new long[1];
 		private final long[] handle = new long[1];
 		private NativeLmdbQuerySource.NodePredicates.PredicateRowCursor row;
@@ -476,6 +737,12 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		PlaneSource(NativeAdjacency fixed, NativeLmdbQuerySource.DynamicAdjacency dynamic,
 				NativeLmdbQuerySource.WildcardAdjacency wildcard, NativeLmdbQuerySource.NodePredicates predicates,
 				long root, long requestedPredicate, boolean boundRoot) {
+			this(fixed, dynamic, wildcard, predicates, root, requestedPredicate, boundRoot, null);
+		}
+
+		PlaneSource(NativeAdjacency fixed, NativeLmdbQuerySource.DynamicAdjacency dynamic,
+				NativeLmdbQuerySource.WildcardAdjacency wildcard, NativeLmdbQuerySource.NodePredicates predicates,
+				long root, long requestedPredicate, boolean boundRoot, Owner owner) {
 			this.fixed = fixed;
 			this.dynamic = dynamic;
 			this.wildcard = wildcard;
@@ -483,7 +750,34 @@ public final class KernelProjectionCursor implements AutoCloseable {
 			this.root = root;
 			this.requestedPredicate = requestedPredicate;
 			this.boundRoot = boundRoot;
+			this.owner = owner;
+			resetTraversal();
+		}
+
+		private void configure(NativeAdjacency fixed, NativeLmdbQuerySource.DynamicAdjacency dynamic,
+				NativeLmdbQuerySource.WildcardAdjacency wildcard, NativeLmdbQuerySource.NodePredicates predicates,
+				long root, long requestedPredicate, boolean boundRoot) {
+			if (row != null) {
+				row.close();
+				row = null;
+			}
+			this.fixed = fixed;
+			this.dynamic = dynamic;
+			this.wildcard = wildcard;
+			this.predicates = predicates;
+			this.root = root;
+			this.requestedPredicate = requestedPredicate;
+			this.boundRoot = boundRoot;
+			resetTraversal();
+		}
+
+		private void resetTraversal() {
 			key[0] = root;
+			handle[0] = 0L;
+			ordinal = 0;
+			started = false;
+			predicate = -1L;
+			run = 0L;
 		}
 
 		@Override
@@ -559,10 +853,22 @@ public final class KernelProjectionCursor implements AutoCloseable {
 			if (boundRoot) {
 				RunView view = fixed != null ? fixed
 						: dynamic != null ? dynamic : wildcard != null ? wildcard : predicates;
+				if (owner != null) {
+					return owner.activateResolved(view, root, run, view.size(run), cancellation);
+				}
 				return KernelAdjacencyCursor.openRun(view, root, run, cancellation, null);
 			}
 			return fixed != null ? KernelAdjacencyCursor.open(fixed, proof, contexts, cancellation, null)
 					: KernelAdjacencyCursor.open(wildcard, proof, contexts, cancellation, null);
+		}
+
+		@Override
+		public void release(KernelAdjacencyCursor cursor) {
+			if (owner != null) {
+				owner.release(cursor);
+			} else {
+				Source.super.release(cursor);
+			}
 		}
 
 		@Override
@@ -571,6 +877,55 @@ public final class KernelProjectionCursor implements AutoCloseable {
 				row.close();
 				row = null;
 			}
+		}
+	}
+
+	private static final class BoundSource implements Source {
+		private final Owner owner;
+		private NativeAdjacency.BoundRunCursor bound;
+		private long root;
+		private long run;
+		private boolean started;
+
+		BoundSource(Owner owner, NativeAdjacency.BoundRunCursor bound, long root) {
+			this.owner = Objects.requireNonNull(owner, "owner");
+			configure(bound, root);
+		}
+
+		private void configure(NativeAdjacency.BoundRunCursor bound, long root) {
+			this.bound = Objects.requireNonNull(bound, "bound");
+			this.root = root;
+			this.run = 0L;
+			this.started = false;
+		}
+
+		@Override
+		public boolean advance() {
+			if (started || root == -1L) {
+				return false;
+			}
+			started = true;
+			run = bound.bind(root);
+			if (run == NativeAdjacency.NOT_COVERED) {
+				throw new IllegalStateException("adjacency refused a bound root after kernel bind");
+			}
+			return run > 0L;
+		}
+
+		@Override
+		public long predicate() {
+			return -1L;
+		}
+
+		@Override
+		public KernelAdjacencyCursor open(Predicate<AdjacencyPageCursor> proof, boolean contexts,
+				KernelCancellation cancellation) {
+			return owner.activateBound(bound, root, run, cancellation);
+		}
+
+		@Override
+		public void release(KernelAdjacencyCursor cursor) {
+			owner.release(cursor);
 		}
 	}
 }

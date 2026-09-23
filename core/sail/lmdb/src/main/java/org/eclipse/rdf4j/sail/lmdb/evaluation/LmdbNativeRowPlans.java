@@ -34,8 +34,14 @@ final class UnionPlan implements SlotPlan {
 	}
 
 	@Override
+	public LmdbNativeFactorCursor openFactors(RowState row) throws IOException {
+		return LmdbNativeFactorAlgebra.tryOpen(this, row);
+	}
+
+	@Override
 	public RowCursor open(RowState row) throws IOException {
-		return new UnionCursor(left, right, row);
+		LmdbNativeFactorCursor grouped = openFactors(row);
+		return grouped != null ? LmdbNativeFactorRows.asRows(grouped, row) : new UnionCursor(left, right, row);
 	}
 
 	@Override
@@ -202,7 +208,8 @@ final class FilterPlan implements SlotPlan {
 		LmdbNativeFactorCursor grouped = openFactors(row);
 		if (grouped != null)
 			return LmdbNativeFactorRows.asRows(grouped, row);
-		return new FilterCursor(arg.open(row), filter, row);
+		RowCursor input = arg.open(row);
+		return new FilterCursor(filterMask < 0L ? LmdbNativeFactorAlgebra.logical(input, row) : input, filter, row);
 	}
 
 	@Override
@@ -370,8 +377,15 @@ final class ExtensionPlan implements SlotPlan {
 	}
 
 	@Override
+	public LmdbNativeFactorCursor openFactors(RowState row) throws IOException {
+		return LmdbNativeFactorAlgebra.tryOpen(this, row);
+	}
+
+	@Override
 	public RowCursor open(RowState row) throws IOException {
-		return new ExtensionCursor(arg.open(row), copies, row);
+		LmdbNativeFactorCursor grouped = openFactors(row);
+		return grouped != null ? LmdbNativeFactorRows.asRows(grouped, row)
+				: new ExtensionCursor(arg.open(row), copies, row);
 	}
 
 	@Override
@@ -414,55 +428,69 @@ final class ExtensionCursor implements FactorizedRowCursor {
 	final RowState row;
 	int activeMark = -1;
 	int probePollTick;
+	boolean closed;
 
 	ExtensionCursor(RowCursor arg, CopyBinding[] copies, RowState row) {
-		this.arg = arg;
+		boolean replaySafe = true;
+		for (CopyBinding copy : copies)
+			replaySafe &= copy.encounterOrderReplaySafe;
+		// A scalar fallback may still receive a multiplicity-carrying join. Volatile functions must run
+		// once per logical solution even when grouped transport is disabled or an ordered boundary is active.
+		this.arg = replaySafe ? arg : LmdbNativeFactorAlgebra.logical(arg, row);
 		this.copies = copies;
 		this.row = row;
 	}
 
 	@Override
 	public boolean next() throws IOException {
-		release();
-		while (arg.next()) {
-			// Like ExtensionIterator's copied target bindings, each extension evaluates a new mapping. Expressions
-			// within this extension share labeled BNODE state; a later extension must not reuse its child's state.
-			row.beginLogicalSolution();
-			// a run of bind conflicts advances without emitting; poll or the probe deadline starves
-			LmdbNativeProbeDeadline.poll(++probePollTick);
-			int mark = row.mark();
-			boolean ok = true;
-			for (CopyBinding copy : copies) {
-				long id = copy.value(row);
-				if (id == UNKNOWN) {
-					if (!copy.setNullOnError) {
-						continue;
-					}
-					// Match ExtensionIterator's setNullOnError contract. The zero id is an occupied slot for
-					// join/conflict purposes but remains absent from the visible BindingSet, so a later pattern cannot
-					// turn a failed assignment into a new binding.
-					id = LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
-				}
-				boolean bound = copy.termChecked ? row.bindOrCheckTerm(copy.targetSlot, id)
-						: row.bind(copy.targetSlot, id);
-				if (!bound) {
-					ok = false;
-					break;
-				}
+		if (closed)
+			return false;
+		try {
+			release();
+			while (arg.next()) {
+				LmdbNativeProbeDeadline.poll(++probePollTick);
+				activeMark = row.mark();
+				if (bindCopies(copies, row))
+					return true;
+				release();
 			}
-			if (ok) {
-				activeMark = mark;
-				return true;
-			}
-			row.rollback(mark);
+			close();
+			return false;
+		} catch (IOException | RuntimeException | Error failure) {
+			LmdbNativeFactorAlgebra.closeSuppressing(this, failure);
+			throw failure;
 		}
-		return false;
+	}
+
+	/** Shared by scalar and grouped extension; assignment order and null-on-error must not diverge. */
+	static boolean bindCopies(CopyBinding[] copies, RowState row) throws IOException {
+		// Expressions in this extension share labeled BNODE state, but not the state of a previous solution.
+		row.beginLogicalSolution();
+		for (CopyBinding copy : copies) {
+			long id = copy.value(row);
+			if (id == UNKNOWN) {
+				if (!copy.setNullOnError)
+					continue;
+				// An error leaves an occupied null placeholder, exactly as ExtensionIterator does. It is absent
+				// from visible values, but a later pattern must not turn the failed assignment into a binding.
+				id = LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
+			}
+			if (!(copy.termChecked ? row.bindOrCheckTerm(copy.targetSlot, id) : row.bind(copy.targetSlot, id)))
+				return false;
+		}
+		return true;
 	}
 
 	@Override
 	public void close() {
-		release();
-		arg.close();
+		if (closed)
+			return;
+		closed = true;
+		try {
+			release();
+		} finally {
+			arg.close();
+		}
 	}
 
 	void release() {

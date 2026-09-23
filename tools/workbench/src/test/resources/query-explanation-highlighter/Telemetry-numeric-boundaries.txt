@@ -1,0 +1,2 @@
+Distinct (costEstimate=9.223372036854776E17M, resultSizeActual=9.0071992547E9M, signedLongMax=9.2233720368547E12M, inputRowsActual=9.0071992547E9M, rowsDroppedActual=1, duplicatesRemovedActual=1, dedupRateActual=0.00)
+   StatementPattern (resultSizeActual=9.0071992547E9M)

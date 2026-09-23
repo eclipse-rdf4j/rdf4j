@@ -1,0 +1,2 @@
+Join (costEstimate=2.68)
+   StatementPattern (costEstimate=1.0E7M)

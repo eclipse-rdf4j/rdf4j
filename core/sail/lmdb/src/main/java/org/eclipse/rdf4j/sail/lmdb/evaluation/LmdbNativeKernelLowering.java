@@ -952,6 +952,9 @@ final class LmdbNativeKernelLowering {
 		// The physical grouped producer is independent of execution tier. Preserve its
 		// hierarchy for branching BGPs instead of replacing it with scalar IR probes. Other
 		// shortcuts above retain precedence; unsupported/effectful shapes keep their old path.
+		// Automatic admission is limited to a direct MultiJoinPlan: composed SlotPlan trees do not yet have a reusable
+		// structural plan or a cost for nested OPTIONAL/UNION reopening. Explicit packed forcing remains handled by the
+		// packed algebra dispatchers.
 		if (!preferScans && !scanVariablePredicates && arg instanceof MultiJoinPlan multi
 				&& LmdbNativePackedFtree.projectionAggregateCandidate(multi, row, groupSlots, aggregates)) {
 			Lowered projected = lowerAggregateWithPlanProducer(arg, row, groupSlots, aggregates, having);
@@ -2288,7 +2291,7 @@ final class LmdbNativeKernelLowering {
 				if (tryLowerCyclicCore(multiJoin, row)) {
 					return lowerRegisteredFilters(multiFilters);
 				}
-				SlotPlan[] order = multiJoin.derivedPlan(row).order;
+				SlotPlan[] order = multiJoin.derivedPlanForLowering(row, availableBindings()).order;
 				// Under DISTINCT sinking (plan 32 M4), branches whose fresh variables are all projected away
 				// contribute existence only — they lower to Exists semijoins AFTER the spine has produced their
 				// anchor variables, instead of multiplying rows the DISTINCT would collapse anyway.
@@ -2384,6 +2387,25 @@ final class LmdbNativeKernelLowering {
 			}
 			reason = reasonPrefix + (top ? "unsupported:" : "child:") + plan.getClass().getSimpleName();
 			return false;
+		}
+
+		/** Returns the bindings that can be read safely by a new producer at the current lowering depth. */
+		long availableBindings() {
+			long available = 0L;
+			for (int slot = 0; slot < slotColumn.length; slot++) {
+				if (((hiddenSlotMask >>> slot) & 1L) != 0L) {
+					continue;
+				}
+				if (((entryMask >>> slot) & 1L) == 0L && ((assuredMask >>> slot) & 1L) == 0L
+						&& slotColumn[slot] < 0) {
+					continue;
+				}
+				Operand operand = slotOperand(slot);
+				if (operand != null && !operandMaybeNull(operand)) {
+					available |= 1L << slot;
+				}
+			}
+			return available;
 		}
 
 		/**

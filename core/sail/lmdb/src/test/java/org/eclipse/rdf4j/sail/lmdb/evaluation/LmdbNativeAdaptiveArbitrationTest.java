@@ -221,6 +221,31 @@ class LmdbNativeAdaptiveArbitrationTest {
 	}
 
 	@Test
+	void censoredColdArmCanRetryWhenItsRightCensoredBoundExceedsTheUsefulDeadline() {
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeAdaptiveArbitration.Priced<String> incumbent = pricedWithCompletions("irAggregateParallel", 0,
+				5_000_000, 10_000_000, 20_000_000, 12);
+		LmdbNativeAdaptiveArbitration.Priced<String> censoredColdArm = pricedWithCensoredOnlyEvidence(
+				LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE, 1, 9_000_000, 12_000_000, 18_000_000, 1);
+		store.safetyLedger().earn(1_000_000_000_000L);
+
+		LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<String> probe = LmdbNativeAdaptiveArbitration.maybeProbe(
+				List.of(incumbent, censoredColdArm), incumbent, model,
+				new LmdbNativeAdaptiveArbitration.ProbeContext(LmdbNativeProbeConfig.defaults(),
+						new LmdbNativeQueryProbeBudget(), true));
+
+		assertSame(censoredColdArm.candidate(), probe == null ? null : probe.trial(),
+				"a cold arm with only a startup censor must get one bounded retry even when its censor bound exceeds "
+						+ "the current displacement deadline");
+		if (probe != null) {
+			probe.reservation().refund();
+			store.probeScheduler().probeAbandoned(probe.flight());
+		}
+	}
+
+	@Test
 	void semanticNestedLoopFallbackIsNeverConsumedAsAnExperimentalProbe() {
 		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
 		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
@@ -340,6 +365,33 @@ class LmdbNativeAdaptiveArbitrationTest {
 		probe.reservation().refund();
 	}
 
+	/**
+	 * A structural fallback remains available for normal ranking, but it must never be consumed as a bounded trial:
+	 * probe cancellation removes the trial from this dispatch, which would otherwise remove the only legal execution
+	 * path before the arbiter can fall back to it.
+	 */
+	@Test
+	void structuralFallbackIsNotConsumedAsABoundedTrial() {
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeAdaptiveArbitration.Priced<String> incumbent = pricedWithEvidence("nestedLoop", 0,
+				30_000_000, 50_000_000, 90_000_000, 40);
+		LmdbNativeAdaptiveArbitration.Priced<String> fallbackQuote = pricedWithEvidence(
+				LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX, 1, 1_000_000, 2_000_000, 4_000_000, 40);
+		LmdbNativeAdaptiveArbitration.Candidate<String> fallbackCandidate = new LmdbNativeAdaptiveArbitration.Candidate<>(
+				fallbackQuote.candidate().estimate(), 1, observation -> "typeMatrix", false);
+		LmdbNativeAdaptiveArbitration.Priced<String> fallback = new LmdbNativeAdaptiveArbitration.Priced<>(
+				fallbackCandidate, fallbackQuote.prediction());
+
+		LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<String> probe = LmdbNativeAdaptiveArbitration.maybeProbe(
+				List.of(incumbent, fallback), incumbent, model,
+				new LmdbNativeAdaptiveArbitration.ProbeContext(LmdbNativeProbeConfig.defaults(),
+						new LmdbNativeQueryProbeBudget(), true));
+
+		assertSame(null, probe, "a structural fallback must remain for normal dispatch, not be spent as a trial");
+	}
+
 	@Test
 	void mandatoryTrialsCompleteEachIrStrategyBeforeTryingOtherStrategies() {
 		List<String> expected = List.of(
@@ -441,6 +493,25 @@ class LmdbNativeAdaptiveArbitrationTest {
 			assertSame(true, LmdbNativeAdaptiveArbitration.underConfirmed(pair[0], parallel.prediction(), pair[1],
 					serial.prediction()), pair[1] + " must re-arm its under-confirmed parallel sibling " + pair[0]);
 		}
+	}
+
+	/**
+	 * A cold compiled parallel IR run can include code-generation and worker-startup cost. It must not permanently
+	 * suppress the compiled sibling after one such sample when the current winner is the interpreted parallel tier.
+	 */
+	@Test
+	void parallelIrWinnerRearmsAColdCompiledParallelSibling() {
+		LmdbNativeAdaptiveArbitration.Priced<String> compiled = pricedWithCompletions(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL, 0,
+				80_000_000, 120_000_000, 180_000_000, 1);
+		LmdbNativeAdaptiveArbitration.Priced<String> interpreted = pricedWithCompletions(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED, 1,
+				5_000_000, 7_000_000, 10_000_000, 12);
+
+		assertTrue(LmdbNativeAdaptiveArbitration.underConfirmed(
+				compiled.candidate().estimate().variantKey().strategyFamily(), compiled.prediction(),
+				interpreted.candidate().estimate().variantKey().strategyFamily(), interpreted.prediction()),
+				"one cold compiled sample must not settle a competing interpreted parallel IR winner");
 	}
 
 	@Test

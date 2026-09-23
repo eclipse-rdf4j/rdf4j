@@ -197,6 +197,12 @@ public abstract class Protocol {
 	 */
 	public static final String QUERY_PARAM_NAME = "query";
 
+	/** Parameter carrying the client-generated identifier of a cancellable regular query. */
+	public static final String QUERY_REQUEST_ID_PARAM_NAME = "query-request-id";
+
+	/** Parameter identifying a request to cancel a regular query. */
+	public static final String CANCEL_QUERY_PARAM_NAME = "cancel-query";
+
 	public static final String LIMIT_PARAM_NAME = "limit";
 
 	public static final String OFFSET_PARAM_NAME = "offset";

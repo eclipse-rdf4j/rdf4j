@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
+import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
@@ -70,7 +71,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 2, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 30000)
+@Warmup(iterations = 5, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 1000)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
 		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true",
@@ -79,7 +80,8 @@ import org.openjdk.jmh.runner.options.TimeValue;
 
 		, "-Drdf4j.lmdb.valueOverlay.maxBytes=1073741824", "-Drdf4j.lmdb.valueOverlay.retained.maxBytes=268435455",
 		"-Drdf4j.lmdb.valueOverlay.reverseSlots=16777216", "-Drdf4j.lmdb.valueOverlay.sharedPrefixes=true",
-		"-Drdf4j.lmdb.valueOverlay.optimalTokenParsing=true", "-Drdf4j.lmdb.valueOverlay.vectorMinSavingPercent=8"
+		"-Drdf4j.lmdb.valueOverlay.optimalTokenParsing=true", "-Drdf4j.lmdb.valueOverlay.vectorMinSavingPercent=8",
+//		"-Drdf4j.lmdb.themeQueryBenchmark.forcedStrategy=packedFtree"
 })
 @Measurement(iterations = 3, batchSize = 1, timeUnit = TimeUnit.SECONDS, time = 1)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
@@ -114,6 +116,7 @@ public class ThemeQueryBenchmark {
 	private static final String TYPE_MATRIX_METRICS_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.typeMatrixMetrics";
 	private static final String JANINO_CODEGEN_THRESHOLD_ROWS_PROPERTY = "rdf4j.lmdb.janinoCodegen.thresholdRows";
 	private static final String JANINO_CODEGEN_SYNCHRONOUS_PROPERTY = "rdf4j.lmdb.janinoCodegen.synchronous";
+	static final String FORCED_EXECUTION_STRATEGY_PROPERTY = "rdf4j.lmdb.themeQueryBenchmark.forcedStrategy";
 	private static final List<String> IR_ENABLED_PROPERTIES = List.of(
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.kernelInterpreter.enabled",
@@ -140,17 +143,17 @@ public class ThemeQueryBenchmark {
 	 * trials compile synchronously so their IR measurements are deterministic. Each trial restores the caller's
 	 * properties, including when running both modes in the same JVM via {@link #main}.
 	 */
-//	@Param({ "auto" })
-	@Param({ "auto", "disabled" })
+	@Param({ "auto" })
+//	@Param({  "auto","disabled" })
 	public String z_z_irMode;
 
 	@Param({
-//			"0",
+			"0",
 //			"1",
 //			"2",
 //			"3",
 //			"4",
-			"5",
+//			"5",
 //			"6",
 //			"7",
 //			"8",
@@ -162,7 +165,7 @@ public class ThemeQueryBenchmark {
 	public int z_queryIndex;
 
 	@Param({
-//			"MEDICAL_RECORDS",
+			"MEDICAL_RECORDS",
 //			"SOCIAL_MEDIA",
 //			"LIBRARY",
 //			"ENGINEERING",
@@ -172,7 +175,7 @@ public class ThemeQueryBenchmark {
 //			"PHARMA",
 //			"ADAPTIVE_FILTER_PLACEMENT",
 //			"ANALYTICS",
-			"EXPLORATION",
+//			"EXPLORATION",
 //			"DATA_TRANSFORMATION"
 	})
 	public String themeName;
@@ -183,6 +186,7 @@ public class ThemeQueryBenchmark {
 	private Theme theme;
 	private String query;
 	private long expected;
+	private String forcedExecutionStrategy;
 	private final Map<String, String> previousIrProperties = new LinkedHashMap<>();
 
 	public static void main(String[] args) throws RunnerException {
@@ -227,6 +231,7 @@ public class ThemeQueryBenchmark {
 	public void setup() throws IOException {
 		StopWatch stopWatch = StopWatch.createStarted();
 		theme = Theme.valueOf(themeName);
+		forcedExecutionStrategy = configuredForcedExecutionStrategy();
 		File storeDirectory = storeDirectory();
 		System.out.println(storeDirectory.getAbsolutePath());
 		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
@@ -285,6 +290,19 @@ public class ThemeQueryBenchmark {
 
 	}
 
+	static String configuredForcedExecutionStrategy() {
+		String configured = System.getProperty(FORCED_EXECUTION_STRATEGY_PROPERTY);
+		return configured == null || configured.isBlank() ? null : configured;
+	}
+
+	private TupleQuery prepareBenchmarkQuery(SailRepositoryConnection connection) {
+		TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+		if (forcedExecutionStrategy != null) {
+			((SailQuery) tupleQuery).setForcedLmdbExecutionStrategy(forcedExecutionStrategy);
+		}
+		return tupleQuery;
+	}
+
 	@Benchmark
 	public long executeQuery() {
 		try (var connection = repository.getConnection()) {
@@ -299,7 +317,7 @@ public class ThemeQueryBenchmark {
 //				System.out.println();
 //
 //			}
-			TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+			TupleQuery tupleQuery = prepareBenchmarkQuery(connection);
 			tupleQuery.setMaxExecutionTime(60);
 			try (var evaluate = tupleQuery.evaluate()) {
 				count = countRowsAndVerifyCountBinding(evaluate, expectedCountBindingValue);
@@ -619,6 +637,7 @@ public class ThemeQueryBenchmark {
 				.addValue("themeBenchmark.themeName", () -> themeName)
 				.addValue("themeBenchmark.queryIndex", () -> z_queryIndex)
 				.addValue("themeBenchmark.irMode", () -> z_z_irMode)
+				.addValue("themeBenchmark.forcedStrategy", () -> forcedExecutionStrategy)
 				.addReflectiveGetter("lmdbStore.writable", store, "isWritable")
 				.addReflectiveGetter("lmdbConfig.tripleIndexes", storeConfig, "getTripleIndexes")
 				.addReflectiveGetter("lmdbConfig.forceSync", storeConfig, "getForceSync")
@@ -644,7 +663,7 @@ public class ThemeQueryBenchmark {
 
 		try (var connection = repository.getConnection()) {
 			var snapshotPath = new QueryPlanCapture()
-					.captureAndWrite(context, () -> connection.prepareTupleQuery(query));
+					.captureAndWrite(context, () -> prepareBenchmarkQuery(connection));
 			System.out.println("Query plan snapshot written to: " + snapshotPath);
 		}
 	}
@@ -657,7 +676,7 @@ public class ThemeQueryBenchmark {
 
 	TupleExpr explainOptimizedTupleExpr() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			Explanation explanation = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+			Explanation explanation = prepareBenchmarkQuery(connection).explain(Explanation.Level.Optimized);
 			return (TupleExpr) explanation.tupleExpr();
 		}
 	}
@@ -686,7 +705,7 @@ public class ThemeQueryBenchmark {
 			if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
 				try (SailRepositoryConnection connection = repository.getConnection()) {
 					System.out.println("### Optimized Query ###");
-					Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+					Explanation explain = prepareBenchmarkQuery(connection).explain(Explanation.Level.Optimized);
 					System.out.println(explain);
 					TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
 					System.out.println(new TupleExprIRRenderer().render(tupleExpr));
@@ -694,7 +713,7 @@ public class ThemeQueryBenchmark {
 				}
 				try (SailRepositoryConnection connection = repository.getConnection()) {
 					System.out.println("### Telemetry Query ###");
-					Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+					Explanation explain = prepareBenchmarkQuery(connection).explain(Explanation.Level.Telemetry);
 					System.out.println(explain);
 					TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
 					System.out.println(new TupleExprIRRenderer().render(tupleExpr));

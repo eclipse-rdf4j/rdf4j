@@ -39,6 +39,12 @@ class QueryResultTemplateTest {
 		String html = transform("tuple.xsl", queryResultXml(), infoXml());
 
 		assertThat(html).contains("id=\"wb-query-text\"");
+		assertThat(html)
+				.contains("id=\"rdf4j-query-result\"")
+				.contains("data-query-request-id=\"query-1\"")
+				.contains("id=\"workbench-total-result-count\"")
+				.contains("value=\"42\"")
+				.contains("scripts/queryResult.js");
 		assertThat(countOccurrences(html, QUERY_TEXT)).isEqualTo(1);
 	}
 
@@ -47,6 +53,12 @@ class QueryResultTemplateTest {
 		String html = transform("graph.xsl", queryResultXml(), infoXml());
 
 		assertThat(html).contains("id=\"wb-query-text\"");
+		assertThat(html)
+				.contains("id=\"rdf4j-query-result\"")
+				.contains("data-query-request-id=\"query-1\"")
+				.contains("id=\"workbench-total-result-count\"")
+				.contains("value=\"42\"")
+				.contains("scripts/queryResult.js");
 		assertThat(countOccurrences(html, QUERY_TEXT)).isEqualTo(1);
 	}
 
@@ -168,6 +180,9 @@ class QueryResultTemplateTest {
 		xml.append("    <workbench:infer>false</workbench:infer>\n");
 		xml.append("    <workbench:query-timeout>17</workbench:query-timeout>\n");
 		appendQueryDuration(xml, queryDurationMillis);
+		xml.append("    <workbench:query-request-id>query-1</workbench:query-request-id>\n");
+		xml.append("    <workbench:query-result-status>completed</workbench:query-result-status>\n");
+		xml.append("    <workbench:total-result-count>42</workbench:total-result-count>\n");
 		xml.append("  </workbench:metadata>\n");
 		xml.append("</sparql:sparql>\n");
 		return xml.toString();

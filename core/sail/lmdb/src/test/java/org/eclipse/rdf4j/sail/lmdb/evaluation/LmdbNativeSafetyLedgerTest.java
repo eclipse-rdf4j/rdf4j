@@ -90,4 +90,23 @@ class LmdbNativeSafetyLedgerTest {
 		clock.addAndGet(CONFIG.minSpacingNanos());
 		assertTrue(ledger.spacingAllows(), "decisions plus elapsed time reopen probing");
 	}
+
+	@Test
+	void fastRepeatedQueriesCanOpenMostEngineIrProbeSlotsWithinOneSecond() {
+		AtomicLong clock = new AtomicLong();
+		LmdbNativeSafetyLedger ledger = new LmdbNativeSafetyLedger(CONFIG, clock::get);
+		ledger.noteProbeDecision();
+
+		for (int probe = 0; probe < 9; probe++) {
+			for (int decision = 0; decision < CONFIG.minSpacingDecisions(); decision++) {
+				clock.addAndGet(10_000_000L);
+				ledger.noteNormalDecision();
+			}
+			assertTrue(ledger.spacingAllows(),
+					"a 10 ms query cadence must leave room for the next engine-IR trial within one second");
+			ledger.noteProbeDecision();
+		}
+
+		assertTrue(clock.get() <= 1_000_000_000L, "nine engine-IR trials must fit in the first second");
+	}
 }

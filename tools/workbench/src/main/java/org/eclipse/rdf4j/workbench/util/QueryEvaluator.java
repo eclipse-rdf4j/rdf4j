@@ -15,18 +15,23 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.http.client.QueryRequestContext;
+import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
 import org.eclipse.rdf4j.http.client.query.AbstractHTTPQuery;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -82,6 +87,12 @@ public final class QueryEvaluator {
 	private static final String METADATA_QUERY_TIMEOUT = "query-timeout";
 
 	private static final String METADATA_QUERY_DURATION = "query-duration";
+
+	public static final String METADATA_QUERY_REQUEST_ID = "query-request-id";
+
+	public static final String METADATA_QUERY_RESULT_STATUS = "query-result-status";
+
+	public static final String METADATA_TOTAL_RESULT_COUNT = "total-result-count";
 
 	private static final int MATERIALIZATION_CHECKPOINT_INTERVAL = 128;
 
@@ -202,12 +213,25 @@ public final class QueryEvaluator {
 			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText,
 			final String repositoryId)
 			throws BadRequestException, RDF4JException {
+		extractQueryAndEvaluate(builder, resp, out, xslPath, con, queryText, req, cookies, responseQueryText,
+				repositoryId, null);
+	}
+
+	/**
+	 * Evaluates a query using a response heartbeat whose stream is passed to the selected result writer. The heartbeat
+	 * is started only after query preparation and after the final result writer is known.
+	 */
+	public void extractQueryAndEvaluate(final TupleResultBuilder builder, final HttpServletResponse resp,
+			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
+			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText,
+			final String repositoryId, final QueryResponseHeartbeat responseHeartbeat)
+			throws BadRequestException, RDF4JException {
 		QueryCircuitBreakerHandle breakerHandle = QUERY_CIRCUIT_BREAKER.register(
 				QueryCircuitBreakerHandle.Source.WORKBENCH, repositoryId, queryText);
 		try {
 			QUERY_CIRCUIT_BREAKER.execute(breakerHandle, con, () -> {
 				extractQueryAndEvaluateInternal(builder, resp, out, xslPath, con, queryText, req, cookies,
-						responseQueryText);
+						responseQueryText, responseHeartbeat);
 				return null;
 			});
 		} finally {
@@ -219,6 +243,15 @@ public final class QueryEvaluator {
 			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
 			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText)
 			throws BadRequestException, RDF4JException {
+		extractQueryAndEvaluateInternal(builder, resp, out, xslPath, con, queryText, req, cookies, responseQueryText,
+				null);
+	}
+
+	private void extractQueryAndEvaluateInternal(final TupleResultBuilder builder, final HttpServletResponse resp,
+			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
+			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText,
+			final QueryResponseHeartbeat responseHeartbeat)
+			throws BadRequestException, RDF4JException {
 		final QueryLanguage queryLn = QueryLanguage.valueOf(req.getParameter("queryLn"));
 		Query query = prepareQuery(con, queryText, req);
 		if (req.isParameterPresent(EXPLAIN)) {
@@ -228,12 +261,16 @@ public final class QueryEvaluator {
 		}
 
 		boolean evaluateCookie = false;
+		Integer knownTotalResultCount = null;
 		int offset = req.getInt("offset");
 		int limit = getResultLimit(req);
 		boolean paged = limit > 0;
 		if (query instanceof GraphQuery || query instanceof TupleQuery) {
 			final int know_total = req.getInt("know_total");
 			evaluateCookie = know_total <= 0;
+			if (know_total > 0) {
+				knownTotalResultCount = know_total;
+			}
 			if (!evaluateCookie) {
 				cookies.addTotalResultCountCookie(req, resp, know_total);
 			}
@@ -248,8 +285,8 @@ public final class QueryEvaluator {
 				}
 			}
 		}
-		this.evaluate(builder, out, xslPath, req, resp, cookies, query, evaluateCookie, paged, offset, limit,
-				responseQueryText);
+		this.evaluate(builder, out, xslPath, req, resp, cookies, con, query, evaluateCookie, paged, offset, limit,
+				responseQueryText, knownTotalResultCount, responseHeartbeat);
 	}
 
 	public ExplainQueryResult explain(final RepositoryConnection con, final String queryText,
@@ -469,6 +506,14 @@ public final class QueryEvaluator {
 			HttpServletResponse resp, CookieHandler cookies, final TupleQuery query, boolean writeCookie, boolean paged,
 			int offset, int limit, String responseQueryText)
 			throws QueryEvaluationException, QueryResultHandlerException {
+		evaluateTupleQuery(builder, xslPath, req, resp, cookies, query, writeCookie, paged, offset, limit,
+				responseQueryText, null);
+	}
+
+	private void evaluateTupleQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
+			HttpServletResponse resp, CookieHandler cookies, final TupleQuery query, boolean writeCookie, boolean paged,
+			int offset, int limit, String responseQueryText, Integer knownTotalResultCount)
+			throws QueryEvaluationException, QueryResultHandlerException {
 		List<BindingSet> bindings;
 		final String[] names;
 		final long startNanos = System.nanoTime();
@@ -480,11 +525,13 @@ public final class QueryEvaluator {
 		if (writeCookie) {
 			cookies.addTotalResultCountCookie(req, resp, bindings.size());
 		}
+		int totalResultCount = knownTotalResultCount == null ? bindings.size() : knownTotalResultCount;
 		builder.transform(xslPath, "tuple.xsl");
 		builder.start(names);
 		builder.link(List.of(INFO));
 		addWorkbenchMetadata(builder, req, responseQueryText);
 		addQueryDurationMetadata(builder, responseQueryText, queryDurationMillis);
+		addTotalResultCountMetadata(builder, totalResultCount, responseQueryText);
 		final List<Object> values = new ArrayList<>(names.length);
 		if (paged && writeCookie) {
 			// Only in this case do we have paged results, but were given the full
@@ -546,7 +593,7 @@ public final class QueryEvaluator {
 	 */
 	private void evaluateGraphQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
 			HttpServletResponse resp, CookieHandler cookies, final GraphQuery query, boolean writeCookie, boolean paged,
-			int offset, int limit, String responseQueryText)
+			int offset, int limit, String responseQueryText, Integer knownTotalResultCount)
 			throws QueryEvaluationException, QueryResultHandlerException {
 		final long startNanos = System.nanoTime();
 		List<Statement> statements = collectStatements(query);
@@ -554,11 +601,13 @@ public final class QueryEvaluator {
 		if (writeCookie) {
 			cookies.addTotalResultCountCookie(req, resp, statements.size());
 		}
+		int totalResultCount = knownTotalResultCount == null ? statements.size() : knownTotalResultCount;
 		builder.transform(xslPath, "graph.xsl");
 		builder.start("subject", "predicate", "object");
 		builder.link(List.of(INFO));
 		addWorkbenchMetadata(builder, req, responseQueryText);
 		addQueryDurationMetadata(builder, responseQueryText, queryDurationMillis);
+		addTotalResultCountMetadata(builder, totalResultCount, responseQueryText);
 		if (paged && writeCookie) {
 			// Only in this case do we have paged results, but were given the full
 			// query. Just-in-case parameter massaging below to avoid array index
@@ -576,25 +625,55 @@ public final class QueryEvaluator {
 
 	private void evaluateGraphQuery(final RDFWriter writer, final GraphQuery query)
 			throws QueryEvaluationException, RDFHandlerException {
-		query.evaluate(writer);
+		/*
+		 * Do not use GraphQuery.evaluate(RDFHandler) here. RDF4J writers emit their document header from startRDF(),
+		 * before the query has produced its first statement. That would stop the response heartbeat while the actual
+		 * evaluation is still blocked. Prefetch the first result while the heartbeat is active, then start the writer
+		 * and replay the prefetched result.
+		 */
+		try (GraphQueryResult result = query.evaluate()) {
+			Map<String, String> namespaces = result.getNamespaces();
+			Statement first = result.hasNext() ? result.next() : null;
+			writer.startRDF();
+			for (Map.Entry<String, String> entry : namespaces.entrySet()) {
+				writer.handleNamespace(entry.getKey(), entry.getValue());
+			}
+			int statementCount = 0;
+			if (first != null) {
+				writer.handleStatement(first);
+				statementCount++;
+			}
+			while (result.hasNext()) {
+				writer.handleStatement(result.next());
+				statementCount++;
+				if (statementCount % MATERIALIZATION_CHECKPOINT_INTERVAL == 0) {
+					checkpointMaterialization("WORKBENCH_GRAPH_RESULT");
+				}
+			}
+			writer.endRDF();
+		}
 	}
 
-	private void evaluateBooleanQuery(final TupleResultBuilder builder, final BooleanQuery query,
-			final String responseQueryText) throws QueryEvaluationException, QueryResultHandlerException {
-		final long startNanos = System.nanoTime();
-		final boolean result = query.evaluate();
-		addQueryDurationMetadata(builder, responseQueryText, elapsedMillisSince(startNanos));
+	private boolean evaluateBooleanQuery(final BooleanQuery query) throws QueryEvaluationException {
+		return query.evaluate();
+	}
+
+	private void writeBooleanResult(final TupleResultBuilder builder, final boolean result)
+			throws QueryResultHandlerException {
 		builder.link(List.of(INFO));
 		builder.bool(result);
 	}
 
 	private void evaluate(final TupleResultBuilder builder, final OutputStream out, final String xslPath,
-			final WorkbenchRequest req, HttpServletResponse resp, CookieHandler cookies, final Query query,
-			boolean writeCookie, boolean paged, int offset, int limit, String responseQueryText)
+			final WorkbenchRequest req, HttpServletResponse resp, CookieHandler cookies, RepositoryConnection con,
+			final Query query, boolean writeCookie, boolean paged, int offset, int limit, String responseQueryText,
+			Integer knownTotalResultCount, QueryResponseHeartbeat responseHeartbeat)
 			throws RDF4JException, BadRequestException {
 		if (query instanceof TupleQuery) {
+			startResponseHeartbeat(builder, responseHeartbeat);
+			writeNamespaces(builder, con);
 			this.evaluateTupleQuery(builder, xslPath, req, resp, cookies, (TupleQuery) query, writeCookie, paged,
-					offset, limit, responseQueryText);
+					offset, limit, responseQueryText, knownTotalResultCount);
 		} else {
 			final RDFFormat format = req.isParameterPresent(ACCEPT)
 					? Rio.getWriterFormatForMIMEType(req.getParameter(ACCEPT)).orElse(null)
@@ -602,32 +681,87 @@ public final class QueryEvaluator {
 			if (query instanceof GraphQuery) {
 				GraphQuery graphQuery = (GraphQuery) query;
 				if (null == format) {
+					startResponseHeartbeat(builder, responseHeartbeat);
+					writeNamespaces(builder, con);
 					this.evaluateGraphQuery(builder, xslPath, req, resp, cookies, graphQuery, writeCookie, paged,
-							offset, limit, responseQueryText);
+							offset, limit, responseQueryText, knownTotalResultCount);
 				} else {
-					this.evaluateGraphQuery(Rio.createWriter(format, out), graphQuery);
+					RDFWriter writer = Rio.createWriter(format, out);
+					// getTupleResultBuilder() creates a temporary SPARQL-results writer before the query type is known.
+					// Restore the negotiated RDF media type before the first heartbeat can commit the response.
+					resp.setContentType(format.getDefaultMIMEType());
+					startResponseHeartbeat(writer, responseHeartbeat);
+					this.evaluateGraphQuery(writer, graphQuery);
 				}
 			} else if (query instanceof BooleanQuery) {
+				startResponseHeartbeat(builder, responseHeartbeat);
+				long booleanStartNanos = System.nanoTime();
+				boolean result = this.evaluateBooleanQuery((BooleanQuery) query);
+				long booleanDurationMillis = elapsedMillisSince(booleanStartNanos);
+				writeNamespaces(builder, con);
 				builder.transform(xslPath, "boolean.xsl");
 				builder.startBoolean();
-				this.evaluateBooleanQuery(builder, (BooleanQuery) query, responseQueryText);
+				addWorkbenchMetadata(builder, req, responseQueryText);
+				addQueryDurationMetadata(builder, responseQueryText, booleanDurationMillis);
+				this.writeBooleanResult(builder, result);
 				builder.endBoolean();
 			} else {
 				throw new BadRequestException("Unknown query type: " + query.getClass().getSimpleName());
 			}
 		}
+		completeResponseHeartbeat(responseHeartbeat);
 	}
 
 	private void addWorkbenchMetadata(TupleResultBuilder builder, WorkbenchRequest req, String responseQueryText) {
-		if (responseQueryText == null) {
-			return;
+		String queryRequestId = QueryRequestContext.getQueryRequestId();
+		if (queryRequestId != null) {
+			builder.metadata(METADATA_QUERY_REQUEST_ID, queryRequestId);
+			builder.metadata(METADATA_QUERY_RESULT_STATUS, "completed");
 		}
-		String queryTimeout = req.getParameter("query-timeout");
-		builder.metadata(METADATA_QUERY_TEXT, responseQueryText);
-		builder.metadata(METADATA_INFER,
-				req.isParameterPresent("infer") ? Boolean.parseBoolean(req.getParameter("infer")) : false);
-		builder.metadata(METADATA_QUERY_TIMEOUT,
-				queryTimeout == null || queryTimeout.isBlank() ? Integer.valueOf(0) : queryTimeout);
+		if (responseQueryText != null) {
+			String queryTimeout = req.getParameter("query-timeout");
+			builder.metadata(METADATA_QUERY_TEXT, responseQueryText);
+			builder.metadata(METADATA_INFER,
+					req.isParameterPresent("infer") ? Boolean.parseBoolean(req.getParameter("infer")) : false);
+			builder.metadata(METADATA_QUERY_TIMEOUT,
+					queryTimeout == null || queryTimeout.isBlank() ? Integer.valueOf(0) : queryTimeout);
+		}
+	}
+
+	private void addTotalResultCountMetadata(TupleResultBuilder builder, int totalResultCount,
+			String responseQueryText) {
+		if (responseQueryText != null || QueryRequestContext.getQueryRequestId() != null) {
+			builder.metadata(METADATA_TOTAL_RESULT_COUNT, totalResultCount);
+		}
+	}
+
+	private void writeNamespaces(TupleResultBuilder builder, RepositoryConnection con)
+			throws QueryResultHandlerException {
+		for (Namespace namespace : org.eclipse.rdf4j.common.iteration.Iterations.asList(con.getNamespaces())) {
+			builder.prefix(namespace.getPrefix(), namespace.getName());
+		}
+	}
+
+	private void startResponseHeartbeat(TupleResultBuilder builder, QueryResponseHeartbeat responseHeartbeat) {
+		if (responseHeartbeat != null) {
+			builder.startResponseHeartbeat(responseHeartbeat);
+		}
+	}
+
+	private void startResponseHeartbeat(RDFWriter writer, QueryResponseHeartbeat responseHeartbeat) {
+		if (responseHeartbeat != null) {
+			responseHeartbeat.start(writer);
+		}
+	}
+
+	private void completeResponseHeartbeat(QueryResponseHeartbeat responseHeartbeat) {
+		if (responseHeartbeat != null) {
+			try {
+				responseHeartbeat.complete();
+			} catch (java.io.IOException e) {
+				throw new QueryResultHandlerException("Could not complete query response heartbeat", e);
+			}
+		}
 	}
 
 	/**

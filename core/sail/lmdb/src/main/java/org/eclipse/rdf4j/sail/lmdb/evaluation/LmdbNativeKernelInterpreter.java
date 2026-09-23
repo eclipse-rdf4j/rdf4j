@@ -249,6 +249,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	// --- cursors and per-site scratch -----------------------------------------------------
 	/** BoundRunCursors opened in bind, one per Probe node (in op-construction order). */
 	private final List<NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor> boundCursors = new ArrayList<>();
+	/** The ordinary cursor belonging to each probe site, shared with its scheduled projection when one exists. */
+	private final IdentityHashMap<Node, NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor> boundCursorSites = new IdentityHashMap<>();
 	private final List<KernelExpansionCursors.Intersection> intersectionCursors = new ArrayList<>();
 	/** Key-run cursors held during an activation (EnumerateAdjKeys / SipKeyProbe); swept by close(). */
 	private final List<NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[]> activeKeyCursors = new ArrayList<>();
@@ -534,10 +536,15 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			failure = KernelRuntime.closeResource(pullRows, failure);
 			pullRows = null;
 		}
+		for (ProjectionProgram program : projectionPrograms) {
+			failure = KernelRuntime.closeResource(program::close, failure);
+		}
+		projectionPrograms.clear();
 		for (NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor cursor : boundCursors) {
 			failure = KernelRuntime.closeResource(cursor, failure);
 		}
 		boundCursors.clear();
+		boundCursorSites.clear();
 		for (KernelExpansionCursors.Intersection cursor : intersectionCursors)
 			failure = KernelRuntime.closeResource(cursor, failure);
 		intersectionCursors.clear();
@@ -554,10 +561,6 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}
 		}
 		activeKeyCursors.clear();
-		for (ProjectionProgram program : projectionPrograms) {
-			failure = KernelRuntime.closeResource(program::closeCursor, failure);
-		}
-		projectionPrograms.clear();
 		failure = KernelRuntime.closeResource(orderedRows, failure);
 		orderedRows = null;
 		failure = KernelRuntime.closeResource(dedup, failure);
@@ -886,6 +889,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		final Map<FilterValue, Integer> pageFacts = new IdentityHashMap<>();
 		AdjacencyPageCursor proofPage;
 		KernelProjectionCursor cursor;
+		KernelProjectionCursor.Owner owner;
 
 		ProjectionProgram(LmdbNativeProducerSchedule schedule) {
 			this.schedule = schedule;
@@ -902,13 +906,32 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			projectionPrograms.add(this);
 		}
 
+		private void clearPageFacts() {
+			if (!pageFacts.isEmpty()) {
+				pageFacts.clear();
+			}
+		}
+
 		KernelProjectionCursor open() {
-			pageFacts.clear();
+			clearPageFacts();
 			var layout = schedule.layout;
-			cursor = KernelProjectionCursor.open(source(), this, schedule.outputMask, schedule.programMask(),
-					schedule.contextObserved, layout.contextMatch() != null,
-					layout.contextMatch() == null ? -1L : read(layout.contextMatch()), layout.excludeDefault(),
-					cancel, context.groupMemoryLedger(), schedule.retainedColumns());
+			if (reusableSource()) {
+				if (owner == null) {
+					owner = KernelProjectionCursor.Owner.open(context.groupMemoryLedger(), schedule.retainedColumns());
+					if (owner == null) {
+						return null;
+					}
+				}
+				cursor = owner.activate(source(owner), this, schedule.outputMask, schedule.programMask(),
+						schedule.contextObserved, layout.contextMatch() != null,
+						layout.contextMatch() == null ? -1L : read(layout.contextMatch()), layout.excludeDefault(),
+						cancel);
+			} else {
+				cursor = KernelProjectionCursor.open(source(), this, schedule.outputMask, schedule.programMask(),
+						schedule.contextObserved, layout.contextMatch() != null,
+						layout.contextMatch() == null ? -1L : read(layout.contextMatch()), layout.excludeDefault(),
+						cancel, context.groupMemoryLedger(), schedule.retainedColumns());
+			}
 			return cursor;
 		}
 
@@ -917,14 +940,36 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			cursor = null;
 			if (owned != null) {
 				try {
-					owned.close();
+					owned.closeActivation();
 				} finally {
 					workCounters.addProjection(owned);
 				}
 			}
 		}
 
+		void close() {
+			Throwable failure = null;
+			try {
+				closeCursor();
+			} catch (Throwable problem) {
+				failure = problem;
+			}
+			KernelProjectionCursor.Owner owned = owner;
+			owner = null;
+			failure = KernelRuntime.closeResource(owned, failure);
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
+
 		private KernelProjectionCursor.Source source() {
+			return source(null);
+		}
+
+		private boolean reusableSource() {
+			return schedule.producer instanceof Probe probe && boundCursorSites.containsKey(probe)
+					|| schedule.producer instanceof ProbeVariable || schedule.producer instanceof EnumeratePredicates;
+		}
+
+		private KernelProjectionCursor.Source source(KernelProjectionCursor.Owner reusableOwner) {
 			Node producer = schedule.producer;
 			if (producer instanceof EnumerateAdjKeys keys) {
 				return keys.wildcard
@@ -936,15 +981,29 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				return KernelProjectionCursor.wildcard(context.wildcardAdjacencies[wildcard.view]);
 			}
 			if (producer instanceof Probe probe) {
-				return KernelProjectionCursor.probe(context.adjacencies[probe.adjacency], read(probe.key));
+				NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor bound = boundCursorSites.get(probe);
+				return reusableOwner != null && bound != null
+						? KernelProjectionCursor.probe(reusableOwner, bound, read(probe.key))
+						: KernelProjectionCursor.probe(context.adjacencies[probe.adjacency], read(probe.key));
 			}
 			if (producer instanceof ProbeVariable probe) {
-				return KernelProjectionCursor.dynamic(context.dynamicAdjacencies[probe.view], read(probe.key),
-						read(probe.predicate));
+				return reusableOwner != null
+						? KernelProjectionCursor.dynamic(reusableOwner, context.dynamicAdjacencies[probe.view],
+								read(probe.key),
+								read(probe.predicate))
+						: KernelProjectionCursor.dynamic(context.dynamicAdjacencies[probe.view], read(probe.key),
+								read(probe.predicate));
 			}
 			if (producer instanceof EnumeratePredicates predicates) {
-				return predicates.wildcard
-						? KernelProjectionCursor.predicates(context.wildcardAdjacencies[predicates.view],
+				if (predicates.wildcard) {
+					return reusableOwner != null
+							? KernelProjectionCursor.predicates(reusableOwner,
+									context.wildcardAdjacencies[predicates.view], read(predicates.key))
+							: KernelProjectionCursor.predicates(context.wildcardAdjacencies[predicates.view],
+									read(predicates.key));
+				}
+				return reusableOwner != null
+						? KernelProjectionCursor.predicates(reusableOwner, context.nodePredicates[predicates.view],
 								read(predicates.key))
 						: KernelProjectionCursor.predicates(context.nodePredicates[predicates.view],
 								read(predicates.key));
@@ -957,7 +1016,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			var layout = schedule.layout;
 			switch (level) {
 			case LmdbNativeProducerSchedule.PLANE:
-				pageFacts.clear();
+				clearPageFacts();
 				if (layout.predicateCol() >= 0) {
 					v[layout.predicateCol()] = predicate;
 				}
@@ -1008,7 +1067,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		public boolean acceptsPage(AdjacencyPageCursor page) {
 			// A downstream continuation may have overwritten input registers before physical advancement resumes.
 			restore(LmdbNativeProducerSchedule.PLANE);
-			pageFacts.clear();
+			clearPageFacts();
 			proofPage = page;
 			try {
 				for (Map.Entry<FilterValue, IntUnaryOperator> proof : pageReaders.entrySet()) {
@@ -1218,6 +1277,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor cursor = context.adjacencies[probe.adjacency]
 					.openBoundRunCursor();
 			boundCursors.add(cursor);
+			boundCursorSites.put(probe, cursor);
 			return new PullStage() {
 				long position, end;
 
@@ -2920,6 +2980,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor cursor = context.adjacencies[probe.adjacency]
 				.openBoundRunCursor();
 		boundCursors.add(cursor);
+		boundCursorSites.put(probe, cursor);
 		boolean ctxActive = probe.ctxActive();
 		return () -> {
 			long key = read(probe.key);

@@ -597,7 +597,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Difference node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		return new MinusQueryEvaluationStep(precompile(node.getLeftArg(), context),
-				precompile(node.getRightArg(), context));
+				precompile(node.getRightArg(), context), node.getLeftArg(), node.getRightArg());
 	}
 
 	protected QueryEvaluationStep prepare(Group node, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -1169,10 +1169,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			Predicate<BindingSet> hasValue = context.hasBinding(var.getName());
 			return bindings -> {
 				if (hasValue.test(bindings)) {
-					return getValue.apply(bindings);
-				} else {
-					throw new ValueExprEvaluationException();
+					Value boundValue = getValue.apply(bindings);
+					if (boundValue != null) {
+						return boundValue;
+					}
 				}
+				throw new ValueExprEvaluationException();
 			};
 		}
 

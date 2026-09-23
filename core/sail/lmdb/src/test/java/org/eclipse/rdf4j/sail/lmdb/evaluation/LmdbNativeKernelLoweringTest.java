@@ -85,9 +85,13 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	private static RowState freshFiveSlotRow() {
+		return freshFiveSlotRow(new StubSource());
+	}
+
+	private static RowState freshFiveSlotRow(NativeLmdbQuerySource source) {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("a", 0, "b", 1, "c", 2, "d", 3, "e", 4), null);
 		layout.freeze(java.util.List.of("a", "b", "c", "d", "e"));
-		RowState row = new RowState(new StubSource(), layout, EmptyBindingSet.getInstance());
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
 		java.util.Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
 		row.recomputeBoundMask();
 		return row;
@@ -198,6 +202,63 @@ class LmdbNativeKernelLoweringTest {
 				System.clearProperty(key);
 			else
 				System.setProperty(key, previous);
+		}
+	}
+
+	@Test
+	void composedQ0AggregateDeclinesAutomaticSharedFactorProjectionLowering() {
+		String key = LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY;
+		String previous = System.getProperty(key);
+		try {
+			System.setProperty(key, "true");
+			SlotPlan patient = pattern(Term.slot(0), Term.constant(PRED + 128));
+			MultiJoinPlan encounter = new MultiJoinPlan(new SlotPlan[] {
+					pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)) }, new MaskedFilter[0]);
+			SlotPlan recentEncounter = new ExtensionPlan(encounter,
+					new CopyBinding[] { CopyBinding.slot(3, 2) });
+			SlotPlan filtered = new FilterPlan(new LeftJoinPlan(patient, recentEncounter), ignored -> true, 1L << 3);
+			SlotPlan q0Shape = new LeftJoinPlan(filtered, pattern(Term.slot(0), Term.slot(4)));
+			var lowered = LmdbNativeKernelLowering.lowerAggregate(q0Shape, freshFiveSlotRow(), new int[0],
+					new AggregateSpec[] { AggregateSpec.slot("count", 0, true, AggKind.COUNT) }, null);
+
+			assertNotNull(lowered);
+			assertNotEquals("agg:shared-factor-projections", lowered.planBridgeReason,
+					"composed Q0-shaped plans must not enter the automatic projection bridge");
+			assertNull(lowered.kernel.aggregateProjections,
+					"composed Q0-shaped plans must not expose shared factor projections");
+		} finally {
+			restoreProperty(key, previous);
+		}
+	}
+
+	@Test
+	void composedAggregateOperatorsDeclineAutomaticSharedFactorProjectionLowering() {
+		String key = LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY;
+		String previous = System.getProperty(key);
+		try {
+			System.setProperty(key, "true");
+			MultiJoinPlan branch = new MultiJoinPlan(new SlotPlan[] {
+					pattern(Term.slot(0), Term.slot(1)), pattern(Term.slot(1), Term.slot(2)) }, new MaskedFilter[0]);
+			List<SlotPlan> composedPlans = List.of(
+					new FilterPlan(branch, ignored -> true, 0L),
+					new ExtensionPlan(branch, new CopyBinding[] { CopyBinding.slot(3, 2) }),
+					new JoinPlan(branch, pattern(Term.slot(0), Term.slot(3))),
+					new LeftJoinPlan(branch, pattern(Term.slot(0), Term.slot(3))),
+					new UnionPlan(branch, pattern(Term.slot(0), Term.slot(3))),
+					new MinusPlan(branch, pattern(Term.slot(0), Term.slot(3)), 1L),
+					new FilterPlan(branch, new ExistsFilter(pattern(Term.slot(1), Term.slot(3))), -1L));
+			for (SlotPlan composed : composedPlans) {
+				var lowered = LmdbNativeKernelLowering.lowerAggregate(composed, freshFiveSlotRow(), new int[0],
+						new AggregateSpec[] { AggregateSpec.slot("count", 0, true, AggKind.COUNT) }, null);
+				assertNotNull(lowered);
+				assertNotEquals("agg:shared-factor-projections", lowered.planBridgeReason,
+						"composed plan entered the automatic projection bridge: "
+								+ composed.getClass().getSimpleName());
+				assertNull(lowered.kernel.aggregateProjections,
+						"composed plan exposed shared factor projections: " + composed.getClass().getSimpleName());
+			}
+		} finally {
+			restoreProperty(key, previous);
 		}
 	}
 
@@ -773,6 +834,154 @@ class LmdbNativeKernelLoweringTest {
 		assertNotNull(multi);
 		assertTrue(single.kernel.resumable, single.kernel.shapeKey());
 		assertTrue(multi.kernel.resumable, multi.kernel.shapeKey());
+	}
+
+	@Test
+	void nestedMultiJoinStartsWithPatternThatCanUseOuterBinding() {
+		PatternPlan core = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constant(PRED + 8),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
+		PatternPlan unboundEncounter = new PatternPlan(Term.slot(1), Term.constant(PRED + 2), Term.slot(2),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1_000_000D);
+		PatternPlan patientEncounter = new PatternPlan(Term.slot(0), Term.constant(PRED + 4), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
+		SlotPlan plan = new LeftJoinPlan(core,
+				new MultiJoinPlan(new SlotPlan[] { unboundEncounter, patientEncounter }, new MaskedFilter[0]));
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan,
+					freshFiveSlotRow(new FanOutStubSource(PRED + 4, true, 1D)), null);
+			assertNotNull(lowered, "the nested OPTIONAL must lower to a native pipeline");
+			LmdbNativeKernelIr.LeftGroup group = lowered.kernel.pipeline.stream()
+					.filter(LmdbNativeKernelIr.LeftGroup.class::isInstance)
+					.map(LmdbNativeKernelIr.LeftGroup.class::cast)
+					.findFirst()
+					.orElseThrow(() -> new AssertionError(lowered.kernel.shapeKey()));
+			assertFalse(group.arm.isEmpty(), lowered.kernel.shapeKey());
+			assertTrue(group.arm.get(0) instanceof LmdbNativeKernelIr.Probe,
+					"nested OPTIONAL must use the already-bound patient before enumerating encounters: "
+							+ lowered.kernel.shapeKey());
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	@Test
+	void nestedMultiJoinFindsOuterBindingThroughReplaySafeFilterWrapper() {
+		PatternPlan core = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constant(PRED + 8),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
+		PatternPlan unboundEncounter = new PatternPlan(Term.slot(1), Term.constant(PRED + 2), Term.slot(2),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1_000_000D);
+		PatternPlan patientEncounter = new PatternPlan(Term.slot(0), Term.constant(PRED + 4), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
+		SlotPlan filteredPatientEncounter = new FilterPlan(patientEncounter, ignored -> true, 1L << 0);
+		SlotPlan plan = new LeftJoinPlan(core,
+				new MultiJoinPlan(new SlotPlan[] { unboundEncounter, filteredPatientEncounter }, new MaskedFilter[0]));
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan,
+					freshFiveSlotRow(new FanOutStubSource(PRED + 4, true, 1D)), null);
+			assertNotNull(lowered, "the filtered nested OPTIONAL must lower to a native pipeline");
+			LmdbNativeKernelIr.LeftGroup group = lowered.kernel.pipeline.stream()
+					.filter(LmdbNativeKernelIr.LeftGroup.class::isInstance)
+					.map(LmdbNativeKernelIr.LeftGroup.class::cast)
+					.findFirst()
+					.orElseThrow(() -> new AssertionError(lowered.kernel.shapeKey()));
+			assertTrue(group.arm.stream().anyMatch(LmdbNativeKernelIr.Probe.class::isInstance),
+					"the wrapped bound endpoint must lower to a probe: " + lowered.kernel.shapeKey());
+			assertFalse(group.arm.stream().anyMatch(LmdbNativeKernelIr.EnumerateAdjKeys.class::isInstance),
+					"the wrapped bound endpoint must be lowered before the dependent key enumeration: "
+							+ lowered.kernel.shapeKey());
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	@Test
+	void nestedMultiJoinDoesNotUseMaybeNullOptionalBindingAsAnAnchor() {
+		PatternPlan core = new PatternPlan(Term.slot(3), Term.constant(PRED), Term.constant(PRED + 8),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
+		PatternPlan optionalPatient = new PatternPlan(Term.slot(3), Term.constant(PRED + 1), Term.slot(0),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
+		PatternPlan unboundEncounter = new PatternPlan(Term.slot(1), Term.constant(PRED + 2), Term.slot(2),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
+		PatternPlan patientEncounter = new PatternPlan(Term.slot(0), Term.constant(PRED + 4), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
+		SlotPlan secondOptional = new MultiJoinPlan(new SlotPlan[] { unboundEncounter, patientEncounter },
+				new MaskedFilter[0]);
+		SlotPlan plan = new LeftJoinPlan(new LeftJoinPlan(core, optionalPatient), secondOptional);
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshFiveSlotRow(),
+					null);
+			assertNotNull(lowered, "the chained OPTIONAL must lower to a native pipeline");
+			List<LmdbNativeKernelIr.LeftGroup> groups = lowered.kernel.pipeline.stream()
+					.filter(LmdbNativeKernelIr.LeftGroup.class::isInstance)
+					.map(LmdbNativeKernelIr.LeftGroup.class::cast)
+					.toList();
+			assertEquals(1, groups.size(), lowered.kernel.shapeKey());
+			assertTrue(groups.get(0).arm.get(0) instanceof LmdbNativeKernelIr.EnumerateAdjKeys,
+					"a maybe-null OPTIONAL binding must not be used as a correlated key: " + lowered.kernel.shapeKey());
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	@Test
+	void nestedMultiJoinUsesWorkInsteadOfBindingRankForSelectiveConstant() {
+		PatternPlan boundHighFanOut = new PatternPlan(Term.slot(0), Term.constant(PRED + 4), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
+		PatternPlan selectiveConstant = new PatternPlan(Term.constant(PRED + 10), Term.constant(PRED + 11),
+				Term.slot(3), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { boundHighFanOut, selectiveConstant },
+				new MaskedFilter[0]);
+
+		MultiJoinPlan.OrderedPlan ordered = plan.derivedPlanForLowering(
+				freshFiveSlotRow(new FanOutStubSource(PRED + 4, true, 1_000D)), 1L);
+
+		assertSame(selectiveConstant, ordered.order[0],
+				"a selective constant must beat a high-fanout bound variable by measured chain work");
+	}
+
+	@Test
+	void nestedMultiJoinCostedReorderHandlesMoreThanSixteenChildren() {
+		PatternPlan unboundEncounter = new PatternPlan(Term.slot(1), Term.constant(PRED + 2), Term.slot(2),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1_000_000D);
+		PatternPlan patientEncounter = new PatternPlan(Term.slot(0), Term.constant(PRED + 4), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
+		SlotPlan[] children = new SlotPlan[17];
+		children[0] = unboundEncounter;
+		children[1] = patientEncounter;
+		for (int i = 2; i < children.length; i++) {
+			children[i] = new PatternPlan(Term.constant(PRED + 20 + i), Term.constant(PRED + 40 + i),
+					Term.constant(PRED + 60 + i), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+		}
+
+		MultiJoinPlan.OrderedPlan ordered = new MultiJoinPlan(children, new MaskedFilter[0])
+				.derivedPlanForLowering(freshFiveSlotRow(new FanOutStubSource(PRED + 4, true, 1D)), 1L);
+
+		assertSame(patientEncounter, ordered.order[0],
+				"the polynomial reorder must still repair a correlated child beyond sixteen join members");
+	}
+
+	@Test
+	void nestedMultiJoinDoesNotDelayExistingFilterPlacementWhenReordering() {
+		PatternPlan unboundEncounter = new PatternPlan(Term.slot(1), Term.constant(PRED + 2), Term.slot(2),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1_000_000D);
+		PatternPlan patientEncounter = new PatternPlan(Term.slot(0), Term.constant(PRED + 4), Term.slot(1),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
+		MaskedFilter filterOnEncounter = new MaskedFilter(bindings -> true, 1L << 2);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { unboundEncounter, patientEncounter },
+				new MaskedFilter[] { filterOnEncounter });
+
+		MultiJoinPlan.OrderedPlan ordered = plan.derivedPlanForLowering(
+				freshFiveSlotRow(new FanOutStubSource(PRED + 4, true, 1D)), 1L);
+
+		assertSame(unboundEncounter, ordered.order[0],
+				"reordering must preserve the existing filter depth when it would delay encounter filtering");
+		assertEquals(0, ordered.filterDepth[0]);
 	}
 
 	@Test

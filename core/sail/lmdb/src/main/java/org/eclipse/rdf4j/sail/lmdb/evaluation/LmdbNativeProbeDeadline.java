@@ -110,8 +110,7 @@ final class LmdbNativeProbeDeadline {
 		if (deadline == null) {
 			return queryCancellation == null && workerCancellation == null
 					? null
-					: new KernelCancellation(System.nanoTime() + (Long.MAX_VALUE >> 2), workerCancellation,
-							queryCancellation);
+					: KernelCancellation.forOrdinaryExecution(workerCancellation, queryCancellation, null);
 		}
 		BooleanSupplier probeOrWorker = workerCancellation == null ? deadline::expired
 				: () -> deadline.expired() || workerCancellation.getAsBoolean();
@@ -130,9 +129,7 @@ final class LmdbNativeProbeDeadline {
 		if (deadline == null) {
 			return queryCancellation == null && peerCancellation == null
 					? null
-					: new KernelCancellation(System.nanoTime() + (Long.MAX_VALUE >> 2), null, queryCancellation, -1,
-							null,
-							peerCancellation);
+					: KernelCancellation.forOrdinaryExecution(null, queryCancellation, peerCancellation);
 		}
 		return new KernelCancellation(deadline.deadlineNanoTime, deadline::expired, queryCancellation,
 				LmdbNativeProbeConfig.system().bufferRows(), deadline::tripCapacity, peerCancellation);

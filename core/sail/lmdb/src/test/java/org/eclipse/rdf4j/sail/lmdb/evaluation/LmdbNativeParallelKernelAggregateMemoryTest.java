@@ -79,6 +79,7 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 	private static final String NUMERIC_QUERY = "SELECT ?s (SUM(?o) AS ?sum) (AVG(?o) AS ?avg) (MIN(?o) AS ?min) "
 			+ "(MAX(?o) AS ?max) WHERE { ?s <" + EX + "numeric> ?o } GROUP BY ?s";
 	private static final int ROWS = 160;
+	private static final int DISTINCT_EXPECTED = 16_384;
 	private static final String[] PROPERTIES = {
 			"rdf4j.lmdb.nativeQueryEngine.enabled",
 			"rdf4j.lmdb.janinoCodegen.enabled",
@@ -249,6 +250,50 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 	}
 
 	@Test
+	void parallelDistinctUsesPartitionLocalCapacityForRepeatedValues() {
+		LmdbQueryMemoryManager ample = LmdbQueryMemoryManager.createForTesting(4_000_000L, 4_000_000L);
+		LmdbQueryMemoryManager partitionLocal = LmdbQueryMemoryManager.createForTesting(200_000L, 200_000L);
+		ExecutorService workers = Executors.newFixedThreadPool(4);
+		try {
+			LmdbNativeHashJoin.queryMemoryOverride = ample;
+			long ampleParallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+			List<BindingSet> ampleResult = runSyntheticDistinct(ample, workers);
+			assertSyntheticDistinctResult(ampleResult);
+			assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
+					.as("the repeated-value control must prove that the parallel aggregate is reachable")
+					.isGreaterThan(ampleParallelBefore);
+			assertThat(ample.usedBytes()).isZero();
+
+			LmdbNativeHashJoin.queryMemoryOverride = partitionLocal;
+			long boundedParallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+			List<BindingSet> boundedResult = runSyntheticDistinct(partitionLocal, workers);
+			assertSyntheticDistinctResult(boundedResult);
+			assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
+					.as("partition-local DISTINCT reservations must fit while one historical full-capacity set does not")
+					.isGreaterThan(boundedParallelBefore);
+			assertThat(partitionLocal.usedBytes())
+					.as("parallel DISTINCT admission and merge must release every local set reservation")
+					.isZero();
+		} finally {
+			workers.shutdownNow();
+			LmdbNativeHashJoin.queryMemoryOverride = null;
+		}
+	}
+
+	@Test
+	void partitionDistinctHintPreservesGroupedAndSmallBoundsWithoutOverflow() {
+		assertThat(LmdbNativeParallelKernelAggregate.partitionDistinctExpected(DISTINCT_EXPECTED, false, 1L, 3L))
+				.isEqualTo(5_462);
+		assertThat(LmdbNativeParallelKernelAggregate.partitionDistinctExpected(DISTINCT_EXPECTED, false, 2L, 3L))
+				.isEqualTo(10_923);
+		assertThat(LmdbNativeParallelKernelAggregate.partitionDistinctExpected(DISTINCT_EXPECTED, false,
+				1L << 60, 1L << 61)).isEqualTo(8_192);
+		assertThat(LmdbNativeParallelKernelAggregate.partitionDistinctExpected(DISTINCT_EXPECTED, true, 1L, 3L))
+				.isEqualTo(DISTINCT_EXPECTED);
+		assertThat(LmdbNativeParallelKernelAggregate.partitionDistinctExpected(8, false, 1L, 3L)).isEqualTo(8);
+	}
+
+	@Test
 	void constrainedBudgetKeepsLongDecodedInputsExactAndReleasesState() {
 		set("rdf4j.lmdb.parallel.threads", "2");
 		set("rdf4j.lmdb.parallel.maxTasks", "2");
@@ -408,6 +453,55 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 			assertThat(row.getValue("count").stringValue()).isEqualTo(Integer.toString(ROWS));
 			assertThat(result.hasNext()).isFalse();
 		}
+	}
+
+	private List<BindingSet> runSyntheticDistinct(LmdbQueryMemoryManager manager, ExecutorService workers) {
+		LmdbNativeRowDetachmentTest.FakeStoreSource values = new LmdbNativeRowDetachmentTest.FakeStoreSource();
+		long[] roots = new long[ROWS];
+		for (int i = 0; i < roots.length; i++) {
+			roots[i] = values.add(SimpleValueFactory.getInstance().createIRI(EX, "root-" + i));
+		}
+		long sharedValue = values.add(SimpleValueFactory.getInstance().createIRI(EX, "shared-value"));
+		SyntheticValueSource source = new SyntheticValueSource(new NumericParallelSource(values),
+				PlanValueCatalog.EMPTY)
+						.forEvaluation();
+		try {
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("root", 0, "value", 1), null);
+			layout.freeze(List.of("root", "value"));
+			BindingSet base = EmptyBindingSet.getInstance();
+			AggregateSpec distinctSpec = AggregateSpec.slot("count", 1, true, AggKind.COUNT);
+			NativeGroupIteration emitter = new NativeGroupIteration(source, SlotPlan.singleton(), layout, new int[0],
+					new AggregateSpec[] { distinctSpec }, false, base, null, null, false, null);
+			RowState row = new RowState(source, layout, base);
+			assertThat(emitter.initialize(row)).isTrue();
+
+			Aggregate terminal = new Aggregate(new int[0],
+					new AggregateOutput[] { AggregateOutput.countDistinct(1) }, null, OutputMods.none());
+			Kernel kernel = new Kernel(2, List.of(new EnumerateDomain(0, 0), new EnumerateDomain(1, 1)), terminal);
+			KernelGroupLayout groupLayout = new KernelGroupLayout(new int[0],
+					new AggOut[] { new AggOut(distinctSpec, LmdbNativeKernelBindings.ENC_LONG_COUNT) });
+			LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
+					new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
+					new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0],
+					new int[0], List.of(), groupLayout, true, DISTINCT_EXPECTED);
+			LmdbNativeKernelLowering.Lowered lowered = new LmdbNativeKernelLowering.Lowered(kernel, bindings);
+			BoundDomains domains = new BoundDomains(new long[][] { roots, { sharedValue } }, new int[] { 0, 0 },
+					new int[] { roots.length, 1 });
+			LmdbNativeHashJoin.queryMemoryOverride = manager;
+			return LmdbNativeParallelKernelAggregate.tryEvaluate(lowered,
+					new NativeLmdbQuerySource.NativeAdjacency[0],
+					LmdbNativeKernelBindings.VariablePredicateViews.NONE, null, null, domains, SlotPlan.singleton(),
+					row,
+					emitter, null, LmdbNativeKernelInterpreter::forAggregate, workers);
+		} finally {
+			source.executionContext().close();
+		}
+	}
+
+	private void assertSyntheticDistinctResult(List<BindingSet> result) {
+		assertThat(result).as("the partition-local DISTINCT fixture must complete in parallel").isNotNull();
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).getValue("count").stringValue()).isEqualTo("1");
 	}
 
 	private List<BindingSet> numericAggregates() {

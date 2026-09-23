@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.eclipse.rdf4j</groupId>
 	<artifactId>rdf4j</artifactId>
-	<version>6.1.0-SNAPSHOT</version>
+	<version>6.2.0-SNAPSHOT</version>
 	<packaging>pom</packaging>
 	<name>Eclipse RDF4J</name>
 	<description>An extensible Java framework for RDF and SPARQL</description>
@@ -93,7 +93,7 @@
 		<jetty.version>12.1.10</jetty.version>
 		<netty.version>4.2.15.Final</netty.version>
 		<opentelemetry.version>1.63.0</opentelemetry.version>
-		<bouncycastle.version>1.84</bouncycastle.version>
+		<bouncycastle.version>1.85</bouncycastle.version>
 		<testcontainers.version>2.0.5</testcontainers.version>
 		<mockito.javaagent>-javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar</mockito.javaagent>
 		<rdf4j.apidocs.directory>${maven.multiModuleProjectDirectory}/target/site/apidocs</rdf4j.apidocs.directory>
@@ -184,6 +184,10 @@
 					<url>https://central.sonatype.com/repository/maven-snapshots/</url>
 				</snapshotRepository>
 			</distributionManagement>
+			<properties>
+				<!-- Allow two hours for Central validation and publishing; the plugin default is 30 minutes. -->
+				<central.publishing.waitMaxTime>7200</central.publishing.waitMaxTime>
+			</properties>
 			<build>
 				<plugins>
 					<plugin>
@@ -195,6 +199,7 @@
 							<publishingServerId>central</publishingServerId>
 							<autoPublish>true</autoPublish>
 							<waitUntil>published</waitUntil>
+							<waitMaxTime>${central.publishing.waitMaxTime}</waitMaxTime>
 							<centralSnapshotsUrl>https://central.sonatype.com/repository/maven-snapshots/</centralSnapshotsUrl>
 						</configuration>
 					</plugin>

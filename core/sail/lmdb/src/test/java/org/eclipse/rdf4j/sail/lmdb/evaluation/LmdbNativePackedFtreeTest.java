@@ -581,6 +581,78 @@ class LmdbNativePackedFtreeTest {
 		assertEquals(1L, packed.totalRows);
 	}
 
+	@Test
+	void optionalUnionAndBindRetainPackedSiblingFactors() throws Exception {
+		TestGraph graph = pathGraph();
+		graph.borrow = true;
+		RowState row = row(graph.source(), "a", "b", "c", "d", "e", "alias", "label");
+		SlotPlan path = join(pattern(0, P1, 1), pattern(1, P2, 2), pattern(2, P3, 3), pattern(3, P4, 4));
+		SlotPlan bound = new ExtensionPlan(path, new CopyBinding[] { CopyBinding.slot(5, 0),
+				CopyBinding.constant(6, 777L) });
+		SlotPlan optional = new LeftJoinPlan(new UnionPlan(bound, bound),
+				new FilterPlan(SingletonPlan.INSTANCE, ignored -> false, 0L));
+		long total = 0L;
+		try (RowCursor cursor = LmdbNativeFactorRows.asRows(LmdbNativeFactorAlgebra.open(optional, row), row)) {
+			while (cursor.next()) {
+				assertEquals(row.slots[0], row.slots[5]);
+				assertEquals(777L, row.slots[6]);
+				total = Math.addExact(total, ((FactorizedRowCursor) cursor).multiplicity());
+			}
+		}
+		assertEquals(30L, total, "UNION adds two 15-row paths; a rejected OPTIONAL emits each left mapping once");
+		for (long value : row.slots)
+			assertEquals(LmdbNativeAggregateCompiler.UNKNOWN, value);
+	}
+
+	@Test
+	void boundPackedLeafKeepsEntryBindingsAndClosesEarly() throws Exception {
+		TestGraph graph = pathGraph();
+		graph.borrow = true;
+		RowState row = row(graph.source(), "a", "b", "c", "d", "e");
+		assertTrue(row.bind(0, 2L));
+		int entryMark = row.mark();
+		SlotPlan path = join(pattern(0, P1, 1), pattern(1, P2, 2), pattern(2, P3, 3), pattern(3, P4, 4));
+		SlotPlan union = new UnionPlan(path, path);
+		try (RowCursor cursor = LmdbNativeFactorRows.asRows(LmdbNativeFactorAlgebra.open(union, row), row)) {
+			assertTrue(cursor.next());
+			assertEquals(2L, row.slots[0]);
+		}
+		assertEquals(entryMark, row.mark());
+		assertEquals(2L, row.slots[0]);
+		long count = 0L;
+		try (RowCursor cursor = LmdbNativeFactorRows.asRows(LmdbNativeFactorAlgebra.open(union, row), row)) {
+			while (cursor.next())
+				count += ((FactorizedRowCursor) cursor).multiplicity();
+		}
+		assertEquals(10L, count);
+	}
+
+	@Test
+	void independentAggregateReadersKeepOnePackedProducerAndOutsideWeights() throws Exception {
+		TestGraph graph = pathGraph();
+		graph.borrow = true;
+		RowState row = row(graph.source(), "a", "b", "c", "d", "e", "label");
+		SlotPlan path = join(pattern(0, P1, 1), pattern(1, P2, 2), pattern(2, P3, 3), pattern(3, P4, 4));
+		SlotPlan plan = new ExtensionPlan(new UnionPlan(path, path),
+				new CopyBinding[] { CopyBinding.constant(5, 777L) });
+		long[] weights = new long[3];
+		try (NativeFactorProjections projections = plan.openProjections(row,
+				new int[][] { { 2 }, { 2, 0 }, { 2, 4 } }, new boolean[] { false, true, true })) {
+			assertNotNull(projections);
+			while (projections.nextBatch()) {
+				for (int p = 0; p < weights.length; p++) {
+					while (projections.next(p)) {
+						assertEquals(20L, projections.value(2));
+						weights[p] += projections.multiplicity();
+					}
+				}
+			}
+		}
+		assertTrue(weights[0] > 0L);
+		assertEquals(30L, weights[1]);
+		assertEquals(30L, weights[2]);
+	}
+
 	private static long[][] copyCounts(LmdbNativePackedFtree.Chunk chunk, boolean subtree) {
 		long[][] result = new long[chunk.data.length][];
 		for (int i = 0; i < result.length; i++) {

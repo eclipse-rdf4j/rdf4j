@@ -102,6 +102,15 @@ final class NativeFilterLease {
 		if (plan instanceof UnionPlan union) {
 			return new UnionPlan(borrow(union.left), borrow(union.right));
 		}
+		if (plan instanceof OrderedUnionPlan union) {
+			return new OrderedUnionPlan(borrow(union.left), borrow(union.right), union.orderSlots);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return new RowDistinctPlan(borrow(distinct.arg), distinct.slots);
+		}
+		if (plan instanceof DrainGuardPlan guard) {
+			return new DrainGuardPlan(borrow(guard.delegate), borrow(guard.drained), guard.drainBeforeDelegate);
+		}
 		if (plan instanceof MinusPlan minus) {
 			return new MinusPlan(borrow(minus.left), borrow(minus.right), minus.sharedMask);
 		}

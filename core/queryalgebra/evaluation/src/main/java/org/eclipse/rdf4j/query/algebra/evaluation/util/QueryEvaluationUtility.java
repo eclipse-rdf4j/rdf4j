@@ -562,6 +562,7 @@ public class QueryEvaluationUtility {
 
 		private final Set<QueryModelNode> nonRepeatableNodes = Collections.newSetFromMap(new IdentityHashMap<>());
 		private final Set<QueryModelNode> lateralAncestors = Collections.newSetFromMap(new IdentityHashMap<>());
+		private final Set<QueryModelNode> extensionAncestors = Collections.newSetFromMap(new IdentityHashMap<>());
 
 		public boolean isRepeatable(QueryModelNode node) {
 			return !nonRepeatableNodes.contains(node);
@@ -569,6 +570,10 @@ public class QueryEvaluationUtility {
 
 		public boolean containsLateral(QueryModelNode node) {
 			return lateralAncestors.contains(node);
+		}
+
+		public boolean containsExtension(QueryModelNode node) {
+			return extensionAncestors.contains(node);
 		}
 	}
 
@@ -617,6 +622,12 @@ public class QueryEvaluationUtility {
 		@Override
 		public void meet(Lateral node) {
 			markAncestors(node, result.lateralAncestors);
+			super.meet(node);
+		}
+
+		@Override
+		public void meet(Extension node) {
+			markAncestors(node, result.extensionAncestors);
 			super.meet(node);
 		}
 

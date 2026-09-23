@@ -40,19 +40,19 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView;
 @InternalUseOnly
 public final class KernelAdjacencyCursor implements AutoCloseable {
 	private static final int BATCH_SIZE = 256;
-	private static final long BUFFER_BYTES = Math.multiplyExact(6L * BATCH_SIZE, Long.BYTES);
 
 	private final AdjacencyPageCursor pages;
 	private final NativeAdjacency.KeyRunCursor runs;
 	private final Predicate<AdjacencyPageCursor> pageAccept;
-	private final KernelCancellation cancellation;
+	private KernelCancellation cancellation;
 	private final LmdbQueryMemoryManager.Reservation reservation;
-	private final long[] roots = new long[BATCH_SIZE];
-	private final long[] rootQuadCounts = new long[BATCH_SIZE];
-	private final long[] neighbors = new long[BATCH_SIZE];
-	private final long[] multiplicities = new long[BATCH_SIZE];
-	private final long[] contextNeighbors = new long[BATCH_SIZE];
-	private final long[] contexts = new long[BATCH_SIZE];
+	private final int bufferCapacity;
+	private final long[] roots;
+	private final long[] rootQuadCounts;
+	private final long[] neighbors;
+	private final long[] multiplicities;
+	private final long[] contextNeighbors;
+	private final long[] contexts;
 
 	private int pageRow = -1;
 	private int pageRows;
@@ -90,12 +90,19 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 
 	private KernelAdjacencyCursor(AdjacencyPageCursor pages, NativeAdjacency.KeyRunCursor runs,
 			Predicate<AdjacencyPageCursor> pageAccept, KernelCancellation cancellation,
-			LmdbQueryMemoryManager.Reservation reservation) {
+			LmdbQueryMemoryManager.Reservation reservation, int bufferCapacity) {
 		this.pages = pages;
 		this.runs = runs;
 		this.pageAccept = pageAccept;
 		this.cancellation = cancellation;
 		this.reservation = reservation;
+		this.bufferCapacity = bufferCapacity;
+		this.roots = new long[bufferCapacity];
+		this.rootQuadCounts = new long[bufferCapacity];
+		this.neighbors = new long[bufferCapacity];
+		this.multiplicities = new long[bufferCapacity];
+		this.contextNeighbors = new long[bufferCapacity];
+		this.contexts = new long[bufferCapacity];
 	}
 
 	/** Opens a cursor using page traversal when this exact view provides it, with context access selected up front. */
@@ -134,7 +141,7 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 				return null;
 			}
 		}
-		return create(pages, runs, pageAccept, cancellation, ledger);
+		return create(pages, runs, pageAccept, cancellation, BATCH_SIZE, ledger);
 	}
 
 	/**
@@ -154,7 +161,10 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		if (positiveRunHandle <= 0L) {
 			throw new IllegalArgumentException("run handle must be positive: " + positiveRunHandle);
 		}
-		return create(null, new SingleRunCursor(view, rootId, positiveRunHandle), null, cancellation, ledger);
+		long runSize = view.size(positiveRunHandle);
+		int bufferCapacity = boundedCapacity(runSize);
+		return create(null, new SingleRunCursor(view, rootId, positiveRunHandle, runSize), null, cancellation,
+				bufferCapacity, ledger);
 	}
 
 	/** Opens a bound wildcard view using page traversal when available, with context access selected up front. */
@@ -192,16 +202,17 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 				return null;
 			}
 		}
-		return create(pages, runs, pageAccept, cancellation, ledger);
+		return create(pages, runs, pageAccept, cancellation, BATCH_SIZE, ledger);
 	}
 
 	private static KernelAdjacencyCursor create(AdjacencyPageCursor pages, NativeAdjacency.KeyRunCursor runs,
-			Predicate<AdjacencyPageCursor> pageAccept, KernelCancellation cancellation,
+			Predicate<AdjacencyPageCursor> pageAccept, KernelCancellation cancellation, int bufferCapacity,
 			LmdbQueryMemoryManager.QueryLedger ledger) {
 		LmdbQueryMemoryManager.Reservation reservation = null;
+		long reservationBytes = bufferBytesForCapacity(bufferCapacity);
 		try {
-			if (ledger != null) {
-				reservation = ledger.reserve(BUFFER_BYTES, null);
+			if (ledger != null && reservationBytes > 0L) {
+				reservation = ledger.reserve(reservationBytes, null);
 			}
 		} catch (RuntimeException | Error failure) {
 			Throwable cleanup = closeResource(pages, failure);
@@ -214,12 +225,12 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 			}
 			throw failure;
 		}
-		if (reservation == null && ledger != null) {
+		if (reservation == null && reservationBytes > 0L && ledger != null) {
 			closeOwned(pages, runs, null);
 			return null;
 		}
 		try {
-			return new KernelAdjacencyCursor(pages, runs, pageAccept, cancellation, reservation);
+			return new KernelAdjacencyCursor(pages, runs, pageAccept, cancellation, reservation, bufferCapacity);
 		} catch (RuntimeException | Error failure) {
 			Throwable cleanup = closeResource(pages, failure);
 			cleanup = closeResource(runs, cleanup);
@@ -231,6 +242,114 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 				throw problem;
 			}
 			throw failure;
+		}
+	}
+
+	private static int boundedCapacity(long runSize) {
+		if (runSize < 0L) {
+			throw new IllegalStateException("run cursor returned a negative root size");
+		}
+		return (int) Math.min((long) BATCH_SIZE, runSize);
+	}
+
+	private static long bufferBytesForCapacity(int bufferCapacity) {
+		return Math.multiplyExact(6L * bufferCapacity, Long.BYTES);
+	}
+
+	/**
+	 * Owns one physical run cursor and its six primitive batch lanes across logical projection activations. The bound
+	 * adjacency cursor remains owned by the kernel's ordinary producer path; this owner only borrows it while a run is
+	 * active and releases the physical cursor state between activations.
+	 */
+	static final class ReusableRunOwner implements AutoCloseable {
+		private final ReusableRunCursor runs = new ReusableRunCursor();
+		private KernelAdjacencyCursor cursor;
+		private boolean active;
+		private boolean closed;
+
+		KernelAdjacencyCursor activateBound(NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor bound, long root,
+				long runSize, KernelCancellation cancellation) {
+			if (runSize < 0L) {
+				throw new IllegalArgumentException("reusable run activation needs a non-negative size");
+			}
+			ensureAvailable();
+			runs.bind(bound, root, runSize);
+			return activate(cancellation);
+		}
+
+		KernelAdjacencyCursor activateResolved(RunView view, long root, long handle, long runSize,
+				KernelCancellation cancellation) {
+			if (handle <= 0L) {
+				throw new IllegalArgumentException("reusable run activation needs a positive handle");
+			}
+			if (runSize < 0L) {
+				throw new IllegalArgumentException("reusable run activation needs a non-negative size");
+			}
+			ensureAvailable();
+			runs.bind(view, root, handle, runSize);
+			return activate(cancellation);
+		}
+
+		private void ensureAvailable() {
+			if (closed) {
+				throw new IllegalStateException("reusable run owner is closed");
+			}
+			if (active) {
+				throw new IllegalStateException("reusable run owner already has an active run");
+			}
+		}
+
+		private KernelAdjacencyCursor activate(KernelCancellation cancellation) {
+			ensureAvailable();
+			if (cursor == null) {
+				cursor = create(null, runs, null, cancellation, BATCH_SIZE, null);
+			} else {
+				// release() reset every traversal field before making this cursor available again; only the new token
+				// changes.
+				cursor.ensureOpen();
+				cursor.cancellation = cancellation;
+			}
+			active = true;
+			return cursor;
+		}
+
+		void release(KernelAdjacencyCursor candidate) {
+			if (candidate != cursor) {
+				throw new IllegalArgumentException("run owner does not own this cursor");
+			}
+			if (!active) {
+				return;
+			}
+			candidate.releaseReusable();
+			runs.clear();
+			active = false;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			Throwable failure = null;
+			if (active) {
+				try {
+					release(cursor);
+				} catch (Throwable problem) {
+					failure = problem;
+				}
+			}
+			failure = closeResource(cursor, failure);
+			cursor = null;
+			if (failure instanceof RuntimeException problem) {
+				throw problem;
+			}
+			if (failure instanceof Error problem) {
+				throw problem;
+			}
+			if (failure != null) {
+				throw new IllegalStateException("reusable run cleanup failed", failure);
+			}
 		}
 	}
 
@@ -295,7 +414,7 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		// pageAccept has already run, so all payload access below is authorized by the caller's proof.
 		if (pageRootBatchFrom < 0 || pageRow < pageRootBatchFrom
 				|| pageRow - pageRootBatchFrom >= pageRootBatchSize) {
-			int requested = Math.min(BATCH_SIZE, pageRows - pageRow);
+			int requested = Math.min(bufferCapacity, pageRows - pageRow);
 			int copied = pages.copyRootCounts(pageRow, requested, roots, 0, rootQuadCounts, 0);
 			if (copied <= 0 || copied > requested) {
 				throw new IllegalStateException("page root cursor returned an invalid copied count: " + copied);
@@ -347,7 +466,7 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 			return false;
 		}
 		if (fiberBatchIndex >= fiberBatchSize) {
-			fiberBatchSize = pages.copyRowFibers(pageRow, pageFiber, BATCH_SIZE, neighbors, 0, multiplicities, 0);
+			fiberBatchSize = pages.copyRowFibers(pageRow, pageFiber, bufferCapacity, neighbors, 0, multiplicities, 0);
 			fiberBatchIndex = 0;
 			if (fiberBatchSize <= 0) {
 				throw new IllegalStateException("page fiber cursor made no progress before its declared end");
@@ -381,8 +500,21 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 			rootFibers = runFiberCount;
 			return false;
 		}
+		if (rootQuads == 1L) {
+			neighbor = runs.neighborAt(0L);
+			multiplicity = 1L;
+			neighborValuesCopied = Math.addExact(neighborValuesCopied, 1L);
+			fiberQuadOffset = 0L;
+			runFiberQuadOffset = 1L;
+			runFiberCount++;
+			contextIndex = -1L;
+			contextBatchStart = -1L;
+			contextBatchSize = 0;
+			fiberReady = true;
+			return true;
+		}
 		if (runFiberBatchIndex >= runFiberBatchSize) {
-			runFiberBatchSize = runs.copyFibers(runFiberQuadOffset, BATCH_SIZE, neighbors, 0, multiplicities, 0);
+			runFiberBatchSize = runs.copyFibers(runFiberQuadOffset, bufferCapacity, neighbors, 0, multiplicities, 0);
 			runFiberBatchIndex = 0;
 			if (runFiberBatchSize <= 0) {
 				throw new IllegalStateException("run fiber cursor made no progress before its declared end");
@@ -462,7 +594,7 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		}
 		checkCancelled();
 		long remaining = multiplicity - contextIndex;
-		int requested = Math.toIntExact(Math.min((long) BATCH_SIZE, remaining));
+		int requested = Math.toIntExact(Math.min((long) bufferCapacity, remaining));
 		if (requested <= 0) {
 			throw new IllegalStateException("context batch has no remaining rows");
 		}
@@ -563,6 +695,45 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		}
 	}
 
+	private void resetReusable(KernelCancellation cancellation) {
+		ensureOpen();
+		this.cancellation = cancellation;
+		pageRow = -1;
+		pageRows = 0;
+		pageRootBatchFrom = -1;
+		pageRootBatchSize = 0;
+		pageFiber = 0;
+		pageFiberCount = 0;
+		pageFiberQuadOffset = 0L;
+		fiberBatchSize = 0;
+		fiberBatchIndex = 0;
+		runFiberQuadOffset = 0L;
+		runFiberCount = 0L;
+		runFiberBatchSize = 0;
+		runFiberBatchIndex = 0;
+		root = 0L;
+		rootQuads = 0L;
+		rootFibers = 0L;
+		neighbor = 0L;
+		multiplicity = 0L;
+		fiberQuadOffset = 0L;
+		contextIndex = -1L;
+		contextBatchStart = -1L;
+		contextBatchSize = 0;
+		context = 0L;
+		pageCommonContext = false;
+		pageCommonContextId = 0L;
+		rootReady = false;
+		fiberReady = false;
+		contextReady = false;
+		neighborValuesCopied = 0L;
+		contextValuesCopied = 0L;
+	}
+
+	private void releaseReusable() {
+		resetReusable(cancellation);
+	}
+
 	private void checkCancelled() {
 		KernelRuntime.checkCancelled(cancellation);
 	}
@@ -621,13 +792,14 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		private final RunView view;
 		private final long root;
 		private final long handle;
+		private final long size;
 		private boolean positioned;
-		private long size = Long.MIN_VALUE;
 
-		private SingleRunCursor(RunView view, long root, long handle) {
+		private SingleRunCursor(RunView view, long root, long handle, long size) {
 			this.view = view;
 			this.root = root;
 			this.handle = handle;
+			this.size = size;
 		}
 
 		@Override
@@ -654,9 +826,6 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		@Override
 		public long runSize() {
 			checkPositioned();
-			if (size == Long.MIN_VALUE) {
-				size = view.size(handle);
-			}
 			return size;
 		}
 
@@ -738,6 +907,154 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 			if (!positioned) {
 				throw new IllegalStateException("advance must succeed before reading the run");
 			}
+		}
+	}
+
+	private static final class ReusableRunCursor implements NativeAdjacency.KeyRunCursor {
+		private NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor bound;
+		private RunView view;
+		private long root;
+		private long handle;
+		private long size;
+		private boolean positioned;
+
+		void bind(NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor bound, long root, long size) {
+			this.bound = Objects.requireNonNull(bound, "bound");
+			this.view = null;
+			this.root = root;
+			this.handle = 1L;
+			this.size = size;
+			this.positioned = false;
+		}
+
+		void bind(RunView view, long root, long handle, long size) {
+			this.bound = null;
+			this.view = Objects.requireNonNull(view, "view");
+			this.root = root;
+			this.handle = handle;
+			this.size = size;
+			this.positioned = false;
+		}
+
+		void clear() {
+			bound = null;
+			view = null;
+			root = 0L;
+			handle = 0L;
+			size = 0L;
+			positioned = false;
+		}
+
+		@Override
+		public boolean advance() {
+			if (positioned) {
+				return false;
+			}
+			positioned = true;
+			return true;
+		}
+
+		@Override
+		public long key() {
+			checkPositioned();
+			return root;
+		}
+
+		@Override
+		public long runHandle() {
+			checkPositioned();
+			return handle;
+		}
+
+		@Override
+		public long runSize() {
+			checkPositioned();
+			return size;
+		}
+
+		@Override
+		public long neighborAt(long runOffset) {
+			checkPositioned();
+			return bound != null ? bound.neighborAt(runOffset) : view.neighborAt(handle, runOffset);
+		}
+
+		@Override
+		public long contextAt(long runOffset) {
+			checkPositioned();
+			return bound != null ? bound.contextAt(runOffset) : view.contextAt(handle, runOffset);
+		}
+
+		@Override
+		public int copyNeighbors(long runOffset, int length, long[] target, int targetOffset) {
+			checkPositioned();
+			return bound != null ? bound.copyNeighbors(runOffset, length, target, targetOffset)
+					: view.copyNeighbors(handle, runOffset, length, target, targetOffset);
+		}
+
+		@Override
+		public int copyFibers(long runOffset, int length, long[] neighborTarget, int neighborOffset,
+				long[] multiplicityTarget, int multiplicityOffset) {
+			checkPositioned();
+			if (runOffset < 0L || length < 0 || neighborOffset < 0 || multiplicityOffset < 0
+					|| neighborOffset > neighborTarget.length - length
+					|| multiplicityOffset > multiplicityTarget.length - length) {
+				throw new IllegalArgumentException("invalid resolved-run fiber-copy range");
+			}
+			if (runOffset > size) {
+				throw new IllegalArgumentException("resolved-run fiber offset exceeds run size: " + runOffset);
+			}
+			if (length == 0 || runOffset == size) {
+				return 0;
+			}
+			int requested = Math.toIntExact(Math.min((long) length, size - runOffset));
+			int copied = copyNeighbors(runOffset, requested, neighborTarget, neighborOffset);
+			if (copied < 0 || copied > requested) {
+				throw new IllegalStateException(
+						"resolved-run neighbor cursor returned an invalid copied count: " + copied);
+			}
+			if (copied == 0) {
+				return 0;
+			}
+			long offset = runOffset;
+			int rawIndex = 0;
+			int fibers = 0;
+			while (rawIndex < copied && fibers < length) {
+				long currentNeighbor = neighborTarget[neighborOffset + rawIndex];
+				long start = offset;
+				do {
+					offset++;
+					rawIndex++;
+				} while (rawIndex < copied && neighborTarget[neighborOffset + rawIndex] == currentNeighbor);
+				if (rawIndex == copied) {
+					while (offset < size && neighborAt(offset) == currentNeighbor) {
+						offset++;
+					}
+				}
+				neighborTarget[neighborOffset + fibers] = currentNeighbor;
+				multiplicityTarget[multiplicityOffset + fibers] = offset - start;
+				fibers++;
+				if (rawIndex == copied) {
+					break;
+				}
+			}
+			return fibers;
+		}
+
+		@Override
+		public int copyContexts(long runOffset, int length, long[] target, int targetOffset) {
+			checkPositioned();
+			return bound != null ? bound.copyContexts(runOffset, length, target, targetOffset)
+					: view.copyContexts(handle, runOffset, length, target, targetOffset);
+		}
+
+		private void checkPositioned() {
+			if (!positioned) {
+				throw new IllegalStateException("reusable run cursor is not positioned");
+			}
+		}
+
+		@Override
+		public void close() {
 		}
 	}
 }

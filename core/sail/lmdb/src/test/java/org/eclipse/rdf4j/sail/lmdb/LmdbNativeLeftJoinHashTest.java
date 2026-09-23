@@ -40,6 +40,7 @@ public class LmdbNativeLeftJoinHashTest {
 
 	private static final String EX = "http://example.com/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String PACKED_ALGEBRA_FLAG = "rdf4j.lmdb.packedFtree.algebra.enabled";
 	private static final String HASH_FLAG = "rdf4j.lmdb.leftjoin.hash.enabled";
 	private static final String MEMO_FLAG = "rdf4j.lmdb.leftjoin.memo.enabled";
 	private static final String MIN_PROBES = "rdf4j.lmdb.leftjoin.hash.minProbes";
@@ -47,17 +48,40 @@ public class LmdbNativeLeftJoinHashTest {
 	private static final String MEMBERSHIP_MAX_SIZE = "rdf4j.lmdb.membership.maxSize";
 	private static final String JANINO_FLAG = "rdf4j.lmdb.janinoCodegen.enabled";
 	private static final String KERNEL_INTERPRETER_FLAG = "rdf4j.lmdb.kernelInterpreter.enabled";
+	private static final String CORRELATED_OPTIONAL_QUERY = q("SELECT ?s ?tag WHERE {\n"
+			+ "  ?s ex:type ex:Item .\n"
+			+ "  OPTIONAL { ?s ex:tag ?tag }\n"
+			+ "}");
+	private static final String REPEATED_LEFT_KEYS_QUERY = q("SELECT ?s ?alias ?tag WHERE {\n"
+			+ "  ?s ex:type ex:Item ; ex:alias ?alias .\n"
+			+ "  OPTIONAL { ?s ex:tag ?tag }\n"
+			+ "}");
+	private static final String CONDITION_WRAPPED_QUERY = q("SELECT ?s ?tag WHERE {\n"
+			+ "  ?s ex:type ex:Item .\n"
+			+ "  OPTIONAL { ?s ex:tag ?tag FILTER(BOUND(?s)) }\n"
+			+ "}");
+	private static final String REPEATED_SLOT_QUERY = q("SELECT ?s WHERE {\n"
+			+ "  ?s ex:type ex:Item .\n"
+			+ "  OPTIONAL { ?s ex:same ?s }\n"
+			+ "}");
+	private static final String MULTI_PATTERN_OPTIONAL_QUERY = q("SELECT ?s ?alias ?tag ?label WHERE {\n"
+			+ "  VALUES ?s { ex:item0 }\n"
+			+ "  ?s ex:alias ?alias .\n"
+			+ "  OPTIONAL { ?s ex:tag ?tag . ?tag ex:label ?label }\n"
+			+ "}");
 
 	@TempDir
 	File dataDir;
 
 	private SailRepository repository;
+	private String previousPackedAlgebra;
 	private String previousJanino;
 	private String previousKernelInterpreter;
 
 	@BeforeEach
 	public void setUp() {
 		System.setProperty(MIN_PROBES, "0");
+		previousPackedAlgebra = System.setProperty(PACKED_ALGEBRA_FLAG, "false");
 		previousJanino = System.setProperty(JANINO_FLAG, "false");
 		previousKernelInterpreter = System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
 		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
@@ -94,6 +118,7 @@ public class LmdbNativeLeftJoinHashTest {
 	@AfterEach
 	public void tearDown() {
 		repository.shutDown();
+		restore(PACKED_ALGEBRA_FLAG, previousPackedAlgebra);
 		System.clearProperty(HASH_FLAG);
 		System.clearProperty(MEMO_FLAG);
 		System.clearProperty(MIN_PROBES);
@@ -105,52 +130,53 @@ public class LmdbNativeLeftJoinHashTest {
 
 	@Test
 	public void correlatedPatternOptionalBuildsPayloadHash() {
-		assertAllModesAgree(q("SELECT ?s ?tag WHERE {\n"
-				+ "  ?s ex:type ex:Item .\n"
-				+ "  OPTIONAL { ?s ex:tag ?tag }\n"
-				+ "}"), true);
+		assertAllModesAgree(CORRELATED_OPTIONAL_QUERY, true);
 	}
 
 	@Test
 	public void repeatedLeftKeysReusePayloadHash() {
-		assertAllModesAgree(q("SELECT ?s ?alias ?tag WHERE {\n"
-				+ "  ?s ex:type ex:Item ; ex:alias ?alias .\n"
-				+ "  OPTIONAL { ?s ex:tag ?tag }\n"
-				+ "}"), true);
+		assertAllModesAgree(REPEATED_LEFT_KEYS_QUERY, true);
 	}
 
 	@Test
 	public void conditionWrappedPatternOptionalBuildsPayloadHash() {
-		assertAllModesAgree(q("SELECT ?s ?tag WHERE {\n"
-				+ "  ?s ex:type ex:Item .\n"
-				+ "  OPTIONAL { ?s ex:tag ?tag FILTER(BOUND(?s)) }\n"
-				+ "}"), true);
+		assertAllModesAgree(CONDITION_WRAPPED_QUERY, true);
 	}
 
 	@Test
 	public void payloadOverflowDegradesToKeySet() {
 		System.setProperty(MAX_ROWS, "1");
-		assertAllModesAgree(q("SELECT ?s ?tag WHERE {\n"
-				+ "  ?s ex:type ex:Item .\n"
-				+ "  OPTIONAL { ?s ex:tag ?tag }\n"
-				+ "}"), true);
+		assertAllModesAgree(CORRELATED_OPTIONAL_QUERY, true);
 	}
 
 	@Test
 	public void repeatedSlotPatternStaysOnExistingPath() {
-		assertAllModesAgree(q("SELECT ?s WHERE {\n"
-				+ "  ?s ex:type ex:Item .\n"
-				+ "  OPTIONAL { ?s ex:same ?s }\n"
-				+ "}"), false);
+		assertAllModesAgree(REPEATED_SLOT_QUERY, false);
 	}
 
 	@Test
 	public void multiPatternOptionalMemoizesRepeatedCorrelationKey() {
-		assertMemoModesAgree(q("SELECT ?s ?alias ?tag ?label WHERE {\n"
-				+ "  VALUES ?s { ex:item0 }\n"
-				+ "  ?s ex:alias ?alias .\n"
-				+ "  OPTIONAL { ?s ex:tag ?tag . ?tag ex:label ?label }\n"
-				+ "}"));
+		assertMemoModesAgree(MULTI_PATTERN_OPTIONAL_QUERY);
+	}
+
+	@Test
+	public void packedAlgebraMatchesGenericForOptionalShapes() {
+		String previousPackedAlgebra = System.getProperty(PACKED_ALGEBRA_FLAG);
+		String previousHash = System.getProperty(HASH_FLAG);
+		String previousMemo = System.getProperty(MEMO_FLAG);
+		try {
+			System.setProperty(PACKED_ALGEBRA_FLAG, "true");
+			System.setProperty(HASH_FLAG, "true");
+			System.setProperty(MEMO_FLAG, "true");
+			for (String query : List.of(CORRELATED_OPTIONAL_QUERY, REPEATED_LEFT_KEYS_QUERY, CONDITION_WRAPPED_QUERY,
+					REPEATED_SLOT_QUERY, MULTI_PATTERN_OPTIONAL_QUERY)) {
+				assertPackedNativeMatchesGeneric(query);
+			}
+		} finally {
+			restore(PACKED_ALGEBRA_FLAG, previousPackedAlgebra);
+			restore(HASH_FLAG, previousHash);
+			restore(MEMO_FLAG, previousMemo);
+		}
 	}
 
 	private void assertAllModesAgree(String query, boolean expectHash) {
@@ -214,6 +240,22 @@ public class LmdbNativeLeftJoinHashTest {
 			restore(NATIVE_FLAG, previousNative);
 			restore(MEMO_FLAG, previousMemo);
 		}
+	}
+
+	private void assertPackedNativeMatchesGeneric(String query) {
+		String previousNative = System.getProperty(NATIVE_FLAG);
+		List<String> packedRows;
+		List<String> genericRows;
+		try {
+			System.setProperty(NATIVE_FLAG, "true");
+			packedRows = rows(query);
+			System.setProperty(NATIVE_FLAG, "false");
+			genericRows = rows(query);
+		} finally {
+			restore(NATIVE_FLAG, previousNative);
+		}
+
+		assertThat(packedRows).as("packed native vs generic for:\n" + query).isEqualTo(genericRows);
 	}
 
 	private static long memoMaterializations() {

@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
 
 /**
- * Packed arbitrary-f-tree execution for LMDB basic graph-pattern joins.
+ * Packed arbitrary-f-tree execution for LMDB basic graph-pattern regions and composable bag algebra.
  * <p>
  * This is deliberately a physical representation, not another tail rewrite. An unrestricted terminal can retain a
  * snapshot-owned borrowed group and exact summary per parent; a materialized variable owns a packed vector. A
@@ -57,8 +57,9 @@ import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
  * (including constant endpoint restrictions, named/default graph restrictions, duplicate statement multiplicity and
  * cyclic constraints). Tree edges expand packed child vectors; additional relations to already-bound ancestors are
  * enforced by ordered multi-way intersections. Variable-predicate and other unsupported shapes remain owned by the
- * general kernel paths. A speculative native strategy always declines before changing result semantics when its
- * physical invariants cannot be proved.
+ * general kernel paths. OPTIONAL, UNION and BIND compose these regions through {@link LmdbNativeFactorAlgebra} and
+ * share demand-projected aggregate readers rather than becoming artificial BGP tree edges. A speculative native
+ * strategy always declines before changing result semantics when its physical invariants cannot be proved.
  */
 @Experimental
 final class LmdbNativePackedFtree {
@@ -139,6 +140,40 @@ final class LmdbNativePackedFtree {
 	/** Test observability: incremented whenever a grouped aggregate runs through the partition-parallel path. */
 	static final AtomicLong PARALLEL_GROUP_RUNS = new AtomicLong();
 
+	static LmdbNativeWork estimateAggregateWork(SlotPlan plan, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates) {
+		return plan instanceof MultiJoinPlan multi && !LmdbNativeFactorAlgebra.candidate(plan)
+				? estimateAggregateWork(multi, row, groupSlots, aggregates)
+				: LmdbNativeFactorAlgebra.candidate(plan) ? plan.estimateWork(row, row.boundMask())
+						: LmdbNativeWork.UNKNOWN;
+	}
+
+	static LmdbNativeStrategyProposal<NativeUnorderedInput> proposeRows(SlotPlan input, RowState row,
+			int[] retainedSlots, boolean distinct, TupleExpr explainTarget) {
+		if (input instanceof MultiJoinPlan multi && !LmdbNativeFactorAlgebra.candidate(input))
+			return proposeRows(multi, row, retainedSlots, distinct, explainTarget);
+		if (!LmdbNativeFactorAlgebra.candidate(input))
+			return null;
+		return new LmdbNativeStrategyProposal<>(() -> {
+			FactorizedRowCursor rows = LmdbNativePackedMorsels.tryRows(input, row, retainedSlots, distinct,
+					explainTarget);
+			if (rows == null)
+				rows = LmdbNativeFactorProjections.openRows(input, row, retainedSlots, !distinct);
+			if (row.runtimePlan != null)
+				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, new SlotPlan[] { input });
+			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE);
+			return NativeUnorderedInput.rows(row, rows);
+		}, input.estimateWork(row, row.boundMask()), LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, () -> {
+		});
+	}
+
+	static List<BindingSet> tryEvaluateAggregate(SlotPlan input, RowState row, int[] groups,
+			AggregateSpec[] aggregates, NativeGroupIteration owner, TupleExpr explainTarget) throws IOException {
+		return input instanceof MultiJoinPlan multi && !LmdbNativeFactorAlgebra.candidate(input)
+				? tryEvaluateAggregate(multi, row, groups, aggregates, owner, explainTarget)
+				: LmdbNativePackedAlgebraAggregate.evaluate(input, row, groups, aggregates, owner, explainTarget);
+	}
+
 	static LmdbNativeWork estimateAggregateWork(MultiJoinPlan multiJoin, RowState row, int[] groupSlots,
 			AggregateSpec[] aggregates) {
 		if (!enabled() || multiJoin == null) {
@@ -177,7 +212,10 @@ final class LmdbNativePackedFtree {
 		}
 		LmdbNativeWork work = plan.estimateRowWork(row.source);
 		return new LmdbNativeStrategyProposal<>(() -> {
-			PackedRowCursor cursor = PackedRowCursor.open(plan, row);
+			FactorizedRowCursor cursor = LmdbNativePackedMorsels.tryRows(multiJoin, row, retainedSlots, distinct,
+					explainTarget);
+			if (cursor == null)
+				cursor = PackedRowCursor.open(plan, row);
 			if (cursor == null) {
 				LmdbNativeAttemptMetrics.recordDecline(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
 						"adjacency-unavailable");
@@ -232,6 +270,65 @@ final class LmdbNativePackedFtree {
 			}
 			throw failure;
 		}
+	}
+
+	/**
+	 * A BGP region inside a larger bag-algebra plan. Unlike the borrowed-only transport hook, a region may export
+	 * packed scalar prefixes when no terminal supports borrowing. The same runtime is retained; it is not opened
+	 * speculatively a second time. Correlation is specialized to fixed endpoint restrictions before f-tree planning.
+	 */
+	static LmdbNativeFactorCursor openLeaf(MultiJoinPlan input, RowState row) throws IOException {
+		if (!enabled() || row.encounterOrderRequired)
+			return null;
+		if (row.source instanceof SyntheticValueSource values) {
+			for (SlotPlan child : input.children) {
+				if (child instanceof PatternPlan pattern && values.anySynthetic(pattern.s.lookup(row.slots),
+						pattern.p.lookup(row.slots), pattern.o.lookup(row.slots), pattern.c.lookup(row.slots)))
+					return null;
+			}
+			// anySynthetic also rejects unresolved terminal keys. Such keys belong to the terminal value authority,
+			// never an adjacency key; a storage-absent generated value uses the ordinary native no-match probe.
+		}
+		MultiJoinPlan join = specializeEntry(input, row);
+		if (join == null)
+			return null;
+		Plan plan = Planner.plan(join, row, LmdbNativeAggregateCompiler.slotsOf(join.producedMask()));
+		if (plan == null)
+			return null;
+		Runtime runtime = null;
+		try {
+			runtime = Runtime.open(plan, row);
+			return runtime == null ? null : new GroupedRowCursor(plan, row, runtime);
+		} catch (PackedDecline unsupported) {
+			if (runtime != null)
+				runtime.close();
+			return null;
+		} catch (IOException | RuntimeException | Error failure) {
+			if (runtime != null)
+				LmdbNativeFactorAlgebra.closeSuppressing(runtime, failure);
+			throw failure;
+		}
+	}
+
+	static MultiJoinPlan specializeEntry(MultiJoinPlan input, RowState row) {
+		if ((input.producedMask() & row.boundMask()) == 0L)
+			return input;
+		SlotPlan[] children = new SlotPlan[input.children.length];
+		for (int i = 0; i < children.length; i++) {
+			if (!(input.children[i]instanceof PatternPlan pattern))
+				return null;
+			children[i] = new PatternPlan(specialize(pattern.s, row), specialize(pattern.p, row),
+					specialize(pattern.o, row), specialize(pattern.c, row), pattern.contexts,
+					pattern.namedContextScope, pattern.statementOrder, pattern.indexName, pattern.range,
+					pattern.staticEstimate);
+		}
+		return new MultiJoinPlan(children, input.filters);
+	}
+
+	private static Term specialize(Term term, RowState row) {
+		if (term.hasSlot() && !term.isConstant() && row.slots[term.slot] != UNKNOWN)
+			return Term.constantSlot(term.slot, row.slots[term.slot]);
+		return term;
 	}
 
 	/** Structural admission shared with IR lowering; does not open storage or inspect user values. */
@@ -363,14 +460,45 @@ final class LmdbNativePackedFtree {
 				return null;
 			}
 		}
+		NativeFilterLease parallelLease = new NativeFilterLease();
+		try {
+			List<BindingSet> parallel = LmdbNativePackedMorsels.tryAggregate(parallelLease.borrow(multiJoin), row,
+					groupSlots, aggregates, owner, explainTarget);
+			if (parallel != null) {
+				parallelLease.commit();
+				if (row.runtimePlan != null)
+					row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
+							multiJoin.children);
+				LmdbNativeExplain.recordExecutionPath(explainTarget,
+						LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
+				return parallel;
+			}
+			parallelLease.discard();
+		} catch (EncounterOrderFallback fallback) {
+			// The enclosing native aggregate dispatcher owns the ordered replay; no group escaped this attempt.
+			Throwable real = EncounterOrderFallback.realFailure(fallback);
+			if (real == null)
+				parallelLease.discard();
+			else
+				parallelLease.abort(real);
+			throw fallback;
+		} catch (IOException | RuntimeException | Error problem) {
+			parallelLease.abort(problem);
+			throw problem;
+		}
 		try (Runtime runtime = Runtime.open(plan, row)) {
 			if (runtime == null) {
 				return null;
 			}
 			AggContext context = new AggContext(row.source, owner.strictCompare, true, true);
-			List<BindingSet> result = groupSlots.length == 0
-					? evaluateUngrouped(runtime, plan, row, aggregates, owner, context)
-					: evaluateGrouped(multiJoin, runtime, plan, row, groupSlots, aggregates, owner, context);
+			List<BindingSet> result;
+			try {
+				result = groupSlots.length == 0
+						? evaluateUngrouped(runtime, plan, row, aggregates, owner, context)
+						: evaluateGrouped(multiJoin, runtime, plan, row, groupSlots, aggregates, owner, context);
+			} finally {
+				context.close();
+			}
 			if (row.runtimePlan != null) {
 				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
 						multiJoin.children);
@@ -1689,6 +1817,86 @@ final class LmdbNativePackedFtree {
 			}
 			return new Plan(multiJoin, root, nodeArray, constants.toArray(ConstantPattern[]::new), variableMask,
 					fixedSlots, fixedValues, choice.depthSum);
+		}
+
+		/**
+		 * Rebinds one already admitted physical topology to worker-owned filters without repeating cost planning.
+		 *
+		 * <p>
+		 * Worker sources may expose different estimate availability, but the morsel ranges were built from the parent
+		 * topology. Replanning here could select a different root and make those ranges invalid. Node and seed metadata
+		 * therefore retain the parent's ordinals, orientations, and selected root seed; only filter and witness
+		 * placement is rebuilt over the worker-owned filter facades.
+		 */
+		static Plan rebindForWorker(Plan parent, MultiJoinPlan workerPlan) {
+			if (parent == null || workerPlan == null) {
+				return null;
+			}
+			NodePlan[] nodes = new NodePlan[parent.nodes.length];
+			for (NodePlan original : parent.nodes) {
+				nodes[original.ordinal] = new NodePlan(original.ordinal, original.slot);
+			}
+			for (NodePlan original : parent.nodes) {
+				NodePlan rebound = nodes[original.ordinal];
+				rebound.depth = original.depth;
+				rebound.parent = original.parent == null ? null : nodes[original.parent.ordinal];
+				rebound.children = new NodePlan[original.children.length];
+				for (int i = 0; i < original.children.length; i++) {
+					rebound.children[i] = nodes[original.children[i].ordinal];
+				}
+				rebound.primary = copyEdge(original.primary);
+				rebound.constraintEdges = copyEdges(original.constraintEdges);
+				rebound.unary = copyUnary(original.unary);
+				RootSeed[] seeds = new RootSeed[original.seeds.length];
+				RootSeed selected = null;
+				for (int i = 0; i < original.seeds.length; i++) {
+					seeds[i] = copySeed(original.seeds[i]);
+					if (original.seeds[i] == original.seed) {
+						selected = seeds[i];
+					}
+				}
+				rebound.seeds = seeds;
+				rebound.seed = selected == null ? copySeed(original.seed) : selected;
+			}
+			ConstantPattern[] constants = new ConstantPattern[parent.constants.length];
+			for (int i = 0; i < constants.length; i++) {
+				ConstantPattern constant = parent.constants[i];
+				constants[i] = new ConstantPattern(constant.pattern, constant.subject, constant.object);
+			}
+			Plan rebound = new Plan(workerPlan, nodes[parent.root.ordinal], nodes, constants, parent.variableMask,
+					parent.fixedSlots.clone(), parent.fixedValues.clone(), parent.structuralScore);
+			if (!placeFilters(workerPlan.filters, rebound.bySlot, rebound.root)) {
+				return null;
+			}
+			return rebound;
+		}
+
+		private static EdgePlan copyEdge(EdgePlan edge) {
+			return edge == null ? null : new EdgePlan(edge.pattern, edge.keySlot, edge.valueSlot, edge.keyIsSubject);
+		}
+
+		private static EdgePlan[] copyEdges(EdgePlan[] edges) {
+			EdgePlan[] copies = new EdgePlan[edges.length];
+			for (int i = 0; i < copies.length; i++) {
+				copies[i] = copyEdge(edges[i]);
+			}
+			return copies;
+		}
+
+		private static UnaryPlan[] copyUnary(UnaryPlan[] unary) {
+			UnaryPlan[] copies = new UnaryPlan[unary.length];
+			for (int i = 0; i < copies.length; i++) {
+				UnaryPlan original = unary[i];
+				copies[i] = new UnaryPlan(original.pattern, original.slot, original.constantNeighbor,
+						original.variableIsSubject);
+			}
+			return copies;
+		}
+
+		private static RootSeed copySeed(RootSeed seed) {
+			return seed == null ? null
+					: new RootSeed(seed.pattern, seed.variableIsKey, seed.bySubjectForVariableKey,
+							seed.bySubjectForConstantKey, seed.constantNeighbor);
 		}
 
 		private static boolean admissiblePattern(PatternPlan pattern) {
@@ -3143,7 +3351,12 @@ final class LmdbNativePackedFtree {
 				}
 				return runtime;
 			} catch (Throwable t) {
-				runtime.close();
+				try {
+					runtime.close();
+				} catch (Throwable closing) {
+					if (closing != t)
+						t.addSuppressed(closing);
+				}
 				throw t;
 			}
 		}
@@ -3270,6 +3483,26 @@ final class LmdbNativePackedFtree {
 				}
 				return partitions;
 			}
+			return null;
+		}
+
+		/** Read-only planning. The returned descriptor contains no query-thread cursor or native address. */
+		RootMorsels planRootMorsels(long rows) throws IOException {
+			if (exhausted || chunksStarted || rootSeed == null)
+				return null;
+			if (roots instanceof RunRootProducer run)
+				return new RootMorsels(RootPartition.runRange(rootSeed, 0L, run.size, run.size), rows,
+						run.ordered);
+			if (roots instanceof KeyRootProducer) {
+				NativeLmdbQuerySource.NativeAdjacency a = adjacency(rootSeed.pattern.p.constant,
+						rootSeed.bySubjectForVariableKey);
+				if (a == null || !a.supportsKeyEnumeration())
+					return null;
+				long total = a.keyCount();
+				return new RootMorsels(RootPartition.keyRange(rootSeed, 0L, total, total), rows, false);
+			}
+			if (roots instanceof ScanRootProducer scan)
+				return new RootMorsels(RootPartition.arrayRange(scan, 0, scan.values.length), rows, false);
 			return null;
 		}
 
@@ -4345,6 +4578,39 @@ final class LmdbNativePackedFtree {
 				throw new PackedParallelDecline("worker run diverged from the partition plan");
 			}
 			return new RunRootProducer(a, handle, seed.pattern, from, to);
+		}
+	}
+
+	/** Dynamic root-domain claims shared by workers; all storage access remains worker-confined. */
+	static final class RootMorsels {
+		final RootPartition domain;
+		final LmdbNativeMorselRange ranges;
+		final boolean ordered;
+
+		RootMorsels(RootPartition domain, long rows, boolean ordered) {
+			this.domain = domain;
+			this.ranges = new LmdbNativeMorselRange(domain.expectedTotal, rows);
+			this.ordered = ordered;
+		}
+
+		RootProducer claim(Runtime worker) throws IOException {
+			java.util.function.LongUnaryOperator boundary = null;
+			if (ordered) {
+				NativeLmdbQuerySource.NativeAdjacency a = worker.adjacency(domain.seed.pattern.p.constant,
+						domain.seed.bySubjectForConstantKey);
+				if (a == null)
+					throw new PackedParallelDecline("worker root adjacency unavailable");
+				long handle = a.find(domain.seed.constantNeighbor);
+				if (handle <= 0L || a.size(handle) != domain.expectedTotal)
+					throw new PackedParallelDecline("worker root snapshot differs from the morsel domain");
+				boundary = cut -> LmdbNativeMorselRange.afterDuplicates(
+						position -> a.neighborAt(handle, position), cut, domain.expectedTotal);
+			}
+			LmdbNativeMorselRange.Range range = ranges.claim(boundary);
+			return range == null ? null
+					: new RootPartition(domain.kind, domain.seed, range.from(), range.to(),
+							domain.expectedTotal, domain.values, domain.multiplicities, domain.coveredPattern)
+									.openFor(worker);
 		}
 	}
 
@@ -6527,6 +6793,7 @@ final class LmdbNativePackedFtree {
 		final Plan plan;
 		final RowState row;
 		final Runtime runtime;
+		final boolean ownsRuntime;
 		final FactorEnvironment factors;
 		final int mark;
 		Chunk chunk;
@@ -6535,6 +6802,11 @@ final class LmdbNativePackedFtree {
 		int tick;
 
 		GroupedRowCursor(Plan plan, RowState row, Runtime runtime) {
+			this(plan, row, runtime, true);
+		}
+
+		GroupedRowCursor(Plan plan, RowState row, Runtime runtime, boolean ownsRuntime) {
+			this.ownsRuntime = ownsRuntime;
 			this.plan = plan;
 			this.row = row;
 			this.runtime = runtime;
@@ -6611,7 +6883,8 @@ final class LmdbNativePackedFtree {
 			closed = true;
 			factors.clear();
 			try {
-				runtime.close();
+				if (ownsRuntime)
+					runtime.close();
 			} finally {
 				row.rollback(mark);
 			}

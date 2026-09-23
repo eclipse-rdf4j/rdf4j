@@ -42,6 +42,7 @@ class LmdbNativeLeftJoinSweepTest {
 
 	private static final String EX = "http://example.com/correlated/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String PACKED_ALGEBRA_FLAG = "rdf4j.lmdb.packedFtree.algebra.enabled";
 	private static final String SWEEP_FLAG = LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_ENABLED;
 	private static final String JANINO_FLAG = LmdbNativeJaninoCodegen.ENABLED_PROPERTY;
 	private static final String KERNEL_INTERPRETER_FLAG = LmdbNativeKernelInterpreter.ENABLED_PROPERTY;
@@ -53,6 +54,7 @@ class LmdbNativeLeftJoinSweepTest {
 	File dataDir;
 
 	private SailRepository repository;
+	private String previousPackedAlgebra;
 	private String previousJanino;
 	private String previousKernelInterpreter;
 
@@ -89,6 +91,7 @@ class LmdbNativeLeftJoinSweepTest {
 			}
 		}
 		System.setProperty(NATIVE_FLAG, "true");
+		previousPackedAlgebra = System.setProperty(PACKED_ALGEBRA_FLAG, "false");
 		previousJanino = System.setProperty(JANINO_FLAG, "false");
 		previousKernelInterpreter = System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
 	}
@@ -97,12 +100,32 @@ class LmdbNativeLeftJoinSweepTest {
 	void tearDown() {
 		System.clearProperty(NATIVE_FLAG);
 		System.clearProperty(SWEEP_FLAG);
+		restore(PACKED_ALGEBRA_FLAG, previousPackedAlgebra);
 		restore(JANINO_FLAG, previousJanino);
 		restore(KERNEL_INTERPRETER_FLAG, previousKernelInterpreter);
 		System.clearProperty(LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_MAX_ROWS);
 		System.clearProperty("rdf4j.lmdb.nativeHashJoin.minRows");
 		System.clearProperty("rdf4j.lmdb.mergeJoin.minRows");
 		repository.shutDown();
+	}
+
+	@Test
+	void packedAlgebraMatchesGenericForBothOptionalShapesAndSweepFlags() {
+		String previousPackedAlgebra = System.getProperty(PACKED_ALGEBRA_FLAG);
+		String previousNative = System.getProperty(NATIVE_FLAG);
+		String previousSweep = System.getProperty(SWEEP_FLAG);
+		try {
+			System.setProperty(PACKED_ALGEBRA_FLAG, "true");
+			for (String sweep : List.of("false", "true")) {
+				System.setProperty(SWEEP_FLAG, sweep);
+				assertNativeMatchesGeneric(QUERY);
+				assertNativeMatchesGeneric(singlePatternQuery());
+			}
+		} finally {
+			restore(PACKED_ALGEBRA_FLAG, previousPackedAlgebra);
+			restore(NATIVE_FLAG, previousNative);
+			restore(SWEEP_FLAG, previousSweep);
+		}
 	}
 
 	private static void restore(String key, String value) {
@@ -211,6 +234,27 @@ class LmdbNativeLeftJoinSweepTest {
 		List<String> rows = rows(QUERY);
 		assertThat(rows).hasSize(382);
 		assertThat(LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_BUILDS.get() - sweepsBefore).isZero();
+	}
+
+	private void assertNativeMatchesGeneric(String query) {
+		List<String> nativeRows = rows(query);
+		String previousNative = System.getProperty(NATIVE_FLAG);
+		List<String> genericRows;
+		try {
+			System.setProperty(NATIVE_FLAG, "false");
+			genericRows = rows(query);
+		} finally {
+			restore(NATIVE_FLAG, previousNative);
+		}
+
+		assertThat(nativeRows).as("packed native vs generic for:\n" + query)
+				.hasSize(382)
+				.containsExactlyInAnyOrderElementsOf(genericRows);
+	}
+
+	private static String singlePatternQuery() {
+		return "SELECT ?outer ?value WHERE { ?outer <" + EX + "seed> ?seed . OPTIONAL { ?seed <" + EX
+				+ "direct> ?value } }";
 	}
 
 	private List<String> rows(String query) {

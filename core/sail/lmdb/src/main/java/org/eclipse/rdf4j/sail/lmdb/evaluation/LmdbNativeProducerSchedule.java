@@ -60,6 +60,8 @@ final class LmdbNativeProducerSchedule {
 	final Layout layout;
 	final List<List<Node>> programs;
 	final int[][] savedColumns;
+	private final int programMask;
+	private final int retainedColumns;
 	final int[][] channels;
 	final boolean aggregate;
 	final boolean weightedNumeric;
@@ -77,6 +79,16 @@ final class LmdbNativeProducerSchedule {
 		this.layout = layout;
 		this.programs = List.copyOf(programs);
 		this.savedColumns = savedColumns;
+		int programMask = 0;
+		int retainedColumns = 0;
+		for (int level = 0; level < GRAINS; level++) {
+			if (!this.programs.get(level).isEmpty()) {
+				programMask |= 1 << level;
+			}
+			retainedColumns += this.savedColumns[level].length;
+		}
+		this.programMask = programMask;
+		this.retainedColumns = retainedColumns;
 		this.channels = channels;
 		this.aggregate = aggregate;
 		this.weightedNumeric = weightedNumeric;
@@ -301,17 +313,11 @@ final class LmdbNativeProducerSchedule {
 	}
 
 	int programMask() {
-		int mask = 0;
-		for (int level = 0; level < GRAINS; level++) {
-			if (!programs.get(level).isEmpty()) {
-				mask |= 1 << level;
-			}
-		}
-		return mask;
+		return programMask;
 	}
 
 	int retainedColumns() {
-		return Arrays.stream(savedColumns).mapToInt(columns -> columns.length).sum();
+		return retainedColumns;
 	}
 
 	/**

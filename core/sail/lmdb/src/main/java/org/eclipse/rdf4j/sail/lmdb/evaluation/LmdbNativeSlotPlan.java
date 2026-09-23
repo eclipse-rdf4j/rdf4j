@@ -56,7 +56,7 @@ interface SlotPlan {
 	/** Shared chunk-owned aggregate marginals. Null declines before advancing the source. */
 	default NativeFactorProjections openProjections(RowState row, int[][] outputSlots, boolean[] exactWeights)
 			throws IOException {
-		return null;
+		return LmdbNativeFactorProjections.open(this, row, outputSlots, exactWeights);
 	}
 
 	long producedMask();
@@ -135,6 +135,8 @@ interface SlotPlan {
 	 * a trailing pattern may factorize against a prefix containing optional bindings.
 	 */
 	static long assuredMask(SlotPlan plan) {
+		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf)
+			return assuredMask(leaf.template);
 		if (plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan || plan instanceof TupleFunctionPlan) {
 			return plan.producedMask();
 		}
@@ -185,6 +187,8 @@ interface SlotPlan {
 	 * its ownership and expression-repeatability rules are reviewed.
 	 */
 	static boolean encounterOrderReplaySafe(SlotPlan plan) {
+		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf)
+			return encounterOrderReplaySafe(leaf.template);
 		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan || plan instanceof PatternPlan
 				|| plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan || plan instanceof PathPlan) {
 			return true;

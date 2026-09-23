@@ -289,7 +289,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				}
 			}
 			ArrayList<BindingSet> results = new ArrayList<>(table.size());
+			int pollTick = 0;
 			for (Map.Entry<GroupKey, long[]> entry : table.entrySet()) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				QueryBindingSet row = new QueryBindingSet(groupNames.length + aggregateNames.length);
 				for (int i = 0; i < groupNames.length; i++) {
 					row.addBinding(groupNames[i], source.lazyValue(entry.getKey().ids[i]));
@@ -354,7 +356,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			if (cursor == null) {
 				return null;
 			}
+			int pollTick = 0;
 			while (cursor.next()) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				long predicateId = cursor.prefixValue(TripleIndex.PRED_IDX);
 				int mark = row.mark();
 				try {
@@ -422,7 +426,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				}
 				ArrayList<BindingSet> results = new ArrayList<>();
 				RunMerge targetMerge = linkageMode() ? new RunMerge(outgoingRuns) : null;
+				int pollTick = 0;
 				while (typeRoots.advance()) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
 					TYPE_ROOTS_VISITED.incrementAndGet();
 					if (optimization != null) {
 						optimization.rootsVisited(1L);
@@ -434,12 +440,14 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 					try {
 						long runSize = typeRoots.runSize();
 						for (long offset = 0L; offset < runSize;) {
+							LmdbNativeProbeDeadline.poll(++pollTick);
 							long instance = typeRoots.neighborAt(offset);
 							if (optimization != null) {
 								optimization.neighborIdsDecoded(1L);
 							}
 							long next = offset + 1L;
 							while (next < runSize && typeRoots.neighborAt(next) == instance) {
+								LmdbNativeProbeDeadline.poll(++pollTick);
 								if (optimization != null) {
 									optimization.neighborIdsDecoded(1L);
 								}
@@ -487,7 +495,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		}
 		long acceptedRoots = 0L;
 		long[] planeRootCounts = new long[predicateCatalog.length];
+		int pollTick = 0;
 		for (int predicateOrdinal = 0; predicateOrdinal < predicateCatalog.length; predicateOrdinal++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
 			long predicate = predicateCatalog[predicateOrdinal];
 			if (eligiblePredicates != null && !eligiblePredicates.contains(predicate)) {
 				continue;
@@ -509,6 +519,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		if (linkageMode()) {
 			long incomingRoots = 0L;
 			for (int predicateOrdinal = 0; predicateOrdinal < predicateCatalog.length; predicateOrdinal++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				long predicate = predicateCatalog[predicateOrdinal];
 				if (eligiblePredicates != null && !eligiblePredicates.contains(predicate)) {
 					continue;
@@ -584,6 +595,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 					? new NativeAdjacency.NeighborSlice()
 					: null;
 			for (int predicateOrdinal = 0; predicateOrdinal < predicateCatalog.length; predicateOrdinal++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				long predicate = predicateCatalog[predicateOrdinal];
 				if (eligiblePredicates != null && !eligiblePredicates.contains(predicate)) {
 					continue;
@@ -598,16 +610,17 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 						return null;
 					}
 					while (edgeRoots.fillRoots(predicateOrdinal, roots, false) > 0) {
+						LmdbNativeProbeDeadline.poll(++pollTick);
 						int rootCount = roots.size();
 						telemetry.predicateRoots += rootCount;
 						if (borrowedTypeSlices) {
 							accumulateBorrowedRootBatch(null, null, sourceTypes,
 									targetTypes, edges, roots, fibers, predicate, sourceTypeSlice, targetTypeSlice,
-									counters, telemetry);
+									counters, telemetry, null);
 							continue;
 						}
 						accumulateDecodedRootBatch(sourceTypes, targetTypes, edges, roots, fibers, predicate,
-								sourceTypeHandles, sourceTypeScratch, linkage, counters, telemetry);
+								sourceTypeHandles, sourceTypeScratch, linkage, counters, telemetry, null);
 					}
 				}
 			}
@@ -650,7 +663,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		}
 		int[] acceptedOrdinals = new int[predicateCatalog.length];
 		int acceptedCount = 0;
+		int pollTick = 0;
 		for (int predicateOrdinal = 0; predicateOrdinal < predicateCatalog.length; predicateOrdinal++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
 			long predicate = predicateCatalog[predicateOrdinal];
 			if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
 				continue;
@@ -674,6 +689,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			}
 			int taskCount = (int) taskCountLong;
 			for (int task = 0; task < taskCount; task++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				long fromOrdinal = (long) task * ROOT_MORSEL_ROWS;
 				long toOrdinal = Math.min(typeRootCount, fromOrdinal + ROOT_MORSEL_ROWS);
 				int worker = (int) ((long) task * workers / taskCount);
@@ -686,26 +702,34 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				return null;
 			}
 			AtomicReference<Throwable> workerFailure = new AtomicReference<>();
+			LmdbNativeProbeDeadline probeParent = LmdbNativeProbeDeadline.currentOrNull();
+			List<Future<ParallelPlaneResult>> futures = new ArrayList<>(workers);
+			Throwable primaryFailure = null;
 			try {
-				List<Future<ParallelPlaneResult>> futures = new ArrayList<>(workers);
-				for (int worker = 0; worker < workers; worker++) {
-					int workerIndex = worker;
-					NativeLmdbQuerySource workerSource = sources[worker];
-					int[] workerAcceptedOrdinals = acceptedOrdinals;
-					futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-						try {
-							return scanSidewaysTypeMorsels(workerSource, workerIndex, deques, predicateCatalog,
-									workerAcceptedOrdinals, reverse, workerFailure);
-						} catch (IOException | RuntimeException | Error failure) {
-							workerFailure.compareAndSet(null, failure);
-							throw failure;
-						}
-					}));
+				try {
+					for (int worker = 0; worker < workers; worker++) {
+						int workerIndex = worker;
+						NativeLmdbQuerySource workerSource = sources[worker];
+						int[] workerAcceptedOrdinals = acceptedOrdinals;
+						futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
+							try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.inherit(probeParent)) {
+								return scanSidewaysTypeMorsels(workerSource, workerIndex, deques, predicateCatalog,
+										workerAcceptedOrdinals, reverse, workerFailure);
+							} catch (IOException | RuntimeException | Error failure) {
+								workerFailure.compareAndSet(null, failure);
+								throw failure;
+							}
+						}));
+					}
+				} catch (RuntimeException | Error submissionFailure) {
+					rethrowPublishedWorkerFailure(workerFailure, submissionFailure);
 				}
 				PairCountMap counters = new PairCountMap();
 				PlaneMorselTelemetry telemetry = new PlaneMorselTelemetry();
-				Throwable failure = null;
-				boolean interrupted = false;
+				Throwable failure = awaitWorkersBeforeClose(futures, workerFailure);
+				if (failure != null) {
+					rethrowWorkerFailure(failure);
+				}
 				boolean supported = true;
 				for (Future<ParallelPlaneResult> future : futures) {
 					try {
@@ -716,19 +740,11 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 							telemetry.mergeFrom(result.telemetry);
 						}
 					} catch (InterruptedException problem) {
-						interrupted = true;
-						workerFailure.compareAndSet(null, problem);
-						failure = failure == null ? problem : failure;
+						Thread.currentThread().interrupt();
+						throw new QueryEvaluationException(problem);
 					} catch (ExecutionException problem) {
-						Throwable cause = problem.getCause();
-						failure = failure == null ? cause : failure;
+						rethrowWorkerFailure(problem.getCause() == null ? problem : problem.getCause());
 					}
-				}
-				if (interrupted) {
-					Thread.currentThread().interrupt();
-				}
-				if (failure != null) {
-					rethrowWorkerFailure(failure);
 				}
 				if (!supported) {
 					return null;
@@ -740,8 +756,15 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				PARALLEL_RUNS.incrementAndGet();
 				PLANE_MORSEL_RUNS.incrementAndGet();
 				return emitPairCounters(counters);
+			} catch (IOException | RuntimeException | Error failure) {
+				primaryFailure = failure;
+				workerFailure.compareAndSet(null, failure);
+				throw failure;
 			} finally {
-				closeAll(sources);
+				Throwable failure = drainAndCloseWorkers(futures, workerFailure, sources, primaryFailure);
+				if (primaryFailure == null && failure != null) {
+					rethrowWorkerFailure(failure);
+				}
 			}
 		}
 	}
@@ -836,7 +859,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		if (optimization != null) {
 			optimization.trackPageHeaderFastPaths();
 		}
+		int pollTick = 0;
 		for (long predicate : predicateCatalog) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
 			if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
 				continue;
 			}
@@ -873,7 +898,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				if (pages == null || !result.complete) {
 					return ResourcePlanePages.incomplete();
 				}
+				int pollTick = 0;
 				while (pages.advance()) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
 					if (optimization != null) {
 						optimization.pageVisited();
 					}
@@ -925,7 +952,12 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 					|| linkageMode() && (targetTypes == null || !targetTypes.runsNeighborOrdered())) {
 				return new ParallelPlaneResult(counters, telemetry, false);
 			}
+			int pollTick = 0;
 			for (int predicateOrdinal : acceptedOrdinals) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return new ParallelPlaneResult(counters, telemetry, true);
+				}
 				NativeAdjacency adjacency = probe.adjacency(predicateCatalog[predicateOrdinal], !reverse);
 				if (adjacency == null || !adjacency.runsNeighborOrdered() || !adjacency.supportsKeyEnumeration()) {
 					closeAdjacency(adjacency);
@@ -938,6 +970,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			UsageAccumulator usage = linkageMode() ? null : new UsageAccumulator(predicateCatalog);
 			NativeAdjacency.FiberBatch fibers = linkageMode() ? new NativeAdjacency.FiberBatch(BATCH_ROWS) : null;
 			while (workerFailure.get() == null) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				TypeDomainMorsel morsel = deques[workerIndex].pollLast();
 				if (morsel == null) {
 					morsel = stealTypeDomainMorsel(workerIndex, deques);
@@ -965,6 +998,10 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				boolean hasUpperBound = morsel.toOrdinal < sourceTypes.keyCount();
 				long upperSubject = hasUpperBound ? sourceTypes.keyAt(morsel.toOrdinal) : 0L;
 				for (int predicateOrdinal : acceptedOrdinals) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (peerStopped(workerFailure, pollTick)) {
+						return new ParallelPlaneResult(counters, telemetry, true);
+					}
 					NativeAdjacency edge = edges[predicateOrdinal];
 					long fromOrdinal = edge.lowerBoundKeyOrdinal(firstSubject);
 					long toOrdinal = hasUpperBound ? edge.lowerBoundKeyOrdinal(upperSubject) : edge.keyCount();
@@ -973,10 +1010,13 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 							return new ParallelPlaneResult(counters, telemetry, false);
 						}
 						accumulateSidewaysPlane(typeWindow, edgeRoots, predicateOrdinal, targetTypes, fibers, linkage,
-								usage, counters, telemetry);
+								usage, counters, telemetry, workerFailure);
 					}
 				}
 				telemetry.morsels++;
+			}
+			if (workerFailure.get() != null) {
+				return new ParallelPlaneResult(counters, telemetry, true);
 			}
 			if (linkage != null) {
 				linkage.flush(targetTypes, counters);
@@ -994,13 +1034,19 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 
 	private void accumulateSidewaysPlane(TypeDomainWindow typeWindow, NativeAdjacency.KeyRunCursor edgeRoots,
 			int predicateOrdinal, NativeAdjacency targetTypes, NativeAdjacency.FiberBatch fibers,
-			LinkageMorsel linkage, UsageAccumulator usage, PairCountMap counters, PlaneMorselTelemetry telemetry) {
+			LinkageMorsel linkage, UsageAccumulator usage, PairCountMap counters, PlaneMorselTelemetry telemetry,
+			AtomicReference<Throwable> workerFailure) {
 		if (usage != null) {
-			accumulateSidewaysUsagePlane(typeWindow, edgeRoots, predicateOrdinal, usage, telemetry);
+			accumulateSidewaysUsagePlane(typeWindow, edgeRoots, predicateOrdinal, usage, telemetry, workerFailure);
 			return;
 		}
 		int typeCursor = 0;
+		int pollTick = 0;
 		while (edgeRoots.advance()) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			if (peerStopped(workerFailure, pollTick)) {
+				return;
+			}
 			telemetry.sidewaysEdgeProbes++;
 			telemetry.predicateRoots++;
 			long edgeRoot = edgeRoots.key();
@@ -1016,30 +1062,46 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			int sourceTypeOffset = typeWindow.typeOffsets[sourceIndex];
 			if (typeWindow.typeLengths[sourceIndex] == 1) {
 				linkage.appendSingleTypedRun(typeWindow.typeValues[sourceTypeOffset],
-						typeWindow.typeMultiplicities[sourceTypeOffset], edgeRoots, edgeRunSize, targetTypes, counters);
+						typeWindow.typeMultiplicities[sourceTypeOffset], edgeRoots, edgeRunSize, targetTypes, counters,
+						workerFailure);
 				continue;
 			}
 			do {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				int fiberCount = edgeRoots.fillFibers(fibers, false);
 				if (fiberCount == 0) {
 					break;
 				}
-				linkage.appendTypedFibers(typeWindow, sourceIndex, fibers, fiberCount, targetTypes, counters);
+				linkage.appendTypedFibers(typeWindow, sourceIndex, fibers, fiberCount, targetTypes, counters,
+						workerFailure);
 			} while (fibers.nextRunOffset() < edgeRunSize);
 		}
 	}
 
 	private void accumulateSidewaysUsagePlane(TypeDomainWindow typeWindow, NativeAdjacency.KeyRunCursor edgeRoots,
-			int predicateOrdinal, UsageAccumulator usage, PlaneMorselTelemetry telemetry) {
+			int predicateOrdinal, UsageAccumulator usage, PlaneMorselTelemetry telemetry,
+			AtomicReference<Throwable> workerFailure) {
 		int typeCursor = 0;
 		long[] usagePlane = usage.plane(predicateOrdinal);
 		int copied;
+		int pollTick = 0;
 		while ((copied = edgeRoots.fillRootCounts(usage.rootIds, 0, usage.rootMultiplicities, 0,
 				usage.rootIds.length)) != 0) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			if (peerStopped(workerFailure, pollTick)) {
+				return;
+			}
 			telemetry.sidewaysRootCountBatches++;
 			telemetry.sidewaysEdgeProbes += copied;
 			telemetry.predicateRoots += copied;
 			for (int rootIndex = 0; rootIndex < copied; rootIndex++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				if (typeCursor >= typeWindow.size) {
 					return;
 				}
@@ -1051,15 +1113,21 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 					continue;
 				}
 				telemetry.sidewaysEdgeMatches++;
-				accumulateSidewaysUsage(typeWindow, typeCursor++, usage.rootMultiplicities[rootIndex], usagePlane);
+				accumulateSidewaysUsage(typeWindow, typeCursor++, usage.rootMultiplicities[rootIndex], usagePlane,
+						workerFailure);
 			}
 		}
 	}
 
 	private static void accumulateSidewaysUsage(TypeDomainWindow typeWindow, int sourceIndex, long edgeMultiplicity,
-			long[] usagePlane) {
+			long[] usagePlane, AtomicReference<Throwable> workerFailure) {
 		int typeEnd = typeWindow.typeOffsets[sourceIndex] + typeWindow.typeLengths[sourceIndex];
+		int pollTick = 0;
 		for (int typeIndex = typeWindow.typeOffsets[sourceIndex]; typeIndex < typeEnd; typeIndex++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			if (peerStopped(workerFailure, pollTick)) {
+				return;
+			}
 			long multiplicity = Math.multiplyExact(typeWindow.typeMultiplicities[typeIndex], edgeMultiplicity);
 			int typeOrdinal = typeWindow.typeResultOrdinals[typeIndex];
 			usagePlane[typeOrdinal] = Math.addExact(usagePlane[typeOrdinal], multiplicity);
@@ -1096,7 +1164,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			return null;
 		}
 		ArrayList<PageMorsel> tasks = new ArrayList<>();
+		int pollTick = 0;
 		for (int predicateOrdinal = 0; predicateOrdinal < predicateCatalog.length; predicateOrdinal++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
 			long predicate = predicateCatalog[predicateOrdinal];
 			if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
 				continue;
@@ -1113,6 +1183,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 					long page = 0L;
 					long firstRoot = 0L;
 					while (pages.advance()) {
+						LmdbNativeProbeDeadline.poll(++pollTick);
 						if (page % PAGE_MORSEL_PAGES == 0L) {
 							fromPage = page;
 							firstRoot = pages.firstRow();
@@ -1142,6 +1213,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			}
 			int taskCount = tasks.size();
 			for (int task = 0; task < taskCount; task++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				int worker = (int) ((long) task * workers / taskCount);
 				deques[worker].addLast(tasks.get(task));
 			}
@@ -1155,25 +1227,33 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				return null;
 			}
 			AtomicReference<Throwable> workerFailure = new AtomicReference<>();
+			LmdbNativeProbeDeadline probeParent = LmdbNativeProbeDeadline.currentOrNull();
+			List<Future<ParallelPlaneResult>> futures = new ArrayList<>(workers);
+			Throwable primaryFailure = null;
 			try {
-				List<Future<ParallelPlaneResult>> futures = new ArrayList<>(workers);
-				for (int worker = 0; worker < workers; worker++) {
-					int workerIndex = worker;
-					NativeLmdbQuerySource workerSource = sources[worker];
-					futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-						try {
-							return scanPageMorsels(workerSource, workerIndex, deques, predicateCatalog,
-									workerFailure);
-						} catch (IOException | RuntimeException | Error failure) {
-							workerFailure.compareAndSet(null, failure);
-							throw failure;
-						}
-					}));
+				try {
+					for (int worker = 0; worker < workers; worker++) {
+						int workerIndex = worker;
+						NativeLmdbQuerySource workerSource = sources[worker];
+						futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
+							try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.inherit(probeParent)) {
+								return scanPageMorsels(workerSource, workerIndex, deques, predicateCatalog,
+										workerFailure);
+							} catch (IOException | RuntimeException | Error failure) {
+								workerFailure.compareAndSet(null, failure);
+								throw failure;
+							}
+						}));
+					}
+				} catch (RuntimeException | Error submissionFailure) {
+					rethrowPublishedWorkerFailure(workerFailure, submissionFailure);
 				}
 				PairCountMap counters = new PairCountMap();
 				PlaneMorselTelemetry telemetry = new PlaneMorselTelemetry();
-				Throwable failure = null;
-				boolean interrupted = false;
+				Throwable failure = awaitWorkersBeforeClose(futures, workerFailure);
+				if (failure != null) {
+					rethrowWorkerFailure(failure);
+				}
 				boolean supported = true;
 				for (Future<ParallelPlaneResult> future : futures) {
 					try {
@@ -1184,19 +1264,11 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 							telemetry.mergeFrom(result.telemetry);
 						}
 					} catch (InterruptedException problem) {
-						interrupted = true;
-						workerFailure.compareAndSet(null, problem);
-						failure = failure == null ? problem : failure;
+						Thread.currentThread().interrupt();
+						throw new QueryEvaluationException(problem);
 					} catch (ExecutionException problem) {
-						Throwable cause = problem.getCause();
-						failure = failure == null ? cause : failure;
+						rethrowWorkerFailure(problem.getCause() == null ? problem : problem.getCause());
 					}
-				}
-				if (interrupted) {
-					Thread.currentThread().interrupt();
-				}
-				if (failure != null) {
-					rethrowWorkerFailure(failure);
 				}
 				if (!supported) {
 					return null;
@@ -1205,8 +1277,15 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				PARALLEL_RUNS.incrementAndGet();
 				PLANE_MORSEL_RUNS.incrementAndGet();
 				return emitPairCounters(counters);
+			} catch (IOException | RuntimeException | Error failure) {
+				primaryFailure = failure;
+				workerFailure.compareAndSet(null, failure);
+				throw failure;
 			} finally {
-				closeAll(sources);
+				Throwable failure = drainAndCloseWorkers(futures, workerFailure, sources, primaryFailure);
+				if (primaryFailure == null && failure != null) {
+					rethrowWorkerFailure(failure);
+				}
 			}
 		}
 	}
@@ -1231,7 +1310,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			long[] pageFiberMultiplicities = linkageMode() ? new long[FIBER_MORSEL_ROWS] : null;
 			TypeScratch sourceTypeScratch = new TypeScratch();
 			SourceTypeCache sourceTypeCache = new SourceTypeCache();
+			int pollTick = 0;
 			while (workerFailure.get() == null) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				PageMorsel morsel = deques[workerIndex].pollLast();
 				if (morsel == null) {
 					morsel = stealPageTask(workerIndex, deques);
@@ -1254,6 +1335,10 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 							return new ParallelPlaneResult(counters, telemetry, false);
 						}
 						while (pages.advance()) {
+							LmdbNativeProbeDeadline.poll(++pollTick);
+							if (peerStopped(workerFailure, pollTick)) {
+								return new ParallelPlaneResult(counters, telemetry, true);
+							}
 							if (linkageMode()) {
 								boolean uniformNeighborKind = pages.uniformNeighborTermKind();
 								telemetry.neighborKindHeaderChecks++;
@@ -1273,6 +1358,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 								throw new IllegalStateException("CSF page exceeds the root-morsel contract");
 							}
 							for (int root = 0; root < rootCount; root++) {
+								LmdbNativeProbeDeadline.poll(++pollTick);
 								rootIds[root] = pages.rowAt(root);
 								rootMultiplicities[root] = pages.rowQuadCount(root);
 							}
@@ -1282,21 +1368,23 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 							accumulatePageMorsel(sourceTypes, targetTypes, pages, predicate, rootCount,
 									rootIds, rootMultiplicities, sourceTypeHandles, sourceTypeScratch,
 									sourceTypeCache, linkage, counters, telemetry, pageFiberIds,
-									pageFiberMultiplicities);
+									pageFiberMultiplicities, workerFailure);
 							telemetry.morsels++;
 						}
 					}
 				}
 			}
 			if (linkage != null) {
-				linkage.flush(targetTypes, counters);
+				linkage.flush(targetTypes, counters, workerFailure);
 			}
 		}
 		return new ParallelPlaneResult(counters, telemetry, true);
 	}
 
 	private static int pageRepresentativeNeighborKind(NativeAdjacency.AdjacencyPageCursor page) {
+		int pollTick = 0;
 		for (int row = 0; row < page.rowCount(); row++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
 			if (page.rowFiberCount(row) > 0) {
 				return ValueIds.termKind(page.neighborAt(row, 0));
 			}
@@ -1308,8 +1396,14 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			NativeAdjacency.AdjacencyPageCursor page, long predicate, int rootCount, long[] rootIds,
 			long[] rootMultiplicities, long[] sourceTypeHandles, TypeScratch sourceTypeScratch,
 			SourceTypeCache sourceTypeCache, LinkageMorsel linkage, PairCountMap counters,
-			PlaneMorselTelemetry telemetry, long[] pageFiberIds, long[] pageFiberMultiplicities) {
+			PlaneMorselTelemetry telemetry, long[] pageFiberIds, long[] pageFiberMultiplicities,
+			AtomicReference<Throwable> workerFailure) {
+		int pollTick = 0;
 		for (int root = 0; root < rootCount; root++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			if (peerStopped(workerFailure, pollTick)) {
+				return;
+			}
 			long sourceTypeHandle = sourceTypeHandles[root];
 			if (sourceTypeHandle == NativeAdjacency.NOT_FOUND) {
 				continue;
@@ -1322,13 +1416,17 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				sourceTypeCache.put(rootIds[root], sourceTypeScratch);
 			}
 			if (!linkageMode()) {
-				accumulatePlaneUsage(sourceTypeScratch, predicate, rootMultiplicities[root], counters);
+				accumulatePlaneUsage(sourceTypeScratch, predicate, rootMultiplicities[root], counters, workerFailure);
 				continue;
 			}
 			int fiber = 0;
 			while (true) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				if (!linkage.canStartSource()) {
-					linkage.flush(targetTypes, counters);
+					linkage.flush(targetTypes, counters, workerFailure);
 				}
 				int sourceOrdinal = linkage.appendSource(sourceTypeScratch);
 				int available = linkage.remainingFiberCapacity();
@@ -1338,7 +1436,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 					linkage.removeLastSourceIfEmpty(sourceOrdinal);
 					break;
 				}
-				linkage.appendFibers(sourceOrdinal, pageFiberIds, pageFiberMultiplicities, copied);
+				linkage.appendFibers(sourceOrdinal, pageFiberIds, pageFiberMultiplicities, copied, workerFailure);
 				fiber += copied;
 			}
 		}
@@ -1379,13 +1477,16 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				deques[worker] = new ConcurrentLinkedDeque<>();
 			}
 			long morselCount = 0L;
+			int pollTick = 0;
 			for (int predicateOrdinal = 0; predicateOrdinal < predicateCatalog.length; predicateOrdinal++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				long predicate = predicateCatalog[predicateOrdinal];
 				if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
 					continue;
 				}
 				long rootCount = planeRootCounts[predicateOrdinal];
 				for (long from = 0L; from < rootCount; from += ROOT_MORSEL_ROWS) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
 					long to = Math.min(rootCount, from + ROOT_MORSEL_ROWS);
 					deques[(int) (morselCount % workers)]
 							.addLast(new PlaneMorsel(predicateOrdinal, predicate, from, to));
@@ -1402,24 +1503,32 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				return null;
 			}
 			AtomicReference<Throwable> workerFailure = new AtomicReference<>();
+			LmdbNativeProbeDeadline probeParent = LmdbNativeProbeDeadline.currentOrNull();
+			List<Future<ParallelPlaneResult>> futures = new ArrayList<>(workers);
+			Throwable primaryFailure = null;
 			try {
-				List<Future<ParallelPlaneResult>> futures = new ArrayList<>(workers);
-				for (int worker = 0; worker < workers; worker++) {
-					int workerIndex = worker;
-					NativeLmdbQuerySource workerSource = sources[worker];
-					futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-						try {
-							return scanPlaneMorsels(workerSource, workerIndex, deques, workerFailure);
-						} catch (IOException | RuntimeException | Error failure) {
-							workerFailure.compareAndSet(null, failure);
-							throw failure;
-						}
-					}));
+				try {
+					for (int worker = 0; worker < workers; worker++) {
+						int workerIndex = worker;
+						NativeLmdbQuerySource workerSource = sources[worker];
+						futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
+							try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.inherit(probeParent)) {
+								return scanPlaneMorsels(workerSource, workerIndex, deques, workerFailure);
+							} catch (IOException | RuntimeException | Error failure) {
+								workerFailure.compareAndSet(null, failure);
+								throw failure;
+							}
+						}));
+					}
+				} catch (RuntimeException | Error submissionFailure) {
+					rethrowPublishedWorkerFailure(workerFailure, submissionFailure);
 				}
 				PairCountMap counters = new PairCountMap();
 				PlaneMorselTelemetry telemetry = new PlaneMorselTelemetry();
-				Throwable failure = null;
-				boolean interrupted = false;
+				Throwable failure = awaitWorkersBeforeClose(futures, workerFailure);
+				if (failure != null) {
+					rethrowWorkerFailure(failure);
+				}
 				boolean supported = true;
 				for (Future<ParallelPlaneResult> future : futures) {
 					try {
@@ -1430,19 +1539,11 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 							telemetry.mergeFrom(result.telemetry);
 						}
 					} catch (InterruptedException problem) {
-						interrupted = true;
-						workerFailure.compareAndSet(null, problem);
-						failure = failure == null ? problem : failure;
+						Thread.currentThread().interrupt();
+						throw new QueryEvaluationException(problem);
 					} catch (ExecutionException problem) {
-						Throwable cause = problem.getCause();
-						failure = failure == null ? cause : failure;
+						rethrowWorkerFailure(problem.getCause() == null ? problem : problem.getCause());
 					}
-				}
-				if (interrupted) {
-					Thread.currentThread().interrupt();
-				}
-				if (failure != null) {
-					rethrowWorkerFailure(failure);
 				}
 				if (!supported) {
 					return null;
@@ -1451,8 +1552,15 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				PARALLEL_RUNS.incrementAndGet();
 				PLANE_MORSEL_RUNS.incrementAndGet();
 				return emitPairCounters(counters);
+			} catch (IOException | RuntimeException | Error failure) {
+				primaryFailure = failure;
+				workerFailure.compareAndSet(null, failure);
+				throw failure;
 			} finally {
-				closeAll(sources);
+				Throwable failure = drainAndCloseWorkers(futures, workerFailure, sources, primaryFailure);
+				if (primaryFailure == null && failure != null) {
+					rethrowWorkerFailure(failure);
+				}
 			}
 		}
 	}
@@ -1487,7 +1595,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 						: null;
 				long[] sourceTypeHandles = borrowedTypeSlices ? null : new long[ROOT_MORSEL_ROWS];
 				TypeScratch sourceTypeScratch = borrowedTypeSlices ? null : new TypeScratch();
+				int pollTick = 0;
 				while (workerFailure.get() == null) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
 					PlaneMorsel morsel = deques[workerIndex].pollLast();
 					if (morsel == null) {
 						morsel = stealMorsel(workerIndex, deques);
@@ -1509,23 +1619,30 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 								return new ParallelPlaneResult(counters, telemetry, false);
 							}
 							while (edgeRoots.fillRoots(morsel.predicateOrdinal, roots, false) > 0) {
+								LmdbNativeProbeDeadline.poll(++pollTick);
+								if (peerStopped(workerFailure, pollTick)) {
+									return new ParallelPlaneResult(counters, telemetry, true);
+								}
 								telemetry.predicateRoots += roots.size();
 								if (borrowedTypeSlices) {
 									accumulateBorrowedRootBatch(null, null, sourceTypes,
 											targetTypes, edges, roots, fibers, morsel.predicate, sourceTypeSlice,
-											targetTypeSlice, counters, telemetry);
+											targetTypeSlice, counters, telemetry, workerFailure);
 								} else {
 									accumulateDecodedRootBatch(sourceTypes, targetTypes, edges, roots, fibers,
 											morsel.predicate, sourceTypeHandles, sourceTypeScratch, linkage,
-											counters, telemetry);
+											counters, telemetry, workerFailure);
 								}
 							}
 						}
 					}
 					telemetry.morsels++;
 				}
+				if (workerFailure.get() != null) {
+					return new ParallelPlaneResult(counters, telemetry, true);
+				}
 				if (linkage != null) {
-					linkage.flush(targetTypes, counters);
+					linkage.flush(targetTypes, counters, workerFailure);
 				}
 			}
 		}
@@ -1555,13 +1672,70 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		throw new QueryEvaluationException(failure);
 	}
 
+	private static void rethrowPublishedWorkerFailure(AtomicReference<Throwable> workerFailure,
+			Throwable submissionFailure) throws IOException {
+		workerFailure.compareAndSet(null, submissionFailure);
+		Throwable publishedFailure = workerFailure.get();
+		if (publishedFailure != submissionFailure) {
+			publishedFailure.addSuppressed(submissionFailure);
+		}
+		rethrowWorkerFailure(publishedFailure);
+	}
+
+	private static Throwable awaitWorkersBeforeClose(List<? extends Future<?>> futures,
+			AtomicReference<Throwable> failure) {
+		List<Future<?>> drainFutures = new ArrayList<>(futures.size());
+		drainFutures.addAll(futures);
+		Throwable firstProblem = LmdbNativeParallelPrefixRuns.awaitWorkersBeforeClose(drainFutures, failure);
+		Throwable initiatingFailure = failure.get();
+		if (initiatingFailure == null) {
+			return firstProblem;
+		}
+		if (firstProblem != null && firstProblem != initiatingFailure) {
+			initiatingFailure.addSuppressed(firstProblem);
+		}
+		return initiatingFailure;
+	}
+
+	private static boolean peerStopped(AtomicReference<Throwable> workerFailure, int pollTick) {
+		return workerFailure != null && (pollTick & 1023) == 0 && workerFailure.get() != null;
+	}
+
+	private static Throwable drainAndCloseWorkers(List<? extends Future<?>> futures,
+			AtomicReference<Throwable> workerFailure, NativeLmdbQuerySource.ParallelSource[] sources,
+			Throwable primaryFailure) {
+		Throwable failure = primaryFailure;
+		Throwable drainFailure = awaitWorkersBeforeClose(futures, workerFailure);
+		if (failure == null) {
+			failure = drainFailure;
+		} else if (drainFailure != null && drainFailure != failure) {
+			failure.addSuppressed(drainFailure);
+		}
+		try {
+			closeAll(sources);
+		} catch (RuntimeException | Error closeFailure) {
+			if (failure == null) {
+				throw closeFailure;
+			}
+			if (closeFailure != failure) {
+				failure.addSuppressed(closeFailure);
+			}
+		}
+		return failure;
+	}
+
 	private void accumulateBorrowedRootBatch(NativeLmdbQuerySource.LabelSynopsis sourceTypeSynopsis,
 			NativeLmdbQuerySource.LabelSynopsis targetTypeSynopsis, NativeAdjacency sourceTypes,
 			NativeAdjacency targetTypes, NativeAdjacency edges, NativeAdjacency.RootBatch roots,
 			NativeAdjacency.FiberBatch fibers, long predicate,
 			NativeAdjacency.NeighborSlice sourceTypeSlice, NativeAdjacency.NeighborSlice targetTypeSlice,
-			PairCountMap counters, PlaneMorselTelemetry telemetry) {
+			PairCountMap counters, PlaneMorselTelemetry telemetry, AtomicReference<Throwable> workerFailure) {
+		int pollTick = 0;
 		for (int rootIndex = 0; rootIndex < roots.size(); rootIndex++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			if (peerStopped(workerFailure, pollTick)) {
+				return;
+			}
 			long rootId = roots.rootIds()[rootIndex];
 			if (!borrowTypeLabels(sourceTypeSynopsis, sourceTypes, rootId, sourceTypeSlice)) {
 				throw new IllegalStateException("borrow-capable outgoing type view declined source root");
@@ -1574,17 +1748,26 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				continue;
 			}
 			if (!linkageMode()) {
-				accumulateBorrowedUsage(sourceTypeSlice, predicate, roots.quadMultiplicities()[rootIndex], counters);
+				accumulateBorrowedUsage(sourceTypeSlice, predicate, roots.quadMultiplicities()[rootIndex], counters,
+						workerFailure);
 				continue;
 			}
 			long edgeRunHandle = roots.runHandles()[rootIndex];
 			do {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				int fiberCount = edges.fillFibers(rootId, edgeRunHandle, fibers);
 				if (fiberCount == 0) {
 					break;
 				}
 				telemetry.edgeFibers += fiberCount;
 				for (int fiber = 0; fiber < fiberCount; fiber++) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (peerStopped(workerFailure, pollTick)) {
+						return;
+					}
 					if (!borrowTypeLabels(targetTypeSynopsis, targetTypes, fibers.neighborIds()[fiber],
 							targetTypeSlice)) {
 						throw new IllegalStateException("borrow-capable outgoing type view declined target fiber");
@@ -1595,7 +1778,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 					}
 					if (targetTypeSlice.length() > 0) {
 						accumulateBorrowedLinkage(sourceTypeSlice, targetTypeSlice,
-								fibers.contextMultiplicities()[fiber], counters);
+								fibers.contextMultiplicities()[fiber], counters, workerFailure);
 					}
 				}
 			} while (fibers.nextRunOffset() < roots.quadMultiplicities()[rootIndex]);
@@ -1608,13 +1791,22 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	}
 
 	private static void accumulateBorrowedUsage(NativeAdjacency.NeighborSlice sourceTypes, long predicate,
-			long edgeMultiplicity, PairCountMap counters) {
+			long edgeMultiplicity, PairCountMap counters, AtomicReference<Throwable> workerFailure) {
 		long[] values = sourceTypes.values();
 		int end = sourceTypes.offset() + sourceTypes.length();
+		int pollTick = 0;
 		for (int at = sourceTypes.offset(); at < end;) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			if (peerStopped(workerFailure, pollTick)) {
+				return;
+			}
 			long type = values[at];
 			int next = at + 1;
 			while (next < end && values[next] == type) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				next++;
 			}
 			counters.add(type, predicate, Math.multiplyExact((long) (next - at), edgeMultiplicity));
@@ -1623,22 +1815,40 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	}
 
 	private static void accumulateBorrowedLinkage(NativeAdjacency.NeighborSlice sourceTypes,
-			NativeAdjacency.NeighborSlice targetTypes, long edgeMultiplicity, PairCountMap counters) {
+			NativeAdjacency.NeighborSlice targetTypes, long edgeMultiplicity, PairCountMap counters,
+			AtomicReference<Throwable> workerFailure) {
 		long[] sourceValues = sourceTypes.values();
 		long[] targetValues = targetTypes.values();
 		int sourceEnd = sourceTypes.offset() + sourceTypes.length();
 		int targetEnd = targetTypes.offset() + targetTypes.length();
+		int pollTick = 0;
 		for (int sourceAt = sourceTypes.offset(); sourceAt < sourceEnd;) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			if (peerStopped(workerFailure, pollTick)) {
+				return;
+			}
 			long sourceType = sourceValues[sourceAt];
 			int sourceNext = sourceAt + 1;
 			while (sourceNext < sourceEnd && sourceValues[sourceNext] == sourceType) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				sourceNext++;
 			}
 			long sourceAndEdge = Math.multiplyExact((long) (sourceNext - sourceAt), edgeMultiplicity);
 			for (int targetAt = targetTypes.offset(); targetAt < targetEnd;) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				long targetType = targetValues[targetAt];
 				int targetNext = targetAt + 1;
 				while (targetNext < targetEnd && targetValues[targetNext] == targetType) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (peerStopped(workerFailure, pollTick)) {
+						return;
+					}
 					targetNext++;
 				}
 				counters.add(sourceType, targetType,
@@ -1650,8 +1860,13 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	}
 
 	private static void accumulatePlaneUsage(TypeScratch sourceTypes, long predicate, long edgeMultiplicity,
-			PairCountMap counters) {
+			PairCountMap counters, AtomicReference<Throwable> workerFailure) {
+		int pollTick = 0;
 		for (int typeIndex = 0; typeIndex < sourceTypes.size; typeIndex++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			if (peerStopped(workerFailure, pollTick)) {
+				return;
+			}
 			counters.add(sourceTypes.values[typeIndex], predicate,
 					Math.multiplyExact(sourceTypes.multiplicities[typeIndex], edgeMultiplicity));
 		}
@@ -1660,11 +1875,16 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	private void accumulateDecodedRootBatch(NativeAdjacency sourceTypes, NativeAdjacency targetTypes,
 			NativeAdjacency edges, NativeAdjacency.RootBatch roots, NativeAdjacency.FiberBatch fibers, long predicate,
 			long[] sourceTypeHandles, TypeScratch sourceTypeScratch, LinkageMorsel linkage, PairCountMap counters,
-			PlaneMorselTelemetry telemetry) {
+			PlaneMorselTelemetry telemetry, AtomicReference<Throwable> workerFailure) {
 		int rootCount = roots.size();
 		sourceTypes.findBatch(roots.rootIds(), 0, rootCount, sourceTypeHandles, 0);
 		telemetry.sourceTypeBatchLookups++;
+		int pollTick = 0;
 		for (int rootIndex = 0; rootIndex < rootCount; rootIndex++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			if (peerStopped(workerFailure, pollTick)) {
+				return;
+			}
 			long sourceTypeHandle = sourceTypeHandles[rootIndex];
 			if (sourceTypeHandle == NativeAdjacency.NOT_FOUND) {
 				continue;
@@ -1674,25 +1894,30 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			}
 			sourceTypeScratch.read(sourceTypes, sourceTypeHandle, sourceTypes.size(sourceTypeHandle), telemetry);
 			if (!linkageMode()) {
-				accumulatePlaneUsage(sourceTypeScratch, predicate, roots.quadMultiplicities()[rootIndex], counters);
+				accumulatePlaneUsage(sourceTypeScratch, predicate, roots.quadMultiplicities()[rootIndex], counters,
+						workerFailure);
 				continue;
 			}
 			if (!linkage.canStartSource()) {
-				linkage.flush(targetTypes, counters);
+				linkage.flush(targetTypes, counters, workerFailure);
 			}
 			int sourceOrdinal = linkage.appendSource(sourceTypeScratch);
 			long rootId = roots.rootIds()[rootIndex];
 			long edgeRunHandle = roots.runHandles()[rootIndex];
 			do {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				int fiberCount = edges.fillFibers(rootId, edgeRunHandle, fibers);
 				if (fiberCount == 0) {
 					break;
 				}
 				if (!linkage.hasFiberCapacity(fiberCount)) {
-					linkage.flush(targetTypes, counters);
+					linkage.flush(targetTypes, counters, workerFailure);
 					sourceOrdinal = linkage.appendSource(sourceTypeScratch);
 				}
-				linkage.appendFibers(sourceOrdinal, fibers, fiberCount);
+				linkage.appendFibers(sourceOrdinal, fibers, fiberCount, workerFailure);
 			} while (fibers.nextRunOffset() < roots.quadMultiplicities()[rootIndex]);
 		}
 	}
@@ -1709,7 +1934,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			if (cursor == null) {
 				return null;
 			}
+			int pollTick = 0;
 			while (cursor.next()) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				if (size == predicates.length) {
 					predicates = Arrays.copyOf(predicates, size << 1);
 				}
@@ -1746,7 +1973,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			TypeScratch sourceTypeScratch = new TypeScratch();
 			TypeScratch targetTypeScratch = linkageMode() ? new TypeScratch() : null;
 			CursorTargetMerge targetMerge = linkageMode() ? new CursorTargetMerge() : null;
+			int pollTick = 0;
 			while (subjectSweep.advanceSubject()) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				long sourceTypeRunSize = sourceTypeRuns.bind(subjectSweep.subject());
 				if (sourceTypeRunSize == NativeAdjacency.NOT_FOUND) {
 					continue;
@@ -1763,6 +1992,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				}
 				targetMerge.reset(subjectSweep);
 				while (targetMerge.advanceTarget()) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
 					long targetTypeRunSize = targetTypeRuns.bind(targetMerge.target());
 					TARGET_TYPE_LOOKUPS.incrementAndGet();
 					if (targetTypeRunSize == NativeAdjacency.NOT_FOUND) {
@@ -1783,10 +2013,13 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 
 	private static void accumulateSubjectUsage(SubjectPredicateSweep subjectSweep, TypeScratch sourceTypes,
 			PairCountMap counters) {
+		int pollTick = 0;
 		for (int predicateIndex = 0; predicateIndex < subjectSweep.activeSize(); predicateIndex++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
 			SubjectPredicateSweep.Plane plane = subjectSweep.activePlane(predicateIndex);
 			long edgeMultiplicity = plane.cursor.runSize();
 			for (int typeIndex = 0; typeIndex < sourceTypes.size; typeIndex++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				counters.add(sourceTypes.values[typeIndex], plane.predicate,
 						Math.multiplyExact(sourceTypes.multiplicities[typeIndex], edgeMultiplicity));
 			}
@@ -1795,9 +2028,12 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 
 	private static void accumulateSubjectLinkage(TypeScratch sourceTypes, TypeScratch targetTypes,
 			long edgeMultiplicity, PairCountMap counters) {
+		int pollTick = 0;
 		for (int sourceIndex = 0; sourceIndex < sourceTypes.size; sourceIndex++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
 			long sourceAndEdge = Math.multiplyExact(sourceTypes.multiplicities[sourceIndex], edgeMultiplicity);
 			for (int targetIndex = 0; targetIndex < targetTypes.size; targetIndex++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				counters.add(sourceTypes.values[sourceIndex], targetTypes.values[targetIndex],
 						Math.multiplyExact(sourceAndEdge, targetTypes.multiplicities[targetIndex]));
 			}
@@ -1807,7 +2043,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	private List<BindingSet> emitPairCounters(PairCountMap counters) {
 		ArrayList<BindingSet> results = new ArrayList<>(counters.size);
 		long[] keys = new long[2];
+		int pollTick = 0;
 		for (int i = 0; i < counters.firstKeys.length; i++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
 			if (!counters.used[i]) {
 				continue;
 			}
@@ -1841,7 +2079,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			long previous = 0L;
 			long multiplicity = 0L;
 			boolean hasPrevious = false;
+			int pollTick = 0;
 			while (offset < runSize) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				int requested = (int) Math.min(block.length, runSize - offset);
 				int copied = cursor.copyNeighbors(offset, requested, block, 0);
 				if (copied <= 0) {
@@ -1849,6 +2089,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				}
 				BULK_NEIGHBORS_DECODED.addAndGet(copied);
 				for (int i = 0; i < copied; i++) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
 					long value = block[i];
 					if (!hasPrevious) {
 						previous = value;
@@ -1876,7 +2117,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			long previous = 0L;
 			long multiplicity = 0L;
 			boolean hasPrevious = false;
+			int pollTick = 0;
 			while (offset < runSize) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				int requested = (int) Math.min(block.length, runSize - offset);
 				int copied = cursor.copyNeighbors(offset, requested, block, 0);
 				if (copied <= 0) {
@@ -1884,6 +2127,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				}
 				telemetry.bulkNeighborsDecoded += copied;
 				for (int i = 0; i < copied; i++) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
 					long value = block[i];
 					if (!hasPrevious) {
 						previous = value;
@@ -1925,7 +2169,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			long previous = 0L;
 			long multiplicity = 0L;
 			boolean hasPrevious = false;
+			int pollTick = 0;
 			while (offset < runSize) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				int requested = (int) Math.min(block.length, runSize - offset);
 				int copied = view.copyNeighbors(runHandle, offset, requested, block, 0);
 				if (copied <= 0) {
@@ -1937,6 +2183,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 					telemetry.bulkNeighborsDecoded += copied;
 				}
 				for (int i = 0; i < copied; i++) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
 					long value = block[i];
 					if (!hasPrevious) {
 						previous = value;
@@ -2034,7 +2281,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			size = 0;
 			typeValueCount = 0;
 			uniformSubjectIdType = MIXED_SUBJECT_ID_TYPES;
+			int pollTick = 0;
 			while (typeRoots.advance()) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				if (size == subjectIds.length) {
 					throw new IllegalStateException("rdf:type root cursor exceeded its morsel window");
 				}
@@ -2180,7 +2429,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		}
 
 		void bindTypes(TypeDomainWindow window) {
+			int pollTick = 0;
 			for (int index = 0; index < window.typeValueCount; index++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				window.typeResultOrdinals[index] = ordinal(window.typeValues[index]);
 			}
 		}
@@ -2198,12 +2449,15 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		}
 
 		void emit(PairCountMap target) {
+			int pollTick = 0;
 			for (int predicateOrdinal = 0; predicateOrdinal < counts.length; predicateOrdinal++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				long[] plane = counts[predicateOrdinal];
 				if (plane == null) {
 					continue;
 				}
 				for (int typeOrdinal = 0; typeOrdinal < typeCount; typeOrdinal++) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
 					long count = plane[typeOrdinal];
 					if (count != 0L) {
 						target.add(typeValues[typeOrdinal], predicates[predicateOrdinal], count);
@@ -2360,16 +2614,27 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		}
 
 		void appendFibers(int sourceOrdinal, NativeAdjacency.FiberBatch fibers, int count) {
-			appendFibers(sourceOrdinal, fibers.neighborIds(), fibers.contextMultiplicities(), count);
+			appendFibers(sourceOrdinal, fibers, count, null);
+		}
+
+		void appendFibers(int sourceOrdinal, NativeAdjacency.FiberBatch fibers, int count,
+				AtomicReference<Throwable> workerFailure) {
+			appendFibers(sourceOrdinal, fibers.neighborIds(), fibers.contextMultiplicities(), count, workerFailure);
 		}
 
 		void appendTypedFibers(TypeDomainWindow sourceTypes, int sourceIndex, NativeAdjacency.FiberBatch fibers,
-				int count, NativeAdjacency targetTypes, PairCountMap counters) {
+				int count, NativeAdjacency targetTypes, PairCountMap counters,
+				AtomicReference<Throwable> workerFailure) {
 			long[] targetIds = fibers.neighborIds();
 			long[] targetMultiplicities = fibers.contextMultiplicities();
 			int sourceOffset = sourceTypes.typeOffsets[sourceIndex];
 			int sourceEnd = sourceOffset + sourceTypes.typeLengths[sourceIndex];
+			int pollTick = 0;
 			for (int fiber = 0; fiber < count; fiber++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				long target = targetIds[fiber];
 				int termKind = ValueIds.termKind(target);
 				if (termKind != ValueIds.TERM_KIND_IRI && termKind != ValueIds.TERM_KIND_BNODE
@@ -2377,8 +2642,15 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 					continue;
 				}
 				for (int sourceType = sourceOffset; sourceType < sourceEnd; sourceType++) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (peerStopped(workerFailure, pollTick)) {
+						return;
+					}
 					if (fiberCount == edgeSources.length) {
-						flush(targetTypes, counters);
+						flush(targetTypes, counters, workerFailure);
+						if (workerFailure != null && workerFailure.get() != null) {
+							return;
+						}
 					}
 					appendDirectEdge(sourceTypes.typeValues[sourceType],
 							Math.multiplyExact(sourceTypes.typeMultiplicities[sourceType],
@@ -2392,12 +2664,21 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 
 		/** Decodes a single-typed source run straight from its lease-owned CSF coordinate into breaker lanes. */
 		void appendSingleTypedRun(long sourceType, long sourceMultiplicity, NativeAdjacency.KeyRunCursor edgeRoots,
-				long edgeRunSize, NativeAdjacency targetTypes, PairCountMap counters) {
+				long edgeRunSize, NativeAdjacency targetTypes, PairCountMap counters,
+				AtomicReference<Throwable> workerFailure) {
 			long runOffset = 0L;
+			int pollTick = 0;
 			while (runOffset < edgeRunSize) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				if (fiberCount == edgeSources.length) {
 					telemetry.peakMorselFibers = Math.max(telemetry.peakMorselFibers, fiberCount);
-					flush(targetTypes, counters);
+					flush(targetTypes, counters, workerFailure);
+					if (workerFailure != null && workerFailure.get() != null) {
+						return;
+					}
 				}
 				int start = fiberCount;
 				int copied = edgeRoots.copyFibers(runOffset, edgeSources.length - start, edgeTargets, start,
@@ -2407,6 +2688,10 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				}
 				long consumed = 0L;
 				for (int input = start; input < start + copied; input++) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (peerStopped(workerFailure, pollTick)) {
+						return;
+					}
 					long target = edgeTargets[input];
 					long contextMultiplicity = edgeDirectMultiplicities[input];
 					consumed = Math.addExact(consumed, contextMultiplicity);
@@ -2442,10 +2727,20 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		}
 
 		void appendFibers(int sourceOrdinal, long[] targetIds, long[] multiplicities, int count) {
+			appendFibers(sourceOrdinal, targetIds, multiplicities, count, null);
+		}
+
+		void appendFibers(int sourceOrdinal, long[] targetIds, long[] multiplicities, int count,
+				AtomicReference<Throwable> workerFailure) {
 			if (!hasFiberCapacity(count)) {
 				throw new IllegalStateException("linkage fiber morsel is full");
 			}
+			int pollTick = 0;
 			for (int i = 0; i < count; i++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				int termKind = ValueIds.termKind(targetIds[i]);
 				if (termKind != ValueIds.TERM_KIND_IRI && termKind != ValueIds.TERM_KIND_BNODE
 						&& termKind != ValueIds.TERM_KIND_TRIPLE) {
@@ -2478,24 +2773,43 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		}
 
 		void flush(NativeAdjacency targetTypes, PairCountMap counters) {
+			flush(targetTypes, counters, null);
+		}
+
+		void flush(NativeAdjacency targetTypes, PairCountMap counters,
+				AtomicReference<Throwable> workerFailure) {
 			if (fiberCount == 0) {
 				clear();
 				return;
 			}
-			if (tryDenseTargetBreaker(targetTypes, counters)) {
+			if (tryDenseTargetBreaker(targetTypes, counters, workerFailure)) {
 				telemetry.denseTargetBreakers++;
 				clear();
 				return;
 			}
+			if (workerFailure != null && workerFailure.get() != null) {
+				return;
+			}
 			telemetry.radixTargetBreakers++;
 			radixSortEdgeOrdinals(edgeTargets, fiberCount, uniformTargetIdType, sortedEdgeOrdinals,
-					radixScratchOrdinals, radixCounts);
-			int uniqueTargetCount = groupTargets();
+					radixScratchOrdinals, radixCounts, workerFailure);
+			if (workerFailure != null && workerFailure.get() != null) {
+				return;
+			}
+			int uniqueTargetCount = groupTargets(workerFailure);
+			if (workerFailure != null && workerFailure.get() != null) {
+				return;
+			}
 			targetTypes.findBatch(uniqueTargetIds, 0, uniqueTargetCount, uniqueTargetHandles, 0);
 			telemetry.targetTypeBatchLookups++;
 			telemetry.targetTypeLookups += uniqueTargetCount;
 			telemetry.uniqueTargetsResolved += uniqueTargetCount;
+			int pollTick = 0;
 			for (int target = 0; target < uniqueTargetCount; target++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				long handle = uniqueTargetHandles[target];
 				if (handle == NativeAdjacency.NOT_FOUND) {
 					continue;
@@ -2507,15 +2821,19 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				telemetry.targetTypeRunsDecoded++;
 				if (targetScratch.size == 1) {
 					accumulateSingleTargetTypeGroup(target, targetScratch.values[0],
-							targetScratch.multiplicities[0], counters);
+							targetScratch.multiplicities[0], counters, workerFailure);
 				} else {
-					accumulateTargetGroup(target, counters);
+					accumulateTargetGroup(target, counters, workerFailure);
+				}
+				if (workerFailure != null && workerFailure.get() != null) {
+					return;
 				}
 			}
 			clear();
 		}
 
-		private boolean tryDenseTargetBreaker(NativeAdjacency targetTypes, PairCountMap counters) {
+		private boolean tryDenseTargetBreaker(NativeAdjacency targetTypes, PairCountMap counters,
+				AtomicReference<Throwable> workerFailure) {
 			if (uniformTargetIdType < 0 || minimumTargetValue < 0L || maximumTargetValue < minimumTargetValue) {
 				return false;
 			}
@@ -2527,7 +2845,12 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			int span = (int) spanLong;
 			Arrays.fill(denseTargetOrdinals, 0, span, (char) 0);
 			int uniqueTargetCount = 0;
+			int pollTick = 0;
 			for (int edge = 0; edge < fiberCount; edge++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return false;
+				}
 				int bit = (int) (ValueIds.getValue(edgeTargets[edge]) - minimumTargetValue);
 				if (denseTargetOrdinals[bit] == 0) {
 					denseTargetOrdinals[bit] = 1;
@@ -2539,6 +2862,10 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			}
 			int target = 0;
 			for (int bit = 0; bit < span; bit++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return false;
+				}
 				if (denseTargetOrdinals[bit] != 0) {
 					denseTargetOrdinals[bit] = (char) target;
 					uniqueTargetIds[target++] = ValueIds.createId(uniformTargetIdType, minimumTargetValue + bit);
@@ -2550,6 +2877,10 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			telemetry.uniqueTargetsResolved += uniqueTargetCount;
 			int targetTypeValueCount = 0;
 			for (int ordinal = 0; ordinal < uniqueTargetCount; ordinal++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return false;
+				}
 				denseTargetTypeOffsets[ordinal] = targetTypeValueCount;
 				denseTargetTypeLengths[ordinal] = 0;
 				long handle = uniqueTargetHandles[ordinal];
@@ -2569,18 +2900,27 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				denseTargetTypeLengths[ordinal] = targetScratch.size;
 				targetTypeValueCount += targetScratch.size;
 			}
-			accumulateDenseTargets(counters);
+			accumulateDenseTargets(counters, workerFailure);
 			return true;
 		}
 
-		private void accumulateDenseTargets(PairCountMap counters) {
+		private void accumulateDenseTargets(PairCountMap counters, AtomicReference<Throwable> workerFailure) {
+			int pollTick = 0;
 			for (int edge = 0; edge < fiberCount; edge++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				int bit = (int) (ValueIds.getValue(edgeTargets[edge]) - minimumTargetValue);
 				int ordinal = denseTargetOrdinals[bit];
 				int source = edgeSources[edge];
 				if (source == DIRECT_SOURCE_TYPE) {
 					int targetEnd = denseTargetTypeOffsets[ordinal] + denseTargetTypeLengths[ordinal];
 					for (int targetType = denseTargetTypeOffsets[ordinal]; targetType < targetEnd; targetType++) {
+						LmdbNativeProbeDeadline.poll(++pollTick);
+						if (peerStopped(workerFailure, pollTick)) {
+							return;
+						}
 						long multiplicity = Math.multiplyExact(edgeDirectMultiplicities[edge],
 								denseTargetTypeMultiplicities[targetType]);
 						if (reverse) {
@@ -2601,9 +2941,17 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				int sourceEnd = sourceOffset + sourceTypeLengths[source];
 				int targetEnd = denseTargetTypeOffsets[ordinal] + denseTargetTypeLengths[ordinal];
 				for (int sourceType = sourceOffset; sourceType < sourceEnd; sourceType++) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (peerStopped(workerFailure, pollTick)) {
+						return;
+					}
 					long knownAndEdge = Math.multiplyExact(sourceMultiplicities[sourceType],
 							edgeMultiplicities[edge]);
 					for (int targetType = denseTargetTypeOffsets[ordinal]; targetType < targetEnd; targetType++) {
+						LmdbNativeProbeDeadline.poll(++pollTick);
+						if (peerStopped(workerFailure, pollTick)) {
+							return;
+						}
 						long multiplicity = Math.multiplyExact(knownAndEdge,
 								denseTargetTypeMultiplicities[targetType]);
 						if (reverse) {
@@ -2616,10 +2964,15 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			}
 		}
 
-		private int groupTargets() {
+		private int groupTargets(AtomicReference<Throwable> workerFailure) {
 			int uniqueTargetCount = 0;
 			long previous = 0L;
+			int pollTick = 0;
 			for (int sorted = 0; sorted < fiberCount; sorted++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return uniqueTargetCount;
+				}
 				long target = edgeTargets[sortedEdgeOrdinals[sorted]];
 				if (sorted == 0 || target != previous) {
 					uniqueTargetIds[uniqueTargetCount] = target;
@@ -2631,13 +2984,23 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			return uniqueTargetCount;
 		}
 
-		private void accumulateTargetGroup(int target, PairCountMap counters) {
+		private void accumulateTargetGroup(int target, PairCountMap counters,
+				AtomicReference<Throwable> workerFailure) {
+			int pollTick = 0;
 			for (int sorted = targetGroupStarts[target]; sorted < targetGroupStarts[target + 1]; sorted++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				int edge = sortedEdgeOrdinals[sorted];
 				int source = edgeSources[edge];
 				long edgeMultiplicity = edgeMultiplicities[edge];
 				if (source == DIRECT_SOURCE_TYPE) {
 					for (int targetType = 0; targetType < targetScratch.size; targetType++) {
+						LmdbNativeProbeDeadline.poll(++pollTick);
+						if (peerStopped(workerFailure, pollTick)) {
+							return;
+						}
 						long multiplicity = Math.multiplyExact(edgeDirectMultiplicities[edge],
 								targetScratch.multiplicities[targetType]);
 						if (reverse) {
@@ -2655,8 +3018,16 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				int sourceOffset = sourceCode < 0 ? borrowedSourceTypes.typeOffsets[~sourceCode] : sourceCode;
 				int sourceEnd = sourceOffset + sourceTypeLengths[source];
 				for (int sourceType = sourceOffset; sourceType < sourceEnd; sourceType++) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (peerStopped(workerFailure, pollTick)) {
+						return;
+					}
 					long knownAndEdge = Math.multiplyExact(sourceMultiplicities[sourceType], edgeMultiplicity);
 					for (int targetType = 0; targetType < targetScratch.size; targetType++) {
+						LmdbNativeProbeDeadline.poll(++pollTick);
+						if (peerStopped(workerFailure, pollTick)) {
+							return;
+						}
 						long multiplicity = Math.multiplyExact(knownAndEdge,
 								targetScratch.multiplicities[targetType]);
 						if (reverse) {
@@ -2670,8 +3041,13 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		}
 
 		private void accumulateSingleTargetTypeGroup(int target, long targetType, long targetMultiplicity,
-				PairCountMap counters) {
+				PairCountMap counters, AtomicReference<Throwable> workerFailure) {
+			int pollTick = 0;
 			for (int sorted = targetGroupStarts[target]; sorted < targetGroupStarts[target + 1]; sorted++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				int edge = sortedEdgeOrdinals[sorted];
 				int source = edgeSources[edge];
 				if (source == DIRECT_SOURCE_TYPE) {
@@ -2691,6 +3067,10 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				int sourceEnd = sourceOffset + sourceTypeLengths[source];
 				long edgeMultiplicity = edgeMultiplicities[edge];
 				for (int sourceType = sourceOffset; sourceType < sourceEnd; sourceType++) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (peerStopped(workerFailure, pollTick)) {
+						return;
+					}
 					long multiplicity = Math.multiplyExact(
 							Math.multiplyExact(sourceMultiplicities[sourceType], edgeMultiplicity), targetMultiplicity);
 					if (reverse) {
@@ -2704,6 +3084,12 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 
 		private static void radixSortEdgeOrdinals(long[] keys, int length, int uniformIdType, int[] output,
 				int[] scratch, int[] counts) {
+			radixSortEdgeOrdinals(keys, length, uniformIdType, output, scratch, counts, null);
+		}
+
+		private static void radixSortEdgeOrdinals(long[] keys, int length, int uniformIdType, int[] output,
+				int[] scratch, int[] counts, AtomicReference<Throwable> workerFailure) {
+			int pollTick = 0;
 			int tagShift = uniformIdType >= 0 ? 7 : 0;
 			int radixBits = uniformIdType >= 0 ? UNIFORM_TARGET_RADIX_BITS : Byte.SIZE;
 			int bucketCount = 1 << radixBits;
@@ -2711,12 +3097,20 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			long first = keys[0] >>> tagShift;
 			long differingBits = 0L;
 			for (int i = 1; i < length; i++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				differingBits |= first ^ keys[i] >>> tagShift;
 			}
 			int passes = differingBits == 0L ? 0
 					: (Long.SIZE - Long.numberOfLeadingZeros(differingBits) + radixBits - 1) / radixBits;
 			if (passes == 0) {
 				for (int i = 0; i < length; i++) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (peerStopped(workerFailure, pollTick)) {
+						return;
+					}
 					output[i] = i;
 				}
 				return;
@@ -2724,21 +3118,41 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			int[] source = (passes & 1) == 0 ? output : scratch;
 			int[] target = source == output ? scratch : output;
 			for (int i = 0; i < length; i++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				source[i] = i;
 			}
 			for (int pass = 0; pass < passes; pass++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					return;
+				}
 				Arrays.fill(counts, 0, bucketCount, 0);
 				int shift = tagShift + pass * radixBits;
 				for (int i = 0; i < length; i++) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (peerStopped(workerFailure, pollTick)) {
+						return;
+					}
 					counts[(int) (keys[source[i]] >>> shift) & bucketMask]++;
 				}
 				int offset = 0;
 				for (int bucket = 0; bucket < bucketCount; bucket++) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (peerStopped(workerFailure, pollTick)) {
+						return;
+					}
 					int size = counts[bucket];
 					counts[bucket] = offset;
 					offset += size;
 				}
 				for (int i = 0; i < length; i++) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (peerStopped(workerFailure, pollTick)) {
+						return;
+					}
 					int ordinal = source[i];
 					int bucket = (int) (keys[ordinal] >>> shift) & bucketMask;
 					target[counts[bucket]++] = ordinal;
@@ -2857,8 +3271,10 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				LongHashSet acceptedPredicates) throws IOException {
 			Plane[] opened = new Plane[predicateCatalog.length];
 			int count = 0;
+			int pollTick = 0;
 			try {
 				for (long predicate : predicateCatalog) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
 					if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
 						continue;
 					}
@@ -2884,7 +3300,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		}
 
 		boolean advanceSubject() {
+			int pollTick = 0;
 			for (int i = 0; i < activeSize; i++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				int plane = active[i];
 				if (advancePlane(plane)) {
 					push(plane);
@@ -2916,7 +3334,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 
 		private boolean advancePlane(int index) {
 			Plane plane = planes[index];
+			int pollTick = 0;
 			while (plane.cursor.advance()) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				PREDICATE_ROOTS_VISITED.incrementAndGet();
 				if (plane.cursor.runSize() > 0L) {
 					plane.subject = plane.cursor.key();
@@ -3021,7 +3441,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			entries = sweep.activeSize();
 			heapSize = 0;
 			ensureCapacity(entries);
+			int pollTick = 0;
 			for (int i = 0; i < entries; i++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				NativeAdjacency.KeyRunCursor cursor = sweep.activePlane(i).cursor;
 				cursors[i] = cursor;
 				sizes[i] = cursor.runSize();
@@ -3039,9 +3461,12 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			}
 			target = current[heap[0]];
 			multiplicity = 0L;
+			int pollTick = 0;
 			do {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				int entry = pop();
 				do {
+					LmdbNativeProbeDeadline.poll(++pollTick);
 					multiplicity = Math.addExact(multiplicity, 1L);
 				} while (advanceEntry(entry) && current[entry] == target);
 				if (hasCurrent(entry)) {
@@ -3179,7 +3604,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		}
 
 		void mergeFrom(PairCountMap other) {
+			int pollTick = 0;
 			for (int index = 0; index < other.firstKeys.length; index++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				if (other.used[index]) {
 					add(other.firstKeys[index], other.secondKeys[index], other.counts[index]);
 				}
@@ -3408,7 +3835,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			LongCountMap counters) {
 		if (outgoingPredicates == null) {
 			DYNAMIC_PREDICATE_SWEEPS.incrementAndGet();
+			int pollTick = 0;
 			for (long predicate : predicateCatalog) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
 					continue;
 				}
@@ -3431,7 +3860,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				return;
 			}
 			NODE_PREDICATE_ROWS_VISITED.incrementAndGet();
+			int pollTick = 0;
 			do {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				long predicate = cursor.predicate();
 				if (acceptedPredicates == null || acceptedPredicates.contains(predicate)) {
 					long contribution = Math.multiplyExact(sourceTypeMultiplicity,
@@ -3449,7 +3880,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		if (outgoingPredicates == null) {
 			DYNAMIC_PREDICATE_SWEEPS.incrementAndGet();
 			targetMerge.clear();
+			int pollTick = 0;
 			for (long predicate : predicateCatalog) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
 					continue;
 				}
@@ -3474,7 +3907,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				return;
 			}
 			NODE_PREDICATE_ROWS_VISITED.incrementAndGet();
+			int pollTick = 0;
 			do {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				if (acceptedPredicates == null || acceptedPredicates.contains(cursor.predicate())) {
 					long run = cursor.runHandle();
 					long runSize = outgoingPredicates.size(run);
@@ -3490,7 +3925,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 
 	private void accumulateMergedTargets(long sourceTypeMultiplicity,
 			NativeAdjacency.BoundRunCursor targetTypeRuns, RunMerge targetMerge, LongCountMap counters) {
+		int pollTick = 0;
 		while (targetMerge.advanceTarget()) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
 			long target = targetMerge.target();
 			long targetTypeRunSize = targetTypeRuns.bind(target);
 			TARGET_TYPE_LOOKUPS.incrementAndGet();
@@ -3504,9 +3941,11 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			long sourceAndEdgeMultiplicity = Math.multiplyExact(sourceTypeMultiplicity,
 					targetMerge.multiplicity());
 			for (long offset = 0L; offset < targetTypeRunSize;) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				long targetType = targetTypeRuns.neighborAt(offset);
 				long next = offset + 1L;
 				while (next < targetTypeRunSize && targetTypeRuns.neighborAt(next) == targetType) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
 					next++;
 				}
 				counters.add(targetType, Math.multiplyExact(sourceAndEdgeMultiplicity, next - offset));
@@ -3516,7 +3955,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	}
 
 	private void emitTypeCounters(List<BindingSet> results, long sourceType, LongCountMap counters) {
+		int pollTick = 0;
 		for (int i = 0; i < counters.keys.length; i++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
 			if (!counters.used[i]) {
 				continue;
 			}
@@ -3577,11 +4018,14 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			}
 			target = neighbors[heap[0]];
 			multiplicity = 0L;
+			int pollTick = 0;
 			do {
+				LmdbNativeProbeDeadline.poll(++pollTick);
 				int entry = pop();
 				long offset = offsets[entry];
 				long size = sizes[entry];
 				do {
+					LmdbNativeProbeDeadline.poll(++pollTick);
 					multiplicity = Math.addExact(multiplicity, 1L);
 					offset++;
 				} while (offset < size && view.neighborAt(handles[entry], offset) == target);
@@ -3663,6 +4107,12 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 
 	private void coScan(RecordIterator rows, long[] stopBeforeSubject, LongHashSet acceptedPredicates,
 			NativeLmdbQuerySource.NativeProbe targetTypeProbe, Map<GroupKey, long[]> table) throws IOException {
+		coScan(rows, stopBeforeSubject, acceptedPredicates, targetTypeProbe, table, null);
+	}
+
+	private void coScan(RecordIterator rows, long[] stopBeforeSubject, LongHashSet acceptedPredicates,
+			NativeLmdbQuerySource.NativeProbe targetTypeProbe, Map<GroupKey, long[]> table,
+			AtomicReference<Throwable> workerFailure) throws IOException {
 		GroupKey probeKey = new GroupKey(new long[2]);
 		long[] batch = new long[BATCH_ROWS * 4];
 		long currentSubject = 0;
@@ -3671,8 +4121,18 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		long[] runObjects = new long[64];
 		int runSize = 0;
 		int filled;
-		scan: while ((filled = rows.fill(batch, BATCH_ROWS)) > 0) {
+		int pollTick = 0;
+		scan: while (workerFailure == null || workerFailure.get() == null) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			filled = rows.fill(batch, BATCH_ROWS);
+			if (filled <= 0) {
+				break;
+			}
 			for (int i = 0; i < filled; i++) {
+				LmdbNativeProbeDeadline.poll(++pollTick);
+				if (peerStopped(workerFailure, pollTick)) {
+					break scan;
+				}
 				long subject = batch[i * 4 + TripleIndex.SUBJ_IDX];
 				if (stopBeforeSubject != null && Long.compareUnsigned(subject, stopBeforeSubject[0]) >= 0) {
 					break scan;
@@ -3680,7 +4140,10 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				if (!inRun || subject != currentSubject) {
 					if (inRun) {
 						flushRun(runPredicates, runObjects, runSize, acceptedPredicates, targetTypeProbe, table,
-								probeKey);
+								probeKey, workerFailure);
+						if (workerFailure != null && workerFailure.get() != null) {
+							break scan;
+						}
 					}
 					currentSubject = subject;
 					inRun = true;
@@ -3698,16 +4161,23 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				break;
 			}
 		}
-		if (inRun) {
-			flushRun(runPredicates, runObjects, runSize, acceptedPredicates, targetTypeProbe, table, probeKey);
+		if (inRun && (workerFailure == null || workerFailure.get() == null)) {
+			flushRun(runPredicates, runObjects, runSize, acceptedPredicates, targetTypeProbe, table, probeKey,
+					workerFailure);
 		}
 	}
 
 	private void flushRun(long[] runPredicates, long[] runObjects, int runSize, LongHashSet acceptedPredicates,
-			NativeLmdbQuerySource.NativeProbe targetTypeProbe, Map<GroupKey, long[]> table, GroupKey probeKey)
+			NativeLmdbQuerySource.NativeProbe targetTypeProbe, Map<GroupKey, long[]> table, GroupKey probeKey,
+			AtomicReference<Throwable> workerFailure)
 			throws IOException {
 		int typeCount = 0;
+		int pollTick = 0;
 		for (int i = 0; i < runSize; i++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			if (peerStopped(workerFailure, pollTick)) {
+				return;
+			}
 			if (runPredicates[i] == subjectTypePredicate) {
 				typeCount++;
 			}
@@ -3718,11 +4188,19 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		long[] subjectTypes = new long[typeCount];
 		int t = 0;
 		for (int i = 0; i < runSize; i++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			if (peerStopped(workerFailure, pollTick)) {
+				return;
+			}
 			if (runPredicates[i] == subjectTypePredicate) {
 				subjectTypes[t++] = runObjects[i];
 			}
 		}
 		for (int i = 0; i < runSize; i++) {
+			LmdbNativeProbeDeadline.poll(++pollTick);
+			if (peerStopped(workerFailure, pollTick)) {
+				return;
+			}
 			long predicate = runPredicates[i];
 			if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
 				continue;
@@ -3732,14 +4210,26 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				try (RecordIterator targetTypes = targetTypeProbe.open(object, objectTypePredicate, UNKNOWN, UNKNOWN)) {
 					long[] targetTypeRow;
 					while ((targetTypeRow = targetTypes.next()) != null) {
+						LmdbNativeProbeDeadline.poll(++pollTick);
+						if (peerStopped(workerFailure, pollTick)) {
+							return;
+						}
 						long targetType = targetTypeRow[TripleIndex.OBJ_IDX];
 						for (long subjectType : subjectTypes) {
+							LmdbNativeProbeDeadline.poll(++pollTick);
+							if (peerStopped(workerFailure, pollTick)) {
+								return;
+							}
 							increment(table, subjectType, targetType, probeKey);
 						}
 					}
 				}
 			} else {
 				for (long subjectType : subjectTypes) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (peerStopped(workerFailure, pollTick)) {
+						return;
+					}
 					increment(table, subjectType, predicate, probeKey);
 				}
 			}
@@ -3793,55 +4283,79 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				closeAll(sources);
 				return null;
 			}
+			List<Future<Map<GroupKey, long[]>>> futures = new ArrayList<>(workers);
+			AtomicReference<Throwable> workerFailure = new AtomicReference<>();
+			LmdbNativeProbeDeadline probeParent = LmdbNativeProbeDeadline.currentOrNull();
+			Throwable primaryFailure = null;
 			try {
 				int ranges = splits.length + 1;
 				ConcurrentLinkedQueue<Integer> queue = new ConcurrentLinkedQueue<>();
 				for (int i = 0; i < ranges; i++) {
 					queue.add(i);
 				}
-				List<Future<Map<GroupKey, long[]>>> futures = new ArrayList<>(workers);
-				for (int w = 0; w < workers; w++) {
-					NativeLmdbQuerySource workerSource = sources[w];
-					futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-						Map<GroupKey, long[]> local = new HashMap<>();
-						try (NativeLmdbQuerySource.NativeProbe targetTypes = linkageMode() ? workerSource.newProbe()
-								: null) {
-							Integer range;
-							while ((range = queue.poll()) != null) {
-								long[] lo = range == 0 ? null : splits[range - 1];
-								long[] hi = range == splits.length ? null : splits[range];
-								try (RecordIterator rows = workerSource.lmdbStatements(StatementOrder.S, UNKNOWN,
-										UNKNOWN, UNKNOWN, UNKNOWN, null)) {
-									if (lo != null && !rows.seekForward(lo[0], 0, 0, 0)) {
-										continue;
+				try {
+					for (int w = 0; w < workers; w++) {
+						NativeLmdbQuerySource workerSource = sources[w];
+						futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
+							Map<GroupKey, long[]> local = new HashMap<>();
+							try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.inherit(probeParent);
+									NativeLmdbQuerySource.NativeProbe targetTypes = linkageMode()
+											? workerSource.newProbe()
+											: null) {
+								Integer range;
+								int pollTick = 0;
+								while (workerFailure.get() == null && (range = queue.poll()) != null) {
+									LmdbNativeProbeDeadline.poll(++pollTick);
+									long[] lo = range == 0 ? null : splits[range - 1];
+									long[] hi = range == splits.length ? null : splits[range];
+									try (RecordIterator rows = workerSource.lmdbStatements(StatementOrder.S, UNKNOWN,
+											UNKNOWN, UNKNOWN, UNKNOWN, null)) {
+										if (lo != null && !rows.seekForward(lo[0], 0, 0, 0)) {
+											continue;
+										}
+										coScan(rows, hi, acceptedPredicates, targetTypes, local, workerFailure);
 									}
-									coScan(rows, hi, acceptedPredicates, targetTypes, local);
 								}
+							} catch (IOException | RuntimeException | Error failure) {
+								workerFailure.compareAndSet(null, failure);
+								throw failure;
 							}
-						}
-						return local;
-					}));
+							return local;
+						}));
+					}
+				} catch (RuntimeException | Error submissionFailure) {
+					rethrowPublishedWorkerFailure(workerFailure, submissionFailure);
+				}
+				Throwable failure = awaitWorkersBeforeClose(futures, workerFailure);
+				if (failure != null) {
+					rethrowWorkerFailure(failure);
 				}
 				Map<GroupKey, long[]> merged = new HashMap<>();
+				int mergePollTick = 0;
 				for (Future<Map<GroupKey, long[]>> future : futures) {
-					for (Map.Entry<GroupKey, long[]> entry : future.get().entrySet()) {
-						merged.computeIfAbsent(entry.getKey(), ignored -> new long[1])[0] += entry.getValue()[0];
+					LmdbNativeProbeDeadline.poll(++mergePollTick);
+					try {
+						for (Map.Entry<GroupKey, long[]> entry : future.get().entrySet()) {
+							LmdbNativeProbeDeadline.poll(++mergePollTick);
+							merged.computeIfAbsent(entry.getKey(), ignored -> new long[1])[0] += entry.getValue()[0];
+						}
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new QueryEvaluationException(e);
+					} catch (ExecutionException e) {
+						rethrowWorkerFailure(e.getCause() == null ? e : e.getCause());
 					}
 				}
 				return merged;
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new QueryEvaluationException(e);
-			} catch (ExecutionException e) {
-				if (e.getCause() instanceof Error) {
-					throw (Error) e.getCause();
-				}
-				if (e.getCause() instanceof RuntimeException) {
-					throw (RuntimeException) e.getCause();
-				}
-				throw new QueryEvaluationException(e.getCause());
+			} catch (IOException | RuntimeException | Error failure) {
+				primaryFailure = failure;
+				workerFailure.compareAndSet(null, failure);
+				throw failure;
 			} finally {
-				closeAll(sources);
+				Throwable failure = drainAndCloseWorkers(futures, workerFailure, sources, primaryFailure);
+				if (primaryFailure == null && failure != null) {
+					rethrowWorkerFailure(failure);
+				}
 			}
 		}
 	}

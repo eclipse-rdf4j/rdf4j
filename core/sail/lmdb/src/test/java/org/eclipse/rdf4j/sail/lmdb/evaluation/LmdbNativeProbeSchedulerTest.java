@@ -45,6 +45,29 @@ class LmdbNativeProbeSchedulerTest {
 	}
 
 	@Test
+	void firstColdFlightCanRetryWithinOneSecond() {
+		AtomicLong wall = new AtomicLong(1_000_000L);
+		LmdbNativeProbeScheduler scheduler = new LmdbNativeProbeScheduler(CONFIG, wall::get);
+		LmdbNativePhysicalVariantKey arm = variant("packedFtreeAggregate");
+
+		LmdbNativeProbeScheduler.Flight flight = scheduler.tryBeginProbe(arm, REGIME, 0L);
+		assertTrue(flight != null, "an unknown arm must admit its first probe");
+		scheduler.censored(flight, false);
+
+		wall.addAndGet(1_000L);
+		assertTrue(scheduler.mayProbe(arm, REGIME, 0L),
+				"a first cold-start timeout must leave the arm retryable within the first second");
+	}
+
+	@Test
+	void coldFirstProbeOvershootRemainsQuarantineEligible() {
+		assertTrue(LmdbNativeProbeScheduler.shouldQuarantine(true),
+				"startup status must not weaken the cancellation-safety quarantine");
+		assertFalse(LmdbNativeProbeScheduler.shouldQuarantine(false),
+				"a cold probe that did not overshoot must remain an ordinary censor");
+	}
+
+	@Test
 	void aSecondSameEpochCensoringParksTheArmUntilTheNextEpoch() {
 		AtomicLong wall = new AtomicLong(1_000_000L);
 		LmdbNativeProbeScheduler scheduler = new LmdbNativeProbeScheduler(CONFIG, wall::get);

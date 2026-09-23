@@ -32,9 +32,11 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.LmdbIndexOrder;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 
 public class SyntaxTreeBuilder {
+	private boolean allowStableIndexKeyword;
 
 	/**
 	 * Parses the supplied SPARQL query and builds a syntax tree from it.
@@ -48,6 +50,7 @@ public class SyntaxTreeBuilder {
 		throws TokenMgrError, ParseException
 	{
 		SyntaxTreeBuilder stb = new SyntaxTreeBuilder( new UnicodeEscapeStream(query, 1) );
+		stb.allowStableIndexKeyword = true;
 
 		// Set size of tab to 1 to force tokenmanager to report correct column
 		// index for substring splitting of service graph pattern.
@@ -69,6 +72,7 @@ public class SyntaxTreeBuilder {
 		throws TokenMgrError, ParseException
 	{
 		SyntaxTreeBuilder stb = new SyntaxTreeBuilder( new UnicodeEscapeStream(sequence, 1) );
+		stb.allowStableIndexKeyword = false;
 
 		// Set size of tab to 1 to force tokenmanager to report correct column
 		// index for substring splitting of service graph pattern.
@@ -431,6 +435,11 @@ TOKEN:
 |   <TILDE: "~">
 |   <ANNOTATION_OPEN: "{|">
 |   <ANNOTATION_CLOSE: "|}">
+}
+
+TOKEN [IGNORE_CASE] :
+{
+	<STABLE_INDEX: "stable_index">
 }
 
 //
@@ -864,7 +873,8 @@ void Constraint() :
 void FunctionCall() :
 {}
 {
-    IRIref() (<LPAREN> [ <DISTINCT> {jjtThis.setDistinct(true);} ] Expression() ( <COMMA> Expression() )* <RPAREN> | <NIL>)
+    ( IRIref() | StableIndexFunctionIRI() )
+    (<LPAREN> [ <DISTINCT> {jjtThis.setDistinct(true);} ] Expression() ( <COMMA> Expression() )* <RPAREN> | <NIL>)
 }
 
 void ArgList() #void :
@@ -1993,6 +2003,18 @@ void IRI() :
 { Token t; }
 {
 	t = <Q_IRI_REF> {jjtThis.setValue(_trimString(t.image, 1));}
+}
+
+void StableIndexFunctionIRI() #IRI :
+{ }
+{
+	<STABLE_INDEX>
+	{
+		if (!allowStableIndexKeyword) {
+			throw new ParseException("STABLE_INDEX(...) is only available in query expressions");
+		}
+		jjtThis.setValue(LmdbIndexOrder.FUNCTION_URI);
+	}
 }
 
 /// SPARQL 1.1 Update productions

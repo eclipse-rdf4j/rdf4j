@@ -76,6 +76,8 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	private final LmdbNativeQueryProbeBudget probeBudget = new LmdbNativeQueryProbeBudget();
 	private LmdbNativeProbeHarness<T> probeHarness;
 	private LmdbNativeHedgeSupport<T> hedgeSupport;
+	/** A semantic last resort that must not be consumed as an adaptive trial. */
+	private Proposer<T> terminalFallback;
 	private String winningTag;
 	private double winningWork = Double.NaN;
 	private String forcedTag;
@@ -143,6 +145,20 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		if (proposal != null) {
 			candidates.add(proposal);
 		}
+		return this;
+	}
+
+	/**
+	 * Registers a semantic fallback for the case where every ordinary proposal declines or is censored. The fallback is
+	 * deliberately outside the adaptive candidate set: probing it would be able to consume the only legal execution
+	 * path, after which a caller-level retry could start an unbounded generic plan. A terminal fallback is also
+	 * bypassed by forced dispatch, which must either open the requested strategy or report that it is unavailable.
+	 */
+	LmdbNativeStrategyArbiter<T> terminalFallback(Proposer<T> proposer) {
+		if (terminalFallback != null) {
+			throw new IllegalStateException("terminal fallback already registered");
+		}
+		terminalFallback = proposer;
 		return this;
 	}
 
@@ -512,7 +528,8 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				continue;
 			}
 			LmdbNativeAdaptiveArbitration.Candidate<T> candidate = new LmdbNativeAdaptiveArbitration.Candidate<>(
-					estimate, LmdbNativeStrategyPreference.rank(proposal.tag), ignored -> proposal.open());
+					estimate, LmdbNativeStrategyPreference.rank(proposal.tag), ignored -> proposal.open(),
+					proposal.probeable);
 			converted.add(new AdaptiveCandidate<>(i, candidate));
 			priced.add(new LmdbNativeAdaptiveArbitration.Priced<>(candidate, captured.predictions().get(i)));
 		}
@@ -780,7 +797,37 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			candidates.remove(index);
 			chosen.close();
 		}
-		return null;
+		return openTerminalFallback();
+	}
+
+	private LmdbNativeStrategySelection<T> openTerminalFallback() throws IOException {
+		if (terminalFallback == null || forcedTag != null) {
+			return null;
+		}
+		LmdbNativeStrategyProposal<T> fallback = terminalFallback.propose();
+		if (fallback == null) {
+			return null;
+		}
+		try {
+			LmdbNativeStrategySelection<T> selection = openLegacy(fallback);
+			if (selection == null) {
+				fallback.close();
+				return null;
+			}
+			winningTag = fallback.tag;
+			winningWork = fallback.work.known() ? fallback.work.high() : Double.NaN;
+			logSelected(explainTarget, decisionId, forcedDecisionPoint, fallback.tag, "terminal-fallback",
+					"all ordinary candidates declined or were censored");
+			releaseAfterOpen(fallback, "terminal fallback", selection.value(), selection.observation());
+			return selection;
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				fallback.close();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
 	}
 
 	/**
@@ -1072,6 +1119,9 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				}
 				throw new IOException("guarded winner failed", failure);
 			}
+			if (!timedOut && scope.deadline().expired()) {
+				timedOut = true;
+			}
 		}
 		if (!timedOut && value != null) {
 			adaptiveModel.store().safetyLedger().noteNormalDecision();
@@ -1262,7 +1312,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 						startedMillis,
 						scheduler, trialKey);
 			}
-			if (!timedOut && value == null && scope.deadline().tripped()) {
+			if (!timedOut && scope.deadline().expired()) {
 				timedOut = true;
 			}
 			if (!timedOut && value != null) {
@@ -1312,7 +1362,9 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				observation.budgetCensored(bound);
 				LmdbNativeAdaptiveCostModel.CensorResult censor = observation.censorResult();
 				probe.reservation().commit(hedgedCharge(elapsed, delay, race.backupEverStarted()));
-				if (deadlineElapsed >= (long) (hedgeConfig.overshootQuarantineFactor() * probe.deadlineNanos())) {
+				if (LmdbNativeProbeScheduler
+						.shouldQuarantine(deadlineElapsed >= (long) (hedgeConfig.overshootQuarantineFactor()
+								* probe.deadlineNanos()))) {
 					scheduler.quarantine(probe.flight());
 				} else {
 					scheduler.censored(probe.flight(),
@@ -1540,8 +1592,8 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 				discardUnpublished(value, failure);
 				throw new IOException("probe trial opener failed", failure);
 			}
-			if (!timedOut && value == null && scope.deadline().tripped()) {
-				timedOut = true; // a parallel trial declined because its workers saw the tripped deadline
+			if (!timedOut && scope.deadline().expired()) {
+				timedOut = true; // a parallel trial may return a value after its cooperative deadline
 			}
 			// the scope closes before the timeout handling below, so latch the cause while the deadline is still in
 			// hand: capacity is not a timeout and must not be recorded or penalised as one
@@ -1581,7 +1633,9 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 			long elapsed = elapsedNanosSince(startedMillis);
 			plan.reservation().commit(chargeNanos(elapsed));
 			long deadlineElapsed = System.nanoTime() - deadlineNanoTime + plan.deadlineNanos();
-			if (deadlineElapsed >= (long) (hedgeConfig.overshootQuarantineFactor() * plan.deadlineNanos())) {
+			if (LmdbNativeProbeScheduler
+					.shouldQuarantine(deadlineElapsed >= (long) (hedgeConfig.overshootQuarantineFactor()
+							* plan.deadlineNanos()))) {
 				// the arm blew far past its deadline before any cooperative poll fired: it has proven it is not
 				// promptly cancellable at this shape — a different failure class from "slow", quarantined outright
 				scheduler.quarantine(plan.flight());
