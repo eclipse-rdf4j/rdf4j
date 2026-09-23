@@ -14,7 +14,11 @@ package org.eclipse.rdf4j.sail.base;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -25,6 +29,8 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.Test;
 
@@ -56,6 +62,117 @@ class SailSourceBranchTest {
 
 		branch.close();
 
+		assertEquals(1, closeCount.get());
+	}
+
+	@Test
+	void retiredSnapshotClosesAfterItsLastBorrowerEvenWhenNewerSnapshotHasBorrowers() {
+		AtomicInteger datasetCalls = new AtomicInteger();
+		List<AtomicInteger> snapshotCloseCounts = new ArrayList<>();
+		BackingSailSource backing = new BackingSailSource() {
+			@Override
+			public SailSink sink(IsolationLevel level) throws SailException {
+				return new NoopSailSink();
+			}
+
+			@Override
+			public SailDataset dataset(IsolationLevel level) throws SailException {
+				AtomicInteger closeCount = new AtomicInteger();
+				snapshotCloseCounts.add(closeCount);
+				datasetCalls.incrementAndGet();
+				return new CloseCountingDataset(closeCount);
+			}
+		};
+		SailSource branch = backing.fork();
+		SailDataset oldFirst = branch.dataset(IsolationLevels.SNAPSHOT);
+		SailDataset oldSecond = branch.dataset(IsolationLevels.SNAPSHOT);
+
+		SailSink sink = branch.sink(IsolationLevels.NONE);
+		sink.approve(SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:s"),
+						SimpleValueFactory.getInstance().createIRI("urn:p"),
+						SimpleValueFactory.getInstance().createIRI("urn:o")));
+		sink.flush();
+		sink.close();
+		branch.flush();
+
+		SailDataset newReader = branch.dataset(IsolationLevels.SNAPSHOT);
+		assertEquals(2, datasetCalls.get());
+
+		oldFirst.close();
+		assertEquals(0, snapshotCloseCounts.get(0).get());
+		assertEquals(0, snapshotCloseCounts.get(1).get());
+
+		oldSecond.close();
+		assertEquals(1, snapshotCloseCounts.get(0).get());
+		assertEquals(0, snapshotCloseCounts.get(1).get());
+
+		branch.close();
+		assertEquals(0, snapshotCloseCounts.get(1).get());
+		newReader.close();
+		assertEquals(1, snapshotCloseCounts.get(1).get());
+	}
+
+	@Test
+	void staleSnapshotClosesAfterItsLastBorrowerEvenWhenReplacementHasBorrowers() {
+		AtomicInteger datasetCalls = new AtomicInteger();
+		AtomicInteger oldSnapshotCloseCount = new AtomicInteger();
+		AtomicInteger replacementCloseCount = new AtomicInteger();
+		AtomicBoolean oldSnapshotCurrent = new AtomicBoolean(true);
+		BackingSailSource backing = new BackingSailSource() {
+			@Override
+			public SailSink sink(IsolationLevel level) throws SailException {
+				return new NoopSailSink();
+			}
+
+			@Override
+			public SailDataset dataset(IsolationLevel level) throws SailException {
+				if (datasetCalls.getAndIncrement() == 0) {
+					return new CloseCountingDataset(oldSnapshotCloseCount, oldSnapshotCurrent::get);
+				}
+				return new CloseCountingDataset(replacementCloseCount);
+			}
+		};
+		SailSource branch = new SailSourceBranch(backing, new DynamicModelFactory(), true);
+		SailDataset oldReader = branch.dataset(IsolationLevels.SNAPSHOT);
+		oldSnapshotCurrent.set(false);
+		SailDataset replacementReader = branch.dataset(IsolationLevels.SNAPSHOT);
+
+		assertEquals(2, datasetCalls.get());
+		oldReader.close();
+		assertEquals(1, oldSnapshotCloseCount.get());
+		assertEquals(0, replacementCloseCount.get());
+
+		replacementReader.close();
+		branch.close();
+		assertEquals(1, replacementCloseCount.get());
+	}
+
+	@Test
+	void snapshotCloseFailureIsPropagatedAndLeaseClosesExactlyOnce() {
+		AtomicInteger closeCount = new AtomicInteger();
+		BackingSailSource backing = new BackingSailSource() {
+			@Override
+			public SailSink sink(IsolationLevel level) throws SailException {
+				return new NoopSailSink();
+			}
+
+			@Override
+			public SailDataset dataset(IsolationLevel level) throws SailException {
+				return new CloseCountingDataset(closeCount, new SailException("snapshot close"));
+			}
+		};
+		SailSource branch = backing.fork();
+		SailDataset observer = branch.dataset(IsolationLevels.SNAPSHOT);
+
+		branch.close();
+		assertEquals(0, closeCount.get());
+		SailException failure = assertThrows(SailException.class, observer::close);
+		assertEquals("snapshot close", failure.getMessage());
+		assertEquals(1, closeCount.get());
+
+		branch.close();
 		assertEquals(1, closeCount.get());
 	}
 
@@ -109,14 +226,30 @@ class SailSourceBranchTest {
 	private static final class CloseCountingDataset implements SailDataset {
 		private final AtomicInteger closeCount;
 		private final SailException closeFailure;
+		private final BooleanSupplier snapshotCurrent;
 
 		private CloseCountingDataset(AtomicInteger closeCount) {
-			this(closeCount, null);
+			this(closeCount, null, () -> true);
 		}
 
 		private CloseCountingDataset(AtomicInteger closeCount, SailException closeFailure) {
+			this(closeCount, closeFailure, () -> true);
+		}
+
+		private CloseCountingDataset(AtomicInteger closeCount, BooleanSupplier snapshotCurrent) {
+			this(closeCount, null, snapshotCurrent);
+		}
+
+		private CloseCountingDataset(AtomicInteger closeCount, SailException closeFailure,
+				BooleanSupplier snapshotCurrent) {
 			this.closeCount = closeCount;
 			this.closeFailure = closeFailure;
+			this.snapshotCurrent = snapshotCurrent;
+		}
+
+		@Override
+		public boolean isSnapshotCurrent() {
+			return snapshotCurrent.getAsBoolean();
 		}
 
 		@Override

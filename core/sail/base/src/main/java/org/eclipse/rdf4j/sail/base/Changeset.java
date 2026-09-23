@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.lang.invoke.VarHandle;
+import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -20,6 +21,7 @@ import java.util.ConcurrentModificationException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -28,6 +30,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -56,6 +59,20 @@ import org.eclipse.rdf4j.sail.SailException;
 @InternalUseOnly
 public abstract class Changeset implements SailSink, ModelFactory {
 	private static final int COMPACT_BULK_MIN_STATEMENTS = 1024;
+
+	/**
+	 * Read-only compact statement view used when a compact changeset is flushed through the set-based sink overload.
+	 * Implementations preserve the optimized representation held by the changeset for sinks that can consume it. This
+	 * public type is an internal cross-module contract for Sail implementations, not an application-facing Sail API.
+	 */
+	@InternalUseOnly
+	public interface CompactApprovedSet extends Set<Statement> {
+		/**
+		 * Returns the compact backing sequence without expanding its optimized representation. Consumers must treat the
+		 * returned sequence as read-only.
+		 */
+		Iterable<? extends Statement> compactStatements();
+	}
 
 	AdderBasedReadWriteLock readWriteLock = new AdderBasedReadWriteLock();
 	AdderBasedReadWriteLock refBacksReadWriteLock = new AdderBasedReadWriteLock();
@@ -87,7 +104,6 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	private volatile Model approved;
 	private volatile List<Statement> compactApproved;
 	private volatile boolean approvedEmpty = true;
-	private boolean incrementalApprovedBuffer = true;
 
 	/**
 	 * Explicit statements that have been removed as part of a transaction, but have not yet been committed.
@@ -211,13 +227,25 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 		boolean readLock = readWriteLock.readLock();
 		try {
-			List<Statement> compact = compactApproved;
-			if (compact != null) {
-				return compact.stream().anyMatch(statement -> matches(statement, subj, pred, obj, contexts));
+			if (approvedEmpty) {
+				return false;
 			}
-			return approved.contains(subj, pred, obj, contexts);
+			if (compactApproved == null) {
+				return approved != null && approved.contains(subj, pred, obj, contexts);
+			}
 		} finally {
 			readWriteLock.unlockReader(readLock);
+		}
+
+		long writeLock = readWriteLock.writeLock();
+		try {
+			if (approvedEmpty) {
+				return false;
+			}
+			materializeApproved();
+			return approved != null && approved.contains(subj, pred, obj, contexts);
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
 		}
 	}
 
@@ -505,16 +533,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		}
 		List<Statement> compact = compactApproved;
 		if (compact != null) {
-			try {
-				if (compact.add(statement)) {
-					recordApprovedContext(statement.getContext());
-				}
-				approvedEmpty = compact.isEmpty();
-				return;
-			} catch (UnsupportedOperationException ignored) {
-				incrementalApprovedBuffer = false;
-				materializeApproved();
-			}
+			materializeApproved();
 		}
 		if (approved == null) {
 			approved = createEmptyModel();
@@ -523,12 +542,6 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		approvedEmpty = approved.isEmpty();
 		if (added) {
 			recordApprovedContext(statement.getContext());
-			if (incrementalApprovedBuffer && deprecated == null
-					&& approved.size() >= COMPACT_BULK_MIN_STATEMENTS) {
-				compactApproved = bufferStatements(approved, approved.size(), ignored -> {
-				});
-				approved = null;
-			}
 		}
 	}
 
@@ -578,27 +591,6 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	private Stream<Statement> approvedStatementsStream() {
 		List<Statement> compact = compactApproved;
 		return compact != null ? compact.parallelStream() : approved.parallelStream();
-	}
-
-	private boolean matches(Statement statement, Resource subj, IRI pred, Value obj, Resource[] contexts) {
-		if (subj != null && !subj.equals(statement.getSubject())) {
-			return false;
-		}
-		if (pred != null && !pred.equals(statement.getPredicate())) {
-			return false;
-		}
-		if (obj != null && !obj.equals(statement.getObject())) {
-			return false;
-		}
-		if (contexts == null || contexts.length == 0) {
-			return true;
-		}
-		for (Resource context : contexts) {
-			if (Objects.equals(context, statement.getContext())) {
-				return true;
-			}
-		}
-		return false;
 	}
 
 	@Override
@@ -679,7 +671,6 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		this.approved = from.approved;
 		this.compactApproved = from.compactApproved;
 		this.approvedEmpty = from.approvedEmpty;
-		this.incrementalApprovedBuffer = from.incrementalApprovedBuffer;
 		this.deprecated = from.deprecated;
 		this.deprecatedEmpty = from.deprecatedEmpty;
 		this.approvedContexts = from.approvedContexts;
@@ -924,42 +915,52 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 		boolean readLock = readWriteLock.readLock();
 		try {
-
-			List<Statement> compact = compactApproved;
-			if (compact != null) {
-				List<Statement> statements = new ArrayList<>();
-				for (Statement statement : compact) {
-					if (matches(statement, subj, pred, obj, contexts)) {
-						statements.add(statement);
-					}
-				}
-				return statements;
+			if (approvedEmpty) {
+				return Collections.emptyList();
 			}
-
-			Iterable<Statement> statements = approved.getStatements(subj, pred, obj, contexts);
-
-			// This is a synchronized context, users of this method will be allowed to use the results at their leisure.
-			// We
-			// provide a copy of the data so that there will be no concurrent modification exceptions!
-			if (statements instanceof Collection) {
-				return new ArrayList<>((Collection<? extends Statement>) statements);
-			} else {
-				List<Statement> ret = List.of();
-				for (Statement statement : statements) {
-					if (ret.isEmpty()) {
-						ret = List.of(statement);
-					} else {
-						if (ret.size() == 1) {
-							ret = new ArrayList<>(ret);
-						}
-						ret.add(statement);
-					}
-				}
-				return ret;
+			if (compactApproved == null) {
+				return approved == null ? Collections.emptyList()
+						: getApprovedStatementsFromModel(subj, pred, obj, contexts);
 			}
 		} finally {
 			readWriteLock.unlockReader(readLock);
 		}
+
+		long writeLock = readWriteLock.writeLock();
+		try {
+			if (approvedEmpty) {
+				return Collections.emptyList();
+			}
+			materializeApproved();
+			return approved == null ? Collections.emptyList()
+					: getApprovedStatementsFromModel(subj, pred, obj, contexts);
+		} finally {
+			readWriteLock.unlockWriter(writeLock);
+		}
+
+	}
+
+	private List<Statement> getApprovedStatementsFromModel(Resource subj, IRI pred, Value obj,
+			Resource[] contexts) {
+		Iterable<Statement> statements = approved.getStatements(subj, pred, obj, contexts);
+
+		// This is a synchronized context, users of this method will be allowed to use the results at their leisure. We
+		// provide a copy of the data so that there will be no concurrent modification exceptions!
+		if (statements instanceof Collection) {
+			return new ArrayList<>((Collection<? extends Statement>) statements);
+		}
+		List<Statement> ret = List.of();
+		for (Statement statement : statements) {
+			if (ret.isEmpty()) {
+				ret = List.of(statement);
+			} else {
+				if (ret.size() == 1) {
+					ret = new ArrayList<>(ret);
+				}
+				ret.add(statement);
+			}
+		}
+		return ret;
 
 	}
 
@@ -1066,12 +1067,81 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try {
 			List<Statement> compact = compactApproved;
 			if (compact != null) {
-				sink.approveAll(compact);
+				sink.approveAll(compactApprovedSet(compact), approvedContexts);
 			} else if (approved != null) {
 				sink.approveAll(approved, approvedContexts);
 			}
 		} finally {
 			readWriteLock.unlockReader(readLock);
+		}
+	}
+
+	private static Set<Statement> compactApprovedSet(List<Statement> statements) {
+		return new CompactApprovedSetView(statements);
+	}
+
+	private static final class CompactApprovedSetView extends AbstractSet<Statement> implements CompactApprovedSet {
+		private final List<Statement> statements;
+		private final List<Statement> readOnlyStatements;
+
+		private CompactApprovedSetView(List<Statement> statements) {
+			this.statements = statements;
+			readOnlyStatements = Collections.unmodifiableList(statements);
+		}
+
+		@Override
+		public Iterator<Statement> iterator() {
+			return readOnlyStatements.iterator();
+		}
+
+		@Override
+		public int size() {
+			return statements.size();
+		}
+
+		@Override
+		public boolean contains(Object candidate) {
+			return statements.contains(candidate);
+		}
+
+		@Override
+		public boolean add(Statement statement) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public boolean remove(Object candidate) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public boolean addAll(Collection<? extends Statement> candidates) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public boolean removeAll(Collection<?> candidates) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public boolean retainAll(Collection<?> candidates) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public void clear() {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public boolean removeIf(Predicate<? super Statement> filter) {
+			throw new UnsupportedOperationException();
+		}
+
+		@Override
+		public Iterable<? extends Statement> compactStatements() {
+			return statements;
 		}
 	}
 

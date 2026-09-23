@@ -15,15 +15,21 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.LmdbIndexOrder;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.OrderByHint;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.UnaryFunction;
 
-public class LmdbIndexOrderFunction extends UnaryFunction {
+public class LmdbIndexOrderFunction extends UnaryFunction implements OrderByHint {
 
 	public static final String ERROR_MESSAGE = "STABLE_INDEX(...) could not be satisfied by backend stable index order";
 
 	@Override
 	public String getURI() {
 		return LmdbIndexOrder.FUNCTION_URI;
+	}
+
+	@Override
+	public String getUnsupportedOrderByMessage() {
+		return ERROR_MESSAGE;
 	}
 
 	@Override

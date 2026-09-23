@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.base;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -31,13 +32,16 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.Test;
 
@@ -147,6 +151,172 @@ public class ChangesetTest {
 		changeset.approveAll(statements);
 
 		assertSame(prepared.get(), changeset.getApprovedStatements());
+	}
+
+	@Test
+	void patternedReadsMaterializeBulkApprovalsIntoAnIndexedModel() {
+		AtomicInteger modelCreations = new AtomicInteger();
+		AtomicReference<PatternCountingModel> modelRef = new AtomicReference<>();
+		Changeset changeset = new Changeset() {
+			@Override
+			public void flush() throws SailException {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				modelCreations.incrementAndGet();
+				PatternCountingModel model = new PatternCountingModel();
+				modelRef.set(model);
+				return model;
+			}
+		};
+		Resource indexedContext = vf.createIRI("urn:context:indexed");
+		Resource otherContext = vf.createIRI("urn:context:other");
+		Set<Statement> statements = new LinkedHashSet<>();
+		Statement indexedStatement = null;
+		for (int i = 0; i < 1_024; i++) {
+			Resource context = i == 1_023 ? indexedContext : otherContext;
+			Statement statement = vf.createStatement(vf.createIRI("urn:subject:" + i), RDF.TYPE, RDFS.RESOURCE,
+					context);
+			statements.add(statement);
+			if (i == 1_023) {
+				indexedStatement = statement;
+			}
+		}
+
+		assertEquals(statements.size(), changeset.approveAll(statements));
+		assertEquals(0, modelCreations.get());
+
+		assertTrue(changeset.hasApproved(indexedStatement.getSubject(), indexedStatement.getPredicate(),
+				indexedStatement.getObject(), new Resource[] { indexedContext }));
+		assertEquals(1, modelCreations.get(), "the first patterned read should materialize the compact bulk import");
+		PatternCountingModel indexedModel = modelRef.get();
+		assertEquals(1, indexedModel.patternContainsCalls.get());
+		assertFalse(changeset.hasApproved(indexedStatement.getSubject(), indexedStatement.getPredicate(),
+				indexedStatement.getObject(), new Resource[] { otherContext }));
+		assertEquals(2, indexedModel.patternContainsCalls.get());
+		Iterator<Statement> indexedStatements = changeset.getApprovedStatements(indexedStatement.getSubject(),
+				indexedStatement.getPredicate(), indexedStatement.getObject(), new Resource[] { indexedContext })
+				.iterator();
+		assertTrue(indexedStatements.hasNext());
+		assertEquals(indexedStatement, indexedStatements.next());
+		assertFalse(indexedStatements.hasNext());
+		assertEquals(1, indexedModel.patternFilterCalls.get());
+
+		Statement appended = vf.createStatement(vf.createIRI("urn:subject:appended"), RDF.TYPE, RDFS.RESOURCE,
+				indexedContext);
+		changeset.approve(appended);
+		assertTrue(changeset.hasApproved(appended.getSubject(), appended.getPredicate(), appended.getObject(),
+				new Resource[] { indexedContext }));
+		assertEquals(1, modelCreations.get());
+		assertEquals(3, indexedModel.patternContainsCalls.get(),
+				"incremental writes must retain the indexed model after lazy materialization");
+
+		changeset.removeApproved(indexedStatement);
+		assertFalse(changeset.hasApproved(indexedStatement.getSubject(), indexedStatement.getPredicate(),
+				indexedStatement.getObject(), new Resource[] { indexedContext }));
+		changeset.clear(indexedContext);
+		assertFalse(changeset.hasApproved(appended.getSubject(), appended.getPredicate(), appended.getObject(),
+				new Resource[] { indexedContext }));
+	}
+
+	@Test
+	void serializableConflictChecksIndexBulkApprovals() {
+		AtomicInteger modelCreations = new AtomicInteger();
+		AtomicReference<PatternCountingModel> modelRef = new AtomicReference<>();
+		Changeset approvals = new Changeset() {
+			@Override
+			public void flush() throws SailException {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				modelCreations.incrementAndGet();
+				PatternCountingModel model = new PatternCountingModel();
+				modelRef.set(model);
+				return model;
+			}
+		};
+		Set<Statement> statements = new LinkedHashSet<>();
+		for (int i = 0; i < 1_023; i++) {
+			statements.add(vf.createStatement(vf.createIRI("urn:subject:" + i), RDF.TYPE, RDFS.RESOURCE));
+		}
+		Statement observedStatement = vf.createStatement(vf.createIRI("urn:subject:observed"), RDF.TYPE,
+				RDFS.RESOURCE);
+		statements.add(observedStatement);
+		assertEquals(statements.size(), approvals.approveAll(statements));
+
+		Changeset serializable = getChangeset();
+		serializable.observe(observedStatement.getSubject(), observedStatement.getPredicate(),
+				observedStatement.getObject());
+		serializable.prepend(approvals);
+
+		assertThrows(SailConflictException.class, serializable::prepare);
+		assertEquals(1, modelCreations.get(), "conflict checks should promote compact approvals to indexed storage");
+		assertEquals(1, modelRef.get().patternContainsCalls.get());
+	}
+
+	@Test
+	void compactApprovalsPreserveSetSinkBatchAndContexts() {
+		Changeset source = getChangeset();
+		Set<Statement> statements = new LinkedHashSet<>();
+		Set<Resource> contexts = new LinkedHashSet<>();
+		for (int i = 0; i < 1_024; i++) {
+			Resource context = vf.createIRI("urn:context:" + (i % 2));
+			contexts.add(context);
+			statements.add(vf.createStatement(vf.createIRI("urn:subject:" + i), RDF.TYPE, RDFS.RESOURCE, context));
+		}
+		assertEquals(statements.size(), source.approveAll(statements));
+		List<Statement> compactStatements = source.getApprovedStatements();
+
+		BatchDispatchSink sink = new BatchDispatchSink();
+		source.sinkApproved(sink);
+
+		assertEquals(1, sink.setBatchCalls);
+		assertEquals(0, sink.iterableBatchCalls);
+		assertTrue(sink.approved instanceof Changeset.CompactApprovedSet);
+		assertSame(compactStatements, ((Changeset.CompactApprovedSet) sink.approved).compactStatements());
+		assertEquals(statements, sink.approved);
+		assertEquals(contexts, sink.approvedContexts);
+		assertThrows(UnsupportedOperationException.class,
+				() -> sink.approved.add(vf.createStatement(vf.createIRI("urn:extra"), RDF.TYPE, RDFS.RESOURCE)));
+	}
+
+	@Test
+	void individualApprovalsRemainIndexedAroundTheCompactThreshold() {
+		for (int statementCount : new int[] { 1_023, 1_024, 1_025 }) {
+			AtomicInteger modelCreations = new AtomicInteger();
+			AtomicReference<PatternCountingModel> modelRef = new AtomicReference<>();
+			Changeset changeset = new Changeset() {
+				@Override
+				public void flush() throws SailException {
+				}
+
+				@Override
+				public Model createEmptyModel() {
+					modelCreations.incrementAndGet();
+					PatternCountingModel model = new PatternCountingModel();
+					modelRef.set(model);
+					return model;
+				}
+			};
+
+			Statement lastStatement = null;
+			for (int i = 0; i < statementCount; i++) {
+				lastStatement = vf.createStatement(vf.createIRI("urn:threshold:subject:" + i), RDF.TYPE, RDFS.RESOURCE);
+				changeset.approve(lastStatement);
+			}
+
+			assertEquals(1, modelCreations.get(), statementCount + " incremental approvals should keep one Model");
+			assertTrue(changeset.hasApproved(lastStatement.getSubject(), lastStatement.getPredicate(),
+					lastStatement.getObject(), new Resource[0]), "the final statement should remain indexed");
+			assertEquals(1, modelRef.get().patternContainsCalls.get(),
+					"patterned lookup should use the indexed Model at every threshold boundary");
+			assertEquals(1, modelCreations.get(),
+					"patterned reads must not rebuild a Model from an incrementally compacted list");
+			assertEquals(statementCount, changeset.getApprovedStatements().size());
+			assertEquals(1, modelCreations.get());
+		}
 	}
 
 	@Test
@@ -305,6 +475,52 @@ public class ChangesetTest {
 				return new LinkedHashModel();
 			}
 		};
+	}
+
+	private static final class PatternCountingModel extends LinkedHashModel {
+		private final AtomicInteger patternContainsCalls = new AtomicInteger();
+		private final AtomicInteger patternFilterCalls = new AtomicInteger();
+
+		@Override
+		public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
+			patternContainsCalls.incrementAndGet();
+			return super.contains(subj, pred, obj, contexts);
+		}
+
+		@Override
+		public Model filter(Resource subj, IRI pred, Value obj, Resource... contexts) {
+			patternFilterCalls.incrementAndGet();
+			return super.filter(subj, pred, obj, contexts);
+		}
+	}
+
+	private static final class BatchDispatchSink extends Changeset {
+		private int setBatchCalls;
+		private int iterableBatchCalls;
+		private Set<Statement> approved;
+		private Set<Resource> approvedContexts;
+
+		@Override
+		public void flush() throws SailException {
+		}
+
+		@Override
+		public Model createEmptyModel() {
+			return new LinkedHashModel();
+		}
+
+		@Override
+		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
+			setBatchCalls++;
+			this.approved = approved;
+			this.approvedContexts = approvedContexts;
+		}
+
+		@Override
+		public long approveAll(Iterable<? extends Statement> statements, Resource... contexts) {
+			iterableBatchCalls++;
+			return 0;
+		}
 	}
 
 }

@@ -109,7 +109,10 @@ public class FilterOptimizer implements QueryOptimizer {
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		Objects.requireNonNull(tupleExpr, "tupleExpr must not be null");
-		optimizeScope(tupleExpr);
+		QueryEvaluationUtility.withQuerySafetySnapshot(tupleExpr, () -> {
+			optimizeScope(tupleExpr);
+			return null;
+		});
 	}
 
 	/**
@@ -259,10 +262,13 @@ public class FilterOptimizer implements QueryOptimizer {
 		public void meet(Filter filter) {
 			if (QueryEvaluationUtility.isRepeatable(filter.getCondition())
 					&& filter.getCondition()instanceof And and) {
+				QueryModelNode oldParent = filter.getParentNode();
 				filter.setCondition(and.getLeftArg().clone());
 				Filter newFilter = new Filter(filter.getArg().clone(), and.getRightArg().clone());
 				transferScopeChange(filter, newFilter); // preserve scope flag
 				filter.replaceChildNode(filter.getArg(), newFilter);
+				QueryEvaluationUtility.refreshQuerySafetySnapshot(filter);
+				QueryEvaluationUtility.refreshQuerySafetySnapshot(oldParent);
 			}
 			super.meet(filter);
 		}
@@ -292,6 +298,7 @@ public class FilterOptimizer implements QueryOptimizer {
 				transferScopeChange(filter, newFilter); // both have same scope flag
 				FilterSelectivityTelemetry.annotate(newFilter, statistics);
 				parent.replaceChildNode(filter, newFilter);
+				QueryEvaluationUtility.refreshQuerySafetySnapshot(parent);
 			}
 		}
 	}
@@ -450,7 +457,10 @@ public class FilterOptimizer implements QueryOptimizer {
 		public void meet(EmptySet node) {
 			if (filter.getParentNode() != null) {
 				// Remove filter from its original location
-				filter.replaceWith(filter.getArg().clone());
+				QueryModelNode parent = filter.getParentNode();
+				QueryModelNode replacement = filter.getArg().clone();
+				filter.replaceWith(replacement);
+				QueryEvaluationUtility.refreshQuerySafetySnapshot(parent);
 			}
 		}
 
@@ -508,7 +518,8 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		private void relocate(Filter filter, TupleExpr newFilterArg) {
 			if (filter.getArg() != newFilterArg) {
-				if (filter.getParentNode() != null) {
+				QueryModelNode oldParent = filter.getParentNode();
+				if (oldParent != null) {
 					// Remove filter from its original location
 					filter.replaceWith(filter.getArg());
 				}
@@ -516,6 +527,8 @@ public class FilterOptimizer implements QueryOptimizer {
 				// Insert filter at the new location
 				newFilterArg.replaceWith(filter);
 				filter.setArg(newFilterArg);
+				QueryEvaluationUtility.refreshQuerySafetySnapshot(filter);
+				QueryEvaluationUtility.refreshQuerySafetySnapshot(oldParent);
 			}
 		}
 

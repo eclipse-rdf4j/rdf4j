@@ -16,7 +16,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -36,6 +38,8 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -44,12 +48,14 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -57,6 +63,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -64,6 +71,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
@@ -71,9 +79,13 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.BackingSailSource;
+import org.eclipse.rdf4j.sail.base.Changeset;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.junit.jupiter.api.AfterEach;
@@ -1380,6 +1392,111 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
+	void compactChangesetFlushPreservesPreparedBatchAtLmdbSink() throws Exception {
+		LmdbStore sail = new LmdbStore(new File(dataDir, "compact-prepared-batch"),
+				new LmdbStoreConfig("spoc,posc").setBulkOperationSize(2));
+		sail.init();
+
+		SnapshotSailStore snapshotStore = null;
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			PreparedBatchRecordingSource recordingSource = new PreparedBatchRecordingSource(
+					backingStore.getExplicitSailSource());
+			SailStore recordingStore = new SailStore() {
+				@Override
+				public ValueFactory getValueFactory() {
+					return backingStore.getValueFactory();
+				}
+
+				@Override
+				public EvaluationStatistics getEvaluationStatistics() {
+					return backingStore.getEvaluationStatistics();
+				}
+
+				@Override
+				public SailSource getExplicitSailSource() {
+					return recordingSource;
+				}
+
+				@Override
+				public SailSource getInferredSailSource() {
+					return backingStore.getInferredSailSource();
+				}
+
+				@Override
+				public void close() {
+					// The enclosing LmdbStore owns the backing store.
+				}
+			};
+			snapshotStore = new SnapshotSailStore(recordingStore, LinkedHashModel::new);
+
+			Set<Statement> statements = sampleStatements(1_024);
+			try (SailSink changeset = snapshotStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				assertEquals(statements.size(), changeset.approveAll(statements));
+				changeset.flush();
+			}
+			snapshotStore.getExplicitSailSource().flush();
+
+			assertEquals(1, recordingSource.approvedSetCalls);
+			assertAll("the compact flush carrier should preserve and transfer its prepared batch",
+					() -> assertTrue("the real Changeset flush must expose its compact prepared batch to the LMDB sink",
+							recordingSource.approved instanceof Changeset.CompactApprovedSet),
+					() -> {
+						if (recordingSource.approved instanceof Changeset.CompactApprovedSet compact) {
+							assertSame(recordingSource.preparedBatch, compact.compactStatements());
+						} else {
+							throw new AssertionError("the actual Changeset carrier has no prepared-batch view");
+						}
+					},
+					() -> assertThrows(UnsupportedOperationException.class,
+							() -> recordingSource.preparedBatch.add(S0)));
+			assertEquals(statements, recordingSource.approved);
+			assertEquals(Set.of(F.createIRI("urn:bulk:context:0"), F.createIRI("urn:bulk:context:1")),
+					recordingSource.approvedContexts);
+
+			try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
+				assertEquals(statements.size(), dataset.getStatementCount(null, null, null));
+				assertEquals(statements.size() / 2,
+						dataset.getStatementCount(null, null, null, F.createIRI("urn:bulk:context:0")));
+			}
+		} finally {
+			if (snapshotStore != null) {
+				snapshotStore.close();
+			}
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	void ordinarySetUsesLmdbCopyFallbackAndStoresContexts() throws Exception {
+		LmdbStore sail = new LmdbStore(new File(dataDir, "ordinary-set-copy-fallback"),
+				new LmdbStoreConfig("spoc,posc").setBulkOperationSize(2));
+		sail.init();
+
+		try {
+			LmdbSailStore backingStore = sail.getBackingStore();
+			CountingStatementSet statements = new CountingStatementSet(sampleStatements(1_024));
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				sink.approveAll(statements,
+						Set.of(F.createIRI("urn:bulk:context:0"), F.createIRI("urn:bulk:context:1")));
+				sink.flush();
+			}
+
+			assertEquals("an ordinary Set must be copied once into LMDB's prepared representation", 1,
+					statements.iteratorCalls);
+			try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
+				assertEquals(statements.size(), dataset.getStatementCount(null, null, null));
+				assertEquals(statements.size() / 2,
+						dataset.getStatementCount(null, null, null, F.createIRI("urn:bulk:context:0")));
+				assertEquals(statements.size() / 2,
+						dataset.getStatementCount(null, null, null, F.createIRI("urn:bulk:context:1")));
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
 	void approveAllBulkFailureDiscardsNonIsolatedEstimatorUpdates() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(true);
 		setBulkOperationSize(config, 2);
@@ -1459,6 +1576,122 @@ public class LmdbSailStoreTest {
 					F.createIRI("urn:bulk:context:" + (i % 2))));
 		}
 		return statements;
+	}
+
+	private static final class PreparedBatchRecordingSource extends BackingSailSource {
+		private final SailSource delegate;
+		private PreparedStatementBatch preparedBatch;
+		private Set<Statement> approved;
+		private Set<Resource> approvedContexts;
+		private int approvedSetCalls;
+
+		private PreparedBatchRecordingSource(SailSource delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		protected List<Statement> bufferStatementsForBranch(Iterable<? extends Statement> statements, int expectedSize,
+				Consumer<Resource> contextConsumer) {
+			preparedBatch = PreparedStatementBatch.copyOf(statements, expectedSize, contextConsumer);
+			return preparedBatch;
+		}
+
+		@Override
+		public SailSink sink(IsolationLevel level) throws SailException {
+			return new RecordingSailSink(delegate.sink(level), this);
+		}
+
+		@Override
+		public SailDataset dataset(IsolationLevel level) throws SailException {
+			return delegate.dataset(level);
+		}
+	}
+
+	private static final class RecordingSailSink implements SailSink {
+		private final SailSink delegate;
+		private final PreparedBatchRecordingSource source;
+
+		private RecordingSailSink(SailSink delegate, PreparedBatchRecordingSource source) {
+			this.delegate = delegate;
+			this.source = source;
+		}
+
+		@Override
+		public void close() throws SailException {
+			delegate.close();
+		}
+
+		@Override
+		public void prepare() throws SailException {
+			delegate.prepare();
+		}
+
+		@Override
+		public void flush() throws SailException {
+			delegate.flush();
+		}
+
+		@Override
+		public void setNamespace(String prefix, String name) throws SailException {
+			delegate.setNamespace(prefix, name);
+		}
+
+		@Override
+		public void removeNamespace(String prefix) throws SailException {
+			delegate.removeNamespace(prefix);
+		}
+
+		@Override
+		public void clearNamespaces() throws SailException {
+			delegate.clearNamespaces();
+		}
+
+		@Override
+		public void clear(Resource... contexts) throws SailException {
+			delegate.clear(contexts);
+		}
+
+		@Override
+		public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+			delegate.observe(subj, pred, obj, contexts);
+		}
+
+		@Override
+		public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+			delegate.approve(subj, pred, obj, ctx);
+		}
+
+		@Override
+		public long approveAll(Iterable<? extends Statement> statements, Resource... contexts) throws SailException {
+			return delegate.approveAll(statements, contexts);
+		}
+
+		@Override
+		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) throws SailException {
+			source.approvedSetCalls++;
+			source.approved = approved;
+			source.approvedContexts = approvedContexts;
+			delegate.approveAll(approved, approvedContexts);
+		}
+
+		@Override
+		public void deprecate(Statement statement) throws SailException {
+			delegate.deprecate(statement);
+		}
+	}
+
+	private static final class CountingStatementSet extends LinkedHashSet<Statement> {
+		private int iteratorCalls;
+
+		private CountingStatementSet(Collection<? extends Statement> statements) {
+			addAll(statements);
+		}
+
+		@Override
+		public Iterator<Statement> iterator() {
+			iteratorCalls++;
+			return super.iterator();
+		}
 	}
 
 	@AfterEach
