@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Select;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SequentialPrefetchPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
@@ -58,6 +60,12 @@ public class ValidationQuery {
 	private Severity severity;
 	private Shape shape;
 	private List<Variable<?>> extraVariables = List.of();
+
+	// NEW: if non-null, this ValidationQuery is a composite of independently
+	// executable members, rather than a single leaf SPARQL query. When
+	// non-null, `query`/`namespaces` on *this* object are not used to build
+	// an executable query - execution is delegated to the members.
+	private List<ValidationQuery> unionMembers;
 
 	public ValidationQuery(Collection<Namespace> namespaces, String query, List<Variable<Value>> targets,
 			Variable<Value> value,
@@ -110,8 +118,26 @@ public class ValidationQuery {
 		this.validationResultGenerator = new ValidationResultGenerator();
 	}
 
+	// NEW: composite constructor. Shares the same "shape" metadata (variables,
+	// indices, scope) that the old textual union() computed, but does not
+	// carry an executable `query` string - execution happens per-member.
+	private ValidationQuery(ConstraintComponent.Scope scope, List<Variable<Value>> variables,
+			int targetIndex, int valueIndex, List<ValidationQuery> unionMembers) {
+		this.query = null;
+		this.scope = scope;
+		this.variables = Collections.unmodifiableList(variables);
+		this.targetIndex = targetIndex;
+		this.valueIndex = valueIndex;
+		this.unionMembers = unionMembers;
+		this.validationResultGenerator = new ValidationResultGenerator();
+	}
+
 	/**
-	 * Creates the SPARQL UNION of two ValidationQuery objects.
+	 * Combines two ValidationQuery objects so that, at execution time, each is run as its own SPARQL query and the
+	 * results are merged in Java, instead of being concatenated into a single SPARQL {@code UNION}.
+	 * <p>
+	 * This preserves the same set of result rows as the old textual-UNION approach, but avoids re-evaluating shared
+	 * subpatterns (e.g. a large target-class filter) once per branch inside a single query plan.
 	 *
 	 * @param a              The first ValidationQuery.
 	 * @param b              The second ValidationQuery.
@@ -138,35 +164,56 @@ public class ValidationQuery {
 		assert a.targetIndex == b.targetIndex;
 		assert a.valueIndex == b.valueIndex;
 
-		String unionQuery = "{\n" + a.getQuery() + "\n} UNION {\n" + b.query + "\n}";
+		// Flatten: if either side is already a composite, absorb its members
+		// instead of nesting, so N-way folds (as in the .reduce(...) call
+		// site) produce one flat list rather than a left-leaning tree.
+		List<ValidationQuery> members = new ArrayList<>();
+		if (a.unionMembers != null) {
+			members.addAll(a.unionMembers);
+		} else {
+			members.add(a);
+		}
+		if (b.unionMembers != null) {
+			members.addAll(b.unionMembers);
+		} else {
+			members.add(b);
+		}
 
 		var variables = a.variables.size() >= b.variables.size() ? a.variables
 				: b.variables;
 
-		Set<Namespace> namespaces = new HashSet<>();
-		namespaces.addAll(a.namespaces);
-		namespaces.addAll(b.namespaces);
-
 		if (a.propertyShapeWithValue || a.scope == ConstraintComponent.Scope.nodeShape) {
 			assert a.variables.size() > a.valueIndex;
-			return new ValidationQuery(namespaces, unionQuery, a.scope, variables.subList(0, a.valueIndex + 1),
-					a.targetIndex,
-					a.valueIndex);
+			return new ValidationQuery(a.scope, variables.subList(0, a.valueIndex + 1),
+					a.targetIndex, a.valueIndex, members);
 		} else {
 			assert a.variables.size() >= a.valueIndex;
-			return new ValidationQuery(namespaces, unionQuery, a.scope, a.variables.subList(0, a.valueIndex),
-					a.targetIndex,
-					a.valueIndex);
+			return new ValidationQuery(a.scope, a.variables.subList(0, a.valueIndex),
+					a.targetIndex, a.valueIndex, members);
 		}
-
 	}
 
 	public String getQuery() {
+		if (unionMembers != null) {
+			// Debug/logging aid only - this is not one executable query anymore.
+			return unionMembers.stream()
+					.map(ValidationQuery::getQuery)
+					.collect(Collectors.joining("\n-- (executed as a separate query, merged in Java) --\n"));
+		}
 		return query;
 	}
 
 	public PlanNode getValidationPlan(SailConnection baseConnection, Resource[] dataGraph,
 			Resource[] shapesGraphs, boolean includeInferredStatements) {
+
+		if (unionMembers != null) {
+			SequentialPrefetchPlanNode node = new SequentialPrefetchPlanNode(unionMembers.size());
+			for (ValidationQuery m : unionMembers) {
+				node.addDelegate(
+						m.getValidationPlan(baseConnection, dataGraph, shapesGraphs, includeInferredStatements));
+			}
+			return node;
+		}
 
 		assert query != null;
 		assert shape != null;
@@ -217,6 +264,10 @@ public class ValidationQuery {
 
 	public void setValidationResultGenerator(List<Variable<?>> extraVariables,
 			ValidationResultGenerator validationResultGenerator) {
+		if (unionMembers != null) {
+			unionMembers.forEach(m -> m.setValidationResultGenerator(extraVariables, validationResultGenerator));
+			return;
+		}
 		this.validationResultGenerator = validationResultGenerator;
 		this.extraVariables = extraVariables;
 	}
@@ -269,11 +320,19 @@ public class ValidationQuery {
 	}
 
 	public ValidationQuery withSeverity(Severity severity) {
+		if (unionMembers != null) {
+			unionMembers.forEach(m -> m.withSeverity(severity));
+			return this;
+		}
 		this.severity = severity;
 		return this;
 	}
 
 	public ValidationQuery withShape(Shape shape) {
+		if (unionMembers != null) {
+			unionMembers.forEach(m -> m.withShape(shape));
+			return this;
+		}
 		this.shape = shape;
 		return this;
 	}
@@ -283,6 +342,9 @@ public class ValidationQuery {
 		this.propertyShapeWithValue = true;
 		targetIndex--;
 		valueIndex--;
+		if (unionMembers != null) {
+			unionMembers.forEach(ValidationQuery::popTargetChain);
+		}
 	}
 
 	public void shiftToNodeShape() {
@@ -290,6 +352,9 @@ public class ValidationQuery {
 		this.scope = ConstraintComponent.Scope.nodeShape;
 		this.propertyShapeWithValue = false;
 		valueIndex--;
+		if (unionMembers != null) {
+			unionMembers.forEach(ValidationQuery::shiftToNodeShape);
+		}
 	}
 
 	public void shiftToPropertyShape() {
@@ -297,9 +362,16 @@ public class ValidationQuery {
 		this.scope = ConstraintComponent.Scope.propertyShape;
 		this.propertyShapeWithValue = true;
 		targetIndex--;
+		if (unionMembers != null) {
+			unionMembers.forEach(ValidationQuery::shiftToPropertyShape);
+		}
 	}
 
 	public ValidationQuery withConstraintComponent(ConstraintComponent constraintComponent) {
+		if (unionMembers != null) {
+			unionMembers.forEach(m -> m.withConstraintComponent(constraintComponent));
+			return this;
+		}
 		this.constraintComponent = constraintComponent;
 		return this;
 	}
@@ -310,6 +382,9 @@ public class ValidationQuery {
 		scope_validationReport = scope;
 		constraintComponent_validationReport = constraintComponent;
 		propertyShapeWithValue_validationReport = propertyShapeWithValue;
+		if (unionMembers != null) {
+			unionMembers.forEach(ValidationQuery::makeCurrentStateValidationReport);
+		}
 	}
 
 	public Shape getShape() {
