@@ -112,7 +112,9 @@ public class BindSelect implements PlanNode {
 					.visit(new AbstractQueryModelVisitor<Exception>() {
 						@Override
 						public void meet(BindingSetAssignment node) throws Exception {
-							if (node.getBindingNames().equals(expectedBindingNames)
+							// The placeholder VALUES has zero rows: derived binding names are
+							// empty, so the header must be matched via the DECLARED names.
+							if (node.getDeclaredBindingNames().equals(expectedBindingNames)
 									&& isEmpty(node.getBindingSets())) {
 								dynamicValuesAssignments.add(node);
 							}

@@ -1,0 +1,4 @@
+SELECT * WHERE {
+  VALUES (?x ?y) { ("a" UNDEF) ("b" "2") ("c" UNDEF) }
+  FILTER(?x = "a" || ?y = "2")
+}

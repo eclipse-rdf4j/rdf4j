@@ -1,0 +1,4 @@
+SELECT ?x WHERE {
+  VALUES ?x { "1" "2" }
+  OPTIONAL { VALUES (?x ?witness) { ("1" "a") ("1" "b") } }
+}

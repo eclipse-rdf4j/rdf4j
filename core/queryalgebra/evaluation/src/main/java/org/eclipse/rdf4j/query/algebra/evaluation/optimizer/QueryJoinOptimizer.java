@@ -81,9 +81,11 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.ContextAwareQueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.OptimizationSession;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ScopeSafetyMode;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternVisitor;
@@ -95,7 +97,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
  * @author Arjohn Kampman
  * @author James Leigh
  */
-public class QueryJoinOptimizer implements QueryOptimizer {
+public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 
 	/**
 	 * When deciding if merge join is the correct approach we will compare the cardinality of the two join arguments, if
@@ -141,6 +143,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		tupleExpr.visit(new JoinVisitor());
+	}
+
+	@Override
+	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationSession session) {
+		ContextAwareQueryOptimizer.dispatch(tupleExpr, dataset, bindings, session, EnforcePolicy.SKIP,
+				this::optimize, null);
 	}
 
 	/**
