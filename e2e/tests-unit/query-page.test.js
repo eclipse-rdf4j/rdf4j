@@ -62,12 +62,15 @@ test('query utilities cover namespace reset, name validation, query language swi
     harness.ajaxRequests[harness.ajaxRequests.length - 1].resolve({ accessible: true, written: true });
     assert.equal(harness.getText('save-feedback'), 'Query saved.');
     assert.equal(harness.hasClass('save-feedback', 'success'), true);
+    assert.equal(harness.getProperty('query-request-id', 'value'), '');
+    assert.equal(harness.getProperty('query-cancel', 'disabled'), true);
+    assert.equal(harness.openedWindows.length, 0);
 
     harness.setValue('action', 'exec');
     harness.context.workbench.query.setQueryValue('SELECT * WHERE {?s ?p ?o}');
     assert.equal(harness.context.workbench.query.doSubmit(), false);
-    assert.equal(harness.openedWindows.length, 1);
-    assert.match(harness.openedWindows[0].location.href, /action=exec/);
+    assert.equal(harness.openedWindows.length, 0);
+    assert.match(harness.document.location.href, /action=exec/);
     assert.equal(harness.getProperty('include-query-text', 'value'), 'false');
 
     harness.context.workbench.query.setQueryValue('x'.repeat(3000));
