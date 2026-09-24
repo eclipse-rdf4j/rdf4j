@@ -41,6 +41,11 @@ public class NativeStoreRepositoryTest extends RepositoryTest {
 	public File dataDir;
 
 	@Test
+	public void getAllStatementsRepeatedly() {
+		runGetAllStatementsStressTest();
+	}
+
+	@Test
 	public void branchLocalBindInsideUnionPreservesNativeStoreResults() throws Exception {
 		assertBranchLocalBindInsideUnionPreservesNativeStoreResults(true);
 	}
