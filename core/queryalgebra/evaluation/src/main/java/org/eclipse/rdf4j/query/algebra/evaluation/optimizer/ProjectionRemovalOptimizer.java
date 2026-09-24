@@ -65,7 +65,9 @@ public class ProjectionRemovalOptimizer implements QueryOptimizer {
 				return;
 			}
 
-			if (projection.isSubquery() && !AlgebraEvaluationSafety.isRepeatable(child)) {
+			// Outer SELECT projections still define the public result binding domain. An opaque or otherwise
+			// non-repeatable child can expose inherited/internal bindings that its declared output names omit.
+			if (!AlgebraEvaluationSafety.isRepeatable(child)) {
 				return;
 			}
 

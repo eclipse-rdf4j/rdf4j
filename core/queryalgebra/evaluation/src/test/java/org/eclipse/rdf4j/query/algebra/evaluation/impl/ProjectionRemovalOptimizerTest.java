@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ProjectionRemovalOptimizer;
@@ -49,6 +51,28 @@ public class ProjectionRemovalOptimizerTest {
 		new ProjectionRemovalOptimizer().optimize(optimized, null, null);
 
 		assertNotEquals(original, optimized);
+	}
+
+	@Test
+	public void retainsOuterProjectionAroundServiceSubselect() throws RDF4JException {
+		String query = "SELECT ?thing ?counter WHERE { "
+				+ "SERVICE <urn:service> { "
+				+ "SELECT ?thing (COUNT(?thing2) AS ?counter) WHERE { "
+				+ "?thing <urn:predicate> ?thing2 } GROUP BY ?thing } }";
+		TupleExpr original = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		assertTrue(original instanceof QueryRoot);
+		QueryRoot root = (QueryRoot) original;
+		assertTrue(root.getArg() instanceof Projection);
+		Projection outer = (Projection) root.getArg();
+		assertFalse(outer.isSubquery());
+		assertTrue(outer.getArg() instanceof Service);
+		assertTrue(((Service) outer.getArg()).getServiceExpr() instanceof Projection);
+		assertTrue(((Projection) ((Service) outer.getArg()).getServiceExpr()).isSubquery());
+
+		TupleExpr optimized = original.clone();
+		new ProjectionRemovalOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+
+		assertTrue(((QueryRoot) optimized).getArg() instanceof Projection);
 	}
 
 	@Test
