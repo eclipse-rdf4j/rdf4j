@@ -1598,7 +1598,11 @@ public final class QueryAlgebraBindingAnalysis {
 			return possibleOutputsKnown && !canProduceRows;
 		}
 
-		OutputFacts only(Set<String> names) {
+		/**
+		 * Returns facts for a consumer that retains only these result binding names, while keeping retained input
+		 * values whose names are also in the visible result domain.
+		 */
+		public OutputFacts only(Set<String> names) {
 			Set<String> possible = new HashSet<>(possibleOutputs);
 			possible.retainAll(names);
 			Set<String> guaranteed = new HashSet<>(guaranteedOutputs);

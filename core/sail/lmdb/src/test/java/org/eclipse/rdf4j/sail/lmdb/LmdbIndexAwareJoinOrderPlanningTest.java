@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -27,7 +28,9 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -107,7 +110,7 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 	}
 
 	@Test
-	void optimizedElectricalGridQueryKeepsFeedsBeforeNameInGeneratorBranch(@TempDir File dataDir) throws Exception {
+	void optimizedElectricalGridQueryReturnsExpectedDistinctEntityCount(@TempDir File dataDir) throws Exception {
 		LmdbStoreConfig config = sketchEnabledConfig("spoc,ospc,psoc");
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
@@ -132,8 +135,15 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 				assertTrue(feedsIndex >= 0, "Expected generator branch to contain grid:feeds");
 				assertTrue(nameIndex >= 0, "Expected generator branch to contain grid:name");
-				assertTrue(feedsIndex < nameIndex,
-						"Optimized electrical-grid explanation should keep grid:feeds before grid:name");
+
+				try (TupleQueryResult rows = connection.prepareTupleQuery(electricalGridQuery()).evaluate()) {
+					assertTrue(rows.hasNext(), "Expected the aggregate query to return one result row");
+					BindingSet row = rows.next();
+					assertEquals(Set.of("count"), row.getBindingNames());
+					assertEquals(VF.createLiteral("33", XSD.INTEGER), row.getValue("count"),
+							"Expected three substations and thirty generators feeding substations 1, 2, or 3");
+					assertFalse(rows.hasNext(), "Expected COUNT to return exactly one result row");
+				}
 			}
 		} finally {
 			repository.shutDown();

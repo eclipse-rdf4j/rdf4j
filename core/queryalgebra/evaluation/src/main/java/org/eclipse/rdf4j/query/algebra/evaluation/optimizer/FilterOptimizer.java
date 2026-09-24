@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
@@ -558,12 +559,18 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		private boolean canMoveIntoJoinChild(TupleExpr candidate, TupleExpr sibling,
 				boolean siblingRunsAfterCandidate) {
-			QueryAlgebraBindingAnalysis.ReadOnlyContext candidateInput = analysis.contextAt(candidate);
+			QueryAlgebraBindingAnalysis.ReadOnlyContext candidateInput = TupleExprs.isVariableScopeChange(filter)
+					? inputForScopedFilterCandidate(candidate)
+					: analysis.contextAt(candidate);
 			QueryAlgebraBindingAnalysis.ReadOnlyContext siblingInput = analysis.contextAt(sibling);
-			QueryAlgebraBindingAnalysis.OutputFacts candidateFacts = analysis.outputFacts(candidate, candidateInput);
+			QueryAlgebraBindingAnalysis.OutputFacts candidateFacts = outputFactsVisibleToFilter(candidate,
+					candidateInput);
 			QueryAlgebraBindingAnalysis.OutputFacts siblingFacts = analysis.outputFacts(sibling, siblingInput);
-			QueryAlgebraBindingAnalysis.OutputFacts crossedSiblingFacts = siblingRunsAfterCandidate ? siblingFacts
-					: null;
+			// A scope-changing Filter on the right is evaluated independently from the join's left row. Treat
+			// that left sibling as crossed even though it normally runs first: its bindings are not part of the
+			// candidate's condition-visible frame after relocation.
+			QueryAlgebraBindingAnalysis.OutputFacts crossedSiblingFacts = siblingRunsAfterCandidate
+					|| TupleExprs.isVariableScopeChange(filter) ? siblingFacts : null;
 			return analysis.bindingsStableAt(dependencyNames(), filterContext, candidateInput, candidateFacts,
 					crossedSiblingFacts);
 		}
@@ -623,17 +630,54 @@ public class FilterOptimizer implements QueryOptimizer {
 		}
 
 		private boolean candidateHasKnownDependencies(TupleExpr candidate) {
-			QueryAlgebraBindingAnalysis.ReadOnlyContext input = analysis.contextAt(candidate);
-			QueryAlgebraBindingAnalysis.OutputFacts facts = analysis.outputFacts(candidate, input);
+			boolean scopeChange = TupleExprs.isVariableScopeChange(filter);
+			QueryAlgebraBindingAnalysis.ReadOnlyContext input = scopeChange
+					? inputForScopedFilterCandidate(candidate)
+					: analysis.contextAt(candidate);
+			QueryAlgebraBindingAnalysis.OutputFacts facts = outputFactsVisibleToFilter(candidate, input);
 			if (!facts.possibleOutputsKnown() || !facts.guaranteedOutputsKnown()) {
 				return false;
 			}
+			QueryAlgebraBindingAnalysis.ReadOnlyContext visible = input.withOutput(facts);
 			for (String name : dependencyNames()) {
-				if (!mayBindAfter(facts, name) && !input.maybeBoundNames().contains(name)) {
+				if (!visible.maybeBoundNames().contains(name)) {
 					return false;
 				}
 			}
 			return true;
+		}
+
+		/**
+		 * Computes the candidate's input if the moving scope-changing filter were inserted immediately above it. A
+		 * join's right argument normally inherits left-row bindings, but the new Filter is a scope boundary, so the
+		 * evaluator runs that operand with the join's incoming frame instead. Other parent operators retain their
+		 * normal child-input rules.
+		 */
+		private QueryAlgebraBindingAnalysis.ReadOnlyContext inputForScopedFilterCandidate(TupleExpr candidate) {
+			QueryModelNode parent = candidate.getParentNode();
+			if (parent == null) {
+				return analysis.contextAt(candidate);
+			}
+			QueryAlgebraBindingAnalysis.ReadOnlyContext parentInput = analysis.contextAt(parent);
+			if (parent instanceof Join join && join.getRightArg() == candidate) {
+				return parentInput;
+			}
+			return analysis.childInput(parent, candidate, parentInput);
+		}
+
+		/**
+		 * Models the result bindings visible to a moved Filter after its argument has been evaluated. Outside a value
+		 * subquery, FilterIterator retains only the argument's declared binding names when the Filter marks a scope
+		 * change; inherited rows can affect argument-produced values, but they are not directly visible to the
+		 * condition.
+		 */
+		private QueryAlgebraBindingAnalysis.OutputFacts outputFactsVisibleToFilter(TupleExpr candidate,
+				QueryAlgebraBindingAnalysis.ReadOnlyContext input) {
+			QueryAlgebraBindingAnalysis.OutputFacts facts = analysis.outputFacts(candidate, input);
+			if (TupleExprs.isVariableScopeChange(filter) && !FilterIterator.isPartOfSubQuery(filter)) {
+				return facts.only(candidate.getBindingNames());
+			}
+			return facts;
 		}
 
 		private boolean leftJoinEvaluationIsRepeatable(LeftJoin leftJoin) {
@@ -646,10 +690,6 @@ public class FilterOptimizer implements QueryOptimizer {
 			return facts.guaranteedOutputs().contains(name)
 					|| facts.retainedInputNames().contains(name)
 							&& facts.inheritedInput().guaranteedNames().contains(name);
-		}
-
-		private boolean mayBindAfter(QueryAlgebraBindingAnalysis.OutputFacts facts, String name) {
-			return facts.possibleOutputs().contains(name) || facts.retainedInputNames().contains(name);
 		}
 
 		private Set<String> dependencyNames() {
