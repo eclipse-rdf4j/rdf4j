@@ -1491,6 +1491,19 @@ public class XMLDatatypeUtil {
 	 * @return new string
 	 */
 	public static String collapseWhiteSpace(String s) {
+		// Fast path: most values have no whitespace to collapse at all.
+		boolean hasWhitespace = false;
+		for (int i = 0; i < s.length(); i++) {
+			char c = s.charAt(i);
+			if (c == '\t' || c == '\r' || c == '\n' || c == ' ') {
+				hasWhitespace = true;
+				break;
+			}
+		}
+		if (!hasWhitespace) {
+			return s;
+		}
+
 		StringBuilder sb = new StringBuilder(s.length());
 
 		StringTokenizer st = new StringTokenizer(s, "\t\r\n ");
