@@ -568,6 +568,11 @@ public final class QueryAlgebraBindingAnalysis {
 
 	private ReadOnlyContext joinRightInput(Join join, ReadOnlyContext input) {
 		TupleExpr right = join.getRightArg();
+		if (join.isMergeJoin()) {
+			// InnerMergeJoinIterator evaluates both sides from the join's incoming frame, then merges matching rows.
+			// Do not treat left-side outputs as inputs to the right side while optimizers are still planning this join.
+			return input;
+		}
 		String algorithm = join.getAlgorithmName();
 		if (algorithm == null || algorithm.isEmpty()) {
 			// Classify from the frame before this join's left side is evaluated. Modifier analysis roots itself at the

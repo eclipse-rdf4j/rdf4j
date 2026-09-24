@@ -84,6 +84,26 @@ class OptimizerBindingAnalysisTest {
 	}
 
 	@Test
+	void mergeJoinRightInputDoesNotIncludeLeftRows() {
+		Join join = new Join(values("leftOnly", VF.createIRI("urn:left")),
+				values("rightOnly", VF.createIRI("urn:right")));
+		join.setMergeJoin(true);
+		MapBindingSet incoming = new MapBindingSet();
+		incoming.addBinding("externalOnly", VF.createIRI("urn:external"));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(join,
+				incoming);
+
+		QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = analysis.contextAt(join.getRightArg());
+		assertThat(rightInput.guaranteedNames())
+				.as("InnerMergeJoinIterator evaluates both inputs with the incoming frame")
+				.contains("externalOnly")
+				.doesNotContain("leftOnly");
+		assertThat(rightInput.maybeBoundNames())
+				.contains("externalOnly")
+				.doesNotContain("leftOnly");
+	}
+
+	@Test
 	void contextAtStopsAtItsDeclaredRootEvenWhenThatSubtreeHasAParent() {
 		Value one = VF.createIRI("urn:one");
 		BindingSetAssignment left = values("x", one);
