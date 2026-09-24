@@ -157,17 +157,35 @@ which supports fully qualified URLs (e.g., `file://` URLs, relative paths and `c
 Any spring bean that uses the `RDF4JTemplate` can be seen as a DAO and participates in transactionality, query logging, 
 caching, etc. However, `rdf4j-spring` provides a few base classes that provide frequently used functionality.
 
-#### RDF4JDao
-{{< javadoc "RDF4JDao" "spring/dao/RDF4JDao.html" >}} is a suitable base class for a general-purpose DAO. It provides 
-two functionalities to subclasses: 
-    
-* The `RDF4JTemplate` is automatically wired into the bean and it is available through `getRDF4JTemplate()`
-    
-* It provides a simple management facility for SPARQL query/update strings. This allows for SPARQL queries being
-generated only once (by String concatenation, read from a file, or built with the [SparqlBuilder](../../tutorials/sparqlbuilder)).
-The queries are prepared in the template method `prepareNamedSparqlSuppliers()`:  
+#### Relationship queries with JoinQueryBuilder
 
-In the following example, we
+For relationship-oriented DAO methods, prefer the `JoinQueryBuilder` API. It describes the source entity, relation, target constraints, join type, and result shape in one fluent definition. Build the query once as a reusable factory and keep that factory beside the DAO method that uses it:
+
+```java
+private static final JoinDefaultQueryFactory PAINTING_IDS_BY_ARTIST = JoinQueryBuilder
+        .of(EX.creatorOf)
+        .sourceEntityConstraints(artist -> artist.isA(EX.Artist))
+        .targetEntityConstraints(painting -> painting.isA(EX.Painting))
+        .leftOuterJoin()
+        .buildFactory();
+
+public Set<IRI> getPaintingIds(IRI artistId) {
+    return PAINTING_IDS_BY_ARTIST.get(getRdf4JTemplate())
+            .withSourceEntityId(artistId)
+            .asTargetEntityIdSet();
+}
+```
+
+`buildFactory()` creates an immutable query definition that can be reused by DAO methods. Each call to `get(RDF4JTemplate)` creates a fresh evaluation builder, so request-specific IDs and bindings belong in the DAO method. A `private static final` factory is usually the clearest arrangement; use a shared query catalog only when several DAOs genuinely use the same definition. Spring-managed factory beans are not normally needed.
+
+The builder supports one-to-one and one-to-many ID results, entity mapping, counts, grouped counts, context grouping, and presence/emptiness checks. Use `leftOuterJoin()` when unmatched source entities should remain in the result. `rightOuterJoin()` retains unmatched targets, but source-keyed result methods are not supported because an unmatched target has no source key.
+#### RDF4JDao
+{{< javadoc "RDF4JDao" "spring/dao/RDF4JDao.html" >}} is a suitable base class for a general-purpose DAO. The `RDF4JTemplate` is automatically wired into the bean and is available through `getRdf4JTemplate()`.
+
+For relationship queries, use the `JoinQueryBuilder` section above. The `prepareNamedSparqlSuppliers()` hook remains available for arbitrary or externally stored SPARQL. It is optional: DAOs using only query factories can inherit the default no-op implementation.
+
+Named SPARQL suppliers are useful when a query does not fit the source-relation-target model, when handwritten SPARQL is clearer, or when loading a query from a resource. In the following example, we:
+
 * create a DAO, extending `RDF4JDao`
 * annotate it with [`@Component`](https://docs.spring.io/spring-framework/docs/current/javadoc-api/index.html?org/springframework/core/io/package-summary.html) 
 so it gets auto-detected during Spring's component scan
@@ -182,8 +200,24 @@ so it gets auto-detected during Spring's component scan
 public class ArtistDao extends RDF4JDao {
     
     // constructor, other methods etc
+    
+    // generally preferable approach for simple relation queries: 
+    // 1. initialize a static JoinXFactory using the JoinQueryBuilder
+    // 2. in the dao method, provide the dynamic data and evaluate the query using `get(getRDF4JTemplate)...as..()`
 
-    // recommended: encapsulate the keys for queries in an object
+    private static final JoinDefaultQueryFactory PAINTING_IDS_BY_ARTIST = JoinQueryBuilder.of(EX.creatorOf)
+            .sourceEntityConstraints(artist -> artist.isA(EX.Artist))
+            .targetEntityConstraints(painting -> painting.isA(EX.Painting))
+            .leftOuterJoin()
+            .buildFactory();
+
+    public Set<IRI> getPaintingsIdsOfArtist(IRI artistId) {
+        return PAINTING_IDS_BY_ARTIST.get(getRdf4JTemplate())
+                .withSourceEntityId(artistId)
+                .asTargetEntityIdSet();
+    }
+
+    // recommended if you use the NamedSparqlSupplier: encapsulate the keys for queries in an object
     // so it's easier to find them when you need them
 	static abstract class QUERY_KEYS {
 		public static final String ARTISTS_WITHOUT_PAINTINGS = "artists-without-paintings";
