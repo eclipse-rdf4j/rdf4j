@@ -12,37 +12,25 @@
 	<xsl:include href="template.xsl" />
 
 	<xsl:template match="sparql:sparql">
-		<form action="update" method="post" onsubmit="return workbench.update.doSubmit()">
-			<table class="dataentry">
-				<tbody>
-					<tr>
-						<th>
-							<xsl:value-of select="$update-string.label" />
-						</th>
-						<td>
-							<textarea id="update" name="update" rows="16" cols="80">
-								<xsl:text>
-								</xsl:text>
-							</textarea>
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-						<td></td>
-						<td>
-							<span id="updateString.errors" class="error">
-								<xsl:value-of select="//sparql:binding[@name='error-message']" />
-							</span>
-						</td>
-					</tr>
-					<tr>
-						<td></td>
-						<td colspan="2">
-							<input type="submit" value="{$execute.label}" />
-						</td>
-					</tr>
-				</tbody>
-			</table>
+		<form id="update-form" class="workbench-island" action="update" method="post" onsubmit="return workbench.update.doSubmit()">
+			<div id="update-editor" class="workbench-field">
+				<label for="update"><xsl:value-of select="$update-string.label" /></label>
+				<textarea id="update" name="update" rows="16" cols="80"><xsl:text>
+				</xsl:text></textarea>
+				<span id="updateString.errors" class="error" role="alert">
+					<xsl:value-of select="//sparql:binding[@name='error-message']" />
+				</span>
+			</div>
+			<div id="update-actions" class="workbench-form-actions">
+				<span class="workbench-action workbench-action--primary">
+					<label class="workbench-action-hit-area">
+						<xsl:call-template name="workbench-action-icon">
+							<xsl:with-param name="name">update</xsl:with-param>
+						</xsl:call-template>
+						<span class="workbench-action-label"><input type="submit" value="{$execute.label}" /></span>
+					</label>
+				</span>
+			</div>
 		</form>
 		<script type="text/javascript">
         var namespaces = {

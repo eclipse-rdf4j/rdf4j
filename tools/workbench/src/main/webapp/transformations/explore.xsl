@@ -73,73 +73,44 @@
 				</p>
 			</xsl:for-each>
 		</xsl:if>
-		<form action="explore">
-			<table class="dataentry">
-				<tbody>
-					<tr>
-						<th>
-							<xsl:value-of select="$resource.label" />
-						</th>
-						<td colspan="2">
-							<input id="resource" name="resource"
-								size="48" type="text" />
-						</td>
-						<td></td>
-					</tr>
-				</tbody>
-			</table>
-			<table class="dataentry">
-				<tbody>
-					<tr>
-						<td></td>
-						<td>
-							<xsl:if test="count(//sparql:binding[@name='error-message']) &gt; 0">
-								<span class="error">
-									<xsl:value-of
-										select="//sparql:binding[@name='error-message']" />
-								</span>
-							</xsl:if>
-						</td>
-						<td></td>
-					</tr>
-
-					<tr>
-						<th>
-							<xsl:value-of select="$result-limit.label" />
-						</th>
-						<td>
-							<xsl:call-template name="limit-select">
-								<xsl:with-param name="onchange">workbench.paging.addLimit('explore');</xsl:with-param>
-                                <xsl:with-param name="limit_id">limit_explore</xsl:with-param>
-							</xsl:call-template>
-						</td>
-						<td></td>
-					</tr>
-					<tr>
-					    <th>
-							<xsl:value-of select="$result-offset.label" />
-				        </th>
-						<td>
-							<input id="previousX" type="button"
-								value="{$previousX.label}" onclick="workbench.paging.previousOffset('explore');" />
-						</td>
-						<td>
-							<input id="nextX" type="button"
-								value="{$nextX.label}" onclick="workbench.paging.nextOffset('explore');" />
-						</td>
-					</tr>
-						<tr>
-						<th>
-							<xsl:value-of select="$show-datatypes.label" />
-						</th>
-						<td>
-							<input type="checkbox" name="show-datatypes" value="show-dataypes" checked="checked" />
-						</td>
-					</tr>
-				</tbody>
-			</table>
+		<p id="explore-resource-summary" class="workbench-page-meta" hidden="hidden">
+			<span id="explore-resource-value"></span>
+			<span id="explore-result-count"></span>
+		</p>
+		<form id="explore-form" class="workbench-island" action="explore">
+			<div id="explore-controls">
+			<div id="explore-resource-field" class="workbench-field">
+				<label for="resource"><xsl:value-of select="$resource.label" /></label>
+				<input id="resource" name="resource" size="48" type="text" />
+			</div>
+			<xsl:if test="count(//sparql:binding[@name='error-message']) &gt; 0">
+				<span class="error" role="alert">
+					<xsl:value-of select="//sparql:binding[@name='error-message']" />
+				</span>
+			</xsl:if>
+			<details id="explore-result-options" class="workbench-options">
+				<summary><xsl:value-of select="$result-options.label" /></summary>
+				<div class="workbench-options__body">
+					<div class="workbench-field">
+						<label for="limit_explore"><xsl:value-of select="$result-limit.label" /></label>
+						<xsl:call-template name="limit-select">
+							<xsl:with-param name="onchange">workbench.paging.addLimit('explore');</xsl:with-param>
+							<xsl:with-param name="limit_id">limit_explore</xsl:with-param>
+						</xsl:call-template>
+					</div>
+					<label class="workbench-check" for="explore-show-datatypes">
+						<input id="explore-show-datatypes" type="checkbox" name="show-datatypes"
+							value="show-dataypes" checked="checked" />
+						<span><xsl:value-of select="$show-datatypes.label" /></span>
+					</label>
+				</div>
+			</details>
+			</div>
 		</form>
-		
+		<section id="explore-results" class="workbench-island workbench-responsive-records">
+		<xsl:if test="not(sparql:results/sparql:result)">
+			<p class="workbench-empty" role="status"><xsl:value-of select="$no-results.label" /></p>
+		</xsl:if>
 		<table class="simple">
 			<tr>
 				<td>
@@ -208,6 +179,28 @@
 				<xsl:apply-templates select="*" />
 			</table>
 		</xsl:if>
+		<div id="explore-pagination" class="workbench-form-actions">
+			<span class="explore-pagination__label"><xsl:value-of select="$result-offset.label" /></span>
+			<span class="workbench-action workbench-action--secondary">
+				<label class="workbench-action-hit-area">
+					<xsl:call-template name="workbench-action-icon">
+						<xsl:with-param name="name">previous</xsl:with-param>
+					</xsl:call-template>
+					<span class="workbench-action-label"><input id="previousX" type="button"
+						value="{$previousX.label}" onclick="workbench.paging.previousOffset('explore');" /></span>
+				</label>
+			</span>
+			<span class="workbench-action workbench-action--secondary">
+				<label class="workbench-action-hit-area">
+					<xsl:call-template name="workbench-action-icon">
+						<xsl:with-param name="name">next</xsl:with-param>
+					</xsl:call-template>
+					<span class="workbench-action-label"><input id="nextX" type="button"
+						value="{$nextX.label}" onclick="workbench.paging.nextOffset('explore');" /></span>
+				</label>
+			</span>
+		</div>
+		</section>
 		<script src="../../scripts/paging.js" type="text/javascript">  </script>
 		<script src="../../scripts/explore.js" type="text/javascript">  </script>
 	</xsl:template>

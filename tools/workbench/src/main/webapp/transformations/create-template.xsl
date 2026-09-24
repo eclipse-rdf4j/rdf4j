@@ -20,7 +20,7 @@
 		<xsl:variable name="templateLabel"
 			select="sparql:results/sparql:result[1]/sparql:binding[@name='templateLabel']/sparql:literal" />
 		<form action="create" method="post">
-			<table class="dataentry">
+			<table class="dataentry" data-advanced-label="{$advanced-settings.label}">
 				<tbody>
 					<tr>
 						<th>
@@ -140,11 +140,29 @@
 					<tr>
 						<td></td>
 						<td>
-							<input type="button" value="{$cancel.label}" style="float:right"
-								data-href="repositories"
-								onclick="document.location.href=this.getAttribute('data-href')" />
-							<input id="create" type="button" value="{$create.label}"
-								onclick="checkOverwrite()" />
+							<span class="workbench-action workbench-action--secondary">
+								<label class="workbench-action-hit-area">
+									<xsl:call-template name="workbench-action-icon">
+										<xsl:with-param name="name">cancel</xsl:with-param>
+									</xsl:call-template>
+									<span class="workbench-action-label">
+										<input type="button" value="{$cancel.label}"
+											data-href="repositories"
+											onclick="document.location.href=this.getAttribute('data-href')" />
+									</span>
+								</label>
+							</span>
+							<span class="workbench-action workbench-action--primary">
+								<label class="workbench-action-hit-area">
+									<xsl:call-template name="workbench-action-icon">
+										<xsl:with-param name="name">create</xsl:with-param>
+									</xsl:call-template>
+									<span class="workbench-action-label">
+										<input id="create" type="button" value="{$create.label}"
+											onclick="checkOverwrite()" />
+									</span>
+								</label>
+							</span>
 						</td>
 					</tr>
 				</tbody>

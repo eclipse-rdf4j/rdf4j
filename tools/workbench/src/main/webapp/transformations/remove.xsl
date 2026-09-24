@@ -20,13 +20,15 @@
 				<xsl:value-of select="$SYSTEM-warning.desc" />
 			</p>
 		</xsl:if>
-		<p class="WARN">
+		<p id="remove-warning" class="WARN" role="alert">
 			<xsl:value-of select="$remove-warning.desc" />
 		</p>
 		<p>
 			<xsl:value-of select="$value-encoding.desc" />
 		</p>
 
+		<details id="remove-examples" class="workbench-options">
+			<summary><xsl:value-of select="$examples.label" /></summary>
 		<ul>
 			<li>
 				URI:
@@ -46,12 +48,13 @@
 			</li>
 
 		</ul>
+		</details>
 		<xsl:if test="//sparql:binding[@name='error-message']">
 			<p class="error">
 				<xsl:value-of select="//sparql:binding[@name='error-message']" />
 			</p>
 		</xsl:if>
-		<form method="post" action="remove">
+		<form id="remove-form" method="post" action="remove">
 			<table class="dataentry">
 				<tbody>
 					<tr>
@@ -99,7 +102,14 @@
 					<tr>
 						<td></td>
 						<td>
-							<input type="submit" value="{$remove.label}" />
+							<span class="workbench-action workbench-action--danger">
+								<label class="workbench-action-hit-area">
+									<xsl:call-template name="workbench-action-icon">
+										<xsl:with-param name="name">remove</xsl:with-param>
+									</xsl:call-template>
+									<span class="workbench-action-label"><input type="submit" value="{$remove.label}" /></span>
+								</label>
+							</span>
 						</td>
 						<td></td>
 					</tr>

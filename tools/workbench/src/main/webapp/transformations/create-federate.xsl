@@ -16,7 +16,7 @@
 
 	<xsl:template match="sparql:sparql">
 		<form action="create" method="post">
-			<table class="dataentry">
+			<table class="dataentry" data-advanced-label="{$advanced-settings.label}">
 				<tbody>
 					<tr>
 						<th>
@@ -35,7 +35,7 @@
 						</th>
 						<td>
 							<input type="text" id="id" name="Local repository ID" size="16"
-								value="fed" />
+								value="fed" data-field-role="repository-id" />
 						</td>
 						<td>
 							<span id="recurse-message" class="error" style="display: none;">
@@ -50,7 +50,7 @@
 						</th>
 						<td>
 							<input type="text" id="title" name="Repository title" size="48"
-								value="Federation" />
+								value="Federation" data-field-role="repository-title" />
 						</td>
 						<td></td>
 					</tr>
@@ -70,10 +70,9 @@
 					<tr>
 						<td></td>
 						<td>
-							<input type="button" value="{$cancel.label}" style="float:right"
-								data-href="repositories"
-                                onclick="document.location.href=this.getAttribute('data-href')" />
-							<input id="create" type="submit" value="{$create.label}" />
+							<xsl:call-template name="workbench-create-actions">
+								<xsl:with-param name="create-input-type">submit</xsl:with-param>
+							</xsl:call-template>
 						</td>
 					</tr>
 				</tbody>
@@ -85,7 +84,8 @@
 	</xsl:template>
 
 	<xsl:template match="sparql:binding[@name='id']">
-		<input type="checkbox" class="memberID" name="memberID" value="{sparql:literal}" />
+		<input type="checkbox" class="memberID" name="memberID" value="{sparql:literal}"
+			data-field-role="federation-member" />
 		<xsl:value-of select="sparql:literal" />
 		<br />
 	</xsl:template>

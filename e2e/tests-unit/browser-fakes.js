@@ -342,6 +342,14 @@ class FakeElement {
         return result;
     }
 
+    querySelectorAll(selector) {
+        return selectElements([this], selector, false);
+    }
+
+    querySelector(selector) {
+        return this.querySelectorAll(selector)[0] || null;
+    }
+
     serializeArray() {
         return this.formControls
             .filter((control) => control.name && !control.disabled)
@@ -569,6 +577,10 @@ class FakeDocument {
 
     querySelectorAll(selector) {
         return selectElements([this.body], selector, true);
+    }
+
+    querySelector(selector) {
+        return this.querySelectorAll(selector)[0] || null;
     }
 
     addEventListener(type, handler) {

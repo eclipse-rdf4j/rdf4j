@@ -134,4 +134,85 @@ workbench
         selectedUser.textContent = user;
     }
 });
+/**
+ * Keep the shared navigation usable at every Workbench route.  The XSL
+ * template renders the complete list for desktop and this small controller
+ * only changes its disclosure state at the narrow breakpoint.  It also marks
+ * the route currently displayed by the browser so the same navigation works
+ * for pages that do not load query.ts.
+ */
+workbench.addLoad(function installWorkbenchNavigation() {
+    var disclosure = document.getElementById('workbench-navigation-disclosure');
+    if (!disclosure) {
+        return;
+    }
+    var mediaQuery = window.matchMedia ? window.matchMedia('(max-width: 900px)') : null;
+    var syncDisclosure = function () {
+        var isMobile = mediaQuery ? mediaQuery.matches : window.innerWidth <= 900;
+        disclosure.open = !isMobile;
+    };
+    syncDisclosure();
+    if (mediaQuery) {
+        if (mediaQuery.addEventListener) {
+            mediaQuery.addEventListener('change', syncDisclosure);
+        }
+        else if (mediaQuery.addListener) {
+            mediaQuery.addListener(syncDisclosure);
+        }
+    }
+    var currentPath = window.location.pathname.replace(/\/+$/, '');
+    var currentSegment = currentPath.substring(currentPath.lastIndexOf('/') + 1);
+    var entries = document.querySelectorAll('#navigation a[data-workbench-nav-href]');
+    for (var i = 0; i < entries.length; i++) {
+        var entry = entries[i];
+        var target = entry.getAttribute('data-workbench-nav-href');
+        if (!target) {
+            continue;
+        }
+        var targetUrl = document.createElement('a');
+        targetUrl.href = entry.href;
+        var targetPath = targetUrl.pathname.replace(/\/+$/, '');
+        var targetSegment = targetPath.substring(targetPath.lastIndexOf('/') + 1);
+        if (targetSegment === currentSegment || (currentSegment === '' && targetSegment === 'repositories')) {
+            var item = entry.parentElement;
+            if (item) {
+                item.className += ' current';
+            }
+            entry.setAttribute('aria-current', 'page');
+        }
+    }
+});
+/**
+ * Keep disclosure triggers in the toolbar while their panels open below the
+ * controls. Native details summaries move with their content in a wrapping
+ * flex row, so these button/panel pairs provide a stable keyboard and pointer
+ * interaction for both the query page and embedded result documents.
+ */
+workbench.addLoad(function installDisclosureToggles() {
+    var toggles = document.querySelectorAll('.query-disclosure__toggle');
+    for (var i = 0; i < toggles.length; i++) {
+        var toggle = toggles[i];
+        var panelId = toggle.getAttribute('aria-controls');
+        var panel = panelId ? document.getElementById(panelId) : null;
+        if (!panel) {
+            continue;
+        }
+        var container = toggle.parentElement;
+        var setExpanded = function (button, target, owner, expanded) {
+            button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+            target.hidden = !expanded;
+            if (owner) {
+                owner.classList.toggle('is-open', expanded);
+            }
+            window.dispatchEvent(new Event('resize'));
+        };
+        var initiallyExpanded = toggle.getAttribute('aria-expanded') === 'true';
+        setExpanded(toggle, panel, container, initiallyExpanded);
+        toggle.addEventListener('click', (function (button, target, owner) {
+            return function () {
+                setExpanded(button, target, owner, button.getAttribute('aria-expanded') !== 'true');
+            };
+        })(toggle, panel, container), false);
+    }
+});
 //# sourceMappingURL=template.js.map

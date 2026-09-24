@@ -52,9 +52,77 @@ function checkOverwrite() {
 }
 
 workbench.addLoad(function createPageLoaded() {
-    /**
-     * Disables the create button if the id field doesn't have any text.
-     */
+	/**
+	 * Keep required identity and endpoint fields visible while moving the
+	 * lower-frequency repository tuning fields into one native disclosure. The
+	 * rows are moved rather than cloned so every existing input name, value and
+	 * form submission remains unchanged.
+	 */
+	function installAdvancedFields() {
+		var table = <HTMLTableElement>document.querySelector("form[action='create'] table.dataentry");
+		if (!table || document.querySelector('details.workbench-advanced')) {
+			return;
+		}
+		var body = table.tBodies.length ? table.tBodies[0] : null;
+		if (!body || body.rows.length < 3) {
+			return;
+		}
+
+		var rowsToMove: HTMLTableRowElement[] = [];
+		for (var i = 1; i < body.rows.length - 1; i++) {
+			var row = body.rows[i];
+			var roleControl = <HTMLElement>row.querySelector('[data-field-role], [data-config-property]');
+			var role = roleControl ? roleControl.getAttribute('data-field-role') || '' : '';
+			var property = roleControl ? roleControl.getAttribute('data-config-property') || '' : '';
+			var fieldId = roleControl ? roleControl.id : '';
+			var required = role === 'repository-id' || role === 'repository-title'
+				|| role === 'federation-member'
+				|| property === 'config:http.url'
+				|| property === 'config:sparql.queryEndpoint'
+				|| property === 'config:sparql.updateEndpoint'
+				|| property === 'config:cgqi.queryLanguage'
+				|| fieldId === 'sp_text';
+			if (!required) {
+				rowsToMove.push(row);
+			}
+		}
+		if (!rowsToMove.length) {
+			return;
+		}
+
+		var details = document.createElement('details');
+		details.className = 'workbench-advanced';
+		var summary = document.createElement('summary');
+		summary.textContent = table.getAttribute('data-advanced-label') || 'Advanced settings';
+		details.appendChild(summary);
+		var advancedTable = document.createElement('table');
+		advancedTable.className = 'dataentry workbench-advanced-fields';
+		var advancedBody = document.createElement('tbody');
+		advancedTable.appendChild(advancedBody);
+		details.appendChild(advancedTable);
+
+		for (var j = 0; j < rowsToMove.length; j++) {
+			advancedBody.appendChild(rowsToMove[j]);
+		}
+
+		var actionRow = body.rows[body.rows.length - 1];
+		body.removeChild(actionRow);
+		table.parentNode.insertBefore(details, table.nextSibling);
+		var actionTable = <HTMLTableElement>table.cloneNode(false);
+		var actionBody = document.createElement('tbody');
+		actionBody.appendChild(actionRow);
+		actionTable.appendChild(actionBody);
+		details.parentNode.insertBefore(actionTable, details.nextSibling);
+	}
+
+	// The script is loaded after the form markup, so this runs before the
+	// window load hook and is available to keyboard and automated clients at
+	// DOMContentLoaded as well.
+	installAdvancedFields();
+
+	/**
+	 * Disables the create button if the id field doesn't have any text.
+	 */
     function disableCreateIfEmptyId() {
         $('input#create').prop('disabled', !(/.+/.test(workbench.create.id.val())));
     }

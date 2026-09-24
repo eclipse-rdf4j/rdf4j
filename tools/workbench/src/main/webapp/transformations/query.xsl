@@ -67,16 +67,23 @@
                 </span>
                 <div class="query-form__field">
                     <div id="{$statusId}" class="query-explanation-status" aria-live="polite"></div>
+                    <div class="query-explanation-toolbar">
+                        <span class="workbench-action workbench-action--secondary" data-workbench-action="copy">
+                            <span class="workbench-action-label">
+                                <button id="{$copyButtonId}" class="query-explanation-copy" type="button"
+                                        aria-label="{$copy-explanation.label}" title="{$copy-explanation.label}">
+                                    <svg class="workbench-action-icon query-explanation-copy__svg" viewBox="0 0 24 24"
+                                         focusable="false" aria-hidden="true">
+                                        <rect class="query-explanation-copy__stroke" x="9" y="9" width="10" height="10"
+                                              rx="1.5"></rect>
+                                        <path class="query-explanation-copy__stroke" d="M7 15H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1 1h8a1 1 0 0 1 1 1v1"></path>
+                                    </svg>
+                                    <xsl:value-of select="$copy.label"/>
+                                </button>
+                            </span>
+                        </span>
+                    </div>
                     <div class="query-explanation-surface">
-                        <button id="{$copyButtonId}" class="query-explanation-copy" type="button"
-                                aria-label="{$copy-explanation.label}" title="{$copy-explanation.label}">
-                            <svg class="query-explanation-copy__svg" viewBox="0 0 24 24" focusable="false"
-                                 aria-hidden="true">
-                                <rect class="query-explanation-copy__stroke" x="9" y="9" width="10" height="10"
-                                      rx="1.5"></rect>
-                                <path class="query-explanation-copy__stroke" d="M7 15H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v1"></path>
-                            </svg>
-                        </button>
                         <div id="{$overlayId}" class="query-explanation-overlay" aria-hidden="true"></div>
                         <pre id="{$explanationId}" data-format="{$explanationFormat}">
                             <xsl:value-of select="$explanationValue"/>
@@ -146,11 +153,18 @@
                                 </option>
                             </select>
                             <span id="explanation-settings" class="query-explanation-settings">
-                                <button id="explanation-settings-toggle"
-                                        class="query-explanation-settings__toggle" type="button"
-                                        aria-controls="explanation-settings-panel" aria-expanded="false">
-                                    Config
-                                </button>
+								<span class="workbench-action workbench-action--secondary" data-workbench-action="settings">
+									<span class="workbench-action-label">
+										<button id="explanation-settings-toggle"
+											class="query-explanation-settings__toggle" type="button"
+											aria-controls="explanation-settings-panel" aria-expanded="false">
+											<xsl:call-template name="workbench-action-icon">
+												<xsl:with-param name="name">settings</xsl:with-param>
+											</xsl:call-template>
+											Config
+										</button>
+									</span>
+								</span>
                                 <div id="explanation-settings-panel"
                                      class="query-explanation-settings__panel" role="group"
                                      aria-label="Explanation display settings" hidden="hidden">
@@ -200,24 +214,52 @@
                                 </div>
                             </span>
                         </span>
-                        <span id="primary-explain-repeat-controls" class="query-form__field--controls-group">
-                            <input id="rerun-explanation" type="button"
-                                   value="{$explain-query.label}"
-                                   onclick="workbench.query.runExplain(null, 'rerun-explanation')"/>
-                            <span id="rerun-explanation-spinner" class="query-explain-spinner"
-                                  aria-hidden="true"></span>
-                            <input id="rerun-explanation-cancel" class="query-explain-cancel"
-                                   type="button" value="{$cancel.label}" onclick="workbench.query.cancelExplain()"
-                                   aria-hidden="true" disabled="disabled"/>
-                        </span>
-                        <input id="download-explanation" type="button"
-                               value="{$download-explanation.label}">
-                            <xsl:if test="not($explanationVisible)">
-                                <xsl:attribute name="disabled">disabled</xsl:attribute>
-                            </xsl:if>
-                        </input>
-                        <input id="compare-toggle" type="button"
-                               value="{$compare.label}" onclick="workbench.query.toggleCompareMode()"/>
+						<span id="primary-explain-repeat-controls" class="query-form__field--controls-group">
+							<span class="workbench-action workbench-action--secondary" data-workbench-action="explain">
+								<label class="workbench-action-hit-area">
+									<xsl:call-template name="workbench-action-icon">
+										<xsl:with-param name="name">update</xsl:with-param>
+									</xsl:call-template>
+									<span class="workbench-action-label"><input id="rerun-explanation" type="button"
+										value="{$explain-query.label}"
+										onclick="workbench.query.runExplain(null, 'rerun-explanation')"/></span>
+								</label>
+							</span>
+							<span id="rerun-explanation-spinner" class="query-explain-spinner"
+								  aria-hidden="true"></span>
+							<span class="workbench-action workbench-action--danger query-explain-cancel" data-workbench-action="cancel">
+								<label class="workbench-action-hit-area">
+									<xsl:call-template name="workbench-action-icon">
+										<xsl:with-param name="name">cancel</xsl:with-param>
+									</xsl:call-template>
+									<span class="workbench-action-label"><input id="rerun-explanation-cancel" class="query-explain-cancel" type="button"
+										value="{$cancel.label}" onclick="workbench.query.cancelExplain()"
+										aria-hidden="true" disabled="disabled"/></span>
+								</label>
+							</span>
+						</span>
+						<span class="workbench-action workbench-action--secondary" data-workbench-action="download">
+							<label class="workbench-action-hit-area">
+								<xsl:call-template name="workbench-action-icon">
+									<xsl:with-param name="name">download</xsl:with-param>
+								</xsl:call-template>
+								<span class="workbench-action-label"><input id="download-explanation" type="button"
+									value="{$download-explanation.label}">
+									<xsl:if test="not($explanationVisible)">
+										<xsl:attribute name="disabled">disabled</xsl:attribute>
+									</xsl:if>
+								</input></span>
+							</label>
+						</span>
+						<span class="workbench-action workbench-action--secondary" data-workbench-action="compare">
+							<label class="workbench-action-hit-area">
+								<xsl:call-template name="workbench-action-icon">
+									<xsl:with-param name="name">compare</xsl:with-param>
+								</xsl:call-template>
+								<span class="workbench-action-label"><input id="compare-toggle" type="button"
+									value="{$compare.label}" onclick="workbench.query.toggleCompareMode()"/></span>
+							</label>
+						</span>
                     </div>
                 </div>
             </xsl:if>
@@ -242,6 +284,7 @@
         <xsl:variable name="explanationLevel"
                       select="sparql:results/sparql:result/sparql:binding[@name='explanation-level']/sparql:literal"/>
         <link rel="stylesheet" type="text/css" href="../../styles/query.css"/>
+        <div id="query-page" class="query-page">
         <form action="query" method="post" onsubmit="return workbench.query.doSubmit()">
             <input type="hidden" name="action" id="action"/>
             <input type="hidden" name="explain" id="explain"/>
@@ -289,6 +332,88 @@
                         </select>
                     </div>
                 </div>
+                <div id="query-compare-toolbar" class="query-compare-toolbar" hidden="hidden">
+                    <span class="workbench-action workbench-action--secondary" data-workbench-action="copy">
+                        <span class="workbench-action-label">
+                            <button id="query-compare-copy" type="button" aria-label="{$copy.label}"
+                                    title="{$copy-explanation.label}">
+                                <xsl:call-template name="workbench-action-icon">
+                                    <xsl:with-param name="name">copy</xsl:with-param>
+                                </xsl:call-template>
+                                <span><xsl:value-of select="$copy.label"/></span>
+                            </button>
+                        </span>
+                    </span>
+                    <span class="workbench-action workbench-action--secondary" data-workbench-action="swap">
+                        <span class="workbench-action-label">
+                            <button id="query-compare-swap" type="button" aria-label="{$swap.label}"
+                                    title="{$swap.label}">
+                                <xsl:call-template name="workbench-action-icon">
+                                    <xsl:with-param name="name">swap</xsl:with-param>
+                                </xsl:call-template>
+                                <span><xsl:value-of select="$swap.label"/></span>
+                            </button>
+                        </span>
+                    </span>
+                    <div id="query-compare-controls" class="query-compare-toolbar__actions">
+                        <span class="workbench-action workbench-action--secondary" data-workbench-action="refresh">
+                            <span class="workbench-action-label">
+                                <button id="explain-compare-trigger" class="query-compare-action" type="button"
+                                        aria-label="{$refresh-explanations.label}" title="{$refresh-explanations.label}"
+                                        onclick="workbench.query.runCompareExplain()">
+                                    <svg id="explain-compare-trigger-icon"
+                                         class="query-compare-action__svg query-compare-action__svg--refresh"
+                                         focusable="false" aria-hidden="true" viewBox="0 0 24 24">
+                                        <path class="query-compare-action__stroke" d="M20 10a8 8 0 0 0-14-4L4 8"></path>
+                                        <path class="query-compare-action__stroke" d="M4 4v4h4"></path>
+                                        <path class="query-compare-action__stroke" d="M4 14a8 8 0 0 0 14 4l2-2"></path>
+                                        <path class="query-compare-action__stroke" d="M20 20v-4h-4"></path>
+                                    </svg>
+                                    <span><xsl:value-of select="$refresh-explanations.label" /></span>
+                                </button>
+                            </span>
+                        </span>
+                        <span class="workbench-action workbench-action--danger query-explain-cancel"
+                              data-workbench-action="cancel">
+                            <span class="workbench-action-label">
+                                <button id="explain-compare-cancel" class="query-compare-action query-explain-cancel"
+                                        type="button" aria-label="{$cancel.label}" title="{$cancel.label}"
+                                        onclick="workbench.query.cancelCompareExplain()" aria-hidden="true"
+                                        disabled="disabled">
+                                    <svg id="explain-compare-cancel-icon"
+                                         class="query-compare-action__svg query-compare-action__svg--cancel"
+                                         focusable="false" aria-hidden="true" viewBox="0 0 24 24">
+                                        <path d="M6 6l12 12M18 6 6 18"></path>
+                                    </svg>
+                                    <span><xsl:value-of select="$cancel.label" /></span>
+                                </button>
+                            </span>
+                        </span>
+                        <span class="workbench-action workbench-action--secondary" data-workbench-action="diff">
+                            <span class="workbench-action-label">
+                                <button id="query-diff-trigger" class="query-compare-action" type="button"
+                                        aria-label="{$diff.label}" title="{$diff.label}"
+                                        onclick="workbench.query.openDiffModal()" disabled="disabled">
+                                    <span id="query-diff-trigger-icon" class="query-compare-action__icon"
+                                          aria-hidden="true">
+                                        <svg class="query-compare-action__svg query-compare-action__svg--diff"
+                                             focusable="false" aria-hidden="true" viewBox="0 0 26 24">
+                                            <g style="transform: translateX(0.1rem) translateY(0.1rem);">
+                                                <path class="query-compare-action__stroke" d="M2 8H16"></path>
+                                                <path class="query-compare-action__stroke" d="M12.5 4.5L16 8L12.5 11.5"></path>
+                                            </g>
+                                            <g style="transform: translateX(-0.1rem) translateY(-0.1rem);">
+                                                <path class="query-compare-action__stroke" d="M22 20H8"></path>
+                                                <path class="query-compare-action__stroke" d="M11.5 16.5L8 20L11.5 23.5"></path>
+                                            </g>
+                                        </svg>
+                                    </span>
+                                    <span><xsl:value-of select="$diff.label" /></span>
+                                </button>
+                            </span>
+                        </span>
+                    </div>
+                </div>
                 <div id="query-compare-layout" class="query-compare-layout">
                     <xsl:call-template name="query-pane">
                         <xsl:with-param name="paneId">query-primary-pane</xsl:with-param>
@@ -314,48 +439,6 @@
                         <xsl:with-param name="showControls" select="true()"/>
                         <xsl:with-param name="controlsRowId">query-explanation-controls-row</xsl:with-param>
                     </xsl:call-template>
-                    <div id="query-compare-controls">
-                        <button id="explain-compare-trigger" class="query-compare-action" type="button"
-                                aria-label="{$refresh-explanations.label}" title="{$refresh-explanations.label}"
-                                onclick="workbench.query.runCompareExplain()">
-                            <svg id="explain-compare-trigger-icon"
-                                 class="query-compare-action__svg query-compare-action__svg--refresh"
-                                 focusable="false" aria-hidden="true" viewBox="0 0 118.04 122.88">
-                                <path class="query-compare-action__fill"
-                                      d="M16.08,59.26A8,8,0,0,1,0,59.26a59,59,0,0,1,97.13-45V8a8,8,0,1,1,16.08,0V33.35a8,8,0,0,1-8,8L80.82,43.62a8,8,0,1,1-1.44-15.95l8-.73A43,43,0,0,0,16.08,59.26Zm22.77,19.6a8,8,0,0,1,1.44,16l-10.08.91A42.95,42.95,0,0,0,102,63.86a8,8,0,0,1,16.08,0A59,59,0,0,1,22.3,110v4.18a8,8,0,0,1-16.08,0V89.14h0a8,8,0,0,1,7.29-8l25.31-2.3Z"></path>
-                            </svg>
-                        </button>
-                        <button id="explain-compare-cancel" class="query-compare-action query-explain-cancel"
-                                type="button" aria-label="{$cancel.label}" title="{$cancel.label}"
-                                onclick="workbench.query.cancelCompareExplain()" aria-hidden="true"
-                                disabled="disabled">
-                            <svg id="explain-compare-cancel-icon"
-                                 class="query-compare-action__svg query-compare-action__svg--cancel"
-                                 focusable="false" aria-hidden="true" viewBox="0 0 305.002 305.002">
-                                <path class="query-compare-action__fill"
-                                      d="M152.502,0.001C68.412,0.001,0,68.412,0,152.501s68.412,152.5,152.502,152.5c84.089,0,152.5-68.411,152.5-152.5S236.591,0.001,152.502,0.001z M152.502,280.001C82.197,280.001,25,222.806,25,152.501c0-70.304,57.197-127.5,127.502-127.5c70.304,0,127.5,57.196,127.5,127.5C280.002,222.806,222.806,280.001,152.502,280.001z"></path>
-                                <path class="query-compare-action__fill"
-                                      d="M170.18,152.5l43.13-43.129c4.882-4.882,4.882-12.796,0-17.678c-4.881-4.882-12.796-4.881-17.678,0l-43.13,43.13l-43.131-43.131c-4.882-4.881-12.796-4.881-17.678,0c-4.881,4.882-4.881,12.796,0,17.678l43.13,43.13l-43.131,43.131c-4.881,4.882-4.881,12.796,0,17.679c2.441,2.44,5.64,3.66,8.839,3.66c3.199,0,6.398-1.221,8.839-3.66l43.131-43.132l43.131,43.132c2.441,2.439,5.64,3.66,8.839,3.66s6.398-1.221,8.839-3.66c4.882-4.883,4.882-12.797,0-17.679L170.18,152.5z"></path>
-                            </svg>
-                        </button>
-                        <button id="query-diff-trigger" class="query-compare-action" type="button"
-                                aria-label="{$diff.label}" title="{$diff.label}"
-                                onclick="workbench.query.openDiffModal()" disabled="disabled">
-                            <span id="query-diff-trigger-icon" class="query-compare-action__icon"
-                                  aria-hidden="true">
-                                <svg class="query-compare-action__svg query-compare-action__svg--diff" focusable="false" aria-hidden="true" viewBox="0 0 26 24">
-                                    <g style="transform: translateX(0.1rem) translateY(0.1rem);">
-                                        <path class="query-compare-action__stroke" d="M2 8H16"></path>
-                                        <path class="query-compare-action__stroke" d="M12.5 4.5L16 8L12.5 11.5"></path>
-                                    </g>
-                                    <g style="transform: translateX(-0.1rem) translateY(-0.1rem);">
-                                        <path class="query-compare-action__stroke" d="M22 20H8"></path>
-                                        <path class="query-compare-action__stroke" d="M11.5 16.5L8 20L11.5 23.5"></path>
-                                    </g>
-                                </svg>
-                            </span>
-                        </button>
-                    </div>
                     <xsl:call-template name="query-pane">
                         <xsl:with-param name="paneId">query-compare-pane</xsl:with-param>
                         <xsl:with-param name="paneClass">query-compare-pane query-compare-pane--secondary</xsl:with-param>
@@ -376,86 +459,151 @@
                         <xsl:with-param name="copyButtonId">copy-explanation-compare</xsl:with-param>
                     </xsl:call-template>
                 </div>
-                <div class="query-form__row">
-                    <span class="query-form__label">
-                        <xsl:value-of select="$result-limit.label"/>
-                    </span>
-                    <div class="query-form__field">
-                        <xsl:call-template name="limit-select">
-                            <xsl:with-param name="limit_id">limit_query</xsl:with-param>
-                        </xsl:call-template>
-                    </div>
-                </div>
-                <div class="query-form__row">
-                    <label class="query-form__label" for="query-timeout">
-                        <xsl:value-of select="$query-timeout.label"/>
-                    </label>
-                    <div class="query-form__field">
-                        <input id="query-timeout" name="query-timeout" type="number" min="0" step="1">
-                            <xsl:attribute name="value">
-                                <xsl:choose>
-                                    <xsl:when test="string-length(normalize-space($queryTimeout)) &gt; 0">
-                                        <xsl:value-of select="$queryTimeout"/>
-                                    </xsl:when>
-                                    <xsl:when test="string-length(normalize-space($defaultQueryTimeout)) &gt; 0">
-                                        <xsl:value-of select="$defaultQueryTimeout"/>
-                                    </xsl:when>
-                                    <xsl:otherwise>0</xsl:otherwise>
-                                </xsl:choose>
-                            </xsl:attribute>
-                        </input>
-                    </div>
-                </div>
-                <div class="query-form__row">
-                    <span class="query-form__label">
-                        <xsl:value-of select="$query-options.label"/>
-                    </span>
-                    <div class="query-form__field query-form__field--options">
-                        <input id="infer" name="infer" type="checkbox" value="true">
-                            <xsl:if
-                                    test="$info//sparql:binding[@name='default-infer']/sparql:literal = 'true'">
-                                <xsl:attribute name="checked">true</xsl:attribute>
-                            </xsl:if>
-                        </input>
-                        <label for="infer">
-                            <xsl:value-of select="$include-inferred.label"/>
-                        </label>
-                        <input id="save-private" name="save-private" type="checkbox" value="true"/>
-                        <label for="save-private">
-                            <xsl:value-of select="$save-private.label"/>
-                        </label>
-                    </div>
-                </div>
-                <div class="query-form__row">
-                    <span class="query-form__label">
-                        <xsl:value-of select="$query-actions.label"/>
-                    </span>
-                    <div class="query-form__field query-form__field--actions">
-                        <input type="button" onclick="workbench.query.resetNamespaces()" value="Clear"/>
-                        <input id="exec" type="submit" value="{$execute.label}"/>
+                <div class="query-actions-toolbar">
+                    <div class="query-form__field query-form__field--actions query-actions-toolbar__primary">
+                        <button id="exec" class="query-action query-action--primary" type="submit">
+                            <svg class="query-action-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                                <path d="m7 4 12 8-12 8V4Z"></path>
+                            </svg>
+                            <span><xsl:value-of select="$execute.label" /></span>
+                        </button>
                         <input id="query-cancel" class="query-cancel" type="button"
                                value="{$cancel.label}" onclick="workbench.query.cancelQuery()"
                                aria-hidden="true" disabled="disabled"/>
-                        <input id="explain-trigger" type="button"
-                               value="{$explain-query.label}" onclick="workbench.query.runExplain(null, 'explain-trigger')"/>
+                        <button id="explain-trigger" class="query-action" type="button"
+                                onclick="workbench.query.runExplain(null, 'explain-trigger')">
+                            <svg class="query-action-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                                <circle cx="6" cy="12" r="2.5"></circle>
+                                <circle cx="18" cy="6" r="2.5"></circle>
+                                <circle cx="18" cy="18" r="2.5"></circle>
+                                <path d="m8.2 11 7.3-4M8.2 13l7.3 4"></path>
+                            </svg>
+                            <span><xsl:value-of select="$explain-query.label" /></span>
+                        </button>
                         <span id="explain-trigger-spinner" class="query-explain-spinner"
                               aria-hidden="true"></span>
-                        <input id="explain-trigger-cancel" class="query-explain-cancel"
-                               type="button" value="{$cancel.label}" onclick="workbench.query.cancelExplain()"
-                               aria-hidden="true" disabled="disabled"/>
+                        <span id="explain-trigger-cancel-action"
+                              class="workbench-action workbench-action--danger query-explain-cancel"
+                              data-workbench-action="cancel">
+                            <xsl:call-template name="workbench-action-icon">
+                                <xsl:with-param name="name">cancel</xsl:with-param>
+                            </xsl:call-template>
+                            <span class="workbench-action-label">
+                                <input id="explain-trigger-cancel" class="query-explain-cancel"
+                                       type="button" value="{$cancel.label}" onclick="workbench.query.cancelExplain()"
+                                       aria-hidden="true" disabled="disabled"/>
+                            </span>
+                        </span>
+                    </div>
+                <div id="save-query-disclosure" class="query-disclosure query-save-disclosure">
+                    <button id="save-query-toggle" class="query-disclosure__toggle" type="button"
+                            aria-controls="save-query-panel" aria-expanded="false">
+                        <svg class="query-action-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                            <path d="M6 4h12v16l-6-3-6 3V4Z"></path>
+                        </svg>
+                        <xsl:value-of select="$save.label"/>
+                    </button>
+                    <div id="save-query-panel" class="query-disclosure__body query-disclosure__panel query-save-disclosure__body"
+                         role="region" aria-labelledby="save-query-toggle" hidden="hidden">
                         <input id="save" type="submit" value="{$save.label}" disabled="disabled"/>
+                        <label class="query-form__label" for="query-name">
+                            <xsl:value-of select="$query-name.label"/>
+                        </label>
                         <input id="query-name" name="query-name" type="text" size="32"
                                maxlength="32" value=""/>
+                        <span class="query-option">
+                            <input id="save-private" name="save-private" type="checkbox" value="true"/>
+                            <label for="save-private">
+                                <xsl:value-of select="$save-private.label"/>
+                            </label>
+                        </span>
                         <span id="save-feedback"></span>
                     </div>
                 </div>
+                <div id="query-options-disclosure" class="query-disclosure query-options-disclosure">
+                    <button id="query-options-toggle" class="query-disclosure__toggle" type="button"
+                            aria-controls="query-options-panel" aria-expanded="false">
+                        <svg class="query-action-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                            <path d="M4 7h16M4 12h16M4 17h16"></path>
+                            <circle cx="9" cy="7" r="2"></circle>
+                            <circle cx="15" cy="12" r="2"></circle>
+                            <circle cx="11" cy="17" r="2"></circle>
+                        </svg>
+                        <xsl:value-of select="$query-options.label"/>
+                    </button>
+                    <div id="query-options-panel" class="query-disclosure__body query-disclosure__panel"
+                         role="region" aria-labelledby="query-options-toggle" hidden="hidden">
+                        <div class="query-settings">
+                            <div class="query-form__row">
+                                <span class="query-form__label">
+                                    <xsl:value-of select="$result-limit.label"/>
+                                </span>
+                                <div class="query-form__field">
+                                    <xsl:call-template name="limit-select">
+                                        <xsl:with-param name="limit_id">limit_query</xsl:with-param>
+                                    </xsl:call-template>
+                                </div>
+                            </div>
+                            <div class="query-form__row">
+                                <label class="query-form__label" for="query-timeout">
+                                    <xsl:value-of select="$query-timeout.label"/>
+                                </label>
+                                <div class="query-form__field">
+                                    <input id="query-timeout" name="query-timeout" type="number" min="0" step="1">
+                                        <xsl:attribute name="value">
+                                            <xsl:choose>
+                                                <xsl:when test="string-length(normalize-space($queryTimeout)) &gt; 0">
+                                                    <xsl:value-of select="$queryTimeout"/>
+                                                </xsl:when>
+                                                <xsl:when test="string-length(normalize-space($defaultQueryTimeout)) &gt; 0">
+                                                    <xsl:value-of select="$defaultQueryTimeout"/>
+                                                </xsl:when>
+                                                <xsl:otherwise>0</xsl:otherwise>
+                                            </xsl:choose>
+                                        </xsl:attribute>
+                                    </input>
+                                </div>
+                            </div>
+                            <div class="query-form__row">
+                                <div class="query-form__field query-form__field--options">
+                                    <span class="query-option">
+                                        <input id="infer" name="infer" type="checkbox" value="true">
+                                            <xsl:if
+                                                    test="$info//sparql:binding[@name='default-infer']/sparql:literal = 'true'">
+                                                <xsl:attribute name="checked">true</xsl:attribute>
+                                            </xsl:if>
+                                        </input>
+                                        <label for="infer">
+                                            <xsl:value-of select="$include-inferred.label"/>
+                                        </label>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="query-disclosure__actions">
+                                <input type="button" onclick="workbench.query.resetNamespaces()" value="Clear"/>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div>
             </div>
         </form>
-        <section id="query-results" class="query-results" aria-busy="false"
+        <section id="query-results" class="query-results" aria-busy="false" hidden="hidden"
                  aria-labelledby="query-results-heading">
-            <h2 id="query-results-heading">
-                <xsl:value-of select="$query-result.title"/>
-            </h2>
+            <div class="query-results__header">
+                <h2 id="query-results-heading">
+                    <xsl:value-of select="$query-result.title"/>
+                </h2>
+                <button id="query-results-fullscreen" class="query-results__fullscreen" type="button"
+                        aria-label="{$full-screen.label}" title="{$full-screen.label}" hidden="hidden"
+                        aria-pressed="false" onclick="workbench.query.toggleResultsFullscreen()">
+                    <svg class="query-results__fullscreen-icon" viewBox="0 0 24 24" focusable="false"
+                         aria-hidden="true">
+                        <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"></path>
+                    </svg>
+                    <span class="query-results__fullscreen-label"><xsl:value-of select="$full-screen.label" /></span>
+                </button>
+            </div>
             <div id="query-results-loading" class="query-results__loading" hidden="hidden"
                  role="status" aria-live="polite">Loading query results...</div>
             <div id="query-results-status" class="query-results__status" role="status"
@@ -466,12 +614,21 @@
         <div id="query-diff-modal" class="query-diff-modal" aria-hidden="true">
             <div class="query-diff-modal__dialog" role="dialog" aria-modal="true"
                  aria-labelledby="query-diff-modal-title">
-                <div class="query-diff-modal__header">
-                    <div id="query-diff-modal-title" class="query-diff-modal__title">
-                        <xsl:value-of select="$diff.label"/>
-                    </div>
-                    <input id="query-diff-close" type="button" value="&#x2715;"
-                           onclick="workbench.query.closeDiffModal()" style="font-size: 1rem"/>
+				<div class="query-diff-modal__header">
+					<div id="query-diff-modal-title" class="query-diff-modal__title">
+						<xsl:value-of select="$diff.label"/>
+					</div>
+					<span class="workbench-action workbench-action--secondary">
+						<label class="workbench-action-hit-area">
+							<xsl:call-template name="workbench-action-icon">
+								<xsl:with-param name="name">close</xsl:with-param>
+							</xsl:call-template>
+							<span class="workbench-action-label">
+								<input id="query-diff-close" type="button" value="{$close.label}"
+									   onclick="workbench.query.closeDiffModal()" />
+							</span>
+						</label>
+					</span>
                 </div>
                 <div class="query-diff-modal__body">
                     <div class="query-diff-section query-diff-section--query">
@@ -490,6 +647,7 @@
                     </div>
                 </div>
             </div>
+        </div>
         </div>
         <script type="text/javascript">
             var sparqlNamespaces = {

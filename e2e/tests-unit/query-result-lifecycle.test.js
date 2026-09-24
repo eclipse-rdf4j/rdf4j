@@ -173,6 +173,38 @@ test('blank result-frame load is ignored and failed load clears pending state', 
     assert.equal(harness.getProperty('query-cancel', 'disabled'), true);
 });
 
+test('intermediate XML load stays pending until the deferred stylesheet document arrives', () => {
+    const { harness } = submitQuery({ serverRequestIds: ['query-1'] });
+    const resultFrame = harness.getResultFrame();
+
+    resultFrame.src = 'http://localhost:8080/rdf4j-workbench/repositories/test/query?action=exec';
+    resultFrame.contentWindow.location.href = resultFrame.src;
+    resultFrame.contentDocument = null;
+    resultFrame.trigger('load');
+    harness.advanceTimers(300);
+
+    assert.equal(harness.getProperty('query-request-id', 'value'), 'query-1');
+    assert.equal(harness.getProperty('query-results-loading', 'hidden'), false);
+    assert.equal(harness.getText('query-results-status'), '');
+
+    resultFrame.contentDocument = {
+        getElementById(id) {
+            if (id !== 'rdf4j-query-result') {
+                return null;
+            }
+            return {
+                getAttribute(name) {
+                    return name === 'data-query-request-id' ? 'query-1' : 'completed';
+                }
+            };
+        }
+    };
+    resultFrame.trigger('load');
+
+    assert.equal(harness.getProperty('query-request-id', 'value'), '');
+    assert.equal(harness.getProperty('query-results-loading', 'hidden'), true);
+});
+
 test('empty query clears the previous result and reports an actionable status', () => {
     const harness = createQueryBrowserHarness({ query: '' });
     harness.runPageLoad();

@@ -13,6 +13,7 @@
 	<xsl:include href="template.xsl" />
 
 	<xsl:template match="sparql:sparql">
+		<section class="workbench-island workbench-summary-location">
 		<h2>
 			<xsl:value-of select="$repository-location.title" />
 		</h2>
@@ -52,6 +53,8 @@
 				</tr>
 			</tbody>
 		</table>
+		</section>
+		<section class="workbench-island workbench-summary-size">
 		<h2>
 			<xsl:value-of select="$repository-size.title" />
 		</h2>
@@ -75,16 +78,16 @@
 				</tr>
 			</tbody>
 		</table>
+		</section>
 		<xsl:if test="/sparql:sparql/workbench:metadata/workbench:config-model-turtle">
-			<h2>
-				<xsl:value-of select="$config-model.title" />
-			</h2>
-			<details>
+			<section class="workbench-island workbench-summary-config">
+			<details id="summary-config-model" class="workbench-options">
 				<summary>
 					<xsl:value-of select="$config-model.label" />
 				</summary>
-				<pre><xsl:value-of select="/sparql:sparql/workbench:metadata/workbench:config-model-turtle" /></pre>
+				<pre role="region"><xsl:value-of select="/sparql:sparql/workbench:metadata/workbench:config-model-turtle" /></pre>
 			</details>
+			</section>
 		</xsl:if>
 	</xsl:template>
 

@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="980" viewBox="0 0 1440 980" role="img" aria-labelledby="title desc">
+  <title id="title">RDF4J Workbench query page desktop wire</title>
+  <desc id="desc">Collapsed Concept A layout with slate canvas, white navigation, query and result islands, and immediately available execute, explain, previous and next actions.</desc>
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity=".08"/><feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0f172a" flood-opacity=".06"/></filter>
+  </defs>
+  <style>
+    text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; fill: #0f172a; }
+    .muted { fill: #475569; } .small { font-size: 13px; } .label { font-size: 15px; font-weight: 700; }
+    .rule { stroke: #cbd5e1; stroke-width: 1; } .island { fill: #fff; stroke: #e2e8f0; stroke-width: 1; }
+    .soft { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1; } .blue { fill: #2563eb; }
+    .primary { fill: #0f172a; } .logo { fill: #f97316; }
+    text[fill="#fff"] { fill: #fff; }
+  </style>
+  <rect width="1440" height="980" fill="#f1f5f9"/>
+  <rect width="1440" height="72" class="island"/>
+  <rect x="24" y="17" width="34" height="38" rx="7" class="logo"/>
+  <text x="70" y="45" font-size="27" font-weight="700">rdf4j / workbench</text>
+  <text x="1010" y="26" class="small muted">RDF4J Server: http://127.0.0.1:8080/rdf4j-server</text>
+  <text x="1010" y="45" class="small muted">Repository: Embedded results browser repository</text>
+  <text x="1010" y="64" class="small muted">User (optional): - none -</text>
+
+  <rect x="24" y="96" width="190" height="800" rx="14" class="island"/>
+  <text x="44" y="132" class="label">RDF4J SERVER</text><line x1="44" y1="144" x2="194" y2="144" class="rule"/>
+  <text x="44" y="174" class="small muted">Repositories</text><text x="44" y="200" class="small muted">New repository</text><text x="44" y="226" class="small muted">Delete repository</text>
+  <text x="44" y="270" class="label">EXPLORE</text><line x1="44" y1="282" x2="194" y2="282" class="rule"/>
+  <text x="44" y="312" class="small muted">Summary</text><text x="44" y="338" class="small muted">Namespaces</text><text x="44" y="364" class="small muted">Contexts</text><text x="44" y="390" class="small muted">Types</text>
+  <rect x="36" y="402" width="166" height="34" rx="8" fill="#e2e8f0"/><rect x="36" y="402" width="3" height="34" fill="#334155"/><text x="56" y="424" class="small" font-weight="700">Query</text>
+  <text x="56" y="456" class="small muted">Saved Queries</text><text x="56" y="482" class="small muted">Export</text>
+  <text x="44" y="530" class="label">MODIFY</text><line x1="44" y1="542" x2="194" y2="542" class="rule"/>
+  <text x="56" y="572" class="small muted">SPARQL Update</text><text x="56" y="598" class="small muted">Add</text><text x="56" y="624" class="small muted">Remove</text><text x="56" y="650" class="small muted">Clear</text>
+  <text x="44" y="696" class="label">SYSTEM</text><line x1="44" y1="708" x2="194" y2="708" class="rule"/><text x="56" y="740" class="small muted">Information</text>
+
+  <text x="238" y="126" font-size="28" font-weight="700">Query Repository</text>
+  <rect x="238" y="148" width="1178" height="316" rx="14" class="island"/>
+  <text x="262" y="180" font-size="20" font-weight="700">Query</text>
+  <rect x="262" y="196" width="1130" height="178" rx="8" class="soft"/>
+  <rect x="262" y="196" width="48" height="178" fill="#f8fafc"/><line x1="310" y1="196" x2="310" y2="374" class="rule"/>
+  <text x="279" y="226" class="small muted">1</text><text x="279" y="250" class="small muted">2</text><text x="279" y="274" class="small muted">3</text><text x="279" y="298" class="small muted">4</text>
+  <text x="328" y="226" font-family="monospace" font-size="15" fill="#7e22ce">SELECT ?s ?p ?o</text><text x="328" y="250" font-family="monospace" font-size="15">WHERE {</text><text x="348" y="274" font-family="monospace" font-size="15" fill="#2563eb">?s ?p ?o .</text><text x="328" y="298" font-family="monospace" font-size="15">}</text>
+  <rect x="262" y="398" width="112" height="38" rx="8" class="primary"/><text x="284" y="422" fill="#fff" font-size="14" font-weight="700">Execute</text>
+  <rect x="386" y="398" width="136" height="38" rx="8" class="island"/><text x="408" y="422" class="small">Explain Query</text>
+  <rect x="538" y="398" width="132" height="38" rx="8" class="island"/><text x="558" y="422" class="small">Save query  v</text>
+  <rect x="1260" y="398" width="132" height="38" rx="8" class="island"/><text x="1284" y="422" class="small">Options  v</text>
+  <text x="262" y="451" class="small muted">Options and Save query expand inline; defaults remain unchanged.</text>
+
+  <rect x="238" y="492" width="1178" height="364" rx="14" class="island"/>
+  <text x="262" y="530" font-size="20" font-weight="700">Query Result</text>
+  <rect x="1110" y="508" width="132" height="38" rx="8" class="island"/><text x="1132" y="532" class="small">Download  v</text>
+  <rect x="1254" y="508" width="138" height="38" rx="8" class="island"/><text x="1270" y="532" class="small">Result options  v</text>
+  <rect x="1170" y="556" width="100" height="34" rx="8" class="soft"/><text x="1190" y="578" class="small muted">Previous</text>
+  <rect x="1280" y="556" width="100" height="34" rx="8" class="island"/><text x="1307" y="578" class="small" font-weight="700">Next</text>
+  <rect x="262" y="606" width="1130" height="196" rx="8" class="soft"/>
+  <rect x="262" y="606" width="1130" height="36" fill="#e2e8f0"/><text x="282" y="629" class="small" font-weight="700">s</text><text x="642" y="629" class="small" font-weight="700">p</text><text x="1002" y="629" class="small" font-weight="700">o</text>
+  <line x1="622" y1="606" x2="622" y2="802" class="rule"/><line x1="982" y1="606" x2="982" y2="802" class="rule"/>
+  <text x="282" y="670" class="small blue">urn:person:1</text><text x="642" y="670" class="small blue">urn:foaf:name</text><text x="1002" y="670" class="small">"Alice"</text><line x1="262" y1="684" x2="1392" y2="684" class="rule"/>
+  <text x="282" y="710" class="small blue">urn:person:1</text><text x="642" y="710" class="small blue">urn:foaf:mbox</text><text x="1002" y="710" class="small">"alice@example.org"</text><line x1="262" y1="724" x2="1392" y2="724" class="rule"/>
+  <text x="282" y="750" class="small blue">urn:person:2</text><text x="642" y="750" class="small blue">urn:foaf:knows</text><text x="1002" y="750" class="small blue">urn:person:3</text><line x1="262" y1="764" x2="1392" y2="764" class="rule"/>
+  <text x="262" y="834" class="small muted">Loading and Cancel share the existing status area above this frame; errors stay in the status line.</text>
+  <text x="238" y="934" class="small muted">Wire: slate canvas · white islands · 24px gutters · native disclosures · latest result replaces prior result</text>
+</svg>

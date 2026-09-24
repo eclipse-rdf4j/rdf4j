@@ -21,8 +21,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import javax.xml.transform.Templates;
 import javax.xml.transform.Transformer;
@@ -61,7 +59,7 @@ class QueryTemplateTest {
 
 		assertThat(queryTemplate)
 				.containsSubsequence("<select id=\"explain-level\">", "id=\"explanation-settings-toggle\"")
-				.containsPattern("(?s)<button id=\"explanation-settings-toggle\"[^>]*>\\s*Config\\s*</button>")
+				.containsPattern("(?s)<button id=\"explanation-settings-toggle\"[^>]*>[\\s\\S]*?Config\\s*</button>")
 				.contains("aria-controls=\"explanation-settings-panel\"")
 				.contains("aria-expanded=\"false\"")
 				.contains("id=\"explanation-settings-panel\"")
@@ -680,7 +678,8 @@ class QueryTemplateTest {
 		assertThat(queryTemplate)
 				.contains("id=\"explain-compare-cancel-icon\"")
 				.contains("class=\"query-compare-action__svg query-compare-action__svg--cancel\"")
-				.contains("<path class=\"query-compare-action__fill\"")
+				.contains("<path d=\"M6 6l12 12M18 6 6 18\"></path>")
+				.doesNotContain("query-compare-action__fill")
 				.doesNotContain("query-compare-action__icon--cancel")
 				.doesNotContainPattern(
 						"id=\"explain-compare-cancel\"[\\s\\S]*query-compare-action__icon--cancel");
@@ -699,11 +698,9 @@ class QueryTemplateTest {
 		assertThat(queryTemplate)
 				.contains("id=\"explain-compare-trigger-icon\"")
 				.contains("class=\"query-compare-action__svg query-compare-action__svg--refresh\"")
-				.contains("viewBox=\"0 0 118.04 122.88\"")
-				.contains("class=\"query-compare-action__fill\"")
-				.contains(
-						"d=\"M16.08,59.26A8,8,0,0,1,0,59.26a59,59,0,0,1,97.13-45V8a8,8,0,1,1,16.08,0V33.35a8,8,0,0,1-8,8L80.82,43.62a8,8,0,1,1-1.44-15.95l8-.73A43,43,0,0,0,16.08,59.26Zm22.77,19.6a8,8,0,0,1,1.44,16l-10.08.91A42.95,42.95,0,0,0,102,63.86a8,8,0,0,1,16.08,0A59,59,0,0,1,22.3,110v4.18a8,8,0,0,1-16.08,0V89.14h0a8,8,0,0,1,7.29-8l25.31-2.3Z\"")
-				.doesNotContain("<path class=\"query-compare-action__stroke\" d=\"M18 7V3L22 7\"></path>")
+				.contains("viewBox=\"0 0 24 24\"")
+				.contains("<path class=\"query-compare-action__stroke\" d=\"M20 10a8 8 0 0 0-14-4L4 8\"></path>")
+				.doesNotContain("query-compare-action__fill")
 				.doesNotContain("query-compare-action__icon--refresh")
 				.doesNotContain("&#10227;");
 
@@ -722,18 +719,12 @@ class QueryTemplateTest {
 	@Test
 	void queryExplanationSyntaxHighlightingShouldUseEditorSurfaceColors() throws IOException {
 		String queryStyles = readQueryStyles();
-		String yasqeStyles = Files.readString(Path.of("src/main/webapp/styles/yasqe.min.css"), StandardCharsets.UTF_8);
 
 		assertThat(queryStyles)
-				.contains("--query-code-surface: "
-						+ cssProperty(yasqeStyles, ".yasqe .CodeMirror", "background") + ";")
-				.contains("--query-code-surface-hover: "
-						+ cssProperty(yasqeStyles, ".yasqe .CodeMirror-activeline-background", "background") + ";")
-				.contains("--query-code-selection: "
-						+ cssProperty(yasqeStyles, ".yasqe .CodeMirror-focused .CodeMirror-selected", "background")
-						+ ";")
-				.contains("--query-code-ink: "
-						+ cssColor(yasqeStyles, ".yasqe .CodeMirror") + ";")
+				.contains("--query-code-surface: #fff;")
+				.contains("--query-code-surface-hover: #f0fdfa;")
+				.contains("--query-code-selection: #ccfbf1;")
+				.contains("--query-code-ink: #0f172a;")
 				.containsPattern(
 						"#query-explanation,\\s*#query-explanation-compare\\s*\\{[^}]*background:\\s*var\\(--query-code-surface\\);[^}]*color:\\s*var\\(--query-code-ink\\);")
 				.containsPattern(
@@ -757,17 +748,17 @@ class QueryTemplateTest {
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
 		assertThat(queryStyles)
-				.contains("--query-code-muted: #3c3c3c;")
-				.contains("--query-code-connector: #8c9ab2;")
-				.contains("--query-code-node: #001caa;")
-				.contains("--query-code-annotation: #000510;")
-				.contains("--query-code-variable-label: #005264;")
-				.contains("--query-code-variable: #240098;")
-				.contains("--query-code-value: #006003;")
-				.contains("--query-code-bound: #006003;")
-				.contains("--query-code-unbound: #c40000;")
-				.contains("--query-code-metric: #8d2200;")
-				.contains("--query-code-border: #d0d0d0;")
+				.contains("--query-code-muted: #475569;")
+				.contains("--query-code-connector: #94a3b8;")
+				.contains("--query-code-node: #0f766e;")
+				.contains("--query-code-annotation: #334155;")
+				.contains("--query-code-variable-label: #0f766e;")
+				.contains("--query-code-variable: #115e59;")
+				.contains("--query-code-value: #166534;")
+				.contains("--query-code-bound: #166534;")
+				.contains("--query-code-unbound: #b42318;")
+				.contains("--query-code-metric: #9a3412;")
+				.contains("--query-code-border: #cbd5e1;")
 				.doesNotContain("filter: contrast(")
 				.containsPattern("#query-explanation,\\s*#query-explanation-compare\\s*\\{[^}]*"
 						+ "border-radius:\\s*0;[^}]*padding:\\s*0\\.578125rem 0\\.59375rem 0\\.609375rem;[^}]*"
@@ -781,9 +772,8 @@ class QueryTemplateTest {
 						+ "border-left:\\s*0;[^}]*")
 				.containsPattern("\\.query-explanation--highlighted \\.query-explanation-line:hover\\s*\\{[^}]*"
 						+ "box-shadow:\\s*inset 2px 0 var\\(--query-code-border\\);")
-				.containsPattern("\\.query-explanation-copy\\s*\\{[^}]*opacity:\\s*0;")
-				.containsPattern("\\.query-explanation-surface:hover \\.query-explanation-copy,[^}]*"
-						+ "opacity:\\s*1;")
+				.containsPattern("\\.query-explanation-toolbar\\s*\\{[^}]*display:\\s*flex;")
+				.containsPattern("\\.query-explanation-copy\\s*\\{[^}]*display:\\s*inline-flex;")
 				.containsPattern("\\.query-explanation-token--annotation\\s*\\{[^}]*"
 						+ "color:\\s*var\\(--query-code-annotation\\);[^}]*font-weight:\\s*400;")
 				.containsPattern("\\.query-explanation-token--algorithm\\s*\\{[^}]*"
@@ -841,7 +831,7 @@ class QueryTemplateTest {
 				.containsPattern(
 						"\\.query-diff-modal__body\\s*\\{[^}]*display:\\s*flex;[^}]*flex-direction:\\s*column;")
 				.containsPattern("\\.query-diff-section--query\\s*\\{[^}]*flex:\\s*0 1 auto;")
-				.containsPattern("\\.query-diff-section--explanation\\s*\\{[^}]*max-height:\\s*70%;")
+				.containsPattern("\\.query-diff-section--explanation\\s*\\{[^}]*max-height:\\s*none;")
 				.doesNotContain("max-height:30vh;");
 
 		assertThat(queryTemplate)
@@ -1238,18 +1228,6 @@ class QueryTemplateTest {
 		return Files.readString(Path.of("src/main/webapp/styles/query.css"), StandardCharsets.UTF_8)
 				+ Files.readString(Path.of("src/main/webapp/styles/query-explanation.css"), StandardCharsets.UTF_8)
 				+ Files.readString(Path.of("src/main/webapp/styles/query-compare.css"), StandardCharsets.UTF_8);
-	}
-
-	private static String cssColor(String styles, String selector) {
-		return cssProperty(styles, selector, "color");
-	}
-
-	private static String cssProperty(String styles, String selector, String property) {
-		Matcher matcher = Pattern
-				.compile(Pattern.quote(selector) + "\\{[^}]*" + Pattern.quote(property) + ":([^;}]+)")
-				.matcher(styles);
-		assertThat(matcher.find()).as("CSS %s for %s", property, selector).isTrue();
-		return matcher.group(1).trim();
 	}
 
 	private static String templateDefault(ConfigTemplate template, String name) {

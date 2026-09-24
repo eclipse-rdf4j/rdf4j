@@ -64,6 +64,7 @@
 	<variable name="rule-query.label">Rule Query</variable>
 	<variable name="matcher-query.label">Matcher Query (Optional)</variable>
 	<variable name="saved-queries.label">Saved Queries</variable>
+	<variable name="bookmark.label">Link</variable>
 	<variable name="export.label">Export</variable>
 	<variable name="modify.label">Modify</variable>
 	<variable name="update.label">Update</variable>
@@ -92,6 +93,9 @@
 	<variable name="explain-format.label">Explain format</variable>
 	<variable name="download-explanation.label">Download explanation</variable>
 	<variable name="copy-explanation.label">Copy explanation</variable>
+	<variable name="copy.label">Copy</variable>
+	<variable name="swap.label">Swap</variable>
+	<variable name="close.label">Close</variable>
 	<variable name="change-server.label">RDF4J Server URL</variable>
 	<variable name="change.label">Change</variable>
 	<variable name="server.label">RDF4J Server</variable>
@@ -99,6 +103,11 @@
 	<variable name="server-password.label">Password (optional)</variable>
 	<variable name="repository.label">Repository</variable>
 	<variable name="download.label">Download</variable>
+	<variable name="full-screen.label">Full screen</variable>
+	<variable name="exit-full-screen.label">Exit full screen</variable>
+	<variable name="menu.label">Menu</variable>
+	<variable name="advanced-settings.label">Advanced settings</variable>
+	<variable name="examples.label">Examples</variable>
 	<variable name="download-format.label">Download format</variable>
 	<variable name="download-limit.label">Download limit</variable>
 	<variable name="change-server.desc">for example: http://localhost:8080/rdf4j-server</variable>
@@ -117,6 +126,7 @@
 	<variable name="false.label">No</variable>
 	<variable name="repository-default.label">Repository default</variable>
 	<variable name="none.label">None</variable>
+	<variable name="no-results.label">No results to display.</variable>
 	<variable name="all.label">All</variable>
 	<variable name="readable.label">Readable</variable>
 	<variable name="writeable.label">Writeable</variable>
@@ -148,9 +158,16 @@
 	</variable>
 	<variable name="save-private.label">Save privately (do not share)</variable>
 	<variable name="save.label">Save query</variable>
+	<variable name="query-name.label">Query name</variable>
 	<variable name="object.label">Object</variable>
 	<variable name="predicate.label">Predicate</variable>
-	<variable name="query-options.label">Action Options</variable>
+	<variable name="query-options.label">Options</variable>
+	<variable name="result-options.label">Result options</variable>
+	<variable name="result-layout.label">Layout</variable>
+	<variable name="result-layout-auto.label">Auto</variable>
+	<variable name="result-layout-table.label">Table</variable>
+	<variable name="result-layout-records.label">Records</variable>
+	<variable name="result-wrap.label">Wrap values</variable>
 	<variable name="query-actions.label">Actions</variable>
 	<variable name="query-explanation.label">Query Explanation</variable>
 	<variable name="query-timeout.label">Query timeout (seconds)</variable>
@@ -161,6 +178,7 @@
 	<variable name="upload-file.desc">
 		Select the file containing the RDF data you wish to upload
 	</variable>
+	<variable name="upload-file.short">File</variable>
 	<variable name="upload-file.hint">
 		Gzip-compressed files such as data.ttl.gz are accepted and decompressed automatically.
 	</variable>
@@ -168,10 +186,12 @@
 	<variable name="upload-text.desc">
 		Enter the RDF data you wish to upload
 	</variable>
+	<variable name="upload-text.short">Text</variable>
 	<variable name="upload-text.label">RDF Content</variable>
 	<variable name="upload-url.desc">
 		Location of the RDF data you wish to upload
 	</variable>
+	<variable name="upload-url.short">URL</variable>
 	<variable name="upload-url.label">RDF Data URL</variable>
 	<variable name="value-encoding.desc">
 		Please specify subject, predicate, object and/or context of the

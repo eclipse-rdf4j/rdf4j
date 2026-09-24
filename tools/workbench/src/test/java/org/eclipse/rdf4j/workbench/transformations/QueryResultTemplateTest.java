@@ -100,6 +100,46 @@ class QueryResultTemplateTest {
 	}
 
 	@Test
+	void embeddedBooleanResultsShouldNotRenderWorkbenchMetadataAsVisibleText() throws Exception {
+		String html = transform("boolean.xsl", embeddedBooleanResultXml(), infoXml());
+		String visibleText = html.replaceAll("<[^>]*>", " ").replaceAll("\\s+", " ");
+
+		assertThat(html)
+				.contains("data-query-request-id=\"boolean-request-sentinel\"")
+				.contains("data-query-result-status=\"boolean-status-sentinel\"");
+		assertThat(visibleText)
+				.doesNotContain("boolean-request-sentinel")
+				.doesNotContain("boolean-status-sentinel")
+				.doesNotContain("boolean-language-sentinel")
+				.doesNotContain("boolean-infer-sentinel")
+				.doesNotContain("boolean-timeout-sentinel")
+				.doesNotContain("boolean-count-sentinel");
+	}
+
+	@Test
+	void embeddedFalseBooleanResultsShouldNotRenderWorkbenchMetadataAsVisibleText() throws Exception {
+		String html = transform("boolean.xsl", embeddedBooleanResultXml("false"), infoXml());
+		String visibleText = html.replaceAll("<[^>]*>", " ").replaceAll("\\s+", " ");
+
+		assertThat(visibleText)
+				.doesNotContain("boolean-request-sentinel")
+				.doesNotContain("boolean-status-sentinel")
+				.doesNotContain("boolean-language-sentinel")
+				.doesNotContain("boolean-infer-sentinel")
+				.doesNotContain("boolean-timeout-sentinel")
+				.doesNotContain("boolean-count-sentinel");
+	}
+
+	@Test
+	void standaloneTupleResultsKeepPaginationInsideTheResultOptionsForm() throws Exception {
+		String html = transform("tuple.xsl", queryResultXml(), infoXml());
+
+		assertThat(html).doesNotContain("class=\"query-result-navigation\"");
+		assertThat(html.indexOf("id=\"previousX\"")).isLessThan(html.indexOf("<table class=\"data\""));
+		assertThat(html.indexOf("id=\"nextX\"")).isLessThan(html.indexOf("<table class=\"data\""));
+	}
+
+	@Test
 	void embeddedEmptyAndErrorResultsShouldRenderOnlyTheResultMessage() throws Exception {
 		String emptyHtml = transform("query-result-empty.xsl", embeddedQueryResultXml(), infoXml());
 		String errorHtml = transform("query-result-error.xsl", embeddedErrorResultXml(), infoXml());
@@ -199,14 +239,23 @@ class QueryResultTemplateTest {
 	}
 
 	private static String embeddedBooleanResultXml() {
+		return embeddedBooleanResultXml("true");
+	}
+
+	private static String embeddedBooleanResultXml(String value) {
 		return "<?xml version=\"1.0\"?>\n"
 				+ "<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\" "
 				+ "xmlns:workbench=\"https://rdf4j.org/schema/workbench#\">\n"
 				+ "  <sparql:head><sparql:link href=\"info\"/></sparql:head>\n"
-				+ "  <sparql:boolean>true</sparql:boolean>\n"
+				+ "  <sparql:boolean>" + value + "</sparql:boolean>\n"
 				+ "  <workbench:metadata><workbench:embedded>true</workbench:embedded>"
-				+ "<workbench:query-request-id>query-boolean</workbench:query-request-id>"
-				+ "<workbench:query-result-status>completed</workbench:query-result-status></workbench:metadata>\n"
+				+ "<workbench:query-request-id>boolean-request-sentinel</workbench:query-request-id>"
+				+ "<workbench:query-result-status>boolean-status-sentinel</workbench:query-result-status>"
+				+ "<workbench:query-language>boolean-language-sentinel</workbench:query-language>"
+				+ "<workbench:infer>boolean-infer-sentinel</workbench:infer>"
+				+ "<workbench:query-timeout>boolean-timeout-sentinel</workbench:query-timeout>"
+				+ "<workbench:total-result-count>boolean-count-sentinel</workbench:total-result-count>"
+				+ "</workbench:metadata>\n"
 				+ "</sparql:sparql>\n";
 	}
 

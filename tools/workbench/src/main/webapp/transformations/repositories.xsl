@@ -17,17 +17,27 @@
 
 	<xsl:include href="table.xsl" />
 
+	<xsl:template match="sparql:sparql">
+		<section id="repositories-results" class="workbench-island workbench-responsive-records">
+			<table class="data"><xsl:apply-templates select="*" /></table>
+		</section>
+	</xsl:template>
+
 	<xsl:template match="sparql:variable[@name='readable']">
 		<th>
-			<img src="../../images/view.png" alt="{$readable.label}"
-				title="{$readable.label}" />
+			<xsl:call-template name="workbench-status-icon">
+				<xsl:with-param name="status">readable</xsl:with-param>
+				<xsl:with-param name="label" select="$readable.label" />
+			</xsl:call-template>
 		</th>
 	</xsl:template>
 
 	<xsl:template match="sparql:variable[@name='writeable']">
 		<th>
-			<img src="../../images/edit.png"
-				alt="{$writeable.label}" title="{$writeable.label}" />
+			<xsl:call-template name="workbench-status-icon">
+				<xsl:with-param name="status">writeable</xsl:with-param>
+				<xsl:with-param name="label" select="$writeable.label" />
+			</xsl:call-template>
 		</th>
 	</xsl:template>
 
@@ -40,12 +50,16 @@
 	<xsl:template match="sparql:literal[@datatype = '&xsd;boolean']">
 		<xsl:choose>
 			<xsl:when test="text() = 'true'">
-				<img src="../../images/affirmative.png"
-					alt="{$true.label}" title="{$true.label}" />
+				<xsl:call-template name="workbench-status-icon">
+					<xsl:with-param name="status">positive</xsl:with-param>
+					<xsl:with-param name="label" select="$true.label" />
+				</xsl:call-template>
 			</xsl:when>
 			<xsl:otherwise>
-				<img src="../../images/negative.png"
-					alt="{$false.label}" title="{$false.label}" />
+				<xsl:call-template name="workbench-status-icon">
+					<xsl:with-param name="status">negative</xsl:with-param>
+					<xsl:with-param name="label" select="$false.label" />
+				</xsl:call-template>
 			</xsl:otherwise>
 		</xsl:choose>
 	</xsl:template>

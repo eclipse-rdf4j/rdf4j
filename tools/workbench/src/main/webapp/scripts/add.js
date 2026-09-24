@@ -31,6 +31,9 @@ var workbench;
         add.handleBaseURIUse = handleBaseURIUse;
         function enabledInput(selected) {
             var istext = (selected == 'text');
+            $('#add-source-file-panel').prop('hidden', selected != 'file');
+            $('#add-source-url-panel').prop('hidden', selected != 'url');
+            $('#add-source-text-panel').prop('hidden', !istext);
             $('#text').prop('disabled', !istext);
             var contentType = $('#Content-Type');
             $('#source-' + selected).prop('checked', true);
@@ -74,4 +77,8 @@ var workbench;
         add.enabledInput = enabledInput;
     })(add = workbench.add || (workbench.add = {}));
 })(workbench || (workbench = {}));
+workbench.addLoad(function addPageLoaded() {
+    var selected = $("input[name='source']:checked").val() || 'file';
+    workbench.add.enabledInput(selected == 'contents' ? 'text' : selected);
+});
 //# sourceMappingURL=add.js.map

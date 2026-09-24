@@ -14,9 +14,8 @@
 
 	<xsl:template match="sparql:sparql">
 		<xsl:variable name="info" select="/" />
-		<h2>
-			<xsl:value-of select="$application-information.title" />
-		</h2>
+		<section id="information-application" class="workbench-island">
+		<h2><xsl:value-of select="$application-information.title" /></h2>
 		<table class="simple">
 			<tbody>
 
@@ -40,11 +39,10 @@
 				</tr>
 			</tbody>
 		</table>
+		</section>
 
-		<h2>
-			<xsl:value-of select="$runtime-information.title" />
-		</h2>
-
+		<section id="information-runtime" class="workbench-island">
+		<h2><xsl:value-of select="$runtime-information.title" /></h2>
 		<table class="simple">
 			<tbody>
 				<tr>
@@ -77,10 +75,10 @@
 			</tbody>
 
 		</table>
+		</section>
 
-		<h2>
-			<xsl:value-of select="$memory.title" />
-		</h2>
+		<section id="information-memory" class="workbench-island">
+		<h2><xsl:value-of select="$memory.title" /></h2>
 		<table class="simple">
 			<tbody>
 				<tr>
@@ -104,6 +102,7 @@
 				</tr>
 			</tbody>
 		</table>
+		</section>
 	</xsl:template>
 
 	<xsl:template match="sparql:literal">

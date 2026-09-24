@@ -59,11 +59,15 @@ workbench.addLoad(function() {
     }
     var explore = 'explore';
     workbench.paging.correctButtons(explore);
-    var content = document.getElementById('content');
-    var h1 = content.getElementsByTagName('h1')[0];
     var rvalue=resource.val();
     if (rvalue) {
-        h1.appendChild(document.createTextNode(' (' + rvalue + ')'));
+        var summary = document.getElementById('explore-resource-summary');
+        var resourceValue = document.getElementById('explore-resource-value');
+        var resultCount = document.getElementById('explore-result-count');
+        if (summary && resourceValue && resultCount) {
+            resourceValue.textContent = rvalue;
+            summary.removeAttribute('hidden');
+        }
         removeDuplicates(rvalue);
         var limit = workbench.paging.getLimit(explore);
 
@@ -76,11 +80,13 @@ workbench.addLoad(function() {
 
         // Truncate range if close to end.
         last = have_total_count ? Math.min(total_result_count, last) : last;
-        var newHTML = '(' + first + '-' + last;
+        var range = first + '-' + last;
         if (have_total_count) {
-            newHTML = newHTML + ' of ' + total_result_count;
+            range = range + ' of ' + total_result_count;
         }
-        h1.appendChild(document.createTextNode(newHTML + ')'));
+        if (resultCount) {
+            resultCount.textContent = range;
+        }
     }
     workbench.paging.setShowDataTypesCheckboxAndSetChangeEvent();
 });

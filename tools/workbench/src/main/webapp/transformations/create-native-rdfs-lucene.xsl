@@ -75,11 +75,7 @@
 					<tr>
 						<td></td>
 						<td>
-							<input type="button" value="{$cancel.label}" style="float:right"
-								data-href="repositories"
-								onclick="document.location.href=this.getAttribute('data-href')" />
-							<input id="create" type="button" value="{$create.label}"
-								onclick="checkOverwrite()" />
+							<xsl:call-template name="workbench-create-actions" />
 						</td>
 					</tr>
 				</tbody>

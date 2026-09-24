@@ -164,7 +164,7 @@ function createQueryBrowserHarness(options = {}) {
     });
     selectedUser.appendChild(selectedUserSpan);
     const queryFormContainer = registerElement('div', { className: 'query-form' });
-    const queryResults = registerElement('section', { id: 'query-results' });
+    const queryResults = registerElement('section', { id: 'query-results', hidden: true });
     const queryResultsLoading = registerElement('div', {
         id: 'query-results-loading',
         hidden: true,

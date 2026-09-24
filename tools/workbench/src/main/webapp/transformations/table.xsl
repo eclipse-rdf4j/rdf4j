@@ -50,11 +50,12 @@
 	<xsl:template match="sparql:result">
 		<xsl:variable name="result" select="." />
 		<tr>
-			<xsl:for-each select="../../sparql:head/sparql:variable">
-				<xsl:variable name="name" select="@name" />
-				<td>
-					<xsl:apply-templates select="$result/sparql:binding[@name=$name]" />
-				</td>
+		<xsl:for-each select="../../sparql:head/sparql:variable">
+			<xsl:variable name="name" select="@name" />
+			<td>
+				<xsl:attribute name="data-label"><xsl:value-of select="$name" /></xsl:attribute>
+				<xsl:apply-templates select="$result/sparql:binding[@name=$name]" />
+			</td>
 			</xsl:for-each>
 		</tr>
 	</xsl:template>

@@ -21,7 +21,7 @@
 				<xsl:value-of select="$SYSTEM-warning.desc" />
 			</p>
 		</xsl:if>
-		<p class="WARN">
+		<p id="clear-warning" class="WARN" role="alert">
 			<xsl:value-of select="$clear-warning.desc" />
 		</p>
 		<xsl:if test="//sparql:binding[@name='error-message']">
@@ -31,7 +31,7 @@
 			</p>
 		</xsl:if>
 
-		<form method="post" action="clear">
+		<form id="clear-form" method="post" action="clear">
 			<table class="dataentry">
 				<tbody>
 					<tr>
@@ -48,8 +48,15 @@
 					<tr>
 						<td></td>
 						<td>
-							<input type="submit"
-								value="{$clear-context.label}" />
+							<span class="workbench-action workbench-action--danger">
+								<label class="workbench-action-hit-area">
+									<xsl:call-template name="workbench-action-icon">
+										<xsl:with-param name="name">clear</xsl:with-param>
+									</xsl:call-template>
+									<span class="workbench-action-label"><input type="submit"
+										value="{$clear-context.label}" /></span>
+								</label>
+							</span>
 						</td>
 						<td></td>
 					</tr>

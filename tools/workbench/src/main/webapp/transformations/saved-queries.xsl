@@ -12,6 +12,7 @@
 	<xsl:include href="template.xsl" />
 
 	<xsl:template match="sparql:sparql/sparql:results">
+		<div id="saved-queries" class="workbench-page-layout">
 		<xsl:for-each select="sparql:result">
 			<xsl:variable name="queryLn"
 				select="normalize-space(sparql:binding[@name='queryLn'])" />
@@ -48,7 +49,7 @@
 					<xsl:value-of select="$user" />
 				</h2>
 			</xsl:if>
-			<div id="{$query}-div">
+			<article id="{$query}-div" class="saved-query-row workbench-island">
 				<table>
 					<tr>
 						<th style="vertical-align:middle;width:24em">
@@ -64,26 +65,52 @@
 								<input type="hidden" name="infer" value="{$infer}" />
 								<input type="hidden" name="limit_query" value="{$rowsPerPage}" />
 								<input type="hidden" name="query-timeout" value="{$queryTimeout}" />
-								<input type="submit" value="Execute" />
+								<span class="workbench-action workbench-action--primary">
+									<label class="workbench-action-hit-area">
+										<xsl:call-template name="workbench-action-icon">
+											<xsl:with-param name="name">execute</xsl:with-param>
+										</xsl:call-template>
+										<span class="workbench-action-label"><input type="submit" value="Execute" /></span>
+									</label>
+								</span>
 							</form>
 						</td>
 						<td style="vertical-align:middle">
 							<!-- the path may only be up to 2048 characters long in Internet Explorer -->
 							<xsl:choose>
 								<xsl:when test="string-length($queryHREF) &lt; 2049">
-									<a href="{$queryHREF}">
-										<img src="../../images/bookmark.png" alt="Bookmarkable link" />
-									</a>
+									<span class="workbench-action workbench-action--secondary" data-workbench-action="bookmark">
+										<a class="workbench-action-hit-area" href="{$queryHREF}">
+											<xsl:call-template name="workbench-action-icon">
+												<xsl:with-param name="name">link</xsl:with-param>
+											</xsl:call-template>
+											<span class="workbench-action-label"><xsl:value-of select="$bookmark.label" /></span>
+										</a>
+									</span>
 								</xsl:when>
 								<xsl:otherwise>
-									<img src="../../images/cancel.png"
-										alt="Can't produce bookmarkable link...query too long." />
+									<span class="workbench-action workbench-action--secondary workbench-action--disabled"
+										data-workbench-action="bookmark" aria-disabled="true">
+										<span class="workbench-action-hit-area">
+											<xsl:call-template name="workbench-action-icon">
+												<xsl:with-param name="name">link</xsl:with-param>
+											</xsl:call-template>
+											<span class="workbench-action-label">Link unavailable</span>
+										</span>
+									</span>
 								</xsl:otherwise>
 							</xsl:choose>
 						</td>
 						<td style="vertical-align:middle">
-							<input type="button" id="{$query}-toggle" value="Show"
-								class="saved-query-toggle" data-query-urn="{$query}" />
+							<span class="workbench-action workbench-action--secondary">
+								<label class="workbench-action-hit-area">
+									<xsl:call-template name="workbench-action-icon">
+										<xsl:with-param name="name">summary</xsl:with-param>
+									</xsl:call-template>
+									<span class="workbench-action-label"><input type="button" id="{$query}-toggle" value="Show"
+										class="saved-query-toggle" data-query-urn="{$query}" /></span>
+								</label>
+							</span>
 						</td>
 						<td style="vertical-align:middle">
 							<form method="post" name="edit-query" action="query">
@@ -95,14 +122,28 @@
 								<input type="hidden" name="infer" value="{$infer}" />
 								<input type="hidden" name="limit_query" value="{$rowsPerPage}" />
 								<input type="hidden" name="query-timeout" value="{$queryTimeout}" />
-								<input type="submit" value="Edit" />
+								<span class="workbench-action workbench-action--secondary">
+									<label class="workbench-action-hit-area">
+										<xsl:call-template name="workbench-action-icon">
+											<xsl:with-param name="name">update</xsl:with-param>
+										</xsl:call-template>
+										<span class="workbench-action-label"><input type="submit" value="Edit" /></span>
+									</label>
+								</span>
 							</form>
 						</td>
 						<td style="vertical-align:middle">
 							<form method="post" id="{$query}" action="saved-queries?delete={$query}">
-								<input type="button" value="Delete..."
-									class="saved-query-delete" data-query-owner="{$user}"
-									data-query-name="{$queryName}" data-query-urn="{$query}" />
+								<span class="workbench-action workbench-action--danger">
+									<label class="workbench-action-hit-area">
+										<xsl:call-template name="workbench-action-icon">
+											<xsl:with-param name="name">delete</xsl:with-param>
+										</xsl:call-template>
+										<span class="workbench-action-label"><input type="button" value="Delete..."
+											class="saved-query-delete" data-query-owner="{$user}"
+											data-query-name="{$queryName}" data-query-urn="{$query}" /></span>
+									</label>
+								</span>
 							</form>
 						</td>
 					</tr>
@@ -128,8 +169,9 @@
 					</tr>
 				</table>
 				<textarea id="{$query}-text" style="display: none;"><xsl:value-of select="sparql:binding[@name='queryText']" /></textarea>
-			</div>
+			</article>
 		</xsl:for-each>
+		</div>
 		<script src="../../scripts/codemirror.4.5.0.min.js" type="text/javascript"></script>
         <script src="../../scripts/yasqe.min.js" type="text/javascript"></script>
 		<script src="../../scripts/saved-queries.js" type="text/javascript"></script>
