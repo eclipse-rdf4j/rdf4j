@@ -44,23 +44,3 @@ jobs:
 
       - name: Maven install (skip tests)
         run: mvn -B -Dmaven.repo.local=.m2_repo install -DskipTests -Pquick
-
-      - name: Install system dependencies for E2E tests
-        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-          cache: 'npm'
-          cache-dependency-path: ./e2e/package-lock.json
-
-      - name: Install Playwright dependencies for E2E tests
-        working-directory: ./e2e
-        run: |
-          npm install
-          npx playwright install --with-deps
-
-      - name: Run end-to-end tests of RDF4J Server and Workbench
-        working-directory: ./e2e
-        run: ./run.sh
