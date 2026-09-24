@@ -53,7 +53,10 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(this);
+		QueryEvaluationUtility.withQuerySafetySnapshot(tupleExpr, () -> {
+			tupleExpr.visit(this);
+			return null;
+		});
 	}
 
 	@Override
@@ -65,18 +68,18 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 
 		if (leftArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)
 				|| rightArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(leftArg)) {
-			join.replaceWith(new EmptySet());
+			replace(join, new EmptySet());
 		} else if (leftArg instanceof SingletonSet) {
-			join.replaceWith(rightArg);
+			replace(join, rightArg);
 		} else if (rightArg instanceof SingletonSet) {
-			join.replaceWith(leftArg);
+			replace(join, leftArg);
 		} else if (leftArg instanceof Union union && QueryEvaluationUtility.isRepeatable(rightArg)) {
 			// sort unions above joins
 			Join leftJoin = new Join(union.getLeftArg(), rightArg.clone());
 			Join rightJoin = new Join(union.getRightArg(), rightArg.clone());
 			Union newUnion = new Union(leftJoin, rightJoin);
 			newUnion.setVariableScopeChange(union.isVariableScopeChange());
-			join.replaceWith(newUnion);
+			replace(join, newUnion);
 			newUnion.visit(this);
 		} else if (rightArg instanceof Union union && QueryEvaluationUtility.isRepeatable(leftArg)) {
 			// sort unions above joins
@@ -84,23 +87,29 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			Join rightJoin = new Join(leftArg.clone(), union.getRightArg());
 			Union newUnion = new Union(leftJoin, rightJoin);
 			newUnion.setVariableScopeChange(union.isVariableScopeChange());
-			join.replaceWith(newUnion);
+			replace(join, newUnion);
 			newUnion.visit(this);
 		} else if (leftArg instanceof LeftJoin leftJoin && isWellDesigned((LeftJoin) leftArg)
 				&& QueryEvaluationUtility.isRepeatable(leftJoin)
 				&& QueryEvaluationUtility.isRepeatable(rightArg)) {
 			// sort left join above normal joins
+			QueryModelNode oldParent = join.getParentNode();
 			join.replaceWith(leftJoin);
 			join.setLeftArg(leftJoin.getLeftArg());
 			leftJoin.setLeftArg(join);
+			QueryEvaluationUtility.refreshQuerySafetySnapshot(join);
+			QueryEvaluationUtility.refreshQuerySafetySnapshot(oldParent);
 			leftJoin.visit(this);
 		} else if (rightArg instanceof LeftJoin leftJoin && isWellDesigned((LeftJoin) rightArg)
 				&& QueryEvaluationUtility.isRepeatable(leftJoin)
 				&& QueryEvaluationUtility.isRepeatable(leftArg)) {
 			// sort left join above normal joins
+			QueryModelNode oldParent = join.getParentNode();
 			join.replaceWith(leftJoin);
 			join.setRightArg(leftJoin.getLeftArg());
 			leftJoin.setLeftArg(join);
+			QueryEvaluationUtility.refreshQuerySafetySnapshot(join);
+			QueryEvaluationUtility.refreshQuerySafetySnapshot(oldParent);
 			leftJoin.visit(this);
 		}
 	}
@@ -114,11 +123,11 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		ValueExpr condition = leftJoin.getCondition();
 
 		if (leftArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)) {
-			leftJoin.replaceWith(leftArg);
+			replace(leftJoin, leftArg);
 		} else if (rightArg instanceof EmptySet) {
-			leftJoin.replaceWith(leftArg);
+			replace(leftJoin, leftArg);
 		} else if (rightArg instanceof SingletonSet) {
-			leftJoin.replaceWith(leftArg);
+			replace(leftJoin, leftArg);
 		} else if (condition instanceof ValueConstant) {
 			boolean conditionValue = QueryEvaluationUtility
 					.getEffectiveBooleanValue(((ValueConstant) condition).getValue())
@@ -128,10 +137,11 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 				// Constraint is always false; the unextended left solutions remain, but the right operand may
 				// only be discarded unevaluated when it cannot raise an observable query-fatal error
 				if (QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)) {
-					leftJoin.replaceWith(leftArg);
+					replace(leftJoin, leftArg);
 				}
 			} else {
 				leftJoin.setCondition(null);
+				QueryEvaluationUtility.refreshQuerySafetySnapshot(leftJoin);
 			}
 		}
 	}
@@ -144,9 +154,9 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		TupleExpr rightArg = union.getRightArg();
 
 		if (leftArg instanceof EmptySet) {
-			union.replaceWith(rightArg);
+			replace(union, rightArg);
 		} else if (rightArg instanceof EmptySet) {
-			union.replaceWith(leftArg);
+			replace(union, leftArg);
 		}
 	}
 
@@ -158,11 +168,11 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		TupleExpr rightArg = difference.getRightArg();
 
 		if (leftArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)) {
-			difference.replaceWith(leftArg);
+			replace(difference, leftArg);
 		} else if (rightArg instanceof EmptySet) {
-			difference.replaceWith(leftArg);
+			replace(difference, leftArg);
 		} else if (leftArg instanceof SingletonSet && rightArg instanceof SingletonSet) {
-			difference.replaceWith(new EmptySet());
+			replace(difference, new EmptySet());
 		}
 	}
 
@@ -175,7 +185,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 
 		if (leftArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)
 				|| rightArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(leftArg)) {
-			intersection.replaceWith(new EmptySet());
+			replace(intersection, new EmptySet());
 		}
 	}
 
@@ -187,7 +197,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 				&& !(node instanceof Service && !((Service) node).isSilent())) {
 			// a non-silent SERVICE still denotes one remote invocation whose failure is observable, even when
 			// its locally parsed pattern is empty
-			node.replaceWith(node.getArg());
+			replace(node, node.getArg());
 		}
 	}
 
@@ -209,10 +219,10 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 				// Constraint is always false; the filter result is empty, but the argument may only be
 				// discarded unevaluated when it cannot raise an observable query-fatal error
 				if (QueryEvaluationUtility.canDiscardWithoutEvaluation(arg)) {
-					node.replaceWith(new EmptySet());
+					replace(node, new EmptySet());
 				}
 			} else {
-				node.replaceWith(arg);
+				replace(node, arg);
 			}
 		}
 	}
@@ -222,7 +232,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		super.meet(or);
 
 		if (or.getLeftArg().equals(or.getRightArg()) && QueryEvaluationUtility.isRepeatable(or)) {
-			or.replaceWith(or.getLeftArg());
+			replace(or, or.getLeftArg());
 		}
 	}
 
@@ -231,8 +241,14 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		super.meet(and);
 
 		if (and.getLeftArg().equals(and.getRightArg()) && QueryEvaluationUtility.isRepeatable(and)) {
-			and.replaceWith(and.getLeftArg());
+			replace(and, and.getLeftArg());
 		}
+	}
+
+	private static void replace(QueryModelNode node, QueryModelNode replacement) {
+		QueryModelNode parent = node.getParentNode();
+		node.replaceWith(replacement);
+		QueryEvaluationUtility.refreshQuerySafetySnapshot(parent != null ? parent : replacement);
 	}
 
 	/**

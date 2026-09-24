@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
@@ -102,8 +103,9 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			// errors even when the left operand is empty). Mapping-parameterized operands (property paths,
 			// SERVICE, extension operators) are exempt: correlated per-input evaluation is their defined
 			// semantics, so they keep the bind-join paths below.
+			List<String> joinAttributes = List.of(HashJoinIteration.hashJoinAttributeNames(join));
 			eval = bindings -> new MaterializedReplayJoinIterator(leftPrepared, rightPrepared, null, bindings,
-					false);
+					false, joinAttributes, strategy.getCollectionFactory());
 			join.setAlgorithm(MaterializedReplayJoinIterator.class.getSimpleName());
 		} else if (rightDiscardable && join.isMergeJoin() && context.getComparator() != null) {
 			eval = bindings -> InnerMergeJoinIterator.getInstance(leftPrepared, rightPrepared, bindings,

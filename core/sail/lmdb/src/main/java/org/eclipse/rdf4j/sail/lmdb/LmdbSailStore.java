@@ -85,6 +85,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSourceEx
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
+import org.eclipse.rdf4j.sail.base.Changeset;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
@@ -2896,10 +2897,14 @@ class LmdbSailStore implements SailStore {
 					|| !shouldBufferPreparedApprovals()) {
 				return null;
 			}
-			if (approved instanceof PreparedStatementBatch prepared) {
+			Iterable<? extends Statement> statements = approved;
+			if (approved instanceof Changeset.CompactApprovedSet compactApproved) {
+				statements = compactApproved.compactStatements();
+			}
+			if (statements instanceof PreparedStatementBatch prepared) {
 				return prepared;
 			}
-			return PreparedStatementBatch.copyOf(approved, expectedCount, ignored -> {
+			return PreparedStatementBatch.copyOf(statements, expectedCount, ignored -> {
 			});
 		}
 

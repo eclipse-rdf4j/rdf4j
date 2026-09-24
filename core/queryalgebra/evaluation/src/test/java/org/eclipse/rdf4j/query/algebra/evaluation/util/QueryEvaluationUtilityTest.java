@@ -24,6 +24,7 @@ import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
@@ -35,11 +36,19 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -63,6 +72,52 @@ import org.junit.jupiter.api.Test;
 public class QueryEvaluationUtilityTest {
 
 	private final ValueFactory f = SimpleValueFactory.getInstance();
+
+	@Test
+	public void querySafetySnapshotRetainsPublicNoArgumentConstructorAndAnalyzesLazily() throws Exception {
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.QuerySafetySnapshot.class
+				.getConstructor()
+				.newInstance();
+
+		assertFalse(snapshot.isRepeatable(new BNodeGenerator()));
+		assertTrue(snapshot.isRepeatable(new SingletonSet()));
+	}
+
+	@Test
+	public void querySafetySummaryNameStorageGrowsLinearlyWithDistinctFacts() {
+		TupleExpr smallTree = treeWithDistinctSafetyNames(32);
+		TupleExpr largeTree = treeWithDistinctSafetyNames(64);
+		QueryEvaluationUtility.QuerySafetySnapshot small = QueryEvaluationUtility.querySafetySnapshot(smallTree);
+		QueryEvaluationUtility.QuerySafetySnapshot large = QueryEvaluationUtility.querySafetySnapshot(largeTree);
+
+		assertTrue(small.permitsBindingInjection(smallTree, Set.of("subject-0")));
+		assertFalse(small.permitsBindingInjection(smallTree, Set.of("filter-0")));
+		assertFalse(small.permitsBindingInjection(smallTree, Set.of("target-0")));
+		assertTrue(large.retainedNameFactStorageUnits() <= 3 * small.retainedNameFactStorageUnits(),
+				"doubling distinct fact names must not retain a copied fact set at every ancestor");
+	}
+
+	@Test
+	public void querySafetySnapshotSupportsVeryLongVariableNames() {
+		String name = "variable".repeat(512);
+		StatementPattern pattern = new StatementPattern(Var.of(name), Var.of("predicate"), Var.of("object"));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(pattern);
+
+		assertTrue(snapshot.permitsBindingInjection(pattern, Set.of(name)),
+				"name facts must preserve the complete variable name without using name-length stack depth");
+	}
+
+	private TupleExpr treeWithDistinctSafetyNames(int size) {
+		TupleExpr result = null;
+		for (int i = 0; i < size; i++) {
+			StatementPattern pattern = new StatementPattern(Var.of("subject-" + i), Var.of("predicate-" + i),
+					Var.of("object-" + i));
+			TupleExpr branch = new Extension(new Filter(pattern, new Bound(Var.of("filter-" + i))),
+					new ExtensionElem(new ValueConstant(f.createLiteral(i)), "target-" + i));
+			result = result == null ? branch : new Join(result, branch);
+		}
+		return result;
+	}
 
 	private Literal arg1simple;
 

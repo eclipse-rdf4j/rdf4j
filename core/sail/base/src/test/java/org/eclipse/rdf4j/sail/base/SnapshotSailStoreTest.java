@@ -22,17 +22,23 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.DataImportMetrics;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -43,7 +49,10 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.InsertData;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -273,6 +282,49 @@ public class SnapshotSailStoreTest {
 						.contains("statementsAdded=2"));
 	}
 
+	@Test
+	public void deferredOrderedScanUsesTheQuerySnapshotAfterAWrite() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI outerPredicate = valueFactory.createIRI("urn:outer");
+		IRI firstInnerPredicate = valueFactory.createIRI("urn:first-inner");
+		IRI secondInnerPredicate = valueFactory.createIRI("urn:second-inner");
+		Resource outerSubject = valueFactory.createIRI("urn:outer-subject");
+		Resource innerSubject = valueFactory.createIRI("urn:inner-subject");
+		Model initialStatements = new LinkedHashModel();
+		initialStatements.add(outerSubject, outerPredicate, valueFactory.createIRI("urn:outer-object"));
+		initialStatements.add(innerSubject, firstInnerPredicate, valueFactory.createIRI("urn:first-object"));
+		AtomicInteger orderedReads = new AtomicInteger();
+		Sail sail = createSail(createOrderedSnapshotSailStore(initialStatements, orderedReads));
+
+		try (SailConnection connection = sail.getConnection()) {
+			connection.begin(IsolationLevels.SNAPSHOT);
+			StatementPattern outer = new StatementPattern(new Var("outerSubject"),
+					new Var("outerPredicate", outerPredicate, false, true), new Var("outerObject"));
+			StatementPattern firstInner = new StatementPattern(new Var("innerSubject"),
+					new Var("firstPredicate", firstInnerPredicate, false, true), new Var("firstObject"));
+			StatementPattern secondInner = new StatementPattern(new Var("innerSubject"),
+					new Var("secondPredicate", secondInnerPredicate, false, true), new Var("secondObject"));
+			CloseableIteration<?> result = connection.evaluate(
+					new Filter(outer, new Exists(new Join(firstInner, secondInner))),
+					null, EmptyBindingSet.getInstance(), false);
+			try (result) {
+				assertEquals(0, orderedReads.get(), "the nested scan should remain deferred after planning");
+				connection.addStatement(innerSubject, secondInnerPredicate,
+						valueFactory.createIRI("urn:second-object"));
+				int resultCount = 0;
+				while (result.hasNext()) {
+					result.next();
+					resultCount++;
+				}
+				assertEquals(0, resultCount, "the query must keep the state captured before the later write");
+			}
+
+			assertTrue(orderedReads.get() > 0, "the nested merge join should use the advertised subject order");
+		} finally {
+			sail.shutDown();
+		}
+	}
+
 	private Sail createSail(SailStore sailStore) {
 		return new AbstractNotifyingSail() {
 			@Override
@@ -376,6 +428,103 @@ public class SnapshotSailStoreTest {
 			public void close() throws SailException {
 			}
 		}, modelFactory);
+	}
+
+	private SnapshotSailStore createOrderedSnapshotSailStore(Model initialStatements, AtomicInteger orderedReads) {
+		BackingSailSource source = new BackingSailSource() {
+			@Override
+			public SailSink sink(IsolationLevel level) throws SailException {
+				return new TestSailSink();
+			}
+
+			@Override
+			public SailDataset dataset(IsolationLevel level) throws SailException {
+				return new OrderedTestDataset(new LinkedHashModel(initialStatements), orderedReads);
+			}
+		};
+		return new SnapshotSailStore(new SailStore() {
+			@Override
+			public ValueFactory getValueFactory() {
+				return SimpleValueFactory.getInstance();
+			}
+
+			@Override
+			public EvaluationStatistics getEvaluationStatistics() {
+				return new EvaluationStatistics();
+			}
+
+			@Override
+			public SailSource getExplicitSailSource() {
+				return source;
+			}
+
+			@Override
+			public SailSource getInferredSailSource() {
+				return source;
+			}
+
+			@Override
+			public void close() throws SailException {
+			}
+		}, LinkedHashModel::new);
+	}
+
+	private static final class OrderedTestDataset implements SailDataset {
+		private final Model snapshot;
+		private final AtomicInteger orderedReads;
+
+		private OrderedTestDataset(Model snapshot, AtomicInteger orderedReads) {
+			this.snapshot = snapshot;
+			this.orderedReads = orderedReads;
+		}
+
+		@Override
+		public void close() throws SailException {
+		}
+
+		@Override
+		public CloseableIteration<? extends Namespace> getNamespaces() throws SailException {
+			return new EmptyIteration<>();
+		}
+
+		@Override
+		public String getNamespace(String prefix) throws SailException {
+			return null;
+		}
+
+		@Override
+		public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
+			return new EmptyIteration<>();
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws SailException {
+			return new CloseableIteratorIteration<>(
+					new ArrayList<>(snapshot.filter(subj, pred, obj, contexts)).iterator());
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
+				Value obj, Resource... contexts) throws SailException {
+			if (order != StatementOrder.S) {
+				throw new SailException("Only subject ordering is supported by this test dataset");
+			}
+			orderedReads.incrementAndGet();
+			List<Statement> statements = new ArrayList<>(snapshot.filter(subj, pred, obj, contexts));
+			statements.sort(Comparator.comparing(statement -> statement.getSubject().stringValue()));
+			return new CloseableIteratorIteration<>(statements.iterator());
+		}
+
+		@Override
+		public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+			return Set.of(StatementOrder.S);
+		}
+
+		@Override
+		public Comparator<Value> getComparator() {
+			return Comparator.comparing(Value::stringValue);
+		}
 	}
 
 	private static final class CloseCountingModel extends LinkedHashModel implements AutoCloseable {

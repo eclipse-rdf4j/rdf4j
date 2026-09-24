@@ -86,7 +86,6 @@ import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
-import org.eclipse.rdf4j.query.algebra.LmdbIndexOrder;
 import org.eclipse.rdf4j.query.algebra.LocalName;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
@@ -135,10 +134,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.OrderByHint;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.lmdb.LmdbIndexOrderFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSetAssignmentQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.EncodedTripleTermQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.IntersectionQueryEvaluationStep;
@@ -463,6 +462,13 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+		if (expr == null) {
+			throw new IllegalArgumentException("expr must not be null");
+		}
+		return QueryEvaluationUtility.withQuerySafetySnapshot(expr, () -> precompileWithSafetySnapshot(expr, context));
+	}
+
+	private QueryEvaluationStep precompileWithSafetySnapshot(TupleExpr expr, QueryEvaluationContext context) {
 		QueryEvaluationStep ret;
 
 		if (expr instanceof StatementPattern) {
@@ -485,8 +491,6 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			ret = prepare((TripleRef) expr, context);
 		} else if (expr instanceof TupleFunctionCall) {
 			ret = prepare((TupleFunctionCall) expr, context);
-		} else if (expr == null) {
-			throw new IllegalArgumentException("expr must not be null");
 		} else {
 			throw new QueryEvaluationException("Unsupported tuple expr type: " + expr.getClass());
 		}
@@ -708,8 +712,13 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	protected QueryEvaluationStep prepare(Order node, QueryEvaluationContext context) throws QueryEvaluationException {
-		if (node.getElements().stream().anyMatch(orderElem -> LmdbIndexOrder.isFunctionCall(orderElem.getExpr()))) {
-			throw new QueryEvaluationException(LmdbIndexOrderFunction.ERROR_MESSAGE);
+		for (OrderElem orderElem : node.getElements()) {
+			if (orderElem.getExpr()instanceof FunctionCall functionCall) {
+				Function function = QueryEvaluationUtility.resolveFunction(functionCall).orElse(null);
+				if (function instanceof OrderByHint orderByHint) {
+					throw new QueryEvaluationException(orderByHint.getUnsupportedOrderByMessage());
+				}
+			}
 		}
 
 		ValueComparator vcmp = new ValueComparator();

@@ -86,18 +86,16 @@ class SailSourceBranch implements SailSource {
 	private final boolean autoFlush;
 
 	/**
-	 * Non-null when in {@link IsolationLevels#SNAPSHOT} (or higher) mode.
+	 * Non-null when in {@link IsolationLevels#SNAPSHOT} (or higher) mode. The lease tracks observers that derived their
+	 * dataset from this exact backing snapshot.
 	 */
-	private SailDataset snapshot;
+	private SnapshotLease snapshot;
 
 	/**
-	 * Snapshot datasets superseded by a flush of this branch's changes to the backing source, still borrowed by open
-	 * observers. Invariant: {@code snapshot} plus the unflushed {@code changes} must equal the latest state — once
-	 * changes are flushed they are only visible through a freshly derived backing dataset, and backing datasets may be
-	 * pinned to their creation-time snapshot (native SNAPSHOT support in stores such as LMDB). Closed as soon as no
-	 * observer remains; guarded by {@code semaphore}.
+	 * Snapshot generations borrowed by open observers. Identity keys ensure each observer releases its generation once;
+	 * the map and all lease counts are guarded by {@code semaphore}.
 	 */
-	private final List<SailDataset> retiredSnapshots = new ArrayList<>();
+	private final Map<SailDataset, SnapshotLease> observerSnapshots = new IdentityHashMap<>();
 
 	/**
 	 * Non-null when in {@link IsolationLevels#SERIALIZABLE} (or higher) mode.
@@ -108,6 +106,17 @@ class SailSourceBranch implements SailSource {
 	 * Non-null after {@link #prepare()}, but before {@link #flush()}.
 	 */
 	private SailSink prepared;
+
+	private static final class SnapshotLease {
+		private final SailDataset dataset;
+		private int borrowers;
+		private boolean retired;
+		private boolean closed;
+
+		private SnapshotLease(SailDataset dataset) {
+			this.dataset = dataset;
+		}
+	}
 
 	/**
 	 * Creates a new in-memory {@link SailSource} derived from the given {@link SailSource}.
@@ -307,53 +316,60 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public SailDataset dataset(IsolationLevel level) throws SailException {
-		SailDataset dataset = new DelegatingSailDataset(derivedFromSerializable(level)) {
-
-			@Override
-			public void close() throws SailException {
-				Throwable failure = null;
-				try {
-					super.close();
-				} catch (RuntimeException | Error closeFailure) {
-					failure = closeFailure;
-				}
-				try {
-					semaphore.lock();
-					try {
-						observers.remove(this);
-						try {
-							compressChanges();
-						} catch (RuntimeException | Error cleanupFailure) {
-							failure = addFailure(failure, cleanupFailure);
-						}
-						try {
-							autoFlush();
-						} catch (RuntimeException | Error cleanupFailure) {
-							failure = addFailure(failure, cleanupFailure);
-						}
-						try {
-							closeRetiredSnapshotsIfUnobserved();
-						} catch (RuntimeException | Error cleanupFailure) {
-							failure = addFailure(failure, cleanupFailure);
-						}
-					} finally {
-						semaphore.unlock();
-					}
-				} catch (RuntimeException | Error cleanupFailure) {
-					failure = addFailure(failure, cleanupFailure);
-				}
-				if (failure != null) {
-					rethrow(failure);
-				}
-			}
-		};
 		try {
 			semaphore.lock();
+			SailDataset dataset = new DelegatingSailDataset(derivedFromSerializable(level)) {
+
+				@Override
+				public void close() throws SailException {
+					Throwable failure = null;
+					try {
+						super.close();
+					} catch (RuntimeException | Error closeFailure) {
+						failure = closeFailure;
+					}
+					try {
+						semaphore.lock();
+						try {
+							observers.remove(this);
+							SnapshotLease borrowedSnapshot = observerSnapshots.remove(this);
+							if (borrowedSnapshot != null) {
+								try {
+									releaseSnapshot(borrowedSnapshot);
+								} catch (RuntimeException | Error cleanupFailure) {
+									failure = addFailure(failure, cleanupFailure);
+								}
+							}
+							try {
+								compressChanges();
+							} catch (RuntimeException | Error cleanupFailure) {
+								failure = addFailure(failure, cleanupFailure);
+							}
+							try {
+								autoFlush();
+							} catch (RuntimeException | Error cleanupFailure) {
+								failure = addFailure(failure, cleanupFailure);
+							}
+						} finally {
+							semaphore.unlock();
+						}
+					} catch (RuntimeException | Error cleanupFailure) {
+						failure = addFailure(failure, cleanupFailure);
+					}
+					if (failure != null) {
+						rethrow(failure);
+					}
+				}
+			};
 			observers.add(dataset);
+			if (snapshot != null) {
+				snapshot.borrowers++;
+				observerSnapshots.put(dataset, snapshot);
+			}
+			return dataset;
 		} finally {
 			semaphore.unlock();
 		}
-		return dataset;
 	}
 
 	private static Throwable addFailure(Throwable failure, Throwable later) {
@@ -447,19 +463,29 @@ class SailSourceBranch implements SailSource {
 	 */
 	private void retireSnapshot() {
 		if (snapshot != null) {
-			retiredSnapshots.add(snapshot);
+			SnapshotLease toRetire = snapshot;
 			snapshot = null;
+			toRetire.retired = true;
+			if (toRetire.borrowers == 0) {
+				closeSnapshot(toRetire);
+			}
 		}
-		closeRetiredSnapshotsIfUnobserved();
 	}
 
-	private void closeRetiredSnapshotsIfUnobserved() {
-		if (observers.isEmpty() && !retiredSnapshots.isEmpty()) {
-			List<SailDataset> toClose = new ArrayList<>(retiredSnapshots);
-			retiredSnapshots.clear();
-			for (SailDataset dataset : toClose) {
-				dataset.close();
-			}
+	private void releaseSnapshot(SnapshotLease lease) {
+		if (lease.borrowers <= 0) {
+			throw new IllegalStateException("Snapshot lease has no borrowers to release");
+		}
+		lease.borrowers--;
+		if (lease.retired && lease.borrowers == 0) {
+			closeSnapshot(lease);
+		}
+	}
+
+	private void closeSnapshot(SnapshotLease lease) {
+		if (!lease.closed) {
+			lease.closed = true;
+			lease.dataset.close();
 		}
 	}
 
@@ -595,7 +621,7 @@ class SailSourceBranch implements SailSource {
 	private SailDataset derivedFromSnapshot(IsolationLevel level) throws SailException {
 		try {
 			semaphore.lock();
-			if (autoFlush && this.snapshot != null && !this.snapshot.isSnapshotCurrent()) {
+			if (autoFlush && this.snapshot != null && !this.snapshot.dataset.isSnapshotCurrent()) {
 				// a writer bypassed this branch (e.g. isolation NONE writes straight into the backing store) and
 				// advanced the store past the cached pinned snapshot; new borrowers of this long-lived branch must
 				// see the latest committed state, so retire the stale dataset (open borrowers keep it alive).
@@ -605,7 +631,7 @@ class SailSourceBranch implements SailSource {
 			SailDataset derivedFrom;
 			if (this.snapshot != null) {
 				// this object is already has at least snapshot isolation
-				derivedFrom = new DelegatingSailDataset(this.snapshot) {
+				derivedFrom = new DelegatingSailDataset(this.snapshot.dataset) {
 
 					@Override
 					public void close() throws SailException {
@@ -615,7 +641,7 @@ class SailSourceBranch implements SailSource {
 			} else {
 				derivedFrom = backingSource.dataset(level);
 				if (level.isCompatibleWith(IsolationLevels.SNAPSHOT)) {
-					this.snapshot = derivedFrom;
+					this.snapshot = new SnapshotLease(derivedFrom);
 					// don't release snapshot until this SailSource is released
 					derivedFrom = new DelegatingSailDataset(derivedFrom) {
 
