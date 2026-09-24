@@ -85,6 +85,16 @@ For Jetty, it's just a matter of copying the war-files to `$JETTY_BASE\webapps`
 
 After you have deployed the RDF4J Workbench webapp, you should be able to access it, by default, at path `http://localhost:8080/rdf4j-workbench`. You can point your browser at this location to verify that the deployment succeeded.
 
+### Compressed RDF input
+
+RDF4J Server RDF upload endpoints and Workbench's **Add** upload accept RDF input compressed with gzip, zlib/deflate, BZip2, XZ, LZMA, framed LZ4, framed Snappy (`.sz` or `.snappy`), Unix compress (`.Z`), Brotli, or Zstandard. Compression is detected from a reliable stream signature when one exists and otherwise from the file-name suffix. The supplied Server and Workbench applications include the optional archive decoder libraries; using `RDFLoader` in an embedded application does not add those libraries as transitive runtime dependencies.
+
+ZIP and TAR archives are traversed recursively. This includes conventional compressed TAR names such as `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, and `.tar.zst`. Directories and special TAR entries are ignored. Regular members whose names identify an RDF format are parsed independently; unknown terminal members are skipped during automatic format detection, and an archive with no recognized RDF member is rejected. When an explicit RDF format is supplied, it is also used as the fallback for unnamed or otherwise unknown regular members.
+
+These formats are automatic RDF input decoding, not additional HTTP content codings. The accepted `Content-Encoding` values and response compression negotiation are unchanged.
+
+Decoder allocation is limited to 64 MiB by default. Set the Java system property `org.eclipse.rdf4j.rio.compression.maxDecoderMemoryKiB` to a positive KiB value to change that limit. The aggregate ZIP-and-TAR entry limit is 50,000 and can be configured with `org.eclipse.rdf4j.rio.loader.max_archive_entries`; the existing ZIP-specific limit remains in force as well.
+
 ### Configuring RDF4J Workbench for UTF-8 Support
 
 #### UTF-8 in the Request URI (GET)
@@ -439,7 +449,9 @@ Data may be added to or removed from current repository using any of the sidebar
 
 ### Add
 
-The “Add” page allows you to specify a URL with RDF data, a local file on on your client system, or to enter serialized RDF data into its text area for loading into the present repository. It is also possible to specify the Base URI and a Context for the triples. Think of the Context as a 4th element of each RDF statement, specifying a graph within the repository. You may specify one of eight serialization formats, or select “auto-detect” to let the server do a best guess at the format.
+The “Add” page allows you to specify a URL with RDF data, a local file on your client system, or to enter serialized RDF data into its text area for loading into the present repository. It is also possible to specify the Base URI and a Context for the triples. Think of the Context as a 4th element of each RDF statement, specifying a graph within the repository. You may specify one of eight serialization formats, or select “auto-detect” to let the server do a best guess at the format.
+
+Local files (and URLs that serve compressed bytes) may be gzip-compressed for faster transfer, for example `data.ttl.gz` or `data.rdf.gzip`. Workbench decompresses the stream automatically before parsing. With auto-detect, the RDF format is taken from the name after the compression suffix (`ttl` in `data.ttl.gz`). Gzip is always available; deflate, zstd, and brotli are used when the matching library is on the classpath. Zip archives (`.zip` with multiple entries) are not unpacked here.
 
 #### Remove
 

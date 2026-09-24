@@ -206,6 +206,8 @@ function createScriptHarness(options = {}) {
         },
         scrollBy() {
         },
+        stop() {
+        },
         sessionStorage: {
             removeItem() {
             }

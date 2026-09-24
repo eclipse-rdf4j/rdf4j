@@ -104,6 +104,9 @@ function createQueryBrowserHarness(options = {}) {
             request.params = parseRequestData(ajaxOptions.data);
             request.action = request.params.get('action');
             helpers.ajaxRequests.push(request);
+            if (typeof options.onAjaxRequest === 'function') {
+                options.onAjaxRequest(request);
+            }
             if (request.action === 'explain') {
                 pendingExplainRequests.push(request);
                 return request.jqXHR;

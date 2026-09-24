@@ -265,7 +265,7 @@ public abstract class AbstractSimpleConstraintComponent extends AbstractConstrai
 
 	}
 
-	private String getSparqlFilter(boolean negatePlan, Variable<Value> variable,
+	protected String getSparqlFilter(boolean negatePlan, Variable<Value> variable,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		// We use BIND and COALESCE because the filter expression could cause an error and the SHACL spec implicitly
 		// says that values that cause errors are in violation of the constraint.
