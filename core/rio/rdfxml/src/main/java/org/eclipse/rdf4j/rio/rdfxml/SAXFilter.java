@@ -14,11 +14,9 @@ import static org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLConstants.ITS_NAMESPACE;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.Stack;
 
 import org.eclipse.rdf4j.common.net.ParsedIRI;
@@ -107,17 +105,16 @@ class SAXFilter implements ContentHandler {
 	private int xmlLiteralStackHeight;
 
 	/**
+	 * The prefixes that are defined in the XML literal itself (this in contrast to the namespaces from the XML
+	 * literal's context).
+	 */
+	private final List<String> xmlLiteralPrefixes = new ArrayList<>();
+
+	/**
 	 * The prefixes that were used in an XML literal, but that were not defined in it (but rather in the XML literal's
 	 * context).
 	 */
 	private final List<String> unknownPrefixesInXMLLiteral = new ArrayList<>();
-
-	/**
-	 * Tracks the namespace context for the currently parsed XML literal. This includes prefixes declared within the
-	 * literal, prefixes used in element/attribute names, and the inferred default namespace. It is initialized when
-	 * entering XML literal mode and cleared when leaving it.
-	 */
-	private XmlLiteralNamespaceContext xmlLiteralContext;
 
 	/*--------------*
 	 * Constructors *
@@ -150,9 +147,8 @@ class SAXFilter implements ContentHandler {
 		parseLiteralMode = false;
 		xmlLiteralStackHeight = 0;
 
-		if (xmlLiteralContext != null) {
-			xmlLiteralContext.initFromStack(null);
-		}
+		xmlLiteralPrefixes.clear();
+		unknownPrefixesInXMLLiteral.clear();
 	}
 
 	public void setDocumentURI(String documentURI) {
@@ -207,8 +203,9 @@ class SAXFilter implements ContentHandler {
 
 			newNamespaceMappings.put(prefix, uri);
 
-			if (parseLiteralMode && xmlLiteralContext != null) {
-				xmlLiteralContext.registerDeclaredPrefix(prefix);
+			if (parseLiteralMode) {
+				// This namespace is introduced inside an XML literal
+				xmlLiteralPrefixes.add(prefix);
 			}
 
 			if (rdfParser.getRDFHandler() != null) {
@@ -221,8 +218,8 @@ class SAXFilter implements ContentHandler {
 
 	@Override
 	public void endPrefixMapping(String prefix) {
-		if (parseLiteralMode && xmlLiteralContext != null) {
-			xmlLiteralContext.unregisterDeclaredPrefix(prefix);
+		if (parseLiteralMode) {
+			xmlLiteralPrefixes.remove(prefix);
 		}
 	}
 
@@ -236,7 +233,7 @@ class SAXFilter implements ContentHandler {
 			}
 
 			if (parseLiteralMode) {
-				appendStartTag(qName, attributes, namespaceURI);
+				appendStartTag(qName, attributes);
 				xmlLiteralStackHeight++;
 			} else {
 				ElementInfo parent = peekStack();
@@ -399,7 +396,7 @@ class SAXFilter implements ContentHandler {
 				if (parseLiteralMode) {
 					// Insert any used namespace prefixes from the XML literal's
 					// context that are not defined in the XML literal itself.
-					insertContextNamespaces();
+					insertUsedContextPrefixes();
 
 					rdfParser.text(charBuf.toString());
 
@@ -530,9 +527,8 @@ class SAXFilter implements ContentHandler {
 
 		// All currently known namespace prefixes are
 		// new for this XML literal.
+		xmlLiteralPrefixes.clear();
 		unknownPrefixesInXMLLiteral.clear();
-		xmlLiteralContext = new XmlLiteralNamespaceContext();
-		xmlLiteralContext.initFromStack(peekStack());
 	}
 
 	private ParsedIRI createBaseURI(String uriString) {
@@ -546,38 +542,34 @@ class SAXFilter implements ContentHandler {
 	/**
 	 * Appends a start tag to charBuf. This method is used during the parsing of an XML Literal.
 	 */
-	private void appendStartTag(String qName, Attributes attributes, String namespaceURI) {
+	private void appendStartTag(String qName, Attributes attributes) {
+		// Write start of start tag
+		charBuf.append("<" + qName);
 
-		charBuf.append("<").append(qName);
-
-		// track default namespace usage
-		xmlLiteralContext.registerDefaultNamespaceIfNeeded(namespaceURI);
-
-		// write namespace declarations from the SAX parser for this element
+		// Write any new namespace prefix definitions
 		for (Map.Entry<String, String> entry : newNamespaceMappings.entrySet()) {
-			appendNamespaceDecl(charBuf, entry.getKey(), entry.getValue());
-
-			if (parseLiteralMode) {
-				xmlLiteralContext.registerDeclaredPrefix(entry.getKey());
-			}
+			String prefix = entry.getKey();
+			String namespace = entry.getValue();
+			appendNamespaceDecl(charBuf, prefix, namespace);
 		}
 
-		// detect prefix from element name
-		xmlLiteralContext.registerUsedQName(qName);
-
-		// attributes
+		// Write attributes
 		int attCount = attributes.getLength();
 		for (int i = 0; i < attCount; i++) {
-			String attQName = attributes.getQName(i);
-			String value = attributes.getValue(i);
-
-			appendAttribute(charBuf, attQName, value);
-
-			// detect prefix from attribute name
-			xmlLiteralContext.registerUsedQName(attQName);
+			appendAttribute(charBuf, attributes.getQName(i), attributes.getValue(i));
 		}
 
+		// Write end of start tag
 		charBuf.append(">");
+
+		// Check for any used prefixes that are not
+		// defined in the XML literal itself
+		int colonIdx = qName.indexOf(':');
+		String prefix = (colonIdx > 0) ? qName.substring(0, colonIdx) : "";
+
+		if (!xmlLiteralPrefixes.contains(prefix) && !unknownPrefixesInXMLLiteral.contains(prefix)) {
+			unknownPrefixesInXMLLiteral.add(prefix);
+		}
 	}
 
 	/**
@@ -591,10 +583,44 @@ class SAXFilter implements ContentHandler {
 	 * Inserts prefix mappings from an XML Literal's context for all prefixes that are used in the XML Literal and that
 	 * are not defined in the XML Literal itself.
 	 */
-	private void insertContextNamespaces() {
-		if (xmlLiteralContext != null) {
-			xmlLiteralContext.injectNamespaces(charBuf);
+	private void insertUsedContextPrefixes() {
+		int unknownPrefixesCount = unknownPrefixesInXMLLiteral.size();
+
+		if (unknownPrefixesCount > 0) {
+			// Create a String with all needed context prefixes
+			StringBuilder contextPrefixes = new StringBuilder(1024);
+			ElementInfo topElement = peekStack();
+
+			for (int i = 0; i < unknownPrefixesCount; i++) {
+				String prefix = unknownPrefixesInXMLLiteral.get(i);
+				String namespace = topElement.getNamespace(prefix);
+				if (namespace != null) {
+					appendNamespaceDecl(contextPrefixes, prefix, namespace);
+				}
+			}
+
+			int i = 0;
+			int opentag = 0;
+			while (i < charBuf.length()) {
+				char ch = charBuf.charAt(i);
+				if (ch == '<') {
+					if ((i + 1) < charBuf.length()) {
+						char nextChar = charBuf.charAt(i + 1);
+						if (nextChar != '/' && opentag == 0) {
+							opentag++;
+							int endOfFirstStartTag = charBuf.substring(i).indexOf(">");
+							charBuf.insert(endOfFirstStartTag + i, contextPrefixes.toString());
+						} else {
+							opentag--;
+						}
+					}
+				}
+				i += 1;
+			}
+
 		}
+
+		unknownPrefixesInXMLLiteral.clear();
 	}
 
 	private void appendNamespaceDecl(StringBuilder sb, String prefix, String namespace) {
@@ -667,7 +693,7 @@ class SAXFilter implements ContentHandler {
 				this.xmlLang = parent.xmlLang;
 			} else {
 				this.baseURI = documentURI;
-				this.xmlLang = null;
+				this.xmlLang = "";
 			}
 		}
 
@@ -684,125 +710,18 @@ class SAXFilter implements ContentHandler {
 			}
 		}
 
-	}
+		public String getNamespace(String prefix) {
+			String result = null;
 
-	private class XmlLiteralNamespaceContext {
-
-		private final Map<String, String> contextNamespaces = new LinkedHashMap<>();
-		private final Set<String> usedPrefixes = new HashSet<>();
-		private final Set<String> declaredPrefixes = new HashSet<>();
-		private String inferredDefaultNamespace = null;
-		private boolean defaultNamespaceSeen = false;
-
-		void initFromStack(ElementInfo top) {
-			contextNamespaces.clear();
-
-			while (top != null) {
-				if (top.namespaceMap != null) {
-					for (Map.Entry<String, String> e : top.namespaceMap.entrySet()) {
-						contextNamespaces.putIfAbsent(e.getKey(), e.getValue());
-					}
-				}
-				top = top.parent;
+			if (namespaceMap != null) {
+				result = namespaceMap.get(prefix);
 			}
 
-			usedPrefixes.clear();
-			declaredPrefixes.clear();
-			inferredDefaultNamespace = null;
-			defaultNamespaceSeen = false;
-		}
-
-		void registerDeclaredPrefix(String prefix) {
-			declaredPrefixes.add(prefix);
-		}
-
-		void registerUsedQName(String qName) {
-			int idx = qName.indexOf(':');
-			String prefix = (idx > 0) ? qName.substring(0, idx) : "";
-			usedPrefixes.add(prefix); // "" = default namespace
-		}
-
-		void registerDefaultNamespaceIfNeeded(String namespaceURI) {
-			if (!defaultNamespaceSeen) {
-				defaultNamespaceSeen = true;
-				inferredDefaultNamespace = namespaceURI;
-			}
-		}
-
-		void appendNamespaceDecl(StringBuilder sb, String prefix, String namespace) {
-			String attName = "xmlns";
-			if (!prefix.isEmpty()) {
-				attName += ":" + prefix;
-			}
-			sb.append(" ")
-					.append(attName)
-					.append("=\"")
-					.append(XMLUtil.escapeDoubleQuotedAttValue(namespace))
-					.append("\"");
-		}
-
-		void unregisterDeclaredPrefix(String prefix) {
-			declaredPrefixes.remove(prefix);
-		}
-
-		void injectNamespaces(StringBuilder buffer) {
-			if (contextNamespaces.isEmpty()) {
-				return;
-			}
-			StringBuilder decls = new StringBuilder(128);
-			boolean hasExplicitPrefixUsage = false;
-			for (String p : usedPrefixes) {
-				if (!p.isEmpty()) {
-					hasExplicitPrefixUsage = true;
-					break;
-				}
+			if (result == null && parent != null) {
+				result = parent.getNamespace(prefix);
 			}
 
-			if (hasExplicitPrefixUsage) {
-				// CASE 1: prefixed usage → inject only missing prefixes
-				for (String prefix : usedPrefixes) {
-					if (!declaredPrefixes.contains(prefix) && contextNamespaces.containsKey(prefix)) {
-						appendNamespaceDecl(decls, prefix, contextNamespaces.get(prefix));
-					}
-				}
-
-			} else if (inferredDefaultNamespace != null && !inferredDefaultNamespace.isEmpty()) {
-				// CASE 2: default namespace
-				if (!declaredPrefixes.contains("")) {
-					appendNamespaceDecl(decls, "", inferredDefaultNamespace);
-				}
-
-			} else {
-				// CASE 3: no namespace at all
-				for (Map.Entry<String, String> e : contextNamespaces.entrySet()) {
-					if (!declaredPrefixes.contains(e.getKey())) {
-						appendNamespaceDecl(decls, e.getKey(), e.getValue());
-					}
-				}
-			}
-
-			injectIntoTags(buffer, decls);
-		}
-
-		private void injectIntoTags(StringBuilder buffer, StringBuilder decls) {
-			int i = 0;
-			int opentag = 0;
-			while (i < buffer.length()) {
-				char ch = buffer.charAt(i);
-				if (ch == '<') {
-					if ((i + 1) < buffer.length()) {
-						char nextChar = buffer.charAt(i + 1);
-						if (nextChar != '/' && opentag == 0) {
-							opentag++;
-							int endOfFirstStartTag = buffer.substring(i).indexOf(">");
-							buffer.insert(endOfFirstStartTag + i, decls.toString());
-						} else {
-							opentag--;
-						}
-					}
-				}
-				i += 1;
-			}
+			return result;
 		}
 	}
 }
