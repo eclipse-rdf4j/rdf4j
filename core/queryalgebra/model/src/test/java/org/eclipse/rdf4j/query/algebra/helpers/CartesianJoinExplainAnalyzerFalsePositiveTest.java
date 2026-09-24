@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
 class CartesianJoinExplainAnalyzerFalsePositiveTest {
@@ -57,6 +58,32 @@ class CartesianJoinExplainAnalyzerFalsePositiveTest {
 							.as(query.sparql)
 							.isNull();
 		}));
+	}
+
+	@Test
+	void identityProjectionDoesNotConnectDisconnectedMandatoryPatterns() {
+		Join disconnectedJoin = join(pattern("leftS", "leftP", "leftO"), pattern("rightS", "rightP", "rightO"));
+		Projection identityProjection = new Projection(disconnectedJoin,
+				new ProjectionElemList(new ProjectionElem("leftS"), new ProjectionElem("rightS")), false);
+
+		GenericPlanNode plan = explain(identityProjection);
+
+		assertThat(findFirstPlan(plan,
+				node -> "Cartesian product".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE))))
+						.isNotNull();
+	}
+
+	@Test
+	void renamingProjectionStillConnectsMandatoryPatterns() {
+		Join connectedByRename = join(pattern("leftS", "leftP", "leftO"), pattern("rightS", "rightP", "rightO"));
+		Projection renamingProjection = new Projection(connectedByRename,
+				new ProjectionElemList(new ProjectionElem("leftS", "rightS")), false);
+
+		GenericPlanNode plan = explain(renamingProjection);
+
+		assertThat(findFirstPlan(plan,
+				node -> "Cartesian product".equals(node.getStringMetricActual(TelemetryMetricNames.JOIN_TYPE))))
+						.isNull();
 	}
 
 	private static Stream<QueryCase> reconnectingQueries() {

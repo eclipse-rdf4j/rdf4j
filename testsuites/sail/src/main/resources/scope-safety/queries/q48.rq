@@ -1,0 +1,3 @@
+SELECT ?x (STR(COUNT(*)) AS ?count) WHERE {
+  VALUES ?x { "a" "a" "b" "c" }
+} GROUP BY ?x

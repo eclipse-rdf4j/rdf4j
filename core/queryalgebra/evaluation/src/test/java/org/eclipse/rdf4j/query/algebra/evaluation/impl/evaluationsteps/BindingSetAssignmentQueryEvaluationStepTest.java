@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -90,6 +91,35 @@ class BindingSetAssignmentQueryEvaluationStepTest {
 
 			assertThat(results(step.evaluate(parent))).containsExactly(parent, parent);
 		}
+	}
+
+	@Test
+	void allUndefRowBehavesLikeEmptyRowForIncomingBindings() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("x"));
+		assignment.setBindingSets(List.of(new ListBindingSet(List.of("x"), (Value) null)));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+		BindingSet parent = binding("x", "parent");
+
+		assertThat(results(step.evaluate(parent))).containsExactly(parent);
+	}
+
+	@Test
+	void undefColumnsDoNotLeakIntoResultsWithoutIncomingBindings() {
+		BindingSet row = new ListBindingSet(List.of("bound", "undef"),
+				SimpleValueFactory.getInstance().createLiteral("value"), null);
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("bound", "undef"));
+		assignment.setBindingSets(List.of(row));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		List<BindingSet> actual = results(step.evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(actual).hasSize(1);
+		assertThat(actual.get(0).getBindingNames()).containsExactly("bound");
+		assertThat(actual.get(0).hasBinding("undef")).isFalse();
 	}
 
 	private static List<BindingSet> results(CloseableIteration<BindingSet> iteration) {

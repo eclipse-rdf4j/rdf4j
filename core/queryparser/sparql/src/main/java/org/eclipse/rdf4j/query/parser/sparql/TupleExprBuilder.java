@@ -828,7 +828,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 		}
 
-		result = new Projection(result, projElemList);
+		result = new Projection(result, projElemList, node.isSubSelect());
 		if (group != null) {
 			Set<String> groupNames = group.getBindingNames();
 			List<ProjectionElem> elements = projElemList.getElements();
@@ -2444,7 +2444,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 		}
 
-		bsa.setBindingNames(bindingNames);
+		bsa.setDeclaredBindingNames(bindingNames);
 		verifyLateralAssignments(bindingNames, "VALUES clause");
 
 		List<ASTBindingSet> bindingNodes = node.jjtGetChildren(ASTBindingSet.class);
@@ -2476,7 +2476,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			bindingNames.add(var.getName());
 		}
 
-		bsa.setBindingNames(bindingNames);
+		bsa.setDeclaredBindingNames(bindingNames);
 		verifyLateralAssignments(bindingNames, "VALUES clause");
 
 		List<ASTBindingSet> bindingNodes = node.jjtGetChildren(ASTBindingSet.class);

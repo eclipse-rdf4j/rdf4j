@@ -16,10 +16,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -27,8 +29,11 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 
@@ -56,11 +61,9 @@ public class TupleExprs {
 		do {
 			if (n instanceof Projection && ((Projection) n).isSubquery()) {
 				return true;
-			} else if (n instanceof Join) {
+			} else if (!(n instanceof Join)) {
 				// projections already inside a Join need not be
 				// taken into account
-				return false;
-			} else {
 				List<TupleExpr> children = getChildren(n);
 				if (!children.isEmpty()) {
 					if (queue == null) {
@@ -74,6 +77,59 @@ public class TupleExprs {
 
 		} while (n != null);
 
+		return false;
+	}
+
+	/**
+	 * Tests whether a tuple expression contains a result-set modifier that cannot safely receive bindings from a join
+	 * sibling. A slice is always sensitive to pushed bindings. DISTINCT and REDUCED are sensitive when their argument's
+	 * solution domain is heterogeneous or cannot be determined from the supplied binding analysis.
+	 *
+	 * <p>
+	 * The expression is analyzed with the supplied analysis's root input, excluding bindings from its containing join
+	 * sibling while retaining scopes and correlations inside the expression. Legacy {@link TupleExpr#getBindingNames()}
+	 * summaries do not prove that a name is bound in every solution and are deliberately not used here.
+	 *
+	 * @param tupleExpr the expression to inspect
+	 * @param analysis  invocation-local binding analysis rooted at its containing query expression
+	 * @return whether sibling binding pushdown must stop before this expression
+	 */
+	public static boolean containsResultSetModifier(TupleExpr tupleExpr,
+			QueryAlgebraBindingAnalysis analysis) {
+		return containsResultSetModifier(tupleExpr, analysis.rootContext());
+	}
+
+	/**
+	 * Tests whether an expression contains a result-set modifier that is unsafe for the supplied input frame.
+	 *
+	 * @param tupleExpr the expression to inspect
+	 * @param input     the input visible before evaluating the expression
+	 * @return whether sibling binding pushdown must stop before this expression
+	 */
+	public static boolean containsResultSetModifier(TupleExpr tupleExpr,
+			QueryAlgebraBindingAnalysis.ReadOnlyContext input) {
+		QueryAlgebraBindingAnalysis scopedAnalysis = QueryAlgebraBindingAnalysis
+				.withInputContextAndPossibleInputs(tupleExpr, input, Set.of());
+		Deque<TupleExpr> queue = new ArrayDeque<>();
+		queue.add(tupleExpr);
+		while (!queue.isEmpty()) {
+			TupleExpr current = queue.removeFirst();
+			if (current instanceof Slice) {
+				return true;
+			}
+			if (current instanceof Distinct || current instanceof Reduced) {
+				TupleExpr argument = ((UnaryTupleOperator) current).getArg();
+				QueryAlgebraBindingAnalysis.ReadOnlyContext modifierInput = scopedAnalysis.contextAt(current);
+				QueryAlgebraBindingAnalysis.ReadOnlyContext argumentInput = scopedAnalysis.childInput(current, argument,
+						modifierInput);
+				QueryAlgebraBindingAnalysis.OutputFacts facts = scopedAnalysis.outputFacts(argument, argumentInput);
+				if (!facts.possibleOutputsKnown() || !facts.guaranteedOutputsKnown()
+						|| !facts.possibleOutputs().equals(facts.guaranteedOutputs())) {
+					return true;
+				}
+			}
+			queue.addAll(getChildren(current));
+		}
 		return false;
 	}
 

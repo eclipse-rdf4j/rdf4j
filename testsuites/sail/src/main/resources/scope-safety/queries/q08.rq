@@ -1,0 +1,4 @@
+SELECT ?x ?y WHERE {
+  VALUES ?x { "outer" }
+  { SELECT ?y WHERE { VALUES ?y { "inner" } FILTER(?x = "outer") } }
+}

@@ -82,11 +82,11 @@ class QueryJoinOptimizerExistenceScopeTest {
 		List<Map<String, String>> optimizedResults = evaluate(optimized);
 		List<Join> branches = List.of((Join) union.getLeftArg(), (Join) union.getRightArg());
 		assertThat(branches).allSatisfy(branch -> assertThat(branch.getLeftArg()).isInstanceOf(Extension.class));
-		assertThat(branches).extracting(Join::getAlgorithmName)
-				.containsExactly("IndependentJoinIteration", "HashJoinIteration");
 		assertThat(filters(union)).hasSize(2).allMatch(Filter::isVariableScopeChange);
 		assertThat(optimizedResults).as("QJO-only plan: %s", optimized)
 				.containsExactlyInAnyOrderElementsOf(rawResults);
+		assertThat(branches).extracting(Join::getAlgorithmName)
+				.containsExactly("IndependentJoinIteration", "IndependentJoinIteration");
 	}
 
 	private static TupleExpr scopedExistenceUnion() {

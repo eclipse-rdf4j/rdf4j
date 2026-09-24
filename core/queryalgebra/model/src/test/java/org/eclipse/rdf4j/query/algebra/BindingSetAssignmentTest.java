@@ -12,9 +12,17 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -73,7 +81,194 @@ class BindingSetAssignmentTest {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingSets(List.of(row));
 
+		assertThat(assignment.getDeclaredBindingNames()).containsExactlyInAnyOrder("x", "y");
 		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("x", "y");
 		assertThat(assignment.getAssuredBindingNames()).containsExactly("x");
+	}
+
+	@Test
+	void declaredNamesRemainSeparateFromPossibleAndAssuredNames() {
+		ListBindingSet allUndefAndBound = new ListBindingSet(List.of("bound", "neverBound"),
+				SimpleValueFactory.getInstance().createIRI("urn:value"), null);
+		MapBindingSet bound = new MapBindingSet();
+		bound.addBinding("bound", SimpleValueFactory.getInstance().createIRI("urn:other"));
+
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setDeclaredBindingNames(new LinkedHashSet<>(List.of("bound", "neverBound")));
+		assignment.setBindingSets(List.<BindingSet>of(allUndefAndBound, bound));
+
+		assertThat(assignment.getDeclaredBindingNames()).containsExactly("bound", "neverBound");
+		assertThat(assignment.getPossibleBindingNames()).containsExactly("bound");
+		assertThat(assignment.getAssuredBindingNames()).containsExactly("bound");
+
+		MapBindingSet replacement = new MapBindingSet();
+		replacement.addBinding("replacement", SimpleValueFactory.getInstance().createIRI("urn:replacement"));
+		assignment.setBindingSets(List.<BindingSet>of(replacement));
+
+		assertThat(assignment.getDeclaredBindingNames()).containsExactly("bound", "neverBound");
+		assertThat(assignment.getPossibleBindingNames()).containsExactly("replacement");
+	}
+
+	@Test
+	void possibleNamesFallBackToDeclaredNamesOnlyWhenRowsAreUnknown() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setDeclaredBindingNames(Set.of("declared"));
+
+		assertThat(assignment.getPossibleBindingNames()).containsExactly("declared");
+
+		assignment.setBindingSets(List.of());
+		assertThat(assignment.getPossibleBindingNames()).isEmpty();
+		assertThat(assignment.getDeclaredBindingNames()).containsExactly("declared");
+	}
+
+	@Test
+	void legacyBindingNameSetterAndReturnedSetRemainMutable() {
+		Set<String> legacyNames = new LinkedHashSet<>(List.of("legacy"));
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(legacyNames);
+
+		assertThat(assignment.getBindingNames()).isSameAs(legacyNames);
+		assignment.getBindingNames().add("added");
+		assertThat(legacyNames).containsExactly("legacy", "added");
+		assertThatThrownBy(() -> assignment.getDeclaredBindingNames().add("cannotAdd"))
+				.isInstanceOf(UnsupportedOperationException.class);
+	}
+
+	@Test
+	void possibleNameViewIsReadOnlyForLegacyDeclaredNames() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(new LinkedHashSet<>(List.of("legacy")));
+
+		assertThat(assignment.getPossibleBindingNames()).containsExactly("legacy");
+		assertThatThrownBy(() -> assignment.getPossibleBindingNames().add("cannotAdd"))
+				.isInstanceOf(UnsupportedOperationException.class);
+	}
+
+	@Test
+	void declaredNamesStayInSyncWithLegacyBindingNames() {
+		Set<String> inputNames = new LinkedHashSet<>(List.of("bound", "neverBound"));
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setDeclaredBindingNames(inputNames);
+		inputNames.add("callerMutation");
+
+		assertThat(assignment.getDeclaredBindingNames()).containsExactly("bound", "neverBound");
+		assertThat(assignment.getBindingNames()).containsExactly("bound", "neverBound");
+		assertThatThrownBy(() -> assignment.getDeclaredBindingNames().add("cannotAdd"))
+				.isInstanceOf(UnsupportedOperationException.class);
+
+		assignment.getBindingNames().add("legacyMutation");
+		assertThat(assignment.getDeclaredBindingNames()).containsExactly("bound", "neverBound", "legacyMutation");
+	}
+
+	@Test
+	void rowsOnlyAssignmentsInferDeclaredHeaders() {
+		ListBindingSet row = new ListBindingSet(List.of("bound", "neverBound"),
+				SimpleValueFactory.getInstance().createIRI("urn:value"), null);
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(row));
+
+		assertThat(assignment.getDeclaredBindingNames()).containsExactly("bound", "neverBound");
+		assertThat(assignment.getBindingNames()).containsExactly("bound", "neverBound");
+		assertThat(assignment.getPossibleBindingNames()).containsExactly("bound");
+	}
+
+	@Test
+	void legacyBindingNameMethodsAreDeprecated() throws NoSuchMethodException {
+		assertThat(BindingSetAssignment.class.getMethod("getBindingNames").isAnnotationPresent(Deprecated.class))
+				.isTrue();
+		assertThat(BindingSetAssignment.class.getMethod("setBindingNames", Set.class)
+				.isAnnotationPresent(Deprecated.class)).isTrue();
+	}
+
+	@Test
+	void derivedBindingNameCacheDoesNotAffectEqualityOrHashCode() {
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("x", SimpleValueFactory.getInstance().createIRI("urn:x"));
+		BindingSetAssignment observed = new BindingSetAssignment();
+		observed.setBindingSets(List.of(row));
+		BindingSetAssignment unobserved = new BindingSetAssignment();
+		unobserved.setBindingSets(List.of(row));
+		int unobservedHash = unobserved.hashCode();
+
+		observed.getBindingNames();
+
+		assertThat(observed).isEqualTo(unobserved);
+		assertThat(observed.hashCode()).isEqualTo(unobservedHash);
+	}
+
+	@Test
+	void equalityAndHashingDoNotConsumeRowsOrUseDerivedCacheMutations() {
+		AtomicInteger iteratorCalls = new AtomicInteger();
+		Iterable<BindingSet> rows = () -> {
+			iteratorCalls.incrementAndGet();
+			return List.<BindingSet>of().iterator();
+		};
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(rows);
+		BindingSetAssignment right = new BindingSetAssignment();
+		right.setBindingSets(rows);
+
+		assertThat(left).isEqualTo(right);
+		assertThat(left.hashCode()).isEqualTo(right.hashCode());
+		assertThat(iteratorCalls).hasValue(0);
+
+		BindingSetAssignment cached = new BindingSetAssignment();
+		BindingSetAssignment uncached = new BindingSetAssignment();
+		List<BindingSet> stableRows = List.of(new MapBindingSet());
+		cached.setBindingSets(stableRows);
+		uncached.setBindingSets(stableRows);
+		cached.getBindingNames().add("derived-cache-mutation");
+		assertThat(cached).isEqualTo(uncached);
+		assertThat(cached.hashCode()).isEqualTo(uncached.hashCode());
+	}
+
+	@Test
+	void derivedNameCachesAreExcludedFromSerialization() throws IOException {
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("x", SimpleValueFactory.getInstance().createIRI("urn:x"));
+		Set<String> declaredNames = new LinkedHashSet<>(List.of("x", "neverBound"));
+		List<BindingSet> rows = List.of(row);
+
+		BindingSetAssignment primed = new BindingSetAssignment();
+		primed.setDeclaredBindingNames(declaredNames);
+		primed.setBindingSets(rows);
+		primed.getBindingNames();
+		primed.getPossibleBindingNames();
+		primed.getAssuredBindingNames();
+
+		BindingSetAssignment unprimed = new BindingSetAssignment();
+		unprimed.setDeclaredBindingNames(declaredNames);
+		unprimed.setBindingSets(rows);
+
+		byte[] serializedPrimed = serializedForm(primed);
+		assertThat(serializedPrimed).containsExactly(serializedForm(unprimed));
+
+		BindingSetAssignment restored = deserialize(serializedPrimed);
+		assertThat(restored.getDeclaredBindingNames()).containsExactly("x", "neverBound");
+		assertThat(restored.getBindingNames()).containsExactly("x", "neverBound");
+		assertThat(restored.getPossibleBindingNames()).containsExactly("x");
+
+		BindingSetAssignment rowNamesPrimed = new BindingSetAssignment();
+		rowNamesPrimed.setBindingSets(rows);
+		rowNamesPrimed.getBindingNames();
+		BindingSetAssignment rowNamesUnprimed = new BindingSetAssignment();
+		rowNamesUnprimed.setBindingSets(rows);
+		assertThat(serializedForm(rowNamesPrimed)).containsExactly(serializedForm(rowNamesUnprimed));
+	}
+
+	private static byte[] serializedForm(BindingSetAssignment assignment) throws IOException {
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(assignment);
+		}
+		return bytes.toByteArray();
+	}
+
+	private static BindingSetAssignment deserialize(byte[] bytes) throws IOException {
+		try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
+			return (BindingSetAssignment) input.readObject();
+		} catch (ClassNotFoundException e) {
+			throw new IOException(e);
+		}
 	}
 }

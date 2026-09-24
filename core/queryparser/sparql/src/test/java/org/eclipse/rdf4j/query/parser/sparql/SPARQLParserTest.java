@@ -30,6 +30,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.io.StringReader;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -67,6 +68,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -235,6 +237,30 @@ public class SPARQLParserTest {
 		assertNotNull(tupleExpr);
 		assertTrue(tupleExpr instanceof Projection);
 		assertTrue(tupleExpr.getParentNode() instanceof QueryRoot);
+	}
+
+	@Test
+	public void outerProjectionAndNestedSubselectHaveDifferentScopeFlags() {
+		String queryString = """
+				SELECT ?outer WHERE {
+				  { SELECT ?inner WHERE { ?inner <urn:inner> ?value } }
+				  ?outer <urn:outer> ?other
+				}
+				""";
+		ParsedTupleQuery query = (ParsedTupleQuery) parser.parseQuery(queryString, null);
+		Projection outerProjection = (Projection) ((QueryRoot) query.getTupleExpr()).getArg();
+		List<Projection> projections = new ArrayList<>();
+
+		query.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Projection node) {
+				projections.add(node);
+				super.meet(node);
+			}
+		});
+
+		assertFalse(outerProjection.isSubquery());
+		assertThat(projections).filteredOn(Projection::isSubquery).isNotEmpty();
 	}
 
 	@Test

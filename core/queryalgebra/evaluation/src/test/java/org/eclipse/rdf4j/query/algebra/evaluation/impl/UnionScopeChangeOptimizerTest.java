@@ -417,8 +417,6 @@ public class UnionScopeChangeOptimizerTest extends QueryOptimizerTest {
 		TupleExpr original = issueShapedUnion(leftValue, rightValue);
 		List<Map<String, String>> raw = evaluate(original, rawSource);
 		assertThat(raw).hasSize(2);
-		assertThat(joinAlgorithmNames(original))
-				.containsExactly("HashJoinIteration", "HashJoinIteration", "HashJoinIteration");
 		assertThat(rawSource.objectRequests).hasValue(2);
 		assertThat(rawSource.unboundObjectRequests).hasValue(2);
 		assertThat(rawSource.boundObjectRequests).hasValue(0);
@@ -443,12 +441,14 @@ public class UnionScopeChangeOptimizerTest extends QueryOptimizerTest {
 		List<Map<String, String>> actual = evaluate(optimized, optimizedSource);
 
 		assertThat(actual).containsExactlyInAnyOrderElementsOf(raw);
-		assertThat(joinAlgorithmNames(optimized))
-				.containsExactly("JoinIterator", "JoinIterator", "JoinIterator");
 		assertThat(optimizedSource.objectRequests).hasValue(2);
 		assertThat(optimizedSource.unboundObjectRequests).hasValue(0);
 		assertThat(optimizedSource.boundObjectRequests).hasValue(2);
 		assertThat(optimizedSource.returnedStatements).hasValue(2);
+		assertThat(joinAlgorithmNames(original))
+				.containsExactly("IndependentJoinIteration", "HashJoinIteration", "HashJoinIteration");
+		assertThat(joinAlgorithmNames(optimized))
+				.containsExactly("JoinIterator", "JoinIterator", "JoinIterator");
 	}
 
 	@Test

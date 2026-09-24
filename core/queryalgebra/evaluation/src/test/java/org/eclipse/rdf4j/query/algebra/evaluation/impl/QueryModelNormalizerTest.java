@@ -23,7 +23,11 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -41,12 +45,15 @@ import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -153,6 +160,214 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 		subject.optimize(normalized, null, EmptyBindingSet.getInstance());
 
 		assertThat(evaluate(normalized)).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	public void defaultPipelineSiblingReorderingAcrossOptionalReadPreservesResults() throws Exception {
+		IRI node = SimpleValueFactory.getInstance().createIRI("urn:node");
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:link");
+		IRI optionalValue = SimpleValueFactory.getInstance().createIRI("urn:blocked");
+		Statement statement = SimpleValueFactory.getInstance().createStatement(node, predicate, node);
+		TripleSource source = singleStatementSource(statement);
+		StatementPattern optionalLeft = new StatementPattern(
+				Var.of("s"), new Var("leftPredicate", predicate), Var.of("x"));
+		LeftJoin optional = new LeftJoin(optionalLeft, bindingSetAssignment("y", optionalValue));
+		StatementPattern sibling = new StatementPattern(
+				Var.of("x"), new Var("rightPredicate", predicate), Var.of("y"));
+		QueryRoot original = new QueryRoot(new Join(optional, sibling));
+		QueryRoot standaloneOptional = new QueryRoot(new LeftJoin(
+				new StatementPattern(Var.of("s"), new Var("leftPredicate", predicate), Var.of("x")),
+				bindingSetAssignment("y", optionalValue)));
+		assertThat(evaluate(standaloneOptional, source)).singleElement()
+				.satisfies(row -> assertThat(row.getValue("y")).isEqualTo(optionalValue));
+		List<BindingSet> expected = List.of();
+		assertThat(evaluate(original.clone(), source)).containsExactlyElementsOf(expected);
+
+		QueryRoot optimized = original.clone();
+		EvaluationStatistics statistics = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expression) {
+				if (expression instanceof LeftJoin) {
+					return 1000.0;
+				}
+				if (expression instanceof StatementPattern pattern
+						&& "x".equals(pattern.getSubjectVar().getName())) {
+					return 1.0;
+				}
+				return super.getCardinality(expression);
+			}
+		};
+		optimizeWithDefaultPipeline(optimized, source, statistics);
+
+		assertThat(optimized.getArg()).isInstanceOf(Join.class);
+		assertThat(((Join) optimized.getArg()).getLeftArg()).isInstanceOf(LeftJoin.class);
+		assertThat(((Join) optimized.getArg()).getRightArg()).isInstanceOf(StatementPattern.class);
+		assertThat(evaluate(optimized, source)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	public void parsedOptionalSiblingDependencyPreservesResults() throws Exception {
+		IRI node = SimpleValueFactory.getInstance().createIRI("urn:node");
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:link");
+		Statement statement = SimpleValueFactory.getInstance().createStatement(node, predicate, node);
+		TripleSource source = singleStatementSource(statement);
+		String query = "SELECT ?s ?x ?y WHERE { ?s <urn:link> ?x . "
+				+ "OPTIONAL { VALUES ?y { <urn:blocked> } } ?x <urn:link> ?y . }";
+		TupleExpr parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		List<BindingSet> expected = List.of();
+		assertThat(evaluate(parsed.clone(), source)).containsExactlyElementsOf(expected);
+
+		TupleExpr optimized = parsed.clone();
+		EvaluationStatistics statistics = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expression) {
+				if (expression instanceof LeftJoin) {
+					return 1000.0;
+				}
+				if (expression instanceof StatementPattern pattern
+						&& "x".equals(pattern.getSubjectVar().getName())) {
+					return 1.0;
+				}
+				return super.getCardinality(expression);
+			}
+		};
+		optimizeWithDefaultPipeline(optimized, source, statistics);
+		assertThat(findJoins(optimized)).anySatisfy(join -> {
+			assertThat(join.getLeftArg()).isInstanceOf(LeftJoin.class);
+			assertThat(join.getRightArg()).isInstanceOf(StatementPattern.class);
+		});
+
+		assertThat(evaluate(optimized, source)).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	public void defaultPipelineFilterContainingOptionalReadPreservesResults() throws Exception {
+		IRI node = SimpleValueFactory.getInstance().createIRI("urn:node");
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:link");
+		Statement statement = SimpleValueFactory.getInstance().createStatement(node, predicate, node);
+		TripleSource source = singleStatementSource(statement);
+		String query = "SELECT ?s ?x ?y WHERE { ?s <urn:link> ?x . "
+				+ "OPTIONAL { VALUES ?y { <urn:blocked> } } "
+				+ "FILTER(?s = <urn:node>) ?x <urn:link> ?y . }";
+		TupleExpr parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		List<BindingSet> expected = List.of();
+		assertThat(evaluate(parsed.clone(), source)).containsExactlyElementsOf(expected);
+
+		TupleExpr optimized = parsed.clone();
+		optimizeWithDefaultPipeline(optimized, source, forceOptionalSiblingReordering("x"));
+
+		assertOptionalRemainsBeforeSibling(optimized);
+		assertThat(evaluate(optimized, source)).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	public void defaultPipelineUnionBranchOptionalReadPreservesResults() throws Exception {
+		IRI node = SimpleValueFactory.getInstance().createIRI("urn:node");
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:link");
+		IRI keptSubject = SimpleValueFactory.getInstance().createIRI("urn:kept");
+		IRI keptX = SimpleValueFactory.getInstance().createIRI("urn:kept-x");
+		IRI keptY = SimpleValueFactory.getInstance().createIRI("urn:kept-y");
+		Statement statement = SimpleValueFactory.getInstance().createStatement(node, predicate, node);
+		TripleSource source = singleStatementSource(statement);
+		String query = "SELECT ?s ?x ?y WHERE { "
+				+ "{ ?s <urn:link> ?x . OPTIONAL { VALUES ?y { <urn:blocked> } } ?x <urn:link> ?y . } "
+				+ "UNION { VALUES (?s ?x ?y) { (<urn:kept> <urn:kept-x> <urn:kept-y>) } } }";
+		TupleExpr parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		List<BindingSet> expected = List.of(new ListBindingSet(List.of("s", "x", "y"), keptSubject, keptX, keptY));
+		assertThat(evaluate(parsed.clone(), source)).containsExactlyElementsOf(expected);
+
+		TupleExpr optimized = parsed.clone();
+		optimizeWithDefaultPipeline(optimized, source, forceOptionalSiblingReordering("x"));
+
+		assertOptionalRemainsBeforeSibling(optimized);
+		assertThat(evaluate(optimized, source)).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	public void defaultPipelineNonSubqueryProjectionOptionalReadPreservesResults() throws Exception {
+		IRI node = SimpleValueFactory.getInstance().createIRI("urn:node");
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:link");
+		Statement statement = SimpleValueFactory.getInstance().createStatement(node, predicate, node);
+		TripleSource source = singleStatementSource(statement);
+		String query = "SELECT ?s ?x WHERE { ?s <urn:link> ?x . "
+				+ "OPTIONAL { VALUES ?y { <urn:blocked> } } ?x <urn:link> ?y . }";
+		TupleExpr parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		Projection outerProjection = (Projection) ((QueryRoot) parsed).getArg();
+		assertThat(outerProjection.isSubquery()).isFalse();
+		List<BindingSet> expected = List.of();
+		assertThat(evaluate(parsed.clone(), source)).containsExactlyElementsOf(expected);
+
+		TupleExpr optimized = parsed.clone();
+		optimizeWithDefaultPipeline(optimized, source, forceOptionalSiblingReordering("x"));
+
+		assertOptionalRemainsBeforeSibling(optimized);
+		assertThat(evaluate(optimized, source)).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	public void defaultPipelineNestedOptionalSiblingReadPreservesResults() throws Exception {
+		IRI node = SimpleValueFactory.getInstance().createIRI("urn:node");
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:link");
+		Statement statement = SimpleValueFactory.getInstance().createStatement(node, predicate, node);
+		TripleSource source = singleStatementSource(statement);
+		String query = "SELECT ?s ?x ?z ?y WHERE { ?s <urn:link> ?x . "
+				+ "OPTIONAL { ?x <urn:link> ?z . OPTIONAL { VALUES ?y { <urn:blocked> } } } "
+				+ "?z <urn:link> ?y . }";
+		TupleExpr parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		List<BindingSet> expected = List.of();
+		assertThat(evaluate(parsed.clone(), source)).containsExactlyElementsOf(expected);
+
+		TupleExpr optimized = parsed.clone();
+		optimizeWithDefaultPipeline(optimized, source, forceOptionalSiblingReordering("z"));
+
+		assertOptionalRemainsBeforeSibling(optimized);
+		assertThat(evaluate(optimized, source)).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	public void defaultPipelinePreservesOverwrittenOptionalLeftBindingAgainstSiblingValues() throws Exception {
+		IRI valuesValue = SimpleValueFactory.getInstance().createIRI("urn:one");
+		IRI extensionValue = SimpleValueFactory.getInstance().createIRI("urn:two");
+		IRI optionalValue = SimpleValueFactory.getInstance().createIRI("urn:optional");
+		Extension optionalLeft = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(extensionValue), "y"));
+		LeftJoin optional = new LeftJoin(optionalLeft, bindingSetAssignment("z", optionalValue));
+		QueryRoot original = new QueryRoot(new Join(optional, bindingSetAssignment("y", valuesValue)));
+		List<BindingSet> expected = List.of();
+		assertThat(evaluate(original.clone())).containsExactlyElementsOf(expected);
+
+		QueryRoot optimized = original.clone();
+		optimizeWithDefaultPipeline(optimized, new EmptyTripleSource(), forceOptionalSiblingReordering("y"));
+
+		assertThat(findLeftJoins(optimized)).singleElement().satisfies(leftJoin -> {
+			assertThat(leftJoin.getLeftArg()).isInstanceOf(Join.class);
+			Join leftJoinInput = (Join) leftJoin.getLeftArg();
+			assertThat(leftJoinInput.getLeftArg()).isInstanceOf(Extension.class);
+			assertThat(leftJoinInput.getRightArg()).isInstanceOf(BindingSetAssignment.class);
+		});
+		assertThat(evaluate(optimized)).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	public void defaultPipelineCanReorderIndependentOptionalAndPreserveResults() throws Exception {
+		IRI node = SimpleValueFactory.getInstance().createIRI("urn:node");
+		IRI predicate = SimpleValueFactory.getInstance().createIRI("urn:link");
+		IRI optionalValue = SimpleValueFactory.getInstance().createIRI("urn:optional");
+		Statement statement = SimpleValueFactory.getInstance().createStatement(node, predicate, node);
+		TripleSource source = singleStatementSource(statement);
+		String query = "SELECT ?s ?x ?y ?optional WHERE { ?s <urn:link> ?x . "
+				+ "OPTIONAL { VALUES ?optional { <urn:optional> } } ?x <urn:link> ?y . }";
+		TupleExpr parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		List<BindingSet> expected = List.of(
+				new ListBindingSet(List.of("s", "x", "y", "optional"), node, node, node, optionalValue));
+		assertThat(evaluate(parsed.clone(), source)).containsExactlyElementsOf(expected);
+
+		TupleExpr optimized = parsed.clone();
+		optimizeWithDefaultPipeline(optimized, source, forceOptionalSiblingReordering("x"));
+
+		assertThat(findLeftJoins(optimized)).singleElement()
+				.satisfies(leftJoin -> assertThat(leftJoin.getLeftArg()).isInstanceOf(Join.class));
+		assertThat(evaluate(optimized, source)).containsExactlyElementsOf(expected);
 	}
 
 	@Test
@@ -345,8 +560,63 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 		return assignment;
 	}
 
+	private static List<Join> findJoins(TupleExpr expression) {
+		List<Join> joins = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join join) {
+				joins.add(join);
+				super.meet(join);
+			}
+		});
+		return joins;
+	}
+
+	private static List<LeftJoin> findLeftJoins(TupleExpr expression) {
+		List<LeftJoin> leftJoins = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(LeftJoin leftJoin) {
+				leftJoins.add(leftJoin);
+				super.meet(leftJoin);
+			}
+		});
+		return leftJoins;
+	}
+
+	private static void assertOptionalRemainsBeforeSibling(TupleExpr expression) {
+		assertThat(findJoins(expression)).anySatisfy(join -> {
+			assertThat(join.getLeftArg()).isInstanceOf(LeftJoin.class);
+			assertThat(join.getRightArg()).isInstanceOf(StatementPattern.class);
+		});
+	}
+
+	private static EvaluationStatistics forceOptionalSiblingReordering(String... siblingSubjectNames) {
+		Set<String> subjects = Set.of(siblingSubjectNames);
+		return new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expression) {
+				if (expression instanceof LeftJoin) {
+					return 1000.0;
+				}
+				if (expression instanceof StatementPattern pattern
+						&& subjects.contains(pattern.getSubjectVar().getName())) {
+					return 1.0;
+				}
+				if (expression instanceof BindingSetAssignment) {
+					return 1.0;
+				}
+				return super.getCardinality(expression);
+			}
+		};
+	}
+
 	private static List<BindingSet> evaluate(TupleExpr expression) throws Exception {
-		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		return evaluate(expression, new EmptyTripleSource());
+	}
+
+	private static List<BindingSet> evaluate(TupleExpr expression, TripleSource tripleSource) throws Exception {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, null);
 		List<BindingSet> results = new ArrayList<>();
 		try (CloseableIteration<BindingSet> iteration = strategy.evaluate(expression, EmptyBindingSet.getInstance())) {
 			while (iteration.hasNext()) {
@@ -354,6 +624,32 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 			}
 		}
 		return results;
+	}
+
+	private static TupleExpr optimizeWithDefaultPipeline(TupleExpr expression, TripleSource tripleSource) {
+		return optimizeWithDefaultPipeline(expression, tripleSource, new EvaluationStatistics());
+	}
+
+	private static TupleExpr optimizeWithDefaultPipeline(TupleExpr expression, TripleSource tripleSource,
+			EvaluationStatistics statistics) {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, null, null, 0, statistics);
+		return strategy.optimize(expression, statistics, EmptyBindingSet.getInstance());
+	}
+
+	private static TripleSource singleStatementSource(Statement statement) {
+		return new EmptyTripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate,
+					Value object, Resource... contexts) {
+				boolean matches = (subject == null || subject.equals(statement.getSubject()))
+						&& (predicate == null || predicate.equals(statement.getPredicate()))
+						&& (object == null || object.equals(statement.getObject()));
+				if (!matches) {
+					return TripleSource.EMPTY_ITERATION;
+				}
+				return new CloseableIteratorIteration<>(List.of(statement).iterator());
+			}
+		};
 	}
 
 	@Override

@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
@@ -443,6 +444,76 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				new ExtensionElem(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("new")), "x"));
 
 		assertJoinFilterObservesOverwrittenValue(overwrite);
+	}
+
+	@Test
+	public void optionalExtensionOverwriteKeepsFilterAboveLeftJoin() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:probe");
+		TripleSource tripleSource = statementListTripleSource(
+				valueFactory.createStatement(subject, predicate, valueFactory.createLiteral(1)));
+		StatementPattern left = new StatementPattern(
+				Var.of("s"), new Var("p", predicate), Var.of("x"));
+		Extension optionalRight = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(valueFactory.createLiteral(10)), "x"));
+		QueryRoot original = new QueryRoot(new Filter(new LeftJoin(left, optionalRight),
+				new Compare(Var.of("x"), new ValueConstant(valueFactory.createLiteral(5)), CompareOp.GT)));
+		List<BindingSet> expected = evaluate(original.clone(), tripleSource);
+		assertThat(expected).singleElement()
+				.satisfies(row -> assertThat(row.getValue("x")).isEqualTo(valueFactory.createLiteral(10)));
+
+		TupleExpr optimized = optimizeWithStandardPipeline(original.clone(), tripleSource);
+
+		assertThat(evaluate(optimized, tripleSource)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(findAll(optimized, Filter.class)).singleElement()
+				.satisfies(filter -> assertThat(filter.getArg()).isInstanceOf(LeftJoin.class));
+	}
+
+	@Test
+	public void optionalProjectionDiscardPreservesOuterFilterResult() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:probe");
+		TripleSource tripleSource = statementListTripleSource(
+				valueFactory.createStatement(subject, predicate, valueFactory.createLiteral(1)));
+		StatementPattern left = new StatementPattern(
+				Var.of("s"), new Var("p", predicate), Var.of("x"));
+		Projection discardBindings = new Projection(new SingletonSet(), new ProjectionElemList());
+		discardBindings.setSubquery(true);
+		QueryRoot original = new QueryRoot(new Filter(new LeftJoin(left, discardBindings),
+				new Compare(Var.of("x"), new ValueConstant(valueFactory.createLiteral(5)), CompareOp.GT)));
+		List<BindingSet> expected = evaluate(original.clone(), tripleSource);
+		assertThat(expected).isEmpty();
+
+		TupleExpr optimized = optimizeWithStandardPipeline(original.clone(), tripleSource);
+
+		assertThat(evaluate(optimized, tripleSource)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	public void optionalRestoredBindingSurvivesRecursiveFilterPushdown() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:probe");
+		IRI originalValue = valueFactory.createIRI("urn:original");
+		IRI restoredValue = valueFactory.createIRI("urn:restored");
+		TripleSource tripleSource = statementListTripleSource(
+				valueFactory.createStatement(subject, predicate, originalValue));
+		StatementPattern leftPattern = new StatementPattern(
+				Var.of("s"), new Var("p", predicate), Var.of("x"));
+		Projection discardBindings = new Projection(leftPattern, new ProjectionElemList());
+		discardBindings.setSubquery(true);
+		QueryRoot original = new QueryRoot(new Filter(
+				new LeftJoin(discardBindings, singleValueBindingSetAssignment("x", restoredValue)),
+				new Bound(Var.of("x"))));
+		List<BindingSet> expected = evaluate(original.clone(), tripleSource);
+		assertThat(expected).singleElement()
+				.satisfies(row -> assertThat(row.getValue("x")).isEqualTo(restoredValue));
+
+		TupleExpr optimized = optimizeWithStandardPipeline(original.clone(), tripleSource);
+
+		assertThat(evaluate(optimized, tripleSource)).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test
@@ -1228,16 +1299,20 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 	private TupleExpr optimizeWithStandardPipeline(String actualQuery, TripleSource tripleSource) {
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, actualQuery, null);
+		return optimizeWithStandardPipeline(pq.getTupleExpr(), tripleSource);
+	}
+
+	private TupleExpr optimizeWithStandardPipeline(TupleExpr tupleExpr, TripleSource tripleSource) {
 		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
 				new StrictEvaluationStrategy(tripleSource, null),
 				tripleSource,
 				new EvaluationStatistics());
 
 		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
-			optimizer.optimize(pq.getTupleExpr(), null, EmptyBindingSet.getInstance());
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
-		return pq.getTupleExpr();
+		return tupleExpr;
 	}
 
 	private BindingSetAssignment singleValuesAnchor(TupleExpr tupleExpr, String bindingName) {

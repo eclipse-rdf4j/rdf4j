@@ -19,10 +19,10 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationStep {
 	private final BindingSetAssignment node;
@@ -56,8 +57,45 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 		final Iterator<BindingSet> assignments = node.getBindingSets().iterator();
 		CloseableIteration<BindingSet> result;
 		if (bindings.isEmpty()) {
-			// we can just return the assignments directly without checking existing bindings
-			result = new CloseableIteratorIteration<>(assignments);
+			// Return ordinary rows without copying, but don't expose null slots as result bindings.
+			result = new LookAheadIteration<>() {
+
+				@Override
+				protected BindingSet getNextElement() throws QueryEvaluationException {
+					if (!assignments.hasNext()) {
+						return null;
+					}
+					BindingSet assignedBindings = assignments.next();
+					int assignedValueCount = 0;
+					for (Binding ignored : assignedBindings) {
+						assignedValueCount++;
+					}
+					if (assignedValueCount == assignedBindings.getBindingNames().size()) {
+						return assignedBindings;
+					}
+
+					MutableBindingSet nextResult = bsMaker.apply(EmptyBindingSet.getInstance());
+					for (Binding binding : assignedBindings) {
+						String name = binding.getName();
+						Value assignedValue = binding.getValue();
+						if (assignedValue == null) {
+							continue;
+						}
+						BindingNameAccess bindingName = bindingNamesByName.get(name);
+						if (bindingName == null) {
+							nextResult.addBinding(name, assignedValue);
+						} else {
+							bindingName.addBinding.accept(assignedValue, nextResult);
+						}
+					}
+					return nextResult;
+				}
+
+				@Override
+				protected void handleClose() {
+
+				}
+			};
 		} else {
 			// we need to verify that new binding assignments do not overwrite existing bindings
 			final boolean hasParentOverlap = hasParentOverlap(bindings);

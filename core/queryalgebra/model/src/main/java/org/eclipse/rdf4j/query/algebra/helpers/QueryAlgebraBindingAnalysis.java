@@ -127,11 +127,17 @@ public final class QueryAlgebraBindingAnalysis {
 			}
 		}
 		this.rootContext = ReadOnlyContext.external(values, externalNames, 0).withPossibleInputs(possibleInputNames);
+		if (root != null) {
+			contextCache.put(root, rootContext);
+		}
 	}
 
 	private QueryAlgebraBindingAnalysis(TupleExpr root, ReadOnlyContext rootContext) {
 		this.root = root;
 		this.rootContext = rootContext;
+		if (root != null) {
+			contextCache.put(root, rootContext);
+		}
 	}
 
 	public static QueryAlgebraBindingAnalysis withBindingValues(TupleExpr root, BindingSet initialBindings) {
@@ -389,6 +395,9 @@ public final class QueryAlgebraBindingAnalysis {
 
 	public void invalidate() {
 		contextCache.clear();
+		if (root != null) {
+			contextCache.put(root, rootContext);
+		}
 		outputCache.clear();
 		scopeIdentities.clear();
 	}
@@ -484,6 +493,9 @@ public final class QueryAlgebraBindingAnalysis {
 				if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 					return input.enterScope(nextScopeId(leftJoin.getRightArg()));
 				}
+				if (TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), input)) {
+					return input;
+				}
 				return leftJoinInput.withOutput(outputFacts(leftJoin.getLeftArg(), leftJoinInput));
 			}
 			if (child == leftJoin.getLeftArg()) {
@@ -496,10 +508,9 @@ public final class QueryAlgebraBindingAnalysis {
 				if (leftJoin.getAssuredBindingNames().containsAll(conditionNames)) {
 					return leftFrame;
 				}
-				ReadOnlyContext rightInput = TupleExprs.containsSubquery(leftJoin.getRightArg())
-						? input.enterScope(nextScopeId(leftJoin.getRightArg()))
-						: leftFrame;
-				return rightInput.withOutput(outputFacts(leftJoin.getRightArg(), rightInput));
+				OutputFacts right = outputFacts(leftJoin.getRightArg(),
+						childInput(leftJoin, leftJoin.getRightArg(), input));
+				return input.withOutput(matchedLeftJoinFacts(left, right, input));
 			}
 			return input;
 		}
@@ -559,7 +570,9 @@ public final class QueryAlgebraBindingAnalysis {
 		TupleExpr right = join.getRightArg();
 		String algorithm = join.getAlgorithmName();
 		if (algorithm == null || algorithm.isEmpty()) {
-			if (right instanceof Service || !isOutOfScopeForLeftBindings(right)) {
+			// Classify from the frame before this join's left side is evaluated. Modifier analysis roots itself at the
+			// right subtree, so its inherited input is preserved while parent links outside that subtree are ignored.
+			if (right instanceof Service || !isOutOfScopeForLeftBindings(right, input)) {
 				return input.withOutput(outputFacts(join.getLeftArg(), input));
 			}
 			return input;
@@ -575,6 +588,25 @@ public final class QueryAlgebraBindingAnalysis {
 
 	private ReadOnlyContext unknownChildInput(QueryModelNode parent, ReadOnlyContext input) {
 		return input.enterUnknownScope(nextScopeId(parent));
+	}
+
+	/**
+	 * The OPTIONAL condition is evaluated only for compatible merged rows. Its context therefore includes guaranteed
+	 * outputs from both sides, unlike the OPTIONAL result context, which must also account for unmatched left rows.
+	 */
+	private OutputFacts matchedLeftJoinFacts(OutputFacts left, OutputFacts right, ReadOnlyContext input) {
+		if (!left.possibleOutputsKnown || !right.possibleOutputsKnown || !left.canProduceRows
+				|| !right.canProduceRows) {
+			return OutputFacts.unknown(input);
+		}
+		Set<String> possible = union(left.possibleOutputs, right.possibleOutputs);
+		Set<String> guaranteed = union(left.guaranteedOutputs, right.guaranteedOutputs);
+		Set<String> overwritten = union(left.overwrittenInputNames, right.overwrittenInputNames);
+		Set<String> retained = new HashSet<>(input.maybeBoundNames);
+		retained.removeAll(possible);
+		retained.removeAll(overwritten);
+		return OutputFacts.known(possible, guaranteed, joinFixedValues(left, right, guaranteed),
+				joinKinds(left, right, guaranteed), input, true, retained).withOverwrittenInputs(overwritten);
 	}
 
 	/**
@@ -674,8 +706,9 @@ public final class QueryAlgebraBindingAnalysis {
 		return found[0];
 	}
 
-	private boolean isOutOfScopeForLeftBindings(TupleExpr expression) {
+	private boolean isOutOfScopeForLeftBindings(TupleExpr expression, ReadOnlyContext input) {
 		return TupleExprs.isVariableScopeChange(expression) || TupleExprs.containsSubquery(expression)
+				|| TupleExprs.containsResultSetModifier(expression, input)
 				|| containsDifferenceInScope(expression);
 	}
 

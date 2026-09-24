@@ -66,6 +66,7 @@ import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -373,6 +374,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 				// Recursively get the join arguments
 				List<TupleExpr> joinArgs = getJoinArgs(node, new ArrayList<>());
+				if (hasUnsafeOptionalReorder(node, joinArgs)) {
+					visitAt(node.getLeftArg());
+					visitAt(node.getRightArg());
+					return;
+				}
 
 				// get all extensions (BIND clause)
 				List<TupleExpr> orderedExtensions = getExtensionTupleExprs(joinArgs);
@@ -558,6 +564,110 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			} finally {
 				boundVars = origBoundVars;
 			}
+		}
+
+		/**
+		 * Cost-based join ordering can inject a sibling's values into a LeftJoin evaluator. Keep the current join order
+		 * when that would change a binding read, output, or result-modifier input of the OPTIONAL.
+		 */
+		private boolean hasUnsafeOptionalReorder(Join join, List<TupleExpr> joinArgs) {
+			if (joinArgs.size() < 2) {
+				return false;
+			}
+
+			QueryAlgebraBindingAnalysis.ReadOnlyContext joinInput = bindingAnalysis.contextAt(join);
+			for (TupleExpr candidate : joinArgs) {
+				if (!(candidate instanceof LeftJoin leftJoin)) {
+					continue;
+				}
+
+				QueryAlgebraBindingAnalysis optionalAnalysis = QueryAlgebraBindingAnalysis
+						.withInputContextAndPossibleInputs(leftJoin, joinInput, Set.of());
+				QueryAlgebraBindingAnalysis.ReadOnlyContext leftInput = optionalAnalysis
+						.contextAt(leftJoin.getLeftArg());
+				QueryAlgebraBindingAnalysis.OutputFacts leftFacts = optionalAnalysis
+						.outputFacts(leftJoin.getLeftArg(), leftInput);
+				QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = optionalAnalysis
+						.contextAt(leftJoin.getRightArg());
+				QueryAlgebraBindingAnalysis.OutputFacts rightFacts = optionalAnalysis
+						.outputFacts(leftJoin.getRightArg(), rightInput);
+				boolean scopedOperand = TupleExprs.containsSubquery(leftJoin.getLeftArg())
+						|| TupleExprs.containsSubquery(leftJoin.getRightArg())
+						|| TupleExprs.containsResultSetModifier(leftJoin.getLeftArg(), optionalAnalysis)
+						|| TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), optionalAnalysis);
+
+				Set<String> sensitiveNames = possibleAndRetainedNames(leftJoin.getRightArg(), rightFacts);
+				addBindingReferences(leftJoin.getRightArg(), optionalAnalysis, rightInput, sensitiveNames);
+				if (leftJoin.hasCondition()) {
+					addBindingReferences(leftJoin.getCondition(), optionalAnalysis,
+							optionalAnalysis.contextAt(leftJoin.getCondition()), sensitiveNames);
+				}
+
+				Set<String> guaranteedByLeft = effectiveGuaranteedNames(leftFacts);
+				if (scopedOperand) {
+					sensitiveNames.addAll(possibleAndRetainedNames(leftJoin.getLeftArg(), leftFacts));
+					addBindingReferences(leftJoin.getLeftArg(), optionalAnalysis, leftInput, sensitiveNames);
+				}
+
+				for (TupleExpr sibling : joinArgs) {
+					if (sibling == candidate) {
+						continue;
+					}
+
+					QueryAlgebraBindingAnalysis.OutputFacts siblingFacts = bindingAnalysis
+							.outputFacts(sibling, joinInput);
+					Set<String> siblingNames = possibleAndRetainedNames(sibling, siblingFacts);
+					Set<String> stableInputs = new HashSet<>(scopedOperand ? joinInput.guaranteedNames()
+							: guaranteedByLeft);
+					if (!siblingFacts.possibleOutputsKnown()) {
+						stableInputs.clear();
+					}
+					stableInputs.removeAll(siblingFacts.overwrittenInputNames());
+
+					Set<String> changedNames = new HashSet<>(sensitiveNames);
+					changedNames.retainAll(siblingNames);
+					changedNames.removeAll(stableInputs);
+					if (!changedNames.isEmpty()) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		private Set<String> possibleAndRetainedNames(TupleExpr expression,
+				QueryAlgebraBindingAnalysis.OutputFacts facts) {
+			Set<String> names = new HashSet<>(facts.possibleOutputsKnown() ? facts.possibleOutputs()
+					: expression.getBindingNames());
+			names.addAll(facts.retainedInputNames());
+			return names;
+		}
+
+		private Set<String> effectiveGuaranteedNames(QueryAlgebraBindingAnalysis.OutputFacts facts) {
+			Set<String> names = new HashSet<>();
+			if (facts.guaranteedOutputsKnown()) {
+				names.addAll(facts.guaranteedOutputs());
+			}
+			Set<String> retainedGuaranteedInputs = new HashSet<>(facts.inheritedInputNames());
+			retainedGuaranteedInputs.retainAll(facts.retainedInputNames());
+			retainedGuaranteedInputs.removeAll(facts.overwrittenInputNames());
+			names.addAll(retainedGuaranteedInputs);
+			return names;
+		}
+
+		private void addBindingReferences(QueryModelNode expression, QueryAlgebraBindingAnalysis analysis,
+				QueryAlgebraBindingAnalysis.ReadOnlyContext input, Set<String> names) {
+			analysis.visitScoped(expression, input, (node, nodeInput) -> {
+				if (node instanceof Projection projection && projection.isSubquery()) {
+					return false;
+				}
+				if (node instanceof Var var && !var.isConstant() && !var.hasValue() && var.getName() != null) {
+					names.add(var.getName());
+				} else if (node instanceof ProjectionElem projectionElem) {
+					names.add(projectionElem.getName());
+				}
+				return true;
+			});
 		}
 
 		private boolean containsLateral(TupleExpr tupleExpr) {

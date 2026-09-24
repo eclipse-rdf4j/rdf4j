@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
@@ -40,9 +42,11 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
@@ -52,6 +56,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
@@ -76,6 +81,28 @@ class OptimizerBindingAnalysisTest {
 		assertThat(expressionInput.fixedValues().get("x")).isEqualTo(VF.createIRI("urn:x"));
 		assertThat(joinOutput.guaranteedOutputs()).contains("y");
 		assertThat(joinOutput.fixedValues().get("y")).isEqualTo(VF.createIRI("urn:x"));
+	}
+
+	@Test
+	void contextAtStopsAtItsDeclaredRootEvenWhenThatSubtreeHasAParent() {
+		Value one = VF.createIRI("urn:one");
+		BindingSetAssignment left = values("x", one);
+		BindingSetAssignment right = values("y", one);
+		Join parent = new Join(left, right);
+		BindingSetAssignment detached = right.clone();
+
+		QueryAlgebraBindingAnalysis attachedRoot = QueryAlgebraBindingAnalysis.withBindingValues(right,
+				EmptyBindingSet.getInstance());
+		QueryAlgebraBindingAnalysis detachedRoot = QueryAlgebraBindingAnalysis.withBindingValues(detached,
+				EmptyBindingSet.getInstance());
+		QueryAlgebraBindingAnalysis parentAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(parent,
+				EmptyBindingSet.getInstance());
+
+		assertThat(attachedRoot.contextAt(right).visibleNames())
+				.isEqualTo(detachedRoot.contextAt(detached).visibleNames());
+		assertThat(attachedRoot.contextAt(right).guaranteedNames())
+				.isEqualTo(detachedRoot.contextAt(detached).guaranteedNames());
+		assertThat(parentAnalysis.contextAt(right).guaranteedNames()).contains("x");
 	}
 
 	@Test
@@ -330,6 +357,89 @@ class OptimizerBindingAnalysisTest {
 
 		assertThat(minusInput.guaranteedNames()).doesNotContain("x");
 		assertThat(minusInput.fixedValues()).doesNotContainKey("x");
+	}
+
+	@Test
+	void modifierClassificationExcludesJoinSiblingsAndKeepsApiInputs() {
+		Value one = VF.createIRI("urn:one");
+		Extension bindInput = new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "y"));
+		BindingSetAssignment yValue = values("y", one);
+		Distinct modifier = new Distinct(new Union(bindInput, yValue));
+		Join root = new Join(values("x", one), modifier);
+
+		QueryAlgebraBindingAnalysis withoutApiInput = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				EmptyBindingSet.getInstance());
+		assertThat(TupleExprs.containsResultSetModifier(modifier, withoutApiInput))
+				.as("the left sibling must not make an otherwise heterogeneous DISTINCT look uniform")
+				.isTrue();
+
+		MapBindingSet apiInput = new MapBindingSet();
+		apiInput.addBinding("x", one);
+		QueryAlgebraBindingAnalysis withApiInput = QueryAlgebraBindingAnalysis.withBindingValues(root, apiInput);
+		assertThat(TupleExprs.containsResultSetModifier(modifier, withApiInput))
+				.as("a legitimate incoming value may make both DISTINCT branches produce the same domain")
+				.isFalse();
+	}
+
+	@Test
+	void modifierClassificationRetainsExplicitLateralInputs() {
+		Value one = VF.createIRI("urn:one");
+		BindingSetAssignment left = values("x", one);
+		Extension bindLateralInput = new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "y"));
+		BindingSetAssignment yValue = values("y", one);
+		Distinct modifier = new Distinct(new Union(bindLateralInput, yValue));
+		Lateral lateral = new Lateral(left, modifier, Set.of("x"));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(lateral,
+				EmptyBindingSet.getInstance());
+
+		assertThat(analysis.contextAt(modifier).guaranteedNames()).contains("x");
+		assertThat(TupleExprs.containsResultSetModifier(lateral, analysis))
+				.as("the explicit LATERAL input makes the modifier argument uniform")
+				.isFalse();
+	}
+
+	@Test
+	void sliceAndReducedRemainModifierBoundariesWhenNested() {
+		Value one = VF.createIRI("urn:one");
+		Extension bindInput = new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "y"));
+		BindingSetAssignment yValue = values("y", one);
+		TupleExpr reduced = new Reduced(new Union(bindInput, yValue));
+		TupleExpr nestedModifiers = new Slice(reduced, 0, 1);
+		Join root = new Join(values("x", one), nestedModifiers);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				EmptyBindingSet.getInstance());
+
+		assertThat(TupleExprs.containsResultSetModifier(reduced, analysis)).isTrue();
+		assertThat(TupleExprs.containsResultSetModifier(nestedModifiers, analysis)).isTrue();
+	}
+
+	@Test
+	void optionalModifierRhsIsIndependentAndConditionSeesMergedPossibleOutputs() {
+		Value one = VF.createIRI("urn:one");
+		Extension bindLeftX = new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "y"));
+		BindingSetAssignment yValue = values("y", one);
+		Distinct right = new Distinct(new Union(bindLeftX, yValue));
+		Compare condition = new Compare(Var.of("y"), new ValueConstant(one), Compare.CompareOp.EQ);
+		LeftJoin leftJoin = new LeftJoin(values("x", one), right, condition);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(leftJoin,
+				EmptyBindingSet.getInstance());
+
+		QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = analysis.contextAt(right);
+		assertThat(rightInput.guaranteedNames()).doesNotContain("x");
+		QueryAlgebraBindingAnalysis.ReadOnlyContext conditionInput = analysis.contextAt(condition);
+		assertThat(conditionInput.guaranteedNames()).contains("x").doesNotContain("y");
+		assertThat(conditionInput.maybeBoundNames()).contains("y");
+	}
+
+	@Test
+	void optionalSliceDoesNotReceiveTheLeftOperandBindings() {
+		Value one = VF.createIRI("urn:one");
+		Slice right = new Slice(values("y", one), 0, 1);
+		LeftJoin leftJoin = new LeftJoin(values("x", one), right);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(leftJoin,
+				EmptyBindingSet.getInstance());
+
+		assertThat(analysis.contextAt(right).guaranteedNames()).doesNotContain("x");
 	}
 
 	@Test

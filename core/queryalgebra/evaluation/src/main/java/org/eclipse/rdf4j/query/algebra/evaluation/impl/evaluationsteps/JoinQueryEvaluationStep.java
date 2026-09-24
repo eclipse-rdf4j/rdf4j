@@ -33,8 +33,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.IndependentJoinIterat
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
-import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OutputFacts;
-import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
@@ -49,6 +47,8 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		// efficient computation of a SERVICE join using vectored evaluation
 		// TODO maybe we can create a ServiceJoin node already in the parser?
 		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime();
+		QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(join,
+				EmptyBindingSet.getInstance());
 		QueryEvaluationStep leftRaw = strategy.precompile(join.getLeftArg(), context);
 		QueryEvaluationStep rightRaw = strategy.precompile(join.getRightArg(), context);
 		QueryEvaluationStep leftPrepared = JoinMetricsTracking
@@ -56,9 +56,9 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		QueryEvaluationStep rightPrepared = JoinMetricsTracking
 				.wrapRightInput(rightRaw, join, join.getRightArg(), runtimeTelemetryTrackingActive);
 		BoundStatementPatternGuardJoinIteration.GuardCounter leftGuardCounter = getGuardCounter(join.getLeftArg(),
-				leftRaw);
+				leftRaw, bindingAnalysis);
 		BoundStatementPatternGuardJoinIteration.GuardCounter rightGuardCounter = getGuardCounter(join.getRightArg(),
-				rightRaw);
+				rightRaw, bindingAnalysis);
 		guardCounter = combineGuardCounters(leftGuardCounter, rightGuardCounter);
 		if (join.getRightArg() instanceof Service) {
 			eval = bindings -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
@@ -67,7 +67,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
 		} else if (containsDifferenceInCurrentScope(join.getRightArg())) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
-			if (canHashJoinWithGuaranteedOutputs(join, joinAttributes)) {
+			if (canHashJoinWithGuaranteedOutputs(joinAttributes)) {
 				eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
 						joinAttributes, context);
 				join.setAlgorithm(HashJoinIteration.class.getSimpleName());
@@ -75,9 +75,9 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 				eval = bindings -> new IndependentJoinIteration(leftPrepared, rightPrepared, bindings);
 				join.setAlgorithm(IndependentJoinIteration.class.getSimpleName());
 			}
-		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg())) {
+		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg(), bindingAnalysis)) {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
-			if (canHashJoinWithGuaranteedOutputs(join, joinAttributes)) {
+			if (canHashJoinWithGuaranteedOutputs(joinAttributes)) {
 				eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
 						joinAttributes, context);
 				join.setAlgorithm(HashJoinIteration.class.getSimpleName());
@@ -135,8 +135,10 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		return eval.apply(bindings);
 	}
 
-	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
+	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr,
+			QueryAlgebraBindingAnalysis bindingAnalysis) {
 		return TupleExprs.isVariableScopeChange(expr) || TupleExprs.containsSubquery(expr)
+				|| TupleExprs.containsResultSetModifier(expr, bindingAnalysis)
 				|| containsDifferenceInCurrentScope(expr);
 	}
 
@@ -155,29 +157,10 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		return false;
 	}
 
-	private static boolean canHashJoinWithGuaranteedOutputs(Join join, String[] joinAttributes) {
-		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(join,
-				EmptyBindingSet.getInstance());
-		ReadOnlyContext leftInput = analysis.contextAt(join.getLeftArg());
-		ReadOnlyContext rightInput = analysis.contextAt(join.getRightArg());
-		OutputFacts leftFacts = analysis.outputFacts(join.getLeftArg(), leftInput);
-		OutputFacts rightFacts = analysis.outputFacts(join.getRightArg(), rightInput);
-		if (!leftFacts.possibleOutputsKnown() || !leftFacts.guaranteedOutputsKnown()
-				|| !rightFacts.possibleOutputsKnown() || !rightFacts.guaranteedOutputsKnown()) {
-			return false;
-		}
-		Set<String> commonOutputs = new LinkedHashSet<>(leftFacts.possibleOutputs());
-		commonOutputs.retainAll(rightFacts.possibleOutputs());
-		Set<String> joinAttributeSet = Set.of(joinAttributes);
-		if (!joinAttributeSet.containsAll(commonOutputs)) {
-			return false;
-		}
-		for (String name : joinAttributes) {
-			if (!leftFacts.guaranteedOutputs().contains(name) || !rightFacts.guaranteedOutputs().contains(name)) {
-				return false;
-			}
-		}
-		return true;
+	private static boolean canHashJoinWithGuaranteedOutputs(String[] joinAttributes) {
+		// The shared helper only returns QABA-proven names that are guaranteed by both operands. Requiring at
+		// least one such key keeps the bounded-memory independent join for cases where no safe partition exists.
+		return joinAttributes.length > 0;
 	}
 
 	private static boolean isNoNewBindingStatementGuard(Join join) {
@@ -195,8 +178,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static boolean isBoundStatementPatternGuardCandidate(TupleExpr expr) {
-		return expr instanceof StatementPattern
-				&& !isOutOfScopeForLeftArgBindings(expr);
+		return expr instanceof StatementPattern;
 	}
 
 	private static boolean isFullyBoundLeftStatementGuardCandidate(TupleExpr expr) {
@@ -206,8 +188,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	private static boolean isNoNewBindingGuard(Join join) {
 		TupleExpr rightArg = join.getRightArg();
-		return !isOutOfScopeForLeftArgBindings(rightArg)
-				&& join.getLeftArg().getBindingNames().containsAll(requiredBindingNames(rightArg));
+		return join.getLeftArg().getBindingNames().containsAll(requiredBindingNames(rightArg));
 	}
 
 	private static Set<String> requiredBindingNames(TupleExpr expr) {
@@ -236,8 +217,8 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static BoundStatementPatternGuardJoinIteration.GuardCounter getGuardCounter(TupleExpr expr,
-			QueryEvaluationStep raw) {
-		if (isOutOfScopeForLeftArgBindings(expr)) {
+			QueryEvaluationStep raw, QueryAlgebraBindingAnalysis bindingAnalysis) {
+		if (isOutOfScopeForLeftArgBindings(expr, bindingAnalysis)) {
 			return null;
 		}
 		if (expr instanceof StatementPattern && raw instanceof StatementPatternQueryEvaluationStep) {
