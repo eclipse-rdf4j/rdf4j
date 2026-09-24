@@ -61,5 +61,6 @@ You can find more detailed information about our development and release process
 
 ## Packed f-tree algebra update
 
-See [PACKED-ALGEBRA.md](PACKED-ALGEBRA.md) for the OPTIONAL / UNION / BIND implementation, aggregate projections,
-reproducible isolated checks, and the explicit limitations of the validation performed on this source bundle.
+See the [packed factorized trees guide](docs/branch/optimize-lmdb/query-joins-and-factors.md#packed-factorized-trees)
+for the current implementation and boundaries. The [branch developer documentation index](docs/branch/optimize-lmdb/README.md)
+maps the wider `optimize-lmdb` feature set.

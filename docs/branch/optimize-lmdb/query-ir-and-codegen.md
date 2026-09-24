@@ -1,0 +1,64 @@
+# LMDB query IR and code generation
+
+This guide separates three mechanisms that are easy to conflate: compiling a logical/native plan to kernel IR, emitting and caching Janino whole-stage kernels, and the later Java Class-File-API specialization for one hot batch filter. They have different admission points, keys, lifetimes, and fallbacks. The branch delta catalogued as Q7 covers native query IR, Janino emission, and batch specialization; Java/SPARQL semantics and generic fallback remain the correctness baseline, and the mechanisms below are not claims of measured speedup.
+
+## From slot plan to a shape-only kernel
+
+[`LmdbNativeKernelLowering`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeKernelLowering.java) performs recognition over an already compiled slot plan. It does not open the data source or reserve execution resources. On success it returns an [`LmdbNativeKernelIr.Kernel`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeKernelIr.java) and a separate `LmdbNativeKernelBindings` descriptor. Unsupported structure declines at this layer; whether the shape is accepted by a row/aggregate route and whether it actually opens are later decisions.
+
+The IR uses integer column positions and symbolic constant/entry/column operands. It describes a pipeline of operators such as source enumeration, probes, filters, joins, UNION, EXISTS, path expansion, BIND hooks, output modifiers, and a row or aggregate terminal. `NULL_ID` is the unbound sentinel; dictionary identifiers remain encoded longs until a hook or final value consumer needs an RDF value. Node requirements summarize source views and hook/semantic needs so the bind stage can decide whether a concrete plan can run against the current snapshot.
+
+The canonical `shapeKey()` describes the generated program, not store contents. It must not contain store ids or plan-local synthetic ids. Those inputs—source views, constants, entry bindings, domains, hooks, cancellation and aggregate state—arrive through `KernelContext` at bind time. This is what makes the compiled-class cache process-wide and shareable across stores without confusing their id spaces. Shape-affecting choices belong in the key; source-specific values do not.
+
+Lowering supports multiple exact tiers instead of requiring every filter to become an id-only instruction. Depending on the route, a predicate can be an id-inline operation, a small hook callback, or an aggregate residual hook over a scratch row. A rejected filter lowering does not by itself reject a whole kernel; unsupported pipeline structure, exceeded slot/table limits, missing semantic evidence, or an unsatisfied binding requirement can. See the detailed gates in [`LmdbNativeKernelLowering`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeKernelLowering.java) and the source map in [`query-test-map.md`](query-test-map.md).
+
+## Janino whole-stage route
+
+[`LmdbNativeKernelEmitter`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeKernelEmitter.java) turns a well-formed IR tree into one Java class implementing `JaninoKernel`. Pipeline nodes become small methods with nested loops and continuation calls; register columns are primitive `long` fields, and shared structures/value semantics use `KernelRuntime` and `KernelHooks`. This fuses the represented pipeline in one generated class, but does not mean every query operator or surrounding root modifier is in that class.
+
+[`LmdbNativeJaninoCodegen`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeJaninoCodegen.java) admits compilation when `rdf4j.lmdb.janinoCodegen.enabled` is true (default) and the observed-row count reaches `rdf4j.lmdb.janinoCodegen.thresholdRows` (default 128). The first request records a shape entry and submits the source compilation to one process-wide daemon compiler by default. The compiled constructor/class is cached by canonical shape key in a process-wide access-ordered cache (default maximum 512 entries); each cursor/open instantiates a kernel and binds the current context. `rdf4j.lmdb.janinoCodegen.synchronous=true` changes compilation to the requesting thread and waits for the result. It is a validation/debug mode with different request latency behavior, not a runtime speed claim.
+
+If a compile is pending, disabled, under threshold, fails, or cannot be instantiated, `kernel()` may return `null`. The native execution caller can then use the IR interpreter if its route and shape support it, otherwise it can decline to a remaining strategy. Normal compile failure is remembered in the cache to avoid repeated compilation attempts for one shape; `rdf4j.lmdb.janinoCodegen.failOnError=true` turns compile/instantiation failures into validation errors rather than ordinary decline. `rdf4j.lmdb.janinoCodegen.dumpDir` optionally writes generated source for diagnosis. The exact reason is available through the lowering/explanation path; a null is not evidence that the shape was semantically unsupported.
+
+The interpreter implements the same `JaninoKernel` bind/fill contract by walking the IR. `kernelInterpreter.enabled` defaults true; `kernelInterpreter.warmup` also defaults true and allows an interpreter route to serve when Janino is pending or unavailable. Interpreter support is explicit: unsupported node kinds, `PARTITIONED_GROUPS` aggregate state, non-pull-safe resumable producers, or unsupported terminals decline. For unordered resumable row pipelines the interpreter can pull on downstream demand; blocking ORDER BY remains materialized. The interpreter is not an all-query generic evaluator and it does not make an unsupported IR shape eligible.
+
+## Separately gated lowering seams
+
+The following controls are read at lowering/strategy boundaries. Defaults are from the current source, not a claim that every seam is used by every query.
+
+| Property | Default | What the gate controls |
+|---|---:|---|
+| `rdf4j.lmdb.janinoCodegen.scanSources` | true | Lets supported source nodes lower to direct LMDB scan cursors when the needed adjacency view is unavailable. A failed adjacency bind may otherwise retry lowering with scan preference. |
+| `rdf4j.lmdb.janinoCodegen.unionSources` | true | Allows a `UnionPlan` operand in the kernel IR. Cost arbitration and exact structural admission still apply. |
+| `rdf4j.lmdb.janinoCodegen.planBridge` | false | Allows the total-coverage `PlanRows` bridge for a native slot plan that direct IR lowering cannot express. It is a separate route and not proof that arbitrary generic algebra is lowered. |
+| `rdf4j.lmdb.janinoCodegen.hashJoin` | true | Allows the supported two-pattern hash build/probe IR shape when the shared native hash-join cost gate favors it. |
+| `rdf4j.lmdb.janinoCodegen.wcoj` | true | Allows supported simple-cycle intersection nodes. This is a specific IR admission gate, distinct from general WCOJ planning. |
+| `rdf4j.lmdb.janinoCodegen.rowExists` | true | Allows sticky row-rung EXISTS filters to lower as in-kernel witnesses; refused shapes retain the residual filter tier. |
+| `rdf4j.lmdb.janinoCodegen.aggResidual` | true | Keeps supported aggregate producer filters in-kernel through the residual hook tier rather than declining the aggregate kernel. |
+| `rdf4j.lmdb.janinoCodegen.bindHooks` | true | Allows computed BIND lowering only for expressions already admitted by the supported expression compiler. |
+| `rdf4j.lmdb.janinoCodegen.contextColumns` | true | Allows context-bearing patterns to bind through a context column where source/layout checks pass. |
+| `rdf4j.lmdb.janinoCodegen.outputMods` | true | Allows supported ORDER/LIMIT/OFFSET consumer modifiers to be represented by the kernel terminal. The ordinary sort/slice path remains when it declines. |
+| `rdf4j.lmdb.janinoCodegen.mixedBinding` | true | Retries binding with only unavailable adjacency-pattern sites routed through scans instead of an all-or-nothing source retry. |
+| `rdf4j.lmdb.janinoCodegen.distinctNumericAggregates` | true | Generates membership state for numeric DISTINCT aggregation while exact RDF numeric arithmetic remains in hooks. |
+| `rdf4j.lmdb.janinoCodegen.wildcardPredicates` | false | Allows the compiled wildcard-predicate emitter; an eligible IR interpreter can remain available when off. |
+| `rdf4j.lmdb.janinoCodegen.synchronous` | false | Compiles on the requesting thread and waits instead of using deferred compile. |
+
+Other gates such as bounded groups/order, count specialization, factor plans/marginals/windows, weighted computed groups, vector tail, resumability, probe-close seek and node-predicate lowering are shape- or route-specific. The authoritative exhaustive controls and parsers are in [`query-configuration.md`](query-configuration.md); don’t infer an active route from a switch alone.
+
+## Batch filter specialization is not Janino
+
+[`LmdbNativeSpecialization`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSpecialization.java) handles a narrower operation: a batch filter whose read slots are proven. It first runs the ordinary Java filter. Once the observed-row threshold is reached (default 32,768), one daemon compiler may define a hidden class with the Java 25 Class-File API. That class copies only the filter's read-mask slots into `RowState`, recomputes the bound mask, applies the unchanged filter, and compacts the selection vector. A query can pick up an available specialized kernel at a later batch boundary; existing running code is not rewritten mid-batch.
+
+Its process-wide LRU key is `(slotCount, normalizedReadMask)`, while the filter is supplied at call time, so generated classes are independent of store and id-space. Current defaults cap the cache at 128 entries and 512 KiB of generated byte arrays; oversized or failed compilation is rejected and leaves the interpreted batch filter in place. This is distinct from whole-stage IR lowering, has a different threshold/cache/key, and says nothing about HotSpot JIT compilation.
+
+## Resource and failure boundaries
+
+IR recognition is source-independent. Binding attaches snapshot/source resources and query hooks; execution closes the scanner/cursor or aggregate scope that owns them. Janino cache entries retain compiled classes; per-open kernel instances retain their bound references only for that execution. Batch-specialization entries retain shape-only hidden kernels. Query row/factor buffers are not automatically covered by these class-cache limits—see [query memory and result lifecycle](query-memory-and-result-lifecycle.md).
+
+A lowering decline or unavailable codegen tier is before output, so the dispatch may try an interpreter or another strategy where registered. After rows have escaped, a runtime exception/cancel must propagate with cleanup; switching to a second evaluator could duplicate or omit rows. The failure boundary is described by [strategy arbitration](query-arbitration-and-explanation.md).
+
+## Unexecuted route example
+
+For an eligible two-pattern join followed by a filter, slot compilation can recognize the producer/filter shape, lowering can build `Probe`/`HashBuild`/`HashProbe` and filter nodes, and the generated/interpreted kernel can read primitive ids and call hooks only where its IR requires RDF-level semantics. If the shape is below the Janino row threshold, the interpreter may be used while compilation is pending; if lowering or interpreter support declines, another row candidate remains available. This is a control-flow sketch only; the query was not parsed or run as part of this documentation work.
+
+Representative source contracts: [`LmdbNativeKernelLoweringTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeKernelLoweringTest.java), [`LmdbNativeKernelIrEmitterTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeKernelIrEmitterTest.java), [`LmdbNativeKernelInterpreterParityTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeKernelInterpreterParityTest.java), [`LmdbNativeKernelInterpreterRowParityTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeKernelInterpreterRowParityTest.java), [`LmdbNativeKernelInterpreterWarmupTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeKernelInterpreterWarmupTest.java), [`LmdbNativeSpecializationTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbNativeSpecializationTest.java), and [`LmdbNativeKernelAdversarialDeclineTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbNativeKernelAdversarialDeclineTest.java). These links describe test coverage; none were executed here.
