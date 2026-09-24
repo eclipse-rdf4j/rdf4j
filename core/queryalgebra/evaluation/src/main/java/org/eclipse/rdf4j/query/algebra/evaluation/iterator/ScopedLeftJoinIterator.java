@@ -12,7 +12,9 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -37,8 +39,12 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 	private final BindingSet inputBindings;
 	private final Predicate<BindingSet> condition;
 	private final QueryEvaluationContext context;
+	private final String[] joinAttributes;
 
+	private volatile CloseableIteration<BindingSet> rightIter;
 	private List<BindingSet> rightRows;
+	private Map<BindingSetHashKey, List<BindingSet>> rightRowsByKey;
+	private List<BindingSet> currentRightRows;
 	private BindingSet currentLeft;
 	private int nextRightRow;
 	private boolean currentLeftMatched;
@@ -46,6 +52,17 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 	public ScopedLeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
 			QueryValueEvaluationStep condition, BindingSet bindings, QueryEvaluationContext context)
 			throws QueryEvaluationException {
+		this(left, right, condition, bindings, context, new String[0]);
+	}
+
+	/**
+	 * @param joinAttributes names guaranteed to be bound by both operands; right rows are bucketed by these names so
+	 *                       each left row only scans the rows it can join with.
+	 */
+	public ScopedLeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
+			QueryValueEvaluationStep condition, BindingSet bindings, QueryEvaluationContext context,
+			String[] joinAttributes) throws QueryEvaluationException {
+		this.joinAttributes = joinAttributes;
 		leftIter = left.evaluate(bindings);
 		rightStep = right;
 		inputBindings = bindings;
@@ -58,8 +75,8 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 		try {
 			while (true) {
 				if (currentLeft != null) {
-					while (nextRightRow < rightRows.size()) {
-						BindingSet rightRow = rightRows.get(nextRightRow++);
+					while (nextRightRow < currentRightRows.size()) {
+						BindingSet rightRow = currentRightRows.get(nextRightRow++);
 						if (!currentLeft.isCompatible(rightRow)) {
 							continue;
 						}
@@ -89,7 +106,11 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 				currentLeftMatched = false;
 				if (rightRows == null) {
 					rightRows = materializeRight();
+					if (isClosed()) {
+						return null;
+					}
 				}
+				currentRightRows = rightRowsFor(currentLeft);
 			}
 		} catch (RuntimeException | Error e) {
 			closeOnFailure(e);
@@ -99,12 +120,47 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 
 	private List<BindingSet> materializeRight() throws QueryEvaluationException {
 		List<BindingSet> rows = new ArrayList<>();
-		try (CloseableIteration<BindingSet> iter = rightStep.evaluate(inputBindings)) {
-			while (iter.hasNext()) {
-				rows.add(iter.next());
+		// Keep the right iteration in a field so that close() (e.g. from a query timeout) can interrupt it.
+		CloseableIteration<BindingSet> iter = rightStep.evaluate(inputBindings);
+		rightIter = iter;
+		try {
+			while (!isClosed() && iter.hasNext()) {
+				BindingSet row = iter.next();
+				rows.add(row);
+				if (joinAttributes.length > 0 && hasAllJoinAttributes(row)) {
+					if (rightRowsByKey == null) {
+						rightRowsByKey = new HashMap<>();
+					}
+					rightRowsByKey
+							.computeIfAbsent(BindingSetHashKey.create(joinAttributes, row), k -> new ArrayList<>())
+							.add(row);
+				}
 			}
+		} finally {
+			rightIter = null;
+			iter.close();
+		}
+		if (rightRowsByKey != null && rightRowsByKey.values().stream().mapToInt(List::size).sum() != rows.size()) {
+			// Some right rows did not bind every join attribute, so they cannot be bucketed.
+			rightRowsByKey = null;
 		}
 		return rows;
+	}
+
+	private List<BindingSet> rightRowsFor(BindingSet leftRow) {
+		if (rightRowsByKey == null || !hasAllJoinAttributes(leftRow)) {
+			return rightRows;
+		}
+		return rightRowsByKey.getOrDefault(BindingSetHashKey.create(joinAttributes, leftRow), List.of());
+	}
+
+	private boolean hasAllJoinAttributes(BindingSet row) {
+		for (String name : joinAttributes) {
+			if (row.getValue(name) == null) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private BindingSet merge(BindingSet leftRow, BindingSet rightRow) {
@@ -131,9 +187,19 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		try {
-			leftIter.close();
+			try {
+				leftIter.close();
+			} finally {
+				CloseableIteration<BindingSet> iter = rightIter;
+				rightIter = null;
+				if (iter != null) {
+					iter.close();
+				}
+			}
 		} finally {
 			rightRows = null;
+			rightRowsByKey = null;
+			currentRightRows = null;
 			currentLeft = null;
 			nextRightRow = 0;
 			currentLeftMatched = false;

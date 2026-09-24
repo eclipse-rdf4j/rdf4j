@@ -15,7 +15,9 @@ import java.util.HashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -55,11 +57,10 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(leftJoin);
 			if (leftJoin.hasCondition() || joinAttributes.length == 0) {
 				QueryValueEvaluationStep isolatedCondition = leftJoin.hasCondition()
-						? new ScopedQueryValueEvaluationStep(conditionBindingNames(leftJoin),
-								strategy.precompile(leftJoin.getCondition(), context))
+						? precompileScopedCondition(strategy, leftJoin, context)
 						: null;
 				leftJoin.setAlgorithm(ScopedLeftJoinIterator.class.getSimpleName());
-				return bs -> new ScopedLeftJoinIterator(left, right, isolatedCondition, bs, context);
+				return bs -> new ScopedLeftJoinIterator(left, right, isolatedCondition, bs, context, joinAttributes);
 			}
 			leftJoin.setAlgorithm(HashJoinIteration.class.getSimpleName());
 			return bs -> new HashJoinIteration(left, right, bs, true, joinAttributes, context);
@@ -77,6 +78,19 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			condition = null;
 		}
 		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames());
+	}
+
+	private static QueryValueEvaluationStep precompileScopedCondition(EvaluationStrategy strategy, LeftJoin leftJoin,
+			QueryEvaluationContext context) {
+		QueryValueEvaluationStep condition;
+		try {
+			condition = strategy.precompile(leftJoin.getCondition(), context);
+		} catch (QueryEvaluationException e) {
+			// A condition that fails to compile can never be true, so the OPTIONAL never matches (as in
+			// FilterIterator).
+			condition = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
+		}
+		return new ScopedQueryValueEvaluationStep(conditionBindingNames(leftJoin), condition);
 	}
 
 	private static Set<String> conditionBindingNames(LeftJoin leftJoin) {

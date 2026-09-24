@@ -1851,9 +1851,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryValueEvaluationStep leftStep = precompile(node.getLeftArg(), context);
 		QueryValueEvaluationStep rightStep = precompile(node.getRightArg(), context);
 		if (leftStep.isConstant() && rightStep.isConstant()) {
-			Value leftVal = leftStep.evaluate(EmptyBindingSet.getInstance());
-			Value rightVal = rightStep.evaluate(EmptyBindingSet.getInstance());
-			Value value = operation.apply(leftVal, rightVal);
+			Value value;
+			try {
+				Value leftVal = leftStep.evaluate(EmptyBindingSet.getInstance());
+				Value rightVal = rightStep.evaluate(EmptyBindingSet.getInstance());
+				value = operation.apply(leftVal, rightVal);
+			} catch (ValueExprEvaluationException e) {
+				// Keep the error per solution (it makes a BIND unbound or a FILTER false) instead of failing the query.
+				return failingValueEvaluationStep(e);
+			}
 			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(value);
 		} else if (leftStep.isConstant()) {
 			Value leftVal = leftStep.evaluate(EmptyBindingSet.getInstance());
@@ -1889,15 +1895,25 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			java.util.function.Function<Value, Value> operation, QueryEvaluationContext context) {
 		QueryValueEvaluationStep argStep = precompile(node.getArg(), context);
 		if (argStep.isConstant()) {
-			Value argValue = argStep.evaluate(EmptyBindingSet.getInstance());
-
-			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(operation.apply(argValue));
+			Value value;
+			try {
+				value = operation.apply(argStep.evaluate(EmptyBindingSet.getInstance()));
+			} catch (ValueExprEvaluationException e) {
+				return failingValueEvaluationStep(e);
+			}
+			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(value);
 		} else {
 			return bindings -> {
 				Value argValue = argStep.evaluate(bindings);
 				return operation.apply(argValue);
 			};
 		}
+	}
+
+	private static QueryValueEvaluationStep failingValueEvaluationStep(ValueExprEvaluationException failure) {
+		return bindings -> {
+			throw new ValueExprEvaluationException(failure.getMessage(), failure);
+		};
 	}
 
 	/**

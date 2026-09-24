@@ -249,31 +249,31 @@ public class QueryPlanRetrievalTest {
 					"║        s: Var (name=s)\n" +
 					"║        p: Var (name=p)\n" +
 					"║        o: Var (name=o)\n" +
-					"╚══ Join (JoinIterator) [right]\n" +
-					"   ├── Filter [left]\n" +
-					"   │  ╠══ Compare (>)\n" +
-					"   │  ║     Var (name=o)\n" +
+					"╚══ Join (HashJoinIteration) [right]\n" +
+					"   ├── Filter (new scope) (costEstimate=6.61, resultSizeEstimate=12) [left]\n" +
+					"   │  ╠══ Compare (!=)\n" +
 					"   │  ║     Var (name=o2)\n" +
-					"   │  ╚══ Filter (new scope) (costEstimate=6.61, resultSizeEstimate=12)\n" +
-					"   │     ├── Compare (!=)\n" +
-					"   │     │     Var (name=o2)\n" +
+					"   │  ║     Var (name=o)\n" +
+					"   │  ╚══ Filter\n" +
+					"   │     ├── Compare (>)\n" +
 					"   │     │     Var (name=o)\n" +
+					"   │     │     Var (name=o2)\n" +
 					"   │     └── StatementPattern (resultSizeEstimate=12)\n" +
 					"   │           s: Var (name=o)\n" +
 					"   │           p: Var (name=p2)\n" +
 					"   │           o: Var (name=o2)\n" +
-					"   └── Filter [right]\n" +
-					"      ╠══ Compare (>)\n" +
-					"      ║     Var (name=o)\n" +
-					"      ║     Var (name=o3)\n" +
-					"      ╚══ Filter (new scope) (costEstimate=6.61, resultSizeEstimate=12)\n" +
-					"         ├── Or\n" +
-					"         │  ╠══ Compare (!=)\n" +
-					"         │  ║     Var (name=o)\n" +
-					"         │  ║     Var (name=o3)\n" +
-					"         │  ╚══ Compare (=)\n" +
-					"         │        Var (name=o)\n" +
-					"         │        Var (name=o3)\n" +
+					"   └── Filter (new scope) (costEstimate=6.61, resultSizeEstimate=12) [right]\n" +
+					"      ╠══ Or\n" +
+					"      ║  ├── Compare (!=)\n" +
+					"      ║  │     Var (name=o)\n" +
+					"      ║  │     Var (name=o3)\n" +
+					"      ║  └── Compare (=)\n" +
+					"      ║        Var (name=o)\n" +
+					"      ║        Var (name=o3)\n" +
+					"      ╚══ Filter\n" +
+					"         ├── Compare (>)\n" +
+					"         │     Var (name=o)\n" +
+					"         │     Var (name=o3)\n" +
 					"         └── StatementPattern (resultSizeEstimate=12)\n" +
 					"               s: Var (name=o)\n" +
 					"               p: Var (name=p3)\n" +
@@ -316,62 +316,72 @@ public class QueryPlanRetrievalTest {
 					"║     ProjectionElem \"o\"\n" +
 					"║     ProjectionElem \"o2\"\n" +
 					"║     ProjectionElem \"g\"\n" +
-					"╚══ Filter\n" +
-					"   ├── ListMemberOperator\n" +
-					"   │     Var (name=o2)\n" +
-					"   │     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-					"   │     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-					"   │     ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-					"   │     ValueConstant (value=\"4\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-					"   │     ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-					"   └── LeftJoin (LeftJoinIterator)\n" +
-					"         And\n" +
-					"         ├── Var (name=hasX)\n" +
-					"         └── Compare (>)\n" +
-					"            ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#string-length)\n" +
-					"            ║     Str\n" +
-					"            ║        Var (name=x)\n" +
-					"            ╚══ ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-					"         Union\n" +
-					"         ├── Filter\n" +
-					"         │  ╠══ Not\n" +
-					"         │  ║     Bound\n" +
+					"╚══ LeftJoin (LeftJoinIterator)\n" +
+					"      Compare (>)\n" +
+					"      ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#string-length)\n" +
+					"      ║     Str\n" +
+					"      ║        Var (name=x)\n" +
+					"      ╚══ ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"      Union\n" +
+					"      ╠══ Filter\n" +
+					"      ║  ├── Not\n" +
+					"      ║  │     Bound\n" +
+					"      ║  │        Var (name=g)\n" +
+					"      ║  └── Join (JoinIterator)\n" +
+					"      ║     ╠══ Filter [left]\n" +
+					"      ║     ║  ├── Compare (>)\n" +
+					"      ║     ║  │     Var (name=o)\n" +
+					"      ║     ║  │     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"      ║     ║  └── StatementPattern (costEstimate=2.50, resultSizeEstimate=0)\n" +
+					"      ║     ║        s: Var (name=s)\n" +
+					"      ║     ║        p: Var (name=_const_c03ab50c_uri, value=http://example.com/p, anonymous)\n" +
+					"      ║     ║        o: Var (name=o)\n" +
+					"      ║     ╚══ Filter [right]\n" +
+					"      ║        ├── And\n" +
+					"      ║        │  ╠══ Compare (<)\n" +
+					"      ║        │  ║     Var (name=o2)\n" +
+					"      ║        │  ║     ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        │  ╚══ ListMemberOperator\n" +
+					"      ║        │        Var (name=o2)\n" +
+					"      ║        │        ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        │        ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        │        ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        │        ValueConstant (value=\"4\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        │        ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║        └── StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
+					"      ║              s: Var (name=s)\n" +
+					"      ║              p: Var (name=_const_c03ab50d_uri, value=http://example.com/q, anonymous)\n" +
+					"      ║              o: Var (name=o2)\n" +
+					"      ╚══ Filter\n" +
+					"         ├── And\n" +
+					"         │  ╠══ And\n" +
+					"         │  ║  ├── Compare (!=)\n" +
+					"         │  ║  │     Var (name=o)\n" +
+					"         │  ║  │     ValueConstant (value=\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"         │  ║  └── Compare (!=)\n" +
 					"         │  ║        Var (name=g)\n" +
-					"         │  ╚══ Join (JoinIterator)\n" +
-					"         │     ├── Filter [left]\n" +
-					"         │     │  ╠══ Compare (>)\n" +
-					"         │     │  ║     Var (name=o)\n" +
-					"         │     │  ║     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"         │     │  ╚══ StatementPattern (costEstimate=2.50, resultSizeEstimate=0)\n" +
-					"         │     │        s: Var (name=s)\n" +
-					"         │     │        p: Var (name=_const_c03ab50c_uri, value=http://example.com/p, anonymous)\n"
-					+
-					"         │     │        o: Var (name=o)\n" +
-					"         │     └── Filter [right]\n" +
-					"         │        ╠══ Compare (<)\n" +
-					"         │        ║     Var (name=o2)\n" +
-					"         │        ║     ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"         │        ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
-					"         │              s: Var (name=s)\n" +
-					"         │              p: Var (name=_const_c03ab50d_uri, value=http://example.com/q, anonymous)\n"
-					+
-					"         │              o: Var (name=o2)\n" +
-					"         └── Filter\n" +
-					"            ╠══ And\n" +
-					"            ║  ├── Compare (!=)\n" +
-					"            ║  │     Var (name=o)\n" +
-					"            ║  │     ValueConstant (value=\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-					"            ║  └── Compare (!=)\n" +
-					"            ║        Var (name=g)\n" +
-					"            ║        ValueConstant (value=http://example.com/Bad)\n" +
-					"            ╚══ StatementPattern FROM NAMED CONTEXT (resultSizeEstimate=0)\n" +
-					"                  s: Var (name=s)\n" +
-					"                  p: Var (name=_const_c03ab50e_uri, value=http://example.com/r, anonymous)\n" +
-					"                  o: Var (name=o)\n" +
-					"                  c: Var (name=g)\n" +
-					"         Extension\n" +
+					"         │  ║        ValueConstant (value=http://example.com/Bad)\n" +
+					"         │  ╚══ ListMemberOperator\n" +
+					"         │        Var (name=o2)\n" +
+					"         │        ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"         │        ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"         │        ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"         │        ValueConstant (value=\"4\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"         │        ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"         └── StatementPattern FROM NAMED CONTEXT (resultSizeEstimate=0)\n" +
+					"               s: Var (name=s)\n" +
+					"               p: Var (name=_const_c03ab50e_uri, value=http://example.com/r, anonymous)\n" +
+					"               o: Var (name=o)\n" +
+					"               c: Var (name=g)\n" +
+					"      Filter\n" +
+					"      ╠══ Var (name=hasX)\n" +
+					"      ╚══ Extension\n" +
 					"         ├── SingletonSet\n" +
 					"         └── ExtensionElem (hasX)\n" +
 					"               Exists\n" +
@@ -463,18 +473,18 @@ public class QueryPlanRetrievalTest {
 					"         │        o: Var (name=o)\n" +
 					"         └── LeftJoin [right]\n" +
 					"            ╠══ Join (IndependentJoinIteration) [left]\n" +
-					"            ║  ├── Filter [left]\n" +
-					"            ║  │  ╠══ Compare (>)\n" +
-					"            ║  │  ║     Var (name=score)\n" +
-					"            ║  │  ║     ValueConstant (value=\"10\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"            ║  ├── Filter (new scope) (costEstimate=2.92, resultSizeEstimate=0) [left]\n" +
+					"            ║  │  ╠══ Compare (!=)\n" +
+					"            ║  │  ║  ├── MathExpr (-)\n" +
+					"            ║  │  ║  │     Var (name=score)\n" +
+					"            ║  │  ║  │     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"            ║  │  ╚══ Filter (new scope) (costEstimate=2.92, resultSizeEstimate=0)\n" +
-					"            ║  │     ├── Compare (!=)\n" +
-					"            ║  │     │  ╠══ MathExpr (-)\n" +
-					"            ║  │     │  ║     Var (name=score)\n" +
-					"            ║  │     │  ║     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"            ║  │  ║  └── ValueConstant (value=\"0\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
-					"            ║  │     │  ╚══ ValueConstant (value=\"0\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					"            ║  │  ╚══ Filter\n" +
+					"            ║  │     ├── Compare (>)\n" +
+					"            ║  │     │     Var (name=score)\n" +
+					"            ║  │     │     ValueConstant (value=\"10\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
 					+
 					"            ║  │     └── StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n" +
 					"            ║  │           s: Var (name=s)\n" +
@@ -570,17 +580,17 @@ public class QueryPlanRetrievalTest {
 			Query query = connection.prepareTupleQuery(sparql);
 			String actual = query.explain(Explanation.Level.Optimized).toString();
 			assertExplainTextEqualsIgnoringAnnotations(actual, "Join (JoinIterator)\n" +
-					"╠══ Filter [left]\n" +
-					"║  ├── Compare (!=)\n" +
-					"║  │     Var (name=o)\n" +
-					"║  │     Var (name=s)\n" +
-					"║  └── Filter (new scope)\n" +
-					"║     ╠══ Not\n" +
-					"║     ║     Exists\n" +
-					"║     ║        StatementPattern (resultSizeEstimate=12)\n" +
-					"║     ║           s: Var (name=o)\n" +
-					"║     ║           p: Var (name=s)\n" +
-					"║     ║           o: Var (name=c)\n" +
+					"╠══ Filter (new scope) [left]\n" +
+					"║  ├── Not\n" +
+					"║  │     Exists\n" +
+					"║  │        StatementPattern (resultSizeEstimate=12)\n" +
+					"║  │           s: Var (name=o)\n" +
+					"║  │           p: Var (name=s)\n" +
+					"║  │           o: Var (name=c)\n" +
+					"║  └── Filter\n" +
+					"║     ╠══ Compare (!=)\n" +
+					"║     ║     Var (name=o)\n" +
+					"║     ║     Var (name=s)\n" +
 					"║     ╚══ Extension\n" +
 					"║        ├── SingletonSet\n" +
 					"║        └── ExtensionElem (o)\n" +
@@ -1299,87 +1309,85 @@ public class QueryPlanRetrievalTest {
 					"   └── Extension\n" +
 					"         Group (countryID, year)\n" +
 					"            Join (HashJoinIteration)\n" +
-					"            ╠══ Filter [left]\n" +
-					"            ║  ├── Compare (!=)\n" +
-					"            ║  │     Var (name=p)\n" +
-					"            ║  │     ValueConstant (value=http://publications.europa.eu/resource/authority/procurement-procedure-type/neg-wo-call)\n"
+					"            ╠══ Extension [left]\n" +
+					"            ║  ├── Join (JoinIterator)\n" +
+					"            ║  │  ╠══ StatementPattern (costEstimate=0.71, resultSizeEstimate=0) [left]\n" +
+					"            ║  │  ║     s: Var (name=resultnotice)\n" +
+					"            ║  │  ║     p: Var (name=_const_183bd06d_uri, value=http://data.europa.eu/a4g/ontology#refersToProcedure, anonymous)\n"
 					+
-					"            ║  └── Extension\n" +
-					"            ║     ╠══ Join (JoinIterator)\n" +
-					"            ║     ║  ├── StatementPattern (costEstimate=0.71, resultSizeEstimate=0) [left]\n" +
-					"            ║     ║  │     s: Var (name=resultnotice)\n" +
-					"            ║     ║  │     p: Var (name=_const_183bd06d_uri, value=http://data.europa.eu/a4g/ontology#refersToProcedure, anonymous)\n"
+					"            ║  │  ║     o: Var (name=proc)\n" +
+					"            ║  │  ╚══ Join (JoinIterator) [right]\n" +
+					"            ║  │     ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n" +
+					"            ║  │     │     s: Var (name=proc)\n" +
+					"            ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
-					"            ║     ║  │     o: Var (name=proc)\n" +
-					"            ║     ║  └── Join (JoinIterator) [right]\n" +
-					"            ║     ║     ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n" +
-					"            ║     ║     ║     s: Var (name=proc)\n" +
-					"            ║     ║     ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					"            ║  │     │     o: Var (name=_const_be18ee7b_uri, value=http://data.europa.eu/a4g/ontology#Procedure, anonymous)\n"
 					+
-					"            ║     ║     ║     o: Var (name=_const_be18ee7b_uri, value=http://data.europa.eu/a4g/ontology#Procedure, anonymous)\n"
+					"            ║  │     └── Join (JoinIterator) [right]\n" +
+					"            ║  │        ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n" +
+					"            ║  │        ║     s: Var (name=resultnotice)\n" +
+					"            ║  │        ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
-					"            ║     ║     ╚══ Join (JoinIterator) [right]\n" +
-					"            ║     ║        ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n"
+					"            ║  │        ║     o: Var (name=_const_77e914ad_uri, value=http://data.europa.eu/a4g/ontology#ResultNotice, anonymous)\n"
 					+
-					"            ║     ║        │     s: Var (name=resultnotice)\n" +
-					"            ║     ║        │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					"            ║  │        ╚══ Join (JoinIterator) [right]\n" +
+					"            ║  │           ├── StatementPattern (costEstimate=1.12, resultSizeEstimate=0) [left]\n"
 					+
-					"            ║     ║        │     o: Var (name=_const_77e914ad_uri, value=http://data.europa.eu/a4g/ontology#ResultNotice, anonymous)\n"
+					"            ║  │           │     s: Var (name=proc)\n" +
+					"            ║  │           │     p: Var (name=_const_9c3f1eec_uri, value=http://data.europa.eu/a4g/ontology#hasProcurementScopeDividedIntoLot, anonymous)\n"
 					+
-					"            ║     ║        └── Join (JoinIterator) [right]\n" +
-					"            ║     ║           ╠══ StatementPattern (costEstimate=1.12, resultSizeEstimate=0) [left]\n"
+					"            ║  │           │     o: Var (name=lot)\n" +
+					"            ║  │           └── Join (JoinIterator) [right]\n" +
+					"            ║  │              ╠══ StatementPattern (costEstimate=0.75, resultSizeEstimate=0) [left]\n"
 					+
-					"            ║     ║           ║     s: Var (name=proc)\n" +
-					"            ║     ║           ║     p: Var (name=_const_9c3f1eec_uri, value=http://data.europa.eu/a4g/ontology#hasProcurementScopeDividedIntoLot, anonymous)\n"
+					"            ║  │              ║     s: Var (name=stat)\n" +
+					"            ║  │              ║     p: Var (name=_const_25686184_uri, value=http://data.europa.eu/a4g/ontology#concernsSubmissionsForLot, anonymous)\n"
 					+
-					"            ║     ║           ║     o: Var (name=lot)\n" +
-					"            ║     ║           ╚══ Join (JoinIterator) [right]\n" +
-					"            ║     ║              ├── StatementPattern (costEstimate=0.75, resultSizeEstimate=0) [left]\n"
+					"            ║  │              ║     o: Var (name=lot)\n" +
+					"            ║  │              ╚══ Join (JoinIterator) [right]\n" +
+					"            ║  │                 ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n"
 					+
-					"            ║     ║              │     s: Var (name=stat)\n" +
-					"            ║     ║              │     p: Var (name=_const_25686184_uri, value=http://data.europa.eu/a4g/ontology#concernsSubmissionsForLot, anonymous)\n"
+					"            ║  │                 │     s: Var (name=stat)\n" +
+					"            ║  │                 │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 					+
-					"            ║     ║              │     o: Var (name=lot)\n" +
-					"            ║     ║              └── Join (JoinIterator) [right]\n" +
-					"            ║     ║                 ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n"
+					"            ║  │                 │     o: Var (name=_const_ea79e75_uri, value=http://data.europa.eu/a4g/ontology#SubmissionStatisticalInformation, anonymous)\n"
 					+
-					"            ║     ║                 ║     s: Var (name=stat)\n" +
-					"            ║     ║                 ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+					"            ║  │                 └── Join (JoinIterator) [right]\n" +
+					"            ║  │                    ╠══ Filter [left]\n" +
+					"            ║  │                    ║  ├── Compare (!=)\n" +
+					"            ║  │                    ║  │     Var (name=p)\n" +
+					"            ║  │                    ║  │     ValueConstant (value=http://publications.europa.eu/resource/authority/procurement-procedure-type/neg-wo-call)\n"
 					+
-					"            ║     ║                 ║     o: Var (name=_const_ea79e75_uri, value=http://data.europa.eu/a4g/ontology#SubmissionStatisticalInformation, anonymous)\n"
+					"            ║  │                    ║  └── StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n"
 					+
-					"            ║     ║                 ╚══ Join (JoinIterator) [right]\n" +
-					"            ║     ║                    ├── StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [left]\n"
+					"            ║  │                    ║        s: Var (name=proc)\n" +
+					"            ║  │                    ║        p: Var (name=_const_9c756f6b_uri, value=http://data.europa.eu/a4g/ontology#hasProcedureType, anonymous)\n"
 					+
-					"            ║     ║                    │     s: Var (name=proc)\n" +
-					"            ║     ║                    │     p: Var (name=_const_9c756f6b_uri, value=http://data.europa.eu/a4g/ontology#hasProcedureType, anonymous)\n"
+					"            ║  │                    ║        o: Var (name=p)\n" +
+					"            ║  │                    ╚══ Join (JoinIterator) [right]\n" +
+					"            ║  │                       ├── StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [left]\n"
 					+
-					"            ║     ║                    │     o: Var (name=p)\n" +
-					"            ║     ║                    └── Join (JoinIterator) [right]\n" +
-					"            ║     ║                       ╠══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [left]\n"
+					"            ║  │                       │     s: Var (name=stat)\n" +
+					"            ║  │                       │     p: Var (name=_const_98c73a3c_uri, value=http://data.europa.eu/a4g/ontology#hasReceivedTenders, anonymous)\n"
 					+
-					"            ║     ║                       ║     s: Var (name=stat)\n" +
-					"            ║     ║                       ║     p: Var (name=_const_98c73a3c_uri, value=http://data.europa.eu/a4g/ontology#hasReceivedTenders, anonymous)\n"
+					"            ║  │                       │     o: Var (name=bidders)\n" +
+					"            ║  │                       └── Join (JoinIterator) [right]\n" +
+					"            ║  │                          ╠══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [left]\n"
 					+
-					"            ║     ║                       ║     o: Var (name=bidders)\n" +
-					"            ║     ║                       ╚══ Join (JoinIterator) [right]\n" +
-					"            ║     ║                          ├── StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [left]\n"
+					"            ║  │                          ║     s: Var (name=resultnotice)\n" +
+					"            ║  │                          ║     p: Var (name=_const_1b0b00ca_uri, value=http://data.europa.eu/a4g/ontology#hasDispatchDate, anonymous)\n"
 					+
-					"            ║     ║                          │     s: Var (name=resultnotice)\n" +
-					"            ║     ║                          │     p: Var (name=_const_1b0b00ca_uri, value=http://data.europa.eu/a4g/ontology#hasDispatchDate, anonymous)\n"
+					"            ║  │                          ║     o: Var (name=ddate)\n" +
+					"            ║  │                          ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [right]\n"
 					+
-					"            ║     ║                          │     o: Var (name=ddate)\n" +
-					"            ║     ║                          └── StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [right]\n"
+					"            ║  │                                s: Var (name=resultnotice)\n" +
+					"            ║  │                                p: Var (name=_const_6aa9a9c_uri, value=http://data.europa.eu/a4g/ontology#refersToRole, anonymous)\n"
 					+
-					"            ║     ║                                s: Var (name=resultnotice)\n" +
-					"            ║     ║                                p: Var (name=_const_6aa9a9c_uri, value=http://data.europa.eu/a4g/ontology#refersToRole, anonymous)\n"
-					+
-					"            ║     ║                                o: Var (name=buyerrole)\n" +
-					"            ║     ╚══ ExtensionElem (year)\n" +
-					"            ║           FunctionCall (http://www.w3.org/2005/xpath-functions#year-from-dateTime)\n"
-					+
-					"            ║              FunctionCall (http://www.w3.org/2001/XMLSchema#dateTime)\n" +
-					"            ║                 Var (name=ddate)\n" +
+					"            ║  │                                o: Var (name=buyerrole)\n" +
+					"            ║  └── ExtensionElem (year)\n" +
+					"            ║        FunctionCall (http://www.w3.org/2005/xpath-functions#year-from-dateTime)\n" +
+					"            ║           FunctionCall (http://www.w3.org/2001/XMLSchema#dateTime)\n" +
+					"            ║              Var (name=ddate)\n" +
 					"            ╚══ Distinct (new scope) [right]\n" +
 					"                  Projection\n" +
 					"                  ╠══ ProjectionElemList\n" +
@@ -1840,85 +1848,84 @@ public class QueryPlanRetrievalTest {
 				"      Extension\n" +
 				"         Group (countryID, year)\n" +
 				"            Join (HashJoinIteration)\n" +
-				"            ╠══ Filter [left]\n" +
-				"            ║  ├── Compare (!=)\n" +
-				"            ║  │     Var (name=p)\n" +
-				"            ║  │     ValueConstant (value=http://publications.europa.eu/resource/authority/procurement-procedure-type/neg-wo-call)\n"
+				"            ╠══ Extension [left]\n" +
+				"            ║  ├── Join (JoinIterator)\n" +
+				"            ║  │  ╠══ StatementPattern (costEstimate=0.71, resultSizeEstimate=0) [left]\n" +
+				"            ║  │  ║     s: Var (name=resultnotice)\n" +
+				"            ║  │  ║     p: Var (name=_const_183bd06d_uri, value=http://data.europa.eu/a4g/ontology#refersToProcedure, anonymous)\n"
 				+
-				"            ║  └── Extension\n" +
-				"            ║     ╠══ Join (JoinIterator)\n" +
-				"            ║     ║  ├── StatementPattern (costEstimate=0.71, resultSizeEstimate=0) [left]\n" +
-				"            ║     ║  │     s: Var (name=resultnotice)\n" +
-				"            ║     ║  │     p: Var (name=_const_183bd06d_uri, value=http://data.europa.eu/a4g/ontology#refersToProcedure, anonymous)\n"
+				"            ║  │  ║     o: Var (name=proc)\n" +
+				"            ║  │  ╚══ Join (JoinIterator) [right]\n" +
+				"            ║  │     ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n" +
+				"            ║  │     │     s: Var (name=proc)\n" +
+				"            ║  │     │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 				+
-				"            ║     ║  │     o: Var (name=proc)\n" +
-				"            ║     ║  └── Join (JoinIterator) [right]\n" +
-				"            ║     ║     ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n" +
-				"            ║     ║     ║     s: Var (name=proc)\n" +
-				"            ║     ║     ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+				"            ║  │     │     o: Var (name=_const_be18ee7b_uri, value=http://data.europa.eu/a4g/ontology#Procedure, anonymous)\n"
 				+
-				"            ║     ║     ║     o: Var (name=_const_be18ee7b_uri, value=http://data.europa.eu/a4g/ontology#Procedure, anonymous)\n"
+				"            ║  │     └── Join (JoinIterator) [right]\n" +
+				"            ║  │        ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n" +
+				"            ║  │        ║     s: Var (name=resultnotice)\n" +
+				"            ║  │        ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 				+
-				"            ║     ║     ╚══ Join (JoinIterator) [right]\n" +
-				"            ║     ║        ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n" +
-				"            ║     ║        │     s: Var (name=resultnotice)\n" +
-				"            ║     ║        │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+				"            ║  │        ║     o: Var (name=_const_77e914ad_uri, value=http://data.europa.eu/a4g/ontology#ResultNotice, anonymous)\n"
 				+
-				"            ║     ║        │     o: Var (name=_const_77e914ad_uri, value=http://data.europa.eu/a4g/ontology#ResultNotice, anonymous)\n"
+				"            ║  │        ╚══ Join (JoinIterator) [right]\n" +
+				"            ║  │           ├── StatementPattern (costEstimate=1.12, resultSizeEstimate=0) [left]\n" +
+				"            ║  │           │     s: Var (name=proc)\n" +
+				"            ║  │           │     p: Var (name=_const_9c3f1eec_uri, value=http://data.europa.eu/a4g/ontology#hasProcurementScopeDividedIntoLot, anonymous)\n"
 				+
-				"            ║     ║        └── Join (JoinIterator) [right]\n" +
-				"            ║     ║           ╠══ StatementPattern (costEstimate=1.12, resultSizeEstimate=0) [left]\n"
+				"            ║  │           │     o: Var (name=lot)\n" +
+				"            ║  │           └── Join (JoinIterator) [right]\n" +
+				"            ║  │              ╠══ StatementPattern (costEstimate=0.75, resultSizeEstimate=0) [left]\n"
 				+
-				"            ║     ║           ║     s: Var (name=proc)\n" +
-				"            ║     ║           ║     p: Var (name=_const_9c3f1eec_uri, value=http://data.europa.eu/a4g/ontology#hasProcurementScopeDividedIntoLot, anonymous)\n"
+				"            ║  │              ║     s: Var (name=stat)\n" +
+				"            ║  │              ║     p: Var (name=_const_25686184_uri, value=http://data.europa.eu/a4g/ontology#concernsSubmissionsForLot, anonymous)\n"
 				+
-				"            ║     ║           ║     o: Var (name=lot)\n" +
-				"            ║     ║           ╚══ Join (JoinIterator) [right]\n" +
-				"            ║     ║              ├── StatementPattern (costEstimate=0.75, resultSizeEstimate=0) [left]\n"
+				"            ║  │              ║     o: Var (name=lot)\n" +
+				"            ║  │              ╚══ Join (JoinIterator) [right]\n" +
+				"            ║  │                 ├── StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n"
 				+
-				"            ║     ║              │     s: Var (name=stat)\n" +
-				"            ║     ║              │     p: Var (name=_const_25686184_uri, value=http://data.europa.eu/a4g/ontology#concernsSubmissionsForLot, anonymous)\n"
+				"            ║  │                 │     s: Var (name=stat)\n" +
+				"            ║  │                 │     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
 				+
-				"            ║     ║              │     o: Var (name=lot)\n" +
-				"            ║     ║              └── Join (JoinIterator) [right]\n" +
-				"            ║     ║                 ╠══ StatementPattern (costEstimate=1.00, resultSizeEstimate=0) [left]\n"
+				"            ║  │                 │     o: Var (name=_const_ea79e75_uri, value=http://data.europa.eu/a4g/ontology#SubmissionStatisticalInformation, anonymous)\n"
 				+
-				"            ║     ║                 ║     s: Var (name=stat)\n" +
-				"            ║     ║                 ║     p: Var (name=_const_f5e5585a_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#type, anonymous)\n"
+				"            ║  │                 └── Join (JoinIterator) [right]\n" +
+				"            ║  │                    ╠══ Filter [left]\n" +
+				"            ║  │                    ║  ├── Compare (!=)\n" +
+				"            ║  │                    ║  │     Var (name=p)\n" +
+				"            ║  │                    ║  │     ValueConstant (value=http://publications.europa.eu/resource/authority/procurement-procedure-type/neg-wo-call)\n"
 				+
-				"            ║     ║                 ║     o: Var (name=_const_ea79e75_uri, value=http://data.europa.eu/a4g/ontology#SubmissionStatisticalInformation, anonymous)\n"
+				"            ║  │                    ║  └── StatementPattern (costEstimate=2.24, resultSizeEstimate=0)\n"
 				+
-				"            ║     ║                 ╚══ Join (JoinIterator) [right]\n" +
-				"            ║     ║                    ├── StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [left]\n"
+				"            ║  │                    ║        s: Var (name=proc)\n" +
+				"            ║  │                    ║        p: Var (name=_const_9c756f6b_uri, value=http://data.europa.eu/a4g/ontology#hasProcedureType, anonymous)\n"
 				+
-				"            ║     ║                    │     s: Var (name=proc)\n" +
-				"            ║     ║                    │     p: Var (name=_const_9c756f6b_uri, value=http://data.europa.eu/a4g/ontology#hasProcedureType, anonymous)\n"
+				"            ║  │                    ║        o: Var (name=p)\n" +
+				"            ║  │                    ╚══ Join (JoinIterator) [right]\n" +
+				"            ║  │                       ├── StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [left]\n"
 				+
-				"            ║     ║                    │     o: Var (name=p)\n" +
-				"            ║     ║                    └── Join (JoinIterator) [right]\n" +
-				"            ║     ║                       ╠══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [left]\n"
+				"            ║  │                       │     s: Var (name=stat)\n" +
+				"            ║  │                       │     p: Var (name=_const_98c73a3c_uri, value=http://data.europa.eu/a4g/ontology#hasReceivedTenders, anonymous)\n"
 				+
-				"            ║     ║                       ║     s: Var (name=stat)\n" +
-				"            ║     ║                       ║     p: Var (name=_const_98c73a3c_uri, value=http://data.europa.eu/a4g/ontology#hasReceivedTenders, anonymous)\n"
+				"            ║  │                       │     o: Var (name=bidders)\n" +
+				"            ║  │                       └── Join (JoinIterator) [right]\n" +
+				"            ║  │                          ╠══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [left]\n"
 				+
-				"            ║     ║                       ║     o: Var (name=bidders)\n" +
-				"            ║     ║                       ╚══ Join (JoinIterator) [right]\n" +
-				"            ║     ║                          ├── StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [left]\n"
+				"            ║  │                          ║     s: Var (name=resultnotice)\n" +
+				"            ║  │                          ║     p: Var (name=_const_1b0b00ca_uri, value=http://data.europa.eu/a4g/ontology#hasDispatchDate, anonymous)\n"
 				+
-				"            ║     ║                          │     s: Var (name=resultnotice)\n" +
-				"            ║     ║                          │     p: Var (name=_const_1b0b00ca_uri, value=http://data.europa.eu/a4g/ontology#hasDispatchDate, anonymous)\n"
+				"            ║  │                          ║     o: Var (name=ddate)\n" +
+				"            ║  │                          ╚══ StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [right]\n"
 				+
-				"            ║     ║                          │     o: Var (name=ddate)\n" +
-				"            ║     ║                          └── StatementPattern (costEstimate=2.24, resultSizeEstimate=0) [right]\n"
+				"            ║  │                                s: Var (name=resultnotice)\n" +
+				"            ║  │                                p: Var (name=_const_6aa9a9c_uri, value=http://data.europa.eu/a4g/ontology#refersToRole, anonymous)\n"
 				+
-				"            ║     ║                                s: Var (name=resultnotice)\n" +
-				"            ║     ║                                p: Var (name=_const_6aa9a9c_uri, value=http://data.europa.eu/a4g/ontology#refersToRole, anonymous)\n"
-				+
-				"            ║     ║                                o: Var (name=buyerrole)\n" +
-				"            ║     ╚══ ExtensionElem (year)\n" +
-				"            ║           FunctionCall (http://www.w3.org/2005/xpath-functions#year-from-dateTime)\n" +
-				"            ║              FunctionCall (http://www.w3.org/2001/XMLSchema#dateTime)\n" +
-				"            ║                 Var (name=ddate)\n" +
+				"            ║  │                                o: Var (name=buyerrole)\n" +
+				"            ║  └── ExtensionElem (year)\n" +
+				"            ║        FunctionCall (http://www.w3.org/2005/xpath-functions#year-from-dateTime)\n" +
+				"            ║           FunctionCall (http://www.w3.org/2001/XMLSchema#dateTime)\n" +
+				"            ║              Var (name=ddate)\n" +
 				"            ╚══ Distinct (new scope) [right]\n" +
 				"                  Projection\n" +
 				"                  ╠══ ProjectionElemList\n" +

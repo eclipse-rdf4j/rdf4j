@@ -91,6 +91,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
@@ -576,8 +577,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 
 			QueryAlgebraBindingAnalysis.ReadOnlyContext joinInput = bindingAnalysis.contextAt(join);
+			Set<TupleExpr> priorityArgs = Collections.newSetFromMap(new IdentityHashMap<>());
+			priorityArgs.addAll(getExtensionTupleExprs(joinArgs));
+			priorityArgs.addAll(getSubSelects(joinArgs));
 			for (TupleExpr candidate : joinArgs) {
 				if (!(candidate instanceof LeftJoin leftJoin)) {
+					// Priority arguments are evaluated first. Any other argument may be evaluated with a sibling's row
+					// injected by JoinIterator, which changes nested BIND inputs and sub-select/MINUS/GROUP scopes.
+					if (!priorityArgs.contains(candidate)) {
+						Set<String> sensitiveNames = new HashSet<>();
+						collectInjectionSensitiveNames(candidate, sensitiveNames);
+						if (!sensitiveNames.isEmpty() && siblingChangesNames(candidate, joinArgs, joinInput,
+								sensitiveNames, joinInput.guaranteedNames())) {
+							return true;
+						}
+					}
 					continue;
 				}
 
@@ -608,31 +622,82 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					sensitiveNames.addAll(possibleAndRetainedNames(leftJoin.getLeftArg(), leftFacts));
 					addBindingReferences(leftJoin.getLeftArg(), optionalAnalysis, leftInput, sensitiveNames);
 				}
+				Set<String> leftSensitiveNames = new HashSet<>();
+				collectInjectionSensitiveNames(leftJoin.getLeftArg(), leftSensitiveNames);
+				if (!leftSensitiveNames.isEmpty() && siblingChangesNames(candidate, joinArgs, joinInput,
+						leftSensitiveNames, joinInput.guaranteedNames())) {
+					return true;
+				}
 
-				for (TupleExpr sibling : joinArgs) {
-					if (sibling == candidate) {
-						continue;
-					}
-
-					QueryAlgebraBindingAnalysis.OutputFacts siblingFacts = bindingAnalysis
-							.outputFacts(sibling, joinInput);
-					Set<String> siblingNames = possibleAndRetainedNames(sibling, siblingFacts);
-					Set<String> stableInputs = new HashSet<>(scopedOperand ? joinInput.guaranteedNames()
-							: guaranteedByLeft);
-					if (!siblingFacts.possibleOutputsKnown()) {
-						stableInputs.clear();
-					}
-					stableInputs.removeAll(siblingFacts.overwrittenInputNames());
-
-					Set<String> changedNames = new HashSet<>(sensitiveNames);
-					changedNames.retainAll(siblingNames);
-					changedNames.removeAll(stableInputs);
-					if (!changedNames.isEmpty()) {
-						return true;
-					}
+				if (siblingChangesNames(candidate, joinArgs, joinInput, sensitiveNames,
+						scopedOperand ? joinInput.guaranteedNames() : guaranteedByLeft)) {
+					return true;
 				}
 			}
 			return false;
+		}
+
+		private boolean siblingChangesNames(TupleExpr candidate, List<TupleExpr> joinArgs,
+				QueryAlgebraBindingAnalysis.ReadOnlyContext joinInput, Set<String> sensitiveNames,
+				Set<String> stableNames) {
+			for (TupleExpr sibling : joinArgs) {
+				if (sibling == candidate) {
+					continue;
+				}
+
+				QueryAlgebraBindingAnalysis.OutputFacts siblingFacts = bindingAnalysis.outputFacts(sibling, joinInput);
+				Set<String> siblingNames = possibleAndRetainedNames(sibling, siblingFacts);
+				Set<String> stableInputs = new HashSet<>(stableNames);
+				if (!siblingFacts.possibleOutputsKnown()) {
+					stableInputs.clear();
+				}
+				stableInputs.removeAll(siblingFacts.overwrittenInputNames());
+
+				Set<String> changedNames = new HashSet<>(sensitiveNames);
+				changedNames.retainAll(siblingNames);
+				changedNames.removeAll(stableInputs);
+				if (!changedNames.isEmpty()) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/**
+		 * Collects names whose meaning changes when a sibling's row is injected into the expression: BIND inputs, every
+		 * name inside nested sub-selects and aggregates, and names only a MINUS right operand uses.
+		 */
+		private void collectInjectionSensitiveNames(TupleExpr expression, Set<String> names) {
+			expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
+				@Override
+				public void meet(ExtensionElem node) {
+					names.addAll(VarNameCollector.process(node.getExpr()));
+				}
+
+				@Override
+				public void meet(Projection node) {
+					if (node.isSubquery()) {
+						names.addAll(VarNameCollector.process(node));
+					} else {
+						super.meet(node);
+					}
+				}
+
+				@Override
+				public void meet(Group node) {
+					names.addAll(VarNameCollector.process(node));
+				}
+
+				@Override
+				public void meet(Difference node) {
+					node.getLeftArg().visit(this);
+					// Names the left operand always binds are fixed by compatibility; only right-only names change
+					// which rows MINUS removes when injected.
+					Set<String> rightOnly = new HashSet<>(VarNameCollector.process(node.getRightArg()));
+					rightOnly.removeAll(node.getLeftArg().getAssuredBindingNames());
+					names.addAll(rightOnly);
+				}
+			});
 		}
 
 		private Set<String> possibleAndRetainedNames(TupleExpr expression,
@@ -1188,7 +1253,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			// select the pair that has the highest union size.
 			for (TupleExpr[] tupleTuple : list) {
-				Set<String> names = tupleTuple[0].getBindingNames();
+				Set<String> names = new HashSet<>(tupleTuple[0].getBindingNames());
 				names.addAll(tupleTuple[1].getBindingNames());
 				int unionSize = names.size();
 

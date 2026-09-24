@@ -190,7 +190,7 @@ class OptimizerBindingAnalysisConsumersTest {
 	}
 
 	@Test
-	void sameTermDoesNotTreatNullableLateralInputAsDefinitelyUnbound() {
+	void sameTermDoesNotTreatNullableLateralInputAsDefinitelyUnbound() throws Exception {
 		IRI expectedValue = VF.createIRI("urn:expected");
 		BindingSetAssignment left = new BindingSetAssignment();
 		MapBindingSet boundRow = new MapBindingSet();
@@ -198,12 +198,13 @@ class OptimizerBindingAnalysisConsumersTest {
 		left.setBindingSets(List.of(boundRow, new MapBindingSet()));
 		Filter right = new Filter(new SingletonSet(), new SameTerm(Var.of("x"), new ValueConstant(expectedValue)));
 		QueryRoot candidate = new QueryRoot(new Lateral(left, right, Set.of("x")));
+		List<BindingSet> expected = evaluate(candidate.clone(), EmptyBindingSet.getInstance());
 
 		new SameTermFilterOptimizer().optimize(candidate, null, EmptyBindingSet.getInstance());
 
-		Lateral optimizedLateral = (Lateral) candidate.getArg();
-		assertThat(optimizedLateral.getRightArg()).isInstanceOf(Filter.class);
-		assertThat(((Filter) optimizedLateral.getRightArg()).getCondition()).isInstanceOf(SameTerm.class);
+		// FilterIterator hides the LATERAL input from a filter whose argument does not bind ?x, so the rewrite may
+		// only fold the filter if that preserves the evaluator's results.
+		assertThat(evaluate(candidate, EmptyBindingSet.getInstance())).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test

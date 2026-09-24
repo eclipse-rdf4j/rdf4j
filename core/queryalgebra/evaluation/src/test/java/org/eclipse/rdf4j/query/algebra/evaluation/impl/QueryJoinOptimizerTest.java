@@ -24,6 +24,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -103,6 +104,44 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				+ "    values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}. " + "   }" + "  }" + " }" + "}";
 
 		testOptimizer(expectedQuery, query);
+	}
+
+	@Test
+	public void reorderSubselectsToleratesImmutableBindingNames() {
+		String query = "PREFIX ex: <http://ex/> SELECT * WHERE { FILTER NOT EXISTS { MINUS { "
+				+ "{ SELECT DISTINCT ?a ?c WHERE { } } OPTIONAL { ?a ex:r \"abc\" . ?d ex:r ?a . } } "
+				+ "{ SELECT ?d (COUNT(*) AS ?n0) WHERE { } GROUP BY ?d } } ?c ex:q ?c . }";
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+
+		new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource())
+				.optimize(parsed.getTupleExpr(), null, EmptyBindingSet.getInstance());
+	}
+
+	@Test
+	public void reorderSubselectsDoesNotMutateBindingNamesOfArguments() throws Exception {
+		Set<String> firstNames = new HashSet<>(Set.of("a", "shared"));
+		Set<String> secondNames = new HashSet<>(Set.of("b", "shared"));
+		TupleExpr first = new SingletonSet() {
+			@Override
+			public Set<String> getBindingNames() {
+				return firstNames;
+			}
+		};
+		TupleExpr second = new SingletonSet() {
+			@Override
+			public Set<String> getBindingNames() {
+				return secondNames;
+			}
+		};
+		Object joinVisitor = buildJoinVisitor(new QueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource()));
+		Method reorder = findDeclaredMethod(joinVisitor.getClass(), "reorderSubselects", List.class);
+		reorder.setAccessible(true);
+
+		reorder.invoke(joinVisitor, List.of(first, second));
+
+		assertThat(firstNames).containsExactlyInAnyOrder("a", "shared");
+		assertThat(secondNames).containsExactlyInAnyOrder("b", "shared");
 	}
 
 	@Test

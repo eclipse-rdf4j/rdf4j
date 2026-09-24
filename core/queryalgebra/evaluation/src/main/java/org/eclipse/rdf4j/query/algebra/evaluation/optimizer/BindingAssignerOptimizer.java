@@ -12,9 +12,16 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
+import java.util.HashSet;
+import java.util.Set;
+
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -32,17 +39,70 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings);
 		if (!analysis.rootContext().externalValues().isEmpty()) {
-			tupleExpr.visit(new VarVisitor(analysis));
+			AssignedNameCollector assignedNames = new AssignedNameCollector();
+			tupleExpr.visit(assignedNames);
+			tupleExpr.visit(new VarVisitor(analysis, assignedNames.names));
+		}
+	}
+
+	/**
+	 * Collects names that the query itself assigns (BIND, aggregates, projection aliases). Only those can replace an
+	 * API binding; every other occurrence of an API-bound name must see the API value.
+	 */
+	private static class AssignedNameCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+		private final Set<String> names = new HashSet<>();
+
+		private AssignedNameCollector() {
+			super(true);
+		}
+
+		@Override
+		public void meet(ExtensionElem node) {
+			names.add(node.getName());
+			super.meet(node);
+		}
+
+		@Override
+		public void meet(GroupElem node) {
+			names.add(node.getName());
+			super.meet(node);
+		}
+
+		@Override
+		public void meet(ProjectionElem node) {
+			if (!node.getName().equals(node.getProjectionAlias().orElse(node.getName()))) {
+				names.add(node.getProjectionAlias().get());
+			}
+			super.meet(node);
 		}
 	}
 
 	private static class VarVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private final QueryAlgebraBindingAnalysis analysis;
+		private final Set<String> assignedNames;
+		private int unknownOperatorDepth;
 
-		private VarVisitor(QueryAlgebraBindingAnalysis analysis) {
+		private VarVisitor(QueryAlgebraBindingAnalysis analysis, Set<String> assignedNames) {
 			super(true);
 			this.analysis = analysis;
+			this.assignedNames = assignedNames;
+		}
+
+		@Override
+		public void meetOther(QueryModelNode node) {
+			// Unknown operators may change the variable scope; below them only the binding analysis decides.
+			if (node instanceof TupleExpr) {
+				unknownOperatorDepth++;
+				try {
+					super.meetOther(node);
+				} finally {
+					unknownOperatorDepth--;
+				}
+			} else {
+				super.meetOther(node);
+			}
 		}
 
 		@Override
@@ -50,10 +110,18 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 			if (var.hasValue() || var.getName() == null) {
 				return;
 			}
-			QueryAlgebraBindingAnalysis.ReadOnlyContext context = analysis.contextAt(var);
-			Value value = context.externalValues().get(var.getName());
-			if (value != null && context.guaranteedNames().contains(var.getName())
-					&& value.equals(context.fixedValues().get(var.getName()))) {
+			Value value;
+			if (unknownOperatorDepth > 0 || assignedNames.contains(var.getName())) {
+				QueryAlgebraBindingAnalysis.ReadOnlyContext context = analysis.contextAt(var);
+				value = context.externalValues().get(var.getName());
+				if (value == null || !context.guaranteedNames().contains(var.getName())
+						|| !value.equals(context.fixedValues().get(var.getName()))) {
+					return;
+				}
+			} else {
+				value = analysis.rootContext().externalValues().get(var.getName());
+			}
+			if (value != null) {
 				Var replacement = Var.of(var.getName(), value, var.isAnonymous(), var.isConstant());
 				var.replaceWith(replacement);
 				analysis.invalidate();

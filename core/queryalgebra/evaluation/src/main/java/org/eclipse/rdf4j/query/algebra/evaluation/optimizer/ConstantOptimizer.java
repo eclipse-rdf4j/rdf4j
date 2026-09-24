@@ -343,7 +343,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 			if (isConstant(node.getCondition())) {
 				try {
 					if (isTrueWithKnownValues(node.getCondition())) {
-						node.replaceWith(node.getResult());
+						node.replaceWith(node.getResult().clone());
 						bindingAnalysis.invalidate();
 					} else {
 						node.replaceWith(node.getAlternative().clone());

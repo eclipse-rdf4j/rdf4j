@@ -112,6 +112,7 @@ public final class QueryAlgebraBindingAnalysis {
 	private final Map<QueryModelNode, ReadOnlyContext> contextCache = new IdentityHashMap<>();
 	private final Map<QueryModelNode, Long> scopeIdentities = new IdentityHashMap<>();
 	private final Map<OutputKey, OutputFacts> outputCache = new HashMap<>();
+	private final Map<OutputKey, Boolean> resultSetModifierCache = new HashMap<>();
 	private final AtomicLong nextScopeIdentity = new AtomicLong(1);
 
 	private QueryAlgebraBindingAnalysis(TupleExpr root, BindingSet initialBindings, Set<String> externalNames,
@@ -399,6 +400,7 @@ public final class QueryAlgebraBindingAnalysis {
 			contextCache.put(root, rootContext);
 		}
 		outputCache.clear();
+		resultSetModifierCache.clear();
 		scopeIdentities.clear();
 	}
 
@@ -465,7 +467,8 @@ public final class QueryAlgebraBindingAnalysis {
 	public ReadOnlyContext childInput(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input) {
 		if (parent instanceof Filter filter) {
 			if (child == filter.getCondition()) {
-				return input.withOutput(outputFacts(filter.getArg(), input));
+				ReadOnlyContext conditionInput = input.withOutput(outputFacts(filter.getArg(), input));
+				return scopedFilterConditionInput(filter, conditionInput);
 			}
 			return input;
 		}
@@ -564,6 +567,54 @@ public final class QueryAlgebraBindingAnalysis {
 			return unknownChildInput(parent, input);
 		}
 		return input;
+	}
+
+	/**
+	 * Mirrors FilterIterator: outside EXISTS/IN subqueries, a filter whose condition is not fully covered by its
+	 * argument evaluates the condition against its own binding names plus those of enclosing join left operands, up to
+	 * the nearest variable-scope boundary. Inherited bindings from beyond that boundary (the enclosing group or an
+	 * OPTIONAL left row) are hidden from the condition.
+	 */
+	private ReadOnlyContext scopedFilterConditionInput(Filter filter, ReadOnlyContext conditionInput) {
+		for (QueryModelNode current = filter; current != null; current = current.getParentNode()) {
+			if (current instanceof SubQueryValueOperator) {
+				return conditionInput;
+			}
+		}
+		boolean[] containsSubQuery = { false };
+		filter.getCondition().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
+				containsSubQuery[0] = true;
+			}
+		});
+		Set<String> conditionNames = VarNameCollector.process(filter.getCondition());
+		Set<String> scopeNames = new HashSet<>(filter.getBindingNames());
+		if (!containsSubQuery[0] && filter.getArg().getBindingNames().containsAll(conditionNames)) {
+			return conditionInput;
+		}
+		QueryModelNode child = filter;
+		QueryModelNode parent = filter.getParentNode();
+		while (!scopeNames.containsAll(conditionNames)) {
+			if (child instanceof TupleExpr tupleExpr && TupleExprs.isVariableScopeChange(tupleExpr)) {
+				Set<String> hidden = new HashSet<>(conditionInput.visibleNames);
+				hidden.addAll(conditionInput.maybeBoundNames);
+				hidden.addAll(conditionInput.externalValues.keySet());
+				hidden.removeAll(scopeNames);
+				return conditionInput.without(hidden);
+			}
+			if (parent == null) {
+				break;
+			}
+			if (parent instanceof Join join && join.getRightArg() == child) {
+				scopeNames.addAll(join.getLeftArg().getBindingNames());
+			} else if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
+				scopeNames.addAll(leftJoin.getLeftArg().getBindingNames());
+			}
+			child = parent;
+			parent = parent.getParentNode();
+		}
+		return conditionInput;
 	}
 
 	private ReadOnlyContext joinRightInput(Join join, ReadOnlyContext input) {
@@ -713,8 +764,49 @@ public final class QueryAlgebraBindingAnalysis {
 
 	private boolean isOutOfScopeForLeftBindings(TupleExpr expression, ReadOnlyContext input) {
 		return TupleExprs.isVariableScopeChange(expression) || TupleExprs.containsSubquery(expression)
-				|| TupleExprs.containsResultSetModifier(expression, input)
+				|| containsResultSetModifier(expression, input)
 				|| containsDifferenceInScope(expression);
+	}
+
+	/**
+	 * Same classification as {@link TupleExprs#containsResultSetModifier(TupleExpr, ReadOnlyContext)}, but computed
+	 * top-down within this analysis and memoized, so that nested right-hand joins do not each rebuild a fresh analysis
+	 * (which made the cost exponential in the join depth).
+	 */
+	private boolean containsResultSetModifier(TupleExpr expression, ReadOnlyContext input) {
+		OutputKey key = new OutputKey(expression, input);
+		Boolean cached = resultSetModifierCache.get(key);
+		if (cached != null) {
+			return cached;
+		}
+		boolean result = computeContainsResultSetModifier(expression, input);
+		resultSetModifierCache.put(key, result);
+		return result;
+	}
+
+	private boolean computeContainsResultSetModifier(TupleExpr expression, ReadOnlyContext input) {
+		if (expression instanceof Slice) {
+			return true;
+		}
+		if (expression instanceof Distinct || expression instanceof Reduced) {
+			TupleExpr argument = ((UnaryTupleOperator) expression).getArg();
+			OutputFacts facts = outputFacts(argument, childInput(expression, argument, input));
+			if (!facts.possibleOutputsKnown() || !facts.guaranteedOutputsKnown()
+					|| !facts.possibleOutputs().equals(facts.guaranteedOutputs())) {
+				return true;
+			}
+		}
+		for (TupleExpr child : TupleExprs.getChildren(expression)) {
+			// Join operands are classified against the join's own input rather than one augmented with sibling
+			// outputs: that is at most as informed (so at least as conservative) and keeps the number of distinct
+			// memoized inputs linear in the join depth.
+			ReadOnlyContext childContext = expression instanceof Join || expression instanceof LeftJoin ? input
+					: childInput(expression, child, input);
+			if (containsResultSetModifier(child, childContext)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private boolean containsDifferenceInScope(TupleExpr expression) {

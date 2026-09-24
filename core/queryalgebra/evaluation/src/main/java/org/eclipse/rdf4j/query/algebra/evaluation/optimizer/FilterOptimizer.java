@@ -479,7 +479,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Extension node) {
-			Set<String> dependencies = dependencyNames();
+			Set<String> dependencies = stableNames();
 			boolean overwritesDependency = node.getElements()
 					.stream()
 					.anyMatch(element -> dependencies.contains(element.getName()));
@@ -512,9 +512,12 @@ public class FilterOptimizer implements QueryOptimizer {
 					// The moving filter may still be optimized within its own scope.
 					filter.getArg().visit(this);
 				}
-			} else if (AlgebraEvaluationSafety.isRepeatable(filter.getCondition())) {
+			} else if (AlgebraEvaluationSafety.isRepeatable(filter.getCondition())
+					&& !TupleExprs.isVariableScopeChange(this.filter)) {
 				filter.getArg().visit(this);
 			} else {
+				// A scope-marked group filter must stay above the group's other conjuncts: moving below them would
+				// make an unscoped conjunct the group root, and that conjunct would then see outer bindings.
 				relocate(this.filter, filter);
 			}
 		}
@@ -569,10 +572,19 @@ public class FilterOptimizer implements QueryOptimizer {
 			// A scope-changing Filter on the right is evaluated independently from the join's left row. Treat
 			// that left sibling as crossed even though it normally runs first: its bindings are not part of the
 			// candidate's condition-visible frame after relocation.
+			// The same holds when the candidate is evaluated without the sibling's row (scope-changing, MINUS or
+			// subquery right operands use HashJoin/IndependentJoin): its input is then the join's own input.
 			QueryAlgebraBindingAnalysis.OutputFacts crossedSiblingFacts = siblingRunsAfterCandidate
-					|| TupleExprs.isVariableScopeChange(filter) ? siblingFacts : null;
-			return analysis.bindingsStableAt(dependencyNames(), filterContext, candidateInput, candidateFacts,
+					|| TupleExprs.isVariableScopeChange(filter)
+					|| runsWithoutSiblingRow(candidate, candidateInput) ? siblingFacts : null;
+			return analysis.bindingsStableAt(stableNames(), filterContext, candidateInput, candidateFacts,
 					crossedSiblingFacts);
+		}
+
+		private boolean runsWithoutSiblingRow(TupleExpr candidate,
+				QueryAlgebraBindingAnalysis.ReadOnlyContext candidateInput) {
+			return candidate.getParentNode()instanceof TupleExpr parent
+					&& candidateInput.equals(analysis.contextAt(parent));
 		}
 
 		private boolean canDistributeAcrossUnion(Union union) {
@@ -695,6 +707,16 @@ public class FilterOptimizer implements QueryOptimizer {
 		private Set<String> dependencyNames() {
 			Set<String> names = new HashSet<>(dependencies.directReferences());
 			names.addAll(dependencies.correlatedInputs());
+			return names;
+		}
+
+		/**
+		 * Names whose binding state must not change when the filter moves. The evaluator still injects outer values
+		 * into EXISTS-local names (e.g. inside a sub-SELECT), so those count too, although they need not be bound.
+		 */
+		private Set<String> stableNames() {
+			Set<String> names = dependencyNames();
+			names.addAll(dependencies.existsLocals());
 			return names;
 		}
 

@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.List;
 
-import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
@@ -77,9 +76,6 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Contains;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrEnds;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrStarts;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 
@@ -205,6 +201,8 @@ final class AlgebraEvaluationSafety {
 		return false;
 	}
 
+	private static final String BUILT_IN_FUNCTION_PACKAGE = "org.eclipse.rdf4j.query.algebra.evaluation.function.";
+
 	static boolean isRepeatable(ValueExpr expression) {
 		if (expression == null) {
 			return false;
@@ -218,7 +216,7 @@ final class AlgebraEvaluationSafety {
 			return true;
 		}
 		if (expressionClass == FunctionCall.class) {
-			return isRepeatableStringPredicate((FunctionCall) expression);
+			return isRepeatableFunctionCall((FunctionCall) expression);
 		}
 		if (expressionClass == Exists.class) {
 			return isRepeatable(((SubQueryValueOperator) expression).getSubQuery());
@@ -263,27 +261,16 @@ final class AlgebraEvaluationSafety {
 		return false;
 	}
 
-	private static boolean isRepeatableStringPredicate(FunctionCall functionCall) {
+	private static boolean isRepeatableFunctionCall(FunctionCall functionCall) {
 		String uri = functionCall.getURI();
 		if (uri == null) {
 			return false;
 		}
 		Function registeredFunction = FunctionRegistry.getInstance().get(uri).orElse(null);
-		if (registeredFunction == null) {
-			return false;
-		}
-
-		Class<?> expectedImplementation;
-		if (FN.STARTS_WITH.stringValue().equals(uri)) {
-			expectedImplementation = StrStarts.class;
-		} else if (FN.ENDS_WITH.stringValue().equals(uri)) {
-			expectedImplementation = StrEnds.class;
-		} else if (FN.CONTAINS.stringValue().equals(uri)) {
-			expectedImplementation = Contains.class;
-		} else {
-			expectedImplementation = null;
-		}
-		if (expectedImplementation == null || registeredFunction.getClass() != expectedImplementation) {
+		// Only RDF4J's own function implementations are trusted to declare volatility correctly; custom registrations
+		// (including overrides of built-in URIs) may have side effects or state.
+		if (registeredFunction == null || registeredFunction.mustReturnDifferentResult()
+				|| !registeredFunction.getClass().getName().startsWith(BUILT_IN_FUNCTION_PACKAGE)) {
 			return false;
 		}
 
