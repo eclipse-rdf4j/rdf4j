@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -180,7 +181,8 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		} else if (rightArg instanceof EmptySet) {
 			replacePreservingScope(difference, leftArg);
 		} else if (leftArg instanceof SingletonSet && rightArg instanceof SingletonSet) {
-			replacePreservingScope(difference, new EmptySet());
+			// MINUS only removes rows that share a variable with a right row, so the empty solution survives.
+			replacePreservingScope(difference, leftArg);
 		}
 	}
 
@@ -200,7 +202,9 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 	protected void meetUnaryTupleOperator(UnaryTupleOperator node) {
 		super.meetUnaryTupleOperator(node);
 
-		if (node.getArg() instanceof EmptySet) {
+		if (node.getArg() instanceof EmptySet
+				// An implicit group (no GROUP BY) yields one aggregate row even over empty input.
+				&& !(node instanceof Group group && group.getGroupBindingNames().isEmpty())) {
 			replacePreservingScope(node, node.getArg());
 		}
 	}

@@ -29,7 +29,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.IndependentJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
@@ -65,26 +64,13 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					(Service) join.getRightArg(), bindings,
 					strategy);
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
-		} else if (containsDifferenceInCurrentScope(join.getRightArg())) {
-			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
-			if (canHashJoinWithGuaranteedOutputs(joinAttributes)) {
-				eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
-						joinAttributes, context);
-				join.setAlgorithm(HashJoinIteration.class.getSimpleName());
-			} else {
-				eval = bindings -> new IndependentJoinIteration(leftPrepared, rightPrepared, bindings);
-				join.setAlgorithm(IndependentJoinIteration.class.getSimpleName());
-			}
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg(), bindingAnalysis)) {
+			// The right side must not see left-row bindings, so both sides are evaluated independently and hashed on
+			// the names they may share; rows where a shared name is unbound still join with every compatible row.
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
-			if (canHashJoinWithGuaranteedOutputs(joinAttributes)) {
-				eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
-						joinAttributes, context);
-				join.setAlgorithm(HashJoinIteration.class.getSimpleName());
-			} else {
-				eval = bindings -> new IndependentJoinIteration(leftPrepared, rightPrepared, bindings);
-				join.setAlgorithm(IndependentJoinIteration.class.getSimpleName());
-			}
+			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false, joinAttributes,
+					context);
+			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
 		} else if (join.isMergeJoin() && context.getComparator() != null) {
 			eval = bindings -> InnerMergeJoinIterator.getInstance(leftPrepared, rightPrepared, bindings,
 					context.getComparator(), context.getValue(join.getOrder().getName()), context);
@@ -155,12 +141,6 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			}
 		}
 		return false;
-	}
-
-	private static boolean canHashJoinWithGuaranteedOutputs(String[] joinAttributes) {
-		// The shared helper only returns QABA-proven names that are guaranteed by both operands. Requiring at
-		// least one such key keeps the bounded-memory independent join for cases where no safe partition exists.
-		return joinAttributes.length > 0;
 	}
 
 	private static boolean isNoNewBindingStatementGuard(Join join) {

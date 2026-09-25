@@ -59,6 +59,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
@@ -151,14 +152,8 @@ class OptimizerBindingAnalysisConsumersTest {
 		BindingSetAssignment left = values("x", VF.createIRI("urn:x"));
 		Extension right = new Extension(new SingletonSet(), new ExtensionElem(new Bound(Var.of("x")), "wasBound"));
 		Join join = new Join(left, right);
-		ConstantOptimizer optimizer = new ConstantOptimizer(
-				new DefaultEvaluationStrategy(new EmptyTripleSource(), null));
 
-		optimizer.optimize(join, null, EmptyBindingSet.getInstance());
-
-		assertThat(right.getElements().getFirst().getExpr()).isInstanceOf(ValueConstant.class);
-		assertThat(((ValueConstant) right.getElements().getFirst().getExpr()).getValue())
-				.isEqualTo(BooleanLiteral.TRUE);
+		assertThat(isGuaranteedAtBound(join, (Bound) right.getElements().getFirst().getExpr())).isTrue();
 	}
 
 	@Test
@@ -167,26 +162,16 @@ class OptimizerBindingAnalysisConsumersTest {
 		Extension right = new Extension(new SingletonSet(),
 				new ExtensionElem(new FunctionCall("urn:unregistered", Var.of("argument")), "x"));
 		LeftJoin optional = new LeftJoin(left, right, new Bound(Var.of("x")));
-		ConstantOptimizer optimizer = new ConstantOptimizer(
-				new DefaultEvaluationStrategy(new EmptyTripleSource(), null));
 
-		optimizer.optimize(optional, null, EmptyBindingSet.getInstance());
-
-		assertThat(optional.getCondition()).isInstanceOf(ValueConstant.class);
-		assertThat(((ValueConstant) optional.getCondition()).getValue()).isEqualTo(BooleanLiteral.TRUE);
+		assertThat(isGuaranteedAtBound(optional, (Bound) optional.getCondition())).isTrue();
 	}
 
 	@Test
 	void sharedAnalysisUsesTheJoinedPhaseForPostfilterOptionalConditions() {
 		BindingSetAssignment right = values("y", VF.createIRI("urn:right"));
 		LeftJoin optional = new LeftJoin(new SingletonSet(), right, new Bound(Var.of("y")));
-		ConstantOptimizer optimizer = new ConstantOptimizer(
-				new DefaultEvaluationStrategy(new EmptyTripleSource(), null));
 
-		optimizer.optimize(optional, null, EmptyBindingSet.getInstance());
-
-		assertThat(optional.getCondition()).isInstanceOf(ValueConstant.class);
-		assertThat(((ValueConstant) optional.getCondition()).getValue()).isEqualTo(BooleanLiteral.TRUE);
+		assertThat(isGuaranteedAtBound(optional, (Bound) optional.getCondition())).isTrue();
 	}
 
 	@Test
@@ -269,19 +254,14 @@ class OptimizerBindingAnalysisConsumersTest {
 	}
 
 	@Test
-	void constantOptimizerUsesGuaranteedBindingsForBound() {
+	void analysisGuaranteesBindingsReadByBound() {
 		BindingSetAssignment values = new BindingSetAssignment();
 		MapBindingSet row = new MapBindingSet();
 		row.addBinding("x", VF.createIRI("urn:x"));
 		values.setBindingSets(List.of(row));
 		Filter guaranteed = new Filter(values, new Bound(Var.of("x")));
-		ConstantOptimizer optimizer = new ConstantOptimizer(
-				new DefaultEvaluationStrategy(new EmptyTripleSource(), null));
 
-		optimizer.optimize(guaranteed, null, EmptyBindingSet.getInstance());
-
-		assertThat(guaranteed.getCondition()).isInstanceOf(ValueConstant.class);
-		assertThat(((ValueConstant) guaranteed.getCondition()).getValue()).isEqualTo(BooleanLiteral.TRUE);
+		assertThat(isGuaranteedAtBound(guaranteed, (Bound) guaranteed.getCondition())).isTrue();
 	}
 
 	@Test
@@ -374,18 +354,16 @@ class OptimizerBindingAnalysisConsumersTest {
 	}
 
 	@Test
-	void constantOptimizerUsesPreAndPostGroupingFramesForExpressions() throws Exception {
+	void analysisUsesPreAndPostGroupingFramesForExpressions() throws Exception {
 		String query = "SELECT (COUNT(BOUND(?o)) AS ?count) WHERE { ?s <urn:p> ?o } "
 				+ "GROUP BY (BOUND(?s) AS ?key) HAVING(BOUND(?key)) ORDER BY BOUND(?key)";
 		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		List<Bound> before = collectBounds(parsed.getTupleExpr());
-		ConstantOptimizer optimizer = new ConstantOptimizer(
-				new DefaultEvaluationStrategy(new EmptyTripleSource(), null));
 
 		assertThat(before).hasSize(5);
-		optimizer.optimize(parsed.getTupleExpr(), null, EmptyBindingSet.getInstance());
-
-		List<Bound> remaining = collectBounds(parsed.getTupleExpr());
+		List<Bound> remaining = before.stream()
+				.filter(bound -> !isGuaranteedAtBound(parsed.getTupleExpr(), bound))
+				.toList();
 		List<String> remainingParents = remaining.stream()
 				.map(bound -> bound.getParentNode().getClass().getSimpleName() + " -> "
 						+ bound.getParentNode().getParentNode().getClass().getSimpleName())
@@ -502,6 +480,16 @@ class OptimizerBindingAnalysisConsumersTest {
 				return unbound;
 			}
 		}
+	}
+
+	/**
+	 * ConstantOptimizer only folds BOUND for constants (join reordering can move the expression away from the frame it
+	 * was analysed in), so frame selection is asserted on the shared analysis directly.
+	 */
+	private static boolean isGuaranteedAtBound(TupleExpr root, Bound bound) {
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				EmptyBindingSet.getInstance());
+		return analysis.expressionIsGuaranteed(bound.getArg(), analysis.contextAt(bound));
 	}
 
 	private static List<Bound> collectBounds(TupleExpr expression) {

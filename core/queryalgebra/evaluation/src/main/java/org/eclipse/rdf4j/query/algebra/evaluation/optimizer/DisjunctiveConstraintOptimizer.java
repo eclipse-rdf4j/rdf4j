@@ -71,6 +71,10 @@ public class DisjunctiveConstraintOptimizer implements QueryOptimizer {
 				QueryModelNode parent = filter.getParentNode();
 				boolean scopeChange = filter.isVariableScopeChange();
 				scopeChange |= TupleExprs.isVariableScopeChange(node);
+				if (filter.isVariableScopeChange() && filterArg instanceof Filter intermediateFilter) {
+					// The intermediate filter becomes the group root and must keep the group's scope.
+					intermediateFilter.setVariableScopeChange(true);
+				}
 
 				// Splitting overlapping predicates into UNION branches would duplicate rows.
 				filter.replaceWith(filterArg);

@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * Removes identity projections only when the child's exported outputs and inherited inputs prove that no bindings would
@@ -61,7 +62,10 @@ public class ProjectionRemovalOptimizer implements QueryOptimizer {
 					|| !childFacts.possibleOutputs().equals(projectedNames)
 					|| !child.getBindingNames().equals(projectedNames)
 					|| !projectedNames.containsAll(childFacts.inheritedInputNames())
-					|| !projectedNames.containsAll(input.maybeBoundNames())) {
+					|| !projectedNames.containsAll(input.maybeBoundNames())
+					// A variable a sub-select body reads but does not project is local to the sub-select; removing the
+					// projection would expose it to bindings from outside the sub-select.
+					|| projection.isSubquery() && !projectedNames.containsAll(VarNameCollector.process(child))) {
 				return;
 			}
 

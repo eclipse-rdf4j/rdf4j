@@ -138,7 +138,7 @@ class ScopedModifierAndOptionalEvaluationTest {
 	}
 
 	@Test
-	void isolatedOptionalConditionCanUseIncomingBindingsOutsideOperandOutputs() {
+	void isolatedOptionalConditionDoesNotSeeIncomingBindingsOutsideOperandOutputs() {
 		BindingSet incoming = row("outer", "accept");
 		BindingSetAssignment left = values("x", row("x", "left"));
 		BindingSetAssignment rightValues = values("y", row("y", "right"));
@@ -149,7 +149,9 @@ class ScopedModifierAndOptionalEvaluationTest {
 
 		List<BindingSet> results = evaluate(leftJoin, incoming);
 
-		assertThat(results).containsExactly(row("outer", "accept", "x", "left", "y", "right"));
+		// As on the ordinary OPTIONAL path, the condition is scoped to the operands' bindings: an incoming binding of
+		// another name may come from a sibling row, so the condition cannot see it and the OPTIONAL does not match.
+		assertThat(results).containsExactly(row("outer", "accept", "x", "left"));
 	}
 
 	@Test

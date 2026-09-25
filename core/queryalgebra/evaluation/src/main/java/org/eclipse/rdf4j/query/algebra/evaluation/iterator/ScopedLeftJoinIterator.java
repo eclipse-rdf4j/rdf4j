@@ -12,16 +12,15 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -42,11 +41,9 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 	private final String[] joinAttributes;
 
 	private volatile CloseableIteration<BindingSet> rightIter;
-	private List<BindingSet> rightRows;
-	private Map<BindingSetHashKey, List<BindingSet>> rightRowsByKey;
-	private List<BindingSet> currentRightRows;
+	private PartialKeyHashLookup rightRows;
+	private Iterator<BindingSet> currentRightRows;
 	private BindingSet currentLeft;
-	private int nextRightRow;
 	private boolean currentLeftMatched;
 
 	public ScopedLeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
@@ -56,13 +53,13 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 	}
 
 	/**
-	 * @param joinAttributes names guaranteed to be bound by both operands; right rows are bucketed by these names so
-	 *                       each left row only scans the rows it can join with.
+	 * @param joinAttributes names both operands may bind; right rows are bucketed by these names, including rows where
+	 *                       some are unbound, so each left row only visits the rows it can join with.
 	 */
 	public ScopedLeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
 			QueryValueEvaluationStep condition, BindingSet bindings, QueryEvaluationContext context,
 			String[] joinAttributes) throws QueryEvaluationException {
-		this.joinAttributes = joinAttributes;
+		this.joinAttributes = PartialKeyHashLookup.capKeyNames(joinAttributes);
 		leftIter = left.evaluate(bindings);
 		rightStep = right;
 		inputBindings = bindings;
@@ -75,8 +72,8 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 		try {
 			while (true) {
 				if (currentLeft != null) {
-					while (nextRightRow < currentRightRows.size()) {
-						BindingSet rightRow = currentRightRows.get(nextRightRow++);
+					while (currentRightRows.hasNext()) {
+						BindingSet rightRow = currentRightRows.next();
 						if (!currentLeft.isCompatible(rightRow)) {
 							continue;
 						}
@@ -102,7 +99,6 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 				}
 
 				currentLeft = leftIter.next();
-				nextRightRow = 0;
 				currentLeftMatched = false;
 				if (rightRows == null) {
 					rightRows = materializeRight();
@@ -110,7 +106,7 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 						return null;
 					}
 				}
-				currentRightRows = rightRowsFor(currentLeft);
+				currentRightRows = rightRows.candidates(BindingSetHashKey.create(joinAttributes, currentLeft));
 			}
 		} catch (RuntimeException | Error e) {
 			closeOnFailure(e);
@@ -118,62 +114,27 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 		}
 	}
 
-	private List<BindingSet> materializeRight() throws QueryEvaluationException {
-		List<BindingSet> rows = new ArrayList<>();
+	private PartialKeyHashLookup materializeRight() throws QueryEvaluationException {
+		// Every right row is bucketed by its key values, unbound ones included; the lookup matches null patterns.
+		Map<BindingSetHashKey, List<BindingSet>> rowsByKey = new LinkedHashMap<>();
 		// Keep the right iteration in a field so that close() (e.g. from a query timeout) can interrupt it.
 		CloseableIteration<BindingSet> iter = rightStep.evaluate(inputBindings);
 		rightIter = iter;
 		try {
 			while (!isClosed() && iter.hasNext()) {
 				BindingSet row = iter.next();
-				rows.add(row);
-				if (joinAttributes.length > 0 && hasAllJoinAttributes(row)) {
-					if (rightRowsByKey == null) {
-						rightRowsByKey = new HashMap<>();
-					}
-					rightRowsByKey
-							.computeIfAbsent(BindingSetHashKey.create(joinAttributes, row), k -> new ArrayList<>())
-							.add(row);
-				}
+				rowsByKey.computeIfAbsent(BindingSetHashKey.create(joinAttributes, row), k -> new ArrayList<>())
+						.add(row);
 			}
 		} finally {
 			rightIter = null;
 			iter.close();
 		}
-		if (rightRowsByKey != null && rightRowsByKey.values().stream().mapToInt(List::size).sum() != rows.size()) {
-			// Some right rows did not bind every join attribute, so they cannot be bucketed.
-			rightRowsByKey = null;
-		}
-		return rows;
-	}
-
-	private List<BindingSet> rightRowsFor(BindingSet leftRow) {
-		if (rightRowsByKey == null || !hasAllJoinAttributes(leftRow)) {
-			return rightRows;
-		}
-		return rightRowsByKey.getOrDefault(BindingSetHashKey.create(joinAttributes, leftRow), List.of());
-	}
-
-	private boolean hasAllJoinAttributes(BindingSet row) {
-		for (String name : joinAttributes) {
-			if (row.getValue(name) == null) {
-				return false;
-			}
-		}
-		return true;
+		return new PartialKeyHashLookup(rowsByKey);
 	}
 
 	private BindingSet merge(BindingSet leftRow, BindingSet rightRow) {
-		MutableBindingSet result = context.createBindingSet(leftRow);
-		for (String name : rightRow.getBindingNames()) {
-			if (!result.hasBinding(name)) {
-				Value value = rightRow.getValue(name);
-				if (value != null) {
-					result.addBinding(name, value);
-				}
-			}
-		}
-		return result;
+		return HashJoinIteration.merge(context.createBindingSet(leftRow), rightRow);
 	}
 
 	private void closeOnFailure(Throwable failure) {
@@ -198,10 +159,8 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 			}
 		} finally {
 			rightRows = null;
-			rightRowsByKey = null;
 			currentRightRows = null;
 			currentLeft = null;
-			nextRightRow = 0;
 			currentLeftMatched = false;
 		}
 	}

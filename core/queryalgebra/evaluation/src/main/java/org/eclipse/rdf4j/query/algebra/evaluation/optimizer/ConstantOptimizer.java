@@ -330,7 +330,9 @@ public class ConstantOptimizer implements QueryOptimizer {
 		public void meet(Bound bound) {
 			super.meet(bound);
 
-			if (bindingAnalysis.expressionIsGuaranteed(bound.getArg(), bindingAnalysis.contextAt(bound))) {
+			// Only a constant is bound regardless of placement: later join reordering can move this expression away
+			// from the siblings that bind the variable at this point.
+			if (bound.getArg().hasValue()) {
 				bound.replaceWith(new ValueConstant(BooleanLiteral.TRUE));
 				bindingAnalysis.invalidate();
 			}

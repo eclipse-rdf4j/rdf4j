@@ -86,7 +86,7 @@ class QueryJoinOptimizerExistenceScopeTest {
 		assertThat(optimizedResults).as("QJO-only plan: %s", optimized)
 				.containsExactlyInAnyOrderElementsOf(rawResults);
 		assertThat(branches).extracting(Join::getAlgorithmName)
-				.containsExactly("IndependentJoinIteration", "IndependentJoinIteration");
+				.containsExactly("HashJoinIteration", "HashJoinIteration");
 	}
 
 	private static TupleExpr scopedExistenceUnion() {

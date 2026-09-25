@@ -14,10 +14,14 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -31,9 +35,12 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
@@ -211,7 +218,7 @@ public class HashJoinIterationTest {
 	}
 
 	@Test
-	public void hashAttributesUseOnlyNamesGuaranteedByBothOperands() {
+	public void hashAttributesUsePossiblySharedNames() {
 		QueryBindingSet leftBound = new QueryBindingSet();
 		leftBound.addBinding("key", vf.createLiteral("same"));
 		leftBound.addBinding("nullable", vf.createLiteral("left"));
@@ -230,6 +237,172 @@ public class HashJoinIterationTest {
 		right.setBindingNames(Set.of("key", "nullable"));
 		right.setBindingSets(List.of(rightBound, rightUnbound));
 
-		assertArrayEquals(new String[] { "key" }, HashJoinIteration.hashJoinAttributeNames(new Join(left, right)));
+		// Nullable names are safe keys: probing matches every compatible null pattern.
+		assertArrayEquals(new String[] { "key", "nullable" },
+				HashJoinIteration.hashJoinAttributeNames(new Join(left, right)));
+	}
+
+	@Test
+	public void nullableKeysMatchEveryCompatibleNullPattern() {
+		List<BindingSet> left = List.of(
+				row("k1", "a", "k2", "x", "l", "1"),
+				row("k1", "a", "k2", null, "l", "2"),
+				row("k1", null, "k2", "x", "l", "3"),
+				row("k1", null, "k2", null, "l", "4"),
+				row("k1", "b", "k2", "y", "l", "5"));
+		List<BindingSet> right = List.of(
+				row("k1", "a", "k2", "x", "r", "1"),
+				row("k1", "a", "k2", null, "r", "2"),
+				row("k1", null, "k2", "y", "r", "3"),
+				row("k1", null, "k2", null, "r", "4"),
+				row("k1", "c", "k2", "x", "r", "5"));
+		String[] keys = { "k1", "k2" };
+
+		for (boolean leftJoin : new boolean[] { false, true }) {
+			assertEquals(JoinTestSupport.referenceJoin(left, right, leftJoin),
+					hashJoin(left, right, leftJoin, keys), "leftJoin=" + leftJoin);
+			if (!leftJoin) {
+				// larger left side swaps the build and probe sides of the inner join
+				assertEquals(JoinTestSupport.referenceJoin(right, left, false), hashJoin(right, left, false, keys));
+			}
+		}
+	}
+
+	@Test
+	public void emptyProbeRowsMatchEveryBuildRow() {
+		ArrayBindingSet placeholderOnly = new ArrayBindingSet("k");
+		placeholderOnly.getDirectSetBinding("k").accept(null, placeholderOnly);
+		List<BindingSet> left = List.of(EmptyBindingSet.getInstance(), new QueryBindingSet(), placeholderOnly);
+		List<BindingSet> right = List.of(row("k", "a", "r", "1"), row("k", null, "r", "2"), row("k", "b", "r", "3"));
+
+		assertEquals(JoinTestSupport.referenceJoin(left, right, true), hashJoin(left, right, true, "k"));
+		assertEquals(9, hashJoin(left, right, true, "k").size());
+	}
+
+	@Test
+	public void keySetsThatMissOrOverclaimSharedNamesStayCorrect() {
+		List<BindingSet> left = List.of(row("s", "a", "t", "1"), row("s", "b", "t", "2"), row("s", null, "t", "3"));
+		List<BindingSet> right = List.of(row("s", "a", "t", "1"), row("s", "a", "t", "9"), row("s", null, "t", "2"));
+
+		for (String[] keys : List.of(new String[] {}, new String[] { "s" }, new String[] { "never" },
+				new String[] { "never", "s", "t" })) {
+			for (boolean leftJoin : new boolean[] { false, true }) {
+				assertEquals(JoinTestSupport.referenceJoin(left, right, leftJoin),
+						hashJoin(left, right, leftJoin, keys), String.join(",", keys) + " leftJoin=" + leftJoin);
+			}
+		}
+	}
+
+	@Test
+	public void keySetsLargerThanTheMaskWidthAreCapped() {
+		String[] keys = new String[70];
+		String[] leftPairs = new String[140];
+		String[] rightPairs = new String[140];
+		for (int i = 0; i < keys.length; i++) {
+			keys[i] = "k" + i;
+			leftPairs[2 * i] = keys[i];
+			leftPairs[2 * i + 1] = "v";
+			rightPairs[2 * i] = keys[i];
+			rightPairs[2 * i + 1] = i == 69 ? "other" : "v";
+		}
+		List<BindingSet> left = List.of(row(leftPairs));
+		List<BindingSet> right = List.of(row(rightPairs), row("k0", "v"));
+
+		assertEquals(JoinTestSupport.referenceJoin(left, right, false), hashJoin(left, right, false, keys));
+	}
+
+	@Test
+	public void nullableHashKeysKeepProbeWorkProportionalToMatches() {
+		AtomicInteger checks = new AtomicInteger();
+		List<BindingSet> left = nullableKeyRows(checks, "l");
+		List<BindingSet> right = nullableKeyRows(checks, "r");
+
+		BindingSetAssignment leftValues = new BindingSetAssignment();
+		leftValues.setBindingNames(Set.of("k", "l"));
+		leftValues.setBindingSets(left);
+		BindingSetAssignment rightValues = new BindingSetAssignment();
+		rightValues.setBindingNames(Set.of("k", "r"));
+		rightValues.setBindingSets(right);
+		String[] keys = HashJoinIteration.hashJoinAttributeNames(new Join(leftValues, rightValues));
+
+		List<?> joined = hashJoin(left, right, false, keys);
+		assertEquals(JoinTestSupport.referenceJoin(left, right, false), joined);
+		assertTrue(checks.get() < 10_000,
+				"compatibility checks should follow the matches, not |L|*|R|=40000: " + checks.get());
+
+		checks.set(0);
+		HashJoinIteration legacy = new HashJoinIteration(
+				new CloseableIteratorIteration<>(left.iterator()), Set.of("k", "l"),
+				new CloseableIteratorIteration<>(right.iterator()), Set.of("k", "r"), false);
+		assertEquals(JoinTestSupport.referenceJoin(left, right, false), JoinTestSupport.drain(legacy));
+		assertTrue(checks.get() < 10_000,
+				"the legacy constructor should hash on the shared names: " + checks.get());
+	}
+
+	@Test
+	public void hashJoinDefersRightEvaluationUntilTheLeftHasARow() {
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		QueryEvaluationStep right = bindings -> {
+			rightEvaluations.incrementAndGet();
+			return JoinTestSupport.step(List.of(row("k", "a"))).evaluate(bindings);
+		};
+
+		for (boolean leftJoin : new boolean[] { false, true }) {
+			HashJoinIteration iteration = new HashJoinIteration(JoinTestSupport.step(List.of()), right,
+					EmptyBindingSet.getInstance(), leftJoin, new String[] { "k" },
+					new QueryEvaluationContext.Minimal(null));
+			assertEquals(List.of(), JoinTestSupport.drain(iteration));
+		}
+		assertEquals(0, rightEvaluations.get());
+	}
+
+	@Test
+	public void hashJoinClosesLeftWhenRightEvaluationFails() {
+		AtomicBoolean leftClosed = new AtomicBoolean();
+		QueryEvaluationStep left = bindings -> new JoinTestSupport.TrackingIteration(List.of(row("k", "a")),
+				leftClosed, new AtomicInteger());
+		QueryEvaluationStep right = bindings -> {
+			throw new QueryEvaluationException("right failed");
+		};
+
+		assertThrows(QueryEvaluationException.class, () -> JoinTestSupport.drain(new HashJoinIteration(left, right,
+				EmptyBindingSet.getInstance(), false, new String[] { "k" }, new QueryEvaluationContext.Minimal(null))));
+		assertTrue(leftClosed.get());
+	}
+
+	@Test
+	public void innerJoinWithAnEmptyBuildSideDoesNotDrainTheProbeSide() {
+		AtomicInteger consumedLeftRows = new AtomicInteger();
+		List<BindingSet> left = new ArrayList<>();
+		for (int i = 0; i < 1000; i++) {
+			left.add(row("k", "v" + i));
+		}
+		QueryEvaluationStep leftStep = bindings -> new JoinTestSupport.TrackingIteration(left, new AtomicBoolean(),
+				consumedLeftRows);
+
+		HashJoinIteration iteration = new HashJoinIteration(leftStep, JoinTestSupport.step(List.of()),
+				EmptyBindingSet.getInstance(), false, new String[] { "k" }, new QueryEvaluationContext.Minimal(null));
+
+		assertEquals(List.of(), JoinTestSupport.drain(iteration));
+		assertTrue(consumedLeftRows.get() <= 1, "consumed " + consumedLeftRows.get() + " left rows");
+	}
+
+	private static List<BindingSet> nullableKeyRows(AtomicInteger checks, String payloadName) {
+		List<BindingSet> rows = new ArrayList<>();
+		for (int i = 0; i < 200; i++) {
+			rows.add(JoinTestSupport.countingRow(checks, "k", i % 20 == 0 ? null : "v" + i, payloadName,
+					Integer.toString(i)));
+		}
+		return rows;
+	}
+
+	private static List<?> hashJoin(List<BindingSet> left, List<BindingSet> right, boolean leftJoin,
+			String... keys) {
+		return JoinTestSupport.drain(new HashJoinIteration(JoinTestSupport.step(left), JoinTestSupport.step(right),
+				EmptyBindingSet.getInstance(), leftJoin, keys, new QueryEvaluationContext.Minimal(null)));
+	}
+
+	private static QueryBindingSet row(String... nameValuePairs) {
+		return JoinTestSupport.row(nameValuePairs);
 	}
 }

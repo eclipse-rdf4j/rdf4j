@@ -329,9 +329,13 @@ public class QueryPlanRetrievalTest {
 					"      ║  │        Var (name=g)\n" +
 					"      ║  └── Join (JoinIterator)\n" +
 					"      ║     ╠══ Filter [left]\n" +
-					"      ║     ║  ├── Compare (>)\n" +
-					"      ║     ║  │     Var (name=o)\n" +
-					"      ║     ║  │     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+					"      ║     ║  ├── And\n" +
+					"      ║     ║  │  ╠══ Compare (>)\n" +
+					"      ║     ║  │  ║     Var (name=o)\n" +
+					"      ║     ║  │  ║     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+					+
+					"      ║     ║  │  ╚══ Bound\n" +
+					"      ║     ║  │        Var (name=s)\n" +
 					"      ║     ║  └── StatementPattern (costEstimate=2.50, resultSizeEstimate=0)\n" +
 					"      ║     ║        s: Var (name=s)\n" +
 					"      ║     ║        p: Var (name=_const_c03ab50c_uri, value=http://example.com/p, anonymous)\n" +
@@ -443,7 +447,10 @@ public class QueryPlanRetrievalTest {
 					"║     ProjectionElem \"score\"\n" +
 					"║     ProjectionElem \"lvl\"\n" +
 					"╚══ Join (JoinIterator)\n" +
-					"   ├── BindingSetAssignment ([[s=http://example.com/A], [s=http://example.com/B], [s=http://example.com/C]]) (costEstimate=0, resultSizeEstimate=1.00) [left]\n"
+					"   ├── Filter [left]\n" +
+					"   │  ╠══ Bound\n" +
+					"   │  ║     Var (name=s)\n" +
+					"   │  ╚══ BindingSetAssignment ([[s=http://example.com/A], [s=http://example.com/B], [s=http://example.com/C]]) (costEstimate=0, resultSizeEstimate=1.00)\n"
 					+
 					"   └── Join (JoinIterator) [right]\n" +
 					"      ╠══ Filter (new scope) (costEstimate=1.00, resultSizeEstimate=1.00) [left]\n" +
@@ -472,7 +479,7 @@ public class QueryPlanRetrievalTest {
 					"         │        p: Var (name=_const_efd45947_uri, value=http://example.com/prop, anonymous)\n" +
 					"         │        o: Var (name=o)\n" +
 					"         └── LeftJoin [right]\n" +
-					"            ╠══ Join (IndependentJoinIteration) [left]\n" +
+					"            ╠══ Join (HashJoinIteration) [left]\n" +
 					"            ║  ├── Filter (new scope) (costEstimate=2.92, resultSizeEstimate=0) [left]\n" +
 					"            ║  │  ╠══ Compare (!=)\n" +
 					"            ║  │  ║  ├── MathExpr (-)\n" +

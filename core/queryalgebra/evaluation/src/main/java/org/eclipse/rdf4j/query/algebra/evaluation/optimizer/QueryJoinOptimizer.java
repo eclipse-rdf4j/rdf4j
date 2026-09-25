@@ -83,6 +83,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -376,6 +377,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				// Recursively get the join arguments
 				List<TupleExpr> joinArgs = getJoinArgs(node, new ArrayList<>());
 				if (hasUnsafeOptionalReorder(node, joinArgs)) {
+					// Without reordering, a group-level BIND is not moved ahead of its siblings, so it must be
+					// evaluated in its own scope to keep sibling bindings out of its expressions.
+					for (TupleExpr extension : getExtensionTupleExprs(joinArgs)) {
+						if (extension instanceof Extension scopedExtension) {
+							scopedExtension.setVariableScopeChange(true);
+						}
+					}
+					bindingAnalysis.invalidate();
 					visitAt(node.getLeftArg());
 					visitAt(node.getRightArg());
 					return;
@@ -547,7 +556,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 
 					// Replace old join hierarchy
-					node.replaceWith(right);
+					replacePreservingScope(node, right);
 					bindingAnalysis.invalidate();
 
 					// we optimize after the right call above in case the optimize call below
@@ -559,12 +568,23 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 				} else {
 					// only subselect/priority joins involved in this query.
-					node.replaceWith(priorityJoins);
+					replacePreservingScope(node, priorityJoins);
 					bindingAnalysis.invalidate();
 				}
 			} finally {
 				boundVars = origBoundVars;
 			}
+		}
+
+		/**
+		 * A rebuilt join hierarchy must keep a nested group's scope boundary; otherwise an enclosing join would
+		 * evaluate it with its sibling bindings injected.
+		 */
+		private void replacePreservingScope(Join node, TupleExpr replacement) {
+			if (node.isVariableScopeChange() && replacement instanceof VariableScopeChange scopeChange) {
+				scopeChange.setVariableScopeChange(true);
+			}
+			node.replaceWith(replacement);
 		}
 
 		/**
@@ -1294,7 +1314,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			int currentUnionSize = -1;
 			int currentJoinSize = -1;
 			for (TupleExpr candidate : joinArgs) {
-				if (!currentList.contains(candidate)) {
+				// Identity check: structurally equal sub-selects are still distinct join arguments.
+				if (currentList.stream().noneMatch(selectedExpr -> selectedExpr == candidate)) {
 
 					Set<String> names = candidate.getBindingNames();
 					int joinSize = getJoinSize(currentListNames, names);

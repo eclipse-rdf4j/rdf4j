@@ -25,20 +25,15 @@ import java.util.function.IntFunction;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.common.iterator.EmptyIterator;
-import org.eclipse.rdf4j.common.iterator.UnionIterator;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
-import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
  * Generic hash join implementation suitable for use by Sail implementations.
@@ -49,7 +44,9 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 
 	protected final String[] joinAttributes;
 	private final CloseableIteration<BindingSet> leftIter;
-	private final CloseableIteration<BindingSet> rightIter;
+	private volatile CloseableIteration<BindingSet> rightIter;
+	private final QueryEvaluationStep rightStep;
+	private final BindingSet rightBindings;
 	private final boolean leftJoin;
 
 	private Iterator<BindingSet> scanList;
@@ -58,6 +55,8 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	private BindingSet currentScanElem;
 	private Iterator<BindingSet> hashTableValues;
 	private boolean currentMatched;
+	private PartialKeyHashLookup lookup;
+	private boolean noMatchesPossible;
 
 	private final IntFunction<Map<BindingSetHashKey, List<BindingSet>>> mapMaker;
 
@@ -73,8 +72,10 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 			boolean leftJoin, String[] joinAttributes, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		this.leftIter = left.evaluate(bindings);
-		this.rightIter = right.evaluate(bindings);
-		this.joinAttributes = joinAttributes;
+		// The right side is evaluated only once the left side has a row.
+		this.rightStep = right;
+		this.rightBindings = bindings;
+		this.joinAttributes = PartialKeyHashLookup.capKeyNames(joinAttributes);
 		this.leftJoin = leftJoin;
 		this.mapMaker = this::makeHashTable;
 		this.mapValueMaker = this::makeHashValue;
@@ -89,11 +90,12 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	) throws QueryEvaluationException {
 		this.leftIter = leftIter;
 		this.rightIter = rightIter;
+		this.rightStep = null;
+		this.rightBindings = null;
 		this.mapMaker = this::makeHashTable;
 
-		// Legacy callers provide only possible names. They cannot prove that a shared name is present on every row,
-		// so they must not use it to partition rows into hash buckets.
-		joinAttributes = new String[0];
+		// Possibly shared names are safe keys: probing matches every compatible null pattern.
+		joinAttributes = sharedNames(leftBindingNames, rightBindingNames);
 
 		this.leftJoin = leftJoin;
 		this.mapValueMaker = this::makeHashValue;
@@ -109,6 +111,10 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		Map<BindingSetHashKey, List<BindingSet>> nextHashTable = hashTable;
 		if (nextHashTable == null) {
 			nextHashTable = hashTable = setupHashTable();
+			lookup = new PartialKeyHashLookup(nextHashTable);
+		}
+		if (noMatchesPossible) {
+			return null;
 		}
 
 		while (true) {
@@ -128,37 +134,19 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 					continue;
 				}
 
-				if (currentScanElem instanceof EmptyBindingSet) {
-					// An empty row is compatible with every row, so inspect every hash bucket.
-					Collection<List<BindingSet>> values = nextHashTable.values();
-					boolean empty = values.isEmpty() || values.size() == 1 && values.contains(null);
-					hashTableValues = empty ? new EmptyIterator<>() : new UnionIterator<>(values);
-				} else {
-					BindingSetHashKey key = BindingSetHashKey.create(joinAttributes, currentScanElem);
-					List<BindingSet> hashValue = nextHashTable.get(key);
-					hashTableValues = hashValue == null || hashValue.isEmpty()
-							? new EmptyIterator<>()
-							: hashValue.iterator();
-				}
+				// Keys may be unbound on either side, so the lookup visits every compatible null pattern.
+				hashTableValues = lookup.candidates(BindingSetHashKey.create(joinAttributes, currentScanElem));
 			}
 
 			while (hashTableValues != null && hashTableValues.hasNext()) {
 				BindingSet candidate = hashTableValues.next();
-				// Hash keys only cover names guaranteed by both operands. Every other shared name, including a
-				// nullable one, still participates in SPARQL's full compatibility test.
+				// The lookup only compares key positions bound on both sides; shared names outside the key still
+				// participate in SPARQL's full compatibility test.
 				if (!currentScanElem.isCompatible(candidate)) {
 					continue;
 				}
 				currentMatched = true;
-				MutableBindingSet result = bsMaker.apply(currentScanElem);
-				for (String name : candidate.getBindingNames()) {
-					if (!result.hasBinding(name)) {
-						Value value = candidate.getValue(name);
-						if (value != null) {
-							result.addBinding(name, value);
-						}
-					}
-				}
+				MutableBindingSet result = merge(bsMaker.apply(currentScanElem), candidate);
 				if (!hashTableValues.hasNext()) {
 					clearCurrentHashValue();
 				}
@@ -172,6 +160,25 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 				return unmatched;
 			}
 		}
+	}
+
+	/**
+	 * Adds the candidate's values for names the result leaves unbound, including names present without a value.
+	 */
+	static MutableBindingSet merge(MutableBindingSet result, BindingSet candidate) {
+		for (String name : candidate.getBindingNames()) {
+			if (result.getValue(name) == null) {
+				Value value = candidate.getValue(name);
+				if (value != null) {
+					if (result.hasBinding(name)) {
+						result.setBinding(name, value);
+					} else {
+						result.addBinding(name, value);
+					}
+				}
+			}
+		}
+		return result;
 	}
 
 	private void clearCurrentHashValue() {
@@ -192,8 +199,9 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 			}
 		} finally {
 			try {
-				if (rightIter != null) {
-					rightIter.close();
+				CloseableIteration<BindingSet> toCloseRightIter = rightIter;
+				if (toCloseRightIter != null) {
+					toCloseRightIter.close();
 				}
 			} finally {
 				try {
@@ -222,6 +230,13 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	}
 
 	private Map<BindingSetHashKey, List<BindingSet>> setupHashTable() throws QueryEvaluationException {
+		if (!leftIter.hasNext()) {
+			// Neither an inner nor a left join can produce rows without a left row, so the right side is not needed.
+			noMatchesPossible = true;
+			scanList = Collections.emptyIterator();
+			return mapMaker.apply(0);
+		}
+		CloseableIteration<BindingSet> rightIter = openRightIteration();
 
 		Collection<BindingSet> leftArgResults;
 		Collection<BindingSet> rightArgResults = makeIterationCache(rightIter);
@@ -256,6 +271,11 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		leftArgResults = null;
 		rightArgResults = null;
 
+		if (!leftJoin && smallestResult.isEmpty()) {
+			// An inner join with an empty side has no rows; the other side need not be scanned.
+			noMatchesPossible = true;
+		}
+
 		// create the hash table for our join
 		// hash table will never be any bigger than smallestResult.size()
 		Map<BindingSetHashKey, List<BindingSet>> resultHashTable = mapMaker.apply(smallestResult.size());
@@ -276,6 +296,29 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 			maxListSize = Math.max(maxListSize, hashValue.size());
 		}
 		return resultHashTable;
+	}
+
+	private CloseableIteration<BindingSet> openRightIteration() throws QueryEvaluationException {
+		CloseableIteration<BindingSet> iteration = rightIter;
+		if (iteration != null || rightStep == null) {
+			return iteration;
+		}
+		try {
+			iteration = rightStep.evaluate(rightBindings);
+		} catch (RuntimeException | Error e) {
+			try {
+				close();
+			} catch (RuntimeException | Error closeFailure) {
+				e.addSuppressed(closeFailure);
+			}
+			throw e;
+		}
+		rightIter = iteration;
+		if (isClosed()) {
+			// close() ran concurrently before the right side was published
+			iteration.close();
+		}
+		return iteration;
 	}
 
 	protected void putHashTableEntry(Map<BindingSetHashKey, List<BindingSet>> nextHashTable, BindingSetHashKey hashKey,
@@ -358,26 +401,25 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		col.addAll(values);
 	}
 
+	/**
+	 * @return the names both operands may bind. A name may be unbound in some rows; the join still matches every
+	 *         compatible row.
+	 */
 	public static String[] hashJoinAttributeNames(Join join) {
-		return guaranteedCommonOutputs(join, join.getLeftArg(), join.getRightArg());
+		return sharedNames(join.getLeftArg().getBindingNames(), join.getRightArg().getBindingNames());
 	}
 
+	/**
+	 * @return the names both operands may bind. A name may be unbound in some rows; the join still matches every
+	 *         compatible row.
+	 */
 	public static String[] hashJoinAttributeNames(LeftJoin join) {
-		return guaranteedCommonOutputs(join, join.getLeftArg(), join.getRightArg());
+		return sharedNames(join.getLeftArg().getBindingNames(), join.getRightArg().getBindingNames());
 	}
 
-	private static String[] guaranteedCommonOutputs(TupleExpr root, TupleExpr left, TupleExpr right) {
-		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
-				EmptyBindingSet.getInstance());
-		var independentInput = analysis.rootContext();
-		var leftFacts = analysis.outputFacts(left, independentInput);
-		var rightFacts = analysis.outputFacts(right, independentInput);
-		if (!leftFacts.possibleOutputsKnown() || !leftFacts.guaranteedOutputsKnown()
-				|| !rightFacts.possibleOutputsKnown() || !rightFacts.guaranteedOutputsKnown()) {
-			return new String[0];
-		}
-		Set<String> guaranteed = new TreeSet<>(leftFacts.guaranteedOutputs());
-		guaranteed.retainAll(rightFacts.guaranteedOutputs());
-		return guaranteed.toArray(String[]::new);
+	private static String[] sharedNames(Set<String> leftNames, Set<String> rightNames) {
+		Set<String> shared = new TreeSet<>(leftNames);
+		shared.retainAll(rightNames);
+		return PartialKeyHashLookup.capKeyNames(shared.toArray(String[]::new));
 	}
 }

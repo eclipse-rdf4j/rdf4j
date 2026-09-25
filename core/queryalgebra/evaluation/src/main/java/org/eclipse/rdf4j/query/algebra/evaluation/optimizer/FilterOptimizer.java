@@ -422,7 +422,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Union union) {
 			if (!canDistributeAcrossUnion(union)) {
-				relocate(filter, union);
+				relocate(filter, scopeBoundaryTarget(union));
 				return;
 			}
 
@@ -507,7 +507,7 @@ public class FilterOptimizer implements QueryOptimizer {
 			if (TupleExprs.isVariableScopeChange(filter)) {
 				if (filter != this.filter) {
 					// A filter outside this group cannot be moved into the group's scope.
-					relocate(this.filter, filter);
+					relocate(this.filter, scopeBoundaryTarget(filter));
 				} else {
 					// The moving filter may still be optimized within its own scope.
 					filter.getArg().visit(this);
@@ -548,6 +548,19 @@ public class FilterOptimizer implements QueryOptimizer {
 			node.getArg().visit(this);
 		}
 
+		/**
+		 * A scoped group that is a join's right operand is evaluated independently only while it is the operand's root.
+		 * Placing an unscoped filter directly above it would make the join inject left-row bindings into the group, so
+		 * the filter stays above the join instead.
+		 */
+		private TupleExpr scopeBoundaryTarget(TupleExpr scopedGroup) {
+			if (TupleExprs.isVariableScopeChange(scopedGroup) && scopedGroup.getParentNode()instanceof Join join
+					&& join.getRightArg() == scopedGroup) {
+				return join;
+			}
+			return scopedGroup;
+		}
+
 		private void relocate(Filter filter, TupleExpr newFilterArg) {
 			if (filter.getArg() != newFilterArg && filter.getParentNode() != null) {
 				// Remove filter from its original location
@@ -573,7 +586,7 @@ public class FilterOptimizer implements QueryOptimizer {
 			// that left sibling as crossed even though it normally runs first: its bindings are not part of the
 			// candidate's condition-visible frame after relocation.
 			// The same holds when the candidate is evaluated without the sibling's row (scope-changing, MINUS or
-			// subquery right operands use HashJoin/IndependentJoin): its input is then the join's own input.
+			// subquery right operands use a hash join): its input is then the join's own input.
 			QueryAlgebraBindingAnalysis.OutputFacts crossedSiblingFacts = siblingRunsAfterCandidate
 					|| TupleExprs.isVariableScopeChange(filter)
 					|| runsWithoutSiblingRow(candidate, candidateInput) ? siblingFacts : null;

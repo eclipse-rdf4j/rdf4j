@@ -151,6 +151,14 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 				}
 			}
 
+			// Binding or renaming removes the filter, so each variable must be bound by the filter's own argument. A
+			// variable supplied only by an incoming row (OPTIONAL left side, EXISTS correlation) would otherwise lose
+			// its constraint and be overwritten.
+			Set<String> argumentBindingNames = filterArg.getAssuredBindingNames();
+			if (isUnboundVar(leftArg, argumentBindingNames) || isUnboundVar(rightArg, argumentBindingNames)) {
+				return;
+			}
+
 			Value leftValue = getValue(leftArg);
 			Value rightValue = getValue(rightArg);
 
@@ -171,6 +179,13 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			if (valueExpr instanceof Var var) {
 				return !var.hasValue() && !context.maybeBoundNames().contains(var.getName())
 						&& facts.possibleOutputsKnown() && !facts.possibleOutputs().contains(var.getName());
+			}
+			return false;
+		}
+
+		private boolean isUnboundVar(ValueExpr valueExpr, Set<String> bindingNames) {
+			if (valueExpr instanceof Var var) {
+				return !var.hasValue() && !bindingNames.contains(var.getName());
 			}
 			return false;
 		}

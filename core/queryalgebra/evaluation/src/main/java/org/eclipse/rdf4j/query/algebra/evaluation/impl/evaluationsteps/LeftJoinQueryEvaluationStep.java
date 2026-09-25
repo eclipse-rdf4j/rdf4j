@@ -54,16 +54,13 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 				EmptyBindingSet.getInstance());
 		if (TupleExprs.containsSubquery(leftJoin.getRightArg())
 				|| TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), bindingAnalysis)) {
+			// The right side is evaluated once with the query input and hashed on the names both sides may share.
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(leftJoin);
-			if (leftJoin.hasCondition() || joinAttributes.length == 0) {
-				QueryValueEvaluationStep isolatedCondition = leftJoin.hasCondition()
-						? precompileScopedCondition(strategy, leftJoin, context)
-						: null;
-				leftJoin.setAlgorithm(ScopedLeftJoinIterator.class.getSimpleName());
-				return bs -> new ScopedLeftJoinIterator(left, right, isolatedCondition, bs, context, joinAttributes);
-			}
-			leftJoin.setAlgorithm(HashJoinIteration.class.getSimpleName());
-			return bs -> new HashJoinIteration(left, right, bs, true, joinAttributes, context);
+			QueryValueEvaluationStep isolatedCondition = leftJoin.hasCondition()
+					? precompileScopedCondition(strategy, leftJoin, context)
+					: null;
+			leftJoin.setAlgorithm(ScopedLeftJoinIterator.class.getSimpleName());
+			return bs -> new ScopedLeftJoinIterator(left, right, isolatedCondition, bs, context, joinAttributes);
 		}
 
 		// Check whether optional join is "well designed" as defined in section
@@ -90,13 +87,9 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			// FilterIterator).
 			condition = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
 		}
-		return new ScopedQueryValueEvaluationStep(conditionBindingNames(leftJoin), condition);
-	}
-
-	private static Set<String> conditionBindingNames(LeftJoin leftJoin) {
-		Set<String> bindingNames = new HashSet<>(leftJoin.getBindingNames());
-		bindingNames.addAll(VarNameCollector.process(leftJoin.getCondition()));
-		return bindingNames;
+		// Like the ordinary OPTIONAL path, the condition only sees the operands' bindings; incoming bindings of other
+		// names may come from a sibling row and are out of scope.
+		return new ScopedQueryValueEvaluationStep(leftJoin.getBindingNames(), condition);
 	}
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,

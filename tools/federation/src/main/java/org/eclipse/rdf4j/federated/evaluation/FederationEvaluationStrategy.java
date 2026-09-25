@@ -805,10 +805,10 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 			return new QueryEvaluationStep() {
 				final QueryEvaluationStep leftES = precompile(leftJoin.getLeftArg(), context);
 				final QueryEvaluationStep rightES = precompile(leftJoin.getRightArg(), context);
+				final String[] hashJoinAttributeNames = HashJoinIteration.hashJoinAttributeNames(leftJoin);
 
 				@Override
 				public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-					String[] hashJoinAttributeNames = HashJoinIteration.hashJoinAttributeNames(leftJoin);
 					return new HashJoinIteration(leftES, rightES, bindings, true, hashJoinAttributeNames, context);
 				}
 

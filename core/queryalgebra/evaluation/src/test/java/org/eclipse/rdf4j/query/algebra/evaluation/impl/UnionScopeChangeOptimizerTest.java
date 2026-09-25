@@ -446,7 +446,7 @@ public class UnionScopeChangeOptimizerTest extends QueryOptimizerTest {
 		assertThat(optimizedSource.boundObjectRequests).hasValue(2);
 		assertThat(optimizedSource.returnedStatements).hasValue(2);
 		assertThat(joinAlgorithmNames(original))
-				.containsExactly("IndependentJoinIteration", "HashJoinIteration", "HashJoinIteration");
+				.containsExactly("HashJoinIteration", "HashJoinIteration", "HashJoinIteration");
 		assertThat(joinAlgorithmNames(optimized))
 				.containsExactly("JoinIterator", "JoinIterator", "JoinIterator");
 	}

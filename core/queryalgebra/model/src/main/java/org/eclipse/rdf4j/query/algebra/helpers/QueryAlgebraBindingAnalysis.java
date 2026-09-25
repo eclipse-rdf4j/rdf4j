@@ -496,7 +496,7 @@ public final class QueryAlgebraBindingAnalysis {
 				if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 					return input.enterScope(nextScopeId(leftJoin.getRightArg()));
 				}
-				if (TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), input)) {
+				if (containsResultSetModifier(leftJoin.getRightArg(), input)) {
 					return input;
 				}
 				return leftJoinInput.withOutput(outputFacts(leftJoin.getLeftArg(), leftJoinInput));
@@ -513,7 +513,8 @@ public final class QueryAlgebraBindingAnalysis {
 				}
 				OutputFacts right = outputFacts(leftJoin.getRightArg(),
 						childInput(leftJoin, leftJoin.getRightArg(), input));
-				return input.withOutput(matchedLeftJoinFacts(left, right, input));
+				// The evaluator withholds the same inherited names from the condition as from the optional operands.
+				return leftJoinInput.withOutput(matchedLeftJoinFacts(left, right, leftJoinInput));
 			}
 			return input;
 		}
@@ -842,11 +843,19 @@ public final class QueryAlgebraBindingAnalysis {
 		}
 		if (expression instanceof ZeroLengthPath path) {
 			Set<String> names = variableNames(path.getVarList());
-			return OutputFacts.known(names, names, Map.of(), Map.of(), input, true);
+			Set<String> guaranteed = new HashSet<>(names);
+			if (zeroLengthEndpointMayBeBound(path.getSubjectVar(), path.getObjectVar(), input)) {
+				guaranteed.removeAll(variableNames(path.getContextVar()));
+			}
+			return OutputFacts.known(names, guaranteed, Map.of(), Map.of(), input, true);
 		}
 		if (expression instanceof ArbitraryLengthPath path) {
 			Set<String> possible = variableNames(path.getSubjectVar(), path.getObjectVar(), path.getContextVar());
 			Set<String> guaranteed = new HashSet<>(possible);
+			if (path.getMinLength() == 0
+					&& zeroLengthEndpointMayBeBound(path.getSubjectVar(), path.getObjectVar(), input)) {
+				guaranteed.removeAll(variableNames(path.getContextVar()));
+			}
 			Map<String, Value> fixed = fixedFromVars(input, path.getSubjectVar(), path.getObjectVar(),
 					path.getContextVar());
 			if (path.getPathExpression() != null) {
@@ -1367,6 +1376,19 @@ public final class QueryAlgebraBindingAnalysis {
 			}
 		}
 		return result;
+	}
+
+	/**
+	 * A zero-length path row produced for a bound endpoint does not bind the graph variable; only when both endpoints
+	 * are free are zero-length rows enumerated per graph.
+	 */
+	private static boolean zeroLengthEndpointMayBeBound(Var subject, Var object, ReadOnlyContext input) {
+		return mayBeBound(subject, input) || mayBeBound(object, input);
+	}
+
+	private static boolean mayBeBound(Var var, ReadOnlyContext input) {
+		return var == null || var.hasValue() || var.getName() == null
+				|| input.maybeBoundNames().contains(var.getName());
 	}
 
 	private Set<String> variableNames(Var... vars) {
