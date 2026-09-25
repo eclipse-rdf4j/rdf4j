@@ -1,10 +1,11 @@
 # Shared query planning and evaluator semantics
 
 This guide covers shared RDF4J query-algebra and evaluation changes in the
-range from merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to pinned
-`HEAD` `a869fe298dc4700ce956bcaf9fece3745c57fe05`. These contracts apply to
-generic evaluation as well as LMDB. The LMDB-specific strategy choices are
-described in the [query guide set](README.md#native-query-feature-catalog). The central rule is
+historical range from merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to
+inventory snapshot `a869fe298dc4700ce956bcaf9fece3745c57fe05`. These
+contracts apply to generic evaluation as well as LMDB. The LMDB-specific
+strategy choices are described in the
+[query guide set](README.md#native-query-feature-catalog). The central rule is
 that a physical optimization may reorder, re-evaluate, or inject bindings only
 when the evaluator can justify that the observable SPARQL result and errors
 remain the same.
@@ -51,7 +52,8 @@ Sources: [`Function`](../../../core/queryalgebra/evaluation/src/main/java/org/ec
 and [`QueryEvaluationUtility`](../../../core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/util/QueryEvaluationUtility.java).
 The source tests include `FunctionDeterminismTest`,
 `DeterministicFunctionProbeTest`, `QuerySafetyAnalysisReuseTest`, and
-`BindingInjectionSafetyTest`; these were inspected, not run.
+`BindingInjectionSafetyTest`; these links identify source coverage, not a
+passing test result.
 
 ## Join evaluation: when bind joins are an as-if optimization
 
@@ -152,7 +154,7 @@ The source test map includes
 [`QueryJoinOptimizerMergeJoinBoundVarsTest`](../../../core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/QueryJoinOptimizerMergeJoinBoundVarsTest.java),
 [`QueryJoinOptimizerTest`](../../../core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/QueryJoinOptimizerTest.java),
 and [`IterativeEvaluationOptimizerTest`](../../../core/queryalgebra/evaluation/src/test/java/org/eclipse/rdf4j/query/algebra/evaluation/impl/IterativeEvaluationOptimizerTest.java).
-Tests were not run.
+These are source coverage references; they do not imply current test results.
 
 ## ORDER BY: query mode, volatile keys, and explicit hints
 

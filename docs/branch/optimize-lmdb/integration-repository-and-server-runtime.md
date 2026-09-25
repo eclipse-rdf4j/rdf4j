@@ -1,7 +1,8 @@
 # Repository listing and server failure lifecycle
 
-This guide records two non-LMDB operational changes in the comparison from
-merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to pinned `HEAD`
+This guide records two non-LMDB operational changes in the historical
+comparison from merge base
+`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to inventory snapshot
 `a869fe298dc4700ce956bcaf9fece3745c57fe05`. Neither change is an LMDB query
 optimization. One isolates repository metadata failures during local
 repository enumeration; the other closes the embedded server context after
@@ -55,7 +56,7 @@ not a way to recover memory or make an OOME harmless. The source test
 [`LoggingDispatcherServletTest`](../../../tools/server-boot/src/test/java/org/eclipse/rdf4j/tools/serverboot/LoggingDispatcherServletTest.java)
 constructs a root and child context, injects an `OutOfMemoryError` from a
 controller, and asserts that the same error escapes and the root context is
-closed. The test source was inspected but not run.
+closed. The test source is a coverage reference, not a current passing result.
 
 Changed source: [`LoggingDispatcherServlet`](../../../tools/server-boot/src/main/java/org/eclipse/rdf4j/tools/serverboot/LoggingDispatcherServlet.java).
 The adjacent LMDB query read-handle timeout test is in

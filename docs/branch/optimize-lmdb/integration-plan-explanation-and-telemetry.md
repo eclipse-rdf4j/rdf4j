@@ -1,8 +1,10 @@
 # Plan explanation, strategy decisions, and telemetry
 
-This guide covers shared query-explanation model changes on the pinned branch
-range `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` →
-`a869fe298dc4700ce956bcaf9fece3745c57fe05`. LMDB strategy-specific
+This guide covers shared query-explanation model changes in the historical
+comparison from merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to
+inventory snapshot `a869fe298dc4700ce956bcaf9fece3745c57fe05`. Its source
+descriptions were checked against `a678d9a369deded63520cd86b6c30152485b7f6d`;
+the branch README records these revision roles. LMDB strategy-specific
 eligibility and dispatch details live in
 [strategy arbitration and explanation](query-arbitration-and-explanation.md);
 this page documents how decisions and execution facts cross from compilation
@@ -94,9 +96,13 @@ benchmark durations.
 ## Workbench and developer use
 
 Workbench query-explanation UI changes display the physical prelude,
-strategy-decision rows, and level-appropriate summary details in the result
-views and styles. Template/model transformation output is the rendering path;
-the JavaScript/TypeScript controls choose and request explanation levels.
+strategy-decision rows, and level-appropriate summary details. The XSL template
+supplies the explanation containers and controls; TypeScript requests
+explanation levels and renders text explanations. For text output, users can
+switch between normal syntax highlighting and a hotspot heatmap, and hide
+selected properties while retaining plan structure. JSON and DOT remain
+separate display formats. These are presentation controls: they do not change
+the server's selected strategy or the collected query telemetry.
 Server and Workbench LMDB property panels are documented in
 [runtime controls](integration-runtime-controls-and-workbench.md).
 

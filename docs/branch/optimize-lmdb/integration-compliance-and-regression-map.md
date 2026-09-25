@@ -1,10 +1,11 @@
 # Compliance harness, regression suites, and frozen baselines
 
 This guide distinguishes changes to test-discovery/evidence infrastructure
-from changes to production query behavior. The reviewed range is merge base
-`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` through pinned `HEAD`
+from changes to production query behavior. The historical range is merge base
+`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` through inventory snapshot
 `a869fe298dc4700ce956bcaf9fece3745c57fe05`. Compliance tests and captured
-baselines are not runtime features and were not executed for this guide.
+baselines are not runtime features; source links below do not report a current
+test result.
 
 ## Stable SPARQL compliance identities
 
@@ -49,9 +50,8 @@ described allowed failure/skip entries. At its recorded freeze time,
 metadata records 504 observations with four failures and no errors/skips, and
 also states that the captured run used working-tree review changes. The
 `source.head` field is provenance for that historical report, not a result
-from pinned `HEAD`; this documentation work did not re-run the suite. Read the
-baseline's provenance fields before interpreting its allowlist as present-day
-behavior.
+from the current source review revision. Read the baseline's provenance fields
+before interpreting its allowlist as present-day behavior.
 
 The standalone
 [`check-lmdb-compliance-baseline.py`](../../../scripts/check-lmdb-compliance-baseline.py)
@@ -106,13 +106,14 @@ and [federation implementation guide](integration-federation-semantics.md).
 
 Read source tests to learn which inputs and contracts they intend to protect;
 read the baseline and archived report to learn which outcomes were historically
-observed. Neither source presence nor a stored green/red summary means the
-current branch was tested in this documentation pass. If a test is added or
-renamed, update the stable manifest identity/required testcase inventory and
-its review evidence coherently; do not broaden the allowed-failure list just
+observed. Neither source presence nor a stored green/red summary establishes
+that the current source passes; the source map is not a current test result.
+If a test is added or renamed, update the stable manifest identity/required
+testcase inventory and its review evidence coherently; do not broaden the allowed-failure list just
 to make a comparison quiet. When interpreting an allowed failure, follow the
 per-case description and source behavior rather than treating the allowlist
 as the expected result for every implementation.
 
-No test, build, compliance command, baseline checker, or application was run
-while writing these docs.
+Source tests, frozen baseline reports, and static/build verification have
+different evidence roles. This guide treats source links as coverage pointers
+and the frozen report as historical evidence only.

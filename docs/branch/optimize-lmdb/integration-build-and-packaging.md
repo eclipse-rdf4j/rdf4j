@@ -1,10 +1,11 @@
 # Build, dependency, workspace, and packaging changes
 
-This page records build-system behavior visible in the comparison from merge
-base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to pinned `HEAD`
-`a869fe298dc4700ce956bcaf9fece3745c57fe05`. It distinguishes new branch
-wiring from build context that is already required by the pinned tree. This
-documentation pass did not invoke Maven, JavaCC, or any helper.
+This page records build-system behavior visible in the historical comparison
+from merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to inventory snapshot
+`a869fe298dc4700ce956bcaf9fece3745c57fe05`. It distinguishes branch wiring
+from build context already required by that snapshot. Current build behavior
+should be checked in current source; the [branch README](README.md) records the
+source revision used for this guide review.
 
 ## Runtime and test dependencies
 
@@ -64,8 +65,7 @@ the manual `check`, `regenerate`, and `record` lifecycle and the PR workflow
 invokes `check` after Java 25 setup. See
 [AST patch maintenance](integration-developer-tooling.md#sparql-ast-patch-workflow)
 and [language behavior](integration-sparql-language.md). The check is a
-deterministic source-consistency guard; no invocation of it occurred for this
-documentation task.
+deterministic source-consistency guard separate from ordinary compilation.
 
 ## Assembly and command distribution
 

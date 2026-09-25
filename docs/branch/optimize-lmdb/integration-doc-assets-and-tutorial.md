@@ -1,8 +1,8 @@
 # Published documentation and the adjacency page tutorial
 
 This guide maps the changed operator documentation and teaching assets to
-their implementation sources. The comparison is merge base
-`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` through pinned `HEAD`
+their implementation sources. The historical comparison is merge base
+`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` through inventory snapshot
 `a869fe298dc4700ce956bcaf9fece3745c57fe05`. Documentation figures and
 embedded tutorial examples explain a format; they do not define or mutate the
 production storage format.
@@ -39,9 +39,9 @@ spec
 [`lmdb-adjacency-tutorial.spec.js`](../../../e2e/tests/lmdb-adjacency-tutorial.spec.js)
 loads the local file URL and exercises the statement selector, direction,
 lesson navigation, term/number formatting, logical/physical view, vector
-inspector, and byte highlighting. These tests were inspected as source; no
-Node test, browser, page, or rendering was executed for this documentation
-work.
+inspector, and byte highlighting. These source links identify checks that
+protect the tutorial fixtures and browser interactions; they do not claim a
+current passing result.
 
 ## Operator-facing site pages
 
@@ -74,4 +74,4 @@ lesson changes, update the embedded fixture labels and the source-level
 consistency assertions together. Avoid turning a teaching scale diagram into
 a performance chart or a capacity promise. The static page is a manual
 developer aid; its included browser tests provide a maintenance target, not
-evidence from this documentation-only pass.
+evidence that the tutorial is a production encoder or performance benchmark.

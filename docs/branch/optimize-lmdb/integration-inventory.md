@@ -8,21 +8,35 @@ than one documented contract.
 
 ## Comparison boundary
 
-The inventory compares merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df`
-with pinned `HEAD` `a869fe298dc4700ce956bcaf9fece3745c57fe05`. The local
-`origin/develop` ref supplied for this snapshot is
-`5eee576f5ad74725852feae859a0f9010dae10ff`. The committed-range path list is
-[changed-paths.tsv](changed-paths.tsv), produced from `git diff --name-status`
-between those two pinned commits. It contains 1,786 change records: 1,481 added,
+The historical inventory compares merge base
+`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` with inventory snapshot
+`a869fe298dc4700ce956bcaf9fece3745c57fe05`. Source descriptions in this guide
+set were checked against current source revision
+`a678d9a369deded63520cd86b6c30152485b7f6d`; the branch [README](README.md)
+records these revision roles. `origin/develop`
+`5eee576f5ad74725852feae859a0f9010dae10ff` is the ref recorded for the
+historical comparison, not a claim about the live ref. The committed historical
+path list is [changed-paths.tsv](changed-paths.tsv), produced from a diff
+between the two explicit commits. It contains 1,786 change records: 1,481 added,
 302 modified, one deleted, and two renamed paths. Git's summary reports
 2,381,547 insertions and 9,346 deletions.
+
+These read-only commands reproduce the historical ledger and its numeric
+summary; they do not overwrite generated output:
+
+```sh
+git diff --name-status -M 4aec7e9a2223d873b1c1a7703aad4c87bf8354df a869fe298dc4700ce956bcaf9fece3745c57fe05
+git diff --shortstat 4aec7e9a2223d873b1c1a7703aad4c87bf8354df a869fe298dc4700ce956bcaf9fece3745c57fe05
+```
 
 The path count is not a feature count. It includes generated parser output,
 fixtures, tests, dated benchmark captures, experimental patch files, packaged
 scripts, and assistant/developer workflow assets. The manifest and this map
-describe the committed range only; the worktree also had six pre-existing
-untracked research/evidence files at inventory start. No source, build, test, or
-benchmark code was run for this inventory.
+describe only the historical committed range; their path counts do not change
+when later source or documentation commits are added. The original inventory
+was source-oriented. The current source review revision is identified above;
+test names elsewhere remain pointers to coverage contracts, not claims of
+passing test runs.
 
 The `core/sail/lmdb` subtree accounts for 1,185 paths. The remaining 601 paths
 are assigned below. The table groups every changed path family exactly once;
@@ -39,7 +53,7 @@ documentation covering their consumers.
 
 | Changed path family | Paths | Feature area covered | Guide destination |
 |---|---:|---|---|
-| `.agent/`, `.codex/`, `.claude/` | 58 | Agent skills and developer workflows for Maven tests, JMH/JFR, plan snapshots, debugging, and source review. `.claude/` is classified by pathname only; its instruction contents were not read. | [Developer tooling](integration-developer-tooling.md) |
+| `.agent/`, `.codex/`, `.claude/` | 58 | Agent skills and developer workflows for Maven tests, JMH/JFR, plan snapshots, debugging, and source review. `.claude/` is classified by pathname only; its instruction contents are outside this source inventory. | [Developer tooling](integration-developer-tooling.md) |
 | `.github/workflows/` | 1 | PR verification adds the SPARQL AST patch consistency check. | [Developer tooling](integration-developer-tooling.md#sparql-ast-patch-workflow); [build and packaging](integration-build-and-packaging.md) |
 | `assembly/` | 4 | SDK assembly includes the LMDB bulk-loader module and Unix/Windows launchers; paths to API docs and WARs become configurable. | [Build and packaging](integration-build-and-packaging.md); [bulk loading](integration-bulk-loading.md) |
 | `benchmark-results/` | 135 | Dated baseline, comparison, profiling, and tiered captures; measurements remain historical and workload/host-specific. | [Performance evidence](integration-performance-evidence.md#historical-reports-and-source-authority) |
@@ -80,7 +94,7 @@ documentation covering their consumers.
 | `tools/workbench/` | 21 | Query execution and cancellation, runtime controls, explanations, result templates, and generated JavaScript/TypeScript/CSS/XSL assets. | [Runtime controls and Workbench](integration-runtime-controls-and-workbench.md) |
 | `tools/value-overlay/` | 7 | Isolated value-overlay storage audits, regressions, and read benchmarks. | [Performance evidence](integration-performance-evidence.md); [value-overlay architecture](storage-value-overlay.md) |
 | `tools/pom.xml` | 1 | Tool-module reactor/build wiring. | [Build and packaging](integration-build-and-packaging.md) |
-| Root metadata (`README.md`, `pom.xml`, `.gitattributes`, `.gitignore`, `CLAUDE.md`, deleted `run.sh`) | 6 | Maven version/build profiles, workspace output layout, test memory/temp output settings, runtime dependency management, distribution metadata, and top-level documentation pointer. `CLAUDE.md` is recorded only as a changed pathname and was not read. | [Build and packaging](integration-build-and-packaging.md); [developer tooling](integration-developer-tooling.md) |
+| Root metadata (`README.md`, `pom.xml`, `.gitattributes`, `.gitignore`, `CLAUDE.md`, deleted `run.sh`) | 6 | Maven version/build profiles, workspace output layout, test memory/temp output settings, runtime dependency management, distribution metadata, and top-level documentation pointer. `CLAUDE.md` is classified by pathname; its instruction contents are outside this source inventory. | [Build and packaging](integration-build-and-packaging.md); [developer tooling](integration-developer-tooling.md) |
 
 The rows sum to 1,786 changed paths. Within the 601 non-LMDB paths, the core
 families account for 198 paths; tooling accounts for 147; the remaining 256
@@ -93,9 +107,9 @@ and root metadata.
 The branch index at [README.md](README.md) is the reader-facing catalog: every
 feature row has a destination. The table below keeps changed shared/core
 surface families auditable against representative implementation and test
-anchors. Test names are source evidence only; this documentation work did not
-run them. The exact ownership partition for LMDB implementation Java paths is
-in the [storage inventory](storage-inventory.md#scope-and-working-tree-state)
+anchors. Test names and fixtures point to source coverage contracts; they do
+not establish a current passing result. The exact ownership partition for LMDB implementation Java paths is
+in the [storage inventory](storage-inventory.md#historical-source-scope)
 and [query inventory](query-inventory.md#query-and-storage-ownership-boundary).
 
 | Feature group | Representative changed source | Representative source coverage | Completed guide |
@@ -103,13 +117,13 @@ and [query inventory](query-inventory.md#query-and-storage-ownership-boundary).
 | Shared join ordering, function safety, replay joins, strict ordering | [`QueryJoinOptimizer`](../../../core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/QueryJoinOptimizer.java), [`QueryEvaluationUtility`](../../../core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/util/QueryEvaluationUtility.java), [`MaterializedReplayJoinIterator`](../../../core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/iterator/MaterializedReplayJoinIterator.java) | `QueryJoinOptimizerConnectivityTest`, `QueryJoinOptimizerMergeJoinBoundVarsTest`, `JoinIndependentOperandTest`, `MaterializedReplayJoinIndexTest`, `FunctionDeterminismTest`, `OrderByQueryEvaluationModeTest` | [Shared evaluator semantics](integration-query-evaluation.md) |
 | Binding compatibility, VALUES guarantees, datatype/model caches, reified terms, query-model metadata | [`BindingSetCompatibilityIndex`](../../../core/collection-factory/api/src/main/java/org/eclipse/rdf4j/collection/factory/api/BindingSetCompatibilityIndex.java), [`BindingSetAssignment`](../../../core/queryalgebra/model/src/main/java/org/eclipse/rdf4j/query/algebra/BindingSetAssignment.java), [`DynamicModel`](../../../core/model/src/main/java/org/eclipse/rdf4j/model/impl/DynamicModel.java) | API/MapDB `BindingSetCompatibilityIndexTest`, `BindingSetAssignmentTest`, `DynamicModelTest`, `ReifiedTripleRefBindingNamesTest` | [Shared query structures](integration-shared-query-structures.md) |
 | Parser, prefix expansion, expression-valued triple components, generated AST, ordered hint syntax, query rendering | [`PrefixDeclProcessor`](../../../core/queryparser/sparql/src/main/java/org/eclipse/rdf4j/query/parser/sparql/PrefixDeclProcessor.java), [`sparql.jjt`](../../../core/queryparser/sparql/src/main/java/org/eclipse/rdf4j/query/parser/sparql/ast/sparql.jjt), parser-generated sources, query-renderer serializers | `PrefixDeclProcessorTest`, `SPARQLParserTest`, `TestSparqlTripleTermParser`, query-renderer tests | [SPARQL language and generated grammar](integration-sparql-language.md) and [AST maintenance](integration-developer-tooling.md#sparql-ast-patch-workflow) |
-| Shared generated SPARQL query corpus | [`SparqlComprehensiveStreamingValidTest`](../../../core/queryrender/src/test/java/org/eclipse/rdf4j/queryrender/SparqlComprehensiveStreamingValidTest.java) and its [`queryrender` test-JAR configuration](../../../core/queryrender/pom.xml) | Category factories used by renderer tests are composed into the lazy stream consumed by [`LmdbNativeGeneratedQueryCoverageTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeGeneratedQueryCoverageTest.java) and [`LmdbNativeGeneratedCorpusBenchmark`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeGeneratedCorpusBenchmark.java); sources were inspected but not run. | [Generated-query corpus and evidence boundaries](integration-performance-evidence.md#shared-generated-query-corpus) |
+| Shared generated SPARQL query corpus | [`SparqlComprehensiveStreamingValidTest`](../../../core/queryrender/src/test/java/org/eclipse/rdf4j/queryrender/SparqlComprehensiveStreamingValidTest.java) and its [`queryrender` test-JAR configuration](../../../core/queryrender/pom.xml) | Category factories used by renderer tests are composed into the lazy stream consumed by [`LmdbNativeGeneratedQueryCoverageTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeGeneratedQueryCoverageTest.java) and [`LmdbNativeGeneratedCorpusBenchmark`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeGeneratedCorpusBenchmark.java); execution of either consumer is not implied. | [Generated-query corpus and evidence boundaries](integration-performance-evidence.md#shared-generated-query-corpus) |
 | Federated SERVICE batching, row-correlated extension, SILENT failure boundary | [`RepositoryFederatedService`](../../../core/repository/sparql/src/main/java/org/eclipse/rdf4j/repository/sparql/federation/RepositoryFederatedService.java), [`ServiceJoinIterator`](../../../core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/federation/ServiceJoinIterator.java) | `RepositoryFederatedServiceTest`, SPARQL federation compliance cases | [Federation semantics](integration-federation-semantics.md) |
 | Sail snapshot leases, compact changeset ingestion, transparent native sources | [`SailSourceBranch`](../../../core/sail/base/src/main/java/org/eclipse/rdf4j/sail/base/SailSourceBranch.java), [`Changeset`](../../../core/sail/base/src/main/java/org/eclipse/rdf4j/sail/base/Changeset.java), [`SailDatasetTripleTermSource`](../../../core/sail/base/src/main/java/org/eclipse/rdf4j/sail/base/SailDatasetTripleTermSource.java) | `SailSourceBranchTest`, `ChangesetTest`, `SnapshotSailStoreTest`, `UnionSailDatasetTest` | [Sail source lifecycle](integration-sail-source-lifecycle.md) |
 | Iteration seek, cooperative timeout, existing remote request cancellation, iterable add hook | [`CloseableIteration`](../../../core/common/iterator/src/main/java/org/eclipse/rdf4j/common/iteration/CloseableIteration.java), [`TimeLimitIteration`](../../../core/common/iterator/src/main/java/org/eclipse/rdf4j/common/iteration/TimeLimitIteration.java), [`AbstractRepositoryConnection`](../../../core/repository/api/src/main/java/org/eclipse/rdf4j/repository/base/AbstractRepositoryConnection.java) | `CloseableIterationSeekDefaultTest`, `TimeLimitIterationTest`, `CooperativeCancellationWrapperTest`, `RDF4JProtocolSessionTest` | [Query and iteration lifecycle](integration-query-lifecycle.md) |
 | Runtime property allowlist, forced strategy protocol, Workbench actions and display | [`LmdbRuntimePropertiesController`](../../../tools/server-spring/src/main/java/org/eclipse/rdf4j/common/webapp/system/LmdbRuntimePropertiesController.java), [`QueryServlet`](../../../tools/workbench/src/main/java/org/eclipse/rdf4j/workbench/commands/QueryServlet.java), [`AbstractHTTPQuery`](../../../core/http/client/src/main/java/org/eclipse/rdf4j/http/client/query/AbstractHTTPQuery.java) | `LmdbRuntimePropertiesControllerTest`, `QueryServletLmdbRuntimePropertyPostTest`, `QueryEvaluatorTest` | [Runtime controls and Workbench](integration-runtime-controls-and-workbench.md) and [query configuration](query-configuration.md) |
 | Generic plan metadata, strategy decisions, explanation and counters | [`GenericPlanNode`](../../../core/query/src/main/java/org/eclipse/rdf4j/query/explanation/GenericPlanNode.java), [`QueryExplanationContext`](../../../core/query/src/main/java/org/eclipse/rdf4j/query/explanation/QueryExplanationContext.java), [`StrategyDecision`](../../../core/query/src/main/java/org/eclipse/rdf4j/query/explanation/StrategyDecision.java) | `GenericPlanNodeTest` and LMDB explanation tests | [Plan explanation and telemetry](integration-plan-explanation-and-telemetry.md) |
-| Repository discovery resilience and server OutOfMemoryError cleanup | [`LocalRepositoryManager`](../../../core/repository/manager/src/main/java/org/eclipse/rdf4j/repository/manager/LocalRepositoryManager.java), [`LoggingDispatcherServlet`](../../../tools/server-boot/src/main/java/org/eclipse/rdf4j/http/server/LoggingDispatcherServlet.java) | `LocalRepositoryManagerTest`, `LoggingDispatcherServletTest` | [Repository and server runtime](integration-repository-and-server-runtime.md) |
+| Repository discovery resilience and server OutOfMemoryError cleanup | [`LocalRepositoryManager`](../../../core/repository/manager/src/main/java/org/eclipse/rdf4j/repository/manager/LocalRepositoryManager.java), [`LoggingDispatcherServlet`](../../../tools/server-boot/src/main/java/org/eclipse/rdf4j/tools/serverboot/LoggingDispatcherServlet.java) | `LocalRepositoryManagerTest`, `LoggingDispatcherServletTest` | [Repository and server runtime](integration-repository-and-server-runtime.md) |
 | Bulk CLI, low-disk monitor, package/SDK launchers, library batch hook | [`LmdbBulkLoad`](../../../tools/lmdb-bulk-load/src/main/java/org/eclipse/rdf4j/tools/lmdb/bulk/LmdbBulkLoad.java), [`DiskSpaceMonitor`](../../../tools/lmdb-bulk-load/src/main/java/org/eclipse/rdf4j/tools/lmdb/bulk/DiskSpaceMonitor.java) | `LmdbBulkLoadTest`, `DiskSpaceMonitorTest` | [Bulk-load CLI](integration-bulk-loading.md); [LMDB recovery](storage-bulk-ingestion-recovery.md) |
 | JavaCC AST source maintenance, isolated Maven outputs, developer reports and runners | `scripts/manage-sparql-ast.py`, JavaCC patch files, `.agent`/`.codex` tools, Maven POM/profile wiring | `test_manage_sparql_ast.py`, `test_maven_workspace_pom.py`, developer instructions under `.agent` and `.codex` | [Developer tooling](integration-developer-tooling.md); [build and packaging](integration-build-and-packaging.md) |
 | Benchmark query catalog, microbenchmarks, plan snapshots, source experiments, historic captures | `testsuites/benchmark*`, `tools/{generated-keys,lmdb-join,lmdb-packed,lmdb-performance,value-overlay}`, `benchmark-results/` | Benchmark module tests and tool-specific harnesses; reports are separately dated artifacts | [Performance evidence](integration-performance-evidence.md) |
@@ -119,15 +133,16 @@ and [query inventory](query-inventory.md#query-and-storage-ownership-boundary).
 
 The branch documentation separates three evidence types:
 
-* **Current source mechanism**: pinned `HEAD` code establishes control flow,
+* **Current source mechanism**: code at review revision
+  `a678d9a369deded63520cd86b6c30152485b7f6d` establishes control flow,
   defaults, values, units, ownership, lifetime, failure handling, and
   configuration sampling.
 * **Regression/test source**: test names and fixtures show intended coverage;
-  they do not imply that tests passed in this task.
+  they do not imply a current test result.
 * **Historical measurement/report**: captures under `benchmark-results/` and
   research artifacts describe only their recorded host, data, query, command,
   commit, JVM, and measurement interval. They are not evidence of performance
-  at the pinned `HEAD` unless the report itself matches that source provenance.
+  at the current source review revision unless a report matches that provenance.
 
 Production features and their unchanged prerequisites are called out
 separately in the guides. Generated parser output is not an independent syntax
@@ -135,5 +150,7 @@ design; MemoryStore and NativeStore paths in this range are regression tests,
 not store implementation changes; isolated experiments and reports are not
 assumed to be on a normal runtime path. The index is exhaustive by changed
 path-family counts and representative feature/source anchors, but the feature
-catalog is not a one-to-one map from paths to features. No application code,
-build, test, benchmark, custom script, or documentation page was executed.
+catalog is not a one-to-one map from paths to features. The historical inventory,
+current source review, static link checks, and any build/test/benchmark evidence
+are separate activities; this guide does not present source links as execution
+results.

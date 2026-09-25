@@ -108,7 +108,18 @@ Numeric settings are plain system properties, not part of the registry. KiB, MiB
 | rdf4j.lmdb.parallel.minWorkEstimate | 2,048 native work units; finite nonnegative configured values accepted. | Read at parallel proposal admission; admission only lets the strategy compete—the startup-cost price and arbiter may still choose serial. |
 | rdf4j.lmdb.parallel.startupWork | 12,500 native work units; finite nonnegative configured values accepted. | Read when parallel strategy work is priced. This is a modeled intercept, not a latency measurement. |
 
-Packed factor rows/tree sizing and property-path gates have additional exact semantics in [joins and factors](query-joins-and-factors.md) and [paths](query-paths-and-special-operators.md). In particular, enabling chunk-pipeline flags alone does not make chunkPipeline reachable: current strategy source has no proposal site for that tag.
+Packed factor rows/tree sizing and property-path gates have additional exact
+semantics in [joins and factors](query-joins-and-factors.md) and
+[paths](query-paths-and-special-operators.md). `chunkPipeline` is not a
+standalone arbitration candidate, but `factorizedRows` can use
+`LmdbNativeChunkPipeline.tryOpenPrefix` as an internal prefix route when its
+shape permits. `chunkPipeline.enabled` gates that route. In the normal
+ordered-root pipeline, `merge.enabled` and `sip.enabled` separately enable
+merge walks and sideways-information-passing optimizations; neither is required
+for the prefix route itself. `externalRoot.experimental` gates the
+worker-supplied-root path, whose implementation deliberately omits merge walks
+and SIP because workers do not share one globally ordered root stream. These
+switches do not make `chunkPipeline` independently forceable.
 
 ## Cost learning, probe and hedge tuning
 
@@ -144,4 +155,4 @@ Posterior/probe/hedge numeric readers trim property text, reject malformed/non-f
 
 ## Source and configuration test map
 
-[LmdbRuntimePropertiesTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbRuntimePropertiesTest.java) covers registry membership, default-off experiments, read/write behavior, and selected consumer-default agreement; it does not establish agreement for every registered property. [LmdbNativeAdaptiveCostModelTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeAdaptiveCostModelTest.java) tests adaptive toggle defaults and opt-out. [LmdbNativeProbeSchedulerTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeProbeSchedulerTest.java), [LmdbNativeHedgePolicyTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeHedgePolicyTest.java), and [LmdbNativePosteriorStoreTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePosteriorStoreTest.java) characterize representative scheduler, hedge-policy, and posterior behavior, not every numeric property parser. Direct per-feature gate tests are linked in their family guides and [query test map](query-test-map.md). These are source links only; no tests/config mutations were executed during this documentation work.
+[LmdbRuntimePropertiesTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbRuntimePropertiesTest.java) covers registry membership, default-off experiments, read/write behavior, and selected consumer-default agreement; it does not establish agreement for every registered property. [LmdbNativeAdaptiveCostModelTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeAdaptiveCostModelTest.java) tests adaptive toggle defaults and opt-out. [LmdbNativeProbeSchedulerTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeProbeSchedulerTest.java), [LmdbNativeHedgePolicyTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeHedgePolicyTest.java), and [LmdbNativePosteriorStoreTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePosteriorStoreTest.java) characterize representative scheduler, hedge-policy, and posterior behavior, not every numeric property parser. Direct per-feature gate tests are linked in their family guides and [query test map](query-test-map.md). These links identify source contracts, not current pass evidence.

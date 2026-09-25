@@ -2,9 +2,10 @@
 
 This guide covers the branch's benchmark, profiler, source-comparison, and
 historical-result surfaces outside `core/sail/lmdb`. These tools help answer
-different questions; their results are not interchangeable. Comparison
-boundary: merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to pinned
-`HEAD` `a869fe298dc4700ce956bcaf9fece3745c57fe05`.
+different questions; their results are not interchangeable. Historical
+comparison boundary: merge base
+`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to inventory snapshot
+`a869fe298dc4700ce956bcaf9fece3745c57fe05`.
 
 ## What changed and where
 
@@ -17,7 +18,7 @@ boundary: merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to pinned
 | [`tools/lmdb-performance`](../../../tools/lmdb-performance) | A paired component suite spanning selected CSF, UTF-8, binding-view, generated-key, and native-sort paths. | The README describes which complete files/methods and explicit API doubles each suite compiles. It is not a complete RDF4J build, Janino query run, or LMDB-backed workload. |
 | [`tools/value-overlay`](../../../tools/value-overlay) | Read-only overlay storage audits, regression cases, and component read benchmarks. | Storage semantics and production ownership belong to the [value-overlay guide](storage-value-overlay.md); its isolated measurements do not substitute for a repository query. |
 | [`benchmark-results`](../../../benchmark-results) | 135 captured benchmark, comparison, profile, and screening artifacts, dated in August 2026. | Historical evidence only. Its machine, runtime, harness, branch/source bundle, query/data shape, and measurement protocol are part of every result's meaning. |
-| [`scripts/run-single-benchmark.sh`](../../../scripts/run-single-benchmark.sh) and [`run-single-benchmark-docker.sh`](../../../scripts/run-single-benchmark-docker.sh) | Reproducible single-benchmark selection wrappers, including optional JFR capture and Docker environment setup. | Read the script and the produced command/configuration together. A JFR profile is diagnostic evidence, not a timing comparison. Neither runner was executed during this documentation pass. |
+| [`scripts/run-single-benchmark.sh`](../../../scripts/run-single-benchmark.sh) and [`run-single-benchmark-docker.sh`](../../../scripts/run-single-benchmark-docker.sh) | Reproducible single-benchmark selection wrappers, including optional JFR capture and Docker environment setup. | Read the script and the produced command/configuration together. A JFR profile is diagnostic evidence, not a timing comparison; wrapper availability alone does not establish a measured result. |
 
 The stand-alone `tools/` experiments are developer/research surfaces; the
 branch's normal runtime behavior is established by the production source and
@@ -77,8 +78,9 @@ The main references are [`QueryPlanCapture`](../../../testsuites/benchmark-commo
 [`QueryPlanSnapshotComparator`](../../../testsuites/benchmark/src/main/java/org/eclipse/rdf4j/benchmark/plan/QueryPlanSnapshotComparator.java),
 and the repository-specific
 [snapshot workflow](../../../.agent/skills/query-plan-snapshot-cli/references/workflow.md).
-The skill supplies local capture/compare steps; its procedure is not a claim
-that a snapshot was taken in this documentation task.
+The skill supplies local capture/compare steps; its procedure is not evidence
+that a particular snapshot exists. Use the dated artifact and its provenance
+when citing a captured plan.
 
 ## Shared generated query corpus
 
@@ -101,7 +103,7 @@ and verifies their categories before assembling its workload. A stream can
 represent a large corpus without materializing every query at once, although
 consumers that collect or index it still allocate for the subset they retain.
 These are source-level fixture and memory observations, not a report that the
-coverage tests or benchmark were executed here.
+coverage tests pass or that benchmark measurements exist.
 
 Sources: [`SparqlComprehensiveStreamingValidTest`](../../../core/queryrender/src/test/java/org/eclipse/rdf4j/queryrender/SparqlComprehensiveStreamingValidTest.java),
 the [`queryrender` test-JAR configuration](../../../core/queryrender/pom.xml),
@@ -118,13 +120,14 @@ not a change in RDF4J query semantics. The regression/evidence mapping is in
 
 The committed `benchmark-results/` files are reports produced by earlier
 runs. A saved number establishes that the report recorded that result under
-its accompanying conditions; it does not show that this documentation task
-reran the workload or that the result applies to current machines, users, or
-all query shapes. Dated plan files, archived source ZIP names, prior
+its accompanying conditions; it does not establish a new run or show that the
+result applies to current machines, users, or all query shapes. Dated plan
+files, archived source ZIP names, prior
 implementation reports, generated object dumps, experimental patches, and
 profiling text have the same historical boundary.
 
-For current behavior, use pinned-HEAD code and current tests. For a current
+For current behavior, use current source and tests; the [branch README](README.md)
+records the source revision checked for this guide set. For a current
 performance claim, use a controlled before/after run whose source pair and
 methodology are stated. Do not infer that an implementation is active because
 an experiment or flag exists: inspect planner selection and runtime call
@@ -132,6 +135,6 @@ sites. The query configuration reference marks allowlisted and disabled
 experiments; the native query guides explain which strategy families are
 actually reachable.
 
-No benchmark, test, build, profiler, Java program, or harness was run while
-preparing these docs. This document inventories available evidence and its
-limits; it reports no new measured result.
+This guide inventories available evidence and its limits. It reports no new
+benchmark or profiler measurement; source links and build checks are not
+presented as performance evidence.

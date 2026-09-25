@@ -1,6 +1,6 @@
 # LMDB query source-test map
 
-This map points from query architecture to tests that encode representative source contracts. Links identify useful coverage to read; this documentation task did not run any tests, queries, examples, or benchmarks. A test file is not a completeness claim for every planner shape or a substitute for checking its assertions before changing a route.
+This map points from query architecture to tests that encode representative source contracts. Links identify useful coverage to inspect; they do not claim current test results, executed query examples, or benchmark measurements. A test file is not a completeness claim for every planner shape or a substitute for checking its assertions before changing a route.
 
 ## Routing, plan hosts and strategy dispatch
 

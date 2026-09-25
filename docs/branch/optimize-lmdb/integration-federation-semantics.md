@@ -1,8 +1,8 @@
 # Federated `SERVICE` semantics and batching
 
 This branch changes shared repository-side federation in addition to LMDB
-evaluation. The source boundary is merge base
-`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to pinned `HEAD`
+evaluation. The historical source boundary is merge base
+`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to inventory snapshot
 `a869fe298dc4700ce956bcaf9fece3745c57fe05`. This is a semantic compatibility
 guide: it explains when a remote request may be split, and how failure and
 bag multiplicity are preserved. The LMDB-specific correlated-provider path is
@@ -82,10 +82,11 @@ remote iteration whether the buffer completes or fails.
 
 Sources: [repository federation evaluator](../../../core/repository/sparql/src/main/java/org/eclipse/rdf4j/repository/sparql/federation/RepositoryFederatedService.java),
 [service join conversion](../../../core/repository/sparql/src/main/java/org/eclipse/rdf4j/repository/sparql/federation/ServiceJoinConversionIteration.java),
-[evaluation service iterator](../../../core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/federation/ServiceJoinIterator.java).
+[evaluation service iterator](../../../core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/federation/ServiceJoinIterator.java),
+and the [W3C SPARQL 1.1 Federated Query specification](https://www.w3.org/TR/sparql11-federated-query/).
 `RepositoryFederatedServiceTest` is the direct test entry point, supplemented
-by compliance/service cases and query parser/evaluator tests. No tests were run
-for this documentation.
+by compliance/service cases and query parser/evaluator tests. These links
+identify source coverage; they do not imply a passing test result.
 
 ## Review checklist for a federation change
 

@@ -1,8 +1,11 @@
 # Sail snapshots, changesets, and source lifetimes
 
-The shared Sail integration changes in this guide are from merge base
-`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to `HEAD`
-`a869fe298dc4700ce956bcaf9fece3745c57fe05`. These are important prerequisites
+The shared Sail integration changes in this guide are from the historical
+comparison between merge base
+`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` and inventory snapshot
+`a869fe298dc4700ce956bcaf9fece3745c57fe05`. Their source descriptions were
+checked against `a678d9a369deded63520cd86b6c30152485b7f6d`; the branch README
+records these revision roles. These are important prerequisites
 for LMDB-specific execution: a store may use an optimized path only when the
 wrapper stack still preserves its transaction, snapshot, and observation
 semantics. For the LMDB value and adjacency lifetimes themselves, use

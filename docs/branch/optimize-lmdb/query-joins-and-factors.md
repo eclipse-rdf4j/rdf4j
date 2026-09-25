@@ -48,7 +48,18 @@ For each distinct prefix probe key, tail branches are probed once. A tail branch
 
 This avoids repeating independent tail probes for every flat-prefix row and delays the product expansion until an output consumer needs those values. It still preserves bag multiplicity for ordinary SELECT. The per-iteration `BATCH_ROWS` is 1,024; memo entry and value limits are respectively 65,536 and 1,048,576, with bypass accounting when an entry would exceed the caps. Those caps bound this memo's entries/values; they are not a global byte reservation and do not cap every other query-owned structure.
 
-The related switches are `rdf4j.lmdb.factorizedRows.enabled`, `.chunkedPrefix.enabled`, and `.keysOnlyRoot.enabled`; all three are enabled unless the property is exactly lowercase `false`. The `.orderedFactorizedRows.enabled` gate controls the separate ORDER BY factorized producer. See [query configuration](query-configuration.md) for all defaults and read scopes.
+The row-tail switches are `rdf4j.lmdb.factorizedRows.enabled`,
+`.chunkedPrefix.enabled`, and `.keysOnlyRoot.enabled`; each is enabled unless
+its property is exactly lowercase `false`. For an eligible factorized-row
+plan, `rdf4j.lmdb.chunkPipeline.enabled` gates the internal chunk-pipeline
+prefix. In the normal ordered-root pipeline, `.merge.enabled` and `.sip.enabled`
+separately enable merge walks and sideways-information-passing optimizations;
+neither is a prerequisite for that prefix. `.externalRoot.experimental` gates
+the worker-supplied root variant, which omits merge walks and SIP because
+workers do not share one globally ordered root stream. The
+`.orderedFactorizedRows.enabled` gate controls the separate ORDER BY
+factorized producer. See [query configuration](query-configuration.md) for all
+defaults and read scopes.
 
 ## Packed factorized trees
 
@@ -68,7 +79,7 @@ Current planner and dispatch constraints:
 
 The packed vector size defaults to 2,048 rows, is clamped to 64–65,536, and is rounded down to the nearest power of two. Root batches default to 1,024 but are limited to vector size and floored at 64. Initial node capacity defaults to vector size, with the same 64 floor and vector ceiling. Exact variable ordering begins at three variables and defaults to a threshold of nine; the beam defaults to 128 and has a minimum of eight. Bulk run copies use a fixed 4,096-lane window. These are row/lane counts, not byte ceilings.
 
-## Worked examples (not executed)
+## Worked examples (source-only)
 
 **Independent fanouts.** For `?person ex:knows ?friend . ?person ex:tag ?tag`, once `?person` is fixed, neither tail variable is needed to probe the other branch. A factorized tail can count or retain each branch's values per key. `SELECT ?person` can preserve the product multiplicity without building every pair; `SELECT DISTINCT ?person` needs only that each branch be nonempty. `SELECT ?friend ?tag` must enumerate the cross product when it returns bindings.
 
@@ -80,4 +91,4 @@ The packed vector size defaults to 2,048 rows, is clamped to 64–65,536, and is
 
 When adding a factor-capable operator, define its exact produced mask and read mask, state whether the current operation preserves encounter order and expression/error effects, and specify its empty relation and multiplicity rules. Keep source-backed leaves borrowed only while their owner lease is live. If a shape cannot be proved at open, return a local decline before that leaf advances. Test both scalar rows and weighted rows, duplicates, nullable OPTIONAL bindings, nested UNION, cyclic filters, correlated entry bindings, cancellation, and source close ordering.
 
-Relevant source tests include [`LmdbNativeFactorizedCostTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeFactorizedCostTest.java), [`LmdbFactorizedBatchTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbFactorizedBatchTest.java), [`LmdbNativeFactorizedReorderTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeFactorizedReorderTest.java), [`LmdbNativeFactorizedSinkTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeFactorizedSinkTest.java), [`LmdbNativePackedFtreeCapacityTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePackedFtreeCapacityTest.java), [`LmdbNativePackedFtreeWitnessTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePackedFtreeWitnessTest.java), [`LmdbNativePackedFtreeParallelFailureTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePackedFtreeParallelFailureTest.java), and [`LmdbNativeInteriorIslandTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeInteriorIslandTest.java). They are source references only; no test or benchmark was run for this guide.
+Relevant source tests include [`LmdbNativeFactorizedCostTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeFactorizedCostTest.java), [`LmdbFactorizedBatchTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbFactorizedBatchTest.java), [`LmdbNativeFactorizedReorderTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeFactorizedReorderTest.java), [`LmdbNativeFactorizedSinkTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeFactorizedSinkTest.java), [`LmdbNativePackedFtreeCapacityTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePackedFtreeCapacityTest.java), [`LmdbNativePackedFtreeWitnessTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePackedFtreeWitnessTest.java), [`LmdbNativePackedFtreeParallelFailureTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePackedFtreeParallelFailureTest.java), and [`LmdbNativeInteriorIslandTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeInteriorIslandTest.java). These links identify source contracts, not current pass evidence.

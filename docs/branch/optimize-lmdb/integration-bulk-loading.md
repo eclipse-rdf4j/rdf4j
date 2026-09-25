@@ -1,9 +1,11 @@
 # Bulk-load CLI and distribution contract
 
 This document covers the shared CLI, launchers, and SDK packaging introduced
-on the pinned `optimize-lmdb` snapshot (`a869fe298dc4700ce956bcaf9fece3745c57fe05`,
-compared with merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df`). The staged
-loader's partition/codec/recovery internals and persistent effects are
+in the historical comparison from merge base
+`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to inventory snapshot
+`a869fe298dc4700ce956bcaf9fece3745c57fe05`. Source descriptions were checked
+against the current review revision recorded in the [branch README](README.md).
+The staged loader's partition/codec/recovery internals and persistent effects are
 documented in [storage bulk ingestion and recovery](storage-bulk-ingestion-recovery.md).
 The CLI is an independent packaged module, `rdf4j-lmdb-bulk-load`, wired into
 the SDK assembly.
@@ -17,8 +19,7 @@ looks for the executable tool jar under the module's `target`; if missing or
 stale, its default path packages the module plus dependencies with Maven. Its
 `--no-build` mode fails with usage exit 2 instead of building. It chooses
 `$JAVA_HOME/bin/java` when available, otherwise `java`, and enables native
-access for the packaged executable. This helper can therefore build; this
-documentation task did not invoke it.
+access for the packaged executable.
 
 The SDK includes the LMDB bulk-load module and two launchers in `bin`:
 POSIX [`lmdb-bulk-load.sh`](../../../assembly/src/main/dist/lmdb-bulk-load.sh)
@@ -42,6 +43,15 @@ CLI infers it from the path; stdin requires `--format` and uses
 input. For file input, the default base URI is the file URI; `--base-uri`
 overrides it for each input.
 
+This CLI uses its own loader path; it does not inherit the recursive compressed
+and archived input support of the general RDF loader and Workbench
+`RDFInputDispatcher`. The `rio` parser path recognizes gzip by the stream
+signature and unwraps one gzip layer before parsing; the fast N-Triples parser
+has the same gzip-only behavior. Neither path recursively visits ZIP/TAR
+members or applies the general dispatcher's other compression codecs. This
+boundary applies only to input parsing; intermediate bulk-load artifacts have
+their own compression options below.
+
 Options select parser mode (`auto`, `fast`, or `rio`), statement and triple-term
 index specifications, inline literal IDs, value-hash generation, a byte-sized
 memory budget (with KiB/MiB/GiB suffixes), power-of-two partition count,
@@ -50,7 +60,7 @@ value, per-transaction record/byte caps, progress format, and intermediate
 compression (`fastest`, `none`, or codec levels; more granular
 run/staged/artifact choices are available). The exact current defaults and
 legal values are printed by `--help` in source; the full storage consequences
-belong in the storage guide. In this pinned implementation, `workers` and
+belong in the storage guide. In the current implementation, `workers` and
 `queue-batches` are captured into workspace/progress metadata but are not used
 to schedule loader work or bound a work queue. Treat them as reported settings,
 not active parallelism or memory controls. `memoryBudgetBytes`, partition
@@ -63,7 +73,7 @@ configuration value. The phase-artifact workspace itself remains the
 target-adjacent `.<target>.lmdb-bulk-load` directory in the current engine;
 the CLI disk monitor also watches the configured temporary directory, but that
 does not make it the phase workspace location. See
-[resource limits and workspace recovery](storage-bulk-ingestion-recovery.md#resource-limits-and-disk-heap-tradeoffs)
+[resource limits and workspace recovery](storage-bulk-ingestion-recovery.md)
 for the source-level storage path.
 
 The parser applies optional statement indexes, triple-term indexes, inline
@@ -97,16 +107,19 @@ parsed/stored statements, persisted/inline values, temporary bytes, elapsed
 milliseconds, and selected compression are printed to stdout.
 
 Sources: [CLI implementation](../../../tools/lmdb-bulk-load/src/main/java/org/eclipse/rdf4j/tools/lmdb/bulk/LmdbBulkLoad.java),
+[bulk input engine](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/bulk/LmdbBulkLoaderEngine.java),
+[general input dispatcher](../../../core/rio/api/src/main/java/org/eclipse/rdf4j/rio/helpers/RDFInputDispatcher.java),
 [disk monitor](../../../tools/lmdb-bulk-load/src/main/java/org/eclipse/rdf4j/tools/lmdb/bulk/DiskSpaceMonitor.java),
 [repository launcher](../../../scripts/lmdb-bulk-load.sh),
 [SDK launchers and assembly](../../../assembly/src/main/assembly/sdk.xml).
-The CLI source tests are `LmdbBulkLoadTest` and `DiskSpaceMonitorTest`; they
-were not executed in this documentation task.
+[`LmdbBulkLoadTest`](../../../tools/lmdb-bulk-load/src/test/java/org/eclipse/rdf4j/tools/lmdb/bulk/LmdbBulkLoadTest.java)
+and [`DiskSpaceMonitorTest`](../../../tools/lmdb-bulk-load/src/test/java/org/eclipse/rdf4j/tools/lmdb/bulk/DiskSpaceMonitorTest.java)
+are source coverage references; they do not claim a passing result.
 
 ## Illustrative invocation
 
-This is a nonexecuted example; use CLI `--help` from the pinned build for the
-complete current argument reference:
+This is an illustrative invocation. Use `--help` from a CLI build matching
+your checkout for the complete argument reference:
 
 ```text
 rdf4j-lmdb-bulk-load --store /data/store --input /data/rdf --parser auto \

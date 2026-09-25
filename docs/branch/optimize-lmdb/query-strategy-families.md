@@ -57,13 +57,24 @@ If the fusion arbiter declines, the caller uses the ordinary native unordered in
 
 Parallel aggregation and parallel IR are separate candidates; one is not an alias for the other. A specialist's exact aggregate summary can answer the full query without row enumeration. When a selected aggregate path pre-materializes `List<BindingSet>`, retained output storage scales with emitted groups; streaming kernel/iterator alternatives have different buffer scopes, described in [memory and result lifecycle](query-memory-and-result-lifecycle.md).
 
-## Strategy names: forceable, structural, or currently unreachable
+## Strategy names: forceable, structural, or non-candidates
 
 [`LmdbNativeForceableStrategies`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeForceableStrategies.java) is the curated legal force list for row, ORDER BY, and group dispatch. Examples of forceable families include `nestedLoop`, `wcoj`, `packedFtree`, `factorizedRows`, `batch`, `parallelPipelines`, `irKernel`, `irAggregate`, `packedFtreeAggregate`, and `adjacencyAggregate`. It accepts no-force spellings `null`, blank, and `NOT_ACTIVATED`.
 
-The execution vocabulary contains more labels than the forceable catalog. `limitZero`, `bareDirect`, `bareExists`, `orderedTopK`, `orderedFullSort`, `typeMatrix`, and group-table representation labels are structural/internal routes rather than candidates at every dispatch point. `hashJoin` and `mergeJoin` are internal batch subdecisions, not independent top-level candidates. `chunkPipeline` remains in the vocabulary and preference order, but the source catalog states that no current proposal tags it; do not describe that family as currently selected. The generic fallback is a root compiler/hosting decision, not an offered row/group candidate.
+The execution vocabulary contains more labels than the forceable catalog. `limitZero`, `bareDirect`, `bareExists`, `orderedTopK`, `orderedFullSort`, `typeMatrix`, and group-table representation labels are structural/internal routes rather than candidates at every dispatch point. `hashJoin` and `mergeJoin` are internal batch subdecisions, not independent top-level candidates. `chunkPipeline` remains in the vocabulary and preference order, but no standalone proposal is tagged with it, so it cannot be independently selected or forced. The `factorizedRows` path may still use the chunk pipeline internally for its prefix when eligible. The generic fallback is a root compiler/hosting decision, not an offered row/group candidate.
 
-The configuration and exact tuning properties belong to [query configuration](query-configuration.md). In particular, `rdf4j.lmdb.chunkPipeline.*` switches and its presence in the preference list alone do not establish that a chunk-pipeline proposal is active. Config gates, structural proposal sites, and the forceable catalog must all agree before documenting a family as reachable.
+The configuration and exact tuning properties belong to
+[query configuration](query-configuration.md). Only
+`rdf4j.lmdb.chunkPipeline.enabled` gates the internal prefix route of
+`factorizedRows`. In the normal ordered-root pipeline, `.merge.enabled` and
+`.sip.enabled` separately enable merge walks and sideways-information-passing
+optimizations; neither is required for the prefix route. The separate
+`externalRoot.experimental` switch gates the worker-supplied root path, where
+merge walks and SIP are disabled because workers do not share one globally
+ordered root stream. These properties do not create a standalone arbitration
+proposal. Config gates, structural proposal sites, and the forceable catalog
+must all agree before documenting a family as an independently selectable
+candidate.
 
 ## Failure, cancellation, and resource lifetime
 
@@ -73,6 +84,6 @@ Probe/hedge paths exist only at dispatch points that supply the required drain/d
 
 ## Source tests and extension map
 
-Source contracts include [`LmdbNativeStrategyArbiterTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeStrategyArbiterTest.java), [`LmdbNativeArbiterInvariantTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeArbiterInvariantTest.java), [`LmdbNativeArbiterConsistencyTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeArbiterConsistencyTest.java), [`LmdbNativeDistinctOrderLimitTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeDistinctOrderLimitTest.java), [`LmdbNativeAdaptiveFilterPlacementTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeAdaptiveFilterPlacementTest.java), [`LmdbNativeHashJoinChainStatsTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeHashJoinChainStatsTest.java), [`LmdbNativeLeftJoinCursorTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeLeftJoinCursorTest.java), and [`LmdbNativeIrKernelParallelTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeIrKernelParallelTest.java). No test or benchmark was executed for this documentation task. The test-map guide classifies all query tests and representative source contracts.
+Source contracts include [`LmdbNativeStrategyArbiterTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeStrategyArbiterTest.java), [`LmdbNativeArbiterInvariantTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeArbiterInvariantTest.java), [`LmdbNativeArbiterConsistencyTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeArbiterConsistencyTest.java), [`LmdbNativeDistinctOrderLimitTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeDistinctOrderLimitTest.java), [`LmdbNativeAdaptiveFilterPlacementTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeAdaptiveFilterPlacementTest.java), [`LmdbNativeHashJoinChainStatsTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeHashJoinChainStatsTest.java), [`LmdbNativeLeftJoinCursorTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeLeftJoinCursorTest.java), and [`LmdbNativeIrKernelParallelTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeIrKernelParallelTest.java). These links identify source contracts, not current pass evidence. The test-map guide groups representative query tests by feature and contract.
 
 When adding a strategy, establish a named candidate at the real dispatch site, state its structural checks and resources, provide a cost estimate or explicitly unknown work, define pre-output decline and post-output failure semantics, add a stable explanation tag, and update the catalog only if forcing is truly legal there. Add a permutation/admission test so declaration order is not accidentally mistaken for cost preference.

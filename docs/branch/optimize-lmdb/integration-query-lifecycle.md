@@ -1,14 +1,15 @@
 # Shared iteration, timeout, and operation lifecycle
 
 This guide separates the branch's shared iteration changes from existing
-request-cancellation machinery that provides context for them. The comparison
-is merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` through pinned
-`HEAD` `a869fe298dc4700ce956bcaf9fece3745c57fe05`. Branch additions are the
+request-cancellation machinery that provides context for them. The historical
+comparison is merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` through
+inventory snapshot `a869fe298dc4700ce956bcaf9fece3745c57fe05`. Branch
+additions are the
 experimental `CloseableIteration.seek` hint and the internal
 `CooperativeCancellation` capability, including timeout integration and
 wrapper forwarding. The HTTP request-ID protocol and Workbench/server
-operation coordinators described later are present at this HEAD but are not
-new branch features. `AbstractHTTPQuery` changes only to transport a forced
+operation coordinators described later are present by this inventory snapshot
+but are not new branch features. `AbstractHTTPQuery` changes only to transport a forced
 LMDB execution strategy; it does not add cancellation IDs. The repository
 connection change adds a batch-ingestion extension, described in
 [bulk loading](integration-bulk-loading.md).
@@ -82,7 +83,7 @@ Relevant source tests are
 [`TimeLimitIterationTest`](../../../core/common/iterator/src/test/java/org/eclipse/rdf4j/common/iteration/TimeLimitIterationTest.java),
 [`CooperativeCancellationWrapperTest`](../../../core/sail/api/src/test/java/org/eclipse/rdf4j/sail/helpers/CooperativeCancellationWrapperTest.java),
 and the materialized replay tests listed in the [query memory guide](query-memory-and-result-lifecycle.md).
-These files were inspected as source; tests were not run.
+These links identify source coverage and do not imply passing results.
 
 ## Existing RDF4J Server HTTP cancellation protocol
 
@@ -161,8 +162,14 @@ returns 204; an unknown/completed ID returns 404; forwarding failure returns
 502. Handles are scoped to the Workbench repository reference. Standard query
 requests with a nonblank query register an internal UUID if no ID was supplied;
 an explicitly supplied blank ID is rejected. Async explain requires its ID.
-The Workbench query result metadata includes the registered query ID and
-result status so the browser can target the matching cancel action.
+The Workbench query response can include the registered query ID and result
+status as metadata. The current browser keeps the cancel ID in the active page
+while the query runs and clears stale cancel state on `pagehide`/`pageshow`.
+Submission navigates the current page by GET unless the query path exceeds
+2,048 characters or the full URL exceeds 2,083, when the current form uses POST;
+the form has no named result-window target. Repeated execution cancels the
+earlier request before tracking a fresh ID. Response metadata remains part of
+the response contract but is not a cross-window lifecycle signal.
 
 For `HTTPRepository`, the Workbench's handle carries a remote-cancel callback;
 embedded operations have no remote HTTP callback. In either case the existing
@@ -193,7 +200,7 @@ Named source coverage includes
 [`QueryResponseHeartbeatTest`](../../../core/http/client/src/test/java/org/eclipse/rdf4j/http/client/QueryResponseHeartbeatTest.java),
 [`QueryResponseHeartbeatHandlerTest`](../../../tools/server-spring/src/test/java/org/eclipse/rdf4j/http/server/repository/handler/QueryResponseHeartbeatHandlerTest.java),
 and [`QueryServletTest`](../../../tools/workbench/src/test/java/org/eclipse/rdf4j/workbench/commands/QueryServletTest.java).
-They were inspected, not run.
+These links identify source coverage and do not imply passing results.
 
 ## Batch ingestion API extension
 
@@ -227,4 +234,4 @@ spans evaluation and result serialization, and complete the handle on every
 success and error path. Tests should cover cancellation before evaluation,
 during evaluation, during result serialization, unknown/completed IDs,
 duplicate IDs, remote-cancel retry, and close failures; the checked-in tests
-map these paths but were not run for this documentation work.
+map these paths as source coverage references; they do not claim a passing result.

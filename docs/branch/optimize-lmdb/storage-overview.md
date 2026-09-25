@@ -1,6 +1,11 @@
 # LMDB storage architecture
 
-This guide describes the storage implementation at pinned branch `a869fe298dc4700ce956bcaf9fece3745c57fe05`. It is aimed at developers changing the LMDB Sail. The production source is authoritative; the source links below point at the branch checkout. No performance result or execution claim is implied by this static guide.
+This guide describes storage behavior checked against current source revision
+`a678d9a369deded63520cd86b6c30152485b7f6d`. The historical feature inventory
+covers merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` through inventory
+snapshot `a869fe298dc4700ce956bcaf9fece3745c57fe05`; the branch README records
+these revision roles. This architecture guide is aimed at developers changing
+the LMDB Sail and is not a benchmark report.
 
 The central design rule is that LMDB statements and the value dictionary are authoritative. The direct-adjacency index, value overlay, planner statistics and small hash caches are accelerators with explicit ownership and fallback rules. A declined or incomplete accelerator must not change the result produced from the authoritative LMDB transaction.
 
@@ -85,9 +90,7 @@ See [value IDs and record formats](storage-values-and-records.md), [CSF format](
 
 ## Page-walking cardinality estimates
 
-The page estimator is part of the storage/index layer because it inspects LMDB B-tree pages and is tied to the lifetime of their mapping. Production calls borrow an already-pinned read-only transaction and database handle; a managed mapping view must not outlive the caller's transaction/map generation. If page inspection cannot give a safe estimate, the configured compatibility path uses the cursor-sampling estimator. The system property `org.eclipse.rdf4j.sail.lmdb.disablePageWalkingEstimator` is read when an LMDB store opens; the config switch `setPageCardinalityEstimator(false)` also selects the compatibility route. It does not change statement semantics.
-
-The page walk is bounded by its estimate/sampling policy and may pay native page-inspection and short-lived metadata costs; it can benefit from OS page cache, but this does not make the whole index resident in Java heap. The page-mapping lifecycle contract is covered by source such as [`LmdbBtreeRangeCounter`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/estimate/LmdbBtreeRangeCounter.java), [`LmdbPageCardinalityEstimator`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/estimate/LmdbPageCardinalityEstimator.java), and [`LmdbPageMappingLifecycleTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/estimate/LmdbPageMappingLifecycleTest.java). Planner consumers and their fallback interpretation are described in the query guide.
+The page estimator is part of the storage/index layer because it inspects LMDB B-tree pages and is tied to the lifetime of their mapping. Production calls borrow an already-pinned read-only transaction and database handle; a managed mapping view must not outlive the caller's transaction/map generation. Disabling the config option `setPageCardinalityEstimator(false)` or setting `org.eclipse.rdf4j.sail.lmdb.disablePageWalkingEstimator=true` when the store opens selects the RDF4J 5.3.2 cursor sampler. A missing estimator or an `IOException`/`RuntimeException` during the primary page estimate also selects that sampler; failure of only the secondary estimate keeps the primary estimate. These are estimate-path fallbacks, not changes to statement results. Page inspection is bounded by its estimate/sampling policy and may pay native page-inspection and short-lived metadata costs; it can benefit from OS page cache, but this does not make the whole index resident in Java heap. The page-mapping lifecycle contract is covered by source such as [`TripleStore.cardinality`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java#L3211), [`LmdbBtreeRangeCounter`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/estimate/LmdbBtreeRangeCounter.java), [`LmdbPageCardinalityEstimator`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/estimate/LmdbPageCardinalityEstimator.java), and [`LmdbPageMappingLifecycleTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/estimate/LmdbPageMappingLifecycleTest.java). Planner consumers are described in the query guide.
 
 ## Extension rules
 

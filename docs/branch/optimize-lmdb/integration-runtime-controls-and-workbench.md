@@ -1,7 +1,7 @@
 # Runtime controls, HTTP protocol, and Workbench
 
-This guide covers the runtime-control boundary changed on branch range
-`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` → pinned `HEAD`
+This guide covers the runtime-control boundary changed in the historical range
+`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` → inventory snapshot
 `a869fe298dc4700ce956bcaf9fece3745c57fe05`. The key operational distinction
 is scope: live boolean properties are allowlisted JVM-wide controls on the
 server process; a repository selection in Workbench chooses which server/store
@@ -140,7 +140,9 @@ cases the property write changes the LMDB JVM hosting that store. Workbench
 source templates and TypeScript build the property table and strategy
 dropdown from the server response; an empty strategy choice means no forced
 strategy. Query result/explain UI additions show physical explanation and
-strategy information; their data contract is in
+strategy information. Text explanations also offer normal syntax highlighting,
+a hotspot heatmap, and property visibility controls; these change presentation
+only. Their data contract is in
 [plan/explanation documentation](integration-plan-explanation-and-telemetry.md).
 
 When a strategy is selected, the Workbench reads the form value into

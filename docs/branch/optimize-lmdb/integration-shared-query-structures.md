@@ -1,8 +1,8 @@
 # Shared query structures and contracts
 
 This guide covers shared RDF4J APIs and model/evaluation support changed on
-`optimize-lmdb`, independent of the LMDB physical plan. The branch comparison is
-merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to pinned `HEAD`
+`optimize-lmdb`, independent of the LMDB physical plan. The historical branch
+comparison is merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` to inventory snapshot
 `a869fe298dc4700ce956bcaf9fece3745c57fe05`. “Changed” below means the path is
 different in that range; unchanged RDF4J contracts are called out where needed
 to explain compatibility. The [query guides](README.md#native-query-feature-catalog) describe
@@ -35,7 +35,8 @@ more than a scan for small inputs or low-selectivity keys. It is intended for
 operators that can amortize that index over candidate probes. Tests in
 `BindingSetCompatibilityIndexTest` under the API, MapDB, and MapDB3 modules
 cover equality, wildcard compatibility, duplicates, candidate filtering, and
-resource closure; these are source evidence, not a test run in this task.
+resource closure; these links identify relevant source coverage without
+reporting test execution.
 
 Sources: [index contract](../../../core/collection-factory/api/src/main/java/org/eclipse/rdf4j/collection/factory/api/BindingSetCompatibilityIndex.java),
 [default index](../../../core/collection-factory/api/src/main/java/org/eclipse/rdf4j/collection/factory/api/DefaultBindingSetCompatibilityIndex.java),
@@ -97,8 +98,8 @@ rebuilt from remaining statements. Clearing the model drops the cache. When the
 model has promoted to its other backing implementation, it drops this cache;
 deserialization rebuilds it only for the map-backed form. This gives deleted
 terms a bounded cleanup path without scanning all surviving statements after
-every removal. It is an implementation trade-off; this documentation contains
-no allocation or throughput measurement.
+every removal. It is an implementation trade-off; no allocation or throughput
+measurement is asserted.
 
 `CoreDatatype.from(String)` adds a URI-string lookup for built-in RDF, GEO, and
 XSD datatypes. It returns `CoreDatatype.NONE` for `null` or an unrecognized

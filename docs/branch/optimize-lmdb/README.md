@@ -1,12 +1,21 @@
 # `optimize-lmdb` developer guide
 
-This guide set explains the changes in the pinned `optimize-lmdb` branch
-snapshot and the unchanged contracts those changes rely on. Its source boundary
-is merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` through pinned `HEAD`
-`a869fe298dc4700ce956bcaf9fece3745c57fe05`. The supplied local
-`origin/develop` ref was `5eee576f5ad74725852feae859a0f9010dae10ff`; the range
-was computed from the explicit merge base, not inferred from the local ref
-name.
+This guide set inventories the historical `optimize-lmdb` changes and the
+unchanged contracts those changes rely on. Its revision roles are:
+
+| Role | Revision |
+|---|---|
+| Historical merge base | `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` |
+| Inventory snapshot | `a869fe298dc4700ce956bcaf9fece3745c57fe05` |
+| Source revision checked for this accuracy review | `a678d9a369deded63520cd86b6c30152485b7f6d` |
+| `origin/develop` ref recorded for the historical comparison | `5eee576f5ad74725852feae859a0f9010dae10ff` |
+
+The source descriptions were checked against
+`a678d9a369deded63520cd86b6c30152485b7f6d`, the source revision immediately
+before the guides were added in
+`d64e893cbb427b00d1a4d3a75a11fe0b04d77e70`. The ledger and its counts remain
+bounded by the historical inventory snapshot; the recorded `origin/develop`
+hash is comparison provenance, not a claim about the live ref.
 
 The exact changed-path ledger is [changed-paths.tsv](changed-paths.tsv), with
 the path-family ownership and feature audit in
@@ -18,11 +27,10 @@ fixtures, dated measurements, experiments, and developer workflow assets are
 included. The guides distinguish those supporting surfaces from runtime
 features.
 
-This is source documentation, not a test or benchmark report. No application,
-build, test, benchmark, custom script, validator, browser, or documentation page
-was executed for this work. Source test names point to coverage contracts, not
-to passing evidence. Throughput and memory improvements are not claimed unless
-a dated report itself supports the specific workload and snapshot.
+Source test names identify coverage contracts; they do not assert a current
+test result. Benchmark reports are historical observations tied to their
+recorded source and workload. No throughput or memory improvement is claimed
+unless a dated report supports that specific workload and snapshot.
 
 ## Architecture at a glance
 
@@ -170,12 +178,13 @@ surfaces.
 
 ## Evidence method and compatibility notes
 
-Current source at the pinned commit is authoritative for mechanism, default,
-unit, scope, lifetime, failure behavior, and property read time. The guides
-link to changed tests and fixtures as source coverage but do not say those
-tests passed here. Benchmark reports under `benchmark-results/` are historical
-observations tied to their recorded code, host, dataset, query, JVM and command;
-they are not transferred to current source without a matching provenance.
+Current source at the latest review revision
+(`a678d9a369deded63520cd86b6c30152485b7f6d`) is authoritative for mechanism,
+defaults, scope, lifetime, failure behavior, and property read time. The guides
+link to tests and fixtures as source coverage without claiming a passing run.
+Benchmark reports under `benchmark-results/` are historical observations tied
+to their recorded code, host, dataset, query, JVM and command; they are not
+transferred to current source without matching provenance.
 
 This index labels branch changes separately from supporting tests,
 experiments, reports, and unchanged prerequisites; individual guides state
@@ -198,4 +207,4 @@ discrepancy rather than silently choosing one.
 
 The branch comparison and family totals are documented in
 [integration-inventory.md](integration-inventory.md). `CLAUDE.md` appears in
-the path ledger only as a changed pathname; its contents were not read.
+the path ledger only as a changed pathname; its contents are outside this guide's scope.

@@ -2,8 +2,8 @@
 
 This guide covers changed repository workflows, generated-source maintenance,
 and test/report helpers. It does not treat editor/agent configuration as
-runtime behavior. The branch comparison is merge base
-`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` through pinned `HEAD`
+runtime behavior. The historical comparison is merge base
+`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` through inventory snapshot
 `a869fe298dc4700ce956bcaf9fece3745c57fe05`.
 
 ## SPARQL AST patch workflow
@@ -26,8 +26,8 @@ modified outputs, and `record` rewrites patch files only when the replay
 matches the current custom Java sources exactly. These safeguards keep the
 grammar, checked-in generated files, and patches from drifting independently.
 The pull-request workflow invokes `python3 scripts/manage-sparql-ast.py
-check`; that CI step was read as configuration and was not run here. Parser
-semantics themselves are in [SPARQL language changes](integration-sparql-language.md).
+check`. Parser semantics themselves are in
+[SPARQL language changes](integration-sparql-language.md).
 
 Changed workflow sources include
 [`01-optimize-SyntaxTreeBuilder.diff`](../../../core/queryparser/sparql/JavaCC/patches/01-optimize-SyntaxTreeBuilder.diff),
@@ -52,8 +52,8 @@ covered in [build and packaging](integration-build-and-packaging.md).
 
 The source-level `test_maven_workspace_pom.py` protects the POM/profile
 contract and the existence of the runner; `test_token_efficient_output.py`
-protects output summarization behavior. These test files are a regression map,
-not proof that the tooling was executed during this documentation work.
+protects output summarization behavior. These tests document regression
+coverage; their presence is not a current test result.
 
 ## Compliance and report helpers
 
@@ -103,8 +103,8 @@ references, and helper scripts for Maven tests, performance evidence, plan
 snapshots, debugging, and source review. Their intended workflows appear in
 the relevant guides above, rather than duplicating every skill body here.
 The `.claude/` portion of the changed-path inventory is classified by
-pathname only; its instruction content was not read for this documentation
-set. Agent instructions and experimental plans are developer aids, not
+pathname only; its instruction content is outside this developer-tooling
+guide. Agent instructions and experimental plans are developer aids, not
 production implementation evidence.
 
 ## Safe maintenance sequence

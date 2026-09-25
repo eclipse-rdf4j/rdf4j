@@ -1,6 +1,14 @@
 # Direct-adjacency storage lifecycle
 
-This guide describes the direct-adjacency subsystem at pinned branch `a869fe298dc4700ce956bcaf9fece3745c57fe05`. It covers how the derived in-memory index is built, updated and retained. It does not describe the query planner's routing decisions; see the sibling query guides for those consumers. The triple store remains authoritative throughout.
+This guide describes the direct-adjacency subsystem checked against current
+source revision `a678d9a369deded63520cd86b6c30152485b7f6d`. Its historical
+feature inventory covers merge base
+`4aec7e9a2223d873b1c1a7703aad4c87bf8354df` through inventory snapshot
+`a869fe298dc4700ce956bcaf9fece3745c57fe05`; see the branch README for revision
+roles. It covers how the derived in-memory index is built, updated and
+retained. It does not describe the query planner's routing decisions; see the
+sibling query guides for those consumers. The triple store remains authoritative
+throughout.
 
 **Branch delta and prerequisites:** the branch adds direct-adjacency capture, paged-CSF base construction, delta/run overlays, immutable generation publication, leases, consolidation and recovery to the existing LMDB statement store. The existing statement indexes remain the source for startup/rebuild scans and the fallback authority; this lifecycle guide describes when newly added derived state may claim a complete snapshot.
 
@@ -99,6 +107,6 @@ The names/defaults are resolved in [`LmdbDirectAdjacencyOptions.resolve()`](../.
 
 When changing this subsystem, preserve the invariants that one publication is snapshot-coherent, a missing revision becomes a gap, row absence requires a coverage proof, and every native allocation has one memory-charge owner with an explicit final-release path. For new optional projections, state whether inconsistency invalidates only that projection or the whole base; do not let a projection-level mismatch leak into unrelated rows. For new codecs, validate counts, ordinals, references and lengths before native access, and keep format-version scope explicit.
 
-Useful intended-contract sources include [`LmdbDirectAdjacencyCommitTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbDirectAdjacencyCommitTest.java), [`LmdbAdjacencyStartupConcurrencyTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbAdjacencyStartupConcurrencyTest.java), [`LmdbDirectAdjacencySnapshotTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbDirectAdjacencySnapshotTest.java), [`LmdbDirectAdjacencyConsolidationTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbDirectAdjacencyConsolidationTest.java), [`LmdbNodePredicateKernelFaultTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbNodePredicateKernelFaultTest.java), [`LmdbNodePredicateRecoveryTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbNodePredicateRecoveryTest.java), and [`LmdbNodePredicateLifetimeTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbNodePredicateLifetimeTest.java). They are references to expected contracts, not evidence that this documentation task ran those tests.
+Tests that specify these contracts include [`LmdbDirectAdjacencyCommitTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbDirectAdjacencyCommitTest.java), [`LmdbAdjacencyStartupConcurrencyTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbAdjacencyStartupConcurrencyTest.java), [`LmdbDirectAdjacencySnapshotTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbDirectAdjacencySnapshotTest.java), [`LmdbDirectAdjacencyConsolidationTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbDirectAdjacencyConsolidationTest.java), [`LmdbNodePredicateKernelFaultTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbNodePredicateKernelFaultTest.java), [`LmdbNodePredicateRecoveryTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbNodePredicateRecoveryTest.java), and [`LmdbNodePredicateLifetimeTest`](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbNodePredicateLifetimeTest.java).
 
 Related detail: [overview](storage-overview.md), [CSF page layout](storage-csf-format.md), [transaction/commit bridge](storage-transactions-and-async-writes.md), and [query routing](query-routing-and-hosts.md).

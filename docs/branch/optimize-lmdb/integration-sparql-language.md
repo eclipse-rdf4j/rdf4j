@@ -1,8 +1,8 @@
 # SPARQL syntax, parsing, and model construction
 
-This guide describes the parser-facing parts of `optimize-lmdb`. The reviewed
-range is merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` through pinned
-`HEAD` `a869fe298dc4700ce956bcaf9fece3745c57fe05`. Parser output changes are
+This guide describes the parser-facing parts of `optimize-lmdb`. The historical
+range is merge base `4aec7e9a2223d873b1c1a7703aad4c87bf8354df` through inventory
+snapshot `a869fe298dc4700ce956bcaf9fece3745c57fe05`. Parser output changes are
 externally observable; the notes below state the exact supported forms rather
 than treating generated Java diffs as syntax changes. For query-model behavior
 after parsing, see [shared structures](integration-shared-query-structures.md)
@@ -32,8 +32,8 @@ semantic rule is the standalone order element check in the parser visitor;
 where orientation matters, the physical-order guide describes the consumer.
 
 The syntax is an RDF4J/LMDB-specific query extension, not portable SPARQL.
-Examples below are illustrative and were not executed in this documentation
-task:
+Examples below illustrate the supported syntax; consult the parser and its
+tests for the executable contract:
 
 ```sparql
 SELECT ?s ?o WHERE { ?s ?p ?o }
@@ -100,7 +100,7 @@ Source: [TupleExprBuilder](../../../core/queryparser/sparql/src/main/java/org/ec
 `sparql.jjt` remains the grammar source of truth. The generated tree builder,
 constants, and token manager are checked into source control and customized
 through two ordered patches. The changed JavaCC README defines the current
-workflow and CI check; read [AST generation and patch maintenance](integration-developer-tooling.md#sparql-ast-patch-maintenance)
+workflow and CI check; read [AST generation and patch maintenance](integration-developer-tooling.md#sparql-ast-patch-workflow)
 before changing generated files. Do not edit a generated parser class as if it
 were an independent source of truth, and do not attribute every generated-file
 diff to a runtime grammar behavior change.
