@@ -89,7 +89,13 @@
 				</span>
 			</xsl:if>
 			<details id="explore-result-options" class="workbench-options">
-				<summary><xsl:value-of select="$result-options.label" /></summary>
+				<summary>
+					<span><xsl:value-of select="$result-options.label" /></span>
+					<xsl:call-template name="workbench-action-icon">
+						<xsl:with-param name="name">chevron</xsl:with-param>
+						<xsl:with-param name="additional-class">workbench-disclosure-chevron</xsl:with-param>
+					</xsl:call-template>
+				</summary>
 				<div class="workbench-options__body">
 					<div class="workbench-field">
 						<label for="limit_explore"><xsl:value-of select="$result-limit.label" /></label>
@@ -111,6 +117,7 @@
 		<xsl:if test="not(sparql:results/sparql:result)">
 			<p class="workbench-empty" role="status"><xsl:value-of select="$no-results.label" /></p>
 		</xsl:if>
+		<xsl:if test="sparql:results/sparql:result">
 		<table class="simple">
 			<tr>
 				<td>
@@ -173,32 +180,32 @@
 				</td>
 			</tr>
 		</table>
+		</xsl:if>
 		<xsl:if
-			test="sparql:head/sparql:variable/@name != 'error-message' and sparql:results">
+			test="sparql:head/sparql:variable/@name != 'error-message' and sparql:results/sparql:result">
 			<table class="data">
 				<xsl:apply-templates select="*" />
 			</table>
 		</xsl:if>
 		<div id="explore-pagination" class="workbench-form-actions">
-			<span class="explore-pagination__label"><xsl:value-of select="$result-offset.label" /></span>
-			<span class="workbench-action workbench-action--secondary">
-				<label class="workbench-action-hit-area">
-					<xsl:call-template name="workbench-action-icon">
-						<xsl:with-param name="name">previous</xsl:with-param>
-					</xsl:call-template>
-					<span class="workbench-action-label"><input id="previousX" type="button"
-						value="{$previousX.label}" onclick="workbench.paging.previousOffset('explore');" /></span>
-				</label>
-			</span>
-			<span class="workbench-action workbench-action--secondary">
-				<label class="workbench-action-hit-area">
-					<xsl:call-template name="workbench-action-icon">
-						<xsl:with-param name="name">next</xsl:with-param>
-					</xsl:call-template>
-					<span class="workbench-action-label"><input id="nextX" type="button"
-						value="{$nextX.label}" onclick="workbench.paging.nextOffset('explore');" /></span>
-				</label>
-			</span>
+				<span class="workbench-action workbench-action--secondary">
+					<label class="workbench-action-hit-area">
+						<xsl:call-template name="workbench-action-icon">
+							<xsl:with-param name="name">previous</xsl:with-param>
+						</xsl:call-template>
+						<span class="workbench-action-label"><input id="previousX" type="button"
+							value="{$previousX.label}" onclick="workbench.paging.previousOffset('explore');" /></span>
+					</label>
+				</span>
+				<span class="workbench-action workbench-action--secondary">
+					<label class="workbench-action-hit-area">
+						<xsl:call-template name="workbench-action-icon">
+							<xsl:with-param name="name">next</xsl:with-param>
+						</xsl:call-template>
+						<span class="workbench-action-label"><input id="nextX" type="button"
+							value="{$nextX.label}" onclick="workbench.paging.nextOffset('explore');" /></span>
+					</label>
+				</span>
 		</div>
 		</section>
 		<script src="../../scripts/paging.js" type="text/javascript">  </script>

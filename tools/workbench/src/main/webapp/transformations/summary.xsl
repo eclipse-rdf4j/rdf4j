@@ -83,7 +83,11 @@
 			<section class="workbench-island workbench-summary-config">
 			<details id="summary-config-model" class="workbench-options">
 				<summary>
-					<xsl:value-of select="$config-model.label" />
+					<span><xsl:value-of select="$config-model.label" /></span>
+					<xsl:call-template name="workbench-action-icon">
+						<xsl:with-param name="name">chevron</xsl:with-param>
+						<xsl:with-param name="additional-class">workbench-disclosure-chevron</xsl:with-param>
+					</xsl:call-template>
 				</summary>
 				<pre role="region"><xsl:value-of select="/sparql:sparql/workbench:metadata/workbench:config-model-turtle" /></pre>
 			</details>

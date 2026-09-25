@@ -49,11 +49,11 @@
 									<path d="M12 4v12M7 11l5 5 5-5M5 20h14"></path>
 								</svg>
 								<span><xsl:value-of select="$download.label" /></span>
+								<xsl:call-template name="workbench-action-icon">
+									<xsl:with-param name="name">chevron</xsl:with-param>
+									<xsl:with-param name="additional-class">workbench-disclosure-chevron</xsl:with-param>
+								</xsl:call-template>
 							</button>
-							<div id="query-result-download-panel" class="query-disclosure__panel" role="region"
-								aria-labelledby="query-result-download-toggle" hidden="hidden">
-								<xsl:call-template name="graph-download-controls" />
-							</div>
 						</div>
 						<div id="query-result-options-disclosure" class="query-result-disclosure">
 							<button id="query-result-options-toggle" class="query-disclosure__toggle" type="button"
@@ -65,12 +65,22 @@
 									<circle cx="11" cy="17" r="2"></circle>
 								</svg>
 								<span><xsl:value-of select="$result-options.label" /></span>
+								<xsl:call-template name="workbench-action-icon">
+									<xsl:with-param name="name">chevron</xsl:with-param>
+									<xsl:with-param name="additional-class">workbench-disclosure-chevron</xsl:with-param>
+								</xsl:call-template>
 							</button>
-							<div id="query-result-options-panel" class="query-disclosure__panel" role="region"
-								aria-labelledby="query-result-options-toggle" hidden="hidden">
-								<xsl:call-template name="graph-result-options" />
-							</div>
 						</div>
+					</div>
+				</div>
+				<div class="query-result-disclosure-panels">
+					<div id="query-result-download-panel" class="query-disclosure__panel" role="region"
+						aria-labelledby="query-result-download-toggle" hidden="hidden">
+						<xsl:call-template name="graph-download-controls" />
+					</div>
+					<div id="query-result-options-panel" class="query-disclosure__panel" role="region"
+						aria-labelledby="query-result-options-toggle" hidden="hidden">
+						<xsl:call-template name="graph-result-options" />
 					</div>
 				</div>
 			</xsl:when>
@@ -104,13 +114,11 @@
 
 	<xsl:template name="graph-download-controls">
 		<form>
-			<table class="dataentry">
-				<tbody>
-					<tr>
-						<th>
-							<xsl:value-of select="$download-format.label" />
-						</th>
-						<td>
+			<xsl:choose>
+				<xsl:when test="/sparql:sparql/workbench:metadata/workbench:embedded = 'true'">
+					<div class="query-result-fields query-result-download-fields">
+						<div class="query-result-field">
+							<label for="Accept"><xsl:value-of select="$download-format.label" /></label>
 							<select id="Accept" name="Accept">
 								<xsl:for-each
 									select="$info//sparql:binding[@name='graph-download-format']">
@@ -122,81 +130,131 @@
 										<xsl:value-of select="substring-after(sparql:literal, ' ')" />
 									</option>
 								</xsl:for-each>
-						</select>
-					</td>
-					<td>
-						<span class="workbench-action workbench-action--secondary" data-workbench-action="download">
-							<label class="workbench-action-hit-area">
-								<xsl:call-template name="workbench-action-icon">
-									<xsl:with-param name="name">download</xsl:with-param>
-								</xsl:call-template>
-								<span class="workbench-action-label"><input type="submit"
-									onclick="workbench.paging.addGraphParam('Accept');return false"
-									value="{$download.label}" /></span>
-							</label>
-						</span>
-						</td>
-					</tr>
-					<tr>
-						<th>
-							<xsl:value-of select="$download-limit.label" />
-						</th>
-						<td>
+							</select>
+						</div>
+						<div class="query-result-field">
+							<label for="download_limit"><xsl:value-of select="$download-limit.label" /></label>
 							<xsl:call-template name="limit-select">
 								<xsl:with-param name="limit_id">download_limit</xsl:with-param>
 							</xsl:call-template>
-						</td>
-						<td></td>
-					</tr>
-				</tbody>
-			</table>
+						</div>
+						<div class="query-result-download-action">
+							<span class="workbench-action workbench-action--secondary" data-workbench-action="download">
+								<label class="workbench-action-hit-area">
+									<xsl:call-template name="workbench-action-icon">
+										<xsl:with-param name="name">download</xsl:with-param>
+									</xsl:call-template>
+									<span class="workbench-action-label"><input type="submit"
+										onclick="workbench.paging.addGraphParam('Accept');return false"
+										value="{$download.label}" /></span>
+								</label>
+							</span>
+						</div>
+					</div>
+				</xsl:when>
+				<xsl:otherwise>
+					<table class="dataentry query-result-controls">
+						<tbody>
+							<tr>
+								<th><xsl:value-of select="$download-format.label" /></th>
+								<td>
+									<select id="Accept" name="Accept">
+										<xsl:for-each
+											select="$info//sparql:binding[@name='graph-download-format']">
+											<option value="{substring-before(sparql:literal, ' ')}">
+												<xsl:if
+													test="$info//sparql:binding[@name='default-Accept']/sparql:literal = substring-before(sparql:literal, ' ')">
+													<xsl:attribute name="selected">true</xsl:attribute>
+												</xsl:if>
+												<xsl:value-of select="substring-after(sparql:literal, ' ')" />
+											</option>
+										</xsl:for-each>
+									</select>
+								</td>
+								<td>
+									<span class="workbench-action workbench-action--secondary" data-workbench-action="download">
+										<label class="workbench-action-hit-area">
+											<xsl:call-template name="workbench-action-icon">
+												<xsl:with-param name="name">download</xsl:with-param>
+											</xsl:call-template>
+											<span class="workbench-action-label"><input type="submit"
+												onclick="workbench.paging.addGraphParam('Accept');return false"
+												value="{$download.label}" /></span>
+										</label>
+									</span>
+								</td>
+							</tr>
+							<tr>
+								<th><xsl:value-of select="$download-limit.label" /></th>
+								<td>
+									<xsl:call-template name="limit-select">
+										<xsl:with-param name="limit_id">download_limit</xsl:with-param>
+									</xsl:call-template>
+								</td>
+								<td></td>
+							</tr>
+						</tbody>
+					</table>
+				</xsl:otherwise>
+			</xsl:choose>
 		</form>
 	</xsl:template>
 
 	<xsl:template name="graph-result-options">
 		<form>
-			<table class="dataentry">
-				<tbody>
-					<xsl:if test="/sparql:sparql/workbench:metadata/workbench:embedded = 'true'">
-						<tr>
-							<th><label for="result-layout"><xsl:value-of select="$result-layout.label" /></label></th>
-							<td>
-								<select id="result-layout" name="result-layout">
-									<option value="auto" selected="selected"><xsl:value-of select="$result-layout-auto.label" /></option>
-									<option value="table"><xsl:value-of select="$result-layout-table.label" /></option>
-									<option value="records"><xsl:value-of select="$result-layout-records.label" /></option>
-								</select>
-							</td>
-						</tr>
-					</xsl:if>
-					<tr>
-						<th>
-							<xsl:value-of select="$result-limit.label" />
-						</th>
-						<td>
+			<xsl:choose>
+				<xsl:when test="/sparql:sparql/workbench:metadata/workbench:embedded = 'true'">
+					<div class="query-result-fields query-result-option-fields">
+						<div class="query-result-field">
+							<label for="result-layout"><xsl:value-of select="$result-layout.label" /></label>
+							<select id="result-layout" name="result-layout">
+								<option value="auto" selected="selected"><xsl:value-of select="$result-layout-auto.label" /></option>
+								<option value="table"><xsl:value-of select="$result-layout-table.label" /></option>
+								<option value="records"><xsl:value-of select="$result-layout-records.label" /></option>
+							</select>
+						</div>
+						<div class="query-result-field">
+							<label for="limit_query"><xsl:value-of select="$result-limit.label" /></label>
 							<xsl:call-template name="limit-select">
-								<xsl:with-param name="onchange">
-									workbench.paging.addGraphParam('limit_query');
-								</xsl:with-param>
+								<xsl:with-param name="onchange">workbench.paging.addGraphParam('limit_query');</xsl:with-param>
 								<xsl:with-param name="limit_id">limit_query</xsl:with-param>
 							</xsl:call-template>
-						</td>
-						<td id="result-limited">
-							<xsl:if
-								test="$info//sparql:binding[@name='default-limit']/sparql:literal = count(//sparql:result)">
-								<xsl:value-of select="$result-limited.desc" />
-							</xsl:if>
-						</td>
-					</tr>
-					<xsl:if test="/sparql:sparql/workbench:metadata/workbench:embedded = 'true'">
-						<tr>
-							<th><label for="result-wrap-values"><xsl:value-of select="$result-wrap.label" /></label></th>
-							<td><input id="result-wrap-values" type="checkbox" name="wrap-values" value="true"
-								checked="checked" /></td>
-						</tr>
-					</xsl:if>
-				</tbody>
-			</table>
+							<span id="result-limited">
+								<xsl:if
+									test="$info//sparql:binding[@name='default-limit']/sparql:literal = count(//sparql:result)">
+									<xsl:value-of select="$result-limited.desc" />
+								</xsl:if>
+							</span>
+						</div>
+						<label class="query-result-check" for="result-wrap-values">
+							<input id="result-wrap-values" type="checkbox" name="wrap-values" value="true"
+								checked="checked" />
+							<span><xsl:value-of select="$result-wrap.label" /></span>
+						</label>
+					</div>
+				</xsl:when>
+				<xsl:otherwise>
+					<table class="dataentry query-result-controls">
+						<tbody>
+							<tr>
+								<th><xsl:value-of select="$result-limit.label" /></th>
+								<td>
+									<xsl:call-template name="limit-select">
+										<xsl:with-param name="onchange">workbench.paging.addGraphParam('limit_query');</xsl:with-param>
+										<xsl:with-param name="limit_id">limit_query</xsl:with-param>
+									</xsl:call-template>
+								</td>
+								<td id="result-limited">
+									<xsl:if
+										test="$info//sparql:binding[@name='default-limit']/sparql:literal = count(//sparql:result)">
+										<xsl:value-of select="$result-limited.desc" />
+									</xsl:if>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</xsl:otherwise>
+			</xsl:choose>
 		</form>
 	</xsl:template>
 

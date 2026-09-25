@@ -24,8 +24,8 @@
 			<div id="update-actions" class="workbench-form-actions">
 				<span class="workbench-action workbench-action--primary">
 					<label class="workbench-action-hit-area">
-						<xsl:call-template name="workbench-action-icon">
-							<xsl:with-param name="name">update</xsl:with-param>
+					<xsl:call-template name="workbench-action-icon">
+							<xsl:with-param name="name">execute</xsl:with-param>
 						</xsl:call-template>
 						<span class="workbench-action-label"><input type="submit" value="{$execute.label}" /></span>
 					</label>

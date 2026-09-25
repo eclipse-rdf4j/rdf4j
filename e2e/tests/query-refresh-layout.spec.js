@@ -1,5 +1,6 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const fs = require('fs');
 const path = require('path');
 
 const SERVER_BASE_URL = process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server';
@@ -7,6 +8,70 @@ const WORKBENCH_BASE_URL = process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0
 const REPOSITORY_ID = 'query-refresh-layout';
 const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`;
 const DESIGN_DIR = path.resolve(__dirname, '../../design/workbench-query-refresh');
+const CHEVRON_DIR = path.resolve(__dirname, '../../design/workbench-polish-20260925/final-chevron-v6-20260925');
+
+function readChevron(toggle) {
+    const icon = toggle.querySelector('svg.workbench-disclosure-chevron');
+    if (!icon) {
+        return { present: false };
+    }
+    const iconBounds = icon.getBoundingClientRect();
+    const toggleBounds = toggle.getBoundingClientRect();
+    const iconStyle = getComputedStyle(icon);
+    const toggleStyle = getComputedStyle(toggle);
+    const transform = iconStyle.transform === 'none' ? new DOMMatrixReadOnly() : new DOMMatrixReadOnly(iconStyle.transform);
+    return {
+        present: true,
+        viewBox: icon.getAttribute('viewBox'),
+        cssWidth: parseFloat(iconStyle.width),
+        cssHeight: parseFloat(iconStyle.height),
+        width: iconBounds.width,
+        height: iconBounds.height,
+        path: icon.querySelector('path')?.getAttribute('d'),
+        focusable: icon.getAttribute('focusable'),
+        ariaHidden: icon.getAttribute('aria-hidden'),
+        fill: iconStyle.fill,
+        stroke: iconStyle.stroke,
+        strokeWidth: parseFloat(iconStyle.strokeWidth),
+        strokeLinecap: iconStyle.strokeLinecap,
+        strokeLinejoin: iconStyle.strokeLinejoin,
+        rotation: Math.atan2(transform.b, transform.a) * 180 / Math.PI,
+        gap: parseFloat(toggleStyle.gap),
+        edgeInset: toggleBounds.right - iconBounds.right,
+        centerDelta: Math.abs((toggleBounds.top + toggleBounds.bottom - iconBounds.top - iconBounds.bottom) / 2)
+    };
+}
+
+function expectChevron(metrics, size = 16, rotation = 0) {
+    expect(metrics.present).toBe(true);
+    expect(metrics.viewBox).toBe('0 0 24 24');
+    expect(metrics.cssWidth).toBe(size);
+    expect(metrics.cssHeight).toBe(size);
+    expect(metrics.width).toBeCloseTo(size, 0);
+    expect(metrics.height).toBeCloseTo(size, 0);
+    expect(metrics.path).toBe('m6 9 6 6 6-6');
+    expect(metrics.focusable).toBe('false');
+    expect(metrics.ariaHidden).toBe('true');
+    expect(metrics.fill).toBe('none');
+    expect(metrics.stroke).not.toBe('none');
+    expect(metrics.strokeWidth).toBe(1.75);
+    expect(metrics.strokeLinecap).toBe('round');
+    expect(metrics.strokeLinejoin).toBe('round');
+    expect(Math.abs(metrics.rotation)).toBeCloseTo(Math.abs(rotation), 0);
+    expect(metrics.gap).toBe(8);
+    expect(metrics.edgeInset).toBeGreaterThanOrEqual(12);
+    expect(metrics.centerDelta).toBeLessThanOrEqual(1);
+}
+
+async function expectChevronState(locator, size, rotation) {
+    await expect.poll(async () => {
+        const actualRotation = Math.abs((await locator.evaluate(readChevron)).rotation);
+        return Math.abs(actualRotation - Math.abs(rotation)) < 0.1;
+    }, {
+        intervals: [16, 32, 64]
+    }).toBe(true);
+    expectChevron(await locator.evaluate(readChevron), size, rotation);
+}
 
 test.beforeEach(async ({ page, request }) => {
     await request.delete(`${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`);
@@ -196,11 +261,162 @@ test('keeps navigation state and option controls coherent on a narrow query page
     expect(metrics.privateLabelFor).toBe('save-private');
 });
 
+test('uses the shared SVG chevron across query and embedded result states', async ({ page }) => {
+    fs.mkdirSync(CHEVRON_DIR, { recursive: true });
+
+    for (const [width, height, name] of [[1440, 1000, 'desktop'], [390, 1000, 'mobile'], [320, 900, 'narrow']]) {
+        await page.setViewportSize({ width, height });
+        await page.goto(QUERY_URL);
+        await page.locator('.CodeMirror').waitFor({ state: 'visible' });
+
+        for (const selector of ['#query-options-toggle', '#save-query-toggle']) {
+            expectChevron(await page.locator(selector).evaluate(readChevron));
+        }
+        if (width <= 768) {
+            const menu = page.locator('#workbench-navigation-disclosure');
+            const menuSummary = page.locator('#workbench-navigation-summary');
+            await expect(menu).toHaveJSProperty('open', false);
+            await expectChevronState(menuSummary, 18, 0);
+            if (width === 390) {
+                await page.screenshot({
+                    path: path.join(CHEVRON_DIR, 'menu-mobile-closed.png'),
+                    fullPage: true,
+                    animations: 'disabled'
+                });
+            }
+            await menuSummary.press('Enter');
+            await expect(menu).toHaveJSProperty('open', true);
+            await expectChevronState(menuSummary, 18, 180);
+            if (width === 390) {
+                await page.screenshot({
+                    path: path.join(CHEVRON_DIR, 'menu-mobile-keyboard-focus.png'),
+                    fullPage: true,
+                    animations: 'disabled'
+                });
+                await menuSummary.evaluate(element => element.blur());
+                await page.screenshot({
+                    path: path.join(CHEVRON_DIR, 'menu-mobile-open.png'),
+                    fullPage: true,
+                    animations: 'disabled'
+                });
+            }
+            await menuSummary.press('Enter');
+            await expect(menu).toHaveJSProperty('open', false);
+            await expectChevronState(menuSummary, 18, 0);
+            await menuSummary.evaluate(element => element.blur());
+        }
+
+        const queryClosedPath = path.join(CHEVRON_DIR, `query-${name}-closed.png`);
+        await page.screenshot({ path: queryClosedPath, fullPage: true, animations: 'disabled' });
+        await page.locator('#query-options-toggle').press('Enter');
+        await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'true');
+        await expectChevronState(page.locator('#query-options-toggle'), 16, 180);
+        if (width === 1440) {
+            await page.screenshot({
+                path: path.join(CHEVRON_DIR, 'query-desktop-options-keyboard-focus.png'),
+                fullPage: true,
+                animations: 'disabled'
+            });
+        }
+        await page.locator('#query-options-toggle').evaluate(element => element.blur());
+        await page.screenshot({
+            path: path.join(CHEVRON_DIR, `query-${name}-options-open.png`),
+            fullPage: true,
+            animations: 'disabled'
+        });
+        await page.locator('#query-options-toggle').press('Enter');
+        await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'false');
+
+        await page.locator('.CodeMirror').evaluate(element => {
+            element.CodeMirror.setValue('SELECT * WHERE { VALUES ?s { "one" "two" "three" } }');
+        });
+        await page.locator('#exec').click();
+        const frame = page.frameLocator('#query-results-frame');
+        await expect(frame.locator('table.data tbody tr')).toHaveCount(3);
+        for (const selector of ['#query-result-download-toggle', '#query-result-options-toggle']) {
+            expectChevron(await frame.locator(selector).evaluate(readChevron));
+        }
+        await page.locator('#exec').evaluate(element => element.blur());
+        await page.screenshot({
+            path: path.join(CHEVRON_DIR, `embedded-result-${name}-closed.png`),
+            fullPage: true,
+            animations: 'disabled'
+        });
+        await frame.locator('#query-result-options-toggle').press('Enter');
+        await expect(frame.locator('#query-result-options-toggle')).toHaveAttribute('aria-expanded', 'true');
+        await expectChevronState(frame.locator('#query-result-options-toggle'), 16, 180);
+        if (width === 390) {
+            await page.screenshot({
+                path: path.join(CHEVRON_DIR, 'embedded-result-mobile-options-keyboard-focus.png'),
+                fullPage: true,
+                animations: 'disabled'
+            });
+        }
+        await frame.locator('#query-result-options-toggle').evaluate(element => element.blur());
+        await page.screenshot({
+            path: path.join(CHEVRON_DIR, `embedded-result-${name}-options-open.png`),
+            fullPage: true,
+            animations: 'disabled'
+        });
+        await frame.locator('#query-result-options-toggle').press('Enter');
+        await frame.locator('#query-result-download-toggle').press('Enter');
+        await expect(frame.locator('#Accept')).toBeVisible();
+        await expectChevronState(frame.locator('#query-result-download-toggle'), 16, 180);
+    }
+});
+
+test('uses shared chevrons for explanation, native details, and mobile navigation', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(QUERY_URL);
+    await page.locator('.CodeMirror').waitFor({ state: 'visible' });
+    await page.locator('.CodeMirror').evaluate(element => {
+        element.CodeMirror.setValue('SELECT * WHERE { ?s ?p ?o } LIMIT 10');
+    });
+    await page.locator('#explain-trigger').click();
+    await expect(page.locator('#compare-toggle')).toBeVisible({ timeout: 10000 });
+    const explanationChevron = page.locator('#explanation-settings-toggle');
+    await expect(explanationChevron).toBeVisible();
+    expectChevron(await explanationChevron.evaluate(readChevron));
+    await explanationChevron.press('Enter');
+    await expect(explanationChevron).toHaveAttribute('aria-expanded', 'true');
+    await expectChevronState(explanationChevron, 16, 180);
+
+    const addUrl = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/add`;
+    for (const [width, height, name] of [[1440, 1000, 'desktop'], [390, 1000, 'mobile'], [320, 900, 'narrow']]) {
+        await page.setViewportSize({ width, height });
+        await page.goto(addUrl);
+        const details = page.locator('#add-import-settings');
+        const summary = details.locator('summary');
+        await expect(details).not.toHaveAttribute('open', '');
+        expectChevron(await summary.evaluate(readChevron));
+        if (width === 1440 || width === 390) {
+            await page.screenshot({
+                path: path.join(CHEVRON_DIR, `add-details-${name}-closed.png`),
+                fullPage: true,
+                animations: 'disabled'
+            });
+        }
+        await summary.press('Enter');
+        await expect(details).toHaveAttribute('open', '');
+        await expectChevronState(summary, 16, 180);
+        await summary.evaluate(element => element.blur());
+        if (width === 1440 || width === 390) {
+            await page.screenshot({
+                path: path.join(CHEVRON_DIR, `add-details-${name}-open.png`),
+                fullPage: true,
+                animations: 'disabled'
+            });
+        }
+        const overflow = await page.evaluate(() =>
+            document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1);
+        expect(overflow).toBe(true);
+    }
+});
+
 test('keeps the collapsed query toolbar compact and gives disclosures visible affordances', async ({ page }) => {
     const metrics = await page.evaluate(() => {
         const actionLabel = Array.from(document.querySelectorAll('.query-form__label'))
             .find(element => element.textContent.trim() === 'Actions');
-        const summaries = Array.from(document.querySelectorAll('#query-options-toggle, #save-query-toggle'));
         const rect = selector => document.querySelector(selector).getBoundingClientRect();
         const execute = rect('#exec');
         const explain = rect('#explain-trigger');
@@ -213,7 +429,6 @@ test('keeps the collapsed query toolbar compact and gives disclosures visible af
             toolbar: Boolean(toolbar),
             toolbarHeight: toolbar ? toolbar.getBoundingClientRect().height : 0,
             maxControlGap: Math.max(explain.top - execute.bottom, options.top - explain.bottom, save.top - options.bottom),
-            chevrons: summaries.map(summary => getComputedStyle(summary, '::after').content),
             queryNameLabel: Boolean(document.querySelector('label[for="query-name"]')),
             editorIconFills: editorIcons.map(path => getComputedStyle(path).fill),
             editorIconStrokes: editorIcons.map(path => getComputedStyle(path).stroke)
@@ -224,7 +439,16 @@ test('keeps the collapsed query toolbar compact and gives disclosures visible af
     expect(metrics.toolbar).toBe(true);
     expect(metrics.toolbarHeight).toBeLessThan(100);
     expect(metrics.maxControlGap).toBeLessThan(24);
-    expect(metrics.chevrons.every(content => content !== 'none' && content !== '""')).toBe(true);
+    const queryChevronMetrics = await Promise.all([
+        page.locator('#query-options-toggle').evaluate(readChevron),
+        page.locator('#save-query-toggle').evaluate(readChevron)
+    ]);
+    queryChevronMetrics.forEach(metrics => expectChevron(metrics));
+    await page.locator('#query-options-toggle').press('Enter');
+    await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'true');
+    await expectChevronState(page.locator('#query-options-toggle'), 16, 180);
+    await page.locator('#query-options-toggle').press('Enter');
+    await expectChevronState(page.locator('#query-options-toggle'), 16, 0);
     expect(metrics.queryNameLabel).toBe(true);
     expect(metrics.editorIconFills.every(fill => fill === 'none' || fill === 'rgba(0, 0, 0, 0)')).toBe(true);
     expect(metrics.editorIconStrokes.every(stroke => stroke !== 'none')).toBe(true);
@@ -473,14 +697,17 @@ test('keeps embedded result paging visible and groups download controls', async 
         return !!navigation && !!(layout.compareDocumentPosition(navigation) & Node.DOCUMENT_POSITION_FOLLOWING);
     });
     expect(navigationFollowsTable).toBe(true);
-    const chevrons = await frame.locator(
-        '#query-result-download-toggle, #query-result-options-toggle'
-    ).evaluateAll(summaries => summaries.map(summary => getComputedStyle(summary, '::after').content));
-    expect(chevrons.every(content => content !== 'none' && content !== '""')).toBe(true);
+    const resultChevronMetrics = await Promise.all([
+        frame.locator('#query-result-download-toggle').evaluate(readChevron),
+        frame.locator('#query-result-options-toggle').evaluate(readChevron)
+    ]);
+    resultChevronMetrics.forEach(metrics => expectChevron(metrics));
     await frame.locator('#query-result-download-toggle').press('Enter');
     await expect(frame.locator('#Accept')).toBeVisible();
+    await expectChevronState(frame.locator('#query-result-download-toggle'), 16, 180);
     await frame.locator('#query-result-options-toggle').press('Enter');
     await expect(frame.locator('#limit_query')).toBeVisible();
+    await expectChevronState(frame.locator('#query-result-options-toggle'), 16, 180);
     await expect(frame.locator('#nextX')).toBeVisible();
 });
 

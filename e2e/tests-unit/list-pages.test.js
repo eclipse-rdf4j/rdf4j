@@ -79,7 +79,10 @@ test('explore page trims duplicates, restores limits, and renders ranges', () =>
     assert.equal(harness.document.getElementById('resource').value, 'http://example.com/a');
     assert.equal(harness.document.getElementById('limit_explore').value, '4');
     assert.equal(firstList.getElementsByTagName('li').length, 1);
-    assert.equal(harness.heading.textContent, 'Explore (http://example.com/a)(3-6 of 9)');
+    assert.equal(harness.heading.textContent, 'Explore');
+    assert.equal(harness.document.getElementById('explore-resource-value').textContent, 'http://example.com/a');
+    assert.equal(harness.document.getElementById('explore-result-count').textContent, '3-6 of 9');
+    assert.equal(harness.document.getElementById('explore-resource-summary').hidden, false);
 });
 
 test('paging helpers cover url, query, and cookie branches', () => {

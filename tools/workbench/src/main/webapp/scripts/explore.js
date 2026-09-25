@@ -27,6 +27,21 @@ workbench.addLoad(function () {
             }
         }
     }
+    function syncExplorePaginationVisibility() {
+        var pagination = document.getElementById('explore-pagination');
+        if (!pagination) {
+            return;
+        }
+        var resultRows = document.querySelectorAll('#explore-results table.data tbody tr');
+        var resultTable = document.querySelector('#explore-results table.data');
+        var emptyResult = document.querySelector('#explore-results .workbench-empty');
+        var emptyPage = Boolean(emptyResult) || Boolean(resultTable && resultRows.length === 0);
+        if (resultTable) {
+            resultTable.hidden = resultRows.length === 0;
+        }
+        var offset = workbench.paging.getOffset();
+        pagination.hidden = emptyPage && offset <= 0;
+    }
     // Populate parameters
     var elements = workbench.getQueryStringElements();
     var resource = $('#resource');
@@ -70,10 +85,17 @@ workbench.addLoad(function () {
         var offset = limit == 0 ? 0 : workbench.paging.getOffset();
         var first = offset + 1;
         var last = limit == 0 ? total_result_count : offset + limit;
+        var result_rows = document.querySelectorAll('#explore-results table.data tbody tr');
+        var result_table = document.querySelector('#explore-results table.data');
+        var empty_result = document.querySelector('#explore-results .workbench-empty');
+        var empty_page = Boolean(empty_result) || Boolean(result_table && result_rows.length === 0);
         // Truncate range if close to end.
         last = have_total_count ? Math.min(total_result_count, last) : last;
         var range = first + '-' + last;
-        if (have_total_count) {
+        if (empty_page) {
+            range = have_total_count ? '0 of ' + total_result_count : '0';
+        }
+        else if (have_total_count) {
             range = range + ' of ' + total_result_count;
         }
         if (resultCount) {
@@ -81,5 +103,6 @@ workbench.addLoad(function () {
         }
     }
     workbench.paging.setShowDataTypesCheckboxAndSetChangeEvent();
+    syncExplorePaginationVisibility();
 });
 //# sourceMappingURL=explore.js.map

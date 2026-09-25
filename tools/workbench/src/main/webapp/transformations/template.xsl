@@ -170,7 +170,7 @@
 							<path d="M4 6h16M4 12h16M4 18h16"></path>
 						</svg>
 						<span><xsl:value-of select="$menu.label" /></span>
-						<svg class="workbench-menu-chevron" viewBox="0 0 24 24" width="18" height="18"
+						<svg class="workbench-menu-chevron workbench-disclosure-chevron" viewBox="0 0 24 24" width="18" height="18"
 							focusable="false" aria-hidden="true">
 							<path d="m6 9 6 6 6-6"></path>
 						</svg>
@@ -515,7 +515,16 @@
 
 	<xsl:template name="workbench-action-icon">
 		<xsl:param name="name" />
-		<svg class="workbench-action-icon workbench-action-icon--{$name}" viewBox="0 0 24 24"
+		<xsl:param name="additional-class" select="''" />
+		<xsl:variable name="icon-class">
+			<xsl:text>workbench-action-icon workbench-action-icon--</xsl:text>
+			<xsl:value-of select="$name" />
+			<xsl:if test="normalize-space($additional-class)">
+				<xsl:text> </xsl:text>
+				<xsl:value-of select="$additional-class" />
+			</xsl:if>
+		</xsl:variable>
+		<svg class="{$icon-class}" viewBox="0 0 24 24"
 			width="16" height="16" focusable="false" aria-hidden="true">
 			<xsl:choose>
 				<xsl:when test="$name = 'add' or $name = 'create'">
@@ -527,8 +536,28 @@
 				<xsl:when test="$name = 'download'">
 					<path d="M12 4v12m0 0 5-5m-5 5-5-5M5 20h14" />
 				</xsl:when>
-				<xsl:when test="$name = 'execute' or $name = 'update'">
+				<xsl:when test="$name = 'execute'">
+					<path d="M8 5 19 12 8 19V5Z" />
+				</xsl:when>
+				<xsl:when test="$name = 'explain'">
+					<circle cx="6" cy="12" r="2.5" />
+					<circle cx="18" cy="6" r="2.5" />
+					<circle cx="18" cy="18" r="2.5" />
+					<path d="m8.2 11 7.3-4m-7.3 6 7.3 4" />
+				</xsl:when>
+				<xsl:when test="$name = 'eye'">
+					<path d="M3 12s3.5-5 9-5 9 5 9 5-3.5 5-9 5-9-5-9-5Z" />
+					<circle cx="12" cy="12" r="2.5" />
+				</xsl:when>
+				<xsl:when test="$name = 'edit'">
+					<path d="m4 20 4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Z" />
+					<path d="m14 7 3 3" />
+				</xsl:when>
+				<xsl:when test="$name = 'update'">
 					<path d="m5 12 5 5L19 7" />
+				</xsl:when>
+				<xsl:when test="$name = 'chevron'">
+					<path d="m6 9 6 6 6-6" />
 				</xsl:when>
 				<xsl:when test="$name = 'cancel'">
 					<path d="M19 12H5m6-6-6 6 6 6" />

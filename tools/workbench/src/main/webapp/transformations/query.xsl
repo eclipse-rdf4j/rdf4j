@@ -161,7 +161,11 @@
 											<xsl:call-template name="workbench-action-icon">
 												<xsl:with-param name="name">settings</xsl:with-param>
 											</xsl:call-template>
-											Config
+											<span>Config</span>
+											<xsl:call-template name="workbench-action-icon">
+												<xsl:with-param name="name">chevron</xsl:with-param>
+												<xsl:with-param name="additional-class">workbench-disclosure-chevron</xsl:with-param>
+											</xsl:call-template>
 										</button>
 									</span>
 								</span>
@@ -218,7 +222,7 @@
 							<span class="workbench-action workbench-action--secondary" data-workbench-action="explain">
 								<label class="workbench-action-hit-area">
 									<xsl:call-template name="workbench-action-icon">
-										<xsl:with-param name="name">update</xsl:with-param>
+										<xsl:with-param name="name">explain</xsl:with-param>
 									</xsl:call-template>
 									<span class="workbench-action-label"><input id="rerun-explanation" type="button"
 										value="{$explain-query.label}"
@@ -462,9 +466,10 @@
                 <div class="query-actions-toolbar">
                     <div class="query-form__field query-form__field--actions query-actions-toolbar__primary">
                         <button id="exec" class="query-action query-action--primary" type="submit">
-                            <svg class="query-action-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
-                                <path d="m7 4 12 8-12 8V4Z"></path>
-                            </svg>
+                            <xsl:call-template name="workbench-action-icon">
+                                <xsl:with-param name="name">execute</xsl:with-param>
+                                <xsl:with-param name="additional-class">query-action-icon</xsl:with-param>
+                            </xsl:call-template>
                             <span><xsl:value-of select="$execute.label" /></span>
                         </button>
                         <input id="query-cancel" class="query-cancel" type="button"
@@ -472,12 +477,10 @@
                                aria-hidden="true" disabled="disabled"/>
                         <button id="explain-trigger" class="query-action" type="button"
                                 onclick="workbench.query.runExplain(null, 'explain-trigger')">
-                            <svg class="query-action-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
-                                <circle cx="6" cy="12" r="2.5"></circle>
-                                <circle cx="18" cy="6" r="2.5"></circle>
-                                <circle cx="18" cy="18" r="2.5"></circle>
-                                <path d="m8.2 11 7.3-4M8.2 13l7.3 4"></path>
-                            </svg>
+                            <xsl:call-template name="workbench-action-icon">
+                                <xsl:with-param name="name">explain</xsl:with-param>
+                                <xsl:with-param name="additional-class">query-action-icon</xsl:with-param>
+                            </xsl:call-template>
                             <span><xsl:value-of select="$explain-query.label" /></span>
                         </button>
                         <span id="explain-trigger-spinner" class="query-explain-spinner"
@@ -501,7 +504,11 @@
                         <svg class="query-action-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
                             <path d="M6 4h12v16l-6-3-6 3V4Z"></path>
                         </svg>
-                        <xsl:value-of select="$save.label"/>
+                        <span><xsl:value-of select="$save.label"/></span>
+                        <xsl:call-template name="workbench-action-icon">
+                            <xsl:with-param name="name">chevron</xsl:with-param>
+                            <xsl:with-param name="additional-class">workbench-disclosure-chevron</xsl:with-param>
+                        </xsl:call-template>
                     </button>
                     <div id="save-query-panel" class="query-disclosure__body query-disclosure__panel query-save-disclosure__body"
                          role="region" aria-labelledby="save-query-toggle" hidden="hidden">
@@ -529,7 +536,11 @@
                             <circle cx="15" cy="12" r="2"></circle>
                             <circle cx="11" cy="17" r="2"></circle>
                         </svg>
-                        <xsl:value-of select="$query-options.label"/>
+                        <span><xsl:value-of select="$query-options.label"/></span>
+                        <xsl:call-template name="workbench-action-icon">
+                            <xsl:with-param name="name">chevron</xsl:with-param>
+                            <xsl:with-param name="additional-class">workbench-disclosure-chevron</xsl:with-param>
+                        </xsl:call-template>
                     </button>
                     <div id="query-options-panel" class="query-disclosure__body query-disclosure__panel"
                          role="region" aria-labelledby="query-options-toggle" hidden="hidden">

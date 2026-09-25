@@ -84,7 +84,13 @@
 				</div>
 			</div>
 			<details id="add-import-settings" class="workbench-options">
-				<summary><xsl:value-of select="$advanced-settings.label" /></summary>
+				<summary>
+					<span><xsl:value-of select="$advanced-settings.label" /></span>
+					<xsl:call-template name="workbench-action-icon">
+						<xsl:with-param name="name">chevron</xsl:with-param>
+						<xsl:with-param name="additional-class">workbench-disclosure-chevron</xsl:with-param>
+					</xsl:call-template>
+				</summary>
 				<div class="workbench-options__body">
 					<div class="workbench-field">
 						<label for="baseURI"><xsl:value-of select="$base-uri.label" /></label>

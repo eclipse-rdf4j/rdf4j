@@ -74,6 +74,7 @@ class QueryResultTemplateTest {
 				.doesNotContain("id=\"navigation\"")
 				.doesNotContain("id=\"footer\"")
 				.contains("class=\"data\"")
+				.contains("<h2 id=\"title_heading\">Query Result (1)</h2>")
 				.contains("scripts/queryResult.js")
 				.contains("data-query-request-id=\"query-1\"")
 				.contains("data-query-language=\"SPARQL\"")
@@ -186,6 +187,24 @@ class QueryResultTemplateTest {
 				.doesNotContain("onclick=\"workbench.savedQueries.toggle");
 	}
 
+	@Test
+	void informationPageShouldKeepAllLiveValuesInsideOneSharedSurface() throws Exception {
+		String html = transform("information.xsl", informationXml(), infoXml());
+
+		assertThat(countOccurrences(html, "class=\"workbench-island\"")).isEqualTo(1);
+		assertThat(html)
+				.contains("<div id=\"workbench-information\" class=\"workbench-island\">")
+				.contains("<section id=\"information-application\">")
+				.contains("<section id=\"information-runtime\">")
+				.contains("<section id=\"information-memory\">")
+				.contains("information-version-sentinel")
+				.contains("information-os-sentinel")
+				.contains("information-jvm-sentinel")
+				.contains("information-user-sentinel")
+				.contains("information-used-memory-sentinel")
+				.contains("information-maximum-memory-sentinel");
+	}
+
 	private String transform(String stylesheetName, String xml, String infoXml) throws Exception {
 		Files.writeString(tempDir.resolve("info"), infoXml, StandardCharsets.UTF_8);
 		Path xmlPath = tempDir.resolve(stylesheetName + ".xml");
@@ -229,6 +248,23 @@ class QueryResultTemplateTest {
 		xml.append("    <workbench:query-result-status>completed</workbench:query-result-status>\n");
 		xml.append("    <workbench:total-result-count>42</workbench:total-result-count>\n");
 		xml.append("  </workbench:metadata>\n");
+		xml.append("</sparql:sparql>\n");
+		return xml.toString();
+	}
+
+	private static String informationXml() {
+		StringBuilder xml = new StringBuilder();
+		xml.append("<?xml version=\"1.0\"?>\n");
+		xml.append("<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\">\n");
+		xml.append("  <sparql:head><sparql:link href=\"info\"/></sparql:head>\n");
+		xml.append("  <sparql:results><sparql:result>\n");
+		appendBinding(xml, "version", "information-version-sentinel");
+		appendBinding(xml, "os", "information-os-sentinel");
+		appendBinding(xml, "jvm", "information-jvm-sentinel");
+		appendBinding(xml, "user", "information-user-sentinel");
+		appendBinding(xml, "memory-used", "information-used-memory-sentinel");
+		appendBinding(xml, "maximum-memory", "information-maximum-memory-sentinel");
+		xml.append("  </sparql:result></sparql:results>\n");
 		xml.append("</sparql:sparql>\n");
 		return xml.toString();
 	}

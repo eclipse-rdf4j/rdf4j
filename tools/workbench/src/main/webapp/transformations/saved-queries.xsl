@@ -104,8 +104,8 @@
 						<td style="vertical-align:middle">
 							<span class="workbench-action workbench-action--secondary">
 								<label class="workbench-action-hit-area">
-									<xsl:call-template name="workbench-action-icon">
-										<xsl:with-param name="name">summary</xsl:with-param>
+								<xsl:call-template name="workbench-action-icon">
+										<xsl:with-param name="name">eye</xsl:with-param>
 									</xsl:call-template>
 									<span class="workbench-action-label"><input type="button" id="{$query}-toggle" value="Show"
 										class="saved-query-toggle" data-query-urn="{$query}" /></span>
@@ -125,7 +125,7 @@
 								<span class="workbench-action workbench-action--secondary">
 									<label class="workbench-action-hit-area">
 										<xsl:call-template name="workbench-action-icon">
-											<xsl:with-param name="name">update</xsl:with-param>
+											<xsl:with-param name="name">edit</xsl:with-param>
 										</xsl:call-template>
 										<span class="workbench-action-label"><input type="submit" value="Edit" /></span>
 									</label>

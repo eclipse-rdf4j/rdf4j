@@ -28,7 +28,13 @@
 		</p>
 
 		<details id="remove-examples" class="workbench-options">
-			<summary><xsl:value-of select="$examples.label" /></summary>
+			<summary>
+				<span><xsl:value-of select="$examples.label" /></span>
+				<xsl:call-template name="workbench-action-icon">
+					<xsl:with-param name="name">chevron</xsl:with-param>
+					<xsl:with-param name="additional-class">workbench-disclosure-chevron</xsl:with-param>
+				</xsl:call-template>
+			</summary>
 		<ul>
 			<li>
 				URI:

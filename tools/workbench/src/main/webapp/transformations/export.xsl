@@ -43,7 +43,13 @@
 			</div>
 		</form>
 		<details id="export-result-options" class="workbench-island workbench-options">
-			<summary><xsl:value-of select="$result-options.label" /></summary>
+			<summary>
+				<span><xsl:value-of select="$result-options.label" /></span>
+				<xsl:call-template name="workbench-action-icon">
+					<xsl:with-param name="name">chevron</xsl:with-param>
+					<xsl:with-param name="additional-class">workbench-disclosure-chevron</xsl:with-param>
+				</xsl:call-template>
+			</summary>
 			<div class="workbench-options__body">
 			<form id="export-result-options-form" action="export">
 			<div class="workbench-field">

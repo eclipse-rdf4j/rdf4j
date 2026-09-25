@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import javax.xml.transform.Templates;
 import javax.xml.transform.Transformer;
@@ -59,7 +60,11 @@ class QueryTemplateTest {
 
 		assertThat(queryTemplate)
 				.containsSubsequence("<select id=\"explain-level\">", "id=\"explanation-settings-toggle\"")
-				.containsPattern("(?s)<button id=\"explanation-settings-toggle\"[^>]*>[\\s\\S]*?Config\\s*</button>")
+				.containsPattern("(?s)<button id=\"explanation-settings-toggle\"[^>]*>[\\s\\S]*?"
+						+ "<span>Config</span>[\\s\\S]*?"
+						+ "<xsl:with-param name=\"name\">chevron</xsl:with-param>[\\s\\S]*?"
+						+ "<xsl:with-param name=\"additional-class\">workbench-disclosure-chevron"
+						+ "</xsl:with-param>[\\s\\S]*?</button>")
 				.contains("aria-controls=\"explanation-settings-panel\"")
 				.contains("aria-expanded=\"false\"")
 				.contains("id=\"explanation-settings-panel\"")
@@ -78,6 +83,34 @@ class QueryTemplateTest {
 						+ "bottom:\\s*calc\\(100% \\+ 0\\.5rem\\);")
 				.contains(".query-explanation-property-config")
 				.contains(".query-explanation-property-option");
+	}
+
+	@Test
+	void expandableWorkbenchControlsShouldUseOneSharedChevronIcon() throws IOException {
+		String iconTemplate = Files.readString(Path.of("src/main/webapp/transformations/template.xsl"),
+				StandardCharsets.UTF_8);
+		assertThat(iconTemplate)
+				.containsPattern("(?s)<xsl:when test=\"\\$name = 'chevron'\">\\s*"
+						+ "<path d=\"m6 9 6 6 6-6\" />\\s*</xsl:when>");
+
+		assertDisclosureChevronCallCount("query.xsl", 3);
+		assertDisclosureChevronCallCount("tuple.xsl", 2);
+		assertDisclosureChevronCallCount("graph.xsl", 2);
+		assertDisclosureChevronCallCount("add.xsl", 1);
+		assertDisclosureChevronCallCount("explore.xsl", 1);
+		assertDisclosureChevronCallCount("export.xsl", 1);
+		assertDisclosureChevronCallCount("server.xsl", 1);
+		assertDisclosureChevronCallCount("remove.xsl", 1);
+		assertDisclosureChevronCallCount("summary.xsl", 1);
+	}
+
+	private void assertDisclosureChevronCallCount(String templateName, int expectedCount) throws IOException {
+		String template = Files.readString(Path.of("src/main/webapp/transformations", templateName),
+				StandardCharsets.UTF_8);
+		String call = "<xsl:with-param name=\"name\">chevron</xsl:with-param>";
+		assertThat(template.split(Pattern.quote(call), -1).length - 1)
+				.as("shared disclosure chevrons in %s", templateName)
+				.isEqualTo(expectedCount);
 	}
 
 	@Test
@@ -719,12 +752,13 @@ class QueryTemplateTest {
 	@Test
 	void queryExplanationSyntaxHighlightingShouldUseEditorSurfaceColors() throws IOException {
 		String queryStyles = readQueryStyles();
+		String workbenchStyles = readWorkbenchStyles();
 
 		assertThat(queryStyles)
-				.contains("--query-code-surface: #fff;")
-				.contains("--query-code-surface-hover: #f0fdfa;")
-				.contains("--query-code-selection: #ccfbf1;")
-				.contains("--query-code-ink: #0f172a;")
+				.contains("--query-code-surface: var(--workbench-surface);")
+				.contains("--query-code-surface-hover: var(--workbench-inset);")
+				.contains("--query-code-selection: var(--workbench-inset);")
+				.contains("--query-code-ink: var(--workbench-ink);")
 				.containsPattern(
 						"#query-explanation,\\s*#query-explanation-compare\\s*\\{[^}]*background:\\s*var\\(--query-code-surface\\);[^}]*color:\\s*var\\(--query-code-ink\\);")
 				.containsPattern(
@@ -738,32 +772,39 @@ class QueryTemplateTest {
 				.contains("background: var(--query-code-selection);")
 				.containsPattern(
 						"\\.query-explanation--highlighted \\.query-explanation-line:hover\\s*\\{[^}]*background:");
+
+		assertThat(workbenchStyles)
+				.contains("--workbench-surface: #fff;")
+				.contains("--workbench-inset: #f8fafc;")
+				.contains("--workbench-ink: #0f172a;");
 	}
 
 	@Test
 	void queryExplanationShouldUseCompactTechnicalTheme() throws IOException {
 		String queryStyles = readQueryStyles();
+		String workbenchStyles = readWorkbenchStyles();
 		String highlighter = Files.readString(
 				Path.of("src/main/webapp/scripts/ts/queryExplanationHighlighter.ts"), StandardCharsets.UTF_8);
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
 		assertThat(queryStyles)
-				.contains("--query-code-muted: #475569;")
-				.contains("--query-code-connector: #94a3b8;")
-				.contains("--query-code-node: #0f766e;")
-				.contains("--query-code-annotation: #334155;")
-				.contains("--query-code-variable-label: #0f766e;")
-				.contains("--query-code-variable: #115e59;")
-				.contains("--query-code-value: #166534;")
-				.contains("--query-code-bound: #166534;")
-				.contains("--query-code-unbound: #b42318;")
-				.contains("--query-code-metric: #9a3412;")
-				.contains("--query-code-border: #cbd5e1;")
+				.contains("--query-code-muted: var(--workbench-muted);")
+				.contains("--query-code-connector: var(--workbench-muted);")
+				.contains("--query-code-node: var(--workbench-teal);")
+				.contains("--query-code-annotation: var(--workbench-nav);")
+				.contains("--query-code-variable-label: var(--workbench-teal);")
+				.contains("--query-code-variable: var(--workbench-teal-dark);")
+				.contains("--query-code-value: var(--workbench-nav);")
+				.contains("--query-code-bound: var(--workbench-teal-dark);")
+				.contains("--query-code-unbound: var(--workbench-danger);")
+				.contains("--query-code-metric: var(--workbench-nav);")
+				.contains("--query-code-border: var(--workbench-rule);")
 				.doesNotContain("filter: contrast(")
 				.containsPattern("#query-explanation,\\s*#query-explanation-compare\\s*\\{[^}]*"
-						+ "border-radius:\\s*0;[^}]*padding:\\s*0\\.578125rem 0\\.59375rem 0\\.609375rem;[^}]*"
-						+ "box-shadow:\\s*none;[^}]*"
-						+ "font-family:\\s*Menlo,[^}]*font-size:\\s*0\\.8125rem;[^}]*line-height:\\s*1rem;")
+						+ "border-radius:\\s*var\\(--workbench-control-radius\\);[^}]*"
+						+ "padding:\\s*0\\.578125rem 0\\.59375rem 0\\.609375rem;[^}]*"
+						+ "font-family:\\s*var\\(--workbench-code-font\\);[^}]*"
+						+ "font-size:\\s*var\\(--workbench-code-font-size\\);[^}]*line-height:\\s*1rem;")
 				.containsPattern("\\.query-explanation-token--connector\\s*\\{[^}]*"
 						+ "letter-spacing:\\s*-0\\.005rem;")
 				.containsPattern("\\.query-explanation-token--node-type\\s*\\{[^}]*"
@@ -798,6 +839,16 @@ class QueryTemplateTest {
 						+ "color:\\s*var\\(--query-code-bound\\);")
 				.containsPattern("\\.query-explanation-token--binding-unbound\\s*\\{[^}]*"
 						+ "color:\\s*var\\(--query-code-unbound\\);");
+
+		assertThat(workbenchStyles)
+				.contains("--workbench-muted: #64748b;")
+				.contains("--workbench-code-font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;")
+				.contains("--workbench-code-font-size: 14px;")
+				.contains("--workbench-nav: #334155;")
+				.contains("--workbench-teal: #0f766e;")
+				.contains("--workbench-teal-dark: #115e59;")
+				.contains("--workbench-danger: #b42318;")
+				.contains("--workbench-rule: #cbd5e1;");
 
 		assertThat(highlighter)
 				.contains("var structuralSuffix = hasNextMarker ? /(?:,\\s*|\\)\\s*\\()$/")
@@ -1228,6 +1279,10 @@ class QueryTemplateTest {
 		return Files.readString(Path.of("src/main/webapp/styles/query.css"), StandardCharsets.UTF_8)
 				+ Files.readString(Path.of("src/main/webapp/styles/query-explanation.css"), StandardCharsets.UTF_8)
 				+ Files.readString(Path.of("src/main/webapp/styles/query-compare.css"), StandardCharsets.UTF_8);
+	}
+
+	private static String readWorkbenchStyles() throws IOException {
+		return Files.readString(Path.of("src/main/webapp/styles/workbench-refresh.css"), StandardCharsets.UTF_8);
 	}
 
 	private static String templateDefault(ConfigTemplate template, String name) {

@@ -48,6 +48,9 @@ var workbench;
         var compareQuerySeeded = false;
         var diffNotReadyLabel = '';
         var lastDiffTriggerElement = null;
+        var diffModalBackgroundLocked = false;
+        var diffModalPreviousBodyOverflow = '';
+        var diffModalBackgroundState = [];
         var explanationHighlightMode = 'syntax';
         var EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY = 'rdf4j.workbench.query.explanation.hiddenProperties';
         var explanationHiddenProperties = loadExplanationHiddenProperties();
@@ -1988,6 +1991,82 @@ var workbench;
                 renderStableExplanation(paneKey, paneDisplayExplanation, sharedMaximum);
             }
         }
+        function syncDiffModalPresentation(open) {
+            if (open === diffModalBackgroundLocked) {
+                return;
+            }
+            var body = document.body;
+            var backgroundElements = Array.prototype.slice.call(document.querySelectorAll('#query-page > form, #query-page > #query-results'));
+            if (open) {
+                diffModalPreviousBodyOverflow = body ? body.style.overflow : '';
+                diffModalBackgroundState = backgroundElements.map(function (element) {
+                    return {
+                        element: element,
+                        inert: !!element.inert,
+                        ariaHidden: element.getAttribute('aria-hidden')
+                    };
+                });
+                backgroundElements.forEach(function (element) {
+                    element.inert = true;
+                    element.setAttribute('aria-hidden', 'true');
+                });
+                if (body) {
+                    body.style.overflow = 'hidden';
+                }
+                diffModalBackgroundLocked = true;
+                return;
+            }
+            diffModalBackgroundState.forEach(function (state) {
+                state.element.inert = state.inert;
+                if (state.ariaHidden === null) {
+                    state.element.removeAttribute('aria-hidden');
+                }
+                else {
+                    state.element.setAttribute('aria-hidden', state.ariaHidden);
+                }
+            });
+            if (body) {
+                body.style.overflow = diffModalPreviousBodyOverflow;
+            }
+            diffModalBackgroundState = [];
+            diffModalBackgroundLocked = false;
+        }
+        function getDiffModalFocusableElements() {
+            var dialog = document.querySelector('.query-diff-modal__dialog');
+            if (!dialog) {
+                return [];
+            }
+            var candidates = Array.prototype.slice.call(dialog.querySelectorAll('a[href], area[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'));
+            return candidates.filter(function (element) {
+                var style = window.getComputedStyle(element);
+                return !element.hasAttribute('disabled') && style.display !== 'none'
+                    && style.visibility !== 'hidden' && element.getBoundingClientRect().width > 0
+                    && element.getBoundingClientRect().height > 0;
+            });
+        }
+        function handleDiffModalTab(event) {
+            if (!diffModalBackgroundLocked || event.key !== 'Tab') {
+                return;
+            }
+            var dialog = document.querySelector('.query-diff-modal__dialog');
+            var focusable = getDiffModalFocusableElements();
+            if (!dialog || focusable.length === 0) {
+                event.preventDefault();
+                return;
+            }
+            var first = focusable[0];
+            var last = focusable[focusable.length - 1];
+            var active = document.activeElement;
+            if (!dialog.contains(active) || (!event.shiftKey && active === last)) {
+                event.preventDefault();
+                first.focus();
+            }
+            else if (event.shiftKey && active === first) {
+                event.preventDefault();
+                last.focus();
+            }
+        }
+        query_1.handleDiffModalTab = handleDiffModalTab;
         function renderQueryPageState() {
             if (!queryPageState) {
                 return;
@@ -1995,9 +2074,11 @@ var workbench;
             syncLegacyMachineFlags();
             $('#query-compare-layout').toggleClass('query-compare-layout--active', compareModeEnabled);
             $('#query-compare-controls').toggle(compareModeEnabled);
+            var diffModalOpen = queryPageState.diffModal.kind === 'open';
             $('#query-diff-modal')
-                .toggleClass('query-diff-modal--open', queryPageState.diffModal.kind === 'open')
-                .attr('aria-hidden', queryPageState.diffModal.kind === 'open' ? 'false' : 'true');
+                .toggleClass('query-diff-modal--open', diffModalOpen)
+                .attr('aria-hidden', diffModalOpen ? 'false' : 'true');
+            syncDiffModalPresentation(diffModalOpen);
             renderPanePresentation('primary');
             renderPanePresentation('compare');
             updateDownloadButtonState();
@@ -4232,6 +4313,10 @@ workbench.addLoad(function queryPageLoaded() {
         }
     });
     $(document).keydown(function (event) {
+        if ($('#query-diff-modal').hasClass('query-diff-modal--open') && event.key === 'Tab') {
+            workbench.query.handleDiffModalTab(event);
+            return;
+        }
         if (event.key === 'Escape' && workbench.query.isResultsFullscreen()) {
             workbench.query.toggleResultsFullscreen();
             event.preventDefault();

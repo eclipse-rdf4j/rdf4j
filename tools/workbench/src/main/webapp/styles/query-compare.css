@@ -43,7 +43,7 @@ body.query-compare-mode #query-sidebar-toggle {
 .query-sidebar-toggle__stroke {
     fill: none;
     stroke: currentColor;
-    stroke-width: 2.25;
+    stroke-width: 1.75;
     stroke-linecap: round;
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
@@ -125,19 +125,18 @@ body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
     align-items: center;
     justify-content: center;
     gap: 0.45rem;
-    min-height: 36px;
-    padding: 0 12px;
+	min-height: calc(var(--workbench-control-height) - 2px);
+	padding: 0.35rem 0.65rem;
     border: 0;
     background: transparent;
     color: inherit;
-    font: inherit;
-    font-weight: 600;
+	font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
     cursor: pointer;
 }
 
 .query-compare-toolbar .workbench-action-icon {
-    width: 1rem;
-    height: 1rem;
+    width: 16px;
+    height: 16px;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.75;
@@ -170,13 +169,14 @@ body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
     align-items: center;
     justify-content: center;
     width: auto;
-    min-height: 36px;
-    padding: 0 12px;
-    border: 1px solid #c7d3df;
-    border-radius: 0.75rem;
-    background: #ffffff;
-    color: var(--query-link, #0f766e);
-    box-shadow: 0 8px 18px rgba(12, 25, 36, 0.12);
+	min-height: calc(var(--workbench-control-height) - 2px);
+	padding: 0.35rem 0.65rem;
+	border: 1px solid var(--workbench-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-surface);
+	color: var(--workbench-nav);
+	font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+    box-shadow: none;
     cursor: pointer;
     transition: transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
 }
@@ -198,12 +198,13 @@ body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
 }
 
 .query-compare-action:hover {
-    background: #f0fdfa;
+	background: var(--workbench-inset);
 }
 
-.query-compare-action:focus {
-    outline: 2px solid var(--query-link, #0f766e);
-    outline-offset: 2px;
+
+.query-compare-action:focus-visible {
+	outline: 2px solid var(--workbench-focus);
+	outline-offset: 2px;
 }
 
 .query-compare-action[disabled] {
@@ -223,14 +224,14 @@ body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
 
 .query-compare-action__svg {
     display: block;
-    width: 1.2rem;
-    height: 1.2rem;
+    width: 18px;
+    height: 18px;
 }
 
 .query-compare-action__stroke {
     fill: none;
     stroke: currentColor;
-    stroke-width: 2.1;
+    stroke-width: 1.75;
     stroke-linecap: round;
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
@@ -275,7 +276,7 @@ body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
     position: fixed;
     inset: 0;
     z-index: 999;
-    background: rgba(12, 25, 36, 0.7);
+    background: rgba(15, 23, 42, 0.55);
     align-items: center;
     justify-content: center;
     padding: var(--query-diff-modal-padding);
@@ -287,16 +288,16 @@ body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
 }
 
 .query-diff-modal__dialog {
-    background: #ffffff;
-    color: #1f2328;
+	background: var(--workbench-surface);
+	color: var(--workbench-ink);
     width: calc(100vw - (var(--query-diff-modal-padding) * 2));
     height: auto;
     min-height: 0;
     max-width: 1400px;
     max-height: calc(100vh - (var(--query-diff-modal-padding) * 2));
     margin: 0 auto;
-    border-radius: 12px;
-    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.35);
+	border-radius: var(--workbench-radius);
+	box-shadow: var(--workbench-shadow);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -309,12 +310,12 @@ body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
     justify-content: space-between;
     gap: 1rem;
     padding: 1rem 1.25rem;
-    border-bottom: 1px solid #d0d7de;
+	border-bottom: 1px solid var(--workbench-soft-rule);
 }
 
 .query-diff-modal__title {
-    font-size: 1.15rem;
-    font-weight: 700;
+	font-size: 18px;
+	font-weight: 600;
 }
 
 .query-diff-modal__body {
@@ -345,17 +346,18 @@ body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
 }
 
 .query-diff-section__title {
-    font-weight: 700;
-    color: var(--query-ink, #0f172a);
+	font-size: var(--workbench-control-font-size);
+	font-weight: 600;
+	color: var(--workbench-nav);
 }
 
 .query-diff-view {
-    border: 1px solid #d0d7de;
-    border-radius: 8px;
-    background: #f8fafc;
-    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-    font-size: 0.9rem;
-    line-height: 1.45;
+	border: 1px solid var(--workbench-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-inset);
+	font-family: var(--workbench-code-font);
+	font-size: var(--workbench-code-font-size);
+	line-height: 1.5;
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
@@ -373,7 +375,7 @@ body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
 }
 
 .query-diff-row__marker {
-    font-weight: 700;
+	font-weight: 600;
 }
 
 .query-diff-row__content {
@@ -381,30 +383,36 @@ body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
 }
 
 .query-diff-row__segment--changed {
-    border-radius: 0.2rem;
+	border-radius: 3px;
     padding: 0 0.12rem;
 }
 
 .query-diff-row--added {
-    background: #ecfdf3;
-    color: #116329;
+	background: var(--workbench-surface);
+	color: var(--workbench-teal-dark);
 }
 
 .query-diff-row--added .query-diff-row__segment--changed {
-    background: #bbf7d0;
+	background: var(--workbench-inset);
 }
 
 .query-diff-row--removed {
-    background: #fff1f0;
-    color: #9f1d1d;
+	background: var(--workbench-surface);
+	color: var(--workbench-danger);
 }
 
 .query-diff-row--removed .query-diff-row__segment--changed {
-    background: #fecaca;
+	background: var(--workbench-inset);
 }
 
 .query-diff-row--context {
-    color: #334155;
+	color: var(--workbench-nav);
+}
+
+@media (max-width: 600px) {
+	.query-diff-view {
+		font-size: 13px;
+	}
 }
 
 @media (max-width: 900px) {
