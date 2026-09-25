@@ -18,6 +18,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -487,13 +488,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 			@Override
 			public void meet(BindingSetAssignment node) throws QueryEvaluationException {
-				Set<String> bindingNames = node.getBindingNames();
-
-				Set<String> collect = bindingNames.stream()
-						.map(varName -> varNames.computeIfAbsent(varName, k -> k))
-						.collect(Collectors.toSet());
-
-				node.setBindingNames(collect);
+				Set<String> bindingNames = new LinkedHashSet<>(node.getDeclaredBindingNames());
+				bindingNames.addAll(node.getPossibleBindingNames());
+				bindingNames.forEach(varName -> varNames.computeIfAbsent(varName, k -> k));
 
 				super.meet(node);
 			}

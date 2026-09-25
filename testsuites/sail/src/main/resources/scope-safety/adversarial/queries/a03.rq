@@ -1,0 +1,7 @@
+# The subquery's ?x is hidden and must not constrain OPTIONAL compatibility.
+SELECT ?x ?y WHERE {
+  VALUES ?x { "outer" }
+  OPTIONAL {
+    { SELECT ?y WHERE { VALUES (?x ?y) { ("inner-a" "A") ("inner-b" "B") } } }
+  }
+}

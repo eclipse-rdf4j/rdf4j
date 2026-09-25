@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
+import org.eclipse.rdf4j.queryrender.sparql.experimental.SparqlQueryRenderer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
@@ -465,6 +466,22 @@ public class TupleExprIRRendererTest {
 				"  ?x foaf:name ?n .\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg(), false);
+	}
+
+	@Test
+	void values_allUndefColumnIsPreserved() {
+		String q = "SELECT ?bound WHERE { VALUES (?bound ?neverBound) { (\"value\" UNDEF) } }";
+		assertSameSparqlQuery(q, cfg(), false);
+	}
+
+	@Test
+	void preprocessedRendererPreservesAllUndefValuesColumns() {
+		String q = "SELECT ?bound WHERE { VALUES (?bound ?neverBound) { (\"value\" UNDEF) } }";
+		ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, q, null);
+
+		String rendered = new SparqlQueryRenderer().render(parsed);
+
+		assertThat(rendered).contains("?neverBound");
 	}
 
 	@RepeatedTest(10)

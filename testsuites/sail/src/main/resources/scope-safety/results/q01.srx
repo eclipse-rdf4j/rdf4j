@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sparql xmlns="http://www.w3.org/2005/sparql-results#">
+  <head>
+    <variable name="x"/>
+    <variable name="y"/>
+  </head>
+  <results>
+    <result>
+      <binding name="x"><literal>1</literal></binding>
+      <binding name="y"><literal>a</literal></binding>
+    </result>
+    <result>
+      <binding name="x"><literal>2</literal></binding>
+    </result>
+    <result>
+      <binding name="x"><literal>3</literal></binding>
+      <binding name="y"><literal>c</literal></binding>
+    </result>
+    <result>
+      <binding name="x"><literal>4</literal></binding>
+    </result>
+    <result>
+      <binding name="x"><literal>5</literal></binding>
+    </result>
+  </results>
+</sparql>

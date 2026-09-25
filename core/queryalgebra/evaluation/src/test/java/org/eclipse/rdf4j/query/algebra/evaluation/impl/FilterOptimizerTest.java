@@ -15,34 +15,59 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
@@ -50,6 +75,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimiz
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
@@ -91,39 +117,530 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 	@Test
 	public void deMerge() {
-		Var s = Var.of("s");
-		Var p = Var.of("p");
-		Var o = Var.of("o");
-		Var o2 = Var.of("o2");
-		ValueConstant one = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(1));
-		ValueConstant two = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(2));
-		ValueConstant four = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(4));
-		ValueConstant five = new ValueConstant(SimpleValueFactory.getInstance().createLiteral(5));
+		String query = "SELECT * WHERE {?s ?p ?o . ?s ?p ?o2 . FILTER(?o2 != '2'^^xsd:int "
+				+ "&& ?o2 > '1'^^xsd:int && ?o < '5'^^xsd:int && ?o > '2'^^xsd:int && ?o2 < '4'^^xsd:int) }";
 
-		And firstAnd = new And(new Compare(o.clone(), five, CompareOp.LT), new Compare(o.clone(), two, CompareOp.GT));
-		Filter spo = new Filter(new StatementPattern(s.clone(), p.clone(), o.clone()), firstAnd);
+		TupleExpr optimized = parseTupleExpr(query);
+		new FilterOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
 
-		And secondAnd = new And(
-				new And(new Compare(o2.clone(), two, CompareOp.NE), new Compare(o2.clone(), one, CompareOp.GT)),
-				new Compare(o2.clone(), four, CompareOp.LT));
-		Filter spo2 = new Filter(new StatementPattern(s.clone(), p.clone(), o2.clone()), secondAnd);
+		List<Filter> filters = findAll(optimized, Filter.class);
+		assertThat(filters)
+				.hasSize(2)
+				.allSatisfy(filter -> assertThat(filter.getArg()).isInstanceOf(StatementPattern.class));
+		Set<Set<String>> actualComparisons = new HashSet<>();
+		for (Filter filter : filters) {
+			actualComparisons.add(comparisonSignatures(filter.getCondition()));
+		}
+		assertThat(actualComparisons).containsExactlyInAnyOrder(
+				Set.of("o:GT:2", "o:LT:5"),
+				Set.of("o2:NE:2", "o2:GT:1", "o2:LT:4"));
+	}
 
-		TupleExpr expected = new QueryRoot(
-				new Projection(new Join(spo, spo2), new ProjectionElemList(new ProjectionElem("s"),
-						new ProjectionElem("p"), new ProjectionElem("o"), new ProjectionElem("o2"))));
+	@Test
+	public void preservesResultsWhenDemergingErrorProneConjuncts() throws Exception {
+		String query = "SELECT ?o ?o2 WHERE { VALUES (?o ?o2) { (3 3) (\"x\" 3) (3 \"x\") (5 2) (2 4) } "
+				+ "FILTER(?o2 != 2 && ?o2 > 1 && ?o < 5 && ?o > 2 && ?o2 < 4) }";
+		List<BindingSet> originalResults = evaluateParsedQuery(query);
+		assertThat(originalResults).singleElement().satisfies(bindingSet -> {
+			assertThat(bindingSet.getValue("o").stringValue()).isEqualTo("3");
+			assertThat(bindingSet.getValue("o2").stringValue()).isEqualTo("3");
+		});
 
-		String query = "SELECT * WHERE {?s ?p ?o . ?s ?p ?o2  . FILTER(?o2 != '2'^^xsd:int && ?o2 > '1'^^xsd:int && ?o < '5'^^xsd:int && ?o > '2'^^xsd:int && ?o2 < '4'^^xsd:int) }";
-
-		testOptimizer(expected, query);
+		assertFilterOptimizerPreservesResults(query, originalResults);
 	}
 
 	@Test
 	public void testNestedFilter() {
-		String expectedQuery = "SELECT * WHERE {?s ?p ?o . ?o ?r ?z. ?z ?k ?m. FILTER( NOT EXISTS {{?o ?p2 ?v1. FILTER(?v1 < 4) }\n {?o ?p2 ?v2. FILTER(?v2 > 0 && ?v2 < 4)}\n ?o ?p2 ?v3.} && NOT EXISTS {?o ?p2 []}) }";
+		String query = "SELECT * WHERE {?s ?p ?o . ?o ?r ?z. FILTER NOT EXISTS {?o ?p2 []}\n ?z ?k ?m. "
+				+ "FILTER NOT EXISTS {?o ?p2 ?v1, ?v2, ?v3. FILTER(?v2 < 4) FILTER(?v1 < 4) FILTER(?v2 > 0)} }";
 
-		String query = "SELECT * WHERE {?s ?p ?o . ?o ?r ?z. FILTER NOT EXISTS {?o ?p2 []}\n ?z ?k ?m. FILTER NOT EXISTS {?o ?p2 ?v1, ?v2, ?v3. FILTER(?v2 < 4) FILTER(?v1 < 4) FILTER(?v2 > 0)} }";
+		TupleExpr optimized = parseTupleExpr(query);
+		new FilterOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		Filter correlatedFilter = findFirst(optimized, Filter.class,
+				filter -> findAll(filter.getCondition(), Exists.class).size() == 2);
 
-		testOptimizer(expectedQuery, query);
+		assertThat(correlatedFilter.getArg()).isInstanceOf(StatementPattern.class);
+		assertThat(((StatementPattern) correlatedFilter.getArg()).getObjectVar().getName()).isEqualTo("o");
+		assertThat(correlatedFilter.getParentNode()).isInstanceOf(Join.class);
+	}
+
+	@Test
+	public void preservesNestedFilterResultsOnNonemptyGraphPatterns() throws Exception {
+		String query = "SELECT ?s ?o WHERE { ?s <urn:p> ?o . ?o <urn:r> ?z . "
+				+ "FILTER NOT EXISTS { ?o <urn:p2> [] } ?z <urn:k> ?m . "
+				+ "FILTER NOT EXISTS { ?o <urn:p2> ?v1, ?v2, ?v3 . "
+				+ "FILTER(?v2 < 4) FILTER(?v1 < 4) FILTER(?v2 > 0) } }";
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI p = valueFactory.createIRI("urn:p");
+		IRI r = valueFactory.createIRI("urn:r");
+		IRI p2 = valueFactory.createIRI("urn:p2");
+		IRI k = valueFactory.createIRI("urn:k");
+		IRI s1 = valueFactory.createIRI("urn:s1");
+		IRI s2 = valueFactory.createIRI("urn:s2");
+		IRI o1 = valueFactory.createIRI("urn:o1");
+		IRI o2 = valueFactory.createIRI("urn:o2");
+		IRI z1 = valueFactory.createIRI("urn:z1");
+		IRI z2 = valueFactory.createIRI("urn:z2");
+		TripleSource tripleSource = statementListTripleSource(
+				valueFactory.createStatement(s1, p, o1),
+				valueFactory.createStatement(o1, r, z1),
+				valueFactory.createStatement(z1, k, valueFactory.createIRI("urn:m1")),
+				valueFactory.createStatement(s2, p, o2),
+				valueFactory.createStatement(o2, r, z2),
+				valueFactory.createStatement(z2, k, valueFactory.createIRI("urn:m2")),
+				valueFactory.createStatement(o2, p2, valueFactory.createLiteral(2)));
+
+		MapBindingSet expected = new MapBindingSet(2);
+		expected.addBinding("s", s1);
+		expected.addBinding("o", o1);
+		List<BindingSet> originalResults = evaluateParsedQuery(query, tripleSource);
+		assertThat(originalResults).containsExactly(expected);
+
+		assertFilterOptimizerPreservesResults(query, originalResults, tripleSource);
+	}
+
+	@Test
+	public void preservesFilterScopeMarkersInsideExists() throws Exception {
+		String query = "SELECT * WHERE {?s ?p ?o . ?o ?r ?z. ?z ?k ?m. FILTER( NOT EXISTS {{?o ?p2 ?v1. FILTER(?v1 < 4) }\n"
+				+ " {?o ?p2 ?v2. FILTER(?v2 > 0 && ?v2 < 4)}\n ?o ?p2 ?v3.} && NOT EXISTS {?o ?p2 []}) }";
+		TupleExpr tupleExpr = parseTupleExpr(query);
+		Exists groupedExists = findFirst(tupleExpr, Exists.class,
+				exists -> exists.getSubQuery().getBindingNames().containsAll(Set.of("v1", "v2", "v3")));
+		List<Filter> originalMarkedFiltersInExists = findAll(groupedExists.getSubQuery(), Filter.class).stream()
+				.filter(Filter::isVariableScopeChange)
+				.toList();
+		assertThat(originalMarkedFiltersInExists).hasSize(2);
+		Filter scopedV1Filter = findFirst(groupedExists.getSubQuery(), Filter.class,
+				filter -> filter.isVariableScopeChange() && mentionsVariable(filter, "v1"));
+		Filter scopedV2Filter = findFirst(groupedExists.getSubQuery(), Filter.class,
+				filter -> filter.isVariableScopeChange() && mentionsVariable(filter, "v2"));
+		Set<String> expectedComparisons = new HashSet<>(comparisonSignatures(scopedV1Filter.getCondition()));
+		expectedComparisons.addAll(comparisonSignatures(scopedV2Filter.getCondition()));
+
+		new FilterOptimizer().optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+
+		// The optimizer clones EXISTS expressions while splitting repeatable conjunctions, so compare their scoped
+		// condition structure rather than object identity. Splitting v2's two comparisons legitimately creates a third
+		// marked Filter in this subquery.
+		Exists optimizedGroupedExists = findFirst(tupleExpr, Exists.class,
+				exists -> exists.getSubQuery().getBindingNames().containsAll(Set.of("v1", "v2", "v3")));
+		List<Filter> markedFiltersInExists = findAll(optimizedGroupedExists.getSubQuery(), Filter.class).stream()
+				.filter(Filter::isVariableScopeChange)
+				.toList();
+		Set<String> actualComparisons = new HashSet<>();
+		for (Filter filter : markedFiltersInExists) {
+			actualComparisons.addAll(comparisonSignatures(filter.getCondition()));
+		}
+		assertThat(actualComparisons).containsExactlyInAnyOrderElementsOf(expectedComparisons);
+		assertThat(markedFiltersInExists).anySatisfy(filter -> assertThat(mentionsVariable(filter, "v1")).isTrue());
+		assertThat(markedFiltersInExists).anySatisfy(filter -> assertThat(mentionsVariable(filter, "v2")).isTrue());
+	}
+
+	@Test
+	public void preservesOuterBindingVisibilityAcrossScopedFilter() throws Exception {
+		Value one = SimpleValueFactory.getInstance().createLiteral("1", XSD.INTEGER);
+		Value two = SimpleValueFactory.getInstance().createLiteral("2", XSD.INTEGER);
+		BindingSetAssignment leftValues = singleValueBindingSetAssignment("x", one);
+		BindingSetAssignment rightValues = singleValueBindingSetAssignment("y", two);
+
+		Filter scopedRightFilter = new Filter(rightValues,
+				new Compare(Var.of("y"), new ValueConstant(two), CompareOp.EQ));
+		scopedRightFilter.setVariableScopeChange(true);
+		Filter siblingDependentFilter = new Filter(scopedRightFilter,
+				new Compare(Var.of("x"), new ValueConstant(one), CompareOp.EQ));
+		TupleExpr original = new Join(leftValues, siblingDependentFilter);
+		List<BindingSet> originalResults = evaluate(original);
+		assertThat(originalResults).singleElement().satisfies(bindingSet -> {
+			assertThat(bindingSet.getValue("x")).isEqualTo(one);
+			assertThat(bindingSet.getValue("y")).isEqualTo(two);
+		});
+
+		for (FilterOptimizer optimizer : filterOptimizerConfigurations()) {
+			TupleExpr optimized = original.clone();
+			optimizer.optimize(optimized, null, EmptyBindingSet.getInstance());
+			assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(originalResults);
+		}
+	}
+
+	@Test
+	public void retainsUnionRowsWhenSiblingSuppliesFilterVariable() throws Exception {
+		String query = """
+				SELECT ?x ?y WHERE {
+				  { VALUES ?y { "left" } } UNION { VALUES ?x { 1 } }
+				  VALUES ?x { 1 }
+				  FILTER(?x = 1)
+				}
+				""";
+
+		List<BindingSet> original = evaluateParsedQuery(query);
+		assertThat(original).hasSize(2);
+
+		assertFilterOptimizerPreservesResults(query, original);
+	}
+
+	@Test
+	public void retainsOptionalRowsWhenSiblingSuppliesNullableFilterVariable() throws Exception {
+		String query = """
+				SELECT ?seed ?x WHERE {
+				  VALUES ?seed { 2 }
+				  OPTIONAL {
+				    VALUES ?x { 1 }
+				    FILTER(?x = ?seed)
+				  }
+				  VALUES ?x { 1 }
+				  FILTER(?x = 1)
+				}
+				""";
+
+		List<BindingSet> original = evaluateParsedQuery(query);
+		assertThat(original).hasSize(1);
+
+		assertFilterOptimizerPreservesResults(query, original);
+	}
+
+	@Test
+	public void pushesNullableFilterWhenOtherJoinInputCannotSupplyItsVariable() throws Exception {
+		String query = """
+				SELECT ?seed ?x ?z WHERE {
+				  VALUES ?seed { 2 }
+				  OPTIONAL {
+				    VALUES ?x { 1 }
+				    FILTER(?x = ?seed)
+				  }
+				  VALUES ?z { 9 }
+				  FILTER(?x = 1)
+				}
+				""";
+
+		TupleExpr original = parseTupleExpr(query);
+		List<BindingSet> originalResults = evaluate(original);
+		for (FilterOptimizer optimizer : filterOptimizerConfigurations()) {
+			TupleExpr optimized = original.clone();
+			optimizer.optimize(optimized, null, EmptyBindingSet.getInstance());
+
+			Filter movedFilter = findFirst(optimized, Filter.class,
+					filter -> isEqualityToConstant(filter, "x"));
+			assertThat(movedFilter.getArg()).isInstanceOf(LeftJoin.class);
+			assertThat(movedFilter.getParentNode()).isInstanceOf(Join.class);
+			assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(originalResults);
+		}
+	}
+
+	@Test
+	public void preservesCorrelatedExistsAndNotExistsAcrossExpressionScopes() throws Exception {
+		assertFilterOptimizerPreservesResults("""
+				SELECT ?x WHERE {
+				  VALUES ?x { 1 2 }
+				  FILTER EXISTS { VALUES ?x { 1 } }
+				}
+				""");
+		assertFilterOptimizerPreservesResults("""
+				SELECT ?x WHERE {
+				  VALUES ?x { 1 2 }
+				  FILTER NOT EXISTS { VALUES ?x { 1 } }
+				}
+				""");
+		assertFilterOptimizerPreservesResults("""
+				SELECT ?x ?marker ?next WHERE {
+				  VALUES ?x { 1 2 }
+				  BIND(IF(EXISTS { VALUES ?x { 1 } }, "yes", "no") AS ?marker)
+				  BIND(IF(?marker = "yes", ?x + 1, ?x + 2) AS ?next)
+				  FILTER(?next = 2)
+				}
+				""");
+		assertFilterOptimizerPreservesResults("""
+				SELECT ?x ?y WHERE {
+				  VALUES ?x { 1 2 }
+				  OPTIONAL {
+				    VALUES ?y { 1 }
+				    FILTER EXISTS { VALUES ?x { 1 } }
+				  }
+				}
+				""");
+		assertFilterOptimizerPreservesResults("""
+				SELECT ?x ?y WHERE {
+				  VALUES ?x { 1 2 }
+				  OPTIONAL {
+				    VALUES ?y { 1 }
+				    FILTER NOT EXISTS { VALUES ?x { 1 } }
+				  }
+				}
+				""");
+		assertFilterOptimizerPreservesResults("""
+				SELECT ?x WHERE {
+				  { SELECT ?x WHERE { VALUES ?x { 1 2 } }
+				    ORDER BY DESC(EXISTS { VALUES ?x { 1 } }) ASC(?x) }
+				  FILTER(?x = 2)
+				}
+				""");
+	}
+
+	@Test
+	public void preservesHavingOnAggregateInputContext() throws Exception {
+		assertFilterOptimizerPreservesResults("""
+					SELECT ?key (COUNT(?n) AS ?count) WHERE {
+					  VALUES (?key ?n) { ("a" 1) ("a" 2) ("b" 3) }
+					}
+				GROUP BY ?key
+				HAVING(COUNT(?n) > 1)
+				""");
+	}
+
+	@Test
+	public void preservesOrderByExistsOnGroupedOutputContext() throws Exception {
+		assertFilterOptimizerPreservesResults("""
+				SELECT ?key (COUNT(?n) AS ?count) WHERE {
+				  VALUES (?key ?n) { ("a" 1) ("a" 2) ("b" 3) }
+					}
+				GROUP BY ?key
+				ORDER BY DESC(EXISTS { VALUES ?key { "a" } }) DESC(?count)
+				""");
+	}
+
+	@Test
+	public void preservesHavingAndOrderByExistsTogetherAfterGrouping() throws Exception {
+		assertFilterOptimizerPreservesResults("""
+					SELECT ?key (COUNT(?n) AS ?count) WHERE {
+					  VALUES (?key ?n) { ("a" 1) ("a" 2) ("b" 3) }
+					}
+				GROUP BY ?key
+				HAVING(COUNT(?n) > 1)
+				ORDER BY DESC(EXISTS { VALUES ?key { "a" } }) DESC(?count)
+				""");
+	}
+
+	@Test
+	public void doesNotMoveFilterBelowExtensionThatOverwritesItsVariable() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Value oldValue = valueFactory.createLiteral("old");
+		Value newValue = valueFactory.createLiteral("new");
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("x", oldValue);
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("x"));
+		values.setBindingSets(List.of(row));
+
+		Extension overwrite = new Extension(values,
+				new ExtensionElem(new ValueConstant(newValue), "x"));
+		Filter original = new Filter(overwrite,
+				new Compare(Var.of("x"), new ValueConstant(newValue), CompareOp.EQ));
+		List<BindingSet> originalResults = evaluate(original);
+		assertThat(originalResults).singleElement()
+				.satisfies(result -> assertThat(result.getValue("x")).isEqualTo(newValue));
+
+		for (FilterOptimizer optimizer : filterOptimizerConfigurations()) {
+			TupleExpr optimized = original.clone();
+			optimizer.optimize(optimized, null, EmptyBindingSet.getInstance());
+
+			assertThat(optimized).isInstanceOf(Filter.class);
+			assertThat(((Filter) optimized).getArg()).isInstanceOf(Extension.class);
+			assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(originalResults);
+		}
+	}
+
+	@Test
+	public void preservesFilterValueWhenJoinSiblingExtensionOverwritesItsVariable() throws Exception {
+		Extension overwrite = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("new")), "x"));
+
+		assertJoinFilterObservesOverwrittenValue(overwrite);
+	}
+
+	@Test
+	public void optionalExtensionOverwriteKeepsFilterAboveLeftJoin() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:probe");
+		TripleSource tripleSource = statementListTripleSource(
+				valueFactory.createStatement(subject, predicate, valueFactory.createLiteral(1)));
+		StatementPattern left = new StatementPattern(
+				Var.of("s"), new Var("p", predicate), Var.of("x"));
+		Extension optionalRight = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(valueFactory.createLiteral(10)), "x"));
+		QueryRoot original = new QueryRoot(new Filter(new LeftJoin(left, optionalRight),
+				new Compare(Var.of("x"), new ValueConstant(valueFactory.createLiteral(5)), CompareOp.GT)));
+		List<BindingSet> expected = evaluate(original.clone(), tripleSource);
+		assertThat(expected).singleElement()
+				.satisfies(row -> assertThat(row.getValue("x")).isEqualTo(valueFactory.createLiteral(10)));
+
+		TupleExpr optimized = optimizeWithStandardPipeline(original.clone(), tripleSource);
+
+		assertThat(evaluate(optimized, tripleSource)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(findAll(optimized, Filter.class)).singleElement()
+				.satisfies(filter -> assertThat(filter.getArg()).isInstanceOf(LeftJoin.class));
+	}
+
+	@Test
+	public void optionalProjectionDiscardPreservesOuterFilterResult() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:probe");
+		TripleSource tripleSource = statementListTripleSource(
+				valueFactory.createStatement(subject, predicate, valueFactory.createLiteral(1)));
+		StatementPattern left = new StatementPattern(
+				Var.of("s"), new Var("p", predicate), Var.of("x"));
+		Projection discardBindings = new Projection(new SingletonSet(), new ProjectionElemList());
+		discardBindings.setSubquery(true);
+		QueryRoot original = new QueryRoot(new Filter(new LeftJoin(left, discardBindings),
+				new Compare(Var.of("x"), new ValueConstant(valueFactory.createLiteral(5)), CompareOp.GT)));
+		List<BindingSet> expected = evaluate(original.clone(), tripleSource);
+		assertThat(expected).isEmpty();
+
+		TupleExpr optimized = optimizeWithStandardPipeline(original.clone(), tripleSource);
+
+		assertThat(evaluate(optimized, tripleSource)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	public void optionalRestoredBindingSurvivesRecursiveFilterPushdown() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:probe");
+		IRI originalValue = valueFactory.createIRI("urn:original");
+		IRI restoredValue = valueFactory.createIRI("urn:restored");
+		TripleSource tripleSource = statementListTripleSource(
+				valueFactory.createStatement(subject, predicate, originalValue));
+		StatementPattern leftPattern = new StatementPattern(
+				Var.of("s"), new Var("p", predicate), Var.of("x"));
+		Projection discardBindings = new Projection(leftPattern, new ProjectionElemList());
+		discardBindings.setSubquery(true);
+		QueryRoot original = new QueryRoot(new Filter(
+				new LeftJoin(discardBindings, singleValueBindingSetAssignment("x", restoredValue)),
+				new Bound(Var.of("x"))));
+		List<BindingSet> expected = evaluate(original.clone(), tripleSource);
+		assertThat(expected).singleElement()
+				.satisfies(row -> assertThat(row.getValue("x")).isEqualTo(restoredValue));
+
+		TupleExpr optimized = optimizeWithStandardPipeline(original.clone(), tripleSource);
+
+		assertThat(evaluate(optimized, tripleSource)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	public void preservesFilterValueAcrossNestedCompositeOverwrite() throws Exception {
+		Extension overwrite = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("new")), "x"));
+
+		assertJoinFilterObservesOverwrittenValue(new Join(new SingletonSet(), overwrite));
+	}
+
+	private void assertJoinFilterObservesOverwrittenValue(TupleExpr rightArg) throws Exception {
+		Value oldValue = SimpleValueFactory.getInstance().createLiteral("old");
+		Value newValue = SimpleValueFactory.getInstance().createLiteral("new");
+		QueryRoot original = new QueryRoot(new Filter(
+				new Join(singleValueBindingSetAssignment("x", oldValue), rightArg),
+				new Compare(Var.of("x"), new ValueConstant(newValue), CompareOp.EQ)));
+		List<BindingSet> originalResults = evaluate(original);
+		assertThat(originalResults).singleElement()
+				.satisfies(result -> assertThat(result.getValue("x")).isEqualTo(newValue));
+
+		for (FilterOptimizer optimizer : filterOptimizerConfigurations()) {
+			QueryRoot optimized = original.clone();
+			optimizer.optimize(optimized, null, EmptyBindingSet.getInstance());
+			assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(originalResults);
+
+			assertThat(findAll(optimized, Filter.class)).singleElement()
+					.satisfies(filter -> assertThat(filter.getArg())
+							.as("the x = new filter cannot run directly on the old-value input")
+							.isNotInstanceOf(BindingSetAssignment.class)
+							.isNotInstanceOf(SingletonSet.class));
+		}
+	}
+
+	@Test
+	public void preservesVolatileConjunctEvaluationOrder() throws Exception {
+		String functionUri = "urn:rdf4j:test:filter-optimizer:conjunct-order";
+		AtomicInteger invocationCount = new AtomicInteger();
+		Function function = new Function() {
+			@Override
+			public String getURI() {
+				return functionUri;
+			}
+
+			@Override
+			@SuppressWarnings("deprecation")
+			public Value evaluate(ValueFactory valueFactory, Value... args) {
+				invocationCount.incrementAndGet();
+				return valueFactory.createLiteral(true);
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+		};
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		registry.add(function);
+		try {
+			String query = """
+					SELECT ?left ?right WHERE {
+					  VALUES ?left { 1 2 }
+					  VALUES ?right { 10 20 30 }
+					  FILTER(<urn:rdf4j:test:filter-optimizer:conjunct-order>() && ?left = 1)
+					}
+					""";
+			List<BindingSet> original = evaluateParsedQuery(query);
+			assertThat(original).hasSize(3);
+			assertThat(invocationCount).hasValue(6);
+
+			for (FilterOptimizer optimizer : filterOptimizerConfigurations()) {
+				invocationCount.set(0);
+				TupleExpr optimized = parseTupleExpr(query);
+				optimizer.optimize(optimized, null, EmptyBindingSet.getInstance());
+				assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(original);
+				assertThat(invocationCount).hasValue(6);
+			}
+		} finally {
+			registry.remove(function);
+		}
+	}
+
+	@Test
+	public void preservesVolatileFunctionInvocationCountAcrossJoin() throws Exception {
+		String functionUri = "urn:rdf4j:test:filter-optimizer:invocation-count";
+		AtomicInteger invocationCount = new AtomicInteger();
+		Function function = new Function() {
+			@Override
+			public String getURI() {
+				return functionUri;
+			}
+
+			@Override
+			@SuppressWarnings("deprecation")
+			public Value evaluate(ValueFactory valueFactory, Value... args) {
+				invocationCount.incrementAndGet();
+				return valueFactory.createLiteral(true);
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+		};
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		registry.add(function);
+		try {
+			String query = """
+					SELECT ?left ?right WHERE {
+					  VALUES ?left { 1 2 }
+					  VALUES ?right { 10 20 30 }
+					  FILTER(<urn:rdf4j:test:filter-optimizer:invocation-count>())
+					}
+					""";
+			List<BindingSet> original = evaluateParsedQuery(query);
+			assertThat(original).hasSize(6);
+			assertThat(invocationCount).hasValue(6);
+
+			for (FilterOptimizer optimizer : filterOptimizerConfigurations()) {
+				invocationCount.set(0);
+				TupleExpr optimized = parseTupleExpr(query);
+				optimizer.optimize(optimized, null, EmptyBindingSet.getInstance());
+				assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(original);
+				assertThat(invocationCount).hasValue(6);
+			}
+		} finally {
+			registry.remove(function);
+		}
 	}
 
 	@Test
@@ -185,12 +702,153 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 
 	@Test
 	public void mergesExistsBeforeCompareForValuesOnlyJoin() {
-		String expectedQuery = "SELECT * WHERE {VALUES ?u {<urn:u1> <urn:u2>} VALUES ?v {<urn:v1> <urn:v2>} "
-				+ "FILTER(EXISTS {?v <urn:follows> ?u .} && ?u != ?v) }";
 		String query = "SELECT * WHERE {VALUES ?u {<urn:u1> <urn:u2>} VALUES ?v {<urn:v1> <urn:v2>} "
 				+ "FILTER(?u != ?v) FILTER EXISTS {?v <urn:follows> ?u .} }";
 
-		testOptimizer(expectedQuery, query);
+		TupleExpr optimized = parseTupleExpr(query);
+		new FilterOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		Join join = findFirst(optimized, Join.class, ignored -> true);
+		assertThat(join.getParentNode()).isInstanceOf(Projection.class);
+		assertThat(join.getLeftArg()).isInstanceOf(BindingSetAssignment.class);
+		assertThat(((BindingSetAssignment) join.getLeftArg()).getBindingNames()).containsExactly("u");
+		assertThat(join.getRightArg()).isInstanceOf(Filter.class);
+		Filter movedFilter = (Filter) join.getRightArg();
+		assertThat(movedFilter.getArg()).isInstanceOf(BindingSetAssignment.class);
+		assertThat(((BindingSetAssignment) movedFilter.getArg()).getBindingNames()).containsExactly("v");
+		assertThat(findAll(movedFilter.getCondition(), Exists.class)).hasSize(1);
+		assertThat(findAll(movedFilter.getCondition(), Compare.class)).singleElement()
+				.satisfies(compare -> assertThat(compare.getOperator()).isEqualTo(CompareOp.NE));
+	}
+
+	@Test
+	public void preservesResultsWhenExistsAndCompareMoveIntoValuesJoin() throws Exception {
+		String query = "SELECT ?u ?v WHERE { VALUES ?u { <urn:u1> <urn:u2> } VALUES ?v { <urn:u1> <urn:u2> } "
+				+ "FILTER(?u != ?v) FILTER EXISTS { ?v <urn:follows> ?u } }";
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI follows = valueFactory.createIRI("urn:follows");
+		IRI u1 = valueFactory.createIRI("urn:u1");
+		IRI u2 = valueFactory.createIRI("urn:u2");
+		TripleSource tripleSource = statementListTripleSource(
+				valueFactory.createStatement(u1, follows, u1),
+				valueFactory.createStatement(u1, follows, u2),
+				valueFactory.createStatement(u2, follows, u1));
+
+		MapBindingSet expectedV1 = new MapBindingSet(2);
+		expectedV1.addBinding("u", u1);
+		expectedV1.addBinding("v", u2);
+		MapBindingSet expectedV2 = new MapBindingSet(2);
+		expectedV2.addBinding("u", u2);
+		expectedV2.addBinding("v", u1);
+		List<BindingSet> originalResults = evaluateParsedQuery(query, tripleSource);
+		assertThat(originalResults).containsExactlyInAnyOrder(expectedV1, expectedV2);
+
+		assertFilterOptimizerPreservesResults(query, originalResults, tripleSource);
+	}
+
+	@Test
+	public void preservesResultsWhenCorrelatedExistsMovesIntoValuesJoin() throws Exception {
+		String query = "SELECT ?u ?v WHERE { VALUES ?u { 1 2 } VALUES ?v { 1 2 } "
+				+ "FILTER(?u != ?v) FILTER EXISTS { VALUES ?u { 1 } VALUES ?v { 2 } } }";
+
+		MapBindingSet expected = new MapBindingSet(2);
+		expected.addBinding("u", SimpleValueFactory.getInstance().createLiteral("1", XSD.INTEGER));
+		expected.addBinding("v", SimpleValueFactory.getInstance().createLiteral("2", XSD.INTEGER));
+		List<BindingSet> originalResults = evaluateParsedQuery(query);
+		assertThat(originalResults).containsExactly(expected);
+
+		assertFilterOptimizerPreservesResults(query, originalResults);
+	}
+
+	@Test
+	public void preservesResultsWhenPushingNestedCorrelatedNotExists() throws Exception {
+		String query = "SELECT ?x ?y WHERE { VALUES ?x { 1 2 } VALUES ?y { 10 20 } "
+				+ "FILTER NOT EXISTS { { VALUES ?candidate { 1 } FILTER(?candidate = ?x) } "
+				+ "{ VALUES ?other { 4 } FILTER(?other > 3) } } }";
+		List<BindingSet> originalResults = evaluateParsedQuery(query);
+		assertThat(originalResults).hasSize(2)
+				.allSatisfy(bindingSet -> assertThat(bindingSet.getValue("x").stringValue()).isEqualTo("2"));
+
+		assertFilterOptimizerPreservesResults(query, originalResults);
+	}
+
+	@Test
+	public void preservesNestedExistsResultsWithNonemptyGraphPatterns() throws Exception {
+		String query = "SELECT ?s ?o WHERE { VALUES ?s { <urn:s1> <urn:s2> <urn:s3> } "
+				+ "?s <urn:object> ?o . FILTER NOT EXISTS { "
+				+ "{ ?o <urn:p2> ?v1 . FILTER(?v1 < 4) } "
+				+ "{ ?o <urn:p2> ?v2 . FILTER(?v2 > 0 && ?v2 < 4) } "
+				+ "?o <urn:p2> ?v3 . } }";
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI objectPredicate = valueFactory.createIRI("urn:object");
+		IRI p2 = valueFactory.createIRI("urn:p2");
+		IRI s1 = valueFactory.createIRI("urn:s1");
+		IRI s2 = valueFactory.createIRI("urn:s2");
+		IRI s3 = valueFactory.createIRI("urn:s3");
+		IRI o1 = valueFactory.createIRI("urn:o1");
+		IRI o2 = valueFactory.createIRI("urn:o2");
+		IRI o3 = valueFactory.createIRI("urn:o3");
+		TripleSource tripleSource = statementListTripleSource(
+				valueFactory.createStatement(s1, objectPredicate, o1),
+				valueFactory.createStatement(s2, objectPredicate, o2),
+				valueFactory.createStatement(s3, objectPredicate, o3),
+				valueFactory.createStatement(o1, p2, valueFactory.createLiteral(2)),
+				valueFactory.createStatement(o2, p2, valueFactory.createLiteral(5)),
+				valueFactory.createStatement(o3, p2, valueFactory.createLiteral("not a number")));
+
+		MapBindingSet expectedS2 = new MapBindingSet(2);
+		expectedS2.addBinding("s", s2);
+		expectedS2.addBinding("o", o2);
+		MapBindingSet expectedS3 = new MapBindingSet(2);
+		expectedS3.addBinding("s", s3);
+		expectedS3.addBinding("o", o3);
+		List<BindingSet> originalResults = evaluate(parseTupleExpr(query), tripleSource);
+		assertThat(originalResults).containsExactlyInAnyOrder(expectedS2, expectedS3);
+
+		assertFilterOptimizerPreservesResults(query, originalResults, tripleSource);
+	}
+
+	@Test
+	public void preservesCorrelatedExistsInvocationCount() throws Exception {
+		String functionUri = "urn:rdf4j:test:filter-optimizer:correlated-exists-count";
+		AtomicInteger invocationCount = new AtomicInteger();
+		Function function = new Function() {
+			@Override
+			public String getURI() {
+				return functionUri;
+			}
+
+			@Override
+			@SuppressWarnings("deprecation")
+			public Value evaluate(ValueFactory valueFactory, Value... args) {
+				invocationCount.incrementAndGet();
+				return valueFactory.createLiteral(true);
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+		};
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		registry.add(function);
+		try {
+			String query = "SELECT ?u ?v WHERE { VALUES ?u { 1 2 } VALUES ?v { 1 2 } "
+					+ "FILTER(?u != ?v) FILTER EXISTS { VALUES ?u { 1 } VALUES ?v { 2 } "
+					+ "FILTER(<" + functionUri + ">()) } }";
+			List<BindingSet> originalResults = evaluateParsedQuery(query);
+			assertThat(originalResults).hasSize(1);
+			assertThat(invocationCount).hasValue(1);
+
+			for (FilterOptimizer optimizer : filterOptimizerConfigurations()) {
+				invocationCount.set(0);
+				TupleExpr optimized = parseTupleExpr(query);
+				optimizer.optimize(optimized, null, EmptyBindingSet.getInstance());
+				assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(originalResults);
+				assertThat(invocationCount).hasValue(1);
+			}
+		} finally {
+			registry.remove(function);
+		}
 	}
 
 	@Test
@@ -236,6 +894,38 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				"SELECT ?s ?label WHERE {VALUES ?label {\"RDF4J\"} ?s <urn:label> ?label .}",
 				"SELECT ?s ?label WHERE {VALUES ?label {\"Eclipse\" \"RDF4J\"} ?s <urn:label> ?label . "
 						+ "FILTER(?label IN (\"RDF4J\", \"SPARQL\", \"RDF4J\"))}");
+	}
+
+	@Test
+	public void standardPipelinePreservesFilterInValuesBindingNamesAndResults() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI label = valueFactory.createIRI("urn:label");
+		TripleSource tripleSource = statementListTripleSource(
+				valueFactory.createStatement(valueFactory.createIRI("urn:s1"), label,
+						valueFactory.createLiteral("Eclipse")),
+				valueFactory.createStatement(valueFactory.createIRI("urn:s2"), label,
+						valueFactory.createLiteral("RDF4J")),
+				valueFactory.createStatement(valueFactory.createIRI("urn:s3"), label,
+						valueFactory.createLiteral("SPARQL")));
+		assertStandardPipelinePreservesBindingsAndResults(
+				"SELECT ?s ?label WHERE {?s <urn:label> ?label . FILTER(?label = \"Eclipse\")}", tripleSource);
+		assertStandardPipelinePreservesBindingsAndResults(
+				"SELECT ?s ?label WHERE {?s <urn:label> ?label . FILTER(?label IN (\"Eclipse\", \"RDF4J\"))}",
+				tripleSource);
+		assertStandardPipelinePreservesBindingsAndResults(
+				"SELECT ?s ?label WHERE {VALUES ?label {\"Eclipse\" \"RDF4J\"} "
+						+ "?s <urn:label> ?label . FILTER(?label IN (\"RDF4J\", \"SPARQL\", \"RDF4J\"))}",
+				tripleSource);
+
+		String equalityQuery = "SELECT ?s ?label WHERE { VALUES (?s ?label) "
+				+ "{ (<urn:s1> \"Eclipse\") (<urn:s2> \"Other\") } FILTER(?label = \"Eclipse\") }";
+		String inQuery = "SELECT ?s ?label WHERE { VALUES (?s ?label) "
+				+ "{ (<urn:s1> \"Eclipse\") (<urn:s2> \"RDF4J\") (<urn:s3> \"Other\") } "
+				+ "FILTER(?label IN (\"Eclipse\", \"RDF4J\")) }";
+		assertThat(evaluateParsedQuery(equalityQuery)).hasSize(1);
+		assertThat(evaluateParsedQuery(inQuery)).hasSize(2);
+		assertStandardPipelinePreservesBindingsAndResults(equalityQuery);
+		assertStandardPipelinePreservesBindingsAndResults(inQuery);
 	}
 
 	@Test
@@ -317,7 +1007,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void standardPipelineShowsInScopeFilterInsideJoinGroup() {
+	public void standardPipelineShowsInScopeFilterBeforeFilterInValuesAndPreservesResults() throws Exception {
 		String query = String.join("\n",
 				"PREFIX med: <http://example.com/theme/medical/>",
 				"PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>",
@@ -330,35 +1020,94 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 				"  FILTER NOT EXISTS { ?enc med:hasCondition ?cond . }",
 				"}");
 
-		QueryRoot root = new QueryRoot(QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
+		TupleExpr original = parseTupleExpr(query);
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI patientType = valueFactory.createIRI("http://example.com/theme/medical/Patient");
+		IRI hasEncounter = valueFactory.createIRI("http://example.com/theme/medical/hasEncounter");
+		IRI hasObservation = valueFactory.createIRI("http://example.com/theme/medical/hasObservation");
+		IRI valuePredicate = valueFactory.createIRI("http://example.com/theme/medical/value");
+		IRI hasCondition = valueFactory.createIRI("http://example.com/theme/medical/hasCondition");
+		IRI patient1 = valueFactory.createIRI("urn:patient:1");
+		IRI patient2 = valueFactory.createIRI("urn:patient:2");
+		IRI patient3 = valueFactory.createIRI("urn:patient:3");
+		IRI encounter1 = valueFactory.createIRI("urn:encounter:1");
+		IRI encounter2 = valueFactory.createIRI("urn:encounter:2");
+		IRI encounter3 = valueFactory.createIRI("urn:encounter:3");
+		IRI observation1 = valueFactory.createIRI("urn:observation:1");
+		IRI observation2 = valueFactory.createIRI("urn:observation:2");
+		IRI observation3 = valueFactory.createIRI("urn:observation:3");
+		TripleSource tripleSource = statementListTripleSource(
+				valueFactory.createStatement(patient1, RDF.TYPE, patientType),
+				valueFactory.createStatement(patient1, hasEncounter, encounter1),
+				valueFactory.createStatement(encounter1, hasObservation, observation1),
+				valueFactory.createStatement(observation1, valuePredicate, valueFactory.createLiteral(50)),
+				valueFactory.createStatement(patient2, RDF.TYPE, patientType),
+				valueFactory.createStatement(patient2, hasEncounter, encounter2),
+				valueFactory.createStatement(encounter2, hasObservation, observation2),
+				valueFactory.createStatement(observation2, valuePredicate, valueFactory.createLiteral(90)),
+				valueFactory.createStatement(patient3, RDF.TYPE, patientType),
+				valueFactory.createStatement(patient3, hasEncounter, encounter3),
+				valueFactory.createStatement(encounter3, hasObservation, observation3),
+				valueFactory.createStatement(observation3, valuePredicate, valueFactory.createLiteral(60)),
+				valueFactory.createStatement(encounter3, hasCondition, valueFactory.createIRI("urn:condition:3")));
+		List<BindingSet> originalResults = evaluate(original.clone(), tripleSource);
+		assertThat(originalResults).singleElement().satisfies(bindingSet -> {
+			assertThat(bindingSet.getValue("count").stringValue()).isEqualTo("1");
+			assertThat(bindingSet.getBindingNames()).containsExactly("count");
+		});
+		QueryRoot root = new QueryRoot(original.clone());
 		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
-				new StrictEvaluationStrategy(new EmptyTripleSource(), null),
-				new EmptyTripleSource(),
+				new StrictEvaluationStrategy(tripleSource, null),
+				tripleSource,
 				new EvaluationStatistics());
 
+		List<QueryOptimizer> optimizers = new ArrayList<>();
 		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
-			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
-//			if (optimizer instanceof org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer) {
-//				break;
-//			}
+			optimizers.add(optimizer);
+		}
+		int filterInValuesIndex = -1;
+		for (int i = 0; i < optimizers.size(); i++) {
+			if ("FilterInValuesOptimizer".equals(optimizers.get(i).getClass().getSimpleName())) {
+				filterInValuesIndex = i;
+				break;
+			}
+		}
+		assertThat(filterInValuesIndex).as("the standard pipeline has a FilterInValues stage").isGreaterThan(0);
+
+		for (int i = 0; i < filterInValuesIndex; i++) {
+			optimizers.get(i).optimize(root, null, EmptyBindingSet.getInstance());
 		}
 
-		Filter notExistsFilter = findFirst(root, Filter.class,
-				filter -> !(filter.getCondition() instanceof ListMemberOperator));
-		List<Filter> groupFilters = flattenJoinLeaves(notExistsFilter.getArg()).stream()
+		Filter inScopeInFilter = findFirst(root, Filter.class,
+				filter -> filter.getCondition() instanceof ListMemberOperator);
+		Group group = findFirst(root, Group.class, ignored -> true);
+		List<Filter> groupFilters = flattenJoinLeaves(group.getArg()).stream()
 				.filter(Filter.class::isInstance)
 				.map(Filter.class::cast)
+				.filter(filter -> filter.getCondition() instanceof ListMemberOperator)
 				.toList();
 
 		assertThat(groupFilters)
-				.as("The in-scope IN filter should be pushed into the join group before join ordering")
+				.as("The in-scope IN filter should be in the aggregate Group input before FilterInValues. Plan:\n%s",
+						root)
 				.singleElement()
 				.satisfies(filter -> {
+					assertThat(filter).isSameAs(inScopeInFilter);
 					assertThat(filter.getCondition()).isInstanceOf(ListMemberOperator.class);
 					assertThat(filter.getArg()).isInstanceOf(StatementPattern.class);
 					assertThat(((StatementPattern) filter.getArg()).getPredicateVar().getValue().stringValue())
 							.isEqualTo("http://example.com/theme/medical/value");
 				});
+
+		for (int i = filterInValuesIndex; i < optimizers.size(); i++) {
+			optimizers.get(i).optimize(root, null, EmptyBindingSet.getInstance());
+		}
+		List<BindingSet> optimizedResults = evaluate(root, tripleSource);
+		assertThat(optimizedResults).containsExactlyInAnyOrderElementsOf(originalResults);
+		assertThat(optimizedResults).singleElement().satisfies(bindingSet -> {
+			assertThat(bindingSet.getValue("count").stringValue()).isEqualTo("1");
+			assertThat(bindingSet.getBindingNames()).containsExactly("count");
+		});
 	}
 
 	@Test
@@ -387,6 +1136,130 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 					assertThat(filter.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE))
 							.isEqualTo("cardinality");
 				});
+	}
+
+	private static void assertFilterOptimizerPreservesResults(String query) throws Exception {
+		assertFilterOptimizerPreservesResults(query, evaluateParsedQuery(query));
+	}
+
+	private static void assertFilterOptimizerPreservesResults(String query, List<BindingSet> originalResults)
+			throws Exception {
+		assertFilterOptimizerPreservesResults(query, originalResults, new EmptyTripleSource());
+	}
+
+	private static void assertFilterOptimizerPreservesResults(String query, List<BindingSet> originalResults,
+			TripleSource tripleSource) throws Exception {
+		TupleExpr original = parseTupleExpr(query);
+		int configuration = 0;
+		for (FilterOptimizer optimizer : filterOptimizerConfigurations()) {
+			TupleExpr optimized = original.clone();
+			optimizer.optimize(optimized, null, EmptyBindingSet.getInstance());
+			assertThat(evaluate(optimized, tripleSource))
+					.as("raw algebra:\n%s\noptimized algebra for FilterOptimizer configuration %s:\n%s", original,
+							configuration++, optimized)
+					.containsExactlyInAnyOrderElementsOf(originalResults);
+		}
+	}
+
+	private static List<FilterOptimizer> filterOptimizerConfigurations() {
+		return List.of(
+				new FilterOptimizer(null, false, false),
+				new FilterOptimizer(null, false, true),
+				new FilterOptimizer(null, true, true));
+	}
+
+	private static List<BindingSet> evaluateParsedQuery(String query) throws Exception {
+		return evaluate(parseTupleExpr(query));
+	}
+
+	private static List<BindingSet> evaluateParsedQuery(String query, TripleSource tripleSource) throws Exception {
+		return evaluate(parseTupleExpr(query), tripleSource);
+	}
+
+	private void assertStandardPipelinePreservesBindingsAndResults(String query) throws Exception {
+		assertStandardPipelinePreservesBindingsAndResults(query, new EmptyTripleSource());
+	}
+
+	private void assertStandardPipelinePreservesBindingsAndResults(String query, TripleSource tripleSource)
+			throws Exception {
+		TupleExpr original = parseTupleExpr(query);
+		Set<String> expectedProjectionNames = projectedBindingNames(original);
+		List<BindingSet> expectedResults = evaluate(original.clone(), tripleSource);
+		assertThat(expectedResults).as("the result fixture must produce rows for: %s", query).isNotEmpty();
+		assertThat(expectedResults).allSatisfy(bindingSet -> assertThat(bindingSet.getBindingNames())
+				.containsExactlyInAnyOrderElementsOf(expectedProjectionNames));
+
+		TupleExpr optimized = optimizeWithStandardPipeline(query, tripleSource);
+		List<BindingSet> optimizedResults = evaluate(optimized, tripleSource);
+		assertThat(optimizedResults)
+				.as("the standard pipeline should preserve result bags for: %s", query)
+				.containsExactlyInAnyOrderElementsOf(expectedResults);
+		assertThat(optimizedResults).allSatisfy(bindingSet -> assertThat(bindingSet.getBindingNames())
+				.containsExactlyInAnyOrderElementsOf(expectedProjectionNames));
+	}
+
+	private static Set<String> projectedBindingNames(TupleExpr tupleExpr) {
+		return Set.copyOf(findFirst(tupleExpr, Projection.class,
+				projection -> projection.getParentNode() instanceof QueryRoot).getBindingNames());
+	}
+
+	private static BindingSetAssignment singleValueBindingSetAssignment(String bindingName, Value value) {
+		MapBindingSet row = new MapBindingSet(1);
+		row.addBinding(bindingName, value);
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(bindingName));
+		assignment.setBindingSets(List.of(row));
+		return assignment;
+	}
+
+	private static TripleSource statementListTripleSource(Statement... statements) {
+		return new StatementListTripleSource(List.of(statements));
+	}
+
+	private static boolean mentionsVariable(Filter filter, String variableName) {
+		return findAll(filter.getCondition(), Var.class).stream()
+				.anyMatch(variable -> variableName.equals(variable.getName()));
+	}
+
+	private static Set<String> comparisonSignatures(QueryModelNode root) {
+		Set<String> signatures = new HashSet<>();
+		for (Compare compare : findAll(root, Compare.class)) {
+			List<Var> variables = findAll(compare, Var.class);
+			List<ValueConstant> constants = findAll(compare, ValueConstant.class);
+			if (variables.size() == 1 && constants.size() == 1) {
+				signatures.add(variables.getFirst().getName() + ":" + compare.getOperator().name() + ":"
+						+ constants.getFirst().getValue().stringValue());
+			}
+		}
+		return signatures;
+	}
+
+	private static TupleExpr parseTupleExpr(String query) throws MalformedQueryException,
+			UnsupportedQueryLanguageException {
+		return QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+	}
+
+	private static List<BindingSet> evaluate(TupleExpr tupleExpr) throws Exception {
+		return evaluate(tupleExpr, new EmptyTripleSource());
+	}
+
+	private static List<BindingSet> evaluate(TupleExpr tupleExpr, TripleSource tripleSource) throws Exception {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, null);
+		List<BindingSet> results = new ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = strategy.evaluate(tupleExpr, EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+		return results;
+	}
+
+	private static boolean isEqualityToConstant(Filter filter, String varName) {
+		if (!(filter.getCondition()instanceof Compare compare) || compare.getOperator() != CompareOp.EQ
+				|| !(compare.getLeftArg()instanceof Var var) || !varName.equals(var.getName())) {
+			return false;
+		}
+		return compare.getRightArg() instanceof ValueConstant;
 	}
 
 	void testOptimizer(String expectedQuery, String actualQuery)
@@ -421,17 +1294,25 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	}
 
 	private TupleExpr optimizeWithStandardPipeline(String actualQuery) {
+		return optimizeWithStandardPipeline(actualQuery, new EmptyTripleSource());
+	}
+
+	private TupleExpr optimizeWithStandardPipeline(String actualQuery, TripleSource tripleSource) {
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, actualQuery, null);
+		return optimizeWithStandardPipeline(pq.getTupleExpr(), tripleSource);
+	}
+
+	private TupleExpr optimizeWithStandardPipeline(TupleExpr tupleExpr, TripleSource tripleSource) {
 		StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(
-				new StrictEvaluationStrategy(new EmptyTripleSource(), null),
-				new EmptyTripleSource(),
+				new StrictEvaluationStrategy(tripleSource, null),
+				tripleSource,
 				new EvaluationStatistics());
 
 		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
-			optimizer.optimize(pq.getTupleExpr(), null, EmptyBindingSet.getInstance());
+			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
-		return pq.getTupleExpr();
+		return tupleExpr;
 	}
 
 	private BindingSetAssignment singleValuesAnchor(TupleExpr tupleExpr, String bindingName) {
@@ -447,6 +1328,33 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 			values.add(bindingSet.getValue(bindingName).toString());
 		}
 		return values;
+	}
+
+	private static final class StatementListTripleSource extends EmptyTripleSource {
+		private final List<Statement> statements;
+
+		private StatementListTripleSource(List<Statement> statements) {
+			this.statements = statements;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+				Resource... contexts) {
+			Iterator<Statement> matches = statements.stream()
+					.filter(statement -> (subject == null || subject.equals(statement.getSubject()))
+							&& (predicate == null || predicate.equals(statement.getPredicate()))
+							&& (object == null || object.equals(statement.getObject()))
+							&& (contexts.length == 0 || Arrays.stream(contexts)
+									.anyMatch(context -> Objects.equals(context, statement.getContext()))))
+					.iterator();
+			return new CloseableIteratorIteration<>(matches);
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subject,
+				IRI predicate, Value object, Resource... contexts) {
+			return getStatements(subject, predicate, object, contexts);
+		}
 	}
 
 	private static class SelectiveJoinStatistics extends EvaluationStatistics {

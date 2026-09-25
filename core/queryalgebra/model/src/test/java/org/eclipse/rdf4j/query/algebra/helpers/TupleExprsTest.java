@@ -20,9 +20,14 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.junit.jupiter.api.Test;
 
@@ -78,6 +83,22 @@ public class TupleExprsTest {
 	public void constVarNameIncludesDirectedLanguageBaseDirection() {
 		assertThat(TupleExprs.getConstVarName(f.createLiteral("שלום", "he", Literal.BaseDirection.RTL)))
 				.isNotEqualTo(TupleExprs.getConstVarName(f.createLiteral("שלום", "he", Literal.BaseDirection.LTR)));
+	}
+
+	@Test
+	public void containsSubqueryContinuesPastJoinForRemainingSiblings() {
+		assertThat(TupleExprs.containsSubquery(new Union(join(), subquery()))).isTrue();
+		assertThat(TupleExprs.containsSubquery(new Union(subquery(), join()))).isTrue();
+	}
+
+	private static Join join() {
+		return new Join(new StatementPattern(Var.of("leftS"), Var.of("leftP"), Var.of("leftO")),
+				new StatementPattern(Var.of("rightS"), Var.of("rightP"), Var.of("rightO")));
+	}
+
+	private static Projection subquery() {
+		return new Projection(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new ProjectionElemList(new ProjectionElem("s")), true);
 	}
 
 }

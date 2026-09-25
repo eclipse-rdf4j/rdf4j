@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /**
@@ -46,13 +47,16 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new Visitor());
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings);
+		tupleExpr.visit(new Visitor(analysis));
 	}
 
 	private static final class Visitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+		private final QueryAlgebraBindingAnalysis analysis;
 
-		private Visitor() {
+		private Visitor(QueryAlgebraBindingAnalysis analysis) {
 			super(false);
+			this.analysis = analysis;
 		}
 
 		@Override
@@ -63,16 +67,24 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 			}
 
 			BindingSetAssignment assignment = safeValuesAnchor(filter.getCondition());
-			if (assignment == null
-					|| !filter.getArg().getAssuredBindingNames().containsAll(assignment.getBindingNames())) {
+			if (assignment == null) {
+				return;
+			}
+
+			QueryAlgebraBindingAnalysis.ReadOnlyContext input = analysis.contextAt(filter.getArg());
+			QueryAlgebraBindingAnalysis.OutputFacts facts = analysis.outputFacts(filter.getArg(), input);
+			if (!facts.possibleOutputsKnown() || !facts.guaranteedOutputsKnown()
+					|| !analysis.guaranteedAfter(facts).containsAll(assignment.getBindingNames())) {
 				return;
 			}
 
 			if (mergeWithExistingValuesAnchor(filter, assignment)) {
+				analysis.invalidate();
 				return;
 			}
 
 			filter.replaceWith(new Join(assignment, filter.getArg().clone()));
+			analysis.invalidate();
 		}
 	}
 
