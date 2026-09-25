@@ -1,0 +1,2 @@
+PREFIX : <urn:query-boundary:>
+SELECT ?s ?v WHERE { VALUES ?p { :p } ?s ?p ?k . SERVICE :remote { ?k :q ?v } } LIMIT 1

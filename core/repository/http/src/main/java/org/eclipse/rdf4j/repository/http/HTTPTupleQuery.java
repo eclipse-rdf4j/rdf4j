@@ -51,6 +51,7 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 		RDF4JProtocolSession client = conn.getSesameSession();
 		String queryRequestId = registerActiveQuerySession(client);
 		try {
+			applyForcedLmdbExecutionStrategy();
 			conn.flushTransactionState(Protocol.Action.QUERY);
 
 			return client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
@@ -68,6 +69,7 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 		RDF4JProtocolSession client = conn.getSesameSession();
 		String queryRequestId = registerActiveQuerySession(client);
 		try {
+			applyForcedLmdbExecutionStrategy();
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, includeInferred, getMaxExecutionTime(),
 					handler, getBindingsArray());
@@ -101,6 +103,7 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 			repository.registerActiveQueryExplanationSession(explainRequestId, client);
 		}
 		try {
+			applyForcedLmdbExecutionStrategy();
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			return client.sendQueryExplanation(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
 					getMaxExecutionTime(), level, getBindingsArray());

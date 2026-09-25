@@ -63,6 +63,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterRegistry;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.eclipse.rdf4j.rio.RDFWriterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -217,6 +218,8 @@ public class DefaultQueryRequestHandler extends AbstractQueryRequestHandler {
 		// determine if inferred triples should be included in query evaluation
 		query.setIncludeInferred(getIncludeInferred(request));
 
+		applyForcedLmdbExecutionStrategy(request, query);
+
 		int maxExecutionTime = getMaxExecutionTime(request);
 		if (maxExecutionTime > 0) {
 			query.setMaxExecutionTime(maxExecutionTime);
@@ -239,6 +242,24 @@ public class DefaultQueryRequestHandler extends AbstractQueryRequestHandler {
 						repositoryCon.getValueFactory());
 				query.setBinding(bindingName, bindingValue);
 			}
+		}
+	}
+
+	/**
+	 * Pins one named query-execution strategy for this query when the request asks for one. This is meaningful only for
+	 * a Sail that supports named execution strategies (today, LMDB); the setter lives on {@link SailQuery} rather than
+	 * the generic {@link Query} API, so a repository fronted by anything else simply never sees the request. An absent
+	 * parameter, a blank one (what a strategy dropdown's empty entry submits) and the {@code NOT_ACTIVATED} sentinel
+	 * all mean "leave the store's own selection alone" — see
+	 * {@link Protocol#isLmdbForcedExecutionStrategyUnset(String)}.
+	 */
+	protected void applyForcedLmdbExecutionStrategy(HttpServletRequest request, Query query) {
+		String strategy = request.getParameter(Protocol.LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME);
+		if (Protocol.isLmdbForcedExecutionStrategyUnset(strategy)) {
+			return;
+		}
+		if (query instanceof SailQuery sailQuery) {
+			sailQuery.setForcedLmdbExecutionStrategy(strategy);
 		}
 	}
 

@@ -351,6 +351,38 @@ test('wraps a negative LongMin overflow before formatting it', () => {
     assert.equal(result.text, 'Join (resultSizeActual=9.2233720368547E12M)\n');
 });
 
+test('renders the physical plan prelude ahead of the query explanation', () => {
+    const { highlighter } = createHighlighterHarness();
+    const plan = {
+        physicalPlanPrelude: 'LMDB native physical plan (executed)\n  invocation[0]:\n    status: COMPLETED',
+        type: 'StatementPattern',
+        plans: [{ type: 'Var (name=s)' }]
+    };
+
+    assert.equal(
+        highlighter.format(plan).text,
+        'LMDB native physical plan (executed)\n'
+            + '  invocation[0]:\n'
+            + '    status: COMPLETED\n'
+            + '\n'
+            + 'Query explanation\n'
+            + 'StatementPattern\n'
+            + '   s: Var (name=s)\n'
+    );
+
+    const lineSeparator = '\r\n';
+    assert.equal(
+        highlighter.format(plan, 'Optimized', lineSeparator).text,
+        `LMDB native physical plan (executed)${lineSeparator}`
+            + `  invocation[0]:${lineSeparator}`
+            + `    status: COMPLETED${lineSeparator}`
+            + `${lineSeparator}`
+            + `Query explanation${lineSeparator}`
+            + `StatementPattern${lineSeparator}`
+            + `   s: Var (name=s)${lineSeparator}`
+    );
+});
+
 test('matches the Java formatter for every shared plan fixture', () => {
     const { highlighter } = createHighlighterHarness();
     const parserHarness = createQueryBrowserHarness();

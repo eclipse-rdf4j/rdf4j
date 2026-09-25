@@ -1,0 +1,29 @@
+Maven packaging skipped by --no-build.
+Running benchmark with jar /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx4G -XX:ActiveProcessorCount=8 -Drdf4j.lmdb.directAdjacency.parallelRowPath.enabled=false
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ParallelismBenchmark.parallelOverlap
+# Parameters: (inputRows = 1000000, workersPerQuery = 7)
+# Run progress: 0.00% complete, ETA 00:00:07
+# Fork: 1 of 1
+# Warmup Iteration   1: 15:51:42,797 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+140.448 ms/op
+# Warmup Iteration   2: 167.671 ms/op
+Iteration   1: 318.465 ms/op
+Iteration   2: 319.476 ms/op
+Iteration   3: 318.698 ms/op
+Iteration   4: 330.008 ms/op
+Iteration   5: 323.069 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ParallelismBenchmark.parallelOverlap":
+  321.943 ±(99.9%) 18.768 ms/op [Average]
+# Run complete. Total time: 00:00:15
+Benchmark                             (inputRows)  (workersPerQuery)  Mode  Cnt    Score    Error  Units
+ParallelismBenchmark.parallelOverlap      1000000                  7  avgt    5  321.943 ± 18.768  ms/op

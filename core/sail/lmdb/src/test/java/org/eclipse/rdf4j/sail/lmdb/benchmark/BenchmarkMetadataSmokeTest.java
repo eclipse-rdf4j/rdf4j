@@ -33,6 +33,16 @@ class BenchmarkMetadataSmokeTest {
 			String contents = new String(benchmarkList.readAllBytes(), StandardCharsets.UTF_8);
 			assertTrue(contents.contains(DatagovLoadIsolationBenchmark.class.getName()),
 					"Lmdb benchmark metadata should contain DatagovLoadIsolationBenchmark");
+			assertTrue(contents.contains(ParallelismBenchmark.class.getName()),
+					"Lmdb benchmark metadata should contain ParallelismBenchmark");
+			assertTrue(contents.contains(HashJoinBenchmark.class.getName()),
+					"Lmdb benchmark metadata should contain HashJoinBenchmark");
+			assertTrue(contents.contains(MaterializationBenchmark.class.getName()),
+					"Lmdb benchmark metadata should contain MaterializationBenchmark");
+			assertTrue(contents.contains(CorrelatedBenchmark.class.getName()),
+					"Lmdb benchmark metadata should contain CorrelatedBenchmark");
+			assertTrue(contents.contains(OrderByBenchmark.class.getName()),
+					"Lmdb benchmark metadata should contain OrderByBenchmark");
 		}
 	}
 }

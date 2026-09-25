@@ -1,0 +1,27 @@
+# twmp-after17 — consolidated summary (2026-08-16)
+#
+# Runs: twmp-after17-janino-off.txt (janino=false, interpreted IR-kernel tier via
+# LmdbNativeKernelInterpreter, M1-M5 of .agent/lmdb-kernel-interpreter-execplan.md landed) and
+# twmp-after17-janino-on.txt (janino=true reference, same build, --no-build rerun).
+# Profile matched to twmp-after16: 4x4s warmup, 3x2s measurement, 1 fork, MEDICAL_RECORDS.
+# Harness: scripts/run-single-benchmark.sh (not the IntelliJ classpath of after15/16).
+#
+# q   after16-off   after17-off   speedup   after17-on   off/on
+# 0        6.840         0.660     10.4x         0.589     1.12
+# 1       15.769         7.907      2.0x         6.042     1.31
+# 2        0.279         0.298    parity          0.320     0.93
+# 3       23.722         1.439     16.5x         1.362     1.06
+# 4       16.113         6.332      2.5x         4.971     1.27
+# 5        0.647         0.606    parity          0.694     0.87
+# 6       14.048         4.983      2.8x         3.994     1.25
+# 7        8.868         2.077      4.3x         1.912     1.09
+# 8       11.643         4.357      2.7x         3.877     1.12
+# 9       27.064         8.093      3.3x         7.171     1.13
+# 10      24.577         7.216      3.4x         6.729     1.07
+#
+# Readings: all nine gap queries improved 2.0-16.5x with janino off; the interpreted tier is now
+# within 6-31% of the compiled tier on every query (geomean ~1.1x) — the residual is operator
+# fusion, per the design mandate. q2/q5 remain packedFtreeAggregate in both arms (parity).
+# The compiled arm also improved vs after16 on q3/q9/q10 (6.2->1.4, 8.4->7.2, 10.2->6.7) —
+# candidates: the M3 single-tag arbitration cleanup, the concurrent irAggregateParallel
+# default-on edit, and/or harness difference; not attributed in this pass.

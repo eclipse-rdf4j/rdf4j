@@ -12,9 +12,14 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -25,55 +30,240 @@ import org.junit.jupiter.api.Test;
 class BindingSetAssignmentTest {
 
 	@Test
-	void bindingNamesIncludeOptionalRowsButAssuredNamesRequireEveryRow() {
-		MapBindingSet bound = new MapBindingSet();
-		bound.addBinding("x", SimpleValueFactory.getInstance().createIRI("urn:x"));
-		MapBindingSet different = new MapBindingSet();
-		different.addBinding("y", SimpleValueFactory.getInstance().createIRI("urn:y"));
+	void assuredBindingNamesIntersectAllRows() {
 		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingSets(() -> List.<BindingSet>of(bound, different).iterator());
+		assignment.setBindingSets(List.of(
+				row("shared", "firstOnly"),
+				row("shared", "secondOnly"),
+				row("shared")));
 
-		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("x", "y");
+		assertThat(assignment.getBindingNames())
+				.containsExactlyInAnyOrder("shared", "firstOnly", "secondOnly");
+		assertThat(assignment.getAssuredBindingNames()).containsExactly("shared");
+	}
+
+	@Test
+	void declaredNamesRemainPossibleForEmptyAssignment() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("declaredFirst", "declaredSecond"));
+		assignment.setBindingSets(List.of());
+
+		assertThat(assignment.getBindingNames())
+				.containsExactlyInAnyOrder("declaredFirst", "declaredSecond");
+		assertThat(assignment.getAssuredBindingNames())
+				.containsExactlyInAnyOrder("declaredFirst", "declaredSecond");
+	}
+
+	@Test
+	void bindingSetReplacementInvalidatesPossibleAndAssuredNames() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(row("initial", "shared")));
+
+		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("initial", "shared");
+		assertThat(assignment.getAssuredBindingNames()).containsExactlyInAnyOrder("initial", "shared");
+
+		assignment.setBindingSets(List.of(row("replacement", "shared"), row("replacement")));
+
+		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("replacement", "shared");
+		assertThat(assignment.getAssuredBindingNames()).containsExactly("replacement");
+	}
+
+	@Test
+	void declaredNameReplacementInvalidatesPossibleNamesButNotRowAssurance() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("shared"));
+		assignment.setBindingSets(List.of(row("shared")));
+
+		assertThat(assignment.getBindingNames()).containsExactly("shared");
+		assertThat(assignment.getAssuredBindingNames()).containsExactly("shared");
+
+		assignment.setBindingNames(Set.of("declared"));
+
+		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("declared", "shared");
+		assertThat(assignment.getAssuredBindingNames()).containsExactly("shared");
+	}
+
+	@Test
+	void oneShotRowsAreSnapshottedForBothNameSetsAndReplay() {
+		List<BindingSet> rows = List.of(
+				row("shared", "firstOnly"),
+				row("shared", "secondOnly"));
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(new OneShotRows(rows));
+
+		Set<String> possibleNames = assignment.getBindingNames();
+		Set<String> assuredNames = assignment.getAssuredBindingNames();
+		List<BindingSet> firstReplay = materialize(assignment.getBindingSets());
+		List<BindingSet> secondReplay = materialize(assignment.getBindingSets());
+
+		assertThat(possibleNames).containsExactlyInAnyOrder("shared", "firstOnly", "secondOnly");
+		assertThat(assuredNames).containsExactly("shared");
+		assertThat(firstReplay).containsExactlyElementsOf(rows);
+		assertThat(secondReplay).containsExactlyElementsOf(rows);
+	}
+
+	@Test
+	void reusableRowsAreCopiedBeforeTheSourceAdvances() {
+		MapBindingSet reusableRow = new MapBindingSet(1);
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(() -> new Iterator<>() {
+			private int index;
+
+			@Override
+			public boolean hasNext() {
+				return index < 2;
+			}
+
+			@Override
+			public BindingSet next() {
+				if (!hasNext()) {
+					throw new NoSuchElementException();
+				}
+				reusableRow.setBinding("x", SimpleValueFactory.getInstance().createLiteral(Integer.toString(++index)));
+				return reusableRow;
+			}
+		});
+
+		List<BindingSet> snapshot = materialize(assignment.getBindingSets());
+
+		assertThat(snapshot)
+				.extracting(row -> row.getValue("x").stringValue())
+				.containsExactly("1", "2");
+		assertThat(snapshot.get(0)).isNotSameAs(snapshot.get(1));
+	}
+
+	@Test
+	void reusableRowsPreserveChangingBoundVariableSets() {
+		MapBindingSet reusableRow = new MapBindingSet(1);
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(() -> new Iterator<>() {
+			private int index;
+
+			@Override
+			public boolean hasNext() {
+				return index < 2;
+			}
+
+			@Override
+			public BindingSet next() {
+				if (!hasNext()) {
+					throw new NoSuchElementException();
+				}
+				reusableRow.clear();
+				if (index++ == 0) {
+					reusableRow.setBinding("first", SimpleValueFactory.getInstance().createLiteral("one"));
+				} else {
+					reusableRow.setBinding("second", SimpleValueFactory.getInstance().createLiteral("two"));
+				}
+				return reusableRow;
+			}
+		});
+
+		List<BindingSet> snapshot = materialize(assignment.getBindingSets());
+
+		assertThat(snapshot.get(0).getBindingNames()).containsExactly("first");
+		assertThat(snapshot.get(0).getValue("first").stringValue()).isEqualTo("one");
+		assertThat(snapshot.get(1).getBindingNames()).containsExactly("second");
+		assertThat(snapshot.get(1).getValue("second").stringValue()).isEqualTo("two");
+		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("first", "second");
 		assertThat(assignment.getAssuredBindingNames()).isEmpty();
 	}
 
 	@Test
-	void singleRowAndEmptyAssignmentsHaveCorrectAssuredNames() {
-		MapBindingSet bound = new MapBindingSet();
-		bound.addBinding("x", SimpleValueFactory.getInstance().createIRI("urn:x"));
-		BindingSetAssignment single = new BindingSetAssignment();
-		single.setBindingSets(List.<BindingSet>of(bound));
-		assertThat(single.getAssuredBindingNames()).containsExactly("x");
+	void snapshotAndCloneAreStableAfterExternalRowMutation() {
+		MapBindingSet sourceRow = new MapBindingSet(1);
+		sourceRow.setBinding("x", SimpleValueFactory.getInstance().createLiteral("before"));
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(sourceRow));
 
-		BindingSetAssignment empty = new BindingSetAssignment();
-		empty.setBindingSets(List.of());
-		assertThat(empty.getBindingNames()).isEmpty();
-		assertThat(empty.getAssuredBindingNames()).isEmpty();
+		BindingSetAssignment clone = assignment.clone();
+		sourceRow.setBinding("x", SimpleValueFactory.getInstance().createLiteral("after"));
+
+		assertThat(materialize(assignment.getBindingSets()))
+				.extracting(row -> row.getValue("x").stringValue())
+				.containsExactly("before");
+		assertThat(materialize(clone.getBindingSets()))
+				.extracting(row -> row.getValue("x").stringValue())
+				.containsExactly("before");
 	}
 
 	@Test
-	void explicitBindingNamesRemainAssuredWhenNoRowsAreAvailable() {
+	void snapshotPreservesPossibleNamesForUnboundValues() {
+		BindingSet sourceRow = new ListBindingSet(
+				List.of("bound", "unbound"),
+				Arrays.asList(SimpleValueFactory.getInstance().createLiteral("value"), null));
 		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingNames(Set.of("x", "y"));
+		assignment.setBindingSets(List.of(sourceRow));
 
-		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("x", "y");
-		assertThat(assignment.getAssuredBindingNames()).containsExactlyInAnyOrder("x", "y");
+		BindingSet snapshot = materialize(assignment.getBindingSets()).get(0);
 
-		MapBindingSet bound = new MapBindingSet();
-		bound.addBinding("x", SimpleValueFactory.getInstance().createIRI("urn:x"));
-		assignment.setBindingSets(List.<BindingSet>of(bound, new MapBindingSet()));
-		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("x", "y");
-		assertThat(assignment.getAssuredBindingNames()).isEmpty();
+		assertThat(snapshot.getBindingNames()).containsExactly("bound", "unbound");
+		assertThat(snapshot.getValue("bound").stringValue()).isEqualTo("value");
+		assertThat(snapshot.getValue("unbound")).isNull();
+		assertThat(assignment.getBindingNames()).containsExactly("bound", "unbound");
+		assertThat(assignment.getAssuredBindingNames()).containsExactly("bound");
 	}
 
 	@Test
-	void nullSlotsInListBindingSetsAreNotAssuredBindings() {
-		ListBindingSet row = new ListBindingSet(List.of("x", "y"),
-				SimpleValueFactory.getInstance().createIRI("urn:x"), null);
+	void snapshotBindingNamesCannotBeMutatedThroughReplayedRows() {
+		MapBindingSet sourceRow = new MapBindingSet(1);
+		sourceRow.setBinding("x", SimpleValueFactory.getInstance().createLiteral("value"));
 		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingSets(List.of(row));
+		assignment.setBindingSets(List.of(sourceRow));
 
-		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("x", "y");
-		assertThat(assignment.getAssuredBindingNames()).containsExactly("x");
+		BindingSet snapshot = materialize(assignment.getBindingSets()).get(0);
+
+		assertThrows(UnsupportedOperationException.class, () -> snapshot.getBindingNames().clear());
+		assertThat(snapshot.getBindingNames()).containsExactly("x");
+	}
+
+	@Test
+	void cloneEqualsAndHashRemainStableAfterSnapshotAndNameDerivation() {
+		List<BindingSet> rows = List.of(
+				row("shared", "firstOnly"),
+				row("shared", "secondOnly"));
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(new OneShotRows(rows));
+
+		BindingSetAssignment clone = assignment.clone();
+		int hashBeforeNameAccess = assignment.hashCode();
+
+		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("shared", "firstOnly", "secondOnly");
+		assertThat(assignment.getAssuredBindingNames()).containsExactly("shared");
+		assertThat(clone).isEqualTo(assignment);
+		assertThat(clone.hashCode()).isEqualTo(hashBeforeNameAccess);
+		assertThat(materialize(clone.getBindingSets())).containsExactlyElementsOf(rows);
+		assertThat(materialize(assignment.getBindingSets())).containsExactlyElementsOf(rows);
+	}
+
+	private static List<BindingSet> materialize(Iterable<BindingSet> bindingSets) {
+		return StreamSupport.stream(bindingSets.spliterator(), false).toList();
+	}
+
+	private static BindingSet row(String... bindingNames) {
+		MapBindingSet row = new MapBindingSet(bindingNames.length);
+		for (String bindingName : bindingNames) {
+			row.addBinding(bindingName, SimpleValueFactory.getInstance().createLiteral(bindingName));
+		}
+		return row;
+	}
+
+	private static final class OneShotRows implements Iterable<BindingSet> {
+
+		private final List<BindingSet> rows;
+		private boolean iterated;
+
+		private OneShotRows(List<BindingSet> rows) {
+			this.rows = rows;
+		}
+
+		@Override
+		public Iterator<BindingSet> iterator() {
+			if (iterated) {
+				throw new IllegalStateException("source rows can only be iterated once");
+			}
+			iterated = true;
+			return rows.iterator();
+		}
 	}
 }

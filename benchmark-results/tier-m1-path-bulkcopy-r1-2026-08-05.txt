@@ -1,0 +1,285 @@
+[INFO] Reactor Summary for Eclipse RDF4J 6.1.0-SNAPSHOT:
+[INFO] 
+[INFO] Eclipse RDF4J ...................................... SUCCESS [  0.169 s]
+[INFO] RDF4J: Assembly Descriptors ........................ SUCCESS [  0.266 s]
+[INFO] RDF4J: Core ........................................ SUCCESS [  1.182 s]
+[INFO] RDF4J: common ...................................... SUCCESS [  3.049 s]
+[INFO] RDF4J: common annotation ........................... SUCCESS [  0.942 s]
+[INFO] RDF4J: Model API ................................... SUCCESS [  0.958 s]
+[INFO] RDF4J: common exception ............................ SUCCESS [  1.344 s]
+[INFO] RDF4J: common IO ................................... SUCCESS [  1.572 s]
+[INFO] RDF4J: common order ................................ SUCCESS [  1.266 s]
+[INFO] RDF4J: common iterators ............................ SUCCESS [  1.211 s]
+[INFO] RDF4J: common text ................................. SUCCESS [  1.163 s]
+[INFO] RDF4J: RDF Vocabularies ............................ SUCCESS [  1.354 s]
+[INFO] RDF4J: Model ....................................... SUCCESS [  1.495 s]
+[INFO] RDF4J: common transaction .......................... SUCCESS [  1.396 s]
+[INFO] RDF4J: common XML .................................. SUCCESS [  1.574 s]
+[INFO] RDF4J: Rio ......................................... SUCCESS [  3.032 s]
+[INFO] RDF4J: Rio - API ................................... SUCCESS [  1.726 s]
+[INFO] RDF4J: Rio - Languages ............................. SUCCESS [  1.773 s]
+[INFO] RDF4J: Rio - Datatypes ............................. SUCCESS [  1.792 s]
+[INFO] RDF4J: Query ....................................... SUCCESS [  1.871 s]
+[INFO] RDF4J: Rio - Binary ................................ SUCCESS [  2.084 s]
+[INFO] RDF4J: Rio - N-Triples ............................. SUCCESS [  2.130 s]
+[INFO] RDF4J: Query algebra ............................... SUCCESS [  3.060 s]
+[INFO] RDF4J: Query algebra - model ....................... SUCCESS [  2.011 s]
+[INFO] RDF4J: Rio - N-Quads ............................... SUCCESS [  2.448 s]
+[INFO] RDF4J: Query parser ................................ SUCCESS [  2.759 s]
+[INFO] RDF4J: Query parser - API .......................... SUCCESS [  2.283 s]
+[INFO] RDF4J: Rio - Turtle ................................ SUCCESS [  2.452 s]
+[INFO] RDF4J: Rio - TriG .................................. SUCCESS [  1.858 s]
+[INFO] RDF4J: Query parser - SPARQL ....................... SUCCESS [  2.206 s]
+[INFO] RDF4J: Test Suites ................................. SUCCESS [  0.014 s]
+[INFO] RDF4J: benchmarks .................................. SUCCESS [  1.725 s]
+[INFO] RDF4J: Rio - JSON-LD ............................... SUCCESS [  2.595 s]
+[INFO] RDF4J: Collection Factory that may be shared ....... SUCCESS [  2.946 s]
+[INFO] RDF4J: Collection Factory - API .................... SUCCESS [  1.949 s]
+[INFO] RDF4J: Sail ........................................ SUCCESS [  2.683 s]
+[INFO] RDF4J: Sail API .................................... SUCCESS [  2.471 s]
+[INFO] RDF4J: Query result IO ............................. SUCCESS [  3.059 s]
+[INFO] RDF4J: Query result IO - API ....................... SUCCESS [  1.865 s]
+[INFO] RDF4J: QueryResultIO testsuite ..................... SUCCESS [  0.010 s]
+[INFO] RDF4J: Query result IO - binary .................... SUCCESS [  1.971 s]
+[INFO] RDF4J: Query result IO - SPARQL/JSON ............... SUCCESS [  2.117 s]
+[INFO] RDF4J: Query result IO - SPARQL/XML ................ SUCCESS [  2.117 s]
+[INFO] RDF4J: Repository .................................. SUCCESS [  3.048 s]
+[INFO] RDF4J: Repository - API ............................ SUCCESS [  7.175 s]
+[INFO] RDF4J: HTTP ........................................ SUCCESS [  2.631 s]
+[INFO] RDF4J: HTTP protocol ............................... SUCCESS [  1.816 s]
+[INFO] RDF4J: HTTP client API ............................. SUCCESS [  1.078 s]
+[INFO] RDF4J: HTTP client JDK implementation .............. SUCCESS [  0.972 s]
+[INFO] RDF4J: HTTP client Apache HttpComponents 5 implementation SUCCESS [  1.149 s]
+[INFO] RDF4J: HTTP client ................................. SUCCESS [  6.923 s]
+[INFO] RDF4J: SPARQL Repository ........................... SUCCESS [  2.001 s]
+[INFO] RDF4J: Query algebra - evaluation .................. SUCCESS [  2.910 s]
+[INFO] RDF4J: Repository API testsuite .................... SUCCESS [  0.037 s]
+[INFO] RDF4J: SailRepository .............................. SUCCESS [  2.458 s]
+[INFO] RDF4J: Query Rendering ............................. SUCCESS [  2.520 s]
+[INFO] RDF4J: Repository - event (wrapper) ................ SUCCESS [  1.753 s]
+[INFO] RDF4J: HTTPRepository .............................. SUCCESS [  7.042 s]
+[INFO] RDF4J: Repository manager .......................... SUCCESS [  6.860 s]
+[INFO] RDF4J: Sail base implementations ................... SUCCESS [  2.296 s]
+[INFO] RDF4J: Sail API testsuite .......................... SUCCESS [  0.016 s]
+[INFO] RDF4J: Model API testsuite ......................... SUCCESS [  0.011 s]
+[INFO] RDF4J: Collection Factory - Map DB v3 backed ....... SUCCESS [  3.708 s]
+[INFO] RDF4J: LmdbStore ................................... SUCCESS [ 13.221 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  01:08 min (Wall Clock)
+[INFO] Finished at: 2026-08-05T08:27:06+02:00
+[INFO] ------------------------------------------------------------------------
+Running benchmark with jar /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx4G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery
+# Parameters: (variant = selectReachable)
+# Run progress: 0.00% complete, ETA 00:01:00
+# Fork: 1 of 1
+# Warmup Iteration   1: 08:27:07,167 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+0.455 ms/op
+# Warmup Iteration   2: 0.395 ms/op
+Iteration   1: 0.376 ms/op
+                 gc.alloc.rate.norm: 585361.660 B/op
+Iteration   2: 0.374 ms/op
+                 gc.alloc.rate.norm: 585351.957 B/op
+Iteration   3: 0.371 ms/op
+                 gc.alloc.rate.norm: 585355.069 B/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery":
+  0.374 ±(99.9%) 0.047 ms/op [Average]
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate":
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate.norm":
+  585356.229 ±(99.9%) 90.394 B/op [Average]
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.count":
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.time":
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx4G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery
+# Parameters: (variant = countReachable)
+# Run progress: 16.67% complete, ETA 00:00:54
+# Fork: 1 of 1
+# Warmup Iteration   1: 08:27:18,006 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+0.184 ms/op
+# Warmup Iteration   2: 0.144 ms/op
+Iteration   1: 0.144 ms/op
+                 gc.alloc.rate.norm: 143554.071 B/op
+Iteration   2: 0.144 ms/op
+                 gc.alloc.rate.norm: 143555.969 B/op
+Iteration   3: 0.144 ms/op
+                 gc.alloc.rate.norm: 143555.725 B/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery":
+  0.144 ±(99.9%) 0.002 ms/op [Average]
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate":
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate.norm":
+  143555.255 ±(99.9%) 18.834 B/op [Average]
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.count":
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.time":
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx4G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery
+# Parameters: (variant = reverseReachable)
+# Run progress: 33.33% complete, ETA 00:00:43
+# Fork: 1 of 1
+# Warmup Iteration   1: 08:27:28,809 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+0.486 ms/op
+# Warmup Iteration   2: 0.417 ms/op
+Iteration   1: 0.403 ms/op
+                 gc.alloc.rate.norm: 460783.201 B/op
+Iteration   2: 0.396 ms/op
+                 gc.alloc.rate.norm: 460635.948 B/op
+Iteration   3: 0.397 ms/op
+                 gc.alloc.rate.norm: 460646.046 B/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery":
+  0.399 ±(99.9%) 0.062 ms/op [Average]
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate":
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate.norm":
+  460688.398 ±(99.9%) 1500.665 B/op [Average]
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.count":
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.time":
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx4G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery
+# Parameters: (variant = unboundStarts)
+# Run progress: 50.00% complete, ETA 00:00:32
+# Fork: 1 of 1
+# Warmup Iteration   1: 08:27:39,616 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+1.397 ms/op
+# Warmup Iteration   2: 1.221 ms/op
+Iteration   1: 1.187 ms/op
+                 gc.alloc.rate.norm: 2945216.293 B/op
+Iteration   2: 1.185 ms/op
+                 gc.alloc.rate.norm: 2944403.493 B/op
+Iteration   3: 1.179 ms/op
+                 gc.alloc.rate.norm: 2944160.755 B/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery":
+  1.184 ±(99.9%) 0.070 ms/op [Average]
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate":
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate.norm":
+  2944593.514 ±(99.9%) 10085.671 B/op [Average]
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.count":
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.time":
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx4G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery
+# Parameters: (variant = boundDirect)
+# Run progress: 66.67% complete, ETA 00:00:21
+# Fork: 1 of 1
+# Warmup Iteration   1: 08:27:50,489 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+0.013 ms/op
+# Warmup Iteration   2: 0.011 ms/op
+Iteration   1: 0.011 ms/op
+                 gc.alloc.rate.norm: 58239.951 B/op
+Iteration   2: 0.011 ms/op
+                 gc.alloc.rate.norm: 58240.147 B/op
+Iteration   3: 0.011 ms/op
+                 gc.alloc.rate.norm: 58239.903 B/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery":
+  0.011 ±(99.9%) 0.001 ms/op [Average]
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate":
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate.norm":
+  58240.001 ±(99.9%) 2.352 B/op [Average]
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.count":
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.time":
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms1G -Xmx4G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery
+# Parameters: (variant = boundExistence)
+# Run progress: 83.33% complete, ETA 00:00:10
+# Fork: 1 of 1
+# Warmup Iteration   1: 08:28:01,302 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+0.014 ms/op
+# Warmup Iteration   2: 0.012 ms/op
+Iteration   1: 0.012 ms/op
+                 gc.alloc.rate.norm: 63680.365 B/op
+Iteration   2: 0.012 ms/op
+                 gc.alloc.rate.norm: 63680.329 B/op
+Iteration   3: 0.012 ms/op
+                 gc.alloc.rate.norm: 63680.196 B/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery":
+  0.012 ±(99.9%) 0.003 ms/op [Average]
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate":
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate.norm":
+  63680.297 ±(99.9%) 1.621 B/op [Average]
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.count":
+Secondary result "org.eclipse.rdf4j.sail.lmdb.benchmark.PropertyPathReachabilityBenchmark.executeQuery:gc.time":
+# Run complete. Total time: 00:01:05
+Benchmark                                                                 (variant)  Mode  Cnt        Score       Error   Units
+PropertyPathReachabilityBenchmark.executeQuery                      selectReachable  avgt    3        0.374 ±     0.047   ms/op
+PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate        selectReachable  avgt    3     1493.015 ±   169.134  MB/sec
+PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate.norm   selectReachable  avgt    3   585356.229 ±    90.394    B/op
+PropertyPathReachabilityBenchmark.executeQuery:gc.count             selectReachable  avgt    3       15.000              counts
+PropertyPathReachabilityBenchmark.executeQuery:gc.time              selectReachable  avgt    3       18.000                  ms
+PropertyPathReachabilityBenchmark.executeQuery                       countReachable  avgt    3        0.144 ±     0.002   ms/op
+PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate         countReachable  avgt    3      948.408 ±    21.150  MB/sec
+PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate.norm    countReachable  avgt    3   143555.255 ±    18.834    B/op
+PropertyPathReachabilityBenchmark.executeQuery:gc.count              countReachable  avgt    3       10.000              counts
+PropertyPathReachabilityBenchmark.executeQuery:gc.time               countReachable  avgt    3       15.000                  ms
+PropertyPathReachabilityBenchmark.executeQuery                     reverseReachable  avgt    3        0.399 ±     0.062   ms/op
+PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate       reverseReachable  avgt    3     1101.254 ±   159.239  MB/sec
+PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate.norm  reverseReachable  avgt    3   460688.398 ±  1500.665    B/op
+PropertyPathReachabilityBenchmark.executeQuery:gc.count            reverseReachable  avgt    3       11.000              counts
+PropertyPathReachabilityBenchmark.executeQuery:gc.time             reverseReachable  avgt    3       16.000                  ms
+PropertyPathReachabilityBenchmark.executeQuery                        unboundStarts  avgt    3        1.184 ±     0.070   ms/op
+PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate          unboundStarts  avgt    3     2368.691 ±    39.469  MB/sec
+PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate.norm     unboundStarts  avgt    3  2944593.514 ± 10085.671    B/op
+PropertyPathReachabilityBenchmark.executeQuery:gc.count               unboundStarts  avgt    3       26.000              counts
+PropertyPathReachabilityBenchmark.executeQuery:gc.time                unboundStarts  avgt    3       18.000                  ms
+PropertyPathReachabilityBenchmark.executeQuery                          boundDirect  avgt    3        0.011 ±     0.001   ms/op
+PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate            boundDirect  avgt    3     5240.864 ±   608.308  MB/sec
+PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate.norm       boundDirect  avgt    3    58240.001 ±     2.352    B/op
+PropertyPathReachabilityBenchmark.executeQuery:gc.count                 boundDirect  avgt    3       51.000              counts
+PropertyPathReachabilityBenchmark.executeQuery:gc.time                  boundDirect  avgt    3       29.000                  ms
+PropertyPathReachabilityBenchmark.executeQuery                       boundExistence  avgt    3        0.012 ±     0.003   ms/op
+PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate         boundExistence  avgt    3     5102.137 ±  1381.042  MB/sec
+PropertyPathReachabilityBenchmark.executeQuery:gc.alloc.rate.norm    boundExistence  avgt    3    63680.297 ±     1.621    B/op
+PropertyPathReachabilityBenchmark.executeQuery:gc.count              boundExistence  avgt    3       51.000              counts
+PropertyPathReachabilityBenchmark.executeQuery:gc.time               boundExistence  avgt    3       37.000                  ms

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.repository.http;
 import java.io.File;
 import java.io.IOException;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,6 +30,8 @@ import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
+import org.eclipse.rdf4j.http.protocol.LmdbForceableStrategy;
+import org.eclipse.rdf4j.http.protocol.LmdbRuntimeProperty;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.Value;
@@ -214,6 +217,42 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 			init();
 		}
 		return new HTTPRepositoryConnection(this, createHTTPClient());
+	}
+
+	/** Lists server-global live LMDB features, preserving this repository's credentials and additional headers. */
+	public List<LmdbRuntimeProperty> getLmdbRuntimeProperties() throws RepositoryException {
+		if (!isInitialized()) {
+			init();
+		}
+		try (RDF4JProtocolSession client = createHTTPClient()) {
+			return client.getLmdbRuntimeProperties();
+		} catch (IOException e) {
+			throw new RepositoryException("Could not read LMDB runtime properties", e);
+		}
+	}
+
+	/** Lists the LMDB query-execution strategies this server allows a single query to pin. */
+	public List<LmdbForceableStrategy> getLmdbForceableStrategies() throws RepositoryException {
+		if (!isInitialized()) {
+			init();
+		}
+		try (RDF4JProtocolSession client = createHTTPClient()) {
+			return client.getLmdbForceableStrategies();
+		} catch (IOException e) {
+			throw new RepositoryException("Could not read LMDB forceable execution strategies", e);
+		}
+	}
+
+	/** Updates one server-global live LMDB feature. */
+	public LmdbRuntimeProperty setLmdbRuntimeProperty(String name, boolean enabled) throws RepositoryException {
+		if (!isInitialized()) {
+			init();
+		}
+		try (RDF4JProtocolSession client = createHTTPClient()) {
+			return client.setLmdbRuntimeProperty(name, enabled);
+		} catch (IOException e) {
+			throw new RepositoryException("Could not update LMDB runtime property", e);
+		}
 	}
 
 	@Override

@@ -1,0 +1,34 @@
+diff --git a/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSort.java b/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSort.java
+index 285fac0..7db3dd8 100644
+--- a/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSort.java
++++ b/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSort.java
+@@ -173,6 +173,29 @@ final class NativeSortBuffer {
+ 		for (int i = 0; i < size; i++) {
+ 			order[i] = i;
+ 		}
++		if (size < 2) {
++			return order;
++		}
++		boolean descending = compareRows(0, 1, comparator) > 0;
++		int prefix = 2;
++		while (prefix < size) {
++			int compared = compareRows(prefix - 1, prefix, comparator);
++			if (descending ? compared <= 0 : compared > 0) {
++				break;
++			}
++			prefix++;
++		}
++		if (prefix == size) {
++			// Strict descending order excludes comparator-equal rows, preserving stability.
++			if (descending) {
++				for (int left = 0, right = size - 1; left < right; left++, right--) {
++					int row = order[left];
++					order[left] = order[right];
++					order[right] = row;
++				}
++			}
++			return order;
++		}
+ 		for (int width = 1; width < size;) {
+ 			for (int from = 0; from < size;) {
+ 				int middle = (int) Math.min((long) from + width, size);

@@ -51,6 +51,7 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 		RDF4JProtocolSession client = conn.getSesameSession();
 		String queryRequestId = registerActiveQuerySession(client);
 		try {
+			applyForcedLmdbExecutionStrategy();
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			return client.sendGraphQuery(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
 					getMaxExecutionTime(), ((WeakReference<?>) null), getBindingsArray());
@@ -75,6 +76,7 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 		RDF4JProtocolSession client = conn.getSesameSession();
 		String queryRequestId = registerActiveQuerySession(client);
 		try {
+			applyForcedLmdbExecutionStrategy();
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			client.sendGraphQuery(queryLanguage, queryString, baseURI, dataset, includeInferred, getMaxExecutionTime(),
 					handler, getBindingsArray());
@@ -103,6 +105,7 @@ public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 	public Explanation explain(Explanation.Level level) {
 		RDF4JProtocolSession client = conn.getSesameSession();
 		try {
+			applyForcedLmdbExecutionStrategy();
 			conn.flushTransactionState(Protocol.Action.QUERY);
 			return client.sendQueryExplanation(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
 					getMaxExecutionTime(), level, getBindingsArray());

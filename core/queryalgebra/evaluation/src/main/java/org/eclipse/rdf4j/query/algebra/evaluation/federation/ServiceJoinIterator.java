@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.federation;
 
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -20,6 +21,7 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase;
 
 /**
@@ -84,6 +86,21 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 						estimateUtf8Bytes(service.getServiceExpressionString()));
 			}
 			FederatedService fs = strategy.getService(serviceUri);
+			if (!leftIter.hasNext()) {
+				// A join with an empty operand yields no solutions, but the SERVICE operand still denotes one
+				// logical invocation whose non-silent failure is observable. Perform the invocation for its
+				// error effect; a silent invocation's outcome is unobservable here and is skipped.
+				if (!service.isSilent()) {
+					try (CloseableIteration<BindingSet> invocation = fs.select(service,
+							new HashSet<>(service.getServiceVars()), EmptyBindingSet.getInstance(),
+							service.getBaseURI())) {
+						while (invocation.hasNext()) {
+							invocation.next();
+						}
+					}
+				}
+				return;
+			}
 			long started = runtimeTelemetryEnabled ? System.nanoTime() : 0L;
 			try {
 				CloseableIteration<BindingSet> result = fs.evaluate(service, leftIter, service.getBaseURI());

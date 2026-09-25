@@ -19,8 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -235,9 +237,25 @@ public class SparqlMinusScopingTests extends AbstractComplianceTest {
 						"}"
 		);
 
-		// MINUS compares only variables in the domains of its two operands. BIND creates
-		// ?maybe on the left, while ?s and ?w occur on the right, so MINUS is a no-op.
+		// Build subject -> hasMaybe mapping
+		Map<String, Boolean> hasMaybe = new LinkedHashMap<>();
+		for (BindingSet bs : rows) {
+			String s = name(bs.getValue("s"));
+			boolean bound = bs.hasBinding("maybe");
+			hasMaybe.put(s, bound);
+		}
+
+		// Bottom-up algebra (SPARQL 1.1 §18.6): the OPTIONAL group is evaluated independently of the outer
+		// pattern, as Minus(Extend(Z, maybe, 1), BGP(?s :q ?w)). The single mapping {maybe->1} shares no
+		// variables with any right-hand-side mapping, so the MINUS domain-disjointness clause keeps it, and
+		// the OPTIONAL extends every outer row with ?maybe=1. (An earlier expectation encoded the bind-join
+		// substitution behavior, where the injected ?s made the domains overlap and MINUS removed the row —
+		// an instance of the independent-operand defect fixed by the materialized-replay LeftJoin routing.)
 		assertEquals(4, rows.size());
+		assertEquals(Boolean.TRUE, hasMaybe.get("a"));
+		assertEquals(Boolean.TRUE, hasMaybe.get("b"));
+		assertEquals(Boolean.TRUE, hasMaybe.get("c"));
+		assertEquals(Boolean.TRUE, hasMaybe.get("e"));
 		assertEquals(setOf("a", "b", "c", "e"), names(rows, "s"));
 		assertEquals(setOf("a|1", "b|1", "c|1", "e|1"), pairs(rows, "s", "maybe"));
 	}

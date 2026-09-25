@@ -1181,6 +1181,15 @@ var workbench;
             var effectiveLevel = level || 'Optimized';
             var separator = effectiveLineSeparator(lineSeparator);
             var lines = formatLines(plan || {}, 0, isProjectionElemList(plan || {}), effectiveLevel, separator, hiddenProperties);
+            var prelude = plan && plan.physicalPlanPrelude;
+            if (typeof prelude === 'string' && prelude.length) {
+                // The physical plan prelude carries its own embedded newlines (independent of the
+                // requested lineSeparator), so normalize them before splitting and let the join below
+                // re-emit them using the caller's separator, matching GenericPlanNode#toString().
+                var normalizedPrelude = prelude.replace(/\r\n|\r/g, '\n');
+                var preludeLines = splitPhysicalLines(textLine(normalizedPrelude), '\n');
+                lines = preludeLines.concat([textLine(''), textLine('Query explanation')], lines);
+            }
             var text = '';
             for (var i = 0; i < lines.length; i++) {
                 text += lineText(lines[i]) + separator;

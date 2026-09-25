@@ -325,6 +325,19 @@ Also nested inside the `<web-app>` element are definitions of security roles. Th
 </security-role>
 ```
 
+### LMDB runtime property administration
+
+The `GET /system/lmdb/properties` endpoint remains readable, including in the default anonymous deployment. Its
+process-wide `POST` mutations require an authenticated container user in the `rdf4j-admin` role and the deliberate
+request header `X-RDF4J-Admin-Request: true`; a missing or different header is rejected with HTTP 403. Map the
+administrator accounts in the servlet containers for both Server and Workbench, and keep CORS allowlisting under
+deployment control.
+
+When Workbench proxies this operation to a remote RDF4J Server, the Workbench request must have the
+`rdf4j-admin` role and the Workbench's normal HTTP repository connection must authenticate with `rdf4j-admin` on the
+remote Server as well. The Workbench UI and RDF4J HTTP client send the required header automatically. Other clients
+must send it explicitly along with their normal authenticated request.
+
 ### User accounts
 
 Tomcat has a number of ways to manage user accounts. The different techniques are called 'realms' and the default one is called 'UserDatabaseRealm'. This is the simplest one to manage, but also the least secure, because usernames and passwords are stored in plain text.
@@ -438,7 +451,7 @@ Data may be added to or removed from current repository using any of the sidebar
 
 The “Add” page allows you to specify a URL with RDF data, a local file on your client system, or to enter serialized RDF data into its text area for loading into the present repository. It is also possible to specify the Base URI and a Context for the triples. Think of the Context as a 4th element of each RDF statement, specifying a graph within the repository. You may specify one of eight serialization formats, or select “auto-detect” to let the server do a best guess at the format.
 
-Local files (and URLs that serve compressed bytes) may be gzip-compressed for faster transfer, for example `data.ttl.gz` or `data.rdf.gzip`. Workbench decompresses the stream automatically before parsing. With auto-detect, the RDF format is taken from the name after the compression suffix (`ttl` in `data.ttl.gz`). Gzip is always available; deflate, zstd, and brotli are used when the matching library is on the classpath. Zip archives (`.zip` with multiple entries) are not unpacked here.
+When a local file is uploaded, Workbench passes its stream and name to the shared RDF input dispatcher before parsing. With auto-detect, format detection uses the name after recognized compression suffixes are removed. The supported compressed formats, archive handling, and resource limits are described in [Compressed RDF input](#compressed-rdf-input) above.
 
 #### Remove
 

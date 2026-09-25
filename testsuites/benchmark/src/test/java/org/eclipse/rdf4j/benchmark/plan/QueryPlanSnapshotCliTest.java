@@ -39,6 +39,10 @@ import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanExplanation;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanSnapshot;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.io.FileUtil;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 
 class QueryPlanSnapshotCliTest {
@@ -198,6 +202,28 @@ class QueryPlanSnapshotCliTest {
 	}
 
 	@Test
+	void parsesDirectAdjacencyReadyTimeoutSeconds() {
+		QueryPlanSnapshotCliOptions options = assertDoesNotThrow(() -> QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--store", "lmdb",
+				"--theme", "MEDICAL_RECORDS",
+				"--query-index", "0",
+				"--await-direct-adjacency-seconds", "300"
+		}));
+
+		assertEquals(300, options.directAdjacencyReadyTimeoutSeconds);
+	}
+
+	@Test
+	void rejectsDirectAdjacencyReadyTimeoutForMemoryStore() {
+		assertThrows(IllegalArgumentException.class, () -> QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--store", "memory",
+				"--theme", "MEDICAL_RECORDS",
+				"--query-index", "0",
+				"--await-direct-adjacency-seconds", "300"
+		}));
+	}
+
+	@Test
 	void rejectsNegativeQueryTimeoutSeconds() {
 		assertThrows(IllegalArgumentException.class, () -> QueryPlanSnapshotCli.parseArgs(new String[] {
 				"--store", "memory",
@@ -315,6 +341,30 @@ class QueryPlanSnapshotCliTest {
 	}
 
 	@Test
+	void planOnlyOmitsTelemetryAndExecutionVerification() throws Exception {
+		ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
+		QueryPlanSnapshotCli cli = newCli("", outputBuffer);
+
+		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--no-interactive",
+				"--store", "memory",
+				"--theme", "MEDICAL_RECORDS",
+				"--query-index", "0",
+				"--plan-only",
+				"--persist", "false"
+		});
+
+		cli.run(options);
+
+		String printed = outputBuffer.toString(StandardCharsets.UTF_8);
+		assertTrue(printed.contains("=== Unoptimized Explanation ==="), printed);
+		assertTrue(printed.contains("=== Optimized Explanation ==="), printed);
+		assertFalse(printed.contains("=== Telemetry Explanation ==="), printed);
+		assertTrue(printed.contains("Execution verification skipped (--plan-only)."), printed);
+		assertFalse(printed.contains("runs=1,"), printed);
+	}
+
+	@Test
 	void runAllThemeQueriesForSingleThemePrintsBatchEtaStartAndSummary() throws Exception {
 		ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
 		QueryPlanSnapshotCli cli = newCli("", outputBuffer);
@@ -408,6 +458,43 @@ class QueryPlanSnapshotCliTest {
 			String secondRunPrinted = secondRunOutput.toString(StandardCharsets.UTF_8);
 			assertTrue(secondRunPrinted.contains("LMDB data already fully loaded"),
 					"Expected second run to skip reloading LMDB data when byte size matches: " + secondRunPrinted);
+		} finally {
+			deleteDir(lmdbDataDirectory);
+		}
+	}
+
+	@Test
+	void directAdjacencyWaitInitializesReusedLmdbStore() throws Exception {
+		Path lmdbDataDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-adjacency-ready-");
+		try {
+			LmdbStore seedStore = new LmdbStore(lmdbDataDirectory.toFile(),
+					new LmdbStoreConfig("spoc,ospc,psoc,posc").setDirectAdjacencyMaxBytes(1L << 30));
+			SailRepository seedRepository = new SailRepository(seedStore);
+			try (var connection = seedRepository.getConnection()) {
+				var values = SimpleValueFactory.getInstance();
+				connection.add(values.createIRI("urn:seed:s"), values.createIRI("urn:seed:p"),
+						values.createIRI("urn:seed:o"));
+			} finally {
+				seedRepository.shutDown();
+			}
+			Files.writeString(lmdbDataDirectory.resolve(".rdf4j-query-plan-cli-fully-loaded-size-bytes"), "1",
+					StandardCharsets.UTF_8);
+			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+					"--no-interactive",
+					"--store", "lmdb",
+					"--lmdb-data-dir", lmdbDataDirectory.toString(),
+					"--theme", "MEDICAL_RECORDS",
+					"--query-index", "0",
+					"--plan-only",
+					"--await-direct-adjacency-seconds", "10",
+					"--persist", "false"
+			});
+
+			ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
+			newCli("", outputBuffer).run(options);
+
+			assertTrue(outputBuffer.toString(StandardCharsets.UTF_8)
+					.contains("LMDB direct adjacency is exact for the current revision."));
 		} finally {
 			deleteDir(lmdbDataDirectory);
 		}

@@ -58,3 +58,9 @@ These steps are explained in more detail in the [Contributor
 guidelines](https://github.com/eclipse/rdf4j/blob/main/CONTRIBUTING.md).
 
 You can find more detailed information about our development and release processes in the [Developer Workflow and Project Management](https://rdf4j.org/documentation/developer/) documentation.
+
+## Packed f-tree algebra update
+
+See the [packed factorized trees guide](docs/branch/optimize-lmdb/query-joins-and-factors.md#packed-factorized-trees)
+for the current implementation and boundaries. The [branch developer documentation index](docs/branch/optimize-lmdb/README.md)
+maps the wider `optimize-lmdb` feature set.
