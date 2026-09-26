@@ -354,7 +354,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			}
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
-			backingStore = new LmdbSailStore(dataDir, properties, config, useSketchBasedJoinEstimator);
+			backingStore = createBackingStore(dataDir, properties, config, useSketchBasedJoinEstimator);
 
 			// update version afer loading and potential internal migration within value and triple store
 			if (updateVersion) {
@@ -505,6 +505,11 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	SailStore getSailStore() {
 		return store;
+	}
+
+	LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+			boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+		return new LmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled);
 	}
 
 	LmdbSailStore getBackingStore() {

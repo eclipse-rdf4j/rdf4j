@@ -12,23 +12,61 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBEnvInfo;
 
 class LmdbStoreFlushReproductionTest {
 
@@ -37,6 +75,7 @@ class LmdbStoreFlushReproductionTest {
 	private static final IRI PREDICATE = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:predicate");
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void committedChangesReachBackingStoreDuringOverlappingSnapshotReaders(@TempDir Path dataDir) throws Exception {
 		LmdbStore store = newStore(dataDir);
 		SailRepository repository = new SailRepository(store);
@@ -60,6 +99,7 @@ class LmdbStoreFlushReproductionTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void committedChangesReachBackingStoreDuringOverlappingTupleQueryResults(@TempDir Path dataDir) throws Exception {
 		LmdbStore store = newStore(dataDir);
 		SailRepository repository = new SailRepository(store);
@@ -84,6 +124,7 @@ class LmdbStoreFlushReproductionTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void closingFinalTupleQueryResultDrainsPendingChanges(@TempDir Path dataDir) throws Exception {
 		LmdbStore store = newStore(dataDir);
 		SailRepository repository = new SailRepository(store);
@@ -109,6 +150,7 @@ class LmdbStoreFlushReproductionTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void closingFinalSnapshotReaderDrainsPendingChanges(@TempDir Path dataDir) throws Exception {
 		LmdbStore store = newStore(dataDir);
 		SailRepository repository = new SailRepository(store);
@@ -133,9 +175,1058 @@ class LmdbStoreFlushReproductionTest {
 		}
 	}
 
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void snapshotTransactionKeepsOneGenerationAcrossExplicitInferredAndNamespaceReads(@TempDir Path dataDir)
+			throws Exception {
+		LmdbStore store = newStore(dataDir);
+		store.init();
+		SailConnection seed = store.getConnection();
+		SailConnection reader = store.getConnection();
+		SailConnection writer = store.getConnection();
+		IRI original = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:snapshot:original");
+		IRI explicitAdded = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:snapshot:explicit");
+		IRI inferredAdded = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:snapshot:inferred");
+
+		try {
+			try (seed; reader; writer) {
+				seed.begin(IsolationLevels.SNAPSHOT);
+				seed.addStatement(original, PREDICATE, SimpleValueFactory.getInstance().createLiteral("before"));
+				seed.setNamespace("snapshot", "urn:issue:6070:before:");
+				seed.commit();
+
+				reader.begin(IsolationLevels.SNAPSHOT);
+				try (CloseableIteration<? extends Statement> statements = reader.getStatements(null, PREDICATE, null,
+						false)) {
+					assertTrue(statements.hasNext(),
+							"the first explicit-only read establishes the transaction snapshot");
+					assertEquals(original, statements.next().getSubject());
+				}
+
+				writer.begin(IsolationLevels.SNAPSHOT);
+				writer.addStatement(explicitAdded, PREDICATE, SimpleValueFactory.getInstance().createLiteral("after"));
+				assertTrue(((InferencerConnection) writer).addInferredStatement(inferredAdded, PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("after")));
+				writer.setNamespace("snapshot", "urn:issue:6070:after:");
+				writer.commit();
+
+				assertEquals("urn:issue:6070:before:", reader.getNamespace("snapshot"),
+						"metadata reads later in a SNAPSHOT transaction retain the established generation");
+				Set<Resource> visibleSubjects = new HashSet<>();
+				try (CloseableIteration<? extends Statement> statements = reader.getStatements(null, PREDICATE, null,
+						true)) {
+					while (statements.hasNext()) {
+						visibleSubjects.add(statements.next().getSubject());
+					}
+				}
+				assertEquals(Set.of(original), visibleSubjects,
+						"a later include-inferred read must retain the original explicit and inferred generation");
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void snapshotTransactionDoesNotAdoptANewerSharedCachedView(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir);
+		store.init();
+		IRI original = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:cache:original");
+		IRI explicitAdded = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:cache:explicit");
+		IRI inferredAdded = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:cache:inferred");
+		try (SailConnection seed = store.getConnection();
+				SailConnection reader = store.getConnection();
+				SailConnection writer = store.getConnection()) {
+			seed.begin(IsolationLevels.SNAPSHOT);
+			seed.addStatement(original, PREDICATE, SimpleValueFactory.getInstance().createLiteral("before"));
+			seed.commit();
+
+			reader.begin(IsolationLevels.SNAPSHOT);
+			try (CloseableIteration<? extends Statement> statements = reader.getStatements(null, PREDICATE, null,
+					false)) {
+				assertTrue(statements.hasNext(), "the first explicit read anchors the reader transaction");
+				assertEquals(original, statements.next().getSubject());
+				assertFalse(statements.hasNext());
+			}
+
+			writer.begin(IsolationLevels.SNAPSHOT);
+			writer.addStatement(explicitAdded, PREDICATE, SimpleValueFactory.getInstance().createLiteral("after"));
+			assertTrue(((InferencerConnection) writer).addInferredStatement(inferredAdded, PREDICATE,
+					SimpleValueFactory.getInstance().createLiteral("after")));
+			writer.setNamespace("cache", "urn:issue:6070:cache:after:");
+			writer.commit();
+
+			// Warm the shared SnapshotSailStore caches with a view admitted after the writer commits. The older
+			// transaction must still obtain its own established generation from those caches.
+			try (SailConnection latest = store.getConnection()) {
+				latest.begin(IsolationLevels.SNAPSHOT_READ);
+				Set<Resource> latestSubjects = new HashSet<>();
+				try (CloseableIteration<? extends Statement> statements = latest.getStatements(null, PREDICATE, null,
+						true)) {
+					while (statements.hasNext()) {
+						latestSubjects.add(statements.next().getSubject());
+					}
+				}
+				assertEquals(Set.of(original, explicitAdded, inferredAdded), latestSubjects,
+						"a later transaction refreshes the shared source cache to the committed generation");
+				latest.rollback();
+			}
+
+			assertNull(reader.getNamespace("cache"),
+					"the older transaction keeps the namespace map established by its first read");
+			Set<Resource> readerSubjects = new HashSet<>();
+			try (CloseableIteration<? extends Statement> statements = reader.getStatements(null, PREDICATE, null,
+					true)) {
+				while (statements.hasNext()) {
+					readerSubjects.add(statements.next().getSubject());
+				}
+			}
+			assertEquals(Set.of(original), readerSubjects,
+					"the older transaction cannot adopt explicit or inferred data from a newer shared cache");
+			reader.rollback();
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void readOnlySerializableTransactionDoesNotRetainTheNativeWriter(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir);
+		store.init();
+		SailConnection observer = store.getConnection();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		try {
+			observer.begin(IsolationLevels.SERIALIZABLE);
+			try (CloseableIteration<? extends Statement> statements = observer.getStatements(null, PREDICATE, null,
+					false)) {
+				assertFalse(statements.hasNext());
+			}
+
+			Future<?> writerCommit = executor.submit(() -> {
+				try (SailConnection writer = store.getConnection()) {
+					writer.begin(IsolationLevels.SNAPSHOT_READ);
+					writer.addStatement(SimpleValueFactory.getInstance().createIRI("urn:issue:6070:independent-writer"),
+							PREDICATE, SimpleValueFactory.getInstance().createLiteral("committed"));
+					writer.commit();
+				} catch (SailException e) {
+					throw new RuntimeException(e);
+				}
+			});
+			writerCommit.get(5, TimeUnit.SECONDS);
+			assertTrue(observer.isActive(), "the read-only SERIALIZABLE transaction remains open during the commit");
+		} finally {
+			executor.shutdownNow();
+			if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+				observer.rollback();
+				executor.awaitTermination(5, TimeUnit.SECONDS);
+			}
+			try {
+				observer.close();
+			} finally {
+				store.shutDown();
+			}
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void preparedSerializableChangesetReservesNativeWriterBeforeRetainingItsBranch(@TempDir Path dataDir)
+			throws Exception {
+		LmdbStore store = newStore(dataDir);
+		store.init();
+		SailSource branch = store.getSailStore().getExplicitSailSource().fork();
+		SailSink pending = branch.sink(IsolationLevels.SERIALIZABLE);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		CountDownLatch competingReservationStarted = new CountDownLatch(1);
+		Future<SailClosable> competingReservation = null;
+		try {
+			pending.approve(SimpleValueFactory.getInstance().createIRI("urn:issue:6070:prepared-owner"), PREDICATE,
+					SimpleValueFactory.getInstance().createLiteral("prepared"), null);
+			pending.prepare();
+
+			Future<SailClosable> reservation = executor.submit(() -> {
+				competingReservationStarted.countDown();
+				return store.getBackingStore().getExplicitSailSource().beginPreparedWrite();
+			});
+			competingReservation = reservation;
+			assertTrue(competingReservationStarted.await(5, TimeUnit.SECONDS));
+			assertThrows(TimeoutException.class,
+					() -> reservation.get(200, TimeUnit.MILLISECONDS),
+					"another owner must wait while a changed SERIALIZABLE sink is prepared");
+		} finally {
+			try {
+				pending.close();
+			} finally {
+				try {
+					if (competingReservation != null) {
+						try (SailClosable acquired = competingReservation.get(5, TimeUnit.SECONDS)) {
+							assertTrue(acquired != null);
+						}
+					}
+				} finally {
+					try {
+						branch.close();
+					} finally {
+						executor.shutdownNow();
+						if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+							throw new AssertionError("the prepared-writer waiter did not terminate");
+						}
+						store.shutDown();
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void readObserverCloseDoesNotWaitForAnotherPreparedWriter(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir);
+		store.init();
+		SailSource source = store.getSailStore().getExplicitSailSource();
+		SailDataset reader = source.dataset(IsolationLevels.SNAPSHOT_READ);
+		SailSource preparedBranch = source.fork();
+		SailSink preparedWriter = preparedBranch.sink(IsolationLevels.SERIALIZABLE);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		CountDownLatch closeStarted = new CountDownLatch(1);
+		Future<?> closeReader = null;
+		boolean closedWhileWriterPrepared = false;
+		try {
+			SailSink queued = source.sink(IsolationLevels.NONE);
+			queued.approve(SimpleValueFactory.getInstance().createIRI("urn:issue:6070:queued-before-prepared-reader"),
+					PREDICATE, SimpleValueFactory.getInstance().createLiteral("queued while observed"), null);
+			queued.flush();
+			queued.close();
+			assertEquals(0, countBackingStore(store), "an open root observer defers its queued branch changes");
+
+			preparedWriter.approve(
+					SimpleValueFactory.getInstance().createIRI("urn:issue:6070:prepared-reader-close"), PREDICATE,
+					SimpleValueFactory.getInstance().createLiteral("writer is prepared"), null);
+			preparedWriter.prepare();
+
+			try (CloseableIteration<? extends Statement> statements = reader.getStatements(null, PREDICATE, null)) {
+				assertFalse(statements.hasNext());
+			}
+			closeReader = executor.submit(() -> {
+				closeStarted.countDown();
+				reader.close();
+			});
+			assertTrue(closeStarted.await(5, TimeUnit.SECONDS));
+			try {
+				closeReader.get(5, TimeUnit.SECONDS);
+				closedWhileWriterPrepared = true;
+			} catch (TimeoutException expectedIfCloseBlocks) {
+				// Release the writer in finally, then fail below if observer close waited for it.
+			}
+		} finally {
+			try {
+				preparedWriter.close();
+			} finally {
+				try {
+					preparedBranch.close();
+				} finally {
+					try {
+						if (closeReader == null) {
+							reader.close();
+						} else {
+							closeReader.get(5, TimeUnit.SECONDS);
+						}
+						source.flush();
+						assertEquals(1, countBackingStore(store),
+								"the skipped auto-flush remains available to a later explicit flush");
+					} finally {
+						executor.shutdownNow();
+						if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+							throw new AssertionError("the read-only connection close did not terminate");
+						}
+						store.shutDown();
+					}
+				}
+			}
+		}
+		assertTrue(closedWhileWriterPrepared,
+				"read-only observer close must not wait for another owner's prepared writer lease");
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void branchCloseDoesNotWaitForAnotherPreparedWriter(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir);
+		store.init();
+		SailSource source = store.getSailStore().getExplicitSailSource();
+		SailSource closingBranch = source.fork();
+		SailDataset reader = closingBranch.dataset(IsolationLevels.SNAPSHOT_READ);
+		SailSource preparedBranch = source.fork();
+		SailSink preparedWriter = preparedBranch.sink(IsolationLevels.SERIALIZABLE);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		CountDownLatch closeStarted = new CountDownLatch(1);
+		Future<?> closeBranch = null;
+		boolean closedWhileWriterPrepared = false;
+		try {
+			preparedWriter.approve(
+					SimpleValueFactory.getInstance().createIRI("urn:issue:6070:branch-close-prepared-writer"),
+					PREDICATE,
+					SimpleValueFactory.getInstance().createLiteral("writer remains prepared"), null);
+			preparedWriter.prepare();
+			closeBranch = executor.submit(() -> {
+				closeStarted.countDown();
+				closingBranch.close();
+			});
+			assertTrue(closeStarted.await(5, TimeUnit.SECONDS));
+			try {
+				closeBranch.get(5, TimeUnit.SECONDS);
+				closedWhileWriterPrepared = true;
+			} catch (TimeoutException expectedIfCloseBlocks) {
+				// Release the unrelated prepared writer in finally, then fail below if branch close waited for it.
+			}
+		} finally {
+			try {
+				preparedWriter.close();
+			} finally {
+				try {
+					preparedBranch.close();
+				} finally {
+					try {
+						reader.close();
+						if (closeBranch == null) {
+							closingBranch.close();
+						} else {
+							closeBranch.get(5, TimeUnit.SECONDS);
+						}
+					} finally {
+						executor.shutdownNow();
+						if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+							throw new AssertionError("the branch-close worker did not terminate");
+						}
+						store.shutDown();
+					}
+				}
+			}
+		}
+		assertTrue(closedWhileWriterPrepared,
+				"branch close must not wait for another owner's prepared writer lease");
+	}
+
+	@Test
+	void serializableConnectionCanCommitAfterOpeningItsObservationSink(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir);
+		store.init();
+		SailConnection connection = store.getConnection();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		try {
+			connection.begin(IsolationLevels.SERIALIZABLE);
+			try (CloseableIteration<? extends Statement> statements = connection.getStatements(null, PREDICATE, null,
+					false)) {
+				assertFalse(statements.hasNext());
+			}
+			connection.addStatement(SimpleValueFactory.getInstance().createIRI("urn:issue:6070:serializable-write"),
+					PREDICATE, SimpleValueFactory.getInstance().createLiteral("committed"));
+
+			Future<?> commit = executor.submit(() -> {
+				try {
+					connection.prepare();
+					connection.commit();
+				} catch (SailException e) {
+					throw new RuntimeException(e);
+				}
+			});
+			commit.get(5, TimeUnit.SECONDS);
+			assertFalse(connection.isActive());
+		} finally {
+			executor.shutdownNow();
+			if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+				connection.rollback();
+				executor.awaitTermination(5, TimeUnit.SECONDS);
+			}
+			try {
+				connection.close();
+			} finally {
+				store.shutDown();
+			}
+		}
+	}
+
+	@Test
+	void namespaceOnlyNoneCommitKeepsExistingReadCommittedViewAndInvalidatesIt(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir);
+		store.init();
+		SailDataset before = store.getBackingStore()
+				.getExplicitSailSource()
+				.dataset(IsolationLevels.READ_COMMITTED);
+		try {
+			assertNull(before.getNamespace("published"));
+			try (SailConnection writer = store.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				writer.setNamespace("published", "urn:issue:6070:namespace:");
+				writer.commit();
+			}
+
+			assertFalse(before.isSnapshotCurrent(),
+					"namespace-only publication invalidates future reuse of the old READ_COMMITTED view");
+			assertNull(before.getNamespace("published"),
+					"an already-open dataset continues to expose its captured namespace map");
+			try (SailDataset after = store.getBackingStore()
+					.getExplicitSailSource()
+					.dataset(IsolationLevels.READ_COMMITTED)) {
+				assertEquals("urn:issue:6070:namespace:", after.getNamespace("published"),
+						"the next READ_COMMITTED view observes the namespace-only commit");
+			}
+		} finally {
+			try {
+				before.close();
+			} finally {
+				store.shutDown();
+			}
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void noneSinksCannotCommitOrRollbackAnotherOwnersWriter(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir);
+		store.init();
+		Object firstOwner = new Object();
+		Object secondOwner = new Object();
+		SailSource firstSource = store.getBackingStore().getExplicitSailSource(firstOwner);
+		SailSource secondSource = store.getBackingStore().getExplicitSailSource(secondOwner);
+		IRI firstSubject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:none:first-owner");
+		IRI secondSubject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:none:second-owner");
+		try {
+			SailSink firstSink = firstSource.sink(IsolationLevels.NONE);
+			firstSink.approve(firstSubject, PREDICATE, SimpleValueFactory.getInstance().createLiteral("first"), null);
+
+			try (SailSink secondSink = secondSource.sink(IsolationLevels.NONE)) {
+				assertNull(secondSource.tryBeginPublication(),
+						"a different NONE owner cannot acquire publication while another writer is active");
+				store.getBackingStore().rollback(secondOwner);
+			}
+
+			firstSink.flush();
+			firstSink.close();
+
+			try (SailSink secondWrite = secondSource.sink(IsolationLevels.NONE)) {
+				secondWrite.approve(secondSubject, PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("second"), null);
+				store.getBackingStore().rollback(secondOwner);
+			}
+
+			assertEquals(1, countBackingStore(store),
+					"the first owner's commit survives a foreign rollback and the second owner's rollback");
+			try (SailDataset dataset = store.getBackingStore()
+					.getExplicitSailSource()
+					.dataset(IsolationLevels.SNAPSHOT_READ);
+					CloseableIteration<? extends Statement> statements = dataset.getStatements(null, null, null)) {
+				assertTrue(statements.hasNext());
+				assertEquals(firstSubject, statements.next().getSubject());
+				assertFalse(statements.hasNext());
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void olderSinkCannotFlushLaterWriterGenerationForSameOwner(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir);
+		store.init();
+		Object owner = new Object();
+		SailSource source = store.getBackingStore().getExplicitSailSource(owner);
+		IRI firstSubject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:generation:first");
+		IRI secondSubject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:generation:second");
+		SailSink olderSink = null;
+		SailSink newerSink = null;
+		try {
+			olderSink = source.sink(IsolationLevels.NONE);
+			olderSink.approve(firstSubject, PREDICATE, SimpleValueFactory.getInstance().createLiteral("first"), null);
+			olderSink.flush();
+
+			newerSink = source.sink(IsolationLevels.NONE);
+			newerSink.approve(secondSubject, PREDICATE, SimpleValueFactory.getInstance().createLiteral("second"), null);
+			olderSink.flush();
+
+			assertEquals(1, countBackingStore(store),
+					"an older same-owner sink cannot publish a later native writer generation");
+
+			olderSink.close();
+			newerSink.flush();
+			assertEquals(2, countBackingStore(store),
+					"closing an older same-owner sink must leave the newer writer available to commit");
+		} finally {
+			if (newerSink != null) {
+				newerSink.close();
+			}
+			if (olderSink != null) {
+				olderSink.close();
+			}
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void closingUnflushedSinkRollsBackItsCurrentGeneration(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir);
+		store.init();
+		Object owner = new Object();
+		SailSource source = store.getBackingStore().getExplicitSailSource(owner);
+		IRI abandonedSubject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:generation:abandoned");
+		IRI committedSubject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:generation:committed");
+		try {
+			try (SailSink abandoned = source.sink(IsolationLevels.NONE)) {
+				abandoned.approve(abandonedSubject, PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("abandoned"),
+						null);
+			}
+
+			try (SailSink committed = source.sink(IsolationLevels.NONE)) {
+				committed.approve(committedSubject, PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("committed"),
+						null);
+				committed.flush();
+			}
+
+			assertEquals(1, countBackingStore(store),
+					"closing an unflushed sink must roll back its writer generation before the next same-owner transaction");
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void failedInferredRootFlushDoesNotPublishExplicitRoot(@TempDir Path dataDir) throws Exception {
+		FailingInferredFlushStore store = new FailingInferredFlushStore(dataDir);
+		IRI subject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:failed-paired-publication");
+		store.init();
+		try {
+			try (SailConnection connection = store.getConnection()) {
+				connection.begin(IsolationLevels.SNAPSHOT);
+				connection.addStatement(subject, PREDICATE, SimpleValueFactory.getInstance().createLiteral("pending"));
+				SailException failure = assertThrows(SailException.class, connection::commit);
+				assertEquals("injected inferred-root flush failure", failure.getMessage());
+			}
+
+			try (SailDataset dataset = store.getBackingStore()
+					.getExplicitSailSource()
+					.dataset(IsolationLevels.SNAPSHOT_READ);
+					CloseableIteration<? extends Statement> statements = dataset.getStatements(subject, PREDICATE,
+							null)) {
+				assertFalse(statements.hasNext(),
+						"an inferred-root flush failure must roll back the earlier explicit-root publication");
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void unchangedReadViewRemainsCurrentInsideItsOwnPublicationScope(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir);
+		store.init();
+		SailSource source = store.getBackingStore().getExplicitSailSource();
+		try (SailDataset dataset = source.dataset(IsolationLevels.READ_COMMITTED)) {
+			try (SailClosable publication = source.beginPublication()) {
+				assertTrue(dataset.isSnapshotCurrent(),
+						"a scope opened only to order admission does not stale the unchanged committed generation");
+			}
+			try (SailSink sink = source.sink(IsolationLevels.NONE)) {
+				sink.approve(SimpleValueFactory.getInstance().createIRI("urn:issue:6070:publication:write"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("committed"), null);
+				sink.flush();
+			}
+			try (SailClosable laterPublication = source.beginPublication()) {
+				assertFalse(dataset.isSnapshotCurrent(),
+						"an intervening committed publication remains stale inside a later ordering scope");
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void pinnedTripleTermIteratorFailsAfterValueMapGrowth(@TempDir Path dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
+				.setValueDBSize(1024L * 1024L)
+				.setAutoGrow(true);
+		LmdbStore store = new LmdbStore(dataDir.toFile(), config);
+		store.init();
+		ValueStore valueStore = valueStoreOf(store);
+		TripleStore tripleStore = tripleStoreOf(store);
+		long initialMapSize = mapSize(valueStore);
+		SailConnection seed = store.getConnection();
+		TripleTerm original = SimpleValueFactory.getInstance()
+				.createTripleTerm(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:quoted:original"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("before"));
+		TripleTerm added = SimpleValueFactory.getInstance()
+				.createTripleTerm(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:quoted:zzz-added"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("x".repeat(2 * 1024 * 1024)));
+		try {
+			try (seed) {
+				seed.begin(IsolationLevels.SNAPSHOT);
+				seed.addStatement(SimpleValueFactory.getInstance().createIRI("urn:issue:6070:quoted:outer"), PREDICATE,
+						original);
+				seed.commit();
+				int tripleReaderPermits = availableReaderPermits(tripleStore.getTxnManager());
+				int valueReaderPermits = availableReaderPermits(valueStore.getTxnManager());
+
+				try (SailDataset reader = store.getBackingStore()
+						.getExplicitSailSource()
+						.dataset(IsolationLevels.SNAPSHOT_READ);
+						CloseableIteration<? extends TripleTerm> triples = reader.getTriples(null, null, null)) {
+					assertEquals(tripleReaderPermits - 1, availableReaderPermits(tripleStore.getTxnManager()),
+							"the paired read view must retain its TripleStore reader lease");
+					assertEquals(valueReaderPermits - 1, availableReaderPermits(valueStore.getTxnManager()),
+							"the paired read view must retain its ValueStore reader lease");
+					assertTrue(triples.hasNext(),
+							"the initial quoted term is present in the reader's dictionary snapshot");
+					assertEquals(original, triples.next());
+
+					try (SailSink sink = store.getBackingStore().getExplicitSailSource().sink(IsolationLevels.NONE)) {
+						sink.approve(SimpleValueFactory.getInstance().createIRI("urn:issue:6070:quoted:outer:added"),
+								PREDICATE, added, null);
+						sink.flush();
+					}
+					assertTrue(mapSize(valueStore) > initialMapSize,
+							"the committed quoted value must grow the native ValueStore map before invalidation is checked");
+					assertThrows(SailException.class, triples::hasNext,
+							"map growth must invalidate rather than renew the iterator's pinned value snapshot");
+
+					try (SailDataset latest = store.getBackingStore()
+							.getExplicitSailSource()
+							.dataset(IsolationLevels.SNAPSHOT_READ);
+							CloseableIteration<? extends TripleTerm> latestTriples = latest.getTriples(null, null,
+									null)) {
+						assertTrue(latestTriples.hasNext());
+						latestTriples.next();
+						assertTrue(latestTriples.hasNext(), "the direct sink commit must publish the new quoted term");
+					}
+					assertEquals(tripleReaderPermits - 1, availableReaderPermits(tripleStore.getTxnManager()),
+							"closing a newer dataset must leave the older TripleStore lease owned");
+					assertEquals(valueReaderPermits - 1, availableReaderPermits(valueStore.getTxnManager()),
+							"closing a newer dataset must leave the older ValueStore lease owned");
+				}
+				assertEquals(tripleReaderPermits, availableReaderPermits(tripleStore.getTxnManager()),
+						"closing an invalidated iterator and dataset must release the TripleStore reader lease");
+				assertEquals(valueReaderPermits, availableReaderPermits(valueStore.getTxnManager()),
+						"closing an invalidated iterator and dataset must release the ValueStore reader lease");
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void valueMapGrowthCheckpointDoesNotPublishUnflushedQuotedTerms(@TempDir Path dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
+				.setValueDBSize(1024L * 1024L)
+				.setAutoGrow(true);
+		LmdbStore store = new LmdbStore(dataDir.toFile(), config);
+		store.init();
+		ValueStore valueStore = valueStoreOf(store);
+		SailSource source = store.getBackingStore().getExplicitSailSource();
+		long initialMapSize = mapSize(valueStore);
+		IRI firstSubject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:checkpoint:first");
+		IRI growthSubject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:checkpoint:growth");
+		TripleTerm firstTerm = SimpleValueFactory.getInstance()
+				.createTripleTerm(SimpleValueFactory.getInstance().createIRI("urn:issue:6070:checkpoint:quoted"),
+						PREDICATE, SimpleValueFactory.getInstance().createLiteral("committed to dictionary only"));
+		TripleTerm growthTerm = SimpleValueFactory.getInstance()
+				.createTripleTerm(SimpleValueFactory.getInstance().createIRI("urn:issue:6070:checkpoint:large"),
+						PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("x".repeat(2 * 1024 * 1024)));
+		try {
+			try (SailSink sink = source.sink(IsolationLevels.NONE)) {
+				sink.approve(firstSubject, PREDICATE, firstTerm, null);
+				sink.approve(growthSubject, PREDICATE, growthTerm, null);
+				assertTrue(mapSize(valueStore) > initialMapSize,
+						"the second direct NONE mutation must trigger the native ValueStore checkpoint");
+
+				SailException retry = assertThrows(SailException.class,
+						() -> source.dataset(IsolationLevels.SNAPSHOT_READ),
+						"the checkpoint-owning NONE writer cannot wait for itself to finish");
+				assertTrue(retry.getMessage().contains("retry"),
+						"same-owner admission must report a retryable checkpoint boundary");
+				sink.flush();
+			}
+
+			try (SailDataset dataset = source.dataset(IsolationLevels.SNAPSHOT_READ);
+					CloseableIteration<? extends TripleTerm> terms = dataset.getTriples(null, null, null)) {
+				assertTrue(terms.hasNext());
+				assertEquals(firstTerm, terms.next());
+				assertTrue(terms.hasNext());
+				assertEquals(growthTerm, terms.next());
+				assertFalse(terms.hasNext());
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void competingReaderWaitsForValueMapCheckpointCommit(@TempDir Path dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
+				.setValueDBSize(1024L * 1024L)
+				.setAutoGrow(true);
+		LmdbStore store = new LmdbStore(dataDir.toFile(), config);
+		store.init();
+		Object connectionOwner = new Object();
+		SailSource source = store.getBackingStore().getExplicitSailSource(connectionOwner);
+		IRI subject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:checkpoint:competing-reader");
+		TripleTerm term = SimpleValueFactory.getInstance()
+				.createTripleTerm(SimpleValueFactory.getInstance().createIRI("urn:issue:6070:checkpoint:reader-quoted"),
+						PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("x".repeat(2 * 1024 * 1024)));
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		CountDownLatch admissionStarted = new CountDownLatch(1);
+		AtomicReference<Thread> admissionThread = new AtomicReference<>();
+		Future<List<TripleTerm>> admittedTerms = null;
+		SailSink sink = source.sink(IsolationLevels.NONE);
+		try {
+			try (SailClosable owner = store.getBackingStore().enterWriterOwner(connectionOwner)) {
+				sink.approve(subject, PREDICATE, term, null);
+			}
+			assertTrue(mapSize(valueStoreOf(store)) > 1024L * 1024L,
+					"the large quoted term must checkpoint the growing ValueStore map");
+			Future<SailException> sameOwnerAdmission = executor.submit(() -> {
+				try (SailClosable owner = store.getBackingStore().enterWriterOwner(connectionOwner)) {
+					return assertThrows(SailException.class, () -> source.dataset(IsolationLevels.SNAPSHOT_READ));
+				}
+			});
+			assertTrue(sameOwnerAdmission.get(5, TimeUnit.SECONDS).getMessage().contains("retry"),
+					"the same logical connection owner must not wait for its own pending writer on another thread");
+			Object readerOwner = new Object();
+
+			admittedTerms = executor.submit(() -> {
+				admissionThread.set(Thread.currentThread());
+				admissionStarted.countDown();
+				try (SailClosable owner = store.getBackingStore().enterWriterOwner(readerOwner);
+						SailDataset dataset = source.dataset(IsolationLevels.SNAPSHOT_READ);
+						CloseableIteration<? extends Statement> statements = dataset.getStatements(subject, PREDICATE,
+								null);
+						CloseableIteration<? extends TripleTerm> terms = dataset.getTriples(null, null, null)) {
+					assertTrue(statements.hasNext(), "the admitted view follows the completed owner commit");
+					List<TripleTerm> result = new ArrayList<>();
+					while (terms.hasNext()) {
+						result.add(terms.next());
+					}
+					return result;
+				}
+			});
+			assertTrue(admissionStarted.await(5, TimeUnit.SECONDS));
+			awaitThreadWaitingOrFinished(admissionThread.get());
+			assertFalse(admittedTerms.isDone(),
+					"a competing direct reader must wait without retaining a partial checkpoint view");
+
+			sink.flush();
+			List<TripleTerm> result = admittedTerms.get(5, TimeUnit.SECONDS);
+			assertEquals(List.of(term), result,
+					"after publication, the admitted view sees the matching statement and quoted term");
+		} finally {
+			try {
+				sink.close();
+			} finally {
+				try {
+					if (admittedTerms != null) {
+						admittedTerms.get(5, TimeUnit.SECONDS);
+					}
+				} finally {
+					executor.shutdownNow();
+					try {
+						assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS),
+								"the competing read admission must terminate after owner cleanup");
+					} finally {
+						store.shutDown();
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void competingReaderResumesAfterValueMapCheckpointRollback(@TempDir Path dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
+				.setValueDBSize(1024L * 1024L)
+				.setAutoGrow(true);
+		LmdbStore store = new LmdbStore(dataDir.toFile(), config);
+		store.init();
+		SailSource source = store.getBackingStore().getExplicitSailSource();
+		IRI earlierSubject = SimpleValueFactory.getInstance()
+				.createIRI("urn:issue:6070:checkpoint:earlier-checkpointed-term");
+		IRI subject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:checkpoint:rolled-back-reader");
+		TripleTerm earlierTerm = SimpleValueFactory.getInstance()
+				.createTripleTerm(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:checkpoint:earlier-quoted"),
+						PREDICATE, SimpleValueFactory.getInstance().createLiteral("committed by resize checkpoint"));
+		TripleTerm term = SimpleValueFactory.getInstance()
+				.createTripleTerm(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:checkpoint:rollback-quoted"),
+						PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("x".repeat(2 * 1024 * 1024)));
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		CountDownLatch admissionStarted = new CountDownLatch(1);
+		AtomicReference<Thread> admissionThread = new AtomicReference<>();
+		Future<Boolean> admittedStatement = null;
+		SailSink sink = source.sink(IsolationLevels.NONE);
+		try {
+			sink.approve(earlierSubject, PREDICATE, earlierTerm, null);
+			sink.approve(subject, PREDICATE, term, null);
+			assertTrue(mapSize(valueStoreOf(store)) > 1024L * 1024L,
+					"the large quoted term must checkpoint the growing ValueStore map");
+
+			admittedStatement = executor.submit(() -> {
+				admissionThread.set(Thread.currentThread());
+				admissionStarted.countDown();
+				try (SailDataset dataset = source.dataset(IsolationLevels.SNAPSHOT_READ);
+						CloseableIteration<? extends Statement> statements = dataset.getStatements(subject, PREDICATE,
+								null)) {
+					return statements.hasNext();
+				}
+			});
+			assertTrue(admissionStarted.await(5, TimeUnit.SECONDS));
+			awaitThreadWaitingOrFinished(admissionThread.get());
+			assertFalse(admittedStatement.isDone(),
+					"a competing direct reader must wait until rollback removes the partial transaction");
+
+			sink.close();
+			assertFalse(admittedStatement.get(5, TimeUnit.SECONDS),
+					"the reader that resumes after rollback sees no statement from the abandoned transaction");
+			try (SailDataset dataset = source.dataset(IsolationLevels.SNAPSHOT_READ);
+					CloseableIteration<? extends TripleTerm> terms = dataset.getTriples(null, null, null)) {
+				assertTrue(terms.hasNext(),
+						"an earlier quoted term durably checkpointed for map growth may remain orphaned");
+				assertEquals(earlierTerm, terms.next());
+				assertFalse(terms.hasNext());
+			}
+		} finally {
+			try {
+				sink.close();
+			} finally {
+				try {
+					if (admittedStatement != null) {
+						admittedStatement.get(5, TimeUnit.SECONDS);
+					}
+				} finally {
+					executor.shutdownNow();
+					try {
+						assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS),
+								"the competing read admission must terminate after rollback");
+					} finally {
+						store.shutDown();
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void sameNoneConnectionCanReadNamespaceAfterValueMapCheckpoint(@TempDir Path dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
+				.setValueDBSize(1024L * 1024L)
+				.setAutoGrow(true);
+		LmdbStore store = new LmdbStore(dataDir.toFile(), config);
+		store.init();
+		try (SailConnection seed = store.getConnection()) {
+			seed.begin(IsolationLevels.NONE);
+			seed.setNamespace("removed", "urn:issue:6070:checkpoint:previous:");
+			seed.commit();
+		}
+		Object otherOwner = new Object();
+		SailSource otherSource = store.getBackingStore().getExplicitSailSource(otherOwner);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		CountDownLatch competingReadStarted = new CountDownLatch(1);
+		AtomicReference<Thread> competingReadThread = new AtomicReference<>();
+		Future<String[]> competingRead = null;
+		try {
+			try (SailConnection connection = store.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				try (SailSink sink = store.getBackingStore()
+						.getExplicitSailSource(connection)
+						.sink(IsolationLevels.NONE)) {
+					sink.clearNamespaces();
+					sink.setNamespace("checkpoint", "urn:issue:6070:checkpoint:");
+					sink.setNamespace("removed", "urn:issue:6070:checkpoint:temporary:");
+					sink.removeNamespace("removed");
+					IRI subject = SimpleValueFactory.getInstance()
+							.createIRI("urn:issue:6070:checkpoint:namespace-read");
+					sink.approve(subject, PREDICATE,
+							SimpleValueFactory.getInstance().createLiteral("x".repeat(2 * 1024 * 1024)), null);
+					assertTrue(mapSize(valueStoreOf(store)) > 1024L * 1024L,
+							"the large statement must trigger the ValueStore checkpoint before metadata lookup");
+
+					assertEquals("urn:issue:6070:checkpoint:", connection.getNamespace("checkpoint"),
+							"the checkpoint owner must read its added namespace without opening a mixed native view");
+					assertNull(connection.getNamespace("removed"),
+							"the checkpoint owner must read namespace removal and clear operations");
+					List<String> prefixes = new ArrayList<>();
+					try (CloseableIteration<? extends Namespace> namespaces = connection.getNamespaces()) {
+						while (namespaces.hasNext()) {
+							prefixes.add(namespaces.next().getPrefix());
+						}
+					}
+					assertEquals(List.of("checkpoint"), prefixes,
+							"namespace enumeration must copy the checkpoint owner's clear, remove, and add operations");
+
+					assertFalse(store.getBackingStore().snapshotNamespacesForCheckpointOwner(otherOwner).available(),
+							"the checkpoint namespace shortcut is restricted to its logical writer owner");
+
+					competingRead = executor.submit(() -> {
+						competingReadThread.set(Thread.currentThread());
+						competingReadStarted.countDown();
+						try (SailClosable owner = store.getBackingStore().enterWriterOwner(otherOwner);
+								SailDataset dataset = otherSource.dataset(IsolationLevels.SNAPSHOT_READ)) {
+							return new String[] { dataset.getNamespace("checkpoint"), dataset.getNamespace("removed") };
+						}
+					});
+					assertTrue(competingReadStarted.await(5, TimeUnit.SECONDS));
+					awaitThreadWaitingOrFinished(competingReadThread.get());
+					assertFalse(competingRead.isDone(),
+							"a different owner must wait rather than read uncommitted namespaces");
+
+					connection.rollback();
+					String[] otherNamespaces = competingRead.get(5, TimeUnit.SECONDS);
+					assertNull(otherNamespaces[0]);
+					assertEquals("urn:issue:6070:checkpoint:previous:", otherNamespaces[1]);
+				}
+			}
+		} finally {
+			try {
+				if (competingRead != null) {
+					competingRead.get(5, TimeUnit.SECONDS);
+				}
+			} finally {
+				executor.shutdownNow();
+				try {
+					assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS),
+							"the competing namespace read must finish after rollback");
+				} finally {
+					store.shutDown();
+				}
+			}
+		}
+	}
+
+	private static void awaitThreadWaitingOrFinished(Thread thread) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		while (thread.getState() != Thread.State.WAITING && thread.getState() != Thread.State.TERMINATED
+				&& System.nanoTime() < deadline) {
+			Thread.onSpinWait();
+		}
+		assertEquals(Thread.State.WAITING, thread.getState(),
+				"competing dataset admission must reach the checkpoint condition before the owner proceeds");
+	}
+
+	private static ValueStore valueStoreOf(LmdbStore store) throws ReflectiveOperationException {
+		Field valueStoreField = LmdbSailStore.class.getDeclaredField("valueStore");
+		valueStoreField.setAccessible(true);
+		return (ValueStore) valueStoreField.get(store.getBackingStore());
+	}
+
+	private static TripleStore tripleStoreOf(LmdbStore store) throws ReflectiveOperationException {
+		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
+		tripleStoreField.setAccessible(true);
+		return (TripleStore) tripleStoreField.get(store.getBackingStore());
+	}
+
+	private static int availableReaderPermits(TxnManager manager) throws ReflectiveOperationException {
+		Field readerSlotsField = TxnManager.class.getDeclaredField("readerSlots");
+		readerSlotsField.setAccessible(true);
+		return ((Semaphore) readerSlotsField.get(manager)).availablePermits();
+	}
+
+	private static long mapSize(ValueStore valueStore) throws ReflectiveOperationException {
+		Field envField = ValueStore.class.getDeclaredField("env");
+		envField.setAccessible(true);
+		long env = envField.getLong(valueStore);
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+			assertEquals(MDB_SUCCESS, mdb_env_info(env, info));
+			return info.me_mapsize();
+		}
+	}
+
+	@Test
+	void opensAndReopensPrePortStoreWithQuotedValues(@TempDir Path dataDir) throws Exception {
+		unpackPrePortFixture(dataDir);
+		Path storePath = dataDir.resolve("store");
+
+		LmdbStore store = newStore(storePath);
+		store.init();
+		try {
+			assertLegacyStoreContents(store);
+		} finally {
+			store.shutDown();
+		}
+
+		LmdbStore reopened = newStore(storePath);
+		reopened.init();
+		try {
+			assertLegacyStoreContents(reopened);
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
 	private static LmdbStore newStore(Path dataDir) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true);
 		return new LmdbStore(dataDir.toFile(), config);
+	}
+
+	private static void unpackPrePortFixture(Path root) throws IOException {
+		InputStream fixture = LmdbStoreFlushReproductionTest.class.getResourceAsStream(
+				"/org/eclipse/rdf4j/sail/lmdb/pre-port-store-978c9a64.zip");
+		assertTrue(fixture != null, "the pre-port binary store fixture is on the test classpath");
+		try (ZipInputStream zip = new ZipInputStream(fixture)) {
+			ZipEntry entry;
+			while ((entry = zip.getNextEntry()) != null) {
+				Path target = root.resolve(entry.getName()).normalize();
+				if (!target.startsWith(root)) {
+					throw new IOException("Legacy store fixture contains an invalid entry: " + entry.getName());
+				}
+				if (entry.isDirectory()) {
+					Files.createDirectories(target);
+				} else if (target.getFileName().toString().equals("lock.mdb")) {
+					// LMDB lock files are process- and platform-local. Let the native library recreate them.
+				} else {
+					Files.createDirectories(target.getParent());
+					Files.copy(zip, target);
+				}
+				zip.closeEntry();
+			}
+		}
+	}
+
+	private static void assertLegacyStoreContents(LmdbStore store) throws Exception {
+		IRI subject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:legacy:subject");
+		IRI context = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:legacy:context");
+		IRI quotedSubject = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:legacy:quoted-subject");
+		TripleTerm expectedTriple = SimpleValueFactory.getInstance()
+				.createTripleTerm(quotedSubject, PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("quoted value"));
+		try (SailConnection connection = store.getConnection()) {
+			assertEquals("urn:issue:6070:legacy:", connection.getNamespace("legacy"));
+			try (CloseableIteration<? extends Statement> statements = connection.getStatements(subject, PREDICATE, null,
+					false, context)) {
+				assertTrue(statements.hasNext());
+				assertEquals(SimpleValueFactory.getInstance().createLiteral("legacy value"),
+						statements.next().getObject());
+			}
+		}
+		try (SailDataset dataset = store.getSailStore()
+				.getExplicitSailSource()
+				.dataset(IsolationLevels.SNAPSHOT_READ);
+				CloseableIteration<? extends TripleTerm> triples = dataset.getTriples(quotedSubject, PREDICATE, null)) {
+			assertTrue(triples.hasNext());
+			assertEquals(expectedTriple, triples.next());
+			assertFalse(triples.hasNext());
+		}
 	}
 
 	private static SailDataset commitWithContinuousReaderHandoffs(SailRepository repository, SailSource source)
@@ -254,6 +1345,113 @@ class LmdbStoreFlushReproductionTest {
 			} finally {
 				connection.close();
 			}
+		}
+	}
+
+	private static final class FailingInferredFlushStore extends LmdbStore {
+
+		private FailingInferredFlushStore(Path dataDir) {
+			super(dataDir.toFile(), new LmdbStoreConfig("spoc,posc").setForceSync(true));
+		}
+
+		@Override
+		SailStore getSailStore() {
+			SailStore delegate = super.getSailStore();
+			return new SailStore() {
+				@Override
+				public void close() throws SailException {
+					delegate.close();
+				}
+
+				@Override
+				public ValueFactory getValueFactory() {
+					return delegate.getValueFactory();
+				}
+
+				@Override
+				public EvaluationStatistics getEvaluationStatistics() {
+					return delegate.getEvaluationStatistics();
+				}
+
+				@Override
+				public SailSource getExplicitSailSource() {
+					return delegate.getExplicitSailSource();
+				}
+
+				@Override
+				public SailSource getInferredSailSource() {
+					return new FailingFlushSource(delegate.getInferredSailSource());
+				}
+			};
+		}
+	}
+
+	private static final class FailingFlushSource implements SailSource {
+
+		private final SailSource delegate;
+
+		private FailingFlushSource(SailSource delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public void close() throws SailException {
+			delegate.close();
+		}
+
+		@Override
+		public SailSource fork() {
+			return delegate.fork();
+		}
+
+		@Override
+		public SailSink sink(IsolationLevel level) throws SailException {
+			return delegate.sink(level);
+		}
+
+		@Override
+		public SailDataset dataset(IsolationLevel level) throws SailException {
+			return delegate.dataset(level);
+		}
+
+		@Override
+		public SailClosable beginDatasetAcquisition(IsolationLevel level) throws SailException {
+			return delegate.beginDatasetAcquisition(level);
+		}
+
+		@Override
+		public SailClosable beginPublication() throws SailException {
+			return delegate.beginPublication();
+		}
+
+		@Override
+		public SailClosable tryBeginPublication() throws SailException {
+			return delegate.tryBeginPublication();
+		}
+
+		@Override
+		public SailClosable beginPreparedWrite() throws SailException {
+			return delegate.beginPreparedWrite();
+		}
+
+		@Override
+		public boolean hasPendingWriteChanges() {
+			return delegate.hasPendingWriteChanges();
+		}
+
+		@Override
+		public boolean isSnapshotCurrent(SailDataset dataset) {
+			return delegate.isSnapshotCurrent(dataset);
+		}
+
+		@Override
+		public void prepare() throws SailException {
+			delegate.prepare();
+		}
+
+		@Override
+		public void flush() {
+			throw new SailException("injected inferred-root flush failure");
 		}
 	}
 }

@@ -73,17 +73,30 @@ class LmdbContextIdIterator implements Closeable {
 		try {
 			readStamp = txnLockManager.readLock();
 		} catch (InterruptedException e) {
-			throw new SailException(e);
+			Thread.currentThread().interrupt();
+			freeBuffers();
+			throw new SailException("Interrupted while opening a context cursor", e);
 		}
+		long openedCursor = 0;
 		try {
-			this.txnRefVersion = txnRef.version();
-			this.txn = txnRef.get();
+			synchronized (txnRef) {
+				txnRef.ensureSnapshotValid();
+				this.txnRefVersion = txnRef.version();
+				this.txn = txnRef.get();
 
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				PointerBuffer pp = stack.mallocPointer(1);
-				E(mdb_cursor_open(txn, dbi, pp));
-				cursor = pp.get(0);
+				try (MemoryStack stack = MemoryStack.stackPush()) {
+					PointerBuffer pp = stack.mallocPointer(1);
+					E(mdb_cursor_open(txn, dbi, pp));
+					cursor = pp.get(0);
+					openedCursor = cursor;
+				}
 			}
+		} catch (IOException | RuntimeException | Error e) {
+			if (openedCursor != 0) {
+				mdb_cursor_close(openedCursor);
+			}
+			freeBuffers();
+			throw e;
 		} finally {
 			txnLockManager.unlockRead(readStamp);
 		}
@@ -94,92 +107,127 @@ class LmdbContextIdIterator implements Closeable {
 		try {
 			readStamp = txnLockManager.readLock();
 		} catch (InterruptedException e) {
-			throw new SailException(e);
+			Thread.currentThread().interrupt();
+			throw new SailException("Interrupted while reading a context cursor", e);
 		}
 		try {
-			int lastResult;
-			if (txnRefVersion != txnRef.version()) {
-				// cursor must be renewed
-				E(mdb_cursor_renew(txn, cursor));
+			synchronized (txnRef) {
+				if (closed) {
+					return null;
+				}
+				txnRef.ensureSnapshotValid();
+
+				int lastResult;
+				if (txnRefVersion != txnRef.version()) {
+					// A pinned cursor must fail before renewal onto the transaction's newer map generation.
+					txnRef.ensureSnapshotValid();
+					E(mdb_cursor_renew(txn, cursor));
+					if (fetchNext) {
+						// cursor must be positioned on last item, reuse minKeyBuf if available
+						if (minKeyBuf == null) {
+							minKeyBuf = pool.getKeyBuffer();
+						}
+						minKeyBuf.clear();
+						Varint.writeUnsigned(minKeyBuf, record[0]);
+						minKeyBuf.flip();
+						keyData.mv_data(minKeyBuf);
+						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
+						if (lastResult != MDB_SUCCESS) {
+							// use MDB_SET_RANGE if key was deleted
+							lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+						}
+						if (lastResult != MDB_SUCCESS) {
+							closeInternalUnderCurrentReadLock();
+							return null;
+						}
+					}
+					this.txnRefVersion = txnRef.version();
+				}
+
 				if (fetchNext) {
-					// cursor must be positioned on last item, reuse minKeyBuf if available
-					if (minKeyBuf == null) {
-						minKeyBuf = pool.getKeyBuffer();
-					}
-					minKeyBuf.clear();
-					Varint.writeUnsigned(minKeyBuf, record[0]);
-					minKeyBuf.flip();
-					keyData.mv_data(minKeyBuf);
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
-					if (lastResult != MDB_SUCCESS) {
-						// use MDB_SET_RANGE if key was deleted
-						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-					}
-					if (lastResult != MDB_SUCCESS) {
-						closeInternal(false);
-						return null;
-					}
-				}
-				// update version of txn ref
-				this.txnRefVersion = txnRef.version();
-			}
-
-			if (fetchNext) {
-				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-				fetchNext = false;
-			} else {
-				if (minKeyBuf != null) {
-					// set cursor to min key
-					keyData.mv_data(minKeyBuf);
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-				} else {
-					// set cursor to first item
 					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					fetchNext = false;
+				} else {
+					if (minKeyBuf != null) {
+						// set cursor to min key
+						keyData.mv_data(minKeyBuf);
+						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					} else {
+						// set cursor to first item
+						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					}
 				}
-			}
 
-			while (lastResult == MDB_SUCCESS) {
-				record[0] = Varint.readUnsigned(keyData.mv_data());
-				// fetch next value
-				fetchNext = true;
-				return record;
+				while (lastResult == MDB_SUCCESS) {
+					record[0] = Varint.readUnsigned(keyData.mv_data());
+					// fetch next value
+					fetchNext = true;
+					return record;
+				}
+				closeInternalUnderCurrentReadLock();
+				return null;
 			}
-			closeInternal(false);
-			return null;
+		} catch (SailException e) {
+			closeInternalUnderCurrentReadLock();
+			throw e;
 		} catch (IOException e) {
-			throw new SailException(e);
+			closeInternalUnderCurrentReadLock();
+			throw new SailException(e.getMessage(), e);
 		} finally {
 			txnLockManager.unlockRead(readStamp);
 		}
 	}
 
 	private void closeInternal(boolean maybeCalledAsync) {
+		closeInternal(maybeCalledAsync, false);
+	}
+
+	private void closeInternalUnderCurrentReadLock() {
+		closeInternal(false, true);
+	}
+
+	private void closeInternal(boolean maybeCalledAsync, boolean currentThreadHasReadLock) {
 		if (!closed) {
-			long writeStamp = 0L;
-			boolean writeLocked = false;
-			if (maybeCalledAsync && ownerThread != Thread.currentThread()) {
+			long lockStamp = 0L;
+			boolean locked = false;
+			boolean writeLocked = maybeCalledAsync && ownerThread != Thread.currentThread();
+			if (!currentThreadHasReadLock) {
 				try {
-					writeStamp = txnLockManager.writeLock();
-					writeLocked = true;
+					lockStamp = writeLocked ? txnLockManager.writeLock() : txnLockManager.readLock();
+					locked = true;
 				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
 					throw new SailException(e);
 				}
 			}
 			try {
-				if (!closed) {
-					mdb_cursor_close(cursor);
-					pool.free(keyData);
-					pool.free(valueData);
-					if (minKeyBuf != null) {
-						pool.free(minKeyBuf);
+				synchronized (txnRef) {
+					if (!closed) {
+						try {
+							mdb_cursor_close(cursor);
+						} finally {
+							freeBuffers();
+							closed = true;
+						}
 					}
 				}
 			} finally {
-				closed = true;
-				if (writeLocked) {
-					txnLockManager.unlockWrite(writeStamp);
+				if (locked) {
+					if (writeLocked) {
+						txnLockManager.unlockWrite(lockStamp);
+					} else {
+						txnLockManager.unlockRead(lockStamp);
+					}
 				}
 			}
+		}
+	}
+
+	private void freeBuffers() {
+		pool.free(keyData);
+		pool.free(valueData);
+		if (minKeyBuf != null) {
+			pool.free(minKeyBuf);
 		}
 	}
 

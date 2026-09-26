@@ -84,6 +84,16 @@ class SailDatasetImpl implements SailDataset {
 	}
 
 	@Override
+	public boolean isSnapshotCurrent() {
+		return derivedFrom.isSnapshotCurrent();
+	}
+
+	@Override
+	public boolean isSnapshotCompatibleWithCurrentAdmission() {
+		return derivedFrom.isSnapshotCompatibleWithCurrentAdmission();
+	}
+
+	@Override
 	public String getNamespace(String prefix) throws SailException {
 		Map<String, String> addedNamespaces = changes.getAddedNamespaces();
 		if (addedNamespaces != null && addedNamespaces.containsKey(prefix)) {

@@ -158,7 +158,8 @@ class LmdbStatsLoggingTest {
 			connection.begin(isolation);
 			connection.setNamespace("rdf", RDF.NAMESPACE);
 			connection.commit();
-			assertWriteSnapshots(before, store.getLmdbStats());
+			assertThat(snapshots(Level.TRACE)).isEmpty();
+			assertThat(store.getLmdbStats()).isEqualTo(before);
 
 			appender.list.clear();
 			connection.begin(isolation);

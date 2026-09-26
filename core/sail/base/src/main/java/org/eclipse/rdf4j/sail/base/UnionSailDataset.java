@@ -67,6 +67,21 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
+	public boolean isSnapshotCurrent() {
+		return dataset1.isSnapshotCurrent() && dataset2.isSnapshotCurrent();
+	}
+
+	@Override
+	public boolean isSnapshotCompatibleWithCurrentAdmission() {
+		return dataset1.isSnapshotCompatibleWithCurrentAdmission()
+				&& dataset2.isSnapshotCompatibleWithCurrentAdmission();
+	}
+
+	boolean isSnapshotCurrent(SailSource primary, SailSource additional) {
+		return primary.isSnapshotCurrent(dataset1) && additional.isSnapshotCurrent(dataset2);
+	}
+
+	@Override
 	public CloseableIteration<? extends Namespace> getNamespaces() throws SailException {
 
 		CloseableIteration<? extends Namespace> iteration1 = null;

@@ -153,4 +153,33 @@ public interface SailDataset extends SailClosable {
 		return null;
 	}
 
+	/**
+	 * Returns whether this dataset still reflects the latest committed state of its backing source. Implementations
+	 * that cannot detect stale snapshots, or that do not provide pinned snapshots, should retain the default value of
+	 * {@code true}.
+	 *
+	 * <p>
+	 * A source that caches snapshots for later readers can use {@code false} to retire this dataset for new readers
+	 * while allowing existing readers to finish against the state they already borrowed.
+	 *
+	 * @return {@code true} if this dataset is current; {@code false} if its backing source has advanced since the
+	 *         snapshot was created.
+	 */
+	default boolean isSnapshotCurrent() {
+		return true;
+	}
+
+	/**
+	 * Returns whether this dataset belongs to the read view currently being admitted by its source.
+	 *
+	 * <p>
+	 * Implementations that do not bind datasets to an admission scope should retain the default value of {@code true}.
+	 * A source may use {@code false} to avoid returning a cached dataset from another transaction's pinned read view.
+	 *
+	 * @return {@code true} if this dataset is compatible with the current admission
+	 */
+	default boolean isSnapshotCompatibleWithCurrentAdmission() {
+		return true;
+	}
+
 }

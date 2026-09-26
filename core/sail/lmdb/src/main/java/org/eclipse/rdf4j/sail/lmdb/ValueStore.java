@@ -194,11 +194,14 @@ class ValueStore extends AbstractValueFactory {
 	private int freeDbi;
 	// database with internal reference counts for IRIs and namespaces
 	private int refCountsDbi;
+	private final RetiredValueIdStore retiredIdStore = new RetiredValueIdStore();
 	private long writeTxn;
 	private Thread writeTxnOwner;
 	private final boolean forceSync;
 	private final boolean noReadahead;
 	private final boolean autoGrow;
+	private volatile Runnable resizeCheckpointListener = () -> {
+	};
 	private boolean invalidateRevisionOnCommit = false;
 
 	/**
@@ -384,8 +387,8 @@ class ValueStore extends AbstractValueFactory {
 			env = pp.get(0);
 		}
 
-		// 6 basic dbs and max. 12 triple term indexes
-		E(mdb_env_set_maxdbs(env, 6 + 12));
+		// 9 basic dbs (including the durable retirement queue) and max. 12 triple term indexes
+		E(mdb_env_set_maxdbs(env, 9 + 12));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
@@ -439,6 +442,7 @@ class ValueStore extends AbstractValueFactory {
 		freeDbi = openDatabase(env, "free_ids", MDB_CREATE);
 		// open ref_counts database
 		refCountsDbi = openDatabase(env, "ref_counts", MDB_CREATE);
+		retiredIdStore.open(env);
 
 		// check if free IDs are available
 		readTransaction(env, (stack, txn) -> {
@@ -728,7 +732,11 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	protected byte[] getData(long id) throws IOException {
-		return readTransaction(env, (stack, txn) -> {
+		return readTransaction(env, (stack, txn) -> getData(txn, id));
+	}
+
+	private byte[] getData(long txn, long id) throws IOException {
+		try (MemoryStack stack = stackPush()) {
 			MDBVal keyData = MDBVal.calloc(stack);
 			keyData.mv_data(id2data(idBuffer(stack), id).flip());
 			MDBVal valueData = MDBVal.calloc(stack);
@@ -738,7 +746,7 @@ class ValueStore extends AbstractValueFactory {
 				return valueBytes;
 			}
 			return null;
-		});
+		}
 	}
 
 	/**
@@ -919,6 +927,13 @@ class ValueStore extends AbstractValueFactory {
 			if (LmdbUtil.requiresResize(mapSize, pageSize, txn, requiredSize)) {
 				// map is full, resize
 				requiredSize = LmdbUtil.getNewSize(pageSize, txn, requiredSize);
+				boolean activeWriteTxn = writeTxn != 0;
+				if (activeWriteTxn) {
+					// LMDB requires the active writer transaction to be committed before changing the map size. Notify
+					// the
+					// owning SailStore before that checkpoint can publish dictionary state ahead of its TripleStore.
+					resizeCheckpointListener.run();
+				}
 
 				var lockManager = txnManager.lockManager();
 				boolean readLocked = hasReadLock.get() != null;
@@ -933,7 +948,6 @@ class ValueStore extends AbstractValueFactory {
 				}
 
 				try {
-					boolean activeWriteTxn = writeTxn != 0;
 					if (activeWriteTxn) {
 						endTransaction(true, true);
 					}
@@ -962,6 +976,10 @@ class ValueStore extends AbstractValueFactory {
 				}
 			}
 		}
+	}
+
+	void setResizeCheckpointListener(Runnable resizeCheckpointListener) {
+		this.resizeCheckpointListener = resizeCheckpointListener;
 	}
 
 	private void incrementRefCount(MemoryStack stack, long writeTxn, byte[] data) {
@@ -1253,6 +1271,43 @@ class ValueStore extends AbstractValueFactory {
 		});
 	}
 
+	private LmdbTripleTerm id2tripleTerm(ReadSnapshot snapshot, long txn, long id, LmdbTripleTerm value)
+			throws IOException {
+		snapshot.ensureValid();
+		final TripleIndex index = tripleTermCspoIndex;
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, index.getDB(true), pp));
+			long cursor = pp.get(0);
+			try {
+				MDBVal keyVal = MDBVal.malloc(stack);
+				MDBVal dataVal = MDBVal.calloc(stack);
+				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				index.getMinKey(keyBuf, -1, -1, -1, id);
+				keyBuf.flip();
+				keyVal.mv_data(keyBuf);
+
+				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+				if (rc != MDB_SUCCESS || !index.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
+					return null;
+				}
+				long[] quad = new long[4];
+				index.keyToQuad(keyVal.mv_data(), quad);
+				LmdbTripleTerm decoded = new LmdbTripleTerm(snapshot.revision(),
+						(Resource) getLazyValue(snapshot, quad[0]),
+						(IRI) getLazyValue(snapshot, quad[1]),
+						getLazyValue(snapshot, quad[2]), id);
+				if (value != null) {
+					value.setFromInitializedValue(decoded);
+					return value;
+				}
+				return decoded;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
 	long findTripleTermId(long subj, long pred, long obj, boolean create) throws IOException {
 		return readTransaction(env, (stack, txn) -> {
 			final TripleIndex mainIndex = tripleTermSpocIndex;
@@ -1302,6 +1357,196 @@ class ValueStore extends AbstractValueFactory {
 		});
 	}
 
+	private long findTripleTermId(ReadSnapshot snapshot, long txn, long subj, long pred, long obj) throws IOException {
+		snapshot.ensureValid();
+		try (MemoryStack stack = stackPush()) {
+			final TripleIndex mainIndex = tripleTermSpocIndex;
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, mainIndex.getDB(true), pp));
+			long cursor = pp.get(0);
+			try {
+				MDBVal keyVal = MDBVal.malloc(stack);
+				MDBVal dataVal = MDBVal.calloc(stack);
+				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				mainIndex.getMinKey(keyBuf, subj, pred, obj, -1);
+				keyVal.mv_data(keyBuf.flip());
+				int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+				if (rc == MDB_SUCCESS && mainIndex.createMatcher(subj, pred, obj, -1).matches(keyVal.mv_data())) {
+					ByteBuffer found = keyVal.mv_data();
+					return Varint.readUnsigned(found, Varint.calcLengthUnsigned(subj)
+							+ Varint.calcLengthUnsigned(pred) + Varint.calcLengthUnsigned(obj));
+				}
+				return LmdbValue.UNKNOWN_ID;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
+	/** Finds a value ID in the supplied dictionary generation without consulting mutable ValueStore caches. */
+	long getId(ReadSnapshot snapshot, Value value) throws IOException {
+		long stamp;
+		try {
+			stamp = txnManager.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while looking up a ValueStore snapshot value", e);
+		}
+		try {
+			synchronized (snapshot.txnRef()) {
+				snapshot.ensureValid();
+				if (snapshot.valueStore() != this) {
+					throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
+				}
+				return getId(snapshot, snapshot.txnRef().get(), value);
+			}
+		} finally {
+			txnManager.lockManager().unlockRead(stamp);
+		}
+	}
+
+	private long getId(ReadSnapshot snapshot, long txn, Value value) throws IOException {
+		snapshot.ensureValid();
+		if (value instanceof LmdbValue lmdbValue && lmdbValue.getValueStoreRevision() == snapshot.revision()
+				&& lmdbValue.getInternalID() != LmdbValue.UNKNOWN_ID) {
+			return lmdbValue.getInternalID();
+		}
+		if (value.isTripleTerm()) {
+			TripleTerm tripleTerm = (TripleTerm) value;
+			long subj = getId(snapshot, txn, tripleTerm.getSubject());
+			long pred = getId(snapshot, txn, tripleTerm.getPredicate());
+			long obj = getId(snapshot, txn, tripleTerm.getObject());
+			if (subj == LmdbValue.UNKNOWN_ID || pred == LmdbValue.UNKNOWN_ID || obj == LmdbValue.UNKNOWN_ID) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			return findTripleTermId(snapshot, txn, subj, pred, obj);
+		}
+		if (inlineLiterals && value instanceof Literal literal) {
+			try {
+				long packedId = Values.packLiteral(literal);
+				if (packedId != 0L && Values.unpackLiteral(packedId, this).equals(literal)) {
+					return packedId;
+				}
+			} catch (IllegalArgumentException e) {
+				// The literal is not compatible with inlining; look for its stored representation below.
+			}
+		}
+		byte[] data = value2data(snapshot, txn, value);
+		return data == null ? LmdbValue.UNKNOWN_ID : findId(snapshot, txn, data);
+	}
+
+	private byte[] value2data(ReadSnapshot snapshot, long txn, Value value) throws IOException {
+		return switch (value.getType()) {
+		case Value.Type.IRI -> uri2data(snapshot, txn, (IRI) value);
+		case Value.Type.BNode -> bnode2data((BNode) value, false);
+		case Value.Type.Literal -> literal2data(snapshot, txn, (Literal) value);
+		default -> throw new IllegalArgumentException("value parameter should be a URI, BNode or Literal");
+		};
+	}
+
+	private byte[] uri2data(ReadSnapshot snapshot, long txn, IRI uri) throws IOException {
+		byte[] namespaceBytes = uri.getNamespace().getBytes(StandardCharsets.UTF_8);
+		byte[] namespaceData = new byte[namespaceBytes.length + 1];
+		namespaceData[0] = NAMESPACE_VALUE;
+		System.arraycopy(namespaceBytes, 0, namespaceData, 1, namespaceBytes.length);
+		long nsID = findId(snapshot, txn, namespaceData);
+		if (nsID == LmdbValue.UNKNOWN_ID) {
+			return null;
+		}
+		byte[] localNameData = uri.getLocalName().getBytes(StandardCharsets.UTF_8);
+		int nsIDLength = Varint.calcLengthUnsigned(nsID);
+		byte[] uriData = new byte[1 + nsIDLength + localNameData.length];
+		uriData[0] = URI_VALUE;
+		Varint.writeUnsigned(ByteBuffer.wrap(uriData, 1, nsIDLength), nsID);
+		ByteArrayUtil.put(localNameData, uriData, 1 + nsIDLength);
+		return uriData;
+	}
+
+	private byte[] literal2data(ReadSnapshot snapshot, long txn, Literal literal) throws IOException {
+		long datatypeID = literal.getDatatype() == null ? 0 : getId(snapshot, txn, literal.getDatatype());
+		if (datatypeID == LmdbValue.UNKNOWN_ID) {
+			return null;
+		}
+		byte[] langData = literal.getLanguage().map(s -> s.getBytes(StandardCharsets.UTF_8)).orElse(null);
+		int langLength = langData == null ? 0 : langData.length;
+		byte[] labelData = literal.getLabel().getBytes(StandardCharsets.UTF_8);
+		int datatypeIDLength = Varint.calcLengthUnsigned(datatypeID);
+		boolean extended = langLength > 0x3F;
+		int extendedLengthBytes = extended ? Varint.calcLengthUnsigned(langLength) : 0;
+		byte[] data = new byte[2 + datatypeIDLength + extendedLengthBytes + langLength + labelData.length];
+		ByteBuffer bb = ByteBuffer.wrap(data);
+		bb.put(LITERAL_VALUE);
+		Varint.writeUnsigned(bb, datatypeID);
+		Literal.BaseDirection baseDirection = literal.getBaseDirection();
+		int directionValue = baseDirection == null ? 0 : switch (baseDirection) {
+		case LTR -> 1;
+		case RTL -> 2;
+		default -> 0;
+		};
+		if (extended) {
+			bb.put((byte) (0xC0 | directionValue));
+			Varint.writeUnsigned(bb, langLength);
+		} else {
+			bb.put((byte) (directionValue << 6 | langLength));
+		}
+		if (langData != null) {
+			bb.put(langData);
+		}
+		bb.put(labelData);
+		return data;
+	}
+
+	private long findId(ReadSnapshot snapshot, long txn, byte[] data) throws IOException {
+		snapshot.ensureValid();
+		try (MemoryStack stack = stackPush()) {
+			MDBVal dataVal = MDBVal.calloc(stack);
+			MDBVal idVal = MDBVal.calloc(stack);
+			if (data.length <= MAX_KEY_SIZE) {
+				dataVal.mv_data(stack.bytes(data));
+				return mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS ? data2id(idVal.mv_data())
+						: LmdbValue.UNKNOWN_ID;
+			}
+
+			ByteBuffer dataBb = ByteBuffer.wrap(data);
+			long dataHash = hash(data);
+			ByteBuffer hashBb = stack.malloc(2 + Long.BYTES + 2);
+			hashBb.put(HASH_KEY);
+			Varint.writeUnsigned(hashBb, dataHash);
+			int hashLength = hashBb.position();
+			hashBb.flip();
+			MDBVal hashVal = MDBVal.calloc(stack);
+			hashVal.mv_data(hashBb);
+			if (mdb_get(txn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
+				ByteBuffer candidateId = dataVal.mv_data().duplicate();
+				idVal.mv_data(candidateId);
+				if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && dataVal.mv_data().compareTo(dataBb) == 0) {
+					return data2id(candidateId);
+				}
+			}
+
+			hashBb.put(0, HASHID_KEY);
+			hashVal.mv_data(hashBb);
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, dbi, pp));
+			long cursor = pp.get(0);
+			try {
+				int rc = mdb_cursor_get(cursor, hashVal, dataVal, MDB_SET_RANGE);
+				while (rc == MDB_SUCCESS && compareRegion(hashVal.mv_data(), 0, hashBb, 0, hashLength) == 0) {
+					ByteBuffer candidateId = hashVal.mv_data().duplicate();
+					candidateId.position(hashLength);
+					idVal.mv_data(candidateId);
+					if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && dataVal.mv_data().compareTo(dataBb) == 0) {
+						return data2id(candidateId);
+					}
+					rc = mdb_cursor_get(cursor, hashVal, dataVal, MDB_NEXT);
+				}
+				return LmdbValue.UNKNOWN_ID;
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		}
+	}
+
 	public RecordIterator getTripleTerms(long subj, long pred, long obj) throws IOException {
 		TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subj, pred, obj, -1);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, -1) > 0;
@@ -1325,6 +1570,314 @@ class ValueStore extends AbstractValueFactory {
 
 	TxnManager getTxnManager() {
 		return txnManager;
+	}
+
+	/** Reserves an untracked read transaction for a caller-owned dictionary snapshot. */
+	ReadSnapshotReservation reserveReadSnapshot() throws IOException {
+		return new ReadSnapshotReservation(txnManager.reserveReadTxn(false));
+	}
+
+	class ReadSnapshotReservation implements AutoCloseable {
+		private TxnManager.ReaderReservation reservation;
+
+		ReadSnapshotReservation(TxnManager.ReaderReservation reservation) {
+			this.reservation = reservation;
+		}
+
+		synchronized ReadSnapshot start() throws IOException {
+			if (reservation == null) {
+				throw new IllegalStateException(
+						"ValueStore read snapshot reservation has already been consumed or closed");
+			}
+			TxnManager.ReaderReservation reserved = reservation;
+			TxnManager.Txn txn = null;
+			try {
+				txn = reserved.start();
+				ReadSnapshot snapshot = new ReadSnapshot(txn);
+				reservation = null;
+				return snapshot;
+			} catch (IOException | RuntimeException | Error e) {
+				reservation = null;
+				if (txn == null) {
+					reserved.close();
+				} else {
+					txn.close();
+				}
+				throw e;
+			}
+		}
+
+		@Override
+		public void close() {
+			TxnManager.ReaderReservation reserved;
+			synchronized (this) {
+				reserved = reservation;
+				reservation = null;
+			}
+			if (reserved != null) {
+				reserved.close();
+			}
+		}
+	}
+
+	/** A write-commit-stable reader whose lifetime is owned by the caller. */
+	final class ReadSnapshot implements AutoCloseable {
+		private final Txn txn;
+		private final long transactionVersion;
+		private final ValueStoreRevision.Snapshot revision;
+		private volatile boolean closed;
+		private volatile Thread closingThread;
+
+		private ReadSnapshot(Txn txn) {
+			this.txn = txn;
+			this.transactionVersion = txn.version();
+			this.revision = new ValueStoreRevision.Snapshot(ValueStore.this, this);
+		}
+
+		boolean isCurrent() {
+			if (closed || txn.isClosed() || txn.version() != transactionVersion) {
+				return false;
+			}
+			try {
+				txn.ensureSnapshotValid();
+				return true;
+			} catch (SailException e) {
+				return false;
+			}
+		}
+
+		void ensureValid() throws IOException {
+			if ((closed && closingThread != Thread.currentThread()) || txn.isClosed()) {
+				throw new IOException("ValueStore read snapshot is closed; retry the read operation");
+			}
+			try {
+				txn.ensureSnapshotValid();
+			} catch (SailException e) {
+				throw new IOException(e.getMessage(), e);
+			}
+			if (txn.version() != transactionVersion) {
+				throw new IOException(
+						"ValueStore map changed while the read snapshot was pinned; retry the read operation");
+			}
+		}
+
+		Txn txnRef() {
+			return txn;
+		}
+
+		ValueStoreRevision.Snapshot revision() {
+			return revision;
+		}
+
+		ValueStore valueStore() {
+			return ValueStore.this;
+		}
+
+		void trackLazyValue(LmdbValue value) throws IOException {
+			synchronized (txn) {
+				ensureValid();
+				revision.track(value);
+			}
+		}
+
+		@Override
+		public synchronized void close() {
+			boolean interrupted = false;
+			long readStamp;
+			while (true) {
+				try {
+					readStamp = txnManager.lockManager().readLock();
+					break;
+				} catch (InterruptedException e) {
+					interrupted = true;
+				}
+			}
+			try {
+				boolean materialize;
+				synchronized (txn) {
+					if (closed) {
+						return;
+					}
+					materialize = isCurrent();
+					closingThread = Thread.currentThread();
+					closed = true;
+				}
+				try {
+					if (materialize) {
+						// Do not hold the Txn monitor while initializing values: LmdbValue.init() takes the value
+						// monitor
+						// before it resolves through this Txn, so reversing that order here could deadlock.
+						revision.materializeTrackedValues();
+					}
+				} finally {
+					synchronized (txn) {
+						closingThread = null;
+						revision.release(this);
+						txn.close();
+					}
+				}
+			} finally {
+				txnManager.lockManager().unlockRead(readStamp);
+				if (interrupted) {
+					Thread.currentThread().interrupt();
+				}
+			}
+		}
+	}
+
+	LmdbValue getLazyValue(ReadSnapshot snapshot, long id) throws IOException {
+		if (snapshot.valueStore() != this) {
+			throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
+		}
+		synchronized (snapshot.txnRef()) {
+			snapshot.ensureValid();
+			int idType = ValueIds.getIdType(id);
+			LmdbValue value = switch (idType) {
+			case ValueIds.T_URI -> new LmdbIRI(snapshot.revision(), id);
+			case ValueIds.T_DOUBLE, ValueIds.T_LITERAL -> new LmdbLiteral(snapshot.revision(), id);
+			case ValueIds.T_BNODE -> new LmdbBNode(snapshot.revision(), id);
+			case ValueIds.T_TRIPLE -> new LmdbTripleTerm(snapshot.revision(), id);
+			default -> {
+				if (ValueIds.isInlined(id)) {
+					yield new LmdbLiteral(snapshot.revision(), id);
+				}
+				throw new IOException("Unsupported value with id=" + id + " and id type " + idType);
+			}
+			};
+			snapshot.revision().track(value);
+			return value;
+		}
+	}
+
+	LmdbValue getValue(ReadSnapshot snapshot, long id) throws IOException {
+		long stamp;
+		try {
+			stamp = txnManager.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while reading ValueStore snapshot", e);
+		}
+		try {
+			synchronized (snapshot.txnRef()) {
+				snapshot.ensureValid();
+				if (snapshot.valueStore() != this) {
+					throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
+				}
+				return getValue(snapshot, snapshot.txnRef().get(), id);
+			}
+		} finally {
+			txnManager.lockManager().unlockRead(stamp);
+		}
+	}
+
+	private LmdbValue getValue(ReadSnapshot snapshot, long txn, long id) throws IOException {
+		snapshot.ensureValid();
+		if (ValueIds.isInlined(id)) {
+			Literal unpacked = Values.unpackLiteral(id, this);
+			return new LmdbLiteral(snapshot.revision(), unpacked.getLabel(), unpacked.getDatatype(), id);
+		}
+		if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+			return id2tripleTerm(snapshot, txn, id, null);
+		}
+		byte[] data = getData(txn, id);
+		return data == null ? null : data2value(snapshot, txn, id, data);
+	}
+
+	boolean resolveValue(ReadSnapshot snapshot, long id, LmdbValue value) {
+		long stamp;
+		try {
+			stamp = txnManager.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException("Interrupted while resolving a ValueStore snapshot value", e);
+		}
+		try {
+			synchronized (snapshot.txnRef()) {
+				snapshot.ensureValid();
+				if (snapshot.valueStore() != this) {
+					throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
+				}
+				if (ValueIds.isInlined(id)) {
+					Literal unpacked = Values.unpackLiteral(id, this);
+					LmdbLiteral literal = (LmdbLiteral) value;
+					literal.setLabel(unpacked.getLabel());
+					literal.setDatatype(unpacked.getDatatype());
+					literal.setBaseDirection(unpacked.getBaseDirection());
+					return true;
+				}
+				if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
+					LmdbTripleTerm tripleTerm = id2tripleTerm(snapshot, snapshot.txnRef().get(), id, null);
+					if (tripleTerm != null) {
+						value.setFromInitializedValue(tripleTerm);
+						return true;
+					}
+					return false;
+				}
+				byte[] data = getData(snapshot.txnRef().get(), id);
+				if (data == null) {
+					return false;
+				}
+				return data2value(snapshot, snapshot.txnRef().get(), id, data, value) != null;
+			}
+		} catch (IOException e) {
+			throw new SailException(e.getMessage(), e);
+		} finally {
+			txnManager.lockManager().unlockRead(stamp);
+		}
+	}
+
+	RecordIterator getTripleTerms(ReadSnapshot snapshot, long subj, long pred, long obj) throws IOException {
+		if (snapshot.valueStore() != this) {
+			throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
+		}
+		snapshot.ensureValid();
+		TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subj, pred, obj, -1);
+		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, -1) > 0;
+		return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, snapshot.txnRef(), snapshot);
+	}
+
+	/** Records IDs that may be reclaimed after the supplied TripleStore reader watermark has passed. */
+	void recordRetiredIds(Collection<Long> ids, long tripleDataRevision) throws IOException {
+		if (!enableGC() || ids.isEmpty()) {
+			return;
+		}
+		readTransaction(env, (stack1, txn1) -> {
+			resizeMap(writeTxn, 80L * ids.size());
+			writeTransaction((stack, activeWriteTxn) -> {
+				retiredIdStore.recordRetirements(stack, activeWriteTxn, ids, tripleDataRevision);
+				return null;
+			});
+			return null;
+		});
+	}
+
+	/** Returns candidates whose retirement watermark has passed; the caller must check TripleStore liveness. */
+	RetiredValueIdStore.DrainBatch pollRetiredIds(long maxRevisionInclusive, int maxIds) throws IOException {
+		if (!retiredIdStore.hasPending()) {
+			return null;
+		}
+		return readTransaction(env,
+				(stack, txn) -> retiredIdStore.pollDrainable(stack, txn, maxRevisionInclusive, maxIds));
+	}
+
+	/** Removes a polled batch after the caller has applied the normal liveness and ValueStore GC checks. */
+	void removeRetiredIds(RetiredValueIdStore.DrainBatch batch) throws IOException {
+		if (batch == null || batch.isEmpty()) {
+			return;
+		}
+		readTransaction(env, (stack1, txn1) -> {
+			resizeMap(writeTxn,
+					32L * (batch.matchedSeqKeys.size() + batch.staleSeqKeys.size() + batch.ids.size()));
+			writeTransaction((stack, activeWriteTxn) -> {
+				retiredIdStore.removeDrained(stack, activeWriteTxn, batch);
+				return null;
+			});
+			return null;
+		});
+	}
+
+	boolean hasRetiredIds() {
+		return retiredIdStore.hasPending();
 	}
 
 	Map<String, LmdbStore.LmdbDatabaseStats> getLmdbStats() throws IOException {
@@ -1381,9 +1934,17 @@ class ValueStore extends AbstractValueFactory {
 				return transaction.exec(stack, writeTxn);
 			}
 		} else {
+			boolean committed = false;
 			try {
-				return LmdbUtil.writeTransaction(env, transaction);
+				T result = LmdbUtil.writeTransaction(env, transaction);
+				committed = true;
+				return result;
 			} finally {
+				if (committed) {
+					retiredIdStore.transactionCommitted();
+				} else {
+					retiredIdStore.transactionRolledBack();
+				}
 				var lockManager = txnManager.lockManager();
 				boolean readLocked = hasReadLock.get() != null;
 				if (readLocked) {
@@ -1865,6 +2426,7 @@ class ValueStore extends AbstractValueFactory {
 					long stamp = revisionLock.writeLock();
 					try {
 						E(mdb_txn_commit(writeTxn));
+						retiredIdStore.transactionCommitted();
 						flushPendingHashUpdates();
 						long revisionId = lazyRevision.getRevisionId();
 						cleaner.register(lazyRevision, () -> {
@@ -1882,12 +2444,19 @@ class ValueStore extends AbstractValueFactory {
 					}
 				} else {
 					E(mdb_txn_commit(writeTxn));
+					retiredIdStore.transactionCommitted();
 					flushPendingHashUpdates();
 				}
 			} else {
 				refCountsTxCache.clear();
 				mdb_txn_abort(writeTxn);
+				retiredIdStore.transactionRolledBack();
 				clearPendingHashUpdates();
+				// IDs assigned during the aborted transaction may have been cached on input values and in valueIDCache.
+				// Reusing either cache would let a later transaction publish triples that point at dictionary IDs which
+				// were never committed.
+				setNewRevision();
+				clearCaches();
 			}
 			writeTxn = 0;
 			writeTxnOwner = null;
@@ -2191,6 +2760,97 @@ class ValueStore extends AbstractValueFactory {
 		case LITERAL_VALUE -> data2literal(id, data, (LmdbLiteral) value);
 		default -> throw new IllegalArgumentException("Invalid type " + data[0] + " for value with id " + id);
 		};
+	}
+
+	private LmdbValue data2value(ReadSnapshot snapshot, long txn, long id, byte[] data) throws IOException {
+		return data2value(snapshot, txn, id, data, null);
+	}
+
+	private LmdbValue data2value(ReadSnapshot snapshot, long txn, long id, byte[] data, LmdbValue value)
+			throws IOException {
+		return switch (data[0]) {
+		case URI_VALUE -> data2uri(snapshot, txn, id, data, (LmdbIRI) value);
+		case BNODE_VALUE -> data2bnode(snapshot, id, data, (LmdbBNode) value);
+		case LITERAL_VALUE -> data2literal(snapshot, txn, id, data, (LmdbLiteral) value);
+		default -> throw new IllegalArgumentException("Invalid type " + data[0] + " for value with id " + id);
+		};
+	}
+
+	private LmdbIRI data2uri(ReadSnapshot snapshot, long txn, long id, byte[] data, LmdbIRI value)
+			throws IOException {
+		ByteBuffer bb = ByteBuffer.wrap(data);
+		bb.get();
+		long nsID = Varint.readUnsignedHeap(bb);
+		byte[] namespaceData = getData(txn, nsID);
+		if (namespaceData == null) {
+			return null;
+		}
+		String namespace = data2namespace(namespaceData);
+		String localName = new String(data, bb.position(), bb.remaining(), StandardCharsets.UTF_8);
+		if (value == null) {
+			return new LmdbIRI(snapshot.revision(), namespace, localName, id);
+		}
+		value.setNamespaceAndIri(namespace, localName);
+		return value;
+	}
+
+	private LmdbBNode data2bnode(ReadSnapshot snapshot, long id, byte[] data, LmdbBNode value) {
+		String nodeID = new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
+		if (value == null) {
+			return new LmdbBNode(snapshot.revision(), nodeID, id);
+		}
+		value.setID(nodeID);
+		return value;
+	}
+
+	private LmdbLiteral data2literal(ReadSnapshot snapshot, long txn, long id, byte[] data, LmdbLiteral value)
+			throws IOException {
+		ByteBuffer bb = ByteBuffer.wrap(data);
+		bb.get();
+		long datatypeID = Varint.readUnsignedHeap(bb);
+		IRI datatype = datatypeID > 0 ? (IRI) getValue(snapshot, txn, datatypeID) : null;
+		if (datatypeID > 0 && datatype == null) {
+			return null;
+		}
+
+		int directionAndLangLength = bb.get() & 0xFF;
+		int directionValue = directionAndLangLength >> 6;
+		int langLength;
+		if (directionValue == 3) {
+			directionValue = directionAndLangLength & 0x3F;
+			langLength = (int) Varint.readUnsignedHeap(bb);
+		} else {
+			langLength = directionAndLangLength & 0x3F;
+		}
+		String lang = langLength > 0 ? new String(data, bb.position(), langLength, StandardCharsets.UTF_8) : null;
+		Literal.BaseDirection baseDirection = switch (directionValue) {
+		case 1 -> Literal.BaseDirection.LTR;
+		case 2 -> Literal.BaseDirection.RTL;
+		default -> Literal.BaseDirection.NONE;
+		};
+		String label = new String(data, bb.position() + langLength, data.length - bb.position() - langLength,
+				StandardCharsets.UTF_8);
+
+		if (value == null) {
+			if (lang != null) {
+				return new LmdbLiteral(snapshot.revision(), label, lang, baseDirection, id);
+			} else if (datatype != null) {
+				return new LmdbLiteral(snapshot.revision(), label, datatype, id);
+			}
+			return new LmdbLiteral(snapshot.revision(), label, org.eclipse.rdf4j.model.vocabulary.XSD.STRING, id);
+		}
+		value.setLabel(label);
+		if (lang != null) {
+			value.setLanguage(lang);
+			value.setBaseDirection(baseDirection);
+			value.setDatatype(baseDirection != Literal.BaseDirection.NONE ? CoreDatatype.RDF.DIRLANGSTRING
+					: CoreDatatype.RDF.LANGSTRING);
+		} else if (datatype != null) {
+			value.setDatatype(datatype);
+		} else {
+			value.setDatatype(CoreDatatype.XSD.STRING);
+		}
+		return value;
 	}
 
 	private LmdbIRI data2uri(long id, byte[] data, LmdbIRI value) throws IOException {

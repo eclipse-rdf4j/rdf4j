@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -171,9 +172,84 @@ final class TxnManager {
 	private Txn createReadTxnInternal(boolean resetOnWrite, boolean priority) throws IOException {
 		checkNotClosed();
 		Semaphore readerPermit = acquireReaderPermit(priority);
+		return createReadTxnInternal(resetOnWrite, readerPermit);
+	}
+
+	/**
+	 * Reserves a reader slot without starting its native transaction. Callers coordinating admission across multiple
+	 * stores can reserve all required slots before entering their publication gate, then start the transactions while
+	 * holding that gate.
+	 */
+	ReaderReservation reserveReadTxn(boolean resetOnWrite) throws IOException {
+		checkNotClosed();
+		return new ReaderReservation(resetOnWrite, acquireReaderPermit(false));
+	}
+
+	/** Opens a family of untracked readers pinned to one committed data revision. */
+	Txn[] createReadTxnPinnedFamily(int count, LongSupplier dataRevision) throws IOException {
+		if (count <= 0) {
+			throw new IllegalArgumentException("pinned transaction family size must be positive: " + count);
+		}
+		if (count >= POOL_SIZE) {
+			throw new IOException("Pinned transaction family exceeds the ordinary reader capacity: " + count);
+		}
+
+		Txn[] transactions = new Txn[count];
+		Semaphore permits = acquireReaderPermits(count, false);
+		int unassigned = count;
+		int opened = 0;
+		long readStamp = 0;
+		boolean readLocked = false;
+		try {
+			try {
+				readStamp = lockManager.readLock();
+				readLocked = true;
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while pinning a read transaction family", e);
+			}
+
+			long revision = dataRevision.getAsLong();
+			for (; opened < count; opened++) {
+				// Each transaction-start path owns and returns its assigned permit on failure.
+				unassigned--;
+				Txn transaction = createReadTxnInternal(false, permits);
+				transactions[opened] = transaction;
+				transaction.setSnapshotRevision(revision);
+			}
+			return transactions;
+		} catch (IOException | RuntimeException | Error e) {
+			for (int i = transactions.length - 1; i >= 0; i--) {
+				if (transactions[i] != null) {
+					transactions[i].close();
+				}
+			}
+			throw e;
+		} finally {
+			if (readLocked) {
+				lockManager.unlockRead(readStamp);
+			}
+			permits.release(unassigned);
+		}
+	}
+
+	/** Oldest active pinned-reader revision, or {@link Long#MAX_VALUE} when there are none. */
+	long minPinnedSnapshotRevision() {
+		long min = Long.MAX_VALUE;
+		for (Txn txn : open) {
+			long revision = txn.snapshotRevision();
+			if (!txn.isIdle() && !txn.isClosed() && revision >= 0 && revision < min) {
+				min = revision;
+			}
+		}
+		return min;
+	}
+
+	private Txn createReadTxnInternal(boolean resetOnWrite, Semaphore readerPermit) throws IOException {
 
 		boolean permitConsumed = false;
 		try {
+			checkNotClosed();
 			// Fast path: recycle an idle reader. The permit guarantees that either the pool is non-empty or that
 			// starting a new transaction stays within POOL_SIZE.
 			Txn pooled = pollPooled();
@@ -203,6 +279,70 @@ final class TxnManager {
 		} finally {
 			if (!permitConsumed) {
 				releaseReaderPermit(readerPermit);
+			}
+		}
+	}
+
+	/** A pre-acquired reader permit that can be consumed exactly once to start a transaction. */
+	final class ReaderReservation implements AutoCloseable {
+		private final boolean resetOnWrite;
+		private Semaphore readerPermit;
+
+		private ReaderReservation(boolean resetOnWrite, Semaphore readerPermit) {
+			this.resetOnWrite = resetOnWrite;
+			this.readerPermit = readerPermit;
+		}
+
+		/**
+		 * Starts the reserved transaction and transfers permit ownership to it. On failure the permit is returned by
+		 * the transaction-start path; closing an unconsumed reservation returns it directly.
+		 */
+		synchronized Txn start() throws IOException {
+			return startPinned(null);
+		}
+
+		/** Starts this reservation and stamps the transaction before releasing the manager read lock. */
+		synchronized Txn startPinned(LongSupplier dataRevision) throws IOException {
+			if (readerPermit == null) {
+				throw new IllegalStateException("Reader reservation has already been consumed or closed");
+			}
+			if (dataRevision != null && resetOnWrite) {
+				throw new IllegalStateException("A pinned read transaction must be untracked for write commits");
+			}
+			long readStamp;
+			try {
+				readStamp = lockManager.readLock();
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while starting a reserved read transaction", e);
+			}
+			try {
+				Semaphore permit = readerPermit;
+				readerPermit = null;
+				Txn txn = createReadTxnInternal(resetOnWrite, permit);
+				if (dataRevision != null) {
+					try {
+						txn.setSnapshotRevision(dataRevision.getAsLong());
+					} catch (RuntimeException | Error e) {
+						txn.close();
+						throw e;
+					}
+				}
+				return txn;
+			} finally {
+				lockManager.unlockRead(readStamp);
+			}
+		}
+
+		@Override
+		public void close() {
+			Semaphore permit;
+			synchronized (this) {
+				permit = readerPermit;
+				readerPermit = null;
+			}
+			if (permit != null) {
+				releaseReaderPermit(permit);
 			}
 		}
 	}
@@ -288,13 +428,17 @@ final class TxnManager {
 	// ---------------------------------------------------------------------------------------------
 
 	private Semaphore acquireReaderPermit(boolean priority) throws IOException {
+		return acquireReaderPermits(1, priority);
+	}
+
+	private Semaphore acquireReaderPermits(int count, boolean priority) throws IOException {
 		Semaphore slots;
 		try {
-			if (priority && readerSlots.tryAcquire(0, TimeUnit.NANOSECONDS)) {
+			if (priority && readerSlots.tryAcquire(count, 0, TimeUnit.NANOSECONDS)) {
 				slots = readerSlots;
 			} else {
 				slots = priority ? priorityReaderSlot : readerSlots;
-				if (!slots.tryAcquire(READER_ADMISSION_TIMEOUT_NANOS, TimeUnit.NANOSECONDS)) {
+				if (!slots.tryAcquire(count, READER_ADMISSION_TIMEOUT_NANOS, TimeUnit.NANOSECONDS)) {
 					throw new IOException("Timed out after "
 							+ TimeUnit.NANOSECONDS.toMillis(READER_ADMISSION_TIMEOUT_NANOS)
 							+ " ms waiting for a free read transaction (limit " + POOL_SIZE + ")");
@@ -305,7 +449,7 @@ final class TxnManager {
 			throw new IOException("Interrupted while waiting for a free read transaction", e);
 		}
 		if (managerClosed) {
-			slots.release();
+			slots.release(count);
 			throw new IOException("Transaction manager is closed");
 		}
 		return slots;
@@ -521,6 +665,8 @@ final class TxnManager {
 		private final Pool valuePool = pools[POOL_ROTATION.getAndIncrement() & (CACHED_POOLS - 1)];
 
 		private volatile long version;
+		private volatile long snapshotRevision = -1;
+		private volatile boolean snapshotInvalidated;
 		private volatile boolean active = true;
 		/** Permanently finished: aborted or handed back to LMDB. */
 		private volatile boolean closed;
@@ -544,6 +690,36 @@ final class TxnManager {
 			return version;
 		}
 
+		long snapshotRevision() {
+			return snapshotRevision;
+		}
+
+		synchronized void setSnapshotRevision(long revision) {
+			if (closed || idle) {
+				throw new IllegalStateException("Cannot pin a closed or idle read transaction");
+			}
+			snapshotRevision = revision;
+			snapshotInvalidated = false;
+		}
+
+		void ensureSnapshotValid() {
+			if (closed || idle) {
+				throw new SailException("SNAPSHOT transaction is closed; retry the read operation");
+			}
+			if (snapshotInvalidated) {
+				throw new SailException("SNAPSHOT transaction invalidated: the store's memory map was resized "
+						+ "during the transaction; retry the transaction");
+			}
+		}
+
+		boolean isClosed() {
+			return closed;
+		}
+
+		boolean isIdle() {
+			return idle;
+		}
+
 		StampedLongAdderLockManager lockManager() {
 			return lockManager;
 		}
@@ -564,6 +740,7 @@ final class TxnManager {
 					return;
 				}
 				permit = readerPermit;
+				snapshotRevision = -1;
 				releasePermit = release();
 			}
 			if (releasePermit) {
@@ -579,6 +756,9 @@ final class TxnManager {
 				return;
 			}
 			if (resetOnWrite || idle) {
+				if (snapshotRevision >= 0) {
+					snapshotInvalidated = true;
+				}
 				resetNative();
 				version++;
 				if (!idle) {
@@ -594,6 +774,9 @@ final class TxnManager {
 		synchronized void setActive(boolean active) throws IOException {
 			if (closed) {
 				return;
+			}
+			if (snapshotRevision >= 0) {
+				snapshotInvalidated = true;
 			}
 			if (active) {
 				if (!idle) {
@@ -616,6 +799,8 @@ final class TxnManager {
 			}
 			this.resetOnWrite = resetOnWrite;
 			this.readerPermit = readerPermit;
+			this.snapshotRevision = -1;
+			this.snapshotInvalidated = false;
 			this.idle = false;
 			this.closed = false;
 			activate();
@@ -693,6 +878,7 @@ final class TxnManager {
 			active = false;
 			idle = false;
 			closed = true;
+			snapshotRevision = -1;
 		}
 
 		@Override

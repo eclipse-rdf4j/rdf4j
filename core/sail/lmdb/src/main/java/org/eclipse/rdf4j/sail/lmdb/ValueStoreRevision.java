@@ -12,8 +12,16 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.Serializable;
+import java.lang.ref.ReferenceQueue;
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
@@ -97,6 +105,166 @@ public interface ValueStoreRevision {
 				return true;
 			}
 			return false;
+		}
+	}
+
+	/** A value revision bound to one pinned ValueStore read snapshot. */
+	class Snapshot extends Base implements Serializable {
+		private static final long serialVersionUID = -2434063125560285009L;
+		private static final AtomicLong REVISION_IDS = new AtomicLong(Long.MIN_VALUE);
+
+		transient private final ValueStore valueStore;
+		transient private volatile ValueStore.ReadSnapshot snapshot;
+		transient private volatile TrackedValues trackedValues;
+		private final long revisionId = REVISION_IDS.getAndIncrement();
+
+		Snapshot(ValueStore valueStore, ValueStore.ReadSnapshot snapshot) {
+			this.valueStore = valueStore;
+			this.snapshot = snapshot;
+		}
+
+		@Override
+		public long getRevisionId() {
+			return revisionId;
+		}
+
+		@Override
+		public ValueStore getValueStore() {
+			return valueStore;
+		}
+
+		void track(LmdbValue value) {
+			ValueStore.ReadSnapshot current = snapshot;
+			if (current == null) {
+				throw new SailException("ValueStore read snapshot is closed; retry the read operation");
+			}
+			trackedValues().add(value);
+		}
+
+		/** Materializes all still-reachable lazy values, including nested values registered during initialization. */
+		void materializeTrackedValues() {
+			TrackedValues values = trackedValues;
+			if (values == null) {
+				return;
+			}
+			while (true) {
+				List<LmdbValue> pending = values.drainLiveValues();
+				if (pending.isEmpty()) {
+					return;
+				}
+				for (LmdbValue value : pending) {
+					value.init();
+				}
+			}
+		}
+
+		void release(ValueStore.ReadSnapshot expected) {
+			if (snapshot == expected) {
+				snapshot = null;
+			}
+			TrackedValues values = trackedValues;
+			if (values != null) {
+				values.clear();
+			}
+		}
+
+		@Override
+		public boolean resolveValue(long id, LmdbValue value) {
+			if (valueStore == null) {
+				return false;
+			}
+			ValueStore.ReadSnapshot current = snapshot;
+			if (current == null) {
+				throw new SailException("ValueStore read snapshot is closed; retry the read operation");
+			}
+			return valueStore.resolveValue(current, id, value);
+		}
+
+		private TrackedValues trackedValues() {
+			TrackedValues current = trackedValues;
+			if (current == null) {
+				synchronized (this) {
+					current = trackedValues;
+					if (current == null) {
+						current = new TrackedValues();
+						trackedValues = current;
+					}
+				}
+			}
+			return current;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return this == other;
+		}
+
+		@Override
+		public int hashCode() {
+			return System.identityHashCode(this);
+		}
+
+		private static final class TrackedValues {
+			private final ReferenceQueue<LmdbValue> collectedValues = new ReferenceQueue<>();
+			private final Set<ValueReference> values = new HashSet<>();
+
+			synchronized void add(LmdbValue value) {
+				removeCollectedValues();
+				values.add(new ValueReference(value, collectedValues));
+			}
+
+			synchronized List<LmdbValue> drainLiveValues() {
+				removeCollectedValues();
+				List<LmdbValue> liveValues = new ArrayList<>(values.size());
+				for (ValueReference reference : values) {
+					LmdbValue value = reference.get();
+					if (value != null) {
+						liveValues.add(value);
+					}
+				}
+				values.clear();
+				return liveValues;
+			}
+
+			synchronized void clear() {
+				values.clear();
+				while (collectedValues.poll() != null) {
+					// drain queue
+				}
+			}
+
+			private void removeCollectedValues() {
+				ValueReference reference;
+				while ((reference = (ValueReference) collectedValues.poll()) != null) {
+					values.remove(reference);
+				}
+			}
+		}
+
+		private static final class ValueReference extends WeakReference<LmdbValue> {
+			private final int identityHash;
+
+			ValueReference(LmdbValue value, ReferenceQueue<LmdbValue> queue) {
+				super(value, queue);
+				identityHash = System.identityHashCode(value);
+			}
+
+			@Override
+			public int hashCode() {
+				return identityHash;
+			}
+
+			@Override
+			public boolean equals(Object other) {
+				if (this == other) {
+					return true;
+				}
+				if (other instanceof ValueReference reference) {
+					LmdbValue value = get();
+					return value != null && value == reference.get();
+				}
+				return false;
+			}
 		}
 	}
 
