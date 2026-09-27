@@ -17,6 +17,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
+import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
@@ -123,8 +124,24 @@ final class LmdbUtil {
 	static int openDatabaseWithTxn(long txn, String name, int flags) throws IOException {
 		try (MemoryStack stack = stackPush()) {
 			IntBuffer ip = stack.mallocInt(1);
-			E(mdb_dbi_open(txn, name, flags, ip));
+			int result = mdb_dbi_open(txn, name, flags, ip);
+			checkMapFull(result);
 			return ip.get(0);
+		}
+	}
+
+	static int checkMapFull(int result) throws IOException {
+		if (result == MDB_MAP_FULL) {
+			throw new MapFullException();
+		}
+		return E(result);
+	}
+
+	static final class MapFullException extends IOException {
+		private static final long serialVersionUID = 1L;
+
+		private MapFullException() {
+			super("LMDB map is full");
 		}
 	}
 

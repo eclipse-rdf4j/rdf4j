@@ -254,6 +254,7 @@ class LmdbSnapshotValueLifetimeTest {
 					writer.removeStatements(subject, PREDICATE, object, context);
 					writer.commit();
 				}
+				long dataRevisionBeforeNamespace = tripleStore.getDataRevision();
 				long tripleTxnIdBeforeNamespace = lastTxnId(tripleStore.env);
 				long valueTxnIdBeforeNamespace = lastTxnId(envOf(valueStore));
 				try (SailConnection writer = store.getConnection()) {
@@ -261,8 +262,10 @@ class LmdbSnapshotValueLifetimeTest {
 					writer.setNamespace("retirement", "urn:snapshot-lifetime:retirement:");
 					writer.commit();
 				}
-				assertEquals(tripleTxnIdBeforeNamespace, lastTxnId(tripleStore.env),
-						"an ineligible namespace-only commit must not write the TripleStore environment");
+				assertEquals(tripleTxnIdBeforeNamespace + 1, lastTxnId(tripleStore.env),
+						"namespace metadata must publish atomically in the authoritative TripleStore environment");
+				assertEquals(dataRevisionBeforeNamespace, tripleStore.getDataRevision(),
+						"a namespace-only commit must not advance the RDF data revision");
 				assertEquals(valueTxnIdBeforeNamespace, lastTxnId(envOf(valueStore)),
 						"an ineligible namespace-only commit must not write the ValueStore environment");
 				assertTrue(store.getBackingStore().hasRetiredValueIds(),
@@ -309,6 +312,7 @@ class LmdbSnapshotValueLifetimeTest {
 					"an empty transaction must not commit the ValueStore environment");
 			assertTrue(store.getBackingStore().hasRetiredValueIds(),
 					"an empty transaction does not publish pending retirement maintenance");
+			long dataRevisionBeforeEligibleNamespace = tripleStore.getDataRevision();
 			long tripleTxnIdBeforeEligibleNamespace = lastTxnId(tripleStore.env);
 			long valueTxnIdBeforeEligibleNamespace = lastTxnId(envOf(valueStore));
 			try (SailConnection writer = store.getConnection()) {
@@ -316,8 +320,10 @@ class LmdbSnapshotValueLifetimeTest {
 				writer.setNamespace("retirement-eligible", "urn:snapshot-lifetime:retirement-eligible:");
 				writer.commit();
 			}
-			assertEquals(tripleTxnIdBeforeEligibleNamespace, lastTxnId(tripleStore.env),
-					"an eligible namespace-only commit must not write the TripleStore environment");
+			assertEquals(tripleTxnIdBeforeEligibleNamespace + 1, lastTxnId(tripleStore.env),
+					"an eligible namespace-only commit must publish its authoritative namespace snapshot");
+			assertEquals(dataRevisionBeforeEligibleNamespace, tripleStore.getDataRevision(),
+					"an eligible namespace-only commit must not advance the RDF data revision");
 			assertEquals(valueTxnIdBeforeEligibleNamespace, lastTxnId(envOf(valueStore)),
 					"an eligible namespace-only commit must not write the ValueStore environment");
 			assertTrue(store.getBackingStore().hasRetiredValueIds(),

@@ -19,10 +19,12 @@ import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
+import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NORDAHEAD;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
@@ -32,7 +34,9 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
+import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
@@ -52,6 +56,7 @@ import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -60,6 +65,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -111,6 +117,13 @@ class ValueStore extends AbstractValueFactory {
 	 * The default triple term indexes. These are always used - even if not specified.
 	 */
 	private static final String DEFAULT_TRIPLE_TERM_INDEXES = "spoc,cspo";
+	private static final String TERM_INDEX_MANIFEST_DATABASE = "term_index_manifest";
+	private static final byte[] TERM_INDEX_MANIFEST_KEY = "term-index-specs".getBytes(StandardCharsets.US_ASCII);
+	private static final int TERM_INDEX_MANIFEST_VERSION = 1;
+	private static final int MAX_TERM_INDEXES = 12;
+	private static final int TERM_INDEX_REBUILD_BATCH_SIZE = 2_048;
+	private static final long TERM_INDEX_REBUILD_BYTES_PER_RECORD = TripleIndex.MAX_KEY_LENGTH + 64L;
+	private static final Set<String> ALL_TERM_INDEX_SPECS = allTermIndexSpecs();
 
 	private static final byte URI_VALUE = 0;
 
@@ -188,6 +201,7 @@ class ValueStore extends AbstractValueFactory {
 	private long mapSize;
 	// main database
 	private int dbi;
+	private int termIndexManifestDbi;
 	// database with unused IDs
 	private int unusedDbi;
 	// database with free IDs
@@ -208,6 +222,7 @@ class ValueStore extends AbstractValueFactory {
 	 * The list of triple term indexes that are used to store and retrieve triples.
 	 */
 	private final List<TripleIndex> tripleTermIndexes = new ArrayList<>();
+	private final Set<Integer> droppedTermIndexDbis = new HashSet<>();
 	private TripleIndex tripleTermSpocIndex;
 	private TripleIndex tripleTermCspoIndex;
 
@@ -261,66 +276,123 @@ class ValueStore extends AbstractValueFactory {
 		this.valueEvictionInterval = config.getValueEvictionInterval();
 		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
 		this.inlineLiterals = config.getInlineLiterals();
-		open();
+		try {
+			open();
 
-		int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
-		valueCache = new LmdbValue[cacheSize];
-		valueCacheId = new long[cacheSize];
-		valueCacheMask = cacheSize - 1;
-		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
-		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
-		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
-		setNewRevision();
+			int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
+			valueCache = new LmdbValue[cacheSize];
+			valueCacheId = new long[cacheSize];
+			valueCacheMask = cacheSize - 1;
+			valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
+			namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
+			namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
+			setNewRevision();
 
-		startTransaction(true);
-		initTermIndexes(config);
-		commit();
+			startTransaction(true);
+			termIndexManifestDbi = openTermIndexManifestDatabase();
+			initTermIndexes(config);
+			commit();
 
-		// read maximum id from store
-		readTransaction(env, (stack, txn) -> {
-			long cursor = 0;
-			PointerBuffer pp = stack.mallocPointer(1);
+			// read maximum id from store
+			readTransaction(env, (stack, txn) -> {
+				long cursor = 0;
+				PointerBuffer pp = stack.mallocPointer(1);
 
-			MDBVal keyData = MDBVal.calloc(stack);
-			MDBVal valueData = MDBVal.calloc(stack);
-			for (int lookupDbi : new int[] { dbi, freeDbi }) {
-				try {
-					E(mdb_cursor_open(txn, lookupDbi, pp));
-					cursor = pp.get(0);
+				MDBVal keyData = MDBVal.calloc(stack);
+				MDBVal valueData = MDBVal.calloc(stack);
+				for (int lookupDbi : new int[] { dbi, freeDbi }) {
+					try {
+						E(mdb_cursor_open(txn, lookupDbi, pp));
+						cursor = pp.get(0);
 
-					// set cursor after max ID
-					keyData.mv_data(stack.bytes(new byte[] { ID_KEY, (byte) 0xFF }));
-					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-					if (rc != MDB_SUCCESS) {
-						// directly go to last value
-						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
-					} else {
-						// go to previous value of selected key
-						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
+						// set cursor after max ID
+						keyData.mv_data(stack.bytes(new byte[] { ID_KEY, (byte) 0xFF }));
+						int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+						if (rc != MDB_SUCCESS) {
+							// directly go to last value
+							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
+						} else {
+							// go to previous value of selected key
+							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
+						}
+						if (rc == MDB_SUCCESS && keyData.mv_data().get(0) == ID_KEY) {
+							nextId = Math.max(nextId, ValueIds.getValue(data2id(keyData.mv_data())) + 1);
+						}
+					} finally {
+						if (cursor != 0) {
+							mdb_cursor_close(cursor);
+						}
 					}
-					if (rc == MDB_SUCCESS && keyData.mv_data().get(0) == ID_KEY) {
-						nextId = Math.max(nextId, ValueIds.getValue(data2id(keyData.mv_data())) + 1);
+				}
+				try {
+					cursor = 0;
+					E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), pp));
+					cursor = pp.get(0);
+					if (mdb_cursor_get(cursor, keyData, valueData, MDB_LAST) == MDB_SUCCESS) {
+						nextId = Math.max(nextId, ValueIds.getValue(Varint.readUnsigned(keyData.mv_data())) + 1);
 					}
 				} finally {
 					if (cursor != 0) {
 						mdb_cursor_close(cursor);
 					}
 				}
-			}
+				return null;
+			});
+		} catch (IOException | RuntimeException | Error failure) {
+			cleanupAfterFailedConstruction(failure);
+			throw failure;
+		}
+	}
+
+	private void cleanupAfterFailedConstruction(Throwable failure) {
+		TxnManager manager = txnManager;
+		txnManager = null;
+		if (manager != null) {
 			try {
-				cursor = 0;
-				E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), pp));
-				cursor = pp.get(0);
-				if (mdb_cursor_get(cursor, keyData, valueData, MDB_LAST) == MDB_SUCCESS) {
-					nextId = Math.max(nextId, ValueIds.getValue(Varint.readUnsigned(keyData.mv_data())) + 1);
-				}
-			} finally {
-				if (cursor != 0) {
-					mdb_cursor_close(cursor);
-				}
+				manager.close();
+			} catch (Throwable cleanupFailure) {
+				addSuppressed(failure, cleanupFailure);
 			}
-			return null;
-		});
+		}
+
+		long transaction = writeTxn;
+		writeTxn = 0;
+		writeTxnOwner = null;
+		invalidateRevisionOnCommit = false;
+		droppedTermIndexDbis.clear();
+		if (transaction != 0) {
+			try {
+				abortWriteTransaction(transaction);
+			} catch (Throwable cleanupFailure) {
+				addSuppressed(failure, cleanupFailure);
+			}
+		}
+
+		long environment = env;
+		env = 0;
+		if (environment != 0) {
+			try {
+				closeEnvironment(environment);
+			} catch (Throwable cleanupFailure) {
+				addSuppressed(failure, cleanupFailure);
+			}
+		}
+
+		ValueStoreHashFile currentHashFile = hashFile;
+		hashFile = null;
+		if (currentHashFile != null) {
+			try {
+				currentHashFile.close();
+			} catch (Throwable cleanupFailure) {
+				addSuppressed(failure, cleanupFailure);
+			}
+		}
+	}
+
+	private static void addSuppressed(Throwable failure, Throwable cleanupFailure) {
+		if (failure != cleanupFailure) {
+			failure.addSuppressed(cleanupFailure);
+		}
 	}
 
 	private void openHashFileQuietly() {
@@ -387,8 +459,9 @@ class ValueStore extends AbstractValueFactory {
 			env = pp.get(0);
 		}
 
-		// 9 basic dbs (including the durable retirement queue) and max. 12 triple term indexes
-		E(mdb_env_set_maxdbs(env, 9 + 12));
+		// 9 basic dbs (including the durable retirement queue), the term-index manifest, and both active and staged
+		// generations of the maximum term-index set.
+		E(mdb_env_set_maxdbs(env, 9 + 1 + (2 * MAX_TERM_INDEXES)));
 		E(mdb_env_set_maxreaders(env, 256));
 
 		// Open environment
@@ -464,6 +537,24 @@ class ValueStore extends AbstractValueFactory {
 		});
 	}
 
+	private int openTermIndexManifestDatabase() throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			IntBuffer dbi = stack.mallocInt(1);
+			int rc = mdb_dbi_open(writeTxn, stack.UTF8(TERM_INDEX_MANIFEST_DATABASE), 0, dbi);
+			if (rc == MDB_SUCCESS) {
+				return dbi.get(0);
+			}
+			if (rc != MDB_NOTFOUND) {
+				E(rc);
+			}
+		}
+
+		// The manifest is opened during the constructor's writer transaction. Preflight only when migrating a legacy
+		// value environment without the named database, so existing stores do not grow their maps on every open.
+		resizeMap(writeTxn, LmdbUtil.MIN_FREE_SPACE);
+		return LmdbUtil.openDatabaseWithTxn(writeTxn, TERM_INDEX_MANIFEST_DATABASE, MDB_CREATE);
+	}
+
 	private Set<String> getTripleTermIndexSpecs() throws SailException {
 		String indexesStr = properties.getTripleTermIndexes();
 		if (indexesStr == null || indexesStr.trim().isEmpty()) {
@@ -478,34 +569,51 @@ class ValueStore extends AbstractValueFactory {
 		return indexSpecs;
 	}
 
-	private void initTermIndexes(LmdbStoreConfig config) throws IOException {
+	void initTermIndexes(LmdbStoreConfig config) throws IOException {
 		try {
-			String indexSpecStr = config.getTripleIndexes();
-			String tripleTermIndexSpecStr = config.getTripleTermIndexes();
-			if (!properties.isLoaded()) {
-				// newly created lmdb store
-				Set<String> termIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
-				termIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
-				initTripleTermIndexes(termIndexSpecs);
+			String requestedSpecsText = config.getTripleTermIndexes();
+			Set<String> nativeTermIndexSpecs = readTermIndexManifest();
+			boolean hasNativeManifest = nativeTermIndexSpecs != null;
+			Set<String> effectiveTermIndexSpecs;
+			if (hasNativeManifest) {
+				// The native record shares a transaction with the index DBIs and remains authoritative if the sidecar
+				// is
+				// stale, missing, or was lost after a rename.
+				effectiveTermIndexSpecs = nativeTermIndexSpecs;
+			} else if (properties.isLoaded()) {
+				// Import the legacy sidecar on first native-manifest migration.
+				effectiveTermIndexSpecs = getTripleTermIndexSpecs();
 			} else {
-				// Initialize existing indexes
-				Set<String> termIndexSpecs = getTripleTermIndexSpecs();
-				initTripleTermIndexes(termIndexSpecs);
+				// Newly created store (or a store whose sidecar was lost before native metadata existed).
+				effectiveTermIndexSpecs = TripleIndex.parseIndexSpecList(requestedSpecsText);
+				effectiveTermIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
+			}
+			if (effectiveTermIndexSpecs.size() > MAX_TERM_INDEXES) {
+				throw new IOException("At most " + MAX_TERM_INDEXES + " triple-term indexes can be active");
+			}
 
-				// Compare the existing triple term indexes with the requested indexes
-				Set<String> reqTermIndexSpecs = TripleIndex.parseIndexSpecList(tripleTermIndexSpecStr);
-				reqTermIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
-				if (reqTermIndexSpecs.isEmpty()) {
-					// No indexes specified, use the existing ones
-					indexSpecStr = properties.getTripleTermIndexes();
-				} else if (!reqTermIndexSpecs.equals(termIndexSpecs)) {
-					// Set of indexes needs to be changed
-					reindex(termIndexSpecs, reqTermIndexSpecs);
+			removeOrphanedTermIndexes(effectiveTermIndexSpecs);
+			initTripleTermIndexes(effectiveTermIndexSpecs);
+
+			// An explicit term-index setting requests a derived-index rebuild. With no explicit setting, the native
+			// manifest (or the one-time legacy import) selects the committed generation.
+			if (requestedSpecsText != null && !requestedSpecsText.trim().isEmpty()) {
+				Set<String> requestedTermIndexSpecs = TripleIndex.parseIndexSpecList(requestedSpecsText);
+				requestedTermIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
+				if (requestedTermIndexSpecs.size() > MAX_TERM_INDEXES) {
+					throw new IOException("At most " + MAX_TERM_INDEXES + " triple-term indexes can be active");
+				}
+				if (!requestedTermIndexSpecs.equals(effectiveTermIndexSpecs)) {
+					reindex(effectiveTermIndexSpecs, requestedTermIndexSpecs);
+					effectiveTermIndexSpecs = requestedTermIndexSpecs;
+					hasNativeManifest = true;
 				}
 			}
 
-			properties.setTripleIndexes(indexSpecStr);
-			properties.setTripleTermIndexes(tripleTermIndexSpecStr);
+			if (!hasNativeManifest) {
+				writeTermIndexManifest(effectiveTermIndexSpecs);
+			}
+			properties.setTripleTermIndexes(String.join(",", TripleIndex.orderIndexSpecs(effectiveTermIndexSpecs)));
 		} catch (IOException | SailException e) {
 			throw e;
 		}
@@ -524,8 +632,136 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
+	private Set<String> readTermIndexManifest() throws IOException, SailException {
+		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.calloc(stack);
+			key.mv_data(stack.bytes(TERM_INDEX_MANIFEST_KEY));
+			MDBVal value = MDBVal.calloc(stack);
+			int rc = mdb_get(writeTxn, termIndexManifestDbi, key, value);
+			if (rc == MDB_NOTFOUND) {
+				return null;
+			}
+			E(rc);
+			ByteBuffer data = value.mv_data().duplicate();
+			if (data.remaining() < 2 * Integer.BYTES) {
+				throw new IOException("Truncated native triple-term index manifest");
+			}
+			int version = data.getInt();
+			if (version != TERM_INDEX_MANIFEST_VERSION) {
+				throw new IOException("Unsupported native triple-term index manifest version: " + version);
+			}
+			int count = data.getInt();
+			if (count < 1 || count > MAX_TERM_INDEXES) {
+				throw new IOException("Invalid native triple-term index count: " + count);
+			}
+			Set<String> specs = new LinkedHashSet<>();
+			for (int i = 0; i < count; i++) {
+				if (data.remaining() < Integer.BYTES) {
+					throw new IOException("Truncated native triple-term index manifest entry length");
+				}
+				int length = data.getInt();
+				if (length < 1 || length > data.remaining()) {
+					throw new IOException("Invalid native triple-term index manifest entry length: " + length);
+				}
+				byte[] encodedSpec = new byte[length];
+				data.get(encodedSpec);
+				String spec = new String(encodedSpec, StandardCharsets.UTF_8);
+				if (spec.length() != 4 || !specs.add(spec)) {
+					throw new IOException("Invalid or duplicate native triple-term index specification: " + spec);
+				}
+			}
+			if (data.hasRemaining()) {
+				throw new IOException("Trailing bytes in native triple-term index manifest");
+			}
+			Set<String> validatedSpecs = TripleIndex.parseIndexSpecList(String.join(",", specs));
+			if (!validatedSpecs.equals(specs)) {
+				throw new IOException("Invalid native triple-term index manifest");
+			}
+			return specs;
+		}
+	}
+
+	private void writeTermIndexManifest(Set<String> indexSpecs) throws IOException {
+		byte[] serialized = serializeTermIndexManifest(indexSpecs);
+		// Make room before writing the authority record; if this checkpoints an in-progress staging index, the
+		// previous manifest still names the only active set.
+		resizeMap(writeTxn, serialized.length + 128L);
+		writeTermIndexManifest(serialized);
+	}
+
+	private void writeTermIndexManifest(byte[] serialized) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.calloc(stack);
+			key.mv_data(stack.bytes(TERM_INDEX_MANIFEST_KEY));
+			MDBVal value = MDBVal.calloc(stack);
+			value.mv_data(stack.bytes(serialized));
+			int rc = mdb_put(writeTxn, termIndexManifestDbi, key, value, 0);
+			if (rc == MDB_MAP_FULL) {
+				throw new TermIndexMapFullException();
+			}
+			E(rc);
+		}
+	}
+
+	private static byte[] serializeTermIndexManifest(Set<String> indexSpecs) {
+		Set<String> orderedSpecs = TripleIndex.orderIndexSpecs(indexSpecs);
+		int size = 2 * Integer.BYTES;
+		List<byte[]> encodedSpecs = new ArrayList<>(orderedSpecs.size());
+		for (String spec : orderedSpecs) {
+			byte[] encoded = spec.getBytes(StandardCharsets.UTF_8);
+			encodedSpecs.add(encoded);
+			size += Integer.BYTES + encoded.length;
+		}
+		ByteBuffer data = ByteBuffer.allocate(size);
+		data.putInt(TERM_INDEX_MANIFEST_VERSION);
+		data.putInt(encodedSpecs.size());
+		for (byte[] encoded : encodedSpecs) {
+			data.putInt(encoded.length);
+			data.put(encoded);
+		}
+		return data.array();
+	}
+
+	private void removeOrphanedTermIndexes(Set<String> activeIndexSpecs) throws IOException {
+		for (String spec : ALL_TERM_INDEX_SPECS) {
+			if (activeIndexSpecs.contains(spec)) {
+				continue;
+			}
+			try (MemoryStack stack = stackPush()) {
+				IntBuffer dbi = stack.mallocInt(1);
+				String name = "term-" + spec;
+				int rc = mdb_dbi_open(writeTxn, stack.UTF8(name + name), 0, dbi);
+				if (rc == MDB_NOTFOUND) {
+					continue;
+				}
+				E(rc);
+				E(mdb_drop(writeTxn, dbi.get(0), true));
+			}
+		}
+	}
+
+	private static Set<String> allTermIndexSpecs() {
+		Set<String> specs = new LinkedHashSet<>();
+		appendTermIndexPermutations("", "spoc", specs);
+		return Collections.unmodifiableSet(specs);
+	}
+
+	private static void appendTermIndexPermutations(String prefix, String remaining, Set<String> specs) {
+		if (remaining.isEmpty()) {
+			specs.add(prefix);
+			return;
+		}
+		for (int i = 0; i < remaining.length(); i++) {
+			appendTermIndexPermutations(prefix + remaining.charAt(i),
+					remaining.substring(0, i) + remaining.substring(i + 1), specs);
+		}
+	}
+
 	private void reindex(Set<String> currentIndexSpecs, Set<String> newIndexSpecs)
 			throws IOException, SailException {
+		if (newIndexSpecs.size() > MAX_TERM_INDEXES) {
+			throw new IOException("At most " + MAX_TERM_INDEXES + " triple-term indexes can be active");
+		}
 		Map<String, TripleIndex> currentIndexes = new HashMap<>();
 		for (TripleIndex index : tripleTermIndexes) {
 			currentIndexes.put(new String(index.getFieldSeq()), index);
@@ -537,41 +773,17 @@ class ValueStore extends AbstractValueFactory {
 		addedIndexSpecs.removeAll(currentIndexSpecs);
 
 		if (!addedIndexSpecs.isEmpty()) {
+			// Keep all active DBI handles valid if a later DBI open unexpectedly returns MDB_MAP_FULL and aborts this
+			// writer. On legacy migration the sidecar remains authoritative until the native record is published.
+			checkpointTermIndexWriter();
 			TripleIndex sourceIndex = tripleTermIndexes.getFirst();
-			try (MemoryStack stack = stackPush()) {
-				MDBVal keyValue = MDBVal.calloc(stack);
-				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-				keyValue.mv_data(keyBuf);
-				MDBVal dataValue = MDBVal.calloc(stack);
-				for (String fieldSeq : addedIndexSpecs) {
-					logger.debug("Initializing new index '{}'...", fieldSeq);
-
-					TripleIndex addedIndex = new TripleIndex("term-" + fieldSeq, fieldSeq, false, env, writeTxn);
-					RecordIterator[] sourceIter = { null };
-					try {
-						sourceIter[0] = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1,
-								true, txnManager.createTxn(writeTxn));
-
-						RecordIterator it = sourceIter[0];
-						long[] quad;
-						while ((quad = it.next()) != null) {
-							keyBuf.clear();
-							addedIndex.toKey(keyBuf, quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
-									quad[TripleIndex.OBJ_IDX],
-									quad[TripleIndex.CONTEXT_IDX]);
-							keyBuf.flip();
-
-							resizeMap(writeTxn, 0L);
-							E(mdb_put(writeTxn, addedIndex.getDB(true), keyValue, dataValue, 0));
-						}
-					} finally {
-						if (sourceIter[0] != null) {
-							sourceIter[0].close();
-						}
-					}
-
-					currentIndexes.put(fieldSeq, addedIndex);
-				}
+			for (String fieldSeq : addedIndexSpecs) {
+				logger.debug("Initializing new index '{}'...", fieldSeq);
+				TripleIndex addedIndex = openReindexIndex(fieldSeq);
+				addedIndex.clear(writeTxn);
+				checkpointTermIndexWriter();
+				rebuildTermIndex(sourceIndex, addedIndex);
+				currentIndexes.put(fieldSeq, addedIndex);
 			}
 
 			logger.debug("New index(es) initialized");
@@ -580,27 +792,283 @@ class ValueStore extends AbstractValueFactory {
 		// Determine the set of removed indexes
 		Set<String> removedIndexSpecs = new HashSet<>(currentIndexSpecs);
 		removedIndexSpecs.removeAll(newIndexSpecs);
-
-		List<Throwable> removedIndexExceptions = new ArrayList<>();
-		// Delete files for removed indexes
+		List<TripleIndex> removedIndexes = new ArrayList<>(removedIndexSpecs.size());
 		for (String fieldSeq : removedIndexSpecs) {
+			TripleIndex removedIndex = currentIndexes.get(fieldSeq);
+			if (removedIndex == null) {
+				throw new IOException("Missing active triple-term index while removing " + fieldSeq);
+			}
+			removedIndexes.add(removedIndex);
+		}
+
+		byte[] manifest = serializeTermIndexManifest(newIndexSpecs);
+
+		List<TripleIndex> replacementIndexes = new ArrayList<>(newIndexSpecs.size());
+		for (String fieldSeq : TripleIndex.orderIndexSpecs(newIndexSpecs)) {
+			TripleIndex index = currentIndexes.get(fieldSeq);
+			if (index == null) {
+				throw new IOException("Missing rebuilt triple-term index " + fieldSeq);
+			}
+			replacementIndexes.add(index);
+		}
+
+		// Staged index prefixes are safe to checkpoint while the previous manifest remains authoritative. The
+		// destructive drops and replacement manifest then share a separate transaction with no resize checkpoint.
+		resizeMap(writeTxn, Math.max(manifest.length + 128L, LmdbUtil.MIN_FREE_SPACE));
+		checkpointTermIndexWriter();
+		while (true) {
 			try {
-				TripleIndex removedIndex = currentIndexes.remove(fieldSeq);
-				removedIndex.destroy(writeTxn);
-				logger.debug("Deleted file(s) for removed {} index", fieldSeq);
-			} catch (Throwable e) {
-				removedIndexExceptions.add(e);
+				for (TripleIndex removedIndex : removedIndexes) {
+					dropTermIndex(removedIndex);
+					logger.debug("Deleted file(s) for removed {} index", removedIndex);
+				}
+				writeTermIndexManifest(manifest);
+				break;
+			} catch (TermIndexMapFullException mapFull) {
+				// Abort every drop in this attempt before growing. The committed inactive indexes and old manifest are
+				// untouched, so the final publication can be retried as a whole.
+				Set<Integer> droppedDbis = new HashSet<>(droppedTermIndexDbis);
+				growMapAfterReindexMapFull(Math.max(manifest.length + 128L, LmdbUtil.MIN_FREE_SPACE));
+				droppedTermIndexDbis.clear();
+				reopenDroppedTermIndexHandles(droppedDbis, removedIndexes, currentIndexes);
 			}
 		}
 
-		if (!removedIndexExceptions.isEmpty()) {
-			throw new IOException(removedIndexExceptions.getFirst());
+		for (String fieldSeq : removedIndexSpecs) {
+			currentIndexes.remove(fieldSeq);
 		}
-
-		// Update the indexes using the specified index order
 		tripleTermIndexes.clear();
-		for (String fieldSeq : newIndexSpecs) {
-			tripleTermIndexes.add(currentIndexes.remove(fieldSeq));
+		tripleTermIndexes.addAll(replacementIndexes);
+		tripleTermSpocIndex = currentIndexes.get("spoc");
+		tripleTermCspoIndex = currentIndexes.get("cspo");
+	}
+
+	private void reopenDroppedTermIndexHandles(Set<Integer> droppedDbis, List<TripleIndex> removedIndexes,
+			Map<String, TripleIndex> currentIndexes) throws IOException {
+		if (droppedDbis.isEmpty()) {
+			return;
+		}
+		for (int i = 0; i < removedIndexes.size(); i++) {
+			TripleIndex removedIndex = removedIndexes.get(i);
+			if (droppedDbis.contains(removedIndex.getDB(true))) {
+				String fieldSeq = new String(removedIndex.getFieldSeq());
+				TripleIndex reopenedIndex = openReindexIndex(fieldSeq);
+				removedIndexes.set(i, reopenedIndex);
+				currentIndexes.put(fieldSeq, reopenedIndex);
+			}
+		}
+	}
+
+	private void dropTermIndex(TripleIndex index) throws IOException {
+		int rc = dropTermIndexDatabase(writeTxn, index.getDB(true));
+		if (rc == MDB_MAP_FULL) {
+			throw new TermIndexMapFullException();
+		}
+		E(rc);
+	}
+
+	int dropTermIndexDatabase(long transaction, int dbi) {
+		int rc = mdb_drop(transaction, dbi, true);
+		if (rc == MDB_SUCCESS) {
+			droppedTermIndexDbis.add(dbi);
+		}
+		return rc;
+	}
+
+	private TripleIndex openReindexIndex(String fieldSeq) throws IOException {
+		while (true) {
+			resizeMap(writeTxn, LmdbUtil.MIN_FREE_SPACE);
+			try {
+				return new TripleIndex("term-" + fieldSeq, fieldSeq, false, env, writeTxn);
+			} catch (LmdbUtil.MapFullException mapFull) {
+				growMapAfterReindexMapFull(LmdbUtil.MIN_FREE_SPACE);
+			}
+		}
+	}
+
+	private void rebuildTermIndex(TripleIndex sourceIndex, TripleIndex targetIndex) throws IOException {
+		byte[] afterSourceKey = null;
+		while (true) {
+			ReindexBatch batch = readReindexBatch(sourceIndex, afterSourceKey);
+			if (batch.recordCount() == 0) {
+				return;
+			}
+
+			long requiredBytes = (long) batch.recordCount() * TERM_INDEX_REBUILD_BYTES_PER_RECORD;
+			resizeMap(writeTxn, requiredBytes);
+			boolean mapFull = false;
+			try (MemoryStack stack = stackPush()) {
+				MDBVal key = MDBVal.calloc(stack);
+				ByteBuffer keyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				key.mv_data(keyBuffer);
+				MDBVal value = MDBVal.calloc(stack);
+				long[] quads = batch.quads();
+				for (int i = 0; i < batch.recordCount(); i++) {
+					int offset = i * 4;
+					keyBuffer.clear();
+					targetIndex.toKey(keyBuffer, quads[offset + TripleIndex.SUBJ_IDX],
+							quads[offset + TripleIndex.PRED_IDX], quads[offset + TripleIndex.OBJ_IDX],
+							quads[offset + TripleIndex.CONTEXT_IDX]);
+					keyBuffer.flip();
+					key.mv_size(keyBuffer.remaining());
+					key.mv_data(keyBuffer);
+					int rc = mdb_put(writeTxn, targetIndex.getDB(true), key, value, 0);
+					if (rc == MDB_MAP_FULL) {
+						mapFull = true;
+						break;
+					}
+					E(rc);
+				}
+			}
+
+			if (mapFull) {
+				growMapAfterReindexMapFull(requiredBytes);
+				targetIndex.clear(writeTxn);
+				afterSourceKey = null;
+				continue;
+			}
+
+			afterSourceKey = batch.lastSourceKey();
+			if (batch.lastBatch()) {
+				return;
+			}
+		}
+	}
+
+	private ReindexBatch readReindexBatch(TripleIndex sourceIndex, byte[] afterSourceKey) throws IOException {
+		return LmdbUtil.readTransaction(env, writeTxn, (stack, txn) -> {
+			long cursor = 0;
+			try {
+				PointerBuffer pointer = stack.mallocPointer(1);
+				E(mdb_cursor_open(txn, sourceIndex.getDB(true), pointer));
+				cursor = pointer.get(0);
+
+				MDBVal key = MDBVal.calloc(stack);
+				MDBVal value = MDBVal.calloc(stack);
+				int rc;
+				if (afterSourceKey == null) {
+					rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+				} else {
+					ByteBuffer seekKey = stack.malloc(afterSourceKey.length);
+					seekKey.put(afterSourceKey).flip();
+					key.mv_data(seekKey);
+					rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
+					if (rc == MDB_SUCCESS && keyEquals(key.mv_data(), afterSourceKey)) {
+						rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+					}
+				}
+				if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+
+				long[] quads = new long[TERM_INDEX_REBUILD_BATCH_SIZE * 4];
+				byte[] lastKeyBuffer = new byte[TripleIndex.MAX_KEY_LENGTH];
+				int lastKeyLength = 0;
+				int count = 0;
+				long[] quad = new long[4];
+				while (rc == MDB_SUCCESS && count < TERM_INDEX_REBUILD_BATCH_SIZE) {
+					ByteBuffer sourceKey = key.mv_data().duplicate();
+					lastKeyLength = sourceKey.remaining();
+					if (lastKeyLength > lastKeyBuffer.length) {
+						throw new IOException("Triple-term source index key exceeds the maximum key length");
+					}
+					sourceKey.get(lastKeyBuffer, 0, lastKeyLength);
+					sourceIndex.keyToQuad(key.mv_data().duplicate(), quad);
+					System.arraycopy(quad, 0, quads, count * 4, quad.length);
+					count++;
+					if (count < TERM_INDEX_REBUILD_BATCH_SIZE) {
+						rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+					}
+				}
+				if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+					E(rc);
+				}
+				byte[] lastKey = count == 0 ? afterSourceKey : Arrays.copyOf(lastKeyBuffer, lastKeyLength);
+				return new ReindexBatch(Arrays.copyOf(quads, count * 4), count, lastKey,
+						count < TERM_INDEX_REBUILD_BATCH_SIZE);
+			} finally {
+				if (cursor != 0) {
+					mdb_cursor_close(cursor);
+				}
+			}
+		});
+	}
+
+	private static boolean keyEquals(ByteBuffer key, byte[] expected) {
+		ByteBuffer candidate = key.duplicate();
+		if (candidate.remaining() != expected.length) {
+			return false;
+		}
+		for (int i = 0; i < expected.length; i++) {
+			if (candidate.get() != expected[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void growMapAfterReindexMapFull(long requiredBytes) throws IOException {
+		endTransaction(false, false);
+		if (!autoGrow) {
+			throw new IOException("LMDB map is full while rebuilding triple-term indexes");
+		}
+		var lockManager = txnManager.lockManager();
+		boolean readLocked = hasReadLock.get() != null;
+		if (readLocked) {
+			lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
+		}
+		long stamp = 0;
+		try {
+			stamp = lockManager.writeLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		} finally {
+			if (stamp == 0 && readLocked) {
+				try {
+					lockManager.readLock();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+			}
+		}
+		try {
+			txnManager.deactivate();
+			try {
+				long newMapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize,
+						Math.max(requiredBytes, LmdbUtil.MIN_FREE_SPACE));
+				E(mdb_env_set_mapsize(env, newMapSize));
+				mapSize = newMapSize;
+				startTransaction(false);
+			} finally {
+				txnManager.activate();
+			}
+		} finally {
+			lockManager.unlockWrite(stamp);
+			if (readLocked) {
+				try {
+					lockManager.readLock();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IOException(e);
+				}
+			}
+		}
+	}
+
+	private void checkpointTermIndexWriter() throws IOException {
+		endTransaction(true, true);
+		startTransaction(false);
+	}
+
+	private record ReindexBatch(long[] quads, int recordCount, byte[] lastSourceKey, boolean lastBatch) {
+	}
+
+	private static final class TermIndexMapFullException extends IOException {
+		private static final long serialVersionUID = 1L;
+
+		private TermIndexMapFullException() {
+			super("LMDB map is full while publishing triple-term indexes");
 		}
 	}
 
@@ -2425,7 +2893,11 @@ class ValueStore extends AbstractValueFactory {
 				if (invalidateRevisionOnCommit) {
 					long stamp = revisionLock.writeLock();
 					try {
-						E(mdb_txn_commit(writeTxn));
+						int rc = commitAndReleaseWriteTransaction();
+						if (rc != MDB_SUCCESS) {
+							cleanupAfterFailedCommit();
+							E(rc);
+						}
 						retiredIdStore.transactionCommitted();
 						flushPendingHashUpdates();
 						long revisionId = lazyRevision.getRevisionId();
@@ -2443,25 +2915,120 @@ class ValueStore extends AbstractValueFactory {
 						revisionLock.unlockWrite(stamp);
 					}
 				} else {
-					E(mdb_txn_commit(writeTxn));
+					int rc = commitAndReleaseWriteTransaction();
+					if (rc != MDB_SUCCESS) {
+						cleanupAfterFailedCommit();
+						E(rc);
+					}
 					retiredIdStore.transactionCommitted();
 					flushPendingHashUpdates();
 				}
 			} else {
 				refCountsTxCache.clear();
-				mdb_txn_abort(writeTxn);
-				retiredIdStore.transactionRolledBack();
-				clearPendingHashUpdates();
+				Throwable rollbackFailure = null;
+				long transaction = writeTxn;
+				try {
+					abortWriteTransaction(transaction);
+				} catch (Throwable failure) {
+					rollbackFailure = failure;
+				} finally {
+					releaseWriteTransactionState();
+					droppedTermIndexDbis.clear();
+				}
+				try {
+					rollbackRetiredIds();
+				} catch (Throwable failure) {
+					rollbackFailure = appendFailure(rollbackFailure, failure);
+				}
+				try {
+					clearPendingHashUpdates();
+				} catch (Throwable failure) {
+					rollbackFailure = appendFailure(rollbackFailure, failure);
+				}
 				// IDs assigned during the aborted transaction may have been cached on input values and in valueIDCache.
 				// Reusing either cache would let a later transaction publish triples that point at dictionary IDs which
 				// were never committed.
-				setNewRevision();
-				clearCaches();
+				try {
+					setNewRevision();
+				} catch (Throwable failure) {
+					rollbackFailure = appendFailure(rollbackFailure, failure);
+				}
+				try {
+					clearCaches();
+				} catch (Throwable failure) {
+					rollbackFailure = appendFailure(rollbackFailure, failure);
+				}
+				rethrowFailure(rollbackFailure);
 			}
-			writeTxn = 0;
-			writeTxnOwner = null;
-			invalidateRevisionOnCommit = false;
+			releaseWriteTransactionState();
 		}
+	}
+
+	void abortWriteTransaction(long transaction) {
+		mdb_txn_abort(transaction);
+	}
+
+	void rollbackRetiredIds() {
+		retiredIdStore.transactionRolledBack();
+	}
+
+	private static Throwable appendFailure(Throwable primary, Throwable additional) {
+		if (primary == null) {
+			return additional;
+		}
+		if (primary != additional) {
+			primary.addSuppressed(additional);
+		}
+		return primary;
+	}
+
+	private static void rethrowFailure(Throwable failure) throws IOException {
+		if (failure instanceof IOException ioException) {
+			throw ioException;
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		if (failure != null) {
+			throw new IOException(failure);
+		}
+	}
+
+	private void releaseWriteTransactionState() {
+		writeTxn = 0;
+		writeTxnOwner = null;
+		invalidateRevisionOnCommit = false;
+	}
+
+	private int commitAndReleaseWriteTransaction() {
+		long transaction = writeTxn;
+		try {
+			return commitWriteTransaction(transaction);
+		} finally {
+			// LMDB consumes the transaction on every commit result. Do not let later close/rollback paths abort this
+			// pointer.
+			releaseWriteTransactionState();
+			droppedTermIndexDbis.clear();
+		}
+	}
+
+	private void cleanupAfterFailedCommit() throws IOException {
+		refCountsTxCache.clear();
+		retiredIdStore.transactionRolledBack();
+		clearPendingHashUpdates();
+		setNewRevision();
+		clearCaches();
+	}
+
+	int commitWriteTransaction(long transaction) {
+		return mdb_txn_commit(transaction);
+	}
+
+	void closeEnvironment(long environment) {
+		mdb_env_close(environment);
 	}
 
 	public void commit() throws IOException {
@@ -2547,7 +3114,7 @@ class ValueStore extends AbstractValueFactory {
 			}
 			txnManager.close();
 			endTransaction(false, false);
-			mdb_env_close(env);
+			closeEnvironment(env);
 			env = 0;
 		}
 		if (hashFile != null) {

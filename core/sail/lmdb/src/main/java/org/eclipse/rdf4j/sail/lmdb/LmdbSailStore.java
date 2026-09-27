@@ -92,6 +92,18 @@ class LmdbSailStore implements SailStore {
 				throws IOException, SailException;
 	}
 
+	@FunctionalInterface
+	interface PersistentSetFactoryFactory {
+		PersistentSetFactory<Long> create(File dataDir) throws IOException;
+	}
+
+	@FunctionalInterface
+	interface FilterSelectivityStatsFactory {
+		LmdbFilterSelectivityStats create(Path estimatorPath, TripleStore tripleStore, ValueStore valueStore,
+				boolean optimizerSamplingEnabled, long optimizerSamplingMaxMillis, int optimizerSamplingMaxRows,
+				boolean backgroundRawSamplingEnabled) throws IOException;
+	}
+
 	private static final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
 	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
 
@@ -303,6 +315,28 @@ class LmdbSailStore implements SailStore {
 		volatile boolean finished = false;
 	}
 
+	private final class NamespaceSnapshotWriteOperation implements Operation {
+		private final Map<String, String> snapshot;
+		private volatile boolean finished;
+		private volatile Throwable failure;
+
+		private NamespaceSnapshotWriteOperation(Map<String, String> snapshot) {
+			this.snapshot = snapshot;
+		}
+
+		@Override
+		public void execute() throws IOException {
+			try {
+				tripleStore.writeNamespaceSnapshot(snapshot);
+			} catch (IOException | RuntimeException | Error e) {
+				failure = e;
+				throw e;
+			} finally {
+				finished = true;
+			}
+		}
+	}
+
 	private final NamespaceStore namespaceStore;
 	private volatile Map<String, String> publishedNamespaces = Map.of();
 
@@ -341,6 +375,7 @@ class LmdbSailStore implements SailStore {
 	private final ConcurrentHashMap<Thread, PreparedWriteContext> preparedWriteContexts = new ConcurrentHashMap<>();
 	private volatile Object storeTransactionOwner;
 	private volatile Object namespaceTransactionOwner;
+	private volatile Throwable namespacePersistenceFailure;
 	private final ThreadLocal<Object> activeWriterOwner = new ThreadLocal<>();
 
 	private final class PreparedWriteContext {
@@ -578,6 +613,9 @@ class LmdbSailStore implements SailStore {
 		}
 
 		boolean isSnapshotCurrent() {
+			if (namespacePersistenceFailure != null) {
+				return false;
+			}
 			long currentPublicationVersion = publicationVersion;
 			// An odd version means one or more scopes are ordering a possible publication. Until the final
 			// scope commits a change, the preceding even version remains the latest committed generation.
@@ -588,6 +626,7 @@ class LmdbSailStore implements SailStore {
 		}
 
 		void ensureNativeSnapshotsValid() throws SailException {
+			ensureNamespacePersistenceCertain();
 			tripleTxn.ensureSnapshotValid();
 			if (tripleTxn.isClosed() || tripleTxn.version() != tripleTxnVersion) {
 				throw new SailException(
@@ -717,10 +756,12 @@ class LmdbSailStore implements SailStore {
 	}
 
 	SailClosable beginPublication(Object owner) throws SailException {
+		ensureNamespacePersistenceCertain();
 		return beginPublicationScope(owner);
 	}
 
 	private SailClosable beginPreparedWrite(Object requestedOwner) throws SailException {
+		ensureNamespacePersistenceCertain();
 		Object owner = requestedOwner;
 		if (owner == null) {
 			owner = activeWriterOwner.get();
@@ -757,6 +798,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private SailClosable beginPublicationScope(Object requestedOwner) throws SailException {
+		ensureNamespacePersistenceCertain();
 		PublicationContext current = publicationContext.get();
 		if (current != null) {
 			if (requestedOwner != null && requestedOwner != current.owner) {
@@ -958,6 +1000,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private long awaitStablePublication() throws SailException {
+		ensureNamespacePersistenceCertain();
 		publicationGate.lock();
 		try {
 			while (activePublications != 0 || publicationFinalizing
@@ -1051,10 +1094,20 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void restorePublishedNamespaces() throws IOException {
+		if (namespacePersistenceFailure != null) {
+			return;
+		}
 		Map<String, String> published = publishedNamespaces;
 		if (!published.equals(namespaceStore.snapshot())) {
 			namespaceStore.restore(published);
-			namespaceStore.sync();
+		}
+	}
+
+	private void ensureNamespacePersistenceCertain() throws SailException {
+		Throwable failure = namespacePersistenceFailure;
+		if (failure != null) {
+			throw new SailException("LMDB namespace commit outcome is uncertain; reopen the store before using it",
+					failure);
 		}
 	}
 
@@ -1085,37 +1138,43 @@ class LmdbSailStore implements SailStore {
 	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 			boolean sketchBasedJoinEstimatorEnabled, ValueStoreFactory valueStoreFactory,
 			TripleStoreFactory tripleStoreFactory) throws IOException, SailException {
+		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, valueStoreFactory, tripleStoreFactory,
+				PersistentSetFactory::new, LmdbFilterSelectivityStats::new);
+	}
+
+	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+			boolean sketchBasedJoinEstimatorEnabled, ValueStoreFactory valueStoreFactory,
+			TripleStoreFactory tripleStoreFactory, PersistentSetFactoryFactory setFactoryFactory,
+			FilterSelectivityStatsFactory statsFactory) throws IOException, SailException {
 		this.dataDir = dataDir;
-		this.setFactory = new PersistentSetFactory<>(dataDir);
 		this.bulkOperationSize = config.getBulkOperationSize();
 		this.backgroundRawSamplingMaxMillisPerCycle = config.getBackgroundRawSamplingMaxMillisPerCycle();
-		this.sketchBasedJoinEstimator = sketchBasedJoinEstimatorEnabled
-				? new SketchBasedJoinEstimator(new GuardedEstimatorStatementSource(), sketchEstimatorConfig(config))
-				: null;
-		Function<Long, byte[]> encode = element -> {
-			ByteBuffer bb = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
-			bb.putLong(element);
-			return bb.array();
-		};
-		Function<ByteBuffer, Long> decode = buffer -> buffer.order(ByteOrder.BIG_ENDIAN).getLong();
-		this.unusedIds = setFactory.createSet("unusedIds", encode, decode);
-		this.nextUnusedIds = setFactory.createSet("nextUnusedIds", encode, decode);
-		boolean initialized = false;
 		try {
-			namespaceStore = new NamespaceStore(dataDir);
-			publishedNamespaces = namespaceStore.snapshot();
+			this.setFactory = setFactoryFactory.create(dataDir);
+			this.sketchBasedJoinEstimator = sketchBasedJoinEstimatorEnabled
+					? new SketchBasedJoinEstimator(new GuardedEstimatorStatementSource(), sketchEstimatorConfig(config))
+					: null;
+			Function<Long, byte[]> encode = element -> {
+				ByteBuffer bb = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.BIG_ENDIAN);
+				bb.putLong(element);
+				return bb.array();
+			};
+			Function<ByteBuffer, Long> decode = buffer -> buffer.order(ByteOrder.BIG_ENDIAN).getLong();
+			this.unusedIds = setFactory.createSet("unusedIds", encode, decode);
+			this.nextUnusedIds = setFactory.createSet("nextUnusedIds", encode, decode);
 			var valueStore = valueStoreFactory.create(new File(dataDir, "values"), properties, config);
 			this.valueStore = valueStore;
 			valueStore.setResizeCheckpointListener(this::markDictionaryCheckpointPending);
 			tripleStore = tripleStoreFactory.create(new File(dataDir, "triples"), properties, config, valueStore);
+			namespaceStore = new NamespaceStore(dataDir, tripleStore);
+			publishedNamespaces = namespaceStore.snapshot();
 			statementPatternCardinalitySource = new LmdbStatementPatternCardinalitySource(valueStore, tripleStore);
 			mayHaveInferred = tripleStore.hasTriples(false);
 			recoverRetiredValueIds();
-			initialized = true;
 			if (sketchBasedJoinEstimator != null) {
 				Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
 				boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
-				filterSelectivityStats = new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore,
+				filterSelectivityStats = statsFactory.create(estimatorPath, tripleStore, valueStore,
 						config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
 						config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled());
 				sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
@@ -1129,12 +1188,17 @@ class LmdbSailStore implements SailStore {
 				sketchBasedJoinEstimator.startBackgroundRefresh(3);
 				startBackgroundFilterSampling();
 			}
-		} finally {
-			if (!initialized) {
+			logLmdbStats(Level.INFO, "on startup");
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
 				close();
+			} catch (Throwable cleanupFailure) {
+				if (failure != cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
 			}
+			throw failure;
 		}
-		logLmdbStats(Level.INFO, "on startup");
 	}
 
 	private final class GuardedEstimatorStatementSource implements SketchStatementSource {
@@ -1330,6 +1394,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void commitPendingPublication(Object owner) throws SailException {
+		ensureNamespacePersistenceCertain();
 		sinkStoreAccessLock.lock();
 		try {
 			long transactionGeneration = storeTxnGeneration;
@@ -1344,15 +1409,14 @@ class LmdbSailStore implements SailStore {
 			Map<String, String> previousNamespaces = publishedNamespaces;
 			Map<String, String> currentNamespaces = namespaceStore.snapshot();
 			boolean namespacesChanged = !previousNamespaces.equals(currentNamespaces);
+			boolean nativeCommitted = false;
+			long nativeCommitGenerationBefore = tripleStore.getNativeCommitGeneration();
 			try {
-				if (namespacesChanged) {
-					// Persist mutable namespace state before publishing any native store changes. If a later native
-					// commit
-					// fails, the catch path restores this map from the previous committed snapshot.
-					namespaceStore.sync();
-				}
 				if (activeTransaction) {
 					drainAsyncOperations();
+					if (namespacesChanged) {
+						stageNamespaceSnapshot(currentNamespaces);
+					}
 					if (!unusedIds.isEmpty()) {
 						valueStore.recordRetiredIds(new ArrayList<>(unusedIds), tripleStore.getDataRevision() + 1);
 					}
@@ -1361,6 +1425,7 @@ class LmdbSailStore implements SailStore {
 					markPublicationChanged();
 					unusedIds.clear();
 					commitTripleTransaction();
+					nativeCommitted = true;
 					storeTxnStarted.set(false);
 					storeTransactionOwner = null;
 					markPublicationChanged();
@@ -1375,9 +1440,14 @@ class LmdbSailStore implements SailStore {
 							logger.warn("Failed to schedule join estimator persistence after commit", e);
 						}
 					}
+				} else if (namespacesChanged) {
+					// This transaction changes no RDF or dictionary state. Commit the namespace DB in the TripleStore
+					// environment, but do not advance its data revision: retirement horizons are about RDF contents.
+					tripleStore.commitNamespaceSnapshot(currentNamespaces);
+					nativeCommitted = true;
 				}
 
-				if (namespacesChanged) {
+				if (namespacesChanged && publishedNamespaces == previousNamespaces) {
 					publishedNamespaces = currentNamespaces;
 					namespaceGeneration++;
 					markPublicationChanged();
@@ -1399,18 +1469,52 @@ class LmdbSailStore implements SailStore {
 				}
 				clearDictionaryCheckpointPending(transactionGeneration);
 			} catch (IOException | RuntimeException | Error e) {
-				if (namespacesChanged && publishedNamespaces == previousNamespaces) {
+				boolean committed = nativeCommitted
+						|| tripleStore.getNativeCommitGeneration() > nativeCommitGenerationBefore;
+				boolean stateUnknown = false;
+				if (namespacesChanged && !committed) {
 					try {
-						namespaceStore.restore(previousNamespaces);
-						namespaceStore.sync();
-					} catch (IOException | RuntimeException restoreFailure) {
-						e.addSuppressed(restoreFailure);
+						Map<String, String> persistedNamespaces = tripleStore.readNamespaceSnapshot();
+						if (currentNamespaces.equals(persistedNamespaces)) {
+							committed = true;
+						} else if (!previousNamespaces.equals(persistedNamespaces)) {
+							stateUnknown = true;
+							namespacePersistenceFailure = e;
+							e.addSuppressed(new IOException(
+									"Persisted namespace snapshot matches neither the previous nor attempted state"));
+						}
+					} catch (IOException | RuntimeException reconcileFailure) {
+						stateUnknown = true;
+						namespacePersistenceFailure = e;
+						e.addSuppressed(reconcileFailure);
 					}
 				}
-				try {
-					rollback(owner);
-				} catch (SailException rollbackFailure) {
-					e.addSuppressed(rollbackFailure);
+				if (committed) {
+					// Once the TripleStore commit returns, its namespace snapshot is authoritative. Preserve that state
+					// even
+					// if a later in-memory publication or maintenance step fails.
+					if (namespacesChanged && publishedNamespaces == previousNamespaces) {
+						publishedNamespaces = currentNamespaces;
+						namespaceGeneration++;
+						markPublicationChanged();
+					}
+					namespaceTransactionOwner = null;
+					if (activeTransaction) {
+						storeTxnStarted.set(false);
+						storeTransactionOwner = null;
+						multiThreadingActive = false;
+						estimatorTouchedSinceStoreTxnStart.set(false);
+						clearDictionaryCheckpointPending(transactionGeneration);
+					}
+				} else {
+					if (namespacesChanged && !stateUnknown) {
+						namespaceStore.restore(previousNamespaces);
+					}
+					try {
+						rollback(owner);
+					} catch (SailException rollbackFailure) {
+						e.addSuppressed(rollbackFailure);
+					}
 				}
 				if (e instanceof Error error) {
 					throw error;
@@ -1419,6 +1523,35 @@ class LmdbSailStore implements SailStore {
 			}
 		} finally {
 			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	private void stageNamespaceSnapshot(Map<String, String> snapshot) throws IOException, SailException {
+		if (!multiThreadingActive) {
+			tripleStore.writeNamespaceSnapshot(snapshot);
+			return;
+		}
+		NamespaceSnapshotWriteOperation namespaceWrite = new NamespaceSnapshotWriteOperation(snapshot);
+		while (!opQueue.add(namespaceWrite)) {
+			if (tripleStoreException != null) {
+				throw wrapTripleStoreException();
+			}
+			Thread.onSpinWait();
+		}
+		while (!namespaceWrite.finished) {
+			if (tripleStoreException != null) {
+				throw wrapTripleStoreException();
+			}
+			Thread.onSpinWait();
+		}
+		if (namespaceWrite.failure instanceof IOException io) {
+			throw io;
+		}
+		if (namespaceWrite.failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (namespaceWrite.failure instanceof Error error) {
+			throw error;
 		}
 	}
 
@@ -1529,62 +1662,82 @@ class LmdbSailStore implements SailStore {
 
 	@Override
 	public void close() throws SailException {
-		try {
-			try {
-				cancelAndDrainScheduledBackgroundSampling();
-				cancelAndDrainScheduledEstimatorPersist();
-				shutdownAndAwaitEstimatorPersistExecutor();
-				if (sketchBasedJoinEstimator != null) {
-					sketchBasedJoinEstimator.close();
-				}
-				if (filterSelectivityStats != null) {
-					filterSelectivityStats.persistIfDirty();
-				}
-				if (valueStore != null && tripleStore != null) {
-					logLmdbStats(Level.INFO, "on shutdown");
-				}
-			} finally {
-				try {
-					if (namespaceStore != null) {
-						namespaceStore.close();
-					}
-				} finally {
-					try {
-						if (valueStore != null) {
-							valueStore.close();
-						}
-					} finally {
-						try {
-							if (tripleStore != null) {
-								try {
-									running.set(false);
-									tripleStoreExecutor.shutdown();
-									try {
-										while (!tripleStoreExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
-											logger.warn("Waiting for triple store executor to terminate");
-										}
-									} catch (InterruptedException e) {
-										Thread.currentThread().interrupt();
-										throw new InterruptedSailException(e);
-									}
-								} finally {
-									shutdownAndAwaitEstimatorPersistExecutor();
-									tripleStore.close();
-								}
-							}
-						} finally {
-							if (setFactory != null) {
-								setFactory.close();
-								setFactory = null;
-							}
-						}
-					}
-				}
-			}
-		} catch (IOException e) {
-			logger.warn("Failed to close store", e);
-			throw new SailException(e);
+		Throwable failure = null;
+		failure = attemptClose(failure, this::cancelAndDrainScheduledBackgroundSampling);
+		failure = attemptClose(failure, this::cancelAndDrainScheduledEstimatorPersist);
+		failure = attemptClose(failure, this::shutdownAndAwaitEstimatorPersistExecutor);
+		if (sketchBasedJoinEstimator != null) {
+			failure = attemptClose(failure, sketchBasedJoinEstimator::close);
 		}
+		if (filterSelectivityStats != null) {
+			failure = attemptClose(failure, filterSelectivityStats::persistIfDirty);
+		}
+		if (valueStore != null && tripleStore != null) {
+			failure = attemptClose(failure, () -> logLmdbStats(Level.INFO, "on shutdown"));
+		}
+		if (namespaceStore != null) {
+			failure = attemptClose(failure, namespaceStore::close);
+		}
+		if (valueStore != null) {
+			failure = attemptClose(failure, valueStore::close);
+		}
+
+		running.set(false);
+		failure = attemptClose(failure, tripleStoreExecutor::shutdown);
+		failure = attemptClose(failure, () -> {
+			try {
+				while (!tripleStoreExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+					logger.warn("Waiting for triple store executor to terminate");
+				}
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new InterruptedSailException(e);
+			}
+		});
+		if (tripleStore != null) {
+			failure = attemptClose(failure, tripleStore::close);
+		}
+		PersistentSetFactory<Long> factory = setFactory;
+		setFactory = null;
+		if (factory != null) {
+			failure = attemptClose(failure, factory::close);
+		}
+
+		if (failure != null) {
+			logger.warn("Failed to close store", failure);
+			if (failure instanceof SailException sailException) {
+				throw sailException;
+			}
+			if (failure instanceof IOException ioException) {
+				throw new SailException(ioException);
+			}
+			if (failure instanceof RuntimeException runtimeException) {
+				throw runtimeException;
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			throw new SailException(failure);
+		}
+	}
+
+	@FunctionalInterface
+	private interface CloseAction {
+		void close() throws Exception;
+	}
+
+	private static Throwable attemptClose(Throwable failure, CloseAction action) {
+		try {
+			action.close();
+		} catch (Throwable cleanupFailure) {
+			if (failure == null) {
+				return cleanupFailure;
+			}
+			if (failure != cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+		}
+		return failure;
 	}
 
 	private void shutdownAndAwaitEstimatorPersistExecutor() {
@@ -2229,6 +2382,7 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void markNamespaceMutation() throws SailException {
+			ensureNamespacePersistenceCertain();
 			Object owner = writerOwner();
 			if (namespaceTransactionOwner != null && namespaceTransactionOwner != owner) {
 				throw new SailException("LMDB namespaces are being changed by another sink");
@@ -2508,6 +2662,7 @@ class LmdbSailStore implements SailStore {
 		 * @throws SailException if a transaction could not be started.
 		 */
 		private void startTransaction(boolean preferThreading) throws SailException {
+			ensureNamespacePersistenceCertain();
 			Object owner = writerOwner();
 			synchronized (storeTxnStarted) {
 				if (storeTxnStarted.get() && storeTransactionOwner != owner) {
@@ -2867,7 +3022,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public boolean isSnapshotCompatibleWithCurrentAdmission() {
-			return !closed && activeReadView.get() == readView;
+			return namespacePersistenceFailure == null && !closed && activeReadView.get() == readView;
 		}
 
 		@Override

@@ -36,6 +36,7 @@ import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Objects;
 import java.util.function.Function;
 
 import org.apache.commons.io.FileUtils;
@@ -49,9 +50,45 @@ import org.lwjgl.util.lmdb.MDBStat;
  * A factory for LMDB-based persistent sets.
  */
 class PersistentSetFactory<T extends Serializable> {
+	interface EnvironmentLifecycle {
+		void afterOpen(long env, Path dbDir) throws IOException;
 
-	final long env;
+		void close(long env);
+	}
+
+	interface NativeTransactionOperations {
+		int commit(long txn);
+
+		void abort(long txn);
+	}
+
+	private static final EnvironmentLifecycle DEFAULT_ENVIRONMENT_LIFECYCLE = new EnvironmentLifecycle() {
+		@Override
+		public void afterOpen(long env, Path dbDir) {
+		}
+
+		@Override
+		public void close(long env) {
+			mdb_env_close(env);
+		}
+	};
+
+	private static final NativeTransactionOperations DEFAULT_NATIVE_TRANSACTION_OPERATIONS = new NativeTransactionOperations() {
+		@Override
+		public int commit(long txn) {
+			return mdb_txn_commit(txn);
+		}
+
+		@Override
+		public void abort(long txn) {
+			mdb_txn_abort(txn);
+		}
+	};
+
+	long env;
 	private final Path dbDir;
+	private final EnvironmentLifecycle environmentLifecycle;
+	private final NativeTransactionOperations nativeTransactionOperations;
 	TxnManager txnManager;
 	long writeTxn;
 	PointerBuffer writeTxnPp = PointerBuffer.allocateDirect(1);
@@ -60,49 +97,153 @@ class PersistentSetFactory<T extends Serializable> {
 	private long pageSize;
 
 	PersistentSetFactory(File cacheDir) throws IOException {
+		this(cacheDir, DEFAULT_ENVIRONMENT_LIFECYCLE, DEFAULT_NATIVE_TRANSACTION_OPERATIONS);
+	}
+
+	PersistentSetFactory(File cacheDir, EnvironmentLifecycle environmentLifecycle) throws IOException {
+		this(cacheDir, environmentLifecycle, DEFAULT_NATIVE_TRANSACTION_OPERATIONS);
+	}
+
+	PersistentSetFactory(File cacheDir, NativeTransactionOperations nativeTransactionOperations) throws IOException {
+		this(cacheDir, DEFAULT_ENVIRONMENT_LIFECYCLE, nativeTransactionOperations);
+	}
+
+	private PersistentSetFactory(File cacheDir, EnvironmentLifecycle environmentLifecycle,
+			NativeTransactionOperations nativeTransactionOperations) throws IOException {
+		this.environmentLifecycle = Objects.requireNonNull(environmentLifecycle);
+		this.nativeTransactionOperations = Objects.requireNonNull(nativeTransactionOperations);
+		long createdEnv = 0;
+		TxnManager createdTxnManager = null;
+		Path createdDbDir = null;
+		int createdDefaultDbi = 0;
+		long createdPageSize = 0;
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
 			E(mdb_env_create(pp));
-			env = pp.get(0);
+			createdEnv = pp.get(0);
 
-			txnManager = new TxnManager(env, Mode.ABORT);
+			createdTxnManager = new TxnManager(createdEnv, Mode.ABORT);
 
-			E(mdb_env_set_maxdbs(env, 2));
-			E(mdb_env_set_mapsize(env, mapSize));
+			E(mdb_env_set_maxdbs(createdEnv, 2));
+			E(mdb_env_set_mapsize(createdEnv, mapSize));
 
 			int flags = MDB_NOTLS | MDB_NOSYNC | MDB_NOMETASYNC;
 
-			dbDir = Files.createTempDirectory(cacheDir.toPath(), "set");
-			E(mdb_env_open(env, dbDir.toAbsolutePath().toString(), flags, 0664));
-			this.defaultDbi = openDatabase(env, null, MDB_CREATE);
+			createdDbDir = Files.createTempDirectory(cacheDir.toPath(), "set");
+			E(mdb_env_open(createdEnv, createdDbDir.toAbsolutePath().toString(), flags, 0664));
+			environmentLifecycle.afterOpen(createdEnv, createdDbDir);
+			createdDefaultDbi = openDatabase(createdEnv, null, MDB_CREATE);
 
 			MDBStat stat = MDBStat.malloc(stack);
-			readTransaction(env, (stack2, txn) -> {
-				E(mdb_stat(txn, this.defaultDbi, stat));
-				pageSize = stat.ms_psize();
-				return null;
+			long environmentForRead = createdEnv;
+			int defaultDbiForRead = createdDefaultDbi;
+			createdPageSize = readTransaction(environmentForRead, (stack2, txn) -> {
+				E(mdb_stat(txn, defaultDbiForRead, stat));
+				return stat.ms_psize();
 			});
+		} catch (IOException | RuntimeException | Error failure) {
+			cleanupAfterInitializationFailure(failure, createdTxnManager, createdEnv, createdDbDir);
+			throw failure;
 		}
+		env = createdEnv;
+		txnManager = createdTxnManager;
+		dbDir = createdDbDir;
+		defaultDbi = createdDefaultDbi;
+		pageSize = createdPageSize;
 	}
 
 	public synchronized void close() throws IOException {
+		Throwable failure = null;
 		if (writeTxn != 0) {
-			mdb_txn_abort(writeTxn);
-			writeTxn = 0;
+			try {
+				nativeTransactionOperations.abort(writeTxn);
+			} catch (Throwable cleanupFailure) {
+				failure = appendFailure(failure, cleanupFailure);
+			} finally {
+				writeTxn = 0;
+			}
 		}
 
-		// We don't need to free the pointer because it was allocated
-		// by java.nio.ByteBuffer, which will handle freeing for us.
-		// writeTxnPp.free();
+		TxnManager manager = txnManager;
+		txnManager = null;
+		if (manager != null) {
+			try {
+				manager.close();
+			} catch (Throwable cleanupFailure) {
+				failure = appendFailure(failure, cleanupFailure);
+			}
+		}
 
-		mdb_env_close(env);
-		FileUtils.deleteDirectory(dbDir.toFile());
+		long environment = env;
+		env = 0;
+		if (environment != 0) {
+			try {
+				environmentLifecycle.close(environment);
+			} catch (Throwable cleanupFailure) {
+				failure = appendFailure(failure, cleanupFailure);
+			}
+		}
+
+		try {
+			FileUtils.deleteDirectory(dbDir.toFile());
+		} catch (Throwable cleanupFailure) {
+			failure = appendFailure(failure, cleanupFailure);
+		}
+
+		if (failure != null) {
+			if (failure instanceof IOException ioException) {
+				throw ioException;
+			}
+			if (failure instanceof RuntimeException runtimeException) {
+				throw runtimeException;
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			throw new IOException("Failed to close persistent set environment", failure);
+		}
+	}
+
+	private void cleanupAfterInitializationFailure(Throwable failure, TxnManager manager, long environment,
+			Path directory) {
+		if (manager != null) {
+			try {
+				manager.close();
+			} catch (Throwable cleanupFailure) {
+				appendFailure(failure, cleanupFailure);
+			}
+		}
+		if (environment != 0) {
+			try {
+				environmentLifecycle.close(environment);
+			} catch (Throwable cleanupFailure) {
+				appendFailure(failure, cleanupFailure);
+			}
+		}
+		if (directory != null) {
+			try {
+				FileUtils.deleteDirectory(directory.toFile());
+			} catch (Throwable cleanupFailure) {
+				appendFailure(failure, cleanupFailure);
+			}
+		}
+	}
+
+	private static Throwable appendFailure(Throwable failure, Throwable cleanupFailure) {
+		if (failure == null) {
+			return cleanupFailure;
+		}
+		if (failure != cleanupFailure) {
+			failure.addSuppressed(cleanupFailure);
+		}
+		return failure;
 	}
 
 	synchronized void commit() throws IOException {
 		if (writeTxn != 0) {
-			E(mdb_txn_commit(writeTxn));
+			long transaction = writeTxn;
 			writeTxn = 0;
+			E(nativeTransactionOperations.commit(transaction));
 		}
 	}
 
@@ -114,7 +255,9 @@ class PersistentSetFactory<T extends Serializable> {
 				txnManager.deactivate();
 
 				// resize map
-				E(mdb_txn_commit(writeTxn));
+				long transaction = writeTxn;
+				writeTxn = 0;
+				E(nativeTransactionOperations.commit(transaction));
 				mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
 				E(mdb_env_set_mapsize(env, mapSize));
 
