@@ -284,7 +284,7 @@ def main() -> int:
             lines = [
                 "## LMDB QEMU durability gate passed",
                 "",
-                "- Guest model: Linux ARM64 under QEMU TCG with ext4 over volatile NBD.",
+                "- Guest model: Linux x86_64 under QEMU KVM with ext4 over volatile NBD.",
                 "- Calibration: guest FLUSH/FUA propagation and unsynced overwrite-loss checks passed.",
                 "- Namespace-only acknowledged commit: recovery oracle passed.",
                 "- Power cuts: " + ", ".join(

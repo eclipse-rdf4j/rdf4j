@@ -149,8 +149,11 @@ def build_artifact_manifest(repo_root: Path) -> dict[str, Any]:
             "required_classes": required_classes, "compiled_classes": records}
 
 
-def guest_classpath(host_classpath_file: Path, repo_root: Path) -> tuple[str, dict[str, Any]]:
+def guest_classpath(host_classpath_file: Path, repo_root: Path, *,
+                    native_classifier: str = "linux-arm64") -> tuple[str, dict[str, Any]]:
     """Map host classpath entries to the two read-only 9p shares."""
+    if native_classifier not in {"linux", "linux-arm64", "linux-ppc64le"}:
+        raise ValueError(f"unsupported Linux guest native classifier: {native_classifier}")
     host_classpath_file = require_regular_file(host_classpath_file, "host classpath file")
     repo_root = repo_root.resolve(strict=True)
     m2_root = (repo_root / ".m2_repo").resolve(strict=True)
@@ -165,7 +168,7 @@ def guest_classpath(host_classpath_file: Path, repo_root: Path) -> tuple[str, di
             raise ValueError("host classpath contains an empty entry")
         host_entry = Path(raw_entry).expanduser().resolve(strict=True)
         name = host_entry.name
-        if "-natives-" in name and "-natives-linux-arm64.jar" not in name:
+        if "-natives-" in name and not name.endswith(f"-natives-{native_classifier}.jar"):
             filtered_native.append(str(host_entry))
             continue
         try:
@@ -187,13 +190,14 @@ def guest_classpath(host_classpath_file: Path, repo_root: Path) -> tuple[str, di
         raise ValueError("classpath must include LMDB target/test-classes")
     if not any(path.endswith("/core/sail/lmdb/target/classes") for path in entries):
         raise ValueError("classpath must include LMDB target/classes")
-    if not any("lwjgl-lmdb-" in path and "-natives-linux-arm64.jar" in path for path in entries):
-        raise ValueError("classpath must include the Linux ARM64 LMDB native library jar")
+    if not any("lwjgl-lmdb-" in path and path.endswith(f"-natives-{native_classifier}.jar") for path in entries):
+        raise ValueError(f"classpath must include the Linux {native_classifier} LMDB native library jar")
     return os.pathsep.join(entries), {
         "source_classpath_file": str(host_classpath_file),
         "source_classpath_sha256": sha256_file(host_classpath_file),
         "mapped_entries": host_inputs,
-        "filtered_non_arm64_native_jars": filtered_native,
+        "native_classifier": native_classifier,
+        "filtered_native_jars": filtered_native,
         "guest_classpath_entry_count": len(entries),
     }
 
@@ -272,13 +276,16 @@ def create_qcow_overlay(qemu_img: Path, base_image: Path, overlay: Path, log_pat
                  "-b", str(base_image), str(overlay)], log_path=log_path)
 
 
-def guest_qemu_arguments(*, qemu: Path, name: str, accel: str, cpu: str, smp: int, memory_mib: int,
+def guest_qemu_arguments(*, qemu: Path, name: str, machine: str = "virt", accel: str, cpu: str,
+                         smp: int, memory_mib: int,
                          firmware_code: Path, firmware_vars: Path, os_disk: Path, data_port: int,
                          seed_iso: Path, serial_log: Path, repo_root: Path, results: Path) -> list[str]:
+    if machine not in {"virt", "q35"}:
+        raise ValueError(f"unsupported QEMU guest machine: {machine}")
     values = [firmware_code, firmware_vars, os_disk, seed_iso, serial_log, repo_root, results]
     if any("," in str(path) for path in values):
         raise ValueError("QEMU input paths may not contain commas")
-    args = [str(qemu), "-name", name, "-machine", "virt", "-accel", accel, "-cpu", cpu,
+    args = [str(qemu), "-name", name, "-machine", machine, "-accel", accel, "-cpu", cpu,
             "-smp", str(smp), "-m", str(memory_mib), "-display", "none", "-monitor", "none",
             "-serial", f"file:{serial_log}", "-no-reboot",
             "-drive", f"if=pflash,format=raw,unit=0,file={firmware_code},readonly=on",

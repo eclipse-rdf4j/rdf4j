@@ -11,6 +11,7 @@ from runner_common import (
     create_fresh_directory,
     create_seed_iso,
     guest_classpath,
+    guest_qemu_arguments,
     resolve_seed_iso_builder,
     validate_qemu_arguments,
 )
@@ -108,7 +109,55 @@ class RunnerSafetyTests(unittest.TestCase):
             self.assertIn("/mnt/m2-ro/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-linux-arm64.jar",
                           guest_cp)
             self.assertNotIn("natives-macos.jar", guest_cp)
-            self.assertEqual(manifest["filtered_non_arm64_native_jars"], [str(mac.resolve())])
+            self.assertEqual(manifest["filtered_native_jars"], [str(mac.resolve())])
+
+    def test_guest_classpath_selects_the_x86_64_linux_native_for_kvm_guest(self):
+        with tempfile.TemporaryDirectory() as parent:
+            repo = Path(parent) / "checkout"
+            test_classes = repo / "core/sail/lmdb/target/test-classes"
+            classes = repo / "core/sail/lmdb/target/classes"
+            m2 = repo / ".m2_repo"
+            test_classes.mkdir(parents=True)
+            classes.mkdir(parents=True)
+            native_dir = m2 / "org/lwjgl/lwjgl-lmdb/3.3.6"
+            native_dir.mkdir(parents=True)
+            linux = native_dir / "lwjgl-lmdb-3.3.6-natives-linux.jar"
+            arm = native_dir / "lwjgl-lmdb-3.3.6-natives-linux-arm64.jar"
+            linux.write_bytes(b"linux-x64")
+            arm.write_bytes(b"linux-arm64")
+            cp_file = Path(parent) / "classpath.txt"
+            cp_file.write_text(os.pathsep.join(map(str, (test_classes, classes, linux, arm))),
+                               encoding="utf-8")
+
+            guest_cp, manifest = guest_classpath(cp_file, repo, native_classifier="linux")
+
+            self.assertIn("lwjgl-lmdb-3.3.6-natives-linux.jar", guest_cp)
+            self.assertNotIn("natives-linux-arm64.jar", guest_cp)
+            self.assertEqual(manifest["native_classifier"], "linux")
+
+    def test_qemu_arguments_support_x86_kvm_guest_machine(self):
+        with tempfile.TemporaryDirectory() as parent:
+            root = Path(parent)
+            command = guest_qemu_arguments(
+                qemu=Path("/usr/bin/qemu-system-x86_64"),
+                name="x86-kvm-test",
+                machine="q35",
+                accel="kvm",
+                cpu="host",
+                smp=2,
+                memory_mib=2048,
+                firmware_code=root / "OVMF_CODE.fd",
+                firmware_vars=root / "OVMF_VARS.fd",
+                os_disk=root / "guest.qcow2",
+                data_port=23000,
+                seed_iso=root / "seed.iso",
+                serial_log=root / "serial.log",
+                repo_root=root / "repo",
+                results=root / "results",
+            )
+            self.assertEqual(command[command.index("-machine") + 1], "q35")
+            self.assertEqual(command[command.index("-accel") + 1], "kvm")
+            self.assertEqual(command[command.index("-cpu") + 1], "host")
 
 
 if __name__ == "__main__":

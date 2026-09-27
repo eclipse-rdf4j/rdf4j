@@ -37,12 +37,14 @@ def build_campaign_plan(args: argparse.Namespace) -> list[CampaignStep]:
         "--qemu", str(Path(args.qemu).resolve()),
         "--qemu-img", str(Path(args.qemu_img).resolve()),
         "--genisoimage", str(Path(args.genisoimage).resolve()),
-        "--accel", "tcg,thread=multi",
-        "--cpu", "max",
+        "--machine", args.machine,
+        "--accel", args.accel,
+        "--cpu", args.cpu,
         "--smp", "4",
         "--memory-mib", "4096",
     ]
-    classpath = ["--host-classpath-file", str(Path(args.host_classpath_file).resolve())]
+    classpath = ["--host-classpath-file", str(Path(args.host_classpath_file).resolve()),
+                 "--native-classifier", args.native_classifier]
     steps: list[CampaignStep] = []
 
     def add(name: str, runner: str, report_relative: str, extra: list[str], offset: int) -> None:
@@ -83,9 +85,20 @@ def run_plan(steps: list[CampaignStep], repo_root: Path, output_root: Path) -> d
     completed: list[str] = []
     logs = output_root / "runner-logs"
     logs.mkdir()
+    first_command = steps[0].command
+    statement_command = next(step.command for step in steps if step.name == "namespace")
+
+    def argument_value(flag: str, command: list[str] = first_command) -> str:
+        try:
+            return command[command.index(flag) + 1]
+        except (ValueError, IndexError) as error:
+            raise ValueError(f"campaign plan is missing {flag}") from error
+
     write_json_exclusive(output_root / "ci-campaign-command-plan.json", {
-        "guest_accelerator": "tcg,thread=multi",
-        "guest_cpu": "max",
+        "guest_machine": argument_value("--machine"),
+        "guest_accelerator": argument_value("--accel"),
+        "guest_cpu": argument_value("--cpu"),
+        "native_classifier": argument_value("--native-classifier", statement_command),
         "required_order": [step.name for step in steps],
         "commands": [{"name": step.name, "command": step.command, "report": str(step.report_path)}
                      for step in steps],
@@ -135,6 +148,10 @@ def main() -> int:
     parser.add_argument("--qemu-img", required=True, type=Path)
     parser.add_argument("--genisoimage", required=True, type=Path)
     parser.add_argument("--host-classpath-file", required=True, type=Path)
+    parser.add_argument("--machine", choices=("q35",), default="q35")
+    parser.add_argument("--accel", choices=("kvm",), default="kvm")
+    parser.add_argument("--cpu", choices=("host",), default="host")
+    parser.add_argument("--native-classifier", choices=("linux",), default="linux")
     parser.add_argument("--port-base", type=int, default=23000)
     args = parser.parse_args()
     try:
@@ -143,9 +160,9 @@ def main() -> int:
             raise FileNotFoundError("repository and workspace .m2_repo are required")
         args.repo_root = repo_root
         args.os_base_image = require_regular_file(args.os_base_image, "provisioned guest image")
-        args.firmware_code = require_regular_file(args.firmware_code, "ARM64 UEFI firmware code")
-        args.firmware_vars_template = require_regular_file(args.firmware_vars_template, "ARM64 UEFI vars template")
-        args.qemu = require_executable(args.qemu, "qemu-system-aarch64")
+        args.firmware_code = require_regular_file(args.firmware_code, "x86_64 UEFI firmware code")
+        args.firmware_vars_template = require_regular_file(args.firmware_vars_template, "x86_64 UEFI vars template")
+        args.qemu = require_executable(args.qemu, "qemu-system-x86_64")
         args.qemu_img = require_executable(args.qemu_img, "qemu-img")
         args.genisoimage = require_executable(args.genisoimage, "genisoimage")
         args.host_classpath_file = require_regular_file(args.host_classpath_file, "exact-build guest classpath")

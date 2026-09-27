@@ -55,18 +55,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host-classpath-file", required=True, type=Path,
                         help="one-line host classpath captured from the exact compiled LMDB test build")
     parser.add_argument("--os-base-image", required=True, type=Path,
-                        help="provisioned Ubuntu ARM64 qcow2 with Java 25, javac, Python 3, and ext4 tools")
+                        help="provisioned Ubuntu guest qcow2 with Java 25, javac, Python 3, and ext4 tools")
     parser.add_argument("--firmware-code", required=True, type=Path,
-                        help="read-only ARM64 UEFI code image")
+                        help="read-only UEFI code image")
     parser.add_argument("--firmware-vars-template", required=True, type=Path,
-                        help="disposable ARM64 UEFI vars template; copied into the new scratch root")
-    parser.add_argument("--qemu", required=True, type=Path, help="qemu-system-aarch64 executable")
+                        help="disposable UEFI vars template; copied into the new scratch root")
+    parser.add_argument("--qemu", required=True, type=Path, help="QEMU system emulator executable")
     parser.add_argument("--qemu-img", required=True, type=Path, help="qemu-img executable")
     add_seed_iso_builder_argument(parser)
     parser.add_argument("--port-base", required=True, type=int,
                         help="available localhost TCP port; recovery uses the next port")
+    parser.add_argument("--machine", choices=("virt", "q35"), default="virt")
     parser.add_argument("--accel", default="hvf", help="QEMU accelerator (default: hvf)")
     parser.add_argument("--cpu", default="host", help="QEMU CPU model (default: host)")
+    parser.add_argument("--native-classifier", choices=("linux", "linux-arm64", "linux-ppc64le"),
+                        default="linux-arm64", help="Linux LWJGL native classifier used by the guest")
     parser.add_argument("--smp", type=int, default=4)
     parser.add_argument("--memory-mib", type=int, default=4096)
     parser.add_argument("--writer-timeout-seconds", type=int, default=300)
@@ -91,7 +94,8 @@ def validate_inputs(args: argparse.Namespace) -> dict[str, Any]:
     classpath = require_regular_file(args.host_classpath_file, "host classpath file")
     backend = require_regular_file(repo / "scripts/lmdb-crashlab/volatile_nbd.py", "checked-in NBD backend")
     artifact_manifest = build_artifact_manifest(repo)
-    classpath_value, classpath_manifest = guest_classpath(classpath, repo)
+    classpath_value, classpath_manifest = guest_classpath(
+        classpath, repo, native_classifier=args.native_classifier)
     if not 1 <= args.port_base <= 65534:
         raise ValueError("--port-base must allow both it and its recovery successor in the TCP port range")
     require_free_tcp_ports("127.0.0.1", (args.port_base, args.port_base + 1))
@@ -189,7 +193,8 @@ def prepare_guest_inputs(root: Path, results: Path, qemu_root: Path, inputs: dic
 
 def qemu_command(inputs: dict[str, Any], args: argparse.Namespace, *, name: str, os_disk: Path,
                  vars_file: Path, port: int, seed: Path, serial: Path, results: Path) -> list[str]:
-    return guest_qemu_arguments(qemu=inputs["qemu"], name=name, accel=args.accel, cpu=args.cpu,
+    return guest_qemu_arguments(qemu=inputs["qemu"], name=name, machine=args.machine,
+                                accel=args.accel, cpu=args.cpu,
                                 smp=args.smp, memory_mib=args.memory_mib,
                                 firmware_code=inputs["firmware_code"], firmware_vars=vars_file,
                                 os_disk=os_disk, data_port=port, seed_iso=seed, serial_log=serial,
@@ -372,7 +377,8 @@ def main() -> int:
         build_manifest_after = None
         compiled_artifacts_unchanged = False
     try:
-        _, classpath_manifest_after = guest_classpath(inputs["classpath_file"], inputs["repo_root"])
+        _, classpath_manifest_after = guest_classpath(
+            inputs["classpath_file"], inputs["repo_root"], native_classifier=args.native_classifier)
         classpath_artifacts_unchanged = classpath_manifest_after == inputs["classpath_manifest"]
     except (FileNotFoundError, ValueError):
         classpath_artifacts_unchanged = False

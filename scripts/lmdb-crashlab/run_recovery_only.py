@@ -57,8 +57,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--qemu-img", required=True, type=Path)
     add_seed_iso_builder_argument(parser)
     parser.add_argument("--port", required=True, type=int)
+    parser.add_argument("--machine", choices=("virt", "q35"), default="virt")
     parser.add_argument("--accel", default="hvf")
     parser.add_argument("--cpu", default="host")
+    parser.add_argument("--native-classifier", choices=("linux", "linux-arm64", "linux-ppc64le"),
+                        default="linux-arm64", help="Linux LWJGL native classifier used by the guest")
     parser.add_argument("--smp", type=int, default=4)
     parser.add_argument("--memory-mib", type=int, default=4096)
     parser.add_argument("--timeout-seconds", type=int, default=300)
@@ -97,7 +100,8 @@ def validate_inputs(args: argparse.Namespace) -> dict[str, Any]:
         "backend": require_regular_file(repo / "scripts/lmdb-crashlab/volatile_nbd.py", "checked-in NBD backend"),
     }
     values["artifact_manifest"] = build_artifact_manifest(repo)
-    values["classpath_value"], values["classpath_manifest"] = guest_classpath(values["classpath_file"], repo)
+    values["classpath_value"], values["classpath_manifest"] = guest_classpath(
+        values["classpath_file"], repo, native_classifier=args.native_classifier)
     if not 1 <= args.port <= 65535 or args.timeout_seconds < 1:
         raise ValueError("port and timeout must be in range")
     require_free_tcp_ports("127.0.0.1", (args.port,))
@@ -175,7 +179,8 @@ def main() -> int:
         initial_status = backend_control(Path(sys.executable), inputs["backend"], control, "status")
         write_json_exclusive(results / "actual-recovery-backend-initial-status.json", initial_status)
         command = guest_qemu_arguments(
-            qemu=inputs["qemu"], name="rdf4j-crashlab-recovery-only", accel=args.accel, cpu=args.cpu,
+            qemu=inputs["qemu"], name="rdf4j-crashlab-recovery-only", machine=args.machine,
+            accel=args.accel, cpu=args.cpu,
             smp=args.smp, memory_mib=args.memory_mib, firmware_code=inputs["firmware_code"],
             firmware_vars=recovery_vars, os_disk=recovery_os, data_port=args.port,
             seed_iso=recovery_seed, serial_log=results / "actual-recovery-serial.log",
@@ -226,7 +231,8 @@ def main() -> int:
                            for name, path in source_paths.items())
     try:
         build_unchanged = build_artifact_manifest(inputs["repo_root"]) == inputs["artifact_manifest"]
-        _, classpath_after = guest_classpath(inputs["classpath_file"], inputs["repo_root"])
+        _, classpath_after = guest_classpath(
+            inputs["classpath_file"], inputs["repo_root"], native_classifier=args.native_classifier)
         classpath_unchanged = classpath_after == inputs["classpath_manifest"]
     except (FileNotFoundError, ValueError):
         build_unchanged = classpath_unchanged = False

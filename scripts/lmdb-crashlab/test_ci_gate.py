@@ -101,7 +101,7 @@ class CiGateTests(unittest.TestCase):
     def test_complete_report_matrix_is_accepted(self):
         validate_campaign_reports(calibration_report(), namespace_report(), self.reports)
 
-    def test_ci_campaign_plan_always_runs_calibration_ack_and_all_cuts_under_tcg(self):
+    def test_ci_campaign_plan_always_runs_calibration_ack_and_all_cuts_under_x86_kvm(self):
         from argparse import Namespace
 
         args = Namespace(
@@ -110,19 +110,28 @@ class CiGateTests(unittest.TestCase):
             os_base_image=Path("/images/ubuntu-arm64.qcow2"),
             firmware_code=Path("/firmware/code.fd"),
             firmware_vars_template=Path("/firmware/vars.fd"),
-            qemu=Path("/usr/bin/qemu-system-aarch64"),
+            qemu=Path("/usr/bin/qemu-system-x86_64"),
             qemu_img=Path("/usr/bin/qemu-img"),
             genisoimage=Path("/usr/bin/genisoimage"),
             host_classpath_file=Path("/scratch/classpath.txt"),
+            machine="q35",
+            accel="kvm",
+            cpu="host",
+            native_classifier="linux",
             port_base=23000,
         )
         plan = build_campaign_plan(args)
         self.assertEqual([step.name for step in plan], ["calibration", "namespace", *POWER_CUT_SCENARIOS])
         for step in plan:
+            self.assertIn("--machine", step.command)
+            self.assertEqual(step.command[step.command.index("--machine") + 1], "q35")
             self.assertIn("--accel", step.command)
-            self.assertEqual(step.command[step.command.index("--accel") + 1], "tcg,thread=multi")
+            self.assertEqual(step.command[step.command.index("--accel") + 1], "kvm")
             self.assertIn("--cpu", step.command)
-            self.assertEqual(step.command[step.command.index("--cpu") + 1], "max")
+            self.assertEqual(step.command[step.command.index("--cpu") + 1], "host")
+            if step.name != "calibration":
+                self.assertIn("--native-classifier", step.command)
+                self.assertEqual(step.command[step.command.index("--native-classifier") + 1], "linux")
 
     def test_missing_campaign_and_duplicate_scenario_are_rejected(self):
         with self.assertRaises(ValueError):
@@ -213,7 +222,13 @@ class CiGateTests(unittest.TestCase):
         workflow = Path(__file__).parents[2] / ".github/workflows/lmdb-qemu-durability.yml"
         source = workflow.read_text(encoding="utf-8")
         self.assertRegex(source, r"(?m)^on:\s*\n\s+pull_request:\s*$")
-        self.assertIn("runs-on: ubuntu-24.04-arm", source)
+        self.assertIn("runs-on: ubuntu-24.04", source)
+        self.assertNotIn("runs-on: ubuntu-24.04-arm", source)
+        self.assertIn("qemu-system-x86_64", source)
+        self.assertIn("/dev/kvm", source)
+        self.assertIn("accel=kvm", source)
+        self.assertNotIn("tcg", source.lower())
+        self.assertLess(source.index("Preflight KVM acceleration"), source.index("Build exact Java 25 artifacts"))
         self.assertIn("run_ci_campaigns.py", source)
         self.assertIn("if: always()", source)
         self.assertNotIn("paths:", source)
@@ -222,18 +237,43 @@ class CiGateTests(unittest.TestCase):
             self.assertIn(scenario, source)
         for test_class in (*SUREFIRE_TEST_CLASSES, *FAILSAFE_IT_CLASSES):
             self.assertIn(test_class, source)
+        gate = Path(__file__).with_name("ci_gate.py").read_text(encoding="utf-8")
+        self.assertIn("Linux x86_64 under QEMU KVM", gate)
 
-    def test_arm_virt_provisioner_uses_the_configured_pl011_serial_console(self):
+    def test_kvm_preflight_grants_only_job_user_and_starts_real_qemu_accelerator(self):
+        workflow = Path(__file__).parents[2] / ".github/workflows/lmdb-qemu-durability.yml"
+        source = workflow.read_text(encoding="utf-8")
+        self.assertIn("acl", source)
+        self.assertIn("setfacl", source)
+        self.assertIn("getfacl", source)
+        self.assertIn('"u:$UID:rw" /dev/kvm', source)
+        self.assertIn("KVM_GET_API_VERSION", source)
+        self.assertIn("KVM_CREATE_VM", source)
+        self.assertIn("-machine q35,accel=kvm -cpu host", source)
+        self.assertIn("-qmp \"unix:$probe_qmp,server=on,wait=off\"", source)
+
+    def test_provisioner_preserves_arm_pl011_and_x86_serial_consoles(self):
         provisioner = Path(__file__).with_name("provision-linux-guest.sh").read_text(encoding="utf-8")
-        self.assertIn("/dev/ttyAMA0", provisioner)
-        self.assertNotIn("/dev/ttyS0", provisioner)
+        self.assertIn("guest_serial=ttyAMA0", provisioner)
+        self.assertIn("guest_serial=ttyS0", provisioner)
+        self.assertIn("/dev/__GUEST_SERIAL__", provisioner)
+        self.assertIn("qemu_machine=virt", provisioner)
+        self.assertIn("qemu_machine=q35", provisioner)
         self.assertIn("virtio-net-pci,netdev=net0,romfile=", provisioner)
+
+    def test_linux_guest_provisioner_supports_x86_64_ovmf(self):
+        provisioner = Path(__file__).with_name("provision-linux-guest.sh").read_text(encoding="utf-8")
+        self.assertIn("x86_64", provisioner)
+        self.assertIn("ttyS0", provisioner)
+        self.assertIn("file=$firmware_code", provisioner)
+        self.assertIn("file=$vars_file", provisioner)
+        self.assertIn("qemu_machine=q35", provisioner)
 
     def test_ci_artifact_excludes_regenerable_guest_os_images(self):
         workflow = Path(__file__).parents[2] / ".github/workflows/lmdb-qemu-durability.yml"
         source = workflow.read_text(encoding="utf-8")
-        self.assertIn("!${{ runner.temp }}/rdf4j-lmdb-qemu/guest/image/ubuntu-24.04-server-cloudimg-arm64.img", source)
-        self.assertIn("!${{ runner.temp }}/rdf4j-lmdb-qemu/guest/ubuntu-arm64-java25.qcow2", source)
+        self.assertIn("!${{ runner.temp }}/rdf4j-lmdb-qemu/guest/image/ubuntu-24.04-server-cloudimg-amd64.img", source)
+        self.assertIn("!${{ runner.temp }}/rdf4j-lmdb-qemu/guest/ubuntu-x86_64-java25.qcow2", source)
 
 
 if __name__ == "__main__":

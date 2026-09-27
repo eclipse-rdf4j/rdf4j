@@ -8,8 +8,8 @@ permissions:
 
 jobs:
   lmdb-qemu-durability:
-    name: LMDB recovery and power cuts (QEMU TCG)
-    runs-on: ubuntu-24.04-arm
+    name: LMDB recovery and power cuts (QEMU KVM)
+    runs-on: ubuntu-24.04
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
@@ -26,22 +26,119 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install QEMU ARM64, UEFI, and ISO tools
+      - name: Install QEMU x86_64, UEFI, and ISO tools
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y qemu-system-arm qemu-utils qemu-efi-aarch64 genisoimage
-          command -v qemu-system-aarch64
+          sudo apt-get install --no-install-recommends -y qemu-system-x86 qemu-utils ovmf genisoimage acl
+          command -v qemu-system-x86_64
           command -v qemu-img
           command -v genisoimage
-          test -s /usr/share/AAVMF/AAVMF_CODE.fd
-          test -s /usr/share/AAVMF/AAVMF_VARS.fd
-          qemu-system-aarch64 --version
+          command -v setfacl
+          command -v getfacl
+          test -s /usr/share/OVMF/OVMF_CODE_4M.fd
+          test -s /usr/share/OVMF/OVMF_VARS_4M.fd
+          qemu-system-x86_64 --version
           qemu-img --version
 
       - name: Create isolated crashlab workspace
         run: |
           mkdir -p "$RUNNER_TEMP/rdf4j-lmdb-qemu/guest" "$RUNNER_TEMP/rdf4j-lmdb-qemu/campaigns"
           printf 'CRASHLAB_ROOT=%s\n' "$RUNNER_TEMP/rdf4j-lmdb-qemu" >> "$GITHUB_ENV"
+
+      - name: Preflight KVM acceleration
+        run: |
+          set -euo pipefail
+          if [[ ! -c /dev/kvm ]]; then
+            printf 'KVM preflight failed: /dev/kvm is not a character device.\n' >&2
+            exit 1
+          fi
+          sudo setfacl --modify "u:$UID:rw" /dev/kvm
+          kvm_acl=$(getfacl --omit-header --absolute-names /dev/kvm)
+          printf '%s\n' "$kvm_acl" | tee "$CRASHLAB_ROOT/kvm-preflight-acl.txt"
+          grep -Fx "user:$UID:rw-" <<<"$kvm_acl"
+          if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then
+            printf 'KVM preflight failed: job user still cannot read and write /dev/kvm after its user ACL was applied.\n' >&2
+            ls -l /dev/kvm >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import fcntl
+          import os
+
+          # KVMIO is 0xAE; these are _IO(KVMIO, 0x00/0x01) from Linux KVM.
+          KVM_GET_API_VERSION = 0xAE00
+          KVM_CREATE_VM = 0xAE01
+          device_fd = os.open("/dev/kvm", os.O_RDWR | os.O_CLOEXEC)
+          try:
+              api_version = fcntl.ioctl(device_fd, KVM_GET_API_VERSION, 0)
+              if api_version != 12:
+                  raise RuntimeError(f"unsupported KVM API version: {api_version}")
+              vm_fd = fcntl.ioctl(device_fd, KVM_CREATE_VM, 0)
+              try:
+                  print(f"KVM API {api_version}; created test VM fd {vm_fd}")
+              finally:
+                  os.close(vm_fd)
+          finally:
+              os.close(device_fd)
+          PY
+          probe_root="$CRASHLAB_ROOT/kvm-preflight"
+          [[ ! -e $probe_root && ! -L $probe_root ]] || {
+            printf 'Refusing pre-existing KVM preflight directory: %s\n' "$probe_root" >&2
+            exit 1
+          }
+          mkdir "$probe_root"
+          ls -l /dev/kvm | tee "$probe_root/result.txt"
+          probe_pid=
+          cleanup_probe() {
+            if [[ -n "${probe_pid:-}" ]]; then
+              if kill -0 "$probe_pid" 2>/dev/null; then
+                kill -TERM "$probe_pid" 2>/dev/null || true
+              fi
+              wait "$probe_pid" 2>/dev/null || true
+            fi
+          }
+          trap cleanup_probe EXIT
+          probe_qmp="$probe_root/qmp.sock"
+          probe_log="$probe_root/qemu.log"
+          qemu-system-x86_64 \
+            -machine q35,accel=kvm -cpu host -m 64 -nodefaults \
+            -display none -S -monitor none -serial none \
+            -qmp "unix:$probe_qmp,server=on,wait=off" \
+            >"$probe_log" 2>&1 &
+          probe_pid=$!
+          for _ in $(seq 1 100); do
+            if [[ -S $probe_qmp ]]; then
+              break
+            fi
+            if ! kill -0 "$probe_pid" 2>/dev/null; then
+              wait "$probe_pid" || true
+              cat "$probe_log" >&2
+              printf 'KVM preflight failed: paused QEMU exited before QMP became ready.\n' >&2
+              exit 1
+            fi
+            sleep 0.05
+          done
+          if [[ ! -S $probe_qmp ]]; then
+            cat "$probe_log" >&2
+            printf 'KVM preflight failed: QEMU did not expose its QMP socket.\n' >&2
+            exit 1
+          fi
+          probe_start_ns=$(date +%s%N)
+          sleep 2
+          probe_end_ns=$(date +%s%N)
+          probe_elapsed_ms=$(((probe_end_ns - probe_start_ns) / 1000000))
+          probe_state=$(ps -o stat= -p "$probe_pid" | tr -d '[:space:]')
+          if [[ -z $probe_state || $probe_state == Z* ]]; then
+            wait "$probe_pid" || true
+            cat "$probe_log" >&2
+            printf 'KVM preflight failed: QEMU exited during the 2-second paused run.\n' >&2
+            exit 1
+          fi
+          printf 'KVM preflight passed: paused QEMU stayed alive for %s ms (process state %s).\n' \
+            "$probe_elapsed_ms" "$probe_state" | tee -a "$probe_root/result.txt"
+          kill -TERM "$probe_pid"
+          wait "$probe_pid" || true
+          probe_pid=
 
       - name: Build exact Java 25 artifacts
         run: mvn -B -ntp -T 1C -Dmaven.repo.local=.m2_repo -Pquick clean install
@@ -72,7 +169,7 @@ jobs:
       - name: Check crashlab Python harness
         run: scripts/lmdb-crashlab/run-tests.sh
 
-      - name: Capture exact Linux ARM64 test classpath
+      - name: Capture exact Linux x86_64 test classpath
         run: |
           mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb \
             org.apache.maven.plugins:maven-dependency-plugin:3.8.1:build-classpath \
@@ -82,30 +179,32 @@ jobs:
             "$GITHUB_WORKSPACE/core/sail/lmdb/target/classes" > "$CRASHLAB_ROOT/host-classpath.txt"
           tr -d '\n' < "$CRASHLAB_ROOT/host-dependencies.txt" >> "$CRASHLAB_ROOT/host-classpath.txt"
           printf '\n' >> "$CRASHLAB_ROOT/host-classpath.txt"
-          grep -q 'lwjgl-lmdb-[^:]*-natives-linux-arm64.jar' "$CRASHLAB_ROOT/host-classpath.txt"
+          grep -q 'lwjgl-lmdb-[^:]*-natives-linux.jar' "$CRASHLAB_ROOT/host-classpath.txt"
 
-      - name: Provision disposable Ubuntu ARM64 Java 25 guest
+      - name: Provision disposable Ubuntu x86_64 Java 25 guest
         run: |
           bash scripts/lmdb-crashlab/provision-linux-guest.sh \
             "$CRASHLAB_ROOT/guest" \
-            "$(command -v qemu-system-aarch64)" \
+            "$(command -v qemu-system-x86_64)" \
             "$(command -v qemu-img)" \
             "$(command -v genisoimage)" \
-            /usr/share/AAVMF/AAVMF_CODE.fd \
-            /usr/share/AAVMF/AAVMF_VARS.fd
+            /usr/share/OVMF/OVMF_CODE_4M.fd \
+            /usr/share/OVMF/OVMF_VARS_4M.fd \
+            x86_64 kvm
 
       - name: Run calibrated LMDB recovery and power-cut campaigns
         run: |
           python3 scripts/lmdb-crashlab/run_ci_campaigns.py \
             --repo-root "$GITHUB_WORKSPACE" \
             --scratch-root "$CRASHLAB_ROOT/campaigns" \
-            --os-base-image "$CRASHLAB_ROOT/guest/ubuntu-arm64-java25.qcow2" \
-            --firmware-code /usr/share/AAVMF/AAVMF_CODE.fd \
-            --firmware-vars-template /usr/share/AAVMF/AAVMF_VARS.fd \
-            --qemu "$(command -v qemu-system-aarch64)" \
+            --os-base-image "$CRASHLAB_ROOT/guest/ubuntu-x86_64-java25.qcow2" \
+            --firmware-code /usr/share/OVMF/OVMF_CODE_4M.fd \
+            --firmware-vars-template /usr/share/OVMF/OVMF_VARS_4M.fd \
+            --qemu "$(command -v qemu-system-x86_64)" \
             --qemu-img "$(command -v qemu-img)" \
             --genisoimage "$(command -v genisoimage)" \
             --host-classpath-file "$CRASHLAB_ROOT/host-classpath.txt" \
+            --machine q35 --accel kvm --cpu host --native-classifier linux \
             --port-base 23000
 
       - name: Reject skipped Java tests and incomplete campaign reports
@@ -128,8 +227,8 @@ jobs:
           name: lmdb-qemu-durability-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/rdf4j-lmdb-qemu/**
-            !${{ runner.temp }}/rdf4j-lmdb-qemu/guest/image/ubuntu-24.04-server-cloudimg-arm64.img
-            !${{ runner.temp }}/rdf4j-lmdb-qemu/guest/ubuntu-arm64-java25.qcow2
+            !${{ runner.temp }}/rdf4j-lmdb-qemu/guest/image/ubuntu-24.04-server-cloudimg-amd64.img
+            !${{ runner.temp }}/rdf4j-lmdb-qemu/guest/ubuntu-x86_64-java25.qcow2
             !${{ runner.temp }}/rdf4j-lmdb-qemu/guest/firmware-vars.fd
             !${{ runner.temp }}/rdf4j-lmdb-qemu/guest/seed.iso
           if-no-files-found: error

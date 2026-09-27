@@ -44,13 +44,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo-root", required=True, type=Path,
                         help="checkout shared read-only with the guest")
     parser.add_argument("--os-base-image", required=True, type=Path,
-                        help="provisioned Ubuntu ARM64 qcow2 with Java 25 and ext4 tools including filefrag")
+                        help="provisioned Ubuntu guest qcow2 with Java 25 and ext4 tools including filefrag")
     parser.add_argument("--firmware-code", required=True, type=Path)
     parser.add_argument("--firmware-vars-template", required=True, type=Path)
     parser.add_argument("--qemu", required=True, type=Path)
     parser.add_argument("--qemu-img", required=True, type=Path)
     add_seed_iso_builder_argument(parser)
     parser.add_argument("--port-base", required=True, type=int)
+    parser.add_argument("--machine", choices=("virt", "q35"), default="virt")
     parser.add_argument("--accel", default="hvf")
     parser.add_argument("--cpu", default="host")
     parser.add_argument("--smp", type=int, default=4)
@@ -101,7 +102,8 @@ def parse_events(path: Path) -> list[dict[str, Any]]:
 def start_guest(inputs: dict[str, Any], args: argparse.Namespace, *, label: str, os_disk: Path,
                 vars_file: Path, port: int, seed: Path, serial: Path, results: Path):
     command = guest_qemu_arguments(
-        qemu=inputs["qemu"], name=f"rdf4j-crashlab-{label}", accel=args.accel, cpu=args.cpu,
+        qemu=inputs["qemu"], name=f"rdf4j-crashlab-{label}", machine=args.machine,
+        accel=args.accel, cpu=args.cpu,
         smp=args.smp, memory_mib=args.memory_mib, firmware_code=inputs["firmware_code"],
         firmware_vars=vars_file, os_disk=os_disk, data_port=port, seed_iso=seed,
         serial_log=serial, repo_root=inputs["repo_root"], results=results)

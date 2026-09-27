@@ -127,29 +127,37 @@ checkout and `.m2_repo` into the guest through read-only 9p mounts. Use a
 quiescent build: no Maven process may rewrite `target` or `.m2_repo` while a
 guest is reading it.
 
-The host needs `qemu-system-aarch64`, `qemu-img`, and either macOS `hdiutil` or
-Linux `genisoimage` for cloud-init seed ISOs. The
-provisioned ARM64 Ubuntu qcow2 must already contain Java 25 (`java` and
-`javac`), cloud-init, Python 3, ext4/e2fsprogs tools (`mkfs.ext4`, `filefrag`,
-`blkid`, `blockdev`, `lsblk`), and the 9p and virtio block drivers. The runner
-creates only new per-run overlays, seed ISOs, raw data images, and logs beneath
-the explicitly supplied scratch root. It refuses a scratch root that already
-exists. It never formats or mounts a host device, installs host packages, or
-removes an earlier run. The supplied OS image and firmware files are inputs;
-each guest boot uses a fresh qcow2 overlay and copied UEFI variables.
+The local runner supports an ARM64 guest with `qemu-system-aarch64` and TCG, or
+an x86_64 guest with `qemu-system-x86_64` and KVM; both also need `qemu-img`,
+firmware, and either macOS `hdiutil` or Linux `genisoimage` for cloud-init seed
+ISOs. A provisioned guest must contain Java 25 (`java` and `javac`), cloud-init,
+Python 3, ext4/e2fsprogs tools (`mkfs.ext4`, `filefrag`, `blkid`, `blockdev`,
+`lsblk`), and the 9p and virtio block drivers. The runner creates only new
+per-run overlays, seed ISOs, raw data images, and logs beneath the explicitly
+supplied scratch root. It refuses a scratch root that already exists. It never
+formats or mounts a host device, installs host packages, or removes an earlier
+run. The supplied OS image and firmware files are inputs; each guest boot uses
+a fresh qcow2 overlay and copied UEFI variables.
 
 ### Required GitHub pull-request gate
 
-`.github/workflows/lmdb-qemu-durability.yml` runs unconditionally on every
-`pull_request` event on `ubuntu-24.04-arm`. It uses QEMU TCG explicitly and
-executes the real Linux guest calibration, acknowledged namespace-only commit,
-and all three checked-in transaction cut campaigns. Each cut campaign reopens
-the same preserved image twice and compares the full public-oracle outcome and
-state hash. The job also runs the crashlab Python tests and explicitly selects
-the Java test classes below; a report validator fails if any selected class is
-missing, ran zero tests, failed, errored, or skipped a test. The artifact step
-always retains the provisioning log, NBD traces, guest serial output, images,
-campaign reports, and Maven test reports without changing the job result.
+`.github/workflows/lmdb-qemu-durability.yml` runs unconditionally for every
+`pull_request` on `ubuntu-24.04`. It requires readable and writable `/dev/kvm`
+and grants that access only to the job user's UID. Before building or testing,
+the preflight checks the KVM API and creates/closes a test VM, then starts a
+bounded paused x86_64 QEMU process with `q35`, `accel=kvm`, and `cpu=host`.
+Missing or unusable KVM fails the job rather than falling back to slow TCG or
+skipping the guest tier. It provisions an Ubuntu
+x86_64 Java 25 guest with OVMF and runs the actual Linux guest FLUSH/FUA
+calibration, acknowledged namespace-only commit, and all three checked-in
+transaction cut campaigns. Each cut campaign reopens the same preserved image
+twice and compares the full public-oracle outcome and state hash. The job also
+runs the crashlab Python tests and explicitly selects the Java test classes
+below; a report validator fails if any selected class is missing, ran zero
+tests, failed, errored, or skipped a test. The artifact step always retains
+diagnostic logs, NBD traces, guest serial output, campaign reports, and Maven
+test reports without changing the job result; regenerable OS images and
+overlays are excluded.
 
 The required Java selection is `LmdbCrashRecoveryTest`,
 `LmdbStoreFlushReproductionTest`, `TripleStoreAutoGrowTest`,
