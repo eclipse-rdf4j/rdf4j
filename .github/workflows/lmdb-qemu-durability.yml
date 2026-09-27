@@ -29,12 +29,17 @@ jobs:
       - name: Install QEMU x86_64, UEFI, and ISO tools
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y qemu-system-x86 qemu-utils ovmf genisoimage acl
+          sudo apt-get install --no-install-recommends -y qemu-system-x86 qemu-utils ovmf genisoimage acl libcap2-bin strace file util-linux
           command -v qemu-system-x86_64
           command -v qemu-img
           command -v genisoimage
           command -v setfacl
           command -v getfacl
+          command -v getcap
+          command -v strace
+          command -v file
+          command -v setsid
+          command -v timeout
           test -s /usr/share/OVMF/OVMF_CODE_4M.fd
           test -s /usr/share/OVMF/OVMF_VARS_4M.fd
           qemu-system-x86_64 --version
@@ -52,16 +57,91 @@ jobs:
             printf 'KVM preflight failed: /dev/kvm is not a character device.\n' >&2
             exit 1
           fi
-          sudo setfacl --modify "u:$UID:rw" /dev/kvm
+          runner_uid=$(id -u)
+          runner_user=$(id -un)
+          kvm_group=$(stat -c %G /dev/kvm)
+          qemu_binary=$(command -v qemu-system-x86_64)
+          [[ $runner_uid -ne 0 && -n $runner_user && -n $kvm_group ]] || {
+            printf 'KVM preflight failed: expected an unprivileged runner user and named device group.\n' >&2
+            exit 1
+          }
+          sudo setfacl --modify "u:$runner_uid:rw" /dev/kvm
           kvm_acl=$(getfacl --numeric --omit-header --absolute-names /dev/kvm)
-          printf '%s\n' "$kvm_acl" | tee "$CRASHLAB_ROOT/kvm-preflight-acl.txt"
-          grep -Fx "user:$UID:rw-" <<<"$kvm_acl"
+          probe_root="$CRASHLAB_ROOT/kvm-preflight"
+          [[ ! -e $probe_root && ! -L $probe_root ]] || {
+            printf 'Refusing pre-existing KVM preflight directory: %s\n' "$probe_root" >&2
+            exit 1
+          }
+          mkdir "$probe_root"
+          printf '%s\n' "$kvm_acl" | tee "$probe_root/acl.txt"
+          grep -Fx "user:$runner_uid:rw-" <<<"$kvm_acl"
           if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then
             printf 'KVM preflight failed: job user still cannot read and write /dev/kvm after its user ACL was applied.\n' >&2
             ls -l /dev/kvm >&2
             exit 1
           fi
-          python3 - <<'PY'
+          qemu_wrapper="$CRASHLAB_ROOT/qemu-kvm"
+          printf '#!/usr/bin/env bash\nset -euo pipefail\nexec sudo -n -u %q -g %q -- %q "$@"\n' \
+            "$runner_user" "$kvm_group" "$qemu_binary" > "$qemu_wrapper"
+          chmod 0755 "$qemu_wrapper"
+          capture_process_context() {
+            local path=$1
+            {
+              printf 'captured_at=%s\n' "$(date --iso-8601=seconds)"
+              printf 'probe_uid=%s probe_user=%s device_group=%s qemu_binary=%s\n' \
+                "$(id -u)" "$(id -un)" "$kvm_group" "$qemu_binary"
+              id -a
+              stat -Lc 'device=%A %U:%G mode=%a major_minor=%t:%T path=%n' /dev/kvm
+              getfacl --numeric --absolute-names /dev/kvm
+              stat -Lc 'qemu=%A %U:%G mode=%a path=%n' "$qemu_binary"
+              file "$qemu_binary"
+              getcap "$qemu_binary" || true
+            } > "$path" 2>&1
+          }
+          capture_group_context() {
+            local path=$1
+            sudo -n -u "$runner_user" -g "$kvm_group" -- bash -c '
+              id -a
+              stat -Lc "device=%A %U:%G mode=%a major_minor=%t:%T path=%n" /dev/kvm
+              getfacl --numeric --absolute-names /dev/kvm
+              stat -Lc "qemu=%A %U:%G mode=%a path=%n" "$1"
+              file "$1"
+              getcap "$1" || true
+            ' _ "$qemu_binary" > "$path" 2>&1
+          }
+          collect_security_context() {
+            local directory=$1
+            local since=$2
+            if sudo -n test -r /sys/kernel/security/apparmor/profiles; then
+              if ! sudo -n cat /sys/kernel/security/apparmor/profiles \
+                  > "$directory/apparmor-profiles.txt" 2>&1; then
+                printf 'AppArmor profile list could not be read.\n' \
+                  >> "$directory/apparmor-profiles.txt"
+              fi
+            else
+              printf 'AppArmor profile list unavailable.\n' > "$directory/apparmor-profiles.txt"
+            fi
+            timeout 5s sudo -n journalctl -k --since "$since" --no-pager 2>&1 \
+              | grep -Ei 'apparmor|audit.*denied|denied.*(qemu|/dev/kvm)' \
+              > "$directory/kernel-denials.txt" || true
+            [[ -s $directory/kernel-denials.txt ]] || \
+              printf 'No matching recent kernel denial record was available.\n' \
+                > "$directory/kernel-denials.txt"
+            if sudo -n test -r /var/log/audit/audit.log; then
+              timeout 5s sudo -n tail -n 500 /var/log/audit/audit.log 2>&1 \
+                | grep -Ei 'apparmor="DENIED"|audit.*denied|denied.*(qemu|/dev/kvm)' \
+                > "$directory/audit-denials.txt" || true
+              [[ -s $directory/audit-denials.txt ]] || \
+                printf 'No matching recent audit denial record was available.\n' \
+                  > "$directory/audit-denials.txt"
+            else
+              printf 'Audit log file unavailable.\n' > "$directory/audit-denials.txt"
+            fi
+          }
+          capture_process_context "$probe_root/kvm-api-context.txt"
+          printf 'runner uid=%s user=%s device group=%s\n' \
+            "$runner_uid" "$runner_user" "$kvm_group" | tee "$probe_root/result.txt"
+          python3 - <<'PY' | tee -a "$probe_root/result.txt"
           import fcntl
           import os
 
@@ -81,64 +161,179 @@ jobs:
           finally:
               os.close(device_fd)
           PY
-          probe_root="$CRASHLAB_ROOT/kvm-preflight"
-          [[ ! -e $probe_root && ! -L $probe_root ]] || {
-            printf 'Refusing pre-existing KVM preflight directory: %s\n' "$probe_root" >&2
-            exit 1
+          printf 'KVM API preflight passed for uid=%s user=%s group=%s.\n' \
+            "$runner_uid" "$runner_user" "$kvm_group" | tee -a "$probe_root/result.txt"
+          direct_context="$probe_root/direct-user-context.txt"
+          capture_process_context "$direct_context"
+          capture_qmp_quit() {
+            python3 - "$1" <<'PY'
+          import json
+          import socket
+          import sys
+
+          sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          sock.settimeout(3)
+          sock.connect(sys.argv[1])
+          stream = sock.makefile("rwb", buffering=0)
+          greeting = json.loads(stream.readline())
+          if "QMP" not in greeting:
+              raise RuntimeError(f"unexpected QMP greeting: {greeting}")
+          stream.write(b'{"execute":"qmp_capabilities"}\r\n')
+          response = json.loads(stream.readline())
+          if "return" not in response:
+              raise RuntimeError(f"QMP capability negotiation failed: {response}")
+          stream.write(b'{"execute":"quit"}\r\n')
+          stream.close()
+          sock.close()
+          PY
           }
-          mkdir "$probe_root"
-          ls -l /dev/kvm | tee "$probe_root/result.txt"
           probe_pid=
+          probe_qmp=
+          probe_state() {
+            ps -o stat= -p "$1" 2>/dev/null | tr -d '[:space:]'
+          }
+          stop_probe() {
+            local pid=${probe_pid:-}
+            [[ -n $pid ]] || return 0
+            kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+            for _ in $(seq 1 40); do
+              local state
+              state=$(probe_state "$pid")
+              if [[ -z $state || $state == Z* ]]; then
+                wait "$pid" 2>/dev/null || true
+                probe_pid=
+                return 0
+              fi
+              sleep 0.05
+            done
+            kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            probe_pid=
+          }
+          wait_probe_exit() {
+            local pid=$1
+            local state
+            for _ in $(seq 1 100); do
+              state=$(probe_state "$pid")
+              if [[ -z $state || $state == Z* ]]; then
+                set +e
+                wait "$pid"
+                local status=$?
+                set -e
+                probe_pid=
+                return "$status"
+              fi
+              sleep 0.05
+            done
+            return 124
+          }
           cleanup_probe() {
             if [[ -n "${probe_pid:-}" ]]; then
-              if kill -0 "$probe_pid" 2>/dev/null; then
-                kill -TERM "$probe_pid" 2>/dev/null || true
+              if [[ -S ${probe_qmp:-} ]]; then
+                capture_qmp_quit "$probe_qmp" >/dev/null 2>&1 || true
               fi
-              wait "$probe_pid" 2>/dev/null || true
+              stop_probe
             fi
           }
           trap cleanup_probe EXIT
-          probe_qmp="$probe_root/qmp.sock"
-          probe_log="$probe_root/qemu.log"
-          qemu-system-x86_64 \
-            -machine q35,accel=kvm -cpu host -m 64 -nodefaults \
-            -display none -S -monitor none -serial none \
-            -qmp "unix:$probe_qmp,server=on,wait=off" \
-            >"$probe_log" 2>&1 &
-          probe_pid=$!
-          for _ in $(seq 1 100); do
-            if [[ -S $probe_qmp ]]; then
-              break
+          run_qemu_probe() {
+            local label=$1
+            local required=$2
+            shift 2
+            local directory="$probe_root/$label"
+            local start_time
+            local probe_log="$directory/qemu.log"
+            probe_qmp="$directory/qmp.sock"
+            mkdir "$directory"
+            if [[ $label == primary-group ]]; then
+              capture_group_context "$directory/process-context.txt"
+            else
+              capture_process_context "$directory/process-context.txt"
             fi
-            if ! kill -0 "$probe_pid" 2>/dev/null; then
-              wait "$probe_pid" || true
+            start_time=$(date --iso-8601=seconds)
+            setsid "$@" \
+              -machine q35,accel=kvm -cpu host -m 64 -nodefaults \
+              -display none -S -monitor none -serial none \
+              -qmp "unix:$probe_qmp,server=on,wait=off" \
+              >"$probe_log" 2>&1 &
+            probe_pid=$!
+            for _ in $(seq 1 100); do
+              if [[ -S $probe_qmp ]]; then
+                break
+              fi
+              if ! kill -0 "$probe_pid" 2>/dev/null; then
+                set +e
+                wait "$probe_pid"
+                probe_status=$?
+                set -e
+                probe_pid=
+                collect_security_context "$directory" "$start_time"
+                printf 'QEMU %s diagnostic exited before QMP became ready (status %s).\n' \
+                  "$label" "$probe_status" | tee -a "$probe_root/result.txt"
+                if [[ $required == true ]]; then
+                  cat "$probe_log" >&2
+                  cat "$directory/kernel-denials.txt" >&2
+                  return 1
+                fi
+                return 0
+              fi
+              sleep 0.05
+            done
+            if [[ ! -S $probe_qmp ]]; then
+              collect_security_context "$directory" "$start_time"
+              printf 'QEMU %s diagnostic did not expose QMP within 5 seconds.\n' "$label" \
+                | tee -a "$probe_root/result.txt"
               cat "$probe_log" >&2
-              printf 'KVM preflight failed: paused QEMU exited before QMP became ready.\n' >&2
-              exit 1
+              stop_probe
+              if [[ $required == true ]]; then
+                cat "$directory/kernel-denials.txt" >&2
+                return 1
+              fi
+              return 0
             fi
-            sleep 0.05
-          done
-          if [[ ! -S $probe_qmp ]]; then
-            cat "$probe_log" >&2
-            printf 'KVM preflight failed: QEMU did not expose its QMP socket.\n' >&2
-            exit 1
-          fi
-          probe_start_ns=$(date +%s%N)
-          sleep 2
-          probe_end_ns=$(date +%s%N)
-          probe_elapsed_ms=$(((probe_end_ns - probe_start_ns) / 1000000))
-          probe_state=$(ps -o stat= -p "$probe_pid" | tr -d '[:space:]')
-          if [[ -z $probe_state || $probe_state == Z* ]]; then
-            wait "$probe_pid" || true
-            cat "$probe_log" >&2
-            printf 'KVM preflight failed: QEMU exited during the 2-second paused run.\n' >&2
-            exit 1
-          fi
-          printf 'KVM preflight passed: paused QEMU stayed alive for %s ms (process state %s).\n' \
-            "$probe_elapsed_ms" "$probe_state" | tee -a "$probe_root/result.txt"
-          kill -TERM "$probe_pid"
-          wait "$probe_pid" || true
-          probe_pid=
+            sleep 2
+            probe_state_now=$(probe_state "$probe_pid")
+            if [[ -z $probe_state_now || $probe_state_now == Z* ]]; then
+              set +e
+              wait "$probe_pid"
+              probe_status=$?
+              set -e
+              probe_pid=
+              collect_security_context "$directory" "$start_time"
+              printf 'QEMU %s diagnostic exited during the paused KVM check (status %s).\n' \
+                "$label" "$probe_status" | tee -a "$probe_root/result.txt"
+              if [[ $required == true ]]; then
+                cat "$probe_log" >&2
+                return 1
+              fi
+              return 0
+            fi
+            capture_qmp_quit "$probe_qmp"
+            set +e
+            wait_probe_exit "$probe_pid"
+            probe_status=$?
+            set -e
+            if [[ $probe_status -ne 0 ]]; then
+              stop_probe
+              collect_security_context "$directory" "$start_time"
+              printf 'QEMU %s diagnostic failed while shutting down (status %s).\n' \
+                "$label" "$probe_status" | tee -a "$probe_root/result.txt"
+              if [[ $required == true ]]; then
+                cat "$probe_log" >&2
+                return 1
+              fi
+              return 0
+            fi
+            probe_pid=
+            collect_security_context "$directory" "$start_time"
+            printf 'QEMU %s KVM probe passed; QMP stayed responsive for 2 seconds.\n' "$label" \
+              | tee -a "$probe_root/result.txt"
+          }
+          run_qemu_probe direct-user false \
+            strace -f -yy -e trace=%file -o "$probe_root/direct-user/open.trace" "$qemu_binary"
+          run_qemu_probe primary-group true "$qemu_wrapper"
+          probe_qmp=
+          trap - EXIT
 
       - name: Build exact Java 25 artifacts
         run: mvn -B -ntp -T 1C -Dmaven.repo.local=.m2_repo -Pquick clean install
@@ -185,7 +380,7 @@ jobs:
         run: |
           bash scripts/lmdb-crashlab/provision-linux-guest.sh \
             "$CRASHLAB_ROOT/guest" \
-            "$(command -v qemu-system-x86_64)" \
+            "$CRASHLAB_ROOT/qemu-kvm" \
             "$(command -v qemu-img)" \
             "$(command -v genisoimage)" \
             /usr/share/OVMF/OVMF_CODE_4M.fd \
@@ -200,7 +395,7 @@ jobs:
             --os-base-image "$CRASHLAB_ROOT/guest/ubuntu-x86_64-java25.qcow2" \
             --firmware-code /usr/share/OVMF/OVMF_CODE_4M.fd \
             --firmware-vars-template /usr/share/OVMF/OVMF_VARS_4M.fd \
-            --qemu "$(command -v qemu-system-x86_64)" \
+            --qemu "$CRASHLAB_ROOT/qemu-kvm" \
             --qemu-img "$(command -v qemu-img)" \
             --genisoimage "$(command -v genisoimage)" \
             --host-classpath-file "$CRASHLAB_ROOT/host-classpath.txt" \

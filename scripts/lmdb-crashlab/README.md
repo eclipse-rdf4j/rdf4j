@@ -142,12 +142,15 @@ a fresh qcow2 overlay and copied UEFI variables.
 ### Required GitHub pull-request gate
 
 `.github/workflows/lmdb-qemu-durability.yml` runs unconditionally for every
-`pull_request` on `ubuntu-24.04`. It requires readable and writable `/dev/kvm`
-and grants that access only to the job user's UID. Before building or testing,
-the preflight checks the KVM API and creates/closes a test VM, then starts a
-bounded paused x86_64 QEMU process with `q35`, `accel=kvm`, and `cpu=host`.
-Missing or unusable KVM fails the job rather than falling back to slow TCG or
-skipping the guest tier. It provisions an Ubuntu
+`pull_request` on `ubuntu-24.04`. It adds a read/write ACL for the job user's
+UID on `/dev/kvm`. The preflight captures process and device metadata, verifies
+the KVM API and creates/closes a test VM, then records a direct-user QEMU file
+open trace and available AppArmor/kernel/audit denial records. The required
+QEMU probe runs as the same unprivileged job user with `/dev/kvm`'s primary
+group and must stay QMP-responsive while configured with `q35`, `accel=kvm`,
+and `cpu=host`; that exact wrapper is used for guest provisioning and each
+campaign. Missing or unusable KVM fails the job rather than falling back to
+slow TCG or skipping the guest tier. It provisions an Ubuntu
 x86_64 Java 25 guest with OVMF and runs the actual Linux guest FLUSH/FUA
 calibration, acknowledged namespace-only commit, and all three checked-in
 transaction cut campaigns. Each cut campaign reopens the same preserved image

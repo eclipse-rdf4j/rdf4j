@@ -16,7 +16,8 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
 - [done] Move hosted guest to x86 KVM.
 - [done] Commit and push x86 KVM gate.
 - [done] Diagnose hosted ACL verifier mismatch.
-- [in_progress] Rerun hosted KVM campaigns.
+- [in_progress] Diagnose QEMU device access mismatch.
+- [todo] Rerun hosted KVM campaigns.
 - [todo] Update PR evidence and plan.
 
 ## Surprises & Discoveries
@@ -41,6 +42,8 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
   Evidence: [GitHub Actions run 36335095831](https://github.com/eclipse-rdf4j/rdf4j/actions/runs/36335095831), archived `guest/provision-serial.log` and `guest/provision-qemu.log`; the marker was at guest uptime 1732.4s and Java gate reports had zero skips.
 - Observation: the first x86_64 hosted run reached the KVM preflight, applied the correct job-user ACL, then stopped because `getfacl` printed the username while the check expected a numeric UID.
   Evidence: [GitHub Actions run 36339315491](https://github.com/eclipse-rdf4j/rdf4j/actions/runs/36339315491), job log shows `user:runner:rw-` followed by a failed `grep` for `user:$UID:rw-`; Maven and guest steps were skipped.
+- Observation: after the ACL representation fix, the job user's direct KVM API/VM creation succeeded but the QEMU process still reported `EACCES`; this does not identify the cause.
+  Evidence: [GitHub Actions run 36339519128](https://github.com/eclipse-rdf4j/rdf4j/actions/runs/36339519128), uploaded `kvm-preflight` artifact shows `user:1001:rw-`, `KVM API 12; created test VM fd 4`, and QEMU's `failed to initialize kvm: Permission denied`.
 - Decision: raise the replay-cut fixture to 20,000 statements, matching the seeded replay fixture, so the native writer must spill the transaction journal and reach an actual post-growth replay on the hosted ARM64 runner.
   Evidence: after the fixture adjustment, the full `LmdbCrashRecoveryTest` selector passed locally with 15 tests and zero skips; see `initial-evidence.txt` and `logs/mvnf/20260927-163858-verify.log`.
 - Decision: disable only the unused QEMU UEFI network option ROM with `romfile=`; retain the virtio NIC and user-mode network needed by guest package provisioning.
@@ -53,6 +56,8 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
   Rationale: device ownership may deny the runner user even when KVM is available; a bounded API and forced-accelerator probe fails before Maven or guest provisioning without introducing a TCG fallback.
 - Decision: request numeric ACL output from `getfacl` when validating the user-specific entry.
   Rationale: names are rendered by default even when the ACL was set by numeric UID; `--numeric` makes the output stable against account-name formatting.
+- Decision: treat the QEMU `EACCES` as unresolved until both process/device context and a same-UID primary-device-group probe are captured.
+  Rationale: direct KVM ioctl success shows the ACL applies to one process, but does not establish why QEMU fails. Collect QEMU identity/capabilities and available AppArmor denials, trace its `/dev/kvm` open, then test a same-UID invocation with `/dev/kvm`'s primary group without disabling host security.
 
 ## Decision Log
 
@@ -74,13 +79,13 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
 
 ## Outcomes & Retrospective
 
-The 20,000-statement replay fixture passed the hosted Java gate (86 selected tests, zero skips). Run 36335095831 also passed that gate; the ARM guest installed Java 25 and reached poweroff, but TCG took 1732 seconds to provision and its QEMU process did not exit before the 1800-second bound. The first x86_64/KVM run, 36339315491, failed only at the ACL-output assertion before the KVM API, Maven, or guest checks ran. The assertion now uses numeric ACL output and the 55-test Python crashlab suite passes locally. Completion still requires a hosted x86_64/KVM run to execute calibration and every required campaign, publish evidence, and retain zero skips for the selected Java tests.
+The 20,000-statement replay fixture passed the hosted Java gate (86 selected tests, zero skips). Run 36335095831 also passed that gate; the ARM guest installed Java 25 and reached poweroff, but TCG took 1732 seconds to provision and its QEMU process did not exit before the 1800-second bound. The first x86_64/KVM run, 36339315491, failed at ACL-output parsing before the KVM API, Maven, or guest checks. The ACL assertion now uses numeric output and the 55-test Python crashlab suite passes locally. Run 36339519128 confirmed the direct runner user can query KVM API 12 and create a VM, but QEMU's own KVM initialization still failed with permission denied. The reason remains undiagnosed; the next check captures process/device/QEMU context and traces QEMU's open while testing the device's primary group as the same runner UID. Completion still requires a hosted x86_64/KVM run to execute calibration and every required campaign, publish evidence, and retain zero skips for the selected Java tests.
 
 ## Context and Orientation
 
 `.github/workflows/pr-verify.yml` runs ordinary Maven tests on Ubuntu, but it does not boot the crashlab guest. `scripts/lmdb-crashlab/run_calibration.py` checks that guest filesystem writes reach the volatile NBD backend through FLUSH/FUA. `run_campaign.py` verifies acknowledged namespace-only commits. `run_powercut_campaign.py` runs the three deterministic LMDB commit cutpoints and reopens the same preserved image twice. The runners support macOS `hdiutil` and Linux `genisoimage`, ARM64/TCG for local use, and x86_64/KVM for CI. They use the actual compiled RDF4J classes, the matching LWJGL native, a writable ext4 data disk, and an independent result witness. The guest provisioning script selects the serial console for the QEMU machine and waits for a guest-originated QMP shutdown before exiting.
 
-The workflow keeps source, classpath dependencies, QEMU guest image, faulted data image, and external witness separate. The cloud guest is prepared once for Java 25 and ext4 tools, then each campaign uses its own overlay and NBD data image. The CI job grants the runner user scoped access to `/dev/kvm`, verifies the KVM API and VM creation, and starts QEMU with forced KVM acceleration before proceeding; there is no TCG fallback or guest-tier skip. The repository's existing unit workflow also runs `LmdbCrashRecoveryTest`; the new job explicitly selects recovery and isolation classes and rejects missing, failing, or skipped Surefire/Failsafe reports.
+The workflow keeps source, classpath dependencies, QEMU guest image, faulted data image, and external witness separate. The cloud guest is prepared once for Java 25 and ext4 tools, then each campaign uses its own overlay and NBD data image. The CI job grants a per-UID `/dev/kvm` ACL for direct API validation, captures QEMU/device access diagnostics, and then requires forced-KVM QEMU under the same UID with the device's primary group; there is no root QEMU, TCG fallback, or guest-tier skip. The repository's existing unit workflow also runs `LmdbCrashRecoveryTest`; the new job explicitly selects recovery and isolation classes and rejects missing, failing, or skipped Surefire/Failsafe reports.
 
 ## Plan of Work
 
