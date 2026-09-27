@@ -33,7 +33,7 @@ import org.junit.jupiter.api.Test;
 public class QueryJoinOptimizerConnectivityTest {
 
 	@Test
-	public void prefersCheapestConnectedTupleExprOverCheaperCrossJoin() {
+	public void prefersCheaperCartesianCandidateOverMoreExpensiveConnectedCandidate() {
 		String query = String.join("\n",
 				"PREFIX ex: <ex:>",
 				"SELECT * WHERE {",
@@ -50,11 +50,11 @@ public class QueryJoinOptimizerConnectivityTest {
 				.map(QueryJoinOptimizerConnectivityTest::predicate)
 				.collect(Collectors.toList());
 
-		assertThat(order).containsExactly("ex:pAnchor", "ex:pConnected", "ex:pDisconnected");
+		assertThat(order).containsExactly("ex:pAnchor", "ex:pDisconnected", "ex:pConnected");
 	}
 
 	@Test
-	public void joinEstimationDoesNotReintroduceCheaperCrossJoin() {
+	public void pairwiseEstimatesCanPreferCheaperCartesianPair() {
 		String query = String.join("\n",
 				"PREFIX ex: <ex:>",
 				"SELECT * WHERE {",
@@ -65,19 +65,20 @@ public class QueryJoinOptimizerConnectivityTest {
 
 		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 		QueryRoot root = new QueryRoot(parsedQuery.getTupleExpr());
-		new QueryJoinOptimizer(new MisleadingJoinStatistics(), new EmptyTripleSource()).optimize(root, null, null);
+		new QueryJoinOptimizer(new CheaperCartesianPairStatistics(), new EmptyTripleSource()).optimize(root, null,
+				null);
 
 		List<String> order = joinArgs(root).stream()
 				.map(QueryJoinOptimizerConnectivityTest::predicate)
 				.collect(Collectors.toList());
 
 		assertThat(order)
-				.as("join estimation must prefer a connected expression over a cheaper cross join")
-				.containsExactly("ex:pAnchor", "ex:pConnected", "ex:pDisconnected");
+				.as("pairwise estimates rank a lower-cardinality Cartesian pair ahead of a more expensive connected pair")
+				.containsExactly("ex:pAnchor", "ex:pDisconnected", "ex:pConnected");
 	}
 
 	@Test
-	public void joinEstimationUsesBindingsInheritedByLateral() {
+	public void lateralUsesInheritedBindingsAndRetainsCostFirstOrdering() {
 		String query = String.join("\n",
 				"PREFIX ex: <ex:>",
 				"SELECT * WHERE {",
@@ -101,8 +102,92 @@ public class QueryJoinOptimizerConnectivityTest {
 				.collect(Collectors.toList());
 
 		assertThat(order)
-				.as("join estimation must retain a connection to bindings inherited by the lateral scope")
-				.containsExactly("ex:pBound", "ex:pConnected", "ex:pDisconnected");
+				.as("within the LATERAL right run, inherited ?s moves pBound first; later choices follow pairwise cost")
+				.containsExactly("ex:pBound", "ex:pDisconnected", "ex:pConnected");
+
+		String nonLateralQuery = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT * WHERE {",
+				"  ?s ex:pBound ?shared .",
+				"  ?shared ex:pConnected ?next .",
+				"  ?other ex:pDisconnected ?value .",
+				"}");
+		ParsedQuery nonLateralParsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, nonLateralQuery, null);
+		QueryRoot nonLateralRoot = new QueryRoot(nonLateralParsed.getTupleExpr());
+		new QueryJoinOptimizer(new InheritedBindingJoinStatistics(), new EmptyTripleSource()).optimize(nonLateralRoot,
+				null, null);
+		assertThat(joinArgs(nonLateralRoot).stream()
+				.map(QueryJoinOptimizerConnectivityTest::predicate)
+				.findFirst()
+				.orElseThrow())
+						.as("without the LATERAL input binding, the cheaper disconnected candidate may start the join")
+						.isEqualTo("ex:pDisconnected");
+	}
+
+	@Test
+	public void pairwiseEstimatesPreferTheCheapestConnectedChoiceWhenItIsActuallyCheaper() {
+		String query = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT * WHERE {",
+				"  ?other ex:pDisconnected ?value .",
+				"  ?shared ex:pConnectedExpensive ?expensive .",
+				"  ?root ex:pAnchor ?shared .",
+				"  ?shared ex:pConnectedCheap ?cheap .",
+				"}");
+
+		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryRoot root = new QueryRoot(parsedQuery.getTupleExpr());
+		new QueryJoinOptimizer(new ConnectedAlternativesStatistics(), new EmptyTripleSource()).optimize(root, null,
+				null);
+
+		List<String> order = joinArgs(root).stream()
+				.map(QueryJoinOptimizerConnectivityTest::predicate)
+				.collect(Collectors.toList());
+
+		assertThat(order).containsExactly("ex:pAnchor", "ex:pConnectedCheap", "ex:pConnectedExpensive",
+				"ex:pDisconnected");
+	}
+
+	@Test
+	public void equalCostTiePrefersConnectedCandidateOnThePublicOptimizerPath() {
+		String query = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT * WHERE {",
+				"  ?root ex:pAnchor ?shared .",
+				"  ?other ex:pDisconnected ?value .",
+				"  ?shared ex:pConnected ?next .",
+				"}");
+
+		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryRoot root = new QueryRoot(parsedQuery.getTupleExpr());
+		new QueryJoinOptimizer(new EqualPairwiseStatistics(), new EmptyTripleSource()).optimize(root, null, null);
+
+		List<String> order = joinArgs(root).stream()
+				.map(QueryJoinOptimizerConnectivityTest::predicate)
+				.collect(Collectors.toList());
+
+		assertThat(order).containsExactly("ex:pAnchor", "ex:pConnected", "ex:pDisconnected");
+	}
+
+	@Test
+	public void allowsCheapestDisconnectedProgressWhenNoConnectedPairExists() {
+		String query = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT * WHERE {",
+				"  ?e ex:pThird ?f .",
+				"  ?a ex:pFirst ?b .",
+				"  ?c ex:pSecond ?d .",
+				"}");
+
+		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryRoot root = new QueryRoot(parsedQuery.getTupleExpr());
+		new QueryJoinOptimizer(new DisconnectedPairStatistics(), new EmptyTripleSource()).optimize(root, null, null);
+
+		List<String> order = joinArgs(root).stream()
+				.map(QueryJoinOptimizerConnectivityTest::predicate)
+				.collect(Collectors.toList());
+
+		assertThat(order).containsExactly("ex:pFirst", "ex:pSecond", "ex:pThird");
 	}
 
 	private static List<TupleExpr> joinArgs(TupleExpr tupleExpr) {
@@ -146,7 +231,93 @@ public class QueryJoinOptimizerConnectivityTest {
 		}
 	}
 
-	private static final class MisleadingJoinStatistics extends EvaluationStatistics {
+	private static final class ConnectedAlternativesStatistics extends EvaluationStatistics {
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof StatementPattern) {
+				return switch (predicate(tupleExpr)) {
+				case "ex:pAnchor" -> 1;
+				case "ex:pConnectedCheap" -> 2;
+				case "ex:pConnectedExpensive" -> 3;
+				case "ex:pDisconnected" -> 100;
+				default -> throw new AssertionError("Unexpected predicate: " + predicate(tupleExpr));
+				};
+			}
+			if (tupleExpr instanceof Join join) {
+				String left = predicate(join.getLeftArg());
+				String right = predicate(join.getRightArg());
+				if (isPair(left, right, "ex:pAnchor", "ex:pConnectedCheap")) {
+					return 2;
+				}
+				if (isPair(left, right, "ex:pAnchor", "ex:pConnectedExpensive")) {
+					return 3;
+				}
+				if (isPair(left, right, "ex:pConnectedCheap", "ex:pConnectedExpensive")) {
+					return 4;
+				}
+				return 100;
+			}
+			return super.getCardinality(tupleExpr);
+		}
+	}
+
+	private static final class EqualPairwiseStatistics extends EvaluationStatistics {
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof StatementPattern) {
+				return switch (predicate(tupleExpr)) {
+				case "ex:pAnchor" -> 1;
+				case "ex:pDisconnected" -> 10;
+				case "ex:pConnected" -> 10_000;
+				default -> throw new AssertionError("Unexpected predicate: " + predicate(tupleExpr));
+				};
+			}
+			if (tupleExpr instanceof Join) {
+				return 5;
+			}
+			return super.getCardinality(tupleExpr);
+		}
+	}
+
+	private static final class DisconnectedPairStatistics extends EvaluationStatistics {
+
+		@Override
+		public boolean supportsJoinEstimation() {
+			return true;
+		}
+
+		@Override
+		public double getCardinality(TupleExpr tupleExpr) {
+			if (tupleExpr instanceof StatementPattern pattern) {
+				return switch (predicate(pattern)) {
+				case "ex:pFirst" -> 1;
+				case "ex:pSecond" -> 2;
+				case "ex:pThird" -> 3;
+				default -> throw new AssertionError("Unexpected predicate: " + predicate(pattern));
+				};
+			}
+			if (tupleExpr instanceof Join join) {
+				String left = predicate(join.getLeftArg());
+				String right = predicate(join.getRightArg());
+				return isPair(left, right, "ex:pFirst", "ex:pSecond") ? 1 : 100;
+			}
+			return super.getCardinality(tupleExpr);
+		}
+	}
+
+	private static final class CheaperCartesianPairStatistics extends EvaluationStatistics {
 
 		@Override
 		public boolean supportsJoinEstimation() {
@@ -179,7 +350,6 @@ public class QueryJoinOptimizerConnectivityTest {
 			}
 			return super.getCardinality(tupleExpr);
 		}
-
 	}
 
 	private static final class InheritedBindingJoinStatistics extends EvaluationStatistics {

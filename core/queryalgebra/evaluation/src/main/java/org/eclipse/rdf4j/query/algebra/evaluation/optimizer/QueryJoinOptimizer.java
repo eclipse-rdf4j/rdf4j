@@ -1238,9 +1238,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		/**
-		 * Selects from a list of tuple expressions the next tuple expression that should be evaluated. This method
-		 * selects the cheapest tuple expression that uses an existing binding, if one exists, and otherwise selects the
-		 * cheapest tuple expression overall.
+		 * Selects the lowest-cost service-ready tuple expression, falling back to all expressions if none are service
+		 * ready. A zero-cost candidate in the selected list is returned immediately, before connectivity breaks
+		 * equal-cost ties.
 		 */
 		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
