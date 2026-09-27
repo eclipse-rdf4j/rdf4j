@@ -13,6 +13,7 @@ import sys
 from typing import Any
 
 from runner_common import (
+    add_seed_iso_builder_argument,
     backend_control,
     build_artifact_manifest,
     copy_and_hash,
@@ -25,6 +26,7 @@ from runner_common import (
     require_executable,
     require_free_tcp_ports,
     require_regular_file,
+    resolve_seed_iso_builder,
     sha256_file,
     start_backend,
     start_logged_process,
@@ -56,8 +58,8 @@ SCENARIOS = {
         "cutpoint": "AFTER_CONNECTION_COMMIT_RETURNED_BEFORE_B_ACK",
         "commit_invoked": True,
         "native_commit_returned": True,
-        "allowed_outcomes": ("A", "A_PLUS_B"),
-        "description": "connection commit returned but external B acknowledgment was not written",
+        "allowed_outcomes": ("A_PLUS_B",),
+        "description": "connection commit returned durably but external B acknowledgment was not written",
     },
 }
 PRESERVED_WITNESS_NAMES = (
@@ -130,7 +132,7 @@ def parse_args() -> argparse.Namespace:
                         help="disposable ARM64 UEFI vars template")
     parser.add_argument("--qemu", required=True, type=Path, help="qemu-system-aarch64 executable")
     parser.add_argument("--qemu-img", required=True, type=Path, help="qemu-img executable")
-    parser.add_argument("--hdiutil", required=True, type=Path, help="hdiutil executable for seed ISOs")
+    add_seed_iso_builder_argument(parser)
     parser.add_argument("--port-base", required=True, type=int,
                         help="available localhost TCP port; next port is reused for both recoveries")
     parser.add_argument("--accel", default="hvf", help="QEMU accelerator (default: hvf)")
@@ -148,11 +150,13 @@ def validate_inputs(args: argparse.Namespace) -> dict[str, Any]:
     repo = args.repo_root.expanduser().resolve(strict=True)
     if not repo.is_dir() or not (repo / ".m2_repo").is_dir():
         raise FileNotFoundError("repository root and its .m2_repo must exist")
+    seed_iso_tool, seed_iso_builder = resolve_seed_iso_builder(args)
     inputs: dict[str, Any] = {
         "repo_root": repo,
         "qemu": require_executable(args.qemu, "QEMU"),
         "qemu_img": require_executable(args.qemu_img, "qemu-img"),
-        "hdiutil": require_executable(args.hdiutil, "hdiutil"),
+        "seed_iso_tool": require_executable(seed_iso_tool, seed_iso_builder),
+        "seed_iso_builder": seed_iso_builder,
         "os_image": require_regular_file(args.os_base_image, "OS base image"),
         "firmware_code": require_regular_file(args.firmware_code, "UEFI code image"),
         "firmware_vars": require_regular_file(args.firmware_vars_template, "UEFI vars template"),
@@ -220,10 +224,13 @@ def prepare_guest_inputs(root: Path, inputs: dict[str, Any], args: argparse.Name
     copy_file_exclusive(inputs["firmware_vars"], writer_vars)
     for vars_file in recovery_vars:
         copy_file_exclusive(inputs["firmware_vars"], vars_file)
-    writer_seed = create_seed_iso(inputs["hdiutil"], qemu_root, "powercut-writer", "boot-powercut-writer.sh")
+    writer_seed = create_seed_iso(inputs["seed_iso_tool"], qemu_root, "powercut-writer", "boot-powercut-writer.sh",
+                                  builder=inputs["seed_iso_builder"])
     recovery_seeds = [
-        create_seed_iso(inputs["hdiutil"], qemu_root, "powercut-recovery-1", "boot-powercut-recovery.sh"),
-        create_seed_iso(inputs["hdiutil"], qemu_root, "powercut-recovery-2", "boot-powercut-recovery.sh"),
+        create_seed_iso(inputs["seed_iso_tool"], qemu_root, "powercut-recovery-1", "boot-powercut-recovery.sh",
+                        builder=inputs["seed_iso_builder"]),
+        create_seed_iso(inputs["seed_iso_tool"], qemu_root, "powercut-recovery-2", "boot-powercut-recovery.sh",
+                        builder=inputs["seed_iso_builder"]),
     ]
     sources = [
         inputs["backend"], SCRIPT_DIR / "run_powercut_campaign.py", SCRIPT_DIR / "runner_common.py",

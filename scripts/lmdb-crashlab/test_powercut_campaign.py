@@ -44,8 +44,9 @@ class PowerCutContractTests(unittest.TestCase):
     def test_returned_commit_is_unknown_but_repeated_outcome_must_match(self):
         validate_cutpoint_witness("commit-returned-before-ack", self.witness("commit-returned-before-ack"),
                                   b_acknowledged=False)
-        validate_recovery_pair("commit-returned-before-ack", self.result("A"), self.result("A"))
         validate_recovery_pair("commit-returned-before-ack", self.result("A_PLUS_B"), self.result("A_PLUS_B"))
+        with self.assertRaises(ValueError):
+            validate_recovery_pair("commit-returned-before-ack", self.result("A"), self.result("A"))
         with self.assertRaises(ValueError):
             validate_recovery_pair("commit-returned-before-ack", self.result("A"), self.result("A_PLUS_B"))
 

@@ -1,0 +1,132 @@
+name: LMDB QEMU durability
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lmdb-qemu-durability:
+    name: LMDB recovery and power cuts (QEMU TCG)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install QEMU ARM64, UEFI, and ISO tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y qemu-system-arm qemu-utils qemu-efi-aarch64 genisoimage
+          command -v qemu-system-aarch64
+          command -v qemu-img
+          command -v genisoimage
+          test -s /usr/share/AAVMF/AAVMF_CODE.fd
+          test -s /usr/share/AAVMF/AAVMF_VARS.fd
+          qemu-system-aarch64 --version
+          qemu-img --version
+
+      - name: Create isolated crashlab workspace
+        run: |
+          mkdir -p "$RUNNER_TEMP/rdf4j-lmdb-qemu/guest" "$RUNNER_TEMP/rdf4j-lmdb-qemu/campaigns"
+          printf 'CRASHLAB_ROOT=%s\n' "$RUNNER_TEMP/rdf4j-lmdb-qemu" >> "$GITHUB_ENV"
+
+      - name: Build exact Java 25 artifacts
+        run: mvn -B -ntp -T 1C -Dmaven.repo.local=.m2_repo -Pquick clean install
+
+      - name: Run required LMDB recovery and isolation tests
+        run: >-
+          mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb
+          -Dtest=LmdbCrashRecoveryTest,LmdbStoreFlushReproductionTest,TripleStoreAutoGrowTest,ValueStoreTermIndexRecoveryTest,LmdbConstructorCleanupTest,PersistentSetFactoryTransactionOwnershipTest,LmdbSnapshotValueLifetimeTest,LmdbValueRetirementRecoveryTest,TxnMutationJournalTest
+          -Dit.test=LmdbStoreModelLifecycleIT verify
+
+      - name: Preserve Maven test reports
+        if: always()
+        run: |
+          if [[ -z "${CRASHLAB_ROOT:-}" ]]; then
+            printf 'Crashlab workspace was not initialized; Maven reports cannot be copied.\n'
+            exit 0
+          fi
+          mkdir -p "$CRASHLAB_ROOT/maven"
+          for report_dir in core/sail/lmdb/target/surefire-reports core/sail/lmdb/target/failsafe-reports; do
+            if [[ -d "$report_dir" ]]; then
+              cp -a "$report_dir" "$CRASHLAB_ROOT/maven/"
+            else
+              printf 'missing report directory: %s\n' "$report_dir" \
+                >> "$CRASHLAB_ROOT/maven/missing-report-directories.txt"
+            fi
+          done
+
+      - name: Check crashlab Python harness
+        run: scripts/lmdb-crashlab/run-tests.sh
+
+      - name: Capture exact Linux ARM64 test classpath
+        run: |
+          mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb \
+            org.apache.maven.plugins:maven-dependency-plugin:3.8.1:build-classpath \
+            -DincludeScope=test \
+            -Dmdep.outputFile="$CRASHLAB_ROOT/host-dependencies.txt"
+          printf '%s:' "$GITHUB_WORKSPACE/core/sail/lmdb/target/test-classes" \
+            "$GITHUB_WORKSPACE/core/sail/lmdb/target/classes" > "$CRASHLAB_ROOT/host-classpath.txt"
+          tr -d '\n' < "$CRASHLAB_ROOT/host-dependencies.txt" >> "$CRASHLAB_ROOT/host-classpath.txt"
+          printf '\n' >> "$CRASHLAB_ROOT/host-classpath.txt"
+          grep -q 'lwjgl-lmdb-[^:]*-natives-linux-arm64.jar' "$CRASHLAB_ROOT/host-classpath.txt"
+
+      - name: Provision disposable Ubuntu ARM64 Java 25 guest
+        run: |
+          bash scripts/lmdb-crashlab/provision-linux-guest.sh \
+            "$CRASHLAB_ROOT/guest" \
+            "$(command -v qemu-system-aarch64)" \
+            "$(command -v qemu-img)" \
+            "$(command -v genisoimage)" \
+            /usr/share/AAVMF/AAVMF_CODE.fd \
+            /usr/share/AAVMF/AAVMF_VARS.fd
+
+      - name: Run calibrated LMDB recovery and power-cut campaigns
+        run: |
+          python3 scripts/lmdb-crashlab/run_ci_campaigns.py \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --scratch-root "$CRASHLAB_ROOT/campaigns" \
+            --os-base-image "$CRASHLAB_ROOT/guest/ubuntu-arm64-java25.qcow2" \
+            --firmware-code /usr/share/AAVMF/AAVMF_CODE.fd \
+            --firmware-vars-template /usr/share/AAVMF/AAVMF_VARS.fd \
+            --qemu "$(command -v qemu-system-aarch64)" \
+            --qemu-img "$(command -v qemu-img)" \
+            --genisoimage "$(command -v genisoimage)" \
+            --host-classpath-file "$CRASHLAB_ROOT/host-classpath.txt" \
+            --port-base 23000
+
+      - name: Reject skipped Java tests and incomplete campaign reports
+        run: |
+          python3 scripts/lmdb-crashlab/ci_gate.py \
+            --calibration-report "$CRASHLAB_ROOT/campaigns/calibration/results/ext4-crash-calibration-report.json" \
+            --namespace-report "$CRASHLAB_ROOT/campaigns/namespace/results/actual-campaign-report.json" \
+            --powercut-report "$CRASHLAB_ROOT/campaigns/mixed-replay-before-native-commit/results/actual-powercut-campaign-report.json" \
+            --powercut-report "$CRASHLAB_ROOT/campaigns/dictionary-before-triple-commit/results/actual-powercut-campaign-report.json" \
+            --powercut-report "$CRASHLAB_ROOT/campaigns/commit-returned-before-ack/results/actual-powercut-campaign-report.json" \
+            --surefire-dir core/sail/lmdb/target/surefire-reports \
+            --failsafe-dir core/sail/lmdb/target/failsafe-reports \
+            --summary-json "$CRASHLAB_ROOT/campaigns/ci-gate-summary.json" \
+            --github-step-summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve guest, campaign, and test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lmdb-qemu-durability-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rdf4j-lmdb-qemu/**
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

@@ -13,6 +13,7 @@ import sys
 from typing import Any
 
 from runner_common import (
+    add_seed_iso_builder_argument,
     backend_control,
     build_artifact_manifest,
     copy_and_hash,
@@ -25,6 +26,7 @@ from runner_common import (
     require_executable,
     require_free_tcp_ports,
     require_regular_file,
+    resolve_seed_iso_builder,
     sha256_file,
     start_backend,
     start_logged_process,
@@ -60,7 +62,7 @@ def parse_args() -> argparse.Namespace:
                         help="disposable ARM64 UEFI vars template; copied into the new scratch root")
     parser.add_argument("--qemu", required=True, type=Path, help="qemu-system-aarch64 executable")
     parser.add_argument("--qemu-img", required=True, type=Path, help="qemu-img executable")
-    parser.add_argument("--hdiutil", required=True, type=Path, help="hdiutil executable for cloud-init seed ISOs")
+    add_seed_iso_builder_argument(parser)
     parser.add_argument("--port-base", required=True, type=int,
                         help="available localhost TCP port; recovery uses the next port")
     parser.add_argument("--accel", default="hvf", help="QEMU accelerator (default: hvf)")
@@ -81,7 +83,8 @@ def validate_inputs(args: argparse.Namespace) -> dict[str, Any]:
         raise FileNotFoundError(f"missing workspace Maven repository: {repo / '.m2_repo'}")
     qemu = require_executable(args.qemu, "QEMU")
     qemu_img = require_executable(args.qemu_img, "qemu-img")
-    hdiutil = require_executable(args.hdiutil, "hdiutil")
+    seed_iso_tool, seed_iso_builder = resolve_seed_iso_builder(args)
+    seed_iso_tool = require_executable(seed_iso_tool, seed_iso_builder)
     os_image = require_regular_file(args.os_base_image, "OS base image")
     firmware_code = require_regular_file(args.firmware_code, "UEFI code image")
     firmware_vars = require_regular_file(args.firmware_vars_template, "UEFI vars template")
@@ -100,7 +103,8 @@ def validate_inputs(args: argparse.Namespace) -> dict[str, Any]:
         "repo_root": repo,
         "qemu": qemu,
         "qemu_img": qemu_img,
-        "hdiutil": hdiutil,
+        "seed_iso_tool": seed_iso_tool,
+        "seed_iso_builder": seed_iso_builder,
         "os_image": os_image,
         "firmware_code": firmware_code,
         "firmware_vars": firmware_vars,
@@ -142,8 +146,10 @@ def prepare_guest_inputs(root: Path, results: Path, qemu_root: Path, inputs: dic
     recovery_vars = qemu_root / "recovery-vars.fd"
     copy_file_exclusive(inputs["firmware_vars"], writer_vars)
     copy_file_exclusive(inputs["firmware_vars"], recovery_vars)
-    writer_seed = create_seed_iso(inputs["hdiutil"], qemu_root, "writer", "boot-writer.sh")
-    recovery_seed = create_seed_iso(inputs["hdiutil"], qemu_root, "recovery", "boot-recovery.sh")
+    writer_seed = create_seed_iso(inputs["seed_iso_tool"], qemu_root, "writer", "boot-writer.sh",
+                                  builder=inputs["seed_iso_builder"])
+    recovery_seed = create_seed_iso(inputs["seed_iso_tool"], qemu_root, "recovery", "boot-recovery.sh",
+                                    builder=inputs["seed_iso_builder"])
 
     sources = [inputs["backend"], GUEST_DIR / "Rdf4jCrashlabOracle.java",
                GUEST_DIR / "CrashPostBaselineWriterMain.java", GUEST_DIR / "writer-controller.py",

@@ -22,8 +22,9 @@ cd scripts/lmdb-crashlab
 ```
 
 The exact default unittest command is
-`python3 -m unittest -v test_runner_common test_volatile_nbd test_powercut_campaign`.
-It currently runs 38 tests.
+`python3 -m unittest -v test_runner_common test_volatile_nbd test_powercut_campaign test_ci_gate`.
+It currently runs 50 tests, including report rejection controls for missing,
+skipped, failed, duplicate, wrong-scenario, and incomplete evidence.
 
 The wire tests bind a localhost TCP port. They need a platform that permits
 loopback sockets; the RDF4J test process itself does not need Python.
@@ -126,7 +127,8 @@ checkout and `.m2_repo` into the guest through read-only 9p mounts. Use a
 quiescent build: no Maven process may rewrite `target` or `.m2_repo` while a
 guest is reading it.
 
-The host needs `qemu-system-aarch64`, `qemu-img`, and macOS `hdiutil`. The
+The host needs `qemu-system-aarch64`, `qemu-img`, and either macOS `hdiutil` or
+Linux `genisoimage` for cloud-init seed ISOs. The
 provisioned ARM64 Ubuntu qcow2 must already contain Java 25 (`java` and
 `javac`), cloud-init, Python 3, ext4/e2fsprogs tools (`mkfs.ext4`, `filefrag`,
 `blkid`, `blockdev`, `lsblk`), and the 9p and virtio block drivers. The runner
@@ -135,6 +137,33 @@ the explicitly supplied scratch root. It refuses a scratch root that already
 exists. It never formats or mounts a host device, installs host packages, or
 removes an earlier run. The supplied OS image and firmware files are inputs;
 each guest boot uses a fresh qcow2 overlay and copied UEFI variables.
+
+### Required GitHub pull-request gate
+
+`.github/workflows/lmdb-qemu-durability.yml` runs unconditionally on every
+`pull_request` event on `ubuntu-24.04-arm`. It uses QEMU TCG explicitly and
+executes the real Linux guest calibration, acknowledged namespace-only commit,
+and all three checked-in transaction cut campaigns. Each cut campaign reopens
+the same preserved image twice and compares the full public-oracle outcome and
+state hash. The job also runs the crashlab Python tests and explicitly selects
+the Java test classes below; a report validator fails if any selected class is
+missing, ran zero tests, failed, errored, or skipped a test. The artifact step
+always retains the provisioning log, NBD traces, guest serial output, images,
+campaign reports, and Maven test reports without changing the job result.
+
+The required Java selection is `LmdbCrashRecoveryTest`,
+`LmdbStoreFlushReproductionTest`, `TripleStoreAutoGrowTest`,
+`ValueStoreTermIndexRecoveryTest`, `LmdbConstructorCleanupTest`,
+`PersistentSetFactoryTransactionOwnershipTest`,
+`LmdbSnapshotValueLifetimeTest`, `LmdbValueRetirementRecoveryTest`,
+`TxnMutationJournalTest`, and the `LmdbStoreModelLifecycleIT` integration test.
+The gate requires zero skipped tests in each selected report. This does not
+claim that every test in the LMDB module is enabled: separate long-running
+theme/benchmark and sketch-placement cases are intentionally `@Disabled`,
+`SailSourceModelTest` and `LongMultithreadedTransactions` are disabled, the
+optional `LmdbRegressionPlanCaptureTest` is property-gated, and one oversized
+native-map probe in `TripleStoreInitializationTest` uses a platform assumption.
+Those unrelated exclusions remain outside this focused required gate.
 
 ### Recreate the Java 25 guest and exact test classpath
 
@@ -359,7 +388,7 @@ The contracts differ by boundary:
 | --- | --- | --- |
 | `mixed-replay-before-native-commit` | After the complete replay of B's mixed mutation journal inside `SailConnection.commit()`, before the authoritative TripleStore transaction commits | Exactly A; B commit-invoked is present and native-commit-returned is absent |
 | `dictionary-before-triple-commit` | After the dictionary commit returns, while `TripleStore.commit()` is paused before native RDF/namespace publication | Exactly A; B was invoked but native commit did not return |
-| `commit-returned-before-ack` | After `SailConnection.commit()` returns, before any B acknowledgment witness is written | Exactly A or exactly A+B; both independent recoveries must choose the same one |
+| `commit-returned-before-ack` | After `SailConnection.commit()` returns, before any B acknowledgment witness is written | Exactly A+B; a returned force-synchronous commit must survive even when the separate acknowledgment is absent |
 
 The replay B includes deletion, delete/re-add of an A statement, promotion of
 an inferred statement to explicit, a namespace update, nested quoted-term data

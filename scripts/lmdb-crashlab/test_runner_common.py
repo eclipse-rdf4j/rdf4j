@@ -2,9 +2,18 @@ import tempfile
 import unittest
 from pathlib import Path
 import os
+from unittest.mock import patch
+import argparse
 
 from run_campaign import create_blank_image
-from runner_common import create_fresh_directory, guest_classpath, validate_qemu_arguments
+from runner_common import (
+    add_seed_iso_builder_argument,
+    create_fresh_directory,
+    create_seed_iso,
+    guest_classpath,
+    resolve_seed_iso_builder,
+    validate_qemu_arguments,
+)
 
 
 class RunnerSafetyTests(unittest.TestCase):
@@ -29,7 +38,9 @@ class RunnerSafetyTests(unittest.TestCase):
 
     def test_canonical_runner_includes_runner_and_protocol_suites(self):
         runner = Path(__file__).with_name("run-tests.sh").read_text(encoding="utf-8")
-        self.assertIn("python3 -m unittest -v test_runner_common test_volatile_nbd test_powercut_campaign", runner)
+        self.assertIn(
+            "python3 -m unittest -v test_runner_common test_volatile_nbd test_powercut_campaign test_ci_gate", runner
+        )
 
     def test_qemu_arguments_reject_unsafe_cache_modes(self):
         with self.assertRaises(ValueError):
@@ -43,6 +54,34 @@ class RunnerSafetyTests(unittest.TestCase):
             "-device", "virtio-blk-pci,drive=datadisk,write-cache=on,serial=CRASHLAB-NBD",
         ]
         validate_qemu_arguments(args)
+
+    def test_seed_iso_builder_supports_linux_genisoimage_and_legacy_hdiutil(self):
+        parser = argparse.ArgumentParser()
+        add_seed_iso_builder_argument(parser)
+        self.assertEqual(resolve_seed_iso_builder(parser.parse_args(["--genisoimage", "/usr/bin/genisoimage"])),
+                         (Path("/usr/bin/genisoimage"), "genisoimage"))
+        self.assertEqual(resolve_seed_iso_builder(parser.parse_args(["--hdiutil", "/usr/bin/hdiutil"])),
+                         (Path("/usr/bin/hdiutil"), "hdiutil"))
+
+    def test_seed_iso_uses_genisoimage_cidata_layout(self):
+        with tempfile.TemporaryDirectory() as parent:
+            root = Path(parent)
+            tool = root / "genisoimage"
+            tool.touch()
+            qemu_root = root / "qemu"
+            qemu_root.mkdir()
+
+            def create_expected_iso(command, log_path):
+                self.assertEqual(command[0], str(tool))
+                self.assertEqual(command[1:5], ["-output", str(qemu_root / "runner-seed.iso"),
+                                                "-volid", "cidata"])
+                self.assertIn("-joliet", command)
+                self.assertIn("-rock", command)
+                Path(command[2]).write_bytes(b"iso")
+
+            with patch("runner_common.run_checked", side_effect=create_expected_iso):
+                output = create_seed_iso(tool, qemu_root, "runner", "boot-writer.sh", builder="genisoimage")
+            self.assertEqual(output.read_bytes(), b"iso")
 
     def test_guest_classpath_maps_read_only_roots_and_filters_other_native_platforms(self):
         with tempfile.TemporaryDirectory() as parent:

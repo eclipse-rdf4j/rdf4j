@@ -11,6 +11,7 @@ import sys
 from typing import Any
 
 from runner_common import (
+    add_seed_iso_builder_argument,
     backend_control,
     build_artifact_manifest,
     copy_and_hash,
@@ -23,6 +24,7 @@ from runner_common import (
     require_executable,
     require_free_tcp_ports,
     require_regular_file,
+    resolve_seed_iso_builder,
     sha256_file,
     start_backend,
     start_logged_process,
@@ -53,7 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--firmware-vars-template", required=True, type=Path)
     parser.add_argument("--qemu", required=True, type=Path)
     parser.add_argument("--qemu-img", required=True, type=Path)
-    parser.add_argument("--hdiutil", required=True, type=Path)
+    add_seed_iso_builder_argument(parser)
     parser.add_argument("--port", required=True, type=int)
     parser.add_argument("--accel", default="hvf")
     parser.add_argument("--cpu", default="host")
@@ -77,6 +79,7 @@ def validate_inputs(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("source witness is empty")
     if not namespace_witness.read_text(encoding="utf-8").strip():
         raise ValueError("source namespace witness is empty")
+    seed_iso_tool, seed_iso_builder = resolve_seed_iso_builder(args)
     values = {
         "repo_root": repo,
         "source_image": source_image,
@@ -88,7 +91,8 @@ def validate_inputs(args: argparse.Namespace) -> dict[str, Any]:
         "firmware_vars": require_regular_file(args.firmware_vars_template, "UEFI vars template"),
         "qemu": require_executable(args.qemu, "QEMU"),
         "qemu_img": require_executable(args.qemu_img, "qemu-img"),
-        "hdiutil": require_executable(args.hdiutil, "hdiutil"),
+        "seed_iso_tool": require_executable(seed_iso_tool, seed_iso_builder),
+        "seed_iso_builder": seed_iso_builder,
         "classpath_file": require_regular_file(args.host_classpath_file, "host classpath file"),
         "backend": require_regular_file(repo / "scripts/lmdb-crashlab/volatile_nbd.py", "checked-in NBD backend"),
     }
@@ -129,7 +133,8 @@ def main() -> int:
                         qemu_root / "recovery-os-overlay.log")
     recovery_vars = qemu_root / "recovery-vars.fd"
     copy_file_exclusive(inputs["firmware_vars"], recovery_vars)
-    recovery_seed = create_seed_iso(inputs["hdiutil"], qemu_root, "recovery", "boot-recovery.sh")
+    recovery_seed = create_seed_iso(inputs["seed_iso_tool"], qemu_root, "recovery", "boot-recovery.sh",
+                                    builder=inputs["seed_iso_builder"])
     source_hashes = {
         "source_image": source_hash_before,
         "source_witness": sha256_file(inputs["source_witness"]),
