@@ -13,6 +13,7 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from typing import Any, Callable, Sequence
@@ -21,6 +22,9 @@ from typing import Any, Callable, Sequence
 GUEST_REPO = Path("/mnt/rdf4j-ro")
 GUEST_M2 = Path("/mnt/m2-ro")
 JAVA_CLASS_MAJOR = 69
+MAX_UNIX_SOCKET_PATH_BYTES = 100
+_CONTROL_SOCKET_PATHS: dict[str, tuple[Path, Path | None]] = {}
+_BACKEND_CONTROL_OWNERS: dict[int, str] = {}
 
 
 def create_fresh_directory(path: Path) -> Path:
@@ -373,6 +377,9 @@ def stop_process(process: subprocess.Popen[bytes] | None, sig: int = signal.SIGK
         time.sleep(0.02)
     if group_exists():
         raise RuntimeError(f"process group {group_id} remained after SIGKILL")
+    control_key = _BACKEND_CONTROL_OWNERS.pop(process.pid, None)
+    if control_key is not None:
+        _cleanup_control_socket(control_key)
 
 
 def fence_nbd_then_stop_guest(guest: subprocess.Popen[bytes], fence_nbd: Callable[[], Any]) -> Any:
@@ -394,25 +401,97 @@ def start_backend(*, python: Path, backend: Path, image: Path, control: Path, po
     for path in (control, events, log, command_record):
         if path.exists() or path.is_symlink():
             raise FileExistsError(f"refusing preexisting backend artifact: {path}")
+    control_key, active_control = _register_control_socket(control)
     command = [str(python), "-u", str(backend), "serve", "--image", str(image),
-               "--control", str(control), "--port", str(port), "--log", str(events)]
-    process = start_logged_process(command, log)
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        if control.exists():
-            write_json_exclusive(command_record, command)
-            return process
-        if process.poll() is not None:
-            raise RuntimeError(f"NBD backend exited during startup with status {process.returncode}")
-        time.sleep(0.05)
-    raise TimeoutError(f"NBD backend control socket did not appear: {control}")
+               "--control", str(active_control), "--port", str(port), "--log", str(events)]
+    command_metadata = {
+        "logical_control": str(Path(control).absolute()),
+        "active_control": str(active_control),
+        "control_path_shortened": active_control != Path(control).absolute(),
+        "command": command,
+    }
+    process = None
+    try:
+        write_json_exclusive(command_record, command_metadata)
+        process = start_logged_process(command, log)
+        _BACKEND_CONTROL_OWNERS[process.pid] = control_key
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if active_control.exists():
+                return process
+            if process.poll() is not None:
+                raise RuntimeError(f"NBD backend exited during startup with status {process.returncode}")
+            time.sleep(0.05)
+        raise TimeoutError(f"NBD backend control socket did not appear: {active_control}")
+    except BaseException as error:
+        if process is None:
+            _cleanup_control_socket(control_key)
+        else:
+            try:
+                stop_process(process, signal.SIGKILL)
+            except BaseException as cleanup_error:
+                raise error from cleanup_error
+        raise
 
 
 def backend_control(python: Path, backend: Path, control_path: Path, action: str,
                     *extra: str) -> dict[str, Any]:
-    command = [str(python), str(backend), "ctl", "--control", str(control_path), action, *extra]
+    active_control = _active_control_socket(control_path)
+    command = [str(python), str(backend), "ctl", "--control", str(active_control), action, *extra]
     result = subprocess.run(command, check=True, capture_output=True, text=True)
     return json.loads(result.stdout)
+
+
+def _control_socket_key(control_path: Path) -> str:
+    return os.path.abspath(os.fspath(control_path))
+
+
+def _register_control_socket(control_path: Path) -> tuple[str, Path]:
+    key = _control_socket_key(control_path)
+    if key in _CONTROL_SOCKET_PATHS:
+        raise RuntimeError(f"an NBD backend already owns this control endpoint: {key}")
+    logical_path = Path(key)
+    if len(os.fsencode(logical_path)) <= MAX_UNIX_SOCKET_PATH_BYTES:
+        active_path = logical_path
+        owned_directory = None
+    else:
+        temp_root = Path("/tmp") if Path("/tmp").is_dir() else Path(tempfile.gettempdir())
+        owned_directory = Path(tempfile.mkdtemp(prefix="rdf4j-nbd-", dir=temp_root))
+        os.chmod(owned_directory, 0o700)
+        active_path = owned_directory / "control.sock"
+        if len(os.fsencode(active_path)) > MAX_UNIX_SOCKET_PATH_BYTES:
+            owned_directory.rmdir()
+            raise OSError(f"temporary NBD control socket path is too long: {active_path}")
+    if active_path.exists() or active_path.is_symlink():
+        if owned_directory is not None:
+            owned_directory.rmdir()
+        raise FileExistsError(f"refusing preexisting NBD control endpoint: {active_path}")
+    _CONTROL_SOCKET_PATHS[key] = (active_path, owned_directory)
+    return key, active_path
+
+
+def _active_control_socket(control_path: Path) -> Path:
+    key = _control_socket_key(control_path)
+    registered = _CONTROL_SOCKET_PATHS.get(key)
+    return registered[0] if registered is not None else Path(key)
+
+
+def _cleanup_control_socket(control_key: str) -> None:
+    registered = _CONTROL_SOCKET_PATHS.get(control_key)
+    if registered is None:
+        return
+    active_path, owned_directory = registered
+    try:
+        socket_stat = active_path.lstat()
+    except FileNotFoundError:
+        pass
+    else:
+        if not stat.S_ISSOCK(socket_stat.st_mode):
+            raise RuntimeError(f"refusing to remove non-socket NBD endpoint artifact: {active_path}")
+        active_path.unlink()
+    if owned_directory is not None:
+        owned_directory.rmdir()
+    del _CONTROL_SOCKET_PATHS[control_key]
 
 
 def run_checked(command: Sequence[str], *, log_path: Path | None = None) -> subprocess.CompletedProcess[str]:

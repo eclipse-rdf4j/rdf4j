@@ -1,18 +1,26 @@
+import argparse
+import json
+import os
+import signal
+import socket
+import stat
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-import os
 from unittest.mock import patch
-import argparse
 
 from run_campaign import create_blank_image
 from runner_common import (
     add_seed_iso_builder_argument,
+    backend_control,
     create_fresh_directory,
     create_seed_iso,
     guest_classpath,
     guest_qemu_arguments,
     resolve_seed_iso_builder,
+    start_backend,
+    stop_process,
     validate_qemu_arguments,
 )
 
@@ -36,6 +44,105 @@ class RunnerSafetyTests(unittest.TestCase):
             image = Path(parent) / "data.raw"
             create_blank_image(image, 4096)
             self.assertEqual(image.stat().st_size, 4096)
+
+    def test_nbd_backend_supports_deep_campaign_socket_paths(self):
+        backend = Path(__file__).with_name("volatile_nbd.py")
+        with tempfile.TemporaryDirectory(dir="/tmp") as parent:
+            root = Path(parent)
+            for index in range(10):
+                root = root / f"campaign-segment-{index:02d}"
+            root.mkdir(parents=True)
+            image = root / "data.raw"
+            create_blank_image(image, 4096)
+            control = root / "recovery-1-control.sock"
+            self.assertGreater(len(os.fsencode(control)), 100, "test needs an overlong AF_UNIX path")
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+                listener.bind(("127.0.0.1", 0))
+                port = listener.getsockname()[1]
+
+            events = root / "events.jsonl"
+            log = root / "backend.log"
+            command_record = root / "backend-command.json"
+            process = start_backend(
+                python=Path(sys.executable), backend=backend, image=image, control=control,
+                port=port, events=events, log=log, command_record=command_record,
+            )
+            command = json.loads(command_record.read_text(encoding="utf-8"))
+            active_control = Path(command["active_control"])
+            try:
+                status = backend_control(Path(sys.executable), backend, control, "status")
+                self.assertEqual(status["size"], 4096)
+                self.assertLess(len(os.fsencode(active_control)), 100)
+                self.assertNotEqual(active_control, control)
+                self.assertEqual(command["logical_control"], str(control.absolute()))
+                self.assertTrue(command["control_path_shortened"])
+                self.assertEqual(stat.S_IMODE(active_control.parent.stat().st_mode), 0o700)
+            finally:
+                stop_process(process, signal.SIGINT)
+
+            self.assertFalse(active_control.exists(), "the owned control socket must be removed")
+            self.assertFalse(active_control.parent.exists(), "the per-run socket directory must be removed")
+
+    def test_nbd_backend_keeps_ordinary_socket_path_and_cleans_it(self):
+        backend = Path(__file__).with_name("volatile_nbd.py")
+        with tempfile.TemporaryDirectory(dir="/tmp") as parent:
+            root = Path(parent)
+            image = root / "data.raw"
+            create_blank_image(image, 4096)
+            control = root / "control.sock"
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+                listener.bind(("127.0.0.1", 0))
+                port = listener.getsockname()[1]
+            command_record = root / "backend-command.json"
+            process = start_backend(
+                python=Path(sys.executable), backend=backend, image=image, control=control,
+                port=port, events=root / "events.jsonl", log=root / "backend.log",
+                command_record=command_record,
+            )
+            command = json.loads(command_record.read_text(encoding="utf-8"))
+            active_control = Path(command["active_control"])
+            try:
+                status = backend_control(Path(sys.executable), backend, control, "status")
+                self.assertEqual(status["size"], 4096)
+                self.assertEqual(active_control, control)
+                self.assertFalse(command["control_path_shortened"])
+            finally:
+                stop_process(process, signal.SIGINT)
+            self.assertFalse(control.exists(), "backend shutdown must remove its socket")
+
+    def test_failed_nbd_startup_cleans_owned_short_socket_directory(self):
+        backend = Path(__file__).with_name("volatile_nbd.py")
+        with tempfile.TemporaryDirectory(dir="/tmp") as parent:
+            root = Path(parent)
+            for index in range(10):
+                root = root / f"campaign-segment-{index:02d}"
+            root.mkdir(parents=True)
+            control = root / "recovery-1-control.sock"
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+                listener.bind(("127.0.0.1", 0))
+                port = listener.getsockname()[1]
+            created_directories = []
+            actual_mkdtemp = tempfile.mkdtemp
+
+            def create_tempdir(*args, **kwargs):
+                created = Path(actual_mkdtemp(*args, **kwargs))
+                created_directories.append(created)
+                return str(created)
+
+            command_record = root / "backend-command.json"
+            with patch("runner_common.tempfile.mkdtemp", side_effect=create_tempdir):
+                with self.assertRaisesRegex(RuntimeError, "NBD backend exited during startup"):
+                    start_backend(
+                        python=Path(sys.executable), backend=backend, image=root / "missing.raw",
+                        control=control, port=port, events=root / "events.jsonl",
+                        log=root / "backend.log", command_record=command_record,
+                    )
+            self.assertEqual(len(created_directories), 1)
+            socket_dir = created_directories[0]
+            command = json.loads(command_record.read_text(encoding="utf-8"))
+            self.assertTrue(command["control_path_shortened"])
+            self.assertEqual(Path(command["active_control"]).parent, socket_dir)
+            self.assertFalse(socket_dir.exists(), "failed startup must release its private socket directory")
 
     def test_canonical_runner_includes_runner_and_protocol_suites(self):
         runner = Path(__file__).with_name("run-tests.sh").read_text(encoding="utf-8")
