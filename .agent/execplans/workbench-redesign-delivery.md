@@ -17,7 +17,7 @@ The Workbench redesign brings its configuration forms, query workflow, results, 
 - [x] Verify mount-aware repository menu links.
 - [x] Run affected module and browser gates.
 - [x] Capture curated final screenshots.
-- [in_progress] Commit, push, draft PR, comment.
+- [x] Commit, push, draft PR, comment.
 
 ## Surprises & Discoveries
 
@@ -29,6 +29,8 @@ The Workbench redesign brings its configuration forms, query workflow, results, 
 - The final repository-mount regression showed that Servlet PATH mappings are relative to the servlet context and take precedence over shortened `pathInfo`. `WorkbenchPageUrl` builds the mount from `contextPath + mappedPath` without stripping a matching prefix; all 14 focused policy tests pass.
 - The final packaged gates passed: Workbench 544/544 tests, Server Boot 57 unit and 2 integration tests, and focused Server Spring 9/9 tests. Final packaged Chromium and WebKit navigation checks each pass 1/1.
 - Fourteen reviewed application screenshots are under `docs/workbench-redesign-evidence/`. The self-contained design gallery contains 32 boards with paired light/dark references (64 linked PNGs); intermediate prompts, exploratory mockups, logs, and unlinked images remain local.
+- The audited delivery commit `8a93c1be2410158adedac5c257e32b452177546b` contains 190 files, including source, generated assets, tests, plans, the curated gallery, and 14 packaged-app screenshots. The selected gallery assets total 85,345,272 bytes; the exact app logo asset is hash-verified in the gallery.
+- The commit is pushed to `origin/GH-6071-workbench-redesign`. Draft PR #6072 targets `develop`; its comment #5854968498 contains the final test counts and ten embedded packaged-app captures, with the complete fourteen-image set linked.
 
 ## Decision Log
 
@@ -44,7 +46,7 @@ The Workbench redesign brings its configuration forms, query workflow, results, 
 
 ## Outcomes & Retrospective
 
-Issue #6071 exists and the local branch is `GH-6071-workbench-redesign`. Source and artifact inventory, affected module gates, packaged browser route checks, and screenshot curation are complete. Publication is the only remaining step. Final outcomes, evidence paths, commit/PR identities, and any verification limits will be recorded here before handoff.
+Issue #6071 tracks the redesign. The full audited implementation and curated evidence are committed on `GH-6071-workbench-redesign`, pushed to `origin`, and available in draft PR #6072 against `develop`. The PR comment contains test summaries and real application screenshots. No merge was requested or performed.
 
 ## Context and Orientation
 
@@ -64,7 +66,7 @@ Third, rebuild and exercise the packaged Workbench. Run the Workbench module tes
 
 Fourth, capture actual packaged-app screenshots for Query/Explain, Query options, comparison close, upload/export, configuration, and representative mobile layouts in light and dark themes. Review each image and keep a concise curated set in a dedicated documentation evidence directory. Verify that every selected file is safe to publish and contains no local credentials, user paths, or transient logs.
 
-Finally, format and check the complete intended source diff, stage only the audited source/tests/docs/plans and curated screenshots, create a Conventional Commit beginning `GH-<issue-number>`, push the issue-numbered branch with tracking, and open a draft PR targeting the confirmed development branch. Attach the PR to the task. Post one concise PR comment containing test counts, actual screenshot embeds from the committed evidence files, and limitations. Verify the pushed SHA, PR head/base/title/body, comment, screenshot URLs, and remaining local staged/unstaged status; leave unrelated and transient artifacts untouched.
+Finally, format and check the complete intended source diff, stage only the audited source/tests/docs/plans and curated screenshots, create a commit beginning `GH-<issue-number>`, push the issue-numbered branch with tracking, and open a draft PR targeting the confirmed development branch. Attach the PR to the task. Post one concise PR comment containing test counts, actual screenshot embeds from the committed evidence files, and limitations. Verify the pushed SHA, PR head/base/title/body, comment, screenshot URLs, and remaining local staged/unstaged status; leave unrelated and transient artifacts untouched. This work is complete: the branch was pushed, PR #6072 was created and attached, and comment #5854968498 was verified against the committed screenshot paths.
 
 ## Concrete Steps
 
@@ -86,7 +88,7 @@ All discovery, verification, and screenshot capture can be repeated without dele
 
 ## Artifacts and Notes
 
-The final reviewed packaged-app captures are listed in `docs/workbench-redesign-evidence/README.md`. Machine-local report logs remain outside the source deliverable; compact first-red evidence and gate summaries are preserved in the local root `initial-evidence.txt` during this task.
+The final reviewed packaged-app captures are listed in `docs/workbench-redesign-evidence/README.md`; ten are embedded in PR comment #5854968498. The source-grounded 32-board light/dark catalog is `design/workbench-design-coverage-20260925/index.html`; it links 64 PNGs and includes the original logo, palette calculations, source-fidelity specifications, and sanitized manifest. Machine-local report logs remain outside the source deliverable; compact red/green evidence is preserved in the local root `initial-evidence.txt`.
 
 Issue search commands were run through GitHub search for all states, including `"workbench redesign"`, `"workbench refresh"`, `"workbench theme"`, `"workbench UI"`, `"redesign Workbench"`, and `"Workbench layout"`. The closest pre-existing result, #470, is closed with stale/completed state and only asks for an old jQuery UI theme. New issue #6071 was created with the full functionality scope.
 
@@ -94,4 +96,4 @@ Issue search commands were run through GitHub search for all states, including `
 
 No product dependency is added by this delivery. Use the installed GitHub connector only for operations it authorizes, `gh` only after its authentication is valid, the repository's `mvnf` skill for Maven tests, the existing Playwright installation for browser automation, and Git's ordinary non-force branch/push operations. If one publisher cannot perform both Git and issue/PR writes, use the available authorized path for each operation and verify every remote result rather than assuming success.
 
-Plan revision (2026-09-27): Issue #6071 created after duplicate search; branch renamed to `GH-6071-workbench-redesign`. Parent confirmed the authenticated CLI keyring works outside sandbox network isolation. Artifact curation and final gates continue before staging.
+Plan revision (2026-09-27): Completed final route mapping regressions and reran Workbench and Server Boot module gates plus packaged Chromium/WebKit navigation. Captured and reviewed fourteen packaged-app screenshots, curated the self-contained 32-board gallery, and staged only audited deliverables. Commit `8a93c1be2410158adedac5c257e32b452177546b` was pushed; draft PR #6072 targets `develop`, was attached to the task, and comment #5854968498 publishes the test summary and actual-app captures. The plan is complete; the PR remains draft and unmerged.
