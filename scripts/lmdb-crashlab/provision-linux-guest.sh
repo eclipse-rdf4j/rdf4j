@@ -109,13 +109,19 @@ timeout --foreground --signal=TERM --kill-after=30s 1800s "$qemu" \
 	-device virtio-blk-pci,drive=osdisk,bootindex=0 \
 	-drive "file=$seed_iso,format=raw,if=none,id=seed,readonly=on" \
 	-device virtio-blk-pci,drive=seed \
-	-netdev user,id=net0 -device virtio-net-pci,netdev=net0 \
+	-netdev user,id=net0 -device virtio-net-pci,netdev=net0,romfile= \
 	> "$qemu_log" 2>&1
 qemu_status=$?
 set -e
 if [[ $qemu_status -ne 0 ]] || ! grep -Fq 'CRASHLAB_PROVISIONED' "$serial_log"; then
 	printf 'guest provisioning failed (qemu status %s); see %s and %s\n' \
 		"$qemu_status" "$serial_log" "$qemu_log" >&2
+	if [[ -s $serial_log ]]; then
+		sed -n '1,200p' "$serial_log" >&2
+	fi
+	if [[ -s $qemu_log ]]; then
+		cat "$qemu_log" >&2
+	fi
 	exit 1
 fi
 

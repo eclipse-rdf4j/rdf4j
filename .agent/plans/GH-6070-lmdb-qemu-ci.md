@@ -12,8 +12,9 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
 - [done] Validate campaign reports and skips.
 - [done] Add Linux guest provisioning workflow.
 - [done] Make hosted growth replay cut deterministic.
-- [in_progress] Rerun hosted Java gate and campaigns.
-- [todo] Commit fix and update PR evidence.
+- [done] Fix hosted guest and artifact rules.
+- [in_progress] Boot guest and run campaigns.
+- [todo] Commit fixes and update PR evidence.
 
 ## Surprises & Discoveries
 
@@ -29,8 +30,16 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
   Evidence: `ci_gate.py` lists nine Surefire classes and one Failsafe class; matching test sources are present in `core/sail/lmdb/src/test`.
 - Observation: the first hosted ARM64 run exposed that the 10,000-statement replay cut did not reach a spilled-journal map-growth replay there; the child completed and raised its existing protocol assertion rather than being silently skipped.
   Evidence: [GitHub Actions run 36333236346](https://github.com/eclipse-rdf4j/rdf4j/actions/runs/36333236346), Surefire reported 15 `LmdbCrashRecoveryTest` cases with one failure, zero errors, and zero skips.
+- Observation: after raising that case to 20,000 statements, the hosted Java gate passed all 86 selected tests with zero skips, but ARM guest boot stopped because `virtio-net-pci` attempted to load a missing UEFI option ROM.
+  Evidence: [GitHub Actions run 36334103137](https://github.com/eclipse-rdf4j/rdf4j/actions/runs/36334103137), `guest/provision-qemu.log` says `failed to find romfile "efi-virtio.rom"`.
+- Observation: the initial always-uploaded artifact was 688,376,851 bytes, mostly the 620,224,512-byte Ubuntu base image and 67,108,864-byte UEFI variables copy.
+  Evidence: the artifact manifest for run 36334103137 included both regenerable inputs and small test reports/logs.
 - Decision: raise the replay-cut fixture to 20,000 statements, matching the seeded replay fixture, so the native writer must spill the transaction journal and reach an actual post-growth replay on the hosted ARM64 runner.
   Evidence: after the fixture adjustment, the full `LmdbCrashRecoveryTest` selector passed locally with 15 tests and zero skips; see `initial-evidence.txt` and `logs/mvnf/20260927-163858-verify.log`.
+- Decision: disable only the unused QEMU UEFI network option ROM with `romfile=`; retain the virtio NIC and user-mode network needed by guest package provisioning.
+  Evidence: the same QEMU binary stayed alive with that argument in a bounded local TCG startup check.
+- Decision: exclude regenerable guest OS base/overlay, UEFI variable copy, and cloud-init ISO from the uploaded artifact while keeping checksums, serial/QEMU logs, Maven reports, independent witnesses, and preserved crash images.
+  Rationale: preserve reproducible failure evidence without uploading hundreds of megabytes of OS provisioning inputs on every pull request.
 
 ## Decision Log
 
@@ -49,7 +58,7 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
 
 ## Outcomes & Retrospective
 
-Pending implementation and an actual GitHub Actions run. Completion requires the hosted workflow to execute the guest and all required cases, publish its run evidence, and show no skipped required cases. Local Python contract tests or a Maven compile alone do not satisfy this outcome.
+The 20,000-statement replay fixture passed the hosted Java gate (86 selected tests, zero skips). The next hosted run must validate guest provisioning and all calibrated campaigns; its predecessor stopped before provisioning because QEMU requested a missing UEFI NIC ROM. Completion requires a hosted workflow run to execute calibration and every required campaign, publish evidence, and retain zero skips for the selected Java tests. Local Python contracts or Maven results alone do not satisfy this outcome.
 
 ## Context and Orientation
 

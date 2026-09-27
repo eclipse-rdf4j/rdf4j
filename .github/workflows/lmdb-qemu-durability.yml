@@ -126,7 +126,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lmdb-qemu-durability-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/rdf4j-lmdb-qemu/**
+          path: |
+            ${{ runner.temp }}/rdf4j-lmdb-qemu/**
+            !${{ runner.temp }}/rdf4j-lmdb-qemu/guest/image/ubuntu-24.04-server-cloudimg-arm64.img
+            !${{ runner.temp }}/rdf4j-lmdb-qemu/guest/ubuntu-arm64-java25.qcow2
+            !${{ runner.temp }}/rdf4j-lmdb-qemu/guest/firmware-vars.fd
+            !${{ runner.temp }}/rdf4j-lmdb-qemu/guest/seed.iso
           if-no-files-found: error
           retention-days: 7
           compression-level: 0

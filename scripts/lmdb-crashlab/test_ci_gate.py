@@ -227,6 +227,13 @@ class CiGateTests(unittest.TestCase):
         provisioner = Path(__file__).with_name("provision-linux-guest.sh").read_text(encoding="utf-8")
         self.assertIn("/dev/ttyAMA0", provisioner)
         self.assertNotIn("/dev/ttyS0", provisioner)
+        self.assertIn("virtio-net-pci,netdev=net0,romfile=", provisioner)
+
+    def test_ci_artifact_excludes_regenerable_guest_os_images(self):
+        workflow = Path(__file__).parents[2] / ".github/workflows/lmdb-qemu-durability.yml"
+        source = workflow.read_text(encoding="utf-8")
+        self.assertIn("!${{ runner.temp }}/rdf4j-lmdb-qemu/guest/image/ubuntu-24.04-server-cloudimg-arm64.img", source)
+        self.assertIn("!${{ runner.temp }}/rdf4j-lmdb-qemu/guest/ubuntu-arm64-java25.qcow2", source)
 
 
 if __name__ == "__main__":

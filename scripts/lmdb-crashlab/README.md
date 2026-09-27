@@ -38,8 +38,8 @@ returned commit in an external forced witness, kills only its own child JVM,
 and checks the recovered complete RDF state and public subject, predicate,
 object, context, namespace, and SPARQL reads. The two deterministic in-progress
 cut tests stop inside the current namespace-to-triple and autogrow-replay
-boundaries; they are expected to stay red until the underlying storage
-invariants are repaired.
+boundaries. They assert that interrupted work recovers atomically and remain in
+the required CI selection.
 
 Use the project's runner for the process test on a normal writable checkout:
 
