@@ -16,6 +16,9 @@ key-value database using memory-mapped IO for great performance and stability.
 The LMDB Store can be used in any RDF4J project that requires persistent
 storage that is fast, scalable and reliable.
 
+For the user-visible effects of transaction snapshots, map growth, recovery and store upgrades, see
+[LMDB transactions, map growth, and recovery](/documentation/programming/lmdb-store-transactions/).
+
 ## Dependencies for the LMDB Store and native extensions
 
 To make use of the LMDB Store, you'll need to include the following Maven dependency:
@@ -207,16 +210,10 @@ choosing the value and triple db sizes.
 ## Autogrow feature
 RDF4J implements an **autogrow** feature to simplify the management of memory map sizes.
 
-If it is enabled (which is the default) then RDF4J monitors the actual used pages and
-
-automatically increases the map size if required.
-
-This monitoring only has a very minimal overhead.
-The only downsides are:
-  - Some kind of stop the world approach is required to set the new map sizes where all running
-
-    transactions are suspended for a short time.
-  - A running write transaction may lead to a temporary overflow of data to disk if the
-    current map size needs to be increased. This may be an issue with large transactions that
-
-    can get slowed down.
+If it is enabled (which is the default), RDF4J monitors used pages and increases the map size when required. Resizing
+requires coordinating native readers while LMDB remaps the environment. A pinned query result or an established
+`SNAPSHOT`/`SERIALIZABLE` transaction can be invalidated by that resize and must be retried. For large writes, map-full
+handling aborts and replays the complete TripleStore mutation journal; replay may use temporary disk space and extend
+the write. See
+[LMDB transactions, map growth, and recovery](/documentation/programming/lmdb-store-transactions/) for retry guidance,
+reader lifetime, and persistence details.
