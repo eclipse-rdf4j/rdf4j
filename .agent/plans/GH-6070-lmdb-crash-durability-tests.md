@@ -42,7 +42,7 @@ The test oracle must be independent of the database and live outside the crash t
 - [x] Format audit and final build.
 - [x] Audit staged scope and commit.
 - [x] Correct signatures and final evidence.
-- [in_progress] Commit final audit corrections.
+- [x] Commit final audit corrections.
 
 ## Surprises & Discoveries
 
@@ -279,4 +279,4 @@ Plan update note (2026-09-27): the checked-in CrashLab harness entrypoint now ru
 
 Plan update note (2026-09-27): corrected the legacy fixture manifest's producer LMDB version from an unsupported guess (0.9.31) to the observed 0.9.33 from the bundled LWJGL 3.3.6 native binding. Verified the fixture ZIP still matches its unchanged SHA-256. Prior shared base, MemoryStore, and NativeStore green module gates are preserved in `initial-evidence.txt` lines 904–915 and predate this LMDB-only repair; they are not reported as reruns on the final tree.
 
-Plan update note (2026-09-27): the final audit added the required Codex signature beneath the headers in `LmdbUtil.java`, `PersistentSetFactory.java`, and `TripleIndex.java`. The earlier power-cut state-hash typo is preserved in `crash-durability-evidence.txt` with an appended correction; both authoritative reports were parsed and their two recoveries each match `1230ecbd86d08fc914cec80aa3d7481451750436e91f057e47fc4b07c8cfdb32`. The namespace-only ACK campaign is listed separately from the three additional power-cut campaigns, whose images each recovered twice. Header, formatting, and post-audit root quick-install checks pass. Commits remain `0ceb37fe7f` and `4d21a86789`; the final audit corrections are the only changes awaiting commit.
+Plan update note (2026-09-27): the final audit added the required Codex signature beneath the headers in `LmdbUtil.java`, `PersistentSetFactory.java`, and `TripleIndex.java`. The earlier power-cut state-hash typo is preserved in `crash-durability-evidence.txt` with an appended correction; both authoritative reports were parsed and their two recoveries each match `1230ecbd86d08fc914cec80aa3d7481451750436e91f057e47fc4b07c8cfdb32`. The namespace-only ACK campaign is listed separately from the three additional power-cut campaigns, whose images each recovered twice. Header, formatting, and post-audit root quick-install checks pass. Commits: `0ceb37fe7f`, `4d21a86789`, and `147224b139`.
