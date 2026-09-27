@@ -128,6 +128,20 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
 			long iterationCacheSyncThreshold, QueryEvaluationContext context, ValueFactory vf, CollectionFactory cf)
 			throws QueryEvaluationException {
+		this(strategy, group, parentBindings, iterationCacheSyncThreshold, context, vf, cf,
+				strategy.precompile(group.getArg(), context));
+	}
+
+	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
+			QueryEvaluationContext context, QueryEvaluationStep arguments) throws QueryEvaluationException {
+		this(strategy, group, parentBindings, 0, context, SimpleValueFactory.getInstance(),
+				new DefaultCollectionFactory(),
+				arguments);
+	}
+
+	private GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
+			long iterationCacheSyncThreshold, QueryEvaluationContext context, ValueFactory vf, CollectionFactory cf,
+			QueryEvaluationStep arguments) throws QueryEvaluationException {
 		this.strategy = strategy;
 		this.group = group;
 		this.parentBindings = parentBindings;
@@ -136,7 +150,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		this.context = context;
 		this.vf = vf;
 		this.cf = cf;
-		this.arguments = strategy.precompile(group.getArg(), context);
+		this.arguments = arguments;
 	}
 
 	/*---------*

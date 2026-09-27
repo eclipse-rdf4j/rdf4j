@@ -605,7 +605,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	protected QueryEvaluationStep prepare(Group node, QueryEvaluationContext context) throws QueryEvaluationException {
-		return bindings -> new GroupIterator(DefaultEvaluationStrategy.this, node, bindings, context);
+		QueryEvaluationStep arguments = precompile(node.getArg(), context);
+		return bindings -> new GroupIterator(DefaultEvaluationStrategy.this, node, bindings, context, arguments);
 	}
 
 	protected QueryEvaluationStep prepare(Intersection node, QueryEvaluationContext context)

@@ -57,6 +57,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			String[] joinAttributes = leftBindingNames.stream()
 					.filter(rightBindingNames::contains)
 					.toArray(String[]::new);
+			leftJoin.setAlgorithm(HashJoinIteration.class.getSimpleName());
 			if (QueryEvaluationUtility.canDiscardWithoutEvaluation(leftJoin.getRightArg())) {
 				return bs -> new HashJoinIteration(left, right, bs, true, joinAttributes, context);
 			}
@@ -119,6 +120,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 				if (shared.length >= 1 && shared.length <= 4
 						&& provider.supports(rightRaw, shared, BatchCorrelatedJoinProvider.Mode.LEFT,
 								condition != null)) {
+					leftJoin.setAlgorithm(BatchCorrelatedJoinProvider.class.getSimpleName());
 					Predicate<BindingSet> batchCondition = condition == null ? null
 							: new ScopedQueryValueEvaluationStep(leftJoin.getBindingNames(), condition).asPredicate();
 					return bs -> {
@@ -127,6 +129,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 								return defaultStep.evaluate(bs);
 							}
 						}
+						leftJoin.setAlgorithm(BatchCorrelatedJoinProvider.class.getSimpleName());
 						return provider.tryBatchJoin(
 								new BatchCorrelatedJoinProvider.BatchCorrelationRequest(left.evaluate(bs), bs,
 										shared, BatchCorrelatedJoinProvider.Mode.LEFT, batchCondition),
@@ -135,6 +138,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 				}
 			}
 		}
+		leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
 		return defaultStep;
 	}
 
