@@ -52,6 +52,7 @@ enum HttpCompressionEncoding {
 	}
 
 	void finish(OutputStream outputStream) throws IOException {
+		outputStream.flush();
 		compression.finish(outputStream);
 	}
 

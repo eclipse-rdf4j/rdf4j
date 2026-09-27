@@ -1,0 +1,19 @@
+{
+  "type": "Join",
+  "resultSizeActual": 0,
+  "plans": [
+    {
+      "type": "StatementPattern",
+      "resultSizeActual": 9223372036854775807
+    },
+    {
+      "type": "Service",
+      "resultSizeActual": 1,
+      "longMetricsActual": {
+        "remoteRequestCountActual": 9223372036854775807,
+        "remoteAskRequestCountActual": 9223372036854775807,
+        "remoteSelectRequestCountActual": 1
+      }
+    }
+  ]
+}

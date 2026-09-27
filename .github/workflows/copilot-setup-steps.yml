@@ -34,7 +34,7 @@ jobs:
             ${{ runner.os }}-m2-repo-
 
       - name: Validate formatting configuration
-        run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo formatter:validate impsort:check xml-format:xml-check
+        run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo spotless:check
 
       - name: Quick compile (skip tests)
         run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo compile -DskipTests -Pquick

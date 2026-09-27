@@ -65,13 +65,13 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 				possible.addAll(rowBindingNames);
 				if (firstRow) {
 					for (String name : rowBindingNames) {
-						if (set.hasBinding(name)) {
+						if (set.getValue(name) != null) {
 							assured.add(name);
 						}
 					}
 					firstRow = false;
 				} else {
-					assured.removeIf(name -> !set.hasBinding(name));
+					assured.removeIf(name -> set.getValue(name) == null);
 				}
 			}
 		}
@@ -89,7 +89,7 @@ public class BindingSetAssignment extends AbstractQueryModelNode implements Tupl
 					assured.clear();
 					break;
 				}
-				assured.removeIf(name -> !set.hasBinding(name));
+				assured.removeIf(name -> set.getValue(name) == null);
 				if (assured.isEmpty()) {
 					break;
 				}

@@ -1,0 +1,15 @@
+{
+  "type": "Distinct",
+  "costEstimate": 1e30,
+  "resultSizeActual": 9007199254799998,
+  "longMetricsActual": {
+    "signedLongMin": -9223372036854775808,
+    "signedLongMax": 9223372036854775807
+  },
+  "plans": [
+    {
+      "type": "StatementPattern",
+      "resultSizeActual": 9007199254799999
+    }
+  ]
+}

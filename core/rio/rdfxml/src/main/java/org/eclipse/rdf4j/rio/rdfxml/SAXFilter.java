@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.rdfxml;
 
-import static org.eclipse.rdf4j.rio.rdfxml.RDFXMLParser.ITS_NAMESPACE;
+import static org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLConstants.ITS_NAMESPACE;
 
 import java.util.ArrayList;
 import java.util.HashMap;

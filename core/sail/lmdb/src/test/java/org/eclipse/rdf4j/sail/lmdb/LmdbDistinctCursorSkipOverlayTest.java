@@ -23,6 +23,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.IterationConstants;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -141,7 +142,7 @@ class LmdbDistinctCursorSkipOverlayTest {
 			@Override
 			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate,
 					Value object, Resource... contexts) {
-				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
 
 			@Override

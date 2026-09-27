@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabaseWithTxn;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.writeTransaction;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
@@ -47,6 +47,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxreaders;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
@@ -68,7 +69,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -97,6 +98,8 @@ import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.IndexShape;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierMutation;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
@@ -158,6 +161,11 @@ class TripleStore implements Closeable {
 	private static final long PREDICATE_OBJECT_DOMAIN_REBUILD_REQUESTED = 1L;
 	private static final long NO_INTEGER_RANGE_MIN = Long.MAX_VALUE;
 	private static final long NO_INTEGER_RANGE_MAX = Long.MIN_VALUE;
+	/**
+	 * Emergency JVM switch for replacing the page-walking estimator with the RDF4J 5.3.2 cursor sampler. The value is
+	 * read when a {@link TripleStore} is constructed; only {@code true} disables page walking.
+	 */
+	static final String DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.disablePageWalkingEstimator";
 	private static final boolean REUSE_SECONDARY_WRITE_CURSOR = true;
 	/*-----------*
 	 * Variables *
@@ -181,6 +189,7 @@ class TripleStore implements Closeable {
 
 	long env;
 	long writeTxn;
+	private final int mainDbi;
 	private final int contextsDbi;
 	private final int predicateObjectDomainsDbi;
 	private final int predicateObjectDomainDegradationsDbi;
@@ -203,7 +212,7 @@ class TripleStore implements Closeable {
 	private final Semaphore independentWriterGate = new Semaphore(1);
 	private int pageSize;
 	private final boolean autoGrow;
-	private final boolean pageCardinalityEstimator;
+	private final boolean pageWalkingEstimatorEnabled;
 	private long mapSize;
 	private final TxnManager txnManager;
 	private long[] explicitAlignedWriteCursors = new long[0];
@@ -226,9 +235,16 @@ class TripleStore implements Closeable {
 	private final Long2ObjectOpenHashMap<RdfTermDomain> pendingRdfTermDomainCacheWrites = new Long2ObjectOpenHashMap<>();
 	private final LongOpenHashSet pendingRdfTermDomainCacheDeletes = new LongOpenHashSet();
 	private boolean pendingRdfTermDomainCacheClear;
+	private final AtomicLong mappingGeneration = new AtomicLong();
 
 	private TxnRecordCache recordCache = null;
 	private final Long2ObjectOpenHashMap<PendingRdfTermDomain> pendingRdfTermDomains = new Long2ObjectOpenHashMap<>();
+
+	private record DatabaseHandles(int mainDbi, int contextsDbi) {
+	}
+
+	private record PageAndMapState(int pageSize, boolean empty) {
+	}
 
 	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore) throws IOException, SailException {
 		this(dir, new StoreProperties(dir), config, valueStore);
@@ -242,7 +258,8 @@ class TripleStore implements Closeable {
 		boolean forceSync = config.getForceSync();
 		boolean noReadahead = config.getNoReadahead();
 		this.autoGrow = config.getAutoGrow();
-		this.pageCardinalityEstimator = config.getPageCardinalityEstimator();
+		this.pageWalkingEstimatorEnabled = config.getPageCardinalityEstimator()
+				&& !Boolean.getBoolean(DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY);
 		this.valueStore = valueStore;
 		this.predicateGuaranteeIndexEnabled = config.getPredicateGuaranteeIndexEnabled();
 		this.predicateGuaranteeIndexAutoRebuild = config.getPredicateGuaranteeIndexAutoRebuild();
@@ -271,24 +288,30 @@ class TripleStore implements Closeable {
 			flags |= MDB_NORDAHEAD;
 		}
 		E(mdb_env_open(env, this.dir.getAbsolutePath(), flags, 0664));
-		// open contexts database
-		contextsDbi = transaction(env, (stack, txn) -> {
+		// Open the unnamed main database and contexts database in one serialized setup transaction. The main DBI is
+		// retained for page-estimator read scopes; opening it again while readers are active mutates LMDB's shared
+		// comparator state.
+		DatabaseHandles databaseHandles = writeTransaction(env, (stack, txn) -> {
+			int mainDbi = openDatabaseWithTxn(txn, null, 0);
 			String name = "contexts";
 			IntBuffer ip = stack.mallocInt(1);
 			if (mdb_dbi_open(txn, name, 0, ip) == MDB_NOTFOUND) {
 				E(mdb_dbi_open(txn, name, MDB_CREATE, ip));
 			}
-			return ip.get(0);
+			return new DatabaseHandles(mainDbi, ip.get(0));
 		});
-		predicateObjectDomainsDbi = transaction(env,
+		mainDbi = databaseHandles.mainDbi();
+		contextsDbi = databaseHandles.contextsDbi();
+		predicateObjectDomainsDbi = writeTransaction(env,
 				(stack, txn) -> openDatabaseWithTxn(txn, PREDICATE_OBJECT_DOMAINS_DB, MDB_CREATE));
-		predicateObjectDomainDegradationsDbi = transaction(env,
+		predicateObjectDomainDegradationsDbi = writeTransaction(env,
 				(stack, txn) -> openDatabaseWithTxn(txn, PREDICATE_OBJECT_DOMAIN_DEGRADATIONS_DB, MDB_CREATE));
-		frontierMutationJournalDbi = transaction(env,
+		frontierMutationJournalDbi = writeTransaction(env,
 				(stack, txn) -> openDatabaseWithTxn(txn, FRONTIER_MUTATION_JOURNAL_DB, MDB_CREATE));
 
 		txnManager = new TxnManager(env, Mode.RESET);
-		pageEstimator = pageCardinalityEstimator ? new LmdbPageCardinalityEstimator(dataMdbFile) : null;
+		pageEstimator = pageWalkingEstimatorEnabled ? new LmdbPageCardinalityEstimator(dataMdbFile, env, mainDbi)
+				: null;
 
 		try {
 			String indexSpecStr = config.getTripleIndexes();
@@ -332,12 +355,22 @@ class TripleStore implements Closeable {
 				properties.setTripleIndexes(indexSpecStr);
 			}
 			initializeRdfTermDomains();
-		} catch (IOException | SailException e) {
-			endTransaction(false);
+		} catch (IOException e) {
+			cleanupAfterInitializationFailure(e);
+			throw e;
+		} catch (RuntimeException | Error e) {
+			cleanupAfterInitializationFailure(e);
 			throw e;
 		}
 
 		resetAlignedWriteCursorState();
+		if (pageEstimator != null) {
+			List<String> fieldSequences = new ArrayList<>(indexes.size());
+			for (TripleIndex index : indexes) {
+				fieldSequences.add(new String(index.getFieldSeq()));
+			}
+			pageEstimator.configureIndexes(fieldSequences);
+		}
 	}
 
 	private Set<String> getIndexSpecs() throws SailException {
@@ -960,6 +993,27 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	Map<String, LmdbStore.LmdbDatabaseStats> getLmdbStats() throws IOException {
+		return txnManager.doWith((stack, txn) -> {
+			Map<String, LmdbStore.LmdbDatabaseStats> stats = new LinkedHashMap<>();
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_env_stat(env, stat));
+			stats.put("main", LmdbStore.LmdbDatabaseStats.from(stat));
+			addLmdbStats(stats, "contexts", txn, contextsDbi, stat);
+			for (TripleIndex index : indexes) {
+				addLmdbStats(stats, index.getName(true), txn, index.getDB(true), stat);
+				addLmdbStats(stats, index.getName(false), txn, index.getDB(false), stat);
+			}
+			return stats;
+		});
+	}
+
+	private static void addLmdbStats(Map<String, LmdbStore.LmdbDatabaseStats> stats, String name, long txn, int dbi,
+			MDBStat stat) throws IOException {
+		E(mdb_stat(txn, dbi, stat));
+		stats.put(name, LmdbStore.LmdbDatabaseStats.from(stat));
+	}
+
 	private void initIndexes(Set<String> indexSpecs) throws IOException {
 		for (String fieldSeq : TripleIndex.orderIndexSpecs(indexSpecs)) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
@@ -968,30 +1022,88 @@ class TripleStore implements Closeable {
 	}
 
 	private void initializePageAndMapSize(long tripleDbSize) throws IOException {
-		// initialize page size and set map size for env
-		readTransaction(env, (stack, txn) -> {
+		// Discover page size and emptiness while active. LMDB must not resize its map while the transaction is pinned,
+		// because the native resize may invalidate the transaction's mapping.
+		PageAndMapState state = readTransaction(env, (stack, txn) -> {
 			MDBStat stat = MDBStat.malloc(stack);
 			TripleIndex mainIndex = indexes.getFirst();
-			mdb_stat(txn, mainIndex.getDB(true), stat);
+			E(mdb_stat(txn, mainIndex.getDB(true), stat));
+			return new PageAndMapState(stat.ms_psize(), stat.ms_entries() == 0);
+		});
+		pageSize = state.pageSize();
 
-			boolean isEmpty = stat.ms_entries() == 0;
-			pageSize = stat.ms_psize();
-			// align map size with page size
-			long configMapSize = (tripleDbSize / pageSize) * pageSize;
-			if (isEmpty) {
-				// this is an empty db, use configured map size
-				mdb_env_set_mapsize(env, configMapSize);
-			}
+		// Align the configured size with LMDB's page size, preserving the zero-size and empty-versus-populated rules.
+		long configMapSize = (tripleDbSize / pageSize) * pageSize;
+		if (state.empty()) {
+			// This is an empty database, so use the configured map size.
+			E(setMapSize(configMapSize));
+		}
+
+		try (MemoryStack stack = stackPush()) {
 			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
-			mdb_env_info(env, info);
+			E(mdb_env_info(env, info));
 			mapSize = info.me_mapsize();
 			if (mapSize < configMapSize) {
-				// configured map size is larger than map size stored in env, increase map size
-				mdb_env_set_mapsize(env, configMapSize);
-				mapSize = configMapSize;
+				// The configured map size is larger than the size stored in the environment, so increase it.
+				E(setMapSize(configMapSize));
+				E(mdb_env_info(env, info));
 			}
-			return null;
-		});
+			// LMDB may clamp the requested size, so retain the successful native value rather than the request.
+			mapSize = info.me_mapsize();
+		}
+	}
+
+	private void cleanupAfterInitializationFailure(Throwable failure) {
+		try {
+			endTransaction(false);
+		} catch (Throwable cleanupFailure) {
+			failure.addSuppressed(cleanupFailure);
+		}
+
+		if (pageEstimator != null) {
+			try {
+				pageEstimator.close();
+			} catch (Throwable cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+		}
+		for (TripleIndex index : indexes) {
+			try {
+				index.close();
+			} catch (Throwable cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+		}
+		try {
+			txnManager.close();
+		} catch (Throwable cleanupFailure) {
+			failure.addSuppressed(cleanupFailure);
+		}
+		if (env != 0) {
+			try {
+				mdb_env_close(env);
+			} catch (Throwable cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			} finally {
+				env = 0;
+			}
+		}
+	}
+
+	/**
+	 * Advances the mapping generation before every resize attempt. Callers retain their existing handling of the native
+	 * return code, while the generation remains monotonic even when LMDB rejects an attempted size.
+	 */
+	private int setMapSize(long requestedMapSize) throws IOException {
+		while (true) {
+			long current = mappingGeneration.get();
+			if (current == Long.MAX_VALUE) {
+				throw new IOException("LMDB mapping generation exhausted");
+			}
+			if (mappingGeneration.compareAndSet(current, current + 1)) {
+				return mdb_env_set_mapsize(env, requestedMapSize);
+			}
+		}
 	}
 
 	private String getIndexName(String fieldSeq) {
@@ -1052,7 +1164,7 @@ class TripleStore implements Closeable {
 									try {
 										txnManager.deactivate();
 										mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-										E(mdb_env_set_mapsize(env, mapSize));
+										E(setMapSize(mapSize));
 										logger.debug("resized map to {}", mapSize);
 									} finally {
 										try {
@@ -1113,7 +1225,6 @@ class TripleStore implements Closeable {
 		if (env != 0) {
 			LmdbStatementPatternCardinalitySource.evictStore(instanceId);
 			endTransaction(false);
-			txnManager.close();
 
 			List<Throwable> caughtExceptions = new ArrayList<>();
 			if (pageEstimator != null) {
@@ -1132,6 +1243,10 @@ class TripleStore implements Closeable {
 					caughtExceptions.add(e);
 				}
 			}
+
+			// Abort every reader only after the page estimator has drained its in-flight read scopes, and before the
+			// environment (and with it the reader table) goes away.
+			txnManager.close();
 
 			mdb_env_close(env);
 			env = 0;
@@ -1626,33 +1741,65 @@ class TripleStore implements Closeable {
 		});
 	}
 
+	/**
+	 * Estimates the number of explicit and inferred statements matching the supplied value IDs.
+	 *
+	 * <p>
+	 * With {@code pageCardinalityEstimator} enabled, the normal path uses the bounded page-walking estimator. Disabling
+	 * it selects the RDF4J 5.3.2 cursor sampler, as does setting {@value #DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY} to
+	 * {@code true} or encountering an unexpected failure in the page-walking path. The system property provides an
+	 * operational override for stores whose repository configuration still enables page walking.
+	 * </p>
+	 */
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
-		if (!pageCardinalityEstimator) {
-			return exactCardinality(subj, pred, obj, context);
+		if (!pageWalkingEstimatorEnabled) {
+			return cardinalityUsingRdf4j532Estimator(subj, pred, obj, context);
 		}
 
-		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
+		LmdbPageCardinalityEstimator estimator = pageEstimator;
+		if (estimator == null) {
+			return cardinalityUsingRdf4j532Estimator(subj, pred, obj, context);
+		}
 
+		int bindingMask = LmdbPageCardinalityEstimator.bindingMask(subj, pred, obj, context);
+		int primaryIndexPosition = estimator.primaryIndex(bindingMask);
+		TripleIndex primaryIndex = indexes.get(primaryIndexPosition);
 		try {
-			return cardinalityUsingPageEstimator(index, subj, pred, obj, context);
+			CardinalityEstimate primary = cardinalityUsingPageEstimator(primaryIndexPosition, subj, pred, obj, context,
+					bindingMask);
+			if (!primary.secondaryEvidenceRecommended()) {
+				return primary.entries();
+			}
+
+			int secondaryIndexPosition = estimator.secondaryIndex(bindingMask);
+			if (secondaryIndexPosition < 0) {
+				return primary.entries();
+			}
+			TripleIndex secondaryIndex = indexes.get(secondaryIndexPosition);
+			try {
+				CardinalityEstimate secondary = cardinalityUsingPageEstimator(secondaryIndexPosition, subj, pred, obj,
+						context, bindingMask);
+				return LmdbPageCardinalityEstimator.combineIndexEstimates(primary, secondary).entries();
+			} catch (IOException | RuntimeException secondaryFailure) {
+				logger.debug("Secondary page cardinality estimate failed for index {}; using primary index {}",
+						new String(secondaryIndex.getFieldSeq()), new String(primaryIndex.getFieldSeq()),
+						secondaryFailure);
+				return primary.entries();
+			}
 		} catch (IOException | RuntimeException e) {
-			logger.warn("Page-walk cardinality estimator failed for index {}, falling back to sampling",
-					new String(index.getFieldSeq()), e);
-			return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+			logger.warn("Page cardinality estimator failed for index {}, falling back to the RDF4J 5.3.2 sampler",
+					new String(primaryIndex.getFieldSeq()), e);
+			return cardinalityUsingRdf4j532Estimator(subj, pred, obj, context);
 		}
 	}
 
+	/**
+	 * Planner-facing cardinality. It never counts matching rows exhaustively: with the page-walking estimator enabled
+	 * it uses the bounded page estimate, otherwise (or when that estimate fails) the RDF4J 5.3.2 cursor sampler. This
+	 * is the same estimator selection as {@link #cardinality(long, long, long, long)}.
+	 */
 	protected double planningCardinality(long subj, long pred, long obj, long context) throws IOException {
-		TripleIndex index = getBestIndex(subj, pred, obj, context);
-		if (pageCardinalityEstimator) {
-			try {
-				return cardinalityUsingPageEstimator(index, subj, pred, obj, context);
-			} catch (IOException | RuntimeException e) {
-				logger.warn("Page-walk planning cardinality estimator failed for index {}, falling back to sampling",
-						new String(index.getFieldSeq()), e);
-			}
-		}
-		return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+		return cardinality(subj, pred, obj, context);
 	}
 
 	protected double repeatedVariableCardinality(long subj, long pred, long obj, long context,
@@ -1711,40 +1858,50 @@ class TripleStore implements Closeable {
 						|| quad[OBJ_IDX] == quad[CONTEXT_IDX]);
 	}
 
-	private double cardinalityUsingPageEstimator(TripleIndex index, long subj, long pred, long obj, long context)
-			throws IOException {
+	private CardinalityEstimate cardinalityUsingPageEstimator(int indexPosition, long subj, long pred, long obj,
+			long context, int bindingMask) throws IOException {
 		LmdbPageCardinalityEstimator estimator = pageEstimator;
 		if (estimator == null) {
-			return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+			return CardinalityEstimate
+					.unqualified(cardinalityUsingRdf4j532Estimator(subj, pred, obj, context));
 		}
-		int relevantParts = index.getPatternScore(subj, pred, obj, context);
+		TripleIndex index = indexes.get(indexPosition);
+		IndexShape indexShape = estimator.indexShape(indexPosition, bindingMask);
 		final String explicitDbName = index.getName(true);
 		final String inferredDbName = index.getName(false);
 
-		return txnManager.doWith((stack, txn) -> {
-			long txnId = mdb_txn_id(txn);
-			if (relevantParts == 0) {
-				long explicitEntries = estimator.totalEntries(txnId, explicitDbName);
-				long inferredEntries = estimator.totalEntries(txnId, inferredDbName);
-				return (double) (explicitEntries + inferredEntries);
+		// Query optimization already holds the dataset's read transaction.
+		return txnManager.doWithPriority((stack, txn) -> {
+			long generation = mappingGeneration.get();
+			try (LmdbPageCardinalityEstimator.ReadView view = estimator.readTransaction(txn, generation)) {
+				if (bindingMask == 0) {
+					double exact = (double) view.totalEntries(explicitDbName)
+							+ view.totalEntries(inferredDbName);
+					return CardinalityEstimate.exact(exact);
+				}
+
+				ByteBuffer minKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				index.getMinKey(minKeyBuffer, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
+						indexShape.rangeObject(obj), indexShape.rangeContext(context));
+				minKeyBuffer.flip();
+				byte[] minKey = toArray(minKeyBuffer);
+
+				ByteBuffer maxKeyBuffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+				index.getMaxKey(maxKeyBuffer, indexShape.rangeSubject(subj), indexShape.rangePredicate(pred),
+						indexShape.rangeObject(obj), indexShape.rangeContext(context));
+				maxKeyBuffer.flip();
+				byte[] maxKey = toArray(maxKeyBuffer);
+
+				GroupMatcher matcher = indexShape.residualFieldCount() == 0 ? null
+						: index.createMatcher(subj, pred, obj, context);
+				LmdbPageCardinalityEstimator.Estimate explicit = view.estimateEntriesWithQuality(
+						explicitDbName, minKey, minKey.length, maxKey, maxKey.length, matcher,
+						indexShape.residualFieldCount());
+				LmdbPageCardinalityEstimator.Estimate inferred = view.estimateEntriesWithQuality(
+						inferredDbName, minKey, minKey.length, maxKey, maxKey.length, matcher,
+						indexShape.residualFieldCount());
+				return LmdbPageCardinalityEstimator.combineDatabaseEstimates(explicit, inferred);
 			}
-
-			ByteBuffer minKeyBuffer = ByteBuffer.allocate(TripleIndex.MAX_KEY_LENGTH);
-			index.getMinKey(minKeyBuffer, subj, pred, obj, context);
-			minKeyBuffer.flip();
-			byte[] minKey = toArray(minKeyBuffer);
-
-			ByteBuffer maxKeyBuffer = ByteBuffer.allocate(TripleIndex.MAX_KEY_LENGTH);
-			index.getMaxKey(maxKeyBuffer, subj, pred, obj, context);
-			maxKeyBuffer.flip();
-			byte[] maxKey = toArray(maxKeyBuffer);
-
-			GroupMatcher matcher = index.createMatcher(subj, pred, obj, context);
-			long explicitCount = estimator.estimateEntries(txnId, explicitDbName, minKey, minKey.length, maxKey,
-					maxKey.length, matcher);
-			long inferredCount = estimator.estimateEntries(txnId, inferredDbName, minKey, minKey.length, maxKey,
-					maxKey.length, matcher);
-			return (double) (explicitCount + inferredCount);
 		});
 	}
 
@@ -1754,13 +1911,37 @@ class TripleStore implements Closeable {
 		return data;
 	}
 
+	/**
+	 * Runs the complete estimator selection used by RDF4J 5.3.2. Compatibility includes the old index tie-break: the
+	 * first configured index with the longest bound prefix wins. The page walker has a different, intentional
+	 * residual-layout tie-break, so passing its selected index to the old sampler would not fully restore 5.3.2
+	 * behavior.
+	 */
+	private double cardinalityUsingRdf4j532Estimator(long subj, long pred, long obj, long context)
+			throws IOException {
+		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
+		return cardinalityUsingSamplingEstimator(index, subj, pred, obj, context);
+	}
+
+	/**
+	 * Cursor sampler from RDF4J 5.3.2 ({@code e0bbd99d3b5d1ed1ee9e48e4394006768581e2c0}). Its executable algorithm is
+	 * intentionally unchanged: it uses three interpolated key-space buckets, reads at most one hundred rows per bucket,
+	 * derives per-field densities from adjacent sampled keys, and estimates the unsampled gaps.
+	 *
+	 * <p>
+	 * This method was extracted from the old {@code cardinality} method, and {@code MAX_KEY_LENGTH} moved from
+	 * {@code TripleStore} to {@link TripleIndex}; those are the only mechanical differences from the tagged source. Do
+	 * not improve or retune this compatibility path in place. Fixes belong in the page-walking estimator unless a
+	 * deliberate change to the 5.3.2 fallback contract is accompanied by updated golden compatibility tests.
+	 * </p>
+	 */
 	private double cardinalityUsingSamplingEstimator(TripleIndex index, long subj, long pred, long obj, long context)
 			throws IOException {
 
 		int relevantParts = index.getPatternScore(subj, pred, obj, context);
 		if (relevantParts == 0) {
 			// it's worthless to use the index, just retrieve all entries in the db
-			return txnManager.doWith((stack, txn) -> {
+			return txnManager.doWithPriority((stack, txn) -> {
 				double cardinality = 0;
 				for (boolean explicit : new boolean[] { true, false }) {
 					int dbi = index.getDB(explicit);
@@ -1772,155 +1953,155 @@ class TripleStore implements Closeable {
 			});
 		}
 
-		return txnManager.doWith((stack, txn) -> {
-			Pool pool = Pool.get();
-			final Statistics s = pool.getStatistics();
-			try {
-				MDBVal maxKey = MDBVal.malloc(stack);
-				ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-				index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
-				maxKeyBuf.flip();
-				maxKey.mv_data(maxKeyBuf);
+		// The legacy fallback runs under the same dataset transaction as the page estimator.
+		return txnManager.doWithPriority((stack, txn) -> {
+			final Statistics s = new Statistics();
+			MDBVal maxKey = MDBVal.malloc(stack);
+			ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
+			maxKeyBuf.flip();
+			maxKey.mv_data(maxKeyBuf);
 
-				PointerBuffer pp = stack.mallocPointer(1);
+			PointerBuffer pp = stack.mallocPointer(1);
 
-				MDBVal keyData = MDBVal.malloc(stack);
-				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-				MDBVal valueData = MDBVal.malloc(stack);
+			MDBVal keyData = MDBVal.malloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			MDBVal valueData = MDBVal.malloc(stack);
 
-				double cardinality = 0;
-				for (boolean explicit : new boolean[] { true, false }) {
-					Arrays.fill(s.avgRowsPerValue, 1.0);
-					Arrays.fill(s.avgRowsPerValueCounts, 0);
+			double cardinality = 0;
+			for (boolean explicit : new boolean[] { true, false }) {
+				Arrays.fill(s.avgRowsPerValue, 1.0);
+				Arrays.fill(s.avgRowsPerValueCounts, 0);
 
-					keyBuf.clear();
-					index.getMinKey(keyBuf, subj, pred, obj, context);
-					keyBuf.flip();
+				keyBuf.clear();
+				index.getMinKey(keyBuf, subj, pred, obj, context);
+				keyBuf.flip();
 
-					int dbi = index.getDB(explicit);
+				int dbi = index.getDB(explicit);
 
-					int pos;
-					long cursor = 0;
+				int pos;
+				long cursor = 0;
 
-					try {
-						E(mdb_cursor_open(txn, dbi, pp));
-						cursor = pp.get(0);
+				try {
+					E(mdb_cursor_open(txn, dbi, pp));
+					cursor = pp.get(0);
 
-						// set cursor to min key
+					// set cursor to min key
+					keyData.mv_data(keyBuf);
+					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
+						break;
+					} else {
+						Varint.readListUnsigned(keyData.mv_data(), s.minValues);
+					}
+
+					// set cursor to max key
+					keyData.mv_data(maxKeyBuf);
+					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+					if (rc != MDB_SUCCESS) {
+						// directly go to last value
+						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
+					} else {
+						// go to previous value of selected key
+						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
+					}
+					if (rc == MDB_SUCCESS) {
+						Varint.readListUnsigned(keyData.mv_data(), s.maxValues);
+						// this is required to correctly estimate the range size at a later point
+						s.startValues[Statistics.MAX_BUCKETS] = s.maxValues;
+					} else {
+						break;
+					}
+
+					long allSamplesCount = 0;
+					int bucket = 0;
+					boolean endOfRange = false;
+					for (; bucket < Statistics.MAX_BUCKETS && !endOfRange; bucket++) {
+						if (bucket != 0) {
+							bucketStart((double) bucket / Statistics.MAX_BUCKETS, s.minValues, s.maxValues,
+									s.values);
+							keyBuf.clear();
+							Varint.writeListUnsigned(keyBuf, s.values);
+							keyBuf.flip();
+						}
+						// this is the min key for the first iteration
 						keyData.mv_data(keyBuf);
-						int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-						if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
-							break;
-						} else {
-							Varint.readListUnsigned(keyData.mv_data(), s.minValues);
-						}
 
-						// set cursor to max key
-						keyData.mv_data(maxKeyBuf);
+						int currentSamplesCount = 0;
 						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-						if (rc != MDB_SUCCESS) {
-							// directly go to last value
-							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
-						} else {
-							// go to previous value of selected key
-							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
-						}
-						if (rc == MDB_SUCCESS) {
-							Varint.readListUnsigned(keyData.mv_data(), s.maxValues);
-							// this is required to correctly estimate the range size at a later point
-							s.startValues[Statistics.MAX_BUCKETS] = s.maxValues;
-						} else {
-							break;
-						}
+						while (rc == MDB_SUCCESS && currentSamplesCount < Statistics.MAX_SAMPLES_PER_BUCKET) {
+							if (mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
+								endOfRange = true;
+								break;
+							} else {
+								allSamplesCount++;
+								currentSamplesCount++;
 
-						long allSamplesCount = 0;
-						int bucket = 0;
-						boolean endOfRange = false;
-						for (; bucket < Statistics.MAX_BUCKETS && !endOfRange; bucket++) {
-							if (bucket != 0) {
-								bucketStart((double) bucket / Statistics.MAX_BUCKETS, s.minValues, s.maxValues,
-										s.values);
-								keyBuf.clear();
-								Varint.writeListUnsigned(keyBuf, s.values);
-								keyBuf.flip();
-							}
-							// this is the min key for the first iteration
-							keyData.mv_data(keyBuf);
+								System.arraycopy(s.values, 0, s.lastValues[bucket], 0, s.values.length);
+								Varint.readListUnsigned(keyData.mv_data(), s.values);
 
-							int currentSamplesCount = 0;
-							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-							while (rc == MDB_SUCCESS && currentSamplesCount < Statistics.MAX_SAMPLES_PER_BUCKET) {
-								if (mdb_cmp(txn, dbi, keyData, maxKey) >= 0) {
-									endOfRange = true;
-									break;
+								if (currentSamplesCount == 1) {
+									Arrays.fill(s.counts, 1);
+									System.arraycopy(s.values, 0, s.startValues[bucket], 0, s.values.length);
 								} else {
-									allSamplesCount++;
-									currentSamplesCount++;
-
-									System.arraycopy(s.values, 0, s.lastValues[bucket], 0, s.values.length);
-									Varint.readListUnsigned(keyData.mv_data(), s.values);
-
-									if (currentSamplesCount == 1) {
-										Arrays.fill(s.counts, 1);
-										System.arraycopy(s.values, 0, s.startValues[bucket], 0, s.values.length);
-									} else {
-										for (int i = 0; i < s.values.length; i++) {
-											if (s.values[i] == s.lastValues[bucket][i]) {
-												s.counts[i]++;
-											} else {
-												long diff = s.values[i] - s.lastValues[bucket][i];
-												s.avgRowsPerValueCounts[i]++;
-												s.avgRowsPerValue[i] = (s.avgRowsPerValue[i]
-														* (s.avgRowsPerValueCounts[i] - 1) +
-														(double) s.counts[i] / diff) / s.avgRowsPerValueCounts[i];
-												s.counts[i] = 0;
-											}
+									for (int i = 0; i < s.values.length; i++) {
+										if (s.values[i] == s.lastValues[bucket][i]) {
+											s.counts[i]++;
+										} else {
+											long diff = s.values[i] - s.lastValues[bucket][i];
+											s.avgRowsPerValueCounts[i]++;
+											s.avgRowsPerValue[i] = (s.avgRowsPerValue[i]
+													* (s.avgRowsPerValueCounts[i] - 1) +
+													(double) s.counts[i] / diff) / s.avgRowsPerValueCounts[i];
+											s.counts[i] = 0;
 										}
 									}
-									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-									if (rc != MDB_SUCCESS) {
-										// no more elements are available
-										endOfRange = true;
-									}
+								}
+								rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+								if (rc != MDB_SUCCESS) {
+									// no more elements are available
+									endOfRange = true;
 								}
 							}
 						}
+					}
 
-						// at least the seen samples must be counted
-						cardinality += allSamplesCount;
+					// at least the seen samples must be counted
+					cardinality += allSamplesCount;
 
-						// the actual number of buckets (bucket - 1 "real" buckets and one for the last element within
-						// the range)
-						int buckets = bucket;
-						for (bucket = 1; bucket < buckets; bucket++) {
-							// find first element that has been changed
-							pos = 0;
-							while (pos < s.lastValues[bucket].length
-									&& s.startValues[bucket][pos] == s.lastValues[bucket - 1][pos]) {
-								pos++;
-							}
-							if (pos < s.lastValues[bucket].length) {
-								// this may be < 0 if two groups are overlapping
-								long diffBetweenGroups = Math
-										.max(s.startValues[bucket][pos] - s.lastValues[bucket - 1][pos], 0);
-								// estimate number of elements between last element of previous bucket and first element
-								// of current bucket
-								cardinality += s.avgRowsPerValue[pos] * diffBetweenGroups;
-							}
+					// the actual number of buckets (bucket - 1 "real" buckets and one for the last element within
+					// the range)
+					int buckets = bucket;
+					for (bucket = 1; bucket < buckets; bucket++) {
+						// find first element that has been changed
+						pos = 0;
+						while (pos < s.lastValues[bucket].length
+								&& s.startValues[bucket][pos] == s.lastValues[bucket - 1][pos]) {
+							pos++;
 						}
-					} finally {
-						if (cursor != 0) {
-							mdb_cursor_close(cursor);
+						if (pos < s.lastValues[bucket].length) {
+							// this may be < 0 if two groups are overlapping
+							long diffBetweenGroups = Math
+									.max(s.startValues[bucket][pos] - s.lastValues[bucket - 1][pos], 0);
+							// estimate number of elements between last element of previous bucket and first element
+							// of current bucket
+							cardinality += s.avgRowsPerValue[pos] * diffBetweenGroups;
 						}
 					}
+				} finally {
+					if (cursor != 0) {
+						mdb_cursor_close(cursor);
+					}
 				}
-				return cardinality;
-			} finally {
-				pool.free(s);
 			}
+			return cardinality;
 		});
 	}
 
+	/**
+	 * Counts matching explicit and inferred statements by iterating them. Only used where an exact count is required,
+	 * never as the page-estimator fallback (that is the RDF4J 5.3.2 sampler).
+	 */
 	double exactCardinality(long subj, long pred, long obj, long context) throws IOException {
 		return txnManager.doWith((stack, txn) -> {
 			double cardinality = 0.0;
@@ -2419,7 +2600,7 @@ class TripleStore implements Closeable {
 		 */
 		acquireIndependentWriterGate();
 		try {
-			transaction(env, (stack, txn) -> {
+			writeTransaction(env, (stack, txn) -> {
 				FrontierMutationJournalState state = readFrontierMutationJournalState(stack, txn);
 				if (coveredSequence > state.latestSequence()) {
 					throw new IllegalArgumentException("Frontier publication cannot cover future mutations");
@@ -3066,7 +3247,7 @@ class TripleStore implements Closeable {
 						// resize map if required
 						commitDurableStatementBatch();
 						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-						E(mdb_env_set_mapsize(env, mapSize));
+						E(setMapSize(mapSize));
 						logger.debug("resized map to {}", mapSize);
 						beginWriteTransactionAfterDurableBatch();
 					}
@@ -3210,7 +3391,7 @@ class TripleStore implements Closeable {
 							try {
 								txnManager.deactivate();
 								mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-								E(mdb_env_set_mapsize(env, mapSize));
+								E(setMapSize(mapSize));
 								logger.debug("resized map to {}", mapSize);
 								// restart write transaction
 								beginWriteTransactionAfterDurableBatch();

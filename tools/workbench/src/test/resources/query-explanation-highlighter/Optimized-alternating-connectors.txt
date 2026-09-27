@@ -1,0 +1,6 @@
+Join
+╠══ Join [left]
+║  ├── Projection [left]
+║  │     StatementPattern
+║  └── StatementPattern [right]
+╚══ StatementPattern [right]

@@ -25,7 +25,7 @@ pygmentsStyle = "github"
 #  call_for_action_url = "https://www.eclipse.org/downloads"
 #  call_for_action_icon = "fa-download"
   
-[Author]
+[Params.author]
   name = "Eclipse RDF4J developers"
   website = "https://rdf4j.org/"
 

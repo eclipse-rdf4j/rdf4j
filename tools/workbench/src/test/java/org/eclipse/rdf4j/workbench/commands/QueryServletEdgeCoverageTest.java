@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
 
@@ -64,7 +65,7 @@ class QueryServletEdgeCoverageTest {
 		verify(successRequest, never()).startAsync(any(), any());
 
 		QueryServlet cancelledServlet = new QueryServlet();
-		Repository cancelledRepository = mock(Repository.class);
+		HTTPRepository cancelledRepository = mock(HTTPRepository.class);
 		RepositoryConnection cancelledConnection = mock(RepositoryConnection.class);
 		TupleQuery cancelledQuery = mock(TupleQuery.class);
 		Explanation cancelledExplanation = mock(Explanation.class);
@@ -74,9 +75,11 @@ class QueryServletEdgeCoverageTest {
 		StringWriter cancelledBody = new StringWriter();
 
 		when(cancelledRepository.getConnection()).thenReturn(cancelledConnection);
+		when(cancelledRepository.getRepositoryURL()).thenReturn("https://example.org/rdf4j/repositories/cancelled");
 		when(cancelledConnection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(cancelledQuery);
 		when(cancelledQuery.explain(Explanation.Level.Optimized)).thenAnswer(invocation -> {
-			cancelledCoordinator.cancel("tracked-cancel-after-explain");
+			cancelledCoordinator.cancel("https://example.org/rdf4j/repositories/cancelled",
+					"tracked-cancel-after-explain");
 			return cancelledExplanation;
 		});
 		when(cancelledResponse.getWriter()).thenReturn(new PrintWriter(cancelledBody));

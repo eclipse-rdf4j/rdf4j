@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
+import org.eclipse.rdf4j.common.iteration.IterationConstants;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -293,7 +294,7 @@ class SailDatasetImpl implements SailDataset {
 		} else if (iter != null) {
 			return iter;
 		} else {
-			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+			return IterationConstants.EMPTY_STATEMENT_ITERATION;
 		}
 	}
 

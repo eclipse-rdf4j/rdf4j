@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.rio.rdfxml;
 
 import static org.eclipse.rdf4j.model.vocabulary.RDF.REIFIES;
+import static org.eclipse.rdf4j.rio.rdfxml.util.RDFXMLConstants.ITS_NAMESPACE;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -109,6 +110,7 @@ public class RDFXMLParser extends XMLReaderBasedParser implements ErrorHandler {
 	 * Constants *
 	 *-----------*/
 
+	// The ITS_NAMESPACE from RDFXMLConstants can be used instead.
 	protected static final String ITS_NAMESPACE = "http://www.w3.org/2005/11/its";
 	private static final String SAX_NAMESPACES = "http://xml.org/sax/features/namespaces";
 	private static final String ONE_TRIPLE_ERROR = "rdf:parseType=\"Triple\" must produce exactly one triple";

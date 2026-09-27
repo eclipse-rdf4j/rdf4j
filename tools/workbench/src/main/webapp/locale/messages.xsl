@@ -161,6 +161,9 @@
 	<variable name="upload-file.desc">
 		Select the file containing the RDF data you wish to upload
 	</variable>
+	<variable name="upload-file.hint">
+		Gzip-compressed files such as data.ttl.gz are accepted and decompressed automatically.
+	</variable>
 	<variable name="upload-file.label">RDF Data File</variable>
 	<variable name="upload-text.desc">
 		Enter the RDF data you wish to upload

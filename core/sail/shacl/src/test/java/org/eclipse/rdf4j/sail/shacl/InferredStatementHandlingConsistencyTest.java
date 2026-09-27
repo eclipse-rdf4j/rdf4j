@@ -13,18 +13,22 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import java.util.ArrayDeque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
@@ -41,6 +45,7 @@ import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
 import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
+import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValuesBackedNode;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
 import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChainRetriever;
 import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
@@ -55,8 +60,11 @@ class InferredStatementHandlingConsistencyTest {
 	private static final IRI TARGET = Values.iri("urn:target");
 	private static final IRI P = Values.iri("urn:p");
 	private static final IRI P_SUB = Values.iri("urn:pSub");
+	private static final IRI Q = Values.iri("urn:q");
 	private static final IRI DOMAIN_P = Values.iri("urn:domainP");
 	private static final IRI O = Values.iri("urn:o");
+	private static final IRI O1 = Values.iri("urn:o1");
+	private static final IRI O2 = Values.iri("urn:o2");
 	private static final IRI C = Values.iri("urn:c");
 
 	@Test
@@ -115,6 +123,216 @@ class InferredStatementHandlingConsistencyTest {
 				Assertions.assertEquals(0, countTuples(bindSelect),
 						"Expected inferred statements to be hidden when includeInferredStatements is disabled");
 			}
+		}
+	}
+
+	@Test
+	void bindSelectShouldOnlyReplaceItsDynamicValuesAssignment() {
+		MemoryStore memoryStore = new MemoryStore();
+		memoryStore.init();
+
+		try (SailConnection connection = memoryStore.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.addStatement(TARGET, P, O);
+			connection.commit();
+			connection.begin(IsolationLevels.NONE);
+
+			ShaclSailConnection.Settings transactionSettings = new ShaclSailConnection.Settings(false, true, false,
+					IsolationLevels.NONE);
+			try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(connection, null, null, null, new Stats(),
+					null,
+					false, transactionSettings, true)) {
+				PlanNode source = new SingletonPlanNode(
+						new ValidationTuple(O, ConstraintComponent.Scope.nodeShape, false, ALL_CONTEXTS));
+
+				SparqlFragment query = SparqlFragment.bgp(List.of(),
+						"VALUES ( ?target_0000000000 ) { ( <urn:target> ) }\n"
+								+ "?target_0000000000 <urn:p> ?target_0000000001 .",
+						false);
+
+				BindSelect bindSelect = new BindSelect(
+						connection,
+						ALL_CONTEXTS,
+						query,
+						List.of(new StatementMatcher.Variable<>("target_0000000000"),
+								new StatementMatcher.Variable<>("target_0000000001")),
+						source,
+						List.of("target_0000000000", "target_0000000001"),
+						ConstraintComponent.Scope.nodeShape,
+						10,
+						EffectiveTarget.Extend.left,
+						false,
+						connectionsGroup);
+
+				Assertions.assertEquals(1, countTuples(bindSelect));
+			}
+			connection.rollback();
+		} finally {
+			memoryStore.shutDown();
+		}
+	}
+
+	@Test
+	void bindSelectShouldNotReplaceStaticValuesWithTheSameBindingNames() {
+		MemoryStore memoryStore = new MemoryStore();
+		memoryStore.init();
+
+		try (SailConnection connection = memoryStore.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.addStatement(TARGET, P, O);
+			connection.addStatement(O, P, O);
+			connection.commit();
+			connection.begin(IsolationLevels.NONE);
+
+			ShaclSailConnection.Settings transactionSettings = new ShaclSailConnection.Settings(false, true, false,
+					IsolationLevels.NONE);
+			try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(connection, null, null, null, new Stats(),
+					null,
+					false, transactionSettings, true)) {
+				PlanNode source = new SingletonPlanNode(
+						new ValidationTuple(O, ConstraintComponent.Scope.nodeShape, false, ALL_CONTEXTS));
+
+				SparqlFragment query = SparqlFragment.bgp(List.of(),
+						"VALUES ( ?target_0000000000 ) { ( <urn:target> ) }\n"
+								+ "?target_0000000000 <urn:p> ?target_0000000001 .",
+						false);
+
+				BindSelect bindSelect = new BindSelect(
+						connection,
+						ALL_CONTEXTS,
+						query,
+						List.of(new StatementMatcher.Variable<>("target_0000000000"),
+								new StatementMatcher.Variable<>("target_0000000001")),
+						source,
+						List.of("target_0000000000", "target_0000000001"),
+						ConstraintComponent.Scope.nodeShape,
+						10,
+						EffectiveTarget.Extend.right,
+						false,
+						connectionsGroup);
+
+				Assertions.assertEquals(0, countTuples(bindSelect));
+			}
+			connection.rollback();
+		} finally {
+			memoryStore.shutDown();
+		}
+	}
+
+	@Test
+	void bindSelectShouldKeepDynamicValuesPerIterator() {
+		MemoryStore memoryStore = new MemoryStore();
+		memoryStore.init();
+
+		try (SailConnection connection = memoryStore.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.addStatement(TARGET, P, O1);
+			connection.addStatement(TARGET, P, O2);
+			connection.commit();
+			connection.begin(IsolationLevels.NONE);
+
+			ShaclSailConnection.Settings transactionSettings = new ShaclSailConnection.Settings(false, true, false,
+					IsolationLevels.NONE);
+			try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(connection, null, null, null, new Stats(),
+					null,
+					false, transactionSettings, true)) {
+				TreeSet<Value> values = new TreeSet<>(new ValueComparator());
+				values.addAll(Set.of(O1, O2));
+				PlanNode source = new ValuesBackedNode(values, ConstraintComponent.Scope.nodeShape, ALL_CONTEXTS);
+
+				SparqlFragment query = SparqlFragment.bgp(List.of(),
+						"VALUES ( ?target_0000000000 ) { ( <urn:target> ) }\n"
+								+ "?target_0000000000 <urn:p> ?target_0000000001 .",
+						false);
+
+				BindSelect bindSelect = new BindSelect(
+						connection,
+						ALL_CONTEXTS,
+						query,
+						List.of(new StatementMatcher.Variable<>("target_0000000000"),
+								new StatementMatcher.Variable<>("target_0000000001")),
+						source,
+						List.of("target_0000000000", "target_0000000001"),
+						ConstraintComponent.Scope.nodeShape,
+						1,
+						EffectiveTarget.Extend.left,
+						false,
+						connectionsGroup);
+				bindSelect.receiveLogger(ValidationExecutionLogger.getInstance(false));
+
+				try (CloseableIteration<? extends ValidationTuple> first = bindSelect.iterator();
+						CloseableIteration<? extends ValidationTuple> second = bindSelect.iterator()) {
+					Assertions.assertTrue(first.hasNext());
+					Assertions.assertEquals(O1, first.next().getActiveTarget());
+					Assertions.assertTrue(second.hasNext());
+					Assertions.assertEquals(O1, second.next().getActiveTarget());
+					Assertions.assertTrue(first.hasNext());
+					Assertions.assertEquals(O2, first.next().getActiveTarget());
+					Assertions.assertTrue(second.hasNext());
+					Assertions.assertEquals(O2, second.next().getActiveTarget());
+				}
+			}
+			connection.rollback();
+		} finally {
+			memoryStore.shutDown();
+		}
+	}
+
+	@Test
+	void bindSelectShouldUpdateAllUnionValuesAssignmentsAcrossBatches() {
+		MemoryStore memoryStore = new MemoryStore();
+		memoryStore.init();
+
+		try (SailConnection connection = memoryStore.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			connection.addStatement(TARGET, P, O1);
+			connection.addStatement(TARGET, Q, O2);
+			connection.commit();
+			connection.begin(IsolationLevels.NONE);
+
+			ShaclSailConnection.Settings transactionSettings = new ShaclSailConnection.Settings(false, true, false,
+					IsolationLevels.NONE);
+			try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(connection, null, null, null, new Stats(),
+					null,
+					false, transactionSettings, true)) {
+				TreeSet<Value> values = new TreeSet<>(new ValueComparator());
+				values.addAll(Set.of(O1, O2));
+				PlanNode source = new ValuesBackedNode(values, ConstraintComponent.Scope.nodeShape, ALL_CONTEXTS);
+
+				SparqlFragment query = SparqlFragment.union(List.of(
+						SparqlFragment.bgp(List.of(),
+								"?target_0000000000 <urn:p> ?target_0000000001 .", false),
+						SparqlFragment.bgp(List.of(),
+								"VALUES ( ?target_0000000000 ) { ( <urn:target> ) }\n"
+										+ "?target_0000000000 <urn:q> ?target_0000000001 .",
+								false)));
+
+				BindSelect bindSelect = new BindSelect(
+						connection,
+						ALL_CONTEXTS,
+						query,
+						List.of(new StatementMatcher.Variable<>("target_0000000000"),
+								new StatementMatcher.Variable<>("target_0000000001")),
+						source,
+						List.of("target_0000000000", "target_0000000001"),
+						ConstraintComponent.Scope.nodeShape,
+						1,
+						EffectiveTarget.Extend.left,
+						false,
+						connectionsGroup);
+				bindSelect.receiveLogger(ValidationExecutionLogger.getInstance(false));
+
+				Set<Value> actual = new HashSet<>();
+				try (CloseableIteration<? extends ValidationTuple> iterator = bindSelect.iterator()) {
+					while (iterator.hasNext()) {
+						actual.add(iterator.next().getActiveTarget());
+					}
+				}
+				Assertions.assertEquals(Set.of(O1, O2), actual);
+			}
+			connection.rollback();
+		} finally {
+			memoryStore.shutDown();
 		}
 	}
 

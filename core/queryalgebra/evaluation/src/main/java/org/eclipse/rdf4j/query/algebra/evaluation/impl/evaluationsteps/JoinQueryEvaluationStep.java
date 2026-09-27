@@ -17,8 +17,10 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -155,7 +157,23 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr) {
-		return TupleExprs.isVariableScopeChange(expr) || TupleExprs.containsSubquery(expr);
+		return TupleExprs.isVariableScopeChange(expr) || TupleExprs.containsSubquery(expr)
+				|| containsDifferenceInCurrentScope(expr);
+	}
+
+	private static boolean containsDifferenceInCurrentScope(TupleExpr expr) {
+		if (expr instanceof Difference) {
+			return true;
+		}
+		if (expr instanceof Service || expr instanceof Lateral) {
+			return false;
+		}
+		for (TupleExpr child : TupleExprs.getChildren(expr)) {
+			if (containsDifferenceInCurrentScope(child)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static boolean rightLocallyProducesSharedBinding(Join join) {

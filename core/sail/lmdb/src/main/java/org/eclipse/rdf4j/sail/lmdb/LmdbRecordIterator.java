@@ -115,7 +115,7 @@ class LmdbRecordIterator implements RecordIterator {
 		this.distinctPrefixLength = Math.max(0, distinctPrefixLength);
 		this.originalQuad = new long[] { subj, pred, obj, context };
 		this.quad = new long[] { subj, pred, obj, context };
-		this.pool = Pool.get();
+		this.pool = txnRef.getValuePool();
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
 		this.index = index;
@@ -185,7 +185,12 @@ class LmdbRecordIterator implements RecordIterator {
 		int lastResult;
 		if (txnRefVersion != txnRef.version()) {
 			// cursor must be renewed
-			mdb_cursor_renew(txn, cursor);
+			try {
+				E(mdb_cursor_renew(txn, cursor));
+			} catch (IOException e) {
+				closeInternal(false);
+				throw new SailException(e);
+			}
 			if (fetchNext) {
 				// cursor must be positioned on last item, reuse minKeyBuf if available
 				if (minKeyBuf == null) {

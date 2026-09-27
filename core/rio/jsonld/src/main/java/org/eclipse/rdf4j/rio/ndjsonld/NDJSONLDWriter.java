@@ -22,6 +22,8 @@ import java.util.LinkedHashMap;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.util.RDFVersionsConversionContext;
+import org.eclipse.rdf4j.model.util.VersionLabel;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RioSetting;
@@ -35,6 +37,8 @@ public class NDJSONLDWriter extends AbstractRDFWriter {
 	private final BufferedGroupingRDFHandler bufferedGroupingRDFHandler;
 
 	private final LinkedHashMap<String, String> namespacesBuffer;
+
+	private RDFVersionsConversionContext conversionContext;
 
 	/**
 	 * Creates a new NDJSONLDWriter that will write to the supplied OutputStream.
@@ -59,12 +63,22 @@ public class NDJSONLDWriter extends AbstractRDFWriter {
 
 			@Override
 			protected void processBuffer() throws RDFHandlerException {
+				if (getWriterConfig().get(BasicWriterSettings.RDF_OUTPUT_VERSION) == VersionLabel.RDF_1_1 ||
+						getWriterConfig().get(BasicWriterSettings.RDF_OUTPUT_VERSION) == VersionLabel.RDF_1_2_BASIC) {
+					// Share a single conversion context across all JSONLD writers so that the
+					// same triple term is consistently mapped to the same blank node.
+					if (conversionContext == null) {
+						conversionContext = new RDFVersionsConversionContext();
+					}
+				}
+
 				for (Resource context : getBufferedStatements().contexts()) {
 					for (Resource subject : getBufferedStatements().subjects()) {
 						JSONLDWriter jsonldWriter = getJsonldWriter(writer, baseURI);
 						Iterable<Statement> statements = getBufferedStatements().getStatements(subject, null, null,
 								context);
 						jsonldWriter.startRDF();
+						jsonldWriter.setRdfVersionsConversionContext(conversionContext); // null if not needed
 						for (String key : namespacesBuffer.keySet()) {
 							jsonldWriter.handleNamespace(key, namespacesBuffer.get(key));
 						}

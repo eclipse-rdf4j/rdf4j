@@ -220,7 +220,7 @@ class TripleStoreFrontierMutationJournalLifecycleTest {
 				}
 			}, "frontier-journal-acknowledger");
 			acknowledger.start();
-			assertTrue(awaitFrame(acknowledger, LmdbUtil.class.getName(), "transaction", 10_000L),
+			assertTrue(awaitFrame(acknowledger, LmdbUtil.class.getName(), "writeTransaction", 10_000L),
 					"the acknowledger must queue on the LMDB writer mutex behind the open store transaction");
 
 			int journalDbi = journalDbi(store);
@@ -502,7 +502,7 @@ class TripleStoreFrontierMutationJournalLifecycleTest {
 		Field dbiField = TripleStore.class.getDeclaredField("frontierMutationJournalDbi");
 		dbiField.setAccessible(true);
 		int dbi = dbiField.getInt(store);
-		LmdbUtil.transaction(store.env, (stack, txn) -> {
+		LmdbUtil.writeTransaction(store.env, (stack, txn) -> {
 			LmdbUtil.E(mdb_drop(txn, dbi, false));
 			MDBVal key = MDBVal.malloc(stack);
 			MDBVal value = MDBVal.malloc(stack);

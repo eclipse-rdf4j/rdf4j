@@ -14,6 +14,19 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+/**
+ * Validated, read-only view of one LMDB page.
+ *
+ * <p>
+ * The offsets and flags exposed here are LMDB's on-disk values; higher-level tree-walking code should use these
+ * accessors instead of duplicating layout arithmetic. A page can be backed by LMDB's existing mapping, so its
+ * {@link ByteBuffer} and any values read from it must not escape the estimator snapshot that loaded it. In particular,
+ * do not retain an {@code LmdbPage} across transactions or map resizes.
+ *
+ * <p>
+ * Parsing rejects impossible bounds and page-number mismatches before traversal. When adding a new accessor, perform
+ * the same bounds validation here so callers cannot accidentally interpret adjacent page data as part of a node.
+ */
 final class LmdbPage {
 
 	final long expectedPgno;
@@ -46,6 +59,9 @@ final class LmdbPage {
 			throw new IOException("Unexpected short page read for page " + expectedPgno);
 		}
 		long pgno = page.getLong(0);
+		if (pgno != expectedPgno) {
+			throw new IOException("Page number mismatch: expected " + expectedPgno + ", found " + pgno);
+		}
 		int pad = LmdbFormat.unsignedShort(page, 8);
 		int flags = LmdbFormat.unsignedShort(page, 10);
 		int lower;
@@ -63,12 +79,11 @@ final class LmdbPage {
 			upper = LmdbFormat.unsignedShort(page, 14);
 			overflowPages = 0;
 			numKeys = LmdbFormat.numKeys(lower);
-			if (lower < LmdbFormat.PAGE_HEADER_SIZE || lower > pageSize || upper < 0 || upper > pageSize
-					|| upper < lower) {
+			if (lower < LmdbFormat.PAGE_HEADER_SIZE || lower > pageSize || upper < lower || upper > pageSize) {
 				throw new IOException("Corrupt page bounds for page " + expectedPgno + ": lower=" + lower + ", upper="
 						+ upper + ", pageSize=" + pageSize);
 			}
-			if (numKeys < 0 || numKeys > (pageSize - LmdbFormat.PAGE_HEADER_SIZE) / 2) {
+			if (numKeys < 0 || numKeys > (pageSize - LmdbFormat.PAGE_HEADER_SIZE) / Short.BYTES) {
 				throw new IOException("Corrupt node count for page " + expectedPgno + ": " + numKeys);
 			}
 		}
@@ -92,42 +107,77 @@ final class LmdbPage {
 		return (flags & LmdbFormat.P_OVERFLOW) != 0;
 	}
 
+	int nodeOffset(int index) throws IOException {
+		if (isLeaf2()) {
+			throw new IOException("LEAF2 pages do not contain MDB_node records: page " + expectedPgno);
+		}
+		if (index < 0 || index >= numKeys) {
+			throw new IOException("Node index out of bounds " + index + " for page " + expectedPgno);
+		}
+		int ptrOffset = LmdbFormat.PAGE_HEADER_SIZE + index * Short.BYTES;
+		int nodeOffset = LmdbFormat.unsignedShort(buffer, ptrOffset);
+		if (nodeOffset < upper || nodeOffset + LmdbFormat.NODE_SIZE > pageSize) {
+			throw new IOException("Invalid node offset " + nodeOffset + " in page " + expectedPgno);
+		}
+		return nodeOffset;
+	}
+
+	int keySizeAt(int nodeOffset) throws IOException {
+		int keySize = LmdbFormat.unsignedShort(buffer, nodeOffset + LmdbFormat.NODE_KEYSIZE_OFFSET);
+		int keyOffset = nodeOffset + LmdbFormat.NODE_DATA_OFFSET;
+		if (keyOffset + keySize > pageSize) {
+			throw new IOException("Node key exceeds page bounds on page " + expectedPgno);
+		}
+		return keySize;
+	}
+
+	int keyOffsetAt(int nodeOffset) {
+		return nodeOffset + LmdbFormat.NODE_DATA_OFFSET;
+	}
+
+	int nodeFlagsAt(int nodeOffset) {
+		return LmdbFormat.unsignedShort(buffer, nodeOffset + LmdbFormat.NODE_FLAGS_OFFSET);
+	}
+
+	int valueSizeAt(int nodeOffset) {
+		return LmdbFormat.nodeDataSize(buffer, nodeOffset);
+	}
+
+	int valueOffsetAt(int nodeOffset, int keySize) {
+		return nodeOffset + LmdbFormat.NODE_DATA_OFFSET + keySize;
+	}
+
+	long branchPgnoAt(int nodeOffset) {
+		return LmdbFormat.nodeBranchPgno(buffer, nodeOffset);
+	}
+
 	LmdbNode node(int index) throws IOException {
 		LmdbNode node = new LmdbNode();
 		readNode(index, node);
 		return node;
 	}
 
+	/**
+	 * Decodes the node at {@code index} into a caller-owned, reusable {@link LmdbNode} with the same validation as
+	 * {@link #node(int)}.
+	 */
 	void readNode(int index, LmdbNode node) throws IOException {
-		if (index < 0 || index >= numKeys) {
-			throw new IOException("Node index out of bounds " + index + " for page " + expectedPgno);
-		}
-		int ptrOffset = LmdbFormat.PAGE_HEADER_SIZE + (index * Short.BYTES);
-		int nodeOffset = LmdbFormat.unsignedShort(buffer, ptrOffset);
-		if (nodeOffset < LmdbFormat.PAGE_HEADER_SIZE || nodeOffset >= pageSize) {
-			throw new IOException("Invalid node offset " + nodeOffset + " in page " + expectedPgno);
-		}
-		if (nodeOffset + LmdbFormat.NODE_SIZE > pageSize) {
-			throw new IOException("Node header exceeds page bounds on page " + expectedPgno);
-		}
-
-		int keySize = LmdbFormat.unsignedShort(buffer, nodeOffset + LmdbFormat.NODE_KEYSIZE_OFFSET);
-		int keyOffset = nodeOffset + LmdbFormat.NODE_DATA_OFFSET;
-		if (keyOffset + keySize > pageSize) {
-			throw new IOException("Node key exceeds page bounds on page " + expectedPgno);
-		}
-
+		int nodeOffset = nodeOffset(index);
+		int keySize = keySizeAt(nodeOffset);
+		int keyOffset = keyOffsetAt(nodeOffset);
 		if (isBranch()) {
-			long childPgno = LmdbFormat.nodeBranchPgno(buffer, nodeOffset);
-			node.set(nodeOffset, keyOffset, keySize, -1, -1, 0, childPgno);
+			node.set(nodeOffset, keyOffset, keySize, -1, -1, 0, branchPgnoAt(nodeOffset));
 			return;
 		}
 
-		int nodeFlags = LmdbFormat.unsignedShort(buffer, nodeOffset + LmdbFormat.NODE_FLAGS_OFFSET);
-		int valueSize = LmdbFormat.nodeDataSize(buffer, nodeOffset);
-		int valueOffset = keyOffset + keySize;
-		if (valueOffset + valueSize > pageSize) {
-			throw new IOException("Node value exceeds page bounds on page " + expectedPgno);
+		int nodeFlags = nodeFlagsAt(nodeOffset);
+		int valueSize = valueSizeAt(nodeOffset);
+		int valueOffset = valueOffsetAt(nodeOffset, keySize);
+		int storedValueSize = (nodeFlags & LmdbFormat.F_BIGDATA) != 0 ? Long.BYTES : valueSize;
+		if (storedValueSize < 0 || valueOffset < 0 || valueOffset > pageSize
+				|| storedValueSize > pageSize - valueOffset) {
+			throw new IOException("Node value exceeds page bounds on page " + expectedPgno + ": logicalSize="
+					+ valueSize + ", storedSize=" + storedValueSize);
 		}
 		node.set(nodeOffset, keyOffset, keySize, valueOffset, valueSize, nodeFlags, -1);
 	}

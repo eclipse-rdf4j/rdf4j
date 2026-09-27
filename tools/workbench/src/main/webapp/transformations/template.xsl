@@ -2,7 +2,8 @@
 <!DOCTYPE xsl:stylesheet>
 <xsl:stylesheet version="1.0"
 	xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
-	xmlns:sparql="http://www.w3.org/2005/sparql-results#" xmlns="http://www.w3.org/1999/xhtml">
+	xmlns:sparql="http://www.w3.org/2005/sparql-results#"
+	xmlns:workbench="https://rdf4j.org/schema/workbench#" xmlns="http://www.w3.org/1999/xhtml">
 
 	<xsl:output method="html" doctype-system="about:legacy-compat" />
 
@@ -18,6 +19,11 @@
 					<xsl:value-of select="$title" />
 				</title>
 				<meta name="DC.title" content="{$title}" />
+				<xsl:if test="/sparql:sparql/workbench:metadata/workbench:query-request-id">
+					<meta id="rdf4j-query-result"
+						data-query-request-id="{/sparql:sparql/workbench:metadata/workbench:query-request-id}"
+						data-query-result-status="{/sparql:sparql/workbench:metadata/workbench:query-result-status}" />
+				</xsl:if>
 				<link title="Default" rel="stylesheet" type="text/css"
 					href="../../styles/default/print.css" media="print" />
 				<link title="Default" rel="stylesheet" type="text/css"
@@ -120,6 +126,9 @@
 					<script src="../../scripts/template.js" type="text/javascript"></script>
 					<script src="../../scripts/jquery-1.11.0.min.js" type="text/javascript"></script>
 					<xsl:apply-templates />
+					<xsl:if test="/sparql:sparql/workbench:metadata/workbench:query-request-id">
+						<script src="../../scripts/queryResult.js" type="text/javascript"></script>
+					</xsl:if>
 				</div>
 				<div id="footer">
 						<div>

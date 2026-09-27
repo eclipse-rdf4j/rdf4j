@@ -85,6 +85,16 @@ For Jetty, it's just a matter of copying the war-files to `$JETTY_BASE\webapps`
 
 After you have deployed the RDF4J Workbench webapp, you should be able to access it, by default, at path `http://localhost:8080/rdf4j-workbench`. You can point your browser at this location to verify that the deployment succeeded.
 
+### Compressed RDF input
+
+RDF4J Server RDF upload endpoints and Workbench's **Add** upload accept RDF input compressed with gzip, zlib/deflate, BZip2, XZ, LZMA, framed LZ4, framed Snappy (`.sz` or `.snappy`), Unix compress (`.Z`), Brotli, or Zstandard. Compression is detected from a reliable stream signature when one exists and otherwise from the file-name suffix. The supplied Server and Workbench applications include the optional archive decoder libraries; using `RDFLoader` in an embedded application does not add those libraries as transitive runtime dependencies.
+
+ZIP and TAR archives are traversed recursively. This includes conventional compressed TAR names such as `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar.lz4`, and `.tar.zst`. Directories and special TAR entries are ignored. Regular members whose names identify an RDF format are parsed independently; unknown terminal members are skipped during automatic format detection, and an archive with no recognized RDF member is rejected. When an explicit RDF format is supplied, it is also used as the fallback for unnamed or otherwise unknown regular members.
+
+These formats are automatic RDF input decoding, not additional HTTP content codings. The accepted `Content-Encoding` values and response compression negotiation are unchanged.
+
+Decoder allocation is limited to 64 MiB by default. Set the Java system property `org.eclipse.rdf4j.rio.compression.maxDecoderMemoryKiB` to a positive KiB value to change that limit. The aggregate ZIP-and-TAR entry limit is 50,000 and can be configured with `org.eclipse.rdf4j.rio.loader.max_archive_entries`; the existing ZIP-specific limit remains in force as well.
+
 ### Configuring RDF4J Workbench for UTF-8 Support
 
 #### UTF-8 in the Request URI (GET)
@@ -124,6 +134,54 @@ followed by a `systemctl daemon-reload` and `systemctl restart tomcat9.service` 
 ReadWritePaths=/var/rdf4j/
 ```
 
+### OpenTelemetry Tracing
+
+RDF4J Server can optionally be instrumented with [OpenTelemetry](https://opentelemetry.io/) tracing, recording one span per SPARQL query/update evaluated against a repository. This is entirely opt-in: with no configuration, RDF4J Server behaves exactly as before, with zero overhead. For general background on RDF4J's OpenTelemetry support (the underlying module, its configuration options, and programmatic use outside of Server/Workbench), see [Observability using OpenTelemetry](/documentation/programming/observability/).
+
+Server-side, tracing every repository served by RDF4J Server's repository manager is gated by a single system property:
+
+```
+org.eclipse.rdf4j.opentelemetry.enabled=true
+```
+
+Disabled by default. This can be set like any other RDF4J system property, e.g. via `JAVA_OPTS`/`CATALINA_OPTS` (see "Application directory configuration" above), or, in the Docker images, via `RDF4J_OPTS` as shown below. The remaining tracing behaviour (whether query text is captured, truncation length, `db.system.name`, ...) is configured via the system properties listed in [Observability using OpenTelemetry](/documentation/programming/observability/#configuration).
+
+#### Enabling tracing in the Docker images
+
+The `docker/` Dockerfiles for both Tomcat and Jetty bundle the [OpenTelemetry Java agent](https://github.com/open-telemetry/opentelemetry-java-instrumentation) and can activate it purely through environment variables - no image rebuild required.
+
+| Variable                       | Effect                                                                                                                   |
+|---------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT`   | Presence of this variable is what switches tracing on. Set it to the OTLP endpoint of your collector/backend (e.g. `http://otel-collector:4318`). If unset, the agent is never attached and there is no overhead. |
+| `OTEL_SERVICE_NAME`             | The `service.name` reported for spans. Defaults to `rdf4j`.                                                              |
+| `RDF4J_OPTS`                    | Extra JVM options (typically further `-D` system properties, see above) appended on top of the image's own defaults, without having to repeat them. |
+
+Example `docker-compose.yml` snippet:
+
+```yaml
+services:
+  rdf4j:
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=rdf4j
+      - RDF4J_OPTS=-Dorg.eclipse.rdf4j.opentelemetry.enabled=true -Dorg.eclipse.rdf4j.opentelemetry.captureQueryText=true
+      - OTEL_INSTRUMENTATION_SERVLET_ENABLED=false
+      - OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED=false
+      - OTEL_INSTRUMENTATION_LOGBACK_MDC_ENABLED=false
+      - OTEL_LOGS_EXPORTER=none
+```
+
+**Required for RDF4J Server/Workbench.** Any other OpenTelemetry Java agent behaviour (individual instrumentation modules, sampling, ...) is configured the standard OpenTelemetry way, via further `OTEL_*` environment variables that the agent reads directly - but the four settings below are not optional tuning, they work around two agent/instrumentation bugs that otherwise break RDF4J Server when the agent is attached. Set all four:
+
+```
+OTEL_INSTRUMENTATION_SERVLET_ENABLED=false
+OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED=false
+OTEL_INSTRUMENTATION_LOGBACK_MDC_ENABLED=false
+OTEL_LOGS_EXPORTER=none
+```
+
+- `OTEL_INSTRUMENTATION_SERVLET_ENABLED=false` - **without this, RDF4J Server responses can come back empty/corrupted.** The generic Servlet auto-instrumentation interferes with RDF4J Server's manually-streamed, chunked binary query result responses - observed as an HTTP 200 response with the correct headers but a zero-byte body (e.g. on `GET /repositories`). Repository/query spans (the actual purpose of this module) are unaffected by disabling this, since those come from RDF4J's own instrumentation, not the generic Servlet instrumentation.
+- `OTEL_LOGS_EXPORTER=none`, `OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED=false`, `OTEL_INSTRUMENTATION_LOGBACK_MDC_ENABLED=false` - **without these, RDF4J Server/Workbench can crash with a `NoSuchFieldError` while logging.** RDF4J Server and Workbench are deployed as two separate WARs, each bundling their own copy of `logback-classic`; the agent's logback instrumentation injects a virtual field onto the shared `LoggingEvent` class, which is not consistent across the two WARs' isolated classloaders and throws at runtime. RDF4J does not emit any OpenTelemetry log records, so disabling all three has no downside.
 
 ### Repository Configuration
 
@@ -378,7 +436,9 @@ Data may be added to or removed from current repository using any of the sidebar
 
 ### Add
 
-The “Add” page allows you to specify a URL with RDF data, a local file on on your client system, or to enter serialized RDF data into its text area for loading into the present repository. It is also possible to specify the Base URI and a Context for the triples. Think of the Context as a 4th element of each RDF statement, specifying a graph within the repository. You may specify one of eight serialization formats, or select “auto-detect” to let the server do a best guess at the format.
+The “Add” page allows you to specify a URL with RDF data, a local file on your client system, or to enter serialized RDF data into its text area for loading into the present repository. It is also possible to specify the Base URI and a Context for the triples. Think of the Context as a 4th element of each RDF statement, specifying a graph within the repository. You may specify one of eight serialization formats, or select “auto-detect” to let the server do a best guess at the format.
+
+Local files (and URLs that serve compressed bytes) may be gzip-compressed for faster transfer, for example `data.ttl.gz` or `data.rdf.gzip`. Workbench decompresses the stream automatically before parsing. With auto-detect, the RDF format is taken from the name after the compression suffix (`ttl` in `data.ttl.gz`). Gzip is always available; deflate, zstd, and brotli are used when the matching library is on the classpath. Zip archives (`.zip` with multiple entries) are not unpacked here.
 
 #### Remove
 
@@ -436,6 +496,18 @@ The two other action buttons are “Save Query” and “Execute”:
 
 - “Save Query” is only enabled when a name has been entered into the adjacent text field. Once clicked, your query is saved under the given name. An option to back out or overwrite is given if the name already exists. Saved queries are associated with the current repository and user name. If the “Save privately (do not share)” option is checked, then the saved query will only be visible to the current user.
 - “Execute” attempts to execute the given query text, and then you are presented with a query results page. Values are clickable, and clicking on a value brings you to its “Explore” page. Similar display options are presented as the “Explore” page, as well.
+
+#### Cancelling long-running queries
+
+For an ordinary, non-transactional query, Workbench keeps the query page available while the result is rendered in a separate result window. The page shows a Cancel action while the query is active. Closing the result window requests cancellation. A result document signals completion or failure to the query page; downloads cannot reliably signal completion, so the Cancel action should remain available until the result window is closed or another terminal result signal is received.
+
+Cancellation identifiers are scoped to a repository. Clients do not need to supply an identifier for automatic cancellation; Server generates and registers one for the request. In a deployment with multiple RDF4J Server instances, a cancellation request that reaches an instance that does not own the query can return `404`, while cancellation of an active query on the owning instance returns `204`. Workbench retries failed cancellation requests a bounded number of times. When an HTTP-backed repository forwards cancellation to another RDF4J Server, a downstream failure is reported as `502` so the request can be retried instead of being acknowledged as successful.
+
+For supported result formats, RDF4J Server and Workbench can flush one ASCII space approximately every second while evaluation is waiting for the first result. The probe uses the negotiated writer's response stream and stops before the first byte written by the serializer. XML declarations are omitted before probing when the selected XML writer supports that setting. The supported formats are SPARQL Results JSON and XML, JSON-LD, NDJSON-LD, RDF/JSON, Turtle, N3, TriG, N-Triples, N-Quads, RDF/XML, and TriX; RDF/XML and TriX require the actual XML writer to support omitting its processing instruction. See the [SPARQL Results JSON](https://www.w3.org/TR/sparql11-results-json/), [SPARQL Results XML](https://www.w3.org/TR/sparql11-results-xml/), [JSON-LD 1.1](https://www.w3.org/TR/json-ld11/), and [RDF 1.1 Turtle](https://www.w3.org/TR/turtle/) specifications for the relevant grammars.
+
+Heartbeats are excluded for binary formats, CSV, TSV, XLSX, plain boolean responses, unknown formats, invalid requests, and `HEAD` responses. Proxy and TCP buffering can delay when a disconnected client is detected. The first heartbeat flush commits the response status and headers even when the serializer buffers ordinary bytes. Before that commitment, an evaluation or validation failure can use the normal HTTP error response. A failed response write triggers cancellation. After commitment, a query or evaluation failure terminates or invalidates the response body but does not necessarily invoke cancellation; the status may remain `200`, and the client must not treat an incomplete body as a successful empty result.
+
+This cancellation and disconnect handling does not apply to transaction-bound queries. A transaction connection may own pending updates and other work, so closing it to stop one result could invalidate the entire transaction.
 
 ### Working with Saved Queries
 

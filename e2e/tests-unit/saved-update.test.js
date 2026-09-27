@@ -131,6 +131,59 @@ test('saved queries delete permissions and toggle behavior cover both branches',
     assert.equal(toggle.getAttribute('value'), 'Show');
 });
 
+test('saved query controls bind inert data attributes to static handlers', () => {
+    const harness = createFormBrowserHarness({
+        confirmResponses: [true]
+    });
+    const owner = "owner');globalThis.rdf4jXss=true;//";
+    const queryName = "query');globalThis.rdf4jXss=true;//";
+    const form = harness.registerElement('form', { id: 'urn:query', name: 'urn:query' });
+    const metadata = harness.registerElement('div', {
+        id: 'urn:query-metadata',
+        style: { display: 'none' }
+    });
+    const toggle = harness.registerElement('input', {
+        id: 'urn:query-toggle',
+        className: 'saved-query-toggle',
+        attributes: {
+            'data-query-urn': 'urn:query',
+            value: 'Show'
+        }
+    });
+    const textarea = harness.registerElement('textarea', {
+        id: 'urn:query-text',
+        value: 'ASK {}'
+    });
+    const deleteButton = harness.registerElement('input', {
+        id: 'urn:query-delete',
+        className: 'saved-query-delete',
+        attributes: {
+            'data-query-name': queryName,
+            'data-query-owner': owner,
+            'data-query-urn': 'urn:query'
+        }
+    });
+    [form, metadata, toggle, textarea, deleteButton]
+        .forEach((element) => harness.document.body.appendChild(element));
+
+    const yasqe = createYasqeStub(harness);
+    harness.context.YASQE = yasqe.api;
+    harness.document.cookie = 'server-user-password=' + encodeURIComponent(Buffer.from(owner + ':secret').toString('base64'));
+
+    harness.loadScripts(['saved-queries.js']);
+    harness.runLoadHandlers();
+
+    deleteButton.click();
+    assert.equal(form.submitCount, 1);
+    assert.match(harness.confirms[0], /globalThis\.rdf4jXss=true/);
+    assert.equal(harness.context.rdf4jXss, undefined);
+
+    toggle.click();
+    assert.equal(metadata.style.display, '');
+    assert.equal(toggle.getAttribute('value'), 'Hide');
+    assert.equal(yasqe.state.instance.refreshCount, 1);
+});
+
 test('update page initializes yasqe, applies defaults, and submits safely without init', () => {
     const harness = createFormBrowserHarness({
         globals: {

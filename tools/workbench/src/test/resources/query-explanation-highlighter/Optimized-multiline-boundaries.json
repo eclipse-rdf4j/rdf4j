@@ -1,0 +1,25 @@
+{
+  "type": "Join\n",
+  "plans": [
+    {
+      "type": "Parent\n",
+      "plans": [
+        {
+          "type": "StatementPattern",
+          "algorithm": "hash\njoin",
+          "stringMetricsActual": {
+            "indexName": "idx\nnext"
+          },
+          "plans": [
+            {
+              "type": "Var (name=s)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "Filter\n"
+    }
+  ]
+}

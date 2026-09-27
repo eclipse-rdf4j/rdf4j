@@ -63,6 +63,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -88,6 +89,7 @@ import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
@@ -299,20 +301,24 @@ class ValueStore extends AbstractValueFactory {
 		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
 		setNewRevision();
 
+		startTransaction(true);
+		initTermIndexes(config);
+		commit();
+
 		// read maximum id from store
 		readTransaction(env, (stack, txn) -> {
 			long cursor = 0;
 			PointerBuffer pp = stack.mallocPointer(1);
 
+			MDBVal keyData = MDBVal.calloc(stack);
+			MDBVal valueData = MDBVal.calloc(stack);
 			for (int lookupDbi : new int[] { dbi, freeDbi }) {
 				try {
 					E(mdb_cursor_open(txn, lookupDbi, pp));
 					cursor = pp.get(0);
 
-					MDBVal keyData = MDBVal.calloc(stack);
 					// set cursor after max ID
 					keyData.mv_data(stack.bytes(new byte[] { ID_KEY, (byte) 0xFF }));
-					MDBVal valueData = MDBVal.calloc(stack);
 					int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 					if (rc != MDB_SUCCESS) {
 						// directly go to last value
@@ -322,8 +328,7 @@ class ValueStore extends AbstractValueFactory {
 						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
 					}
 					if (rc == MDB_SUCCESS && keyData.mv_data().get(0) == ID_KEY) {
-						// remove lower 2 type bits
-						nextId = Math.max(nextId, (data2id(keyData.mv_data()) >> 2) + 1);
+						nextId = Math.max(nextId, ValueIds.getValue(data2id(keyData.mv_data())) + 1);
 					}
 				} finally {
 					if (cursor != 0) {
@@ -331,11 +336,23 @@ class ValueStore extends AbstractValueFactory {
 					}
 				}
 			}
+			try {
+				cursor = 0;
+				E(mdb_cursor_open(txn, tripleTermCspoIndex.getDB(true), pp));
+				cursor = pp.get(0);
+				if (mdb_cursor_get(cursor, keyData, valueData, MDB_LAST) == MDB_SUCCESS) {
+					nextId = Math.max(nextId, ValueIds.getValue(Varint.readUnsigned(keyData.mv_data())) + 1);
+				}
+			} finally {
+				if (cursor != 0) {
+					mdb_cursor_close(cursor);
+				}
+			}
 			return null;
 		});
 
+		// Seeding may allocate IDs, so it must run after nextId has been initialized from the persisted data.
 		startTransaction(true);
-		initTermIndexes(config);
 		seedCoreDatatypes();
 		commit();
 	}
@@ -440,7 +457,7 @@ class ValueStore extends AbstractValueFactory {
 			return null;
 		});
 
-		txnManager.closeReadTxn();
+		txnManager.reset();
 
 		// open unused IDs database
 		unusedDbi = openDatabase(env, "unused_ids", MDB_CREATE);
@@ -1790,34 +1807,72 @@ class ValueStore extends AbstractValueFactory {
 				return LmdbValue.UNKNOWN_ID;
 			}
 
-			incrementRefCount(stack, writeTxn, subj);
-			incrementRefCount(stack, writeTxn, pred);
-			incrementRefCount(stack, writeTxn, obj);
+			return writeTransaction((stack2, writeTxn) -> {
+				incrementRefCount(stack2, writeTxn, subj);
+				incrementRefCount(stack2, writeTxn, pred);
+				incrementRefCount(stack2, writeTxn, obj);
 
-			long id = nextId(TRIPLE_VALUE);
-			for (TripleIndex index : tripleTermIndexes) {
-				keyBuf.clear();
-				index.toKey(keyBuf, subj, pred, obj, id);
-				keyBuf.flip();
+				long id = nextId(TRIPLE_VALUE);
+				for (TripleIndex index : tripleTermIndexes) {
+					keyBuf.clear();
+					index.toKey(keyBuf, subj, pred, obj, id);
+					keyBuf.flip();
 
-				// update buffer positions in MDBVal
-				keyVal.mv_data(keyBuf);
+					// update buffer positions in MDBVal
+					keyVal.mv_data(keyBuf);
 
-				resizeMap(writeTxn, 0L);
-				E(mdb_put(writeTxn, index.getDB(true), keyVal, dataVal, 0));
-			}
-			return id;
+					resizeMap(writeTxn, 0L);
+					E(mdb_put(writeTxn, index.getDB(true), keyVal, dataVal, 0));
+				}
+				return id;
+			});
 		});
 	}
 
 	public RecordIterator getTripleTerms(long subj, long pred, long obj) throws IOException {
 		TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subj, pred, obj, -1);
 		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, -1) > 0;
-		return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, txnManager.getReadTxn());
+		Txn txn = txnManager.createReadTxn();
+		try {
+			return new LmdbRecordIterator(index, doRangeSearch, subj, pred, obj, -1, true, txn) {
+				@Override
+				public void close() {
+					try {
+						super.close();
+					} finally {
+						txn.close();
+					}
+				}
+			};
+		} catch (Throwable e) {
+			txn.close();
+			throw e;
+		}
 	}
 
 	TxnManager getTxnManager() {
 		return txnManager;
+	}
+
+	Map<String, LmdbStore.LmdbDatabaseStats> getLmdbStats() throws IOException {
+		return readTransaction(env, (stack, txn) -> {
+			Map<String, LmdbStore.LmdbDatabaseStats> stats = new LinkedHashMap<>();
+			MDBStat stat = MDBStat.malloc(stack);
+			addLmdbStats(stats, "main", txn, dbi, stat);
+			addLmdbStats(stats, "unused_ids", txn, unusedDbi, stat);
+			addLmdbStats(stats, "free_ids", txn, freeDbi, stat);
+			addLmdbStats(stats, "ref_counts", txn, refCountsDbi, stat);
+			for (TripleIndex index : tripleTermIndexes) {
+				addLmdbStats(stats, index.getName(true), txn, index.getDB(true), stat);
+			}
+			return stats;
+		});
+	}
+
+	private static void addLmdbStats(Map<String, LmdbStore.LmdbDatabaseStats> stats, String name, long txn, int dbi,
+			MDBStat stat) throws IOException {
+		E(mdb_stat(txn, dbi, stat));
+		stats.put(name, LmdbStore.LmdbDatabaseStats.from(stat));
 	}
 
 	<T> T readTransaction(long env, Transaction<T> transaction) throws IOException {
@@ -1830,8 +1885,8 @@ class ValueStore extends AbstractValueFactory {
 				long stamp = lockManager.readLock();
 				hasReadLock.set(Boolean.TRUE);
 				try {
-					try (MemoryStack stack = stackPush()) {
-						return transaction.exec(stack, txnManager.getReadTxn().get());
+					try (Txn txn = txnManager.createReadTxn(); MemoryStack stack = stackPush()) {
+						return transaction.exec(stack, txn.get());
 					}
 				} finally {
 					hasReadLock.remove();
@@ -1854,9 +1909,31 @@ class ValueStore extends AbstractValueFactory {
 			}
 		} else {
 			try {
-				return LmdbUtil.transaction(env, transaction);
+				return LmdbUtil.writeTransaction(env, transaction);
 			} finally {
-				txnManager.reset();
+				var lockManager = txnManager.lockManager();
+				boolean readLocked = hasReadLock.get() != null;
+				if (readLocked) {
+					lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
+				}
+				long stamp = 0;
+				try {
+					stamp = lockManager.writeLock();
+					txnManager.reset();
+				} catch (InterruptedException e) {
+					throw new IOException(e);
+				} finally {
+					if (stamp != 0) {
+						lockManager.unlockWrite(stamp);
+					}
+					if (readLocked) {
+						try {
+							lockManager.readLock();
+						} catch (InterruptedException e) {
+							throw new IOException(e);
+						}
+					}
+				}
 			}
 		}
 	}
@@ -2770,13 +2847,22 @@ class ValueStore extends AbstractValueFactory {
 
 		// Combine parts in a single byte array
 		int datatypeIDLength = Varint.calcLengthUnsigned(datatypeID);
-		byte[] literalData = new byte[2 + datatypeIDLength + langDataLength + labelData.length];
+		boolean usesExtendedLangLength = langDataLength > 0x3F;
+		int extendedLangLengthBytes = usesExtendedLangLength ? Varint.calcLengthUnsigned(langDataLength) : 0;
+		byte[] literalData = new byte[2 + datatypeIDLength + extendedLangLengthBytes + langDataLength
+				+ labelData.length];
 		ByteBuffer bb = ByteBuffer.wrap(literalData);
 		bb.put(LITERAL_VALUE);
 		Varint.writeUnsigned(bb, datatypeID);
 
-		int directionAndLangLength = directionValue << 6 | langDataLength;
-		bb.put((byte) directionAndLangLength);
+		if (usesExtendedLangLength) {
+			int directionAndLangLength = 0xC0 | directionValue;
+			bb.put((byte) directionAndLangLength);
+			Varint.writeUnsigned(bb, langDataLength);
+		} else {
+			int directionAndLangLength = directionValue << 6 | langDataLength;
+			bb.put((byte) directionAndLangLength);
+		}
 		if (langData != null) {
 			bb.put(langData);
 		}
@@ -2875,7 +2961,14 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		int directionAndLangLength = bb.get() & 0xFF;
-		int langLength = directionAndLangLength & 0x3F;
+		int directionValue = directionAndLangLength >> 6;
+		int langLength;
+		if (directionValue == 3) {
+			directionValue = directionAndLangLength & 0x3F;
+			langLength = (int) Varint.readUnsignedHeap(bb);
+		} else {
+			langLength = directionAndLangLength & 0x3F;
+		}
 
 		// Get language tag
 		String lang = null;
@@ -2883,7 +2976,7 @@ class ValueStore extends AbstractValueFactory {
 			lang = new String(data, bb.position(), langLength, StandardCharsets.UTF_8);
 		}
 
-		Literal.BaseDirection baseDirection = baseDirection(directionAndLangLength);
+		Literal.BaseDirection baseDirection = baseDirection(directionValue);
 
 		// Get label
 		String label = new String(data, bb.position() + langLength, data.length - bb.position() - langLength,
@@ -2932,12 +3025,21 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		int directionAndLangLength = memGetByte(dataAddress + position) & 0xFF;
-		int langLength = directionAndLangLength & 0x3F;
-		Literal.BaseDirection baseDirection = baseDirection(directionAndLangLength);
+		position++;
+		int directionValue = directionAndLangLength >> 6;
+		int langLength;
+		if (directionValue == 3) {
+			// extended header: the low bits hold the direction, a varint follows with the language tag length
+			directionValue = directionAndLangLength & 0x3F;
+			langLength = (int) readUnsignedFromMemory(dataAddress, position);
+			position += varintLengthFromMemory(dataAddress, position);
+		} else {
+			langLength = directionAndLangLength & 0x3F;
+		}
+		Literal.BaseDirection baseDirection = baseDirection(directionValue);
 
 		// Get language tag
 		String lang = null;
-		position++;
 		int langPosition = position;
 		if (langLength > 0) {
 			lang = stringFromMemory(dataAddress, langPosition, langLength);
@@ -2972,8 +3074,8 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private static Literal.BaseDirection baseDirection(int directionAndLangLength) {
-		return switch (directionAndLangLength >> 6) {
+	private static Literal.BaseDirection baseDirection(int directionValue) {
+		return switch (directionValue) {
 		case 1 -> Literal.BaseDirection.LTR;
 		case 2 -> Literal.BaseDirection.RTL;
 		default -> Literal.BaseDirection.NONE;

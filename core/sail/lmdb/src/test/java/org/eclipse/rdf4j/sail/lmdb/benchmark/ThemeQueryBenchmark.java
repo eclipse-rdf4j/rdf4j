@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -523,9 +522,7 @@ public class ThemeQueryBenchmark {
 		storeConfig.setIterationCacheSyncThreshold(0);
 		store = new LmdbStore(storeDirectory, storeConfig);
 		repository = new SailRepository(store);
-//		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
 		loadData();
-//		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
 
 		repository.shutDown();
 		repository = null;
@@ -769,150 +766,6 @@ public class ThemeQueryBenchmark {
 
 	}
 
-	@Benchmark
-	public void explainQuery() {
-
-//		StatementPattern
-//		Var (name=copy)
-//		Var (name=_const_ecfc63a7_uri, value=http://example.com/theme/library/locatedAt, anonymous)
-//		Var(name=branch)
-//
-//		StatementPattern (resultSizeEstimate=45.3K)
-//		Var (name=branch)
-//		Var (name=_const_6d0024c9_uri, value=http://example.com/theme/library/name, anonymous)
-//		Var(name=branchName)
-
-//		if(true) throw new IllegalStateException();
-
-//		System.out.println("=== Explanation for theme " + themeName + " and query index " + z_queryIndex + " ===");
-//		System.out.println("Query:\n" + query);
-//		System.out.println();
-//
-//		try (SailRepositoryConnection connection = repository.getConnection()) {
-//			try (RepositoryResult<Statement> statements = connection.getStatements(null, RDF.TYPE,
-//					Values.iri("http://example.com/theme/library/Copy"))) {
-//				System.out.println("Count of statements with rdf:type http://example.com/theme/library/Copy: "
-//						+ statements.stream().count());
-//			}
-//		}
-//
-//		try (SailRepositoryConnection connection = repository.getConnection()) {
-//			try (RepositoryResult<Statement> statements = connection.getStatements(null,
-//					Values.iri("http://example.com/theme/library/locatedAt"), null)) {
-//				System.out.println("Count of statements with http://example.com/theme/library/locatedAt: "
-//						+ statements.stream().count());
-//			}
-//		}
-
-		try {
-//			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = false;
-//			try (var connection = repository.getConnection()) {
-//				System.out.println("=== Explanation with join reordering disabled ===");
-//				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-//				System.out.println(explain);
-//				System.out.println();
-//				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-//				System.out.println("=== Rendered optimized TupleExpr with join reordering disabled ===");
-//				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-//				System.out.println();
-//				System.out.println();
-//			}
-//			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
-			try (var connection = repository.getConnection()) {
-				System.out.println("=== Explanation Optimized ===");
-				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-				System.out.println(explain);
-				System.out.println();
-				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-				System.out.println("=== Rendered Optimized TupleExpr ===");
-				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-				System.out.println();
-
-			}
-			try (var connection = repository.getConnection()) {
-				System.out.println("=== Explanation Telemetry ===");
-				Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
-				System.out.println(explain);
-				System.out.println();
-				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-				System.out.println("=== Rendered Telemetry TupleExpr ===");
-				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-				System.out.println();
-				System.out.println();
-			}
-//			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
-//			try (var connection = repository.getConnection()) {
-//				System.out.println("=== Explanation with join reordering enabled and telemetry ===");
-//				TupleQuery tupleQuery = connection.prepareTupleQuery(query);
-//				tupleQuery.setMaxExecutionTime(9999999);
-//				Explanation explain = tupleQuery.explain(Explanation.Level.Telemetry);
-//				System.out.println(explain);
-//				System.out.println();
-//			}
-		} finally {
-//			QueryJoinOptimizer.REORDER_JOINS_WITH_SKETCHES = true;
-		}
-
-	}
-
-	@Test
-	@Disabled
-	public void testQueryCounts() throws IOException {
-		var queryIndexes = paramValues("z_queryIndex");
-		var themeNames = paramValues("themeName");
-		for (var themeNameValue : themeNames) {
-			for (var queryIndexValue : queryIndexes) {
-				themeName = themeNameValue;
-				z_queryIndex = Integer.parseInt(queryIndexValue);
-				setup();
-				try {
-					var actual = executeQuery();
-					var expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
-					System.out.println("For theme " + themeName + " and query index " + z_queryIndex
-							+ ", expected count is " + expected + " and actual count is " + actual);
-					assertEquals(expected, actual,
-							"Unexpected count for theme " + themeName + " and query index " + z_queryIndex);
-				} finally {
-					tearDown();
-				}
-			}
-		}
-	}
-
-	@Test
-	@Disabled
-	public void setupVerifiesExpectedDbFileSizesInFixedStore() throws IOException {
-		themeName = "MEDICAL_RECORDS";
-		z_queryIndex = 0;
-		setup();
-		try {
-			var expectedDbFileSizes = readExpectedDbFileSizes();
-			assertEquals(expectedDbFileSizes.triplesDataSizeBytes, dbFileSize(TRIPLES_DATA_FILE),
-					"Unexpected byte size for " + TRIPLES_DATA_FILE);
-			assertEquals(expectedDbFileSizes.valuesDataSizeBytes, dbFileSize(VALUES_DATA_FILE),
-					"Unexpected byte size for " + VALUES_DATA_FILE);
-			assertTrue(expectedDbFileSizeFile().isFile(),
-					"Expected sidecar file to exist: " + expectedDbFileSizeFile());
-		} finally {
-			tearDown();
-		}
-	}
-
-	@Test
-	@Disabled
-	public void executeQueryReturnsExpectedCountForPharmaQueryTenAfterFreshGeneration() throws IOException {
-		FileUtils.deleteDirectory(STORE_DIRECTORY);
-		themeName = "PHARMA";
-		z_queryIndex = 10;
-		setup();
-		try {
-			assertEquals(ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex), executeQuery(),
-					"Unexpected count for freshly generated PHARMA query index 10");
-		} finally {
-			tearDown();
-		}
-	}
-
 	@Test
 	@Disabled
 	@Timeout(value = 5, unit = TimeUnit.MINUTES)
@@ -1003,6 +856,19 @@ public class ThemeQueryBenchmark {
 	}
 
 	private record DbFileSizes(long triplesDataSizeBytes, long valuesDataSizeBytes) {
+	}
+
+	static class ConfigUtil {
+		private static final String DEFAULT_TRIPLE_INDEXES = "spoc,ospc,psoc,posc";
+
+		static LmdbStoreConfig createConfig() {
+			LmdbStoreConfig config = new LmdbStoreConfig(DEFAULT_TRIPLE_INDEXES);
+			config.setSketchEstimatorEnabled(false);
+			config.setForceSync(false);
+			config.setValueDBSize(1_073_741_824L); // 1 GiB
+			config.setTripleDBSize(config.getValueDBSize());
+			return config;
+		}
 	}
 
 }

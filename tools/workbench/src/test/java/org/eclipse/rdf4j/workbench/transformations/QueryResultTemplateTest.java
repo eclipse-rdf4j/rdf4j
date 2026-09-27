@@ -39,6 +39,12 @@ class QueryResultTemplateTest {
 		String html = transform("tuple.xsl", queryResultXml(), infoXml());
 
 		assertThat(html).contains("id=\"wb-query-text\"");
+		assertThat(html)
+				.contains("id=\"rdf4j-query-result\"")
+				.contains("data-query-request-id=\"query-1\"")
+				.contains("id=\"workbench-total-result-count\"")
+				.contains("value=\"42\"")
+				.contains("scripts/queryResult.js");
 		assertThat(countOccurrences(html, QUERY_TEXT)).isEqualTo(1);
 	}
 
@@ -47,6 +53,12 @@ class QueryResultTemplateTest {
 		String html = transform("graph.xsl", queryResultXml(), infoXml());
 
 		assertThat(html).contains("id=\"wb-query-text\"");
+		assertThat(html)
+				.contains("id=\"rdf4j-query-result\"")
+				.contains("data-query-request-id=\"query-1\"")
+				.contains("id=\"workbench-total-result-count\"")
+				.contains("value=\"42\"")
+				.contains("scripts/queryResult.js");
 		assertThat(countOccurrences(html, QUERY_TEXT)).isEqualTo(1);
 	}
 
@@ -65,6 +77,17 @@ class QueryResultTemplateTest {
 		assertThat(countOccurrences(html, "name=\"query-timeout\" value=\"0\"")).isEqualTo(2);
 		assertThat(html).contains("query-timeout=0");
 		assertThat(html).doesNotContain("query-timeout=23");
+	}
+
+	@Test
+	void savedQueriesPageShouldTreatStoredValuesAsDataInsteadOfExecutableCode() throws Exception {
+		String payload = "stored');window.rdf4jXss=true;//";
+		String html = transform("saved-queries.xsl", savedQueriesXml(payload, "attacker"), infoXml());
+
+		assertThat(html)
+				.contains("data-query-name=\"" + payload + "\"")
+				.doesNotContain("onclick=\"workbench.savedQueries.deleteQuery")
+				.doesNotContain("onclick=\"workbench.savedQueries.toggle");
 	}
 
 	private String transform(String stylesheetName, String xml, String infoXml) throws Exception {
@@ -105,12 +128,19 @@ class QueryResultTemplateTest {
 		xml.append("    <workbench:query-text>").append(QUERY_TEXT).append("</workbench:query-text>\n");
 		xml.append("    <workbench:infer>false</workbench:infer>\n");
 		xml.append("    <workbench:query-timeout>17</workbench:query-timeout>\n");
+		xml.append("    <workbench:query-request-id>query-1</workbench:query-request-id>\n");
+		xml.append("    <workbench:query-result-status>completed</workbench:query-result-status>\n");
+		xml.append("    <workbench:total-result-count>42</workbench:total-result-count>\n");
 		xml.append("  </workbench:metadata>\n");
 		xml.append("</sparql:sparql>\n");
 		return xml.toString();
 	}
 
 	private static String savedQueriesXml() {
+		return savedQueriesXml("saved-query", "");
+	}
+
+	private static String savedQueriesXml(String queryName, String user) {
 		StringBuilder xml = new StringBuilder();
 		xml.append("<?xml version=\"1.0\"?>\n");
 		xml.append("<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\">\n");
@@ -125,8 +155,8 @@ class QueryResultTemplateTest {
 		appendBinding(xml, "rowsPerPage", "100");
 		appendBinding(xml, "queryTimeout", "17");
 		appendBinding(xml, "query", "urn:query:test");
-		appendBinding(xml, "user", "");
-		appendBinding(xml, "queryName", "saved-query");
+		appendBinding(xml, "user", user);
+		appendBinding(xml, "queryName", queryName);
 		appendBinding(xml, "shared", "false");
 		xml.append("    </sparql:result>\n");
 		xml.append("  </sparql:results>\n");

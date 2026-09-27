@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,14 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Intersection;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.SPARQLMinusIteration;
@@ -47,9 +56,20 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep rightQes;
 	private final long maxMaterializedRightRows;
 	private final int maxBufferedLeftRows;
+	/**
+	 * Output names shared by both MINUS arguments, or {@code null} when compatibility is decided on every name the rows
+	 * carry. Evaluation-time input bindings flow into both arguments and must not create an extra shared domain.
+	 */
+	private final Set<String> comparisonBindingNames;
 
 	public MinusQueryEvaluationStep(QueryEvaluationStep leftQes, QueryEvaluationStep rightQes) {
 		this(leftQes, rightQes, maxMaterializedRightRows());
+	}
+
+	public MinusQueryEvaluationStep(QueryEvaluationStep leftQes, QueryEvaluationStep rightQes,
+			TupleExpr leftArg, TupleExpr rightArg) {
+		this(leftQes, rightQes, maxMaterializedRightRows(), DEFAULT_MAX_BUFFERED_LEFT_ROWS,
+				sharedOutputBindingNames(leftArg, rightArg));
 	}
 
 	MinusQueryEvaluationStep(QueryEvaluationStep leftQes, QueryEvaluationStep rightQes, long maxMaterializedRightRows) {
@@ -58,10 +78,16 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 
 	MinusQueryEvaluationStep(QueryEvaluationStep leftQes, QueryEvaluationStep rightQes, long maxMaterializedRightRows,
 			int maxBufferedLeftRows) {
+		this(leftQes, rightQes, maxMaterializedRightRows, maxBufferedLeftRows, null);
+	}
+
+	MinusQueryEvaluationStep(QueryEvaluationStep leftQes, QueryEvaluationStep rightQes, long maxMaterializedRightRows,
+			int maxBufferedLeftRows, Set<String> comparisonBindingNames) {
 		this.leftQes = leftQes;
 		this.rightQes = rightQes;
 		this.maxMaterializedRightRows = maxMaterializedRightRows;
 		this.maxBufferedLeftRows = Math.max(1, maxBufferedLeftRows);
+		this.comparisonBindingNames = comparisonBindingNames == null ? null : Set.copyOf(comparisonBindingNames);
 	}
 
 	@Override
@@ -69,10 +95,66 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 		CloseableIteration<BindingSet> left = leftQes.evaluate(bindings);
 		if (maxMaterializedRightRows == Long.MAX_VALUE) {
 			return new SPARQLMinusIteration(left, new QueryEvaluationStep.DelayedEvaluationIteration(rightQes,
-					bindings));
+					bindings), comparisonBindingNames);
 		}
 		return new AdaptiveMinusIteration(
-				left, rightQes, bindings, maxMaterializedRightRows, maxBufferedLeftRows);
+				left, rightQes, bindings, maxMaterializedRightRows, maxBufferedLeftRows, comparisonBindingNames);
+	}
+
+	private static Set<String> sharedOutputBindingNames(TupleExpr leftArg, TupleExpr rightArg) {
+		Set<String> shared = actualOutputBindingNames(leftArg);
+		shared.retainAll(actualOutputBindingNames(rightArg));
+		return shared;
+	}
+
+	private static Set<String> actualOutputBindingNames(TupleExpr expression) {
+		if (expression instanceof Difference) {
+			return actualOutputBindingNames(((Difference) expression).getLeftArg());
+		}
+		if (expression instanceof Filter) {
+			return actualOutputBindingNames(((Filter) expression).getArg());
+		}
+		if (expression instanceof Join join) {
+			return union(actualOutputBindingNames(join.getLeftArg()), actualOutputBindingNames(join.getRightArg()));
+		}
+		if (expression instanceof LeftJoin leftJoin) {
+			return union(actualOutputBindingNames(leftJoin.getLeftArg()),
+					actualOutputBindingNames(leftJoin.getRightArg()));
+		}
+		if (expression instanceof Lateral lateral) {
+			return union(actualOutputBindingNames(lateral.getLeftArg()),
+					actualOutputBindingNames(lateral.getRightArg()));
+		}
+		if (expression instanceof Union union) {
+			return union(actualOutputBindingNames(union.getLeftArg()), actualOutputBindingNames(union.getRightArg()));
+		}
+		if (expression instanceof Intersection intersection) {
+			Set<String> names = actualOutputBindingNames(intersection.getLeftArg());
+			names.retainAll(actualOutputBindingNames(intersection.getRightArg()));
+			return names;
+		}
+		return new HashSet<>(expression.getBindingNames());
+	}
+
+	private static Set<String> union(Set<String> left, Set<String> right) {
+		Set<String> result = new HashSet<>(left);
+		result.addAll(right);
+		return result;
+	}
+
+	private static boolean compatibleOnComparisonDomain(BindingSet right, BindingSet left,
+			Set<String> comparisonBindingNames) {
+		if (comparisonBindingNames == null) {
+			return right.isCompatible(left);
+		}
+		for (String name : comparisonBindingNames) {
+			Value rightValue = right.getValue(name);
+			Value leftValue = left.getValue(name);
+			if (rightValue != null && leftValue != null && !rightValue.equals(leftValue)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	static int maxBufferedLeftRows(long ignoredMaxMaterializedRightRows) {
@@ -99,6 +181,7 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 		private final BindingSet parentBindings;
 		private final long maxMaterializedRightRows;
 		private final int maxBufferedLeftRows;
+		private final Set<String> comparisonBindingNames;
 		private volatile CloseableIteration<BindingSet> activeRightIter;
 		private volatile CloseableIteration<BindingSet> materializedMinus;
 		private Set<BindingSet> materializedRightPrefix;
@@ -113,12 +196,14 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 		private volatile boolean closing;
 
 		private AdaptiveMinusIteration(CloseableIteration<BindingSet> leftIter, QueryEvaluationStep rightQes,
-				BindingSet parentBindings, long maxMaterializedRightRows, int maxBufferedLeftRows) {
+				BindingSet parentBindings, long maxMaterializedRightRows, int maxBufferedLeftRows,
+				Set<String> comparisonBindingNames) {
 			this.leftIter = leftIter;
 			this.rightQes = rightQes;
 			this.parentBindings = parentBindings;
 			this.maxMaterializedRightRows = maxMaterializedRightRows;
 			this.maxBufferedLeftRows = maxBufferedLeftRows;
+			this.comparisonBindingNames = comparisonBindingNames;
 		}
 
 		@Override
@@ -222,7 +307,7 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 
 		private SPARQLMinusIteration materializedMinus(CloseableIteration<BindingSet> left,
 				Set<BindingSet> rightRows) {
-			return new SPARQLMinusIteration(left, QueryEvaluationStep.EMPTY_ITERATION) {
+			return new SPARQLMinusIteration(left, QueryEvaluationStep.EMPTY_ITERATION, comparisonBindingNames) {
 				@Override
 				protected Set<BindingSet> makeSet(CloseableIteration<BindingSet> rightArg) {
 					return rightRows;
@@ -239,7 +324,7 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 				return false;
 			}
 			leftBlock = nextBlock;
-			leftIndex = indexLeftBlock(nextBlock);
+			leftIndex = indexLeftBlock(nextBlock, comparisonBindingNames);
 			excludedLeftRows = new boolean[nextBlock.size()];
 			outputIndex = 0;
 			candidatesRemaining = nextBlock.size();
@@ -271,6 +356,9 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 
 		private void excludeCompatibleLeftRows(BindingSet right) {
 			for (Binding binding : right) {
+				if (binding.getValue() == null) {
+					continue;
+				}
 				Map<Value, int[]> byValue = leftIndex.get(binding.getName());
 				if (byValue == null) {
 					continue;
@@ -280,7 +368,8 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 					continue;
 				}
 				for (int candidate : candidates) {
-					if (!excludedLeftRows[candidate] && right.isCompatible(leftBlock.get(candidate))) {
+					if (!excludedLeftRows[candidate]
+							&& compatibleOnComparisonDomain(right, leftBlock.get(candidate), comparisonBindingNames)) {
 						excludedLeftRows[candidate] = true;
 						candidatesRemaining--;
 					}
@@ -291,10 +380,15 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 			}
 		}
 
-		private static Map<String, Map<Value, int[]>> indexLeftBlock(List<BindingSet> leftRows) {
+		private static Map<String, Map<Value, int[]>> indexLeftBlock(List<BindingSet> leftRows,
+				Set<String> comparisonBindingNames) {
 			Map<String, Map<Value, IntArrayBuilder>> builders = new HashMap<>();
 			for (int i = 0; i < leftRows.size(); i++) {
 				for (Binding binding : leftRows.get(i)) {
+					if (binding.getValue() == null || comparisonBindingNames != null
+							&& !comparisonBindingNames.contains(binding.getName())) {
+						continue;
+					}
 					builders
 							.computeIfAbsent(binding.getName(), ignored -> new HashMap<>())
 							.computeIfAbsent(binding.getValue(), ignored -> new IntArrayBuilder())

@@ -34,6 +34,7 @@ import javax.xml.transform.stream.StreamSource;
 
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
 
@@ -117,6 +118,7 @@ class AddServletTest {
 		Repository repository = mock(Repository.class);
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		when(repository.getConnection()).thenReturn(connection);
+		when(connection.getParserConfig()).thenReturn(new ParserConfig());
 		when(connection.isActive()).thenReturn(true);
 		servlet.setRepository(repository);
 

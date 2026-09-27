@@ -70,11 +70,15 @@ class LmdbLearnedSidecarJournalStampTest {
 
 			TripleStore tripleStore = field(writer.getBackingStore(), "tripleStore", TripleStore.class);
 			long sequence = tripleStore.latestFrontierMutationSequence();
-			long beforeAcknowledgement = LmdbFrontierSnapshotSource
-					.snapshotEpoch(tripleStore.getTxnManager().getReadTxn());
+			long beforeAcknowledgement;
+			try (TxnManager.Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+				beforeAcknowledgement = LmdbFrontierSnapshotSource.snapshotEpoch(txn);
+			}
 			tripleStore.acknowledgeFrontierMutationsThrough(sequence);
-			long afterAcknowledgement = LmdbFrontierSnapshotSource
-					.snapshotEpoch(tripleStore.getTxnManager().getReadTxn());
+			long afterAcknowledgement;
+			try (TxnManager.Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+				afterAcknowledgement = LmdbFrontierSnapshotSource.snapshotEpoch(txn);
+			}
 			assertTrue(afterAcknowledgement > beforeAcknowledgement,
 					"The regression requires a committed metadata-only LMDB transaction");
 		} finally {

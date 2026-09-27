@@ -19,13 +19,18 @@ import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryPressureState;
+import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLResultsJSONWriterFactory;
@@ -35,6 +40,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.WriteListener;
 
 public class TupleQueryResultViewTest {
 
@@ -93,6 +101,93 @@ public class TupleQueryResultViewTest {
 			verify(connection).close();
 		} finally {
 			breaker.complete(handle);
+		}
+	}
+
+	@Test
+	public void testRender_QueryEvaluationErrorBeforeHeartbeatKeepsTheErrorStatus() throws Exception {
+		var request = new MockHttpServletRequest();
+		var response = new MockHttpServletResponse();
+		TupleQueryResult queryResult = mock(TupleQueryResult.class);
+		when(queryResult.getBindingNames()).thenReturn(List.of());
+		when(queryResult.hasNext()).thenThrow(new QueryEvaluationException("lazy failure"));
+
+		QueryResponseHeartbeat heartbeat = new QueryResponseHeartbeat(response.getOutputStream(), Duration.ofHours(1),
+				() -> {
+				});
+		var writer = new SPARQLResultsJSONWriterFactory().getWriter(heartbeat.getOutputStream());
+		assertThat(heartbeat.start(writer)).isTrue();
+		Map<String, Object> model = new HashMap<>();
+		model.put(TupleQueryResultView.FACTORY_KEY, new SPARQLResultsJSONWriterFactory());
+		model.put(TupleQueryResultView.QUERY_RESULT_KEY, queryResult);
+		model.put(TupleQueryResultView.RESPONSE_HEARTBEAT_KEY, heartbeat);
+		model.put(TupleQueryResultView.RESPONSE_WRITER_KEY, writer);
+
+		view.render(model, request, response);
+
+		assertThat(response.getStatus()).isEqualTo(500);
+	}
+
+	@Test
+	public void testRender_QueryEvaluationErrorAfterHeartbeatDoesNotAppendAnErrorBody() throws Exception {
+		var request = new MockHttpServletRequest();
+		var response = new FlushObservingResponse();
+		TupleQueryResult queryResult = mock(TupleQueryResult.class);
+		when(queryResult.getBindingNames()).thenReturn(List.of());
+		when(queryResult.hasNext()).thenThrow(new QueryEvaluationException("lazy failure"));
+
+		QueryResponseHeartbeat heartbeat = new QueryResponseHeartbeat(response.getOutputStream(), Duration.ofMillis(1),
+				() -> {
+				});
+		var writer = new SPARQLResultsJSONWriterFactory().getWriter(heartbeat.getOutputStream());
+		assertThat(heartbeat.start(writer)).isTrue();
+		assertThat(response.heartbeatFlush.await(5, TimeUnit.SECONDS)).isTrue();
+		assertThat(heartbeat.hasProbed()).isTrue();
+		response.flushBuffer();
+		Map<String, Object> model = new HashMap<>();
+		model.put(TupleQueryResultView.FACTORY_KEY, new SPARQLResultsJSONWriterFactory());
+		model.put(TupleQueryResultView.QUERY_RESULT_KEY, queryResult);
+		model.put(TupleQueryResultView.RESPONSE_HEARTBEAT_KEY, heartbeat);
+		model.put(TupleQueryResultView.RESPONSE_WRITER_KEY, writer);
+
+		assertThatThrownBy(() -> view.render(model, request, response))
+				.isInstanceOf(QueryEvaluationException.class)
+				.hasMessage("lazy failure");
+
+		assertThat(response.getContentAsByteArray()).isNotEmpty();
+		assertThat(response.getContentAsByteArray()).endsWith((byte) 0);
+	}
+
+	private static final class FlushObservingResponse extends MockHttpServletResponse {
+		private final CountDownLatch heartbeatFlush = new CountDownLatch(1);
+		private final ServletOutputStream output = new ServletOutputStream() {
+			private final ServletOutputStream delegate = FlushObservingResponse.super.getOutputStream();
+
+			@Override
+			public void write(int value) throws java.io.IOException {
+				delegate.write(value);
+			}
+
+			@Override
+			public void flush() throws java.io.IOException {
+				delegate.flush();
+				heartbeatFlush.countDown();
+			}
+
+			@Override
+			public boolean isReady() {
+				return delegate.isReady();
+			}
+
+			@Override
+			public void setWriteListener(WriteListener writeListener) {
+				delegate.setWriteListener(writeListener);
+			}
+		};
+
+		@Override
+		public ServletOutputStream getOutputStream() {
+			return output;
 		}
 	}
 

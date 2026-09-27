@@ -110,6 +110,35 @@ class LmdbSPARQL11ComplianceRegressionTest {
 		}
 	}
 
+	@Test
+	void minusRightOnlyOuterBindingDoesNotSuppressMatchingRhs(@TempDir File dataDir) {
+		IRI leftPredicate = VF.createIRI("urn:minus:left");
+		IRI rightPredicate = VF.createIRI("urn:minus:right");
+		IRI subject = VF.createIRI("urn:minus:subject");
+
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc")));
+		try {
+			try (var connection = repository.getConnection()) {
+				connection.add(subject, leftPredicate, VF.createIRI("urn:minus:left-value"));
+				connection.add(subject, rightPredicate, VF.createIRI("urn:minus:right-value"));
+
+				String query = """
+						PREFIX : <urn:minus:>
+						SELECT * WHERE {
+						  VALUES ?outer { :outer-a }
+						  { ?subject :left ?left
+						    MINUS { ?subject :right ?outer } }
+						}
+						""";
+				try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+					assertEquals(false, result.hasNext(), () -> explainOptimized(connection, query));
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	private static String explainOptimized(org.eclipse.rdf4j.repository.RepositoryConnection connection,
 			String query) {
 		return connection.prepareTupleQuery(query)

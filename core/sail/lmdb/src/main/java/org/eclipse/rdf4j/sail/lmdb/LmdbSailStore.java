@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
+import org.eclipse.rdf4j.common.iteration.IterationConstants;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -98,6 +99,7 @@ import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSourceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
 
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import jdk.jfr.Category;
@@ -128,6 +130,8 @@ class LmdbSailStore implements SailStore {
 	private static final int CASCADES_PLAN_CACHE_CAPACITY = 1_024;
 	private static final int FRONTIER_DELTA_BATCH_MUTATIONS = 16_384;
 	private static final double FRONTIER_DELETE_REBUILD_THRESHOLD = 0.10d;
+
+	private final File dataDir;
 
 	private final TripleStore tripleStore;
 	private final PackedPlanCache cascadesPlanCache;
@@ -378,6 +382,7 @@ class LmdbSailStore implements SailStore {
 	public LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 			boolean sketchBasedJoinEstimatorEnabled)
 			throws IOException, SailException {
+		this.dataDir = dataDir;
 		this.setFactory = new PersistentSetFactory<>(dataDir);
 		this.bulkOperationSize = config.getBulkOperationSize();
 		this.estimatorAddChunkSize = Math.max(EXACT_ESTIMATOR_ADD_CHUNK_SIZE, bulkOperationSize);
@@ -505,6 +510,7 @@ class LmdbSailStore implements SailStore {
 				close();
 			}
 		}
+		logLmdbStats(Level.INFO, "on startup");
 	}
 
 	private final class GuardedEstimatorStatementSource implements SketchStatementSource {
@@ -855,6 +861,9 @@ class LmdbSailStore implements SailStore {
 				}
 				if (operatorFeedbackStats != null) {
 					operatorFeedbackStats.persistIfDirty();
+				}
+				if (valueStore != null && tripleStore != null) {
+					logLmdbStats(Level.INFO, "on shutdown");
 				}
 			} finally {
 				try {
@@ -1488,6 +1497,21 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	LmdbStore.LmdbStats getLmdbStats() throws IOException {
+		return new LmdbStore.LmdbStats(valueStore.getLmdbStats(), tripleStore.getLmdbStats());
+	}
+
+	private void logLmdbStats(Level level, String phase) {
+		if (logger.isEnabledForLevel(level)) {
+			try {
+				logger.atLevel(level).log("Native LMDB statistics {} for {}: {}", phase, dataDir, getLmdbStats());
+			} catch (IOException | SailException e) {
+				// Diagnostic failures must not change the outcome of a transaction or prevent cleanup.
+				logger.warn("Unable to read native LMDB statistics {} for {}", phase, dataDir, e);
+			}
+		}
+	}
+
 	@Override
 	public SailSource getExplicitSailSource() {
 		return new LmdbSailSource(true);
@@ -1524,13 +1548,13 @@ class LmdbSailStore implements SailStore {
 			Value obj, boolean explicit, Resource... contexts) throws IOException {
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
-			return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+			return IterationConstants.EMPTY_STATEMENT_ITERATION;
 		}
 		long subjID = LmdbValue.UNKNOWN_ID;
 		if (subj != null) {
 			subjID = valueStore.getId(subj);
 			if (subjID == LmdbValue.UNKNOWN_ID) {
-				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
 		}
 		Resource knownSubject = currentResource(subj, subjID);
@@ -1539,7 +1563,7 @@ class LmdbSailStore implements SailStore {
 		if (pred != null) {
 			predID = valueStore.getId(pred);
 			if (predID == LmdbValue.UNKNOWN_ID) {
-				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
 		}
 		IRI knownPredicate = currentIRI(pred, predID);
@@ -1549,7 +1573,7 @@ class LmdbSailStore implements SailStore {
 			objID = valueStore.getId(obj);
 
 			if (objID == LmdbValue.UNKNOWN_ID) {
-				return CloseableIteration.EMPTY_STATEMENT_ITERATION;
+				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
 		}
 		Value knownObject = currentValue(obj, objID);
@@ -1595,8 +1619,13 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 
-			RecordIterator records = getRecords(txn, statementPattern, subjID, predID, objID, contextID, explicit,
-					idFilter);
+			RecordIterator records;
+			try {
+				records = getRecords(txn, statementPattern, subjID, predID, objID, contextID, explicit, idFilter);
+			} catch (IOException e) {
+				System.out.println("Txn:\n" + Objects.toString(txn));
+				throw e;
+			}
 			LmdbStatementIterator iterator = new LmdbStatementIterator(records, valueStore,
 					subjID, knownSubject, predID, knownPredicate, objID, knownObject, contextID,
 					knownContextList.get(i));
@@ -2316,6 +2345,7 @@ class LmdbSailStore implements SailStore {
 						// The triple/value stores are authoritative once both commits succeed.
 						storeTxnStarted.set(false);
 						StoreSnapshotCoordinates committedSnapshot = currentStoreSnapshotCoordinates();
+						logLmdbStats(Level.TRACE, "after commit");
 						estimatorTouchedInTransaction = false;
 						estimatorTouchedSinceStoreTxnStart.set(false);
 						if (filterSelectivityStats != null) {
@@ -2922,6 +2952,8 @@ class LmdbSailStore implements SailStore {
 				synchronized (storeTxnStarted) {
 					if (storeTxnStarted.compareAndSet(false, true)) {
 						startedNewTransaction = true;
+						// Capture committed data before starting either writer or queuing any native writes.
+						logLmdbStats(Level.TRACE, "before writes");
 						multiThreadingActive = preferThreading && enableMultiThreading;
 						nextTransactionAsync = multiThreadingActive;
 						asyncTransactionFinished = false;
@@ -3249,6 +3281,7 @@ class LmdbSailStore implements SailStore {
 		private volatile long snapshotTxnVersion;
 		private final Map<StatementCountCacheKey, Long> exactStatementCountCache = new ConcurrentHashMap<>();
 		private final Map<StatementLookupCacheKey, StatementLookupCacheEntry> exactStatementLookupCache = new ConcurrentHashMap<>();
+		private volatile boolean closed = false;
 
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn) throws SailException {
 			this.explicit = explicit;
@@ -3303,8 +3336,10 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void close() {
-			// close the associated txn
-			txn.close();
+			if (!closed) {
+				closed = true;
+				txn.close();
+			}
 		}
 
 		@Override

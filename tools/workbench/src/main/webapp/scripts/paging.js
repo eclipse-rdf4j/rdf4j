@@ -8,6 +8,7 @@ var workbench;
     var paging;
     (function (paging) {
         var KT = 'know_total';
+        var RESULT_TOTAL_COUNT_ID = 'workbench-total-result-count';
         var OFFSET = 'offset';
         paging.LIMIT = 'limit';
         paging.LIM_ID = '#' + paging.LIMIT;
@@ -315,6 +316,13 @@ var workbench;
          */
         function getTotalResultCount() {
             var total_result_count = 0;
+            var resultMetadata = document.getElementById(RESULT_TOTAL_COUNT_ID);
+            if (resultMetadata && resultMetadata.value) {
+                var resultMetadataCount = parseInt(resultMetadata.value, 10);
+                if (!isNaN(resultMetadataCount)) {
+                    return resultMetadataCount;
+                }
+            }
             var s_trc = workbench.paging.getQueryParameter(KT);
             if (s_trc.length == 0) {
                 s_trc = workbench.getCookie('total_result_count');

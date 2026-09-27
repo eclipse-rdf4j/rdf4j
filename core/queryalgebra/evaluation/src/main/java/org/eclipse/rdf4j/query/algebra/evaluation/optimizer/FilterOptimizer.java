@@ -398,8 +398,11 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Difference node) {
+			// MINUS exports exactly the left argument's bindings, so a filter directly above it observes the same
+			// variables inside the left argument and may always move there. It must never be cloned into the right
+			// argument: an unbound right-side variable makes the filter error and changes whether a compatible right
+			// row removes the left row.
 			relocate(filter, node.getLeftArg());
-			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
 			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost);
 		}
 

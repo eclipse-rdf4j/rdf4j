@@ -196,6 +196,60 @@ class BindingSetAssignmentTest {
 		assertThat(first.hashCode()).isEqualTo(hash).isEqualTo(second.hashCode());
 	}
 
+	@Test
+	void bindingNamesIncludeOptionalRowsButAssuredNamesRequireEveryRow() {
+		MapBindingSet bound = new MapBindingSet();
+		bound.addBinding("x", SimpleValueFactory.getInstance().createIRI("urn:x"));
+		MapBindingSet different = new MapBindingSet();
+		different.addBinding("y", SimpleValueFactory.getInstance().createIRI("urn:y"));
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(() -> List.<BindingSet>of(bound, different).iterator());
+
+		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("x", "y");
+		assertThat(assignment.getAssuredBindingNames()).isEmpty();
+	}
+
+	@Test
+	void singleRowAndEmptyAssignmentsHaveCorrectAssuredNames() {
+		MapBindingSet bound = new MapBindingSet();
+		bound.addBinding("x", SimpleValueFactory.getInstance().createIRI("urn:x"));
+		BindingSetAssignment single = new BindingSetAssignment();
+		single.setBindingSets(List.<BindingSet>of(bound));
+		assertThat(single.getAssuredBindingNames()).containsExactly("x");
+
+		BindingSetAssignment empty = new BindingSetAssignment();
+		empty.setBindingSets(List.of());
+		assertThat(empty.getBindingNames()).isEmpty();
+		assertThat(empty.getAssuredBindingNames()).isEmpty();
+	}
+
+	// Rows that are not known yet cannot assure any declared name: a later row may leave a column UNDEF.
+	@Test
+	void explicitBindingNamesAreNotAssuredUntilEveryRowBindsThem() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("x", "y"));
+
+		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("x", "y");
+		assertThat(assignment.getAssuredBindingNames()).isEmpty();
+
+		MapBindingSet bound = new MapBindingSet();
+		bound.addBinding("x", SimpleValueFactory.getInstance().createIRI("urn:x"));
+		assignment.setBindingSets(List.<BindingSet>of(bound, new MapBindingSet()));
+		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("x", "y");
+		assertThat(assignment.getAssuredBindingNames()).isEmpty();
+	}
+
+	@Test
+	void nullSlotsInListBindingSetsAreNotAssuredBindings() {
+		ListBindingSet row = new ListBindingSet(List.of("x", "y"),
+				SimpleValueFactory.getInstance().createIRI("urn:x"), null);
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(row));
+
+		assertThat(assignment.getBindingNames()).containsExactlyInAnyOrder("x", "y");
+		assertThat(assignment.getAssuredBindingNames()).containsExactly("x");
+	}
+
 	private static MapBindingSet row(String... names) {
 		MapBindingSet row = new MapBindingSet(names.length);
 		for (String name : names) {

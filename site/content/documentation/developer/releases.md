@@ -170,10 +170,22 @@ The job will ask for the github release tag as an input parameters, e.g. '2.2.1'
 
 After successful completion, it will kick off a second job:
 `rdf4j-deploy-release-ossrh`. This job will build all Maven artifacts and
-upload them to [OSS Sonatype](https://oss.sonatype.org/).  After successful
-upload, it will also automatically invoke synchronization with the Central
-Repository.  Note that after successful completion, the artifacts may not be
-available on the Central Repository for several hours.
+upload them to the [Central Publisher Portal](https://central.sonatype.com/).
+The `ossrh` Maven profile automatically publishes the deployment and waits
+for Central to report it as published.
+
+The profile allows up to two hours for validation and publishing, instead
+of the publishing plugin's 30-minute default. The limit is configured in
+seconds by `central.publishing.waitMaxTime`; add, for example,
+`-Dcentral.publishing.waitMaxTime=10800` to the Maven deployment command to
+allow three hours. The CI job timeout must allow time for the build and
+upload as well as this wait.
+
+If Maven reports `Polling for ... timed out before the deployment completed`,
+check the deployment ID from the log in the
+[Portal deployments page](https://central.sonatype.com/publishing/deployments)
+before retrying. A Maven polling timeout does not mean that Central has
+stopped processing the deployment.
 
 ## Eclipse release reviews
 

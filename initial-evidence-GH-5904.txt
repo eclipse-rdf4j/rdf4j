@@ -1,0 +1,97 @@
+Description: GH-5904 regular query cancellation, shared primitive pre-change failure
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py CancellableOperationCoordinatorTest --retain-logs
+Log: maven-build.log
+Result: BUILD FAILURE in RDF4J: HTTP client during testCompile
+Snippet:
+[ERROR] CancellableOperationCoordinatorTest.java:[36,17] cannot find symbol
+[ERROR]   symbol:   class CancellableOperationCoordinator
+[ERROR] QueryRequestContextTest.java:[23,28] cannot find symbol
+[ERROR]   symbol:   variable QueryRequestContext
+
+Post-change focused results:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py CancellableOperationCoordinatorTest --retain-logs
+Report: core/http/client/target/surefire-reports/org.eclipse.rdf4j.http.client.CancellableOperationCoordinatorTest.txt
+Snippet: Tests run: 6, Failures: 0, Errors: 0, Skipped: 0
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py QueryRequestContextTest --retain-logs
+Report: core/http/client/target/surefire-reports/org.eclipse.rdf4j.http.client.QueryRequestContextTest.txt
+Snippet: Tests run: 2, Failures: 0, Errors: 0, Skipped: 0
+
+Note: `initial-evidence.txt` already existed as an untracked user artifact, so this task uses a distinct top-level evidence file rather than overwriting it.
+
+Additional pre-change failures:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py AbstractRepositoryControllerTest --retain-logs
+Log: maven-build.log
+Snippet: AbstractRepositoryControllerTest.java:[52,27] cannot find symbol: method destroy()
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py QueryServletTest#testTrackedQueryShouldInterruptInlineExecutionAndPropagateRemoteCancel --retain-logs
+Log: maven-build.log
+Snippet: QueryServletTest.java:[575,24] cannot find symbol: method substituteQueryCoordinator(CancellableOperationCoordinator)
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py QueryTemplateTest#regularQueryUiShouldKeepControllerPageAndCancelTrackedResultWindow --retain-logs
+Report: tools/workbench/target/surefire-reports/org.eclipse.rdf4j.workbench.transformations.QueryTemplateTest.txt
+Snippet: Tests run: 1, Failures: 1, Errors: 0, Skipped: 0; missing query-request-id control
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py QueryServletTest#testTrackedQueryShouldInterruptInlineExecutionAndPropagateRemoteCancel --retain-logs
+Report: tools/workbench/target/surefire-reports/org.eclipse.rdf4j.workbench.commands.QueryServletTest.txt
+Snippet: Tests run: 1, Failures: 1, Errors: 0, Skipped: 0; cancellation-induced RepositoryException escaped
+
+Final affected-module results:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py core/http/client --retain-logs
+Snippet: Tests run: 110, Failures: 0, Errors: 0, Skipped: 8
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py core/repository/http --retain-logs
+Snippet: Tests run: 12, Failures: 0, Errors: 0, Skipped: 0
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py tools/server-spring --retain-logs
+Snippet: Tests run: 113, Failures: 0, Errors: 0, Skipped: 0
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py tools/workbench --retain-logs
+Snippet: Tests run: 388, Failures: 0, Errors: 0, Skipped: 0
+
+Final build:
+Command: mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install
+Snippet: BUILD SUCCESS; Total time: 26.659 s (Wall Clock)
+
+Replication-support extension pre-change failure:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py DefaultQueryRequestHandlerTest#handleCancelExplainShouldRejectBlankRequestIdAndReturnNotFoundForUnknownIds --retain-logs
+Report: tools/server-spring/target/surefire-reports/org.eclipse.rdf4j.http.server.repository.handler.DefaultQueryRequestHandlerTest.txt
+Snippet: Tests run: 1, Failures: 1, Errors: 0, Skipped: 0; expected: 404 but was: 204
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py DefaultQueryRequestHandlerTest#handleCancelQueryShouldRejectBlankRequestIdAndReturnNotFoundForUnknownIds --retain-logs
+Report: tools/server-spring/target/surefire-reports/org.eclipse.rdf4j.http.server.repository.handler.DefaultQueryRequestHandlerTest.txt
+Snippet: Tests run: 1, Failures: 1, Errors: 0, Skipped: 0; expected: 404 but was: 204
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py QueryServletTest#testCancelExplainShouldRejectBlankRequestIdAndReturnNotFoundForUnknownId --retain-logs
+Report: tools/workbench/target/surefire-reports/org.eclipse.rdf4j.workbench.commands.QueryServletTest.txt
+Snippet: Tests run: 1, Failures: 1, Errors: 0, Skipped: 0; wanted sendError(404), but setStatus(204) was invoked
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py QueryServletTest#testCancelQueryShouldRejectBlankRequestIdAndReturnNotFoundForUnknownId --retain-logs
+Report: tools/workbench/target/surefire-reports/org.eclipse.rdf4j.workbench.commands.QueryServletTest.txt
+Snippet: Tests run: 1, Failures: 1, Errors: 0, Skipped: 0; wanted sendError(404), but setStatus(204) was invoked
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py QueryTemplateTest#queryCancellationShouldBoundRetriesAndGenerateFreshCrossTabSafeIds --retain-logs
+Report: tools/workbench/target/surefire-reports/org.eclipse.rdf4j.workbench.transformations.QueryTemplateTest.txt
+Snippet: Tests run: 1, Failures: 1, Errors: 0, Skipped: 0; missing bounded retry constant and UUID-derived result-window contract
+
+Replication-support extension post-change results:
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py DefaultQueryRequestHandlerTest --retain-logs
+Report: tools/server-spring/target/surefire-reports/org.eclipse.rdf4j.http.server.repository.handler.DefaultQueryRequestHandlerTest.txt
+Snippet: Tests run: 10, Failures: 0, Errors: 0, Skipped: 0
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py QueryServletTest --retain-logs
+Report: tools/workbench/target/surefire-reports/org.eclipse.rdf4j.workbench.commands.QueryServletTest.txt
+Snippet: Tests run: 28, Failures: 0, Errors: 0, Skipped: 0
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py QueryTemplateTest --retain-logs
+Report: tools/workbench/target/surefire-reports/org.eclipse.rdf4j.workbench.transformations.QueryTemplateTest.txt
+Snippet: Tests run: 43, Failures: 0, Errors: 0, Skipped: 0
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py tools/server-spring --retain-logs
+Snippet: Tests run: 113, Failures: 0, Errors: 0, Skipped: 0
+
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py tools/workbench --retain-logs
+Snippet: Tests run: 389, Failures: 0, Errors: 0, Skipped: 0
+
+Command: mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install
+Snippet: BUILD SUCCESS; Total time: 29.891 s (Wall Clock)

@@ -2007,7 +2007,7 @@ public class QueryPlanRetrievalTest {
 				"      ║     ║     ╚══ Group (nameSjb1, idCN1) (resultSizeActual=4)\n" +
 				"      ║     ║        ├── LeftJoin (LeftJoinIterator) (resultSizeActual=11)\n" +
 				"      ║     ║        │  ╠══ Join (JoinIterator) (resultSizeActual=11) [left]\n" +
-				"      ║     ║        │  ║  ├── StatementPattern (costEstimate=54, resultSizeEstimate=4.00, resultSizeActual=4) [left]\n"
+				"      ║     ║        │  ║  ├── StatementPattern (costEstimate=13, resultSizeEstimate=4.00, resultSizeActual=4) [left]\n"
 				+
 				"      ║     ║        │  ║  │     s: Var (name=idTerm1)\n" +
 				"      ║     ║        │  ║  │     p: Var (name=_const_c6e40399_uri, value=http://iec.ch/TC57/2013/CIM-schema-cim16#Terminal.ConductingEquipment, anonymous)\n"
@@ -2046,7 +2046,7 @@ public class QueryPlanRetrievalTest {
 				"      ║     ╚══ ExtensionElem (nbTerm)\n" +
 				"      ║           Count\n" +
 				"      ║              Var (name=idTermOfCN)\n" +
-				"      ╚══ StatementPattern (costEstimate=18, resultSizeEstimate=13, resultSizeActual=4) [right]\n" +
+				"      ╚══ StatementPattern (costEstimate=4.24, resultSizeEstimate=13, resultSizeActual=4) [right]\n" +
 				"            s: Var (name=idTerm3)\n" +
 				"            p: Var (name=_const_4395d870_uri, value=http://iec.ch/TC57/2013/CIM-schema-cim16#Terminal.ConnectivityNode, anonymous)\n"
 				+

@@ -1,0 +1,14 @@
+{
+  "type": "Union",
+  "resultSizeActual": 1234567,
+  "plans": [
+    {
+      "type": "StatementPattern",
+      "resultSizeActual": 1234
+    },
+    {
+      "type": "StatementPattern",
+      "resultSizeActual": 1001
+    }
+  ]
+}

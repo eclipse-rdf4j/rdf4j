@@ -78,8 +78,10 @@ components:
             type: string
             format: binary
   responses:
-    200SparqlResult:
-      description: SPARQL query result
+    200QueryResult:
+      description: |
+        SPARQL query result. If the `explain` parameter is supplied, the response is a query explanation instead: the
+        server supports `text/plain` and `application/json` for explanations.
       content:
         application/sparql-results+xml:
           schema:
@@ -117,6 +119,11 @@ components:
         text/plain:
           schema:
             type: string
+            description: A plain-text RDF result or query explanation, depending on the request.
+        application/json:
+          schema:
+            type: object
+            description: A JSON query explanation returned when the `explain` parameter is supplied.
         text/turtle:
           schema:
             type: string
@@ -326,6 +333,17 @@ paths:
       summary: Execute SPARQL query
       description: |
         Execute a SPARQL query on the repository. The result format is based on the type of result (boolean, variable bindings, or RDF data) and the negotiated acceptable content-type. Note that RDF4J supports executing SPARQL queries with either a GET or a POST request. POST is supported for queries that are too large to be encoded as a query parameter.
+
+        Supplying `explain` returns a query explanation instead of query results. The explanation level is case-sensitive.
+        `Unoptimized` and `Optimized` describe the parsed or optimized plan; `Executed` and `Timed` execute the query to
+        include execution information. Use `Accept=application/json` or `Accept=text/plain` to select the explanation
+        representation; this query parameter takes precedence over the HTTP `Accept` header. Without an `Accept`
+        parameter or header, the server prefers `text/plain`.
+
+        A client-generated nonblank `query-request-id` enables cancellation of this non-transactional regular query.
+        A separate nonblank `explain-request-id` enables cancellation of an explanation request. These identifiers are
+        different namespaces and must not be used interchangeably. Cancellation is sent as a separate `POST` request;
+        see the POST operation below.
       parameters:
         - name: repositoryID
           in: path
@@ -398,15 +416,82 @@ paths:
               - Optimized
               - Executed
               - Timed
+        - name: query-request-id
+          in: query
+          required: false
+          description: |
+            A client-generated nonblank identifier for this non-transactional regular query. Reuse the same value in a
+            later `POST` with `cancel-query=true` to request cancellation. Do not use this parameter for explanations;
+            use `explain-request-id` instead.
+          schema:
+            type: string
+            minLength: 1
+        - name: explain-request-id
+          in: query
+          required: false
+          description: |
+            A client-generated nonblank identifier for this non-transactional query explanation. Supply it together
+            with `explain`, then use the same value in a later `POST` with `cancel-explain=true` to request cancellation.
+            Tracked explanations are not supported for transaction requests.
+          schema:
+            type: string
+            minLength: 1
+        - name: Accept
+          in: query
+          required: false
+          description: |
+            For query explanations, selects the representation and overrides the HTTP `Accept` header. The server
+            accepts `text/plain` and `application/json` for explanations. This parameter is case-sensitive in the RDF4J
+            protocol.
+          schema:
+            type: string
+        - name: Accept
+          in: header
+          required: false
+          description: The preferred response media type. For explanations, use `text/plain` or `application/json`.
+          schema:
+            type: string
       responses:
         '200':
-          $ref: "#/components/responses/200SparqlResult"
+          $ref: "#/components/responses/200QueryResult"
+        '400':
+          description: |
+            Invalid request, such as an invalid explanation level, an unsupported `Accept` query parameter, or a
+            missing query parameter.
+        '406':
+          description: No acceptable explanation representation was selected by the HTTP `Accept` header.
     post:
       tags:
         - SPARQL
-      summary: Execute SPARQL query
+      summary: Execute or cancel a SPARQL query
       description: |
         Execute a SPARQL query on the repository. The result format is based on the type of result (boolean, variable bindings, or RDF data) and the negotiated acceptable content-type. Note that RDF4J supports executing SPARQL queries with either a GET or a POST request. POST is supported for queries that are too large to be encoded as a query parameter.
+
+        A `POST` with neither cancellation flag executes the query. A `POST` with `cancel-query=true` and a
+        `query-request-id` requests cancellation of a non-transactional regular query. A `POST` with
+        `cancel-explain=true` and an `explain-request-id` requests cancellation of a non-transactional query
+        explanation. Cancellation requests may be bodyless: no query text is required, and the identifier may be supplied
+        in the URL or in an `application/x-www-form-urlencoded` body. Use only one cancellation flag and its matching
+        identifier namespace.
+
+        A cancellation response of `204` means that the active operation accepted cancellation. `404` means that this
+        server has no matching active operation, including when it has already completed, has not registered yet, or is
+        handled by another server instance. `502` means that cancellation forwarding to an HTTP-backed repository
+        failed. The cancellation registry is local to a server instance, so clients using load balancing should route
+        cancellation to the query owner or retry boundedly. Connection cleanup may continue after a `204` response.
+
+        Request IDs are scoped to this repository on this server instance. Generate a fresh nonblank UUID for each
+        tracked request; blank cancellation IDs are invalid and an ID already active in the same namespace is rejected
+        with HTTP 400. A regular query without a client ID receives an internal server ID and cannot be cancelled by
+        the client by ID; automatic disconnect cancellation still applies.
+
+        Supplying `explain` returns a query explanation. The explanation level is case-sensitive. `Unoptimized` and
+        `Optimized` describe the parsed or optimized plan; `Executed` and `Timed` execute the query to include execution
+        information. The server supports only `text/plain` and `application/json` for explanations; `Accept` as a query
+        parameter takes precedence over the HTTP `Accept` header. For example, a raw SPARQL body can request an
+        explanation with `POST /repositories/myrepo?explain=Optimized&Accept=application/json&explain-request-id=<id>`.
+        A bodyless cancellation can be sent as `POST /repositories/myrepo?cancel-query=true&query-request-id=<id>`
+        or with the equivalent form fields shown in the named examples below.
       parameters:
         - name: repositoryID
           in: path
@@ -414,23 +499,176 @@ paths:
           required: true
           schema:
             type: string
+        - name: query
+          in: query
+          required: false
+          description: FORM POST requests only. The SPARQL query to evaluate when it is supplied as a URL parameter instead of in the form body.
+          schema:
+            type: string
+        - name: queryLn
+          in: query
+          required: false
+          description: FORM POST requests only. The query language used for the query. If omitted, the server assumes SPARQL.
+          schema:
+            type: string
+        - name: explain
+          in: query
+          required: false
+          description: |
+            QUERY requests only. The explanation level to return instead of query results. The value is case-sensitive.
+            `Executed` and `Timed` evaluate the query to include execution information.
+          schema:
+            type: string
+            enum:
+              - Unoptimized
+              - Optimized
+              - Executed
+              - Timed
+        - name: query-request-id
+          in: query
+          required: false
+          description: |
+            A client-generated nonblank identifier for a non-transactional regular query, or the identifier to cancel
+            when `cancel-query=true`. Do not combine it with `explain`; use `explain-request-id` for explanations.
+          schema:
+            type: string
+            minLength: 1
+        - name: explain-request-id
+          in: query
+          required: false
+          description: |
+            A client-generated nonblank identifier for a non-transactional explanation, or the identifier to cancel
+            when `cancel-explain=true`. Tracked explanations are not supported for transaction requests.
+          schema:
+            type: string
+            minLength: 1
+        - name: cancel-query
+          in: query
+          required: false
+          description: |
+            Set to `true` to cancel the active regular query identified by `query-request-id`. No query body is
+            required for cancellation.
+          schema:
+            type: string
+            enum:
+              - "true"
+        - name: cancel-explain
+          in: query
+          required: false
+          description: |
+            Set to `true` to cancel the active explanation identified by `explain-request-id`. No query body is
+            required for cancellation.
+          schema:
+            type: string
+            enum:
+              - "true"
+        - name: Accept
+          in: query
+          required: false
+          description: |
+            For query explanations, selects `text/plain` or `application/json` and overrides the HTTP `Accept`
+            header. For ordinary queries, any media type supported by the selected result writer is allowed. This
+            parameter is case-sensitive in the RDF4J protocol.
+          schema:
+            type: string
+        - name: Accept
+          in: header
+          required: false
+          description: The preferred response media type. For explanations, use `text/plain` or `application/json`.
+          schema:
+            type: string
       requestBody:
-        description: the SPARQL query to execute
-        required: true
+        description: |
+          Optional for cancellation requests, which do not require a query body. Required for ordinary query
+          execution unless the query is supplied as a URL parameter. For a form request, `query` is the query text;
+          other parameters may be supplied in the URL or form body.
+        required: false
         content:
           application/sparql-query:
             schema:
               type: string
-            example:
-              "SELECT * WHERE {?S ?P ?O } LIMIT 10"
+            examples:
+              trackedExplanation:
+                summary: Tracked optimized explanation with a raw SPARQL body
+                description: Put `explain=Optimized` and `explain-request-id` in the URL query string.
+                value: "SELECT * WHERE {?S ?P ?O } LIMIT 10"
           application/x-www-form-urlencoded:
             schema:
-              type: string
-            example:
-              query=SELECT%20%2A%20WHERE%20%7B%3FS%20%3FP%20%3FO%20%7D%20LIMIT%2010
+              type: object
+              properties:
+                query:
+                  type: string
+                  description: The SPARQL query to execute.
+                queryLn:
+                  type: string
+                query-request-id:
+                  type: string
+                  minLength: 1
+                explain:
+                  type: string
+                  enum:
+                    - Unoptimized
+                    - Optimized
+                    - Executed
+                    - Timed
+                explain-request-id:
+                  type: string
+                  minLength: 1
+                Accept:
+                  type: string
+                  description: For explanation responses, use text/plain or application/json. Ordinary query responses may use any supported result media type.
+                cancel-query:
+                  type: string
+                  enum:
+                    - "true"
+                cancel-explain:
+                  type: string
+                  enum:
+                    - "true"
+              additionalProperties: true
+            examples:
+              trackedExplanation:
+                summary: Tracked optimized explanation as a form request
+                value:
+                  query: SELECT * WHERE {?S ?P ?O } LIMIT 10
+                  explain: Optimized
+                  explain-request-id: explanation-550e8400-e29b-41d4-a716-446655440000
+                  Accept: application/json
+              trackedQuery:
+                summary: Tracked regular query as a form request
+                value:
+                  query: SELECT * WHERE {?S ?P ?O } LIMIT 10
+                  query-request-id: query-550e8400-e29b-41d4-a716-446655440000
+                  Accept: application/sparql-results+json
+              cancelQuery:
+                summary: Regular-query cancellation form
+                description: No `query` field is required; only the matching cancellation flag and request ID are sent.
+                value:
+                  cancel-query: "true"
+                  query-request-id: query-550e8400-e29b-41d4-a716-446655440000
+              cancelExplanation:
+                summary: Explanation cancellation form
+                description: No `query` field is required; use the explanation request-ID namespace.
+                value:
+                  cancel-explain: "true"
+                  explain-request-id: explanation-550e8400-e29b-41d4-a716-446655440000
       responses:
         '200':
-          $ref: "#/components/responses/200SparqlResult"
+          $ref: "#/components/responses/200QueryResult"
+        '204':
+          description: |
+            Cancellation accepted for the matching active regular query or explanation. The response has no body;
+            connection cleanup may still be in progress.
+        '400':
+          description: |
+            Invalid request, such as a missing or blank cancellation identifier, an invalid explanation level, an
+            unsupported `Accept` query parameter, or a duplicate active request identifier.
+        '404':
+          description: No matching active query or explanation is registered on this server instance for this repository.
+        '406':
+          description: No acceptable explanation representation was selected by the HTTP `Accept` header.
+        '502':
+          description: Cancellation forwarding to an HTTP-backed repository failed; the cancellation may be retried.
     delete:
       tags:
         - Repositories
@@ -1000,6 +1238,14 @@ paths:
       summary: Execute a transaction action
       description: |
         Transaction operations are carried on this endpoint. The full URI is the exact value of the Location header as returned by the request to start a transaction.
+
+        A QUERY action may include `explain=Unoptimized`, `Optimized`, `Executed`, or `Timed` to return an
+        untracked query explanation. The level names are case-sensitive; `Executed` and `Timed` evaluate the query.
+        Transaction queries do not support tracked explanations or cancellation. `query-request-id`, `cancel-query`,
+        and `cancel-explain` are rejected with HTTP 400. A nonblank `explain-request-id` is rejected with HTTP 400
+        when `explain` is supplied; transaction explanations are otherwise untracked and cannot be cancelled.
+        For an explanation, the `Accept` query parameter selects `text/plain` or `application/json` and takes
+        precedence over the HTTP `Accept` header. The parameter name is case-sensitive (`Accept`).
       parameters:
         - name: repositoryID
           in: path
@@ -1050,6 +1296,25 @@ paths:
           in: query
           required: false
           description: QUERY actions only. Specifies the query language that is used for the query. Acceptable values are strings denoting the query languages supported by the server, i.e 'sparql' for SPARQL queries. If not specified, the server assumes the query is a SPARQL query.
+          schema:
+            type: string
+        - name: explain
+          in: query
+          required: false
+          description: QUERY actions only. Requests an untracked query explanation. Values are case-sensitive and must be Unoptimized, Optimized, Executed, or Timed. Executed and Timed evaluate the query.
+          schema:
+            type: string
+            enum: [ Unoptimized, Optimized, Executed, Timed ]
+        - name: Accept
+          in: query
+          required: false
+          description: QUERY actions with `explain` only. Selects `text/plain` or `application/json` for explanations and overrides the HTTP Accept header. For ordinary transaction results, any supported media type is allowed. The parameter name is case-sensitive.
+          schema:
+            type: string
+        - name: Accept
+          in: header
+          required: false
+          description: QUERY actions with `explain` only. Selects the explanation representation when no `Accept` query parameter is supplied.
           schema:
             type: string
         - name: infer
@@ -1138,9 +1403,30 @@ paths:
               format: binary
       responses:
         200:
-          description: OK
+          description: |
+            OK. The response depends on the transaction action. For a QUERY action with `explain`, the result is an
+            untracked explanation; the conditional explanation representations are documented below. Other actions
+            retain their normal transaction result semantics.
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Returned for QUERY with `explain` when the selected explanation representation is text/plain.
+            application/json:
+              schema:
+                type: object
+                description: Returned for QUERY with `explain` when the selected explanation representation is application/json.
+            "*/*":
+              schema:
+                description: Other transaction actions and ordinary query results use their action-specific supported representation.
         204:
           description: No content
+        400:
+          description: |
+            Invalid transaction QUERY parameters, including an unsupported explanation level or `Accept` query
+            parameter, or use of tracked request IDs or cancellation flags.
+        406:
+          description: No acceptable explanation representation was selected by the HTTP `Accept` header.
 
     delete:
       tags:
