@@ -42,7 +42,7 @@ The phase enum names the durable work frontiers: `PREFLIGHT`, `STAGE_INPUTS`, `D
 
 ## Resource limits and disk/heap tradeoffs
 
-The builder defaults are captured when the loader is built. `memoryBudgetBytes` is a positive working-memory budget supplied to sorters, dictionary construction and staging caches; it is a coordination input to those algorithms, not a process-wide heap cap or a promise that total live allocations never exceed it. `partitionCount` controls the number of value partitions and must be a positive power of two. `maxOpenFiles` bounds the bucket/sorter output limiter. The builder exposes `workers` and `queueBatches` with zero queue batches meaning `2 × workers`, and records both in workspace/progress metadata; the current `LmdbBulkLoaderEngine` passes them only to `BulkLoadProgress`, so they do not change loader scheduling or allocate a bounded action queue in the reviewed implementation. Do not infer active parallelism from the option names or defaults. Writer transaction limits cap both record count and bytes per LMDB append transaction.
+The builder defaults are captured when the loader is built. `memoryBudgetBytes` is the aggregate working-memory budget for bulk tasks. Admission accounts for each active or queued task's run buffer, sort scratch, codec state, and merge cursor storage before the task is scheduled; it is not a process-wide heap cap because the parser, native LMDB transactions, and JVM runtime also allocate memory. Merge fan-in is reduced when its complete estimate would exceed the budget. If the budget is below the irreducible two-input merge footprint, that one merge runs alone at its measured minimum and the loader reports the effective minimum in a warning. `partitionCount` controls the number of value partitions and must be a positive power of two. `maxOpenFiles` bounds bucket/sorter output handles. A merge needs two input files and one output file, so settings below three retain the existing single-merge minimum of three descriptors; that exception is never multiplied across concurrent merges. The builder exposes `workers` and `queueBatches`; the default queue-batch value resolves to `2 × workers`, and explicitly supplied values must be positive. `workers` bounds the load-owned task pool. The dependency-discovery, dictionary-preparation, and ID-resolution stages use bounded chunks and a per-stage controller that starts with one active partition and raises its target only when completed-work throughput supports more concurrency. This tuning resets per load or resume and is not persisted. The established `queueBatches` setting retains its existing ingestion/progress meaning and is not reused as sorter-task capacity.
 
 | Builder option | Default | Units / effect |
 | --- | --- | --- |
@@ -50,10 +50,10 @@ The builder defaults are captured when the loader is built. `memoryBudgetBytes` 
 | `memoryBudgetBytes` | `max(32 MiB, min(1,024 MiB, maxHeap / 4))` | Bytes used as the staged-work working budget. |
 | `partitionCount` | 256 | Positive power-of-two partitions. |
 | `maxOpenFiles` | 1,024 | Maximum bounded bucket/sort output handles. |
-| `workers` | `processors − 1` when processors ≥ 4, otherwise processors, clamped to 1–32 | Captured in workspace/progress; not used to schedule loader work in the current engine. |
-| `queueBatches` | `2 × workers` | Captured in workspace/progress; the current engine does not create a corresponding batch queue. |
-| `writeTransactionRecords` | 100,000 | Maximum records per writer transaction. |
-| `writeTransactionBytes` | 64 MiB | Maximum bytes per writer transaction. |
+| `workers` | `processors − 1` when processors ≥ 4, otherwise processors, clamped to 1–32 | Upper bound for load-owned task workers; memory and file limits may reduce concurrent work. |
+| `queueBatches` | `2 × workers` | Existing persisted/progress setting; sorter tasks use a separate internal bounded admission queue. |
+| `writeTransactionRecords` | 100,000 | Hard maximum records per LMDB bulk-append batch. |
+| `writeTransactionBytes` | 64 MiB | Byte-based batch-sizing threshold; not a hard transaction-memory cap. |
 | `compression` | `FASTEST` | Per-artifact codec selection. |
 | `progressListener` | `ProgressListener.NONE` | Optional callback; callback failures are logged and ignored. |
 | `temporaryDirectory` | unset | Recorded only as spill-directory metadata; the workspace and intermediate phase artifacts are still created under the target's sibling control directory. |

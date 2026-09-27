@@ -50,52 +50,170 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
 			BooleanSupplier cancellationSignal) throws IOException {
 		return build(spool, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
-				cancellationSignal, TripleIndex::usesUnsignedTupleOrder);
+				cancellationSignal, TripleIndex::usesUnsignedTupleOrder, null);
 	}
 
 	static StatementIndexBulkRecords build(ResolvedIdQuadSpool spool, Path workspace, String configuredIndexes,
 			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
 			BooleanSupplier cancellationSignal, Predicate<String> tupleOrderEquivalence) throws IOException {
+		return build(spool, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
+				cancellationSignal, tupleOrderEquivalence, null);
+	}
+
+	static StatementIndexBulkRecords build(ResolvedIdQuadSpool spool, Path workspace, String configuredIndexes,
+			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler) throws IOException {
+		return build(spool, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
+				cancellationSignal, TripleIndex::usesUnsignedTupleOrder, scheduler, () -> {
+				});
+	}
+
+	static StatementIndexBulkRecords build(ResolvedIdQuadSpool spool, Path workspace, String configuredIndexes,
+			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler, Runnable spillOutputObserver)
+			throws IOException {
+		return build(spool, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
+				cancellationSignal, TripleIndex::usesUnsignedTupleOrder, scheduler, spillOutputObserver);
+	}
+
+	private static StatementIndexBulkRecords build(ResolvedIdQuadSpool spool, Path workspace, String configuredIndexes,
+			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
+			BooleanSupplier cancellationSignal, Predicate<String> tupleOrderEquivalence, BulkTaskScheduler scheduler)
+			throws IOException {
+		return build(spool, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
+				cancellationSignal, tupleOrderEquivalence, scheduler, () -> {
+				});
+	}
+
+	private static StatementIndexBulkRecords build(ResolvedIdQuadSpool spool, Path workspace, String configuredIndexes,
+			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
+			BooleanSupplier cancellationSignal, Predicate<String> tupleOrderEquivalence, BulkTaskScheduler scheduler,
+			Runnable spillOutputObserver) throws IOException {
 		List<String> specifications = parseSpecifications(configuredIndexes);
+		long readerBytes = spool.scanReaderMemoryEstimateBytes();
+		long spillOutputBytes = BulkLz4.mergeOutputMemoryBytes(compression.codecFor(BulkArtifact.STATEMENT_INDEXES));
+		long sorterMemory = Math.max(0L, memoryBudgetBytes - readerBytes - 2L * spillOutputBytes - 1024L
+				- 4L * 256L * Integer.BYTES
+				- ExternalLongTupleSorter.asynchronousSpillMetadataBytes(COMPONENT_COUNT));
 		long perSorterBudget = Math.max(2L * COMPONENT_COUNT * Long.BYTES,
-				memoryBudgetBytes / specifications.size());
+				sorterMemory / specifications.size());
 		int perSorterOpenFiles = Math.max(3, maxOpenFiles / specifications.size());
 		List<ExternalLongTupleSorter> tupleSorters = new ArrayList<>(specifications.size());
 		List<ExternalByteKeySorter> encodedSorters = new ArrayList<>(specifications.size());
+		List<Path> sortedOutputs = new ArrayList<>(specifications.size());
 		try {
 			for (String specification : specifications) {
+				sortedOutputs.add(workspace.resolve("index-" + specification + "-sorted.bin"));
 				if (tupleOrderEquivalence.test(specification)) {
 					tupleSorters.add(new ExternalLongTupleSorter(workspace, "index-" + specification, COMPONENT_COUNT,
 							perSorterBudget, perSorterOpenFiles,
-							compression.codecFor(BulkArtifact.STATEMENT_INDEXES)));
+							compression.codecFor(BulkArtifact.STATEMENT_INDEXES), scheduler, spillOutputObserver));
 					encodedSorters.add(null);
 				} else {
 					tupleSorters.add(null);
 					encodedSorters.add(new ExternalByteKeySorter(workspace, "index-key-" + specification,
 							perSorterBudget, perSorterOpenFiles,
-							compression.codecFor(BulkArtifact.STATEMENT_INDEXES)));
+							compression.codecFor(BulkArtifact.STATEMENT_INDEXES), scheduler, spillOutputObserver));
 				}
 			}
-			scanOnce(spool, specifications, tupleSorters, encodedSorters, compression, cancellationSignal);
-			List<IndexRun> runs = new ArrayList<>(specifications.size());
-			for (int i = 0; i < specifications.size(); i++) {
-				checkCancelled(cancellationSignal);
-				String specification = specifications.get(i);
-				Path output = workspace.resolve("index-" + specification + "-sorted.bin");
-				ExternalLongTupleSorter tupleSorter = tupleSorters.get(i);
-				if (tupleSorter != null) {
-					runs.add(new IndexRun(specification, tupleSorter.finish(output), null));
-				} else {
-					runs.add(new IndexRun(specification, null, encodedSorters.get(i).finish(output)));
+			long synchronousSpillBytes = 0L;
+			for (ExternalLongTupleSorter sorter : tupleSorters) {
+				if (sorter != null) {
+					synchronousSpillBytes = Math.max(synchronousSpillBytes,
+							sorter.synchronousSpillMemoryEstimateBytes());
 				}
 			}
+			for (ExternalByteKeySorter sorter : encodedSorters) {
+				if (sorter != null) {
+					synchronousSpillBytes = Math.max(synchronousSpillBytes,
+							sorter.synchronousSpillMemoryEstimateBytes());
+				}
+			}
+			try (BulkTaskScheduler.ResourceScope scan = scheduler == null ? null
+					: scheduler.reserveScanEnvelope(readerBytes, spool.scanReaderFileDescriptorEstimate(),
+							spool.statements() == 0L ? 0L : 1024L, synchronousSpillBytes,
+							spool.statements() == 0L ? 0 : 1)) {
+				scanOnce(spool, specifications, tupleSorters, encodedSorters, compression, cancellationSignal,
+						scheduler);
+			}
+			List<IndexRun> runs = scheduler == null
+					? finishSerially(specifications, sortedOutputs, tupleSorters, encodedSorters, cancellationSignal)
+					: finishConcurrently(specifications, sortedOutputs, tupleSorters, encodedSorters,
+							cancellationSignal, scheduler);
 			ExternalLongTupleSorter.SortedTupleFile contexts = buildContexts(runs.getFirst(), workspace,
-					memoryBudgetBytes, maxOpenFiles, compression, cancellationSignal);
+					memoryBudgetBytes, maxOpenFiles, compression, cancellationSignal, scheduler);
 			return new StatementIndexBulkRecords(runs, contexts);
 		} catch (IOException | RuntimeException | Error failure) {
 			closeSorters(tupleSorters, failure);
 			closeSorters(encodedSorters, failure);
+			deletePartialFiles(sortedOutputs, workspace.resolve("contexts-sorted.bin"), failure);
 			throw failure;
+		}
+	}
+
+	private static List<IndexRun> finishSerially(List<String> specifications, List<Path> outputs,
+			List<ExternalLongTupleSorter> tupleSorters, List<ExternalByteKeySorter> encodedSorters,
+			BooleanSupplier cancellationSignal) throws IOException {
+		List<IndexRun> runs = new ArrayList<>(specifications.size());
+		for (int i = 0; i < specifications.size(); i++) {
+			checkCancelled(cancellationSignal);
+			ExternalLongTupleSorter tupleSorter = tupleSorters.get(i);
+			if (tupleSorter != null) {
+				runs.add(new IndexRun(specifications.get(i), tupleSorter.finish(outputs.get(i)), null));
+			} else {
+				runs.add(new IndexRun(specifications.get(i), null, encodedSorters.get(i).finish(outputs.get(i))));
+			}
+		}
+		return runs;
+	}
+
+	private static List<IndexRun> finishConcurrently(List<String> specifications, List<Path> outputs,
+			List<ExternalLongTupleSorter> tupleSorters, List<ExternalByteKeySorter> encodedSorters,
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler) throws IOException {
+		for (ExternalLongTupleSorter sorter : tupleSorters) {
+			if (sorter != null) {
+				sorter.prepareFinish();
+			}
+		}
+		for (ExternalByteKeySorter sorter : encodedSorters) {
+			if (sorter != null) {
+				sorter.prepareFinish();
+			}
+		}
+		List<BulkTaskScheduler.Work<IndexRun>> work = new ArrayList<>(specifications.size());
+		for (int i = 0; i < specifications.size(); i++) {
+			int index = i;
+			ExternalLongTupleSorter tupleSorter = tupleSorters.get(index);
+			ExternalByteKeySorter encodedSorter = encodedSorters.get(index);
+			long memoryBytes = tupleSorter != null ? tupleSorter.mergeMemoryEstimateBytes()
+					: encodedSorter.mergeMemoryEstimateBytes();
+			int fileDescriptors = tupleSorter != null ? tupleSorter.mergeFileDescriptorCount()
+					: encodedSorter.mergeFileDescriptorCount();
+			boolean minimumMemoryFloor = tupleSorter != null ? tupleSorter.requiresSerialMemoryFloor()
+					: encodedSorter.requiresSerialMemoryFloor();
+			work.add(new BulkTaskScheduler.Work<>(memoryBytes, fileDescriptors, () -> {
+				checkCancelled(cancellationSignal);
+				return tupleSorter != null
+						? new IndexRun(specifications.get(index), tupleSorter.finish(outputs.get(index)), null)
+						: new IndexRun(specifications.get(index), null,
+								encodedSorter.finish(outputs.get(index)));
+			}, minimumMemoryFloor));
+		}
+		return scheduler.runOrdered(work);
+	}
+
+	private static void deletePartialFiles(List<Path> outputs, Path contexts, Throwable failure) {
+		for (Path output : outputs) {
+			try {
+				Files.deleteIfExists(output);
+			} catch (IOException cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+		}
+		try {
+			Files.deleteIfExists(contexts);
+		} catch (IOException cleanupFailure) {
+			failure.addSuppressed(cleanupFailure);
 		}
 	}
 
@@ -137,9 +255,11 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 
 	private static ExternalLongTupleSorter.SortedTupleFile buildContexts(IndexRun source, Path workspace,
 			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
-			BooleanSupplier cancellationSignal) throws IOException {
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler) throws IOException {
 		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "contexts", 1,
-				memoryBudgetBytes, maxOpenFiles, compression.codecFor(BulkArtifact.STATEMENT_INDEXES))) {
+				memoryBudgetBytes, maxOpenFiles, compression.codecFor(BulkArtifact.STATEMENT_INDEXES), scheduler,
+				() -> {
+				})) {
 			if (source.tuples() != null) {
 				addTupleContexts(source, sorter, cancellationSignal);
 			} else {
@@ -220,8 +340,10 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 
 	private static void scanOnce(ResolvedIdQuadSpool spool, List<String> specifications,
 			List<ExternalLongTupleSorter> tupleSorters, List<ExternalByteKeySorter> encodedSorters,
-			BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
-		try (DataInputStream input = BulkLz4.input(spool.path(), compression.codecFor(BulkArtifact.ID_QUADS))) {
+			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler)
+			throws IOException {
+		try (DataInputStream input = BulkLz4.input(spool.path(), compression.codecFor(BulkArtifact.ID_QUADS),
+				scheduler)) {
 			long expectedOrdinal = 0L;
 			long[] quad = new long[COMPONENT_COUNT];
 			while (true) {

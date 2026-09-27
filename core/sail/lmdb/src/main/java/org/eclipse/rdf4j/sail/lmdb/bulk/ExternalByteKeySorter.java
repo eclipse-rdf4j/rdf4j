@@ -15,6 +15,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -25,6 +26,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 /**
  * Bounded external sorter for variable-length LMDB key/value records.
@@ -38,17 +43,30 @@ final class ExternalByteKeySorter implements AutoCloseable {
 
 	private final Path directory;
 	private final String prefix;
-	private final int maxFanIn;
+	private int maxFanIn;
+	private final int maximumDescriptorFanIn;
+	private final long mergeMemoryBudgetBytes;
 	private final RunBufferAllocator runBufferAllocator;
-	private final boolean nativeStorage;
+	private final BulkTaskScheduler scheduler;
+	private final Runnable spillObserver;
+	private final RunFileDeleter runFileDeleter;
+	private final boolean asyncSpillsEnabled;
+	private boolean nativeStorage;
 	private final BulkCodec codec;
 	private final int dataCapacity;
-	private final int[] offsets;
-	private final int[] keyLengths;
-	private final int[] valueLengths;
-	private final int[] order;
-	private final byte[] transferBuffer;
+	private final int recordCapacity;
+	private final int transferBufferBytes;
+	private int[] offsets;
+	private int[] keyLengths;
+	private int[] valueLengths;
+	private int[] order;
+	private byte[] transferBuffer;
 	private final List<Path> runs = new ArrayList<>();
+	private final List<PendingSpill> pendingSpills = new ArrayList<>();
+	private BulkTaskScheduler.ResourceLease producerLease;
+	private BulkTaskScheduler.ResourceScope producerClaim;
+	private final long producerMemoryBytes;
+	private int nextRunNumber;
 
 	private Arena runBufferArena;
 	private MemorySegment nativeBuffer;
@@ -56,58 +74,81 @@ final class ExternalByteKeySorter implements AutoCloseable {
 	private int bufferedDataBytes;
 	private int bufferedRecords;
 	private long recordCount;
+	private long maximumRecordBytes;
 	private boolean finished;
+	private boolean mergePrepared;
+	private boolean productionPaused;
+	private boolean mergeMemoryFloorRequired;
 
 	ExternalByteKeySorter(Path directory, String prefix, long memoryBudgetBytes, int maxOpenFiles,
 			BulkCodec codec) throws IOException {
 		this(directory, prefix, memoryBudgetBytes, maxOpenFiles, codec,
-				(arena, bytes) -> arena.allocate(bytes, Byte.BYTES));
+				(arena, bytes) -> arena.allocate(bytes, Byte.BYTES), null, () -> {
+				}, Files::deleteIfExists);
 	}
 
 	ExternalByteKeySorter(Path directory, String prefix, long memoryBudgetBytes, int maxOpenFiles,
 			BulkCodec codec, RunBufferAllocator runBufferAllocator) throws IOException {
+		this(directory, prefix, memoryBudgetBytes, maxOpenFiles, codec, runBufferAllocator, null, () -> {
+		}, Files::deleteIfExists);
+	}
+
+	ExternalByteKeySorter(Path directory, String prefix, long memoryBudgetBytes, int maxOpenFiles,
+			BulkCodec codec, BulkTaskScheduler scheduler, Runnable spillObserver) throws IOException {
+		this(directory, prefix, memoryBudgetBytes, maxOpenFiles, codec,
+				(arena, bytes) -> arena.allocate(bytes, Byte.BYTES), scheduler, spillObserver, Files::deleteIfExists);
+	}
+
+	ExternalByteKeySorter(Path directory, String prefix, long memoryBudgetBytes, int maxOpenFiles,
+			BulkCodec codec, RunFileDeleter runFileDeleter) throws IOException {
+		this(directory, prefix, memoryBudgetBytes, maxOpenFiles, codec,
+				(arena, bytes) -> arena.allocate(bytes, Byte.BYTES), null, () -> {
+				}, runFileDeleter);
+	}
+
+	private ExternalByteKeySorter(Path directory, String prefix, long memoryBudgetBytes, int maxOpenFiles,
+			BulkCodec codec, RunBufferAllocator runBufferAllocator, BulkTaskScheduler scheduler,
+			Runnable spillObserver, RunFileDeleter runFileDeleter) throws IOException {
 		this.codec = Objects.requireNonNull(codec, "codec");
 		this.directory = Objects.requireNonNull(directory, "directory");
 		this.prefix = Objects.requireNonNull(prefix, "prefix");
 		this.runBufferAllocator = Objects.requireNonNull(runBufferAllocator, "runBufferAllocator");
-		maxFanIn = Math.max(2, maxOpenFiles - 1);
+		this.scheduler = scheduler;
+		this.spillObserver = Objects.requireNonNull(spillObserver, "spillObserver");
+		this.runFileDeleter = Objects.requireNonNull(runFileDeleter, "runFileDeleter");
+		maximumDescriptorFanIn = Math.max(2, maxOpenFiles - 1);
+		mergeMemoryBudgetBytes = memoryBudgetBytes;
+		maxFanIn = maximumDescriptorFanIn;
 		Files.createDirectories(directory);
-
-		long boundedBudget = Math.max(MIN_RUN_BUDGET_BYTES,
-				Math.min((long) MAX_RUN_BUFFER_BYTES, memoryBudgetBytes));
-		dataCapacity = Math.toIntExact(Math.max(1L, boundedBudget * 2L / 3L));
-		int recordCapacity = Math.toIntExact(
-				Math.max(1L, (boundedBudget - dataCapacity) / METADATA_BYTES_PER_RECORD));
-		offsets = new int[recordCapacity];
-		keyLengths = new int[recordCapacity];
-		valueLengths = new int[recordCapacity];
-		order = new int[recordCapacity];
-
-		boolean allocatedNative = false;
-		Arena candidateArena = Arena.ofConfined();
-		try {
-			MemorySegment candidateBuffer = Objects.requireNonNull(
-					runBufferAllocator.allocate(candidateArena, dataCapacity), "allocated run buffer");
-			if (candidateBuffer.byteSize() < dataCapacity || candidateBuffer.isReadOnly()) {
-				throw new IllegalArgumentException(
-						"Allocated byte-key run buffer must be writable and at least " + dataCapacity + " bytes");
+		RunLayout selectedLayout = layoutForBudget(memoryBudgetBytes, codec);
+		BulkTaskScheduler.ResourceLease selectedLease = null;
+		boolean selectedAsync = false;
+		boolean hasEnclosingMemory = scheduler != null && scheduler.hasCurrentMemoryReservation();
+		if (scheduler != null && !hasEnclosingMemory && scheduler.workerLimit() > 1) {
+			RunLayout asyncLayout = asynchronousLayout(memoryBudgetBytes, codec);
+			if (asyncLayout != null) {
+				selectedLease = scheduler.tryReserve(asyncLayout.producerMemoryBytes(), 0);
+				if (selectedLease != null) {
+					selectedLayout = asyncLayout;
+					selectedAsync = true;
+				}
 			}
-			runBufferArena = candidateArena;
-			nativeBuffer = candidateBuffer;
-			allocatedNative = true;
-		} catch (OutOfMemoryError directMemoryPressure) {
-			candidateArena.close();
-			heapBuffer = new byte[dataCapacity];
-			System.getLogger(ExternalByteKeySorter.class.getName())
-					.log(System.Logger.Level.WARNING,
-							"Could not allocate native byte-key run buffer; using heap fallback",
-							directMemoryPressure);
-		} catch (RuntimeException | Error failure) {
-			candidateArena.close();
+		}
+		asyncSpillsEnabled = selectedAsync;
+		producerLease = selectedLease;
+		dataCapacity = selectedLayout.dataCapacity();
+		recordCapacity = selectedLayout.recordCapacity();
+		transferBufferBytes = selectedLayout.transferBufferBytes();
+		producerMemoryBytes = selectedLayout.producerMemoryBytes();
+		try {
+			if (scheduler != null && !selectedAsync) {
+				reserveProducerMemory();
+			}
+			allocateProducerStorage();
+		} catch (IOException | RuntimeException | Error failure) {
+			closeProducerReservation(failure);
 			throw failure;
 		}
-		nativeStorage = allocatedNative;
-		transferBuffer = nativeStorage ? new byte[Math.min(8 * 1024, dataCapacity)] : null;
 	}
 
 	void add(byte[] key, byte[] value) throws IOException {
@@ -117,6 +158,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		validateInputLength(key.length);
 		validateInputLength(value.length);
 		long dataBytes = Math.addExact((long) key.length, value.length);
+		maximumRecordBytes = Math.max(maximumRecordBytes, Math.addExact(dataBytes, 2L * Integer.BYTES));
 		if (dataBytes > dataCapacity) {
 			flushRun();
 			writeSingleRecordRun(key, value);
@@ -148,38 +190,260 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		return recordCount;
 	}
 
-	SortedRecordFile finish(Path output) throws IOException {
-		ensureWritable();
-		try {
-			flushRun();
-		} finally {
-			releaseRunBuffer();
-		}
-		List<Path> mergeRuns = reduceRuns();
-		Path parent = output.toAbsolutePath().getParent();
-		if (parent != null) {
-			Files.createDirectories(parent);
-		}
-		if (mergeRuns.isEmpty()) {
-			Files.createFile(output);
-		} else if (mergeRuns.size() == 1) {
-			Files.move(mergeRuns.getFirst(), output, StandardCopyOption.REPLACE_EXISTING);
-		} else {
-			mergeGroup(mergeRuns, output, codec);
-			deleteRuns(mergeRuns);
-		}
-		runs.clear();
-		finished = true;
-		return new SortedRecordFile(output, recordCount, codec);
+	int runRecordCapacity() {
+		return recordCapacity;
 	}
 
-	private void ensureWritable() {
+	/** Test-first API seam for yielding persistent producer storage before dependent merge work. */
+	void pauseProduction() throws IOException {
+		if (finished || mergePrepared) {
+			throw new IllegalStateException("Byte-key sorter is already finished");
+		}
+		if (productionPaused) {
+			return;
+		}
+		try {
+			flushRun();
+			awaitAllSpills();
+		} catch (IOException | RuntimeException | Error failure) {
+			addCleanupFailure(failure, cancelAndAwaitPendingSpills());
+			throw failure;
+		}
+		releaseProducerStorage();
+		productionPaused = true;
+	}
+
+	static RunLayout layoutForBudget(long memoryBudgetBytes, BulkCodec codec) {
+		long boundedBudget = Math.max(MIN_RUN_BUDGET_BYTES,
+				Math.min((long) MAX_RUN_BUFFER_BYTES, memoryBudgetBytes));
+		long transferBytes = Math.min(8L * 1024L, Math.max(1L, boundedBudget / 2L));
+		long runBytes = Math.max(1L, boundedBudget - transferBytes);
+		int dataCapacity = Math.toIntExact(Math.max(1L, runBytes * 2L / 3L));
+		int recordCapacity = Math.toIntExact(
+				Math.max(1L, (runBytes - dataCapacity) / METADATA_BYTES_PER_RECORD));
+		long metadataBytes = Math.multiplyExact((long) recordCapacity, 4L * Integer.BYTES);
+		long producerMemoryBytes = Math.addExact(Math.addExact(dataCapacity, metadataBytes), transferBytes);
+		if (producerMemoryBytes > boundedBudget) {
+			// Very small buffers still need one metadata row; shrink the transfer scratch so that this irreducible row
+			// fits the requested per-sorter budget instead of silently exceeding it.
+			transferBytes = Math.max(1L, boundedBudget / 4L);
+			runBytes = Math.max(1L, boundedBudget - transferBytes);
+			dataCapacity = Math.toIntExact(Math.max(1L, runBytes * 2L / 3L));
+			recordCapacity = Math.toIntExact(
+					Math.max(1L, (runBytes - dataCapacity) / METADATA_BYTES_PER_RECORD));
+			metadataBytes = Math.multiplyExact((long) recordCapacity, 4L * Integer.BYTES);
+			producerMemoryBytes = Math.addExact(Math.addExact(dataCapacity, metadataBytes), transferBytes);
+		}
+		if (producerMemoryBytes > boundedBudget) {
+			throw new IllegalStateException("Minimum byte-key sorter buffer exceeds its bounded layout");
+		}
+		long spillMemoryBytes = Math.addExact(Math.addExact(dataCapacity, metadataBytes),
+				BulkLz4.mergeOutputMemoryBytes(codec));
+		return new RunLayout(dataCapacity, recordCapacity, Math.toIntExact(transferBytes), producerMemoryBytes,
+				spillMemoryBytes);
+	}
+
+	private static RunLayout asynchronousLayout(long memoryBudgetBytes, BulkCodec codec) {
+		long candidateBudget = Math.min((long) MAX_RUN_BUFFER_BYTES, memoryBudgetBytes / 2L);
+		if (candidateBudget < MIN_RUN_BUDGET_BYTES) {
+			return null;
+		}
+		while (candidateBudget >= MIN_RUN_BUDGET_BYTES) {
+			RunLayout candidate = layoutForBudget(candidateBudget, codec);
+			if (candidate.producerMemoryBytes() <= memoryBudgetBytes - candidate.spillMemoryBytes()) {
+				return candidate;
+			}
+			if (candidateBudget == MIN_RUN_BUDGET_BYTES) {
+				break;
+			}
+			candidateBudget = Math.max(MIN_RUN_BUDGET_BYTES, candidateBudget / 2L);
+		}
+		return null;
+	}
+
+	long mergeMemoryEstimateBytes() {
+		int mergeFanIn = activeMergeFanIn();
+		return mergeFanIn < 2 ? 0L : mergeMemoryForFanIn(mergeFanIn);
+	}
+
+	long producerMemoryBytes() {
+		return producerMemoryBytes;
+	}
+
+	long synchronousSpillMemoryEstimateBytes() {
+		return BulkLz4.mergeOutputMemoryBytes(codec);
+	}
+
+	int mergeFileDescriptorCount() {
+		int mergeFanIn = activeMergeFanIn();
+		return mergeFanIn < 2 ? 0 : mergeFanIn + 1;
+	}
+
+	boolean requiresSerialMemoryFloor() {
+		return mergeMemoryFloorRequired;
+	}
+
+	private int activeMergeFanIn() {
+		return Math.min(maxFanIn, runs.size());
+	}
+
+	private int maximumFanIn() {
+		for (int fanIn = maximumDescriptorFanIn; fanIn >= 2; fanIn--) {
+			if (mergeMemoryForFanIn(fanIn) <= mergeMemoryBudgetBytes) {
+				mergeMemoryFloorRequired = false;
+				return fanIn;
+			}
+		}
+		mergeMemoryFloorRequired = runs.size() > 1 && mergeMemoryForFanIn(2) > mergeMemoryBudgetBytes;
+		// A two-way merge is the smallest supported operation. The scheduler admits it only as an exclusive,
+		// explicitly accounted minimum-memory task when fixed codec or current-record storage exceeds the budget.
+		return 2;
+	}
+
+	private long mergeMemoryForFanIn(int fanIn) {
+		// advance() allocates a new key/value before replacing current; conservatively account for both records in
+		// every cursor, even though only one cursor normally advances at a time.
+		long cursorBytes = Math.addExact(Math.multiplyExact(maximumRecordBytes, 2L), 128L);
+		long inputBytes = Math.addExact(BulkLz4.mergeInputMemoryBytes(codec), cursorBytes);
+		long leafCount = 1L;
+		while (leafCount < fanIn) {
+			leafCount <<= 1;
+		}
+		long treeBytes = Math.multiplyExact(leafCount << 1, Integer.BYTES);
+		long mergeBytes = Math.addExact(Math.addExact(Math.multiplyExact(fanIn, inputBytes),
+				BulkLz4.mergeOutputMemoryBytes(codec)), treeBytes);
+		return Math.addExact(mergeBytes, Math.multiplyExact((long) runs.size(), 256L));
+	}
+
+	/** Flushes and releases producer storage before independent final merges are scheduled. */
+	void prepareFinish() throws IOException {
 		if (finished) {
 			throw new IllegalStateException("Byte-key sorter is already finished");
 		}
+		if (mergePrepared) {
+			return;
+		}
+		try {
+			flushRun();
+			awaitAllSpills();
+			maxFanIn = maximumFanIn();
+			mergePrepared = true;
+		} catch (IOException | RuntimeException | Error failure) {
+			addCleanupFailure(failure, cancelAndAwaitPendingSpills());
+			throw failure;
+		} finally {
+			releaseProducerStorage();
+		}
+	}
+
+	SortedRecordFile finish(Path output) throws IOException {
+		if (finished) {
+			throw new IllegalStateException("Byte-key sorter is already finished");
+		}
+		try {
+			prepareFinish();
+			List<Path> mergeRuns = reduceRuns();
+			Path parent = output.toAbsolutePath().getParent();
+			if (parent != null) {
+				Files.createDirectories(parent);
+			}
+			if (mergeRuns.isEmpty()) {
+				Files.createFile(output);
+			} else if (mergeRuns.size() == 1) {
+				Files.move(mergeRuns.getFirst(), output, StandardCopyOption.REPLACE_EXISTING);
+			} else {
+				mergeGroup(mergeRuns, output, codec);
+				deleteRuns(mergeRuns);
+			}
+			runs.clear();
+			finished = true;
+			return new SortedRecordFile(output, recordCount, codec);
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				Files.deleteIfExists(output);
+			} catch (IOException cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
+	}
+
+	private void ensureWritable() throws IOException {
+		if (finished || mergePrepared) {
+			throw new IllegalStateException("Byte-key sorter is already finished");
+		}
+		if (productionPaused) {
+			try {
+				reserveProducerMemory();
+				allocateProducerStorage();
+				productionPaused = false;
+			} catch (IOException | RuntimeException | Error failure) {
+				releaseProducerStorage(failure);
+				throw failure;
+			}
+		}
+	}
+
+	private void reserveProducerMemory() throws IOException {
+		if (scheduler == null || producerLease != null || producerClaim != null) {
+			return;
+		}
+		if (scheduler.hasCurrentMemoryReservation()) {
+			producerClaim = scheduler.claimCurrentResources(producerMemoryBytes, 0);
+		} else {
+			producerLease = scheduler.reserveBlocking(producerMemoryBytes, 0);
+		}
+	}
+
+	private void allocateProducerStorage() {
+		offsets = new int[recordCapacity];
+		keyLengths = new int[recordCapacity];
+		valueLengths = new int[recordCapacity];
+		order = new int[recordCapacity];
+		heapBuffer = null;
+		nativeBuffer = null;
+		transferBuffer = null;
+		boolean allocatedNative = false;
+		Arena candidateArena = Arena.ofShared();
+		try {
+			MemorySegment candidateBuffer = Objects.requireNonNull(
+					runBufferAllocator.allocate(candidateArena, dataCapacity), "allocated byte-key run buffer");
+			if (candidateBuffer.byteSize() < dataCapacity || candidateBuffer.isReadOnly()) {
+				throw new IllegalArgumentException(
+						"Allocated byte-key run buffer must be writable and at least " + dataCapacity + " bytes");
+			}
+			byte[] candidateTransferBuffer = new byte[transferBufferBytes];
+			runBufferArena = candidateArena;
+			nativeBuffer = candidateBuffer;
+			transferBuffer = candidateTransferBuffer;
+			allocatedNative = true;
+		} catch (OutOfMemoryError directMemoryPressure) {
+			candidateArena.close();
+			heapBuffer = new byte[dataCapacity];
+			System.getLogger(ExternalByteKeySorter.class.getName())
+					.log(System.Logger.Level.WARNING,
+							"Could not allocate native byte-key run buffer; using heap fallback",
+							directMemoryPressure);
+		} catch (RuntimeException | Error failure) {
+			candidateArena.close();
+			throw failure;
+		}
+		nativeStorage = allocatedNative;
 	}
 
 	private void flushRun() throws IOException {
+		if (bufferedRecords == 0) {
+			return;
+		}
+		if (asyncSpillsEnabled && !scheduler.isWorkerThread()) {
+			if (flushRunAsynchronously()) {
+				return;
+			}
+		}
+		flushRunSynchronously();
+	}
+
+	private void flushRunSynchronously() throws IOException {
 		if (bufferedRecords == 0) {
 			return;
 		}
@@ -188,7 +452,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		}
 		sortOrder(0, bufferedRecords - 1);
 		Path run = Files.createTempFile(directory, prefix + "-run-", ".bin");
-		try (DataOutputStream output = BulkLz4.output(run, codec)) {
+		try (DataOutputStream output = BulkLz4.output(run, codec, scheduler, spillObserver)) {
 			for (int position = 0; position < bufferedRecords; position++) {
 				writeBufferedRecord(output, order[position]);
 			}
@@ -201,9 +465,189 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		bufferedDataBytes = 0;
 	}
 
+	private boolean flushRunAsynchronously() throws IOException {
+		while (!pendingSpills.isEmpty() && pendingSpills.size() >= scheduler.maximumOutstandingTaskCount()) {
+			awaitOldestSpill();
+		}
+		if (!pendingSpills.isEmpty() && pendingSpills.getFirst().future().isDone()) {
+			awaitOldestSpill();
+		}
+		int records = bufferedRecords;
+		int dataBytes = bufferedDataBytes;
+		long metadataBytes = Math.multiplyExact((long) records, 4L * Integer.BYTES);
+		long spillMemoryBytes = Math.addExact(Math.addExact(dataBytes, metadataBytes),
+				BulkLz4.mergeOutputMemoryBytes(codec));
+		BulkTaskScheduler.ResourceLease lease = scheduler.tryReserve(spillMemoryBytes, 1);
+		if (lease == null) {
+			return false;
+		}
+		SpillSnapshot snapshot;
+		try {
+			snapshot = snapshot(records, dataBytes);
+		} catch (RuntimeException | Error failure) {
+			lease.close();
+			throw failure;
+		}
+		int runNumber = nextRunNumber++;
+		Path run = asynchronousRunPath(runNumber);
+		try {
+			Files.deleteIfExists(run);
+			submitSpill(run, snapshot, lease);
+			bufferedRecords = 0;
+			bufferedDataBytes = 0;
+			return true;
+		} catch (IOException | RuntimeException | Error failure) {
+			lease.close();
+			snapshot.close();
+			try {
+				Files.deleteIfExists(run);
+			} catch (IOException cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
+	}
+
+	private SpillSnapshot snapshot(int records, int dataBytes) {
+		byte[] detachedData = new byte[dataBytes];
+		if (nativeStorage) {
+			if (dataBytes > 0) {
+				MemorySegment.copy(nativeBuffer, 0, MemorySegment.ofArray(detachedData), 0, dataBytes);
+			}
+		} else {
+			System.arraycopy(heapBuffer, 0, detachedData, 0, dataBytes);
+		}
+		return new ByteRunSnapshot(detachedData, Arrays.copyOf(offsets, records), Arrays.copyOf(keyLengths, records),
+				Arrays.copyOf(valueLengths, records), new int[records]);
+	}
+
+	private Path asynchronousRunPath(int runNumber) {
+		return directory.resolve(prefix + "-run-" + String.format(java.util.Locale.ROOT, "%08d", runNumber)
+				+ ".bin");
+	}
+
+	private void submitSpill(Path output, SpillSnapshot snapshot, BulkTaskScheduler.ResourceLease lease)
+			throws IOException {
+		CountDownLatch exited = new CountDownLatch(1);
+		try {
+			Future<Path> future = scheduler.submitOrRunInline(lease, () -> {
+				try {
+					snapshot.write(output, codec, spillObserver, scheduler);
+					return output;
+				} catch (IOException | RuntimeException | Error failure) {
+					try {
+						Files.deleteIfExists(output);
+					} catch (IOException cleanupFailure) {
+						failure.addSuppressed(cleanupFailure);
+					}
+					throw failure;
+				}
+			}, () -> {
+				try {
+					snapshot.close();
+				} finally {
+					exited.countDown();
+				}
+			});
+			pendingSpills.add(new PendingSpill(output, future, exited));
+		} catch (RuntimeException | Error failure) {
+			lease.close();
+			snapshot.close();
+			throw failure;
+		}
+	}
+
+	private void awaitOldestSpill() throws IOException {
+		PendingSpill pending = pendingSpills.removeFirst();
+		try {
+			runs.add(pending.future().get());
+		} catch (InterruptedException e) {
+			pending.future().cancel(true);
+			InterruptedIOException interrupted = new InterruptedIOException(
+					"interrupted while joining byte-key spills");
+			interrupted.initCause(e);
+			awaitSpillExit(pending);
+			addCleanupFailure(interrupted, deleteSpillOutput(pending.output()));
+			addCleanupFailure(interrupted, cancelAndAwaitPendingSpills());
+			Thread.currentThread().interrupt();
+			throw interrupted;
+		} catch (ExecutionException | CancellationException e) {
+			boolean interrupted = awaitSpillExit(pending);
+			addCleanupFailure(e, deleteSpillOutput(pending.output()));
+			addCleanupFailure(e, cancelAndAwaitPendingSpills());
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+			Throwable failure = e instanceof ExecutionException execution ? execution.getCause() : e;
+			if (failure instanceof IOException ioException) {
+				throw ioException;
+			}
+			throw new IOException("byte-key spill task failed", failure);
+		}
+	}
+
+	private void awaitAllSpills() throws IOException {
+		while (!pendingSpills.isEmpty()) {
+			awaitOldestSpill();
+		}
+	}
+
+	private IOException cancelAndAwaitPendingSpills() {
+		for (PendingSpill pending : pendingSpills) {
+			pending.future().cancel(true);
+		}
+		boolean interrupted = false;
+		IOException cleanupFailure = null;
+		for (PendingSpill pending : pendingSpills) {
+			interrupted |= awaitSpillExit(pending);
+			try {
+				Files.deleteIfExists(pending.output());
+			} catch (IOException failure) {
+				if (cleanupFailure == null) {
+					cleanupFailure = failure;
+				} else {
+					cleanupFailure.addSuppressed(failure);
+				}
+			}
+		}
+		pendingSpills.clear();
+		if (interrupted) {
+			Thread.currentThread().interrupt();
+		}
+		return cleanupFailure;
+	}
+
+	private boolean awaitSpillExit(PendingSpill pending) {
+		boolean interrupted = false;
+		while (true) {
+			try {
+				pending.exited().await();
+				return interrupted;
+			} catch (InterruptedException e) {
+				interrupted = true;
+			}
+		}
+	}
+
+	private static IOException deleteSpillOutput(Path output) {
+		try {
+			Files.deleteIfExists(output);
+			return null;
+		} catch (IOException cleanupFailure) {
+			return cleanupFailure;
+		}
+	}
+
+	private static void addCleanupFailure(Throwable failure, IOException cleanupFailure) {
+		if (cleanupFailure != null) {
+			failure.addSuppressed(cleanupFailure);
+		}
+	}
+
 	private void writeSingleRecordRun(byte[] key, byte[] value) throws IOException {
+		awaitAllSpills();
 		Path run = Files.createTempFile(directory, prefix + "-run-", ".bin");
-		try (DataOutputStream output = BulkLz4.output(run, codec)) {
+		try (DataOutputStream output = BulkLz4.output(run, codec, scheduler)) {
 			output.writeInt(key.length);
 			output.writeInt(value.length);
 			output.write(key);
@@ -317,10 +761,15 @@ final class ExternalByteKeySorter implements AutoCloseable {
 			for (int start = 0; start < current.size(); start += maxFanIn) {
 				List<Path> group = current.subList(start, Math.min(current.size(), start + maxFanIn));
 				Path merged = Files.createTempFile(directory, prefix + "-pass-" + pass + "-", ".bin");
+				runs.add(merged);
 				try {
 					mergeGroup(group, merged, codec);
 				} catch (Throwable failure) {
-					Files.deleteIfExists(merged);
+					try {
+						deleteRuns(List.of(merged));
+					} catch (IOException cleanupFailure) {
+						failure.addSuppressed(cleanupFailure);
+					}
 					throw failure;
 				}
 				deleteRuns(group);
@@ -332,12 +781,32 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		return current;
 	}
 
-	private static void mergeGroup(List<Path> group, Path outputPath, BulkCodec codec)
+	private void mergeGroup(List<Path> group, Path outputPath, BulkCodec codec) throws IOException {
+		if (scheduler == null) {
+			mergeGroupWithReservedDescriptors(group, outputPath, codec);
+			return;
+		}
+		if (scheduler.hasCurrentMemoryReservation()) {
+			try (BulkTaskScheduler.FileDescriptorScope descriptorScope = scheduler
+					.reserveFileDescriptors(group.size() + 1)) {
+				mergeGroupWithReservedDescriptors(group, outputPath, codec);
+			}
+			return;
+		}
+		long memoryBytes = mergeMemoryForFanIn(group.size());
+		try (BulkTaskScheduler.ResourceLease lease = scheduler.reserveBlocking(memoryBytes, group.size() + 1,
+				memoryBytes > mergeMemoryBudgetBytes);
+				BulkTaskScheduler.FileDescriptorScope descriptorScope = scheduler.bindResourceLease(lease)) {
+			mergeGroupWithReservedDescriptors(group, outputPath, codec);
+		}
+	}
+
+	private void mergeGroupWithReservedDescriptors(List<Path> group, Path outputPath, BulkCodec codec)
 			throws IOException {
 		RunCursor[] cursors = new RunCursor[group.size()];
-		try (DataOutputStream output = BulkLz4.output(outputPath, codec)) {
+		try (DataOutputStream output = BulkLz4.output(outputPath, codec, scheduler)) {
 			for (int i = 0; i < group.size(); i++) {
-				cursors[i] = new RunCursor(group.get(i), codec, true);
+				cursors[i] = new RunCursor(group.get(i), codec, scheduler);
 				cursors[i].advance();
 			}
 			LoserTree tree = new LoserTree(cursors);
@@ -346,7 +815,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 				RunCursor cursor = cursors[winner];
 				writeRecord(output, cursor.current);
 				if (!cursor.advance()) {
-					// The run is fully consumed; free its backing file immediately to lower peak merge disk.
+					// Close the reader; the sorter deletes this input only after the output is registered.
 					cursor.close();
 				}
 				tree.updated(winner);
@@ -386,29 +855,95 @@ final class ExternalByteKeySorter implements AutoCloseable {
 
 	@Override
 	public void close() throws IOException {
+		IOException failure = cancelAndAwaitPendingSpills();
 		try {
 			deleteRuns(runs);
-			runs.clear();
+		} catch (IOException cleanupFailure) {
+			if (failure == null) {
+				failure = cleanupFailure;
+			} else {
+				failure.addSuppressed(cleanupFailure);
+			}
 		} finally {
-			releaseRunBuffer();
+			releaseProducerStorage(failure);
 			finished = true;
 		}
-	}
-
-	private void releaseRunBuffer() {
-		nativeBuffer = null;
-		heapBuffer = null;
-		if (runBufferArena != null) {
-			runBufferArena.close();
-			runBufferArena = null;
+		if (failure != null) {
+			throw failure;
 		}
 	}
 
-	private static void deleteRuns(List<Path> paths) throws IOException {
+	private void closeProducerReservation(Throwable failure) {
+		releaseProducerStorage(failure);
+	}
+
+	private void releaseProducerStorage() {
+		releaseProducerStorage(null);
+	}
+
+	private void releaseProducerStorage(Throwable primaryFailure) {
+		nativeBuffer = null;
+		heapBuffer = null;
+		offsets = null;
+		keyLengths = null;
+		valueLengths = null;
+		order = null;
+		transferBuffer = null;
+		Throwable cleanupFailure = null;
+		Arena arena = runBufferArena;
+		runBufferArena = null;
+		if (arena != null) {
+			try {
+				arena.close();
+			} catch (RuntimeException | Error failure) {
+				cleanupFailure = failure;
+			}
+		}
+		BulkTaskScheduler.ResourceScope claim = producerClaim;
+		producerClaim = null;
+		if (claim != null) {
+			try {
+				claim.close();
+			} catch (RuntimeException | Error failure) {
+				cleanupFailure = combineCleanupFailures(cleanupFailure, failure);
+			}
+		}
+		BulkTaskScheduler.ResourceLease lease = producerLease;
+		producerLease = null;
+		if (lease != null) {
+			try {
+				lease.close();
+			} catch (RuntimeException | Error failure) {
+				cleanupFailure = combineCleanupFailures(cleanupFailure, failure);
+			}
+		}
+		if (cleanupFailure != null) {
+			if (primaryFailure != null) {
+				primaryFailure.addSuppressed(cleanupFailure);
+			} else if (cleanupFailure instanceof RuntimeException runtimeFailure) {
+				throw runtimeFailure;
+			} else {
+				throw (Error) cleanupFailure;
+			}
+		}
+	}
+
+	private static Throwable combineCleanupFailures(Throwable previous, Throwable next) {
+		if (previous == null) {
+			return next;
+		}
+		if (previous != next) {
+			previous.addSuppressed(next);
+		}
+		return previous;
+	}
+
+	private void deleteRuns(List<Path> paths) throws IOException {
 		IOException failure = null;
 		for (Path path : List.copyOf(paths)) {
 			try {
-				Files.deleteIfExists(path);
+				runFileDeleter.delete(path);
+				runs.remove(path);
 			} catch (IOException e) {
 				if (failure == null) {
 					failure = e;
@@ -425,22 +960,133 @@ final class ExternalByteKeySorter implements AutoCloseable {
 	private record Record(byte[] key, byte[] value) {
 	}
 
+	record RunLayout(int dataCapacity, int recordCapacity, int transferBufferBytes, long producerMemoryBytes,
+			long spillMemoryBytes) {
+	}
+
+	private record PendingSpill(Path output, Future<Path> future, CountDownLatch exited) {
+	}
+
+	@FunctionalInterface
+	interface RunFileDeleter {
+		void delete(Path path) throws IOException;
+	}
+
+	private interface SpillSnapshot extends AutoCloseable {
+		void write(Path output, BulkCodec codec, Runnable spillObserver, BulkTaskScheduler scheduler)
+				throws IOException;
+
+		@Override
+		void close();
+	}
+
+	private static final class ByteRunSnapshot implements SpillSnapshot {
+		private byte[] data;
+		private int[] offsets;
+		private int[] keyLengths;
+		private int[] valueLengths;
+		private int[] order;
+
+		private ByteRunSnapshot(byte[] data, int[] offsets, int[] keyLengths, int[] valueLengths, int[] order) {
+			this.data = data;
+			this.offsets = offsets;
+			this.keyLengths = keyLengths;
+			this.valueLengths = valueLengths;
+			this.order = order;
+		}
+
+		@Override
+		public void write(Path outputPath, BulkCodec codec, Runnable spillObserver, BulkTaskScheduler scheduler)
+				throws IOException {
+			for (int record = 0; record < order.length; record++) {
+				order[record] = record;
+			}
+			sortOrder(0, order.length - 1);
+			try (DataOutputStream output = BulkLz4.output(outputPath, codec, scheduler, spillObserver)) {
+				for (int position = 0; position < order.length; position++) {
+					int record = order[position];
+					int keyLength = keyLengths[record];
+					int valueLength = valueLengths[record];
+					int offset = offsets[record];
+					output.writeInt(keyLength);
+					output.writeInt(valueLength);
+					output.write(data, offset, keyLength);
+					output.write(data, offset + keyLength, valueLength);
+				}
+			}
+		}
+
+		private void sortOrder(int left, int right) {
+			while (left < right) {
+				int lower = left;
+				int upper = right;
+				int pivot = order[left + ((right - left) >>> 1)];
+				while (lower <= upper) {
+					while (compareRecords(order[lower], pivot) < 0) {
+						lower++;
+					}
+					while (compareRecords(order[upper], pivot) > 0) {
+						upper--;
+					}
+					if (lower <= upper) {
+						int swap = order[lower];
+						order[lower] = order[upper];
+						order[upper] = swap;
+						lower++;
+						upper--;
+					}
+				}
+				if (upper - left < right - lower) {
+					if (left < upper) {
+						sortOrder(left, upper);
+					}
+					left = lower;
+				} else {
+					if (lower < right) {
+						sortOrder(lower, right);
+					}
+					right = upper;
+				}
+			}
+		}
+
+		private int compareRecords(int left, int right) {
+			int leftOffset = offsets[left];
+			int rightOffset = offsets[right];
+			int comparisonLength = Math.min(keyLengths[left], keyLengths[right]);
+			for (int index = 0; index < comparisonLength; index++) {
+				int comparison = Integer.compare(Byte.toUnsignedInt(data[leftOffset + index]),
+						Byte.toUnsignedInt(data[rightOffset + index]));
+				if (comparison != 0) {
+					return comparison;
+				}
+			}
+			int lengthComparison = Integer.compare(keyLengths[left], keyLengths[right]);
+			return lengthComparison != 0 ? lengthComparison : Integer.compare(left, right);
+		}
+
+		@Override
+		public void close() {
+			data = null;
+			offsets = null;
+			keyLengths = null;
+			valueLengths = null;
+			order = null;
+		}
+	}
+
 	private static final class RunCursor implements AutoCloseable {
 
 		private final DataInputStream input;
-		private final Path path;
-		private final boolean deleteWhenClosed;
 		private Record current;
 		private boolean closed;
 
 		private RunCursor(Path path, BulkCodec codec) throws IOException {
-			this(path, codec, false);
+			this(path, codec, null);
 		}
 
-		private RunCursor(Path path, BulkCodec codec, boolean deleteWhenClosed) throws IOException {
-			this.path = path;
-			this.deleteWhenClosed = deleteWhenClosed;
-			input = BulkLz4.input(path, codec);
+		private RunCursor(Path path, BulkCodec codec, BulkTaskScheduler scheduler) throws IOException {
+			input = BulkLz4.input(path, codec, scheduler);
 		}
 
 		private boolean advance() throws IOException {
@@ -478,13 +1124,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 				return;
 			}
 			closed = true;
-			try {
-				input.close();
-			} finally {
-				if (deleteWhenClosed) {
-					Files.deleteIfExists(path);
-				}
-			}
+			input.close();
 		}
 	}
 

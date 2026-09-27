@@ -296,9 +296,10 @@ public final class LmdbBulkLoad {
 				  --base-uri URI                   Base URI; defaults to the input URI
 				  --statement-indexes SPEC         Comma-separated statement indexes
 				  --triple-term-indexes SPEC       Comma-separated RDF-star term indexes
-				  --memory BYTES                   Memory budget; accepts KiB, MiB, GiB
+				  --memory BYTES                   Aggregate task working-memory budget; accepts KiB, MiB, GiB
+				                                   irreducible merges may run alone at a reported minimum
 				  --partitions COUNT               Power-of-two value partition count
-				  --max-open-files COUNT           Maximum staging and merge files
+				  --max-open-files COUNT           Maximum staging and merge files; one merge may require 3
 				  --workers COUNT                  Parallel action workers (smart default: CPU-based)
 				  --queue-batches COUNT            Bounded batches queued between actions
 				  --compression fastest|none|1-17  Codec for the loader's intermediate files;

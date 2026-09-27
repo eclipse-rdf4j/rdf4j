@@ -17,9 +17,15 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -34,23 +40,25 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
  */
 final class ResolvedValueRecords {
 
-	private static final int MAX_KEY_BYTES = 1024 * 1024 * 1024;
+	static final int MAX_KEY_BYTES = 1024 * 1024 * 1024;
 
 	private final Path descriptors;
 	private final ExternalLongTupleSorter.SortedTupleFile dependencies;
 	private final long records;
+	private final int maximumCanonicalKeyBytes;
 	private final BulkCompression compression;
 
 	private ResolvedValueRecords(Path descriptors, ExternalLongTupleSorter.SortedTupleFile dependencies, long records,
-			BulkCompression compression) {
+			int maximumCanonicalKeyBytes, BulkCompression compression) {
 		this.descriptors = descriptors;
 		this.dependencies = dependencies;
 		this.records = records;
+		this.maximumCanonicalKeyBytes = maximumCanonicalKeyBytes;
 		this.compression = compression;
 	}
 
 	static ResolvedValueRecords restore(Path workspace, long records, long dependencyRecords, long dependencyBytes,
-			BulkCompression compression) throws IOException {
+			BulkCompression compression, int maximumCanonicalKeyBytes, BulkTaskScheduler scheduler) throws IOException {
 		if (records < 0L || dependencyRecords < 0L) {
 			throw new IOException("Invalid resolved value metadata in " + workspace);
 		}
@@ -61,7 +69,11 @@ final class ResolvedValueRecords {
 		ExternalLongTupleSorter.SortedTupleFile dependencies = ExternalLongTupleSorter.SortedTupleFile.restore(
 				workspace.resolve("resolved-value-components.bin"), 3, dependencyRecords, dependencyBytes,
 				compression.codecFor(BulkArtifact.RESOLVED_VALUE_COMPONENTS));
-		return new ResolvedValueRecords(descriptors, dependencies, records, compression);
+		int maximumKeyBytes = maximumCanonicalKeyBytes < 0
+				? maximumCanonicalKeyBytes(descriptors, records,
+						compression.codecFor(BulkArtifact.RESOLVED_VALUES), scheduler)
+				: validateMaximumCanonicalKeyBytes(maximumCanonicalKeyBytes);
+		return new ResolvedValueRecords(descriptors, dependencies, records, maximumKeyBytes, compression);
 	}
 
 	static ResolvedValueRecords build(PartitionValueDictionary dictionary, Path workspace, int maxOpenFiles,
@@ -72,6 +84,7 @@ final class ResolvedValueRecords {
 		Path sortedDependencies = workspace.resolve("resolved-value-components.bin");
 		Files.createDirectories(bucketDirectory);
 		long[] sequence = { 0L };
+		int[] maximumKeyBytes = { 0 };
 		try (DataOutputStream descriptors = BulkLz4.output(descriptorPath, compression.codecFor(BulkArtifact.RESOLVED_VALUES));
 				DependencyBucketWriter buckets = new DependencyBucketWriter(compression, bucketDirectory,
 						dictionary.partitionCount(), maxOpenFiles);
@@ -84,6 +97,7 @@ final class ResolvedValueRecords {
 					return;
 				}
 				long owner = sequence[0]++;
+				maximumKeyBytes[0] = Math.max(maximumKeyBytes[0], entry.key().length);
 				descriptors.writeLong(owner);
 				descriptors.writeLong(entry.id());
 				descriptors.writeInt(entry.roles());
@@ -129,7 +143,709 @@ final class ResolvedValueRecords {
 				}
 			}
 			return new ResolvedValueRecords(descriptorPath, sorter.finish(sortedDependencies), sequence[0],
-					compression);
+					maximumKeyBytes[0], compression);
+		}
+	}
+
+	static ResolvedValueRecords build(PartitionValueDictionary dictionary, Path workspace, int maxOpenFiles,
+			long memoryBudgetBytes, LmdbStoreConfig config, BulkCompression compression,
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+			PartitionConcurrencyController controller) throws IOException {
+		return buildAdaptive(dictionary, workspace, maxOpenFiles, memoryBudgetBytes, config, compression,
+				cancellationSignal, scheduler, controller);
+	}
+
+	private static ResolvedValueRecords buildAdaptive(PartitionValueDictionary dictionary, Path workspace,
+			int maxOpenFiles, long memoryBudgetBytes, LmdbStoreConfig config, BulkCompression compression,
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+			PartitionConcurrencyController controller) throws IOException {
+		Path bucketDirectory = workspace.resolve("value-component-buckets");
+		Path runDirectory = bucketDirectory.resolve("resolved-runs");
+		Path descriptorPath = workspace.resolve("assigned-values.bin");
+		Path sortedDependencies = workspace.resolve("resolved-value-components.bin");
+		Files.createDirectories(bucketDirectory);
+		ResolvedIdQuadSpool.deleteContents(runDirectory);
+		Files.createDirectories(runDirectory);
+		BulkCodec bucketCodec = compression.codecFor(BulkArtifact.VALUE_COMPONENT_BUCKETS);
+		BulkCodec runCodec = compression.codecFor(BulkArtifact.RESOLVED_VALUE_COMPONENTS);
+		BulkCodec descriptorCodec = compression.codecFor(BulkArtifact.RESOLVED_VALUES);
+
+		long[] records = { 0L };
+		// A dictionary cursor remains open while bucket frames are flushed. Keep one output open at a time so both
+		// handles and their codec state fit the same admitted scan envelope, even at low configured file limits.
+		int outputLimit = 1;
+		try (DependencyBucketWriter buckets = new DependencyBucketWriter(compression, bucketDirectory,
+				dictionary.partitionCount(), outputLimit, memoryBudgetBytes, scheduler,
+				PartitionValueDictionary.ENTRY_READER_BUFFER_BYTES)) {
+			dictionary.forEachEntry(entry -> {
+				checkCancelled(cancellationSignal);
+				if (ValueIds.isInlined(entry.id())) {
+					return;
+				}
+				long owner = records[0]++;
+				if (CanonicalTermCodec.isNamespace(entry.key())) {
+					return;
+				}
+				Value value = CanonicalTermCodec.decode(entry.key());
+				switch (value) {
+				case IRI iri -> buckets.write(owner, 0, CanonicalTermCodec.encodeNamespace(iri.getNamespace()), null,
+						config);
+				case Literal literal -> buckets.write(owner, 0, CanonicalTermCodec.encode(literal.getDatatype()), null,
+						config);
+				case TripleTerm triple -> {
+					buckets.write(owner, 0, CanonicalTermCodec.encode(triple.getSubject()), null, config);
+					buckets.write(owner, 1, CanonicalTermCodec.encode(triple.getPredicate()), null, config);
+					buckets.write(owner, 2, CanonicalTermCodec.encode(triple.getObject()), null, config);
+				}
+				default -> {
+					// Blank nodes carry no dependent IDs.
+				}
+				}
+			}, scheduler, buckets.resourceLease());
+			buckets.closeOutputs();
+		}
+
+		long[] describedRecords = { 0L };
+		int[] maximumKeyBytes = { 0 };
+		long descriptorScanMemory = Math.addExact(PartitionValueDictionary.ENTRY_READER_BUFFER_BYTES,
+				BulkLz4.mergeOutputMemoryBytes(descriptorCodec));
+		try (BulkTaskScheduler.ResourceScope descriptorEnvelope = scheduler.reserveStreamEnvelope(
+				descriptorScanMemory, 2);
+				DataOutputStream descriptors = BulkLz4.output(descriptorPath, descriptorCodec, scheduler)) {
+			dictionary.forEachEntry(entry -> {
+				checkCancelled(cancellationSignal);
+				if (ValueIds.isInlined(entry.id())) {
+					return;
+				}
+				long owner = describedRecords[0]++;
+				maximumKeyBytes[0] = Math.max(maximumKeyBytes[0], entry.key().length);
+				descriptors.writeLong(owner);
+				descriptors.writeLong(entry.id());
+				descriptors.writeInt(entry.roles());
+				descriptors.writeInt(entry.key().length);
+				descriptors.write(entry.key());
+			}, scheduler, descriptorEnvelope.ownedLease());
+		}
+		if (describedRecords[0] != records[0]) {
+			throw new IOException("Assigned-value descriptor count changed between dictionary passes: expected "
+					+ records[0] + " but wrote " + describedRecords[0]);
+		}
+
+		long[] dependencyCount = { 0L };
+		long[] completedRuns = { 0L };
+		try (AdaptiveDependencySource source = new AdaptiveDependencySource(dictionary, bucketDirectory,
+				runDirectory, bucketCodec, runCodec, memoryBudgetBytes, maxOpenFiles, config, cancellationSignal,
+				scheduler, controller)) {
+			scheduler.runAdaptive(source, completion -> {
+				DependencyRunResult result = completion.value();
+				controller.recordCommittedWork(completion.committedWorkBytes(), result.startedAt());
+				dependencyCount[0] = Math.addExact(dependencyCount[0], result.rows());
+				completedRuns[0] = Math.max(completedRuns[0], completion.workId() + 1L);
+				result.partition().inFlight--;
+				completion.transferResultOwnership();
+			});
+		}
+		controller.finishStage();
+
+		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "resolved-value-components", 3,
+				memoryBudgetBytes, maxOpenFiles, runCodec, scheduler, () -> {
+				})) {
+			for (long runId = 0; runId < completedRuns[0]; runId++) {
+				ResolvedIdQuadSpool.RunMetadata metadata = ResolvedIdQuadSpool.readRunMetadata(runDirectory, runId,
+						scheduler);
+				ExternalLongTupleSorter.SortedTupleFile run = ExternalLongTupleSorter.SortedTupleFile.restore(
+						ResolvedIdQuadSpool.runPath(runDirectory, runId), 3, metadata.rows(), metadata.bytes(), runCodec);
+				sorter.addSortedRun(run);
+				Files.deleteIfExists(ResolvedIdQuadSpool.metadataPath(runDirectory, runId));
+			}
+			ExternalLongTupleSorter.SortedTupleFile sorted = sorter.finish(sortedDependencies);
+			if (sorted.rows() != dependencyCount[0]) {
+				throw new IOException("Resolved assigned-value dependency count mismatch: expected "
+						+ dependencyCount[0] + " but got " + sorted.rows());
+			}
+			return new ResolvedValueRecords(descriptorPath, sorted, records[0], maximumKeyBytes[0], compression);
+		}
+	}
+
+	private static int bucketOutputLimit(int maxOpenFiles, long memoryBudgetBytes, BulkCodec codec) {
+		long outputMemory = BulkLz4.mergeOutputMemoryBytes(codec);
+		long bufferMemory = Math.min(8L * 1024 * 1024, memoryBudgetBytes / 16L);
+		long outputBudget = Math.max(outputMemory, memoryBudgetBytes - bufferMemory);
+		long byMemory = Math.max(1L, outputBudget / outputMemory);
+		return (int) Math.max(1L, Math.min(Math.max(1, maxOpenFiles), byMemory));
+	}
+
+	private record DependencyRecord(long owner, int component, long routeHash, byte[] key) {
+		long retainedBytes() {
+			return 64L + key.length;
+		}
+	}
+
+	private record DependencyChunk(List<DependencyRecord> records, long retainedBytes) {
+	}
+
+	private record DependencyRunResult(DependencyPartition partition, long rows,
+			PartitionConcurrencyController.ChunkStart startedAt) {
+	}
+
+	private static final class DependencyPartition implements AutoCloseable {
+		private final int partition;
+		private final PartitionValueDictionary.PartitionReader reader;
+		private final DependencyBucketCursor cursor;
+		private int inFlight;
+		private boolean eof;
+		private boolean closed;
+
+		private DependencyPartition(int partition, PartitionValueDictionary.PartitionReader reader,
+				DependencyBucketCursor cursor) {
+			this.partition = partition;
+			this.reader = reader;
+			this.cursor = cursor;
+		}
+
+		@Override
+		public void close() throws IOException {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			IOException failure = null;
+			try {
+				cursor.close();
+			} catch (IOException closeFailure) {
+				failure = closeFailure;
+			}
+			try {
+				reader.close();
+			} catch (RuntimeException closeFailure) {
+				IOException wrapped = new IOException(
+						"Could not close value dictionary reader for partition " + partition, closeFailure);
+				if (failure == null) {
+					failure = wrapped;
+				} else {
+					failure.addSuppressed(wrapped);
+				}
+			}
+			if (failure != null) {
+				throw failure;
+			}
+		}
+	}
+
+	/** Sequentially scans bucket partitions while workers resolve bounded, sorted chunks. */
+	private static final class AdaptiveDependencySource
+			implements BulkTaskScheduler.AdaptiveWorkSource<DependencyRunResult>, AutoCloseable {
+		private static final int MAX_CHUNK_RECORDS = 512;
+		private static final long LOOKUP_CACHE_BYTES = 32L * 1024L;
+		private static final long METADATA_BYTES = 64L;
+		private static final long MAX_CHUNK_BYTES = 256L * 1024L;
+		private static final long CURSOR_HEADER_BYTES = 64L;
+
+		private final PartitionValueDictionary dictionary;
+		private final Path bucketDirectory;
+		private final Path runDirectory;
+		private final BulkCodec inputCodec;
+		private final BulkCodec runCodec;
+		private final long memoryBudgetBytes;
+		private final int maxOpenFiles;
+		private final LmdbStoreConfig config;
+		private final BooleanSupplier cancellationSignal;
+		private final BulkTaskScheduler scheduler;
+		private final PartitionConcurrencyController controller;
+		private final Map<Integer, DependencyPartition> partitions = new HashMap<>();
+		private int nextPartition;
+		private long nextWorkId;
+		private DependencyPartition current;
+		private boolean closed;
+
+		private AdaptiveDependencySource(PartitionValueDictionary dictionary, Path bucketDirectory, Path runDirectory,
+				BulkCodec inputCodec, BulkCodec runCodec, long memoryBudgetBytes, int maxOpenFiles,
+				LmdbStoreConfig config, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+				PartitionConcurrencyController controller) {
+			this.dictionary = dictionary;
+			this.bucketDirectory = bucketDirectory;
+			this.runDirectory = runDirectory;
+			this.inputCodec = inputCodec;
+			this.runCodec = runCodec;
+			this.memoryBudgetBytes = memoryBudgetBytes;
+			this.maxOpenFiles = maxOpenFiles;
+			this.config = config;
+			this.cancellationSignal = cancellationSignal;
+			this.scheduler = scheduler;
+			this.controller = controller;
+			long taskBytes = LOOKUP_CACHE_BYTES + METADATA_BYTES + BulkLz4.mergeOutputMemoryBytes(runCodec);
+			int workerCap = scheduler.workerLimit();
+			long cursorBytes = BulkLz4.concatenatedInputMemoryBytes(inputCodec) + CURSOR_HEADER_BYTES;
+			int memoryCap = Math.toIntExact(Math.min(Integer.MAX_VALUE,
+					ResolvedIdQuadSpool.adaptivePartitionMemoryCap(memoryBudgetBytes, cursorBytes + taskBytes + 1L)));
+			int descriptorCap = Math.max(1, Math.max(3, maxOpenFiles) / 2);
+			controller.beginStage("resolved assigned-value components", workerCap, memoryCap, descriptorCap);
+		}
+
+		@Override
+		public BulkTaskScheduler.AdaptiveWorkPoll<DependencyRunResult> poll() throws IOException {
+			checkCancelled(cancellationSignal);
+			controller.sample();
+			retireDrainedPartitions();
+			if (partitions.size() > controller.targetConcurrency()) {
+				updateActivePartitionCount();
+				return BulkTaskScheduler.AdaptiveWorkPoll.waitForWork();
+			}
+			while (true) {
+				if (current != null && !current.eof) {
+					long firstRecordBytes = current.cursor.peekNextRecordRetainedBytes();
+					if (firstRecordBytes >= 0L) {
+						if (requiresExclusiveMemoryFloor(current, firstRecordBytes) && partitions.size() > 1) {
+							controller.setPhase(PartitionConcurrencyController.Phase.TRANSITIONING);
+							updateActivePartitionCount();
+							return BulkTaskScheduler.AdaptiveWorkPoll.waitForWork();
+						}
+						return requestChunk(current, firstRecordBytes);
+					}
+					current.cursor.closeInput();
+					current.eof = true;
+					current = null;
+				}
+
+				int target = controller.targetConcurrency();
+				if (partitions.size() > target) {
+					updateActivePartitionCount();
+					return BulkTaskScheduler.AdaptiveWorkPoll.waitForWork();
+				}
+				if (partitions.size() < target && nextPartition < dictionary.partitionCount()) {
+					int candidate = nextPartition;
+					Path bucketPath = DependencyBucketWriter.path(bucketDirectory, candidate);
+					if (Files.notExists(bucketPath)) {
+						nextPartition++;
+						continue;
+					}
+					DependencyPartition opened = openPartition(candidate);
+					if (opened == null) {
+						updateActivePartitionCount();
+						return BulkTaskScheduler.AdaptiveWorkPoll.waitForWork();
+					}
+					nextPartition++;
+					partitions.put(opened.partition, opened);
+					current = opened;
+					continue;
+				}
+
+				updateActivePartitionCount();
+				if (nextPartition >= dictionary.partitionCount()) {
+					controller.setPhase(PartitionConcurrencyController.Phase.DRAINING);
+					if (partitions.isEmpty()) {
+						return BulkTaskScheduler.AdaptiveWorkPoll.exhausted();
+					}
+				}
+				return BulkTaskScheduler.AdaptiveWorkPoll.waitForWork();
+			}
+		}
+
+		private boolean requiresExclusiveMemoryFloor(DependencyPartition partition, long firstRecordBytes) {
+			long fixedTaskBytes = LOOKUP_CACHE_BYTES + METADATA_BYTES + BulkLz4.mergeOutputMemoryBytes(runCodec);
+			long requestBytes = Math.addExact(
+					Math.addExact(partition.cursor.resourceLease().memoryBytes(), fixedTaskBytes),
+					firstRecordBytes);
+			return requestBytes > memoryBudgetBytes;
+		}
+
+		private BulkTaskScheduler.AdaptiveWorkPoll<DependencyRunResult> requestChunk(DependencyPartition partition,
+				long firstRecordBytes) throws IOException {
+			controller.setPhase(PartitionConcurrencyController.Phase.PRODUCING);
+			updateActivePartitionCount();
+			PartitionConcurrencyController.ChunkStart requestEpoch = controller.chunkStarted();
+			BulkTaskScheduler.ResourceLease baseLease = partition.cursor.resourceLease();
+			long fixedTaskBytes = LOOKUP_CACHE_BYTES + METADATA_BYTES + BulkLz4.mergeOutputMemoryBytes(runCodec);
+			long availableBytes = memoryBudgetBytes - baseLease.memoryBytes() - fixedTaskBytes;
+			boolean singleRecord = availableBytes <= 0L || firstRecordBytes > Math.min(MAX_CHUNK_BYTES, availableBytes);
+			long chunkTargetBytes = singleRecord
+					? firstRecordBytes
+					: Math.max(firstRecordBytes, Math.min(MAX_CHUNK_BYTES, availableBytes));
+			long taskMemoryBytes = Math.addExact(Math.addExact(baseLease.memoryBytes(), fixedTaskBytes),
+					chunkTargetBytes);
+			int taskFileDescriptors = Math.addExact(baseLease.fileDescriptors(), 1);
+			boolean memoryFloor = taskMemoryBytes > memoryBudgetBytes;
+			long workId = nextWorkId++;
+			return BulkTaskScheduler.AdaptiveWorkPoll.request(
+					new BulkTaskScheduler.AdaptiveWorkRequest<>(taskMemoryBytes, taskFileDescriptors, memoryFloor,
+							requestEpoch.epochGeneration(), partitions.size(),
+							new BulkTaskScheduler.AdaptivePreparation<>() {
+								private final AtomicReference<List<DependencyRecord>> capturedRecords = new AtomicReference<>();
+								private final AtomicBoolean outputComplete = new AtomicBoolean();
+
+								@Override
+								public BulkTaskScheduler.AdaptivePreparedWork<DependencyRunResult> prepare(
+										BulkTaskScheduler.ResourceLease ignored) throws IOException {
+									DependencyChunk chunk = partition.cursor.nextChunk(chunkTargetBytes,
+											singleRecord ? 1 : MAX_CHUNK_RECORDS);
+									if (chunk == null) {
+										throw new IOException("Value dependency partition ended after chunk admission");
+									}
+									capturedRecords.set(chunk.records());
+									partition.inFlight++;
+									Path output = ResolvedIdQuadSpool.runPath(runDirectory, workId);
+									Path metadata = ResolvedIdQuadSpool.metadataPath(runDirectory, workId);
+									Path metadataTemporary = ResolvedIdQuadSpool.metadataTemporaryPath(runDirectory,
+											workId);
+									long committedBytes = chunk.retainedBytes();
+									return new BulkTaskScheduler.AdaptivePreparedWork<>(workId, lease -> {
+										PartitionConcurrencyController.ChunkStart started = controller.chunkStarted();
+										long rows = 0L;
+										try {
+											LookupCache cache = new LookupCache(1024);
+											try (DataOutputStream outputStream = BulkLz4.output(output, runCodec,
+													scheduler)) {
+												long previousOwner = -1L;
+												int previousComponent = -1;
+												for (DependencyRecord record : capturedRecords.get()) {
+													checkCancelled(cancellationSignal);
+													if (record.owner() < previousOwner
+															|| record.owner() == previousOwner
+																	&& record.component() <= previousComponent) {
+														throw new IOException(
+																"Value dependency bucket is not ordered by owner and component");
+													}
+													previousOwner = record.owner();
+													previousComponent = record.component();
+													long id = lookup(partition, cache, record);
+													outputStream.writeLong(record.owner());
+													outputStream.writeLong(record.component());
+													outputStream.writeLong(id);
+													rows++;
+												}
+											}
+											long bytes = Files.size(output);
+											ResolvedIdQuadSpool.writeRunMetadata(runDirectory, workId, rows, bytes,
+													scheduler);
+											outputComplete.set(true);
+											return new BulkTaskScheduler.AdaptiveTaskResult<>(
+													new DependencyRunResult(partition, rows, started), committedBytes,
+													() -> ResolvedIdQuadSpool.deleteRun(output, metadata,
+															metadataTemporary));
+										} catch (IOException | RuntimeException | Error failure) {
+											ResolvedIdQuadSpool.deleteRun(output, metadata, metadataTemporary);
+											throw failure;
+										}
+									}, () -> {
+										capturedRecords.set(List.of());
+										if (!outputComplete.get()) {
+											ResolvedIdQuadSpool.deleteRun(output, metadata, metadataTemporary);
+										}
+									});
+								}
+
+								@Override
+								public void cleanupAfterFailure(BulkTaskScheduler.ResourceLease lease,
+										Throwable failure) {
+									capturedRecords.set(List.of());
+								}
+							}, baseLease));
+		}
+
+		private long lookup(DependencyPartition partition, LookupCache cache, DependencyRecord record)
+				throws IOException {
+			if (!CanonicalTermCodec.isNamespace(record.key())) {
+				long inlineId = InlineValueCodec.tryEncode(CanonicalTermCodec.decode(record.key()), config);
+				if (inlineId != 0L) {
+					return inlineId;
+				}
+			}
+			long id = cache.lookup(record.routeHash(), record.key());
+			if (id == 0L) {
+				id = partition.reader.lookup(record.key());
+				if (id == 0L) {
+					throw new IOException("Missing value-ID dependency for assigned value " + record.owner()
+							+ " component " + record.component());
+				}
+				cache.put(record.routeHash(), record.key(), id);
+			}
+			return id;
+		}
+
+		private DependencyPartition openPartition(int partition) throws IOException {
+			long inputMemory = BulkLz4.concatenatedInputMemoryBytes(inputCodec) + CURSOR_HEADER_BYTES;
+			BulkTaskScheduler.ResourceLease lease = scheduler.tryReserveExclusiveCursorBase(inputMemory, 1);
+			if (lease == null) {
+				return null;
+			}
+			PartitionValueDictionary.PartitionReader reader = null;
+			BulkLz4.ConcatenatedFrames frames = null;
+			try {
+				reader = dictionary.openPartition(partition, scheduler, lease);
+				frames = BulkLz4.openConcatenated(DependencyBucketWriter.path(bucketDirectory, partition), inputCodec,
+						scheduler, lease);
+				DependencyBucketCursor cursor = new DependencyBucketCursor(partition, dictionary.partitionCount(),
+						frames, lease);
+				return new DependencyPartition(partition, reader, cursor);
+			} catch (IOException | RuntimeException | Error failure) {
+				if (frames != null) {
+					try {
+						frames.close();
+					} catch (IOException closeFailure) {
+						failure.addSuppressed(closeFailure);
+					}
+				}
+				try {
+					if (reader != null) {
+						reader.close();
+					}
+				} catch (RuntimeException closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+				try {
+					lease.releaseFileDescriptors();
+				} catch (RuntimeException closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+				try {
+					lease.close();
+				} catch (RuntimeException closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+				throw failure;
+			}
+		}
+
+		private void updateActivePartitionCount() {
+			controller.setActualActivePartitions(partitions.size());
+		}
+
+		private void retireDrainedPartitions() throws IOException {
+			for (DependencyPartition partition : new ArrayList<>(partitions.values())) {
+				if (partition.eof && partition.inFlight == 0) {
+					partitions.remove(partition.partition);
+					partition.close();
+				}
+			}
+		}
+
+		@Override
+		public void awaitReady() throws IOException {
+			throw new IOException("value dependency cursor admission is blocked without in-flight work");
+		}
+
+		@Override
+		public void close() throws IOException {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			IOException failure = null;
+			for (DependencyPartition partition : new ArrayList<>(partitions.values())) {
+				try {
+					partition.close();
+				} catch (IOException closeFailure) {
+					if (failure == null) {
+						failure = closeFailure;
+					} else {
+						failure.addSuppressed(closeFailure);
+					}
+				}
+			}
+			partitions.clear();
+			if (failure != null) {
+				throw failure;
+			}
+		}
+	}
+
+	private record DependencyBucketHeader(long owner, int component, long routeHash, int keyLength) {
+		long retainedBytes() {
+			return 64L + keyLength;
+		}
+	}
+
+	private static final class DependencyBucketCursor implements AutoCloseable {
+		private final int partition;
+		private final int partitionCount;
+		private final BulkLz4.ConcatenatedFrames frames;
+		private final BulkTaskScheduler.ResourceLease lease;
+		private DataInputStream frame;
+		private DependencyBucketHeader pending;
+		private long previousOwner = -1L;
+		private int previousComponent = -1;
+		private boolean exhausted;
+		private boolean inputClosed;
+		private boolean closed;
+
+		private DependencyBucketCursor(int partition, int partitionCount, BulkLz4.ConcatenatedFrames frames,
+				BulkTaskScheduler.ResourceLease lease) {
+			this.partition = partition;
+			this.partitionCount = partitionCount;
+			this.frames = frames;
+			this.lease = lease;
+		}
+
+		private BulkTaskScheduler.ResourceLease resourceLease() {
+			return lease;
+		}
+
+		private long peekNextRecordRetainedBytes() throws IOException {
+			ensureOpen();
+			if (pending != null) {
+				return pending.retainedBytes();
+			}
+			int first = readRecordStartByte();
+			if (first < 0) {
+				exhausted = true;
+				return -1L;
+			}
+			try {
+				long owner = readLongWithFirstByte(first);
+				int component = frame.readUnsignedByte();
+				long routeHash = frame.readLong();
+				int keyLength = frame.readInt();
+				if (owner < 0L || component > 2 || keyLength <= 0 || keyLength > MAX_KEY_BYTES
+						|| ((int) routeHash & (partitionCount - 1)) != partition) {
+					throw new IOException("Malformed assigned-value dependency bucket in partition " + partition);
+				}
+				if (owner < previousOwner || owner == previousOwner && component <= previousComponent) {
+					throw new IOException("Assigned-value dependency bucket is not ordered in partition " + partition);
+				}
+				pending = new DependencyBucketHeader(owner, component, routeHash, keyLength);
+				return pending.retainedBytes();
+			} catch (EOFException truncated) {
+				throw new IOException("Truncated assigned-value dependency bucket in partition " + partition,
+						truncated);
+			}
+		}
+
+		private DependencyRecord next() throws IOException {
+			if (peekNextRecordRetainedBytes() < 0L) {
+				return null;
+			}
+			DependencyBucketHeader header = pending;
+			byte[] key = new byte[header.keyLength()];
+			try {
+				frame.readFully(key);
+			} catch (EOFException truncated) {
+				throw new IOException("Truncated assigned-value dependency key in partition " + partition, truncated);
+			}
+			if (CanonicalTermCodec.routeHash64(key) != header.routeHash()) {
+				throw new IOException("Assigned-value dependency route hash mismatch in partition " + partition);
+			}
+			previousOwner = header.owner();
+			previousComponent = header.component();
+			pending = null;
+			return new DependencyRecord(header.owner(), header.component(), header.routeHash(), key);
+		}
+
+		private DependencyChunk nextChunk(long targetBytes, int maxRecords) throws IOException {
+			List<DependencyRecord> records = new ArrayList<>(Math.min(maxRecords, 64));
+			long retainedBytes = 0L;
+			while (records.size() < maxRecords) {
+				long nextBytes = peekNextRecordRetainedBytes();
+				if (nextBytes < 0L || !records.isEmpty() && nextBytes > targetBytes - retainedBytes) {
+					break;
+				}
+				DependencyRecord record = next();
+				if (record == null) {
+					break;
+				}
+				records.add(record);
+				retainedBytes = Math.addExact(retainedBytes, record.retainedBytes());
+				if (retainedBytes >= targetBytes) {
+					break;
+				}
+			}
+			return records.isEmpty() ? null : new DependencyChunk(List.copyOf(records), retainedBytes);
+		}
+
+		private void closeInput() throws IOException {
+			if (inputClosed) {
+				return;
+			}
+			inputClosed = true;
+			IOException failure = null;
+			try {
+				frames.closeInput();
+			} catch (IOException closeFailure) {
+				failure = closeFailure;
+			}
+			try {
+				lease.releaseFileDescriptors();
+			} catch (RuntimeException closeFailure) {
+				IOException wrapped = new IOException("Could not release dependency cursor descriptors", closeFailure);
+				if (failure == null) {
+					failure = wrapped;
+				} else {
+					failure.addSuppressed(wrapped);
+				}
+			}
+			frame = null;
+			pending = null;
+			if (failure != null) {
+				throw failure;
+			}
+		}
+
+		private int readRecordStartByte() throws IOException {
+			while (!exhausted) {
+				if (frame != null) {
+					int first = frame.read();
+					if (first >= 0) {
+						return first;
+					}
+					frame = null;
+				}
+				if (!frames.nextFrame()) {
+					exhausted = true;
+					return -1;
+				}
+				frame = frames.frame();
+			}
+			return -1;
+		}
+
+		private long readLongWithFirstByte(int first) throws IOException {
+			long value = (long) first << 56;
+			for (int shift = 48; shift >= 0; shift -= 8) {
+				value |= (long) frame.readUnsignedByte() << shift;
+			}
+			return value;
+		}
+
+		private void ensureOpen() throws IOException {
+			if (closed) {
+				throw new IOException("Assigned-value dependency cursor is closed");
+			}
+		}
+
+		@Override
+		public void close() throws IOException {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			IOException failure = null;
+			try {
+				frames.close();
+			} catch (IOException closeFailure) {
+				failure = closeFailure;
+			}
+			try {
+				lease.releaseFileDescriptors();
+			} catch (RuntimeException closeFailure) {
+				IOException wrapped = new IOException("Could not release dependency cursor descriptors", closeFailure);
+				if (failure == null) {
+					failure = wrapped;
+				} else {
+					failure.addSuppressed(wrapped);
+				}
+			}
+			try {
+				lease.close();
+			} catch (RuntimeException closeFailure) {
+				IOException wrapped = new IOException("Could not release dependency cursor resources", closeFailure);
+				if (failure == null) {
+					failure = wrapped;
+				} else {
+					failure.addSuppressed(wrapped);
+				}
+			}
+			if (failure != null) {
+				throw failure;
+			}
 		}
 	}
 
@@ -146,9 +862,33 @@ final class ResolvedValueRecords {
 	}
 
 	void forEach(ResolvedValueConsumer consumer, BooleanSupplier cancellationSignal) throws IOException {
-		try (DataInputStream descriptorInput = BulkLz4.input(descriptors,
-				compression.codecFor(BulkArtifact.RESOLVED_VALUES));
-				DataInputStream dependencyInput = BulkLz4.input(dependencies.path(), dependencies.codec())) {
+		forEach(consumer, cancellationSignal, null);
+	}
+
+	void forEach(ResolvedValueConsumer consumer, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler)
+			throws IOException {
+		forEach(consumer, cancellationSignal, scheduler, 0L, 0);
+	}
+
+	void forEach(ResolvedValueConsumer consumer, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+			long synchronousSpillMemoryBytes, int spillFileDescriptors) throws IOException {
+		forEach(consumer, cancellationSignal, scheduler, synchronousSpillMemoryBytes, spillFileDescriptors, () -> {
+		});
+	}
+
+	void forEach(ResolvedValueConsumer consumer, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+			long synchronousSpillMemoryBytes, int spillFileDescriptors, Runnable beforeReaderClose) throws IOException {
+		BulkCodec descriptorCodec = compression.codecFor(BulkArtifact.RESOLVED_VALUES);
+		long readerBytes = readerMemoryEstimateBytes();
+		int readerCount = readerFileDescriptorEstimate();
+		BulkTaskScheduler.ResourceScope readers = scheduler == null ? null
+				: scheduler.reserveScanEnvelope(readerBytes, readerCount,
+						records == 0L ? 0L : conversionMemoryEstimateBytes(), synchronousSpillMemoryBytes,
+						spillFileDescriptors);
+		try (BulkTaskScheduler.ResourceScope ignored = readers;
+				DataInputStream descriptorInput = BulkLz4.input(descriptors,
+						descriptorCodec, scheduler);
+				DataInputStream dependencyInput = BulkLz4.input(dependencies.path(), dependencies.codec(), scheduler)) {
 			long seen = 0L;
 			while (true) {
 				long sequence;
@@ -162,7 +902,8 @@ final class ResolvedValueRecords {
 					long id = descriptorInput.readLong();
 					int roles = descriptorInput.readInt();
 					int keyLength = descriptorInput.readInt();
-					if (sequence != seen || keyLength < 0 || keyLength > MAX_KEY_BYTES) {
+					if (sequence != seen || keyLength < 0 || keyLength > maximumCanonicalKeyBytes
+							|| keyLength > MAX_KEY_BYTES) {
 						throw new IOException("Malformed assigned-value descriptor at sequence " + seen);
 					}
 					byte[] key = new byte[keyLength];
@@ -193,7 +934,72 @@ final class ResolvedValueRecords {
 				throw new IOException("Assigned-value descriptor count mismatch: expected " + records + " but got "
 						+ seen);
 			}
+			beforeReaderClose.run();
 		}
+	}
+
+	long readerMemoryEstimateBytes() throws IOException {
+		long descriptorReaderBytes = Files.size(descriptors) == 0L ? 0L
+				: BulkLz4.mergeInputMemoryBytes(compression.codecFor(BulkArtifact.RESOLVED_VALUES));
+		long dependencyReaderBytes = Files.size(dependencies.path()) == 0L ? 0L
+				: BulkLz4.mergeInputMemoryBytes(dependencies.codec());
+		return Math.addExact(descriptorReaderBytes, dependencyReaderBytes);
+	}
+
+	int readerFileDescriptorEstimate() throws IOException {
+		return (Files.size(descriptors) == 0L ? 0 : 1) + (Files.size(dependencies.path()) == 0L ? 0 : 1);
+	}
+
+	int maximumCanonicalKeyBytes() {
+		return maximumCanonicalKeyBytes;
+	}
+
+	long conversionMemoryEstimateBytes() {
+		// The canonical key remains live while decoding can materialize UTF-16 text and a value-store record. Four
+		// times the encoded key plus fixed arrays/objects conservatively covers those simultaneous payloads.
+		return Math.addExact(Math.multiplyExact((long) maximumCanonicalKeyBytes, 4L), 16L * 1024L);
+	}
+
+	private static int maximumCanonicalKeyBytes(Path descriptorPath, long expectedRecords, BulkCodec codec,
+			BulkTaskScheduler scheduler) throws IOException {
+		if (expectedRecords == 0L) {
+			return 0;
+		}
+		int maximumKeyBytes = 0;
+		long readerBytes = Files.size(descriptorPath) == 0L ? 0L : BulkLz4.mergeInputMemoryBytes(codec);
+		int readerDescriptors = Files.size(descriptorPath) == 0L ? 0 : 1;
+		try (BulkTaskScheduler.ResourceScope scan = scheduler == null ? null
+				: scheduler.reserveScanEnvelope(readerBytes, readerDescriptors, 0L, 0L, 0);
+				DataInputStream input = BulkLz4.input(descriptorPath, codec, scheduler)) {
+			for (long expectedSequence = 0L; expectedSequence < expectedRecords; expectedSequence++) {
+				long sequence;
+				try {
+					sequence = input.readLong();
+				} catch (EOFException e) {
+					throw new IOException("Truncated assigned-value descriptors at sequence " + expectedSequence, e);
+				}
+				long id = input.readLong();
+				int roles = input.readInt();
+				int keyLength = input.readInt();
+				if (sequence != expectedSequence || id == 0L || roles == 0 || keyLength < 0
+						|| keyLength > MAX_KEY_BYTES) {
+					throw new IOException("Malformed assigned-value descriptor at sequence " + expectedSequence);
+				}
+				input.skipNBytes(keyLength);
+				maximumKeyBytes = Math.max(maximumKeyBytes, keyLength);
+			}
+			if (input.read() != -1) {
+				throw new IOException("Extra assigned-value descriptors");
+			}
+		}
+		return maximumKeyBytes;
+	}
+
+	private static int validateMaximumCanonicalKeyBytes(int maximumKeyBytes) throws IOException {
+		if (maximumKeyBytes < 0 || maximumKeyBytes > MAX_KEY_BYTES) {
+			throw new IOException("Invalid maximum canonical key length: " + maximumKeyBytes);
+		}
+		return maximumKeyBytes;
 	}
 
 	private static int dependencyCount(byte[] key) {
@@ -257,20 +1063,78 @@ final class ResolvedValueRecords {
 		private boolean closed;
 
 		private final BulkCompression compression;
+		private final BulkTaskScheduler scheduler;
+		private final BulkTaskScheduler.ResourceLease bufferLease;
+		private final BulkTaskScheduler.FileDescriptorScope bufferScope;
 
 		private DependencyBucketWriter(BulkCompression compression, Path directory, int partitionCount,
-				int maxOpenFiles) {
+				int maxOpenFiles) throws IOException {
+			this(compression, directory, partitionCount, maxOpenFiles, 0L, null);
+		}
+
+		private DependencyBucketWriter(BulkCompression compression, Path directory, int partitionCount,
+				int maxOpenOutputs, long memoryBudgetBytes, BulkTaskScheduler scheduler) throws IOException {
+			this(compression, directory, partitionCount, maxOpenOutputs, memoryBudgetBytes, scheduler, 0L);
+		}
+
+		private DependencyBucketWriter(BulkCompression compression, Path directory, int partitionCount,
+				int maxOpenOutputs, long memoryBudgetBytes, BulkTaskScheduler scheduler, long readerMemoryBytes)
+				throws IOException {
 			this.compression = compression;
 			this.directory = directory;
 			this.partitionCount = partitionCount;
-			outputs = new BoundedBucketOutputLimiter(maxOpenFiles);
+			this.scheduler = scheduler;
+			BulkTaskScheduler.ResourceLease lease = null;
+			BulkTaskScheduler.FileDescriptorScope scope = null;
+			long bufferBytes = scheduler == null ? 0L : BoundedBucketOutputLimiter.maxBufferedBytes(memoryBudgetBytes);
+			long outputMemoryBytes = BulkLz4.mergeOutputMemoryBytes(
+					compression.codecFor(BulkArtifact.VALUE_COMPONENT_BUCKETS));
+			long stagedBufferBytes = bufferBytes > 0L && readerMemoryBytes <= memoryBudgetBytes - bufferBytes
+					&& outputMemoryBytes <= memoryBudgetBytes - bufferBytes - readerMemoryBytes
+							? bufferBytes
+							: 0L;
+			long limiterBudget = scheduler == null || stagedBufferBytes > 0L ? memoryBudgetBytes : 0L;
+			try {
+				if (readerMemoryBytes > 0L) {
+					long envelope = Math.addExact(Math.addExact(readerMemoryBytes, stagedBufferBytes),
+							outputMemoryBytes);
+					lease = scheduler.reserveBlocking(envelope, 2, true);
+					scope = scheduler.bindResourceLease(lease);
+				} else if (stagedBufferBytes > 0L) {
+					long envelope = Math.addExact(stagedBufferBytes, outputMemoryBytes);
+					lease = scheduler.reserveBlocking(envelope, 1);
+					scope = scheduler.bindResourceLease(lease);
+				}
+				outputs = new BoundedBucketOutputLimiter(maxOpenOutputs, limiterBudget);
+			} catch (IOException | RuntimeException | Error failure) {
+				if (scope != null) {
+					try {
+						scope.close();
+					} catch (RuntimeException closeFailure) {
+						failure.addSuppressed(closeFailure);
+					}
+				}
+				if (lease != null) {
+					lease.close();
+				}
+				throw failure;
+			}
+			bufferLease = lease;
+			bufferScope = scope;
+		}
+
+		private BulkTaskScheduler.ResourceLease resourceLease() {
+			if (bufferLease == null) {
+				throw new IllegalStateException("dictionary scan has no admitted resource lease");
+			}
+			return bufferLease;
 		}
 
 		private void write(long owner, int component, byte[] key, ExternalLongTupleSorter sorter,
 				LmdbStoreConfig config) throws IOException {
 			if (!CanonicalTermCodec.isNamespace(key)) {
 				long inlineId = InlineValueCodec.tryEncode(CanonicalTermCodec.decode(key), config);
-				if (inlineId != 0L) {
+				if (inlineId != 0L && sorter != null) {
 					sorter.add3(owner, component, inlineId);
 					return;
 				}
@@ -279,18 +1143,53 @@ final class ResolvedValueRecords {
 			int partition = (int) routeHash & (partitionCount - 1);
 			DataOutputStream output = outputs.output(partition,
 					() -> BulkLz4.appendOutput(path(directory, partition),
-							compression.codecFor(BulkArtifact.VALUE_COMPONENT_BUCKETS)));
+							compression.codecFor(BulkArtifact.VALUE_COMPONENT_BUCKETS), scheduler));
 			output.writeLong(owner);
 			output.writeByte(component);
 			output.writeLong(routeHash);
 			output.writeInt(key.length);
 			output.write(key);
+			outputs.finishRecord();
 		}
 
 		private void closeOutputs() throws IOException {
 			if (!closed) {
-				outputs.close();
 				closed = true;
+				IOException failure = null;
+				try {
+					outputs.close();
+				} catch (IOException closeFailure) {
+					failure = closeFailure;
+				}
+				try {
+					if (bufferScope != null) {
+						bufferScope.close();
+					}
+				} catch (RuntimeException closeFailure) {
+					IOException wrapped = new IOException("Could not release dependency bucket buffer scope",
+							closeFailure);
+					if (failure == null) {
+						failure = wrapped;
+					} else {
+						failure.addSuppressed(wrapped);
+					}
+				}
+				try {
+					if (bufferLease != null) {
+						bufferLease.close();
+					}
+				} catch (RuntimeException closeFailure) {
+					IOException wrapped = new IOException("Could not release dependency bucket buffer lease",
+							closeFailure);
+					if (failure == null) {
+						failure = wrapped;
+					} else {
+						failure.addSuppressed(wrapped);
+					}
+				}
+				if (failure != null) {
+					throw failure;
+				}
 			}
 		}
 

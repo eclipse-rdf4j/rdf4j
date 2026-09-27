@@ -12,13 +12,19 @@
 package org.eclipse.rdf4j.sail.lmdb.bulk;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.lang.reflect.Method;
+import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
@@ -35,7 +41,7 @@ class ExternalByteKeySorterTest {
 		ExternalByteKeySorter sorter = new ExternalByteKeySorter(temporaryDirectory, "bytes", 192L, 3,
 				BulkCodec.FAST);
 
-		assertThat(usesNativeBuffer(sorter)).isTrue();
+		assertThat(sorter.usesNativeBuffer()).isTrue();
 		for (int value = 31; value >= 0; value--) {
 			sorter.add(bytes("key-" + String.format("%02d", value)), bytes("value-" + value));
 		}
@@ -44,7 +50,7 @@ class ExternalByteKeySorterTest {
 		sorter.finish(output).forEach((key, ignored) -> keys.add(new String(key, StandardCharsets.UTF_8)));
 
 		assertThat(keys).containsExactly(expectedKeys());
-		assertThat(hasLiveRunBuffer(sorter)).isFalse();
+		assertThat(sorter.hasLiveRunBuffer()).isFalse();
 		try (Stream<Path> paths = Files.list(temporaryDirectory)) {
 			assertThat(paths.filter(path -> !path.equals(output)).toList()).isEmpty();
 		}
@@ -58,7 +64,7 @@ class ExternalByteKeySorterTest {
 				BulkCodec.FAST, (arena, bytes) -> {
 					throw new OutOfMemoryError("injected direct-memory pressure");
 				})) {
-			assertThat(usesNativeBuffer(sorter)).isFalse();
+			assertThat(sorter.usesNativeBuffer()).isFalse();
 			sorter.add(bytes("b"), bytes("second"));
 			sorter.add(bytes("a"), bytes("first"));
 
@@ -66,20 +72,240 @@ class ExternalByteKeySorterTest {
 			sorter.finish(output).forEach((key, ignored) -> keys.add(new String(key, StandardCharsets.UTF_8)));
 
 			assertThat(keys).containsExactly("a", "b");
-			assertThat(hasLiveRunBuffer(sorter)).isFalse();
+			assertThat(sorter.hasLiveRunBuffer()).isFalse();
 		}
 	}
 
-	private static boolean usesNativeBuffer(ExternalByteKeySorter sorter) throws ReflectiveOperationException {
-		Method method = ExternalByteKeySorter.class.getDeclaredMethod("usesNativeBuffer");
-		method.setAccessible(true);
-		return (boolean) method.invoke(sorter);
+	@Test
+	void accountsForTheTransferBufferThatNativeRunWritesAllocate() {
+		for (long budgetBytes : List.of(64L, 80L, 96L, 16L * 1024L)) {
+			ExternalByteKeySorter.RunLayout layout = ExternalByteKeySorter.layoutForBudget(budgetBytes, BulkCodec.FAST);
+			long metadataBytes = (long) layout.recordCapacity() * 4L * Integer.BYTES;
+			long allocatedTransferBytes = layout.transferBufferBytes();
+
+			assertThat(layout.producerMemoryBytes())
+					.as("producer reservation must include every allocated byte-key buffer for budget %s", budgetBytes)
+					.isGreaterThanOrEqualTo(layout.dataCapacity() + metadataBytes + allocatedTransferBytes);
+			assertThat(layout.producerMemoryBytes())
+					.as("producer storage must fit the normalized per-sorter budget %s", budgetBytes)
+					.isLessThanOrEqualTo(Math.max(64L, budgetBytes));
+		}
 	}
 
-	private static boolean hasLiveRunBuffer(ExternalByteKeySorter sorter) throws ReflectiveOperationException {
-		Method method = ExternalByteKeySorter.class.getDeclaredMethod("hasLiveRunBuffer");
-		method.setAccessible(true);
-		return (boolean) method.invoke(sorter);
+	@Test
+	void failedFinalMergeDeletesItsPartialOutput() throws Exception {
+		Path output = temporaryDirectory.resolve("failed-final-output.bin");
+		try (ExternalByteKeySorter sorter = new ExternalByteKeySorter(temporaryDirectory, "failed-final", 64L, 3,
+				BulkCodec.FAST)) {
+			sorter.add(bytes("a"), bytes("one"));
+			sorter.add(bytes("a key larger than the run buffer"), bytes("two"));
+			Path missingRun;
+			try (Stream<Path> paths = Files.list(temporaryDirectory)) {
+				missingRun = paths.filter(path -> path.getFileName().toString().startsWith("failed-final-run-"))
+						.findFirst()
+						.orElseThrow();
+			}
+			Files.delete(missingRun);
+
+			assertThatThrownBy(() -> sorter.finish(output)).isInstanceOf(IOException.class);
+			assertThat(output).doesNotExist();
+		}
+	}
+
+	@Test
+	void sizesVariableRecordMergeFanInToItsWorkingMemoryBudget() throws Exception {
+		long memoryBudget = 4L * 1024L * 1024L;
+		byte[] key = bytes("key!");
+		byte[] value = bytes("value");
+		for (BulkCodec codec : List.of(BulkCodec.FAST, BulkCodec.level(17), BulkCodec.NONE)) {
+			try (ExternalByteKeySorter sorter = new ExternalByteKeySorter(temporaryDirectory,
+					"budget-" + codec.token(), memoryBudget, 1024, codec)) {
+				for (int row = 0; row < 180_000; row++) {
+					sorter.add(key, value);
+				}
+				sorter.prepareFinish();
+				assertThat(sorter.mergeFileDescriptorCount()).isGreaterThan(3);
+				assertThat(sorter.mergeMemoryEstimateBytes())
+						.as("merge memory for codec %s", codec)
+						.isLessThanOrEqualTo(memoryBudget);
+				assertThat(sorter.mergeFileDescriptorCount())
+						.as("merge fan-in for codec %s", codec)
+						.isLessThan(1024);
+			}
+		}
+	}
+
+	@Test
+	void spillsSortedVariableRecordsInBackgroundWhileAcceptingMoreInput() throws Exception {
+		long memoryBudget = 1024L * 1024L;
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, 2L * 1024L * 1024L, 16)) {
+			CountDownLatch spillStarted = new CountDownLatch(1);
+			CountDownLatch releaseSpill = new CountDownLatch(1);
+			try (ExternalByteKeySorter sorter = new ExternalByteKeySorter(temporaryDirectory, "async-bytes",
+					memoryBudget, 16, BulkCodec.NONE, scheduler, () -> {
+						spillStarted.countDown();
+						try {
+							if (!releaseSpill.await(5, TimeUnit.SECONDS)) {
+								throw new IllegalStateException("test did not release the byte spill task");
+							}
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+							throw new IllegalStateException("byte spill task was interrupted", e);
+						}
+					})) {
+				for (int record = sorter.runRecordCapacity() - 1; record >= 0; record--) {
+					sorter.add(bytes(String.format("key-%05d", record)), bytes("value"));
+				}
+				sorter.add(bytes("key-overflow"), bytes("value"));
+				assertThat(spillStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+				// The worker owns a detached run while the producer fills the next bounded run.
+				sorter.add(bytes("key-after"), bytes("value"));
+				releaseSpill.countDown();
+				List<String> keys = new ArrayList<>();
+				sorter.finish(temporaryDirectory.resolve("async-bytes-sorted.bin"))
+						.forEach((key, value) -> keys.add(new String(key, StandardCharsets.UTF_8)));
+				assertThat(keys).containsExactly(expectedKeysWithOverflow(sorter.runRecordCapacity()));
+			}
+		}
+	}
+
+	@Test
+	void includesBothCurrentAndNextLargeRecordsInMergeReservations() throws Exception {
+		byte[] key = new byte[1_200 * 1024];
+		byte[] value = new byte[400 * 1024];
+		try (ExternalByteKeySorter sorter = new ExternalByteKeySorter(temporaryDirectory, "large-record", 5L * 1024
+				* 1024, 3, BulkCodec.NONE)) {
+			for (int record = 0; record < 4; record++) {
+				sorter.add(key, value);
+			}
+			sorter.prepareFinish();
+
+			long fourCursorRecords = 4L * (key.length + value.length + 2L * Integer.BYTES);
+			assertThat(sorter.mergeFileDescriptorCount()).isEqualTo(3);
+			assertThat(sorter.mergeMemoryEstimateBytes()).isGreaterThan(fourCursorRecords);
+			assertThat(sorter.mergeMemoryEstimateBytes()).isGreaterThan(5L * 1024 * 1024);
+		}
+	}
+
+	@Test
+	void admitsSynchronousSpillOutputWhileAnotherFileHandleIsOpen() throws Exception {
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, 1024L * 1024L, 2)) {
+			try (BulkTaskScheduler.FileDescriptorScope peerLease = scheduler.reserveFileDescriptors(1);
+					BulkTaskScheduler.OpenFileHandle peerHandle = scheduler.trackOpenFileHandle();
+					FileChannel peer = FileChannel.open(temporaryDirectory.resolve("peer-handle.bin"),
+							StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+				try (ExternalByteKeySorter sorter = new ExternalByteKeySorter(temporaryDirectory, "sync-spill", 64L, 3,
+						BulkCodec.NONE, scheduler, () -> {
+						})) {
+					sorter.add(bytes("a"), bytes("one"));
+					sorter.add(bytes("b"), bytes("two"));
+
+					assertThat(scheduler.peakOpenFileHandles()).isEqualTo(2);
+				}
+			}
+		}
+	}
+
+	@Test
+	void accountsForSynchronousProducerStorageWhileItIsRetained() throws Exception {
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(1, 1024L, 4);
+				ExternalByteKeySorter sorter = new ExternalByteKeySorter(temporaryDirectory, "sync-budget-bytes", 64L,
+						4, BulkCodec.NONE, scheduler, () -> {
+						})) {
+			assertThat(scheduler.reservedMemoryBytes())
+					.as("the live synchronous producer arrays and run buffer")
+					.isGreaterThan(0L);
+		}
+	}
+
+	@Test
+	void pausesProducerStorageWithoutSealingTheSorterAndResumesOnAppend() throws Exception {
+		Path output = temporaryDirectory.resolve("paused-production-output.bin");
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(1, 32L * 1024L, 4);
+				ExternalByteKeySorter sorter = new ExternalByteKeySorter(temporaryDirectory, "paused-production", 64L,
+						4, BulkCodec.NONE, scheduler, () -> {
+						})) {
+			sorter.add(bytes("a"), bytes("first"));
+			sorter.add(bytes("c"), bytes("third"));
+			sorter.pauseProduction();
+			assertThat(sorter.recordCount()).isEqualTo(2L);
+			assertThat(scheduler.reservedMemoryBytes()).isZero();
+
+			sorter.add(bytes("b"), bytes("second"));
+			assertThat(scheduler.reservedMemoryBytes()).isGreaterThan(0L);
+			List<String> keys = new ArrayList<>();
+			sorter.finish(output).forEach((key, value) -> keys.add(new String(key, StandardCharsets.UTF_8)));
+			assertThat(keys).containsExactly("a", "b", "c");
+			assertThat(sorter.recordCount()).isEqualTo(3L);
+		}
+	}
+
+	@Test
+	void admitsOversizedSingleRecordOutputWhileAnotherFileHandleIsOpen() throws Exception {
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, 8L * 1024 * 1024, 2)) {
+			try (BulkTaskScheduler.FileDescriptorScope peerLease = scheduler.reserveFileDescriptors(1);
+					BulkTaskScheduler.OpenFileHandle peerHandle = scheduler.trackOpenFileHandle();
+					FileChannel peer = FileChannel.open(temporaryDirectory.resolve("oversize-peer.bin"),
+							StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+					ExternalByteKeySorter sorter = new ExternalByteKeySorter(temporaryDirectory, "oversize-sync",
+							1024L * 1024L, 3, BulkCodec.NONE, scheduler, () -> {
+							})) {
+				byte[] key = new byte[900 * 1024];
+				byte[] value = new byte[256 * 1024];
+				sorter.add(key, value);
+
+				assertThat(scheduler.peakOpenFileHandles()).isEqualTo(2);
+			}
+		}
+	}
+
+	@Test
+	void finalMergeBorrowsTheEnclosingTaskFileDescriptorLease() throws Exception {
+		Path output = temporaryDirectory.resolve("scheduler-final-merge.bin");
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, 4L * 1024 * 1024, 3);
+				ExternalByteKeySorter sorter = new ExternalByteKeySorter(temporaryDirectory, "scheduler-final", 64L, 3,
+						BulkCodec.NONE, scheduler, () -> {
+						})) {
+			for (int record = 0; record < 6; record++) {
+				sorter.add(bytes("key-" + record), bytes("value-" + record));
+			}
+			sorter.prepareFinish();
+
+			BulkTaskScheduler.Work<ExternalByteKeySorter.SortedRecordFile> work = new BulkTaskScheduler.Work<>(
+					sorter.mergeMemoryEstimateBytes(), sorter.mergeFileDescriptorCount(),
+					() -> sorter.finish(output), sorter.requiresSerialMemoryFloor());
+			scheduler.runOrdered(List.of(work));
+
+			assertThat(output).exists();
+			assertThat(scheduler.peakOpenFileHandles()).isEqualTo(3);
+			assertThat(scheduler.reservedFileDescriptors()).isZero();
+		}
+	}
+
+	@Test
+	void successfulIntermediateMergeRemainsOwnedWhenInputDeletionFails() throws Exception {
+		AtomicBoolean failFirstDelete = new AtomicBoolean(true);
+		ExternalByteKeySorter.RunFileDeleter deleter = path -> {
+			if (failFirstDelete.compareAndSet(true, false)) {
+				throw new IOException("injected intermediate input deletion failure");
+			}
+			Files.deleteIfExists(path);
+		};
+		Path output = temporaryDirectory.resolve("orphan-output.bin");
+		try (ExternalByteKeySorter sorter = new ExternalByteKeySorter(temporaryDirectory, "orphan-byte", 64L, 3,
+				BulkCodec.NONE, deleter)) {
+			for (int record = 0; record < 6; record++) {
+				sorter.add(bytes("key-" + record), bytes("value-" + record));
+			}
+
+			assertThatThrownBy(() -> sorter.finish(output)).isInstanceOf(IOException.class)
+					.hasMessageContaining("injected intermediate input deletion failure");
+		}
+
+		try (Stream<Path> paths = Files.list(temporaryDirectory)) {
+			assertThat(paths.toList()).isEmpty();
+		}
 	}
 
 	private static String[] expectedKeys() {
@@ -87,6 +313,16 @@ class ExternalByteKeySorterTest {
 		for (int value = 0; value < keys.length; value++) {
 			keys[value] = "key-" + String.format("%02d", value);
 		}
+		return keys;
+	}
+
+	private static String[] expectedKeysWithOverflow(int recordCapacity) {
+		String[] keys = new String[recordCapacity + 2];
+		for (int record = 0; record < recordCapacity; record++) {
+			keys[record] = String.format("key-%05d", record);
+		}
+		keys[recordCapacity] = "key-after";
+		keys[recordCapacity + 1] = "key-overflow";
 		return keys;
 	}
 

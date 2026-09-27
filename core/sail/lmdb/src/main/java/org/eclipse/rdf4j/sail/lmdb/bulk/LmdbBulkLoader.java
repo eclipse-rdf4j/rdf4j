@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
+import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -48,6 +49,8 @@ public final class LmdbBulkLoader {
 	private final long writeTransactionBytes;
 	private final BulkCompression compression;
 	private final LmdbBulkLoadGeneration.PromotionHook publicationHook;
+	private final int benchmarkPartitionConcurrency;
+	private final IntConsumer benchmarkActivePartitionObserver;
 
 	private LmdbBulkLoader(Builder builder) {
 		target = builder.target;
@@ -65,6 +68,8 @@ public final class LmdbBulkLoader {
 		writeTransactionBytes = builder.writeTransactionBytes;
 		compression = builder.compression;
 		publicationHook = builder.publicationHook;
+		benchmarkPartitionConcurrency = builder.benchmarkPartitionConcurrency;
+		benchmarkActivePartitionObserver = builder.benchmarkActivePartitionObserver;
 	}
 
 	/**
@@ -154,6 +159,11 @@ public final class LmdbBulkLoader {
 		return queueBatches;
 	}
 
+	PartitionConcurrencyController newPartitionConcurrencyController() {
+		return new PartitionConcurrencyController(System::nanoTime, benchmarkPartitionConcurrency,
+				benchmarkActivePartitionObserver);
+	}
+
 	ProgressListener progressListener() {
 		return progressListener;
 	}
@@ -234,6 +244,8 @@ public final class LmdbBulkLoader {
 		private long writeTransactionBytes = DEFAULT_WRITE_TRANSACTION_BYTES;
 		private BulkCompression compression = BulkCompression.FASTEST;
 		private LmdbBulkLoadGeneration.PromotionHook publicationHook = LmdbBulkLoadGeneration.PromotionHook.NONE;
+		private int benchmarkPartitionConcurrency;
+		private IntConsumer benchmarkActivePartitionObserver;
 
 		private Builder(Path target, LmdbStoreConfig config) {
 			this.target = Objects.requireNonNull(target, "target").toAbsolutePath().normalize();
@@ -331,6 +343,16 @@ public final class LmdbBulkLoader {
 
 		Builder publicationHook(LmdbBulkLoadGeneration.PromotionHook publicationHook) {
 			this.publicationHook = Objects.requireNonNull(publicationHook, "publicationHook");
+			return this;
+		}
+
+		Builder benchmarkPartitionConcurrency(int concurrency, IntConsumer activePartitionObserver) {
+			if (concurrency < 0) {
+				throw new IllegalArgumentException("benchmark partition concurrency must not be negative");
+			}
+			benchmarkPartitionConcurrency = concurrency;
+			benchmarkActivePartitionObserver = Objects.requireNonNull(activePartitionObserver,
+					"activePartitionObserver");
 			return this;
 		}
 

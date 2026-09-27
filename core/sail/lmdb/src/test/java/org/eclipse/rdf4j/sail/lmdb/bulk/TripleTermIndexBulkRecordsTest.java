@@ -13,14 +13,22 @@ package org.eclipse.rdf4j.sail.lmdb.bulk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class TripleTermIndexBulkRecordsTest {
+	@TempDir
+	Path temporaryDirectory;
 
 	@Test
 	void noneDisablesTermIndexSpecifications() {
@@ -48,5 +56,141 @@ class TripleTermIndexBulkRecordsTest {
 		assertThat(ValueStore.class.getDeclaredMethods())
 				.extracting(java.lang.reflect.Method::getName)
 				.doesNotContain("validateBulkTripleTermIndex");
+	}
+
+	@Test
+	void finishesIndependentTermIndexesConcurrentlyAndKeepsTheirRowsSorted() throws Exception {
+		Path workspace = Files.createDirectory(temporaryDirectory.resolve("parallel-terms"));
+		int rows = 120_000;
+		ExternalLongTupleSorter.SortedTupleFile source;
+		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "term-source", 4,
+				16L * 1024 * 1024, 8, BulkCodec.FAST)) {
+			for (int row = rows - 1; row >= 0; row--) {
+				sorter.add4(Integer.toUnsignedLong(row), row % 19L, rows - (long) row, 0L);
+			}
+			source = sorter.finish(workspace.resolve("term-source-sorted.bin"));
+		}
+
+		long memoryBudgetBytes = 8L * 1024 * 1024;
+		int maxOpenFiles = 8;
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, maxOpenFiles);
+				TripleTermIndexBulkRecords records = TripleTermIndexBulkRecords.build(source, workspace, null,
+						memoryBudgetBytes, maxOpenFiles, BulkCompression.FASTEST, () -> false, scheduler)) {
+			assertThat(records.runs()).extracting(TripleTermIndexBulkRecords.IndexRun::specification)
+					.containsExactly("spoc", "cspo");
+			assertThat(scheduler.peakActiveTasks()).isEqualTo(2);
+			assertThat(scheduler.reservedMemoryBytes()).isZero();
+			assertThat(scheduler.reservedFileDescriptors()).isZero();
+			for (TripleTermIndexBulkRecords.IndexRun run : records.runs()) {
+				assertThat(run.tuples().rows()).isEqualTo(rows);
+				long[][] previous = { null };
+				run.tuples().forEach(tuple -> {
+					if (previous[0] != null) {
+						assertThat(compareUnsigned(previous[0], tuple)).isLessThanOrEqualTo(0);
+					}
+					previous[0] = tuple.clone();
+				});
+			}
+		}
+	}
+
+	@Test
+	void overlapsTermIndexSpillsWithSortedSourceReaderWithinMemoryBudget() throws Exception {
+		Path workspace = Files.createDirectory(temporaryDirectory.resolve("budgeted-term-index-scan"));
+		ExternalLongTupleSorter.SortedTupleFile source;
+		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "term-budget-source", 4,
+				512L * 1024L, 8, BulkCodec.NONE)) {
+			for (long row = 0; row < 20_000L; row++) {
+				sorter.add4(row, row + 1L, row + 2L, row + 3L);
+			}
+			source = sorter.finish(workspace.resolve("term-budget-source-sorted.bin"));
+		}
+
+		long memoryBudgetBytes = 1024L * 1024L;
+		AtomicBoolean sawRunBufferReservationDuringScan = new AtomicBoolean();
+		AtomicBoolean observedFirstAsyncSpill = new AtomicBoolean();
+		AtomicInteger openHandlesAtFirstSpill = new AtomicInteger();
+		CountDownLatch spillOutputOpened = new CountDownLatch(1);
+		CountDownLatch releaseSpillOutput = new CountDownLatch(1);
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, 8)) {
+			try (TripleTermIndexBulkRecords records = TripleTermIndexBulkRecords.build(source, workspace, "spoc",
+					memoryBudgetBytes, 8, BulkCompression.NONE, () -> {
+						if (scheduler.reservedMemoryBytes() > 0) {
+							sawRunBufferReservationDuringScan.set(true);
+						}
+						return false;
+					}, scheduler, () -> {
+						if (!scheduler.isWorkerThread() || !observedFirstAsyncSpill.compareAndSet(false, true)) {
+							return;
+						}
+						openHandlesAtFirstSpill.set(scheduler.openFileHandles());
+						spillOutputOpened.countDown();
+						awaitLatch(releaseSpillOutput, "the submitted spill output was not released");
+					}, () -> {
+						awaitLatch(spillOutputOpened,
+								"the worker did not open its spill while the source scan was active");
+						releaseSpillOutput.countDown();
+					})) {
+				assertThat(records.runs()).extracting(TripleTermIndexBulkRecords.IndexRun::specification)
+						.containsExactly("spoc", "cspo");
+				assertThat(records.runs()).allSatisfy(run -> assertThat(run.tuples().rows()).isEqualTo(20_000L));
+				assertThat(sawRunBufferReservationDuringScan)
+						.as("sorter run buffers must be admitted before term input scanning")
+						.isTrue();
+				assertThat(observedFirstAsyncSpill).as("a bounded worker must open an asynchronous spill").isTrue();
+				assertThat(openHandlesAtFirstSpill.get())
+						.as("the source reader and async spill output must be open at the same time")
+						.isGreaterThanOrEqualTo(2);
+				assertThat(scheduler.peakReservedMemoryBytes()).isLessThanOrEqualTo(memoryBudgetBytes);
+				assertThat(scheduler.peakOpenFileHandles()).isGreaterThanOrEqualTo(2);
+				assertThat(scheduler.reservedMemoryBytes()).isZero();
+				assertThat(scheduler.reservedFileDescriptors()).isZero();
+			}
+		} finally {
+			releaseSpillOutput.countDown();
+		}
+	}
+
+	@Test
+	void accountsForSortedTupleSourceReader() throws Exception {
+		Path workspace = Files.createDirectory(temporaryDirectory.resolve("scheduled-term-source-reader"));
+		ExternalLongTupleSorter.SortedTupleFile source;
+		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "scheduled-term-source", 4,
+				64L * 1024, 8, BulkCodec.NONE)) {
+			sorter.add4(1L, 2L, 3L, 4L);
+			source = sorter.finish(workspace.resolve("scheduled-term-source-sorted.bin"));
+		}
+
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(1, 1024L * 1024, 8)) {
+			AtomicBoolean sourceReaderReserved = new AtomicBoolean();
+			source.forEach(tuple -> sourceReaderReserved.set(scheduler.openFileHandles() == 1
+					&& scheduler.reservedFileDescriptors() >= 1), scheduler);
+			assertThat(sourceReaderReserved)
+					.as("sorted tuple source must retain its input descriptor lease while reading")
+					.isTrue();
+			assertThat(scheduler.reservedMemoryBytes()).isZero();
+			assertThat(scheduler.openFileHandles()).isZero();
+		}
+	}
+
+	private static int compareUnsigned(long[] left, long[] right) {
+		for (int column = 0; column < left.length; column++) {
+			int comparison = Long.compareUnsigned(left[column], right[column]);
+			if (comparison != 0) {
+				return comparison;
+			}
+		}
+		return 0;
+	}
+
+	private static void awaitLatch(CountDownLatch latch, String failureMessage) {
+		try {
+			if (!latch.await(30, TimeUnit.SECONDS)) {
+				throw new AssertionError(failureMessage);
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("interrupted while synchronizing the spill overlap test", e);
+		}
 	}
 }

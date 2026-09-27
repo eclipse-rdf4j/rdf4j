@@ -21,6 +21,10 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -86,6 +90,216 @@ class ResolvedIdQuadSpoolTest {
 				BulkCompression.FASTEST, (BooleanSupplier) () -> false);
 
 		assertThat(Files.readAllBytes((Path) path.invoke(genericSpool))).isEqualTo(optimizedBytes);
+	}
+
+	@Test
+	void allowsConcurrentLookupsThroughOnePartitionReader() throws Exception {
+		var valueFactory = SimpleValueFactory.getInstance();
+		IRI subject = valueFactory.createIRI("urn:parallel-reader-subject");
+		IRI predicate = valueFactory.createIRI("urn:parallel-reader-predicate");
+		IRI object = valueFactory.createIRI("urn:parallel-reader-object");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc");
+		Path staging = Files.createDirectory(temporaryDirectory.resolve("parallel-reader-staging"));
+		CanonicalStagedInput staged;
+		try (CanonicalStatementStager stager = new CanonicalStatementStager(staging, config, 4, 4, 64 * 1024L,
+				BulkCompression.NONE)) {
+			stager.writeStatement(valueFactory.createStatement(subject, predicate, object));
+			staged = stager.stagedInput();
+		}
+		ValueDependencyBuckets dependencies = ValueDependencyCollector.collect(staged, staging, 4, 4, config,
+				BulkCompression.NONE, () -> false);
+		PartitionValueDictionary dictionary = PartitionValueDictionaryBuilder.build(staged, dependencies, staging, 4,
+				64 * 1024L, 4, config, BulkCompression.NONE, () -> false);
+		byte[] key = CanonicalTermCodec.encode(subject);
+		int partition = (int) CanonicalTermCodec.routeHash64(key) & 3;
+
+		try (PartitionValueDictionary.PartitionReader reader = dictionary.openPartition(partition);
+				ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			var first = executor.submit(() -> reader.lookup(key));
+			var second = executor.submit(() -> reader.lookup(key));
+			assertThat(first.get()).isPositive();
+			assertThat(second.get()).isEqualTo(first.get());
+		}
+	}
+
+	@Test
+	void schedulerResolvedPartitionChunksMatchSerialIdSpool() throws Exception {
+		var valueFactory = SimpleValueFactory.getInstance();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc");
+		long memoryBudgetBytes = 8L * 1024 * 1024;
+		Path staging = Files.createDirectory(temporaryDirectory.resolve("adaptive-resolution-staging"));
+		CanonicalStagedInput staged;
+		try (CanonicalStatementStager stager = new CanonicalStatementStager(staging, config, 4, 8,
+				memoryBudgetBytes, BulkCompression.NONE)) {
+			for (int index = 0; index < 256; index++) {
+				stager.writeStatement(index % 3 == 0
+						? valueFactory.createStatement(valueFactory.createIRI("urn:subject:" + index),
+								valueFactory.createIRI("urn:predicate"),
+								valueFactory.createIRI("urn:object:" + index % 7),
+								valueFactory.createIRI("urn:graph:" + index % 2))
+						: valueFactory.createStatement(valueFactory.createIRI("urn:subject:" + index),
+								valueFactory.createIRI("urn:predicate"),
+								valueFactory.createIRI("urn:object:" + index % 7)));
+			}
+			staged = stager.stagedInput();
+		}
+		ValueDependencyBuckets dependencies = ValueDependencyCollector.collect(staged, staging, 4, 8, config,
+				BulkCompression.NONE, () -> false);
+		PartitionValueDictionary dictionary = PartitionValueDictionaryBuilder.build(staged, dependencies, staging, 4,
+				memoryBudgetBytes, 8, config, BulkCompression.NONE, () -> false);
+
+		Path serialWorkspace = Files.createDirectory(temporaryDirectory.resolve("serial-resolution"));
+		ResolvedIdQuadSpool serial = ResolvedIdQuadSpool.build(staged, dictionary, serialWorkspace, 8,
+				memoryBudgetBytes, BulkCompression.NONE, () -> false);
+		Path adaptiveWorkspace = Files.createDirectory(temporaryDirectory.resolve("adaptive-resolution"));
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, 8)) {
+			PartitionConcurrencyController controller = new PartitionConcurrencyController(System::nanoTime);
+			controller.beginStage("resolved statement components", 2, 2, 8);
+			controller.setPhase(PartitionConcurrencyController.Phase.PRODUCING);
+			ResolvedIdQuadSpool adaptive = ResolvedIdQuadSpool.build(staged, dictionary, adaptiveWorkspace, 8,
+					memoryBudgetBytes, BulkCompression.NONE, () -> false, scheduler, controller);
+			controller.finishStage();
+
+			assertThat(scheduler.peakActiveTasks()).isPositive();
+			assertThat(scheduler.peakReservedMemoryBytes()).isLessThanOrEqualTo(memoryBudgetBytes);
+			assertThat(scheduler.peakReservedFileDescriptors()).isLessThanOrEqualTo(8);
+			assertThat(Files.readAllBytes(adaptive.path())).isEqualTo(Files.readAllBytes(serial.path()));
+		}
+	}
+
+	@Test
+	void componentBucketWriterAccountsItsLiveOutputHandle() throws Exception {
+		var valueFactory = SimpleValueFactory.getInstance();
+		byte[] key = CanonicalTermCodec.encode(valueFactory.createIRI("urn:bucket-writer-resource-test"));
+		int partitionCount = 4;
+		int partition = (int) CanonicalTermCodec.routeHash64(key) & (partitionCount - 1);
+		BulkCodec codec = BulkCompression.FASTEST.codecFor(BulkArtifact.COMPONENT_BUCKETS);
+		long memoryBudgetBytes = 2L * 1024L * 1024L;
+		Path directory = Files.createDirectory(temporaryDirectory.resolve("component-writer-resource-test"));
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(1, memoryBudgetBytes, 3)) {
+			BulkTaskScheduler.ResourceLease lease = scheduler.reserveBlocking(
+					BulkLz4.mergeOutputMemoryBytes(codec), 1, true);
+			try (lease;
+					BulkTaskScheduler.FileDescriptorScope ignored = scheduler.bindResourceLease(lease);
+					ResolvedIdQuadSpool.ComponentBucketWriter writer = new ResolvedIdQuadSpool.ComponentBucketWriter(
+							BulkCompression.FASTEST, directory, partitionCount, 1, 0L, scheduler)) {
+				writer.write(17L, 2, key);
+				assertThat(scheduler.openFileHandles())
+						.as("the compressed component output is covered by the enclosing descriptor lease")
+						.isEqualTo(1);
+				assertThat(scheduler.peakReservedMemoryBytes())
+						.isPositive()
+						.isLessThanOrEqualTo(memoryBudgetBytes);
+			}
+			assertThat(scheduler.openFileHandles()).isZero();
+			assertThat(scheduler.reservedMemoryBytes()).isZero();
+			assertThat(scheduler.reservedFileDescriptors()).isZero();
+		}
+
+		Path output = Files.list(directory)
+				.filter(path -> path.getFileName().toString().endsWith(".lz4"))
+				.findFirst()
+				.orElseThrow();
+		AtomicLong records = new AtomicLong();
+		BulkLz4.readConcatenated(output, codec, input -> {
+			assertThat(input.readLong()).isEqualTo(17L);
+			assertThat(input.readUnsignedByte()).isEqualTo(2);
+			assertThat(input.readLong()).isEqualTo(CanonicalTermCodec.routeHash64(key));
+			int length = input.readInt();
+			byte[] actual = new byte[length];
+			input.readFully(actual);
+			assertThat(actual).isEqualTo(key);
+			records.incrementAndGet();
+		});
+		assertThat(records).hasValue(1L);
+	}
+
+	@Test
+	void drainsOtherPartitionLeavesBeforeResolvingAnOversizedRecord() throws Exception {
+		var valueFactory = SimpleValueFactory.getInstance();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc");
+		long memoryBudgetBytes = 512L * 1024;
+		Path staging = Files.createDirectory(temporaryDirectory.resolve("adaptive-oversized-resolution-staging"));
+		IRI predicate = iriInPartition(valueFactory, "urn:oversized-predicate:", 2);
+		IRI object = iriInPartition(valueFactory, "urn:oversized-object:", 3);
+		String oversizedValue = "urn:oversized-subject:" + "x".repeat(768 * 1024);
+		IRI oversizedSubject = null;
+		for (int suffix = 0; suffix < 256; suffix++) {
+			IRI candidate = valueFactory.createIRI(oversizedValue + suffix);
+			if (((int) CanonicalTermCodec.routeHash64(CanonicalTermCodec.encode(candidate)) & 3) == 1) {
+				oversizedSubject = candidate;
+				break;
+			}
+		}
+		assertThat(oversizedSubject).as("oversized value routes after the small subject partition").isNotNull();
+
+		CanonicalStagedInput staged;
+		try (CanonicalStatementStager stager = new CanonicalStatementStager(staging, config, 4, 8,
+				memoryBudgetBytes, BulkCompression.NONE)) {
+			int accepted = 0;
+			for (int candidate = 0; accepted < 12_288; candidate++) {
+				IRI subject = valueFactory.createIRI("urn:small-subject:" + candidate);
+				if (((int) CanonicalTermCodec.routeHash64(CanonicalTermCodec.encode(subject)) & 3) == 0) {
+					stager.writeStatement(valueFactory.createStatement(subject, predicate, object));
+					accepted++;
+				}
+			}
+			stager.writeStatement(valueFactory.createStatement(oversizedSubject, predicate, object));
+			staged = stager.stagedInput();
+		}
+		ValueDependencyBuckets dependencies = ValueDependencyCollector.collect(staged, staging, 4, 8, config,
+				BulkCompression.NONE, () -> false);
+		PartitionValueDictionary dictionary = PartitionValueDictionaryBuilder.build(staged, dependencies, staging, 4,
+				memoryBudgetBytes, 8, config, BulkCompression.NONE, () -> false);
+
+		AtomicLong fakeTime = new AtomicLong();
+		AtomicReference<PartitionConcurrencyController> controllerReference = new AtomicReference<>();
+		PartitionConcurrencyController controller = new PartitionConcurrencyController(() -> {
+			PartitionConcurrencyController current = controllerReference.get();
+			long increment = current != null && current.targetConcurrency() > 1 ? 100_000_000L : 1_000_000_000L;
+			return fakeTime.addAndGet(increment);
+		});
+		controllerReference.set(controller);
+		Path adaptiveWorkspace = Files.createDirectory(temporaryDirectory.resolve("adaptive-oversized-resolution"));
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, 8)) {
+			ResolvedIdQuadSpool adaptive = ResolvedIdQuadSpool.build(staged, dictionary, adaptiveWorkspace, 8,
+					memoryBudgetBytes, BulkCompression.NONE, () -> false, scheduler, controller);
+
+			assertThat(controller.peakActualActivePartitions()).isGreaterThan(1);
+			assertThat(scheduler.effectiveMemoryMinimumBytes()).isGreaterThan(memoryBudgetBytes);
+			assertThat(scheduler.peakOpenFileHandles()).isLessThanOrEqualTo(8);
+			try (DataInputStream input = BulkLz4.input(adaptive.path(), BulkCodec.NONE)) {
+				long expectedRows = staged.statements();
+				for (long ordinal = 0; ordinal < expectedRows; ordinal++) {
+					long actualOrdinal = input.readLong();
+					assertThat(actualOrdinal).isEqualTo(ordinal);
+					long subjectId = input.readLong();
+					long predicateId = input.readLong();
+					long objectId = input.readLong();
+					long contextId = input.readLong();
+					if (ordinal == expectedRows - 1L) {
+						assertThat(subjectId)
+								.isEqualTo(lookup(dictionary, CanonicalTermCodec.encode(oversizedSubject)));
+						assertThat(predicateId).isEqualTo(lookup(dictionary, CanonicalTermCodec.encode(predicate)));
+						assertThat(objectId).isEqualTo(lookup(dictionary, CanonicalTermCodec.encode(object)));
+						assertThat(contextId).isZero();
+					}
+				}
+				assertThat(input.read()).isEqualTo(-1);
+			}
+			assertThat(scheduler.reservedMemoryBytes()).isZero();
+			assertThat(scheduler.reservedFileDescriptors()).isZero();
+		}
+	}
+
+	private static IRI iriInPartition(org.eclipse.rdf4j.model.ValueFactory valueFactory, String prefix,
+			int partition) {
+		for (int candidate = 0;; candidate++) {
+			IRI iri = valueFactory.createIRI(prefix + candidate);
+			if (((int) CanonicalTermCodec.routeHash64(CanonicalTermCodec.encode(iri)) & 3) == partition) {
+				return iri;
+			}
+		}
 	}
 
 	private static void assertRow(DataInputStream input, long ordinal, PartitionValueDictionary dictionary,

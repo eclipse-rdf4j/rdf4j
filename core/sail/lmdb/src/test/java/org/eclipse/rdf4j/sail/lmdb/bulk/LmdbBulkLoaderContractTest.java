@@ -107,10 +107,27 @@ class LmdbBulkLoaderContractTest {
 	}
 
 	@Test
+	void benchmarkFixedPartitionControllerRespectsResourceCapsAndReportsActualHighWater() {
+		int[] observedPeak = { 0 };
+		LmdbBulkLoader loader = LmdbBulkLoader.builder(temporaryDirectory.resolve("benchmark-concurrency"),
+				new LmdbStoreConfig("spoc,psoc"))
+				.benchmarkPartitionConcurrency(4, active -> observedPeak[0] = Math.max(observedPeak[0], active))
+				.build();
+		PartitionConcurrencyController controller = loader.newPartitionConcurrencyController();
+		controller.beginStage("benchmark fixed target", 8, 2, 8);
+
+		assertThat(controller.maximumConcurrency()).isEqualTo(2);
+		assertThat(controller.targetConcurrency()).isEqualTo(2);
+		controller.setActualActivePartitions(2);
+		assertThat(observedPeak[0]).isEqualTo(2);
+	}
+
+	@Test
 	void nativeWriterRequiresExplicitTransactionLimits() throws Exception {
 		assertThat(NativeStoreWriter.class.getDeclaredMethod("write", Path.class, LmdbStoreConfig.class,
 				ValueStoreBulkRecords.Output.class, ResolvedIdQuadSpool.class, CanonicalStagedInput.class, long.class,
-				int.class, int.class, long.class, BulkCompression.class, BooleanSupplier.class)).isNotNull();
+				int.class, int.class, long.class, BulkCompression.class, BooleanSupplier.class,
+				BulkTaskScheduler.class)).isNotNull();
 	}
 
 	@Test
@@ -1127,6 +1144,49 @@ class LmdbBulkLoaderContractTest {
 		try (var children = Files.list(spillParent)) {
 			assertThat(children).isEmpty();
 		}
+	}
+
+	@Test
+	void adaptiveLoadsReopenWithStableIdsAndEquivalentQueryResults() throws Exception {
+		StringBuilder input = new StringBuilder();
+		for (int index = 0; index < 512; index++) {
+			input.append("<urn:adaptive:subject:")
+					.append(index)
+					.append("> <urn:adaptive:predicate:")
+					.append(index % 13)
+					.append("> \"adaptive-value-")
+					.append(index % 29)
+					.append("\" <urn:adaptive:graph:")
+					.append(index % 7)
+					.append("> .\n");
+		}
+		byte[] inputBytes = input.toString().getBytes(StandardCharsets.UTF_8);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,psoc")
+				.setValueDBSize(8 * 1024 * 1024)
+				.setTripleDBSize(8 * 1024 * 1024);
+		Path serialTarget = temporaryDirectory.resolve("adaptive-serial-store");
+		Path parallelTarget1 = temporaryDirectory.resolve("adaptive-parallel-store-1");
+		Path parallelTarget2 = temporaryDirectory.resolve("adaptive-parallel-store-2");
+		loadWithWorkers(serialTarget, config, inputBytes, 1);
+		loadWithWorkers(parallelTarget1, config, inputBytes, 4);
+		loadWithWorkers(parallelTarget2, config, inputBytes, 4);
+
+		assertThat(readStatements(serialTarget)).hasSize(512);
+		assertThat(readStatements(parallelTarget1)).isEqualTo(readStatements(serialTarget));
+		assertThat(readStatements(parallelTarget2)).isEqualTo(readStatements(serialTarget));
+		assertThat(readValueIds(parallelTarget1, config)).isEqualTo(readValueIds(parallelTarget2, config));
+	}
+
+	private static void loadWithWorkers(Path target, LmdbStoreConfig config, byte[] input, int workers)
+			throws IOException {
+		LmdbBulkLoader.Result result = LmdbBulkLoader.builder(target, config)
+				.partitionCount(4)
+				.memoryBudgetBytes(2L * 1024 * 1024)
+				.maxOpenFiles(16)
+				.workers(workers)
+				.build()
+				.load(new ByteArrayInputStream(input), "urn:adaptive:", RDFFormat.NQUADS);
+		assertThat(result.storedStatements()).isEqualTo(512);
 	}
 
 	@Test

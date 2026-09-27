@@ -15,6 +15,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -25,6 +26,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Bounded fixed-width tuple sorter using stable unsigned LSD radix runs and an object-stable tournament merge.
@@ -38,12 +44,23 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 	private final String prefix;
 	private final int width;
 	private final int runRows;
-	private final int maxFanIn;
+	private int maxFanIn;
+	private final int maximumDescriptorFanIn;
+	private final long mergeMemoryBudgetBytes;
 	private final long runBufferBytes;
 	private final RunBufferAllocator runBufferAllocator;
 	private final boolean nativeStorage;
 	private final BulkCodec codec;
+	private final BulkTaskScheduler scheduler;
+	private final Runnable spillObserver;
+	private final Runnable spillSubmittedObserver;
+	private final RunFileDeleter runFileDeleter;
+	private final boolean asyncSpillsEnabled;
 	private final List<Path> runs = new ArrayList<>();
+	private final List<PendingSpill> pendingSpills = new ArrayList<>();
+	private BulkTaskScheduler.ResourceLease producerLease;
+	private BulkTaskScheduler.ResourceScope producerClaim;
+	private int nextRunNumber;
 
 	private Arena runBufferArena;
 	private MemorySegment nativeBuffer;
@@ -51,6 +68,8 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 	private int bufferedRows;
 	private long rowCount;
 	private boolean finished;
+	private boolean mergePrepared;
+	private boolean mergeMemoryFloorRequired;
 
 	ExternalLongTupleSorter(Path directory, String prefix, int width, long memoryBudgetBytes, int maxOpenFiles,
 			BulkCodec codec) throws IOException {
@@ -60,21 +79,80 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 
 	ExternalLongTupleSorter(Path directory, String prefix, int width, long memoryBudgetBytes, int maxOpenFiles,
 			BulkCodec codec, RunBufferAllocator runBufferAllocator) throws IOException {
+		this(directory, prefix, width, memoryBudgetBytes, maxOpenFiles, codec, runBufferAllocator, null, () -> {
+		}, () -> {
+		}, Files::deleteIfExists);
+	}
+
+	ExternalLongTupleSorter(Path directory, String prefix, int width, long memoryBudgetBytes, int maxOpenFiles,
+			BulkCodec codec, BulkTaskScheduler scheduler, Runnable spillObserver) throws IOException {
+		this(directory, prefix, width, memoryBudgetBytes, maxOpenFiles, codec, scheduler, spillObserver, () -> {
+		});
+	}
+
+	ExternalLongTupleSorter(Path directory, String prefix, int width, long memoryBudgetBytes, int maxOpenFiles,
+			BulkCodec codec, BulkTaskScheduler scheduler, Runnable spillObserver, Runnable spillSubmittedObserver)
+			throws IOException {
+		this(directory, prefix, width, memoryBudgetBytes, maxOpenFiles, codec,
+				(arena, bytes) -> arena.allocate(bytes, Long.BYTES), scheduler, spillObserver, spillSubmittedObserver,
+				Files::deleteIfExists);
+	}
+
+	ExternalLongTupleSorter(Path directory, String prefix, int width, long memoryBudgetBytes, int maxOpenFiles,
+			BulkCodec codec, RunFileDeleter runFileDeleter) throws IOException {
+		this(directory, prefix, width, memoryBudgetBytes, maxOpenFiles, codec,
+				(arena, bytes) -> arena.allocate(bytes, Long.BYTES), null, () -> {
+				}, () -> {
+				}, runFileDeleter);
+	}
+
+	private ExternalLongTupleSorter(Path directory, String prefix, int width, long memoryBudgetBytes, int maxOpenFiles,
+			BulkCodec codec, RunBufferAllocator runBufferAllocator, BulkTaskScheduler scheduler,
+			Runnable spillObserver, Runnable spillSubmittedObserver, RunFileDeleter runFileDeleter) throws IOException {
 		this.codec = Objects.requireNonNull(codec, "codec");
 		this.directory = Objects.requireNonNull(directory, "directory");
 		this.prefix = Objects.requireNonNull(prefix, "prefix");
 		this.runBufferAllocator = Objects.requireNonNull(runBufferAllocator, "runBufferAllocator");
+		this.scheduler = scheduler;
+		this.spillObserver = Objects.requireNonNull(spillObserver, "spillObserver");
+		this.spillSubmittedObserver = Objects.requireNonNull(spillSubmittedObserver, "spillSubmittedObserver");
+		this.runFileDeleter = Objects.requireNonNull(runFileDeleter, "runFileDeleter");
 		if (width <= 0) {
 			throw new IllegalArgumentException("Tuple width must be positive");
 		}
 		this.width = width;
 		Files.createDirectories(directory);
-		long bytesPerRow = Math.multiplyExact((long) width * Long.BYTES, 2L);
-		this.runRows = (int) Math.max(1L, Math.min(MAX_RUN_ROWS, memoryBudgetBytes / Math.max(1L, bytesPerRow)));
-		this.maxFanIn = Math.max(2, maxOpenFiles - 1);
+		this.maximumDescriptorFanIn = Math.max(2, maxOpenFiles - 1);
+		this.mergeMemoryBudgetBytes = memoryBudgetBytes;
+		this.maxFanIn = maximumDescriptorFanIn;
+		long bytesPerRow = Math.multiplyExact((long) width, Long.BYTES);
+		int candidateRows = (int) Math.max(1L,
+				Math.min(MAX_RUN_ROWS, memoryBudgetBytes / Math.max(1L, Math.multiplyExact(bytesPerRow, 4L))));
+		long candidateBufferBytes = Math.multiplyExact(Math.multiplyExact((long) candidateRows, width), Long.BYTES);
+		long spillWorkingBytes = Math.addExact(Math.multiplyExact(candidateBufferBytes, 2L),
+				Math.addExact(BulkLz4.mergeOutputMemoryBytes(codec),
+						asynchronousSpillMetadataBytes(width) + 2L * 256L * Integer.BYTES));
+		boolean hasEnclosingMemory = scheduler != null && scheduler.hasCurrentMemoryReservation();
+		boolean canSpillAsynchronously = scheduler != null && !hasEnclosingMemory && scheduler.workerLimit() > 1
+				&& Math.addExact(candidateBufferBytes, spillWorkingBytes) <= memoryBudgetBytes;
+		this.asyncSpillsEnabled = canSpillAsynchronously;
+		this.runRows = canSpillAsynchronously ? candidateRows
+				: (int) Math.max(1L, Math.min(MAX_RUN_ROWS, memoryBudgetBytes / Math.max(1L,
+						Math.multiplyExact(bytesPerRow, 2L))));
 		this.runBufferBytes = Math.multiplyExact(Math.multiplyExact((long) runRows, width), Long.BYTES);
+		try {
+			if (scheduler != null) {
+				if (hasEnclosingMemory) {
+					producerClaim = scheduler.claimCurrentResources(runBufferBytes, 0);
+				} else {
+					producerLease = scheduler.reserveBlocking(runBufferBytes, 0);
+				}
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			throw failure;
+		}
 		boolean allocatedNative = false;
-		Arena candidateArena = Arena.ofConfined();
+		Arena candidateArena = Arena.ofShared();
 		try {
 			MemorySegment candidateBuffer = Objects.requireNonNull(
 					runBufferAllocator.allocate(candidateArena, runBufferBytes), "allocated run buffer");
@@ -87,16 +165,53 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 			allocatedNative = true;
 		} catch (OutOfMemoryError directMemoryPressure) {
 			candidateArena.close();
-			heapBuffer = new long[Math.multiplyExact(runRows, width)];
+			try {
+				heapBuffer = new long[Math.multiplyExact(runRows, width)];
+			} catch (RuntimeException | Error failure) {
+				releaseProducerReservation(failure);
+				throw failure;
+			}
 			System.getLogger(ExternalLongTupleSorter.class.getName())
 					.log(System.Logger.Level.WARNING,
 							"Could not allocate native tuple run buffer; using heap comparison-sort fallback",
 							directMemoryPressure);
 		} catch (RuntimeException | Error failure) {
 			candidateArena.close();
+			releaseProducerReservation(failure);
 			throw failure;
 		}
 		nativeStorage = allocatedNative;
+	}
+
+	private ExternalLongTupleSorter(Path directory, String prefix, int width, long memoryBudgetBytes,
+			int maxOpenFiles, BulkCodec codec, RunBufferAllocator runBufferAllocator, BulkTaskScheduler scheduler,
+			RunSnapshot snapshot, int rows, Runnable spillObserver) throws IOException {
+		this.codec = Objects.requireNonNull(codec, "codec");
+		this.directory = Objects.requireNonNull(directory, "directory");
+		this.prefix = Objects.requireNonNull(prefix, "prefix");
+		this.runBufferAllocator = Objects.requireNonNull(runBufferAllocator, "runBufferAllocator");
+		this.scheduler = scheduler;
+		this.spillObserver = Objects.requireNonNull(spillObserver, "spillObserver");
+		this.spillSubmittedObserver = () -> {
+		};
+		this.runFileDeleter = Files::deleteIfExists;
+		this.asyncSpillsEnabled = false;
+		if (width <= 0 || rows < 0 || snapshot.capacityRows < rows) {
+			throw new IllegalArgumentException("Invalid detached tuple run");
+		}
+		this.width = width;
+		Files.createDirectories(directory);
+		this.runRows = Math.max(1, rows);
+		this.maximumDescriptorFanIn = Math.max(2, maxOpenFiles - 1);
+		this.mergeMemoryBudgetBytes = memoryBudgetBytes;
+		this.maxFanIn = maximumDescriptorFanIn;
+		this.runBufferBytes = snapshot.bytes;
+		this.nativeStorage = snapshot.nativeStorage();
+		this.runBufferArena = snapshot.takeArena();
+		this.nativeBuffer = snapshot.takeNativeBuffer();
+		this.heapBuffer = snapshot.takeHeapBuffer();
+		this.bufferedRows = rows;
+		this.rowCount = rows;
 	}
 
 	void add1(long value) throws IOException {
@@ -144,32 +259,167 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		return rowCount;
 	}
 
+	int runCapacity() {
+		return runRows;
+	}
+
+	/** Test-first API seam for adopting an already sorted private run. */
+	void addSortedRun(SortedTupleFile sortedRun) throws IOException {
+		if (finished || mergePrepared) {
+			throw new IllegalStateException("Tuple sorter is already finished");
+		}
+		Objects.requireNonNull(sortedRun, "sortedRun");
+		if (sortedRun.width != width) {
+			throw new IOException("Sorted tuple run width does not match its receiving sorter");
+		}
+		if (!codec.equals(sortedRun.codec)) {
+			throw new IOException("Sorted tuple run codec does not match its receiving sorter");
+		}
+		if (sortedRun.rows < 0L || !Files.isRegularFile(sortedRun.path)
+				|| Files.size(sortedRun.path) != sortedRun.bytes) {
+			throw new IOException("Sorted tuple run metadata no longer matches its file: " + sortedRun.path);
+		}
+		if (runs.contains(sortedRun.path)) {
+			throw new IOException("Sorted tuple run is already owned by this sorter: " + sortedRun.path);
+		}
+		long mergedRowCount;
+		try {
+			mergedRowCount = Math.addExact(rowCount, sortedRun.rows);
+		} catch (ArithmeticException overflow) {
+			throw new IOException("Adopted tuple run row count exceeds the supported range", overflow);
+		}
+
+		flushRun();
+		awaitAllSpills();
+		if (!sortedRun.adopted.compareAndSet(false, true)) {
+			throw new IOException("Sorted tuple run has already been adopted: " + sortedRun.path);
+		}
+		try {
+			runs.add(sortedRun.path);
+			rowCount = mergedRowCount;
+		} catch (RuntimeException | Error failure) {
+			sortedRun.adopted.set(false);
+			throw failure;
+		}
+	}
+
+	long mergeMemoryEstimateBytes() {
+		int mergeFanIn = activeMergeFanIn();
+		return mergeFanIn < 2 ? 0L : mergeMemoryForFanIn(mergeFanIn, codec, width);
+	}
+
+	long producerMemoryBytes() {
+		return runBufferBytes;
+	}
+
+	static long asynchronousSpillMetadataBytes(int width) {
+		return Math.multiplyExact((long) width, Long.BYTES);
+	}
+
+	long synchronousSpillMemoryEstimateBytes() {
+		long scratchBytes = nativeStorage && runRows >= RADIX_SORT_MIN_ROWS
+				? Math.addExact(runBufferBytes, 2L * 256L * Integer.BYTES)
+				: width * (long) Long.BYTES;
+		return Math.addExact(scratchBytes, BulkLz4.mergeOutputMemoryBytes(codec));
+	}
+
+	long asynchronousSpillMemoryEstimateBytes() {
+		return Math.addExact(Math.multiplyExact(runBufferBytes, 2L),
+				Math.addExact(BulkLz4.mergeOutputMemoryBytes(codec),
+						asynchronousSpillMetadataBytes(width) + 2L * 256L * Integer.BYTES));
+	}
+
+	int mergeFileDescriptorCount() {
+		int mergeFanIn = activeMergeFanIn();
+		return mergeFanIn < 2 ? 0 : mergeFanIn + 1;
+	}
+
+	boolean requiresSerialMemoryFloor() {
+		return mergeMemoryFloorRequired;
+	}
+
+	private int activeMergeFanIn() {
+		return Math.min(maxFanIn, runs.size());
+	}
+
+	private int maximumFanIn() {
+		for (int fanIn = maximumDescriptorFanIn; fanIn >= 2; fanIn--) {
+			if (mergeMemoryForFanIn(fanIn, codec, width) <= mergeMemoryBudgetBytes) {
+				mergeMemoryFloorRequired = false;
+				return fanIn;
+			}
+		}
+		mergeMemoryFloorRequired = runs.size() > 1
+				&& mergeMemoryForFanIn(2, codec, width) > mergeMemoryBudgetBytes;
+		// A two-way merge is the smallest supported operation. The scheduler admits it only as an exclusive,
+		// explicitly accounted minimum-memory task when fixed codec storage exceeds the budget.
+		return 2;
+	}
+
+	private long mergeMemoryForFanIn(int fanIn, BulkCodec codec, int width) {
+		long inputBytes = Math.addExact(BulkLz4.mergeInputMemoryBytes(codec), (long) width * Long.BYTES + 256L);
+		long leafCount = 1L;
+		while (leafCount < fanIn) {
+			leafCount <<= 1;
+		}
+		long treeBytes = Math.multiplyExact(leafCount << 1, Integer.BYTES);
+		long mergeBytes = Math.addExact(Math.addExact(Math.multiplyExact(fanIn, inputBytes),
+				BulkLz4.mergeOutputMemoryBytes(codec)), treeBytes);
+		return Math.addExact(mergeBytes, Math.multiplyExact((long) runs.size(), 256L));
+	}
+
+	/** Flushes and releases producer storage before independent final merges are scheduled. */
+	void prepareFinish() throws IOException {
+		if (finished) {
+			throw new IllegalStateException("Tuple sorter is already finished");
+		}
+		if (mergePrepared) {
+			return;
+		}
+		try {
+			flushRun();
+			awaitAllSpills();
+			maxFanIn = maximumFanIn();
+			mergePrepared = true;
+		} catch (IOException | RuntimeException | Error failure) {
+			addCleanupFailure(failure, cancelAndAwaitPendingSpills());
+			throw failure;
+		} finally {
+			releaseRunBuffer();
+		}
+	}
+
 	SortedTupleFile finish(Path output) throws IOException {
 		if (finished) {
 			throw new IllegalStateException("Tuple sorter is already finished");
 		}
 		try {
-			flushRun();
-		} finally {
-			releaseRunBuffer();
+			prepareFinish();
+			List<Path> mergeRuns = reduceRuns();
+			Files.createDirectories(output.toAbsolutePath().getParent());
+			if (mergeRuns.isEmpty()) {
+				Files.createFile(output);
+			} else if (mergeRuns.size() == 1) {
+				Files.move(mergeRuns.getFirst(), output, StandardCopyOption.REPLACE_EXISTING);
+			} else {
+				mergeGroup(mergeRuns, output);
+				deleteRuns(mergeRuns);
+			}
+			runs.clear();
+			finished = true;
+			return new SortedTupleFile(output, width, rowCount, codec, Files.size(output));
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				Files.deleteIfExists(output);
+			} catch (IOException cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		List<Path> mergeRuns = reduceRuns();
-		Files.createDirectories(output.toAbsolutePath().getParent());
-		if (mergeRuns.isEmpty()) {
-			Files.createFile(output);
-		} else if (mergeRuns.size() == 1) {
-			Files.move(mergeRuns.getFirst(), output, StandardCopyOption.REPLACE_EXISTING);
-		} else {
-			mergeGroup(mergeRuns, output);
-			deleteRuns(mergeRuns);
-		}
-		runs.clear();
-		finished = true;
-		return new SortedTupleFile(output, width, rowCount, codec);
 	}
 
 	private void ensureWritable() throws IOException {
-		if (finished) {
+		if (finished || mergePrepared) {
 			throw new IllegalStateException("Tuple sorter is already finished");
 		}
 		if (bufferedRows == runRows) {
@@ -181,11 +431,25 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		if (bufferedRows == 0) {
 			return;
 		}
+		if (asyncSpillsEnabled && !scheduler.isWorkerThread()) {
+			if (flushRunAsynchronously()) {
+				return;
+			}
+		}
+		flushRunSynchronously();
+	}
+
+	private void flushRunSynchronously() throws IOException {
+		if (bufferedRows == 0) {
+			return;
+		}
 		if (!nativeStorage || bufferedRows < RADIX_SORT_MIN_ROWS) {
 			comparisonSort(bufferedRows);
 		} else {
 			try {
-				radixSort(bufferedRows);
+				if (!radixSort(bufferedRows)) {
+					comparisonSort(bufferedRows);
+				}
 			} catch (OutOfMemoryError directMemoryPressure) {
 				System.getLogger(ExternalLongTupleSorter.class.getName())
 						.log(System.Logger.Level.WARNING,
@@ -195,7 +459,7 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 			}
 		}
 		Path run = Files.createTempFile(directory, prefix + "-run-", ".bin");
-		try (DataOutputStream output = BulkLz4.output(run, codec)) {
+		try (DataOutputStream output = BulkLz4.output(run, codec, scheduler, spillObserver)) {
 			int values = bufferedRows * width;
 			for (int i = 0; i < values; i++) {
 				output.writeLong(get(i));
@@ -203,6 +467,203 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		}
 		runs.add(run);
 		bufferedRows = 0;
+	}
+
+	private boolean flushRunAsynchronously() throws IOException {
+		while (!pendingSpills.isEmpty() && pendingSpills.size() >= scheduler.maximumOutstandingTaskCount()) {
+			awaitOldestSpill();
+		}
+		if (!pendingSpills.isEmpty() && pendingSpills.getFirst().future().isDone()) {
+			awaitOldestSpill();
+		}
+		int rows = bufferedRows;
+		long spillMemoryBytes = asynchronousSpillMemoryEstimateBytes();
+		BulkTaskScheduler.ResourceLease lease = scheduler.tryReserve(spillMemoryBytes, 1);
+		if (lease == null) {
+			return false;
+		}
+		RunSnapshot snapshot;
+		try {
+			snapshot = snapshot(rows);
+		} catch (IOException | RuntimeException | Error failure) {
+			lease.close();
+			throw failure;
+		}
+		int runNumber = nextRunNumber++;
+		Path run = directory.resolve(prefix + "-run-" + String.format(java.util.Locale.ROOT, "%08d", runNumber)
+				+ ".bin");
+		try {
+			Files.deleteIfExists(run);
+		} catch (IOException failure) {
+			lease.close();
+			snapshot.close();
+			throw failure;
+		}
+		CountDownLatch exited = new CountDownLatch(1);
+		Future<Path> future;
+		try {
+			future = scheduler.submitOrRunInline(lease, () -> {
+				try {
+					try (ExternalLongTupleSorter detached = new ExternalLongTupleSorter(directory,
+							prefix + "-spill-" + String.format(java.util.Locale.ROOT, "%08d", runNumber), width,
+							Math.multiplyExact(runBufferBytes, 2L), maximumDescriptorFanIn + 1, codec,
+							runBufferAllocator, scheduler, snapshot, rows, spillObserver)) {
+						detached.finish(run);
+					}
+					return run;
+				} catch (IOException | RuntimeException | Error failure) {
+					try {
+						Files.deleteIfExists(run);
+					} catch (IOException cleanupFailure) {
+						failure.addSuppressed(cleanupFailure);
+					}
+					throw failure;
+				}
+			}, () -> {
+				try {
+					snapshot.close();
+				} finally {
+					exited.countDown();
+				}
+			});
+			pendingSpills.add(new PendingSpill(run, future, exited));
+			bufferedRows = 0;
+		} catch (RuntimeException | Error failure) {
+			lease.close();
+			snapshot.close();
+			throw failure;
+		}
+		spillSubmittedObserver.run();
+		return true;
+	}
+
+	private RunSnapshot snapshot(int rows) throws IOException {
+		Arena arena = null;
+		MemorySegment segment = null;
+		if (nativeStorage) {
+			// The detached run is consumed and closed by its worker task, so its storage must be shareable across
+			// the coordinator/worker boundary. The producer's original arena remains confined to the coordinator.
+			arena = Arena.ofShared();
+			try {
+				segment = Objects.requireNonNull(runBufferAllocator.allocate(arena, runBufferBytes),
+						"allocated detached tuple buffer");
+				if (segment.byteSize() < runBufferBytes || segment.isReadOnly()) {
+					throw new IllegalArgumentException("Detached tuple buffer is too small or read-only");
+				}
+				for (int index = 0; index < Math.multiplyExact(rows, width); index++) {
+					segment.set(ValueLayout.JAVA_LONG, (long) index * Long.BYTES, get(index));
+				}
+				return new RunSnapshot(arena, segment, null, runRows, runBufferBytes);
+			} catch (OutOfMemoryError directMemoryPressure) {
+				arena.close();
+				arena = null;
+				segment = null;
+				System.getLogger(ExternalLongTupleSorter.class.getName())
+						.log(System.Logger.Level.WARNING,
+								"Could not allocate native tuple spill buffer; using heap storage",
+								directMemoryPressure);
+			} catch (RuntimeException | Error failure) {
+				if (arena != null) {
+					arena.close();
+				}
+				throw failure;
+			}
+		}
+		long[] copy = new long[Math.multiplyExact(runRows, width)];
+		if (nativeStorage) {
+			for (int index = 0; index < Math.multiplyExact(rows, width); index++) {
+				copy[index] = get(index);
+			}
+		} else {
+			System.arraycopy(heapBuffer, 0, copy, 0, Math.multiplyExact(rows, width));
+		}
+		return new RunSnapshot(null, null, copy, runRows, runBufferBytes);
+	}
+
+	private void awaitOldestSpill() throws IOException {
+		PendingSpill pending = pendingSpills.removeFirst();
+		try {
+			runs.add(pending.future().get());
+		} catch (InterruptedException e) {
+			pending.future().cancel(true);
+			InterruptedIOException interrupted = new InterruptedIOException("interrupted while joining tuple spills");
+			interrupted.initCause(e);
+			awaitSpillExit(pending);
+			addCleanupFailure(interrupted, deleteSpillOutput(pending.output()));
+			addCleanupFailure(interrupted, cancelAndAwaitPendingSpills());
+			Thread.currentThread().interrupt();
+			throw interrupted;
+		} catch (ExecutionException | CancellationException e) {
+			boolean interrupted = awaitSpillExit(pending);
+			addCleanupFailure(e, deleteSpillOutput(pending.output()));
+			addCleanupFailure(e, cancelAndAwaitPendingSpills());
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+			Throwable failure = e instanceof ExecutionException execution ? execution.getCause() : e;
+			if (failure instanceof IOException ioException) {
+				throw ioException;
+			}
+			throw new IOException("tuple spill task failed", failure);
+		}
+	}
+
+	private void awaitAllSpills() throws IOException {
+		while (!pendingSpills.isEmpty()) {
+			awaitOldestSpill();
+		}
+	}
+
+	private IOException cancelAndAwaitPendingSpills() {
+		for (PendingSpill pending : pendingSpills) {
+			pending.future().cancel(true);
+		}
+		boolean interrupted = false;
+		IOException cleanupFailure = null;
+		for (PendingSpill pending : pendingSpills) {
+			interrupted |= awaitSpillExit(pending);
+			try {
+				Files.deleteIfExists(pending.output());
+			} catch (IOException failure) {
+				if (cleanupFailure == null) {
+					cleanupFailure = failure;
+				} else {
+					cleanupFailure.addSuppressed(failure);
+				}
+			}
+		}
+		pendingSpills.clear();
+		if (interrupted) {
+			Thread.currentThread().interrupt();
+		}
+		return cleanupFailure;
+	}
+
+	private static IOException deleteSpillOutput(Path output) {
+		try {
+			Files.deleteIfExists(output);
+			return null;
+		} catch (IOException cleanupFailure) {
+			return cleanupFailure;
+		}
+	}
+
+	private static void addCleanupFailure(Throwable failure, IOException cleanupFailure) {
+		if (cleanupFailure != null) {
+			failure.addSuppressed(cleanupFailure);
+		}
+	}
+
+	private boolean awaitSpillExit(PendingSpill pending) {
+		boolean interrupted = false;
+		while (true) {
+			try {
+				pending.exited().await();
+				return interrupted;
+			} catch (InterruptedException e) {
+				interrupted = true;
+			}
+		}
 	}
 
 	private void comparisonSort(int rows) {
@@ -230,7 +691,54 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		}
 	}
 
-	private void radixSort(int rows) {
+	private boolean radixSort(int rows) throws IOException {
+		long scratchBytes = Math.addExact(runBufferBytes, 2L * 256L * Integer.BYTES);
+		BulkTaskScheduler.ResourceScope scratchClaim = null;
+		BulkTaskScheduler.ResourceLease scratchLease = null;
+		if (scheduler != null) {
+			if (scheduler.hasCurrentMemoryReservation()) {
+				scratchClaim = scheduler.claimCurrentResources(scratchBytes, 0);
+			} else {
+				scratchLease = scheduler.tryReserve(scratchBytes, 0);
+				if (scratchLease == null) {
+					return false;
+				}
+			}
+		}
+		Throwable failure = null;
+		try {
+			radixSortWithScratch(rows);
+			return true;
+		} catch (RuntimeException | Error sortFailure) {
+			failure = sortFailure;
+			throw sortFailure;
+		} finally {
+			if (scratchClaim != null) {
+				try {
+					scratchClaim.close();
+				} catch (RuntimeException | Error releaseFailure) {
+					if (failure != null) {
+						failure.addSuppressed(releaseFailure);
+					} else {
+						throw releaseFailure;
+					}
+				}
+			}
+			if (scratchLease != null) {
+				try {
+					scratchLease.close();
+				} catch (RuntimeException | Error releaseFailure) {
+					if (failure != null) {
+						failure.addSuppressed(releaseFailure);
+					} else {
+						throw releaseFailure;
+					}
+				}
+			}
+		}
+	}
+
+	private void radixSortWithScratch(int rows) {
 		try (Arena scratchArena = Arena.ofConfined()) {
 			MemorySegment scratch = Objects.requireNonNull(
 					runBufferAllocator.allocate(scratchArena, runBufferBytes), "allocated radix scratch buffer");
@@ -372,11 +880,12 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 			for (int start = 0; start < current.size(); start += maxFanIn) {
 				List<Path> group = current.subList(start, Math.min(current.size(), start + maxFanIn));
 				Path merged = Files.createTempFile(directory, prefix + "-pass-" + pass + "-", ".bin");
+				runs.add(merged);
 				try {
 					mergeGroup(group, merged);
 				} catch (Throwable failure) {
 					try {
-						Files.deleteIfExists(merged);
+						deleteRuns(List.of(merged));
 					} catch (IOException cleanupFailure) {
 						failure.addSuppressed(cleanupFailure);
 					}
@@ -392,10 +901,30 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 	}
 
 	private void mergeGroup(List<Path> group, Path outputPath) throws IOException {
+		if (scheduler == null) {
+			mergeGroupWithReservedDescriptors(group, outputPath);
+			return;
+		}
+		if (scheduler.hasCurrentMemoryReservation()) {
+			try (BulkTaskScheduler.FileDescriptorScope descriptorScope = scheduler
+					.reserveFileDescriptors(group.size() + 1)) {
+				mergeGroupWithReservedDescriptors(group, outputPath);
+			}
+			return;
+		}
+		long memoryBytes = mergeMemoryForFanIn(group.size(), codec, width);
+		try (BulkTaskScheduler.ResourceLease lease = scheduler.reserveBlocking(memoryBytes, group.size() + 1,
+				memoryBytes > mergeMemoryBudgetBytes);
+				BulkTaskScheduler.FileDescriptorScope descriptorScope = scheduler.bindResourceLease(lease)) {
+			mergeGroupWithReservedDescriptors(group, outputPath);
+		}
+	}
+
+	private void mergeGroupWithReservedDescriptors(List<Path> group, Path outputPath) throws IOException {
 		RunCursor[] cursors = new RunCursor[group.size()];
-		try (DataOutputStream output = BulkLz4.output(outputPath, codec)) {
+		try (DataOutputStream output = BulkLz4.output(outputPath, codec, scheduler)) {
 			for (int i = 0; i < group.size(); i++) {
-				RunCursor cursor = new RunCursor(group.get(i), width, codec, true);
+				RunCursor cursor = new RunCursor(group.get(i), width, codec, scheduler);
 				cursors[i] = cursor;
 				cursor.advance();
 			}
@@ -407,7 +936,7 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 					output.writeLong(value);
 				}
 				if (!cursor.advance()) {
-					// The run is fully consumed; free its backing file immediately to lower peak merge disk.
+					// Close the reader; the sorter deletes this input only after the output is registered.
 					cursor.close();
 				}
 				tree.updated(winner);
@@ -436,12 +965,21 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 
 	@Override
 	public void close() throws IOException {
+		IOException failure = cancelAndAwaitPendingSpills();
 		try {
 			deleteRuns(runs);
-			runs.clear();
-			finished = true;
+		} catch (IOException cleanupFailure) {
+			if (failure == null) {
+				failure = cleanupFailure;
+			} else {
+				failure.addSuppressed(cleanupFailure);
+			}
 		} finally {
+			finished = true;
 			releaseRunBuffer();
+		}
+		if (failure != null) {
+			throw failure;
 		}
 	}
 
@@ -450,16 +988,73 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		heapBuffer = null;
 		Arena arena = runBufferArena;
 		runBufferArena = null;
+		Throwable cleanupFailure = null;
 		if (arena != null) {
-			arena.close();
+			try {
+				arena.close();
+			} catch (RuntimeException | Error failure) {
+				cleanupFailure = failure;
+			}
+		}
+		Throwable reservationFailure = releaseProducerReservation();
+		if (cleanupFailure == null) {
+			cleanupFailure = reservationFailure;
+		} else if (reservationFailure != null && cleanupFailure != reservationFailure) {
+			cleanupFailure.addSuppressed(reservationFailure);
+		}
+		if (cleanupFailure instanceof RuntimeException runtimeFailure) {
+			throw runtimeFailure;
+		} else if (cleanupFailure instanceof Error errorFailure) {
+			throw errorFailure;
 		}
 	}
 
-	private static void deleteRuns(List<Path> paths) throws IOException {
+	private void releaseProducerReservation(Throwable primaryFailure) {
+		Throwable cleanupFailure = releaseProducerReservation();
+		if (cleanupFailure != null) {
+			if (primaryFailure != null) {
+				primaryFailure.addSuppressed(cleanupFailure);
+			} else if (cleanupFailure instanceof RuntimeException runtimeFailure) {
+				throw runtimeFailure;
+			} else {
+				throw (Error) cleanupFailure;
+			}
+		}
+	}
+
+	private Throwable releaseProducerReservation() {
+		Throwable cleanupFailure = null;
+		BulkTaskScheduler.ResourceScope claim = producerClaim;
+		producerClaim = null;
+		if (claim != null) {
+			try {
+				claim.close();
+			} catch (RuntimeException | Error failure) {
+				cleanupFailure = failure;
+			}
+		}
+		BulkTaskScheduler.ResourceLease lease = producerLease;
+		producerLease = null;
+		if (lease != null) {
+			try {
+				lease.close();
+			} catch (RuntimeException | Error failure) {
+				if (cleanupFailure == null) {
+					cleanupFailure = failure;
+				} else if (cleanupFailure != failure) {
+					cleanupFailure.addSuppressed(failure);
+				}
+			}
+		}
+		return cleanupFailure;
+	}
+
+	private void deleteRuns(List<Path> paths) throws IOException {
 		IOException failure = null;
 		for (Path path : List.copyOf(paths)) {
 			try {
-				Files.deleteIfExists(path);
+				runFileDeleter.delete(path);
+				runs.remove(path);
 			} catch (IOException e) {
 				if (failure == null) {
 					failure = e;
@@ -488,24 +1083,77 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		MemorySegment allocate(Arena arena, long bytes);
 	}
 
+	@FunctionalInterface
+	interface RunFileDeleter {
+		void delete(Path path) throws IOException;
+	}
+
+	private record PendingSpill(Path output, Future<Path> future, CountDownLatch exited) {
+	}
+
+	private static final class RunSnapshot implements AutoCloseable {
+		private Arena arena;
+		private MemorySegment nativeBuffer;
+		private long[] heapBuffer;
+		private final int capacityRows;
+		private final long bytes;
+
+		private RunSnapshot(Arena arena, MemorySegment nativeBuffer, long[] heapBuffer, int capacityRows,
+				long bytes) {
+			this.arena = arena;
+			this.nativeBuffer = nativeBuffer;
+			this.heapBuffer = heapBuffer;
+			this.capacityRows = capacityRows;
+			this.bytes = bytes;
+		}
+
+		private boolean nativeStorage() {
+			return nativeBuffer != null;
+		}
+
+		private Arena takeArena() {
+			Arena detached = arena;
+			arena = null;
+			return detached;
+		}
+
+		private MemorySegment takeNativeBuffer() {
+			MemorySegment detached = nativeBuffer;
+			nativeBuffer = null;
+			return detached;
+		}
+
+		private long[] takeHeapBuffer() {
+			long[] detached = heapBuffer;
+			heapBuffer = null;
+			return detached;
+		}
+
+		@Override
+		public void close() {
+			Arena current = arena;
+			arena = null;
+			if (current != null) {
+				current.close();
+			}
+			nativeBuffer = null;
+			heapBuffer = null;
+		}
+	}
+
 	private static final class RunCursor implements AutoCloseable {
 
 		private final DataInputStream input;
 		private final long[] tuple;
-		private final Path path;
-		private final boolean deleteWhenClosed;
 		private boolean present;
 		private boolean closed;
 
 		private RunCursor(Path path, int width, BulkCodec codec) throws IOException {
-			this(path, width, codec, false);
+			this(path, width, codec, null);
 		}
 
-		private RunCursor(Path path, int width, BulkCodec codec, boolean deleteWhenClosed)
-				throws IOException {
-			this.path = path;
-			this.deleteWhenClosed = deleteWhenClosed;
-			input = BulkLz4.input(path, codec);
+		private RunCursor(Path path, int width, BulkCodec codec, BulkTaskScheduler scheduler) throws IOException {
+			input = BulkLz4.input(path, codec, scheduler);
 			tuple = new long[width];
 		}
 
@@ -533,13 +1181,7 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 				return;
 			}
 			closed = true;
-			try {
-				input.close();
-			} finally {
-				if (deleteWhenClosed) {
-					Files.deleteIfExists(path);
-				}
-			}
+			input.close();
 		}
 	}
 
@@ -602,12 +1244,15 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		private final int width;
 		private final long rows;
 		private final BulkCodec codec;
+		private final long bytes;
+		private final AtomicBoolean adopted = new AtomicBoolean();
 
-		private SortedTupleFile(Path path, int width, long rows, BulkCodec codec) {
+		private SortedTupleFile(Path path, int width, long rows, BulkCodec codec, long bytes) {
 			this.path = path;
 			this.width = width;
 			this.rows = rows;
 			this.codec = codec;
+			this.bytes = bytes;
 		}
 
 		static SortedTupleFile restore(Path path, int width, long rows, long bytes, BulkCodec codec)
@@ -621,7 +1266,7 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 				throw new IOException("Sorted tuple file size mismatch for " + path + ": expected "
 						+ bytes + " bytes");
 			}
-			return new SortedTupleFile(path, width, rows, codec);
+			return new SortedTupleFile(path, width, rows, codec, bytes);
 		}
 
 		Path path() {
@@ -630,6 +1275,16 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 
 		long rows() {
 			return rows;
+		}
+
+		long scanReaderMemoryEstimateBytes() throws IOException {
+			return Files.size(path) == 0L ? 0L
+					: Math.addExact(BulkLz4.mergeInputMemoryBytes(codec),
+							Math.addExact(Math.multiplyExact((long) width, Long.BYTES), 64L));
+		}
+
+		int scanReaderFileDescriptorEstimate() throws IOException {
+			return Files.size(path) == 0L ? 0 : 1;
 		}
 
 		/**
@@ -642,6 +1297,14 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 
 		void forEach(TupleConsumer consumer) throws IOException {
 			try (RunCursor cursor = new RunCursor(path, width, codec)) {
+				while (cursor.advance()) {
+					consumer.accept(cursor.tuple);
+				}
+			}
+		}
+
+		void forEach(TupleConsumer consumer, BulkTaskScheduler scheduler) throws IOException {
+			try (RunCursor cursor = new RunCursor(path, width, codec, scheduler)) {
 				while (cursor.advance()) {
 					consumer.accept(cursor.tuple);
 				}

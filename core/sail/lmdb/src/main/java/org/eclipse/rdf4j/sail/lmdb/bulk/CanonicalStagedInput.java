@@ -12,12 +12,28 @@
 package org.eclipse.rdf4j.sail.lmdb.bulk;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.EOFException;
+import java.io.FilterInputStream;
+import java.io.FilterOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -27,9 +43,20 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 final class CanonicalStagedInput {
 
 	private static final int MAX_RECORD_BYTES = 1024 * 1024 * 1024;
+	static final long VALUE_RECORD_OVERHEAD_BYTES = 64L;
+	static final int STATEMENT_SIZE_INDEX_MAGIC = 0x52444653;
+	static final int STATEMENT_SIZE_INDEX_VERSION = 1;
+	static final int SHA256_BYTES = 32;
+	static final int STATEMENT_SIZE_INDEX_HEADER_BYTES = Integer.BYTES * 2 + Long.BYTES + SHA256_BYTES;
+	private static final long RAW_STATEMENT_OBJECT_OVERHEAD_BYTES = 64L + 4L * 16L;
+	private static final long NO_DECLARED_STATEMENT_SIZE = -1L;
+	private static final int SIZE_INDEX_BUFFER_BYTES = 8 * 1024;
+	static final long RAW_STATEMENT_SCRATCH_BYTES = SIZE_INDEX_BUFFER_BYTES + Long.BYTES;
 
 	private final Path directory;
 	private final Path statementPath;
+	private final Path statementSizesPath;
+	private final Path statementSizesTemporaryPath;
 	private final Path namespacePath;
 	private final Path predicateCountsPath;
 	private final Path valueDirectory;
@@ -37,18 +64,27 @@ final class CanonicalStagedInput {
 	private final long statements;
 	private final long inlineValueOccurrences;
 	private final BulkCompression compression;
+	private final String expectedStatementDigest;
 
 	CanonicalStagedInput(Path directory, int partitionCount, long statements, long inlineValueOccurrences,
 			BulkCompression compression) {
+		this(directory, partitionCount, statements, inlineValueOccurrences, compression, null);
+	}
+
+	CanonicalStagedInput(Path directory, int partitionCount, long statements, long inlineValueOccurrences,
+			BulkCompression compression, String expectedStatementDigest) {
 		this.compression = compression;
 		this.directory = directory;
 		this.statementPath = directory.resolve("statements.lz4");
+		this.statementSizesPath = statementSizeIndexPath(directory);
+		this.statementSizesTemporaryPath = statementSizeIndexTemporaryPath(directory);
 		this.namespacePath = directory.resolve("namespaces.lz4");
 		this.predicateCountsPath = directory.resolve(CanonicalStatementStager.PREDICATE_COUNTS_FILE_NAME);
 		this.valueDirectory = directory.resolve("value-buckets");
 		this.partitionCount = partitionCount;
 		this.statements = statements;
 		this.inlineValueOccurrences = inlineValueOccurrences;
+		this.expectedStatementDigest = validateExpectedDigest(expectedStatementDigest);
 	}
 
 	long statements() {
@@ -57,6 +93,10 @@ final class CanonicalStagedInput {
 
 	long inlineValueOccurrences() {
 		return inlineValueOccurrences;
+	}
+
+	String statementDigest() {
+		return expectedStatementDigest;
 	}
 
 	int partitionCount() {
@@ -87,12 +127,12 @@ final class CanonicalStagedInput {
 	}
 
 	void forEachRawStatement(RawStatementVisitor visitor) throws IOException {
-		long[] expectedOrdinal = { 0L };
-		BulkLz4.readConcatenated(statementPath, compression.codecFor(BulkArtifact.STAGED_STATEMENTS),
-				input -> readRawStatements(input, expectedOrdinal, visitor));
-		if (expectedOrdinal[0] != statements) {
-			throw new IOException("Staged statement count mismatch: expected " + statements + " but read "
-					+ expectedOrdinal[0]);
+		try (RawStatementCursor cursor = openRawStatementCursor()) {
+			RawStatementRecord record;
+			while ((record = cursor.next()) != null) {
+				visitor.accept(record.ordinal(), record.subject(), record.predicate(), record.object(),
+						record.context());
+			}
 		}
 	}
 
@@ -125,37 +165,1062 @@ final class CanonicalStagedInput {
 	}
 
 	void forEachPartitionValue(int partition, ValueVisitor visitor) throws IOException {
+		try (ValueCursor cursor = openPartitionValueCursor(partition)) {
+			ValueRecord record;
+			while ((record = cursor.next()) != null) {
+				visitor.accept(partition, record.routeHash(), record.roles(), record.canonicalKey());
+			}
+		}
+	}
+
+	ValueCursor openPartitionValueCursor(int partition) throws IOException {
+		Path path = CanonicalStatementStager.valueBucketPath(valueDirectory, partition);
+		return openValueCursor(path, compression.codecFor(BulkArtifact.STAGED_VALUES), partition, partitionCount,
+				MAX_RECORD_BYTES, "staged value", "staged byte");
+	}
+
+	ValueCursor openPartitionValueCursor(int partition, BulkTaskScheduler scheduler) throws IOException {
 		if (partition < 0 || partition >= partitionCount) {
 			throw new IllegalArgumentException("Value partition out of range: " + partition);
 		}
-		Path path = CanonicalStatementStager.valueBucketPath(valueDirectory, partition);
-		BulkLz4.readConcatenated(path, compression.codecFor(BulkArtifact.STAGED_VALUES),
-				input -> readValues(input, partition, partitionCount, visitor));
+		BulkCodec codec = compression.codecFor(BulkArtifact.STAGED_VALUES);
+		if (scheduler.hasCurrentMemoryReservation()) {
+			Path path = CanonicalStatementStager.valueBucketPath(valueDirectory, partition);
+			return openValueCursor(path, codec, partition, partitionCount, MAX_RECORD_BYTES,
+					"staged value", "staged byte", scheduler);
+		}
+		BulkTaskScheduler.ResourceLease lease = scheduler.reserveBlocking(BulkLz4.concatenatedInputMemoryBytes(codec),
+				1);
+		BulkTaskScheduler.FileDescriptorScope scope;
+		try {
+			scope = scheduler.bindResourceLease(lease);
+		} catch (RuntimeException | Error failure) {
+			lease.close();
+			throw failure;
+		}
+		try {
+			Path path = CanonicalStatementStager.valueBucketPath(valueDirectory, partition);
+			ValueCursor cursor = openValueCursor(path, codec, partition, partitionCount,
+					MAX_RECORD_BYTES, "staged value", "staged byte", scheduler);
+			return new LeasedValueCursor(cursor, scope, lease);
+		} catch (IOException | RuntimeException | Error failure) {
+			closeLeaseAfterFailure(scope, lease, failure);
+			throw failure;
+		}
 	}
 
-	private static void readRawStatements(DataInputStream input, long[] expectedOrdinal, RawStatementVisitor visitor)
-			throws IOException {
-		while (true) {
-			long ordinal;
+	ValueCursor tryOpenPartitionValueCursor(int partition, BulkTaskScheduler scheduler) throws IOException {
+		if (partition < 0 || partition >= partitionCount) {
+			throw new IllegalArgumentException("Value partition out of range: " + partition);
+		}
+		BulkCodec codec = compression.codecFor(BulkArtifact.STAGED_VALUES);
+		Path path = CanonicalStatementStager.valueBucketPath(valueDirectory, partition);
+		BulkLz4.ConcatenatedFrames frames = BulkLz4.tryOpenConcatenated(path, codec, scheduler);
+		if (frames == null) {
+			return null;
+		}
+		return new ConcatenatedValueCursor(frames, partition, partitionCount, MAX_RECORD_BYTES,
+				"staged value", "staged byte");
+	}
+
+	RawStatementCursor openRawStatementCursor() throws IOException {
+		String digest = ensureStatementSizeIndex();
+		StatementSizeIndex sizes = StatementSizeIndex.open(statementSizesPath, statements, digest);
+		BulkLz4.ConcatenatedFrames frames;
+		try {
+			frames = BulkLz4.openConcatenated(statementPath,
+					compression.codecFor(BulkArtifact.STAGED_STATEMENTS));
+		} catch (IOException | RuntimeException | Error failure) {
 			try {
-				ordinal = input.readLong();
+				sizes.close();
+			} catch (IOException closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
+		return new ConcatenatedRawStatementCursor(frames, sizes, statements, digest);
+	}
+
+	RawStatementCursor openRawStatementCursor(BulkTaskScheduler scheduler) throws IOException {
+		BulkCodec codec = compression.codecFor(BulkArtifact.STAGED_STATEMENTS);
+		if (scheduler.hasCurrentMemoryReservation()) {
+			String digest = ensureStatementSizeIndex(scheduler);
+			StatementSizeIndex sizes = StatementSizeIndex.open(statementSizesPath, statements, digest, scheduler);
+			try {
+				BulkLz4.ConcatenatedFrames frames = BulkLz4.openConcatenated(statementPath, codec, scheduler);
+				return new ConcatenatedRawStatementCursor(frames, sizes, statements, digest);
+			} catch (IOException | RuntimeException | Error failure) {
+				try {
+					sizes.close();
+				} catch (IOException closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+				throw failure;
+			}
+		}
+		BulkTaskScheduler.ResourceLease lease = scheduler.reserveBlocking(rawStatementCursorMemoryBytes(codec), 2);
+		BulkTaskScheduler.FileDescriptorScope scope;
+		try {
+			scope = scheduler.bindResourceLease(lease);
+		} catch (RuntimeException | Error failure) {
+			lease.close();
+			throw failure;
+		}
+		try {
+			String digest = ensureStatementSizeIndex(scheduler);
+			StatementSizeIndex sizes = StatementSizeIndex.open(statementSizesPath, statements, digest, scheduler);
+			try {
+				BulkLz4.ConcatenatedFrames frames = BulkLz4.openConcatenated(statementPath, codec, scheduler);
+				return new LeasedRawStatementCursor(
+						new ConcatenatedRawStatementCursor(frames, sizes, statements, digest), scope, lease);
+			} catch (IOException | RuntimeException | Error failure) {
+				try {
+					sizes.close();
+				} catch (IOException closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+				throw failure;
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			closeLeaseAfterFailure(scope, lease, failure);
+			throw failure;
+		}
+	}
+
+	RawStatementCursor tryOpenRawStatementCursor(BulkTaskScheduler scheduler) throws IOException {
+		BulkCodec codec = compression.codecFor(BulkArtifact.STAGED_STATEMENTS);
+		BulkTaskScheduler.ResourceLease lease = scheduler.tryReserveExclusiveCursorBase(
+				rawStatementCursorMemoryBytes(codec),
+				2);
+		if (lease == null) {
+			return null;
+		}
+		BulkTaskScheduler.FileDescriptorScope scope;
+		try {
+			scope = scheduler.bindResourceLease(lease);
+		} catch (RuntimeException | Error failure) {
+			lease.close();
+			throw failure;
+		}
+		try {
+			String digest = ensureStatementSizeIndex(scheduler);
+			StatementSizeIndex sizes = StatementSizeIndex.open(statementSizesPath, statements, digest, scheduler);
+			try {
+				BulkLz4.ConcatenatedFrames frames = BulkLz4.openConcatenated(statementPath, codec, scheduler);
+				return new LeasedRawStatementCursor(
+						new ConcatenatedRawStatementCursor(frames, sizes, statements, digest), scope, lease);
+			} catch (IOException | RuntimeException | Error failure) {
+				try {
+					sizes.close();
+				} catch (IOException closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+				throw failure;
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			closeLeaseAfterFailure(scope, lease, failure);
+			throw failure;
+		}
+	}
+
+	String ensureStatementSizeIndex() throws IOException {
+		return ensureStatementSizeIndex(null);
+	}
+
+	private String ensureStatementSizeIndex(BulkTaskScheduler scheduler) throws IOException {
+		if (Files.notExists(statementSizesPath)) {
+			rebuildStatementSizeIndex(scheduler);
+		}
+		return StatementSizeIndex.readHeader(statementSizesPath, statements, expectedStatementDigest, scheduler)
+				.digestHex();
+	}
+
+	static long rawStatementCursorMemoryBytes(BulkCodec codec) {
+		return Math.addExact(BulkLz4.concatenatedInputMemoryBytes(codec),
+				2L * SIZE_INDEX_BUFFER_BYTES + RAW_STATEMENT_SCRATCH_BYTES);
+	}
+
+	static Path statementSizeIndexPath(Path directory) {
+		return directory.resolve(CanonicalStatementStager.STATEMENT_SIZES_FILE_NAME);
+	}
+
+	static Path statementSizeIndexTemporaryPath(Path directory) {
+		return directory.resolve(CanonicalStatementStager.STATEMENT_SIZES_FILE_NAME + ".tmp");
+	}
+
+	static ValueCursor openValueCursor(Path path, BulkCodec codec, int partition, int partitionCount,
+			int maximumKeyBytes, String recordDescription, String lengthDescription) throws IOException {
+		return openValueCursor(path, codec, partition, partitionCount, maximumKeyBytes, recordDescription,
+				lengthDescription, null);
+	}
+
+	static ValueCursor openValueCursor(Path path, BulkCodec codec, int partition, int partitionCount,
+			int maximumKeyBytes, String recordDescription, String lengthDescription, BulkTaskScheduler scheduler)
+			throws IOException {
+		return openValueCursor(path, codec, partition, partitionCount, maximumKeyBytes, recordDescription,
+				lengthDescription, scheduler, null);
+	}
+
+	static ValueCursor openValueCursor(Path path, BulkCodec codec, int partition, int partitionCount,
+			int maximumKeyBytes, String recordDescription, String lengthDescription, BulkTaskScheduler scheduler,
+			BulkTaskScheduler.ResourceLease lease) throws IOException {
+		if (partition < 0 || partition >= partitionCount) {
+			throw new IllegalArgumentException("Value partition out of range: " + partition);
+		}
+		BulkLz4.ConcatenatedFrames frames = lease == null ? BulkLz4.openConcatenated(path, codec, scheduler)
+				: BulkLz4.openConcatenated(path, codec, scheduler, lease);
+		return new ConcatenatedValueCursor(frames, partition, partitionCount, maximumKeyBytes, recordDescription,
+				lengthDescription);
+	}
+
+	private void rebuildStatementSizeIndex() throws IOException {
+		rebuildStatementSizeIndex(null);
+	}
+
+	private void rebuildStatementSizeIndex(BulkTaskScheduler scheduler) throws IOException {
+		try {
+			Files.deleteIfExists(statementSizesTemporaryPath);
+			writeSizeIndexPlaceholder(statementSizesTemporaryPath, scheduler);
+			MessageDigest digest = newSha256();
+			long expectedOrdinal = 0L;
+			StatementScratch scratch = new StatementScratch();
+			try (BulkLz4.ConcatenatedFrames frames = BulkLz4.openConcatenated(statementPath,
+					compression.codecFor(BulkArtifact.STAGED_STATEMENTS), scheduler);
+					DataOutputStream sizes = new DataOutputStream(new BufferedOutputStream(
+							openTrackedOutput(statementSizesTemporaryPath, StandardOpenOption.APPEND, scheduler),
+							SIZE_INDEX_BUFFER_BYTES))) {
+				while (frames.nextFrame()) {
+					DataInputStream frame = frames.frame();
+					int firstByte;
+					while ((firstByte = frame.read()) >= 0) {
+						DecodedStatement decoded = decodeRawStatement(frame, firstByte, expectedOrdinal,
+								NO_DECLARED_STATEMENT_SIZE, digest, false, scratch);
+						sizes.writeLong(decoded.serializedBytes());
+						expectedOrdinal++;
+					}
+				}
+				if (expectedOrdinal != statements) {
+					throw statementCountMismatch(statements, expectedOrdinal);
+				}
+			}
+			String actualDigest = HexFormat.of().formatHex(digest.digest());
+			if (expectedStatementDigest != null && !expectedStatementDigest.equals(actualDigest)) {
+				throw new IOException("Staged statement digest does not match the workspace state");
+			}
+			completeSizeIndex(statementSizesTemporaryPath, statements, HexFormat.of().parseHex(actualDigest),
+					statementSizesPath, scheduler);
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				Files.deleteIfExists(statementSizesTemporaryPath);
+			} catch (IOException cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
+	}
+
+	private static DecodedStatement decodeRawStatement(DataInputStream input, int firstOrdinalByte,
+			long expectedOrdinal, long declaredSerializedBytes, MessageDigest digest, boolean retainArrays,
+			StatementScratch scratch)
+			throws IOException {
+		byte[] numericBytes = scratch.numericBytes;
+		numericBytes[0] = (byte) firstOrdinalByte;
+		try {
+			input.readFully(numericBytes, 1, Long.BYTES - 1);
+			digest.update(numericBytes);
+			long ordinal = readLong(numericBytes);
+			if (ordinal != expectedOrdinal) {
+				throw new IOException(
+						"Invalid staged statement ordinal " + ordinal + ", expected " + expectedOrdinal);
+			}
+			RecordSize size = new RecordSize(declaredSerializedBytes);
+			byte[] subject = readComponent(input, size, digest, numericBytes, false, retainArrays,
+					scratch.discardBytes);
+			byte[] predicate = readComponent(input, size, digest, numericBytes, false, retainArrays,
+					scratch.discardBytes);
+			byte[] object = readComponent(input, size, digest, numericBytes, false, retainArrays, scratch.discardBytes);
+			byte[] context = readComponent(input, size, digest, numericBytes, true, retainArrays, scratch.discardBytes);
+			if (declaredSerializedBytes != NO_DECLARED_STATEMENT_SIZE
+					&& size.serializedBytes != declaredSerializedBytes) {
+				throw new IOException("Staged statement size mismatch at ordinal " + ordinal + ": sidecar declares "
+						+ declaredSerializedBytes + " bytes but record has " + size.serializedBytes);
+			}
+			long retainedBytes = Math.addExact(RAW_STATEMENT_OBJECT_OVERHEAD_BYTES, size.payloadBytes);
+			RawStatementRecord record = retainArrays
+					? new RawStatementRecord(ordinal, subject, predicate, object, context)
+					: null;
+			return new DecodedStatement(record, size.serializedBytes, retainedBytes);
+		} catch (EOFException e) {
+			throw new IOException("Truncated staged statement at ordinal " + expectedOrdinal, e);
+		} catch (ArithmeticException e) {
+			throw new IOException("Staged statement size overflow at ordinal " + expectedOrdinal, e);
+		}
+	}
+
+	private static byte[] readComponent(DataInputStream input, RecordSize size, MessageDigest digest,
+			byte[] numericBytes, boolean nullable, boolean retainArrays, byte[] discard) throws IOException {
+		input.readFully(numericBytes, 0, Integer.BYTES);
+		digest.update(numericBytes, 0, Integer.BYTES);
+		int length = readInt(numericBytes);
+		if (nullable && length == -1) {
+			size.addSerialized(Integer.BYTES);
+			return null;
+		}
+		if (length < 0 || length > MAX_RECORD_BYTES) {
+			throw new IOException("Invalid staged byte length: " + length);
+		}
+		size.addComponent(length);
+		byte[] bytes = retainArrays ? new byte[length] : null;
+		if (retainArrays) {
+			input.readFully(bytes);
+			digest.update(bytes);
+		} else {
+			int remaining = length;
+			while (remaining > 0) {
+				int read = input.read(discard, 0, Math.min(remaining, discard.length));
+				if (read < 0) {
+					throw new EOFException("truncated staged term bytes");
+				}
+				digest.update(discard, 0, read);
+				remaining -= read;
+			}
+		}
+		return bytes;
+	}
+
+	private static int readInt(byte[] bytes) {
+		return (bytes[0] & 0xff) << 24 | (bytes[1] & 0xff) << 16 | (bytes[2] & 0xff) << 8
+				| bytes[3] & 0xff;
+	}
+
+	private static long readLong(byte[] bytes) {
+		long value = 0L;
+		for (int index = 0; index < Long.BYTES; index++) {
+			value = value << Byte.SIZE | bytes[index] & 0xffL;
+		}
+		return value;
+	}
+
+	private static IOException statementCountMismatch(long expected, long actual) {
+		return new IOException("Staged statement count mismatch: expected " + expected + " but read " + actual);
+	}
+
+	static void writeSizeIndexPlaceholder(Path path) throws IOException {
+		writeSizeIndexPlaceholder(path, null);
+	}
+
+	private static void writeSizeIndexPlaceholder(Path path, BulkTaskScheduler scheduler) throws IOException {
+		try (DataOutputStream output = new DataOutputStream(openTrackedOutput(path,
+				new StandardOpenOption[] { StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE }, scheduler))) {
+			output.writeInt(STATEMENT_SIZE_INDEX_MAGIC);
+			output.writeInt(STATEMENT_SIZE_INDEX_VERSION);
+			output.writeLong(0L);
+			output.write(new byte[SHA256_BYTES]);
+		}
+	}
+
+	static void completeSizeIndex(Path temporaryPath, long rowCount, byte[] digest, Path targetPath)
+			throws IOException {
+		completeSizeIndex(temporaryPath, rowCount, digest, targetPath, null);
+	}
+
+	private static void completeSizeIndex(Path temporaryPath, long rowCount, byte[] digest, Path targetPath,
+			BulkTaskScheduler scheduler) throws IOException {
+		BulkTaskScheduler.OpenFileHandle handle = scheduler == null ? null : scheduler.trackOpenFileHandle();
+		try (FileChannel channel = FileChannel.open(temporaryPath, StandardOpenOption.WRITE)) {
+			ByteBuffer header = ByteBuffer.allocate(STATEMENT_SIZE_INDEX_HEADER_BYTES);
+			header.putInt(STATEMENT_SIZE_INDEX_MAGIC);
+			header.putInt(STATEMENT_SIZE_INDEX_VERSION);
+			header.putLong(rowCount);
+			header.put(digest);
+			header.flip();
+			while (header.hasRemaining()) {
+				channel.write(header, header.position());
+			}
+			channel.force(true);
+		} finally {
+			if (handle != null) {
+				handle.close();
+			}
+		}
+		try {
+			Files.move(temporaryPath, targetPath, StandardCopyOption.ATOMIC_MOVE,
+					StandardCopyOption.REPLACE_EXISTING);
+		} catch (java.nio.file.AtomicMoveNotSupportedException e) {
+			Files.move(temporaryPath, targetPath, StandardCopyOption.REPLACE_EXISTING);
+		}
+	}
+
+	static MessageDigest newSha256() {
+		try {
+			return MessageDigest.getInstance("SHA-256");
+		} catch (NoSuchAlgorithmException e) {
+			throw new AssertionError("SHA-256 is required by the JRE", e);
+		}
+	}
+
+	private static String validateExpectedDigest(String digest) {
+		if (digest == null) {
+			return null;
+		}
+		try {
+			byte[] decoded = HexFormat.of().parseHex(digest);
+			if (decoded.length != SHA256_BYTES) {
+				throw new IllegalArgumentException("statement digest must be a SHA-256 hex value");
+			}
+			return HexFormat.of().formatHex(decoded);
+		} catch (IllegalArgumentException e) {
+			throw new IllegalArgumentException("statement digest must be a SHA-256 hex value", e);
+		}
+	}
+
+	private static OutputStream openTrackedOutput(Path path, StandardOpenOption option, BulkTaskScheduler scheduler)
+			throws IOException {
+		return openTrackedOutput(path, new StandardOpenOption[] { option }, scheduler);
+	}
+
+	private static OutputStream openTrackedOutput(Path path, StandardOpenOption[] options,
+			BulkTaskScheduler scheduler) throws IOException {
+		BulkTaskScheduler.OpenFileHandle handle = scheduler == null ? null : scheduler.trackOpenFileHandle();
+		OutputStream output = null;
+		try {
+			output = Files.newOutputStream(path, options);
+			if (handle == null) {
+				return output;
+			}
+			OutputStream delegate = output;
+			return new FilterOutputStream(delegate) {
+				private boolean closed;
+
+				@Override
+				public void close() throws IOException {
+					if (closed) {
+						return;
+					}
+					closed = true;
+					try {
+						super.close();
+					} finally {
+						handle.close();
+					}
+				}
+			};
+		} catch (IOException | RuntimeException | Error failure) {
+			if (output != null) {
+				try {
+					output.close();
+				} catch (IOException closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+			}
+			if (handle != null) {
+				handle.close();
+			}
+			throw failure;
+		}
+	}
+
+	private static InputStream openTrackedInput(Path path, BulkTaskScheduler scheduler) throws IOException {
+		BulkTaskScheduler.OpenFileHandle handle = scheduler == null ? null : scheduler.trackOpenFileHandle();
+		InputStream input = null;
+		try {
+			input = Files.newInputStream(path);
+			if (handle == null) {
+				return input;
+			}
+			InputStream delegate = input;
+			return new FilterInputStream(delegate) {
+				private boolean closed;
+
+				@Override
+				public void close() throws IOException {
+					if (closed) {
+						return;
+					}
+					closed = true;
+					try {
+						super.close();
+					} finally {
+						handle.close();
+					}
+				}
+			};
+		} catch (IOException | RuntimeException | Error failure) {
+			if (input != null) {
+				try {
+					input.close();
+				} catch (IOException closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+			}
+			if (handle != null) {
+				handle.close();
+			}
+			throw failure;
+		}
+	}
+
+	private static void closeLeaseAfterFailure(BulkTaskScheduler.FileDescriptorScope scope,
+			BulkTaskScheduler.ResourceLease lease, Throwable failure) {
+		try {
+			scope.close();
+		} catch (RuntimeException closeFailure) {
+			failure.addSuppressed(closeFailure);
+		}
+		try {
+			lease.close();
+		} catch (RuntimeException closeFailure) {
+			failure.addSuppressed(closeFailure);
+		}
+	}
+
+	private static long retainedBytes(long serializedBytes) throws IOException {
+		long payloadBytes = serializedBytes - Long.BYTES - 4L * Integer.BYTES;
+		if (payloadBytes < 0L) {
+			throw new IOException("Invalid staged statement size in sidecar: " + serializedBytes);
+		}
+		try {
+			return Math.addExact(RAW_STATEMENT_OBJECT_OVERHEAD_BYTES, payloadBytes);
+		} catch (ArithmeticException e) {
+			throw new IOException("Staged statement retained-size overflow", e);
+		}
+	}
+
+	private static final class RecordSize {
+		private final long declaredSerializedBytes;
+		private long serializedBytes = Long.BYTES;
+		private long payloadBytes;
+
+		private RecordSize(long declaredSerializedBytes) {
+			this.declaredSerializedBytes = declaredSerializedBytes;
+		}
+
+		private void addComponent(int length) throws IOException {
+			addSerialized(Integer.BYTES);
+			addSerialized(length);
+			try {
+				payloadBytes = Math.addExact(payloadBytes, length);
+			} catch (ArithmeticException e) {
+				throw new IOException("Staged statement payload size overflow", e);
+			}
+		}
+
+		private void addSerialized(long bytes) throws IOException {
+			try {
+				serializedBytes = Math.addExact(serializedBytes, bytes);
+			} catch (ArithmeticException e) {
+				throw new IOException("Staged statement serialized size overflow", e);
+			}
+			if (declaredSerializedBytes != NO_DECLARED_STATEMENT_SIZE
+					&& serializedBytes > declaredSerializedBytes) {
+				throw new IOException("Staged statement component length exceeds staged statement size from sidecar");
+			}
+		}
+	}
+
+	private static final class StatementScratch {
+		private final byte[] numericBytes = new byte[Long.BYTES];
+		private final byte[] discardBytes = new byte[SIZE_INDEX_BUFFER_BYTES];
+	}
+
+	private record DecodedStatement(RawStatementRecord record, long serializedBytes, long retainedBytes) {
+	}
+
+	private record SizeIndexHeader(long rowCount, String digestHex) {
+	}
+
+	private static final class StatementSizeIndex implements AutoCloseable {
+		private final DataInputStream input;
+		private final long rowCount;
+		private final String digestHex;
+		private long rowsRead;
+
+		private StatementSizeIndex(DataInputStream input, SizeIndexHeader header) {
+			this.input = input;
+			this.rowCount = header.rowCount();
+			this.digestHex = header.digestHex();
+		}
+
+		private static StatementSizeIndex open(Path path, long expectedRows, String expectedDigest)
+				throws IOException {
+			return open(path, expectedRows, expectedDigest, null);
+		}
+
+		private static StatementSizeIndex open(Path path, long expectedRows, String expectedDigest,
+				BulkTaskScheduler scheduler) throws IOException {
+			SizeIndexHeader header = readHeader(path, expectedRows, expectedDigest, scheduler);
+			DataInputStream input = new DataInputStream(new BufferedInputStream(openTrackedInput(path, scheduler),
+					SIZE_INDEX_BUFFER_BYTES));
+			try {
+				input.skipNBytes(STATEMENT_SIZE_INDEX_HEADER_BYTES);
+				return new StatementSizeIndex(input, header);
+			} catch (IOException | RuntimeException | Error failure) {
+				try {
+					input.close();
+				} catch (IOException closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+				throw failure;
+			}
+		}
+
+		private static SizeIndexHeader readHeader(Path path, long expectedRows, String expectedDigest)
+				throws IOException {
+			return readHeader(path, expectedRows, expectedDigest, null);
+		}
+
+		private static SizeIndexHeader readHeader(Path path, long expectedRows, String expectedDigest,
+				BulkTaskScheduler scheduler) throws IOException {
+			if (expectedRows < 0L) {
+				throw new IOException("Invalid staged statement count: " + expectedRows);
+			}
+			long expectedFileBytes;
+			try {
+				expectedFileBytes = Math.addExact(STATEMENT_SIZE_INDEX_HEADER_BYTES,
+						Math.multiplyExact(expectedRows, Long.BYTES));
+			} catch (ArithmeticException e) {
+				throw new IOException("Staged statement size index length overflow", e);
+			}
+			long actualFileBytes = Files.size(path);
+			if (actualFileBytes < expectedFileBytes) {
+				throw new IOException("Truncated staged statement size index: expected " + expectedFileBytes
+						+ " bytes but found " + actualFileBytes);
+			}
+			if (actualFileBytes > expectedFileBytes) {
+				throw new IOException("Trailing bytes in staged statement size index");
+			}
+			try (DataInputStream input = new DataInputStream(new BufferedInputStream(openTrackedInput(path, scheduler),
+					SIZE_INDEX_BUFFER_BYTES))) {
+				int magic = input.readInt();
+				if (magic != STATEMENT_SIZE_INDEX_MAGIC) {
+					throw new IOException("Invalid staged statement size index magic");
+				}
+				int version = input.readInt();
+				if (version != STATEMENT_SIZE_INDEX_VERSION) {
+					throw new IOException("Unsupported staged statement size index version: " + version);
+				}
+				long rowCount = input.readLong();
+				if (rowCount != expectedRows) {
+					throw new IOException("Staged statement size index count mismatch: expected " + expectedRows
+							+ " but found " + rowCount);
+				}
+				byte[] digest = input.readNBytes(SHA256_BYTES);
+				if (digest.length != SHA256_BYTES) {
+					throw new IOException("Truncated staged statement size index digest");
+				}
+				String digestHex = HexFormat.of().formatHex(digest);
+				if (expectedDigest != null && !expectedDigest.equals(digestHex)) {
+					throw new IOException("Staged statement size index digest does not match the workspace state");
+				}
+				return new SizeIndexHeader(rowCount, digestHex);
 			} catch (EOFException e) {
+				throw new IOException("Truncated staged statement size index header", e);
+			}
+		}
+
+		private long nextSerializedBytes() throws IOException {
+			if (rowsRead == rowCount) {
+				return -1L;
+			}
+			long size;
+			try {
+				size = input.readLong();
+			} catch (EOFException e) {
+				throw new IOException("Truncated staged statement size index entry at ordinal " + rowsRead, e);
+			}
+			if (size < Long.BYTES + 4L * Integer.BYTES) {
+				throw new IOException("Invalid staged statement size index entry at ordinal " + rowsRead + ": " + size);
+			}
+			rowsRead++;
+			return size;
+		}
+
+		private String digestHex() {
+			return digestHex;
+		}
+
+		@Override
+		public void close() throws IOException {
+			input.close();
+		}
+	}
+
+	private static final class ConcatenatedRawStatementCursor implements RawStatementCursor {
+		private final BulkLz4.ConcatenatedFrames frames;
+		private final StatementSizeIndex sizes;
+		private final long expectedStatements;
+		private final String expectedDigest;
+		private final MessageDigest digest = newSha256();
+		private final StatementScratch scratch = new StatementScratch();
+		private DataInputStream frame;
+		private long rowsRead;
+		private long pendingSerializedBytes = NO_DECLARED_STATEMENT_SIZE;
+		private boolean closed;
+		private boolean inputClosed;
+		private boolean verifiedEnd;
+
+		private ConcatenatedRawStatementCursor(BulkLz4.ConcatenatedFrames frames, StatementSizeIndex sizes,
+				long expectedStatements, String expectedDigest) {
+			this.frames = frames;
+			this.sizes = sizes;
+			this.expectedStatements = expectedStatements;
+			this.expectedDigest = expectedDigest;
+		}
+
+		@Override
+		public long peekNextRecordRetainedBytes() throws IOException {
+			ensureOpen();
+			try {
+				if (rowsRead == expectedStatements) {
+					verifyEndOfInput();
+					return -1L;
+				}
+				if (pendingSerializedBytes == NO_DECLARED_STATEMENT_SIZE) {
+					pendingSerializedBytes = sizes.nextSerializedBytes();
+					if (pendingSerializedBytes < 0L) {
+						throw statementCountMismatch(expectedStatements, rowsRead);
+					}
+				}
+				return retainedBytes(pendingSerializedBytes);
+			} catch (IOException failure) {
+				closeAfterFailure(failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public RawStatementRecord next() throws IOException {
+			ensureOpen();
+			long retainedBytes = peekNextRecordRetainedBytes();
+			if (retainedBytes < 0L) {
+				return null;
+			}
+			try {
+				int firstByte = readFirstRecordByte();
+				if (firstByte < 0) {
+					throw statementCountMismatch(expectedStatements, rowsRead);
+				}
+				DecodedStatement decoded = decodeRawStatement(frame, firstByte, rowsRead, pendingSerializedBytes,
+						digest, true, scratch);
+				rowsRead++;
+				pendingSerializedBytes = NO_DECLARED_STATEMENT_SIZE;
+				return decoded.record();
+			} catch (IOException failure) {
+				closeAfterFailure(failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public RawStatementChunk nextChunk(long targetBytes, int maxRecords) throws IOException {
+			if (targetBytes <= 0L || maxRecords <= 0) {
+				throw new IllegalArgumentException("Raw statement chunk limits must be positive");
+			}
+			List<RawStatementRecord> records = new ArrayList<>(Math.min(maxRecords, 64));
+			long retained = 0L;
+			while (records.size() < maxRecords) {
+				long nextRetained = peekNextRecordRetainedBytes();
+				if (nextRetained < 0L || !records.isEmpty() && nextRetained > targetBytes - retained) {
+					break;
+				}
+				RawStatementRecord record = next();
+				if (record == null) {
+					break;
+				}
+				records.add(record);
+				retained = Math.addExact(retained, nextRetained);
+				if (retained >= targetBytes) {
+					break;
+				}
+			}
+			return records.isEmpty() ? null : new RawStatementChunk(records, retained);
+		}
+
+		private int readFirstRecordByte() throws IOException {
+			while (true) {
+				if (frame != null) {
+					int first = frame.read();
+					if (first >= 0) {
+						return first;
+					}
+					frame = null;
+				}
+				if (!frames.nextFrame()) {
+					return -1;
+				}
+				frame = frames.frame();
+			}
+		}
+
+		private void verifyEndOfInput() throws IOException {
+			if (verifiedEnd) {
 				return;
 			}
-			if (ordinal != expectedOrdinal[0]) {
-				throw new IOException(
-						"Invalid staged statement ordinal " + ordinal + ", expected " + expectedOrdinal[0]);
+			if (rowsRead != expectedStatements) {
+				throw statementCountMismatch(expectedStatements, rowsRead);
+			}
+			if (sizes.nextSerializedBytes() >= 0L) {
+				throw new IOException("Staged statement size index contains rows beyond its declared count");
+			}
+			if (readFirstRecordByte() >= 0) {
+				throw new IOException("Staged statement count mismatch: found data beyond " + expectedStatements
+						+ " records");
+			}
+			String actualDigest = HexFormat.of().formatHex(digest.digest());
+			if (!expectedDigest.equals(actualDigest)) {
+				throw new IOException("Staged statement digest mismatch: expected " + expectedDigest + " but read "
+						+ actualDigest);
+			}
+			verifiedEnd = true;
+		}
+
+		private void ensureOpen() {
+			if (closed) {
+				throw new IllegalStateException("raw statement cursor is closed");
+			}
+			if (inputClosed) {
+				throw new IllegalStateException("raw statement cursor input is closed");
+			}
+		}
+
+		private void closeAfterFailure(IOException failure) {
+			try {
+				close();
+			} catch (IOException closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+		}
+
+		@Override
+		public void closeInput() throws IOException {
+			if (inputClosed) {
+				return;
+			}
+			inputClosed = true;
+			frame = null;
+			IOException failure = null;
+			try {
+				frames.closeInput();
+			} catch (IOException e) {
+				failure = e;
 			}
 			try {
-				byte[] subject = readBytes(input);
-				byte[] predicate = readBytes(input);
-				byte[] object = readBytes(input);
-				byte[] context = readNullableBytes(input);
-				visitor.accept(ordinal, subject, predicate, object, context);
-				expectedOrdinal[0]++;
-			} catch (EOFException e) {
-				throw new IOException("Truncated staged statement at ordinal " + ordinal, e);
+				sizes.close();
+			} catch (IOException e) {
+				if (failure == null) {
+					failure = e;
+				} else {
+					failure.addSuppressed(e);
+				}
 			}
+			if (failure != null) {
+				throw failure;
+			}
+		}
+
+		@Override
+		public void close() throws IOException {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			IOException failure = null;
+			try {
+				closeInput();
+			} catch (IOException e) {
+				failure = e;
+			}
+			try {
+				frames.close();
+			} catch (IOException e) {
+				if (failure == null) {
+					failure = e;
+				} else {
+					failure.addSuppressed(e);
+				}
+			}
+			if (failure != null) {
+				throw failure;
+			}
+		}
+	}
+
+	private static final class LeasedRawStatementCursor implements RawStatementCursor {
+		private final RawStatementCursor delegate;
+		private final BulkTaskScheduler.FileDescriptorScope scope;
+		private final BulkTaskScheduler.ResourceLease lease;
+		private boolean closed;
+		private boolean inputClosed;
+
+		private LeasedRawStatementCursor(RawStatementCursor delegate, BulkTaskScheduler.FileDescriptorScope scope,
+				BulkTaskScheduler.ResourceLease lease) {
+			this.delegate = delegate;
+			this.scope = scope;
+			this.lease = lease;
+		}
+
+		@Override
+		public BulkTaskScheduler.ResourceLease resourceLease() {
+			return lease;
+		}
+
+		@Override
+		public long peekNextRecordRetainedBytes() throws IOException {
+			return delegate.peekNextRecordRetainedBytes();
+		}
+
+		@Override
+		public RawStatementRecord next() throws IOException {
+			return delegate.next();
+		}
+
+		@Override
+		public RawStatementChunk nextChunk(long targetBytes, int maxRecords) throws IOException {
+			return delegate.nextChunk(targetBytes, maxRecords);
+		}
+
+		@Override
+		public void closeInput() throws IOException {
+			if (closed || inputClosed) {
+				return;
+			}
+			closeLeasedInput(delegate::closeInput, scope, lease);
+			inputClosed = true;
+		}
+
+		@Override
+		public void close() throws IOException {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			closeLeasedResource(delegate, scope, lease);
+		}
+	}
+
+	private static final class LeasedValueCursor implements ValueCursor {
+		private final ValueCursor delegate;
+		private final BulkTaskScheduler.FileDescriptorScope scope;
+		private final BulkTaskScheduler.ResourceLease lease;
+		private boolean closed;
+		private boolean inputClosed;
+
+		private LeasedValueCursor(ValueCursor delegate, BulkTaskScheduler.FileDescriptorScope scope,
+				BulkTaskScheduler.ResourceLease lease) {
+			this.delegate = delegate;
+			this.scope = scope;
+			this.lease = lease;
+		}
+
+		@Override
+		public BulkTaskScheduler.ResourceLease resourceLease() {
+			return lease;
+		}
+
+		@Override
+		public long peekNextRecordRetainedBytes() throws IOException {
+			return delegate.peekNextRecordRetainedBytes();
+		}
+
+		@Override
+		public ValueRecord next() throws IOException {
+			return delegate.next();
+		}
+
+		@Override
+		public ValueChunk nextChunk(long targetBytes, int maxRecords) throws IOException {
+			return delegate.nextChunk(targetBytes, maxRecords);
+		}
+
+		@Override
+		public void closeInput() throws IOException {
+			if (closed || inputClosed) {
+				return;
+			}
+			closeLeasedInput(delegate::closeInput, scope, lease);
+			inputClosed = true;
+		}
+
+		@Override
+		public void close() throws IOException {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			closeLeasedResource(delegate, scope, lease);
+		}
+	}
+
+	@FunctionalInterface
+	private interface InputCloser {
+		void close() throws IOException;
+	}
+
+	private static void closeLeasedInput(InputCloser inputCloser, BulkTaskScheduler.FileDescriptorScope scope,
+			BulkTaskScheduler.ResourceLease lease) throws IOException {
+		IOException failure = null;
+		try {
+			inputCloser.close();
+		} catch (IOException e) {
+			failure = e;
+		}
+		try {
+			scope.close();
+		} catch (RuntimeException e) {
+			IOException closeFailure = new IOException("could not close staged input resource scope", e);
+			if (failure == null) {
+				failure = closeFailure;
+			} else {
+				failure.addSuppressed(closeFailure);
+			}
+		}
+		try {
+			lease.releaseFileDescriptors();
+		} catch (RuntimeException e) {
+			IOException closeFailure = new IOException("could not release staged input descriptors", e);
+			if (failure == null) {
+				failure = closeFailure;
+			} else {
+				failure.addSuppressed(closeFailure);
+			}
+		}
+		if (failure != null) {
+			throw failure;
+		}
+	}
+
+	private static void closeLeasedResource(AutoCloseable resource,
+			BulkTaskScheduler.FileDescriptorScope scope, BulkTaskScheduler.ResourceLease lease) throws IOException {
+		IOException failure = null;
+		try {
+			resource.close();
+		} catch (IOException e) {
+			failure = e;
+		} catch (Exception e) {
+			failure = new IOException("could not close leased staged input", e);
+		}
+		try {
+			scope.close();
+		} catch (RuntimeException e) {
+			IOException closeFailure = new IOException("could not close staged input resource scope", e);
+			if (failure == null) {
+				failure = closeFailure;
+			} else {
+				failure.addSuppressed(closeFailure);
+			}
+		}
+		try {
+			lease.close();
+		} catch (RuntimeException e) {
+			IOException closeFailure = new IOException("could not release staged input resources", e);
+			if (failure == null) {
+				failure = closeFailure;
+			} else {
+				failure.addSuppressed(closeFailure);
+			}
+		}
+		if (failure != null) {
+			throw failure;
 		}
 	}
 
@@ -171,28 +1236,6 @@ final class CanonicalStagedInput {
 				visitor.accept(prefix, readUtf8(input));
 			} catch (EOFException e) {
 				throw new IOException("Truncated staged namespace record", e);
-			}
-		}
-	}
-
-	private static void readValues(DataInputStream input, int partition, int partitionCount, ValueVisitor visitor)
-			throws IOException {
-		while (true) {
-			long routeHash;
-			try {
-				routeHash = input.readLong();
-			} catch (EOFException e) {
-				return;
-			}
-			try {
-				int roles = input.readUnsignedByte();
-				byte[] key = readBytes(input);
-				if (((int) routeHash & (partitionCount - 1)) != partition) {
-					throw new IOException("Staged value route hash belongs to a different partition");
-				}
-				visitor.accept(partition, routeHash, roles, key);
-			} catch (EOFException e) {
-				throw new IOException("Truncated staged value record in partition " + partition, e);
 			}
 		}
 	}
@@ -245,5 +1288,252 @@ final class CanonicalStagedInput {
 	@FunctionalInterface
 	interface ValueVisitor {
 		void accept(int partition, long routeHash, int roles, byte[] canonicalKey) throws IOException;
+	}
+
+	/** Returned term arrays are owned by the caller and remain valid after subsequent reads. */
+	interface RawStatementCursor extends AutoCloseable {
+		default BulkTaskScheduler.ResourceLease resourceLease() {
+			return null;
+		}
+
+		void closeInput() throws IOException;
+
+		long peekNextRecordRetainedBytes() throws IOException;
+
+		RawStatementRecord next() throws IOException;
+
+		RawStatementChunk nextChunk(long targetBytes, int maxRecords) throws IOException;
+
+		@Override
+		void close() throws IOException;
+	}
+
+	record RawStatementRecord(long ordinal, byte[] subject, byte[] predicate, byte[] object, byte[] context) {
+	}
+
+	record RawStatementChunk(List<RawStatementRecord> records, long retainedBytes) {
+		RawStatementChunk {
+			records = List.copyOf(records);
+		}
+	}
+
+	/**
+	 * A single-use partition cursor. Returned key arrays are owned by the caller and remain valid after later reads.
+	 * {@code next()} and {@code nextChunk()} return {@code null} at EOF. Errors are reported as {@link IOException};
+	 * closing is idempotent and releases the underlying concatenated-frame reader.
+	 */
+	interface ValueCursor extends AutoCloseable {
+		default BulkTaskScheduler.ResourceLease resourceLease() {
+			return null;
+		}
+
+		void closeInput() throws IOException;
+
+		long peekNextRecordRetainedBytes() throws IOException;
+
+		ValueRecord next() throws IOException;
+
+		ValueChunk nextChunk(long targetBytes, int maxRecords) throws IOException;
+
+		@Override
+		void close() throws IOException;
+	}
+
+	record ValueChunk(List<ValueRecord> records, long retainedBytes) {
+		ValueChunk {
+			records = List.copyOf(records);
+		}
+	}
+
+	record ValueRecord(long routeHash, int roles, byte[] canonicalKey) {
+		ValueRecord {
+			Objects.requireNonNull(canonicalKey, "canonicalKey");
+		}
+
+		long retainedBytes() {
+			return VALUE_RECORD_OVERHEAD_BYTES + canonicalKey.length;
+		}
+	}
+
+	private static final class ConcatenatedValueCursor implements ValueCursor {
+
+		private final BulkLz4.ConcatenatedFrames frames;
+		private final int partition;
+		private final int partitionCount;
+		private final int maximumKeyBytes;
+		private final String recordDescription;
+		private final String lengthDescription;
+		private DataInputStream frame;
+		private ValueRecordHeader pendingHeader;
+		private boolean closed;
+		private boolean inputClosed;
+		private boolean exhausted;
+
+		private ConcatenatedValueCursor(BulkLz4.ConcatenatedFrames frames, int partition, int partitionCount,
+				int maximumKeyBytes, String recordDescription, String lengthDescription) {
+			this.frames = frames;
+			this.partition = partition;
+			this.partitionCount = partitionCount;
+			this.maximumKeyBytes = maximumKeyBytes;
+			this.recordDescription = recordDescription;
+			this.lengthDescription = lengthDescription;
+		}
+
+		@Override
+		public BulkTaskScheduler.ResourceLease resourceLease() {
+			return frames.resourceLease();
+		}
+
+		@Override
+		public long peekNextRecordRetainedBytes() throws IOException {
+			ensureOpen();
+			try {
+				ValueRecordHeader header = nextHeader();
+				return header == null ? -1L : VALUE_RECORD_OVERHEAD_BYTES + header.keyLength();
+			} catch (IOException failure) {
+				try {
+					close();
+				} catch (IOException closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+				throw failure;
+			}
+		}
+
+		@Override
+		public ValueRecord next() throws IOException {
+			ensureOpen();
+			try {
+				ValueRecordHeader header = nextHeader();
+				if (header == null) {
+					return null;
+				}
+				byte[] key = new byte[header.keyLength()];
+				try {
+					frame.readFully(key);
+				} catch (EOFException e) {
+					throw new IOException("Truncated " + recordDescription + " record in partition " + partition, e);
+				}
+				pendingHeader = null;
+				return new ValueRecord(header.routeHash(), header.roles(), key);
+			} catch (IOException failure) {
+				try {
+					close();
+				} catch (IOException closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+				throw failure;
+			}
+		}
+
+		@Override
+		public ValueChunk nextChunk(long targetBytes, int maxRecords) throws IOException {
+			if (targetBytes <= 0L || maxRecords <= 0) {
+				throw new IllegalArgumentException("Value chunk limits must be positive");
+			}
+			List<ValueRecord> records = new ArrayList<>(Math.min(maxRecords, 64));
+			long retainedBytes = 0L;
+			while (records.size() < maxRecords) {
+				long nextRetainedBytes = peekNextRecordRetainedBytes();
+				if (nextRetainedBytes < 0L
+						|| !records.isEmpty() && nextRetainedBytes > targetBytes - retainedBytes) {
+					break;
+				}
+				ValueRecord record = next();
+				if (record == null) {
+					break;
+				}
+				records.add(record);
+				retainedBytes = Math.addExact(retainedBytes, nextRetainedBytes);
+				if (retainedBytes >= targetBytes) {
+					break;
+				}
+			}
+			return records.isEmpty() ? null : new ValueChunk(records, retainedBytes);
+		}
+
+		private ValueRecordHeader nextHeader() throws IOException {
+			if (pendingHeader != null) {
+				return pendingHeader;
+			}
+			if (exhausted) {
+				return null;
+			}
+			while (true) {
+				if (frame != null) {
+					ValueRecordHeader header = readHeader(frame);
+					if (header != null) {
+						pendingHeader = header;
+						return header;
+					}
+					frame = null;
+				}
+				if (!frames.nextFrame()) {
+					exhausted = true;
+					return null;
+				}
+				frame = frames.frame();
+			}
+		}
+
+		private ValueRecordHeader readHeader(DataInputStream input) throws IOException {
+			int firstByte = input.read();
+			if (firstByte < 0) {
+				return null;
+			}
+			try {
+				long routeHash = firstByte;
+				for (int index = 1; index < Long.BYTES; index++) {
+					routeHash = routeHash << Byte.SIZE | input.readUnsignedByte();
+				}
+				int roles = input.readUnsignedByte();
+				int length = input.readInt();
+				if (length < 0 || length > maximumKeyBytes) {
+					throw new IOException("Invalid " + lengthDescription + " length: " + length);
+				}
+				if (((int) routeHash & (partitionCount - 1)) != partition) {
+					String description = Character.toUpperCase(recordDescription.charAt(0))
+							+ recordDescription.substring(1);
+					throw new IOException(description + " route hash belongs to a different partition");
+				}
+				return new ValueRecordHeader(routeHash, roles, length);
+			} catch (EOFException e) {
+				throw new IOException("Truncated " + recordDescription + " record in partition " + partition, e);
+			}
+		}
+
+		private void ensureOpen() {
+			if (closed) {
+				throw new IllegalStateException("value cursor is closed");
+			}
+			if (inputClosed) {
+				throw new IllegalStateException("value cursor input is closed");
+			}
+		}
+
+		private record ValueRecordHeader(long routeHash, int roles, int keyLength) {
+		}
+
+		@Override
+		public void closeInput() throws IOException {
+			if (inputClosed) {
+				return;
+			}
+			inputClosed = true;
+			frame = null;
+			pendingHeader = null;
+			frames.closeInput();
+		}
+
+		@Override
+		public void close() throws IOException {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			frame = null;
+			pendingHeader = null;
+			frames.close();
+		}
 	}
 }

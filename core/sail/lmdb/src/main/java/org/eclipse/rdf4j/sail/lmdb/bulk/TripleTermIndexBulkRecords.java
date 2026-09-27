@@ -47,39 +47,70 @@ final class TripleTermIndexBulkRecords implements AutoCloseable {
 	static TripleTermIndexBulkRecords build(ExternalLongTupleSorter.SortedTupleFile source, Path workspace,
 			String configuredIndexes, long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
 			BooleanSupplier cancellationSignal) throws IOException {
+		return build(source, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
+				cancellationSignal, null);
+	}
+
+	static TripleTermIndexBulkRecords build(ExternalLongTupleSorter.SortedTupleFile source, Path workspace,
+			String configuredIndexes, long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler) throws IOException {
+		return build(source, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
+				cancellationSignal, scheduler, () -> {
+				}, () -> {
+				});
+	}
+
+	static TripleTermIndexBulkRecords build(ExternalLongTupleSorter.SortedTupleFile source, Path workspace,
+			String configuredIndexes, long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler, Runnable spillOutputObserver,
+			Runnable spillSubmittedObserver) throws IOException {
 		List<String> specifications = specifications(configuredIndexes);
 		if (specifications.isEmpty()) {
 			// Triple-term indexing disabled ("none"): skip reading the source and build no runs.
 			return new TripleTermIndexBulkRecords(List.of());
 		}
-		long perSorterBudget = Math.max(8L * Long.BYTES, memoryBudgetBytes / specifications.size());
+		long sourceReaderBytes = source.scanReaderMemoryEstimateBytes();
+		long spillOutputBytes = BulkLz4.mergeOutputMemoryBytes(compression.codecFor(BulkArtifact.TRIPLE_TERM_INDEXES));
+		long sorterMemory = Math.max(0L, memoryBudgetBytes - sourceReaderBytes - 2L * spillOutputBytes - 1024L
+				- 4L * 256L * Integer.BYTES
+				- ExternalLongTupleSorter.asynchronousSpillMetadataBytes(4));
+		long perSorterBudget = Math.max(8L * Long.BYTES, sorterMemory / specifications.size());
 		int perSorterOpenFiles = Math.max(3, maxOpenFiles / specifications.size());
 		List<ExternalLongTupleSorter> sorters = new ArrayList<>(specifications.size());
+		List<Path> sortedOutputs = new ArrayList<>(specifications.size());
 		try {
 			for (String specification : specifications) {
+				sortedOutputs.add(workspace.resolve("term-index-" + specification + "-sorted.bin"));
 				sorters.add(new ExternalLongTupleSorter(workspace, "term-index-" + specification, 4,
 						perSorterBudget, perSorterOpenFiles,
-						compression.codecFor(BulkArtifact.TRIPLE_TERM_INDEXES)));
+						compression.codecFor(BulkArtifact.TRIPLE_TERM_INDEXES), scheduler, spillOutputObserver,
+						spillSubmittedObserver));
 			}
-			source.forEach(tuple -> {
-				checkCancelled(cancellationSignal);
-				for (int i = 0; i < specifications.size(); i++) {
-					String specification = specifications.get(i);
-					sorters.get(i)
-							.add4(
-									tuple[component(specification.charAt(0))],
-									tuple[component(specification.charAt(1))],
-									tuple[component(specification.charAt(2))],
-									tuple[component(specification.charAt(3))]);
-				}
-			});
-			List<IndexRun> runs = new ArrayList<>(specifications.size());
-			for (int i = 0; i < specifications.size(); i++) {
-				checkCancelled(cancellationSignal);
-				String specification = specifications.get(i);
-				runs.add(new IndexRun(specification,
-						sorters.get(i).finish(workspace.resolve("term-index-" + specification + "-sorted.bin"))));
+			long synchronousSpillBytes = sorters.stream()
+					.mapToLong(ExternalLongTupleSorter::synchronousSpillMemoryEstimateBytes)
+					.max()
+					.orElse(0L);
+			try (BulkTaskScheduler.ResourceScope scan = scheduler == null ? null
+					: scheduler.reserveScanEnvelope(sourceReaderBytes,
+							source.scanReaderFileDescriptorEstimate(), source.rows() == 0L ? 0L : 1024L,
+							source.rows() == 0L ? 0L : synchronousSpillBytes,
+							source.rows() == 0L ? 0 : 1)) {
+				source.forEach(tuple -> {
+					checkCancelled(cancellationSignal);
+					for (int i = 0; i < specifications.size(); i++) {
+						String specification = specifications.get(i);
+						sorters.get(i)
+								.add4(
+										tuple[component(specification.charAt(0))],
+										tuple[component(specification.charAt(1))],
+										tuple[component(specification.charAt(2))],
+										tuple[component(specification.charAt(3))]);
+					}
+				}, scheduler);
 			}
+			List<IndexRun> runs = scheduler == null
+					? finishSerially(specifications, sortedOutputs, sorters, cancellationSignal)
+					: finishConcurrently(specifications, sortedOutputs, sorters, cancellationSignal, scheduler);
 			return new TripleTermIndexBulkRecords(runs);
 		} catch (IOException | RuntimeException | Error failure) {
 			for (ExternalLongTupleSorter sorter : sorters) {
@@ -89,8 +120,44 @@ final class TripleTermIndexBulkRecords implements AutoCloseable {
 					failure.addSuppressed(closeFailure);
 				}
 			}
+			for (Path output : sortedOutputs) {
+				try {
+					Files.deleteIfExists(output);
+				} catch (IOException cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+			}
 			throw failure;
 		}
+	}
+
+	private static List<IndexRun> finishSerially(List<String> specifications, List<Path> outputs,
+			List<ExternalLongTupleSorter> sorters, BooleanSupplier cancellationSignal) throws IOException {
+		List<IndexRun> runs = new ArrayList<>(specifications.size());
+		for (int i = 0; i < specifications.size(); i++) {
+			checkCancelled(cancellationSignal);
+			runs.add(new IndexRun(specifications.get(i), sorters.get(i).finish(outputs.get(i))));
+		}
+		return runs;
+	}
+
+	private static List<IndexRun> finishConcurrently(List<String> specifications, List<Path> outputs,
+			List<ExternalLongTupleSorter> sorters, BooleanSupplier cancellationSignal,
+			BulkTaskScheduler scheduler) throws IOException {
+		for (ExternalLongTupleSorter sorter : sorters) {
+			sorter.prepareFinish();
+		}
+		List<BulkTaskScheduler.Work<IndexRun>> work = new ArrayList<>(specifications.size());
+		for (int i = 0; i < specifications.size(); i++) {
+			int index = i;
+			ExternalLongTupleSorter sorter = sorters.get(index);
+			long memoryBytes = sorter.mergeMemoryEstimateBytes();
+			work.add(new BulkTaskScheduler.Work<>(memoryBytes, sorter.mergeFileDescriptorCount(), () -> {
+				checkCancelled(cancellationSignal);
+				return new IndexRun(specifications.get(index), sorter.finish(outputs.get(index)));
+			}, sorter.requiresSerialMemoryFloor()));
+		}
+		return scheduler.runOrdered(work);
 	}
 
 	List<IndexRun> runs() {

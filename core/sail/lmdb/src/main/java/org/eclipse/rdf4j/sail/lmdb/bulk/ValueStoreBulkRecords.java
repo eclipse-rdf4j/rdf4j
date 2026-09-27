@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.bulk;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.function.BooleanSupplier;
 
@@ -35,23 +37,64 @@ final class ValueStoreBulkRecords {
 
 	static Output build(ResolvedValueRecords values, Path workspace, long memoryBudgetBytes, int maxOpenFiles,
 			BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
-		long sorterBudget = Math.max(16 * 1024L, memoryBudgetBytes / 4L);
+		return build(values, workspace, memoryBudgetBytes, maxOpenFiles, compression, cancellationSignal, null);
+	}
+
+	static Output build(ResolvedValueRecords values, Path workspace, long memoryBudgetBytes, int maxOpenFiles,
+			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler)
+			throws IOException {
+		return build(values, workspace, memoryBudgetBytes, maxOpenFiles, compression, cancellationSignal, scheduler,
+				() -> {
+				});
+	}
+
+	static Output build(ResolvedValueRecords values, Path workspace, long memoryBudgetBytes, int maxOpenFiles,
+			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+			Runnable spillOutputObserver) throws IOException {
+		return build(values, workspace, memoryBudgetBytes, maxOpenFiles, compression, cancellationSignal, scheduler,
+				spillOutputObserver, () -> {
+				});
+	}
+
+	static Output build(ResolvedValueRecords values, Path workspace, long memoryBudgetBytes, int maxOpenFiles,
+			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+			Runnable spillOutputObserver, Runnable beforeReaderClose) throws IOException {
+		long largestSpillOutputBytes = List.of(BulkArtifact.VALUE_RECORDS, BulkArtifact.VALUE_HASHES,
+				BulkArtifact.VALUE_REFERENCE_COUNTS, BulkArtifact.TRIPLE_TERMS).stream()
+				.mapToLong(artifact -> BulkLz4.mergeOutputMemoryBytes(compression.codecFor(artifact)))
+				.max().orElseThrow();
+		// Resolved readers and one synchronous output remain live in the scan envelope. Reserve another output stream
+		// for one asynchronous spill, then size the five local producers from the remaining aggregate allowance. The
+		// actual producer and radix-scratch layouts are included again when the envelope is admitted below.
+		long resolvedReaderBytes = values.readerMemoryEstimateBytes();
+		long valueConversionBytes = values.records() == 0L ? 0L : values.conversionMemoryEstimateBytes();
+		long sorterBudget = Math.max(1L,
+				Math.max(0L, memoryBudgetBytes - resolvedReaderBytes - valueConversionBytes - 2L * largestSpillOutputBytes
+						- 4L * 256L * Integer.BYTES
+						- ExternalLongTupleSorter.asynchronousSpillMetadataBytes(4)) / 4L);
 		Path hashCandidatesPath = workspace.resolve("value-hash-candidates.bin");
 		Path referenceCandidatesPath = workspace.resolve("value-reference-candidates.bin");
 		Path tripleTermsPath = workspace.resolve("value-triple-terms.bin");
 		Path hashesPath = workspace.resolve("value-hashes.bin");
 		try (ExternalByteKeySorter main = new ExternalByteKeySorter(workspace, "value-main", sorterBudget,
-				maxOpenFiles, compression.codecFor(BulkArtifact.VALUE_RECORDS));
+				maxOpenFiles, compression.codecFor(BulkArtifact.VALUE_RECORDS), scheduler, spillOutputObserver);
 				ExternalLongTupleSorter hashCandidates = new ExternalLongTupleSorter(workspace,
 						"value-hash-candidates", 3, sorterBudget, maxOpenFiles,
-						compression.codecFor(BulkArtifact.VALUE_HASHES));
+						compression.codecFor(BulkArtifact.VALUE_HASHES), scheduler, spillOutputObserver);
 				ExternalLongTupleSorter referenceCandidates = new ExternalLongTupleSorter(workspace,
 						"value-reference-candidates", 3, sorterBudget, maxOpenFiles,
-						compression.codecFor(BulkArtifact.VALUE_REFERENCE_COUNTS));
+						compression.codecFor(BulkArtifact.VALUE_REFERENCE_COUNTS), scheduler, spillOutputObserver);
 				ExternalLongTupleSorter tripleTerms = new ExternalLongTupleSorter(workspace, "value-triple-terms", 4,
-						sorterBudget, maxOpenFiles, compression.codecFor(BulkArtifact.TRIPLE_TERMS));
+						sorterBudget, maxOpenFiles, compression.codecFor(BulkArtifact.TRIPLE_TERMS), scheduler,
+						spillOutputObserver);
 				ExternalLongTupleSorter hashes = new ExternalLongTupleSorter(workspace, "value-hashes", 3,
-						sorterBudget, maxOpenFiles, compression.codecFor(BulkArtifact.VALUE_HASHES))) {
+						sorterBudget, maxOpenFiles, compression.codecFor(BulkArtifact.VALUE_HASHES), scheduler,
+						spillOutputObserver)) {
+			long synchronousSpillBytes = List.of(main.synchronousSpillMemoryEstimateBytes(),
+					hashCandidates.synchronousSpillMemoryEstimateBytes(),
+					referenceCandidates.synchronousSpillMemoryEstimateBytes(),
+					tripleTerms.synchronousSpillMemoryEstimateBytes(), hashes.synchronousSpillMemoryEstimateBytes()).stream()
+					.max(Long::compare).orElse(0L);
 			values.forEach((sequence, id, roles, canonicalKey, dependencyIds) -> {
 				checkCancelled(cancellationSignal);
 				for (long dependencyId : dependencyIds) {
@@ -76,19 +119,30 @@ final class ValueStoreBulkRecords {
 				};
 				addDataRecords(main, sequence, id, data, hashCandidates);
 				hashes.add3(id, Integer.toUnsignedLong(value.hashCode()), 0L);
-			}, cancellationSignal);
+			}, cancellationSignal, scheduler, synchronousSpillBytes, values.records() == 0L ? 0 : 1,
+				beforeReaderClose);
 
-			ExternalLongTupleSorter.SortedTupleFile sortedHashCandidates = hashCandidates.finish(hashCandidatesPath);
+			List<ExternalLongTupleSorter.SortedTupleFile> independentSorters = finishTupleSorters(
+					List.of(hashCandidates, referenceCandidates, tripleTerms, hashes),
+					List.of(hashCandidatesPath, referenceCandidatesPath, tripleTermsPath, hashesPath),
+					scheduler, cancellationSignal);
+			ExternalLongTupleSorter.SortedTupleFile sortedHashCandidates = independentSorters.get(0);
+			ExternalLongTupleSorter.SortedTupleFile sortedReferences = independentSorters.get(1);
+			ExternalLongTupleSorter.SortedTupleFile sortedTripleTerms = independentSorters.get(2);
+			ExternalLongTupleSorter.SortedTupleFile sortedHashes = independentSorters.get(3);
 			addHashRecords(main, sortedHashCandidates, cancellationSignal);
 
-			ExternalByteKeySorter.SortedRecordFile sortedMain = main
-					.finish(workspace.resolve("value-main-records.bin"));
-			ExternalLongTupleSorter.SortedTupleFile sortedReferences = referenceCandidates
-					.finish(referenceCandidatesPath);
-			ExternalByteKeySorter.SortedRecordFile referenceCounts = reduceReferenceCounts(sortedReferences, workspace,
-					sorterBudget, maxOpenFiles, compression, cancellationSignal);
-			return new Output(sortedMain, referenceCounts, tripleTerms.finish(tripleTermsPath),
-					hashes.finish(hashesPath));
+			Path mainRecordsPath = workspace.resolve("value-main-records.bin");
+			Path referenceCountsPath = workspace.resolve("value-ref-count-records.bin");
+			try (ExternalByteKeySorter referenceCounts = new ExternalByteKeySorter(workspace, "value-ref-counts",
+					sorterBudget, maxOpenFiles, compression.codecFor(BulkArtifact.VALUE_REFERENCE_COUNTS), scheduler,
+					spillOutputObserver)) {
+				reduceReferenceCounts(sortedReferences, referenceCounts, cancellationSignal);
+				List<ExternalByteKeySorter.SortedRecordFile> finalSorters = finishByteSorters(
+						List.of(main, referenceCounts), List.of(mainRecordsPath, referenceCountsPath), scheduler,
+						cancellationSignal);
+				return new Output(finalSorters.get(0), finalSorters.get(1), sortedTripleTerms, sortedHashes);
+			}
 		}
 	}
 
@@ -135,27 +189,84 @@ final class ValueStoreBulkRecords {
 		});
 	}
 
-	private static ExternalByteKeySorter.SortedRecordFile reduceReferenceCounts(
-			ExternalLongTupleSorter.SortedTupleFile references, Path workspace, long memoryBudgetBytes,
-			int maxOpenFiles, BulkCompression compression, BooleanSupplier cancellationSignal) throws IOException {
-		try (ExternalByteKeySorter counts = new ExternalByteKeySorter(workspace, "value-ref-counts", memoryBudgetBytes,
-				maxOpenFiles, compression.codecFor(BulkArtifact.VALUE_REFERENCE_COUNTS))) {
-			long[] currentId = { 0L };
-			long[] count = { 0L };
-			references.forEach(tuple -> {
+	private static List<ExternalLongTupleSorter.SortedTupleFile> finishTupleSorters(
+			List<ExternalLongTupleSorter> sorters, List<Path> outputs, BulkTaskScheduler scheduler,
+			BooleanSupplier cancellationSignal) throws IOException {
+		if (sorters.size() != outputs.size()) {
+			throw new IllegalArgumentException("each tuple sorter needs one output path");
+		}
+		for (ExternalLongTupleSorter sorter : sorters) {
+			checkCancelled(cancellationSignal);
+			sorter.prepareFinish();
+		}
+		if (scheduler == null) {
+			List<ExternalLongTupleSorter.SortedTupleFile> files = new ArrayList<>(sorters.size());
+			for (int i = 0; i < sorters.size(); i++) {
 				checkCancelled(cancellationSignal);
-				long id = tuple[0];
-				if (count[0] != 0L && currentId[0] != id) {
-					counts.add(ValueStoreRecordCodec.idKey(currentId[0]), unsignedValue(count[0]));
-					count[0] = 0L;
-				}
-				currentId[0] = id;
-				count[0]++;
-			});
-			if (count[0] != 0L) {
-				counts.add(ValueStoreRecordCodec.idKey(currentId[0]), unsignedValue(count[0]));
+				files.add(sorters.get(i).finish(outputs.get(i)));
 			}
-			return counts.finish(workspace.resolve("value-ref-count-records.bin"));
+			return files;
+		}
+		List<BulkTaskScheduler.Work<ExternalLongTupleSorter.SortedTupleFile>> work = new ArrayList<>(sorters.size());
+		for (int i = 0; i < sorters.size(); i++) {
+			ExternalLongTupleSorter sorter = sorters.get(i);
+			Path output = outputs.get(i);
+			work.add(new BulkTaskScheduler.Work<>(sorter.mergeMemoryEstimateBytes(), sorter.mergeFileDescriptorCount(),
+					() -> {
+						checkCancelled(cancellationSignal);
+						return sorter.finish(output);
+					}, sorter.requiresSerialMemoryFloor()));
+		}
+		return scheduler.runOrdered(work);
+	}
+
+	private static List<ExternalByteKeySorter.SortedRecordFile> finishByteSorters(
+			List<ExternalByteKeySorter> sorters, List<Path> outputs, BulkTaskScheduler scheduler,
+			BooleanSupplier cancellationSignal) throws IOException {
+		if (sorters.size() != outputs.size()) {
+			throw new IllegalArgumentException("each byte-key sorter needs one output path");
+		}
+		for (ExternalByteKeySorter sorter : sorters) {
+			checkCancelled(cancellationSignal);
+			sorter.prepareFinish();
+		}
+		if (scheduler == null) {
+			List<ExternalByteKeySorter.SortedRecordFile> files = new ArrayList<>(sorters.size());
+			for (int i = 0; i < sorters.size(); i++) {
+				checkCancelled(cancellationSignal);
+				files.add(sorters.get(i).finish(outputs.get(i)));
+			}
+			return files;
+		}
+		List<BulkTaskScheduler.Work<ExternalByteKeySorter.SortedRecordFile>> work = new ArrayList<>(sorters.size());
+		for (int i = 0; i < sorters.size(); i++) {
+			ExternalByteKeySorter sorter = sorters.get(i);
+			Path output = outputs.get(i);
+			work.add(new BulkTaskScheduler.Work<>(sorter.mergeMemoryEstimateBytes(), sorter.mergeFileDescriptorCount(),
+					() -> {
+						checkCancelled(cancellationSignal);
+						return sorter.finish(output);
+					}, sorter.requiresSerialMemoryFloor()));
+		}
+		return scheduler.runOrdered(work);
+	}
+
+	private static void reduceReferenceCounts(ExternalLongTupleSorter.SortedTupleFile references,
+			ExternalByteKeySorter counts, BooleanSupplier cancellationSignal) throws IOException {
+		long[] currentId = { 0L };
+		long[] count = { 0L };
+		references.forEach(tuple -> {
+			checkCancelled(cancellationSignal);
+			long id = tuple[0];
+			if (count[0] != 0L && currentId[0] != id) {
+				counts.add(ValueStoreRecordCodec.idKey(currentId[0]), unsignedValue(count[0]));
+				count[0] = 0L;
+			}
+			currentId[0] = id;
+			count[0]++;
+		});
+		if (count[0] != 0L) {
+			counts.add(ValueStoreRecordCodec.idKey(currentId[0]), unsignedValue(count[0]));
 		}
 	}
 

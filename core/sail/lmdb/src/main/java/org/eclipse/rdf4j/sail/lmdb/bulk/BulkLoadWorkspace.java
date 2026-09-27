@@ -265,10 +265,15 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		persist();
 	}
 
-	void recordStagedInput(CanonicalStagedInput staged) {
+	void recordStagedInput(CanonicalStagedInput staged) throws IOException {
+		String statementDigest = staged.statementDigest();
+		if (statementDigest == null) {
+			throw new IOException("Staged statement digest is unavailable");
+		}
 		state.setProperty("stage.statements", Long.toString(staged.statements()));
 		state.setProperty("stage.inline-value-occurrences", Long.toString(staged.inlineValueOccurrences()));
 		state.setProperty("stage.partition-count", Integer.toString(staged.partitionCount()));
+		state.setProperty("stage.statement-digest", statementDigest);
 	}
 
 	CanonicalStagedInput stagedInput(int partitionCount) throws IOException {
@@ -298,7 +303,23 @@ final class BulkLoadWorkspace implements AutoCloseable {
 				|| valuesAreStillNeeded && !Files.isDirectory(valuesPath)) {
 			throw new IOException("LMDB bulk-load staged frontier is incomplete in " + directory);
 		}
-		return new CanonicalStagedInput(directory, partitionCount, statements, inlineValueOccurrences, compression);
+		String expectedStatementDigest = state.getProperty("stage.statement-digest");
+		CanonicalStagedInput staged;
+		try {
+			staged = new CanonicalStagedInput(directory, partitionCount, statements, inlineValueOccurrences,
+					compression,
+					expectedStatementDigest);
+		} catch (IllegalArgumentException e) {
+			throw new IOException("Invalid staged statement digest in " + stateFile, e);
+		}
+		if (statementsAreStillNeeded) {
+			String actualStatementDigest = staged.ensureStatementSizeIndex();
+			if (expectedStatementDigest == null) {
+				state.setProperty("stage.statement-digest", actualStatementDigest);
+				persist();
+			}
+		}
+		return staged;
 	}
 
 	void recordDictionary(PartitionValueDictionary dictionary) {
@@ -368,6 +389,7 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		state.setProperty("resolved.statements", Long.toString(statements.statements()));
 		state.setProperty("resolved.statements.bytes", Long.toString(Files.size(statements.path())));
 		state.setProperty("resolved.values", Long.toString(values.records()));
+		state.setProperty("resolved.values.max-key-bytes", Integer.toString(values.maximumCanonicalKeyBytes()));
 		state.setProperty("resolved.value-dependencies", Long.toString(values.dependencyRecords()));
 		state.setProperty("resolved.value-dependencies.bytes", Long.toString(Files.size(values.dependenciesPath())));
 	}
@@ -378,11 +400,20 @@ final class BulkLoadWorkspace implements AutoCloseable {
 				parseNonNegativeLong("resolved.statements.bytes"), compression);
 	}
 
-	ResolvedValueRecords resolvedValues() throws IOException {
+	ResolvedValueRecords resolvedValues(BulkTaskScheduler scheduler) throws IOException {
 		requireComplete(BulkLoadPhase.RESOLVE_IDS);
+		int maximumKeyBytes = -1;
+		String recordedMaximumKeyBytes = state.getProperty("resolved.values.max-key-bytes");
+		if (recordedMaximumKeyBytes != null) {
+			try {
+				maximumKeyBytes = Integer.parseInt(recordedMaximumKeyBytes);
+			} catch (NumberFormatException e) {
+				throw new IOException("Invalid resolved-value maximum key length in " + stateFile, e);
+			}
+		}
 		return ResolvedValueRecords.restore(directory, parseNonNegativeLong("resolved.values"),
 				parseNonNegativeLong("resolved.value-dependencies"),
-				parseNonNegativeLong("resolved.value-dependencies.bytes"), compression);
+				parseNonNegativeLong("resolved.value-dependencies.bytes"), compression, maximumKeyBytes, scheduler);
 	}
 
 	long dictionaryPersistedValues() throws IOException {
@@ -394,8 +425,10 @@ final class BulkLoadWorkspace implements AutoCloseable {
 	}
 
 	void reclaimAfterResolution() throws IOException {
-		reclaim("partition-dictionary", "statements.lz4", "component-buckets", "subject-statement-buckets",
-				"resolved-components.bin", "value-component-buckets");
+		reclaim("partition-dictionary", "statements.lz4", CanonicalStatementStager.STATEMENT_SIZES_FILE_NAME,
+				CanonicalStatementStager.STATEMENT_SIZES_FILE_NAME + ".tmp", "component-buckets",
+				"subject-statement-buckets", "resolved-components.bin", "resolved-component-runs",
+				"value-component-buckets", "resolved-value-component-runs");
 	}
 
 	void recordNativeRecords(ValueStoreBulkRecords.Output output) throws IOException {
@@ -602,14 +635,15 @@ final class BulkLoadWorkspace implements AutoCloseable {
 
 	private void deleteIncompletePhaseOutputs(BulkLoadPhase phase) throws IOException {
 		switch (phase) {
-		case STAGE_INPUTS -> deleteRelative("statements.lz4", "namespaces.lz4",
+		case STAGE_INPUTS -> deleteRelative("statements.lz4", CanonicalStatementStager.STATEMENT_SIZES_FILE_NAME,
+				CanonicalStatementStager.STATEMENT_SIZES_FILE_NAME + ".tmp", "namespaces.lz4",
 				CanonicalStatementStager.PREDICATE_COUNTS_FILE_NAME, "value-buckets");
 		case DISTINCT_AND_ANALYZE_VALUES -> deleteRelative("dependency-buckets");
 		case PLAN_VALUE_IDS -> deleteRelative("predicate-id-plan.bin", "predicate-occurrences.bin");
 		case BUILD_MAPPED_DICTIONARY -> deleteRelative("partition-dictionary", "dictionary-runs");
 		case RESOLVE_IDS -> deleteRelative("component-buckets", "subject-statement-buckets", "resolved-components.bin",
-				"id-quads.bin", "value-component-buckets", "assigned-values.bin",
-				"resolved-value-components.bin");
+				"resolved-component-runs", "id-quads.bin", "value-component-buckets", "assigned-values.bin",
+				"resolved-value-components.bin", "resolved-value-component-runs");
 		case BUILD_NATIVE_RUNS -> deleteRelative("value-hash-candidates.bin", "value-reference-candidates.bin",
 				"value-triple-terms.bin", "value-hashes.bin", "value-main-records.bin",
 				"value-ref-count-records.bin");

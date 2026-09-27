@@ -28,7 +28,9 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -46,6 +48,24 @@ final class PartitionValueDictionaryBuilder {
 
 	private static final int MAX_KEY_BYTES = 1024 * 1024 * 1024;
 	private static final long ENTRY_OVERHEAD_BYTES = 64L;
+	private static final long MAX_ID_ORDINAL = (1L << 56) - 1L;
+	private static final long MERGE_PATH_REFERENCE_BYTES = 256L;
+	private static final long ADAPTIVE_CHUNK_TARGET_BYTES = 64L * 1024L;
+	private static final long ADAPTIVE_MIN_RECORD_BYTES = 64L;
+	private static final long ADAPTIVE_REFERENCE_BYTES = 32L;
+	private static final long ADAPTIVE_FIXED_SCRATCH_BYTES = 1024L;
+	private static final int ADAPTIVE_MAX_RECORDS = 256;
+	private static final int INLINE_RANGE = -1;
+	private static final int PLANNED_RANGE = -2;
+
+	private enum ValueSourceKind {
+		STAGED,
+		DEPENDENCIES
+	}
+
+	private record ChunkReservation(long targetBytes, int maxRecords, long totalMemoryBytes, int fileDescriptors,
+			boolean allowSerialMemoryFloor) {
+	}
 
 	private final CanonicalStagedInput staged;
 	private final ValueDependencyBuckets dependencies;
@@ -53,16 +73,76 @@ final class PartitionValueDictionaryBuilder {
 	private final Path runDirectory;
 	private final int partitionCount;
 	private final long memoryBudgetBytes;
+	private final long configuredMemoryBudgetBytes;
 	private final int maxOpenFiles;
 	private final LmdbStoreConfig config;
 	private final BooleanSupplier cancellationSignal;
 	private final PredicateIdPlan predicateIdPlan;
-	private final IdAllocator idAllocator = new IdAllocator();
 
 	private final BulkCompression compression;
 
 	private long persistedValues;
 	private long inlineValues;
+
+	static MergeFanInPlan planMergeFanIn(int runCount, long retainedPathCount, int maxOpenFiles,
+			long memoryBudgetBytes, BulkCodec codec, long maximumKeyBytes) {
+		if (runCount < 0 || retainedPathCount < 0L || maxOpenFiles <= 0 || memoryBudgetBytes < 0L
+				|| maximumKeyBytes < 0L) {
+			throw new IllegalArgumentException(
+					"Dictionary merge limits must be non-negative and maxOpenFiles positive");
+		}
+		Objects.requireNonNull(codec, "codec");
+		if (runCount == 0) {
+			return new MergeFanInPlan(0, 0, 0L, 0L, false);
+		}
+
+		int descriptorFanIn = Math.max(2, maxOpenFiles - 1);
+		int candidateFanIn = Math.min(runCount, descriptorFanIn);
+		int minimumFanIn = Math.min(runCount, 2);
+		long minimumMemory = mergeMemoryBytes(minimumFanIn, retainedPathCount, codec, maximumKeyBytes);
+		for (int fanIn = candidateFanIn; fanIn >= minimumFanIn; fanIn--) {
+			long estimate = mergeMemoryBytes(fanIn, retainedPathCount, codec, maximumKeyBytes);
+			if (estimate <= memoryBudgetBytes) {
+				return new MergeFanInPlan(fanIn, fanIn + 1, estimate, minimumMemory, false);
+			}
+		}
+		return new MergeFanInPlan(minimumFanIn, minimumFanIn + 1, minimumMemory, minimumMemory, true);
+	}
+
+	private static long mergeMemoryBytes(int fanIn, long retainedPathCount, BulkCodec codec, long maximumKeyBytes) {
+		long cursorBytes = saturatedAdd(saturatedMultiply(maximumKeyBytes, 2L), 2L * ENTRY_OVERHEAD_BYTES);
+		long perInputBytes = saturatedAdd(BulkLz4.mergeInputMemoryBytes(codec), cursorBytes);
+		long leafCount = 1L;
+		while (leafCount < fanIn) {
+			leafCount <<= 1;
+		}
+		long mergeTreeBytes = saturatedMultiply(leafCount << 1, Integer.BYTES);
+		long inputBytes = saturatedMultiply(fanIn, perInputBytes);
+		long withOutput = saturatedAdd(inputBytes, BulkLz4.mergeOutputMemoryBytes(codec));
+		long withTree = saturatedAdd(withOutput, mergeTreeBytes);
+		return saturatedAdd(withTree, saturatedMultiply(retainedPathCount, MERGE_PATH_REFERENCE_BYTES));
+	}
+
+	private static long saturatedAdd(long left, long right) {
+		if (left == Long.MAX_VALUE || right == Long.MAX_VALUE || right > Long.MAX_VALUE - left) {
+			return Long.MAX_VALUE;
+		}
+		return left + right;
+	}
+
+	private static long saturatedMultiply(long left, long right) {
+		if (left == 0L || right == 0L) {
+			return 0L;
+		}
+		if (left == Long.MAX_VALUE || right == Long.MAX_VALUE || left > Long.MAX_VALUE / right) {
+			return Long.MAX_VALUE;
+		}
+		return left * right;
+	}
+
+	record MergeFanInPlan(int inputFanIn, int fileDescriptorCount, long estimatedMemoryBytes,
+			long minimumMemoryFloorBytes, boolean requiresSerialMemoryFloor) {
+	}
 
 	private PartitionValueDictionaryBuilder(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
 			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
@@ -74,6 +154,7 @@ final class PartitionValueDictionaryBuilder {
 		this.dictionaryDirectory = workspace.resolve("partition-dictionary");
 		this.runDirectory = workspace.resolve("dictionary-runs");
 		this.partitionCount = partitionCount;
+		this.configuredMemoryBudgetBytes = memoryBudgetBytes;
 		this.memoryBudgetBytes = Math.max(16 * 1024L, memoryBudgetBytes);
 		this.maxOpenFiles = maxOpenFiles;
 		this.config = config;
@@ -102,20 +183,743 @@ final class PartitionValueDictionaryBuilder {
 		return builder.build();
 	}
 
-	private PartitionValueDictionary build() throws IOException {
-		for (int partition = 0; partition < partitionCount; partition++) {
-			checkCancelled();
-			buildPartition(partition);
-		}
-		return new PartitionValueDictionary(dictionaryDirectory, partitionCount, persistedValues, inlineValues);
+	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
+			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
+			BulkCompression compression, BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler,
+			PartitionConcurrencyController controller) throws IOException {
+		PredicateIdPlan predicateIdPlan = PredicateIdPlan.build(staged, workspace,
+				compression.codecFor(BulkArtifact.PREDICATE_ID_PLAN), cancellationSignal);
+		return build(staged, dependencies, workspace, partitionCount, memoryBudgetBytes, maxOpenFiles, config,
+				compression, cancellationSignal, predicateIdPlan, scheduler, controller);
 	}
 
-	private void buildPartition(int partition) throws IOException {
+	static PartitionValueDictionary build(CanonicalStagedInput staged, ValueDependencyBuckets dependencies,
+			Path workspace, int partitionCount, long memoryBudgetBytes, int maxOpenFiles, LmdbStoreConfig config,
+			BulkCompression compression, BooleanSupplier cancellationSignal, PredicateIdPlan predicateIdPlan,
+			BulkTaskScheduler scheduler, PartitionConcurrencyController controller) throws IOException {
+		PartitionValueDictionaryBuilder builder = new PartitionValueDictionaryBuilder(staged, dependencies, workspace,
+				partitionCount, memoryBudgetBytes, maxOpenFiles, config, compression, cancellationSignal,
+				predicateIdPlan);
+		return builder.buildAdaptive(Objects.requireNonNull(scheduler, "scheduler"),
+				Objects.requireNonNull(controller, "controller"));
+	}
+
+	static long[][] planRanges(long[][] countsByPartition) throws IOException {
+		if (countsByPartition == null) {
+			throw new IOException("Partition dictionary ID counts are missing");
+		}
+		long[] nextByType = new long[ValueIds.T_TRIPLE + 1];
+		Arrays.fill(nextByType, 1L);
+		nextByType[ValueIds.T_URI] = PredicateIdPlan.RESERVED_IDS + 1L;
+		long[][] startsByPartition = new long[countsByPartition.length][];
+		for (int partition = 0; partition < countsByPartition.length; partition++) {
+			long[] counts = countsByPartition[partition];
+			if (counts == null || counts.length != ValueIds.T_TRIPLE + 1) {
+				throw new IOException("Invalid partition dictionary ID counts for partition " + partition);
+			}
+			startsByPartition[partition] = Arrays.copyOf(nextByType, nextByType.length);
+			for (int type = ValueIds.T_PTR; type <= ValueIds.T_TRIPLE; type++) {
+				long count = counts[type];
+				if (count < 0L) {
+					throw new IOException("Negative partition dictionary ID count for " + idTypeName(type));
+				}
+				if (count == 0L) {
+					continue;
+				}
+				long firstOrdinal = nextByType[type];
+				if (firstOrdinal > MAX_ID_ORDINAL || count - 1L > MAX_ID_ORDINAL - firstOrdinal) {
+					throw new IOException("Partition dictionary ID range exceeds the encodable ordinal for "
+							+ idTypeName(type));
+				}
+				nextByType[type] = Math.addExact(firstOrdinal, count);
+			}
+		}
+		return startsByPartition;
+	}
+
+	private PartitionValueDictionary build() throws IOException {
+		Throwable failure = null;
+		try {
+			List<PreparedPartition> prepared = new ArrayList<>(partitionCount);
+			for (int partition = 0; partition < partitionCount; partition++) {
+				checkCancelled();
+				prepared.add(preparePartition(partition));
+			}
+			long[][] countsByPartition = new long[partitionCount][];
+			for (PreparedPartition partition : prepared) {
+				countsByPartition[partition.partition()] = partition.countsByType();
+			}
+			long[][] startsByPartition = planRanges(countsByPartition);
+			for (PreparedPartition partition : prepared) {
+				checkCancelled();
+				writePartition(partition, startsByPartition[partition.partition()]);
+			}
+			return new PartitionValueDictionary(dictionaryDirectory, partitionCount, persistedValues, inlineValues);
+		} catch (IOException | RuntimeException | Error e) {
+			failure = e;
+			throw e;
+		} finally {
+			deletePreparedPartitions(failure);
+		}
+	}
+
+	private PartitionValueDictionary buildAdaptive(BulkTaskScheduler scheduler,
+			PartitionConcurrencyController controller) throws IOException {
+		BulkCodec valueCodec = compression.codecFor(BulkArtifact.STAGED_VALUES);
+		BulkCodec dependencyCodec = compression.codecFor(BulkArtifact.DEPENDENCY_BUCKETS);
+		long maximumCursorMemory = Math.max(BulkLz4.concatenatedInputMemoryBytes(valueCodec),
+				Math.addExact(BulkLz4.concatenatedInputMemoryBytes(dependencyCodec), 8L * 1024L));
+		long minimumLeafMemory = saturatedAdd(
+				BulkLz4.mergeOutputMemoryBytes(compression.codecFor(BulkArtifact.DICTIONARY)),
+				saturatedAdd(ADAPTIVE_CHUNK_TARGET_BYTES,
+						saturatedAdd(ADAPTIVE_FIXED_SCRATCH_BYTES,
+								saturatedMultiply(ADAPTIVE_MAX_RECORDS, ADAPTIVE_REFERENCE_BYTES))));
+		long minimumPartitionMemory = saturatedAdd(maximumCursorMemory, minimumLeafMemory);
+		int memoryCap = minimumPartitionMemory > configuredMemoryBudgetBytes
+				? 1
+				: (int) Math.max(1L, Math.min(Integer.MAX_VALUE, configuredMemoryBudgetBytes / minimumPartitionMemory));
+		int descriptorCap = Math.max(1, maxOpenFiles / 3);
+
+		AdaptiveDictionarySource source = new AdaptiveDictionarySource(scheduler, controller);
+		controller.beginStage("dictionary value preparation", scheduler.workerLimit(), memoryCap, descriptorCap);
+		Throwable failure = null;
+		try {
+			controller.setPhase(PartitionConcurrencyController.Phase.PRODUCING);
+			scheduler.runAdaptive(source, source::consumeCompletion);
+			source.close();
+			controller.setPhase(PartitionConcurrencyController.Phase.DRAINING);
+
+			long[][] countsByPartition = new long[partitionCount][];
+			for (int partition = 0; partition < partitionCount; partition++) {
+				countsByPartition[partition] = new long[ValueIds.T_TRIPLE + 1];
+			}
+			long[][] startsByPartition;
+			List<PreparedPartition> prepared = new ArrayList<>(partitionCount);
+			Throwable preparationFailure = null;
+			try {
+				for (int partition = 0; partition < partitionCount; partition++) {
+					checkCancelled();
+					prepared.add(prepareAdaptivePartition(partition, source.runCounts[partition],
+							source.maximumKeyBytes[partition], scheduler, countsByPartition[partition]));
+				}
+				startsByPartition = planRanges(countsByPartition);
+				for (PreparedPartition partition : prepared) {
+					checkCancelled();
+					writePartition(partition, startsByPartition[partition.partition()], scheduler);
+				}
+				return new PartitionValueDictionary(dictionaryDirectory, partitionCount, persistedValues, inlineValues);
+			} catch (IOException | RuntimeException | Error e) {
+				preparationFailure = e;
+				throw e;
+			} finally {
+				deletePreparedPartitions(preparationFailure);
+			}
+		} catch (IOException | RuntimeException | Error e) {
+			failure = e;
+			throw e;
+		} finally {
+			Throwable cleanupFailure = null;
+			try {
+				source.close();
+			} catch (IOException closeFailure) {
+				cleanupFailure = closeFailure;
+			}
+			try {
+				controller.finishStage();
+			} catch (RuntimeException | Error stageFailure) {
+				if (cleanupFailure == null) {
+					cleanupFailure = stageFailure;
+				} else {
+					cleanupFailure.addSuppressed(stageFailure);
+				}
+			}
+			try {
+				deleteAdaptiveRunFiles();
+			} catch (IOException runCleanupFailure) {
+				if (cleanupFailure == null) {
+					cleanupFailure = runCleanupFailure;
+				} else {
+					cleanupFailure.addSuppressed(runCleanupFailure);
+				}
+			}
+			if (cleanupFailure != null) {
+				if (failure == null) {
+					if (cleanupFailure instanceof IOException ioFailure) {
+						throw ioFailure;
+					}
+					if (cleanupFailure instanceof RuntimeException runtimeFailure) {
+						throw runtimeFailure;
+					}
+					throw (Error) cleanupFailure;
+				}
+				failure.addSuppressed(cleanupFailure);
+			}
+		}
+	}
+
+	private PreparedPartition prepareAdaptivePartition(int partition, long runCount, long maximumKeyBytes,
+			BulkTaskScheduler scheduler, long[] countsByType) throws IOException {
+		Path preparedPath = preparedPath(partition);
+		Files.deleteIfExists(preparedPath);
+		if (runCount == 0L) {
+			Files.createFile(preparedPath);
+			return new PreparedPartition(partition, preparedPath, countsByType, 0L, maximumKeyBytes);
+		}
+
+		BulkCodec codec = compression.codecFor(BulkArtifact.DICTIONARY);
+		int pass = 0;
+		long passRunCount = runCount;
+		MergeFanInPlan finalPlan;
+		while (true) {
+			int estimatedRunCount = (int) Math.min(Integer.MAX_VALUE, passRunCount);
+			long retainedPathCount = Math.min((long) maxOpenFiles + 1L, passRunCount + 1L);
+			finalPlan = planMergeFanIn(estimatedRunCount, retainedPathCount, maxOpenFiles,
+					configuredMemoryBudgetBytes, codec, maximumKeyBytes);
+			int fanIn = finalPlan.inputFanIn();
+			if (passRunCount <= fanIn) {
+				break;
+			}
+			long nextPassRunCount = 1L + (passRunCount - 1L) / fanIn;
+			for (long outputRun = 0L; outputRun < nextPassRunCount; outputRun++) {
+				long firstInput = outputRun * fanIn;
+				int inputCount = (int) Math.min(fanIn, passRunCount - firstInput);
+				Path destination = adaptiveRunPath(partition, pass + 1, outputRun);
+				if (inputCount == 1) {
+					Files.move(adaptiveRunPath(partition, pass, firstInput), destination,
+							java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+					continue;
+				}
+				mergeAdaptiveRuns(partition, pass, firstInput, inputCount, destination, finalPlan, scheduler);
+			}
+			passRunCount = nextPassRunCount;
+			pass++;
+		}
+
+		List<Path> finalRuns = new ArrayList<>(finalPlan.inputFanIn());
+		for (long run = 0L; run < passRunCount; run++) {
+			finalRuns.add(adaptiveRunPath(partition, pass, run));
+		}
+		long[] entryCount = { 0L };
+		try (BulkTaskScheduler.ResourceLease lease = scheduler.reserveBlocking(finalPlan.estimatedMemoryBytes(),
+				finalPlan.fileDescriptorCount(), finalPlan.requiresSerialMemoryFloor());
+				BulkTaskScheduler.FileDescriptorScope scope = scheduler.bindResourceLease(lease);
+				DataOutputStream output = BulkLz4.output(preparedPath, codec, scheduler)) {
+			merge(finalRuns, entry -> {
+				writeRunEntry(output, entry);
+				int type = rangeType(entry);
+				if (type >= 0) {
+					countsByType[type] = Math.addExact(countsByType[type], 1L);
+				}
+				entryCount[0] = Math.addExact(entryCount[0], 1L);
+			}, scheduler);
+		} finally {
+			deleteRuns(finalRuns);
+		}
+		return new PreparedPartition(partition, preparedPath, countsByType, entryCount[0], maximumKeyBytes);
+	}
+
+	private void mergeAdaptiveRuns(int partition, int pass, long firstInput, int inputCount, Path destination,
+			MergeFanInPlan plan, BulkTaskScheduler scheduler) throws IOException {
+		List<Path> inputs = new ArrayList<>(inputCount);
+		for (int index = 0; index < inputCount; index++) {
+			inputs.add(adaptiveRunPath(partition, pass, firstInput + index));
+		}
+		try (BulkTaskScheduler.ResourceLease lease = scheduler.reserveBlocking(plan.estimatedMemoryBytes(),
+				plan.fileDescriptorCount(), plan.requiresSerialMemoryFloor());
+				BulkTaskScheduler.FileDescriptorScope scope = scheduler.bindResourceLease(lease);
+				DataOutputStream output = BulkLz4.output(destination, compression.codecFor(BulkArtifact.DICTIONARY),
+						scheduler)) {
+			merge(inputs, entry -> writeRunEntry(output, entry), scheduler);
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				Files.deleteIfExists(destination);
+			} catch (IOException cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		} finally {
+			deleteRuns(inputs);
+		}
+	}
+
+	private Path adaptiveRunPath(int partition, int pass, long run) {
+		return runDirectory.resolve(String.format(java.util.Locale.ROOT,
+				"adaptive-partition-%05d-pass-%04d-run-%016d.bin", partition, pass, run));
+	}
+
+	private void deleteAdaptiveRunFiles() throws IOException {
+		IOException failure = null;
+		try (var paths = Files.newDirectoryStream(runDirectory, "adaptive-partition-*.bin")) {
+			for (Path path : paths) {
+				try {
+					Files.deleteIfExists(path);
+				} catch (IOException e) {
+					if (failure == null) {
+						failure = e;
+					} else {
+						failure.addSuppressed(e);
+					}
+				}
+			}
+		}
+		if (failure != null) {
+			throw failure;
+		}
+	}
+
+	private final class AdaptiveDictionarySource implements BulkTaskScheduler.AdaptiveWorkSource<LeafResult>,
+			AutoCloseable {
+
+		private final BulkTaskScheduler scheduler;
+		private final PartitionConcurrencyController controller;
+		private final long[] runCounts = new long[partitionCount];
+		private final long[] maximumKeyBytes = new long[partitionCount];
+		private final long[] nextRunOrdinals = new long[partitionCount];
+		private final List<PartitionSlot> slots = new ArrayList<>();
+		private PartitionSlot floorPendingSlot;
+		private int nextPartition;
+		private int pendingChunks;
+		private long nextWorkId;
+		private boolean closed;
+
+		private AdaptiveDictionarySource(BulkTaskScheduler scheduler, PartitionConcurrencyController controller) {
+			this.scheduler = scheduler;
+			this.controller = controller;
+		}
+
+		@Override
+		public BulkTaskScheduler.AdaptiveWorkPoll<LeafResult> poll() throws IOException {
+			ensureOpen();
+			checkCancelled();
+			while (true) {
+				refreshActiveCursor();
+				if (floorPendingSlot != null) {
+					if (!prepareFloorAdmission()) {
+						return BulkTaskScheduler.AdaptiveWorkPoll.waitForWork();
+					}
+					PartitionSlot slot = floorPendingSlot;
+					floorPendingSlot = null;
+					ChunkReservation reservation = reservationFor(slot, slot.nextRecordBytes);
+					return chunkRequest(slot, reservation);
+				}
+
+				BulkTaskScheduler.AdaptiveWorkPoll<LeafResult> request = nextChunkRequest();
+				if (request != null) {
+					return request;
+				}
+				if (floorPendingSlot != null) {
+					continue;
+				}
+
+				if (hasActiveCursor()) {
+					throw new IOException("Dictionary adaptive source has a cursor without a readable record");
+				}
+
+				if (retireCompletedPartition()) {
+					continue;
+				}
+
+				PartitionSlot slot = nextPartitionNeedingCursor();
+				if (slot == null) {
+					int desiredPartitions = Math.min(controller.targetConcurrency(), controller.maximumConcurrency());
+					if (nextPartition < partitionCount && slots.size() < desiredPartitions) {
+						slot = new PartitionSlot(nextPartition++, ValueSourceKind.STAGED);
+						slots.add(slot);
+						controller.setActualActivePartitions(slots.size());
+					} else if (pendingChunks > 0) {
+						return BulkTaskScheduler.AdaptiveWorkPoll.waitForWork();
+					} else if (slots.isEmpty() && nextPartition >= partitionCount) {
+						controller.setActualActivePartitions(0);
+						return BulkTaskScheduler.AdaptiveWorkPoll.exhausted();
+					} else {
+						throw new IOException(
+								"Dictionary adaptive source has neither readable input nor pending leaf work");
+					}
+				}
+
+				slot.cursor = tryOpenCursor(slot);
+				if (slot.cursor == null) {
+					if (pendingChunks > 0) {
+						return BulkTaskScheduler.AdaptiveWorkPoll.waitForWork();
+					}
+					throw new IOException(
+							"Dictionary input cursor could not be admitted with no leaf work available to drain");
+				}
+			}
+		}
+
+		private void refreshActiveCursor() throws IOException {
+			PartitionSlot slot = activeCursorSlot();
+			if (slot == null) {
+				return;
+			}
+			slot.nextRecordBytes = slot.cursor.peekNextRecordRetainedBytes();
+			if (slot.nextRecordBytes >= 0L) {
+				return;
+			}
+			closeCursor(slot);
+			if (slot.source == ValueSourceKind.STAGED) {
+				slot.source = ValueSourceKind.DEPENDENCIES;
+			} else {
+				slot.partitionInputComplete = true;
+			}
+		}
+
+		private void closeCursor(PartitionSlot slot) throws IOException {
+			CanonicalStagedInput.ValueCursor cursor = slot.cursor;
+			if (cursor == null) {
+				return;
+			}
+			slot.cursor = null;
+			slot.nextRecordBytes = -1L;
+			IOException failure = null;
+			try {
+				cursor.closeInput();
+			} catch (IOException e) {
+				failure = e;
+			}
+			try {
+				cursor.close();
+			} catch (IOException e) {
+				if (failure == null) {
+					failure = e;
+				} else {
+					failure.addSuppressed(e);
+				}
+			}
+			if (failure != null) {
+				throw failure;
+			}
+		}
+
+		private PartitionSlot activeCursorSlot() throws IOException {
+			PartitionSlot found = null;
+			for (PartitionSlot slot : slots) {
+				if (slot.cursor == null) {
+					continue;
+				}
+				if (found != null) {
+					throw new IOException("Dictionary adaptive source opened more than one input cursor");
+				}
+				found = slot;
+			}
+			return found;
+		}
+
+		private boolean hasActiveCursor() throws IOException {
+			return activeCursorSlot() != null;
+		}
+
+		private PartitionSlot nextPartitionNeedingCursor() {
+			for (PartitionSlot slot : slots) {
+				if (!slot.partitionInputComplete && slot.cursor == null) {
+					return slot;
+				}
+			}
+			return null;
+		}
+
+		private boolean retireCompletedPartition() {
+			for (int index = 0; index < slots.size(); index++) {
+				PartitionSlot slot = slots.get(index);
+				if (!slot.partitionInputComplete || slot.pendingChunks != 0) {
+					continue;
+				}
+				int desiredPartitions = Math.min(controller.targetConcurrency(), controller.maximumConcurrency());
+				if (nextPartition < partitionCount && slots.size() <= desiredPartitions) {
+					slot.partition = nextPartition++;
+					slot.source = ValueSourceKind.STAGED;
+					slot.partitionInputComplete = false;
+					return true;
+				}
+				slots.remove(index);
+				controller.setActualActivePartitions(slots.size());
+				return true;
+			}
+			return false;
+		}
+
+		private BulkTaskScheduler.AdaptiveWorkPoll<LeafResult> nextChunkRequest() throws IOException {
+			PartitionSlot slot = activeCursorSlot();
+			if (slot == null || slot.nextRecordBytes < 0L) {
+				return null;
+			}
+			ChunkReservation reservation = reservationFor(slot, slot.nextRecordBytes);
+			if (reservation.allowSerialMemoryFloor()) {
+				floorPendingSlot = slot;
+				controller.setPhase(PartitionConcurrencyController.Phase.TRANSITIONING);
+				return null;
+			}
+			return chunkRequest(slot, reservation);
+		}
+
+		private BulkTaskScheduler.AdaptiveWorkPoll<LeafResult> chunkRequest(PartitionSlot slot,
+				ChunkReservation reservation) throws IOException {
+			BulkTaskScheduler.ResourceLease baseLease = slot.cursor.resourceLease();
+			long workId = nextWorkId;
+			nextWorkId = Math.addExact(nextWorkId, 1L);
+			long runOrdinal = nextRunOrdinals[slot.partition];
+			nextRunOrdinals[slot.partition] = Math.addExact(runOrdinal, 1L);
+			int activePartitions = slots.size();
+			BulkTaskScheduler.AdaptivePreparation<LeafResult> preparation = lease -> prepareLeaf(slot,
+					reservation, workId, runOrdinal, lease);
+			BulkTaskScheduler.AdaptiveWorkRequest<LeafResult> request = new BulkTaskScheduler.AdaptiveWorkRequest<>(
+					reservation.totalMemoryBytes(), reservation.fileDescriptors(),
+					reservation.allowSerialMemoryFloor(), workId,
+					activePartitions, preparation, baseLease);
+			return BulkTaskScheduler.AdaptiveWorkPoll.request(request);
+		}
+
+		private boolean prepareFloorAdmission() throws IOException {
+			PartitionSlot floorSlot = floorPendingSlot;
+			if (floorSlot == null || floorSlot.cursor == null || floorSlot.nextRecordBytes < 0L) {
+				throw new IOException("Oversized dictionary record lost its cursor preflight before admission");
+			}
+			boolean removed = false;
+			for (int index = 0; index < slots.size();) {
+				PartitionSlot slot = slots.get(index);
+				if (slot == floorSlot) {
+					index++;
+					continue;
+				}
+				if (slot.cursor != null) {
+					throw new IOException("Dictionary floor transition found a second live input cursor");
+				}
+				if (slot.pendingChunks != 0) {
+					index++;
+					continue;
+				}
+				slots.remove(index);
+				removed = true;
+			}
+			if (removed) {
+				controller.setActualActivePartitions(slots.size());
+			}
+			if (pendingChunks != 0) {
+				return false;
+			}
+			if (slots.size() != 1 || slots.get(0) != floorSlot) {
+				throw new IOException("Dictionary floor transition could not isolate the oversized input cursor");
+			}
+			controller.setPhase(PartitionConcurrencyController.Phase.PRODUCING);
+			return true;
+		}
+
+		private ChunkReservation reservationFor(PartitionSlot slot, long firstRecordBytes) {
+			BulkTaskScheduler.ResourceLease baseLease = slot.cursor.resourceLease();
+			long baseMemory = baseLease == null ? 0L : baseLease.memoryBytes();
+			long outputMemory = BulkLz4.mergeOutputMemoryBytes(compression.codecFor(BulkArtifact.DICTIONARY));
+			long maxNormalChunk = configuredMemoryBudgetBytes - baseMemory - outputMemory
+					- ADAPTIVE_FIXED_SCRATCH_BYTES - ADAPTIVE_REFERENCE_BYTES;
+			long targetBytes = Math.max(1L, Math.min(ADAPTIVE_CHUNK_TARGET_BYTES, maxNormalChunk));
+			int maxRecords = recordLimit(targetBytes, firstRecordBytes);
+			long totalMemory = leafMemoryEnvelope(baseMemory, outputMemory, targetBytes, firstRecordBytes, maxRecords);
+			while (totalMemory > configuredMemoryBudgetBytes && targetBytes > 1L && firstRecordBytes <= targetBytes) {
+				targetBytes = Math.max(1L, targetBytes * 3L / 4L);
+				maxRecords = recordLimit(targetBytes, firstRecordBytes);
+				totalMemory = leafMemoryEnvelope(baseMemory, outputMemory, targetBytes, firstRecordBytes, maxRecords);
+			}
+			int baseDescriptors = baseLease == null ? 0 : baseLease.fileDescriptors();
+			return new ChunkReservation(targetBytes, maxRecords, totalMemory,
+					Math.addExact(baseDescriptors, 1), totalMemory > configuredMemoryBudgetBytes);
+		}
+
+		private long leafMemoryEnvelope(long baseMemory, long outputMemory, long targetBytes, long firstRecordBytes,
+				int maxRecords) {
+			long chunkBytes = Math.max(targetBytes, firstRecordBytes);
+			long sortAndCaptureBytes = saturatedAdd(ADAPTIVE_FIXED_SCRATCH_BYTES,
+					saturatedMultiply(maxRecords, ADAPTIVE_REFERENCE_BYTES));
+			return saturatedAdd(baseMemory,
+					saturatedAdd(chunkBytes, saturatedAdd(sortAndCaptureBytes, outputMemory)));
+		}
+
+		private int recordLimit(long targetBytes, long firstRecordBytes) {
+			if (firstRecordBytes > targetBytes) {
+				return 1;
+			}
+			long byBytes = targetBytes / ADAPTIVE_MIN_RECORD_BYTES + 1L;
+			return (int) Math.max(1L, Math.min(ADAPTIVE_MAX_RECORDS, byBytes));
+		}
+
+		private BulkTaskScheduler.AdaptivePreparedWork<LeafResult> prepareLeaf(PartitionSlot slot,
+				ChunkReservation reservation, long workId, long runOrdinal, BulkTaskScheduler.ResourceLease lease)
+				throws IOException {
+			if (slot.cursor == null || slot.partitionInputComplete) {
+				throw new IOException("Dictionary partition cursor changed before its admitted chunk was read");
+			}
+			PartitionConcurrencyController.ChunkStart chunkStart = controller.chunkStarted();
+			CanonicalStagedInput.ValueChunk chunk = slot.cursor.nextChunk(reservation.targetBytes(),
+					reservation.maxRecords());
+			if (chunk == null) {
+				throw new IOException("Dictionary cursor reached EOF after an admitted record-size peek");
+			}
+			Path runPath = adaptiveRunPath(slot.partition, 0, runOrdinal);
+			AtomicReference<CanonicalStagedInput.ValueChunk> capturedChunk = new AtomicReference<>(chunk);
+			java.util.concurrent.atomic.AtomicBoolean outputComplete = new java.util.concurrent.atomic.AtomicBoolean();
+			slot.pendingChunks++;
+			pendingChunks++;
+			BulkTaskScheduler.AdaptiveOperation<LeafResult> operation = taskLease -> {
+				CanonicalStagedInput.ValueChunk taskChunk = capturedChunk.get();
+				if (taskChunk == null) {
+					throw new IOException("Dictionary leaf chunk was released before execution");
+				}
+				try {
+					long maximumKeyBytes = writeSortedLeaf(runPath, taskChunk, scheduler);
+					outputComplete.set(true);
+					LeafResult result = new LeafResult(slot, slot.partition, chunkStart, maximumKeyBytes);
+					return new BulkTaskScheduler.AdaptiveTaskResult<>(result, taskChunk.retainedBytes(),
+							() -> deleteAdaptiveRunFileUnchecked(runPath));
+				} catch (IOException | RuntimeException | Error failure) {
+					try {
+						Files.deleteIfExists(runPath);
+					} catch (IOException cleanupFailure) {
+						failure.addSuppressed(cleanupFailure);
+					}
+					throw failure;
+				}
+			};
+			Runnable cleanup = () -> {
+				capturedChunk.set(null);
+				if (!outputComplete.get()) {
+					deleteAdaptiveRunFileUnchecked(runPath);
+				}
+			};
+			return new BulkTaskScheduler.AdaptivePreparedWork<>(workId, operation, cleanup);
+		}
+
+		private CanonicalStagedInput.ValueCursor tryOpenCursor(PartitionSlot slot) throws IOException {
+			return switch (slot.source) {
+			case STAGED -> staged.tryOpenPartitionValueCursor(slot.partition, scheduler);
+			case DEPENDENCIES -> dependencies.tryOpenPartitionValueCursor(slot.partition, scheduler);
+			};
+		}
+
+		private void consumeCompletion(BulkTaskScheduler.AdaptiveCompletion<LeafResult> completion)
+				throws IOException {
+			LeafResult result = completion.value();
+			if (result == null || result.partition() < 0 || result.partition() >= partitionCount) {
+				throw new IOException("Adaptive dictionary leaf returned invalid partition metadata");
+			}
+			if (!slots.contains(result.slot()) || result.slot().partition != result.partition()
+					|| result.slot().pendingChunks <= 0) {
+				throw new IOException("Adaptive dictionary leaf completed after its partition slot was retired");
+			}
+			controller.recordCommittedWork(completion.committedWorkBytes(), result.chunkStart());
+			result.slot().pendingChunks--;
+			pendingChunks--;
+			runCounts[result.partition()] = Math.addExact(runCounts[result.partition()], 1L);
+			maximumKeyBytes[result.partition()] = Math.max(maximumKeyBytes[result.partition()],
+					result.maximumKeyBytes());
+			completion.transferResultOwnership();
+		}
+
+		@Override
+		public void awaitReady() throws IOException {
+			throw new IOException("Dictionary adaptive source waited without in-flight leaf work");
+		}
+
+		private void ensureOpen() throws IOException {
+			if (closed) {
+				throw new IOException("Dictionary adaptive source is closed");
+			}
+		}
+
+		@Override
+		public void close() throws IOException {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			IOException failure = null;
+			for (PartitionSlot slot : slots) {
+				if (slot.cursor == null) {
+					continue;
+				}
+				try {
+					closeCursor(slot);
+				} catch (IOException e) {
+					if (failure == null) {
+						failure = e;
+					} else {
+						failure.addSuppressed(e);
+					}
+				}
+			}
+			slots.clear();
+			if (controller.peakActualActivePartitions() > 0) {
+				controller.setActualActivePartitions(0);
+			}
+			if (failure != null) {
+				throw failure;
+			}
+		}
+
+	}
+
+	private static final class PartitionSlot {
+		private int partition;
+		private ValueSourceKind source;
+		private CanonicalStagedInput.ValueCursor cursor;
+		private boolean partitionInputComplete;
+		private long nextRecordBytes = -1L;
+		private int pendingChunks;
+
+		private PartitionSlot(int partition, ValueSourceKind source) {
+			this.partition = partition;
+			this.source = source;
+		}
+	}
+
+	private record LeafResult(PartitionSlot slot, int partition,
+			PartitionConcurrencyController.ChunkStart chunkStart, long maximumKeyBytes) {
+	}
+
+	private static void deleteAdaptiveRunFileUnchecked(Path path) {
+		try {
+			Files.deleteIfExists(path);
+		} catch (IOException e) {
+			throw new java.io.UncheckedIOException(e);
+		}
+	}
+
+	private long writeSortedLeaf(Path path, CanonicalStagedInput.ValueChunk chunk, BulkTaskScheduler scheduler)
+			throws IOException {
+		CanonicalStagedInput.ValueRecord[] records = chunk.records()
+				.toArray(CanonicalStagedInput.ValueRecord[]::new);
+		Arrays.sort(records, Comparator.comparing(CanonicalStagedInput.ValueRecord::canonicalKey,
+				Arrays::compareUnsigned));
+		long maximumKeyBytes = 0L;
+		try (DataOutputStream output = BulkLz4.output(path, compression.codecFor(BulkArtifact.DICTIONARY), scheduler)) {
+			CanonicalStagedInput.ValueRecord first = records[0];
+			maximumKeyBytes = first.canonicalKey().length;
+			int mergedRoles = first.roles();
+			for (int index = 1; index < records.length; index++) {
+				CanonicalStagedInput.ValueRecord next = records[index];
+				maximumKeyBytes = Math.max(maximumKeyBytes, next.canonicalKey().length);
+				if (Arrays.equals(first.canonicalKey(), next.canonicalKey())) {
+					if (first.routeHash() != next.routeHash()) {
+						throw new IOException("Equal canonical values have different route hashes");
+					}
+					mergedRoles |= next.roles();
+					continue;
+				}
+				writeRunEntry(output, new MutableEntry(first.routeHash(), mergedRoles, first.canonicalKey()));
+				first = next;
+				mergedRoles = next.roles();
+			}
+			writeRunEntry(output, new MutableEntry(first.routeHash(), mergedRoles, first.canonicalKey()));
+		}
+		return maximumKeyBytes;
+	}
+
+	private PreparedPartition preparePartition(int partition) throws IOException {
 		Map<ByteKey, MutableEntry> distinct = new HashMap<>();
 		List<Path> initialRuns = new ArrayList<>();
 		long[] retainedBytes = { 0L };
+		long[] maximumKeyBytes = { 0L };
 		int[] runNumber = { 0 };
 		CanonicalStagedInput.ValueVisitor collector = (ignored, routeHash, roles, key) -> {
+			maximumKeyBytes[0] = Math.max(maximumKeyBytes[0], key.length);
 			MutableEntry existing = distinct.get(new ByteKey(key));
 			if (existing != null) {
 				existing.roles |= roles;
@@ -134,24 +938,108 @@ final class PartitionValueDictionaryBuilder {
 		if (!distinct.isEmpty()) {
 			initialRuns.add(flushRun(partition, runNumber[0], distinct));
 		}
-		Path artifact = PartitionValueDictionary.dataPath(dictionaryDirectory, partition);
+		Path preparedPath = preparedPath(partition);
+		Files.deleteIfExists(preparedPath);
+		long[] countsByType = new long[ValueIds.T_TRIPLE + 1];
+		long[] entryCount = { 0L };
 		if (initialRuns.isEmpty()) {
-			Files.createFile(artifact);
-			buildLookupIndex(partition, artifact, 0L);
-			return;
+			Files.createFile(preparedPath);
+			return new PreparedPartition(partition, preparedPath, countsByType, 0L, maximumKeyBytes[0]);
 		}
-		List<Path> runs = reduceRunCount(partition, initialRuns);
-		long[] entries = { 0L };
-		try (DataOutputStream output = new DataOutputStream(
-				new BufferedOutputStream(Files.newOutputStream(artifact)))) {
+		List<Path> runs = reduceRunCount(partition, initialRuns, maximumKeyBytes[0]);
+		try (DataOutputStream output = BulkLz4.output(preparedPath,
+				compression.codecFor(BulkArtifact.DICTIONARY))) {
 			merge(runs, entry -> {
-				writeAssigned(output, entry);
-				entries[0]++;
+				writeRunEntry(output, entry);
+				int type = rangeType(entry);
+				if (type >= 0) {
+					countsByType[type] = Math.addExact(countsByType[type], 1L);
+				}
+				entryCount[0] = Math.addExact(entryCount[0], 1L);
 			});
 		} finally {
 			deleteRuns(runs);
 		}
-		buildLookupIndex(partition, artifact, entries[0]);
+		return new PreparedPartition(partition, preparedPath, countsByType, entryCount[0], maximumKeyBytes[0]);
+	}
+
+	private void writePartition(PreparedPartition prepared, long[] startsByType) throws IOException {
+		writePartition(prepared, startsByType, null);
+	}
+
+	private void writePartition(PreparedPartition prepared, long[] startsByType, BulkTaskScheduler scheduler)
+			throws IOException {
+		Path artifact = PartitionValueDictionary.dataPath(dictionaryDirectory, prepared.partition());
+		Files.deleteIfExists(artifact);
+		IdRangeCursor ranges = new IdRangeCursor(startsByType);
+		long[] entries = { 0L };
+		if (scheduler == null) {
+			try (DataOutputStream output = new DataOutputStream(
+					new BufferedOutputStream(Files.newOutputStream(artifact)));
+					RunCursor cursor = new RunCursor(prepared.path(), compression, false)) {
+				while (cursor.advance()) {
+					checkCancelled();
+					writeAssigned(output, cursor.current, ranges);
+					entries[0] = Math.addExact(entries[0], 1L);
+				}
+			}
+		} else {
+			BulkCodec preparedCodec = compression.codecFor(BulkArtifact.DICTIONARY);
+			long operationMemory = dictionaryAssignmentMemoryBytes(prepared, preparedCodec);
+			try (BulkTaskScheduler.ResourceLease lease = scheduler.reserveBlocking(operationMemory, 2,
+					operationMemory > configuredMemoryBudgetBytes);
+					BulkTaskScheduler.FileDescriptorScope scope = scheduler.bindResourceLease(lease);
+					DataOutputStream output = BulkLz4.output(artifact, BulkCodec.NONE, scheduler);
+					RunCursor cursor = new RunCursor(prepared.path(), compression, false, scheduler)) {
+				while (cursor.advance()) {
+					checkCancelled();
+					writeAssigned(output, cursor.current, ranges);
+					entries[0] = Math.addExact(entries[0], 1L);
+				}
+			}
+		}
+		ranges.verifyCounts(prepared.countsByType());
+		if (entries[0] != prepared.entryCount()) {
+			throw new IOException("Prepared partition dictionary entry count changed for partition "
+					+ prepared.partition());
+		}
+		buildLookupIndex(prepared.partition(), artifact, entries[0]);
+	}
+
+	private static long dictionaryAssignmentMemoryBytes(PreparedPartition prepared, BulkCodec preparedCodec)
+			throws IOException {
+		long inputBytes = Files.size(prepared.path()) == 0L ? 0L : BulkLz4.mergeInputMemoryBytes(preparedCodec);
+		long outputBytes = BulkLz4.mergeOutputMemoryBytes(BulkCodec.NONE);
+		// The current canonical key stays live while RDF values are decoded for ID selection. Account for the key,
+		// decoded strings/value objects, and fixed per-record state without claiming to bound the complete JVM heap.
+		long decodedRecordBytes = saturatedAdd(saturatedMultiply(prepared.maximumKeyBytes(), 8L), 1024L);
+		return saturatedAdd(saturatedAdd(inputBytes, outputBytes), decodedRecordBytes);
+	}
+
+	private Path preparedPath(int partition) {
+		return runDirectory.resolve(String.format(java.util.Locale.ROOT, "partition-%05d-prepared.bin", partition));
+	}
+
+	private void deletePreparedPartitions(Throwable failure) throws IOException {
+		IOException cleanupFailure = null;
+		for (int partition = 0; partition < partitionCount; partition++) {
+			try {
+				Files.deleteIfExists(preparedPath(partition));
+			} catch (IOException e) {
+				if (cleanupFailure == null) {
+					cleanupFailure = e;
+				} else {
+					cleanupFailure.addSuppressed(e);
+				}
+			}
+		}
+		if (cleanupFailure == null) {
+			return;
+		}
+		if (failure == null) {
+			throw cleanupFailure;
+		}
+		failure.addSuppressed(cleanupFailure);
 	}
 
 	private void buildLookupIndex(int partition, Path artifact, long entries) throws IOException {
@@ -235,11 +1123,17 @@ final class PartitionValueDictionaryBuilder {
 		return run;
 	}
 
-	private List<Path> reduceRunCount(int partition, List<Path> originalRuns) throws IOException {
-		int fanIn = Math.max(2, maxOpenFiles - 1);
+	private List<Path> reduceRunCount(int partition, List<Path> originalRuns, long maximumKeyBytes) throws IOException {
 		List<Path> runs = originalRuns;
 		int pass = 0;
-		while (runs.size() > fanIn) {
+		while (true) {
+			long pathCountDuringPass = runs.size() + (runs.size() + 1L) / 2L;
+			MergeFanInPlan plan = planMergeFanIn(runs.size(), pathCountDuringPass, maxOpenFiles,
+					memoryBudgetBytes, compression.codecFor(BulkArtifact.DICTIONARY), maximumKeyBytes);
+			int fanIn = plan.inputFanIn();
+			if (runs.size() <= fanIn) {
+				return runs;
+			}
 			List<Path> mergedRuns = new ArrayList<>((runs.size() + fanIn - 1) / fanIn);
 			for (int start = 0; start < runs.size(); start += fanIn) {
 				List<Path> group = runs.subList(start, Math.min(runs.size(), start + fanIn));
@@ -254,14 +1148,17 @@ final class PartitionValueDictionaryBuilder {
 			runs = mergedRuns;
 			pass++;
 		}
-		return runs;
 	}
 
 	private void merge(List<Path> runs, EntryConsumer consumer) throws IOException {
+		merge(runs, consumer, null);
+	}
+
+	private void merge(List<Path> runs, EntryConsumer consumer, BulkTaskScheduler scheduler) throws IOException {
 		RunCursor[] cursors = new RunCursor[runs.size()];
 		try {
 			for (int index = 0; index < runs.size(); index++) {
-				cursors[index] = new RunCursor(runs.get(index), compression, true);
+				cursors[index] = new RunCursor(runs.get(index), compression, true, scheduler);
 				cursors[index].advance();
 			}
 			LoserTree tree = new LoserTree(cursors);
@@ -358,20 +1255,25 @@ final class PartitionValueDictionaryBuilder {
 		}
 	}
 
-	private void writeAssigned(DataOutputStream output, MutableEntry entry) throws IOException {
+	private void writeAssigned(DataOutputStream output, MutableEntry entry, IdRangeCursor idRanges) throws IOException {
 		long id;
 		boolean persisted;
 		if (CanonicalTermCodec.isNamespace(entry.key)) {
-			id = idAllocator.next(ValueIds.T_PTR);
+			id = idRanges.next(ValueIds.T_PTR);
 			persisted = true;
 		} else {
-			Value value = CanonicalTermCodec.decode(entry.key);
+			Value value;
+			try {
+				value = CanonicalTermCodec.decode(entry.key);
+			} catch (IllegalArgumentException e) {
+				throw new IOException("Invalid canonical value in partition dictionary", e);
+			}
 			id = InlineValueCodec.tryEncode(value, config);
 			if (id != 0L) {
 				inlineValues++;
 				persisted = false;
 			} else {
-				id = assignedId(value, entry.key);
+				id = assignedId(value, entry.key, idRanges);
 				persisted = true;
 			}
 		}
@@ -385,16 +1287,49 @@ final class PartitionValueDictionaryBuilder {
 		output.write(entry.key);
 	}
 
-	private long assignedId(Value value, byte[] canonicalKey) {
+	private int rangeType(MutableEntry entry) throws IOException {
+		if (CanonicalTermCodec.isNamespace(entry.key)) {
+			return ValueIds.T_PTR;
+		}
+		Value value;
+		try {
+			value = CanonicalTermCodec.decode(entry.key);
+		} catch (IllegalArgumentException e) {
+			throw new IOException("Invalid canonical value in partition dictionary", e);
+		}
+		if (InlineValueCodec.tryEncode(value, config) != 0L) {
+			return INLINE_RANGE;
+		}
+		return switch (value) {
+		case IRI ignored -> predicateIdPlan.idFor(entry.key) == 0L ? ValueIds.T_URI : PLANNED_RANGE;
+		case Literal ignored -> ValueIds.T_LITERAL;
+		case BNode ignored -> ValueIds.T_BNODE;
+		case TripleTerm ignored -> ValueIds.T_TRIPLE;
+		default -> throw new IOException("Unsupported RDF value type " + value.getClass().getName());
+		};
+	}
+
+	private long assignedId(Value value, byte[] canonicalKey, IdRangeCursor idRanges) throws IOException {
 		return switch (value) {
 		case IRI ignored -> {
 			long plannedId = predicateIdPlan.idFor(canonicalKey);
-			yield plannedId == 0L ? idAllocator.next(ValueIds.T_URI) : plannedId;
+			yield plannedId == 0L ? idRanges.next(ValueIds.T_URI) : plannedId;
 		}
-		case Literal literal -> idAllocator.nextLiteral(literal);
-		case BNode ignored -> idAllocator.next(ValueIds.T_BNODE);
-		case TripleTerm ignored -> idAllocator.next(ValueIds.T_TRIPLE);
-		default -> throw new IllegalArgumentException("Unsupported RDF value type " + value.getClass().getName());
+		case Literal literal -> idRanges.nextLiteral(literal);
+		case BNode ignored -> idRanges.next(ValueIds.T_BNODE);
+		case TripleTerm ignored -> idRanges.next(ValueIds.T_TRIPLE);
+		default -> throw new IOException("Unsupported RDF value type " + value.getClass().getName());
+		};
+	}
+
+	private static String idTypeName(int type) {
+		return switch (type) {
+		case ValueIds.T_PTR -> "T_PTR";
+		case ValueIds.T_URI -> "T_URI";
+		case ValueIds.T_LITERAL -> "T_LITERAL";
+		case ValueIds.T_BNODE -> "T_BNODE";
+		case ValueIds.T_TRIPLE -> "T_TRIPLE";
+		default -> "unknown type " + type;
 		};
 	}
 
@@ -442,6 +1377,10 @@ final class PartitionValueDictionaryBuilder {
 		}
 	}
 
+	private record PreparedPartition(int partition, Path path, long[] countsByType, long entryCount,
+			long maximumKeyBytes) {
+	}
+
 	private static final class MutableEntry {
 
 		private final long routeHash;
@@ -464,9 +1403,15 @@ final class PartitionValueDictionaryBuilder {
 		private boolean closed;
 
 		private RunCursor(Path path, BulkCompression compression, boolean deleteWhenClosed) throws IOException {
+			this(path, compression, deleteWhenClosed, null);
+		}
+
+		private RunCursor(Path path, BulkCompression compression, boolean deleteWhenClosed,
+				BulkTaskScheduler scheduler) throws IOException {
 			this.path = path;
 			this.deleteWhenClosed = deleteWhenClosed;
-			input = BulkLz4.input(path, compression.codecFor(BulkArtifact.DICTIONARY));
+			BulkCodec codec = compression.codecFor(BulkArtifact.DICTIONARY);
+			input = scheduler == null ? BulkLz4.input(path, codec) : BulkLz4.input(path, codec, scheduler);
 		}
 
 		private boolean advance() throws IOException {
@@ -502,25 +1447,43 @@ final class PartitionValueDictionaryBuilder {
 		}
 	}
 
-	private static final class IdAllocator {
+	private static final class IdRangeCursor {
 
+		private final long[] startsByType;
 		private final long[] nextByType = new long[ValueIds.T_TRIPLE + 1];
 
-		private IdAllocator() {
-			Arrays.fill(nextByType, 1L);
-			nextByType[ValueIds.T_URI] = PredicateIdPlan.RESERVED_IDS + 1L;
+		private IdRangeCursor(long[] startsByType) {
+			this.startsByType = Arrays.copyOf(startsByType, startsByType.length);
+			System.arraycopy(startsByType, 0, nextByType, 0, nextByType.length);
 		}
 
-		private long next(int type) {
-			return ValueIds.createId(type, nextByType[type]++);
+		private void verifyCounts(long[] expectedCounts) throws IOException {
+			for (int type = ValueIds.T_PTR; type <= ValueIds.T_TRIPLE; type++) {
+				if (nextByType[type] - startsByType[type] != expectedCounts[type]) {
+					throw new IOException("Partition dictionary assigned an unexpected number of " + idTypeName(type)
+							+ " IDs");
+				}
+			}
 		}
 
-		private long nextLiteral(Literal literal) {
-			long ordinal = nextByType[ValueIds.T_LITERAL]++;
+		private long next(int type) throws IOException {
+			long ordinal = nextByType[type];
+			if (ordinal <= 0L || ordinal > MAX_ID_ORDINAL) {
+				throw new IOException("Partition dictionary ID range exhausted for " + idTypeName(type));
+			}
+			nextByType[type] = ordinal + 1L;
+			return ValueIds.createId(type, ordinal);
+		}
+
+		private long nextLiteral(Literal literal) throws IOException {
+			long ordinal = nextByType[ValueIds.T_LITERAL];
+			if (ordinal <= 0L || ordinal > MAX_ID_ORDINAL) {
+				throw new IOException("Partition dictionary ID range exhausted for T_LITERAL");
+			}
+			nextByType[ValueIds.T_LITERAL] = ordinal + 1L;
 			long encoded = ValueIds.createCoreLiteralReferenceId(ordinal, literal.getCoreDatatype());
 			return encoded == 0L ? ValueIds.createId(ValueIds.T_LITERAL, ordinal) : encoded;
 		}
-
 	}
 
 	@FunctionalInterface

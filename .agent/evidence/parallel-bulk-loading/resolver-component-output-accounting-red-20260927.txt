@@ -1,0 +1,7 @@
+Description: The adaptive resolver's component-bucket prepass must register its compressed writer handle under the enclosing resource lease.
+Command: python3 .codex/skills/mvnf/scripts/mvnf.py --workspace bulk-parallel-20260925 --retain-logs ResolvedIdQuadSpoolTest#componentBucketWriterAccountsItsLiveOutputHandle
+Report: .mvnf/workspaces/bulk-parallel-20260925/build/org.eclipse.rdf4j/rdf4j-sail-lmdb/6.2.0-SNAPSHOT/surefire-reports/org.eclipse.rdf4j.sail.lmdb.bulk.ResolvedIdQuadSpoolTest.txt
+Snippet:
+Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.265 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.bulk.ResolvedIdQuadSpoolTest
+ResolvedIdQuadSpoolTest.componentBucketWriterAccountsItsLiveOutputHandle: [the compressed component output is covered by the enclosing descriptor lease] expected: 1 but was: 0
+Full log: .mvnf/workspaces/bulk-parallel-20260925/logs/20260926T230618.087382Z-35914-b345c39e/verify.log

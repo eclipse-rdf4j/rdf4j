@@ -13,12 +13,16 @@ package org.eclipse.rdf4j.sail.lmdb.bulk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.DataOutputStream;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
@@ -72,6 +76,177 @@ class StatementIndexBulkRecordsTest {
 					sorted("spoc", firstQuad, secondQuad, firstQuad));
 			assertThat(read(records.runs().get(1))).containsExactlyElementsOf(
 					sorted("psoc", firstQuad, secondQuad, firstQuad));
+		}
+	}
+
+	@Test
+	void finishesIndependentConfiguredIndexesConcurrently() throws Exception {
+		Path workspace = Files.createDirectory(temporaryDirectory.resolve("parallel-index-staging"));
+		BulkCompression compression = BulkCompression.FASTEST;
+		long statements = 600_000L;
+		Path spoolPath = workspace.resolve("id-quads.bin");
+		try (DataOutputStream output = BulkLz4.output(spoolPath, compression.codecFor(BulkArtifact.ID_QUADS))) {
+			for (long ordinal = 0; ordinal < statements; ordinal++) {
+				output.writeLong(ordinal);
+				output.writeLong(ordinal + 1L);
+				output.writeLong(ordinal % 17L + 1L);
+				output.writeLong(statements - ordinal);
+				output.writeLong(0L);
+			}
+		}
+		ResolvedIdQuadSpool spool = ResolvedIdQuadSpool.restore(workspace, statements, Files.size(spoolPath),
+				compression);
+
+		long memoryBudgetBytes = 32L * 1024L * 1024L;
+		int maxOpenFiles = 8;
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, maxOpenFiles);
+				StatementIndexBulkRecords records = StatementIndexBulkRecords.build(spool, workspace, "spoc,posc",
+						memoryBudgetBytes, maxOpenFiles, compression, () -> false, scheduler)) {
+			assertThat(records.runs()).extracting(StatementIndexBulkRecords.IndexRun::specification)
+					.containsExactly("spoc", "posc");
+			assertThat(scheduler.peakActiveTasks()).isEqualTo(2);
+			assertThat(scheduler.reservedMemoryBytes()).isZero();
+			assertThat(scheduler.reservedFileDescriptors()).isZero();
+		}
+	}
+
+	@Test
+	void sharedBudgetFitsReaderProducerSynchronousAndAsynchronousSpillLayouts() throws Exception {
+		long memoryBudgetBytes = 512L * 1024L;
+		long readerBytes = BulkLz4.mergeInputMemoryBytes(BulkCodec.NONE) + 4L * Long.BYTES + 64L;
+		long outputBytes = BulkLz4.mergeOutputMemoryBytes(BulkCodec.NONE);
+		long sorterBudgetBytes = memoryBudgetBytes - readerBytes - 2L * outputBytes - 1024L
+				- 4L * 256L * Integer.BYTES
+				- ExternalLongTupleSorter.asynchronousSpillMetadataBytes(4);
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, 8);
+				ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(temporaryDirectory, "combined-layout", 4,
+						sorterBudgetBytes, 8, BulkCodec.NONE, scheduler, () -> {
+						});
+				BulkTaskScheduler.ResourceScope scan = scheduler.reserveScanEnvelope(readerBytes, 1, 1024L,
+						sorter.synchronousSpillMemoryEstimateBytes(), 1)) {
+			assertThat(sorter.runCapacity())
+					.isEqualTo((int) (sorterBudgetBytes / (4L * 4L * Long.BYTES)));
+			BulkTaskScheduler.ResourceLease spill = scheduler.tryReserve(sorter.asynchronousSpillMemoryEstimateBytes(),
+					1);
+			assertThat(spill)
+					.as("reader, producer, sync path, and detached run fit in the configured budget; reserved="
+							+ scheduler.reservedMemoryBytes() + ", spill="
+							+ sorter.asynchronousSpillMemoryEstimateBytes())
+					.isNotNull();
+			spill.close();
+		}
+	}
+
+	@Test
+	void chargesRunBuffersToTheLoadBudgetWhileScanning() throws Exception {
+		Path workspace = Files.createDirectory(temporaryDirectory.resolve("budgeted-index-scan"));
+		long statements = 20_000L;
+		Path spoolPath = workspace.resolve("id-quads.bin");
+		try (DataOutputStream output = BulkLz4.output(spoolPath, BulkCodec.NONE)) {
+			for (long ordinal = 0; ordinal < statements; ordinal++) {
+				output.writeLong(ordinal);
+				output.writeLong(ordinal + 1L);
+				output.writeLong(ordinal + 2L);
+				output.writeLong(ordinal + 3L);
+				output.writeLong(0L);
+			}
+		}
+		ResolvedIdQuadSpool spool = ResolvedIdQuadSpool.restore(workspace, statements, Files.size(spoolPath),
+				BulkCompression.NONE);
+
+		long memoryBudgetBytes = 512L * 1024L;
+		AtomicBoolean sawRunBufferReservationDuringScan = new AtomicBoolean();
+		AtomicBoolean sawSpoolReaderReservationDuringScan = new AtomicBoolean();
+		AtomicBoolean sawSpoolAndSpillOverlapDuringScan = new AtomicBoolean();
+		AtomicBoolean observedFirstSpillOutput = new AtomicBoolean();
+		CountDownLatch spillOutputOpened = new CountDownLatch(1);
+		CountDownLatch releaseSpill = new CountDownLatch(1);
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, 8);
+				StatementIndexBulkRecords records = StatementIndexBulkRecords.build(spool, workspace, "spoc",
+						memoryBudgetBytes, 8, BulkCompression.NONE, () -> {
+							if (scheduler.reservedMemoryBytes() > 0) {
+								sawRunBufferReservationDuringScan.set(true);
+							}
+							if (scheduler.openFileHandles() >= 1 && scheduler.reservedFileDescriptors() >= 1) {
+								sawSpoolReaderReservationDuringScan.set(true);
+							}
+							if (scheduler.openFileHandles() >= 2) {
+								sawSpoolAndSpillOverlapDuringScan.set(true);
+								releaseSpill.countDown();
+							}
+							return false;
+						}, scheduler, () -> {
+							if (!observedFirstSpillOutput.compareAndSet(false, true)) {
+								return;
+							}
+							assertThat(scheduler.isWorkerThread())
+									.as("the first spill must be admitted asynchronously while the scan envelope is live; reserved="
+											+ scheduler.reservedMemoryBytes() + ", peak="
+											+ scheduler.peakReservedMemoryBytes()
+											+ ", minimum=" + scheduler.effectiveMemoryMinimumBytes())
+									.isTrue();
+							assertThat(scheduler.openFileHandles())
+									.as("the output observer runs after the spill handle opens")
+									.isGreaterThanOrEqualTo(2);
+							spillOutputOpened.countDown();
+							try {
+								if (!releaseSpill.await(10, TimeUnit.SECONDS)) {
+									throw new AssertionError("input scan did not overlap the blocked spill output");
+								}
+							} catch (InterruptedException e) {
+								Thread.currentThread().interrupt();
+								throw new AssertionError("spill observer was interrupted", e);
+							}
+						})) {
+			assertThat(records.runs()).hasSize(1);
+			assertThat(sawRunBufferReservationDuringScan)
+					.as("sorter run buffers must be admitted before index input scanning")
+					.isTrue();
+			assertThat(sawSpoolReaderReservationDuringScan)
+					.as("the compressed ID-quad reader must reserve a descriptor during sorter scanning")
+					.isTrue();
+			assertThat(sawSpoolAndSpillOverlapDuringScan)
+					.as("the ID-quad reader and a sorter spill writer must overlap under one load budget")
+					.isTrue();
+			assertThat(observedFirstSpillOutput).as("the first spill output must run on a bounded worker").isTrue();
+			assertThat(spillOutputOpened.getCount()).isZero();
+			assertThat(scheduler.reservedMemoryBytes()).isZero();
+		} finally {
+			releaseSpill.countDown();
+		}
+	}
+
+	@Test
+	void serializesMinimumMergeFanInForConfiguredOneOrTwoOpenFiles() throws Exception {
+		BulkCompression compression = BulkCompression.NONE;
+		for (int maxOpenFiles = 1; maxOpenFiles <= 2; maxOpenFiles++) {
+			Path workspace = Files.createDirectory(temporaryDirectory.resolve("minimum-open-files-" + maxOpenFiles));
+			Path spoolPath = workspace.resolve("id-quads.bin");
+			long statementCount = 512L;
+			try (DataOutputStream output = BulkLz4.output(spoolPath, compression.codecFor(BulkArtifact.ID_QUADS))) {
+				for (long ordinal = 0; ordinal < statementCount; ordinal++) {
+					output.writeLong(ordinal);
+					output.writeLong(ordinal + 10L);
+					output.writeLong(ordinal + 20L);
+					output.writeLong(ordinal + 30L);
+					output.writeLong(0L);
+				}
+			}
+			ResolvedIdQuadSpool spool = ResolvedIdQuadSpool.restore(workspace, statementCount, Files.size(spoolPath),
+					compression);
+			// Multiple small runs force real merges while leaving enough room for the scanned input and one spill;
+			// descriptor overlap still exercises the three-handle minimum at configured limits one and two.
+			long memoryBudgetBytes = 64L * 1024L;
+			try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, 3);
+					StatementIndexBulkRecords records = StatementIndexBulkRecords.build(spool, workspace, "spoc,posc",
+							memoryBudgetBytes, maxOpenFiles, compression, () -> false, scheduler)) {
+				assertThat(records.runs()).hasSize(2);
+				assertThat(scheduler.peakReservedFileDescriptors()).isEqualTo(3);
+				assertThat(scheduler.peakOpenFileHandles())
+						.as("the three-handle serial minimum merge must not overlap another merge")
+						.isEqualTo(3);
+				assertThat(scheduler.reservedFileDescriptors()).isZero();
+			}
 		}
 	}
 

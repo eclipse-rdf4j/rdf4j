@@ -66,7 +66,9 @@ final class LmdbBulkLoaderEngine {
 		long started = System.nanoTime();
 		try (BulkLoadWorkspace workspace = BulkLoadWorkspace.open(loader.target(), loader.temporaryDirectory(),
 				loader.progressListener(), loader.workers(), loader.queueBatches(), loader.compression(),
-				BulkLoadSettings.of(loader))) {
+				BulkLoadSettings.of(loader));
+				BulkTaskScheduler scheduler = new BulkTaskScheduler(loader.workers(), loader.memoryBudgetBytes(),
+						Math.max(3, loader.maxOpenFiles()))) {
 			try {
 				if (inputs != null) {
 					// Recorded before the first phase persists, so an interruption anywhere after this knows what to
@@ -107,7 +109,7 @@ final class LmdbBulkLoaderEngine {
 					if (workspace.phaseComplete(BulkLoadPhase.RESOLVE_IDS)) {
 						statements = workspace.resolvedStatements();
 						if (!workspace.phaseComplete(BulkLoadPhase.BUILD_NATIVE_RUNS)) {
-							resolvedValues = workspace.resolvedValues();
+							resolvedValues = workspace.resolvedValues(scheduler);
 						}
 					} else {
 						ValueDependencyBuckets dependencies = null;
@@ -117,8 +119,9 @@ final class LmdbBulkLoaderEngine {
 							} else {
 								workspace.startPhase(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES);
 								dependencies = ValueDependencyCollector.collect(staged, workspace.directory(),
-										loader.partitionCount(), loader.maxOpenFiles(), loader.config(),
-										workspace.compression(), loader.cancellationSignal());
+										loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes(),
+										loader.config(), workspace.compression(), loader.cancellationSignal(),
+										scheduler, loader.newPartitionConcurrencyController());
 								workspace.progress(staged.statements(), 0L);
 								workspace.completePhase(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES);
 							}
@@ -144,7 +147,8 @@ final class LmdbBulkLoaderEngine {
 							dictionary = PartitionValueDictionaryBuilder.build(staged, dependencies,
 									workspace.directory(), loader.partitionCount(), loader.memoryBudgetBytes(),
 									loader.maxOpenFiles(), loader.config(), workspace.compression(),
-									loader.cancellationSignal(), predicateIdPlan);
+									loader.cancellationSignal(), predicateIdPlan, scheduler,
+									loader.newPartitionConcurrencyController());
 							workspace.recordDictionary(dictionary);
 							workspace.progress(
 									Math.addExact(dictionary.persistedValues(), dictionary.inlineValues()), 0L);
@@ -155,10 +159,11 @@ final class LmdbBulkLoaderEngine {
 						workspace.startPhase(BulkLoadPhase.RESOLVE_IDS);
 						statements = ResolvedIdQuadSpool.build(staged, dictionary, workspace.directory(),
 								loader.maxOpenFiles(), loader.memoryBudgetBytes(), workspace.compression(),
-								loader.cancellationSignal());
+								loader.cancellationSignal(), scheduler, loader.newPartitionConcurrencyController());
 						resolvedValues = ResolvedValueRecords.build(dictionary, workspace.directory(),
 								loader.maxOpenFiles(), loader.memoryBudgetBytes(), loader.config(),
-								workspace.compression(), loader.cancellationSignal());
+								workspace.compression(), loader.cancellationSignal(), scheduler,
+								loader.newPartitionConcurrencyController());
 						workspace.recordResolved(statements, resolvedValues);
 						workspace.progress(Math.addExact(statements.statements(), resolvedValues.records()), 0L);
 						workspace.completePhase(BulkLoadPhase.RESOLVE_IDS);
@@ -177,7 +182,7 @@ final class LmdbBulkLoaderEngine {
 						}
 						nativeValueRecords = ValueStoreBulkRecords.build(resolvedValues, workspace.directory(),
 								loader.memoryBudgetBytes(), loader.maxOpenFiles(), workspace.compression(),
-								loader.cancellationSignal());
+								loader.cancellationSignal(), scheduler);
 						workspace.recordNativeRecords(nativeValueRecords);
 						workspace.progress(nativeRecordCount(nativeValueRecords), 0L);
 						workspace.completePhase(BulkLoadPhase.BUILD_NATIVE_RUNS);
@@ -189,7 +194,7 @@ final class LmdbBulkLoaderEngine {
 							loader.config(),
 							nativeValueRecords, statements, staged, loader.memoryBudgetBytes(), loader.maxOpenFiles(),
 							loader.writeTransactionRecords(), loader.writeTransactionBytes(), workspace.compression(),
-							loader.cancellationSignal());
+							loader.cancellationSignal(), scheduler);
 					workspace.progress(writeResult.storedStatements(), 0L);
 					workspace.completePhase(BulkLoadPhase.WRITE_GENERATION);
 

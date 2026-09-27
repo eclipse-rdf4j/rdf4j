@@ -60,13 +60,14 @@ value, per-transaction record/byte caps, progress format, and intermediate
 compression (`fastest`, `none`, or codec levels; more granular
 run/staged/artifact choices are available). The exact current defaults and
 legal values are printed by `--help` in source; the full storage consequences
-belong in the storage guide. In the current implementation, `workers` and
-`queue-batches` are captured into workspace/progress metadata but are not used
-to schedule loader work or bound a work queue. Treat them as reported settings,
-not active parallelism or memory controls. `memoryBudgetBytes`, partition
-count, open-file limits, and writer transaction caps do flow into the builder;
-the memory budget is not a process-wide heap cap. No throughput or
-maximum-RAM number is asserted here.
+belong in the storage guide. `workers` bounds the load-owned worker pool used
+for sorter runs, independent final merges, and bounded partition preparation;
+memory and open-file admission can reduce actual concurrency. `queue-batches`
+keeps its existing ingestion/progress meaning and does not set the scheduler's
+internal task queue. `memoryBudgetBytes`, partition count, open-file limits,
+and writer transaction caps also flow into the builder; the memory budget is
+not a process-wide heap cap. No throughput or maximum-RAM number is asserted
+here.
 
 The `temporary-directory` setting is recorded as the `spill.directory`
 configuration value. The phase-artifact workspace itself remains the
@@ -140,10 +141,11 @@ and may build it; `--no-build` prevents that behavior.
 **Does `--input -` mix with directory or file input?** No. Stdin must be the
 only input and needs an explicit `--format`.
 
-**Do `--workers` and `--queue-batches` configure parallel loading here?** No.
-The current engine records and reports those settings but does not use them to
-schedule work or cap queued batches. Do not infer a concurrency or memory
-effect from the option names.
+**Do `--workers` and `--queue-batches` configure parallel loading here?**
+`--workers` caps the load-owned worker pool, with actual task concurrency also
+limited by memory and file-descriptor admission. `--queue-batches` retains its
+existing ingestion/progress behavior and does not size the internal task
+queue.
 
 **Does `--temporary-directory` contain the bulk phase files?** Not in this
 implementation. It is recorded as `spill.directory`, while phase artifacts use

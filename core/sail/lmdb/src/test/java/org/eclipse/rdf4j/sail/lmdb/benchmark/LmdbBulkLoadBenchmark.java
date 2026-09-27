@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
+import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoadBenchmarkSupport;
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.AuxCounters;
@@ -48,10 +49,10 @@ import org.openjdk.jmh.annotations.Warmup;
  * Compares normal transactional N-Quads ingestion with the staged LMDB bulk loader.
  *
  * <p>
- * The auxiliary counters expose rows, unique rows, temporary bytes, final store bytes, map growths, and sampled
- * per-load peak heap/direct memory. In single-shot mode JMH sums event counters across measured invocations; divide the
- * reported event score by {@code Cnt} for the mean per-load value. Use the accompanying JFR recording for a trial-wide
- * memory peak.
+ * The auxiliary counters expose rows, unique rows, temporary bytes, final store bytes, map growths, the observed active
+ * partition high water, and sampled per-load peak heap/direct memory. In single-shot mode JMH sums event counters
+ * across measured invocations; divide the reported event score by {@code Cnt} for the mean per-load value. Use the
+ * accompanying JFR recording for a trial-wide memory peak.
  * </p>
  */
 @State(Scope.Thread)
@@ -65,14 +66,23 @@ public class LmdbBulkLoadBenchmark {
 	@Param({ "HIGH_DUPLICATION", "MOSTLY_UNIQUE", "LONG_LITERAL", "RDF_STAR", "REPRESENTATIVE" })
 	public Scenario scenario;
 
-	@Param({ "10000" })
+	@Param({ "10000", "250000" })
 	public int statementCount;
+
+	@Param({ "1", "4" })
+	public int workers;
+
+	@Param({ "ADAPTIVE", "1", "2", "4" })
+	public String partitionConcurrency;
 
 	private Path input;
 	private Path invocationRoot;
+	private int fixedPartitionConcurrency;
 
 	@Setup(Level.Trial)
 	public void createInput() throws IOException {
+		fixedPartitionConcurrency = "ADAPTIVE".equals(partitionConcurrency) ? 0
+				: Integer.parseInt(partitionConcurrency);
 		input = Files.createTempFile("rdf4j-lmdb-bulk-benchmark-", ".nq");
 		try (BufferedWriter writer = Files.newBufferedWriter(input, StandardCharsets.UTF_8)) {
 			for (int index = 0; index < statementCount; index++) {
@@ -86,13 +96,15 @@ public class LmdbBulkLoadBenchmark {
 		invocationRoot = Files.createTempDirectory("rdf4j-lmdb-bulk-invocation-");
 		Path storePath = invocationRoot.resolve("store");
 		try (MemorySampler sampler = new MemorySampler()) {
-			LmdbBulkLoader.Result result = LmdbBulkLoader.builder(storePath, config())
+			LmdbBulkLoader.Builder builder = LmdbBulkLoader.builder(storePath, config())
 					.parserMode(LmdbBulkLoader.ParserMode.FAST)
 					.memoryBudgetBytes(64L * 1024 * 1024)
 					.partitionCount(256)
 					.maxOpenFiles(64)
-					.build()
-					.load(input, RDFFormat.NQUADS);
+					.workers(workers);
+			LmdbBulkLoadBenchmarkSupport.fixedPartitionConcurrency(builder, fixedPartitionConcurrency,
+					active -> counters.peakActivePartitions = Math.max(counters.peakActivePartitions, active));
+			LmdbBulkLoader.Result result = builder.build().load(input, RDFFormat.NQUADS);
 			sampler.record(counters);
 			counters.rows += result.parsedStatements();
 			counters.uniqueRows += result.storedStatements();
@@ -222,6 +234,7 @@ public class LmdbBulkLoadBenchmark {
 		public long mapGrowths;
 		public long peakHeapBytes;
 		public long peakDirectBytes;
+		public long peakActivePartitions;
 
 		@Setup(Level.Iteration)
 		public void reset() {
@@ -232,6 +245,7 @@ public class LmdbBulkLoadBenchmark {
 			mapGrowths = 0L;
 			peakHeapBytes = 0L;
 			peakDirectBytes = 0L;
+			peakActivePartitions = 0L;
 		}
 	}
 

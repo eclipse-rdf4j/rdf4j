@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.bulk;
 import java.io.Closeable;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -24,18 +25,102 @@ import java.util.Objects;
  */
 final class BoundedBucketOutputLimiter implements Closeable {
 
+	private static final long MAX_BUFFERED_BYTES = 8L * 1024 * 1024;
+	private static final int MAX_BUCKET_BUFFER_BYTES = 8 * 1024;
+	private static final int MAX_RECORD_BUFFER_BYTES = 64 * 1024;
+	private static final long MIN_BUFFER_BUDGET_BYTES = MAX_BUCKET_BUFFER_BYTES;
+
 	private final int maxOpenOutputs;
+	private final long maxBufferedBytes;
+	private final int bucketBufferBytes;
+	private final int maxBufferedBuckets;
+	private final byte[] recordBuffer;
 	private final LinkedHashMap<Long, DataOutputStream> outputs = new LinkedHashMap<>(16, 0.75f, true);
+	private final LinkedHashMap<Long, BucketBuffer> bufferedOutputs = new LinkedHashMap<>(16, 0.75f, true);
+	private final DataOutputStream recordOutput;
+	private final OutputStream recordBufferStream = new RecordBufferStream();
+
+	private long bufferedBytes;
+	private boolean recordActive;
+	private long recordKey;
+	private OutputFactory recordFactory;
+	private int recordLength;
+	private DataOutputStream oversizedRecordOutput;
 
 	BoundedBucketOutputLimiter(int maxOpenOutputs) {
+		this(maxOpenOutputs, 0L);
+	}
+
+	BoundedBucketOutputLimiter(int maxOpenOutputs, long memoryBudgetBytes) {
 		if (maxOpenOutputs <= 0) {
 			throw new IllegalArgumentException("maxOpenOutputs must be positive");
 		}
+		if (memoryBudgetBytes < 0L) {
+			throw new IllegalArgumentException("memoryBudgetBytes must not be negative");
+		}
 		this.maxOpenOutputs = maxOpenOutputs;
+		long configuredBufferBytes = configuredBufferBytes(memoryBudgetBytes);
+		if (configuredBufferBytes < MIN_BUFFER_BUDGET_BYTES) {
+			maxBufferedBytes = 0L;
+			bucketBufferBytes = 0;
+			maxBufferedBuckets = 0;
+			recordBuffer = new byte[0];
+		} else {
+			int recordBufferBytes = (int) Math.min(MAX_RECORD_BUFFER_BYTES, configuredBufferBytes / 4L);
+			long bucketBudget = configuredBufferBytes - recordBufferBytes;
+			bucketBufferBytes = (int) Math.min(MAX_BUCKET_BUFFER_BYTES, bucketBudget);
+			maxBufferedBuckets = (int) (bucketBudget / bucketBufferBytes);
+			maxBufferedBytes = recordBufferBytes + (long) maxBufferedBuckets * bucketBufferBytes;
+			recordBuffer = new byte[recordBufferBytes];
+			bufferedBytes = recordBufferBytes;
+		}
+		recordOutput = new DataOutputStream(recordBufferStream);
+	}
+
+	/** Returns the maximum buffer allocation made by the constructor for this working-memory budget. */
+	static long maxBufferedBytes(long memoryBudgetBytes) {
+		if (memoryBudgetBytes < 0L) {
+			throw new IllegalArgumentException("memoryBudgetBytes must not be negative");
+		}
+		long configuredBufferBytes = configuredBufferBytes(memoryBudgetBytes);
+		if (configuredBufferBytes < MIN_BUFFER_BUDGET_BYTES) {
+			return 0L;
+		}
+		int recordBufferBytes = (int) Math.min(MAX_RECORD_BUFFER_BYTES, configuredBufferBytes / 4L);
+		long bucketBudget = configuredBufferBytes - recordBufferBytes;
+		int bucketBufferBytes = (int) Math.min(MAX_BUCKET_BUFFER_BYTES, bucketBudget);
+		int maxBufferedBuckets = (int) (bucketBudget / bucketBufferBytes);
+		return recordBufferBytes + (long) maxBufferedBuckets * bucketBufferBytes;
+	}
+
+	private static long configuredBufferBytes(long memoryBudgetBytes) {
+		return Math.min(MAX_BUFFERED_BYTES, memoryBudgetBytes / 16L);
+	}
+
+	/**
+	 * Bytes currently reserved by the bounded in-memory record and bucket buffers.
+	 */
+	long bufferedBytes() {
+		return bufferedBytes;
+	}
+
+	/**
+	 * Maximum bytes reserved by the bounded in-memory record and bucket buffers.
+	 */
+	long maxBufferedBytes() {
+		return maxBufferedBytes;
 	}
 
 	DataOutputStream output(long key, OutputFactory factory) throws IOException {
 		Objects.requireNonNull(factory, "factory");
+		if (maxBufferedBytes > 0L) {
+			finishRecord();
+			recordActive = true;
+			recordKey = key;
+			recordFactory = factory;
+			recordLength = 0;
+			return recordOutput;
+		}
 		DataOutputStream output = outputs.get(key);
 		if (output != null) {
 			return output;
@@ -44,6 +129,36 @@ final class BoundedBucketOutputLimiter implements Closeable {
 		output = factory.open();
 		outputs.put(key, output);
 		return output;
+	}
+
+	/**
+	 * Completes the record returned by {@link #output(long, OutputFactory)}. Records are buffered atomically so a
+	 * compressed frame never ends part way through one of the binary records consumed by the staging readers.
+	 */
+	void finishRecord() throws IOException {
+		if (!recordActive) {
+			return;
+		}
+		if (oversizedRecordOutput != null) {
+			DataOutputStream output = oversizedRecordOutput;
+			oversizedRecordOutput = null;
+			recordActive = false;
+			recordFactory = null;
+			recordLength = 0;
+			output.close();
+			return;
+		}
+		if (recordLength > 0) {
+			if (recordLength > bucketBufferBytes) {
+				flushBufferedOutput(recordKey);
+				writeFrame(recordFactory, recordBuffer, recordLength);
+			} else {
+				appendBufferedRecord();
+			}
+		}
+		recordActive = false;
+		recordFactory = null;
+		recordLength = 0;
 	}
 
 	private void evictUntilRoom() throws IOException {
@@ -55,9 +170,144 @@ final class BoundedBucketOutputLimiter implements Closeable {
 		}
 	}
 
+	private void writeRecordBytes(byte[] bytes, int offset, int length) throws IOException {
+		if (!recordActive) {
+			throw new IOException("No bucket record is active");
+		}
+		if (length == 0) {
+			return;
+		}
+		if (oversizedRecordOutput != null) {
+			oversizedRecordOutput.write(bytes, offset, length);
+			return;
+		}
+		if (length <= recordBuffer.length - recordLength) {
+			System.arraycopy(bytes, offset, recordBuffer, recordLength, length);
+			recordLength += length;
+			return;
+		}
+		spillOversizedRecord();
+		oversizedRecordOutput.write(bytes, offset, length);
+	}
+
+	private void writeRecordByte(int value) throws IOException {
+		if (!recordActive) {
+			throw new IOException("No bucket record is active");
+		}
+		if (oversizedRecordOutput != null) {
+			oversizedRecordOutput.write(value);
+			return;
+		}
+		if (recordLength == recordBuffer.length) {
+			spillOversizedRecord();
+			oversizedRecordOutput.write(value);
+			return;
+		}
+		recordBuffer[recordLength++] = (byte) value;
+	}
+
+	private void spillOversizedRecord() throws IOException {
+		flushBufferedOutput(recordKey);
+		evictUntilRoom();
+		DataOutputStream output = recordFactory.open();
+		try {
+			if (recordLength > 0) {
+				output.write(recordBuffer, 0, recordLength);
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				output.close();
+			} catch (IOException closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
+		recordLength = 0;
+		oversizedRecordOutput = output;
+	}
+
+	private void appendBufferedRecord() throws IOException {
+		BucketBuffer bucket = bufferedOutputs.get(recordKey);
+		if (bucket == null) {
+			while (bufferedOutputs.size() >= maxBufferedBuckets) {
+				evictEldestBufferedOutput();
+			}
+			bucket = new BucketBuffer(recordFactory, new byte[bucketBufferBytes]);
+			bufferedOutputs.put(recordKey, bucket);
+			bufferedBytes += bucketBufferBytes;
+		}
+		if (recordLength > bucket.bytes.length - bucket.length) {
+			flush(bucket);
+		}
+		System.arraycopy(recordBuffer, 0, bucket.bytes, bucket.length, recordLength);
+		bucket.length += recordLength;
+	}
+
+	private void evictEldestBufferedOutput() throws IOException {
+		Iterator<Map.Entry<Long, BucketBuffer>> iterator = bufferedOutputs.entrySet().iterator();
+		Map.Entry<Long, BucketBuffer> eldest = iterator.next();
+		flush(eldest.getValue());
+		iterator.remove();
+		bufferedBytes -= eldest.getValue().bytes.length;
+	}
+
+	private void flushBufferedOutput(long key) throws IOException {
+		BucketBuffer bucket = bufferedOutputs.get(key);
+		if (bucket != null) {
+			flush(bucket);
+		}
+	}
+
+	private void flush(BucketBuffer bucket) throws IOException {
+		if (bucket.length == 0) {
+			return;
+		}
+		writeFrame(bucket.factory, bucket.bytes, bucket.length);
+		bucket.length = 0;
+	}
+
+	private void writeFrame(OutputFactory factory, byte[] bytes, int length) throws IOException {
+		evictUntilRoom();
+		try (DataOutputStream output = factory.open()) {
+			output.write(bytes, 0, length);
+		}
+	}
+
+	private void closeBufferedOutputs(IOException initialFailure) throws IOException {
+		IOException failure = initialFailure;
+		Iterator<Map.Entry<Long, BucketBuffer>> iterator = bufferedOutputs.entrySet().iterator();
+		while (iterator.hasNext()) {
+			Map.Entry<Long, BucketBuffer> entry = iterator.next();
+			try {
+				flush(entry.getValue());
+				bufferedBytes -= entry.getValue().bytes.length;
+				iterator.remove();
+			} catch (IOException e) {
+				if (failure == null) {
+					failure = e;
+				} else {
+					failure.addSuppressed(e);
+				}
+			}
+		}
+		if (failure != null) {
+			throw failure;
+		}
+	}
+
 	@Override
 	public void close() throws IOException {
 		IOException failure = null;
+		try {
+			finishRecord();
+		} catch (IOException e) {
+			failure = e;
+		}
+		try {
+			closeBufferedOutputs(failure);
+		} catch (IOException e) {
+			failure = e;
+		}
 		for (DataOutputStream output : outputs.values()) {
 			try {
 				output.close();
@@ -72,6 +322,39 @@ final class BoundedBucketOutputLimiter implements Closeable {
 		outputs.clear();
 		if (failure != null) {
 			throw failure;
+		}
+	}
+
+	private final class RecordBufferStream extends OutputStream {
+
+		@Override
+		public void write(int value) throws IOException {
+			writeRecordByte(value);
+		}
+
+		@Override
+		public void write(byte[] bytes, int offset, int length) throws IOException {
+			Objects.checkFromIndexSize(offset, length, bytes.length);
+			writeRecordBytes(bytes, offset, length);
+		}
+
+		@Override
+		public void flush() throws IOException {
+			if (oversizedRecordOutput != null) {
+				oversizedRecordOutput.flush();
+			}
+		}
+	}
+
+	private static final class BucketBuffer {
+
+		private final OutputFactory factory;
+		private final byte[] bytes;
+		private int length;
+
+		private BucketBuffer(OutputFactory factory, byte[] bytes) {
+			this.factory = factory;
+			this.bytes = bytes;
 		}
 	}
 

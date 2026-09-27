@@ -25,6 +25,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 
 final class PartitionValueDictionary {
+	static final int ENTRY_READER_BUFFER_BYTES = 64 * 1024;
+	private static final long ENTRY_RETAINED_OVERHEAD_BYTES = 16L * 1024L;
 
 	static final int INDEX_MAGIC = 0x4c4d4449;
 	static final int INDEX_VERSION = 1;
@@ -64,6 +66,14 @@ final class PartitionValueDictionary {
 		return new PartitionReader(dataPath(directory, partition), indexPath(directory, partition));
 	}
 
+	PartitionReader openPartition(int partition, BulkTaskScheduler scheduler,
+			BulkTaskScheduler.ResourceLease lease) throws IOException {
+		if (partition < 0 || partition >= partitionCount) {
+			throw new IllegalArgumentException("Value partition out of range: " + partition);
+		}
+		return new PartitionReader(dataPath(directory, partition), indexPath(directory, partition), scheduler, lease);
+	}
+
 	void forEachEntry(EntryConsumer consumer) throws IOException {
 		for (int partition = 0; partition < partitionCount; partition++) {
 			Path path = dataPath(directory, partition);
@@ -94,6 +104,69 @@ final class PartitionValueDictionary {
 		}
 	}
 
+	void forEachEntry(EntryConsumer consumer, BulkTaskScheduler scheduler) throws IOException {
+		if (scheduler == null) {
+			forEachEntry(consumer);
+			return;
+		}
+		BulkTaskScheduler.ResourceLease lease = scheduler.reserveExclusiveCursorBaseBlocking(
+				ENTRY_READER_BUFFER_BYTES, 1);
+		try (BulkTaskScheduler.FileDescriptorScope ignored = scheduler.bindResourceLease(lease)) {
+			forEachEntry(consumer, scheduler, lease);
+		} finally {
+			lease.close();
+		}
+	}
+
+	void forEachEntry(EntryConsumer consumer, BulkTaskScheduler scheduler,
+			BulkTaskScheduler.ResourceLease lease) throws IOException {
+		if (scheduler == null) {
+			forEachEntry(consumer);
+			return;
+		}
+		try (BulkTaskScheduler.ResourceScope readerMemory = scheduler.claimCurrentResources(
+				ENTRY_READER_BUFFER_BYTES, 0)) {
+			for (int partition = 0; partition < partitionCount; partition++) {
+				Path path = dataPath(directory, partition);
+				try (BulkTaskScheduler.OpenFileHandle ignored = scheduler.trackOpenFileHandle();
+						DataInputStream input = new DataInputStream(new BufferedInputStream(Files.newInputStream(path),
+								ENTRY_READER_BUFFER_BYTES))) {
+					while (true) {
+						long routeHash;
+						try {
+							routeHash = input.readLong();
+						} catch (EOFException e) {
+							break;
+						}
+						try {
+							long id = input.readLong();
+							int roles = input.readInt();
+							int keyLength = input.readInt();
+							if (keyLength < 0 || keyLength > PartitionReader.MAX_KEY_BYTES) {
+								throw new IOException("Invalid partition dictionary key length: " + keyLength);
+							}
+							long retainedBytes = Math.addExact(Math.multiplyExact((long) keyLength, 4L),
+									ENTRY_RETAINED_OVERHEAD_BYTES);
+							BulkTaskScheduler.ResourceLease entryLease = scheduler.reserveAdditionalBlocking(lease,
+									Math.addExact(lease.memoryBytes(), retainedBytes), lease.fileDescriptors(), true);
+							try (BulkTaskScheduler.ResourceScope entryMemory = scheduler.claimResourceLeaseMemory(
+									entryLease,
+									retainedBytes)) {
+								byte[] key = new byte[keyLength];
+								input.readFully(key);
+								consumer.accept(new Entry(partition, routeHash, id, roles, key));
+							} finally {
+								entryLease.close();
+							}
+						} catch (EOFException e) {
+							throw new IOException("Truncated partition dictionary entry in partition " + partition, e);
+						}
+					}
+				}
+			}
+		}
+	}
+
 	static Path dataPath(Path directory, int partition) {
 		return directory.resolve(String.format(java.util.Locale.ROOT, "dictionary-%05d.bin", partition));
 	}
@@ -113,19 +186,18 @@ final class PartitionValueDictionary {
 		private final long capacity;
 
 		private PartitionReader(Path dataPath, Path indexPath) throws IOException {
-			Arena mappedArena = Arena.ofConfined();
+			this(dataPath, indexPath, null, null);
+		}
+
+		private PartitionReader(Path dataPath, Path indexPath, BulkTaskScheduler scheduler,
+				BulkTaskScheduler.ResourceLease lease) throws IOException {
+			Arena mappedArena = Arena.ofShared();
 			try {
-				try (FileChannel dataChannel = FileChannel.open(dataPath, StandardOpenOption.READ);
-						FileChannel indexChannel = FileChannel.open(indexPath, StandardOpenOption.READ)) {
-					long dataBytes = dataChannel.size();
-					data = dataBytes == 0L
-							? MemorySegment.NULL
-							: dataChannel.map(FileChannel.MapMode.READ_ONLY, 0L, dataBytes, mappedArena);
-					long indexBytes = indexChannel.size();
-					if (indexBytes < INDEX_HEADER_BYTES) {
-						throw new IOException("Truncated partition dictionary index: " + indexPath);
-					}
-					index = indexChannel.map(FileChannel.MapMode.READ_ONLY, 0L, indexBytes, mappedArena);
+				data = mapReadonly(dataPath, mappedArena, scheduler, lease);
+				index = mapReadonly(indexPath, mappedArena, scheduler, lease);
+				long indexBytes = index.byteSize();
+				if (indexBytes < INDEX_HEADER_BYTES) {
+					throw new IOException("Truncated partition dictionary index: " + indexPath);
 				}
 				if (index.get(INT_BIG_ENDIAN, 0L) != INDEX_MAGIC
 						|| index.get(INT_BIG_ENDIAN, Integer.BYTES) != INDEX_VERSION) {
@@ -144,6 +216,23 @@ final class PartitionValueDictionary {
 			} catch (IOException | RuntimeException | Error failure) {
 				mappedArena.close();
 				throw failure;
+			}
+		}
+
+		private static MemorySegment mapReadonly(Path path, Arena arena, BulkTaskScheduler scheduler,
+				BulkTaskScheduler.ResourceLease lease) throws IOException {
+			if (scheduler == null) {
+				try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
+					long bytes = channel.size();
+					return bytes == 0L ? MemorySegment.NULL
+							: channel.map(FileChannel.MapMode.READ_ONLY, 0L, bytes, arena);
+				}
+			}
+			try (BulkTaskScheduler.OpenFileHandle ignored = scheduler.trackOpenFileHandle(lease);
+					FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
+				long bytes = channel.size();
+				return bytes == 0L ? MemorySegment.NULL
+						: channel.map(FileChannel.MapMode.READ_ONLY, 0L, bytes, arena);
 			}
 		}
 

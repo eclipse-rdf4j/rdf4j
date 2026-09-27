@@ -1,0 +1,26 @@
+# Final frozen-build bulk-load measurements (2026-09-27)
+
+The current source was packaged once into `core/sail/lmdb/target/jmh-benchmarks.jar` after the final dictionary/resolver resource-accounting fixes. The five additional candidate cases each ran as three fresh JMH forks with one single-shot measurement per fork; the benchmark used JDK 26, `-Xms1G -Xmx1G -XX:+UseG1GC`, no warmup, 64 MiB loader memory budget, 256 value partitions, max 64 open files, and `partitionConcurrency=ADAPTIVE`. Baseline observations came from the saved serial jar using the same JDK/heap/GC/data. The representative row is a matched three-measurement, single-fork pair. These are three-sample spot checks, not a broad statistical campaign.
+
+| Scenario | Workers | Baseline samples (s) | Baseline mean ± SD (s) | Final samples (s) | Final mean ± SD (s) | Baseline / final |
+|---|---:|---|---:|---|---:|---:|
+| Representative (250,000) | 4 | 66.733, 66.093, 68.821 | 67.216 ± 1.426 | 14.154, 13.250, 14.132 | 13.845 ± 0.516 | 4.85× |
+| Mostly unique (250,000) | 1 | 63.008, 54.686, 61.309 | 59.668 ± 4.397 | 10.063, 9.547, 9.110 | 9.574 ± 0.477 | 6.23× |
+| Mostly unique (250,000) | 4 | 64.980, 54.269, 59.796 | 59.681 ± 5.357 | 8.211, 7.941, 7.770 | 7.974 ± 0.222 | 7.48× |
+| High duplication (250,000) | 4 | 12.237, 12.133, 11.550 | 11.973 ± 0.370 | 3.798, 3.723, 3.452 | 3.657 ± 0.182 | 3.27× |
+| Long literal (50,000) | 4 | 23.002, 22.933, 23.640 | 23.191 ± 0.390 | 9.131, 9.107, 8.861 | 9.033 ± 0.149 | 2.57× |
+| RDF-star (250,000) | 4 | 131.822, 124.816, 131.268 | 129.302 ± 3.895 | 47.028, 66.151, 50.230 | 54.469 ± 10.242 | 2.37× |
+
+Each baseline/candidate pair produced the same store byte count. Final temporary-byte totals were about 650 bytes higher per invocation across these scenarios, a small workspace-artifact delta. In the `LONG_LITERAL` case, final heap high-water samples were about 739–747 MiB versus 682–687 MiB baseline; the other sampled candidates were at or below their baseline heap ranges. The benchmark sampler reports total Java heap occupancy, including parser/runtime activity, not the scheduler reservation or process RSS. The scheduler continued to use the configured 64 MiB aggregate working-buffer budget; this budget does not cap total JVM or native LMDB memory.
+
+The per-fork `peakActivePartitions` counter was 1 for all five final adaptive cases. Thus these measurements do not show multi-partition concurrency; the controller remained conservative at one active partition while bounded spill, merge, and chunk work used the configured worker pool. Small fixed-target RDF-star controls (1, 2, and 4) did not show a repeatable throughput winner over adaptive. This supports keeping adaptive conservative for this workload, not claiming that one is globally optimal.
+
+## Wall and I/O profile
+
+A separate async-profiler 4.4 wall-only, thread-split run of the final RDF-star workload completed in 42.820 s; its HTML is `profile-current-final/wall-only/java-command-slow-53770.html`. This is a profiler run, not a JMH timing sample. A combined JFR run measured 84.312 s under instrumentation and is likewise excluded from the table. JFR captured 533,306 Java `FileWrite` events totaling 460,274,447 bytes and 71,600 `FileRead` events totaling 660,817,128 bytes. Those event durations are cumulative across threads and can overlap, so they are not wall-clock I/O latency. The largest Java write callsite was `BoundedBucketOutputLimiter.writeFrame` (477,797 events, 104,103,048 bytes, 25.991 s summed event duration); the benchmark input setup itself contributed 21.572 s of file-write event time outside the measured load iteration.
+
+The profile shows actual worker-thread writes from dictionary leaf preparation (`PartitionValueDictionaryBuilder.writeSortedLeaf`, 4,566 events / 19.9 MiB) and dependency chunks (`ValueDependencyCollector.write`, 3,797 events / 31.0 MiB), while the coordinator scans and merges. It recorded 2,052 destination-tagged dependency chunk runs, zero legacy dependency shard files, and 256 per-partition buckets. Compared with the earlier pre-fanout candidate RDF-star profile, Java write events fell from 4,524,710 to 533,306; those two instrumented profiles cover different intermediate source revisions, so this is structural I/O evidence rather than a timing comparison.
+
+The profile recorded 24 `jdk.FileForce` events (1.643 s summed duration), mostly workspace checkpoint files; one `BulkLoadWorkspace.writeProperties` force took 1.09 s. JFR Java file events do not expose LMDB native memory-mapped page activity or all native sync behavior. `ThreadPark` summaries include idle progress and sampling threads; the more specific sorter wait stacks were short in aggregate (`runOrdered` 0.521 s, `awaitOldestSpill` 0.429 s). No critical-path wait conclusion should be drawn from the aggregate park totals.
+
+Raw final fork logs and CSV files use the `final-*-fork3.{txt,csv}` prefix. The exact runner is `run-final-forked-cases.py`; final JMH package log is `current-final-package.log`. Wall-only and JFR recordings, thread/I/O attribution, and per-event `FileForce` details are retained under `profile-current-final/`. The earlier representative pair is `representative-{baseline-matched,final}-w4.{txt,csv}.

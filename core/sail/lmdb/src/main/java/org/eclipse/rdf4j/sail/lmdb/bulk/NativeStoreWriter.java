@@ -34,13 +34,13 @@ final class NativeStoreWriter {
 	static WriteResult write(Path generation, LmdbStoreConfig config, ValueStoreBulkRecords.Output values,
 			ResolvedIdQuadSpool statements, CanonicalStagedInput staged, long memoryBudgetBytes, int maxOpenFiles,
 			int maxTransactionRecords, long maxTransactionBytes, BulkCompression compression,
-			BooleanSupplier cancellationSignal) throws IOException {
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler) throws IOException {
 		try (StatementIndexBulkRecords statementIndexes = StatementIndexBulkRecords.build(statements,
 				statements.path().getParent(), config.getTripleIndexes(), memoryBudgetBytes, maxOpenFiles,
-				compression, cancellationSignal);
+				compression, cancellationSignal, scheduler);
 				TripleTermIndexBulkRecords tripleTermIndexes = TripleTermIndexBulkRecords.build(values.tripleTerms(),
 						statements.path().getParent(), config.getTripleTermIndexes(), memoryBudgetBytes, maxOpenFiles,
-						compression, cancellationSignal);
+						compression, cancellationSignal, scheduler);
 				LmdbNativeBulkStore store = new LmdbNativeBulkStore(generation, config)) {
 			try (ByteRecordCursor cursor = new ByteRecordCursor(values.mainRecords().path(),
 					values.mainRecords().codec())) {
