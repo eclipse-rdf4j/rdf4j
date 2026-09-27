@@ -141,19 +141,100 @@ def capture_kvm_api_context(probe_root, qemu_binary, runner_uid, runner_user, de
         output.write(f"runner uid={runner_uid} user={runner_user} device group={device_group}\n")
 
 
-def capture_group_context(directory, qemu_binary, runner_user, device_group):
+def capture_group_context(directory, qemu_binary, runner_uid, runner_user, device_group,
+                          device_gid, runner_groups):
+    runner_uid = int(runner_uid)
+    device_gid = int(device_gid)
+    command_prefix = credential_drop_prefix(runner_uid, device_gid, runner_groups)
     commands = [
-        ["sudo", "-n", "-u", runner_user, "-g", device_group, "--", "id", "-a"],
-        ["sudo", "-n", "-u", runner_user, "-g", device_group, "--", "stat", "-Lc",
+        [*command_prefix, "id", "-a"],
+        [*command_prefix, "stat", "-Lc",
          "device=%A %U:%G mode=%a major_minor=%t:%T path=%n", "/dev/kvm"],
-        ["sudo", "-n", "-u", runner_user, "-g", device_group, "--", "getfacl", "--numeric",
-         "--absolute-names", "/dev/kvm"],
-        ["sudo", "-n", "-u", runner_user, "-g", device_group, "--", "stat", "-Lc",
-         "qemu=%A %U:%G mode=%a path=%n", qemu_binary],
-        ["sudo", "-n", "-u", runner_user, "-g", device_group, "--", "file", qemu_binary],
-        ["sudo", "-n", "-u", runner_user, "-g", device_group, "--", "getcap", qemu_binary],
+        [*command_prefix, "getfacl", "--numeric", "--absolute-names", "/dev/kvm"],
+        [*command_prefix, "stat", "-Lc", "qemu=%A %U:%G mode=%a path=%n", qemu_binary],
+        [*command_prefix, "file", qemu_binary],
+        [*command_prefix, "getcap", qemu_binary],
     ]
-    _capture_context(directory / "process-context.txt", commands)
+    context_path = directory / "process-context.txt"
+    _capture_context(context_path, commands)
+    identity = _run_capture([*command_prefix, "cat", "/proc/self/status"])
+    with context_path.open("a", encoding="utf-8") as output:
+        output.write("$ " + " ".join([*command_prefix, "cat", "/proc/self/status"]) + "\n")
+        if isinstance(identity, subprocess.CompletedProcess):
+            output.write(identity.stdout or "")
+            if identity.returncode:
+                output.write(f"exit status: {identity.returncode}\n")
+        else:
+            output.write(f"unavailable: {identity}\n")
+    if not isinstance(identity, subprocess.CompletedProcess) or identity.returncode:
+        raise RuntimeError("could not inspect credentials after dropping to the runner/KVM group")
+    validate_dropped_credentials(identity.stdout, runner_uid, device_gid)
+    with context_path.open("a", encoding="utf-8") as output:
+        output.write(f"runner uid={runner_uid} user={runner_user} device group={device_group}\n")
+        output.write(f"verified unprivileged runner uid={runner_uid}, primary gid={device_gid}\n")
+
+
+def credential_drop_prefix(runner_uid, device_gid, runner_groups):
+    group_ids = {int(value) for value in runner_groups.split(",") if value}
+    group_ids.add(int(device_gid))
+    groups = ",".join(str(value) for value in sorted(group_ids))
+    return [
+        "sudo", "-n", "setpriv", f"--reuid={int(runner_uid)}", f"--regid={int(device_gid)}",
+        f"--groups={groups}", "--inh-caps=-all", "--bounding-set=-all", "--no-new-privs",
+        "--reset-env", "--",
+    ]
+
+
+def validate_dropped_credentials(status_text, runner_uid, device_gid):
+    fields = {}
+    for line in status_text.splitlines():
+        key, separator, value = line.partition(":")
+        if separator and key in {"Uid", "Gid", "Groups"}:
+            fields[key] = [int(item) for item in value.split()]
+        elif separator and key in {"CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb", "NoNewPrivs"}:
+            fields[key] = int(value.strip(), 16) if key.startswith("Cap") else int(value.strip())
+    if fields.get("Uid") != [int(runner_uid)] * 4:
+        raise RuntimeError(f"credential drop retained a privileged or mismatched UID: {fields.get('Uid')}")
+    if fields.get("Gid") != [int(device_gid)] * 4:
+        raise RuntimeError(f"credential drop did not set every GID to the KVM device group: {fields.get('Gid')}")
+    if int(device_gid) not in fields.get("Groups", []):
+        raise RuntimeError("credential drop omitted the KVM device group from supplementary groups")
+    if fields.get("NoNewPrivs") != 1:
+        raise RuntimeError("credential drop did not enable no_new_privs")
+    if any(fields.get(capability) != 0 for capability in
+           ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")):
+        raise RuntimeError("credential drop retained Linux capabilities")
+
+
+def capture_udev_context(probe_root):
+    commands = [
+        ["udevadm", "info", "--query=all", "--name=/dev/kvm"],
+        ["udevadm", "info", "--attribute-walk", "--name=/dev/kvm"],
+        ["journalctl", "-u", "systemd-udevd.service", "--since", "-15 minutes", "--no-pager"],
+    ]
+    _capture_context(probe_root / "udev-context.txt", commands)
+    rule_roots = (Path("/etc/udev/rules.d"), Path("/usr/lib/udev/rules.d"),
+                  Path("/lib/udev/rules.d"))
+    matching_rules = []
+    seen = set()
+    for root in rule_roots:
+        if not root.is_dir():
+            continue
+        for rule in sorted(root.glob("*.rules")):
+            resolved = rule.resolve()
+            if resolved in seen or not resolved.is_file():
+                continue
+            seen.add(resolved)
+            try:
+                lines = resolved.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                continue
+            matching = [f"{resolved}:{number}:{line}" for number, line in enumerate(lines, 1)
+                        if "kvm" in line.lower()]
+            matching_rules.extend(matching)
+    if not matching_rules:
+        matching_rules = ["No installed udev rule line mentioning KVM was found."]
+    (probe_root / "udev-rules.txt").write_text("\n".join(matching_rules) + "\n", encoding="utf-8")
 
 
 def collect_security_context(directory, since):
@@ -347,10 +428,15 @@ def main(argv=None):
     parser.add_argument("--runner-uid", required=True)
     parser.add_argument("--runner-user", required=True)
     parser.add_argument("--device-group", required=True)
+    parser.add_argument("--device-gid", required=True, type=int)
+    parser.add_argument("--runner-groups", required=True,
+                        help="comma-separated numeric supplementary groups for the runner")
     parser.add_argument("--strace", required=True)
     args = parser.parse_args(argv)
 
     args.probe_root.mkdir(parents=True, exist_ok=False)
+    if os.getuid() != int(args.runner_uid) or os.geteuid() == 0:
+        raise RuntimeError("KVM preflight must run as the requested unprivileged job user")
     result_file = args.probe_root / "result.txt"
     acl = _run_capture(["getfacl", "--numeric", "--omit-header", "--absolute-names", "/dev/kvm"])
     if isinstance(acl, subprocess.CompletedProcess):
@@ -369,12 +455,14 @@ def main(argv=None):
     _record_result(args.probe_root, f"runner uid={args.runner_uid} user={args.runner_user} "
                    f"device group={args.device_group}")
     _record_result(args.probe_root, api_result)
+    capture_udev_context(args.probe_root)
 
     direct_context = lambda directory: capture_process_context(
         directory, args.qemu, args.runner_uid, args.runner_user, args.device_group
     )
     group_context = lambda directory: capture_group_context(
-        directory, args.qemu, args.runner_user, args.device_group
+        directory, args.qemu, args.runner_uid, args.runner_user, args.device_group,
+        args.device_gid, args.runner_groups
     )
     direct_command = [args.strace, "-f", "-yy", "-e", "trace=%file", "-o",
                       str(args.probe_root / "direct-user" / "open.trace"), args.qemu]

@@ -29,7 +29,7 @@ jobs:
       - name: Install QEMU x86_64, UEFI, and ISO tools
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y qemu-system-x86 qemu-utils ovmf genisoimage acl libcap2-bin strace file
+          sudo apt-get install --no-install-recommends -y qemu-system-x86 qemu-utils ovmf genisoimage acl libcap2-bin strace file util-linux
           command -v qemu-system-x86_64
           command -v qemu-img
           command -v genisoimage
@@ -38,6 +38,7 @@ jobs:
           command -v getcap
           command -v strace
           command -v file
+          command -v setpriv
           test -s /usr/share/OVMF/OVMF_CODE_4M.fd
           test -s /usr/share/OVMF/OVMF_VARS_4M.fd
           qemu-system-x86_64 --version
@@ -58,12 +59,14 @@ jobs:
           runner_uid=$(id -u)
           runner_user=$(id -un)
           kvm_group=$(stat -c %G /dev/kvm)
+          kvm_gid=$(stat -c %g /dev/kvm)
           qemu_binary=$(command -v qemu-system-x86_64)
           [[ $runner_uid -ne 0 && -n $runner_user && -n $kvm_group ]] || {
             printf 'KVM preflight failed: expected an unprivileged runner user and named device group.\n' >&2
             exit 1
           }
-          sudo setfacl --modify "u:$runner_uid:rw" /dev/kvm
+          sudo -n setfacl --modify "u:$runner_uid:rw" /dev/kvm
+          runner_groups=$(python3 -c 'import sys; groups=set(map(int,sys.argv[1].split())) | {int(sys.argv[2])}; print(",".join(map(str, sorted(groups)))' "$(id -G)" "$kvm_gid")
           kvm_acl=$(getfacl --numeric --omit-header --absolute-names /dev/kvm)
           printf '%s\n' "$kvm_acl"
           grep -Fx "user:$runner_uid:rw-" <<<"$kvm_acl"
@@ -78,8 +81,8 @@ jobs:
             exit 1
           }
           qemu_wrapper="$CRASHLAB_ROOT/qemu-kvm"
-          printf '#!/usr/bin/env bash\nset -euo pipefail\nexec sudo -n -u %q -g %q -- %q "$@"\n' \
-            "$runner_user" "$kvm_group" "$qemu_binary" > "$qemu_wrapper"
+          printf '#!/usr/bin/env bash\nset -euo pipefail\nexec sudo -n setpriv --reuid %q --regid %q --groups %q --inh-caps=-all --bounding-set=-all --no-new-privs --reset-env -- %q "$@"\n' \
+            "$runner_uid" "$kvm_gid" "$runner_groups" "$qemu_binary" > "$qemu_wrapper"
           chmod 0755 "$qemu_wrapper"
           python3 scripts/lmdb-crashlab/qemu_kvm_preflight.py \
             --probe-root "$probe_root" \
@@ -88,6 +91,8 @@ jobs:
             --runner-uid "$runner_uid" \
             --runner-user "$runner_user" \
             --device-group "$kvm_group" \
+            --device-gid "$kvm_gid" \
+            --runner-groups "$runner_groups" \
             --strace "$(command -v strace)"
 
       - name: Build exact Java 25 artifacts

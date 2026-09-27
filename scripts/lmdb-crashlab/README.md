@@ -148,11 +148,16 @@ the KVM API and creates/closes a test VM, then records a direct-user QEMU file
 open trace and available AppArmor/kernel/audit denial records. Its tested
 `qemu_kvm_preflight.py` controller handles QEMU child exits and the QMP greeting
 with bounded waits; failure of the optional direct-user diagnostic still leads
-to the required group-context probe. The required
-QEMU probe runs as the same unprivileged job user with `/dev/kvm`'s primary
-group and must stay QMP-responsive while configured with `q35`, `accel=kvm`,
-and `cpu=host`; that exact wrapper is used for guest provisioning and each
-campaign. Missing or unusable KVM fails the job rather than falling back to
+to the required group-context probe. For that required probe, `sudo -n`
+launches `setpriv`, which drops every UID to the job user's numeric UID, uses
+the device's primary GID, retains the job's supplementary groups plus that
+device group, clears Linux capabilities, and enables `no_new_privs`. Before
+QEMU starts, the controller verifies all four real/effective/saved/filesystem
+UID and GID values from `/proc/self/status`. QEMU must then stay QMP-responsive
+while configured with `q35`, `accel=kvm`, and `cpu=host`; that exact wrapper is
+used for guest provisioning and each campaign. The preflight artifact also
+captures available udev device data, rules mentioning KVM, and udev journal
+entries. Missing or unusable KVM fails the job rather than falling back to
 slow TCG or skipping the guest tier. It provisions an Ubuntu
 x86_64 Java 25 guest with OVMF and runs the actual Linux guest FLUSH/FUA
 calibration, acknowledged namespace-only commit, and all three checked-in
