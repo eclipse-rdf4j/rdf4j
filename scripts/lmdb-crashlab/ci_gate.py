@@ -91,8 +91,11 @@ def validate_namespace_report(report: dict[str, Any]) -> None:
     _require(report.get("recovery_oracle_findings") == [], "namespace recovery oracle reported findings")
     _require(report.get("public_index_context_sparql_checks_completed") is True,
              "namespace recovery omitted public index/context/SPARQL checks")
-    _require(report.get("last_data_write_followed_by_no_flush_or_fua") is True,
-             "namespace campaign did not cut after its final unsynchronized data write")
+    _require(report.get("post_ack_action_order") == ["read_backend_status", "nbd_cut", "sigkill_guest"],
+             "namespace campaign ran a guest sync or shutdown before the NBD cut")
+    _require(report.get("writer_guest_alive_when_nbd_cut_started") is True and
+             report.get("writer_guest_reaped_after_nbd_cut") is True,
+             "namespace campaign did not cut the NBD device while its writer guest was live")
     _positive_event_count(report, "writer_backend_flush_done_count", "writer_backend_fua_done_count",
                           label="namespace campaign")
     namespace_commit = report.get("namespace_only_commit")

@@ -175,17 +175,31 @@ jobs:
             --summary-json "$CRASHLAB_ROOT/campaigns/ci-gate-summary.json" \
             --github-step-summary "$GITHUB_STEP_SUMMARY"
 
-      - name: Preserve guest, campaign, and test evidence
+      - name: Prepare compact campaign and test evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          evidence_root="$RUNNER_TEMP/rdf4j-lmdb-qemu-artifact"
+          [[ ! -e $evidence_root && ! -L $evidence_root ]] || {
+            printf 'Refusing pre-existing evidence package directory: %s\n' "$evidence_root" >&2
+            exit 1
+          }
+          if [[ -z "${CRASHLAB_ROOT:-}" ]]; then
+            mkdir -p "$evidence_root"
+            printf 'Crashlab workspace was not initialized before an earlier workflow failure.\n' \
+              > "$evidence_root/workspace-not-initialized.txt"
+          else
+            python3 scripts/lmdb-crashlab/package_ci_artifact.py \
+              --crashlab-root "$CRASHLAB_ROOT" \
+              --output-root "$evidence_root"
+          fi
+
+      - name: Preserve compact guest, campaign, and test evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lmdb-qemu-durability-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/rdf4j-lmdb-qemu/**
-            !${{ runner.temp }}/rdf4j-lmdb-qemu/guest/image/ubuntu-24.04-server-cloudimg-amd64.img
-            !${{ runner.temp }}/rdf4j-lmdb-qemu/guest/ubuntu-x86_64-java25.qcow2
-            !${{ runner.temp }}/rdf4j-lmdb-qemu/guest/firmware-vars.fd
-            !${{ runner.temp }}/rdf4j-lmdb-qemu/guest/seed.iso
+          path: ${{ runner.temp }}/rdf4j-lmdb-qemu-artifact/**
           if-no-files-found: error
           retention-days: 7
           compression-level: 0

@@ -129,11 +129,11 @@ class ProcessGroupLifecycleTests(unittest.TestCase):
             child_script = root / "qemu-child.py"
             child_script.write_text(
                 "import os\nimport signal\nimport sys\nimport time\nfrom pathlib import Path\n"
-                "Path(sys.argv[1]).write_text(str(os.getpid()))\n"
-                "Path(sys.argv[2]).write_text('ready')\n"
                 "def ignore_term(*_):\n"
                 "    Path(sys.argv[3]).write_text('term')\n"
                 "signal.signal(signal.SIGTERM, ignore_term)\n"
+                "Path(sys.argv[1]).write_text(str(os.getpid()))\n"
+                "Path(sys.argv[2]).write_text('ready')\n"
                 "while True:\n    time.sleep(0.05)\n",
                 encoding="utf-8",
             )

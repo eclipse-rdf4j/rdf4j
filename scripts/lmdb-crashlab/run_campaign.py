@@ -225,6 +225,9 @@ def main() -> int:
     backend_hash_before = sha256_file(inputs["backend"])
     os_hash_before = sha256_file(inputs["os_image"])
     classpath_hash_before = sha256_file(inputs["classpath_file"])
+    post_ack_action_order: list[str] = []
+    writer_guest_alive_when_nbd_cut_started = False
+    writer_guest_reaped_after_nbd_cut = False
     run_error: BaseException | None = None
     report: dict[str, Any] | None = None
     try:
@@ -250,15 +253,23 @@ def main() -> int:
                                args.writer_timeout_seconds)
         if marker.name != "actual-lmdb-final-ack":
             raise RuntimeError(f"writer guest failed: {marker.read_text(errors='replace')}")
+        post_ack_action_order.append("read_backend_status")
         writer_status_before_cut = backend_control(Path(sys.executable), inputs["backend"],
                                                    writer_control, "status")
         write_json_exclusive(results / "actual-writer-backend-status-before-cut.json",
                              writer_status_before_cut)
+        writer_guest_alive_when_nbd_cut_started = writer_qemu.poll() is None
+
+        def cut_writer_device() -> dict[str, Any]:
+            post_ack_action_order.append("nbd_cut")
+            return backend_control(Path(sys.executable), inputs["backend"], writer_control,
+                                   "cut", "--survival", "drop", "--seed", str(args.cut_seed))
+
         cut_report = fence_nbd_then_stop_guest(
-            writer_qemu,
-            lambda: backend_control(Path(sys.executable), inputs["backend"], writer_control,
-                                    "cut", "--survival", "drop", "--seed", str(args.cut_seed)),
+            writer_qemu, cut_writer_device,
         )
+        post_ack_action_order.append("sigkill_guest")
+        writer_guest_reaped_after_nbd_cut = writer_qemu.poll() is not None
         writer_qemu = None
         write_json_exclusive(results / "actual-nbd-device-cut.json", cut_report)
         preserved_dir = results / "pre-recovery-image"
@@ -341,6 +352,9 @@ def main() -> int:
             "last_data_write_before_cut": last_data_write,
             "last_successful_flush_or_fua_before_cut": last_sync,
             "last_data_write_followed_by_no_flush_or_fua": last_write_index > last_sync_index,
+            "post_ack_action_order": post_ack_action_order,
+            "writer_guest_alive_when_nbd_cut_started": writer_guest_alive_when_nbd_cut_started,
+            "writer_guest_reaped_after_nbd_cut": writer_guest_reaped_after_nbd_cut,
             "recovery_oracle_log": str(oracle_log),
             "recovery_oracle_findings": findings,
             "public_index_context_sparql_checks_completed": public_checks_completed,

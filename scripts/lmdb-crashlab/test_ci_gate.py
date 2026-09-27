@@ -39,6 +39,9 @@ def namespace_report():
         "writer_backend_fua_done_count": 0,
         "namespace_only_commit": "commit returned; witness was fsynced to independent share; no guest filesystem sync before cut",
         "last_data_write_followed_by_no_flush_or_fua": True,
+        "post_ack_action_order": ["read_backend_status", "nbd_cut", "sigkill_guest"],
+        "writer_guest_alive_when_nbd_cut_started": True,
+        "writer_guest_reaped_after_nbd_cut": True,
         "data_device_cut": {"off": True, "survival": "drop", "kept_sectors": 0},
         "external_witness": {"sha256": "b" * 64},
         "namespace_witness": {"sha256": "c" * 64},
@@ -158,18 +161,37 @@ class CiGateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_campaign_reports(calibration_report(), report, self.reports)
 
-    def test_namespace_campaign_requires_unsynced_cut_and_unchanged_image(self):
-        report = namespace_report()
-        report["last_data_write_followed_by_no_flush_or_fua"] = False
-        with self.assertRaises(ValueError):
-            validate_campaign_reports(calibration_report(), report, self.reports)
-
+    def test_namespace_campaign_requires_unchanged_image_and_public_checks(self):
         report = namespace_report()
         report["pre_recovery_image_sha256_after_run"] = "e" * 64
         with self.assertRaises(ValueError):
             validate_campaign_reports(calibration_report(), report, self.reports)
         report = namespace_report()
         report["public_index_context_sparql_checks_completed"] = False
+        with self.assertRaises(ValueError):
+            validate_campaign_reports(calibration_report(), report, self.reports)
+
+    def test_namespace_campaign_accepts_commit_flush_before_live_guest_cut(self):
+        report = namespace_report()
+        report["last_data_write_followed_by_no_flush_or_fua"] = False
+        report["post_ack_action_order"] = ["read_backend_status", "nbd_cut", "sigkill_guest"]
+        report["writer_guest_alive_when_nbd_cut_started"] = True
+        report["writer_guest_reaped_after_nbd_cut"] = True
+        validate_campaign_reports(calibration_report(), report, self.reports)
+
+    def test_namespace_campaign_rejects_post_ack_guest_sync_before_cut(self):
+        report = namespace_report()
+        report["post_ack_action_order"] = [
+            "read_backend_status", "guest_filesystem_sync", "nbd_cut", "sigkill_guest"
+        ]
+        report["writer_guest_alive_when_nbd_cut_started"] = True
+        report["writer_guest_reaped_after_nbd_cut"] = True
+        with self.assertRaises(ValueError):
+            validate_campaign_reports(calibration_report(), report, self.reports)
+
+        report = namespace_report()
+        report["post_ack_action_order"] = ["read_backend_status", "nbd_cut", "sigkill_guest"]
+        report["writer_guest_alive_when_nbd_cut_started"] = False
         with self.assertRaises(ValueError):
             validate_campaign_reports(calibration_report(), report, self.reports)
 
@@ -315,8 +337,9 @@ class CiGateTests(unittest.TestCase):
     def test_ci_artifact_excludes_regenerable_guest_os_images(self):
         workflow = Path(__file__).parents[2] / ".github/workflows/lmdb-qemu-durability.yml"
         source = workflow.read_text(encoding="utf-8")
-        self.assertIn("!${{ runner.temp }}/rdf4j-lmdb-qemu/guest/image/ubuntu-24.04-server-cloudimg-amd64.img", source)
-        self.assertIn("!${{ runner.temp }}/rdf4j-lmdb-qemu/guest/ubuntu-x86_64-java25.qcow2", source)
+        self.assertIn("package_ci_artifact.py", source)
+        self.assertIn("rdf4j-lmdb-qemu-artifact/**", source)
+        self.assertNotIn("rdf4j-lmdb-qemu/**", source)
 
 
 if __name__ == "__main__":
