@@ -40,7 +40,7 @@ The test oracle must be independent of the database and live outside the crash t
 - [x] Reverify repaired native boundary regressions.
 - [x] Diagnose ENOSPC and run final gates.
 - [x] Format audit and final build.
-- [in_progress] Audit staged scope and commit.
+- [x] Audit staged scope and commit.
 
 ## Surprises & Discoveries
 
