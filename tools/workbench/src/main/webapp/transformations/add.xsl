@@ -62,18 +62,16 @@
 				</div>
 				<div id="add-source-url-panel" class="workbench-field add-source-panel" data-source="url" hidden="hidden">
 					<label for="url"><xsl:value-of select="$upload-url.label" /></label>
-					<input id="url" name="url" type="text" value=""
+					<input id="url" name="url" type="text" size="48" value=""
 						onchange="workbench.add.enabledInput('url');" disabled="disabled" />
 				</div>
 				<div id="add-source-text-panel" class="workbench-field add-source-panel" data-source="text" hidden="hidden">
 					<label for="text"><xsl:value-of select="$upload-text.label" /></label>
-					<textarea id="text" name="content" rows="6" cols="70"
-						onchange="workbench.add.enabledInput('text')" disabled="disabled"></textarea>
+					<textarea id="text" name="content" rows="6" cols="70" disabled="disabled"></textarea>
 				</div>
 				<div class="workbench-field add-source-format">
 					<label for="Content-Type"><xsl:value-of select="$data-format.label" /></label>
-					<select id="Content-Type" name="Content-Type"
-						onchange="workbench.add.handleFormatSelection(this.value)">
+					<select id="Content-Type" name="Content-Type">
 						<option id="autodetect" value="autodetect" selected="selected">(autodetect)</option>
 						<xsl:for-each select="document(//sparql:link/@href)//sparql:binding[@name='upload-format']">
 							<option value="{substring-before(sparql:literal, ' ')}">
@@ -92,22 +90,35 @@
 					</xsl:call-template>
 				</summary>
 				<div class="workbench-options__body">
-					<div class="workbench-field">
-						<label for="baseURI"><xsl:value-of select="$base-uri.label" /></label>
-						<input id="baseURI" name="baseURI" type="text"
-							value="{//sparql:binding[@name='baseURI']/sparql:literal}"
-							onchange="workbench.add.handleBaseURIUse()" />
-						<label class="workbench-check" for="useForContext">
-							<input type="checkbox" id="useForContext" name="useForContext"
-								checked="true" onchange="workbench.add.handleBaseURIUse()" />
-							<span>use base URI as context identifier</span>
-						</label>
-					</div>
-					<div class="workbench-field">
-						<label for="context"><xsl:value-of select="$context.label" /></label>
-						<input id="context" readonly="readonly" name="context" type="text"
-							value="{//sparql:binding[@name='context']/sparql:literal}" />
-					</div>
+				<div class="workbench-field">
+					<label for="baseURI"><xsl:value-of select="$base-uri.label" /></label>
+					<input id="baseURI" name="baseURI" type="text" size="48"
+						value="{//sparql:binding[@name='baseURI']/sparql:literal}" />
+					<label class="workbench-check" for="overrideContext">
+						<input type="checkbox" id="overrideContext" name="overrideContext"
+							onchange="workbench.add.handleContextOverride()">
+							<xsl:if test="string-length(normalize-space(//sparql:binding[@name='context']/sparql:literal)) &gt; 0">
+								<xsl:attribute name="checked">checked</xsl:attribute>
+							</xsl:if>
+						</input>
+						<span>override parsed contexts with this context</span>
+					</label>
+				</div>
+				<div class="workbench-field">
+					<label for="context"><xsl:value-of select="$context.label" /></label>
+					<input id="context" name="context" type="text" size="48"
+						aria-describedby="context-help"
+						value="{//sparql:binding[@name='context']/sparql:literal}">
+						<xsl:if test="string-length(normalize-space(//sparql:binding[@name='context']/sparql:literal)) = 0">
+							<xsl:attribute name="disabled">disabled</xsl:attribute>
+						</xsl:if>
+					</input>
+					<p id="context-help" class="workbench-help">
+						RDF context may be an IRI, blank node, or the default graph.
+						With override off, embedded contexts are preserved; contextless data uses the default graph.
+						Base URI resolves relative RDF identifiers; it does not choose a graph context.
+					</p>
+				</div>
 					<div class="workbench-field">
 						<label for="transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel">
 							<xsl:value-of select="$isolation-level.label" />

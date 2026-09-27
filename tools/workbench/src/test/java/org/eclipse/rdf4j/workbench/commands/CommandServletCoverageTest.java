@@ -330,7 +330,7 @@ class CommandServletCoverageTest {
 		servlet.doPost(request, response, "/transform");
 		verify(builder).transform("/transform", "update.xsl");
 		verify(builder).start("error-message", "update");
-		verify(builder).link(List.of("info", "namespaces"));
+		verify(builder).link(List.of("info", "_internal/namespaces"));
 		verify(builder).result("bad update", "broken update");
 		verify(builder).end();
 

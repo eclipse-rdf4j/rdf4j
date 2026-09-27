@@ -1,4 +1,36 @@
 .query-form {
+    --query-code-surface: var(--workbench-editor-surface);
+    --query-code-surface-hover: var(--workbench-editor-gutter);
+    --query-code-selection: var(--workbench-editor-selection-focused);
+    --query-code-ink: var(--workbench-editor-ink);
+    --query-code-muted: var(--workbench-code-meta);
+    --query-code-connector: var(--workbench-code-meta);
+    --query-code-node: var(--workbench-code-keyword);
+    --query-code-annotation: var(--workbench-code-meta);
+    --query-code-variable-label: var(--workbench-code-atom);
+    --query-code-variable: var(--workbench-code-atom);
+    --query-code-value: var(--workbench-code-string);
+    --query-code-iri: var(--workbench-code-variable-3);
+    --query-code-literal: var(--workbench-code-string);
+    --query-code-bound: var(--workbench-code-variable-3);
+    --query-code-unbound: var(--workbench-code-error);
+    --query-code-metric: var(--workbench-code-number);
+    --query-code-border: var(--workbench-editor-gutter-border);
+    --query-code-focus: var(--workbench-focus);
+    --query-json-surface: var(--workbench-editor-surface);
+    --query-json-border: var(--workbench-editor-gutter-border);
+    --query-json-ink: var(--workbench-editor-ink);
+    --query-json-key: var(--workbench-code-meta);
+    --query-json-label: var(--workbench-code-meta);
+    --query-json-summary: var(--workbench-code-meta);
+    --query-json-percentage: var(--workbench-code-number);
+    --query-json-string: var(--workbench-code-string);
+    --query-json-number: var(--workbench-code-number);
+    --query-json-boolean: var(--workbench-code-atom);
+    --query-json-null: var(--workbench-code-meta);
+}
+
+html[data-theme="dark"] .query-form {
     --query-code-surface: var(--workbench-surface);
     --query-code-surface-hover: var(--workbench-inset);
     --query-code-selection: var(--workbench-inset);
@@ -10,11 +42,24 @@
     --query-code-variable-label: var(--workbench-teal);
     --query-code-variable: var(--workbench-teal-dark);
     --query-code-value: var(--workbench-nav);
+    --query-code-iri: var(--query-code-value);
+    --query-code-literal: var(--query-code-value);
     --query-code-bound: var(--workbench-teal-dark);
     --query-code-unbound: var(--workbench-danger);
     --query-code-metric: var(--workbench-nav);
     --query-code-border: var(--workbench-rule);
     --query-code-focus: var(--workbench-focus);
+    --query-json-surface: var(--workbench-surface);
+    --query-json-border: var(--workbench-soft-rule);
+    --query-json-ink: var(--workbench-ink);
+    --query-json-key: var(--workbench-nav);
+    --query-json-label: var(--workbench-muted);
+    --query-json-summary: var(--workbench-muted);
+    --query-json-percentage: var(--workbench-teal-dark);
+    --query-json-string: var(--workbench-ink);
+    --query-json-number: var(--workbench-nav);
+    --query-json-boolean: var(--workbench-teal-dark);
+    --query-json-null: var(--workbench-muted);
 }
 
 #query-explanation-row,
@@ -116,7 +161,7 @@
     z-index: 2;
     padding: 0.75em;
     box-sizing: border-box;
-    background: rgba(255, 255, 255, 0.82);
+    background: color-mix(in srgb, var(--workbench-surface) 82%, transparent);
     color: var(--query-code-node);
     font-weight: bold;
     align-items: flex-start;
@@ -133,15 +178,15 @@
     width: 0.95em;
     height: 0.95em;
     box-sizing: border-box;
-    border: 2px solid #c8d1db;
-    border-top-color: #356893;
+    border: 2px solid var(--workbench-rule);
+    border-top-color: var(--workbench-primary);
     border-radius: 50%;
     vertical-align: middle;
 }
 
 .query-explain-spinner--visible {
     display: inline-block;
-    animation: query-explain-spinner-spin 0.8s linear infinite;
+    animation: query-explain-spinner-spin var(--workbench-motion-spin) linear infinite;
 }
 
 .query-explain-cancel {
@@ -220,7 +265,7 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
     bottom: calc(100% + 0.5rem);
     left: 0;
     z-index: 8;
-    width: 34rem;
+    width: fit-content;
     max-width: 100%;
     box-sizing: border-box;
     padding: 0.85rem;
@@ -229,7 +274,6 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
     background: var(--workbench-surface);
     color: var(--query-code-ink);
     box-shadow: var(--workbench-shadow);
-    animation: query-explanation-settings-panel-in 0.14s ease-out;
 }
 
 .query-explanation-settings__panel[hidden] {
@@ -275,7 +319,7 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
     display: inline-flex;
     align-items: center;
     gap: 0.4em;
-    color: #4b5563;
+    color: var(--workbench-muted);
     font-size: 0.86em;
     white-space: nowrap;
 }
@@ -283,9 +327,9 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
 .query-explanation-hotspot-legend::before {
     width: 2.6em;
     height: 0.65em;
-    border: 1px solid #c86550;
+    border: 1px solid var(--workbench-danger);
     border-radius: 999px;
-    background: linear-gradient(90deg, rgb(255, 247, 237), rgb(239, 68, 68));
+    background: linear-gradient(90deg, var(--workbench-danger-surface), var(--workbench-danger));
     content: '';
 }
 
@@ -384,18 +428,6 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
     font-size: 0.78em;
 }
 
-@keyframes query-explanation-settings-panel-in {
-    from {
-        opacity: 0;
-        transform: translateY(0.25rem);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
 @media (max-width: 48rem) {
     .query-explanation-property-config__options {
         grid-template-columns: minmax(0, 1fr);
@@ -488,6 +520,14 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
     font-weight: 700;
 }
 
+.query-explanation-token--value-iri {
+    color: var(--query-code-iri);
+}
+
+.query-explanation-token--value-literal {
+    color: var(--query-code-literal);
+}
+
 .query-explanation-token--metric-name {
     color: var(--query-code-annotation);
     font-weight: 400;
@@ -513,7 +553,7 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
 
 .query-explanation-line--hotspot {
     border-radius: 0.2em;
-    color: #161616;
+    color: var(--workbench-ink);
 }
 
 .query-explanation-line--hotspot .query-explanation-token {
@@ -527,6 +567,9 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
     }
 
     .query-explanation-settings__panel {
+        animation: none;
+    }
+    .query-explain-spinner--visible {
         animation: none;
     }
 }
@@ -548,8 +591,8 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
 #query-explanation-json-view,
 #query-explanation-json-view-compare {
     display: none;
-    background: var(--workbench-surface);
-    border: 1px solid var(--workbench-soft-rule);
+    background: var(--query-json-surface);
+    border: 1px solid var(--query-json-border);
     border-radius: var(--workbench-control-radius);
     padding: 0.75em;
     width: 100%;
@@ -573,7 +616,7 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
 
 .query-json-tree {
     font-size: var(--workbench-control-font-size);
-    color: var(--workbench-ink);
+    color: var(--query-json-ink);
 }
 
 .query-json-node {
@@ -631,35 +674,35 @@ body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] 
 }
 
 .query-json-node__key {
-    color: var(--workbench-nav);
+    color: var(--query-json-key);
 }
 
 .query-json-node__label {
-    color: var(--workbench-muted);
+    color: var(--query-json-label);
 }
 
 .query-json-node__summary {
-    color: var(--workbench-muted);
+    color: var(--query-json-summary);
 }
 
 .query-json-node__percentage {
-    color: var(--workbench-teal-dark);
+    color: var(--query-json-percentage);
     font-weight: 600;
 }
 
 .query-json-node__value--string {
-    color: var(--workbench-ink);
+    color: var(--query-json-string);
 }
 
 .query-json-node__value--number {
-    color: var(--workbench-nav);
+    color: var(--query-json-number);
 }
 
 .query-json-node__value--boolean {
-    color: var(--workbench-teal-dark);
+    color: var(--query-json-boolean);
 }
 
 .query-json-node__value--null {
-    color: var(--workbench-muted);
+    color: var(--query-json-null);
     font-style: italic;
 }

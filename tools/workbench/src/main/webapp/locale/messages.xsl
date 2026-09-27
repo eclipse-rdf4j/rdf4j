@@ -96,6 +96,7 @@
 	<variable name="copy.label">Copy</variable>
 	<variable name="swap.label">Swap</variable>
 	<variable name="close.label">Close</variable>
+	<variable name="close-comparison.label">Close comparison</variable>
 	<variable name="change-server.label">RDF4J Server URL</variable>
 	<variable name="change.label">Change</variable>
 	<variable name="server.label">RDF4J Server</variable>
@@ -106,9 +107,16 @@
 	<variable name="full-screen.label">Full screen</variable>
 	<variable name="exit-full-screen.label">Exit full screen</variable>
 	<variable name="menu.label">Menu</variable>
+	<variable name="workbench-theme.label">Workbench theme</variable>
+	<variable name="theme-system.label">System</variable>
+	<variable name="theme-light.label">Light</variable>
+	<variable name="theme-dark.label">Dark</variable>
 	<variable name="advanced-settings.label">Advanced settings</variable>
 	<variable name="examples.label">Examples</variable>
 	<variable name="download-format.label">Download format</variable>
+	<variable name="compression.label">Compression</variable>
+	<variable name="gzip.label">Gzip</variable>
+	<variable name="zip.label">ZIP</variable>
 	<variable name="download-limit.label">Download limit</variable>
 	<variable name="change-server.desc">for example: http://localhost:8080/rdf4j-server</variable>
 	<variable name="repository-create.label">New repository</variable>

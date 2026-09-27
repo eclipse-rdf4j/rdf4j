@@ -7,28 +7,10 @@ var workbench;
 (function (workbench) {
     var add;
     (function (add) {
-        function handleFormatSelection(selected) {
-            if (selected == 'application/x-trig' || selected == 'application/trix'
-                || selected == 'text/x-nquads') {
-                $('#useForContext').prop('checked', false);
-                $('#context').val('').prop('readOnly', false);
-            }
+        function handleContextOverride() {
+            $('#context').prop('disabled', !$('#overrideContext').prop('checked'));
         }
-        add.handleFormatSelection = handleFormatSelection;
-        function setContextFromBaseURI() {
-            var baseURI = $('#baseURI').val();
-            $('#context').prop('readOnly', true);
-            $('#context').val(baseURI == '' ? '' : '<' + baseURI + '>');
-        }
-        function handleBaseURIUse() {
-            if ($('#useForContext').prop('checked')) {
-                setContextFromBaseURI();
-            }
-            else {
-                $('#context').prop('readOnly', false);
-            }
-        }
-        add.handleBaseURIUse = handleBaseURIUse;
+        add.handleContextOverride = handleContextOverride;
         function enabledInput(selected) {
             var istext = (selected == 'text');
             $('#add-source-file-panel').prop('hidden', selected != 'file');
@@ -57,20 +39,12 @@ var workbench;
             else {
                 autodetect.prop('disabled', false);
                 autodetect.prop('selected', true);
-                var baseURI = $('#baseURI');
-                var checked = $('#useForContext').prop('checked');
                 if (isfile) {
-                    baseURI.val(file.val() == '' ? '' : encodeURI('file://'
+                    $('#baseURI').val(file.val() == '' ? '' : encodeURI('file://'
                         + file.val().replace(/\\/g, '/')));
-                    if (checked) {
-                        setContextFromBaseURI();
-                    }
                 }
                 else if (isurl) {
-                    baseURI.val(url.val());
-                    if (checked) {
-                        setContextFromBaseURI();
-                    }
+                    $('#baseURI').val(url.val());
                 }
             }
         }
@@ -80,5 +54,6 @@ var workbench;
 workbench.addLoad(function addPageLoaded() {
     var selected = $("input[name='source']:checked").val() || 'file';
     workbench.add.enabledInput(selected == 'contents' ? 'text' : selected);
+    workbench.add.handleContextOverride();
 });
 //# sourceMappingURL=add.js.map

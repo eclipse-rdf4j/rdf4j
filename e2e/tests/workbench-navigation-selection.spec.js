@@ -5,6 +5,7 @@ const path = require('path');
 
 const SERVER_BASE_URL = process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server';
 const WORKBENCH_BASE_URL = process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench';
+const WORKBENCH_MOUNT = new URL(WORKBENCH_BASE_URL).pathname.replace(/\/+$/, '');
 const REPOSITORY_ID = `workbench-navigation-${process.pid}-${Date.now()}`;
 const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`;
 const CAPTURE_DIR = process.env.WORKBENCH_NAV_CAPTURE_DIR;
@@ -38,9 +39,9 @@ test.afterAll(async ({ request }) => {
     }
 });
 
-const MENU_DESTINATIONS = [
-    '../NONE/server',
-    'repositories',
+const menuDestinations = () => [
+	`${WORKBENCH_MOUNT}/repositories/NONE/server`,
+	`${WORKBENCH_MOUNT}/repositories/NONE/repositories`,
     'create',
     'delete',
     'summary',
@@ -126,12 +127,12 @@ async function capture(page, viewportName, routeName) {
 
 test('every menu destination has one consistent selected link on desktop and mobile', async ({ page }) => {
     const selectedTreatment = {
-        linkBackground: 'rgb(226, 232, 240)',
-        linkColor: 'rgb(15, 23, 42)',
+        linkBackground: 'rgb(227, 236, 239)',
+        linkColor: 'rgb(20, 36, 43)',
         linkWeight: '600',
         linkRadius: '7px',
         borderWidth: '3px',
-        borderColor: 'rgb(51, 65, 85)',
+        borderColor: 'rgb(47, 64, 71)',
         itemLinkInset: 0,
         contentInset: 8,
         itemBackground: 'rgba(0, 0, 0, 0)',
@@ -153,7 +154,7 @@ test('every menu destination has one consistent selected link on desktop and mob
                 url: link.href
             }))
         );
-        expect(routeLinks.map(link => link.route)).toEqual(MENU_DESTINATIONS);
+        expect(routeLinks.map(link => link.route)).toEqual(menuDestinations());
 
         const queryRoute = routeLinks.find(link => link.route === 'query');
         const addRoute = routeLinks.find(link => link.route === 'add');
@@ -175,6 +176,12 @@ test('every menu destination has one consistent selected link on desktop and mob
             await page.goto(destination.url, { waitUntil: 'load' });
             await page.locator('#workbench-page-surface').waitFor({ state: 'attached' });
             await showMobileMenu(page, viewport.name === 'mobile');
+
+            if (destination.route === `${WORKBENCH_MOUNT}/repositories/NONE/server`) {
+                await expect(page.locator('#workbench-server')).toBeVisible();
+                await expect(page.locator('#navigation a[aria-current="page"]')).toHaveCount(0);
+                continue;
+            }
 
             const activeLink = await waitForCurrentLink(page, destination.route);
             await expect(activeLink).toBeVisible();

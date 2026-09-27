@@ -106,6 +106,7 @@ workbench.addLoad(function createPageLoaded() {
         actionBody.appendChild(actionRow);
         actionTable.appendChild(actionBody);
         details.parentNode.insertBefore(actionTable, details.nextSibling);
+        workbench.installNativeDisclosure(details);
     }
     // The script is loaded after the form markup, so this runs before the
     // window load hook and is available to keyboard and automated clients at

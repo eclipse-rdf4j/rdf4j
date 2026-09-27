@@ -34,6 +34,9 @@ import java.nio.file.Path;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -63,15 +66,21 @@ import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
+import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.CookieHandler;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockServletContext;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 
 /**
@@ -107,6 +116,285 @@ public class QueryServletTest {
 	}
 
 	@Test
+	public void disabledQueryExecutionShouldRejectImplicitGetExplicitGetPostAndDownloads() throws Exception {
+		assertQueryExecutionDenied(null, false, false, false);
+		assertQueryExecutionDenied("exec", false, false, false);
+		assertQueryExecutionDenied("exec", true, false, false);
+		assertQueryExecutionDenied("exec", true, false, true);
+		assertQueryExecutionDenied(null, false, true, false);
+	}
+
+	@Test
+	public void disabledQueryExecutionShouldServeEmptyGetWithConfiguredAcceptDefault() throws Exception {
+		assertEmptyGetIsServedWhenOnlyEffectiveDefaultsExist(null, "text/csv");
+	}
+
+	@Test
+	public void disabledQueryExecutionShouldServeEmptyGetWithStaleQueryAndAcceptCookies() throws Exception {
+		assertEmptyGetIsServedWhenOnlyEffectiveDefaultsExist(SHORT_QUERY, "text/csv");
+	}
+
+	@Test
+	public void cookieOnlyExplainMustNotBypassDisabledQueryExecution() throws Exception {
+		assertQueryExecutionDenied(null, false, false, false, true);
+	}
+
+	@Test
+	public void cookieOnlyActionAndExplainDoNotClassifyAnEmptyGetAsExplain() throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			TestableQueryServlet policyServlet = new TestableQueryServlet();
+			policyServlet.setPolicy(disabledPolicy("query-execution", "query-explain"));
+			policyServlet.setRepository(repository);
+			policyServlet.setCookieHandler(mock(CookieHandler.class));
+
+			MockHttpServletRequest httpRequest = new MockHttpServletRequest("GET", "/query");
+			httpRequest.setCookies(new Cookie("action", "explain"), new Cookie("explain", "Optimized"),
+					new Cookie("query", SHORT_QUERY));
+			WorkbenchRequest request = new WorkbenchRequest(repository, httpRequest, Map.of());
+			ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getOutputStream()).thenReturn(outputStream);
+
+			policyServlet.service(request, response, "/transformations");
+
+			verify(response, never()).sendError(HttpServletResponse.SC_FORBIDDEN);
+			verify(response).setContentType("application/xml");
+			verify(response).getOutputStream();
+			assertThat(outputStream.asString()).contains("_internal/namespaces");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void disabledExplainShouldRejectGetPostAndSavedQueryReferences() throws Exception {
+		assertExplainDenied(false, false);
+		assertExplainDenied(true, false);
+		assertExplainDenied(true, true);
+	}
+
+	@Test
+	public void explainShouldRejectWhenEveryFormatIsDisabledAndTheCookieSelectsOne() throws Exception {
+		assertExplainDeniedWithoutAllowedOption(
+				disabledPolicy("explain-format-text", "explain-format-dot", "explain-format-json"),
+				"Optimized", "text");
+	}
+
+	@Test
+	public void explainShouldRejectWhenEveryLevelIsDisabledAndAStaleCookieSelectsOne() throws Exception {
+		assertExplainDeniedWithoutAllowedOption(
+				disabledPolicy("explain-level-unoptimized", "explain-level-optimized", "explain-level-executed",
+						"explain-level-telemetry", "explain-level-timed"),
+				"Optimized", "text");
+	}
+
+	@Test
+	public void explainShouldRejectExplicitBlankFormatWhenTextIsDisabled() throws Exception {
+		assertFeatureRequestDenied("explain-format-text", "explain", false, Map.of("explain-format", ""));
+		assertFeatureRequestDenied("explain-format-text", "explain", false, Map.of("explain-format", "   "));
+		assertFeatureRequestDenied("explain-format-text", "explain", true, Map.of("explain-format", ""));
+		assertFeatureRequestDenied("explain-format-text", "explain", true, Map.of("explain-format", "   "));
+	}
+
+	@Test
+	public void configuredDownloadDefaultAppliesEvenWhenTheDownloadLimitControlIsDisabled() throws Exception {
+		String result = executeQueryDownload(
+				policyWithDownloadDefault(2, false),
+				"select ?s where { values ?s { \"first\" \"second\" \"third\" } }",
+				false, 0);
+
+		assertThat(result).contains("first", "second").doesNotContain("third");
+	}
+
+	@Test
+	public void explicitDownloadLimitOverridesDeploymentDefault() throws Exception {
+		String result = executeQueryDownload(
+				policyWithDownloadDefault(2, true),
+				"select ?s where { values ?s { \"first\" \"second\" \"third\" } }",
+				true, 1);
+
+		assertThat(result).contains("first").doesNotContain("second", "third");
+	}
+
+	@Test
+	public void configuredDownloadDefaultCapsAfterAuthoredLimitAndOffset() throws Exception {
+		String result = executeQueryDownload(
+				policyWithDownloadDefault(1, false),
+				"select ?s where { values ?s { \"first\" \"second\" \"third\" } } limit 2 offset 1",
+				false, 0);
+
+		assertThat(result).contains("second").doesNotContain("first", "third");
+	}
+
+	@Test
+	public void disabledQueryLanguageRejectsAnExplicitOverride() throws Exception {
+		assertFeatureRequestDenied("query-language", "exec", false, Map.of("queryLn", "SPARQL"));
+	}
+
+	@Test
+	public void disabledQueryTimeoutRejectsAnExplicitOverride() throws Exception {
+		assertFeatureRequestDenied("query-timeout", "exec", false, Map.of("query-timeout", "0"));
+	}
+
+	@Test
+	public void disabledInferredStatementsRejectAnExplicitOverride() throws Exception {
+		assertFeatureRequestDenied("query-inferred-statements", "exec", false, Map.of("infer", "false"));
+	}
+
+	@Test
+	public void disabledPageSizeRejectsAnExplicitOverride() throws Exception {
+		assertFeatureRequestDenied("result-page-size", "exec", false, Map.of("limit_query", "100"));
+	}
+
+	@Test
+	public void disabledDatatypeDisplayRejectsAnExplicitOverride() throws Exception {
+		assertFeatureRequestDenied("result-show-datatypes", "exec", false, Map.of("show-datatypes", "true"));
+	}
+
+	@Test
+	public void disabledResultTotalsRejectAnExplicitKnownTotal() throws Exception {
+		assertFeatureRequestDenied("result-totals", "exec", false, Map.of("know_total", "3"));
+	}
+
+	@Test
+	public void disabledResultPagingRejectsAnExplicitOffset() throws Exception {
+		assertFeatureRequestDenied("result-paging", "exec", false, Map.of("offset", "100"));
+	}
+
+	@Test
+	public void disabledQuerySaveRejectsTheSaveAction() throws Exception {
+		assertFeatureRequestDenied("query-save", "save", true, Map.of());
+	}
+
+	@Test
+	public void disabledPrivateSaveRejectsAnExplicitPrivateSave() throws Exception {
+		assertFeatureRequestDenied("query-private-save", "save", true, Map.of("save-private", "true"));
+	}
+
+	@Test
+	public void disabledExplainLevelsRejectTheirExplicitSelection() throws Exception {
+		assertFeatureRequestDenied("explain-level-unoptimized", "explain", false,
+				Map.of("explain", "Unoptimized"));
+		assertFeatureRequestDenied("explain-level-optimized", "explain", false,
+				Map.of("explain", "Optimized"));
+		assertFeatureRequestDenied("explain-level-executed", "explain", false,
+				Map.of("explain", "Executed"));
+		assertFeatureRequestDenied("explain-level-telemetry", "explain", false,
+				Map.of("explain", "Telemetry"));
+		assertFeatureRequestDenied("explain-level-timed", "explain", false,
+				Map.of("explain", "Timed"));
+	}
+
+	@Test
+	public void disabledExplainFormatsRejectTheirExplicitSelection() throws Exception {
+		assertFeatureRequestDenied("explain-format-text", "explain", false, Map.of("explain-format", "text"));
+		assertFeatureRequestDenied("explain-format-dot", "explain", false, Map.of("explain-format", "dot"));
+		assertFeatureRequestDenied("explain-format-json", "explain", false, Map.of("explain-format", "json"));
+	}
+
+	@Test
+	public void disabledResultDownloadRejectsAnExplicitDownloadAction() throws Exception {
+		assertFeatureRequestDenied("result-download", "exec", false, Map.of("Accept", "text/csv"));
+	}
+
+	@Test
+	public void disabledResultDownloadFormatRejectsAnExplicitFormatOverride() throws Exception {
+		assertFeatureRequestDenied("result-download-format", "exec", false, Map.of("Accept", "text/csv"));
+	}
+
+	@Test
+	public void disabledTupleAndGraphDownloadFormatsRejectTheirExplicitOverrides() throws Exception {
+		assertFeatureRequestDenied("result-download-format-tuple", "exec", false,
+				Map.of("Accept", "text/csv"));
+		assertFeatureRequestDenied("result-download-format-graph", "exec", false,
+				Map.of("Accept", "application/n-triples"));
+	}
+
+	@Test
+	public void disabledDownloadLimitRejectsAnExplicitLimit() throws Exception {
+		assertFeatureRequestDenied("result-download-limit", "exec", false,
+				Map.of("Accept", "text/csv", "download_limit", "25"));
+	}
+
+	@Test
+	public void disabledQueryAndExplainCancellationRejectExplicitCancellationRequests() throws Exception {
+		assertFeatureRequestDenied("query-cancel", "cancel-query", true,
+				Map.of("query-request-id", "active-query"));
+		assertFeatureRequestDenied("explain-cancel", "cancel-explain", true,
+				Map.of("explain-request-id", "active-explain"));
+	}
+
+	@Test
+	public void disabledQueryLanguageDoesNotRejectCookieOnlyOrConfiguredFallbackValues() throws Exception {
+		MockHttpServletRequest rawRequest = new MockHttpServletRequest();
+		rawRequest.setMethod("GET");
+		rawRequest.addParameter("action", "exec");
+		rawRequest.setCookies(new Cookie("queryLn", "SPARQL"));
+		WorkbenchRequest request = new WorkbenchRequest(null, rawRequest, Map.of("queryLn", "SPARQL"));
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		TestableQueryServlet policyServlet = new TestableQueryServlet();
+		policyServlet.setPolicy(disabledPolicy("query-language"));
+		policyServlet.setRepository(repository);
+		policyServlet.setCookieHandler(mock(CookieHandler.class));
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
+
+		try {
+			policyServlet.service(request, response, "/transformations");
+			verify(response, never()).sendError(HttpServletResponse.SC_FORBIDDEN);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void disabledQueryLanguageUsesItsConfiguredDefaultInsteadOfAStaleCookie() throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			MockHttpServletRequest rawRequest = new MockHttpServletRequest();
+			rawRequest.setMethod("GET");
+			rawRequest.addParameter("action", "exec");
+			rawRequest.addParameter("query", SHORT_QUERY);
+			rawRequest.setCookies(new Cookie("queryLn", "SERQL"));
+			WorkbenchRequest request = new WorkbenchRequest(repository, rawRequest, Map.of("queryLn", "SPARQL"));
+			TestableQueryServlet policyServlet = new TestableQueryServlet();
+			policyServlet.setPolicy(disabledPolicy("query-language"), Map.of(
+					"transformations", "/transformations", "default-queryLn", "SPARQL"));
+			policyServlet.setRepository(repository);
+			policyServlet.setCookieHandler(mock(CookieHandler.class));
+			ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getOutputStream()).thenReturn(outputStream);
+
+			policyServlet.service(request, response, "/transformations");
+
+			assertThat(outputStream.asString()).contains("<sparql");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	public void explicitDuplicateValuesUseWorkbenchRequestPrecedenceForFeatureChecks() throws Exception {
+		MockHttpServletRequest rawRequest = new MockHttpServletRequest();
+		rawRequest.setMethod("GET");
+		rawRequest.addParameter("action", "exec");
+		rawRequest.addParameter("query", SHORT_QUERY);
+		rawRequest.addParameter("queryLn", "SPARQL");
+		rawRequest.addParameter("queryLn", "SPARQL");
+		rawRequest.setCookies(new Cookie("queryLn", "SPARQL"));
+		WorkbenchRequest request = new WorkbenchRequest(null, rawRequest, Map.of("queryLn", "SPARQL"));
+		assertThat(request.isParameterPresent("queryLn")).isTrue();
+		assertThat(request.getParameter("queryLn")).isEqualTo("SPARQL");
+
+		assertFeatureRequestDenied("query-language", "exec", false, request);
+	}
+
+	@Test
 	public void testCookieNamesShouldPreserveSavedQueryOwner() {
 		servlet.writeQueryCookie = true;
 
@@ -124,7 +412,7 @@ public class QueryServletTest {
 			servlet.writeQueryCookie = false;
 
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
-			when(request.getParameter("action")).thenReturn("exec");
+			stubAction(request, "exec");
 			when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 			when(request.getParameter(QueryServlet.QUERY)).thenReturn(longQuery);
 			when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
@@ -240,7 +528,7 @@ public class QueryServletTest {
 		when(storage.askExists(any(), eq("my-query"), eq(""))).thenReturn(false);
 
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("save");
+		stubAction(request, "save");
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 		when(request.getParameter("query-name")).thenReturn("my-query");
@@ -280,7 +568,7 @@ public class QueryServletTest {
 		when(storage.selectSavedQuery(any(), eq(""), eq("my-query"))).thenReturn(savedQuery);
 
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("save");
+		stubAction(request, "save");
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 		when(request.getParameter("query-name")).thenReturn("my-query");
@@ -317,7 +605,7 @@ public class QueryServletTest {
 		when(storage.askExists(any(), eq("my-query"), eq(""))).thenReturn(false);
 
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("save");
+		stubAction(request, "save");
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 		when(request.getParameter("query-name")).thenReturn("my-query");
@@ -354,7 +642,7 @@ public class QueryServletTest {
 		Explanation explanation = mock(Explanation.class);
 		IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:private");
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("explain");
+		stubAction(request, "explain");
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
@@ -392,7 +680,7 @@ public class QueryServletTest {
 		servlet.setRepository(repository);
 
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("explain");
+		stubAction(request, "explain");
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
@@ -428,7 +716,7 @@ public class QueryServletTest {
 		servlet.setRepository(repository);
 
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("explain");
+		stubAction(request, "explain");
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
@@ -457,7 +745,7 @@ public class QueryServletTest {
 	@Test
 	public void testCancelExplainShouldRejectBlankRequestIdAndReturnNotFoundForUnknownId() throws Exception {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("cancel-explain");
+		stubAction(request, "cancel-explain");
 		when(request.isParameterPresent("explain-request-id")).thenReturn(true);
 		when(request.getParameter("explain-request-id")).thenReturn("   ");
 
@@ -468,7 +756,7 @@ public class QueryServletTest {
 		verify(response).sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: explain-request-id");
 
 		WorkbenchRequest unknownRequest = mock(WorkbenchRequest.class);
-		when(unknownRequest.getParameter("action")).thenReturn("cancel-explain");
+		stubAction(unknownRequest, "cancel-explain");
 		when(unknownRequest.isParameterPresent("explain-request-id")).thenReturn(true);
 		when(unknownRequest.getParameter("explain-request-id")).thenReturn("completed-explanation");
 		HttpServletResponse unknownResponse = mock(HttpServletResponse.class);
@@ -485,6 +773,7 @@ public class QueryServletTest {
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		AsyncExplainCoordinator asyncExplainCoordinator = new AsyncExplainCoordinator();
 		ExecutorService executor = Executors.newSingleThreadExecutor();
+		servlet.setPolicy(disabledPolicy("explain-cancel"));
 		servlet.setRepository(repository);
 		servlet.substituteAsyncExplainCoordinator(asyncExplainCoordinator);
 
@@ -507,7 +796,7 @@ public class QueryServletTest {
 		});
 
 		WorkbenchRequest explainRequest = mock(WorkbenchRequest.class);
-		when(explainRequest.getParameter("action")).thenReturn("explain");
+		stubAction(explainRequest, "explain");
 		when(explainRequest.isParameterPresent(QueryServlet.REF)).thenReturn(false);
 		when(explainRequest.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(explainRequest.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
@@ -522,13 +811,6 @@ public class QueryServletTest {
 		HttpServletResponse explainResponse = mock(HttpServletResponse.class);
 		when(explainResponse.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
 
-		WorkbenchRequest cancelRequest = mock(WorkbenchRequest.class);
-		when(cancelRequest.getParameter("action")).thenReturn("cancel-explain");
-		when(cancelRequest.isParameterPresent("explain-request-id")).thenReturn(true);
-		when(cancelRequest.getParameter("explain-request-id")).thenReturn("req-123");
-
-		HttpServletResponse cancelResponse = mock(HttpServletResponse.class);
-
 		try {
 			Future<?> explainFuture = executor
 					.submit(() -> {
@@ -540,9 +822,7 @@ public class QueryServletTest {
 			assertThat(explainFuture.isDone()).isFalse();
 			verify(explainRequest, never()).startAsync(any(), any());
 
-			servlet.doPost(cancelRequest, cancelResponse, "/transformations");
-
-			verify(cancelResponse).setStatus(HttpServletResponse.SC_NO_CONTENT);
+			asyncExplainCoordinator.shutdown();
 			assertThat(explainInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
 			assertThat(interrupted).isTrue();
 			assertThatCode(() -> explainFuture.get(5, TimeUnit.SECONDS)).doesNotThrowAnyException();
@@ -557,7 +837,7 @@ public class QueryServletTest {
 	@Test
 	public void testCancelQueryShouldRejectBlankRequestIdAndReturnNotFoundForUnknownId() throws Exception {
 		WorkbenchRequest blankRequest = mock(WorkbenchRequest.class);
-		when(blankRequest.getParameter("action")).thenReturn("cancel-query");
+		stubAction(blankRequest, "cancel-query");
 		when(blankRequest.isParameterPresent("query-request-id")).thenReturn(true);
 		when(blankRequest.getParameter("query-request-id")).thenReturn("   ");
 		HttpServletResponse blankResponse = mock(HttpServletResponse.class);
@@ -567,7 +847,7 @@ public class QueryServletTest {
 		verify(blankResponse).sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: query-request-id");
 
 		WorkbenchRequest unknownRequest = mock(WorkbenchRequest.class);
-		when(unknownRequest.getParameter("action")).thenReturn("cancel-query");
+		stubAction(unknownRequest, "cancel-query");
 		when(unknownRequest.isParameterPresent("query-request-id")).thenReturn(true);
 		when(unknownRequest.getParameter("query-request-id")).thenReturn("completed-request");
 		HttpServletResponse unknownResponse = mock(HttpServletResponse.class);
@@ -586,6 +866,7 @@ public class QueryServletTest {
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		CancellableOperationCoordinator queryCoordinator = new CancellableOperationCoordinator();
 		ExecutorService executor = Executors.newSingleThreadExecutor();
+		servlet.setPolicy(disabledPolicy("query-cancel"));
 		servlet.setRepository(repository);
 		servlet.substituteQueryCoordinator(queryCoordinator);
 
@@ -610,7 +891,7 @@ public class QueryServletTest {
 		});
 
 		WorkbenchRequest queryRequest = mock(WorkbenchRequest.class);
-		when(queryRequest.getParameter("action")).thenReturn("exec");
+		stubAction(queryRequest, "exec");
 		when(queryRequest.isParameterPresent(QueryServlet.REF)).thenReturn(false);
 		when(queryRequest.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(queryRequest.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
@@ -630,12 +911,6 @@ public class QueryServletTest {
 		HttpServletResponse queryResponse = mock(HttpServletResponse.class);
 		when(queryResponse.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
 
-		WorkbenchRequest cancelRequest = mock(WorkbenchRequest.class);
-		when(cancelRequest.getParameter("action")).thenReturn("cancel-query");
-		when(cancelRequest.isParameterPresent("query-request-id")).thenReturn(true);
-		when(cancelRequest.getParameter("query-request-id")).thenReturn("query-123");
-		HttpServletResponse cancelResponse = mock(HttpServletResponse.class);
-
 		try {
 			Future<?> queryFuture = executor.submit(() -> {
 				servlet.service(queryRequest, queryResponse, "/transformations");
@@ -646,9 +921,7 @@ public class QueryServletTest {
 			assertThat(contextPropagated).isTrue();
 			assertThat(queryFuture.isDone()).isFalse();
 
-			servlet.doPost(cancelRequest, cancelResponse, "/transformations");
-
-			verify(cancelResponse).setStatus(HttpServletResponse.SC_NO_CONTENT);
+			queryCoordinator.shutdown();
 			assertThat(queryInterrupted.await(5, TimeUnit.SECONDS)).isTrue();
 			assertThatCode(() -> queryFuture.get(5, TimeUnit.SECONDS)).doesNotThrowAnyException();
 			verify(connection, atLeastOnce()).close();
@@ -697,7 +970,7 @@ public class QueryServletTest {
 		}).when(repository).cancelQuery("query-retry");
 
 		WorkbenchRequest queryRequest = mock(WorkbenchRequest.class);
-		when(queryRequest.getParameter("action")).thenReturn("exec");
+		stubAction(queryRequest, "exec");
 		when(queryRequest.isParameterPresent(QueryServlet.REF)).thenReturn(false);
 		when(queryRequest.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(queryRequest.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
@@ -717,12 +990,12 @@ public class QueryServletTest {
 		HttpServletResponse queryResponse = mock(HttpServletResponse.class);
 		when(queryResponse.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
 		WorkbenchRequest firstCancelRequest = mock(WorkbenchRequest.class);
-		when(firstCancelRequest.getParameter("action")).thenReturn("cancel-query");
+		stubAction(firstCancelRequest, "cancel-query");
 		when(firstCancelRequest.isParameterPresent("query-request-id")).thenReturn(true);
 		when(firstCancelRequest.getParameter("query-request-id")).thenReturn("query-retry");
 		HttpServletResponse firstCancelResponse = mock(HttpServletResponse.class);
 		WorkbenchRequest secondCancelRequest = mock(WorkbenchRequest.class);
-		when(secondCancelRequest.getParameter("action")).thenReturn("cancel-query");
+		stubAction(secondCancelRequest, "cancel-query");
 		when(secondCancelRequest.isParameterPresent("query-request-id")).thenReturn(true);
 		when(secondCancelRequest.getParameter("query-request-id")).thenReturn("query-retry");
 		HttpServletResponse secondCancelResponse = mock(HttpServletResponse.class);
@@ -756,7 +1029,7 @@ public class QueryServletTest {
 			servlet.setRepository(repository);
 			servlet.writeQueryCookie = true;
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
-			when(request.getParameter("action")).thenReturn("exec");
+			stubAction(request, "exec");
 			when(request.isParameterPresent("Accept")).thenReturn(true);
 			when(request.getParameter("Accept")).thenReturn("text/csv");
 			when(request.getHeader("Accept")).thenReturn("application/sparql-results+xml");
@@ -782,7 +1055,7 @@ public class QueryServletTest {
 			servlet.setRepository(repository);
 			servlet.writeQueryCookie = true;
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
-			when(request.getParameter("action")).thenReturn("exec");
+			stubAction(request, "exec");
 			when(request.isParameterPresent("Accept")).thenReturn(true);
 			when(request.getParameter("Accept")).thenReturn("text/csv");
 			when(request.getHeader("Accept")).thenReturn("application/sparql-results+xml");
@@ -811,7 +1084,7 @@ public class QueryServletTest {
 			servlet.writeQueryCookie = false;
 
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
-			when(request.getParameter("action")).thenReturn("exec");
+			stubAction(request, "exec");
 			when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 			when(request.getParameter(QueryServlet.QUERY)).thenReturn(longQuery);
 			when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
@@ -856,7 +1129,7 @@ public class QueryServletTest {
 			servlet.writeQueryCookie = true;
 
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
-			when(request.getParameter("action")).thenReturn("exec");
+			stubAction(request, "exec");
 			when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 			when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 			when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
@@ -904,7 +1177,7 @@ public class QueryServletTest {
 			servlet.writeQueryCookie = true;
 
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
-			when(request.getParameter("action")).thenReturn("exec");
+			stubAction(request, "exec");
 			when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 			when(request.getParameter(QueryServlet.QUERY)).thenReturn("");
 			when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
@@ -950,7 +1223,7 @@ public class QueryServletTest {
 
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
 			String queryText = "select ?__workbench_query_text where { values ?__workbench_query_text { \"user value\" } }";
-			when(request.getParameter("action")).thenReturn("exec");
+			stubAction(request, "exec");
 			when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 			when(request.getParameter(QueryServlet.QUERY)).thenReturn(queryText);
 			when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
@@ -993,6 +1266,311 @@ public class QueryServletTest {
 		assertThat(queryServletSource).contains("new BufferedOutputStream");
 	}
 
+	private static void stubAction(WorkbenchRequest request, String action) {
+		when(request.getParameter("action")).thenReturn(action);
+		when(request.isParameterPresent("action")).thenReturn(action != null);
+	}
+
+	private void assertQueryExecutionDenied(String action, boolean post, boolean download, boolean savedQuery)
+			throws Exception {
+		assertQueryExecutionDenied(action, post, download, savedQuery, false);
+	}
+
+	private void assertQueryExecutionDenied(String action, boolean post, boolean download, boolean savedQuery,
+			boolean explainCookie)
+			throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			TestableQueryServlet policyServlet = new TestableQueryServlet();
+			policyServlet.setPolicy(disabledPolicy("query-execution"));
+			policyServlet.setRepository(repository);
+			policyServlet.setCookieHandler(mock(CookieHandler.class));
+
+			String ref = post ? (savedQuery ? "id" : "text") : "text";
+			String queryText = savedQuery ? "saved-query" : SHORT_QUERY;
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			stubAction(request, action);
+			when(request.getMethod()).thenReturn(post ? "POST" : "GET");
+			when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+			when(request.getParameter(QueryServlet.QUERY)).thenReturn(queryText);
+			when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
+			when(request.getParameter(QueryServlet.REF)).thenReturn(ref);
+			when(request.getParameter("owner")).thenReturn("");
+			when(request.getParameter("server-user")).thenReturn("");
+			when(request.getParameter("queryLn")).thenReturn("SPARQL");
+			when(request.isParameterPresent("infer")).thenReturn(false);
+			when(request.isParameterPresent("Accept")).thenReturn(download);
+			when(request.getParameter("Accept")).thenReturn(download ? "text/csv" : null);
+			when(request.isParameterPresent("explain")).thenReturn(false);
+			when(request.getParameter("explain")).thenReturn(explainCookie ? "Optimized" : null);
+			when(request.getInt("offset")).thenReturn(0);
+			when(request.getInt("limit_query")).thenReturn(0);
+			when(request.getInt("download_limit")).thenReturn(0);
+			when(request.getInt("know_total")).thenReturn(0);
+			when(request.getInt("query-timeout")).thenReturn(0);
+			when(request.getHeader("Accept-Encoding")).thenReturn(null);
+			when(request.getContextPath()).thenReturn("");
+
+			if (savedQuery) {
+				IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:saved");
+				QueryStorage storage = mock(QueryStorage.class);
+				policyServlet.substituteQueryStorage(storage);
+				when(storage.selectSavedQuery(anyString(), eq(""), eq("saved-query"))).thenReturn(queryId);
+				when(storage.canRead(queryId, "")).thenReturn(true);
+				when(storage.getQueryText(anyString(), eq(""), eq("saved-query"))).thenReturn(SHORT_QUERY);
+			}
+
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
+			if (post) {
+				policyServlet.doPost(request, response, "/transformations");
+			} else {
+				policyServlet.service(request, response, "/transformations");
+			}
+
+			verify(response).sendError(HttpServletResponse.SC_FORBIDDEN);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private void assertFeatureRequestDenied(String featureId, String action, boolean post,
+			Map<String, String> parameters) throws Exception {
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		stubAction(request, action);
+		when(request.getMethod()).thenReturn(post ? "POST" : "GET");
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.getParameter("explain")).thenReturn("Optimized");
+		when(request.getParameter("explain-format")).thenReturn("text");
+		when(request.isParameterPresent("explain")).thenReturn(false);
+		when(request.isParameterPresent("Accept")).thenReturn(false);
+		when(request.getHeader("Accept-Encoding")).thenReturn(null);
+		when(request.getContextPath()).thenReturn("");
+		parameters.forEach((name, value) -> {
+			when(request.isParameterPresent(name)).thenReturn(true);
+			when(request.getParameter(name)).thenReturn(value);
+		});
+		assertFeatureRequestDenied(featureId, action, post, request);
+	}
+
+	private void assertFeatureRequestDenied(String featureId, String action, boolean post,
+			WorkbenchRequest request) throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			TestableQueryServlet policyServlet = new TestableQueryServlet();
+			policyServlet.setPolicy(disabledPolicy(featureId));
+			policyServlet.setRepository(repository);
+			policyServlet.setCookieHandler(mock(CookieHandler.class));
+			QueryStorage storage = mock(QueryStorage.class);
+			when(storage.checkAccess(any())).thenReturn(false);
+			policyServlet.substituteQueryStorage(storage);
+
+			ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getOutputStream()).thenReturn(outputStream);
+			when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+			if (post) {
+				policyServlet.doPost(request, response, "/transformations");
+			} else {
+				policyServlet.service(request, response, "/transformations");
+			}
+
+			verify(response).sendError(HttpServletResponse.SC_FORBIDDEN);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private void assertEmptyGetIsServedWhenOnlyEffectiveDefaultsExist(String effectiveQuery, String effectiveAccept)
+			throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			TestableQueryServlet policyServlet = new TestableQueryServlet();
+			policyServlet.setPolicy(disabledPolicy("query-execution"));
+			policyServlet.setRepository(repository);
+			policyServlet.setCookieHandler(mock(CookieHandler.class));
+
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			stubAction(request, null);
+			when(request.getMethod()).thenReturn("GET");
+			when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(false);
+			when(request.getParameter(QueryServlet.QUERY)).thenReturn(effectiveQuery);
+			when(request.isParameterPresent("Accept")).thenReturn(false);
+			when(request.getParameter("Accept")).thenReturn(effectiveAccept);
+			when(request.getHeader("Accept-Encoding")).thenReturn(null);
+			when(request.getContextPath()).thenReturn("");
+
+			ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getOutputStream()).thenReturn(outputStream);
+
+			policyServlet.service(request, response, "/transformations");
+
+			verify(response, never()).sendError(HttpServletResponse.SC_FORBIDDEN);
+			verify(response).setContentType("application/xml");
+			verify(response).getOutputStream();
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private void assertExplainDenied(boolean post, boolean savedQuery) throws Exception {
+		Repository repository = mock(Repository.class);
+		when(repository.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+		TestableQueryServlet policyServlet = new TestableQueryServlet();
+		policyServlet.setPolicy(disabledPolicy("query-explain"));
+		policyServlet.setRepository(repository);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("plan");
+
+		String ref = savedQuery ? "id" : "text";
+		String queryText = savedQuery ? "saved-query" : SHORT_QUERY;
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		stubAction(request, "explain");
+		when(request.getMethod()).thenReturn(post ? "POST" : "GET");
+		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
+		when(request.getParameter(QueryServlet.REF)).thenReturn(ref);
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn(queryText);
+		when(request.getParameter("owner")).thenReturn("");
+		when(request.getParameter("server-user")).thenReturn("");
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.getParameter("explain")).thenReturn("Optimized");
+		when(request.getParameter("explain-format")).thenReturn("text");
+		when(request.isParameterPresent("infer")).thenReturn(false);
+		when(request.isParameterPresent("explain-request-id")).thenReturn(false);
+		when(request.getInt("query-timeout")).thenReturn(0);
+
+		if (savedQuery) {
+			IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:saved-explain");
+			QueryStorage storage = mock(QueryStorage.class);
+			policyServlet.substituteQueryStorage(storage);
+			when(storage.selectSavedQuery(anyString(), eq(""), eq("saved-query"))).thenReturn(queryId);
+			when(storage.canRead(queryId, "")).thenReturn(true);
+			when(storage.getQueryText(anyString(), eq(""), eq("saved-query"))).thenReturn(SHORT_QUERY);
+		}
+
+		StringWriter body = new StringWriter();
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+		if (post) {
+			policyServlet.doPost(request, response, "/transformations");
+		} else {
+			policyServlet.service(request, response, "/transformations");
+		}
+
+		verify(response).sendError(HttpServletResponse.SC_FORBIDDEN);
+		verify(repository, never()).getConnection();
+	}
+
+	private void assertExplainDeniedWithoutAllowedOption(WorkbenchPolicy policy, String staleLevel, String staleFormat)
+			throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+		TestableQueryServlet policyServlet = new TestableQueryServlet();
+		policyServlet.setPolicy(policy);
+		policyServlet.setRepository(repository);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("plan");
+
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		stubAction(request, "explain");
+		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.getParameter("explain")).thenReturn(staleLevel);
+		when(request.isParameterPresent("explain")).thenReturn(false);
+		when(request.getParameter("explain-format")).thenReturn(staleFormat);
+		when(request.isParameterPresent("explain-format")).thenReturn(false);
+		when(request.getParameter("owner")).thenReturn("");
+		when(request.getParameter("server-user")).thenReturn("");
+		when(request.isParameterPresent("infer")).thenReturn(false);
+		when(request.getInt("query-timeout")).thenReturn(0);
+
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
+		policyServlet.service(request, response, "/transformations");
+
+		verify(response).sendError(HttpServletResponse.SC_FORBIDDEN);
+		verify(repository, never()).getConnection();
+	}
+
+	private String executeQueryDownload(WorkbenchPolicy policy, String queryText, boolean hasRequestLimit,
+			int requestLimit) throws Exception {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			TestableQueryServlet policyServlet = new TestableQueryServlet();
+			policyServlet.setPolicy(policy);
+			policyServlet.setRepository(repository);
+			policyServlet.setCookieHandler(mock(CookieHandler.class));
+
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			stubAction(request, "exec");
+			when(request.getMethod()).thenReturn("GET");
+			when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+			when(request.getParameter(QueryServlet.QUERY)).thenReturn(queryText);
+			when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
+			when(request.getParameter(QueryServlet.REF)).thenReturn("text");
+			when(request.getParameter("queryLn")).thenReturn("SPARQL");
+			when(request.isParameterPresent("infer")).thenReturn(false);
+			when(request.isParameterPresent("Accept")).thenReturn(true);
+			when(request.getParameter("Accept")).thenReturn("text/csv");
+			when(request.isParameterPresent("download_limit")).thenReturn(hasRequestLimit);
+			when(request.getParameter("download_limit"))
+					.thenReturn(hasRequestLimit ? Integer.toString(requestLimit) : null);
+			when(request.getInt("download_limit")).thenReturn(requestLimit);
+			when(request.isParameterPresent("explain")).thenReturn(false);
+			when(request.getInt("offset")).thenReturn(9);
+			when(request.getInt("limit_query")).thenReturn(1);
+			when(request.getInt("know_total")).thenReturn(0);
+			when(request.getInt("query-timeout")).thenReturn(0);
+			when(request.getHeader("Accept-Encoding")).thenReturn(null);
+			when(request.getContextPath()).thenReturn("");
+
+			ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+			HttpServletResponse response = mock(HttpServletResponse.class);
+			when(response.getOutputStream()).thenReturn(outputStream);
+
+			policyServlet.service(request, response, "/transformations");
+			return outputStream.asString();
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static WorkbenchPolicy disabledPolicy(String... featureIds) {
+		Properties properties = new Properties();
+		properties.setProperty("query.consumer-feature-ids", String.join(",", featureIds));
+		for (String featureId : featureIds) {
+			properties.setProperty("query.feature." + featureId + ".enabled", "false");
+		}
+		return WorkbenchPolicy.fromProperties(properties, Set.of());
+	}
+
+	private static WorkbenchPolicy policyWithDownloadDefault(int limit, boolean limitFeatureEnabled) {
+		Properties properties = new Properties();
+		properties.setProperty("query.consumer-feature-ids", "query-execution");
+		properties.setProperty("query.feature.result-download-limit.enabled", Boolean.toString(limitFeatureEnabled));
+		properties.setProperty("query.download.default-limit", Integer.toString(limit));
+		return WorkbenchPolicy.fromProperties(properties, Set.of());
+	}
+
 	private static final class ByteArrayServletOutputStream extends ServletOutputStream {
 		private final ByteArrayOutputStream delegate = new ByteArrayOutputStream();
 
@@ -1029,6 +1607,16 @@ public class QueryServletTest {
 	private static final class TestableQueryServlet extends QueryServlet {
 		private void setCookieHandler(CookieHandler cookieHandler) {
 			this.cookies = cookieHandler;
+		}
+
+		private void setPolicy(WorkbenchPolicy policy) {
+			setPolicy(policy, Map.of());
+		}
+
+		private void setPolicy(WorkbenchPolicy policy, Map<String, String> initParameters) {
+			MockServletContext context = new MockServletContext();
+			context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE, policy);
+			this.config = new TestServletConfig("query", context, initParameters);
 		}
 	}
 }

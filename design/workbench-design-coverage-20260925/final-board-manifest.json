@@ -1,0 +1,821 @@
+{
+  "manifestVersion": 1,
+  "generated": "2026-09-27",
+  "gallery": "index.html",
+  "logo": {
+    "path": "images/rdf4j-logo-reference.png",
+    "sourceAsset": "tools/workbench/src/main/webapp/images/logo.png",
+    "mediaType": "image/png",
+    "bytes": 2256,
+    "sha256": "d5badfdce7a705c5790b72506eea98f696de5f9a9345ddb07bc820a839e7ea2e",
+    "unchangedSourceCopy": true
+  },
+  "boardCount": 32,
+  "imageCount": 64,
+  "boards": [
+    {
+      "id": "B01",
+      "group": "Shared shell",
+      "title": "Application shell",
+      "routes": [
+        "common shell / all routes"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B01-application-shell-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1509883,
+          "sha256": "e5f84310a5b1c416f6243b6940875751cc7cf81b5c578801a486c2ca18d14c10"
+        },
+        {
+          "theme": "light",
+          "path": "images/B01-application-shell.png",
+          "mediaType": "image/png",
+          "bytes": 1332190,
+          "sha256": "b0b41656cb5ef39ebd2ed5bb8293e4364504cf99e0b71cd2bfa176dfffc659a2"
+        }
+      ]
+    },
+    {
+      "id": "B02",
+      "group": "Workbench components",
+      "title": "Accessible component atlas",
+      "routes": [
+        "shared component patterns"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B02-accessible-component-atlas-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1562602,
+          "sha256": "8bdcf570e53be09b5a16f9ca7016619806527a9446e6967351caadcff2965664"
+        },
+        {
+          "theme": "light",
+          "path": "images/B02-accessible-component-atlas.png",
+          "mediaType": "image/png",
+          "bytes": 1545126,
+          "sha256": "6bd725b4845c672294a02218edbc9832fd33b4cc138b4f0f68813db31bd8f13f"
+        }
+      ]
+    },
+    {
+      "id": "B03",
+      "group": "Server",
+      "title": "Server connection",
+      "routes": [
+        "/NONE/server"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B03-server-connection-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1145405,
+          "sha256": "720e0140b8bb31da49dc9288934306c03f40c45becdd8538ff6b686061ce7cc7"
+        },
+        {
+          "theme": "light",
+          "path": "images/B03-server-connection.png",
+          "mediaType": "image/png",
+          "bytes": 1005927,
+          "sha256": "df6f842fc421f7a04dedc0f32bbf83095b592098be8cae36757d5ba3cd86f569"
+        }
+      ]
+    },
+    {
+      "id": "B04",
+      "group": "Repositories",
+      "title": "Repositories index",
+      "routes": [
+        "/repositories"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B04-repositories-index-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1250906,
+          "sha256": "e15cb35f8c7175b2eb08bfd83997853e20a3af08317fd57d56d2dddc638dcff1"
+        },
+        {
+          "theme": "light",
+          "path": "images/B04-repositories-index.png",
+          "mediaType": "image/png",
+          "bytes": 1106927,
+          "sha256": "ba8e7e750adebc72f8386771008ecccf6d9eba64f56460fa229636ea886a7ecc"
+        }
+      ]
+    },
+    {
+      "id": "B05",
+      "group": "Delete",
+      "title": "Delete repository",
+      "routes": [
+        "/delete"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B05-delete-repository-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1457739,
+          "sha256": "64fa6cbb06ccd28209a021230b1d7996c384acb8db7a047fb202e01f65926675"
+        },
+        {
+          "theme": "light",
+          "path": "images/B05-delete-repository.png",
+          "mediaType": "image/png",
+          "bytes": 1410356,
+          "sha256": "efa1ac443547c8e183ed6e7eddf7e732a84061509765f1d73450c326bfaa890a"
+        }
+      ]
+    },
+    {
+      "id": "B06",
+      "group": "Create",
+      "title": "Create chooser and base form",
+      "routes": [
+        "/create (chooser)",
+        "/create?type=<selected> (generic template)"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B06-create-chooser-base-form-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1549851,
+          "sha256": "b4e1e480269a3cf3ed470f87c2969fa1603d7316f4c0f771090f857d1ec4fbd9"
+        },
+        {
+          "theme": "light",
+          "path": "images/B06-create-chooser-base-form.png",
+          "mediaType": "image/png",
+          "bytes": 1394541,
+          "sha256": "a55bcb11628c4b756808c19136cedb4b967c582359a6d95d13d8371afbd99813"
+        }
+      ]
+    },
+    {
+      "id": "B07",
+      "group": "Create Memory",
+      "title": "Memory repository baseline",
+      "routes": [
+        "/create?type=memory"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B07-memory-repository-baseline-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1403119,
+          "sha256": "6f901c5078b470d886319882d981856bbd5f682d649636a1b250692edfc03986"
+        },
+        {
+          "theme": "light",
+          "path": "images/B07-memory-repository-baseline.png",
+          "mediaType": "image/png",
+          "bytes": 1226635,
+          "sha256": "4ff49d68d6e734c7f1a9a9af06662b12aa3db9b324aff8f95aac57ad55286293"
+        }
+      ]
+    },
+    {
+      "id": "B08",
+      "group": "Memory configuration variants",
+      "title": "Memory repository variants",
+      "routes": [
+        "/create?type=memory* (component board)"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B08-memory-repository-variants-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1410751,
+          "sha256": "c19a63d66896b0e1144890188d0a7349a22897652c99efdfb5c5d1feb052fcb5"
+        },
+        {
+          "theme": "light",
+          "path": "images/B08-memory-repository-variants.png",
+          "mediaType": "image/png",
+          "bytes": 1208693,
+          "sha256": "64ae90eddb0cbd7a96c1698e96efe7be103651d6689cce6243cd220a97fede41"
+        }
+      ]
+    },
+    {
+      "id": "B09",
+      "group": "Create Native",
+      "title": "Native repository baseline",
+      "routes": [
+        "/create?type=native"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B09-native-repository-baseline-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1581977,
+          "sha256": "97ba20c8eeb9254158bc9c565ebb08883fa6a82bfd1a481fd1a9a21aab08cb57"
+        },
+        {
+          "theme": "light",
+          "path": "images/B09-native-repository-baseline.png",
+          "mediaType": "image/png",
+          "bytes": 1455455,
+          "sha256": "8fcdd041c12763f21a617c17477ea814ef9984a320ae29e543dbb1057ced331a"
+        }
+      ]
+    },
+    {
+      "id": "B10",
+      "group": "Native configuration variants",
+      "title": "Native repository variants",
+      "routes": [
+        "/create?type=native* (component board)"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B10-native-repository-variants-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1381903,
+          "sha256": "eb58533b38b0e50180bc0624726f37e93dfc621ab89bde37bff3f67a7ed37dad"
+        },
+        {
+          "theme": "light",
+          "path": "images/B10-native-repository-variants.png",
+          "mediaType": "image/png",
+          "bytes": 1198496,
+          "sha256": "cb219170477e8a6dcc883c77693f997e615fc7ec88362526334961e7fad88b26"
+        }
+      ]
+    },
+    {
+      "id": "B11",
+      "group": "Create Remote",
+      "title": "Remote repository configuration",
+      "routes": [
+        "/create?type=remote"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B11-remote-repository-configuration-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1206989,
+          "sha256": "a793dc64091d8ac8ac7496dfc1a7801bc8ae3997b36ac4a07b93c0103d138f2a"
+        },
+        {
+          "theme": "light",
+          "path": "images/B11-remote-repository-configuration.png",
+          "mediaType": "image/png",
+          "bytes": 1005970,
+          "sha256": "52f7da16cde4e18dc138bbf71ecb4379225ad8426c81be6c5389c8cfa293ed98"
+        }
+      ]
+    },
+    {
+      "id": "B12",
+      "group": "Create SPARQL endpoint",
+      "title": "SPARQL endpoint repository",
+      "routes": [
+        "/create?type=sparql"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B12-sparql-endpoint-repository-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1140219,
+          "sha256": "f212ecf96a7f0199650315377706ed1e2b27dfc42f37126680573d1db972bfb0"
+        },
+        {
+          "theme": "light",
+          "path": "images/B12-sparql-endpoint-repository.png",
+          "mediaType": "image/png",
+          "bytes": 954833,
+          "sha256": "f2dcacf3cdd021dcddc60291665d4f0ca2cdcca263d90b082e2a0b7eed341d9f"
+        }
+      ]
+    },
+    {
+      "id": "B13",
+      "group": "Create Federation",
+      "title": "Federation configuration",
+      "routes": [
+        "/create?type=federate"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B13-federation-configuration-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1179493,
+          "sha256": "41ba8136fd27189df26ca3359d125b9c9fcff78dc6d0117ea27300b34b7801d4"
+        },
+        {
+          "theme": "light",
+          "path": "images/B13-federation-configuration.png",
+          "mediaType": "image/png",
+          "bytes": 1045891,
+          "sha256": "dafde263e18677b18d96336fbcce4e369ab9b3ba44e0842e62e54f72fa86332c"
+        }
+      ]
+    },
+    {
+      "id": "B14",
+      "group": "Create LMDB",
+      "title": "LMDB repository core",
+      "routes": [
+        "/create?type=lmdb"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B14-lmdb-repository-core-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1244751,
+          "sha256": "e6cfc2ba41676778897a6abffb00d11ba0ea070cd12792cac73dd228e4a2b1b3"
+        },
+        {
+          "theme": "light",
+          "path": "images/B14-lmdb-repository-core.png",
+          "mediaType": "image/png",
+          "bytes": 1047080,
+          "sha256": "17f983939631a9c556cdb2179740ee731a3180a40c87e8de2b24a90c612bbfd8"
+        }
+      ]
+    },
+    {
+      "id": "B15",
+      "group": "LMDB Advanced options",
+      "title": "LMDB advanced configuration",
+      "routes": [
+        "/create?type=lmdb (Advanced open)"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B15-lmdb-advanced-configuration-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1494416,
+          "sha256": "c45b3ab195289a0bae776c27279d9543e3197f100a1be994f2196547b00cd157"
+        },
+        {
+          "theme": "light",
+          "path": "images/B15-lmdb-advanced-configuration.png",
+          "mediaType": "image/png",
+          "bytes": 1293271,
+          "sha256": "b2df2afdc17f4645824a42b935835d9d4e341b2515ad792476e2b83ac9b82b9c"
+        }
+      ]
+    },
+    {
+      "id": "B16",
+      "group": "Query",
+      "title": "Query workspace",
+      "routes": [
+        "/query"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B16-query-workspace-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1183158,
+          "sha256": "32ec59cd6d39683652cc22542e721c437394f39fa21c1d442783bd1746d3a5e4"
+        },
+        {
+          "theme": "light",
+          "path": "images/B16-query-workspace.png",
+          "mediaType": "image/png",
+          "bytes": 1526028,
+          "sha256": "da9b7c5b6c1aba4627501f1dd170a0b8c0f5c736fb0bdd0c4664d68891241e8f"
+        }
+      ]
+    },
+    {
+      "id": "B17",
+      "group": "Query panels",
+      "title": "Query options and saved query",
+      "routes": [
+        "/query (Query Options and Save panels)"
+      ],
+      "caption": "Query options and Save query · closed/open states",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B17-query-options-save-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1718514,
+          "sha256": "ed1bb41c94de119540149c7d711f041f8d5de4099af7bc07707014853256e35d"
+        },
+        {
+          "theme": "light",
+          "path": "images/B17-query-options-save.png",
+          "mediaType": "image/png",
+          "bytes": 1313599,
+          "sha256": "1b8dca807b03c91e588a24aebdeba60e6c71ce7500a288794371062c2772e5e4"
+        }
+      ]
+    },
+    {
+      "id": "B18",
+      "group": "Explain",
+      "title": "Explain configuration and views",
+      "routes": [
+        "/query (Explain / Config)"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B18-explain-settings-views-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1664084,
+          "sha256": "929e6c2490267cb8372b76b6598b2130ec81016bc47abe35eb838c16c62a721f"
+        },
+        {
+          "theme": "light",
+          "path": "images/B18-explain-settings-views-light.png",
+          "mediaType": "image/png",
+          "bytes": 1613876,
+          "sha256": "2de23e66f774873c0a5c069a0c00fb34f0d1e7f18d0e763744a77a5a0a064180"
+        }
+      ]
+    },
+    {
+      "id": "B19",
+      "group": "Tuple result view",
+      "title": "Tuple query results",
+      "routes": [
+        "/query (tuple result)"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B19-tuple-results-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1628209,
+          "sha256": "280b705c8e5c633c37aa44e0e10f61742d214eb89b24b589c4ade033928b3156"
+        },
+        {
+          "theme": "light",
+          "path": "images/B19-tuple-results-light.png",
+          "mediaType": "image/png",
+          "bytes": 1294090,
+          "sha256": "865153148f430a1fe9d5c752d5521fb199a59a006c934c9c8693b2a55ea2a780"
+        }
+      ]
+    },
+    {
+      "id": "B20",
+      "group": "Graph result view",
+      "title": "Graph query results",
+      "routes": [
+        "/query (graph result)"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B20-graph-results-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1686198,
+          "sha256": "ddae7ba8178df8402d1f26c4719ee538d756c5428582290c7d81e01c4af989cb"
+        },
+        {
+          "theme": "light",
+          "path": "images/B20-graph-results-light.png",
+          "mediaType": "image/png",
+          "bytes": 1536352,
+          "sha256": "1d96cb5797252fdf5295cd47736ccafd71f02ade36736b8fd8d7a7359009de15"
+        }
+      ]
+    },
+    {
+      "id": "B21",
+      "group": "Boolean results",
+      "title": "Boolean query result",
+      "routes": [
+        "/query (ASK true and false)"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B21-ask-results-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1487309,
+          "sha256": "0d546089174548c79a08bb3551c66948c2605bbd8e5e6b9a8d6c770afa842696"
+        },
+        {
+          "theme": "light",
+          "path": "images/B21-ask-results-light.png",
+          "mediaType": "image/png",
+          "bytes": 1408466,
+          "sha256": "ea23c31ceacf42cc55f9b93888038d9231a44c2695101131f71066e8609bee66"
+        }
+      ]
+    },
+    {
+      "id": "B22",
+      "group": "Result option panels",
+      "title": "Embedded result options",
+      "routes": [
+        "/query (tuple and graph result controls)"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B22-result-options-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1590219,
+          "sha256": "73b7fdcd1bba624cec87c2c37a2bf54a15803c6f9e7b5b28323081d101c6ab32"
+        },
+        {
+          "theme": "light",
+          "path": "images/B22-result-options-light.png",
+          "mediaType": "image/png",
+          "bytes": 1486320,
+          "sha256": "0b746991cd21e68a448cadceb465db9d2131a30167265a872c380fde3403ea78"
+        }
+      ]
+    },
+    {
+      "id": "B23",
+      "group": "Export",
+      "title": "Standalone Export",
+      "routes": [
+        "/export"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B23-standalone-export-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1518505,
+          "sha256": "e4c2c0d2fbaf09027e485bc343cb4422c1f76611ba8e23d587ed991f8d95ce6b"
+        },
+        {
+          "theme": "light",
+          "path": "images/B23-standalone-export-light.png",
+          "mediaType": "image/png",
+          "bytes": 1462817,
+          "sha256": "df6a55866f88ae3d76fe1e50b5c6343a98a9375c3d4c88d54c0db2dfe5d35310"
+        }
+      ]
+    },
+    {
+      "id": "B24",
+      "group": "Context and type tables",
+      "title": "Contexts and Types",
+      "routes": [
+        "/contexts",
+        "/types"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B24-contexts-types-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1437434,
+          "sha256": "b9fdf9fca1d6e90799fc31a23a5181f5e14d6371bf9755543a6620524fd02a0c"
+        },
+        {
+          "theme": "light",
+          "path": "images/B24-contexts-types-light.png",
+          "mediaType": "image/png",
+          "bytes": 1263038,
+          "sha256": "52f3d3bf8112e3920175e8a242f9f18bece2f6c0b3ed72edd14918064aaa249d"
+        }
+      ]
+    },
+    {
+      "id": "B25",
+      "group": "Add file",
+      "title": "Add data from file",
+      "routes": [
+        "/add (File source selected)"
+      ],
+      "caption": "Default · Advanced expanded",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B25-add-file-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1222973,
+          "sha256": "a2626b3e5fe22324601e5b05fa6ad7256d9627f7371090b997b9ded6d34bd114"
+        },
+        {
+          "theme": "light",
+          "path": "images/B25-add-file-light.png",
+          "mediaType": "image/png",
+          "bytes": 1057704,
+          "sha256": "1d8979e2a02fa742350e7c7a7707efa7f1f4ab4b408bbb1210c3cc4266522ac2"
+        }
+      ]
+    },
+    {
+      "id": "B26",
+      "group": "Add source modes and advanced",
+      "title": "Add data by URL or text",
+      "routes": [
+        "/add (URL and Text source states)"
+      ],
+      "caption": "URL/Text · Advanced closed/open states",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B26-add-url-text-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1292815,
+          "sha256": "f5bd19d8e5271efaf15b5e082d947295171e4bbf49a78eda1d89341751fa72ea"
+        },
+        {
+          "theme": "light",
+          "path": "images/B26-add-url-text-light.png",
+          "mediaType": "image/png",
+          "bytes": 1292048,
+          "sha256": "076d6faf5e13a7eb426118a312883a290cab3b306f62b080a506249e11c4e46f"
+        }
+      ]
+    },
+    {
+      "id": "B27",
+      "group": "Update",
+      "title": "SPARQL Update",
+      "routes": [
+        "/update"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B27-sparql-update-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1079332,
+          "sha256": "899ae1541d3806f44d9069a1d84538cbaae3c8bcc210435fe022eda7fa2aeb68"
+        },
+        {
+          "theme": "light",
+          "path": "images/B27-sparql-update-light.png",
+          "mediaType": "image/png",
+          "bytes": 951122,
+          "sha256": "f978433b80510b100afd08e792b59951acb62084ced7808e571346896bd1250d"
+        }
+      ]
+    },
+    {
+      "id": "B28",
+      "group": "Clear and Remove forms",
+      "title": "Clear and Remove",
+      "routes": [
+        "/clear",
+        "/remove"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B28-clear-remove-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1258374,
+          "sha256": "180a6736ce4700cf0792cb9d64ed0672b9c7e0444a95a65cbe63712deb386c18"
+        },
+        {
+          "theme": "light",
+          "path": "images/B28-clear-remove-light.png",
+          "mediaType": "image/png",
+          "bytes": 1106815,
+          "sha256": "ee3c8f5fd13f42f2e5a9ace0f39af95837f587f7bb7e9e8c8a2daf32d0c30834"
+        }
+      ]
+    },
+    {
+      "id": "B29",
+      "group": "Explore",
+      "title": "Explore resource",
+      "routes": [
+        "/explore"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B29-explore-resource-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1497137,
+          "sha256": "817e06b18b1d3de44dc930aa9782548087b802086163d0d5a1492766381c33ce"
+        },
+        {
+          "theme": "light",
+          "path": "images/B29-explore-resource-light.png",
+          "mediaType": "image/png",
+          "bytes": 1345517,
+          "sha256": "858c04d2642eb4424ac92de00e64e3b65bcdd4b28ef39dcb2f29251d9f48a454"
+        }
+      ]
+    },
+    {
+      "id": "B30",
+      "group": "Namespaces",
+      "title": "Namespaces",
+      "routes": [
+        "/namespaces"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B30-namespaces-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1251036,
+          "sha256": "38de094e96768e6be5e9b66f73022bcb3bef9605c76fb5607e6614e11ed7e6b5"
+        },
+        {
+          "theme": "light",
+          "path": "images/B30-namespaces-light.png",
+          "mediaType": "image/png",
+          "bytes": 1077102,
+          "sha256": "2928947e587aaaed2193650c0973dccfd78a895eccbd99aab63e43d3a96928f5"
+        }
+      ]
+    },
+    {
+      "id": "B31",
+      "group": "Saved Queries",
+      "title": "Saved Queries",
+      "routes": [
+        "/saved-queries"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B31-saved-queries-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1422745,
+          "sha256": "8b1e6d14ac3c3ef8b97bed3cef3ed5c6218c6ba163c710d513334a6344bab097"
+        },
+        {
+          "theme": "light",
+          "path": "images/B31-saved-queries-light.png",
+          "mediaType": "image/png",
+          "bytes": 1285638,
+          "sha256": "5a099c3e558c37d83db9450fa48068066d6cb3026ef035702e47c1b09a6dd99f"
+        }
+      ]
+    },
+    {
+      "id": "B32",
+      "group": "Summary and Information",
+      "title": "Summary and Information",
+      "routes": [
+        "/summary",
+        "/information"
+      ],
+      "caption": "",
+      "images": [
+        {
+          "theme": "dark",
+          "path": "images/B32-summary-information-dark.png",
+          "mediaType": "image/png",
+          "bytes": 1385066,
+          "sha256": "c7632d5bc8150eab1694a928d970496f82bf33eef4f35ff636fe5dba33461ce4"
+        },
+        {
+          "theme": "light",
+          "path": "images/B32-summary-information-light.png",
+          "mediaType": "image/png",
+          "bytes": 1250237,
+          "sha256": "73321938bfaa8562a1b94bf816d04c1a87a6301b8a4cb5040e11aac1927a192b"
+        }
+      ]
+    }
+  ]
+}

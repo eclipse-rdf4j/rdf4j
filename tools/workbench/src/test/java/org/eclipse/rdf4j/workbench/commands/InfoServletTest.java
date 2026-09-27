@@ -17,17 +17,28 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayOutputStream;
 import java.net.MalformedURLException;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPageUrl;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
+import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockServletContext;
 
 import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.WriteListener;
 import jakarta.servlet.http.HttpServletResponse;
 
 /**
@@ -39,15 +50,21 @@ public class InfoServletTest {
 
 	private RepositoryManager manager;
 
+	private MockServletContext context;
+
 	private final RepositoryInfo info = new RepositoryInfo();
 
 	/**
 	 */
 	@BeforeEach
-	public void setUp() {
+	public void setUp() throws Exception {
 		servlet.setRepositoryInfo(info);
 		manager = mock(RepositoryManager.class);
 		servlet.setRepositoryManager(manager);
+		context = new MockServletContext();
+		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE,
+				WorkbenchPolicy.fromProperties(new Properties(), Set.of()));
+		servlet.init(new TestServletConfig("info", context, Map.of("transformations", "/transform")));
 	}
 
 	/**
@@ -73,6 +90,142 @@ public class InfoServletTest {
 		when(resp.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
 
 		assertThatCode(() -> servlet.service(req, resp, "")).doesNotThrowAnyException();
+	}
+
+	@Test
+	public void repositoryExportDefaultIsIndependentOfTheQueryDownloadPreference() throws Exception {
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		CapturingServletOutputStream output = new CapturingServletOutputStream();
+		when(req.getParameter("Accept")).thenReturn("text/turtle");
+		when(resp.getOutputStream()).thenReturn(output);
+
+		servlet.service(req, resp, "");
+
+		String xml = output.content();
+		assertThat(xml)
+				.containsPattern("(?s)<binding name='default-Accept'>\\s*<literal>text/turtle</literal>")
+				.containsPattern(
+						"(?s)<binding name='default-export-format'>\\s*<literal>application/n-quads</literal>");
+	}
+
+	@Test
+	public void workbenchThemeDefaultIsExposedToTheTemplate() throws Exception {
+		Properties values = new Properties();
+		values.setProperty("theme.deployment-default", "dark");
+		WorkbenchPolicy policy = WorkbenchPolicy.fromProperties(values, Set.of());
+		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE, policy);
+
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		CapturingServletOutputStream output = new CapturingServletOutputStream();
+		when(resp.getOutputStream()).thenReturn(output);
+
+		servlet.service(req, resp, "");
+
+		assertThat(output.content())
+				.containsPattern("(?s)<binding name='default-workbench-theme'>\\s*<literal>dark</literal>");
+	}
+
+	@Test
+	public void configuredQueryDownloadDefaultIsExposedToTheTemplate() throws Exception {
+		Properties values = new Properties();
+		values.setProperty("query.download.default-limit", "50");
+		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE,
+				WorkbenchPolicy.fromProperties(values, Set.of()));
+
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		CapturingServletOutputStream output = new CapturingServletOutputStream();
+		when(resp.getOutputStream()).thenReturn(output);
+
+		servlet.service(req, resp, "");
+
+		assertThat(output.content())
+				.containsPattern(
+						"(?s)<binding name='default-download-limit'>\\s*<literal(?: datatype='[^']+')?>50</literal>");
+	}
+
+	@Test
+	public void declaredQueryFeatureValuesAreExposedToTheTemplate() throws Exception {
+		Properties values = new Properties();
+		values.setProperty("query.consumer-feature-ids", "consumer-export");
+		values.setProperty("query.feature.consumer-export.enabled", "false");
+		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE,
+				WorkbenchPolicy.fromProperties(values, Set.of()));
+
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		CapturingServletOutputStream output = new CapturingServletOutputStream();
+		when(resp.getOutputStream()).thenReturn(output);
+
+		servlet.service(req, resp, "");
+
+		assertThat(output.content())
+				.containsPattern(
+						"(?s)<binding name='query-feature-id'>\\s*<literal>consumer-export</literal>")
+				.containsPattern(
+						"(?s)<binding name='query-feature-enabled'>\\s*<literal(?: datatype='[^']+')?>false</literal>")
+				.containsPattern(
+						"(?s)<binding name='query-feature-id'>\\s*<literal>result-download-limit</literal>")
+				.containsPattern(
+						"(?s)<binding name='query-feature-enabled'>\\s*<literal(?: datatype='[^']+')?>true</literal>");
+	}
+
+	@Test
+	public void configuredMenuGroupsAndItemsAreExposedToTheTemplate() throws Exception {
+		Properties values = new Properties();
+		values.setProperty("menu.items", "query,summary");
+		values.setProperty("menu.groups", "explore");
+		values.setProperty("menu.group.explore.visible", "true");
+		values.setProperty("menu.group.explore.label", "Explore data");
+		values.setProperty("menu.group.explore.icon", "database");
+		values.setProperty("menu.group.explore.order", "3");
+		values.setProperty("menu.item.query.label", "SPARQL query");
+		values.setProperty("menu.item.query.icon", "search");
+		values.setProperty("menu.item.query.order", "1");
+		values.setProperty("menu.item.summary.order", "2");
+		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE,
+				WorkbenchPolicy.fromProperties(values, Set.of()));
+
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		CapturingServletOutputStream output = new CapturingServletOutputStream();
+		when(resp.getOutputStream()).thenReturn(output);
+
+		servlet.service(req, resp, "");
+
+		assertThat(output.content())
+				.containsPattern("(?s)<binding name='menu-group-id'>\\s*<literal>explore</literal>")
+				.containsPattern("(?s)<binding name='menu-group-label'>\\s*<literal>Explore data</literal>")
+				.containsPattern("(?s)<binding name='menu-group-order'>\\s*<literal(?: datatype='[^']+')?>3</literal>")
+				.containsPattern("(?s)<binding name='menu-item-id'>\\s*<literal>query</literal>")
+				.containsPattern("(?s)<binding name='menu-item-label'>\\s*<literal>SPARQL query</literal>")
+				.containsPattern("(?s)<binding name='menu-item-href'>\\s*<literal>query</literal>");
+	}
+
+	@Test
+	public void builtInMenuRoutesAreResolvedUnderTheWorkbenchMount() throws Exception {
+		Properties values = new Properties();
+		values.setProperty("menu.items", "repositories");
+		values.setProperty("menu.groups", "repositories");
+		values.setProperty("menu.group.repositories.visible", "true");
+		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE,
+				WorkbenchPolicy.fromProperties(values, Set.of()));
+
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		when(req.getContextPath()).thenReturn("/rdf4j");
+		when(req.getServletPath()).thenReturn("/workbench");
+		when(req.getPathInfo()).thenReturn("/NONE/info");
+		when(req.getRequestURI()).thenReturn("/rdf4j/workbench/NONE/info");
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		CapturingServletOutputStream output = new CapturingServletOutputStream();
+		when(resp.getOutputStream()).thenReturn(output);
+
+		servlet.service(req, resp, "");
+
+		assertThat(output.content()).containsPattern(
+				"(?s)<binding name='menu-item-href'>\\s*<literal>/rdf4j/workbench/NONE/repositories</literal>");
 	}
 
 	@Test
@@ -102,6 +255,28 @@ public class InfoServletTest {
 		org.assertj.core.api.Assertions.assertThatThrownBy(() -> servlet.service(req, resp, ""))
 				.isInstanceOf(RepositoryConfigException.class)
 				.hasMessageContaining("missing does not exist");
+	}
+
+	private static final class CapturingServletOutputStream extends ServletOutputStream {
+		private final ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+		@Override
+		public boolean isReady() {
+			return true;
+		}
+
+		@Override
+		public void setWriteListener(WriteListener listener) {
+		}
+
+		@Override
+		public void write(int value) {
+			output.write(value);
+		}
+
+		String content() {
+			return output.toString(StandardCharsets.UTF_8);
+		}
 	}
 
 }

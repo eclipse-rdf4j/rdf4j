@@ -81,6 +81,60 @@ test('query utilities cover namespace reset, name validation, query language swi
     assert.equal(harness.document.lastSubmittedForm.getAttribute('target'), 'query-results-frame');
 });
 
+test('disabled namespace reset action does not clear the editor', () => {
+    const harness = createQueryBrowserHarness({ confirmResponses: [true] });
+
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('SELECT * WHERE {?s ?p ?o}');
+    const resetButton = harness.registerElement('input', {
+        id: 'query-reset-namespaces',
+        attributes: { 'data-editor-namespaces-enabled': 'false' }
+    });
+    harness.document.body.appendChild(resetButton);
+
+    harness.context.workbench.query.resetNamespaces();
+
+    assert.equal(harness.context.workbench.query.getQueryValue(), 'SELECT * WHERE {?s ?p ?o}');
+    assert.equal(harness.confirms.length, 0);
+});
+
+test('namespace reset remains enabled when no policy control is rendered', () => {
+    const harness = createQueryBrowserHarness({ confirmResponses: [true] });
+    harness.runPageLoad();
+    harness.context.workbench.query.setQueryValue('SELECT * WHERE {?s ?p ?o}');
+
+    harness.context.workbench.query.resetNamespaces();
+
+    assert.equal(harness.confirms.length, 1);
+    assert.notEqual(harness.context.workbench.query.getQueryValue(), 'SELECT * WHERE {?s ?p ?o}');
+});
+
+test('disabled editor fullscreen hides YASQE control and blocks F11', () => {
+    const harness = createQueryBrowserHarness({ editorFullscreenEnabled: false });
+    harness.runPageLoad();
+    harness.context.workbench.query.toggleCompareMode();
+
+    ['query', 'query-compare'].forEach((editorId) => {
+        const editor = harness.yasqeState.instances[editorId];
+        const fullscreenControl = editor.getWrapperElement().querySelector('.fullscreenToggleBtns');
+
+        assert.ok(fullscreenControl.hidden, `${editorId} fullscreen control should be hidden`);
+        editor.getOption('extraKeys').F11();
+        assert.equal(editor.getOption('fullScreen'), false, `${editorId} F11 should not toggle fullscreen`);
+    });
+});
+
+test('editor fullscreen remains available with the default policy', () => {
+    const harness = createQueryBrowserHarness();
+    harness.runPageLoad();
+    const editor = harness.yasqeState.instances.query;
+    const fullscreenControl = editor.getWrapperElement().querySelector('.fullscreenToggleBtns');
+
+    assert.notEqual(fullscreenControl.hidden, true);
+    editor.getOption('extraKeys').F11();
+    assert.equal(editor.getOption('fullScreen'), true);
+});
+
 test('query explain flow covers success, error, download, and legacy change notifications', () => {
     const harness = createQueryBrowserHarness({
         serverRequestIds: ['request-1', 'request-2']

@@ -33,12 +33,112 @@
         <xsl:param name="copyButtonId"/>
         <xsl:param name="showControls" select="false()"/>
         <xsl:param name="controlsRowId"/>
+        <xsl:param name="showCloseButton" select="false()"/>
+        <xsl:variable name="explainFormatTextEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-format-text</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainFormatDotEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-format-dot</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainFormatJsonEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-format-json</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainLevelUnoptimizedEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-level-unoptimized</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainLevelOptimizedEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-level-optimized</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainLevelExecutedEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-level-executed</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainLevelTelemetryEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-level-telemetry</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainLevelTimedEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-level-timed</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainHighlightSyntaxEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-highlight-syntax</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainHighlightHotspotEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-highlight-hotspot</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainPropertySelectionEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-property-selection</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="effectiveExplainFormat">
+            <xsl:choose>
+                <xsl:when test="normalize-space($explanationFormat) = 'text' and normalize-space($explainFormatTextEnabled) != 'false'">text</xsl:when>
+                <xsl:when test="normalize-space($explanationFormat) = 'dot' and normalize-space($explainFormatDotEnabled) != 'false'">dot</xsl:when>
+                <xsl:when test="normalize-space($explanationFormat) = 'json' and normalize-space($explainFormatJsonEnabled) != 'false'">json</xsl:when>
+                <xsl:when test="normalize-space($explainFormatTextEnabled) != 'false'">text</xsl:when>
+                <xsl:when test="normalize-space($explainFormatDotEnabled) != 'false'">dot</xsl:when>
+                <xsl:when test="normalize-space($explainFormatJsonEnabled) != 'false'">json</xsl:when>
+                <xsl:otherwise/>
+            </xsl:choose>
+        </xsl:variable>
+        <xsl:variable name="effectiveExplainLevel">
+            <xsl:choose>
+                <xsl:when test="normalize-space($explanationLevel) = 'Unoptimized' and normalize-space($explainLevelUnoptimizedEnabled) != 'false'">Unoptimized</xsl:when>
+                <xsl:when test="normalize-space($explanationLevel) = 'Optimized' and normalize-space($explainLevelOptimizedEnabled) != 'false'">Optimized</xsl:when>
+                <xsl:when test="normalize-space($explanationLevel) = 'Executed' and normalize-space($explainLevelExecutedEnabled) != 'false'">Executed</xsl:when>
+                <xsl:when test="normalize-space($explanationLevel) = 'Telemetry' and normalize-space($explainLevelTelemetryEnabled) != 'false'">Telemetry</xsl:when>
+                <xsl:when test="normalize-space($explanationLevel) = 'Timed' and normalize-space($explainLevelTimedEnabled) != 'false'">Timed</xsl:when>
+                <xsl:when test="normalize-space($explainLevelOptimizedEnabled) != 'false'">Optimized</xsl:when>
+                <xsl:when test="normalize-space($explainLevelUnoptimizedEnabled) != 'false'">Unoptimized</xsl:when>
+                <xsl:when test="normalize-space($explainLevelExecutedEnabled) != 'false'">Executed</xsl:when>
+                <xsl:when test="normalize-space($explainLevelTelemetryEnabled) != 'false'">Telemetry</xsl:when>
+                <xsl:when test="normalize-space($explainLevelTimedEnabled) != 'false'">Timed</xsl:when>
+                <xsl:otherwise/>
+            </xsl:choose>
+        </xsl:variable>
 
         <div id="{$paneId}" class="{$paneClass}">
+            <xsl:if test="$paneId = 'query-compare-pane'">
+                <xsl:call-template name="workbench-feature-hidden">
+                    <xsl:with-param name="feature-id">query-compare</xsl:with-param>
+                </xsl:call-template>
+            </xsl:if>
             <div class="query-form__row query-form__row--stacked">
-                <label class="query-form__label" for="{$queryId}">
-                    <xsl:value-of select="$queryLabel"/>
-                </label>
+                <div class="query-editor-header">
+                    <label class="query-form__label" for="{$queryId}">
+                        <xsl:value-of select="$queryLabel"/>
+                    </label>
+                    <xsl:if test="$showCloseButton">
+                    <button id="query-compare-close" class="query-compare-action query-compare-pane__close"
+                            type="button" aria-label="{$close-comparison.label}"
+                            title="{$close-comparison.label}"
+                            onclick="workbench.query.closeComparePane()">
+                        <svg class="query-compare-action__svg" viewBox="0 0 24 24"
+                             focusable="false" aria-hidden="true">
+                            <path class="query-compare-action__stroke" d="m6 6 12 12M18 6 6 18"></path>
+                        </svg>
+                    </button>
+                    </xsl:if>
+                </div>
                 <div class="query-form__field">
                     <textarea id="{$queryId}" rows="16" cols="80" wrap="soft">
                         <xsl:if test="string-length($queryName) &gt; 0">
@@ -59,6 +159,9 @@
                 </div>
             </div>
             <div id="{$explanationRowId}" class="query-form__row query-form__row--stacked">
+                <xsl:call-template name="workbench-feature-hidden">
+                    <xsl:with-param name="feature-id">query-explain</xsl:with-param>
+                </xsl:call-template>
                 <xsl:if test="not($explanationVisible)">
                     <xsl:attribute name="style">display:none;</xsl:attribute>
                 </xsl:if>
@@ -72,6 +175,9 @@
                             <span class="workbench-action-label">
                                 <button id="{$copyButtonId}" class="query-explanation-copy" type="button"
                                         aria-label="{$copy-explanation.label}" title="{$copy-explanation.label}">
+                                    <xsl:call-template name="workbench-feature-hidden">
+                                        <xsl:with-param name="feature-id">explain-copy</xsl:with-param>
+                                    </xsl:call-template>
                                     <svg class="workbench-action-icon query-explanation-copy__svg" viewBox="0 0 24 24"
                                          focusable="false" aria-hidden="true">
                                         <rect class="query-explanation-copy__stroke" x="9" y="9" width="10" height="10"
@@ -86,73 +192,128 @@
                     <div class="query-explanation-surface">
                         <div id="{$overlayId}" class="query-explanation-overlay" aria-hidden="true"></div>
                         <pre id="{$explanationId}" data-format="{$explanationFormat}">
+                            <xsl:call-template name="workbench-feature-hidden">
+                                <xsl:with-param name="feature-id">explain-view-text</xsl:with-param>
+                            </xsl:call-template>
                             <xsl:value-of select="$explanationValue"/>
                         </pre>
-                        <div id="{$dotViewId}"></div>
-                        <div id="{$jsonViewId}"></div>
+                        <div id="{$dotViewId}">
+                            <xsl:call-template name="workbench-feature-hidden">
+                                <xsl:with-param name="feature-id">explain-view-dot</xsl:with-param>
+                            </xsl:call-template>
+                        </div>
+                        <div id="{$jsonViewId}">
+                            <xsl:call-template name="workbench-feature-hidden">
+                                <xsl:with-param name="feature-id">explain-view-json</xsl:with-param>
+                            </xsl:call-template>
+                        </div>
                     </div>
                 </div>
             </div>
             <xsl:if test="$showControls">
                 <div id="{$controlsRowId}" class="query-explanation-controls-row-class">
+                    <xsl:call-template name="workbench-feature-hidden">
+                        <xsl:with-param name="feature-id">query-explain</xsl:with-param>
+                    </xsl:call-template>
                     <xsl:if test="not($explanationVisible)">
                         <xsl:attribute name="style">display:none;</xsl:attribute>
                     </xsl:if>
                     <div class="query-form__field query-form__field--controls">
                         <span id="primary-explain-settings" class="query-form__field--controls-group">
                             <select id="explain-format" name="explain-format">
+                                <xsl:if test="normalize-space($explainFormatTextEnabled) = 'false' and normalize-space($explainFormatDotEnabled) = 'false' and normalize-space($explainFormatJsonEnabled) = 'false'">
+                                    <xsl:attribute name="hidden">hidden</xsl:attribute>
+                                </xsl:if>
                                 <option value="text">
-                                    <xsl:if test="normalize-space($explanationFormat) = '' or normalize-space($explanationFormat) = 'text'">
+                                    <xsl:if test="normalize-space($explainFormatTextEnabled) = 'false'">
+                                        <xsl:attribute name="hidden">hidden</xsl:attribute>
+                                        <xsl:attribute name="disabled">disabled</xsl:attribute>
+                                    </xsl:if>
+                                    <xsl:if test="normalize-space($effectiveExplainFormat) = 'text'">
                                         <xsl:attribute name="selected">selected</xsl:attribute>
                                     </xsl:if>
                                     Text
                                 </option>
                                 <option value="dot">
-                                    <xsl:if test="normalize-space($explanationFormat) = 'dot'">
+                                    <xsl:if test="normalize-space($explainFormatDotEnabled) = 'false'">
+                                        <xsl:attribute name="hidden">hidden</xsl:attribute>
+                                        <xsl:attribute name="disabled">disabled</xsl:attribute>
+                                    </xsl:if>
+                                    <xsl:if test="normalize-space($effectiveExplainFormat) = 'dot'">
                                         <xsl:attribute name="selected">selected</xsl:attribute>
                                     </xsl:if>
                                     DOT
                                 </option>
                                 <option value="json">
-                                    <xsl:if test="normalize-space($explanationFormat) = 'json'">
+                                    <xsl:if test="normalize-space($explainFormatJsonEnabled) = 'false'">
+                                        <xsl:attribute name="hidden">hidden</xsl:attribute>
+                                        <xsl:attribute name="disabled">disabled</xsl:attribute>
+                                    </xsl:if>
+                                    <xsl:if test="normalize-space($effectiveExplainFormat) = 'json'">
                                         <xsl:attribute name="selected">selected</xsl:attribute>
                                     </xsl:if>
                                     JSON
                                 </option>
                             </select>
                             <select id="explain-level">
+                                <xsl:if test="normalize-space($explainLevelUnoptimizedEnabled) = 'false' and normalize-space($explainLevelOptimizedEnabled) = 'false' and normalize-space($explainLevelExecutedEnabled) = 'false' and normalize-space($explainLevelTelemetryEnabled) = 'false' and normalize-space($explainLevelTimedEnabled) = 'false'">
+                                    <xsl:attribute name="hidden">hidden</xsl:attribute>
+                                </xsl:if>
                                 <option value="Unoptimized">
-                                    <xsl:if test="normalize-space($explanationLevel) = 'Unoptimized'">
+                                    <xsl:if test="normalize-space($explainLevelUnoptimizedEnabled) = 'false'">
+                                        <xsl:attribute name="hidden">hidden</xsl:attribute>
+                                        <xsl:attribute name="disabled">disabled</xsl:attribute>
+                                    </xsl:if>
+                                    <xsl:if test="normalize-space($effectiveExplainLevel) = 'Unoptimized'">
                                         <xsl:attribute name="selected">selected</xsl:attribute>
                                     </xsl:if>
                                     Unoptimized
                                 </option>
                                 <option value="Optimized">
-                                    <xsl:if test="normalize-space($explanationLevel) = '' or normalize-space($explanationLevel) = 'Optimized'">
+                                    <xsl:if test="normalize-space($explainLevelOptimizedEnabled) = 'false'">
+                                        <xsl:attribute name="hidden">hidden</xsl:attribute>
+                                        <xsl:attribute name="disabled">disabled</xsl:attribute>
+                                    </xsl:if>
+                                    <xsl:if test="normalize-space($effectiveExplainLevel) = 'Optimized'">
                                         <xsl:attribute name="selected">selected</xsl:attribute>
                                     </xsl:if>
                                     Optimized
                                 </option>
                                 <option value="Executed">
-                                    <xsl:if test="normalize-space($explanationLevel) = 'Executed'">
+                                    <xsl:if test="normalize-space($explainLevelExecutedEnabled) = 'false'">
+                                        <xsl:attribute name="hidden">hidden</xsl:attribute>
+                                        <xsl:attribute name="disabled">disabled</xsl:attribute>
+                                    </xsl:if>
+                                    <xsl:if test="normalize-space($effectiveExplainLevel) = 'Executed'">
                                         <xsl:attribute name="selected">selected</xsl:attribute>
                                     </xsl:if>
                                     Executed
                                 </option>
                                 <option value="Telemetry">
-                                    <xsl:if test="normalize-space($explanationLevel) = 'Telemetry'">
+                                    <xsl:if test="normalize-space($explainLevelTelemetryEnabled) = 'false'">
+                                        <xsl:attribute name="hidden">hidden</xsl:attribute>
+                                        <xsl:attribute name="disabled">disabled</xsl:attribute>
+                                    </xsl:if>
+                                    <xsl:if test="normalize-space($effectiveExplainLevel) = 'Telemetry'">
                                         <xsl:attribute name="selected">selected</xsl:attribute>
                                     </xsl:if>
                                     Telemetry
                                 </option>
                                 <option value="Timed">
-                                    <xsl:if test="normalize-space($explanationLevel) = 'Timed'">
+                                    <xsl:if test="normalize-space($explainLevelTimedEnabled) = 'false'">
+                                        <xsl:attribute name="hidden">hidden</xsl:attribute>
+                                        <xsl:attribute name="disabled">disabled</xsl:attribute>
+                                    </xsl:if>
+                                    <xsl:if test="normalize-space($effectiveExplainLevel) = 'Timed'">
                                         <xsl:attribute name="selected">selected</xsl:attribute>
                                     </xsl:if>
                                     Timed
                                 </option>
                             </select>
                             <span id="explanation-settings" class="query-explanation-settings">
+                                <xsl:if test="normalize-space($explainFormatTextEnabled) = 'false' and normalize-space($explainFormatDotEnabled) = 'false' and normalize-space($explainFormatJsonEnabled) = 'false' and normalize-space($explainLevelUnoptimizedEnabled) = 'false' and normalize-space($explainLevelOptimizedEnabled) = 'false' and normalize-space($explainLevelExecutedEnabled) = 'false' and normalize-space($explainLevelTelemetryEnabled) = 'false' and normalize-space($explainLevelTimedEnabled) = 'false' and normalize-space($explainHighlightSyntaxEnabled) = 'false' and normalize-space($explainHighlightHotspotEnabled) = 'false' and normalize-space($explainPropertySelectionEnabled) = 'false'">
+                                    <xsl:attribute name="hidden">hidden</xsl:attribute>
+                                </xsl:if>
 								<span class="workbench-action workbench-action--secondary" data-workbench-action="settings">
 									<span class="workbench-action-label">
 										<button id="explanation-settings-toggle"
@@ -182,12 +343,30 @@
                                                   aria-label="Text explanation highlighting" aria-hidden="false">
                                                 <input id="explanation-highlight-syntax"
                                                        name="explanation-highlight-mode" type="radio"
-                                                       value="syntax" checked="checked"/>
-                                                <label for="explanation-highlight-syntax">Normal</label>
+                                                       value="syntax" checked="checked">
+                                                    <xsl:call-template name="workbench-feature-hidden">
+                                                        <xsl:with-param name="feature-id">explain-highlight-syntax</xsl:with-param>
+                                                    </xsl:call-template>
+                                                </input>
+                                                <label for="explanation-highlight-syntax">
+                                                    <xsl:call-template name="workbench-feature-hidden">
+                                                        <xsl:with-param name="feature-id">explain-highlight-syntax</xsl:with-param>
+                                                    </xsl:call-template>
+                                                    Normal
+                                                </label>
                                                 <input id="explanation-highlight-hotspot"
                                                        name="explanation-highlight-mode" type="radio"
-                                                       value="hotspot"/>
-                                                <label for="explanation-highlight-hotspot">Heatmap</label>
+                                                       value="hotspot">
+                                                    <xsl:call-template name="workbench-feature-hidden">
+                                                        <xsl:with-param name="feature-id">explain-highlight-hotspot</xsl:with-param>
+                                                    </xsl:call-template>
+                                                </input>
+                                                <label for="explanation-highlight-hotspot">
+                                                    <xsl:call-template name="workbench-feature-hidden">
+                                                        <xsl:with-param name="feature-id">explain-highlight-hotspot</xsl:with-param>
+                                                    </xsl:call-template>
+                                                    Heatmap
+                                                </label>
                                             </span>
                                             <span id="explanation-hotspot-legend"
                                                   class="query-explanation-hotspot-legend"
@@ -196,6 +375,9 @@
                                     </div>
                                     <div id="explanation-property-config"
                                          class="query-explanation-property-config query-explanation-settings__section">
+                                        <xsl:call-template name="workbench-feature-hidden">
+                                            <xsl:with-param name="feature-id">explain-property-selection</xsl:with-param>
+                                        </xsl:call-template>
                                         <div class="query-explanation-property-config__header">
                                             <span class="query-explanation-property-config__title">
                                                 <strong>Visible properties</strong>
@@ -204,13 +386,27 @@
                                                       aria-live="polite"></span>
                                             </span>
                                             <span class="query-explanation-property-config__actions">
-                                                <button id="explanation-properties-all" type="button">All</button>
-                                                <button id="explanation-properties-none" type="button">None</button>
+                                                <button id="explanation-properties-all" type="button">
+                                                    <xsl:call-template name="workbench-feature-hidden">
+                                                        <xsl:with-param name="feature-id">explain-property-selection</xsl:with-param>
+                                                    </xsl:call-template>
+                                                    All
+                                                </button>
+                                                <button id="explanation-properties-none" type="button">
+                                                    <xsl:call-template name="workbench-feature-hidden">
+                                                        <xsl:with-param name="feature-id">explain-property-selection</xsl:with-param>
+                                                    </xsl:call-template>
+                                                    None
+                                                </button>
                                             </span>
                                         </div>
                                         <div id="explanation-property-options"
                                              class="query-explanation-property-config__options"
-                                             role="group" aria-label="Visible query plan properties"></div>
+                                             role="group" aria-label="Visible query plan properties">
+                                            <xsl:call-template name="workbench-feature-hidden">
+                                                <xsl:with-param name="feature-id">explain-property-selection</xsl:with-param>
+                                            </xsl:call-template>
+                                        </div>
                                         <p class="query-explanation-property-config__hint">
                                             Plan structure always remains visible.
                                         </p>
@@ -226,29 +422,54 @@
 									</xsl:call-template>
 									<span class="workbench-action-label"><input id="rerun-explanation" type="button"
 										value="{$explain-query.label}"
-										onclick="workbench.query.runExplain(null, 'rerun-explanation')"/></span>
+										onclick="workbench.query.runExplain(null, 'rerun-explanation')">
+										<xsl:attribute name="data-query-rerun-enabled">
+											<xsl:call-template name="workbench-feature-enabled">
+												<xsl:with-param name="feature-id">query-rerun</xsl:with-param>
+											</xsl:call-template>
+										</xsl:attribute>
+										<xsl:call-template name="workbench-feature-hidden">
+											<xsl:with-param name="feature-id">query-rerun</xsl:with-param>
+										</xsl:call-template>
+										<xsl:call-template name="workbench-feature-hidden">
+											<xsl:with-param name="feature-id">query-explain</xsl:with-param>
+										</xsl:call-template>
+									</input></span>
 								</label>
 							</span>
 							<span id="rerun-explanation-spinner" class="query-explain-spinner"
 								  aria-hidden="true"></span>
-							<span class="workbench-action workbench-action--danger query-explain-cancel" data-workbench-action="cancel">
+								<span class="workbench-action workbench-action--danger query-explain-cancel" data-workbench-action="cancel">
+									<xsl:call-template name="workbench-feature-hidden">
+										<xsl:with-param name="feature-id">explain-cancel</xsl:with-param>
+									</xsl:call-template>
 								<label class="workbench-action-hit-area">
 									<xsl:call-template name="workbench-action-icon">
 										<xsl:with-param name="name">cancel</xsl:with-param>
 									</xsl:call-template>
 									<span class="workbench-action-label"><input id="rerun-explanation-cancel" class="query-explain-cancel" type="button"
 										value="{$cancel.label}" onclick="workbench.query.cancelExplain()"
-										aria-hidden="true" disabled="disabled"/></span>
+										aria-hidden="true" disabled="disabled">
+										<xsl:call-template name="workbench-feature-hidden">
+											<xsl:with-param name="feature-id">explain-cancel</xsl:with-param>
+										</xsl:call-template>
+									</input></span>
 								</label>
 							</span>
 						</span>
 						<span class="workbench-action workbench-action--secondary" data-workbench-action="download">
+							<xsl:call-template name="workbench-feature-hidden">
+								<xsl:with-param name="feature-id">explain-download</xsl:with-param>
+							</xsl:call-template>
 							<label class="workbench-action-hit-area">
 								<xsl:call-template name="workbench-action-icon">
 									<xsl:with-param name="name">download</xsl:with-param>
 								</xsl:call-template>
 								<span class="workbench-action-label"><input id="download-explanation" type="button"
 									value="{$download-explanation.label}">
+									<xsl:call-template name="workbench-feature-hidden">
+									<xsl:with-param name="feature-id">explain-download</xsl:with-param>
+								</xsl:call-template>
 									<xsl:if test="not($explanationVisible)">
 										<xsl:attribute name="disabled">disabled</xsl:attribute>
 									</xsl:if>
@@ -256,12 +477,19 @@
 							</label>
 						</span>
 						<span class="workbench-action workbench-action--secondary" data-workbench-action="compare">
+							<xsl:call-template name="workbench-feature-hidden">
+								<xsl:with-param name="feature-id">query-compare</xsl:with-param>
+							</xsl:call-template>
 							<label class="workbench-action-hit-area">
 								<xsl:call-template name="workbench-action-icon">
 									<xsl:with-param name="name">compare</xsl:with-param>
 								</xsl:call-template>
 								<span class="workbench-action-label"><input id="compare-toggle" type="button"
-									value="{$compare.label}" onclick="workbench.query.toggleCompareMode()"/></span>
+								value="{$compare.label}" onclick="workbench.query.toggleCompareMode()">
+									<xsl:call-template name="workbench-feature-hidden">
+										<xsl:with-param name="feature-id">query-compare</xsl:with-param>
+									</xsl:call-template>
+								</input></span>
 							</label>
 						</span>
                     </div>
@@ -281,6 +509,71 @@
                       select="count($info//sparql:binding[@name='query-format']) = 1 and substring-before(normalize-space($info//sparql:binding[@name='query-format'][1]/sparql:literal), ' ') = 'SPARQL'"/>
         <xsl:variable name="defaultQueryTimeout"
                       select="$info//sparql:binding[@name='default-query-timeout']/sparql:literal/text()"/>
+        <xsl:variable name="queryLanguageEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">query-language</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="queryExecutionEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">query-execution</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="queryExplainEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">query-explain</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainFormatTextEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-format-text</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainFormatDotEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-format-dot</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainFormatJsonEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-format-json</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainLevelUnoptimizedEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-level-unoptimized</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainLevelOptimizedEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-level-optimized</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainLevelExecutedEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-level-executed</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainLevelTelemetryEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-level-telemetry</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="explainLevelTimedEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">explain-level-timed</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="queryRefreshEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">query-refresh</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
+        <xsl:variable name="queryOptionsEnabled">
+            <xsl:call-template name="workbench-feature-enabled">
+                <xsl:with-param name="feature-id">query-options</xsl:with-param>
+            </xsl:call-template>
+        </xsl:variable>
         <xsl:variable name="explanation"
                       select="sparql:results/sparql:result/sparql:binding[@name='explanation']/sparql:literal"/>
         <xsl:variable name="explanationFormat"
@@ -289,6 +582,11 @@
                       select="sparql:results/sparql:result/sparql:binding[@name='explanation-level']/sparql:literal"/>
         <link rel="stylesheet" type="text/css" href="../../styles/query.css"/>
         <div id="query-page" class="query-page">
+            <xsl:attribute name="data-editor-fullscreen-enabled">
+                <xsl:call-template name="workbench-feature-enabled">
+                    <xsl:with-param name="feature-id">editor-fullscreen</xsl:with-param>
+                </xsl:call-template>
+            </xsl:attribute>
         <form action="query" method="post" onsubmit="return workbench.query.doSubmit()">
             <input type="hidden" name="action" id="action"/>
             <input type="hidden" name="explain" id="explain"/>
@@ -300,6 +598,9 @@
                     data-show-label="{$show-menu.label}"
                     data-hide-label="{$hide-menu.label}"
                     onclick="workbench.query.toggleCompareSidebar()">
+                <xsl:call-template name="workbench-feature-hidden">
+                    <xsl:with-param name="feature-id">editor-sidebar</xsl:with-param>
+                </xsl:call-template>
                 <span id="query-sidebar-toggle-icon" class="query-sidebar-toggle__icon" aria-hidden="true">
                     <svg class="query-sidebar-toggle__svg" viewBox="0 0 24 24" focusable="false"
                          aria-hidden="true">
@@ -311,8 +612,11 @@
             </button>
             <div class="query-form">
                 <div id="query-language-row" class="query-form__row">
-                    <xsl:if test="$hideQueryLanguageRow">
+                    <xsl:if test="$hideQueryLanguageRow or normalize-space($queryLanguageEnabled) = 'false'">
                         <xsl:attribute name="style">display:none;</xsl:attribute>
+                    </xsl:if>
+                    <xsl:if test="normalize-space($queryLanguageEnabled) = 'false'">
+                        <xsl:attribute name="hidden">hidden</xsl:attribute>
                     </xsl:if>
                     <label class="query-form__label" for="queryLn">
                         <xsl:value-of select="$query-language.label"/>
@@ -341,6 +645,9 @@
                         <span class="workbench-action-label">
                             <button id="query-compare-copy" type="button" aria-label="{$copy.label}"
                                     title="{$copy-explanation.label}">
+                                <xsl:call-template name="workbench-feature-hidden">
+                                    <xsl:with-param name="feature-id">explain-copy</xsl:with-param>
+                                </xsl:call-template>
                                 <xsl:call-template name="workbench-action-icon">
                                     <xsl:with-param name="name">copy</xsl:with-param>
                                 </xsl:call-template>
@@ -352,6 +659,9 @@
                         <span class="workbench-action-label">
                             <button id="query-compare-swap" type="button" aria-label="{$swap.label}"
                                     title="{$swap.label}">
+                                <xsl:call-template name="workbench-feature-hidden">
+                                    <xsl:with-param name="feature-id">query-swap</xsl:with-param>
+                                </xsl:call-template>
                                 <xsl:call-template name="workbench-action-icon">
                                     <xsl:with-param name="name">swap</xsl:with-param>
                                 </xsl:call-template>
@@ -365,6 +675,15 @@
                                 <button id="explain-compare-trigger" class="query-compare-action" type="button"
                                         aria-label="{$refresh-explanations.label}" title="{$refresh-explanations.label}"
                                         onclick="workbench.query.runCompareExplain()">
+                                    <xsl:attribute name="data-query-refresh-enabled">
+                                        <xsl:choose>
+                                            <xsl:when test="normalize-space($queryExplainEnabled) != 'false' and normalize-space($queryRefreshEnabled) != 'false'">true</xsl:when>
+                                            <xsl:otherwise>false</xsl:otherwise>
+                                        </xsl:choose>
+                                    </xsl:attribute>
+                                    <xsl:if test="normalize-space($queryExplainEnabled) = 'false' or normalize-space($queryRefreshEnabled) = 'false'">
+                                        <xsl:attribute name="hidden">hidden</xsl:attribute>
+                                    </xsl:if>
                                     <svg id="explain-compare-trigger-icon"
                                          class="query-compare-action__svg query-compare-action__svg--refresh"
                                          focusable="false" aria-hidden="true" viewBox="0 0 24 24">
@@ -384,6 +703,9 @@
                                         type="button" aria-label="{$cancel.label}" title="{$cancel.label}"
                                         onclick="workbench.query.cancelCompareExplain()" aria-hidden="true"
                                         disabled="disabled">
+                                    <xsl:call-template name="workbench-feature-hidden">
+                                        <xsl:with-param name="feature-id">explain-cancel</xsl:with-param>
+                                    </xsl:call-template>
                                     <svg id="explain-compare-cancel-icon"
                                          class="query-compare-action__svg query-compare-action__svg--cancel"
                                          focusable="false" aria-hidden="true" viewBox="0 0 24 24">
@@ -398,6 +720,9 @@
                                 <button id="query-diff-trigger" class="query-compare-action" type="button"
                                         aria-label="{$diff.label}" title="{$diff.label}"
                                         onclick="workbench.query.openDiffModal()" disabled="disabled">
+                                    <xsl:call-template name="workbench-feature-hidden">
+                                        <xsl:with-param name="feature-id">query-diff</xsl:with-param>
+                                    </xsl:call-template>
                                     <span id="query-diff-trigger-icon" class="query-compare-action__icon"
                                           aria-hidden="true">
                                         <svg class="query-compare-action__svg query-compare-action__svg--diff"
@@ -419,6 +744,9 @@
                     </div>
                 </div>
                 <div id="query-compare-layout" class="query-compare-layout">
+                    <xsl:call-template name="workbench-feature-hidden">
+                        <xsl:with-param name="feature-id">query-compare</xsl:with-param>
+                    </xsl:call-template>
                     <xsl:call-template name="query-pane">
                         <xsl:with-param name="paneId">query-primary-pane</xsl:with-param>
                         <xsl:with-param name="paneClass">query-compare-pane query-compare-pane--primary</xsl:with-param>
@@ -461,11 +789,15 @@
                         <xsl:with-param name="dotViewId">query-explanation-dot-view-compare</xsl:with-param>
                         <xsl:with-param name="jsonViewId">query-explanation-json-view-compare</xsl:with-param>
                         <xsl:with-param name="copyButtonId">copy-explanation-compare</xsl:with-param>
+                        <xsl:with-param name="showCloseButton" select="true()"/>
                     </xsl:call-template>
                 </div>
                 <div class="query-actions-toolbar">
                     <div class="query-form__field query-form__field--actions query-actions-toolbar__primary">
                         <button id="exec" class="query-action query-action--primary" type="submit">
+                            <xsl:if test="normalize-space($queryExecutionEnabled) = 'false'">
+                                <xsl:attribute name="hidden">hidden</xsl:attribute>
+                            </xsl:if>
                             <xsl:call-template name="workbench-action-icon">
                                 <xsl:with-param name="name">execute</xsl:with-param>
                                 <xsl:with-param name="additional-class">query-action-icon</xsl:with-param>
@@ -474,9 +806,24 @@
                         </button>
                         <input id="query-cancel" class="query-cancel" type="button"
                                value="{$cancel.label}" onclick="workbench.query.cancelQuery()"
-                               aria-hidden="true" disabled="disabled"/>
+                               aria-hidden="true" disabled="disabled">
+                            <xsl:call-template name="workbench-feature-hidden">
+                                <xsl:with-param name="feature-id">query-cancel</xsl:with-param>
+                            </xsl:call-template>
+                        </input>
                         <button id="explain-trigger" class="query-action" type="button"
                                 onclick="workbench.query.runExplain(null, 'explain-trigger')">
+                            <xsl:if test="normalize-space($queryExplainEnabled) = 'false'
+                                    or (normalize-space($explainFormatTextEnabled) = 'false'
+                                        and normalize-space($explainFormatDotEnabled) = 'false'
+                                        and normalize-space($explainFormatJsonEnabled) = 'false')
+                                    or (normalize-space($explainLevelUnoptimizedEnabled) = 'false'
+                                        and normalize-space($explainLevelOptimizedEnabled) = 'false'
+                                        and normalize-space($explainLevelExecutedEnabled) = 'false'
+                                        and normalize-space($explainLevelTelemetryEnabled) = 'false'
+                                        and normalize-space($explainLevelTimedEnabled) = 'false')">
+                                <xsl:attribute name="hidden">hidden</xsl:attribute>
+                            </xsl:if>
                             <xsl:call-template name="workbench-action-icon">
                                 <xsl:with-param name="name">explain</xsl:with-param>
                                 <xsl:with-param name="additional-class">query-action-icon</xsl:with-param>
@@ -488,19 +835,29 @@
                         <span id="explain-trigger-cancel-action"
                               class="workbench-action workbench-action--danger query-explain-cancel"
                               data-workbench-action="cancel">
+                            <xsl:call-template name="workbench-feature-hidden">
+                                <xsl:with-param name="feature-id">explain-cancel</xsl:with-param>
+                            </xsl:call-template>
                             <xsl:call-template name="workbench-action-icon">
                                 <xsl:with-param name="name">cancel</xsl:with-param>
                             </xsl:call-template>
                             <span class="workbench-action-label">
                                 <input id="explain-trigger-cancel" class="query-explain-cancel"
                                        type="button" value="{$cancel.label}" onclick="workbench.query.cancelExplain()"
-                                       aria-hidden="true" disabled="disabled"/>
+                                       aria-hidden="true" disabled="disabled">
+                                    <xsl:call-template name="workbench-feature-hidden">
+                                        <xsl:with-param name="feature-id">explain-cancel</xsl:with-param>
+                                    </xsl:call-template>
+                                </input>
                             </span>
                         </span>
                     </div>
                 <div id="save-query-disclosure" class="query-disclosure query-save-disclosure">
                     <button id="save-query-toggle" class="query-disclosure__toggle" type="button"
                             aria-controls="save-query-panel" aria-expanded="false">
+                        <xsl:call-template name="workbench-feature-hidden">
+                            <xsl:with-param name="feature-id">query-save</xsl:with-param>
+                        </xsl:call-template>
                         <svg class="query-action-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
                             <path d="M6 4h12v16l-6-3-6 3V4Z"></path>
                         </svg>
@@ -512,15 +869,26 @@
                     </button>
                     <div id="save-query-panel" class="query-disclosure__body query-disclosure__panel query-save-disclosure__body"
                          role="region" aria-labelledby="save-query-toggle" hidden="hidden">
-                        <input id="save" type="submit" value="{$save.label}" disabled="disabled"/>
+                        <input id="save" type="submit" value="{$save.label}" disabled="disabled">
+                            <xsl:call-template name="workbench-feature-hidden">
+                                <xsl:with-param name="feature-id">query-save</xsl:with-param>
+                            </xsl:call-template>
+                        </input>
                         <label class="query-form__label" for="query-name">
                             <xsl:value-of select="$query-name.label"/>
                         </label>
                         <input id="query-name" name="query-name" type="text" size="32"
                                maxlength="32" value=""/>
                         <span class="query-option">
-                            <input id="save-private" name="save-private" type="checkbox" value="true"/>
+                            <input id="save-private" name="save-private" type="checkbox" value="true">
+                                <xsl:call-template name="workbench-feature-hidden">
+                                    <xsl:with-param name="feature-id">query-private-save</xsl:with-param>
+                                </xsl:call-template>
+                            </input>
                             <label for="save-private">
+                                <xsl:call-template name="workbench-feature-hidden">
+                                    <xsl:with-param name="feature-id">query-private-save</xsl:with-param>
+                                </xsl:call-template>
                                 <xsl:value-of select="$save-private.label"/>
                             </label>
                         </span>
@@ -530,6 +898,9 @@
                 <div id="query-options-disclosure" class="query-disclosure query-options-disclosure">
                     <button id="query-options-toggle" class="query-disclosure__toggle" type="button"
                             aria-controls="query-options-panel" aria-expanded="false">
+                        <xsl:if test="normalize-space($queryOptionsEnabled) = 'false'">
+                            <xsl:attribute name="hidden">hidden</xsl:attribute>
+                        </xsl:if>
                         <svg class="query-action-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
                             <path d="M4 7h16M4 12h16M4 17h16"></path>
                             <circle cx="9" cy="7" r="2"></circle>
@@ -546,21 +917,31 @@
                          role="region" aria-labelledby="query-options-toggle" hidden="hidden">
                         <div class="query-settings">
                             <div class="query-form__row">
-                                <span class="query-form__label">
+                                <xsl:call-template name="workbench-feature-hidden">
+                                    <xsl:with-param name="feature-id">result-page-size</xsl:with-param>
+                                </xsl:call-template>
+                                <label class="query-form__label" for="limit_query">
                                     <xsl:value-of select="$result-limit.label"/>
-                                </span>
+                                </label>
                                 <div class="query-form__field">
                                     <xsl:call-template name="limit-select">
                                         <xsl:with-param name="limit_id">limit_query</xsl:with-param>
+                                        <xsl:with-param name="feature-id">result-page-size</xsl:with-param>
                                     </xsl:call-template>
                                 </div>
                             </div>
                             <div class="query-form__row">
+                                <xsl:call-template name="workbench-feature-hidden">
+                                    <xsl:with-param name="feature-id">query-timeout</xsl:with-param>
+                                </xsl:call-template>
                                 <label class="query-form__label" for="query-timeout">
                                     <xsl:value-of select="$query-timeout.label"/>
                                 </label>
                                 <div class="query-form__field">
                                     <input id="query-timeout" name="query-timeout" type="number" min="0" step="1">
+                                        <xsl:call-template name="workbench-feature-hidden">
+                                            <xsl:with-param name="feature-id">query-timeout</xsl:with-param>
+                                        </xsl:call-template>
                                         <xsl:attribute name="value">
                                             <xsl:choose>
                                                 <xsl:when test="string-length(normalize-space($queryTimeout)) &gt; 0">
@@ -569,16 +950,22 @@
                                                 <xsl:when test="string-length(normalize-space($defaultQueryTimeout)) &gt; 0">
                                                     <xsl:value-of select="$defaultQueryTimeout"/>
                                                 </xsl:when>
-                                                <xsl:otherwise>0</xsl:otherwise>
+                                                <xsl:otherwise>60</xsl:otherwise>
                                             </xsl:choose>
                                         </xsl:attribute>
                                     </input>
                                 </div>
                             </div>
                             <div class="query-form__row">
+                                <xsl:call-template name="workbench-feature-hidden">
+                                    <xsl:with-param name="feature-id">query-inferred-statements</xsl:with-param>
+                                </xsl:call-template>
                                 <div class="query-form__field query-form__field--options">
                                     <span class="query-option">
                                         <input id="infer" name="infer" type="checkbox" value="true">
+                                            <xsl:call-template name="workbench-feature-hidden">
+                                                <xsl:with-param name="feature-id">query-inferred-statements</xsl:with-param>
+                                            </xsl:call-template>
                                             <xsl:if
                                                     test="$info//sparql:binding[@name='default-infer']/sparql:literal = 'true'">
                                                 <xsl:attribute name="checked">true</xsl:attribute>
@@ -591,7 +978,17 @@
                                 </div>
                             </div>
                             <div class="query-disclosure__actions">
-                                <input type="button" onclick="workbench.query.resetNamespaces()" value="Clear"/>
+                                <input id="query-reset-namespaces" type="button"
+                                       onclick="workbench.query.resetNamespaces()" value="Clear">
+                                    <xsl:attribute name="data-editor-namespaces-enabled">
+                                        <xsl:call-template name="workbench-feature-enabled">
+                                            <xsl:with-param name="feature-id">editor-namespaces</xsl:with-param>
+                                        </xsl:call-template>
+                                    </xsl:attribute>
+                                    <xsl:call-template name="workbench-feature-hidden">
+                                        <xsl:with-param name="feature-id">editor-namespaces</xsl:with-param>
+                                    </xsl:call-template>
+                                </input>
                             </div>
                         </div>
                     </div>
@@ -608,6 +1005,11 @@
                 <button id="query-results-fullscreen" class="query-results__fullscreen" type="button"
                         aria-label="{$full-screen.label}" title="{$full-screen.label}" hidden="hidden"
                         aria-pressed="false" onclick="workbench.query.toggleResultsFullscreen()">
+                    <xsl:attribute name="data-result-fullscreen-enabled">
+                        <xsl:call-template name="workbench-feature-enabled">
+                            <xsl:with-param name="feature-id">result-fullscreen</xsl:with-param>
+                        </xsl:call-template>
+                    </xsl:attribute>
                     <svg class="query-results__fullscreen-icon" viewBox="0 0 24 24" focusable="false"
                          aria-hidden="true">
                         <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"></path>
@@ -663,7 +1065,7 @@
         <script type="text/javascript">
             var sparqlNamespaces = {
             <xsl:for-each
-                    select="document(//sparql:link[@href='namespaces']/@href)//sparql:results/sparql:result">
+                    select="document(//sparql:link[@href='_internal/namespaces']/@href)//sparql:results/sparql:result">
                 <xsl:value-of
                         select="concat('&quot;', sparql:binding[@name='prefix']/sparql:literal, ':&quot;:&quot;', sparql:binding[@name='namespace']/sparql:literal, '&quot;,')"/>
                 <xsl:text>

@@ -40,8 +40,12 @@ function createYasqeStub(registerElement) {
                 const wrapper = registerElement('div', { className: 'yasqe-wrapper' });
                 wrapper.appendChild(registerElement('div', { className: 'CodeMirror' }));
                 wrapper.appendChild(registerElement('div', { className: 'CodeMirror-scroll' }));
+                const fullscreenControl = registerElement('div', { className: 'fullscreenToggleBtns' });
+                fullscreenControl.appendChild(registerElement('div', { className: 'yasqe_fullscreenBtn' }));
+                wrapper.appendChild(fullscreenControl);
+                const editorOptions = Object.assign({ fullScreen: false, extraKeys: {} }, options);
                 const instance = {
-                    options,
+                    options: editorOptions,
                     textarea,
                     changeHandler: null,
                     closed: false,
@@ -52,6 +56,12 @@ function createYasqeStub(registerElement) {
                     },
                     getWrapperElement() {
                         return wrapper;
+                    },
+                    getOption(name) {
+                        return editorOptions[name];
+                    },
+                    setOption(name, value) {
+                        editorOptions[name] = value;
                     },
                     on(eventName, handler) {
                         if (eventName === 'change') {
@@ -76,6 +86,11 @@ function createYasqeStub(registerElement) {
                         }
                     }
                 };
+                editorOptions.extraKeys = Object.assign({}, editorOptions.extraKeys, {
+                    F11() {
+                        instance.setOption('fullScreen', !instance.getOption('fullScreen'));
+                    }
+                });
                 state.instances[textarea.id] = instance;
                 return instance;
             },
@@ -118,6 +133,7 @@ function createQueryBrowserHarness(options = {}) {
         }
     }));
     const { $, context, document, registerElement } = harness;
+    $.extend = Object.assign;
     const yasqe = createYasqeStub(registerElement);
     context.YASQE = yasqe.api;
     context.sparqlNamespaces = Object.assign({
@@ -164,6 +180,11 @@ function createQueryBrowserHarness(options = {}) {
     });
     selectedUser.appendChild(selectedUserSpan);
     const queryFormContainer = registerElement('div', { className: 'query-form' });
+    const queryPageOptions = { id: 'query-page' };
+    if (options.editorFullscreenEnabled === false) {
+        queryPageOptions.attributes = { 'data-editor-fullscreen-enabled': 'false' };
+    }
+    const queryPage = registerElement('div', queryPageOptions);
     const queryResults = registerElement('section', { id: 'query-results', hidden: true });
     const queryResultsLoading = registerElement('div', {
         id: 'query-results-loading',
@@ -409,6 +430,7 @@ function createQueryBrowserHarness(options = {}) {
     });
 
     document.body.appendChild(form);
+    document.body.appendChild(queryPage);
     [
         actionInput,
         explainInput,

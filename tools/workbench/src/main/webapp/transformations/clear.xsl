@@ -39,7 +39,7 @@
 							<xsl:value-of select="$context.label" />
 						</th>
 						<td>
-							<input id="context" name="context"
+							<input id="context" name="context" size="48"
 								type="text" value="{//sparql:binding[@name='context']/sparql:literal}" />
 						</td>
 						<td></td>

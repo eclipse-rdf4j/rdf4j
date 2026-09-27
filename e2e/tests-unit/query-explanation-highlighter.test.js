@@ -228,6 +228,45 @@ test('compacts default and repository IRIs without changing the legacy plaintext
     );
 });
 
+test('retains value semantics while marking rendered IRIs and literal forms', () => {
+    const { harness, highlighter } = createHighlighterHarness();
+    const namespaces = {
+        ex: 'http://example.org/',
+        xsd: 'http://www.w3.org/2001/XMLSchema#'
+    };
+
+    const renderValue = (value) => {
+        const rendered = highlighter.render({
+            type: `Var (name=o, value=${value})`
+        }, {
+            level: 'Optimized',
+            mode: 'syntax',
+            namespaces
+        });
+        const target = harness.document.createElement('pre');
+        target.appendChild(rendered.fragment);
+        return target.getElementsByTagName('span').find((element) =>
+            element.classList.contains('query-explanation-token--value'));
+    };
+
+    for (const iri of ['<http://example.org/Thing>', 'http://example.org/Thing']) {
+        const token = renderValue(iri);
+        assert.equal(token.textContent, 'ex:Thing');
+        assert.equal(token.getAttribute('title'), iri);
+        assert.equal(token.classList.contains('query-explanation-token--value-iri'), true);
+    }
+
+    for (const literal of [
+        '"Example"',
+        '"5"^^<http://www.w3.org/2001/XMLSchema#integer>',
+        '"bonjour"@fr'
+    ]) {
+        const token = renderValue(literal);
+        assert.equal(token.textContent, literal);
+        assert.equal(token.classList.contains('query-explanation-token--value-literal'), true);
+    }
+});
+
 test('compacts namespaces whose prefixes collide with object properties', () => {
     const { harness, highlighter } = createHighlighterHarness();
     const namespace = 'http://example.org/';

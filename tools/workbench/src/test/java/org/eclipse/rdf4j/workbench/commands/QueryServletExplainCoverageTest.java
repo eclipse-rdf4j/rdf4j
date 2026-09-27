@@ -273,6 +273,7 @@ class QueryServletExplainCoverageTest {
 	private static WorkbenchRequest mockExplainRequest(boolean tracked, String requestId) throws Exception {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		when(request.getParameter("action")).thenReturn("explain");
+		when(request.isParameterPresent("action")).thenReturn(true);
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);

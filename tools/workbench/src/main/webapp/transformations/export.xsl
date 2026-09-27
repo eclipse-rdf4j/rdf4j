@@ -22,12 +22,20 @@
 					<select id="Accept" name="Accept">
 						<xsl:for-each select="$info//sparql:binding[@name='graph-download-format']">
 							<option value="{substring-before(sparql:literal, ' ')}">
-								<xsl:if test="$info//sparql:binding[@name='default-Accept']/sparql:literal = substring-before(sparql:literal, ' ')">
+								<xsl:if test="$info//sparql:binding[@name='default-export-format']/sparql:literal = substring-before(sparql:literal, ' ')">
 									<xsl:attribute name="selected">true</xsl:attribute>
 								</xsl:if>
 								<xsl:value-of select="substring-after(sparql:literal, ' ')" />
 							</option>
 						</xsl:for-each>
+					</select>
+				</div>
+				<div class="workbench-field">
+					<label for="compression"><xsl:value-of select="$compression.label" /></label>
+					<select id="compression" name="compression">
+						<option value="none" selected="selected"><xsl:value-of select="$none.label" /></option>
+						<option value="gzip"><xsl:value-of select="$gzip.label" /></option>
+						<option value="zip"><xsl:value-of select="$zip.label" /></option>
 					</select>
 				</div>
 			</div>

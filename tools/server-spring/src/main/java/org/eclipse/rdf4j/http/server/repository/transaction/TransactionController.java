@@ -246,11 +246,6 @@ public class TransactionController extends AbstractController implements Disposa
 
 		Map<String, Object> model = new HashMap<>();
 
-		String baseURI = request.getParameter(Protocol.BASEURI_PARAM_NAME);
-		if (baseURI == null) {
-			baseURI = "";
-		}
-
 		final Resource[] contexts = ProtocolUtil.parseContextParam(request, CONTEXT_PARAM_NAME,
 				SimpleValueFactory.getInstance());
 
@@ -263,12 +258,12 @@ public class TransactionController extends AbstractController implements Disposa
 			case ADD:
 				format = Rio.getParserFormatForMIMEType(request.getContentType())
 						.orElseThrow(Rio.unsupportedFormat(request.getContentType()));
-				transaction.add(request.getInputStream(), baseURI, format, preserveNodeIds, contexts);
+				transaction.add(request.getInputStream(), getRdfBaseURI(request), format, preserveNodeIds, contexts);
 				break;
 			case DELETE:
 				format = Rio.getParserFormatForMIMEType(request.getContentType())
 						.orElseThrow(Rio.unsupportedFormat(request.getContentType()));
-				transaction.delete(format, request.getInputStream(), baseURI);
+				transaction.delete(format, request.getInputStream(), getRdfBaseURI(request));
 				break;
 			case UPDATE:
 				return getSparqlUpdateResult(transaction, request, response);
@@ -300,6 +295,12 @@ public class TransactionController extends AbstractController implements Disposa
 						"Transaction handling error: " + e.getMessage(), e);
 			}
 		}
+	}
+
+	private String getRdfBaseURI(HttpServletRequest request) throws ClientHTTPException {
+		IRI baseURI = ProtocolUtil.parseURIParam(request, Protocol.BASEURI_PARAM_NAME,
+				SimpleValueFactory.getInstance());
+		return baseURI == null ? "" : baseURI.stringValue();
 	}
 
 	private static RDFInputDecompressionLimitException decompressionLimit(Throwable failure) {

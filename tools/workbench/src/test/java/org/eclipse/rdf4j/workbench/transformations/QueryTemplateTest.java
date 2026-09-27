@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 import javax.xml.transform.Templates;
@@ -46,8 +47,10 @@ class QueryTemplateTest {
 				.contains("<input id=\"explanation-highlight-hotspot\"")
 				.contains("name=\"explanation-highlight-mode\"")
 				.contains("type=\"radio\"")
-				.contains("for=\"explanation-highlight-syntax\">Normal</label>")
-				.contains("for=\"explanation-highlight-hotspot\">Heatmap</label>")
+				.containsSubsequence("<label for=\"explanation-highlight-syntax\">",
+						"feature-id\">explain-highlight-syntax</xsl:with-param>", "Normal", "</label>")
+				.containsSubsequence("<label for=\"explanation-highlight-hotspot\">",
+						"feature-id\">explain-highlight-hotspot</xsl:with-param>", "Heatmap", "</label>")
 				.contains("scripts/queryExplanationHighlighter.js")
 				.containsSubsequence("scripts/queryExplanationHighlighter.js", "scripts/query.js");
 	}
@@ -102,6 +105,275 @@ class QueryTemplateTest {
 		assertDisclosureChevronCallCount("server.xsl", 1);
 		assertDisclosureChevronCallCount("remove.xsl", 1);
 		assertDisclosureChevronCallCount("summary.xsl", 1);
+	}
+
+	@Test
+	void workbenchMenuShouldRenderOnlyConfiguredRowsGroupedWithReadWriteAvailability() throws Exception {
+		Transformer transformer = newWorkbenchTransformer(menuInfoResults());
+		StreamSource input = new StreamSource(new StringReader(menuPageResults()));
+		input.setSystemId("https://example.test/rdf4j-workbench/query");
+		StringWriter html = new StringWriter();
+
+		transformer.transform(input, new StreamResult(html));
+
+		String output = html.toString();
+		assertThat(output)
+				.contains("data-workbench-menu-group=\"operations\"")
+				.containsSubsequence("data-workbench-menu-group=\"operations\"", "Run query", "Apply update",
+						"data-workbench-menu-group=\"resources\"", "External help")
+				.contains("Analysis &lt;tools&gt;")
+				.contains("href=\"query\"")
+				.contains("Run query")
+				.contains("href=\"https://docs.example.org/help?a=1&amp;b=2\"")
+				.contains("External help")
+				.contains("aria-hidden=\"true\"")
+				.contains("class=\"disabled\"")
+				.contains("Apply update")
+				.doesNotContain("href=\"summary\"")
+				.doesNotContain("href=\"update\"")
+				.doesNotContain("Create repository");
+		assertThat(output.split(Pattern.quote("data-workbench-menu-group="), -1)).hasSize(3);
+	}
+
+	@Test
+	void queryControlsShouldFollowDisabledFeatureValuesFromInfo() throws Exception {
+		String info = queryFeatureInfoResults(Map.of(
+				"query-language", false,
+				"query-execution", false,
+				"query-explain", false,
+				"query-options", false));
+		Transformer transformer = newWorkbenchTransformer(info);
+		StreamSource input = new StreamSource(new StringReader(menuPageResults()));
+		input.setSystemId("https://example.test/rdf4j-workbench/query");
+		StringWriter html = new StringWriter();
+
+		transformer.transform(input, new StreamResult(html));
+
+		assertThat(html.toString())
+				.containsPattern("(?s)<div id=\"query-language-row\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<button id=\"exec\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<button id=\"explain-trigger\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<div id=\"query-explanation-row\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<div id=\"query-explanation-controls-row\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<button id=\"query-options-toggle\"[^>]*hidden=\"hidden\"");
+	}
+
+	@Test
+	void explainTriggerShouldHideWhenNoLevelOrFormatIsEnabled() throws Exception {
+		String info = queryFeatureInfoResults(Map.ofEntries(
+				Map.entry("explain-level-unoptimized", false),
+				Map.entry("explain-level-optimized", false),
+				Map.entry("explain-level-executed", false),
+				Map.entry("explain-level-telemetry", false),
+				Map.entry("explain-level-timed", false),
+				Map.entry("explain-format-text", false),
+				Map.entry("explain-format-dot", false),
+				Map.entry("explain-format-json", false)));
+		Transformer transformer = newWorkbenchTransformer(info);
+		StreamSource input = new StreamSource(new StringReader(menuPageResults()));
+		input.setSystemId("https://example.test/rdf4j-workbench/query");
+		StringWriter html = new StringWriter();
+
+		transformer.transform(input, new StreamResult(html));
+
+		assertThat(html.toString())
+				.containsPattern("(?s)<button id=\"explain-trigger\"[^>]*hidden=\"hidden\"");
+	}
+
+	@Test
+	void queryAndUpdatePagesShouldLoadPrefixesFromInternalNamespaceMetadata() throws Exception {
+		for (String template : List.of("query.xsl", "update.xsl")) {
+			String output = renderPageWithInternalNamespaces(template);
+			assertThat(output).as("namespace prefixes rendered by %s", template)
+					.contains("\"ex:\":\"urn:example:\"");
+		}
+	}
+
+	@Test
+	void individualQueryFeatureFlagsShouldHideTheirMatchingControls() throws Exception {
+		String info = queryFeatureInfoResults(Map.ofEntries(
+				Map.entry("query-save", false),
+				Map.entry("query-private-save", false),
+				Map.entry("query-timeout", false),
+				Map.entry("query-inferred-statements", false),
+				Map.entry("query-cancel", false),
+				Map.entry("query-compare", false),
+				Map.entry("query-diff", false),
+				Map.entry("query-swap", false),
+				Map.entry("query-rerun", false),
+				Map.entry("query-refresh", false),
+				Map.entry("result-page-size", false),
+				Map.entry("result-fullscreen", false),
+				Map.entry("editor-sidebar", false),
+				Map.entry("editor-fullscreen", false),
+				Map.entry("editor-namespaces", false),
+				Map.entry("explain-format-text", false),
+				Map.entry("explain-format-dot", false),
+				Map.entry("explain-format-json", false),
+				Map.entry("explain-level-unoptimized", false),
+				Map.entry("explain-level-optimized", false),
+				Map.entry("explain-level-executed", false),
+				Map.entry("explain-level-telemetry", false),
+				Map.entry("explain-level-timed", false),
+				Map.entry("explain-view-text", false),
+				Map.entry("explain-view-dot", false),
+				Map.entry("explain-view-json", false),
+				Map.entry("explain-download", false),
+				Map.entry("explain-copy", false),
+				Map.entry("explain-cancel", false),
+				Map.entry("explain-highlight-syntax", false),
+				Map.entry("explain-highlight-hotspot", false),
+				Map.entry("explain-property-selection", false)));
+		Transformer transformer = newWorkbenchTransformer(info);
+		StreamSource input = new StreamSource(new StringReader(menuPageResults()));
+		input.setSystemId("https://example.test/rdf4j-workbench/query");
+		StringWriter html = new StringWriter();
+
+		transformer.transform(input, new StreamResult(html));
+
+		assertThat(html.toString())
+				.containsPattern("(?s)<button id=\"save-query-toggle\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<input id=\"save-private\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<input id=\"query-timeout\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<input id=\"infer\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<input id=\"query-cancel\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<input id=\"compare-toggle\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<div id=\"query-compare-pane\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<button id=\"query-diff-trigger\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<button id=\"query-compare-swap\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<select id=\"limit_query\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<button id=\"query-results-fullscreen\"[^>]*hidden=\"hidden\"")
+				.containsPattern(
+						"(?s)<button id=\"query-results-fullscreen\"[^>]*data-result-fullscreen-enabled=\"false\"")
+				.containsPattern("(?s)<button id=\"query-sidebar-toggle\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<input id=\"query-reset-namespaces\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<input id=\"rerun-explanation\"[^>]*hidden=\"hidden\"")
+				.doesNotContain(
+						"<button id=\"explain-trigger\" class=\"query-action\" type=\"button\" hidden=\"hidden\"")
+				.containsPattern("(?s)<div id=\"query-page\"[^>]*data-editor-fullscreen-enabled=\"false\"")
+				.containsPattern("(?s)<select id=\"explain-format\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<select id=\"explain-level\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<button id=\"copy-explanation\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<span id=\"explanation-settings\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<input id=\"download-explanation\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<input id=\"explanation-highlight-syntax\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<input id=\"explanation-highlight-hotspot\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<button id=\"explanation-properties-all\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<pre id=\"query-explanation\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<div id=\"query-explanation-dot-view\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<div id=\"query-explanation-json-view\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<input id=\"rerun-explanation-cancel\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<button id=\"explain-compare-trigger\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<button id=\"explain-compare-trigger\"[^>]*data-query-refresh-enabled=\"false\"")
+				.containsPattern("(?s)<button id=\"explain-compare-cancel\"[^>]*hidden=\"hidden\"");
+	}
+
+	@Test
+	void disabledQueryRerunHidesOnlyTheRerunControl() throws Exception {
+		Transformer transformer = newWorkbenchTransformer(queryFeatureInfoResults(Map.of("query-rerun", false)));
+		StreamSource input = new StreamSource(new StringReader(menuPageResults()));
+		input.setSystemId("https://example.test/rdf4j-workbench/query");
+		StringWriter html = new StringWriter();
+
+		transformer.transform(input, new StreamResult(html));
+
+		assertThat(html.toString())
+				.containsPattern("(?s)<input id=\"rerun-explanation\"[^>]*hidden=\"hidden\"")
+				.containsPattern("(?s)<button id=\"explain-trigger\"[^>]*onclick=\"workbench.query.runExplain");
+	}
+
+	private static Transformer newWorkbenchTransformer(String infoDocument) throws Exception {
+		TransformerFactory factory = TransformerFactory.newInstance();
+		Path stylesheetPath = Path.of("src/main/webapp/transformations/query.xsl");
+		StreamSource stylesheet = new StreamSource(stylesheetPath.toFile());
+		stylesheet.setSystemId(stylesheetPath.toUri().toString());
+		Templates templates = factory.newTemplates(stylesheet);
+		Transformer transformer = templates.newTransformer();
+		transformer.setURIResolver((href, base) -> new StreamSource(new StringReader(infoDocument)));
+		return transformer;
+	}
+
+	private static String renderPageWithInternalNamespaces(String templateName) throws Exception {
+		TransformerFactory factory = TransformerFactory.newInstance();
+		Path stylesheetPath = Path.of("src/main/webapp/transformations", templateName);
+		StreamSource stylesheet = new StreamSource(stylesheetPath.toFile());
+		stylesheet.setSystemId(stylesheetPath.toUri().toString());
+		Transformer transformer = factory.newTransformer(stylesheet);
+		transformer.setURIResolver((href, base) -> {
+			String document = href.endsWith("_internal/namespaces")
+					? namespaceMetadataResults()
+					: "<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\"><results/></sparql>";
+			return new StreamSource(new StringReader(document));
+		});
+
+		String pageName = templateName.equals("update.xsl") ? "update" : "query";
+		String inputXml = "<?xml version=\"1.0\"?>"
+				+ "<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">"
+				+ "<head><link href=\"info\"/><link href=\"_internal/namespaces\"/></head>"
+				+ "<results><result/></results></sparql>";
+		StreamSource input = new StreamSource(new StringReader(inputXml));
+		input.setSystemId("https://example.test/rdf4j-workbench/repositories/test/" + pageName);
+		StringWriter html = new StringWriter();
+		transformer.transform(input, new StreamResult(html));
+		return html.toString();
+	}
+
+	private static String namespaceMetadataResults() {
+		return "<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\"><results><result>"
+				+ "<binding name=\"prefix\"><literal>ex</literal></binding>"
+				+ "<binding name=\"namespace\"><literal>urn:example:</literal></binding>"
+				+ "</result></results></sparql>";
+	}
+
+	private static String menuPageResults() {
+		return "<?xml version=\"1.0\"?>"
+				+ "<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">"
+				+ "<head><link href=\"info\"/></head><results><result/></results></sparql>";
+	}
+
+	private static String menuInfoResults() {
+		StringBuilder xml = new StringBuilder();
+		xml.append("<?xml version=\"1.0\"?>");
+		xml.append("<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\"><results>");
+		appendMenuRow(xml, "operations", "Analysis <tools>", "explore-group", "10", "query", "Run query",
+				"query", "10", "query");
+		appendMenuRow(xml, "operations", "Analysis <tools>", "explore-group", "10", "update", "Apply update",
+				"update", "20", "update");
+		appendMenuRow(xml, "resources", "Resources", "system-group", "20", "external-help", "External help",
+				"information", "10", "https://docs.example.org/help?a=1&b=2");
+		xml.append("</results></sparql>");
+		return xml.toString();
+	}
+
+	private static String queryFeatureInfoResults(Map<String, Boolean> features) {
+		StringBuilder xml = new StringBuilder();
+		xml.append("<?xml version=\"1.0\"?>");
+		xml.append("<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\"><results>");
+		features.forEach((featureId, enabled) -> {
+			xml.append("<result>");
+			appendBinding(xml, "query-feature-id", featureId);
+			appendBinding(xml, "query-feature-enabled", enabled.toString());
+			xml.append("</result>");
+		});
+		xml.append("</results></sparql>");
+		return xml.toString();
+	}
+
+	private static void appendMenuRow(StringBuilder xml, String groupId, String groupLabel, String groupIcon,
+			String groupOrder, String itemId, String itemLabel, String itemIcon, String itemOrder, String href) {
+		xml.append("<result>");
+		appendBinding(xml, "readable", "true");
+		appendBinding(xml, "writeable", "false");
+		appendBinding(xml, "menu-group-id", groupId);
+		appendBinding(xml, "menu-group-label", groupLabel);
+		appendBinding(xml, "menu-group-icon", groupIcon);
+		appendBinding(xml, "menu-group-order", groupOrder);
+		appendBinding(xml, "menu-item-id", itemId);
+		appendBinding(xml, "menu-item-label", itemLabel);
+		appendBinding(xml, "menu-item-icon", itemIcon);
+		appendBinding(xml, "menu-item-order", itemOrder);
+		appendBinding(xml, "menu-item-href", href);
+		xml.append("</result>");
 	}
 
 	private void assertDisclosureChevronCallCount(String templateName, int expectedCount) throws IOException {
@@ -363,7 +635,8 @@ class QueryTemplateTest {
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
 		assertThat(queryTemplate).contains("svg-pan-zoom")
-				.contains("<div id=\"{$dotViewId}\"></div>")
+				.containsSubsequence("<div id=\"{$dotViewId}\">",
+						"feature-id\">explain-view-dot</xsl:with-param>", "</div>")
 				.contains("name=\"dotViewId\">query-explanation-dot-view</xsl:with-param>")
 				.contains("name=\"dotViewId\">query-explanation-dot-view-compare</xsl:with-param>");
 
@@ -398,7 +671,8 @@ class QueryTemplateTest {
 		String queryScript = Files.readString(Path.of("src/main/webapp/scripts/ts/query.ts"), StandardCharsets.UTF_8);
 
 		assertThat(queryTemplate)
-				.contains("<div id=\"{$jsonViewId}\"></div>")
+				.containsSubsequence("<div id=\"{$jsonViewId}\">",
+						"feature-id\">explain-view-json</xsl:with-param>", "</div>")
 				.contains("name=\"jsonViewId\">query-explanation-json-view</xsl:with-param>")
 				.contains("name=\"jsonViewId\">query-explanation-json-view-compare</xsl:with-param>");
 
@@ -649,11 +923,11 @@ class QueryTemplateTest {
 		assertThat(queryTemplate)
 				.contains("<xsl:variable name=\"explanationLevel\"")
 				.containsPattern(
-						"<select id=\"explain-level\">[\\s\\S]*<xsl:if test=\"normalize-space\\(\\$explanationLevel\\) = 'Unoptimized'\">")
+						"<select id=\"explain-level\">[\\s\\S]*<option value=\"Unoptimized\">[\\s\\S]*<xsl:if test=\"normalize-space\\(\\$effectiveExplainLevel\\) = 'Unoptimized'\">")
 				.containsPattern(
-						"<option value=\"Optimized\">[\\s\\S]*<xsl:if test=\"normalize-space\\(\\$explanationLevel\\) = '' or normalize-space\\(\\$explanationLevel\\) = 'Optimized'\">")
+						"<option value=\"Optimized\">[\\s\\S]*<xsl:if test=\"normalize-space\\(\\$effectiveExplainLevel\\) = 'Optimized'\">")
 				.containsPattern(
-						"<option value=\"Timed\">[\\s\\S]*<xsl:if test=\"normalize-space\\(\\$explanationLevel\\) = 'Timed'\">");
+						"<option value=\"Timed\">[\\s\\S]*<xsl:if test=\"normalize-space\\(\\$effectiveExplainLevel\\) = 'Timed'\">");
 	}
 
 	@Test
@@ -774,9 +1048,9 @@ class QueryTemplateTest {
 						"\\.query-explanation--highlighted \\.query-explanation-line:hover\\s*\\{[^}]*background:");
 
 		assertThat(workbenchStyles)
-				.contains("--workbench-surface: #fff;")
-				.contains("--workbench-inset: #f8fafc;")
-				.contains("--workbench-ink: #0f172a;");
+				.contains("--workbench-surface: #ffffff;")
+				.contains("--workbench-inset: #f5f9fb;")
+				.contains("--workbench-ink: #14242b;");
 	}
 
 	@Test
@@ -841,14 +1115,14 @@ class QueryTemplateTest {
 						+ "color:\\s*var\\(--query-code-unbound\\);");
 
 		assertThat(workbenchStyles)
-				.contains("--workbench-muted: #64748b;")
+				.contains("--workbench-muted: #4f6168;")
 				.contains("--workbench-code-font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;")
 				.contains("--workbench-code-font-size: 14px;")
-				.contains("--workbench-nav: #334155;")
-				.contains("--workbench-teal: #0f766e;")
-				.contains("--workbench-teal-dark: #115e59;")
+				.contains("--workbench-nav: var(--workbench-body);")
+				.contains("--workbench-teal: var(--workbench-primary);")
+				.contains("--workbench-teal-dark: var(--workbench-primary-hover);")
 				.contains("--workbench-danger: #b42318;")
-				.contains("--workbench-rule: #cbd5e1;");
+				.contains("--workbench-rule: var(--workbench-outline);");
 
 		assertThat(highlighter)
 				.contains("var structuralSuffix = hasNextMarker ? /(?:,\\s*|\\)\\s*\\()$/")
@@ -870,6 +1144,23 @@ class QueryTemplateTest {
 				.contains("'binding-unbound'");
 
 		assertThat(queryScript).contains("namespaces: sparqlNamespaces");
+	}
+
+	@Test
+	void queryExplanationHeatmapUsesTheComplementaryBluePalette() throws IOException {
+		String source = Files.readString(
+				Path.of("src/main/webapp/scripts/ts/queryExplanationHighlighter.ts"), StandardCharsets.UTF_8);
+		String compiled = Files.readString(
+				Path.of("src/main/webapp/scripts/queryExplanationHighlighter.js"), StandardCharsets.UTF_8);
+
+		assertThat(source)
+				.contains("var low = [222, 243, 251];")
+				.contains("var high = [115, 196, 226];")
+				.doesNotContain("var low = [255, 247, 237];");
+		assertThat(compiled)
+				.contains("var low = [222, 243, 251];")
+				.contains("var high = [115, 196, 226];")
+				.doesNotContain("var low = [255, 247, 237];");
 	}
 
 	@Test

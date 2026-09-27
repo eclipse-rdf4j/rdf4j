@@ -23,6 +23,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.workbench.base.AbstractServlet;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyResponse;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 
@@ -55,6 +58,8 @@ public class WorkbenchGateway extends AbstractServlet {
 
 	private ServerValidator serverValidator;
 
+	private WorkbenchPolicy policy;
+
 	@Override
 	public void init(final ServletConfig config) throws ServletException {
 		super.init(config);
@@ -64,6 +69,7 @@ public class WorkbenchGateway extends AbstractServlet {
 		if (config.getInitParameter(TRANSFORMATIONS) == null) {
 			throw new MissingInitParameterException(TRANSFORMATIONS);
 		}
+		this.policy = WorkbenchPolicyLoader.getPolicy(config.getServletContext(), appConfig);
 		this.cookies = createCookieHandler(config);
 		this.serverValidator = createServerValidator(config);
 	}
@@ -103,7 +109,28 @@ public class WorkbenchGateway extends AbstractServlet {
 	public void service(final HttpServletRequest req, final HttpServletResponse resp)
 			throws ServletException, IOException {
 		final String change = getChangeServerPath();
+		String pathInfo = req.getPathInfo();
+		if (change == null || !change.equals(pathInfo)) {
+			String effectiveRoute = pathInfo;
+			if (effectiveRoute == null || "/".equals(effectiveRoute)) {
+				effectiveRoute = policy.selectLandingPath(WorkbenchPolicy.LandingContext.WORKBENCH,
+						config.getInitParameter("default-path"));
+				if (effectiveRoute == null) {
+					WorkbenchPolicyResponse.sendDisabledLanding(resp,
+							"The RDF4J Workbench has no Workbench landing page enabled by policy.");
+					return;
+				}
+			}
+			if (!policy.isRouteAllowed(effectiveRoute)) {
+				WorkbenchPolicyResponse.sendHiddenPage(resp);
+				return;
+			}
+		}
 		if (change != null && change.equals(req.getPathInfo())) {
+			if (!policy.isRouteAllowed(change)) {
+				resp.sendError(HttpServletResponse.SC_NOT_FOUND);
+				return;
+			}
 			try {
 				changeServer(req, resp);
 			} catch (QueryResultHandlerException e) {
@@ -113,6 +140,10 @@ public class WorkbenchGateway extends AbstractServlet {
 			final WorkbenchServlet servlet = findWorkbenchServlet(req, resp);
 			if (servlet == null) {
 				// Redirect to change-server-path
+				if (!policy.isRouteAllowed(change)) {
+					resp.sendError(HttpServletResponse.SC_NOT_FOUND);
+					return;
+				}
 				final StringBuilder uri = new StringBuilder(req.getRequestURI());
 				if (req.getPathInfo() != null) {
 					uri.setLength(uri.length() - req.getPathInfo().length());

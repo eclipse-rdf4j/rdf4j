@@ -194,6 +194,14 @@ function createScriptHarness(options = {}) {
                 return `request-${generatedRequestIndex}`;
             }
         },
+        getComputedStyle(element) {
+            const style = element && element.style ? element.style : {};
+            return Object.assign({
+                opacity: style.opacity || '1',
+                transform: style.transform || 'none',
+                direction: style.direction || 'ltr'
+            }, style);
+        },
         document,
         location: document.location,
         localStorage: {

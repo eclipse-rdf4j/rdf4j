@@ -9,27 +9,8 @@ module workbench {
 
     export module add {
 
-        export function handleFormatSelection(selected: string) {
-            if (selected == 'application/x-trig' || selected == 'application/trix'
-                || selected == 'text/x-nquads') {
-                $('#useForContext').prop('checked', false);
-                $('#context').val('').prop('readOnly', false);
-            }
-        }
-
-        function setContextFromBaseURI() {
-            var baseURI = $('#baseURI').val();
-            $('#context').prop('readOnly', true);
-            $('#context').val(baseURI == '' ? '' : '<' + baseURI + '>');
-        }
-
-        export function handleBaseURIUse() {
-            if ($('#useForContext').prop('checked')) {
-                setContextFromBaseURI();
-            }
-            else {
-                $('#context').prop('readOnly', false); 
-            }
+        export function handleContextOverride() {
+            $('#context').prop('disabled', !$('#overrideContext').prop('checked'));
         }
 
         export function enabledInput(selected: string) {
@@ -60,20 +41,12 @@ module workbench {
             else {
                 autodetect.prop('disabled', false);
                 autodetect.prop('selected', true);
-                var baseURI = $('#baseURI');
-                var checked = $('#useForContext').prop('checked');
                 if (isfile) {
-                    baseURI.val(file.val() == '' ? '' : encodeURI('file://'
+                    $('#baseURI').val(file.val() == '' ? '' : encodeURI('file://'
                         + file.val().replace(/\\/g, '/')));
-                    if (checked) {
-                        setContextFromBaseURI();
-                    }
                 }
                 else if (isurl) {
-                    baseURI.val(url.val());
-                    if (checked) {
-                        setContextFromBaseURI();
-                    }
+                    $('#baseURI').val(url.val());
                 }
             }
         }
@@ -83,4 +56,5 @@ module workbench {
 workbench.addLoad(function addPageLoaded() {
     var selected = $("input[name='source']:checked").val() || 'file';
     workbench.add.enabledInput(selected == 'contents' ? 'text' : selected);
+    workbench.add.handleContextOverride();
 });

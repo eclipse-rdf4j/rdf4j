@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -203,12 +204,25 @@ public final class QueryEvaluator {
 			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText,
 			final String repositoryId, final QueryResponseHeartbeat responseHeartbeat)
 			throws BadRequestException, RDF4JException {
+		extractQueryAndEvaluate(builder, resp, out, xslPath, con, queryText, req, cookies, responseQueryText,
+				repositoryId, responseHeartbeat, 0);
+	}
+
+	/**
+	 * Evaluates a query using the fixed deployment result-download default when a download request omits its own cap.
+	 * The configured default applies whether or not the user-facing download-limit control is enabled.
+	 */
+	public void extractQueryAndEvaluate(final TupleResultBuilder builder, final HttpServletResponse resp,
+			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
+			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText,
+			final String repositoryId, final QueryResponseHeartbeat responseHeartbeat, int defaultDownloadLimit)
+			throws BadRequestException, RDF4JException {
 		QueryCircuitBreakerHandle breakerHandle = QUERY_CIRCUIT_BREAKER.register(
 				QueryCircuitBreakerHandle.Source.WORKBENCH, repositoryId, queryText);
 		try {
 			QUERY_CIRCUIT_BREAKER.execute(breakerHandle, con, () -> {
 				extractQueryAndEvaluateInternal(builder, resp, out, xslPath, con, queryText, req, cookies,
-						responseQueryText, responseHeartbeat);
+						responseQueryText, responseHeartbeat, defaultDownloadLimit);
 				return null;
 			});
 		} finally {
@@ -229,6 +243,15 @@ public final class QueryEvaluator {
 			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText,
 			final QueryResponseHeartbeat responseHeartbeat)
 			throws BadRequestException, RDF4JException {
+		extractQueryAndEvaluateInternal(builder, resp, out, xslPath, con, queryText, req, cookies, responseQueryText,
+				responseHeartbeat, 0);
+	}
+
+	private void extractQueryAndEvaluateInternal(final TupleResultBuilder builder, final HttpServletResponse resp,
+			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
+			final WorkbenchRequest req, final CookieHandler cookies, final String responseQueryText,
+			final QueryResponseHeartbeat responseHeartbeat, int defaultDownloadLimit)
+			throws BadRequestException, RDF4JException {
 		final QueryLanguage queryLn = QueryLanguage.valueOf(req.getParameter("queryLn"));
 		Query query = prepareQuery(con, queryText, req);
 		if (req.isParameterPresent(EXPLAIN)) {
@@ -239,8 +262,9 @@ public final class QueryEvaluator {
 
 		boolean evaluateCookie = false;
 		Integer knownTotalResultCount = null;
-		int offset = req.getInt("offset");
-		int limit = getResultLimit(req);
+		boolean downloadRequest = req.isParameterPresent(ACCEPT);
+		int offset = downloadRequest ? 0 : req.getInt("offset");
+		int limit = getResultLimit(req, downloadRequest, defaultDownloadLimit);
 		boolean paged = limit > 0;
 		if (query instanceof GraphQuery || query instanceof TupleQuery) {
 			final int know_total = req.getInt("know_total");
@@ -325,9 +349,10 @@ public final class QueryEvaluator {
 		return query;
 	}
 
-	private int getResultLimit(WorkbenchRequest req) throws BadRequestException {
-		if (req.isParameterPresent(ACCEPT) && req.isParameterPresent(DOWNLOAD_LIMIT)) {
-			return req.getInt(DOWNLOAD_LIMIT);
+	private int getResultLimit(WorkbenchRequest req, boolean downloadRequest, int defaultDownloadLimit)
+			throws BadRequestException {
+		if (downloadRequest) {
+			return req.isParameterPresent(DOWNLOAD_LIMIT) ? req.getInt(DOWNLOAD_LIMIT) : defaultDownloadLimit;
 		}
 		return req.getInt("limit_query");
 	}
@@ -351,7 +376,7 @@ public final class QueryEvaluator {
 			final ExplainQueryResult explainQueryResult) throws QueryResultHandlerException {
 		builder.transform(xslPath, "query.xsl");
 		builder.start(EXPLANATION, EXPLANATION_FORMAT, EXPLANATION_LEVEL);
-		builder.link(List.of(INFO, "namespaces"));
+		builder.link(List.of(INFO, WorkbenchPolicy.INTERNAL_NAMESPACES_LINK));
 		builder.result(explainQueryResult.getContent(), explainQueryResult.getFormat(), explainQueryResult.getLevel());
 		builder.end();
 	}
@@ -459,10 +484,9 @@ public final class QueryEvaluator {
 		addWorkbenchMetadata(builder, req, responseQueryText);
 		addTotalResultCountMetadata(builder, totalResultCount, responseQueryText);
 		final List<Object> values = new ArrayList<>(names.length);
-		if (paged && writeCookie) {
-			// Only in this case do we have paged results, but were given the full
-			// query. Just-in-case parameter massaging below to avoid array index
-			// issues.
+		if (paged && (writeCookie || req.isParameterPresent(ACCEPT))) {
+			// Unknown-total paging evaluates the full query; downloads also need their
+			// result cap applied locally when a total count is already known.
 			int fromIndex = Math.max(0, offset);
 			bindings = bindings.subList(fromIndex, Math.max(fromIndex, Math.min(offset + limit, bindings.size())));
 		}
@@ -531,10 +555,9 @@ public final class QueryEvaluator {
 		builder.link(List.of(INFO));
 		addWorkbenchMetadata(builder, req, responseQueryText);
 		addTotalResultCountMetadata(builder, totalResultCount, responseQueryText);
-		if (paged && writeCookie) {
-			// Only in this case do we have paged results, but were given the full
-			// query. Just-in-case parameter massaging below to avoid array index
-			// issues.
+		if (paged && (writeCookie || req.isParameterPresent(ACCEPT))) {
+			// Unknown-total paging evaluates the full query; downloads also need their
+			// result cap applied locally when a total count is already known.
 			int fromIndex = Math.max(0, offset);
 			statements = statements.subList(fromIndex,
 					Math.max(fromIndex, Math.min(offset + limit, statements.size())));
@@ -546,7 +569,7 @@ public final class QueryEvaluator {
 		builder.end();
 	}
 
-	private void evaluateGraphQuery(final RDFWriter writer, final GraphQuery query)
+	private void evaluateGraphQuery(final RDFWriter writer, final GraphQuery query, int limit)
 			throws QueryEvaluationException, RDFHandlerException {
 		/*
 		 * Do not use GraphQuery.evaluate(RDFHandler) here. RDF4J writers emit their document header from startRDF(),
@@ -566,7 +589,7 @@ public final class QueryEvaluator {
 				writer.handleStatement(first);
 				statementCount++;
 			}
-			while (result.hasNext()) {
+			while ((limit <= 0 || statementCount < limit) && result.hasNext()) {
 				writer.handleStatement(result.next());
 				statementCount++;
 				if (statementCount % MATERIALIZATION_CHECKPOINT_INTERVAL == 0) {
@@ -614,7 +637,7 @@ public final class QueryEvaluator {
 					// Restore the negotiated RDF media type before the first heartbeat can commit the response.
 					resp.setContentType(format.getDefaultMIMEType());
 					startResponseHeartbeat(writer, responseHeartbeat);
-					this.evaluateGraphQuery(writer, graphQuery);
+					this.evaluateGraphQuery(writer, graphQuery, limit);
 				}
 			} else if (query instanceof BooleanQuery) {
 				startResponseHeartbeat(builder, responseHeartbeat);

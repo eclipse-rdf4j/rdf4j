@@ -40,12 +40,12 @@
 					<div class="workbench-form-grid">
 						<div class="workbench-field">
 							<label for="server-user"><xsl:value-of select="$server-user.label" /></label>
-							<input id="server-user" name="server-user" type="text"
+							<input id="server-user" name="server-user" type="text" size="32"
 								value="{normalize-space(//sparql:binding[@name='server-user'])}" />
 						</div>
 						<div class="workbench-field">
 							<label for="server-password"><xsl:value-of select="$server-password.label" /></label>
-							<input id="server-password" name="server-password" type="password" value="" />
+							<input id="server-password" name="server-password" type="password" size="32" value="" />
 						</div>
 					</div>
 				</div>

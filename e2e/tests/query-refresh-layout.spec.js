@@ -175,13 +175,29 @@ test('captures the expanded query and result disclosures', async ({ page }) => {
     await expect(resultFrame.locator('table.data tbody tr')).toHaveCount(3);
 
     await page.locator('#query-options-toggle').press('Enter');
-    await page.locator('#save-query-toggle').press('Enter');
-    await resultFrame.locator('#query-result-download-toggle').press('Enter');
-    await resultFrame.locator('#query-result-options-toggle').press('Enter');
-    await expect(page.locator('#query-name')).toBeVisible();
+    await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('#query-timeout')).toBeVisible();
+    await expect(page.locator('#query-name')).toBeHidden();
+    await resultFrame.locator('#query-result-download-toggle').press('Enter');
     await expect(resultFrame.locator('#Accept')).toBeVisible();
+    await expect(resultFrame.locator('#limit_query')).toBeHidden();
+    await page.screenshot({
+        path: path.join(DESIGN_DIR, 'implementation-query-options-and-download.png'),
+        fullPage: true,
+        animations: 'disabled',
+        caret: 'hide'
+    });
+
+    await page.locator('#save-query-toggle').press('Enter');
+    await expect(page.locator('#save-query-toggle')).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#query-name')).toBeVisible();
+    await expect(page.locator('#query-timeout')).toBeHidden();
+    await resultFrame.locator('#query-result-options-toggle').press('Enter');
+    await expect(resultFrame.locator('#query-result-options-toggle')).toHaveAttribute('aria-expanded', 'true');
+    await expect(resultFrame.locator('#query-result-download-toggle')).toHaveAttribute('aria-expanded', 'false');
     await expect(resultFrame.locator('#limit_query')).toBeVisible();
+    await expect(resultFrame.locator('#Accept')).toBeHidden();
     await page.screenshot({
         path: path.join(DESIGN_DIR, 'implementation-expanded.png'),
         fullPage: true,
@@ -234,7 +250,7 @@ test('keeps navigation state and option controls coherent on a narrow query page
     const metrics = await page.evaluate(() => {
         const rect = selector => document.querySelector(selector).getBoundingClientRect();
         const queryLink = document.querySelector('#navigation a[href="query"]');
-        const queryItem = queryLink.closest('li');
+        const queryLinkStyle = getComputedStyle(queryLink);
         const infer = rect('#infer');
         const inferLabel = rect('label[for="infer"]');
         const privateInput = rect('#save-private');
@@ -242,8 +258,8 @@ test('keeps navigation state and option controls coherent on a narrow query page
         return {
             logoTop: rect('#logo').top,
             contextTop: rect('#contentheader').top,
-            queryBorderWidth: parseFloat(getComputedStyle(queryItem).borderLeftWidth),
-            queryBackground: getComputedStyle(queryItem).backgroundColor,
+            queryBorderWidth: parseFloat(queryLinkStyle.borderLeftWidth),
+            queryBackground: queryLinkStyle.backgroundColor,
             inferPairGap: Math.abs((infer.top + infer.bottom) / 2 - (inferLabel.top + inferLabel.bottom) / 2),
             privatePairGap: Math.abs((privateInput.top + privateInput.bottom) / 2
                 - (privateLabel.top + privateLabel.bottom) / 2),
@@ -259,6 +275,107 @@ test('keeps navigation state and option controls coherent on a narrow query page
     expect(metrics.privatePairGap).toBeLessThanOrEqual(1);
     expect(metrics.inferLabelFor).toBe('infer');
     expect(metrics.privateLabelFor).toBe('save-private');
+});
+
+test('aligns query option controls on desktop and keeps them inside a narrow viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.reload();
+    await page.locator('.CodeMirror').waitFor({ state: 'visible' });
+    await page.locator('#query-options-toggle').press('Enter');
+    await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'true');
+
+    const desktop = await page.evaluate(() => {
+        const bounds = selector => document.querySelector(selector).getBoundingClientRect();
+        const controls = [
+            bounds('#limit_query'),
+            bounds('#query-timeout'),
+            document.querySelector('#infer').parentElement.getBoundingClientRect(),
+            bounds('.query-settings > .query-disclosure__actions input[type="button"]')
+        ];
+        const centers = controls.map(control => (control.top + control.bottom) / 2);
+        const controlHeights = {
+            resultsPerPage: bounds('#limit_query').height,
+            timeout: bounds('#query-timeout').height,
+            clear: bounds('.query-settings > .query-disclosure__actions input[type="button"]').height
+        };
+        return {
+            centerSpread: Math.max(...centers) - Math.min(...centers),
+            controlHeights,
+            controlHeightSpread: Math.max(...Object.values(controlHeights)) - Math.min(...Object.values(controlHeights)),
+            limitLabelFor: document.querySelector('.query-settings label[for="limit_query"]')?.htmlFor ?? null,
+            timeoutLabelFor: document.querySelector('.query-settings label[for="query-timeout"]')?.htmlFor ?? null,
+            inferredLabelFor: document.querySelector('.query-settings label[for="infer"]')?.htmlFor ?? null
+        };
+    });
+
+    console.log('Desktop query options geometry:', desktop);
+    expect(desktop.centerSpread).toBeLessThanOrEqual(1);
+    expect(desktop.controlHeightSpread).toBeLessThanOrEqual(1);
+    expect(desktop.limitLabelFor).toBe('limit_query');
+    expect(desktop.timeoutLabelFor).toBe('query-timeout');
+    expect(desktop.inferredLabelFor).toBe('infer');
+
+    const limit = page.locator('#limit_query');
+    await page.locator('label[for="limit_query"]').click();
+    await expect(limit).toBeFocused();
+    await limit.selectOption('50');
+
+    const infer = page.locator('#infer');
+    const inferredBeforeLabelClick = await infer.isChecked();
+    await page.locator('label[for="infer"]').click();
+    expect(await infer.isChecked()).toBe(!inferredBeforeLabelClick);
+
+    const timeout = page.locator('#query-timeout');
+    await page.locator('label[for="query-timeout"]').click();
+    await expect(timeout).toBeFocused();
+    await timeout.fill('23');
+
+    const clearPrompt = new Promise(resolve => {
+        page.once('dialog', async dialog => {
+            expect(dialog.message()).toContain('Click OK to clear');
+            await dialog.accept();
+            resolve();
+        });
+    });
+    await page.locator('.query-settings > .query-disclosure__actions input[type="button"]').click();
+    await clearPrompt;
+    await expect(limit).toHaveValue('50');
+    await expect(timeout).toHaveValue('23');
+    expect(await infer.isChecked()).toBe(!inferredBeforeLabelClick);
+
+    for (const width of [390, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.reload();
+        await page.locator('.CodeMirror').waitFor({ state: 'visible' });
+        await page.locator('#query-options-toggle').press('Enter');
+        await expect(page.locator('#query-options-panel')).toBeVisible();
+        const narrow = await page.evaluate(() => {
+            const panel = document.querySelector('#query-options-panel').getBoundingClientRect();
+            const settingsElement = document.querySelector('.query-settings');
+            const settings = settingsElement.getBoundingClientRect();
+            const childRects = [
+                'label[for="limit_query"]', '#limit_query',
+                'label[for="query-timeout"]', '#query-timeout',
+                '.query-option', '#infer',
+                '.query-disclosure__actions input[type="button"]'
+            ].map(selector => document.querySelector(selector).getBoundingClientRect());
+            return {
+                clientWidth: document.documentElement.clientWidth,
+                scrollWidth: document.documentElement.scrollWidth,
+                panelRight: panel.right,
+                settingsRight: settings.right,
+                settingsScrollWidth: settingsElement.scrollWidth,
+                settingsClientWidth: settingsElement.clientWidth,
+                childOverflow: Math.max(...childRects.map(rect => rect.right)) - settings.right
+            };
+        });
+
+        console.log(`Narrow query options geometry (${width}px):`, narrow);
+        expect(narrow.scrollWidth).toBeLessThanOrEqual(narrow.clientWidth + 1);
+        expect(narrow.settingsScrollWidth).toBeLessThanOrEqual(narrow.settingsClientWidth + 1);
+        expect(narrow.settingsRight).toBeLessThanOrEqual(narrow.panelRight + 1);
+        expect(narrow.childOverflow).toBeLessThanOrEqual(1);
+    }
 });
 
 test('uses the shared SVG chevron across query and embedded result states', async ({ page }) => {
@@ -335,6 +452,34 @@ test('uses the shared SVG chevron across query and embedded result states', asyn
         await expect(frame.locator('table.data tbody tr')).toHaveCount(3);
         for (const selector of ['#query-result-download-toggle', '#query-result-options-toggle']) {
             expectChevron(await frame.locator(selector).evaluate(readChevron));
+        }
+        if (width === 320) {
+            const toolbar = await frame.locator('.query-result-toolbar').evaluate(element => {
+                const toolbarBounds = element.getBoundingClientRect();
+                const triggers = Array.from(element.querySelectorAll(
+                    '#query-result-download-toggle, #query-result-options-toggle, #query-result-fullscreen'))
+                    .map(trigger => {
+                        const bounds = trigger.getBoundingClientRect();
+                        return {
+                            id: trigger.id,
+                            left: bounds.left,
+                            right: bounds.right
+                        };
+                    });
+                return {
+                    width: toolbarBounds.width,
+                    clientWidth: element.clientWidth,
+                    scrollWidth: element.scrollWidth,
+                    left: toolbarBounds.left,
+                    right: toolbarBounds.right,
+                    triggers
+                };
+            });
+            expect(toolbar.scrollWidth).toBeLessThanOrEqual(toolbar.clientWidth + 1);
+            for (const trigger of toolbar.triggers) {
+                expect(trigger.left, `${trigger.id} starts outside the result toolbar`).toBeGreaterThanOrEqual(toolbar.left - 1);
+                expect(trigger.right, `${trigger.id} ends outside the result toolbar`).toBeLessThanOrEqual(toolbar.right + 1);
+            }
         }
         await page.locator('#exec').evaluate(element => element.blur());
         await page.screenshot({
@@ -525,9 +670,13 @@ test('resizes result content through repeated disclosures and supports real fram
     await expect(resultFrame.locator('input[name="show-datatypes"]')).toBeVisible();
     await resultFrame.locator('input[name="show-datatypes"]').uncheck();
     await resultFrame.locator('#query-result-download-toggle').press('Enter');
+    await expect(resultFrame.locator('#query-result-download-toggle')).toHaveAttribute('aria-expanded', 'true');
+    await expect(resultFrame.locator('#query-result-options-toggle')).toHaveAttribute('aria-expanded', 'false');
+    await resultFrame.locator('#query-result-options-toggle').press('Enter');
+    await expect(resultFrame.locator('#query-result-options-toggle')).toHaveAttribute('aria-expanded', 'true');
+    await expect(resultFrame.locator('#query-result-download-toggle')).toHaveAttribute('aria-expanded', 'false');
     await resultFrame.locator('#query-result-options-toggle').press('Enter');
     await expect(resultFrame.locator('#query-result-options-toggle')).toHaveAttribute('aria-expanded', 'false');
-    await expect(resultFrame.locator('#query-result-download-toggle')).toHaveAttribute('aria-expanded', 'false');
 
     await page.setViewportSize({ width: 1440, height: 500 });
     await expect.poll(() => frame.evaluate(element => element.getBoundingClientRect().height))
@@ -654,6 +803,10 @@ test('keeps query and result controls discoverable through keyboard disclosures'
     await expect(page.locator('#save-private')).toBeVisible();
 
     await page.locator('#query-options-toggle').press('Enter');
+    await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('#save-query-toggle')).toHaveAttribute('aria-expanded', 'false');
+    await page.locator('#save-query-toggle').press('Enter');
+    await expect(page.locator('#save-query-toggle')).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'false');
     await page.locator('#save-query-toggle').press('Enter');
     await expect(page.locator('#save-query-toggle')).toHaveAttribute('aria-expanded', 'false');
@@ -711,7 +864,7 @@ test('keeps embedded result paging visible and groups download controls', async 
     await expect(frame.locator('#nextX')).toBeVisible();
 });
 
-test('uses one embedded result header and stacks open query disclosures', async ({ page }) => {
+test('uses one embedded result header and anchors the active query disclosure', async ({ page }) => {
     await page.locator('.CodeMirror').evaluate(element => {
         element.CodeMirror.setValue('SELECT * WHERE { VALUES ?s { "one" "two" } }');
     });
@@ -722,26 +875,34 @@ test('uses one embedded result header and stacks open query disclosures', async 
     await expect(page.locator('.query-results__header')).toBeHidden();
     await expect(frame.locator('#query-result-embedded-header')).toHaveCount(1);
 
-    await page.locator('#query-options-toggle').press('Enter');
-    await page.locator('#save-query-toggle').press('Enter');
-    const disclosureMetrics = await page.evaluate(() => {
+    const readDisclosureGeometry = async (toggleSelector, panelSelector) => page.evaluate(([toggleSelector, panelSelector]) => {
         const toolbar = document.querySelector('.query-actions-toolbar').getBoundingClientRect();
-        const save = document.querySelector('#save-query-panel').getBoundingClientRect();
-        const options = document.querySelector('#query-options-panel').getBoundingClientRect();
+        const toggle = document.querySelector(toggleSelector).getBoundingClientRect();
+        const panel = document.querySelector(panelSelector).getBoundingClientRect();
         return {
-            toolbarWidth: toolbar.width,
-            saveWidth: save.width,
-            optionsWidth: options.width,
-            saveTop: save.top,
-            optionsTop: options.top,
-            saveBottom: save.bottom
+            toolbar: { left: toolbar.left, right: toolbar.right },
+            toggleBottom: toggle.bottom,
+            panel: { left: panel.left, right: panel.right, top: panel.top, width: panel.width }
         };
-    });
+    }, [toggleSelector, panelSelector]);
 
-    expect(disclosureMetrics.saveWidth).toBeGreaterThanOrEqual(disclosureMetrics.toolbarWidth * 0.8);
-    expect(disclosureMetrics.optionsWidth).toBeGreaterThanOrEqual(disclosureMetrics.toolbarWidth * 0.8);
-    expect(disclosureMetrics.optionsTop).toBeGreaterThanOrEqual(disclosureMetrics.saveBottom - 1);
-    expect(disclosureMetrics.saveTop).toBeGreaterThanOrEqual(0);
+    await page.locator('#query-options-toggle').press('Enter');
+    await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('#save-query-toggle')).toHaveAttribute('aria-expanded', 'false');
+    const optionsGeometry = await readDisclosureGeometry('#query-options-toggle', '#query-options-panel');
+    expect(optionsGeometry.panel.width).toBeGreaterThan(0);
+    expect(optionsGeometry.panel.left).toBeGreaterThanOrEqual(optionsGeometry.toolbar.left - 1);
+    expect(optionsGeometry.panel.right).toBeLessThanOrEqual(optionsGeometry.toolbar.right + 1);
+    expect(optionsGeometry.panel.top).toBeGreaterThanOrEqual(optionsGeometry.toggleBottom - 1);
+
+    await page.locator('#save-query-toggle').press('Enter');
+    await expect(page.locator('#save-query-toggle')).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('#query-options-toggle')).toHaveAttribute('aria-expanded', 'false');
+    const saveGeometry = await readDisclosureGeometry('#save-query-toggle', '#save-query-panel');
+    expect(saveGeometry.panel.width).toBeGreaterThan(0);
+    expect(saveGeometry.panel.left).toBeGreaterThanOrEqual(saveGeometry.toolbar.left - 1);
+    expect(saveGeometry.panel.right).toBeLessThanOrEqual(saveGeometry.toolbar.right + 1);
+    expect(saveGeometry.panel.top).toBeGreaterThanOrEqual(saveGeometry.toggleBottom - 1);
 });
 
 test('keeps the embedded result header aligned when result disclosures open', async ({ page }) => {

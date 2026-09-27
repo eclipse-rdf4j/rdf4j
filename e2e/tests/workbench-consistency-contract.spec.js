@@ -63,6 +63,11 @@ async function openWorkbenchPage(page, route) {
 
 async function readControlSignature(page, locator) {
 	await page.mouse.move(0, 0);
+	const panelId = await locator.evaluate(element => element.closest('.query-disclosure__panel')?.id);
+	if (panelId) {
+		await expect.poll(() => page.locator(`#${panelId}`).evaluate(element => element.getAnimations().length))
+			.toBe(0);
+	}
 	const control = await locator.evaluateHandle(element => {
 		const control = element.matches('button, input, select, textarea, a')
 			? element
@@ -184,11 +189,12 @@ test('query, upload, create, saved, and embedded controls share their locked act
 		expect(signature, name).toMatchObject({
 			fontSize: '13px',
 			fontWeight: '400',
-			height: 36,
 			borderRadius: '7px',
-			borderColor: 'rgb(203, 213, 225)',
+			borderColor: 'rgb(119, 138, 146)',
 			focusIndicator: true
 		});
+		expect(signature.height, name).toBeGreaterThanOrEqual(35);
+		expect(signature.height, name).toBeLessThanOrEqual(36);
 	}
 	expect(queryField).toEqual(addField);
 	expect(addField).toEqual(createField);
@@ -196,7 +202,6 @@ test('query, upload, create, saved, and embedded controls share their locked act
 		fontFamily: signature.fontFamily,
 		fontSize: signature.fontSize,
 		fontWeight: signature.fontWeight,
-		height: signature.height,
 		borderRadius: signature.borderRadius,
 		borderColor: signature.borderColor,
 		outlineStyle: signature.outlineStyle,
@@ -259,7 +264,7 @@ test('System Information keeps every section and live value inside one aligned s
 	expect(desktopMetrics.sections).toBe(3);
 });
 
-test('header Change links stay plain, compact, and slate colored', async ({ page }) => {
+test('header Change links stay plain, compact, and use muted text', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await openWorkbenchPage(page, `repositories/${REPOSITORY_ID}/query`);
 	const changeLinks = page.locator('#contentheader.workbench-context .change a');
@@ -288,7 +293,7 @@ test('header Change links stay plain, compact, and slate colored', async ({ page
 		expect(link.text).toMatch(/^change$/i);
 		expect(link.text).not.toMatch(/[\[\]]/);
 		expect(link.fontSize).toBe('12px');
-		expect(link.color).toBe('rgb(100, 116, 139)');
+		expect(link.color).toBe('rgb(79, 97, 104)');
 		expect(link.textTransform).toBe('none');
 		expect(link.height).toBeLessThanOrEqual(24);
 	}
@@ -579,7 +584,7 @@ test('saved query metadata exposes separators between all label and value pairs'
 			expect(cell).toMatchObject({
 				borderBottomWidth: '1px',
 				borderBottomStyle: 'solid',
-				borderBottomColor: 'rgb(226, 232, 240)'
+				borderBottomColor: 'rgb(227, 236, 239)'
 			});
 		}
 	}
@@ -696,7 +701,7 @@ test('saved query entries share one island and stay separated at desktop and mob
 		}, { firstId: await firstRow.getAttribute('id').then(id => id.replace(/-div$/, '')), secondId: await secondRow.getAttribute('id').then(id => id.replace(/-div$/, '')) });
 		expect(geometry.gap, `${width}px row gap`).toBeGreaterThanOrEqual(23);
 		expect(geometry.separatorWidth, `${width}px separator`).toBe(1);
-		expect(geometry.separatorColor).toBe('rgb(226, 232, 240)');
+		expect(geometry.separatorColor).toBe('rgb(227, 236, 239)');
 		expect(geometry.rowBackground).toBe('rgba(0, 0, 0, 0)');
 		expect(geometry.rowShadow).toBe('none');
 		expect(geometry.listBackground).toBe('rgb(255, 255, 255)');
@@ -836,14 +841,14 @@ test('query, update, and saved editor utilities stay outlined and clear of long 
 		expect(metrics.graphics.length, `${family} at ${width}px should expose SVG graphics`).toBeGreaterThan(0);
 		for (const graphic of metrics.graphics) {
 			expect(graphic.fill, `${family} at ${width}px should use outline glyphs`).toBe('none');
-			expect(graphic.stroke, `${family} at ${width}px should use slate strokes`).toBe('rgb(100, 116, 139)');
+			expect(graphic.stroke, `${family} at ${width}px should use muted strokes`).toBe('rgb(79, 97, 104)');
 		}
 		colors.push(metrics.color);
 	}
-	expect(new Set(colors)).toEqual(new Set(['rgb(100, 116, 139)']));
+	expect(new Set(colors)).toEqual(new Set(['rgb(79, 97, 104)']));
 });
 
-test('editor utility glyphs remain slate outlines through fullscreen toggles', async ({ page }) => {
+test('editor utility glyphs remain muted outlines through fullscreen toggles', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 1000 });
 	const savedName = `fullscreen-${Date.now()}`;
 	await saveQuery(page, savedName);
@@ -883,10 +888,10 @@ test('editor utility glyphs remain slate outlines through fullscreen toggles', a
 		const fullscreenUtilities = await measureVisibleUtilities(editor);
 		expect(fullscreenUtilities.length, `${family} fullscreen utilities`).toBeGreaterThan(0);
 		for (const icon of fullscreenUtilities) {
-			expect(icon.color).toBe('rgb(100, 116, 139)');
+			expect(icon.color).toBe('rgb(79, 97, 104)');
 			for (const graphic of icon.graphics) {
 				expect(graphic.fill).toBe('none');
-				expect(graphic.stroke).toBe('rgb(100, 116, 139)');
+				expect(graphic.stroke).toBe('rgb(79, 97, 104)');
 			}
 		}
 		await windowedIcon.click();

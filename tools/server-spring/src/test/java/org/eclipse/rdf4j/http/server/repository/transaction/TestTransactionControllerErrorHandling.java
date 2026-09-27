@@ -25,6 +25,7 @@ import java.util.zip.ZipOutputStream;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -104,6 +105,38 @@ public class TestTransactionControllerErrorHandling {
 			}
 		});
 
+	}
+
+	@Test
+	public void shouldResolveRelativeUpdateIrisAgainstRawBaseUri() throws Exception {
+		Transaction txn = new Transaction(repository);
+		ActiveTransactionRegistry.INSTANCE.register(txn);
+		UUID transactionId = txn.getID();
+		String baseURI = "https://example.org/update/";
+
+		request.setRequestURI("/repositories/" + repositoryID + "/transactions/" + transactionId);
+		request.setPathInfo(repositoryID + "/transactions/" + transactionId);
+		request.setMethod(HttpMethod.PUT.name());
+		request.setParameter(Protocol.ACTION_PARAM_NAME, "UPDATE");
+		request.setParameter(Protocol.BASEURI_PARAM_NAME, baseURI);
+		request.setContentType(Protocol.SPARQL_UPDATE_MIME_TYPE);
+		request.setContent(("INSERT DATA { <relative-subject> <http://example.org/p> \"update\" }")
+				.getBytes(StandardCharsets.UTF_8));
+
+		try {
+			TransactionController transactionController = new TransactionController();
+			transactionController.handleRequestInternal(request, response);
+		} finally {
+			txn.close();
+			ActiveTransactionRegistry.INSTANCE.deregister(txn);
+		}
+
+		try (var connection = repository.getConnection()) {
+			Assertions.assertTrue(connection.hasStatement(
+					SimpleValueFactory.getInstance().createIRI(baseURI + "relative-subject"),
+					SimpleValueFactory.getInstance().createIRI("http://example.org/p"),
+					SimpleValueFactory.getInstance().createLiteral("update"), false));
+		}
 	}
 
 	@Test

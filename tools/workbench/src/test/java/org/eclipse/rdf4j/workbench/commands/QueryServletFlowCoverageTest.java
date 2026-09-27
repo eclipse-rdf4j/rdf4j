@@ -111,7 +111,7 @@ class QueryServletFlowCoverageTest {
 		RecordingServiceQueryServlet execServlet = new RecordingServiceQueryServlet();
 		WorkbenchRequest execRequest = mock(WorkbenchRequest.class);
 
-		when(execRequest.getParameter("action")).thenReturn("exec");
+		stubAction(execRequest, "exec");
 		when(execRequest.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(execRequest.getParameter(QueryServlet.REF)).thenReturn("text");
 
@@ -164,9 +164,9 @@ class QueryServletFlowCoverageTest {
 		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query")))
 				.thenReturn(SimpleValueFactory.getInstance().createIRI("urn:query:private"));
 		when(storage.canRead(any(), eq("alice"))).thenReturn(false);
-		when(missingCancelRequest.getParameter("action")).thenReturn("cancel-explain");
+		stubAction(missingCancelRequest, "cancel-explain");
 		when(missingCancelRequest.isParameterPresent("explain-request-id")).thenReturn(false);
-		when(nullCancelRequest.getParameter("action")).thenReturn("cancel-explain");
+		stubAction(nullCancelRequest, "cancel-explain");
 		when(nullCancelRequest.isParameterPresent("explain-request-id")).thenReturn(true);
 		when(nullCancelRequest.getParameter("explain-request-id")).thenReturn(null);
 		servlet.substituteQueryStorage(storage);
@@ -352,7 +352,7 @@ class QueryServletFlowCoverageTest {
 
 	private static WorkbenchRequest execRequest(String query, String accept, String acceptEncoding) throws Exception {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("exec");
+		stubAction(request, "exec");
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(query != null);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(query);
@@ -371,7 +371,7 @@ class QueryServletFlowCoverageTest {
 
 	private static WorkbenchRequest mockExplainPostRequest(boolean async, String requestId) throws Exception {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("explain");
+		stubAction(request, "explain");
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("text");
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
@@ -388,7 +388,7 @@ class QueryServletFlowCoverageTest {
 
 	private static WorkbenchRequest unreadableSavedQueryRequest(String action) {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn(action);
+		stubAction(request, action);
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
@@ -399,7 +399,7 @@ class QueryServletFlowCoverageTest {
 
 	private static WorkbenchRequest mockSaveRequest(String queryName) throws Exception {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("save");
+		stubAction(request, "save");
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 		when(request.getParameter("query-name")).thenReturn(queryName);
@@ -420,6 +420,11 @@ class QueryServletFlowCoverageTest {
 
 	private static String localRepositoryReference(String source) {
 		return "urn:rdf4j:repository:" + java.util.UUID.nameUUIDFromBytes(source.getBytes(StandardCharsets.UTF_8));
+	}
+
+	private static void stubAction(WorkbenchRequest request, String action) {
+		when(request.getParameter("action")).thenReturn(action);
+		when(request.isParameterPresent("action")).thenReturn(action != null);
 	}
 
 	private static final class CookieAwareQueryServlet extends QueryServlet {

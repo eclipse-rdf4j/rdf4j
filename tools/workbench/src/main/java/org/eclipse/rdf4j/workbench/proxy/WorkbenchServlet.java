@@ -38,6 +38,10 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.workbench.base.AbstractServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPageUrl;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyResponse;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.eclipse.rdf4j.workbench.util.DynamicHttpRequest;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
@@ -62,6 +66,8 @@ public class WorkbenchServlet extends AbstractServlet {
 
 	private RepositoryManager manager;
 
+	private WorkbenchPolicy policy;
+
 	private final ConcurrentMap<String, ProxyRepositoryServlet> repositories = new ConcurrentHashMap<>();
 
 	@Override
@@ -74,6 +80,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		if (param == null || param.trim().isEmpty()) {
 			throw new MissingInitParameterException(SERVER_PARAM);
 		}
+		this.policy = WorkbenchPolicyLoader.getPolicy(config.getServletContext(), null);
 		try {
 			manager = createRepositoryManager(param);
 		} catch (IOException | RepositoryException e) {
@@ -100,12 +107,23 @@ public class WorkbenchServlet extends AbstractServlet {
 	public void service(final HttpServletRequest req, final HttpServletResponse resp)
 			throws ServletException, IOException {
 		final String pathInfo = req.getPathInfo();
-		if (pathInfo == null) {
-			final String defaultPath = config.getInitParameter(DEFAULT_PATH);
-			resp.sendRedirect(req.getRequestURI() + defaultPath);
-		} else if ("/".equals(pathInfo)) {
-			final String defaultPath = config.getInitParameter(DEFAULT_PATH);
-			resp.sendRedirect(req.getRequestURI() + defaultPath.substring(1));
+		boolean landingRequest = pathInfo == null || "/".equals(pathInfo);
+		String landingPath = landingRequest
+				? policy.selectLandingPath(WorkbenchPolicy.LandingContext.WORKBENCH,
+						config.getInitParameter(DEFAULT_PATH))
+				: null;
+		if (landingRequest && landingPath == null) {
+			WorkbenchPolicyResponse.sendDisabledLanding(resp,
+					"The RDF4J Workbench has no Workbench landing page enabled by policy.");
+			return;
+		}
+		String route = landingRequest ? landingPath : getRoutePath(pathInfo);
+		if (!policy.isRouteAllowed(route)) {
+			WorkbenchPolicyResponse.sendHiddenPage(resp);
+			return;
+		}
+		if (landingRequest) {
+			resp.sendRedirect(WorkbenchPageUrl.resolveWorkbenchPath(req, landingPath));
 		} else if ('/' == pathInfo.charAt(0)) {
 			try {
 				handleRequest(req, resp, pathInfo);
@@ -115,6 +133,23 @@ public class WorkbenchServlet extends AbstractServlet {
 		} else {
 			throw new BadRequestException("Request path must contain a repository ID");
 		}
+	}
+
+	private String getRoutePath(String pathInfo) {
+		String path = pathInfo;
+		if (path == null || "/".equals(path)) {
+			path = config.getInitParameter(DEFAULT_PATH);
+		} else if (!path.startsWith("/")) {
+			return config.getInitParameter("default-command");
+		}
+		if (path == null) {
+			return config.getInitParameter("default-command");
+		}
+		int routeStart = path.indexOf('/', 1);
+		if (routeStart < 0 || routeStart == path.length() - 1) {
+			return config.getInitParameter("default-command");
+		}
+		return path.substring(routeStart);
 	}
 
 	/**

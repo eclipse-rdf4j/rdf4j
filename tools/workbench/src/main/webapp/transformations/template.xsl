@@ -9,12 +9,42 @@
 
 	<xsl:variable name="info"
 		select="document(sparql:sparql/sparql:head/sparql:link[@href='info']/@href)" />
+	<xsl:variable name="default-workbench-theme"
+		select="$info//sparql:binding[@name='default-workbench-theme']/sparql:literal/text()" />
+
+	<xsl:template name="workbench-feature-enabled">
+		<xsl:param name="feature-id" />
+		<xsl:variable name="feature"
+			select="$info//sparql:result[sparql:binding[@name='query-feature-id']/sparql:literal = $feature-id]" />
+		<xsl:choose>
+			<xsl:when test="not($feature) or $feature/sparql:binding[@name='query-feature-enabled']/sparql:literal = 'true'">
+				<xsl:text>true</xsl:text>
+			</xsl:when>
+			<xsl:otherwise>
+				<xsl:text>false</xsl:text>
+			</xsl:otherwise>
+		</xsl:choose>
+	</xsl:template>
+
+	<xsl:template name="workbench-feature-hidden">
+		<xsl:param name="feature-id" />
+		<xsl:variable name="enabled">
+			<xsl:call-template name="workbench-feature-enabled">
+				<xsl:with-param name="feature-id" select="$feature-id" />
+			</xsl:call-template>
+		</xsl:variable>
+		<xsl:if test="normalize-space($enabled) = 'false'">
+			<xsl:attribute name="hidden">hidden</xsl:attribute>
+		</xsl:if>
+	</xsl:template>
 
 	<xsl:template match="/">
 		<xsl:choose>
 			<xsl:when test="/sparql:sparql/workbench:metadata/workbench:embedded = 'true'">
 				<html xml:lang="en" lang="en">
 					<head>
+						<meta name="rdf4j-workbench-theme-default" content="{$default-workbench-theme}" />
+						<script src="../../scripts/workbench-theme.js" type="text/javascript"></script>
 						<title>
 							<xsl:value-of select="$workbench.title" />
 							-
@@ -66,7 +96,9 @@
 			</xsl:when>
 			<xsl:otherwise>
 		<html xml:lang="en" lang="en">
-			<head>
+		<head>
+				<meta name="rdf4j-workbench-theme-default" content="{$default-workbench-theme}" />
+				<script src="../../scripts/workbench-theme.js" type="text/javascript"></script>
 				<title>
 					<xsl:value-of select="$workbench.title" />
 					-
@@ -162,6 +194,14 @@
 						<img src="../../images/logo.png" alt="rdf4j" />
 						<img class="product" src="../../images/product.png" alt="workbench" />
 					</div>
+					<div class="workbench-theme-control">
+						<label for="workbench-theme"><xsl:value-of select="$workbench-theme.label" /></label>
+						<select id="workbench-theme" name="workbench-theme">
+							<option value="system"><xsl:value-of select="$theme-system.label" /></option>
+							<option value="light"><xsl:value-of select="$theme-light.label" /></option>
+							<option value="dark"><xsl:value-of select="$theme-dark.label" /></option>
+						</select>
+					</div>
 				</div>
 				<details id="workbench-navigation-disclosure" class="workbench-navigation-disclosure" open="open">
 					<summary id="workbench-navigation-summary">
@@ -217,153 +257,87 @@
 	</xsl:template>
 
 	<xsl:template name="navigation">
-		<xsl:call-template name="navigation-entry">
-			<xsl:with-param name="label" select="$server.label" />
-			<xsl:with-param name="href" select="'../NONE/server'" />
-			<xsl:with-param name="icon" select="'server'" />
-		</xsl:call-template>
-		<li>
-			<xsl:call-template name="navigation-link">
-				<xsl:with-param name="label" select="$repository-list.label" />
-				<xsl:with-param name="href" select="'repositories'" />
-				<xsl:with-param name="icon" select="'repository'" />
-			</xsl:call-template>
-			<ul class="group">
-				<xsl:call-template name="navigation-entry">
-					<xsl:with-param name="label" select="$repository-create.label" />
-					<xsl:with-param name="href" select="'create'" />
-					<xsl:with-param name="icon" select="'create'" />
-				</xsl:call-template>
-				<xsl:call-template name="navigation-entry">
-					<xsl:with-param name="label" select="$repository-delete.label" />
-					<xsl:with-param name="href" select="'delete'" />
-					<xsl:with-param name="icon" select="'delete'" />
-				</xsl:call-template>
-			</ul>
-		</li>
-		<li>
-			<span class="query-nav-group-label">
-				<xsl:call-template name="query-nav-icon">
-					<xsl:with-param name="name" select="'explore-group'" />
-				</xsl:call-template>
-				<span><xsl:value-of select="$explore.label" /></span>
-			</span>
-			<ul class="group">
-				<xsl:call-template name="navigation-explore" />
-			</ul>
-		</li>
-		<li>
-			<span class="query-nav-group-label">
-				<xsl:call-template name="query-nav-icon">
-					<xsl:with-param name="name" select="'modify-group'" />
-				</xsl:call-template>
-				<span><xsl:value-of select="$modify.label" /></span>
-			</span>
-			<ul class="group">
-				<xsl:call-template name="navigation-modify" />
-			</ul>
-		</li>
-		<li>
-			<span class="query-nav-group-label">
-				<xsl:call-template name="query-nav-icon">
-					<xsl:with-param name="name" select="'system-group'" />
-				</xsl:call-template>
-				<span><xsl:value-of select="$system.label" /></span>
-			</span>
-			<ul class="group">
-				<xsl:call-template name="navigation-entry">
-					<xsl:with-param name="label" select="$information.label" />
-					<xsl:with-param name="href" select="'information'" />
-					<xsl:with-param name="icon" select="'information'" />
-				</xsl:call-template>
-			</ul>
-		</li>
-	</xsl:template>
-
-	<xsl:template name="navigation-explore">
-		<!-- Sometimes $info is not present. -->
-		<xsl:variable name="enabled"
-			select="$info//sparql:binding[@name='readable']/sparql:literal/text() = 'true'" />
-		<xsl:variable name="disabled" select="not($enabled)" />
-		<xsl:call-template name="navigation-entry">
-			<xsl:with-param name="label" select="$summary.label" />
-			<xsl:with-param name="href" select="'summary'" />
-			<xsl:with-param name="disabled" select="$disabled" />
-			<xsl:with-param name="icon" select="'summary'" />
-		</xsl:call-template>
-		<xsl:call-template name="navigation-entry">
-			<xsl:with-param name="label" select="$namespaces.label" />
-			<xsl:with-param name="href" select="'namespaces'" />
-			<xsl:with-param name="disabled" select="$disabled" />
-			<xsl:with-param name="icon" select="'namespaces'" />
-		</xsl:call-template>
-		<xsl:call-template name="navigation-entry">
-			<xsl:with-param name="label" select="$contexts.label" />
-			<xsl:with-param name="href" select="'contexts'" />
-			<xsl:with-param name="disabled" select="$disabled" />
-			<xsl:with-param name="icon" select="'contexts'" />
-		</xsl:call-template>
-		<xsl:call-template name="navigation-entry">
-			<xsl:with-param name="label" select="$types.label" />
-			<xsl:with-param name="href" select="'types'" />
-			<xsl:with-param name="disabled" select="$disabled" />
-			<xsl:with-param name="icon" select="'types'" />
-		</xsl:call-template>
-		<xsl:call-template name="navigation-entry">
-			<xsl:with-param name="label" select="$explore.label" />
-			<xsl:with-param name="href" select="'explore'" />
-			<xsl:with-param name="disabled" select="$disabled" />
-			<xsl:with-param name="icon" select="'explore'" />
-		</xsl:call-template>
-		<xsl:call-template name="navigation-entry">
-			<xsl:with-param name="label" select="$query.label" />
-			<xsl:with-param name="href" select="'query'" />
-			<xsl:with-param name="disabled" select="$disabled" />
-			<xsl:with-param name="icon" select="'query'" />
-		</xsl:call-template>
-		<xsl:call-template name="navigation-entry">
-			<xsl:with-param name="label" select="$saved-queries.label" />
-			<xsl:with-param name="href" select="'saved-queries'" />
-			<xsl:with-param name="disabled" select="$disabled" />
-			<xsl:with-param name="icon" select="'saved'" />
-		</xsl:call-template>
-		<xsl:call-template name="navigation-entry">
-			<xsl:with-param name="label" select="$export.label" />
-			<xsl:with-param name="href" select="'export'" />
-			<xsl:with-param name="disabled" select="$disabled" />
-			<xsl:with-param name="icon" select="'export'" />
-		</xsl:call-template>
-	</xsl:template>
-
-	<xsl:template name="navigation-modify">
-		<!-- Sometimes $info is not present. -->
-		<xsl:variable name="enabled"
-			select="$info//sparql:binding[@name='writeable']/sparql:literal/text() = 'true'" />
-		<xsl:variable name="disabled" select="not($enabled)" />
-		<xsl:call-template name="navigation-entry">
-			<xsl:with-param name="label" select="$sparqlupdate.label" />
-			<xsl:with-param name="href" select="'update'" />
-			<xsl:with-param name="disabled" select="$disabled" />
-			<xsl:with-param name="icon" select="'update'" />
-		</xsl:call-template>
-		<xsl:call-template name="navigation-entry">
-			<xsl:with-param name="label" select="$add.label" />
-			<xsl:with-param name="href" select="'add'" />
-			<xsl:with-param name="disabled" select="$disabled" />
-			<xsl:with-param name="icon" select="'add'" />
-		</xsl:call-template>
-		<xsl:call-template name="navigation-entry">
-			<xsl:with-param name="label" select="$remove.label" />
-			<xsl:with-param name="href" select="'remove'" />
-			<xsl:with-param name="disabled" select="$disabled" />
-			<xsl:with-param name="icon" select="'remove'" />
-		</xsl:call-template>
-		<xsl:call-template name="navigation-entry">
-			<xsl:with-param name="label" select="$clear.label" />
-			<xsl:with-param name="href" select="'clear'" />
-			<xsl:with-param name="disabled" select="$disabled" />
-			<xsl:with-param name="icon" select="'clear'" />
-		</xsl:call-template>
+		<xsl:variable name="menu-items"
+			select="$info//sparql:result[sparql:binding[@name='menu-item-id']]" />
+		<xsl:for-each
+			select="$menu-items[not(sparql:binding[@name='menu-group-id']/sparql:literal = preceding-sibling::sparql:result/sparql:binding[@name='menu-group-id']/sparql:literal)]">
+			<xsl:variable name="group-id" select="sparql:binding[@name='menu-group-id']/sparql:literal" />
+			<xsl:variable name="group-label" select="sparql:binding[@name='menu-group-label']/sparql:literal" />
+			<xsl:variable name="group-icon" select="sparql:binding[@name='menu-group-icon']/sparql:literal" />
+			<xsl:variable name="group-items"
+				select="$menu-items[sparql:binding[@name='menu-group-id']/sparql:literal = $group-id]" />
+			<xsl:choose>
+				<xsl:when test="count($group-items) = 1">
+					<xsl:variable name="item-id"
+						select="$group-items[1]/sparql:binding[@name='menu-item-id']/sparql:literal" />
+					<xsl:variable name="item-label"
+						select="$group-items[1]/sparql:binding[@name='menu-item-label']/sparql:literal" />
+					<xsl:variable name="item-icon"
+						select="$group-items[1]/sparql:binding[@name='menu-item-icon']/sparql:literal" />
+					<xsl:variable name="item-href"
+						select="$group-items[1]/sparql:binding[@name='menu-item-href']/sparql:literal" />
+					<xsl:variable name="read-only-page"
+						select="$item-id = 'summary' or $item-id = 'namespaces' or $item-id = 'contexts' or $item-id = 'types' or $item-id = 'explore' or $item-id = 'query' or $item-id = 'saved-queries' or $item-id = 'export'" />
+					<xsl:variable name="write-page"
+						select="$item-id = 'update' or $item-id = 'add' or $item-id = 'remove' or $item-id = 'clear'" />
+					<xsl:variable name="disabled"
+						select="($read-only-page and not($info//sparql:binding[@name='readable']/sparql:literal/text() = 'true')) or ($write-page and not($info//sparql:binding[@name='writeable']/sparql:literal/text() = 'true'))" />
+					<li class="workbench-nav-group workbench-nav-group--single"
+						data-workbench-menu-group="{$group-id}" data-workbench-menu-label="{$group-label}">
+						<xsl:call-template name="navigation-link">
+							<xsl:with-param name="label" select="$item-label" />
+							<xsl:with-param name="href" select="$item-href" />
+							<xsl:with-param name="icon" select="$item-icon" />
+							<xsl:with-param name="disabled" select="$disabled" />
+							<xsl:with-param name="group-label" select="$group-label" />
+						</xsl:call-template>
+					</li>
+				</xsl:when>
+				<xsl:otherwise>
+					<li class="workbench-nav-group" data-workbench-menu-group="{$group-id}"
+						data-workbench-menu-label="{$group-label}">
+						<details class="workbench-nav-group__disclosure">
+							<summary id="workbench-nav-summary-{$group-id}"
+								aria-controls="workbench-nav-items-{$group-id}"
+								class="query-nav-group-label workbench-nav-group__summary">
+								<xsl:call-template name="query-nav-icon">
+									<xsl:with-param name="name" select="$group-icon" />
+								</xsl:call-template>
+								<span class="workbench-nav-group__label"><xsl:value-of select="$group-label" /></span>
+								<svg class="workbench-nav-group__chevron workbench-disclosure-chevron"
+									viewBox="0 0 24 24" width="18" height="18" focusable="false" aria-hidden="true">
+									<path d="m6 9 6 6 6-6"></path>
+								</svg>
+							</summary>
+							<ul id="workbench-nav-items-{$group-id}" class="group" aria-label="{$group-label}">
+								<xsl:for-each select="$group-items">
+									<xsl:variable name="item-id"
+										select="sparql:binding[@name='menu-item-id']/sparql:literal" />
+									<xsl:variable name="item-label"
+										select="sparql:binding[@name='menu-item-label']/sparql:literal" />
+									<xsl:variable name="item-icon"
+										select="sparql:binding[@name='menu-item-icon']/sparql:literal" />
+									<xsl:variable name="item-href"
+										select="sparql:binding[@name='menu-item-href']/sparql:literal" />
+									<xsl:variable name="read-only-page"
+										select="$item-id = 'summary' or $item-id = 'namespaces' or $item-id = 'contexts' or $item-id = 'types' or $item-id = 'explore' or $item-id = 'query' or $item-id = 'saved-queries' or $item-id = 'export'" />
+									<xsl:variable name="write-page"
+										select="$item-id = 'update' or $item-id = 'add' or $item-id = 'remove' or $item-id = 'clear'" />
+									<xsl:variable name="disabled"
+										select="($read-only-page and not($info//sparql:binding[@name='readable']/sparql:literal/text() = 'true')) or ($write-page and not($info//sparql:binding[@name='writeable']/sparql:literal/text() = 'true'))" />
+									<xsl:call-template name="navigation-entry">
+										<xsl:with-param name="label" select="$item-label" />
+										<xsl:with-param name="href" select="$item-href" />
+										<xsl:with-param name="icon" select="$item-icon" />
+										<xsl:with-param name="disabled" select="$disabled" />
+									</xsl:call-template>
+								</xsl:for-each>
+							</ul>
+						</details>
+					</li>
+				</xsl:otherwise>
+			</xsl:choose>
+		</xsl:for-each>
 	</xsl:template>
 
 	<xsl:template name="navigation-entry">
@@ -386,9 +360,10 @@
 		<xsl:param name="href" />
 		<xsl:param name="disabled" />
 		<xsl:param name="icon" />
+		<xsl:param name="group-label" />
 			<xsl:choose>
 				<xsl:when test="$disabled">
-					<span class="disabled">
+					<span class="disabled" title="{$group-label}">
 						<xsl:call-template name="query-nav-icon">
 							<xsl:with-param name="name" select="$icon" />
 						</xsl:call-template>
@@ -396,7 +371,12 @@
 					</span>
 				</xsl:when>
 				<xsl:otherwise>
-					<a href="{$href}" data-workbench-nav-href="{$href}">
+					<a href="{$href}" data-workbench-nav-href="{$href}" title="{$group-label}">
+						<xsl:if test="normalize-space($group-label) and normalize-space($group-label) != normalize-space($label)">
+							<xsl:attribute name="aria-label">
+								<xsl:value-of select="concat(normalize-space($group-label), ': ', normalize-space($label))" />
+							</xsl:attribute>
+						</xsl:if>
 						<xsl:call-template name="query-nav-icon">
 							<xsl:with-param name="name" select="$icon" />
 						</xsl:call-template>
@@ -655,46 +635,55 @@
 	<xsl:template name="limit-select">
 		<xsl:param name="onchange" />
         <xsl:param name="limit_id" />
+		<xsl:param name="feature-id" select="''" />
+		<xsl:param name="limit_default"
+			select="$info//sparql:binding[@name='default-limit']/sparql:literal/text()" />
 		<select>
             <xsl:attribute name="id">
                 <xsl:value-of select="$limit_id" />
             </xsl:attribute>
-            <xsl:attribute name="name">
+			<xsl:attribute name="name">
                 <xsl:value-of select="$limit_id" />
             </xsl:attribute>
+			<xsl:if test="string-length(normalize-space($feature-id)) &gt; 0">
+				<xsl:call-template name="workbench-feature-hidden">
+					<xsl:with-param name="feature-id" select="$feature-id" />
+				</xsl:call-template>
+			</xsl:if>
 			<xsl:if test="$onchange">
 				<xsl:attribute name="onchange">
 					<xsl:value-of select="$onchange" />
 				</xsl:attribute>
 			</xsl:if>
-			<xsl:variable name="limit"
-				select="$info//sparql:binding[@name='default-limit']/sparql:literal/text()" />
+			<xsl:if test="$limit_default != '' and not($limit_default = '0' or $limit_default = '10' or $limit_default = '50' or $limit_default = '100' or $limit_default = '200')">
+				<option value="{$limit_default}" selected="selected"><xsl:value-of select="$limit_default" /></option>
+			</xsl:if>
 			<option value="0">
-				<xsl:if test="$limit = '0'">
+				<xsl:if test="$limit_default = '0'">
 					<xsl:attribute name="selected">selected</xsl:attribute>
 				</xsl:if>
 				<xsl:value-of select="$all.label" />
 			</option>
 			<option value="10">
-				<xsl:if test="$limit = '10'">
+				<xsl:if test="$limit_default = '10'">
 					<xsl:attribute name="selected">selected</xsl:attribute>
 				</xsl:if>
 				<xsl:value-of select="$limit10.label" />
 			</option>
 			<option value="50">
-				<xsl:if test="$limit = '50'">
+				<xsl:if test="$limit_default = '50'">
 					<xsl:attribute name="selected">selected</xsl:attribute>
 				</xsl:if>
 				<xsl:value-of select="$limit50.label" />
 			</option>
 			<option value="100">
-				<xsl:if test="$limit = '100'">
+				<xsl:if test="$limit_default = '100'">
 					<xsl:attribute name="selected">selected</xsl:attribute>
 				</xsl:if>
 				<xsl:value-of select="$limit100.label" />
 			</option>
 			<option value="200">
-				<xsl:if test="$limit = '200'">
+				<xsl:if test="$limit_default = '200'">
 					<xsl:attribute name="selected">selected</xsl:attribute>
 				</xsl:if>
 				<xsl:value-of select="$limit200.label" />

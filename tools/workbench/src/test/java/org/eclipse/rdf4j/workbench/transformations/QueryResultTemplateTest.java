@@ -17,6 +17,7 @@ import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
 
 import javax.xml.transform.Templates;
 import javax.xml.transform.Transformer;
@@ -141,6 +142,187 @@ class QueryResultTemplateTest {
 	}
 
 	@Test
+	void resultFeatureFlagsShouldHideConfiguredControlsAndKeepLegacyDefaults() throws Exception {
+		Set<String> disabledFeatures = Set.of("result-layout", "result-wrap", "result-totals", "result-paging",
+				"result-page-size", "result-page-previous", "result-page-next", "result-download",
+				"result-download-format", "result-download-format-tuple", "result-download-format-graph",
+				"result-download-limit", "result-show-datatypes", "result-fullscreen");
+		String disabledInfo = infoXmlWithDisabledFeatures(disabledFeatures);
+
+		String tupleEmbeddedLegacy = transform("tuple.xsl", embeddedQueryResultXml(), infoXml());
+		String graphEmbeddedLegacy = transform("graph.xsl", embeddedQueryResultXml(), infoXml());
+		String tupleStandaloneLegacy = transform("tuple.xsl", queryResultXml(), infoXml());
+		String graphStandaloneLegacy = transform("graph.xsl", queryResultXml(), infoXml());
+		assertThat(tupleEmbeddedLegacy).contains("Query Result (1)", "id=\"query-result-fullscreen\"",
+				"id=\"query-result-download-toggle\"", "id=\"Accept\"", "id=\"download_limit\"",
+				"class=\"query-result-download-action\"", "id=\"result-layout\"", "id=\"limit_query\"",
+				"id=\"result-wrap-values\"", "id=\"show-datatypes\"", "id=\"previousX\"", "id=\"nextX\"");
+		assertThat(graphEmbeddedLegacy).contains("Query Result (1)", "id=\"query-result-fullscreen\"",
+				"id=\"query-result-download-toggle\"", "id=\"Accept\"", "id=\"download_limit\"",
+				"class=\"query-result-download-action\"", "id=\"result-layout\"", "id=\"limit_query\"",
+				"id=\"result-wrap-values\"")
+				.doesNotContain("id=\"show-datatypes\"", "id=\"previousX\"", "id=\"nextX\"");
+		assertThat(tupleStandaloneLegacy).contains("Query Result (1)", "id=\"Accept\"", "id=\"download_limit\"",
+				"class=\"query-result-download-action\"", "id=\"limit_query\"", "id=\"show-datatypes\"",
+				"id=\"previousX\"", "id=\"nextX\"");
+		assertThat(graphStandaloneLegacy).contains("Query Result (1)", "id=\"Accept\"", "id=\"download_limit\"",
+				"class=\"query-result-download-action\"", "id=\"limit_query\"")
+				.doesNotContain("id=\"show-datatypes\"", "id=\"previousX\"", "id=\"nextX\"");
+
+		for (String stylesheet : new String[] { "tuple.xsl", "graph.xsl" }) {
+			String embedded = transform(stylesheet, embeddedQueryResultXml(), disabledInfo);
+			String standalone = transform(stylesheet, queryResultXml(), disabledInfo);
+
+			assertResultFeaturesAreHidden(stylesheet, embedded);
+			assertResultFeaturesAreHidden(stylesheet, standalone);
+			assertThat(embedded).contains("id=\"workbench-total-result-count\"", "value=\"42\"");
+			assertThat(standalone).contains("id=\"workbench-total-result-count\"", "value=\"42\"");
+		}
+
+		String tupleWithGraphFormatDisabled = transform("tuple.xsl", embeddedQueryResultXml(),
+				infoXmlWithDisabledFeatures(Set.of("result-download-format-graph")));
+		String graphWithTupleFormatDisabled = transform("graph.xsl", embeddedQueryResultXml(),
+				infoXmlWithDisabledFeatures(Set.of("result-download-format-tuple")));
+		String tupleWithTupleFormatDisabled = transform("tuple.xsl", embeddedQueryResultXml(),
+				infoXmlWithDisabledFeatures(Set.of("result-download-format-tuple")));
+		String graphWithGraphFormatDisabled = transform("graph.xsl", embeddedQueryResultXml(),
+				infoXmlWithDisabledFeatures(Set.of("result-download-format-graph")));
+		String bothFormatsDisabled = infoXmlWithDisabledFeatures(Set.of("result-download-format"));
+		String tupleWithCommonFormatDisabled = transform("tuple.xsl", embeddedQueryResultXml(), bothFormatsDisabled);
+		String graphWithCommonFormatDisabled = transform("graph.xsl", embeddedQueryResultXml(), bothFormatsDisabled);
+
+		assertThat(tupleWithGraphFormatDisabled).contains("id=\"Accept\"");
+		assertThat(graphWithTupleFormatDisabled).contains("id=\"Accept\"");
+		assertDownloadFormatIsHidden(tupleWithTupleFormatDisabled);
+		assertDownloadFormatIsHidden(graphWithGraphFormatDisabled);
+		assertDownloadFormatIsHidden(tupleWithCommonFormatDisabled);
+		assertDownloadFormatIsHidden(graphWithCommonFormatDisabled);
+
+		for (String stylesheet : new String[] { "tuple.xsl", "graph.xsl" }) {
+			for (String xml : new String[] { embeddedQueryResultXml(), queryResultXml() }) {
+				String actionDisabled = transform(stylesheet, xml,
+						infoXmlWithDisabledFeatures(Set.of("result-download")));
+				String limitDisabled = transform(stylesheet, xml,
+						infoXmlWithDisabledFeatures(Set.of("result-download-limit")));
+				assertThat(actionDisabled).doesNotContain("class=\"query-result-download-action\"")
+						.contains("id=\"Accept\"", "id=\"download_limit\"");
+				assertThat(limitDisabled).doesNotContain("id=\"download_limit\"")
+						.contains("class=\"query-result-download-action\"");
+			}
+		}
+	}
+
+	private static void assertResultFeaturesAreHidden(String stylesheet, String html) {
+		assertThat(html)
+				.doesNotContain("Query Result (1)", "id=\"query-result-fullscreen\"",
+						"id=\"query-result-download-toggle\"", "id=\"query-result-options-toggle\"",
+						"id=\"Accept\"", "id=\"download_limit\"", "class=\"query-result-download-action\"",
+						"id=\"result-layout\"", "id=\"limit_query\"", "id=\"result-wrap-values\"");
+		if ("tuple.xsl".equals(stylesheet)) {
+			assertThat(html).doesNotContain("id=\"show-datatypes\"", "id=\"previousX\"", "id=\"nextX\"");
+		}
+	}
+
+	private static void assertDownloadFormatIsHidden(String html) {
+		assertThat(html)
+				.doesNotContain("<label for=\"Accept\">")
+				.contains("<select id=\"Accept\" name=\"Accept\" hidden=\"hidden\">");
+	}
+
+	@Test
+	void resultFeatureFlagsShouldHideOnlyTheirOwnRenderedControls() throws Exception {
+		String embedded = embeddedQueryResultXml();
+		String standalone = queryResultXml();
+		for (String xml : new String[] { embedded, standalone }) {
+			assertFeatureDisabled("tuple.xsl", xml, "result-totals", "Query Result (1)",
+					"id=\"workbench-total-result-count\"");
+			assertFeatureDisabled("graph.xsl", xml, "result-totals", "Query Result (1)",
+					"id=\"workbench-total-result-count\"");
+			assertFeatureDisabled("tuple.xsl", xml, "result-page-size", "id=\"limit_query\"", "id=\"Accept\"");
+			assertFeatureDisabled("graph.xsl", xml, "result-page-size", "id=\"limit_query\"", "id=\"Accept\"");
+			assertFeatureDisabled("tuple.xsl", xml, "result-show-datatypes", "id=\"show-datatypes\"",
+					"id=\"limit_query\"");
+			assertFeatureDisabled("tuple.xsl", xml, "result-paging", "id=\"previousX\"", "id=\"limit_query\"");
+			assertFeatureDisabled("tuple.xsl", xml, "result-page-previous", "id=\"previousX\"", "id=\"nextX\"");
+			assertFeatureDisabled("tuple.xsl", xml, "result-page-next", "id=\"nextX\"", "id=\"previousX\"");
+			assertFeatureDisabled("tuple.xsl", xml, "result-fullscreen", "id=\"query-result-fullscreen\"",
+					"id=\"Accept\"");
+			assertFeatureDisabled("graph.xsl", xml, "result-fullscreen", "id=\"query-result-fullscreen\"",
+					"id=\"Accept\"");
+			assertFeatureDisabled("tuple.xsl", xml, "result-download", "class=\"query-result-download-action\"",
+					"id=\"Accept\"");
+			assertFeatureDisabled("graph.xsl", xml, "result-download", "class=\"query-result-download-action\"",
+					"id=\"Accept\"");
+			assertFeatureDisabled("tuple.xsl", xml, "result-download-limit", "id=\"download_limit\"",
+					"class=\"query-result-download-action\"");
+			assertFeatureDisabled("graph.xsl", xml, "result-download-limit", "id=\"download_limit\"",
+					"class=\"query-result-download-action\"");
+		}
+
+		assertFeatureDisabled("tuple.xsl", embedded, "result-layout", "id=\"result-layout\"",
+				"id=\"result-wrap-values\"");
+		assertFeatureDisabled("graph.xsl", embedded, "result-layout", "id=\"result-layout\"",
+				"id=\"result-wrap-values\"");
+		assertFeatureDisabled("tuple.xsl", embedded, "result-wrap", "id=\"result-wrap-values\"",
+				"id=\"result-layout\"");
+		assertFeatureDisabled("graph.xsl", embedded, "result-wrap", "id=\"result-wrap-values\"",
+				"id=\"result-layout\"");
+	}
+
+	private void assertFeatureDisabled(String stylesheet, String xml, String featureId, String absentMarkup,
+			String presentMarkup) throws Exception {
+		String html = transform(stylesheet, xml, infoXmlWithDisabledFeatures(Set.of(featureId)));
+		assertThat(html).doesNotContain(absentMarkup).contains(presentMarkup);
+	}
+
+	@Test
+	void queryResultDownloadsDefaultToAllIndependentlyOfPageSize() throws Exception {
+		for (String stylesheet : new String[] { "tuple.xsl", "graph.xsl" }) {
+			String html = transform(stylesheet, queryResultXml(), infoXml());
+
+			assertThat(selectMarkup(html, "download_limit"))
+					.containsPattern("(?s)<option\\b(?=[^>]*\\bvalue=\"0\")(?=[^>]*\\bselected)[^>]*>");
+			assertThat(selectMarkup(html, "limit_query"))
+					.containsPattern("(?s)<option\\b(?=[^>]*\\bvalue=\"100\")(?=[^>]*\\bselected)[^>]*>");
+		}
+	}
+
+	@Test
+	void queryResultDownloadLimitControlsReflectTheConfiguredFixedDefault() throws Exception {
+		for (String stylesheet : new String[] { "tuple.xsl", "graph.xsl" }) {
+			String html = transform(stylesheet, queryResultXml(), infoXml("0", "50"));
+			assertThat(selectMarkup(html, "download_limit"))
+					.containsPattern("(?s)<option\\b(?=[^>]*\\bvalue=\"50\")(?=[^>]*\\bselected)[^>]*>");
+		}
+	}
+
+	@Test
+	void repositoryExportDefaultsToNQuadsWithNoCompression() throws Exception {
+		String html = transform("export.xsl", queryResultXml(), infoXml());
+
+		assertThat(selectMarkup(html, "Accept"))
+				.containsPattern("(?s)<option\\b(?=[^>]*\\bvalue=\"application/n-quads\")(?=[^>]*\\bselected)[^>]*>");
+		assertThat(selectMarkup(html, "compression"))
+				.contains("value=\"none\"", "value=\"gzip\"", "value=\"zip\"")
+				.containsPattern("(?s)<option\\b(?=[^>]*\\bvalue=\"none\")(?=[^>]*\\bselected)[^>]*>");
+	}
+
+	@Test
+	void comparisonPaneShouldExposeAnAccessibleCloseAction() throws Exception {
+		String html = transform("query.xsl", queryPageXml(null), infoXml("60"));
+
+		assertThat(html)
+				.containsPattern("(?s)<div id=\"query-compare-pane\"[^>]*>.*?<button\\b"
+						+ "(?=[^>]*\\bid=\"query-compare-close\")"
+						+ "(?=[^>]*\\btype=\"button\")"
+						+ "(?=[^>]*\\baria-label=\"Close comparison\")[^>]*>"
+						+ "\\s*<svg\\b[^>]*>.*?</svg>\\s*</button>")
+				.doesNotContainPattern(
+						"(?s)<button\\b(?=[^>]*\\bid=\"query-compare-close\")[^>]*>[^<]*Close comparison")
+				.contains("id=\"compare-toggle\"");
+	}
+
+	@Test
 	void embeddedEmptyAndErrorResultsShouldRenderOnlyTheResultMessage() throws Exception {
 		String emptyHtml = transform("query-result-empty.xsl", embeddedQueryResultXml(), infoXml());
 		String errorHtml = transform("query-result-error.xsl", embeddedErrorResultXml(), infoXml());
@@ -177,6 +359,20 @@ class QueryResultTemplateTest {
 	}
 
 	@Test
+	void savedQueriesEmptyStateShouldLinkToQueryOnlyWhenThePageIsVisible() throws Exception {
+		String emptyPage = emptySavedQueriesXml();
+		String queryVisible = transform("saved-queries.xsl", emptyPage, infoXmlWithMenuItem("query"));
+		String queryHidden = transform("saved-queries.xsl", emptyPage, infoXml());
+
+		assertThat(queryVisible).contains("No saved queries yet.")
+				.contains("href=\"query\"")
+				.contains("Open Query");
+		assertThat(queryHidden).contains("No saved queries yet.")
+				.doesNotContain("Open Query")
+				.doesNotContain("href=\"query\"");
+	}
+
+	@Test
 	void savedQueriesPageShouldTreatStoredValuesAsDataInsteadOfExecutableCode() throws Exception {
 		String payload = "stored');window.rdf4jXss=true;//";
 		String html = transform("saved-queries.xsl", savedQueriesXml(payload, "attacker"), infoXml());
@@ -185,6 +381,48 @@ class QueryResultTemplateTest {
 				.contains("data-query-name=\"" + payload + "\"")
 				.doesNotContain("onclick=\"workbench.savedQueries.deleteQuery")
 				.doesNotContain("onclick=\"workbench.savedQueries.toggle");
+	}
+
+	@Test
+	void queryPageShouldUseConfiguredDefaultTimeout() throws Exception {
+		String html = transform("query.xsl", queryPageXml(null), infoXml("60"));
+
+		assertQueryTimeoutValue(html, "60");
+	}
+
+	@Test
+	void queryPageShouldPreserveDeploymentTimeoutOverrides() throws Exception {
+		String customTimeoutHtml = transform("query.xsl", queryPageXml(null), infoXml("23"));
+		String unlimitedTimeoutHtml = transform("query.xsl", queryPageXml(null), infoXml("0"));
+
+		assertQueryTimeoutValue(customTimeoutHtml, "23");
+		assertQueryTimeoutValue(unlimitedTimeoutHtml, "0");
+	}
+
+	@Test
+	void queryPageShouldFallBackToSixtySecondsWhenInfoDefaultIsMissingOrBlank() throws Exception {
+		String missingDefaultHtml = transform("query.xsl", queryPageXml(null), infoXmlWithoutQueryTimeout());
+		String blankDefaultHtml = transform("query.xsl", queryPageXml(null), infoXml(""));
+
+		assertQueryTimeoutValue(missingDefaultHtml, "60");
+		assertQueryTimeoutValue(blankDefaultHtml, "60");
+	}
+
+	@Test
+	void queryPageShouldPreserveExplicitPositiveAndZeroTimeouts() throws Exception {
+		String positiveTimeoutHtml = transform("query.xsl", queryPageXml("17"), infoXml("60"));
+		String zeroTimeoutHtml = transform("query.xsl", queryPageXml("0"), infoXml("60"));
+
+		assertQueryTimeoutValue(positiveTimeoutHtml, "17");
+		assertQueryTimeoutValue(zeroTimeoutHtml, "0");
+	}
+
+	@Test
+	void webApplicationShouldConfigureSixtySecondQueryTimeoutByDefault() throws Exception {
+		String webXml = Files.readString(Path.of("src/main/webapp/WEB-INF/web.xml"), StandardCharsets.UTF_8);
+
+		assertThat(webXml).containsPattern("(?s)<param-name>default-query-timeout</param-name>\\s*"
+				+ "<param-value>60</param-value>");
 	}
 
 	@Test
@@ -248,6 +486,22 @@ class QueryResultTemplateTest {
 		xml.append("    <workbench:query-result-status>completed</workbench:query-result-status>\n");
 		xml.append("    <workbench:total-result-count>42</workbench:total-result-count>\n");
 		xml.append("  </workbench:metadata>\n");
+		xml.append("</sparql:sparql>\n");
+		return xml.toString();
+	}
+
+	private static String queryPageXml(String queryTimeout) {
+		StringBuilder xml = new StringBuilder();
+		xml.append("<?xml version=\"1.0\"?>\n");
+		xml.append("<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\">\n");
+		xml.append("  <sparql:head><sparql:link href=\"info\"/></sparql:head>\n");
+		xml.append("  <sparql:results><sparql:result>\n");
+		appendBinding(xml, "query", QUERY_TEXT);
+		appendBinding(xml, "queryLn", "SPARQL");
+		if (queryTimeout != null) {
+			appendBinding(xml, "query-timeout", queryTimeout);
+		}
+		xml.append("  </sparql:result></sparql:results>\n");
 		xml.append("</sparql:sparql>\n");
 		return xml.toString();
 	}
@@ -359,6 +613,22 @@ class QueryResultTemplateTest {
 		return xml.toString();
 	}
 
+	private static String emptySavedQueriesXml() {
+		return "<?xml version=\"1.0\"?>\n"
+				+ "<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\">\n"
+				+ "  <sparql:head><sparql:link href=\"info\"/></sparql:head>\n"
+				+ "  <sparql:results/>\n"
+				+ "</sparql:sparql>\n";
+	}
+
+	private static String infoXmlWithMenuItem(String itemId) {
+		String menuItem = "    <sparql:result>\n"
+				+ "      <sparql:binding name=\"menu-item-id\"><sparql:literal>" + itemId
+				+ "</sparql:literal></sparql:binding>\n"
+				+ "    </sparql:result>\n";
+		return infoXml().replace("  </sparql:results>", menuItem + "  </sparql:results>");
+	}
+
 	private static void appendBinding(StringBuilder xml, String name, String value) {
 		xml.append("      <sparql:binding name=\"")
 				.append(name)
@@ -372,19 +642,52 @@ class QueryResultTemplateTest {
 	}
 
 	private static String infoXml(String defaultQueryTimeout) {
+		return infoXml(defaultQueryTimeout, "0");
+	}
+
+	private static String infoXml(String defaultQueryTimeout, String defaultDownloadLimit) {
 		return "<?xml version=\"1.0\"?>\n"
 				+ "<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\">\n"
 				+ "  <sparql:head/>\n"
 				+ "  <sparql:results>\n"
 				+ "    <sparql:result>\n"
 				+ "      <sparql:binding name=\"default-limit\"><sparql:literal>100</sparql:literal></sparql:binding>\n"
+				+ "      <sparql:binding name=\"default-download-limit\"><sparql:literal>" + defaultDownloadLimit
+				+ "</sparql:literal></sparql:binding>\n"
+				+ "      <sparql:binding name=\"default-Accept\"><sparql:literal>text/turtle</sparql:literal></sparql:binding>\n"
+				+ "      <sparql:binding name=\"default-export-format\"><sparql:literal>application/n-quads</sparql:literal></sparql:binding>\n"
 				+ "      <sparql:binding name=\"default-query-timeout\"><sparql:literal>" + defaultQueryTimeout
 				+ "</sparql:literal></sparql:binding>\n"
 				+ "      <sparql:binding name=\"tuple-download-format\"><sparql:literal>text/csv CSV</sparql:literal></sparql:binding>\n"
 				+ "      <sparql:binding name=\"graph-download-format\"><sparql:literal>text/turtle Turtle</sparql:literal></sparql:binding>\n"
+				+ "      <sparql:binding name=\"graph-download-format\"><sparql:literal>application/n-quads N-Quads</sparql:literal></sparql:binding>\n"
 				+ "    </sparql:result>\n"
 				+ "  </sparql:results>\n"
 				+ "</sparql:sparql>\n";
+	}
+
+	private static String infoXmlWithoutQueryTimeout() {
+		return "<?xml version=\"1.0\"?>\n"
+				+ "<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\">\n"
+				+ "  <sparql:head/>\n"
+				+ "  <sparql:results><sparql:result>\n"
+				+ "      <sparql:binding name=\"default-limit\"><sparql:literal>100</sparql:literal></sparql:binding>\n"
+				+ "  </sparql:result></sparql:results>\n"
+				+ "</sparql:sparql>\n";
+	}
+
+	private static String infoXmlWithDisabledFeatures(Set<String> disabledFeatures) {
+		StringBuilder rows = new StringBuilder();
+		for (String featureId : disabledFeatures) {
+			rows.append("    <sparql:result>\n")
+					.append("      <sparql:binding name=\"query-feature-id\"><sparql:literal>")
+					.append(featureId)
+					.append("</sparql:literal></sparql:binding>\n")
+					.append("      <sparql:binding name=\"query-feature-enabled\"><sparql:literal>false</sparql:literal>")
+					.append("</sparql:binding>\n")
+					.append("    </sparql:result>\n");
+		}
+		return infoXml().replace("  </sparql:results>", rows + "  </sparql:results>");
 	}
 
 	private static int countOccurrences(String text, String match) {
@@ -395,5 +698,20 @@ class QueryResultTemplateTest {
 			index += match.length();
 		}
 		return count;
+	}
+
+	private static String selectMarkup(String html, String id) {
+		int idIndex = html.indexOf("id=\"" + id + "\"");
+		if (idIndex < 0) {
+			return "";
+		}
+		int start = html.lastIndexOf("<select", idIndex);
+		int end = html.indexOf("</select>", idIndex);
+		return start < 0 || end < 0 ? "" : html.substring(start, end + "</select>".length());
+	}
+
+	private static void assertQueryTimeoutValue(String html, String value) {
+		assertThat(html).containsPattern("(?s)<input\\b(?=[^>]*\\bid=\"query-timeout\")(?=[^>]*\\bvalue=\""
+				+ value + "\")[^>]*>");
 	}
 }

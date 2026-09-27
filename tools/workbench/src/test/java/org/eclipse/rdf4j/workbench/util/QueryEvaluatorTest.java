@@ -33,8 +33,11 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryPressureState;
 import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -83,6 +86,7 @@ class QueryEvaluatorTest {
 		verify(tupleQuery, never()).evaluate();
 		verify(builder).transform(xslPath, "query.xsl");
 		verify(builder).start("explanation", "explanation-format", "explanation-level");
+		verify(builder).link(List.of("info", "_internal/namespaces"));
 		verify(builder).result("optimized plan", "text", "Optimized");
 		verify(builder).end();
 	}
@@ -317,6 +321,172 @@ class QueryEvaluatorTest {
 
 		verify(builder, times(2)).result(org.mockito.ArgumentMatchers.any(Object[].class));
 		verify(cookies).addTotalResultCountCookie(req, resp, 3);
+	}
+
+	@Test
+	void shouldDownloadAllResultsFromTheBeginningWhenNoDownloadLimitIsSelected() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		String xslPath = "/xsl";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult tupleQueryResult = new IteratingTupleQueryResult(List.of("s"), List.of(binding("first"),
+				binding("second"), binding("third")));
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("Accept")).thenReturn(true);
+		when(req.isParameterPresent("download_limit")).thenReturn(false);
+		when(req.getParameter("Accept")).thenReturn("text/csv");
+		when(req.getInt("query-timeout")).thenReturn(0);
+		when(req.getInt("offset")).thenReturn(2);
+		when(req.getInt("limit_query")).thenReturn(1);
+		when(req.getInt("know_total")).thenReturn(0);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+				queryText, req, cookies, null);
+
+		verify(builder, times(3)).result(org.mockito.ArgumentMatchers.any(Object[].class));
+		verify(cookies).addTotalResultCountCookie(req, resp, 3);
+	}
+
+	@Test
+	void shouldApplyConfiguredDefaultDownloadCapWithoutChangingAuthoredLimitOrOffset() throws Exception {
+		String queryText = "select * where { ?s ?p ?o } limit 2 offset 1";
+		String xslPath = "/xsl";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult tupleQueryResult = new IteratingTupleQueryResult(List.of("s"),
+				List.of(binding("second"), binding("third")));
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("Accept")).thenReturn(true);
+		when(req.isParameterPresent("download_limit")).thenReturn(false);
+		when(req.getParameter("Accept")).thenReturn("text/csv");
+		when(req.getInt("query-timeout")).thenReturn(0);
+		when(req.getInt("offset")).thenReturn(20);
+		when(req.getInt("limit_query")).thenReturn(100);
+		when(req.getInt("download_limit")).thenReturn(1);
+		when(req.getInt("know_total")).thenReturn(0);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+				queryText, req, cookies, null, "workbench-test", null, 1);
+
+		verify(con).prepareQuery(QueryLanguage.SPARQL, queryText);
+		verify(builder, times(1)).result(org.mockito.ArgumentMatchers.any(Object[].class));
+		verify(cookies).addTotalResultCountCookie(req, resp, 2);
+	}
+
+	@Test
+	void shouldApplyAnExplicitDownloadCapWithoutRewritingAuthoredLimitAndOffset() throws Exception {
+		String queryText = "select * where { ?s ?p ?o } limit 3 offset 1";
+		String xslPath = "/xsl";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult tupleQueryResult = new IteratingTupleQueryResult(List.of("s"), List.of(binding("first"),
+				binding("second"), binding("third")));
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("Accept")).thenReturn(true);
+		when(req.isParameterPresent("download_limit")).thenReturn(true);
+		when(req.getParameter("Accept")).thenReturn("text/csv");
+		when(req.getInt("query-timeout")).thenReturn(0);
+		when(req.getInt("offset")).thenReturn(2);
+		when(req.getInt("download_limit")).thenReturn(2);
+		when(req.getInt("know_total")).thenReturn(0);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+				queryText, req, cookies, null);
+
+		verify(con).prepareQuery(QueryLanguage.SPARQL, queryText);
+		verify(builder, times(2)).result(org.mockito.ArgumentMatchers.any(Object[].class));
+	}
+
+	@Test
+	void shouldApplyAnExplicitDownloadCapToRdfGraphSerialization() throws Exception {
+		String queryText = "construct { ?s ?p ?o } where { ?s ?p ?o }";
+		String xslPath = "/xsl";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		GraphQuery graphQuery = mock(GraphQuery.class);
+		GraphQueryResult graphQueryResult = mock(GraphQueryResult.class);
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Statement first = valueFactory.createStatement(valueFactory.createIRI("urn:s1"),
+				valueFactory.createIRI("urn:p"), valueFactory.createLiteral("first"));
+		Statement second = valueFactory.createStatement(valueFactory.createIRI("urn:s2"),
+				valueFactory.createIRI("urn:p"), valueFactory.createLiteral("second"));
+		Statement third = valueFactory.createStatement(valueFactory.createIRI("urn:s3"),
+				valueFactory.createIRI("urn:p"), valueFactory.createLiteral("third"));
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("Accept")).thenReturn(true);
+		when(req.isParameterPresent("download_limit")).thenReturn(true);
+		when(req.getParameter("Accept")).thenReturn("application/n-triples");
+		when(req.getInt("query-timeout")).thenReturn(0);
+		when(req.getInt("download_limit")).thenReturn(2);
+		when(req.getInt("know_total")).thenReturn(0);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(graphQuery);
+		when(graphQuery.evaluate()).thenReturn(graphQueryResult);
+		when(graphQueryResult.getNamespaces()).thenReturn(Map.of());
+		when(graphQueryResult.hasNext()).thenReturn(true, true, true, false);
+		when(graphQueryResult.next()).thenReturn(first, second, third);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+				queryText, req, cookies, null);
+
+		verify(graphQueryResult, times(2)).next();
+	}
+
+	@Test
+	void shouldApplyAnExplicitDownloadCapWhenKnownTotalAndAuthoredLimitArePresent() throws Exception {
+		String queryText = "select * where { ?s ?p ?o } limit 3 offset 1";
+		String xslPath = "/xsl";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult tupleQueryResult = new IteratingTupleQueryResult(List.of("s"), List.of(binding("first"),
+				binding("second"), binding("third")));
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("Accept")).thenReturn(true);
+		when(req.isParameterPresent("download_limit")).thenReturn(true);
+		when(req.getParameter("Accept")).thenReturn("text/csv");
+		when(req.getInt("query-timeout")).thenReturn(0);
+		when(req.getInt("download_limit")).thenReturn(2);
+		when(req.getInt("know_total")).thenReturn(3);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+				queryText, req, cookies, null);
+
+		verify(builder, times(2)).result(org.mockito.ArgumentMatchers.any(Object[].class));
 	}
 
 	private static BindingSet binding(String value) {

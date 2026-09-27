@@ -12,21 +12,38 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFHandler;
+import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
+
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.WriteListener;
 
 class ExportServletCoverageTest {
 
@@ -84,6 +101,69 @@ class ExportServletCoverageTest {
 	}
 
 	@Test
+	void exportDownloadsCanBePlainGzipOrZipAndRetainNamedGraphs() throws Exception {
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+		IRI context = valueFactory.createIRI("urn:graph:export");
+		Statement statement = valueFactory.createStatement(valueFactory.createIRI("urn:subject"),
+				valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral("exported"), context);
+		String rdfExtension = RDFFormat.NQUADS.getDefaultFileExtension();
+
+		for (String compression : List.of("none", "gzip", "zip")) {
+			ExportServlet servlet = new ExportServlet();
+			org.eclipse.rdf4j.repository.Repository repository = mock(org.eclipse.rdf4j.repository.Repository.class);
+			RepositoryConnection connection = mock(RepositoryConnection.class);
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			jakarta.servlet.http.HttpServletResponse response = mock(jakarta.servlet.http.HttpServletResponse.class);
+			CapturingServletOutputStream output = new CapturingServletOutputStream();
+
+			servlet.setRepository(repository);
+			when(repository.getConnection()).thenReturn(connection);
+			when(request.isParameterPresent("Accept")).thenReturn(true);
+			when(request.getParameter("Accept")).thenReturn(RDFFormat.NQUADS.getDefaultMIMEType());
+			when(request.getParameter("compression")).thenReturn(compression);
+			when(response.getOutputStream()).thenReturn(output);
+			doAnswer(invocation -> {
+				RDFHandler writer = invocation.getArgument(0);
+				writer.startRDF();
+				writer.handleStatement(statement);
+				writer.endRDF();
+				return null;
+			}).when(connection).export(any(RDFHandler.class));
+
+			servlet.service(request, response, "/transform");
+
+			byte[] rdf;
+			if ("gzip".equals(compression)) {
+				verify(response).setContentType("application/gzip");
+				verify(response).setHeader("Content-disposition",
+						"attachment; filename=export." + rdfExtension + ".gz");
+				try (InputStream compressed = new GZIPInputStream(new ByteArrayInputStream(output.bytes()))) {
+					rdf = compressed.readAllBytes();
+				}
+			} else if ("zip".equals(compression)) {
+				verify(response).setContentType("application/zip");
+				verify(response).setHeader("Content-disposition", "attachment; filename=export.zip");
+				try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(output.bytes()),
+						StandardCharsets.UTF_8)) {
+					ZipEntry entry = zip.getNextEntry();
+					assertThat(entry).isNotNull();
+					assertThat(entry.getName()).isEqualTo("export." + rdfExtension);
+					rdf = zip.readAllBytes();
+					zip.closeEntry();
+					assertThat(zip.getNextEntry()).isNull();
+				}
+			} else {
+				verify(response).setContentType(RDFFormat.NQUADS.getDefaultMIMEType());
+				verify(response).setHeader("Content-disposition", "attachment; filename=export." + rdfExtension);
+				rdf = output.bytes();
+			}
+			verify(response, never()).setHeader("Content-Encoding", "gzip");
+			Model parsed = Rio.parse(new ByteArrayInputStream(rdf), "urn:base:", RDFFormat.NQUADS);
+			assertThat(parsed).contains(statement);
+		}
+	}
+
+	@Test
 	void tupleServiceStopsAtExplicitPositiveLimitAndHandlesEmptyResults() throws Exception {
 		ExportServlet servlet = new ExportServlet();
 		WorkbenchRequest limitedRequest = mock(WorkbenchRequest.class);
@@ -123,5 +203,32 @@ class ExportServletCoverageTest {
 
 	private static RepositoryResult<Statement> repositoryResult(Statement... statements) {
 		return new RepositoryResult<>(new CloseableIteratorIteration<>(List.of(statements).iterator()));
+	}
+
+	private static final class CapturingServletOutputStream extends ServletOutputStream {
+		private final ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+		@Override
+		public boolean isReady() {
+			return true;
+		}
+
+		@Override
+		public void setWriteListener(WriteListener listener) {
+		}
+
+		@Override
+		public void write(int value) {
+			output.write(value);
+		}
+
+		@Override
+		public void write(byte[] bytes, int offset, int length) {
+			output.write(bytes, offset, length);
+		}
+
+		private byte[] bytes() {
+			return output.toByteArray();
+		}
 	}
 }

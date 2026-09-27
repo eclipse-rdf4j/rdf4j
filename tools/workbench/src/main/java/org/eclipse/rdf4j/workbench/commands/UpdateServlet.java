@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.slf4j.Logger;
@@ -50,7 +51,7 @@ public class UpdateServlet extends TransformationServlet {
 			TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 			builder.transform(xslPath, "update.xsl");
 			builder.start("error-message", "update");
-			builder.link(Arrays.asList(INFO, "namespaces"));
+			builder.link(Arrays.asList(INFO, WorkbenchPolicy.INTERNAL_NAMESPACES_LINK));
 
 			String updateString = req.getParameter("update");
 			builder.result(exc.getMessage(), updateString);
@@ -76,7 +77,7 @@ public class UpdateServlet extends TransformationServlet {
 		// All GET requests are assumed to be to present the update editor page.
 		builder.transform(xslPath, "update.xsl");
 		builder.start();
-		builder.link(Arrays.asList(INFO, "namespaces"));
+		builder.link(Arrays.asList(INFO, WorkbenchPolicy.INTERNAL_NAMESPACES_LINK));
 		builder.end();
 	}
 

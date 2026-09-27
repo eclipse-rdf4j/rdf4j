@@ -143,7 +143,7 @@ After edits, regenerate TypeScript assets only if TypeScript changes are necessa
 
 ## Concrete Steps
 
-Work from /Users/havardottestad/Documents/Programming/rdf4j7. Preserve the current tracked and untracked state. The root quick clean install has already passed on JDK 26 using the required local Maven repository; its full log is maven-build.log, and the previous ignored log was retained at /private/tmp/rdf4j7-maven-build-pre-workbench-refinement-20260925.log.
+Work from .. Preserve the current tracked and untracked state. The root quick clean install has already passed on JDK 26 using the required local Maven repository; its full log is maven-build.log, and the previous ignored log was retained at /private/tmp/rdf4j7-maven-build-pre-workbench-refinement-20260925.log.
 
 Use the repository Playwright project from e2e for browser contracts and screenshots. Its base URL can be set with RDF4J_WORKBENCH_BASE_URL and RDF4J_SERVER_BASE_URL. Do not run the whole suite with the Playwright reporter's default output over the existing test-results or playwright-report directories; use a task-specific output directory or retain direct logs under e2e with unique names.
 

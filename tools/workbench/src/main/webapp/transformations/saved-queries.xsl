@@ -13,6 +13,14 @@
 
 	<xsl:template match="sparql:sparql/sparql:results">
 		<div id="saved-queries" class="workbench-page-layout">
+		<xsl:if test="not(sparql:result)">
+			<div class="saved-queries-empty" role="status">
+				<p>No saved queries yet.</p>
+				<xsl:if test="$info//sparql:result[sparql:binding[@name='menu-item-id']/sparql:literal = 'query']">
+					<a href="query">Open Query</a>
+				</xsl:if>
+			</div>
+		</xsl:if>
 		<xsl:for-each select="sparql:result">
 			<xsl:variable name="queryLn"
 				select="normalize-space(sparql:binding[@name='queryLn'])" />

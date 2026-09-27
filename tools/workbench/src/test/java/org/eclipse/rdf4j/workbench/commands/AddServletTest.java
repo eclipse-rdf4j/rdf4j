@@ -113,6 +113,42 @@ class AddServletTest {
 	}
 
 	@Test
+	void addContextOverrideIsOptIn() throws Exception {
+		TransformerFactory factory = TransformerFactory.newInstance();
+		StreamSource stylesheet = new StreamSource(ADD_XSL.toFile());
+		stylesheet.setSystemId(ADD_XSL.toUri().toString());
+		Transformer transformer = factory.newTemplates(stylesheet).newTransformer();
+		String sparqlResults = ""
+				+ "<?xml version=\"1.0\"?>\n"
+				+ "<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">\n"
+				+ "  <head />\n"
+				+ "  <results><result>"
+				+ "<binding name=\"baseURI\"><literal>https://example.org/base</literal></binding>"
+				+ "</result></results>\n"
+				+ "</sparql>\n";
+		StringWriter html = new StringWriter();
+		transformer.transform(new StreamSource(new StringReader(sparqlResults)), new StreamResult(html));
+		String output = html.toString();
+		int contextToggle = output.indexOf("id=\"overrideContext\"");
+		int contextToggleEnd = output.indexOf('>', contextToggle);
+		int contextField = output.indexOf("id=\"context\"");
+		int contextFieldEnd = output.indexOf('>', contextField);
+
+		assertThat(contextToggle).isGreaterThanOrEqualTo(0);
+		assertThat(output.substring(contextToggle, contextToggleEnd)).doesNotContain("checked");
+		assertThat(contextField).isGreaterThanOrEqualTo(0);
+		assertThat(output.substring(contextField, contextFieldEnd))
+				.contains("disabled")
+				.doesNotContain("https://example.org/base");
+		assertThat(output)
+				.contains("aria-describedby=\"context-help\"")
+				.contains("RDF context may be an IRI, blank node, or the default graph.")
+				.contains(
+						"With override off, embedded contexts are preserved; contextless data uses the default graph.")
+				.contains("Base URI resolves relative RDF identifiers; it does not choose a graph context.");
+	}
+
+	@Test
 	void doPostReadsTransactionSettingParameter() throws Exception {
 		AddServlet servlet = new AddServlet();
 		Repository repository = mock(Repository.class);

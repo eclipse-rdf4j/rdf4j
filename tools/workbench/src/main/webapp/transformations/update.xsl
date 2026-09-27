@@ -35,7 +35,7 @@
 		<script type="text/javascript">
         var namespaces = {
             <xsl:for-each
-                select="document(//sparql:link[@href='namespaces']/@href)//sparql:results/sparql:result">
+				select="document(//sparql:link[@href='_internal/namespaces']/@href)//sparql:results/sparql:result">
                 <xsl:value-of
                     select="concat('&quot;', sparql:binding[@name='prefix']/sparql:literal, ':&quot;:&quot;', sparql:binding[@name='namespace']/sparql:literal, '&quot;,')" />
                 <xsl:text>

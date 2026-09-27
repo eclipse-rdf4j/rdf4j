@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -44,6 +45,7 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
@@ -55,6 +57,8 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.util.QueryEvaluator;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
@@ -96,6 +100,12 @@ public class QueryServlet extends TransformationServlet {
 	private static final String ACTION_CANCEL_QUERY = "cancel-query";
 
 	private static final String EXPLAIN = "explain";
+
+	private static final String EXPLAIN_FORMAT = "explain-format";
+
+	private static final String DOWNLOAD_LIMIT = "download_limit";
+
+	private static final String SAVE_PRIVATE = "save-private";
 
 	private static final String EXPLAIN_REQUEST_ID = "explain-request-id";
 
@@ -221,21 +231,304 @@ public class QueryServlet extends TransformationServlet {
 	@Override
 	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
 			throws IOException, RDF4JException, BadRequestException {
-		final String action = req.getParameter(ACTION);
+		final String action = getRequestAction(req);
 		if (ACTION_GET.equals(action)) {
 			writeQueryTextResponse(req, resp);
 		} else if (ACTION_EXPLAIN.equals(action)) {
-			if (isSavedQueryReference(req) && !canReadSavedQuery(req)) {
+			if (rejectDisabledExplainRequest(req, resp)) {
+				return;
+			}
+			WorkbenchRequest effectiveRequest = withConfiguredDefaultsForDisabledFeatures(req);
+			if (isSavedQueryReference(effectiveRequest) && !canReadSavedQuery(effectiveRequest)) {
 				throw new BadRequestException("Current user may not read the given query.");
 			}
-			if (req.isParameterPresent(EXPLAIN_REQUEST_ID)) {
-				writeAsyncExplainResponse(req, resp);
+			if (effectiveRequest.isParameterPresent(EXPLAIN_REQUEST_ID)) {
+				writeAsyncExplainResponse(effectiveRequest, resp);
 			} else {
-				writeExplainResponse(req, resp);
+				writeExplainResponse(effectiveRequest, resp);
 			}
 		} else {
-			handleStandardBrowserRequest(req, resp, xslPath);
+			boolean explainRequest = isExplainRequest(req);
+			boolean executionRequest = !explainRequest && isQueryExecutionRequest(req, action);
+			if (explainRequest) {
+				if (rejectDisabledExplainRequest(req, resp)) {
+					return;
+				}
+			} else if (executionRequest) {
+				if (rejectDisabledFeature(resp, "query-execution")
+						|| rejectDisabledQueryEvaluationOptions(req, resp)
+						|| rejectDisabledResultOptions(req, resp)) {
+					return;
+				}
+			}
+			WorkbenchRequest effectiveRequest = withConfiguredDefaultsForDisabledFeatures(req);
+			handleStandardBrowserRequest(effectiveRequest, resp, xslPath);
 		}
+	}
+
+	private boolean isQueryExecutionRequest(WorkbenchRequest req, String action) {
+		if ("exec".equals(action)) {
+			return true;
+		}
+		if (!req.isParameterPresent(QUERY)) {
+			return false;
+		}
+		String queryText = req.getParameter(QUERY);
+		return queryText != null && !queryText.isEmpty();
+	}
+
+	private boolean isExplainRequest(WorkbenchRequest req) {
+		return ACTION_EXPLAIN.equals(getRequestAction(req)) || req.isParameterPresent(EXPLAIN);
+	}
+
+	private String getRequestAction(WorkbenchRequest req) {
+		return req.isParameterPresent(ACTION) ? req.getParameter(ACTION) : null;
+	}
+
+	private boolean rejectDisabledExplainFeature(HttpServletResponse resp) throws IOException {
+		return rejectDisabledFeature(resp, "query-explain");
+	}
+
+	private boolean rejectDisabledExplainRequest(WorkbenchRequest req, HttpServletResponse resp) throws IOException {
+		if (rejectDisabledExplainFeature(resp) || rejectDisabledQueryEvaluationOptions(req, resp)) {
+			return true;
+		}
+		if (defaultEnabledExplainLevel() == null || defaultEnabledExplainFormat() == null) {
+			resp.sendError(HttpServletResponse.SC_FORBIDDEN);
+			return true;
+		}
+		if (req.isParameterPresent(EXPLAIN)) {
+			String level = req.getParameter(EXPLAIN);
+			String levelFeature = explainLevelFeature(level);
+			if (levelFeature != null && rejectDisabledFeature(resp, levelFeature)) {
+				return true;
+			}
+		}
+		if (req.isParameterPresent(EXPLAIN_FORMAT)) {
+			String formatFeature = explainFormatFeature(req.getParameter(EXPLAIN_FORMAT));
+			if (formatFeature != null && rejectDisabledFeature(resp, formatFeature)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean rejectDisabledQueryEvaluationOptions(WorkbenchRequest req, HttpServletResponse resp)
+			throws IOException {
+		return rejectDisabledParameter(req, resp, QUERY_LN, "query-language")
+				|| rejectDisabledParameter(req, resp, QUERY_TIMEOUT, "query-timeout")
+				|| rejectDisabledParameter(req, resp, INFER, "query-inferred-statements");
+	}
+
+	private boolean rejectDisabledResultOptions(WorkbenchRequest req, HttpServletResponse resp) throws IOException {
+		if (rejectDisabledParameter(req, resp, LIMIT, "result-page-size")
+				|| rejectDisabledParameter(req, resp, "show-datatypes", "result-show-datatypes")
+				|| rejectDisabledParameter(req, resp, "know_total", "result-totals")
+				|| rejectDisabledParameter(req, resp, "offset", "result-paging")
+				|| rejectDisabledParameter(req, resp, DOWNLOAD_LIMIT, "result-download-limit")) {
+			return true;
+		}
+		if (!req.isParameterPresent(ACCEPT)) {
+			return false;
+		}
+		if (rejectDisabledFeature(resp, "result-download")) {
+			return true;
+		}
+		String format = req.getParameter(ACCEPT);
+		if (isConfiguredDefault(format, getConfiguredDefault(ACCEPT))) {
+			return false;
+		}
+		if (rejectDisabledFeature(resp, "result-download-format")) {
+			return true;
+		}
+		String formatFeature = resultDownloadFormatFeature(format);
+		return formatFeature != null && rejectDisabledFeature(resp, formatFeature);
+	}
+
+	private boolean rejectDisabledParameter(WorkbenchRequest req, HttpServletResponse resp, String parameter,
+			String featureId) throws IOException {
+		return req.isParameterPresent(parameter) && rejectDisabledFeature(resp, featureId);
+	}
+
+	private String explainLevelFeature(String level) {
+		String normalizedLevel = normalizeExplainLevel(level);
+		if (normalizedLevel == null) {
+			return null;
+		}
+		return "explain-level-" + normalizedLevel.toLowerCase(Locale.ENGLISH);
+	}
+
+	private String normalizeExplainLevel(String level) {
+		if (level == null || level.isBlank()) {
+			return null;
+		}
+		for (Explanation.Level supportedLevel : Explanation.Level.values()) {
+			if (supportedLevel.name().equalsIgnoreCase(level.trim())) {
+				return supportedLevel.name();
+			}
+		}
+		return null;
+	}
+
+	private String explainFormatFeature(String format) {
+		if (format == null) {
+			return null;
+		}
+		String normalized = format.isBlank() ? "text" : format.trim().toLowerCase(Locale.ENGLISH);
+		return switch (normalized) {
+		case "text", "dot", "json" -> "explain-format-" + normalized;
+		default -> null;
+		};
+	}
+
+	private String resultDownloadFormatFeature(String format) {
+		if (format == null) {
+			return null;
+		}
+		if (Rio.getWriterFormatForMIMEType(format).isPresent()) {
+			return "result-download-format-graph";
+		}
+		if (QueryResultIO.getWriterFormatForMIMEType(format).isPresent()
+				|| QueryResultIO.getBooleanWriterFormatForMIMEType(format).isPresent()) {
+			return "result-download-format-tuple";
+		}
+		return null;
+	}
+
+	private boolean isConfiguredDefault(String value, String configuredDefault) {
+		return configuredDefault != null && value != null
+				&& configuredDefault.trim().equalsIgnoreCase(value.trim());
+	}
+
+	private String getConfiguredDefault(String parameter) {
+		return config == null ? null : config.getInitParameter("default-" + parameter);
+	}
+
+	private WorkbenchRequest withConfiguredDefaultsForDisabledFeatures(WorkbenchRequest req) {
+		Map<String, String> fallbackParameters = new HashMap<>();
+		addDisabledFeatureFallback(req, fallbackParameters, QUERY_LN, "query-language", "default-queryLn", "SPARQL");
+		addDisabledFeatureFallback(req, fallbackParameters, QUERY_TIMEOUT, "query-timeout", "default-query-timeout",
+				"0");
+		addDisabledFeatureFallback(req, fallbackParameters, INFER, "query-inferred-statements", "default-infer", null);
+		addDisabledFeatureFallback(req, fallbackParameters, LIMIT, "result-page-size", "default-limit", "0");
+		addDisabledFeatureFallback(req, fallbackParameters, "offset", "result-paging", "default-offset", "0");
+		addDisabledFeatureFallback(req, fallbackParameters, "know_total", "result-totals", "default-know_total",
+				"0");
+		boolean explainRequest = isExplainRequest(req);
+		if (explainRequest && !req.isParameterPresent(EXPLAIN)) {
+			String effectiveLevel = normalizeExplainLevel(req.getParameter(EXPLAIN));
+			String configuredLevel = normalizeExplainLevel(getConfiguredDefault(EXPLAIN));
+			String levelToReplace = effectiveLevel;
+			if (levelToReplace == null && configuredLevel != null && !isEnabledExplainLevel(configuredLevel)) {
+				levelToReplace = configuredLevel;
+			}
+			if (levelToReplace != null && !isEnabledExplainLevel(levelToReplace)) {
+				String level = isEnabledExplainLevel(configuredLevel) ? configuredLevel : defaultEnabledExplainLevel();
+				if (level != null) {
+					fallbackParameters.put(EXPLAIN, level);
+				}
+			}
+		}
+		if (explainRequest && !req.isParameterPresent(EXPLAIN_FORMAT)) {
+			String effectiveFormat = req.getParameter(EXPLAIN_FORMAT);
+			if (effectiveFormat == null || effectiveFormat.isBlank()) {
+				effectiveFormat = "text";
+			}
+			String configuredFormat = getConfiguredDefault(EXPLAIN_FORMAT);
+			String effectiveFormatFeature = explainFormatFeature(effectiveFormat);
+			if (effectiveFormatFeature != null && !isQueryFeatureEnabled(effectiveFormatFeature)) {
+				String format = isEnabledExplainFormat(configuredFormat) ? configuredFormat
+						: defaultEnabledExplainFormat();
+				if (format != null) {
+					fallbackParameters.put(EXPLAIN_FORMAT, format);
+				}
+			}
+		}
+		if (fallbackParameters.isEmpty()) {
+			return req;
+		}
+		try {
+			return new FeatureAwareWorkbenchRequest(req, fallbackParameters);
+		} catch (Exception e) {
+			throw new IllegalStateException("Unable to apply Workbench defaults for disabled query features", e);
+		}
+	}
+
+	private void addDisabledFeatureFallback(WorkbenchRequest req, Map<String, String> fallbacks, String parameter,
+			String featureId, String configKey, String fallback) {
+		if (!isQueryFeatureEnabled(featureId) && !req.isParameterPresent(parameter)) {
+			String value = config == null ? null : config.getInitParameter(configKey);
+			if (value == null) {
+				value = fallback;
+			}
+			if (value != null) {
+				fallbacks.put(parameter, value);
+			}
+		}
+	}
+
+	private boolean isEnabledExplainLevel(String level) {
+		String feature = explainLevelFeature(level);
+		return feature != null && isQueryFeatureEnabled(feature);
+	}
+
+	private String defaultEnabledExplainLevel() {
+		if (isQueryFeatureEnabled("explain-level-optimized")) {
+			return Explanation.Level.Optimized.name();
+		}
+		for (Explanation.Level level : Explanation.Level.values()) {
+			if (isQueryFeatureEnabled("explain-level-" + level.name().toLowerCase(Locale.ENGLISH))) {
+				return level.name();
+			}
+		}
+		return null;
+	}
+
+	private boolean isEnabledExplainFormat(String format) {
+		String feature = explainFormatFeature(format);
+		return feature != null && isQueryFeatureEnabled(feature);
+	}
+
+	private String defaultEnabledExplainFormat() {
+		for (String format : new String[] { "text", "dot", "json" }) {
+			if (isQueryFeatureEnabled("explain-format-" + format)) {
+				return format;
+			}
+		}
+		return null;
+	}
+
+	private boolean rejectDisabledFeature(HttpServletResponse resp, String featureId) throws IOException {
+		if (isQueryFeatureEnabled(featureId)) {
+			return false;
+		}
+		resp.sendError(HttpServletResponse.SC_FORBIDDEN);
+		return true;
+	}
+
+	private boolean isQueryFeatureEnabled(String featureId) {
+		WorkbenchPolicy policy = getWorkbenchPolicy();
+		return policy == null || policy.isQueryFeatureEnabled(featureId);
+	}
+
+	private int getQueryDownloadDefaultLimit() {
+		WorkbenchPolicy policy = getWorkbenchPolicy();
+		return policy == null ? 0 : policy.getQueryDownloadDefaultLimit();
+	}
+
+	private WorkbenchPolicy getWorkbenchPolicy() {
+		if (config == null) {
+			return null;
+		}
+		try {
+			return WorkbenchPolicyLoader.getPolicy(config.getServletContext(), appConfig);
+		} catch (ServletException e) {
+			throw new IllegalStateException("Unable to load Workbench query policy", e);
+		}
+	}
+
+	private boolean hasValue(String value) {
+		return value != null && !value.isBlank();
 	}
 
 	private void writeQueryTextResponse(final WorkbenchRequest req, final HttpServletResponse resp)
@@ -722,9 +1015,17 @@ public class QueryServlet extends TransformationServlet {
 	@Override
 	protected void doPost(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
 			throws IOException, BadRequestException, RDF4JException {
-		final String action = req.getParameter(ACTION);
+		final String action = getRequestAction(req);
 		if ("save".equals(action)) {
-			saveQuery(req, resp);
+			if (rejectDisabledFeature(resp, "query-save")
+					|| rejectDisabledQueryEvaluationOptions(req, resp)
+					|| rejectDisabledParameter(req, resp, LIMIT, "result-page-size")
+					|| (req.isParameterPresent(SAVE_PRIVATE)
+							&& Boolean.parseBoolean(req.getParameter(SAVE_PRIVATE))
+							&& rejectDisabledFeature(resp, "query-private-save"))) {
+				return;
+			}
+			saveQuery(withConfiguredDefaultsForDisabledFeatures(req), resp);
 		} else if ("edit".equals(action)) {
 			if (canReadSavedQuery(req)) {
 				/*
@@ -734,7 +1035,7 @@ public class QueryServlet extends TransformationServlet {
 				final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 				builder.transform(xslPath, "query.xsl");
 				builder.start(EDIT_PARAMS);
-				builder.link(Arrays.asList(INFO, "namespaces"));
+				builder.link(Arrays.asList(INFO, WorkbenchPolicy.INTERNAL_NAMESPACES_LINK));
 				final String queryLn = req.getParameter(EDIT_PARAMS[0]);
 				final String query = getQueryText(req);
 				final Boolean infer = Boolean.valueOf(req.getParameter(EDIT_PARAMS[2]));
@@ -747,22 +1048,34 @@ public class QueryServlet extends TransformationServlet {
 				throw new BadRequestException("Current user may not read the given query.");
 			}
 		} else if ("exec".equals(action)) {
+			if (rejectDisabledFeature(resp, "query-execution")
+					|| rejectDisabledQueryEvaluationOptions(req, resp)
+					|| rejectDisabledResultOptions(req, resp)) {
+				return;
+			}
 			if (canReadSavedQuery(req)) {
 				service(req, resp, xslPath);
 			} else {
 				throw new BadRequestException("Current user may not read the given query.");
 			}
 		} else if (ACTION_EXPLAIN.equals(action)) {
-			if (canReadSavedQuery(req)) {
-				if (req.isParameterPresent(EXPLAIN_REQUEST_ID)) {
-					writeAsyncExplainResponse(req, resp);
+			if (rejectDisabledExplainRequest(req, resp)) {
+				return;
+			}
+			WorkbenchRequest effectiveRequest = withConfiguredDefaultsForDisabledFeatures(req);
+			if (canReadSavedQuery(effectiveRequest)) {
+				if (effectiveRequest.isParameterPresent(EXPLAIN_REQUEST_ID)) {
+					writeAsyncExplainResponse(effectiveRequest, resp);
 				} else {
-					writeExplainResponse(req, resp);
+					writeExplainResponse(effectiveRequest, resp);
 				}
 			} else {
 				throw new BadRequestException("Current user may not read the given query.");
 			}
 		} else if (ACTION_CANCEL_EXPLAIN.equals(action)) {
+			if (rejectDisabledFeature(resp, "explain-cancel")) {
+				return;
+			}
 			final String explainRequestId = getExplainRequestId(req);
 			if (explainRequestId == null) {
 				resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: " + EXPLAIN_REQUEST_ID);
@@ -778,6 +1091,9 @@ public class QueryServlet extends TransformationServlet {
 				resp.sendError(HttpServletResponse.SC_BAD_GATEWAY, e.getMessage());
 			}
 		} else if (ACTION_CANCEL_QUERY.equals(action)) {
+			if (rejectDisabledFeature(resp, "query-cancel")) {
+				return;
+			}
 			final String queryRequestId = getQueryRequestId(req);
 			if (queryRequestId == null) {
 				resp.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing parameter: " + QUERY_REQUEST_ID);
@@ -1000,12 +1316,13 @@ public class QueryServlet extends TransformationServlet {
 					builder.metadata(QueryEvaluator.METADATA_QUERY_RESULT_STATUS, "completed");
 				}
 			}
-			builder.link(Arrays.asList(INFO, "namespaces"));
+			builder.link(Arrays.asList(INFO, WorkbenchPolicy.INTERNAL_NAMESPACES_LINK));
 			builder.end();
 		} else {
 			try {
 				EVAL.extractQueryAndEvaluate(builder, resp, writerOutput, xslPath, con, query, req, this.cookies,
-						getResponseQueryText(req, query), getRepositoryReference(), heartbeat);
+						getResponseQueryText(req, query), getRepositoryReference(), heartbeat,
+						getQueryDownloadDefaultLimit());
 			} catch (MalformedQueryException exc) {
 				throw new BadRequestException(exc.getMessage(), exc);
 			} catch (HTTPQueryEvaluationException exc) {
@@ -1040,7 +1357,7 @@ public class QueryServlet extends TransformationServlet {
 		boolean embedded = isEmbeddedRequest(req);
 		builder.transform(xslPath, embedded ? "query-result-error.xsl" : "query.xsl");
 		builder.start("error-message");
-		builder.link(Arrays.asList(INFO, "namespaces"));
+		builder.link(Arrays.asList(INFO, WorkbenchPolicy.INTERNAL_NAMESPACES_LINK));
 		if (embedded) {
 			builder.metadata(EMBEDDED, true);
 		}
@@ -1124,6 +1441,48 @@ public class QueryServlet extends TransformationServlet {
 
 	private boolean isSavedQueryReference(WorkbenchRequest req) {
 		return req.isParameterPresent(REF) && "id".equals(req.getParameter(REF));
+	}
+
+	private final class FeatureAwareWorkbenchRequest extends WorkbenchRequest {
+		private final WorkbenchRequest delegate;
+
+		private final Map<String, String> fallbackParameters;
+
+		private FeatureAwareWorkbenchRequest(WorkbenchRequest delegate, Map<String, String> fallbackParameters)
+				throws RepositoryException, IOException, ServletException {
+			super(repository, delegate, Collections.emptyMap());
+			this.delegate = delegate;
+			this.fallbackParameters = Map.copyOf(fallbackParameters);
+		}
+
+		@Override
+		public String getParameter(String name) {
+			if (!delegate.isParameterPresent(name) && fallbackParameters.containsKey(name)) {
+				return fallbackParameters.get(name);
+			}
+			return delegate.getParameter(name);
+		}
+
+		@Override
+		public boolean isParameterPresent(String name) {
+			return delegate.isParameterPresent(name) || fallbackParameters.containsKey(name);
+		}
+
+		@Override
+		public String[] getParameterValues(String name) {
+			return delegate.getParameterValues(name);
+		}
+
+		@Override
+		public Map<String, String> getSingleParameterMap() {
+			Map<String, String> parameters = new HashMap<>(delegate.getSingleParameterMap());
+			fallbackParameters.forEach((name, value) -> {
+				if (!delegate.isParameterPresent(name)) {
+					parameters.put(name, value);
+				}
+			});
+			return parameters;
+		}
 	}
 
 	private static final class TrackedQueryExecutionException extends RuntimeException {

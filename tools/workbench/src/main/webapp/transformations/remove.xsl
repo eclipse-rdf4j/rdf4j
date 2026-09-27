@@ -68,7 +68,7 @@
 							<xsl:value-of select="$subject.label" />
 						</th>
 						<td>
-							<input id="subj" name="subj" type="text"
+							<input id="subj" name="subj" type="text" size="48"
 								value="{//sparql:binding[@name='subj']/sparql:literal}" />
 						</td>
 						<td></td>
@@ -79,7 +79,7 @@
 							<xsl:value-of select="$predicate.label" />
 						</th>
 						<td>
-							<input id="pred" name="pred" type="text"
+							<input id="pred" name="pred" type="text" size="48"
 								value="{//sparql:binding[@name='pred']/sparql:literal}" />
 						</td>
 						<td></td>
@@ -100,7 +100,7 @@
 						</th>
 
 						<td>
-							<input id="context" name="context" type="text"
+							<input id="context" name="context" type="text" size="48"
 								value="{//sparql:binding[@name='context']/sparql:literal}" />
 						</td>
 						<td></td>

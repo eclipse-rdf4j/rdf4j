@@ -17,19 +17,31 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.workbench.RepositoryServlet;
+import org.eclipse.rdf4j.workbench.commands.QueryServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
+import org.eclipse.rdf4j.workbench.util.CookieHandler;
+import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockServletContext;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
@@ -147,6 +159,40 @@ class ProxyRepositoryServletTest {
 	}
 
 	@Test
+	void queryExecutionPolicyMustRunBeforeConditionalGetForCanonicalAndAliasRoutes() throws Exception {
+		MockServletContext context = new MockServletContext();
+		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE, disabledQueryExecutionPolicy());
+		Map<String, String> params = new LinkedHashMap<>();
+		params.put("default-command", "/query");
+		params.put("transformations", "/transformations");
+		params.put("/query", PolicyEnforcingQueryServlet.class.getName());
+		params.put("/query-alias", PolicyEnforcingQueryServlet.class.getName());
+
+		ProxyRepositoryServlet servlet = configuredServlet();
+		servlet.init(new TestServletConfig("proxy", context, params));
+		try {
+			for (String route : List.of("/query", "/query-alias")) {
+				MockHttpServletRequest request = new MockHttpServletRequest("GET", "/proxy" + route);
+				request.setRequestURI("/proxy" + route);
+				configureUrl(request);
+				request.setServletPath("/proxy");
+				request.setPathInfo(route);
+				request.addParameter("action", "exec");
+				request.addParameter("query", "select * where { ?s ?p ?o }");
+				request.addHeader("If-Modified-Since", Long.MAX_VALUE);
+
+				MockHttpServletResponse response = new MockHttpServletResponse();
+				servlet.service(request, response);
+
+				assertThat(response.getStatus()).as("policy response for %s", route)
+						.isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+			}
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
 	void serviceRoundsStaleLastModifiedTimestampsUpToWholeSeconds() throws Exception {
 		ProxyRepositoryServlet servlet = initServlet();
 		setLastModified(servlet, 1L);
@@ -195,6 +241,16 @@ class ProxyRepositoryServletTest {
 		servlet.setRepositoryInfo(new RepositoryInfo());
 		servlet.setRepositoryManager(mock(RepositoryManager.class));
 		return servlet;
+	}
+
+	private static WorkbenchPolicy disabledQueryExecutionPolicy() {
+		Properties properties = new Properties();
+		properties.setProperty("menu.items", "query");
+		properties.setProperty("menu.groups", "explore");
+		properties.setProperty("menu.group.explore.visible", "true");
+		properties.setProperty("query.consumer-feature-ids", "query-execution");
+		properties.setProperty("query.feature.query-execution.enabled", "false");
+		return WorkbenchPolicy.fromProperties(properties, Set.of());
 	}
 
 	private static void configureUrl(MockHttpServletRequest request) {
@@ -281,6 +337,24 @@ class ProxyRepositoryServletTest {
 
 		@Override
 		public void setRepository(Repository repository) {
+		}
+	}
+
+	public static class PolicyEnforcingQueryServlet extends QueryServlet {
+		@Override
+		public void init(ServletConfig config) {
+			this.config = config;
+			this.cookies = mock(CookieHandler.class);
+		}
+
+		@Override
+		public void destroy() {
+		}
+
+		@Override
+		protected void service(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
+				throws IOException, RDF4JException, BadRequestException {
+			super.service(req, resp, xslPath);
 		}
 	}
 

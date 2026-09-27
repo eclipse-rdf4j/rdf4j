@@ -749,6 +749,90 @@ class AddServletCoverageTest {
 	}
 
 	@Test
+	void doPostPreservesEmbeddedTriGContextsAndUsesTheDefaultGraphWithoutOverride() throws Exception {
+		AddServlet servlet = new AddServlet();
+		SailRepository repository = new SailRepository(new MemoryStore());
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+		String trig = "@prefix ex: <http://example.org/> .\n"
+				+ "ex:default ex:p \"default\" .\n"
+				+ "ex:graph { ex:named ex:p \"named\" . }\n";
+
+		repository.init();
+		try {
+			servlet.setRepository(repository);
+			when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+			when(request.getParameter("Content-Type")).thenReturn(RDFFormat.TRIG.getDefaultMIMEType());
+			when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+			when(request.isParameterPresent("context")).thenReturn(false);
+			when(request.isParameterPresent("url")).thenReturn(false);
+			when(request.getContentParameter())
+					.thenReturn(new ByteArrayInputStream(trig.getBytes(StandardCharsets.UTF_8)));
+			when(request.getContentFileName()).thenReturn("data.trig");
+
+			servlet.doPost(request, response, "/transform");
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertThat(connection.hasStatement(
+						SimpleValueFactory.getInstance().createIRI("http://example.org/default"),
+						SimpleValueFactory.getInstance().createIRI("http://example.org/p"),
+						SimpleValueFactory.getInstance().createLiteral("default"), false, (Resource) null)).isTrue();
+				assertThat(connection.hasStatement(
+						SimpleValueFactory.getInstance().createIRI("http://example.org/named"),
+						SimpleValueFactory.getInstance().createIRI("http://example.org/p"),
+						SimpleValueFactory.getInstance().createLiteral("named"), false,
+						SimpleValueFactory.getInstance().createIRI("http://example.org/graph"))).isTrue();
+				assertThat(connection.hasStatement(
+						SimpleValueFactory.getInstance().createIRI("http://example.org/named"),
+						SimpleValueFactory.getInstance().createIRI("http://example.org/p"),
+						SimpleValueFactory.getInstance().createLiteral("named"), false, (Resource) null)).isFalse();
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void doPostExplicitContextReplacesEmbeddedTriGContexts() throws Exception {
+		AddServlet servlet = new AddServlet();
+		SailRepository repository = new SailRepository(new MemoryStore());
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+		Resource override = SimpleValueFactory.getInstance().createIRI("http://example.org/override");
+		String trig = "@prefix ex: <http://example.org/> .\n"
+				+ "ex:default ex:p \"default\" .\n"
+				+ "ex:graph { ex:named ex:p \"named\" . }\n";
+
+		repository.init();
+		try {
+			servlet.setRepository(repository);
+			when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+			when(request.getParameter("Content-Type")).thenReturn(RDFFormat.TRIG.getDefaultMIMEType());
+			when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+			when(request.isParameterPresent("context")).thenReturn(true);
+			when(request.getResource("context")).thenReturn(override);
+			when(request.isParameterPresent("url")).thenReturn(false);
+			when(request.getContentParameter())
+					.thenReturn(new ByteArrayInputStream(trig.getBytes(StandardCharsets.UTF_8)));
+			when(request.getContentFileName()).thenReturn("data.trig");
+
+			servlet.doPost(request, response, "/transform");
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertThat(connection.hasStatement(null, null, null, false, override)).isTrue();
+				assertThat(connection.hasStatement(null, null, null, false,
+						SimpleValueFactory.getInstance().createIRI("http://example.org/graph"))).isFalse();
+				assertThat(connection.hasStatement(
+						SimpleValueFactory.getInstance().createIRI("http://example.org/default"),
+						SimpleValueFactory.getInstance().createIRI("http://example.org/p"),
+						SimpleValueFactory.getInstance().createLiteral("default"), false, override)).isTrue();
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void doPostPreservesLiteralArchiveMemberNamesForBrotliCodec() throws Exception {
 		RDFInputFixture fixture = supportedRdfInputs()
 				.filter(candidate -> candidate.name().equals("brotli"))

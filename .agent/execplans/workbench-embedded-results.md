@@ -169,7 +169,7 @@ On the server, `QueryEvaluator.addWorkbenchMetadata` will add `workbench:embedde
 
 ## Concrete Steps
 
-Work from `/Users/havardottestad/Documents/Programming/rdf4j7`. Preserve the existing untracked browser logs, screenshots, and evidence. Run the required initial root install with the workspace Maven repository and retain its full output in `maven-build.log`:
+Work from `.`. Preserve the existing untracked browser logs, screenshots, and evidence. Run the required initial root install with the workspace Maven repository and retain its full output in `maven-build.log`:
 
     mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install 2>&1 | tee maven-build.log | awk '/\\[WARNING\\]/ { next } /\\[ERROR\\]/ { print; next } /Reactor Summary/ { summary=1 } summary { print }'
 

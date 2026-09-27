@@ -178,7 +178,7 @@ class QueryServletCoverageTest {
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		StringWriter body = new StringWriter();
 
-		when(request.getParameter("action")).thenReturn("get");
+		stubAction(request, "get");
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
@@ -204,7 +204,7 @@ class QueryServletCoverageTest {
 		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY))
 				.thenThrow(new HTTPQueryEvaluationException("remote failure"));
 		when(response.getOutputStream()).thenReturn(outputStream);
-		when(request.getParameter("action")).thenReturn("exec");
+		stubAction(request, "exec");
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(false);
@@ -253,7 +253,7 @@ class QueryServletCoverageTest {
 		when(storage.canRead(queryId, "alice")).thenReturn(true);
 		when(storage.getQueryText(anyString(), eq("owner"), eq("saved-query"))).thenReturn(SHORT_QUERY);
 		when(response.getOutputStream()).thenReturn(outputStream);
-		when(request.getParameter("action")).thenReturn("edit");
+		stubAction(request, "edit");
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
@@ -286,13 +286,13 @@ class QueryServletCoverageTest {
 		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query")))
 				.thenReturn(SimpleValueFactory.getInstance().createIRI("urn:query:private"));
 		when(storage.canRead(any(IRI.class), eq("alice"))).thenReturn(false);
-		when(unreadableRequest.getParameter("action")).thenReturn("exec");
+		stubAction(unreadableRequest, "exec");
 		when(unreadableRequest.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(unreadableRequest.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(unreadableRequest.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
 		when(unreadableRequest.getParameter("owner")).thenReturn("owner");
 		when(unreadableRequest.getParameter("server-user")).thenReturn("alice");
-		when(unknownActionRequest.getParameter("action")).thenReturn("surprise");
+		stubAction(unknownActionRequest, "surprise");
 		servlet.substituteQueryStorage(storage);
 
 		assertThatThrownBy(() -> servlet.doPost(unreadableRequest, mock(HttpServletResponse.class), "/transform"))
@@ -381,7 +381,7 @@ class QueryServletCoverageTest {
 
 	private static WorkbenchRequest mockSaveRequest(String queryName) throws Exception {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
-		when(request.getParameter("action")).thenReturn("save");
+		stubAction(request, "save");
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn(SHORT_QUERY);
 		when(request.getParameter("query-name")).thenReturn(queryName);
@@ -404,6 +404,11 @@ class QueryServletCoverageTest {
 			when(request.getParameter("server-user")).thenReturn("carol");
 		}
 		return request;
+	}
+
+	private static void stubAction(WorkbenchRequest request, String action) {
+		when(request.getParameter("action")).thenReturn(action);
+		when(request.isParameterPresent("action")).thenReturn(action != null);
 	}
 
 	private static String expectedRepositoryReference(String source) {
@@ -438,7 +443,7 @@ class QueryServletCoverageTest {
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		HttpServletResponse response = mock(HttpServletResponse.class);
 
-		when(request.getParameter("action")).thenReturn("exec");
+		stubAction(request, "exec");
 		when(request.isParameterPresent("Accept")).thenReturn(true);
 		when(request.getParameter("Accept")).thenReturn("text/csv");
 		when(request.getHeader("Accept")).thenReturn("application/sparql-results+xml");

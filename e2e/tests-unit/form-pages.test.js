@@ -82,10 +82,10 @@ test('add page handles context and source selection branches', () => {
     const url = harness.registerElement('input', { id: 'url', value: 'https://example.test/data' });
     const baseURI = harness.registerElement('input', { id: 'baseURI', value: 'https://example.test/base' });
     const context = harness.registerElement('input', { id: 'context', value: '' });
-    const useForContext = harness.registerElement('input', {
-        id: 'useForContext',
+    const overrideContext = harness.registerElement('input', {
+        id: 'overrideContext',
         type: 'checkbox',
-        checked: true
+        checked: false
     });
     const sourceText = harness.registerElement('input', { id: 'source-text', type: 'radio' });
     const sourceFile = harness.registerElement('input', { id: 'source-file', type: 'radio' });
@@ -104,7 +104,7 @@ test('add page handles context and source selection branches', () => {
         url,
         baseURI,
         context,
-        useForContext,
+        overrideContext,
         sourceText,
         sourceFile,
         sourceUrl,
@@ -113,20 +113,20 @@ test('add page handles context and source selection branches', () => {
 
     harness.loadScripts(['add.js']);
 
-    harness.context.workbench.add.handleFormatSelection('application/x-trig');
-    assert.equal(useForContext.checked, false);
+    harness.context.workbench.add.handleContextOverride();
+    assert.equal(overrideContext.checked, false);
     assert.equal(context.value, '');
-    assert.equal(context.readOnly, false);
+    assert.equal(context.disabled, true);
 
-    useForContext.checked = true;
-    baseURI.value = 'https://example.test/base';
-    harness.context.workbench.add.handleBaseURIUse();
-    assert.equal(context.value, '<https://example.test/base>');
-    assert.equal(context.readOnly, true);
+    overrideContext.checked = true;
+    context.value = 'urn:target-graph';
+    harness.context.workbench.add.handleContextOverride();
+    assert.equal(context.value, 'urn:target-graph');
+    assert.equal(context.disabled, false);
 
-    useForContext.checked = false;
-    harness.context.workbench.add.handleBaseURIUse();
-    assert.equal(context.readOnly, false);
+    overrideContext.checked = false;
+    harness.context.workbench.add.handleContextOverride();
+    assert.equal(context.disabled, true);
 
     harness.context.workbench.add.enabledInput('text');
     assert.equal(text.disabled, false);
@@ -136,16 +136,18 @@ test('add page handles context and source selection branches', () => {
     assert.equal(contentType.getElementsByTagName('option')[0].disabled, true);
     assert.equal(contentType.getElementsByTagName('option')[1].selected, true);
 
-    useForContext.checked = true;
+    context.value = '';
     harness.context.workbench.add.enabledInput('file');
     assert.equal(file.disabled, false);
     assert.equal(baseURI.value, 'file:///tmp/data.ttl');
-    assert.equal(context.value, '<file:///tmp/data.ttl>');
+    assert.equal(context.value, '');
+    assert.equal(context.disabled, true);
 
     harness.context.workbench.add.enabledInput('url');
     assert.equal(url.disabled, false);
     assert.equal(baseURI.value, 'https://example.test/data');
-    assert.equal(context.value, '<https://example.test/data>');
+    assert.equal(context.value, '');
+    assert.equal(context.disabled, true);
   });
 
 test('create page resolves field roles, overwrite checks, and delayed enablement', () => {
