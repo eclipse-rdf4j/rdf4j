@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 import uuid
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 
 GUEST_REPO = Path("/mnt/rdf4j-ro")
@@ -309,7 +309,7 @@ def guest_qemu_arguments(*, qemu: Path, name: str, machine: str = "virt", accel:
 
 def start_logged_process(command: Sequence[str], log_path: Path) -> subprocess.Popen[bytes]:
     with log_path.open("xb") as log:
-        process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
+        process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     return process
 
 
@@ -328,14 +328,65 @@ def wait_for_path(process: subprocess.Popen[bytes], paths: Sequence[Path], timeo
 
 def stop_process(process: subprocess.Popen[bytes] | None, sig: int = signal.SIGKILL,
                  timeout: float = 15) -> None:
-    if process is None or process.poll() is not None:
+    """Stop and reap a logged command plus any wrapped child processes it started."""
+    if process is None:
         return
-    process.send_signal(sig)
-    try:
-        process.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        process.kill()
+
+    group_id = process.pid
+
+    def group_exists() -> bool:
+        try:
+            os.killpg(group_id, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+
+    def signal_group(group_signal: int) -> None:
+        try:
+            os.killpg(group_id, group_signal)
+        except ProcessLookupError:
+            if process.poll() is None:
+                process.send_signal(group_signal)
+
+    if process.poll() is None or group_exists():
+        signal_group(sig)
+
+    deadline = time.monotonic() + timeout
+    while group_exists() and time.monotonic() < deadline:
+        if process.poll() is None:
+            try:
+                process.wait(timeout=min(0.05, max(0.0, deadline - time.monotonic())))
+            except subprocess.TimeoutExpired:
+                pass
+        else:
+            time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+
+    if group_exists():
+        signal_group(signal.SIGKILL)
+    if process.poll() is None:
         process.wait(timeout=10)
+
+    reap_deadline = time.monotonic() + 2
+    while group_exists() and time.monotonic() < reap_deadline:
+        time.sleep(0.02)
+    if group_exists():
+        raise RuntimeError(f"process group {group_id} remained after SIGKILL")
+
+
+def fence_nbd_then_stop_guest(guest: subprocess.Popen[bytes], fence_nbd: Callable[[], Any]) -> Any:
+    """Cut and disconnect the virtual block device before abruptly stopping its guest."""
+    try:
+        cut_result = fence_nbd()
+    except BaseException as cut_error:
+        try:
+            stop_process(guest, signal.SIGKILL)
+        except BaseException as stop_error:
+            raise cut_error from stop_error
+        raise
+    stop_process(guest, signal.SIGKILL)
+    return cut_result
 
 
 def start_backend(*, python: Path, backend: Path, image: Path, control: Path, port: int,

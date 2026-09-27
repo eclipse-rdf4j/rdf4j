@@ -145,7 +145,10 @@ a fresh qcow2 overlay and copied UEFI variables.
 `pull_request` on `ubuntu-24.04`. It adds a read/write ACL for the job user's
 UID on `/dev/kvm`. The preflight captures process and device metadata, verifies
 the KVM API and creates/closes a test VM, then records a direct-user QEMU file
-open trace and available AppArmor/kernel/audit denial records. The required
+open trace and available AppArmor/kernel/audit denial records. Its tested
+`qemu_kvm_preflight.py` controller handles QEMU child exits and the QMP greeting
+with bounded waits; failure of the optional direct-user diagnostic still leads
+to the required group-context probe. The required
 QEMU probe runs as the same unprivileged job user with `/dev/kvm`'s primary
 group and must stay QMP-responsive while configured with `q35`, `accel=kvm`,
 and `cpu=host`; that exact wrapper is used for guest provisioning and each
@@ -385,13 +388,21 @@ attempted B operation payload before the guest applies it. The child fsyncs a
 distinguishes an attempted transaction that has entered commit from a B payload
 that was only staged and never submitted for commit.
 
-Each run kills QEMU before issuing a volatile-sector-drop command to the NBD
-backend, saves and hashes the pre-recovery raw image and every external witness,
-then runs the public RDF4J recovery oracle twice. Each recovery starts from a
-separate writable copy of the same immutable preserved image. The exact public
-RDF state, explicit/inferred visibility, namespace map, and statement index
-lookups are checked. Both recoveries must return the same allowed transaction
-outcome and complete-state hash.
+Each run first asks the NBD backend to fence the device and drop volatile
+sectors while the guest is still alive, then abruptly stops and reaps the QEMU
+process group. If the backend cut fails, the runner still stops the guest and
+propagates the original cut error. It then saves and hashes the pre-recovery raw
+image and every external witness, and runs the public RDF4J recovery oracle
+twice. Each recovery starts from a separate writable copy of the same immutable
+preserved image. The exact public RDF state, explicit/inferred visibility,
+namespace map, and statement index lookups are checked. Both recoveries must
+return the same allowed transaction outcome and complete-state hash.
+
+Previously completed local externally orchestrated guest campaigns used the
+older stop-QEMU-before-cut ordering. Their results remain evidence for their
+recorded outcomes, but do not validate this fence-first boundary. No historical
+GitHub Actions run reached the real campaign tier. The CI campaigns must run
+calibration and all three cuts with the current ordering.
 
 The contracts differ by boundary:
 

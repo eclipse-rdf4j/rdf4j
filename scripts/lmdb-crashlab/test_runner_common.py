@@ -40,7 +40,8 @@ class RunnerSafetyTests(unittest.TestCase):
     def test_canonical_runner_includes_runner_and_protocol_suites(self):
         runner = Path(__file__).with_name("run-tests.sh").read_text(encoding="utf-8")
         self.assertIn(
-            "python3 -m unittest -v test_runner_common test_volatile_nbd test_powercut_campaign test_ci_gate", runner
+            "python3 -m unittest -v test_runner_common test_volatile_nbd test_powercut_campaign test_ci_gate "
+            "test_qemu_kvm_preflight test_process_lifecycle", runner
         )
 
     def test_qemu_arguments_reject_unsafe_cache_modes(self):

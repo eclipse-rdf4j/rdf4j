@@ -18,6 +18,7 @@ from runner_common import (
     create_fresh_directory,
     create_qcow_overlay,
     create_seed_iso,
+    fence_nbd_then_stop_guest,
     guest_qemu_arguments,
     require_executable,
     require_free_tcp_ports,
@@ -203,10 +204,12 @@ def main() -> int:
             "acknowledged_write_event": raw_write,
             "durable_events_after_ack_before_cut": later_syncs,
         })
-        cut_report = backend_control(Path(sys.executable), inputs["backend"], control, "cut",
-                                     "--survival", "drop", "--seed", "20260927")
+        cut_report = fence_nbd_then_stop_guest(
+            qemu,
+            lambda: backend_control(Path(sys.executable), inputs["backend"], control, "cut",
+                                    "--survival", "drop", "--seed", "20260927"),
+        )
         write_json_exclusive(results / "calibration-device-cut.json", cut_report)
-        stop_process(qemu, signal.SIGKILL)
         qemu = None
         stop_process(backend, signal.SIGINT)
         backend = None

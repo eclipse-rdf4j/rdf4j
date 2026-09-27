@@ -21,6 +21,7 @@ from runner_common import (
     create_fresh_directory,
     create_qcow_overlay,
     create_seed_iso,
+    fence_nbd_then_stop_guest,
     guest_classpath,
     guest_qemu_arguments,
     require_executable,
@@ -249,14 +250,16 @@ def main() -> int:
                                args.writer_timeout_seconds)
         if marker.name != "actual-lmdb-final-ack":
             raise RuntimeError(f"writer guest failed: {marker.read_text(errors='replace')}")
-        stop_process(writer_qemu, signal.SIGKILL)
-        writer_qemu = None
         writer_status_before_cut = backend_control(Path(sys.executable), inputs["backend"],
                                                    writer_control, "status")
         write_json_exclusive(results / "actual-writer-backend-status-before-cut.json",
                              writer_status_before_cut)
-        cut_report = backend_control(Path(sys.executable), inputs["backend"], writer_control,
-                                     "cut", "--survival", "drop", "--seed", str(args.cut_seed))
+        cut_report = fence_nbd_then_stop_guest(
+            writer_qemu,
+            lambda: backend_control(Path(sys.executable), inputs["backend"], writer_control,
+                                    "cut", "--survival", "drop", "--seed", str(args.cut_seed)),
+        )
+        writer_qemu = None
         write_json_exclusive(results / "actual-nbd-device-cut.json", cut_report)
         preserved_dir = results / "pre-recovery-image"
         preserved_dir.mkdir()

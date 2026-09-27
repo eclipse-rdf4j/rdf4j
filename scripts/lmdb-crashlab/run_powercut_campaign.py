@@ -21,6 +21,7 @@ from runner_common import (
     create_fresh_directory,
     create_qcow_overlay,
     create_seed_iso,
+    fence_nbd_then_stop_guest,
     guest_classpath,
     guest_qemu_arguments,
     require_executable,
@@ -392,12 +393,14 @@ def main() -> int:
         cut_witness = json.loads(marker.read_text(encoding="utf-8"))
         validate_cutpoint_witness(args.scenario, cut_witness,
                                   b_acknowledged=(paths["results"] / "actual-B-acknowledged-witness.tsv").exists())
-        stop_process(writer_guest, signal.SIGKILL)
-        writer_guest = None
         writer_status = backend_control(Path(sys.executable), inputs["backend"], writer_control, "status")
         write_json_exclusive(paths["results"] / "actual-writer-backend-status-before-cut.json", writer_status)
-        cut = backend_control(Path(sys.executable), inputs["backend"], writer_control,
-                              "cut", "--survival", "drop", "--seed", str(args.cut_seed))
+        cut = fence_nbd_then_stop_guest(
+            writer_guest,
+            lambda: backend_control(Path(sys.executable), inputs["backend"], writer_control,
+                                    "cut", "--survival", "drop", "--seed", str(args.cut_seed)),
+        )
+        writer_guest = None
         write_json_exclusive(paths["results"] / "actual-nbd-device-cut.json", cut)
         if not cut.get("off") or cut.get("survival") != "drop" or cut.get("kept_sectors") != 0:
             raise RuntimeError("NBD backend did not complete a volatile-sector drop cut")

@@ -16,8 +16,15 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
 - [done] Move hosted guest to x86 KVM.
 - [done] Commit and push x86 KVM gate.
 - [done] Diagnose hosted ACL verifier mismatch.
-- [in_progress] Diagnose QEMU device access mismatch.
-- [todo] Rerun hosted KVM campaigns.
+- [done] Capture hosted QEMU access evidence.
+- [done] Test bounded QEMU probe controller.
+- [done] Validate refactored preflight gate.
+- [done] Verify QEMU process-group cleanup.
+- [done] Test guest cut process ordering.
+- [done] Verify wrapped QEMU teardown failures.
+- [done] Run complete crashlab Python suite.
+- [in_progress] Commit and push CI fix.
+- [todo] Run hosted KVM campaign matrix.
 - [todo] Update PR evidence and plan.
 
 ## Surprises & Discoveries
@@ -44,6 +51,12 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
   Evidence: [GitHub Actions run 36339315491](https://github.com/eclipse-rdf4j/rdf4j/actions/runs/36339315491), job log shows `user:runner:rw-` followed by a failed `grep` for `user:$UID:rw-`; Maven and guest steps were skipped.
 - Observation: after the ACL representation fix, the job user's direct KVM API/VM creation succeeded but the QEMU process still reported `EACCES`; this does not identify the cause.
   Evidence: [GitHub Actions run 36339519128](https://github.com/eclipse-rdf4j/rdf4j/actions/runs/36339519128), uploaded `kvm-preflight` artifact shows `user:1001:rw-`, `KVM API 12; created test VM fd 4`, and QEMU's `failed to initialize kvm: Permission denied`.
+- Observation: the new open trace confirmed the direct QEMU process gets `EACCES` from `openat("/dev/kvm", O_RDWR|O_CLOEXEC)`, but the step stopped before the same-UID group probe.
+  Evidence: [GitHub Actions run 36341154827](https://github.com/eclipse-rdf4j/rdf4j/actions/runs/36341154827), `kvm-preflight/direct-user/open.trace` records `= -1 EACCES`; the artifact has no primary-group attempt or denial-log files, so it provides no group-ownership result and the immediate shell exit remains under investigation.
+- Observation: `probe_state()` used the exit status of `ps | tr` inside command substitutions while the workflow enabled `set -euo pipefail`; a vanished child could abort the shell before the missing-process branch ran. The workflow now delegates child/QMP lifecycle to a Python controller that checks `Popen.poll()` and tests exits before socket creation, after socket creation but before the QMP greeting, and optional direct-probe failure followed by required group-probe success.
+  Evidence: `scripts/lmdb-crashlab/test_qemu_kvm_preflight.py` passed four tests; the first workflow contract run failed because the helper was absent, the focused regression run passed six tests, and `bash scripts/lmdb-crashlab/run-tests.sh` passed all 59 tests.
+- Observation: the prior campaign runners stopped QEMU before requesting the NBD volatile-sector cut. Earlier guest campaign reports therefore do not validate the newly enforced fence-first ordering. Current runners cut/disconnect the backend while the guest is still alive, then stop and reap its process group; a backend-cut exception also stops the guest and re-raises the original failure.
+  Evidence: `test_process_lifecycle.py` covers the fence-before-stop order, a wrapper exiting before a TERM-ignoring child, bounded group escalation/quiescence, and cleanup after backend-cut failure; `bash scripts/lmdb-crashlab/run-tests.sh` passed all 64 tests. No historical GitHub Actions run reached the real campaign tier. Earlier completed local externally orchestrated campaigns used the old order, so the next hosted run must execute calibration and all four campaigns with this ordering.
 - Decision: raise the replay-cut fixture to 20,000 statements, matching the seeded replay fixture, so the native writer must spill the transaction journal and reach an actual post-growth replay on the hosted ARM64 runner.
   Evidence: after the fixture adjustment, the full `LmdbCrashRecoveryTest` selector passed locally with 15 tests and zero skips; see `initial-evidence.txt` and `logs/mvnf/20260927-163858-verify.log`.
 - Decision: disable only the unused QEMU UEFI network option ROM with `romfile=`; retain the virtio NIC and user-mode network needed by guest package provisioning.
@@ -58,6 +71,11 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
   Rationale: names are rendered by default even when the ACL was set by numeric UID; `--numeric` makes the output stable against account-name formatting.
 - Decision: treat the QEMU `EACCES` as unresolved until both process/device context and a same-UID primary-device-group probe are captured.
   Rationale: direct KVM ioctl success shows the ACL applies to one process, but does not establish why QEMU fails. Collect QEMU identity/capabilities and available AppArmor denials, trace its `/dev/kvm` open, then test a same-UID invocation with `/dev/kvm`'s primary group without disabling host security.
+- Decision: optional host-denial evidence must not prevent the required same-UID group probe from running.
+  Rationale: run 36341154827 preserved the direct `EACCES` trace but stopped before the candidate QEMU invocation; optional kernel metadata collection is now explicitly best-effort while the final KVM process check remains required.
+- Decision: move process/QMP lifecycle supervision into a small Python helper with subprocess return-code handling, while keeping the workflow's ACL setup and the existing forced-KVM requirement.
+  Rationale: absent child PIDs are normal diagnostic outcomes for the optional direct probe and must be recorded before continuing; shell `set -e`/pipeline behavior currently couples them to whole-step failure. Both optional-direct continuation and required-group failure must be tested deterministically.
+  Date/Author: 2026-09-27 / Codex.
 
 ## Decision Log
 
@@ -79,7 +97,7 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
 
 ## Outcomes & Retrospective
 
-The 20,000-statement replay fixture passed the hosted Java gate (86 selected tests, zero skips). Run 36335095831 also passed that gate; the ARM guest installed Java 25 and reached poweroff, but TCG took 1732 seconds to provision and its QEMU process did not exit before the 1800-second bound. The first x86_64/KVM run, 36339315491, failed at ACL-output parsing before the KVM API, Maven, or guest checks. The ACL assertion now uses numeric output and the 55-test Python crashlab suite passes locally. Run 36339519128 confirmed the direct runner user can query KVM API 12 and create a VM, but QEMU's own KVM initialization still failed with permission denied. The reason remains undiagnosed; the next check captures process/device/QEMU context and traces QEMU's open while testing the device's primary group as the same runner UID. Completion still requires a hosted x86_64/KVM run to execute calibration and every required campaign, publish evidence, and retain zero skips for the selected Java tests.
+The 20,000-statement replay fixture passed the hosted Java gate (86 selected tests, zero skips). Run 36335095831 also passed that gate; the ARM guest installed Java 25 and reached poweroff, but TCG took 1732 seconds to provision and its QEMU process did not exit before the 1800-second bound. The first x86_64/KVM run, 36339315491, failed at ACL-output parsing before the KVM API, Maven, or guest checks. Run 36339519128 confirmed the direct runner user can query KVM API 12 and create a VM, but QEMU's own KVM initialization still failed with permission denied. Run 36341154827 traced that error to QEMU's `/dev/kvm` open returning `EACCES`; the step stopped before the same-UID group probe, so the access cause remains unresolved. No historical GitHub Actions run reached the real campaign tier. The previous inline supervisor's `ps | tr` command substitution could exit under `set -euo pipefail` when the child vanished; focused tests now prove that an optional direct-process exit is recorded and the required same-UID group probe still runs, while a required-process exit fails. Earlier completed local externally orchestrated guest campaigns used stop-QEMU-then-cut ordering and do not validate the new fence-first boundary. The local process lifecycle suite now checks NBD-cut failure cleanup and wrapper/child reaping; a new hosted run must repeat calibration and all four campaigns under the corrected ordering. Completion still requires a hosted x86_64/KVM run to execute those checks, publish evidence, and retain zero skips for the selected Java tests.
 
 ## Context and Orientation
 
