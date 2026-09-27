@@ -187,6 +187,98 @@ body.query-compare-mode.query-compare-nav-open #query-sidebar-toggle {
     display: block;
 }
 
+@media (min-width: 901px) {
+    .query-compare-layout--active,
+    .query-compare-layout--closing {
+        grid-template-rows: repeat(7, auto);
+    }
+
+    .query-compare-layout--active .query-compare-pane,
+    .query-compare-layout--closing .query-compare-pane {
+        display: grid;
+        grid-template-rows: subgrid;
+        grid-row: 1 / span 7;
+    }
+
+    .query-compare-layout--active .query-compare-pane--primary,
+    .query-compare-layout--closing .query-compare-pane--primary {
+        grid-column: 1;
+    }
+
+    .query-compare-layout--active .query-compare-pane--secondary,
+    .query-compare-layout--closing .query-compare-pane--secondary {
+        grid-column: 2;
+    }
+
+    .query-compare-layout--active .query-compare-pane > .query-form__row:first-of-type,
+    .query-compare-layout--closing .query-compare-pane > .query-form__row:first-of-type {
+        grid-row: 1;
+        align-content: start;
+    }
+
+    .query-compare-layout--active .query-compare-pane > .query-form__row:nth-of-type(2),
+    .query-compare-layout--closing .query-compare-pane > .query-form__row:nth-of-type(2) {
+        grid-row: 2;
+    }
+
+    .query-compare-layout--active .query-compare-pane > #query-explanation-row,
+    .query-compare-layout--active .query-compare-pane > #query-explanation-row-compare,
+    .query-compare-layout--closing .query-compare-pane > #query-explanation-row,
+    .query-compare-layout--closing .query-compare-pane > #query-explanation-row-compare {
+        display: grid;
+        grid-template-rows: subgrid;
+        grid-template-columns: minmax(0, 1fr);
+        grid-row: 3 / span 4;
+        align-content: start;
+        min-width: 0;
+    }
+
+    .query-compare-layout--active .query-compare-pane > #query-explanation-row > .query-form__label,
+    .query-compare-layout--active .query-compare-pane > #query-explanation-row-compare > .query-form__label,
+    .query-compare-layout--closing .query-compare-pane > #query-explanation-row > .query-form__label,
+    .query-compare-layout--closing .query-compare-pane > #query-explanation-row-compare > .query-form__label {
+        grid-row: 1;
+    }
+
+    .query-compare-layout--active .query-compare-pane > #query-explanation-row > .query-form__field,
+    .query-compare-layout--active .query-compare-pane > #query-explanation-row-compare > .query-form__field,
+    .query-compare-layout--closing .query-compare-pane > #query-explanation-row > .query-form__field,
+    .query-compare-layout--closing .query-compare-pane > #query-explanation-row-compare > .query-form__field {
+        display: grid;
+        grid-template-rows: subgrid;
+        grid-template-columns: minmax(0, 1fr);
+        grid-row: 2 / span 3;
+        min-width: 0;
+    }
+
+    .query-compare-layout--active .query-compare-pane > #query-explanation-row .query-explanation-status,
+    .query-compare-layout--active .query-compare-pane > #query-explanation-row-compare .query-explanation-status,
+    .query-compare-layout--closing .query-compare-pane > #query-explanation-row .query-explanation-status,
+    .query-compare-layout--closing .query-compare-pane > #query-explanation-row-compare .query-explanation-status {
+        grid-row: 1;
+    }
+
+    .query-compare-layout--active .query-compare-pane > #query-explanation-row .query-explanation-toolbar,
+    .query-compare-layout--active .query-compare-pane > #query-explanation-row-compare .query-explanation-toolbar,
+    .query-compare-layout--closing .query-compare-pane > #query-explanation-row .query-explanation-toolbar,
+    .query-compare-layout--closing .query-compare-pane > #query-explanation-row-compare .query-explanation-toolbar {
+        grid-row: 2;
+    }
+
+    .query-compare-layout--active .query-compare-pane > #query-explanation-row .query-explanation-surface,
+    .query-compare-layout--active .query-compare-pane > #query-explanation-row-compare .query-explanation-surface,
+    .query-compare-layout--closing .query-compare-pane > #query-explanation-row .query-explanation-surface,
+    .query-compare-layout--closing .query-compare-pane > #query-explanation-row-compare .query-explanation-surface {
+        grid-row: 3;
+        min-width: 0;
+    }
+
+    .query-compare-layout--active .query-compare-pane > .query-explanation-controls-row-class,
+    .query-compare-layout--closing .query-compare-pane > .query-explanation-controls-row-class {
+        grid-row: 7;
+    }
+}
+
 #query-compare-controls {
     display: flex;
 }
