@@ -14,8 +14,10 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
 - [done] Make hosted growth replay cut deterministic.
 - [done] Fix hosted guest and artifact rules.
 - [done] Move hosted guest to x86 KVM.
-- [in_progress] Commit fixes and trigger hosted run.
-- [todo] Verify guest campaigns and update PR.
+- [done] Commit and push x86 KVM gate.
+- [done] Diagnose hosted ACL verifier mismatch.
+- [in_progress] Rerun hosted KVM campaigns.
+- [todo] Update PR evidence and plan.
 
 ## Surprises & Discoveries
 
@@ -37,6 +39,8 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
   Evidence: the artifact manifest for run 36334103137 included both regenerable inputs and small test reports/logs.
 - Observation: the ARM TCG guest installed Temurin 25.0.4.1, emitted `CRASHLAB_PROVISIONED`, and reached systemd poweroff; QEMU stayed alive until the 1800-second timeout.
   Evidence: [GitHub Actions run 36335095831](https://github.com/eclipse-rdf4j/rdf4j/actions/runs/36335095831), archived `guest/provision-serial.log` and `guest/provision-qemu.log`; the marker was at guest uptime 1732.4s and Java gate reports had zero skips.
+- Observation: the first x86_64 hosted run reached the KVM preflight, applied the correct job-user ACL, then stopped because `getfacl` printed the username while the check expected a numeric UID.
+  Evidence: [GitHub Actions run 36339315491](https://github.com/eclipse-rdf4j/rdf4j/actions/runs/36339315491), job log shows `user:runner:rw-` followed by a failed `grep` for `user:$UID:rw-`; Maven and guest steps were skipped.
 - Decision: raise the replay-cut fixture to 20,000 statements, matching the seeded replay fixture, so the native writer must spill the transaction journal and reach an actual post-growth replay on the hosted ARM64 runner.
   Evidence: after the fixture adjustment, the full `LmdbCrashRecoveryTest` selector passed locally with 15 tests and zero skips; see `initial-evidence.txt` and `logs/mvnf/20260927-163858-verify.log`.
 - Decision: disable only the unused QEMU UEFI network option ROM with `romfile=`; retain the virtio NIC and user-mode network needed by guest package provisioning.
@@ -47,6 +51,8 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
   Rationale: ARM TCG required nearly 30 minutes just to provision the Java guest, so it is not a practical campaign path; KVM must be verified rather than assumed or silently skipped.
 - Decision: grant `/dev/kvm` read/write access only to the current job user, exercise `KVM_GET_API_VERSION` and `KVM_CREATE_VM`, then require a paused QEMU process configured with KVM.
   Rationale: device ownership may deny the runner user even when KVM is available; a bounded API and forced-accelerator probe fails before Maven or guest provisioning without introducing a TCG fallback.
+- Decision: request numeric ACL output from `getfacl` when validating the user-specific entry.
+  Rationale: names are rendered by default even when the ACL was set by numeric UID; `--numeric` makes the output stable against account-name formatting.
 
 ## Decision Log
 
@@ -68,7 +74,7 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
 
 ## Outcomes & Retrospective
 
-The 20,000-statement replay fixture passed the hosted Java gate (86 selected tests, zero skips). Run 36335095831 also passed that gate; the ARM guest installed Java 25 and reached poweroff, but TCG took 1732 seconds to provision and its QEMU process did not exit before the 1800-second bound. Completion requires a hosted x86_64/KVM run to execute calibration and every required campaign, publish evidence, and retain zero skips for the selected Java tests. Local Python contracts or Maven results alone do not satisfy this outcome.
+The 20,000-statement replay fixture passed the hosted Java gate (86 selected tests, zero skips). Run 36335095831 also passed that gate; the ARM guest installed Java 25 and reached poweroff, but TCG took 1732 seconds to provision and its QEMU process did not exit before the 1800-second bound. The first x86_64/KVM run, 36339315491, failed only at the ACL-output assertion before the KVM API, Maven, or guest checks ran. The assertion now uses numeric ACL output and the 55-test Python crashlab suite passes locally. Completion still requires a hosted x86_64/KVM run to execute calibration and every required campaign, publish evidence, and retain zero skips for the selected Java tests.
 
 ## Context and Orientation
 

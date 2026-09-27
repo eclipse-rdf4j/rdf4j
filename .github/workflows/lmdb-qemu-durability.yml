@@ -53,7 +53,7 @@ jobs:
             exit 1
           fi
           sudo setfacl --modify "u:$UID:rw" /dev/kvm
-          kvm_acl=$(getfacl --omit-header --absolute-names /dev/kvm)
+          kvm_acl=$(getfacl --numeric --omit-header --absolute-names /dev/kvm)
           printf '%s\n' "$kvm_acl" | tee "$CRASHLAB_ROOT/kvm-preflight-acl.txt"
           grep -Fx "user:$UID:rw-" <<<"$kvm_acl"
           if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then

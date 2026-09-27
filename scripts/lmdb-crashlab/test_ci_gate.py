@@ -246,6 +246,7 @@ class CiGateTests(unittest.TestCase):
         self.assertIn("acl", source)
         self.assertIn("setfacl", source)
         self.assertIn("getfacl", source)
+        self.assertIn("getfacl --numeric", source)
         self.assertIn('"u:$UID:rw" /dev/kvm', source)
         self.assertIn("KVM_GET_API_VERSION", source)
         self.assertIn("KVM_CREATE_VM", source)
