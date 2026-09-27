@@ -66,7 +66,7 @@ jobs:
             exit 1
           }
           sudo -n setfacl --modify "u:$runner_uid:rw" /dev/kvm
-          runner_groups=$(python3 -c 'import sys; groups=set(map(int,sys.argv[1].split())) | {int(sys.argv[2])}; print(",".join(map(str, sorted(groups)))' "$(id -G)" "$kvm_gid")
+          runner_groups=$(python3 -c 'import sys; groups=set(map(int,sys.argv[1].split())) | {int(sys.argv[2])}; print(",".join(map(str, sorted(groups))))' "$(id -G)" "$kvm_gid")
           kvm_acl=$(getfacl --numeric --omit-header --absolute-names /dev/kvm)
           printf '%s\n' "$kvm_acl"
           grep -Fx "user:$runner_uid:rw-" <<<"$kvm_acl"

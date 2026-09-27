@@ -1,4 +1,6 @@
 import json
+import re
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -275,6 +277,23 @@ class CiGateTests(unittest.TestCase):
         self.assertEqual(source.count('"$CRASHLAB_ROOT/qemu-kvm"'), 3)
         self.assertIn('"q35,accel=kvm"', helper)
         self.assertIn('f"unix:{qmp_path},server=on,wait=off"', helper)
+
+    def test_workflow_inline_python_is_valid_and_runner_groups_are_deduplicated(self):
+        workflow = Path(__file__).parents[2] / ".github/workflows/lmdb-qemu-durability.yml"
+        source = workflow.read_text(encoding="utf-8")
+        programs = re.findall(r"python3 -c '([^']*)'", source)
+        self.assertTrue(programs, "workflow must not hide unvalidated inline Python")
+        for program in programs:
+            compile(program, str(workflow), "exec")
+
+        self.assertEqual(len(programs), 1, "review any additional inline Python command")
+        result = subprocess.run(
+            ["python3", "-c", programs[0], "1001 4 1001", "108"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.stdout, "4,108,1001\n")
 
     def test_provisioner_preserves_arm_pl011_and_x86_serial_consoles(self):
         provisioner = Path(__file__).with_name("provision-linux-guest.sh").read_text(encoding="utf-8")
