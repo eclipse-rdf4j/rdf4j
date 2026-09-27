@@ -34,22 +34,50 @@ test('namespaces page copies selected prefix and namespace', () => {
     assert.equal(namespace.value, 'http://xmlns.com/foaf/0.1/');
 });
 
-test('export and tuple pages prefer query params then cookies and update result headings', () => {
-    const harness = createListBrowserHarness({
-        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/tuple?limit_query=20&offset=5&know_total=12'
-    });
-    const limitQuery = harness.registerElement('input', { id: 'limit_query', value: '0' });
-    const limitExplore = harness.registerElement('input', { id: 'limit_explore', value: '0' });
-    harness.document.getElementById('title_heading').innerHTML = 'Results (';
-    harness.document.cookie = 'limit_explore=7; total_result_count=99';
-    harness.document.body.appendChild(limitQuery);
-    harness.document.body.appendChild(limitExplore);
+test('export page defaults to its own preview limit instead of the Explore limit cookie', () => {
+	const harness = createListBrowserHarness({
+		href: 'http://localhost:8080/rdf4j-workbench/repositories/test/export'
+	});
+	const limitExport = harness.registerElement('select', { id: 'limit_export', value: '0' });
+	const limitExplore = harness.registerElement('select', { id: 'limit_explore', value: '0' });
+	harness.document.cookie = 'limit_explore=7';
+	harness.document.body.appendChild(limitExport);
+	harness.document.body.appendChild(limitExplore);
 
-    harness.loadPagingScripts(['export.js', 'tuple.js']);
-    harness.runLoadHandlers();
+	harness.loadPagingScripts(['export.js']);
+	harness.runLoadHandlers();
 
-    assert.equal(limitExplore.value, '7');
-    assert.equal(limitQuery.value, '20');
+	assert.equal(limitExport.value, '100');
+	assert.equal(limitExplore.value, '0');
+});
+
+test('export page prefers its own preview-limit query parameter', () => {
+	const harness = createListBrowserHarness({
+		href: 'http://localhost:8080/rdf4j-workbench/repositories/test/export?limit_export=50'
+	});
+	const limitExport = harness.registerElement('select', { id: 'limit_export', value: '0' });
+	harness.document.cookie = 'limit_export=10; limit_explore=7';
+	harness.document.body.appendChild(limitExport);
+
+	harness.loadPagingScripts(['export.js']);
+	harness.runLoadHandlers();
+
+	assert.equal(limitExport.value, '50');
+});
+
+test('tuple page prefers query params and updates result headings', () => {
+	const harness = createListBrowserHarness({
+		href: 'http://localhost:8080/rdf4j-workbench/repositories/test/tuple?limit_query=20&offset=5&know_total=12'
+	});
+	const limitQuery = harness.registerElement('input', { id: 'limit_query', value: '0' });
+	harness.document.getElementById('title_heading').innerHTML = 'Results (';
+	harness.document.cookie = 'total_result_count=99';
+	harness.document.body.appendChild(limitQuery);
+
+	harness.loadPagingScripts(['tuple.js']);
+	harness.runLoadHandlers();
+
+	assert.equal(limitQuery.value, '20');
     assert.equal(harness.document.getElementById('nextX').value, 'Next 20');
     assert.equal(harness.document.getElementById('previousX').value, 'Previous 20');
     assert.equal(harness.document.getElementById('previousX').disabled, false);
