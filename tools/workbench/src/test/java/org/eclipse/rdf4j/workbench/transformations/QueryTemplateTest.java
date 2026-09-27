@@ -101,7 +101,7 @@ class QueryTemplateTest {
 		assertDisclosureChevronCallCount("graph.xsl", 2);
 		assertDisclosureChevronCallCount("add.xsl", 1);
 		assertDisclosureChevronCallCount("explore.xsl", 1);
-		assertDisclosureChevronCallCount("export.xsl", 1);
+		assertDisclosureChevronCallCount("export.xsl", 3);
 		assertDisclosureChevronCallCount("server.xsl", 1);
 		assertDisclosureChevronCallCount("remove.xsl", 1);
 		assertDisclosureChevronCallCount("summary.xsl", 1);

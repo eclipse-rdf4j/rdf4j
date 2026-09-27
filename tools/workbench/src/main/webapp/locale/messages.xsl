@@ -115,6 +115,8 @@
 	<variable name="examples.label">Examples</variable>
 	<variable name="download-format.label">Download format</variable>
 	<variable name="compression.label">Compression</variable>
+	<variable name="retrieve-statements.label">Retrieve statements</variable>
+	<variable name="export-timeout.label">Export timeout (seconds)</variable>
 	<variable name="gzip.label">Gzip</variable>
 	<variable name="zip.label">ZIP</variable>
 	<variable name="download-limit.label">Download limit</variable>
@@ -135,6 +137,10 @@
 	<variable name="repository-default.label">Repository default</variable>
 	<variable name="none.label">None</variable>
 	<variable name="no-results.label">No results to display.</variable>
+	<variable name="export-timeout.desc">Set to 0 for no timeout.</variable>
+	<variable name="export-preview-empty.desc">Retrieve statements to see a preview.</variable>
+	<variable name="export-preview-hint.desc">The table shows a preview. Downloads include the entire repository.</variable>
+	<variable name="export-preview-limit.desc">Choose how many statements to show. All retrieves every statement.</variable>
 	<variable name="all.label">All</variable>
 	<variable name="readable.label">Readable</variable>
 	<variable name="writeable.label">Writeable</variable>

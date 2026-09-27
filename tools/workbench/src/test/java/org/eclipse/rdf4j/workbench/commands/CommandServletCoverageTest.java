@@ -14,7 +14,10 @@ package org.eclipse.rdf4j.workbench.commands;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,6 +45,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
@@ -187,9 +191,17 @@ class CommandServletCoverageTest {
 		servlet.setRepository(repository);
 		when(repository.getConnection()).thenReturn(connection);
 		when(connection.getNamespaces()).thenReturn(repositoryResultOf(new SimpleNamespace("ex", "urn:ex:")));
-		when(connection.getStatements(null, null, null, false)).thenReturn(repositoryResultOf(statement));
+		when(request.getParameter("action")).thenReturn("preview");
 		when(request.isParameterPresent("Accept")).thenReturn(false);
-		when(request.getInt(ExploreServlet.LIMIT)).thenReturn(1, 1);
+		when(request.isParameterPresent("limit_export")).thenReturn(true);
+		when(request.getInt("limit_export")).thenReturn(1);
+		doAnswer(invocation -> {
+			RDFHandler handler = invocation.getArgument(4);
+			handler.startRDF();
+			handler.handleStatement(statement);
+			handler.endRDF();
+			return null;
+		}).when(connection).exportStatements(isNull(), isNull(), isNull(), eq(false), any(RDFHandler.class));
 		when(response.getOutputStream()).thenReturn(new StubServletOutputStream());
 
 		servlet.service(request, response, "/transform");
@@ -198,9 +210,45 @@ class CommandServletCoverageTest {
 		verify(builder).transform("/transform", "export.xsl");
 		verify(builder).start("subject", "predicate", "object", "context");
 		verify(builder).link(List.of("info"));
+		verify(builder).metadata("statement-preview-requested", true);
 		verify(builder).result(statement.getSubject(), statement.getPredicate(), statement.getObject(),
 				statement.getContext());
 		verify(builder).end();
+	}
+
+	@Test
+	void exportPreviewActionWinsOverSelectedDownloadFormat() throws Exception {
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		ExportServletForTest servlet = new ExportServletForTest(builder);
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		Statement statement = VF.createStatement(VF.createIRI("urn:s"), VF.createIRI("urn:p"), VF.createLiteral("o"));
+
+		servlet.setRepository(repository);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.getNamespaces()).thenReturn(repositoryResultOf());
+		when(request.getParameter("action")).thenReturn("preview");
+		when(request.isParameterPresent("Accept")).thenReturn(true);
+		when(request.getParameter("Accept")).thenReturn("application/n-quads");
+		when(request.isParameterPresent("limit_export")).thenReturn(true);
+		when(request.getInt("limit_export")).thenReturn(1);
+		doAnswer(invocation -> {
+			RDFHandler handler = invocation.getArgument(4);
+			handler.startRDF();
+			handler.handleStatement(statement);
+			handler.endRDF();
+			return null;
+		}).when(connection).exportStatements(isNull(), isNull(), isNull(), eq(false), any(RDFHandler.class));
+		when(response.getOutputStream()).thenReturn(new StubServletOutputStream());
+
+		servlet.service(request, response, "/transform");
+
+		verify(connection, never()).export(any());
+		verify(connection).exportStatements(isNull(), isNull(), isNull(), eq(false), any(RDFHandler.class));
+		verify(builder).result(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				statement.getContext());
 	}
 
 	@Test

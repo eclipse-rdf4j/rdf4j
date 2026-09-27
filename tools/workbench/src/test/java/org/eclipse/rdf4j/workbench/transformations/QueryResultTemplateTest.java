@@ -297,14 +297,66 @@ class QueryResultTemplateTest {
 	}
 
 	@Test
-	void repositoryExportDefaultsToNQuadsWithNoCompression() throws Exception {
-		String html = transform("export.xsl", queryResultXml(), infoXml());
+	void repositoryExportDefaultsToNQuadsAndGzipWithAOneHundredStatementPreview() throws Exception {
+		String infoWithDifferentExploreLimit = infoXml().replace(
+				"<sparql:binding name=\"default-limit\"><sparql:literal>100</sparql:literal></sparql:binding>",
+				"<sparql:binding name=\"default-limit\"><sparql:literal>200</sparql:literal></sparql:binding>");
+		String html = transform("export.xsl", emptyExportPageXml(false), infoWithDifferentExploreLimit);
+		String visibleText = html.replaceAll("<[^>]*>", " ").replaceAll("\\s+", " ");
 
+		for (String selectId : new String[] { "Accept", "compression" }) {
+			assertThat(html).containsPattern("(?s)<div class=\"workbench-select-control\">\\s*<select id=\""
+					+ selectId + "\"[^>]*>.*?</select>\\s*<svg class=\"workbench-action-icon "
+					+ "workbench-action-icon--chevron workbench-select-chevron\"[^>]*>");
+		}
 		assertThat(selectMarkup(html, "Accept"))
 				.containsPattern("(?s)<option\\b(?=[^>]*\\bvalue=\"application/n-quads\")(?=[^>]*\\bselected)[^>]*>");
 		assertThat(selectMarkup(html, "compression"))
 				.contains("value=\"none\"", "value=\"gzip\"", "value=\"zip\"")
-				.containsPattern("(?s)<option\\b(?=[^>]*\\bvalue=\"none\")(?=[^>]*\\bselected)[^>]*>");
+				.containsPattern("(?s)<option\\b(?=[^>]*\\bvalue=\"gzip\")(?=[^>]*\\bselected)[^>]*>");
+		assertThat(selectMarkup(html, "limit_export"))
+				.containsPattern("(?s)<option\\b(?=[^>]*\\bvalue=\"100\")(?=[^>]*\\bselected)[^>]*>")
+				.doesNotContainPattern("(?s)<option\\b(?=[^>]*\\bvalue=\"200\")(?=[^>]*\\bselected)[^>]*>");
+		assertThat(html)
+				.containsPattern("(?s)<input\\b(?=[^>]*\\bid=\"timeout\")(?=[^>]*\\bname=\"timeout\")"
+						+ "(?=[^>]*\\btype=\"number\")(?=[^>]*\\bmin=\"0\")"
+						+ "(?=[^>]*\\bvalue=\"43200\")")
+				.containsPattern("(?s)<button\\b(?=[^>]*\\bform=\"export-form\")"
+						+ "(?=[^>]*\\bname=\"action\")(?=[^>]*\\bvalue=\"preview\")[^>]*>")
+				.containsPattern("(?s)<button\\b(?=[^>]*\\bname=\"action\")"
+						+ "(?=[^>]*\\bvalue=\"download\")[^>]*>")
+				.containsPattern("(?s)<label class=\"workbench-action-hit-area\">\\s*"
+						+ "<svg class=\"workbench-action-icon workbench-action-icon--download\"[^>]*>.*?</svg>\\s*"
+						+ "<span class=\"workbench-action-label\">\\s*<button\\b"
+						+ "(?=[^>]*\\bname=\"action\")(?=[^>]*\\bvalue=\"download\")[^>]*>.*?</button>\\s*"
+						+ "</span>\\s*</label>")
+				.containsPattern("(?s)<label class=\"workbench-action-hit-area\">\\s*"
+						+ "<svg class=\"workbench-action-icon workbench-action-icon--refresh\"[^>]*>.*?</svg>\\s*"
+						+ "<span class=\"workbench-action-label\">\\s*<button\\b"
+						+ "(?=[^>]*\\bform=\"export-form\")(?=[^>]*\\bname=\"action\")"
+						+ "(?=[^>]*\\bvalue=\"preview\")[^>]*>Retrieve statements</button>\\s*"
+						+ "</span>\\s*</label>")
+				.contains("Retrieve statements")
+				.contains("Retrieve statements to see a preview.")
+				.doesNotContain("onchange=\"this.form.submit();\"")
+				.doesNotContain("No results to display.");
+		assertThat(visibleText).doesNotContain("43200");
+	}
+
+	@Test
+	void repositoryExportPreservesAnExplicitUnlimitedTimeout() throws Exception {
+		String html = transform("export.xsl", emptyExportPageXml(false, "0"), infoXml());
+
+		assertThat(html)
+				.containsPattern("(?s)<input\\b(?=[^>]*\\bid=\"timeout\")(?=[^>]*\\bvalue=\"0\")");
+	}
+
+	@Test
+	void repositoryExportShowsNoResultsAfterAnEmptyPreviewWasRequested() throws Exception {
+		String html = transform("export.xsl", emptyExportPageXml(true), infoXml());
+
+		assertThat(html).contains("No results to display.")
+				.doesNotContain("Retrieve statements to see a preview.");
 	}
 
 	@Test
@@ -488,6 +540,23 @@ class QueryResultTemplateTest {
 		xml.append("  </workbench:metadata>\n");
 		xml.append("</sparql:sparql>\n");
 		return xml.toString();
+	}
+
+	private static String emptyExportPageXml(boolean previewRequested) {
+		return emptyExportPageXml(previewRequested, "43200");
+	}
+
+	private static String emptyExportPageXml(boolean previewRequested, String timeout) {
+		return "<?xml version=\"1.0\"?>\n"
+				+ "<sparql:sparql xmlns:sparql=\"http://www.w3.org/2005/sparql-results#\" "
+				+ "xmlns:workbench=\"https://rdf4j.org/schema/workbench#\">\n"
+				+ "  <sparql:head><sparql:link href=\"info\"/></sparql:head>\n"
+				+ "  <sparql:results/>\n"
+				+ "  <workbench:metadata><workbench:export-timeout>" + timeout + "</workbench:export-timeout>"
+				+ "<workbench:statement-preview-limit>100</workbench:statement-preview-limit>"
+				+ "<workbench:statement-preview-requested>" + previewRequested
+				+ "</workbench:statement-preview-requested></workbench:metadata>\n"
+				+ "</sparql:sparql>\n";
 	}
 
 	private static String queryPageXml(String queryTimeout) {

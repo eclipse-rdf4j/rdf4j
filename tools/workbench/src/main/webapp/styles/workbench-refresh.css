@@ -1164,6 +1164,49 @@ body.workbench-body .workbench-form-grid {
 	max-width: min(100%, 760px);
 }
 
+body.workbench-body #workbench-page-surface > form#export-form[action="export"] {
+	width: min(100%, 600px);
+	max-width: 100%;
+}
+
+body.workbench-body #export-form .workbench-form-grid {
+	grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+	width: 100%;
+	max-width: 100%;
+}
+
+body.workbench-body #export-form .workbench-select-control {
+	position: relative;
+	display: block;
+	width: 100%;
+	min-width: 0;
+}
+
+body.workbench-body #export-form .workbench-select-control > select {
+	appearance: none;
+	display: block;
+	width: 100%;
+	min-width: 0;
+	margin: 0;
+	padding: 7px 36px 7px 12px;
+	background-image: none;
+}
+
+body.workbench-body #export-form .workbench-select-chevron {
+	position: absolute;
+	top: 50%;
+	right: 12px;
+	transform: translateY(-50%);
+	color: var(--workbench-nav);
+	pointer-events: none;
+}
+
+@media (max-width: 600px) {
+	body.workbench-body #export-form .workbench-form-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
 body.workbench-body .workbench-field {
 	display: flex;
 	flex-direction: column;
