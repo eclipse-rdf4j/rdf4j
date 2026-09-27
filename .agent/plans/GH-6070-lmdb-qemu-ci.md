@@ -11,8 +11,9 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
 - [done] Add strict commit-returned red.
 - [done] Validate campaign reports and skips.
 - [done] Add Linux guest provisioning workflow.
-- [in_progress] Validate hosted TCG campaigns.
-- [todo] Commit and update PR evidence.
+- [done] Make hosted growth replay cut deterministic.
+- [in_progress] Rerun hosted Java gate and campaigns.
+- [todo] Commit fix and update PR evidence.
 
 ## Surprises & Discoveries
 
@@ -26,6 +27,10 @@ Every pull request should run real LMDB crash-recovery checks inside a Linux gue
   Evidence: `scripts/lmdb-crashlab/run-tests.sh` passed 50 tests with loopback-bind permission; the sandboxed first attempt failed only with `PermissionError` at `bind(('127.0.0.1', 0))`.
 - Observation: the selected no-skip Java inventory must include the snapshot lifetime, retirement recovery, and mutation journal suites alongside the crash and map-growth suites.
   Evidence: `ci_gate.py` lists nine Surefire classes and one Failsafe class; matching test sources are present in `core/sail/lmdb/src/test`.
+- Observation: the first hosted ARM64 run exposed that the 10,000-statement replay cut did not reach a spilled-journal map-growth replay there; the child completed and raised its existing protocol assertion rather than being silently skipped.
+  Evidence: [GitHub Actions run 36333236346](https://github.com/eclipse-rdf4j/rdf4j/actions/runs/36333236346), Surefire reported 15 `LmdbCrashRecoveryTest` cases with one failure, zero errors, and zero skips.
+- Decision: raise the replay-cut fixture to 20,000 statements, matching the seeded replay fixture, so the native writer must spill the transaction journal and reach an actual post-growth replay on the hosted ARM64 runner.
+  Evidence: after the fixture adjustment, the full `LmdbCrashRecoveryTest` selector passed locally with 15 tests and zero skips; see `initial-evidence.txt` and `logs/mvnf/20260927-163858-verify.log`.
 
 ## Decision Log
 

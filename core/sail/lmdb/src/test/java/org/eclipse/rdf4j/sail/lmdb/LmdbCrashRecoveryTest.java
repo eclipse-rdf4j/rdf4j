@@ -141,7 +141,7 @@ class LmdbCrashRecoveryTest {
 			PREDICATE, VF.createLiteral("promote me"), GRAPH);
 	private static final StoreTransaction MIXED_DELETE_REPLACEMENT = new StoreTransaction("mixed-delete-replacement",
 			List.of(REPLACEMENT_STATEMENT), List.of(ACKNOWLEDGED_SECOND.additions().get(0)), null);
-	private static final int AUTOGROW_TRANSACTION_SIZE = 10_000;
+	private static final int AUTOGROW_TRANSACTION_SIZE = 20_000;
 	private static final int MIXED_AUTOGROW_TRANSACTION_SIZE = 20_000;
 
 	private enum PausePoint {
