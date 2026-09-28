@@ -3591,12 +3591,13 @@ scale|RlNDUAQAXgEABgAA8AUAAAYAAAD/////WAIAAFgCAABYAgAAAAAAAIIAAAAAAAAAAiwBAAAAAA
             });
             frame.style.width = `${best.width}px`;
             frame.style.zoom = String(best.scale);
-            /* The card is out of flow, so the stage has to be told how big it now draws. Read the
-               painted box rather than multiplying the trial height: laying out at the zoomed size
-               re-rounds, so the result is not exactly the measured height times the factor. */
+            /* The card is out of flow, so the stage has to be told how big it now draws. Some
+               engines include CSS zoom in getBoundingClientRect() and others report the authored
+               dimensions; use the larger of that painted box and the measured 1:1 dimensions at
+               the chosen scale so the centered stage never clips a life-size card. */
             const painted = frame.getBoundingClientRect();
-            stage.style.width = `${Math.ceil(painted.width)}px`;
-            stage.style.height = `${Math.ceil(painted.height)}px`;
+            stage.style.width = `${Math.ceil(Math.max(painted.width, best.width * best.scale))}px`;
+            stage.style.height = `${Math.ceil(Math.max(painted.height, best.height * best.scale))}px`;
         }
 
         function renderPresentProgress() {

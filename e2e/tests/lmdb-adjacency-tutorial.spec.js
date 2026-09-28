@@ -11,6 +11,15 @@ async function loadTutorial(page) {
     await expect(page.locator('html')).toHaveAttribute('data-tutorial-ready', 'true');
 }
 
+async function denyFullscreenForViewportTest(page) {
+    await page.addInitScript(() => {
+        Object.defineProperty(Element.prototype, 'requestFullscreen', {
+            configurable: true,
+            value: () => Promise.reject(new Error('Fullscreen is unavailable in the viewport test.'))
+        });
+    });
+}
+
 test('loads directly from file and every statement selects its real partition', async ({ page }) => {
     await loadTutorial(page);
     expect(page.url()).toBe(tutorialUrl);
@@ -371,6 +380,7 @@ test('packed vector and delta deep dives expose exact structure and lifecycle', 
 
 test('presentation mode fills the screen and keeps one focused artefact per slide', async ({ page }) => {
     await page.setViewportSize({ width: 1800, height: 1100 });
+    await denyFullscreenForViewportTest(page);
     await loadTutorial(page);
     await expect(page.locator('#present-chrome')).toBeHidden();
 
@@ -558,6 +568,7 @@ test('presentation mode stays a live instrument, not a slideshow of screenshots'
 
 test('every slide is drawn at least life size on a presentation screen', async ({ page }) => {
     await page.setViewportSize({ width: 1800, height: 1100 });
+    await denyFullscreenForViewportTest(page);
     await loadTutorial(page);
     await page.locator('#present-toggle').click();
 

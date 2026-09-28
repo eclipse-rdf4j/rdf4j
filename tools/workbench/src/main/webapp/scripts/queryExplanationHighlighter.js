@@ -37,7 +37,9 @@ var workbench;
             'plannedBoundVars',
             'plannerId',
             'plannerAlgorithm',
-            'plannerPath'
+            'plannerPath',
+            'plannedExecutionEngine',
+            'plannedExecutionKind'
         ];
         var PREFERRED_ACTUAL_STRINGS = [
             'bindingState',
@@ -989,6 +991,40 @@ var workbench;
             }
             return { tokens: lineTokens, node: node };
         }
+        function strategyDecisionText(decision) {
+            var mode = decision.mode;
+            var wouldSelect = decision.wouldSelect;
+            var decisionPoint = decision.decisionPoint === null || typeof decision.decisionPoint === 'undefined'
+                ? 'null' : decision.decisionPoint;
+            var selected = wouldSelect !== null && typeof wouldSelect !== 'undefined' ? wouldSelect
+                : mode === 'runtime dependent' ? 'Runtime dependent'
+                    : mode === 'no dispatch' ? 'No strategy required' : 'No eligible strategy';
+            var summary = 'Would select now: ' + selected + ' (' + mode + ')'
+                + (decision.fallback === null || typeof decision.fallback === 'undefined'
+                    ? '' : '; fallback: ' + decision.fallback);
+            var lines = [
+                'Strategies — ' + decisionPoint,
+                summary,
+                decision.reason === null || typeof decision.reason === 'undefined' ? 'null' : decision.reason,
+                'Priority | Strategy | Can attempt? | Decision | Reason'
+            ];
+            (decision.candidates || []).forEach(function (candidate) {
+                var priority = candidate.priority === null || typeof candidate.priority === 'undefined'
+                    ? '—' : String(candidate.priority);
+                var eligibility = candidate.canAttempt === null || typeof candidate.canAttempt === 'undefined'
+                    ? 'Runtime dependent' : candidate.canAttempt ? 'Yes' : 'No';
+                var strategy = candidate.strategy === null || typeof candidate.strategy === 'undefined'
+                    ? 'null' : candidate.strategy;
+                var candidateDecision = candidate.decision === null || typeof candidate.decision === 'undefined'
+                    ? 'null' : candidate.decision;
+                var reason = candidate.declineReason === null || typeof candidate.declineReason === 'undefined'
+                    ? candidate.condition === null || typeof candidate.condition === 'undefined' ? '' : candidate.condition
+                    : candidate.declineReason;
+                lines.push(priority + ' | ' + strategy + ' | ' + eligibility + ' | '
+                    + candidateDecision + ' | ' + reason);
+            });
+            return lines.join('\n');
+        }
         function copyLine(line) {
             return {
                 tokens: line.tokens.slice(),
@@ -1041,6 +1077,12 @@ var workbench;
                 result.push(textLine(''));
             }
             result = result.concat(splitPhysicalLines(nodeLine(node, level, hiddenProperties), lineSeparator));
+            var strategyDecisions = node.strategyDecisions || [];
+            for (var decisionIndex = 0; decisionIndex < strategyDecisions.length; decisionIndex++) {
+                var decisionText = strategyDecisionText(strategyDecisions[decisionIndex])
+                    .replace(/\r\n|\r|\n/g, lineSeparator);
+                result = result.concat(splitPhysicalLines(textLine(decisionText), lineSeparator));
+            }
             var children = displayPlans(node, ordered);
             var hasNestedChild = false;
             for (var childIndex = 0; childIndex < children.length; childIndex++) {

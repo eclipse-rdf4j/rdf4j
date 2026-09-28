@@ -37,6 +37,57 @@ test('formats plan JSON as the legacy text tree', () => {
     );
 });
 
+test('preserves native-plan metric ordering and strategy-decision text', () => {
+    const { highlighter } = createHighlighterHarness();
+    const physicalPlan = 'NativeRows(arg=MultiJoin(order=[Pattern(s=?s)]))';
+    const plan = {
+        type: 'Projection',
+        physicalPlanPrelude: 'LMDB native physical plan (planned)\n  kind: row\n  plan:\n    ' + physicalPlan,
+        stringMetricsPlanned: {
+            nativePhysicalPlan: physicalPlan,
+            plannedExecutionKind: 'row',
+            plannedExecutionEngine: 'lmdb-native'
+        },
+        strategyDecisions: [{
+            decisionPoint: 'Decision 1: row/join dispatch',
+            capturedAtMillis: 1234,
+            mode: 'runtime dependent',
+            wouldSelect: 'irKernelParallel',
+            fallback: 'genericFallback',
+            reason: 'Execution-time binding and admission must still succeed',
+            candidates: [{
+                strategy: 'irKernelParallel',
+                priority: 1,
+                canAttempt: true,
+                decision: 'Would select now',
+                declineReason: 'Execution-time binding and admission must still succeed'
+            }]
+        }]
+    };
+    const result = highlighter.format(plan);
+
+    assert.equal(
+        result.text,
+        'LMDB native physical plan (planned)\n'
+            + '  kind: row\n'
+            + '  plan:\n'
+            + '    ' + physicalPlan + '\n'
+            + '\n'
+            + 'Query explanation\n'
+            + 'Projection (plannedExecutionEngine=lmdb-native, plannedExecutionKind=row, nativePhysicalPlan='
+            + physicalPlan + ')\n'
+            + 'Strategies — Decision 1: row/join dispatch\n'
+            + 'Would select now: irKernelParallel (runtime dependent); fallback: genericFallback\n'
+            + 'Execution-time binding and admission must still succeed\n'
+            + 'Priority | Strategy | Can attempt? | Decision | Reason\n'
+            + '1 | irKernelParallel | Yes | Would select now | Execution-time binding and admission must still succeed\n'
+    );
+    assert.equal(
+        highlighter.format(plan, 'Optimized', '\r\n').text,
+        result.text.replace(/\n/g, '\r\n')
+    );
+});
+
 test('discovers and filters individual plan properties without changing the tree', () => {
     const { harness, highlighter } = createHighlighterHarness();
     const plan = {
