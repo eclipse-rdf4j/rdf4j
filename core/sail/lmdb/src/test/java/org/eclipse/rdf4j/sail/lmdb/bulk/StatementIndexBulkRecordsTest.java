@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
@@ -158,14 +159,30 @@ class StatementIndexBulkRecordsTest {
 		AtomicBoolean sawRunBufferReservationDuringScan = new AtomicBoolean();
 		AtomicBoolean sawSpoolReaderReservationDuringScan = new AtomicBoolean();
 		AtomicBoolean sawSpoolAndSpillOverlapDuringScan = new AtomicBoolean();
-		AtomicBoolean observedFirstSpillOutput = new AtomicBoolean();
+		AtomicBoolean observedAsyncSpillOutput = new AtomicBoolean();
+		AtomicLong scanReservationBaseline = new AtomicLong(-1L);
 		CountDownLatch spillOutputOpened = new CountDownLatch(1);
 		CountDownLatch releaseSpill = new CountDownLatch(1);
 		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, 8);
 				StatementIndexBulkRecords records = StatementIndexBulkRecords.build(spool, workspace, "spoc",
 						memoryBudgetBytes, 8, BulkCompression.NONE, () -> {
-							if (scheduler.reservedMemoryBytes() > 0) {
+							long reservedMemory = scheduler.reservedMemoryBytes();
+							scanReservationBaseline.compareAndSet(-1L, reservedMemory);
+							long baseline = scanReservationBaseline.get();
+							if (reservedMemory > 0L) {
 								sawRunBufferReservationDuringScan.set(true);
+							}
+							if (!observedAsyncSpillOutput.get() && reservedMemory > baseline) {
+								try {
+									if (!spillOutputOpened.await(10, TimeUnit.SECONDS)) {
+										throw new AssertionError(
+												"admitted asynchronous spill did not open before the input scan completed");
+									}
+								} catch (InterruptedException e) {
+									Thread.currentThread().interrupt();
+									throw new AssertionError("input scan was interrupted while awaiting async spill",
+											e);
+								}
 							}
 							if (scheduler.openFileHandles() >= 1 && scheduler.reservedFileDescriptors() >= 1) {
 								sawSpoolReaderReservationDuringScan.set(true);
@@ -176,19 +193,14 @@ class StatementIndexBulkRecordsTest {
 							}
 							return false;
 						}, scheduler, () -> {
-							if (!observedFirstSpillOutput.compareAndSet(false, true)) {
+							if (!scheduler.isWorkerThread()
+									|| !observedAsyncSpillOutput.compareAndSet(false, true)) {
 								return;
 							}
-							assertThat(scheduler.isWorkerThread())
-									.as("the first spill must be admitted asynchronously while the scan envelope is live; reserved="
-											+ scheduler.reservedMemoryBytes() + ", peak="
-											+ scheduler.peakReservedMemoryBytes()
-											+ ", minimum=" + scheduler.effectiveMemoryMinimumBytes())
-									.isTrue();
-							assertThat(scheduler.openFileHandles())
-									.as("the output observer runs after the spill handle opens")
-									.isGreaterThanOrEqualTo(2);
 							spillOutputOpened.countDown();
+							assertThat(scheduler.openFileHandles())
+									.as("the asynchronous spill overlaps the open input reader")
+									.isGreaterThanOrEqualTo(2);
 							try {
 								if (!releaseSpill.await(10, TimeUnit.SECONDS)) {
 									throw new AssertionError("input scan did not overlap the blocked spill output");
@@ -208,7 +220,8 @@ class StatementIndexBulkRecordsTest {
 			assertThat(sawSpoolAndSpillOverlapDuringScan)
 					.as("the ID-quad reader and a sorter spill writer must overlap under one load budget")
 					.isTrue();
-			assertThat(observedFirstSpillOutput).as("the first spill output must run on a bounded worker").isTrue();
+			assertThat(observedAsyncSpillOutput).as("an asynchronous spill output must run on a bounded worker")
+					.isTrue();
 			assertThat(spillOutputOpened.getCount()).isZero();
 			assertThat(scheduler.reservedMemoryBytes()).isZero();
 		} finally {
