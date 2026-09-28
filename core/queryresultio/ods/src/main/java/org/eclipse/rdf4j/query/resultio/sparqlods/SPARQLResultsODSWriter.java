@@ -67,6 +67,7 @@ public class SPARQLResultsODSWriter implements TupleQueryResultWriter {
 	private final Map<String, String> prefixes = new HashMap<>();
 
 	private int columnCount = 0;
+	private boolean documentOpen = false;
 	private boolean headerWritten = false;
 
 	// ODF requires specific date/time format
@@ -117,6 +118,10 @@ public class SPARQLResultsODSWriter implements TupleQueryResultWriter {
 
 	@Override
 	public void startDocument() throws QueryResultHandlerException {
+		if (documentOpen) {
+			return;
+		}
+		documentOpen = true;
 		try {
 			// 1. Write mimetype (must be first and uncompressed)
 			ZipEntry mimetypeEntry = new ZipEntry("mimetype");
@@ -183,15 +188,15 @@ public class SPARQLResultsODSWriter implements TupleQueryResultWriter {
 
 	@Override
 	public void startQueryResult(List<String> bindingNames) throws TupleQueryResultHandlerException {
+		if (!documentOpen) {
+			startDocument();
+		}
+
 		this.columnCount = bindingNames.size();
 		int columnIndex = 0;
 		columnIndexes.clear(); // Reset for potential multiple results
 		for (String bindingName : bindingNames) {
 			columnIndexes.put(bindingName, columnIndex++);
-		}
-
-		if (contentXmlWriter == null) {
-			throw new TupleQueryResultHandlerException("startQueryResult called before startDocument");
 		}
 
 		// Write table structures only once

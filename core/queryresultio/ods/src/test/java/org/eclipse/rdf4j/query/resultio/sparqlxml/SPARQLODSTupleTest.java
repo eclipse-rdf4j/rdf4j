@@ -10,10 +10,14 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.resultio.sparqlxml;
 
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -21,13 +25,20 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipInputStream;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
+import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.sparqlods.SPARQLResultsODSWriter;
+import org.eclipse.rdf4j.query.resultio.sparqlods.SPARQLResultsODSWriterFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -78,6 +89,41 @@ public class SPARQLODSTupleTest {
 			assertTrue(iter.hasNext());
 			assertNotNull(iter.next().getName());
 		}
+	}
+
+	@Test
+	void testCreateTupleWriter() {
+		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(TupleQueryResultFormat.ODS,
+				new ByteArrayOutputStream());
+		assertInstanceOf(SPARQLResultsODSWriter.class, writer);
+	}
+
+	/**
+	 * Same call sequence as AbstractQueryResultIOTest#doTupleLinksAndStylesheetNoStarts: startDocument and startHeader
+	 * are not called.
+	 */
+	@Test
+	void testNoStarts() throws IOException {
+		MapBindingSet bs = new MapBindingSet();
+		bs.setBinding("name", SimpleValueFactory.getInstance().createLiteral("hello"));
+		TupleQueryResult input = new IteratingTupleQueryResult(List.of("name"), List.of(bs));
+
+		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
+		TupleQueryResultWriter writer = new SPARQLResultsODSWriterFactory().getWriter(out);
+		writer.handleStylesheet("http://example.org/stylesheet.xsl");
+		writer.handleLinks(List.of("http://example.org/link1"));
+		QueryResults.report(input, writer);
+
+		String content = null;
+		try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(out.toByteArray()))) {
+			for (ZipEntry e = zis.getNextEntry(); e != null; e = zis.getNextEntry()) {
+				if (e.getName().equals("content.xml")) {
+					content = new String(zis.readAllBytes(), StandardCharsets.UTF_8);
+				}
+			}
+		}
+		assertNotNull(content);
+		assertTrue(content.contains("hello"));
 	}
 
 }
