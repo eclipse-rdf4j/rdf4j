@@ -234,10 +234,10 @@ public class LmdbTypeMatrixTest {
 			IRI targetType = vf.createIRI(EX, "TargetType");
 			IRI predicate = vf.createIRI(EX, "mixed-edge");
 			connection.begin();
-			for (int i = 0; i < 1_400; i++) {
+			for (int i = 0; i < 17_000; i++) {
 				IRI source = vf.createIRI(EX, "mixed-source-" + i);
 				connection.add(source, RDF.TYPE, sourceType);
-				if (i < 1_100) {
+				if (i < 15_000) {
 					connection.add(source, predicate, vf.createLiteral("literal-target-" + i));
 				} else {
 					IRI target = vf.createIRI(EX, "mixed-target-" + i);
@@ -261,7 +261,7 @@ public class LmdbTypeMatrixTest {
 		long sidewaysBefore = metric("SIDEWAYS_TYPE_MORSELS").get();
 		long planeBefore = metric("PLANE_MORSEL_RUNS").get();
 		assertThat(matrix(LINKAGE_MATRIX, "sourceType", "targetType", "links"))
-				.containsExactlyEntriesOf(Map.of(EX + "SourceType|" + EX + "TargetType", 300L));
+				.containsExactlyEntriesOf(Map.of(EX + "SourceType|" + EX + "TargetType", 2_000L));
 		assertThat(rejectedPages.get())
 				.as("the admitted mixed predicate must reject its uniform literal-only CSF pages from page traits; "
 						+ "sideways morsels %s -> %s, plane runs %s -> %s", sidewaysBefore,

@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.model.IRI;
@@ -95,11 +96,14 @@ public class LmdbNativeKernelExecutionTest {
 		save(MERGE_JOIN_FLAG, "false");
 		save(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
+		// The test asserts kernel engagement, independently of when an async compiler worker gets scheduled.
+		save(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, "true");
 
 		dataDir = Files.createTempDirectory("rdf4j-ir-kernel").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
 		config.setForceSync(false);
-		repository = new SailRepository(new LmdbStore(dataDir, config));
+		LmdbStore store = new LmdbStore(dataDir, config);
+		repository = new SailRepository(store);
 		repository.init();
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
@@ -119,6 +123,8 @@ public class LmdbNativeKernelExecutionTest {
 			}
 			connection.commit();
 		}
+		assertTrue(store.awaitDirectAdjacencyReady(60L, TimeUnit.SECONDS),
+				store.getDirectAdjacencyReadinessDescription());
 	}
 
 	@AfterAll
@@ -222,7 +228,12 @@ public class LmdbNativeKernelExecutionTest {
 		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
 		assertEquals(expected, rows(query));
 		assertTrue(KernelExecutionTestAccess.planned() > 0L, "the OPTIONAL shape must reach kernel lowering");
-		assertTrue(KernelExecutionTestAccess.opened() > 0L, "the resumable OPTIONAL kernel must open");
+		assertTrue(KernelExecutionTestAccess.opened() > 0L,
+				"the resumable OPTIONAL kernel must open (planned=" + KernelExecutionTestAccess.planned()
+						+ ", declined=" + KernelExecutionTestAccess.declined()
+						+ ", compilations=" + LmdbNativeJaninoCodegen.COMPILATIONS.get()
+						+ ", pending=" + LmdbNativeJaninoCodegen.PENDING_COMPILES.get()
+						+ ", compileFailures=" + LmdbNativeJaninoCodegen.COMPILE_FAILURES.get() + ")");
 		assertEquals(0L, KernelExecutionTestAccess.declined());
 		assertEquals(hostedBefore, KernelExecutionTestAccess.hostedGenericCompiles());
 		assertEquals(islandsBefore, KernelExecutionTestAccess.islandCompiles());
