@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -71,6 +72,25 @@ class StorePropertiesTest {
 		}
 
 		assertEquals("spoc", persisted.getProperty(StoreProperties.TRIPLE_TERM_INDEXES_KEY));
+	}
+
+	@Test
+	void saveAndLoadRoundTripsLanguageTagKeyPolicy(@TempDir File dir) {
+		StoreProperties properties = new StoreProperties(dir)
+				.setVersion("1")
+				.setTripleIndexes("spoc,posc");
+		properties.save();
+		StoreProperties withoutPolicy = new StoreProperties(dir);
+		assertTrue(withoutPolicy.load());
+		assertNull(withoutPolicy.getLanguageTagKey(), "stores written before the policy existed have no value");
+
+		withoutPolicy.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
+		withoutPolicy.save();
+
+		StoreProperties loaded = new StoreProperties(dir);
+		assertTrue(loaded.load());
+		assertEquals(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL, loaded.getLanguageTagKey());
+		assertEquals("spoc,posc", loaded.getTripleIndexes(), "other keys are retained");
 	}
 
 	@Test

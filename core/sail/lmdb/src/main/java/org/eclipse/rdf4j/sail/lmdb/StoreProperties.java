@@ -44,6 +44,23 @@ class StoreProperties {
 	 */
 	static final String TRIPLE_TERM_INDEXES_KEY = "triple-term-indexes";
 
+	/**
+	 * The key recording how language literals are keyed in the data-to-id direction of the value dictionary, see
+	 * {@link ValueStore.LanguageTagKeyMode}. Absent for stores written before the policy existed; such stores are
+	 * migrated on open.
+	 */
+	static final String LANGUAGE_TAG_KEY = "language-tag-key";
+	/**
+	 * Language tags are lower-cased in the data-to-id key, so every spelling of a tag resolves to the one id of the
+	 * term, matching the case-insensitive tag comparison of {@code Literal.equals}.
+	 */
+	static final String LANGUAGE_TAG_KEY_CANONICAL = "canonical";
+	/**
+	 * Legacy policy: language tags are looked up byte-exactly. Only recorded for stores written before the canonical
+	 * key existed that already hold distinct ids for case variants of one term and therefore cannot be re-keyed.
+	 */
+	static final String LANGUAGE_TAG_KEY_BYTE_EXACT = "byte-exact";
+
 	protected final File propertiesFile;
 	private final StorePropertiesFileOps fileOps;
 
@@ -54,6 +71,7 @@ class StoreProperties {
 	protected String predicateObjectDomainsVersion;
 	protected String tripleTermIndexes;
 	protected String storeId;
+	protected String languageTagKey;
 
 	protected boolean loaded;
 
@@ -91,6 +109,7 @@ class StoreProperties {
 			predicateObjectDomainsVersion = properties.getProperty(PREDICATE_OBJECT_DOMAINS_VERSION_KEY);
 			tripleTermIndexes = properties.getProperty(TRIPLE_TERM_INDEXES_KEY);
 			storeId = properties.getProperty(STORE_ID_KEY);
+			languageTagKey = properties.getProperty(LANGUAGE_TAG_KEY);
 			loaded = true;
 		});
 		return loaded;
@@ -142,6 +161,9 @@ class StoreProperties {
 		if (storeId != null) {
 			properties.setProperty(STORE_ID_KEY, storeId);
 		}
+		if (languageTagKey != null) {
+			properties.setProperty(LANGUAGE_TAG_KEY, languageTagKey);
+		}
 		try (ByteArrayOutputStream output = new ByteArrayOutputStream(256)) {
 			properties.store(output, "LmdbStore meta-data");
 			return output.toByteArray();
@@ -189,6 +211,16 @@ class StoreProperties {
 	StoreProperties setRdfTermDomainsVersion(String predicateObjectDomainsVersion) {
 		this.predicateObjectDomainsVersion = predicateObjectDomainsVersion;
 		this.dirty = true;
+		return this;
+	}
+
+	String getLanguageTagKey() {
+		return languageTagKey;
+	}
+
+	StoreProperties setLanguageTagKey(String languageTagKey) {
+		this.dirty |= !Objects.equals(this.languageTagKey, languageTagKey);
+		this.languageTagKey = languageTagKey;
 		return this;
 	}
 

@@ -103,6 +103,37 @@ public class LmdbStoreSchema {
 	 */
 	public final static IRI VALUE_HASH_CACHE_ENABLED;
 
+	/**
+	 * @deprecated Per-column sketch bucket counts are no longer read; the property is ignored. Kept for binary
+	 *             compatibility.
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public final static IRI SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT;
+
+	/**
+	 * @deprecated Ignored; see {@link #SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT}.
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public final static IRI SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT;
+
+	/**
+	 * @deprecated Ignored; see {@link #SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT}.
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public final static IRI SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT;
+
+	/**
+	 * @deprecated Ignored; see {@link #SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT}.
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public final static IRI SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT;
+
+	/**
+	 * @deprecated Context-pair sketches were removed; the property is ignored. Kept for binary compatibility.
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public final static IRI SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED;
+
 	public final static IRI SKETCH_ESTIMATOR_THROTTLE_EVERY_N;
 
 	public final static IRI SKETCH_ESTIMATOR_THROTTLE_MILLIS;
@@ -169,6 +200,12 @@ public class LmdbStoreSchema {
 		PAGE_CARDINALITY_ESTIMATOR = factory.createIRI(NAMESPACE, "pageCardinalityEstimator");
 		VALUE_EVICTION_INTERVAL = factory.createIRI(NAMESPACE, "valueEvictionInterval");
 		VALUE_HASH_CACHE_ENABLED = factory.createIRI(NAMESPACE, "valueHashCacheEnabled");
+		SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorSubjectBucketCount");
+		SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorPredicateBucketCount");
+		SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorObjectBucketCount");
+		SKETCH_ESTIMATOR_CONTEXT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorContextBucketCount");
+		SKETCH_ESTIMATOR_CONTEXT_PAIR_SKETCHES_ENABLED = factory.createIRI(NAMESPACE,
+				"sketchEstimatorContextPairSketchesEnabled");
 		SKETCH_ESTIMATOR_THROTTLE_EVERY_N = factory.createIRI(NAMESPACE, "sketchEstimatorThrottleEveryN");
 		SKETCH_ESTIMATOR_THROTTLE_MILLIS = factory.createIRI(NAMESPACE, "sketchEstimatorThrottleMillis");
 		SKETCH_ESTIMATOR_EVIDENCE_MODE = factory.createIRI(NAMESPACE, "sketchEstimatorEvidenceMode");

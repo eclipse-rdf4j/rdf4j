@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import java.io.File;
+import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -47,7 +48,7 @@ class LmdbFilterReinvocableLearningTest {
 	void joinRightArgFilterOutcomeIsNotLearned(@TempDir File dataDir) {
 		LmdbStore store = initializedStore(dataDir);
 		try {
-			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			EvaluationStatistics statistics = committedStatistics(store);
 			Filter correlated = filter("5");
 			// The filter probes as the right arg of a join: each per-outer-binding invocation passes ~100% of the
 			// rows the outer side pre-selected.
@@ -66,7 +67,7 @@ class LmdbFilterReinvocableLearningTest {
 	void unionAndLeftArgFiltersStillLearn(@TempDir File dataDir) {
 		LmdbStore store = initializedStore(dataDir);
 		try {
-			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			EvaluationStatistics statistics = committedStatistics(store);
 			Filter leftArg = filter("5");
 			new Join(leftArg, otherPattern());
 			statistics.recordFilterOutcome(leftArg, 20L, 80L);
@@ -86,7 +87,7 @@ class LmdbFilterReinvocableLearningTest {
 		try {
 			LmdbStore store = initializedStore(dataDir);
 			try {
-				EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+				EvaluationStatistics statistics = committedStatistics(store);
 				Filter correlated = filter("5");
 				asJoinRightArg(correlated);
 				statistics.recordFilterOutcome(correlated, 100L, 0L);
@@ -114,6 +115,14 @@ class LmdbFilterReinvocableLearningTest {
 		return new StatementPattern(new Var("x"),
 				new Var("p", SimpleValueFactory.getInstance().createIRI("urn:test:outer"), true, true),
 				new Var("person"));
+	}
+
+	/** Statistics bound to a committed snapshot: these tests replay observations that committed queries produced. */
+	private static LmdbEvaluationStatistics committedStatistics(LmdbStore store) {
+		LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+				.getEvaluationStatistics();
+		statistics.bindExecutionSnapshot(OptionalLong.of(0L));
+		return statistics;
 	}
 
 	private static LmdbStore initializedStore(File dataDir) {

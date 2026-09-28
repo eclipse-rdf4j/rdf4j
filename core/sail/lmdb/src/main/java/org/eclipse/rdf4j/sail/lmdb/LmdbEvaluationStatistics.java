@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
@@ -36,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoLearnedEviden
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanCandidate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
@@ -53,6 +56,14 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 	private final LmdbEstimatorRuntime runtime;
 	private final LmdbEvaluationFilterServices filterServices;
+	/**
+	 * Feedback publication scope. Learned state (exact facts, multipliers, filter cells, semi/anti surfaces) is stamped
+	 * with the committed data version, so it may only be trained by queries that read a committed snapshot. A query
+	 * inside a transaction with pending writes reads through the changeset overlay, whose dataset carries no snapshot
+	 * epoch; its rows may be rolled back and must never teach the store. The scope fails closed: an instance publishes
+	 * only after {@link #bindExecutionSnapshot(OptionalLong)} was called with a present epoch.
+	 */
+	private volatile boolean feedbackPublicationAllowed;
 
 	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator estimator) {
@@ -127,6 +138,31 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 		return runtime;
 	}
 
+	/**
+	 * Binds this per-query statistics instance to the snapshot the query executes against. Feedback is published only
+	 * when the epoch is present, i.e. the triple source reads a committed snapshot rather than an uncommitted changeset
+	 * overlay (the same signal {@link LmdbCascadesOptimizer} uses to decline proof rewrites). Planning and estimation
+	 * are not affected by this scope.
+	 */
+	void bindExecutionSnapshot(OptionalLong executionSnapshotEpoch) {
+		feedbackPublicationAllowed = executionSnapshotEpoch != null && executionSnapshotEpoch.isPresent();
+	}
+
+	/** Returns whether runtime feedback observed through this instance is published into the learned state. */
+	boolean feedbackPublicationAllowed() {
+		return feedbackPublicationAllowed;
+	}
+
+	/**
+	 * Returns the durable snapshot epoch of a query's triple source, or empty when the source reads an uncommitted
+	 * changeset overlay or is not a {@link SailDatasetTripleTermSource}.
+	 */
+	static OptionalLong executionSnapshotEpoch(TripleSource tripleSource) {
+		return tripleSource instanceof SailDatasetTripleTermSource source
+				? source.getSnapshotEpoch()
+				: OptionalLong.empty();
+	}
+
 	@Override
 	public double getCardinality(TupleExpr expression) {
 		if (expression instanceof AbstractQueryModelNode node && node.isCardinalitySet()) {
@@ -199,11 +235,17 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 	@Override
 	public void recordFilterOutcome(Filter filter, FilterOutcomeObservation observation) {
+		if (!feedbackPublicationAllowed) {
+			return;
+		}
 		filterServices.recordFilterOutcome(filter, observation);
 	}
 
 	@Override
 	public void recordSemiAntiOutcome(Filter filter, SemiAntiOutcomeObservation observation) {
+		if (!feedbackPublicationAllowed) {
+			return;
+		}
 		runtime.recordSemiAntiOutcome(filter, observation);
 	}
 
@@ -256,7 +298,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 	@Override
 	public boolean shouldTrackCostFeedback(QueryModelNode node) {
-		return super.shouldTrackCostFeedback(node)
+		return feedbackPublicationAllowed && super.shouldTrackCostFeedback(node)
 				&& runtime.feedback() != null && node instanceof TupleExpr expression
 				&& runtime.feedback().shouldTrackRuntimeFeedback(expression);
 	}
@@ -264,6 +306,9 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	@Override
 	public RuntimeFeedbackTarget resolveRuntimeFeedbackTarget(QueryModelNode node,
 			RuntimeFeedbackContract contract) {
+		if (!feedbackPublicationAllowed) {
+			return RuntimeFeedbackTarget.NO_OP;
+		}
 		return filterServices.resolveRuntimeFeedbackTarget(node, contract);
 	}
 
@@ -275,6 +320,9 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 	@Override
 	public void publishRuntimeFeedbackTargets(RuntimeFeedbackTarget[] targets, int targetCount,
 			boolean rootCompleted) {
+		if (!feedbackPublicationAllowed) {
+			return;
+		}
 		LmdbOperatorFeedbackStats feedback = runtime.feedback();
 		if (feedback == null) {
 			super.publishRuntimeFeedbackTargets(targets, targetCount, rootCompleted);
@@ -294,7 +342,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 	@Override
 	public void recordOperatorOutcome(QueryModelNode node) {
-		if (runtime.feedback() != null && node instanceof TupleExpr expression) {
+		if (feedbackPublicationAllowed && runtime.feedback() != null && node instanceof TupleExpr expression) {
 			// A QueryRoot wrapper is not evaluated as a tracked operator, so the node directly beneath it is the
 			// outermost close that can trigger the completed-tree pass.
 			QueryModelNode parent = expression.getParentNode();
@@ -311,7 +359,7 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 
 	@Override
 	public void recordOperatorOutcome(QueryModelNode node, InvocationAggregateObservation observation) {
-		if (runtime.feedback() != null && node instanceof TupleExpr expression) {
+		if (feedbackPublicationAllowed && runtime.feedback() != null && node instanceof TupleExpr expression) {
 			QueryModelNode parent = expression.getParentNode();
 			runtime.feedback().observe(expression, parent == null || parent instanceof QueryRoot, observation);
 		}

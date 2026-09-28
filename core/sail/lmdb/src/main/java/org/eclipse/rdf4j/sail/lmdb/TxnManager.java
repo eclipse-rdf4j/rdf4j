@@ -32,6 +32,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -107,6 +108,11 @@ final class TxnManager {
 	private final Semaphore readerSlots = new Semaphore(POOL_SIZE - 1, true);
 	/** Reserved for short callbacks whose caller already holds a transaction. */
 	private final Semaphore priorityReaderSlot = new Semaphore(1, true);
+	/** Admissions granted from the ordinary / reserved slot; diagnostics for lease-accounting tests. */
+	private final LongAdder ordinaryAdmissions = new LongAdder();
+	private final LongAdder reservedAdmissions = new LongAdder();
+	/** Distinguishes successive leases of one recycled {@link Txn} (see {@link Txn#isLive(long)}). */
+	private final AtomicLong leaseSequence = new AtomicLong();
 
 	private final ReentrantLock readersFullLock = new ReentrantLock();
 	private final Condition readerInactive = readersFullLock.newCondition();
@@ -137,6 +143,35 @@ final class TxnManager {
 	 */
 	Txn createTxn(long txn) {
 		return new Txn(txn, /* owned= */ false, /* resetOnWrite= */ false, null);
+	}
+
+	/**
+	 * Wraps a transaction this manager owns into a non-owning view: it mirrors the target's native handle, version and
+	 * value pool, so cursors opened through it renew exactly like cursors on the target, while closing the view is a
+	 * no-op and consumes no reader permit. Planner-time reads use it to run on the query's pinned dataset transaction.
+	 */
+	Txn planningView(Txn target) {
+		return new Txn(target);
+	}
+
+	/** Number of reader admissions granted from the ordinary slots so far. */
+	long ordinaryAdmissions() {
+		return ordinaryAdmissions.sum();
+	}
+
+	/** Number of reader admissions granted from the single reserved slot so far. */
+	long reservedAdmissions() {
+		return reservedAdmissions.sum();
+	}
+
+	/** Currently free ordinary reader slots. */
+	int availableOrdinaryPermits() {
+		return readerSlots.availablePermits();
+	}
+
+	/** Currently free reserved reader slots (one or zero). */
+	int availableReservedPermits() {
+		return priorityReaderSlot.availablePermits();
 	}
 
 	/**
@@ -308,6 +343,7 @@ final class TxnManager {
 			slots.release();
 			throw new IOException("Transaction manager is closed");
 		}
+		(slots == readerSlots ? ordinaryAdmissions : reservedAdmissions).increment();
 		return slots;
 	}
 
@@ -529,20 +565,60 @@ final class TxnManager {
 		private volatile boolean idle;
 		private volatile boolean resetOnWrite;
 		private volatile boolean stale;
+		/** Identifies the current lease of this (possibly recycled) transaction; advances on every reuse. */
+		private volatile long lease;
+		/** Target of a non-owning view created by {@link TxnManager#planningView(Txn)}; {@code null} otherwise. */
+		private final Txn viewOf;
 
 		private Txn(long txn, boolean owned, boolean resetOnWrite, Semaphore readerPermit) {
 			this.txn = txn;
 			this.owned = owned;
 			this.resetOnWrite = resetOnWrite;
 			this.readerPermit = readerPermit;
+			this.viewOf = null;
+			this.lease = leaseSequence.incrementAndGet();
+		}
+
+		private Txn(Txn viewOf) {
+			this.txn = 0L;
+			this.owned = false;
+			this.resetOnWrite = false;
+			this.readerPermit = null;
+			this.viewOf = viewOf;
+			this.lease = viewOf.lease;
 		}
 
 		long get() {
-			return txn;
+			return viewOf == null ? txn : viewOf.txn;
 		}
 
 		long version() {
-			return version;
+			return viewOf == null ? version : viewOf.version;
+		}
+
+		/** The lease this transaction currently represents; compare with {@link #isLive(long)} later. */
+		long leaseId() {
+			return lease;
+		}
+
+		/**
+		 * Whether this transaction is still the lease identified by {@code leaseId}: owned by this manager, neither
+		 * closed nor parked idle in the reuse pool, and not recycled into a new lease since. In {@link Mode#RESET} a
+		 * closed transaction keeps a live native handle and may be handed to another caller, so a stale reference
+		 * cannot be detected from the handle alone.
+		 */
+		synchronized boolean isLive(long leaseId) {
+			return owned && !closed && !idle && lease == leaseId;
+		}
+
+		/** Whether this lease is renewed onto the newest snapshot on every write commit (tracked reader). */
+		boolean isTracked() {
+			return owned && resetOnWrite;
+		}
+
+		/** Whether this is a non-owning view of another transaction. */
+		boolean isView() {
+			return viewOf != null;
 		}
 
 		StampedLongAdderLockManager lockManager() {
@@ -550,7 +626,7 @@ final class TxnManager {
 		}
 
 		Pool getValuePool() {
-			return valuePool;
+			return viewOf == null ? valuePool : viewOf.valuePool;
 		}
 
 		@Override
@@ -625,6 +701,7 @@ final class TxnManager {
 			this.readerPermit = readerPermit;
 			this.idle = false;
 			this.closed = false;
+			this.lease = leaseSequence.incrementAndGet();
 			activate();
 		}
 

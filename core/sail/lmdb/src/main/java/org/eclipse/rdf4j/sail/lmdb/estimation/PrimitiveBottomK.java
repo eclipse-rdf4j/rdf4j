@@ -53,13 +53,15 @@ final class PrimitiveBottomK {
 	}
 
 	ProjectionSample projectionSample(QuadProbe probe) {
-		if (probe.projectedMask() == 0 && !probe.hasEqualityConstraints() || size == 0) {
-			return new ProjectionSample(new long[0], 0, 0, size);
+		// Read the size once: the hash buffer and the scan must agree on it even if an offer races this read.
+		int sampleRows = size;
+		if (probe.projectedMask() == 0 && !probe.hasEqualityConstraints() || sampleRows == 0) {
+			return new ProjectionSample(new long[0], 0, 0, sampleRows);
 		}
-		long[] hashes = probe.projectedMask() == 0 ? new long[0] : new long[size];
+		long[] hashes = probe.projectedMask() == 0 ? new long[0] : new long[sampleRows];
 		int matched = 0;
 		int eligible = 0;
-		for (int position = 0; position < size; position++) {
+		for (int position = 0; position < sampleRows; position++) {
 			if (matchesBounds(position, probe)) {
 				eligible++;
 				if (!matchesEquality(position, probe)) {
@@ -75,7 +77,7 @@ final class PrimitiveBottomK {
 		}
 		long[] result = hashes.length == 0 || matched == hashes.length ? hashes : Arrays.copyOf(hashes, matched);
 		Arrays.sort(result);
-		return new ProjectionSample(result, matched, eligible, size);
+		return new ProjectionSample(result, matched, eligible, sampleRows);
 	}
 
 	int size() {

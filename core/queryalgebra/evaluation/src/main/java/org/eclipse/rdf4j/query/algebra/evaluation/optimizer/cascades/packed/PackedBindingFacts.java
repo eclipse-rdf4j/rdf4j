@@ -109,6 +109,11 @@ final class PackedBindingFacts {
 		return masks.intern(scratch, 0);
 	}
 
+	/** {@code (leftMaskId ∩ rightMaskId) ⊆ containerMaskId}, allocation-free. */
+	boolean containsAllIntersection(int containerMaskId, int leftMaskId, int rightMaskId) {
+		return masks.containsAllIntersection(containerMaskId, leftMaskId, rightMaskId);
+	}
+
 	boolean containsAllScheduledDependencies(int containerMaskId, int directDependencyMaskId,
 			int embeddedReferenceMaskId, int outerOutputMaskId) {
 		return masks.containsAll(containerMaskId, directDependencyMaskId)
@@ -170,12 +175,16 @@ final class PackedBindingFacts {
 				childrenSafe &= (scalarSafeWhenAssuredWords[childId >>> 6] & 1L << childId) != 0L;
 			}
 			int operator = query.scalarOperator(scalarId);
-			boolean safe;
-			if (operator == PackedScalarOp.EXISTS) {
+			if (operator == PackedScalarOp.EXISTS || operator == PackedScalarOp.IN
+					|| operator == PackedScalarOp.COMPARE_ANY || operator == PackedScalarOp.COMPARE_ALL) {
+				// Every subquery scalar carries its body's referenced names in the semantic-scope slot.
 				int referencedNames = query.scalarSemanticScope(scalarId);
 				if (referencedNames != 0) {
 					addNameSet(referencedNames);
 				}
+			}
+			boolean safe;
+			if (operator == PackedScalarOp.EXISTS) {
 				int payloadId = query.scalarPayload(scalarId);
 				safe = query.payloadOperator(payloadId) == PackedPayloadOp.SUBQUERY_VALUE
 						&& query.payloadChildCount(payloadId) == 1

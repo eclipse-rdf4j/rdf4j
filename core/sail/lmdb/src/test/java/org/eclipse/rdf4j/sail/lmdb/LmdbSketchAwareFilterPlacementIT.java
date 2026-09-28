@@ -23,6 +23,7 @@ import java.lang.annotation.Target;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -177,6 +178,7 @@ class LmdbSketchAwareFilterPlacementIT {
 					try {
 						loadLibraryData(repository);
 						EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+						((LmdbEvaluationStatistics) statistics).bindExecutionSnapshot(OptionalLong.of(0L));
 
 						assertCriteriaEventually("local branch-name filter selectivity", () -> {
 							assertTrue(statistics.supportsFilterSelectivityCosting(),
@@ -218,6 +220,7 @@ class LmdbSketchAwareFilterPlacementIT {
 					try {
 						loadLibraryData(repository);
 						EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+						((LmdbEvaluationStatistics) statistics).bindExecutionSnapshot(OptionalLong.of(0L));
 
 						Filter observed = new Filter(
 								new StatementPattern(Var.of("branch"), Var.of("namePredicate", NAME),
@@ -384,6 +387,7 @@ class LmdbSketchAwareFilterPlacementIT {
 					try {
 						loadLibraryData(repository);
 						EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+						((LmdbEvaluationStatistics) statistics).bindExecutionSnapshot(OptionalLong.of(0L));
 
 						Filter conditioned = new Filter(
 								new Join(bindingAssignment("authorName", "Author 1", "Author 2", "Author 3"),
@@ -427,6 +431,7 @@ class LmdbSketchAwareFilterPlacementIT {
 						loadLibraryData(repository);
 						store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
 						EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+						((LmdbEvaluationStatistics) statistics).bindExecutionSnapshot(OptionalLong.of(0L));
 
 						StatementPattern left = new StatementPattern(Var.of("copy"), Var.of("locatedAt", LOCATED_AT),
 								Var.of("branch"));
@@ -495,6 +500,7 @@ class LmdbSketchAwareFilterPlacementIT {
 						loadThemeData(repository, Theme.MEDICAL_RECORDS);
 						String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2);
 						EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+						((LmdbEvaluationStatistics) statistics).bindExecutionSnapshot(OptionalLong.of(0L));
 
 						assertCriteriaEventually("medical q2 local filter costing support", () -> assertTrue(
 								statistics.supportsFilterSelectivityCosting(),
@@ -549,6 +555,7 @@ class LmdbSketchAwareFilterPlacementIT {
 						loadThemeDataWithBulkEstimator(repository, store, Theme.MEDICAL_RECORDS);
 						String query = ThemeQueryCatalog.queryFor(Theme.MEDICAL_RECORDS, 2);
 						EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+						((LmdbEvaluationStatistics) statistics).bindExecutionSnapshot(OptionalLong.of(0L));
 
 						assertCriteriaEventually("medical q2 theme filter costing support", () -> assertTrue(
 								statistics.supportsFilterSelectivityCosting(),

@@ -36,6 +36,7 @@ class LmdbEstimatorArchitectureTest {
 			"LmdbEstimationEngine.java",
 			"LmdbEstimatorRuntime.java",
 			"LmdbFilterEstimateTransform.java",
+			"LmdbFrontierLeafAnswer.java",
 			"LmdbMappedFilterEvidence.java",
 			"LmdbPropertyPathEstimator.java",
 			"LmdbStorageEstimatorEvidence.java");

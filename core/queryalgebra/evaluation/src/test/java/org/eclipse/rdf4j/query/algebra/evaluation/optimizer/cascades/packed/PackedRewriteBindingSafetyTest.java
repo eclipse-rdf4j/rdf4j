@@ -90,16 +90,21 @@ class PackedRewriteBindingSafetyTest {
 		});
 	}
 
+	/**
+	 * The stored code {@code "1.0"^^xsd:decimal} value-equals the xsd:integer code constant {@code 1} in the FILTER but
+	 * is not term-equal to it, so a VALUES-join rewrite over the numeric codes would lose the entity.
+	 */
 	@Test
 	void finiteTypeDomainPreservesNumericValueEquality() {
-		List<Value> codes = List.of(VF.createLiteral(1), VF.createLiteral(2), VF.createLiteral(3));
+		List<Value> codes = List.of(VF.createLiteral("1", XSD.INTEGER), VF.createLiteral("2", XSD.INTEGER),
+				VF.createLiteral("3", XSD.INTEGER));
 		TupleExpr input = new Union(codeTypeBranch("entity", "code", "target", "urn:Condition", "urn:code", codes),
 				codeTypeBranch("entity", "code", "target", "urn:Medication", "urn:code", codes));
 		Group source = new Group(input, List.of(), List.of(new GroupElem("count", new Count(Var.of("entity"), true))));
 		List<Statement> statements = List.of(
 				VF.createStatement(VF.createIRI("urn:entity"), RDF.TYPE, VF.createIRI("urn:Condition")),
 				VF.createStatement(VF.createIRI("urn:entity"), VF.createIRI("urn:code"),
-						VF.createLiteral("1", XSD.INT)));
+						VF.createLiteral("1.0", XSD.DECIMAL)));
 		PackedPlanningResult result = PackedCascadesPlanner.optimize(source.clone(), OptimizationGoal.root());
 		assertEquals(List.of("1"), evaluate(source, statements).stream()
 				.map(row -> row.getValue("count").stringValue())

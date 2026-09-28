@@ -269,6 +269,13 @@ class ValueStore extends AbstractValueFactory {
 	final boolean valueHashCacheEnabled;
 	private final boolean inlineLiterals;
 
+	/**
+	 * How language literals are keyed in the data-to-id direction, see {@link LanguageTagKeyMode}. Written only during
+	 * construction (a legacy store may switch from {@link LanguageTagKeyMode#BYTE_EXACT} to
+	 * {@link LanguageTagKeyMode#CANONICAL} once {@link #migrateLanguageTagKeysIfNeeded()} has re-keyed it).
+	 */
+	private LanguageTagKeyMode languageTagKeyMode;
+
 	private final ThreadLocal<Boolean> hasReadLock = new ThreadLocal<>();
 
 	ValueStore(File dir, LmdbStoreConfig config) throws IOException {
@@ -285,6 +292,7 @@ class ValueStore extends AbstractValueFactory {
 		this.valueEvictionInterval = config.getValueEvictionInterval();
 		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
 		this.inlineLiterals = config.getInlineLiterals();
+		this.languageTagKeyMode = initialLanguageTagKeyMode();
 		open();
 
 		int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
@@ -355,6 +363,8 @@ class ValueStore extends AbstractValueFactory {
 		startTransaction(true);
 		seedCoreDatatypes();
 		commit();
+
+		migrateLanguageTagKeysIfNeeded();
 	}
 
 	private void seedCoreDatatypes() throws IOException {
@@ -1381,13 +1391,29 @@ class ValueStore extends AbstractValueFactory {
 		}
 	}
 
+	/**
+	 * Finds (and optionally creates) the id of an encoded value. The data-to-id direction is keyed by
+	 * {@link #lookupKey(byte[])} (the canonical language-tag form), the id-to-data direction stores {@code data} as
+	 * given.
+	 */
 	private long findId(byte[] data, boolean create) throws IOException {
+		byte[] key = lookupKey(data);
+		return findId(data, key, lookupLanguageRange(key), create);
+	}
+
+	/**
+	 * @param data          the encoded value (stored as the id-to-data payload when an id is created)
+	 * @param key           the data-to-id key of {@code data}
+	 * @param languageRange the language-tag range of {@code key} inside which stored payloads may differ from the key
+	 *                      in ASCII case, or -1 for byte-exact payload comparison
+	 */
+	private long findId(byte[] data, byte[] key, long languageRange, boolean create) throws IOException {
 		Long id = readTransaction(env, (stack, txn) -> {
-			if (data.length <= MAX_KEY_SIZE) {
-				MDBVal dataVal = MDBVal.calloc(stack);
-				dataVal.mv_data(stack.bytes(data));
+			if (key.length <= MAX_KEY_SIZE) {
+				MDBVal keyVal = MDBVal.calloc(stack);
+				keyVal.mv_data(stack.bytes(key));
 				MDBVal idVal = MDBVal.calloc(stack);
-				if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
+				if (mdb_get(txn, dbi, keyVal, idVal) == MDB_SUCCESS) {
 					return data2id(idVal.mv_data());
 				}
 				if (!create) {
@@ -1399,8 +1425,9 @@ class ValueStore extends AbstractValueFactory {
 				long newId = nextId(data[0]);
 				writeTransaction((stack2, writeTxn) -> {
 					idVal.mv_data(id2data(idBuffer(stack), newId).flip());
+					MDBVal dataVal = key == data ? keyVal : MDBVal.calloc(stack2).mv_data(stack2.bytes(data));
 
-					E(mdb_put(writeTxn, dbi, dataVal, idVal, 0));
+					E(mdb_put(writeTxn, dbi, keyVal, idVal, 0));
 					E(mdb_put(writeTxn, dbi, idVal, dataVal, 0));
 
 					// update ref count if necessary
@@ -1411,7 +1438,7 @@ class ValueStore extends AbstractValueFactory {
 			} else {
 				MDBVal idVal = MDBVal.calloc(stack);
 
-				long dataHash = hash(data);
+				long dataHash = hash(key);
 				int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
 				ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
 				hashBb.put(HASH_KEY);
@@ -1426,7 +1453,8 @@ class ValueStore extends AbstractValueFactory {
 				// ID of first value is directly stored with hash as key
 				if (mdb_get(txn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
 					idVal.mv_data(dataVal.mv_data());
-					if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && bufferEquals(dataVal.mv_data(), data)) {
+					if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
+							&& payloadMatchesKey(dataVal.mv_data(), key, languageRange)) {
 						return data2id(idVal.mv_data());
 					}
 				} else {
@@ -1476,7 +1504,7 @@ class ValueStore extends AbstractValueFactory {
 							hashIdBb.position(hashLength);
 							idVal.mv_data(hashIdBb);
 							if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
-									&& bufferEquals(dataVal.mv_data(), data)) {
+									&& payloadMatchesKey(dataVal.mv_data(), key, languageRange)) {
 								// id was found if stored value is equal to requested value
 								return data2id(hashIdBb);
 							}
@@ -1529,16 +1557,17 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void findIds(byte[][] data, int[] indexes, long[] ids, int count) throws IOException {
-		int[] order = count > 1 ? sortedStoreOrder(data, count) : null;
+		byte[][] keys = lookupKeys(data, count);
+		int[] order = count > 1 ? sortedStoreOrder(keys, count) : null;
 		if (writeTxn == 0) {
 			writeTransaction((stack, txn) -> {
-				findIds(data, indexes, ids, count, order, stack, txn);
+				findIds(data, keys, indexes, ids, count, order, stack, txn);
 				return null;
 			});
 			return;
 		}
 		readTransaction(env, (stack, txn) -> {
-			findIds(data, indexes, ids, count, order, stack, txn);
+			findIds(data, keys, indexes, ids, count, order, stack, txn);
 			return null;
 		});
 	}
@@ -1576,12 +1605,12 @@ class ValueStore extends AbstractValueFactory {
 		});
 	}
 
-	private void findIds(byte[][] data, int[] indexes, long[] ids, int count, int[] order, MemoryStack stack, long txn)
-			throws IOException {
+	private void findIds(byte[][] data, byte[][] keys, int[] indexes, long[] ids, int count, int[] order,
+			MemoryStack stack, long txn) throws IOException {
 		BatchIdStorer storer = new BatchIdStorer(stack, txn);
 		for (int i = 0; i < count; i++) {
 			int dataIndex = order == null ? i : order[i];
-			ids[indexes[dataIndex]] = storer.findId(data[dataIndex]);
+			ids[indexes[dataIndex]] = storer.findId(data[dataIndex], keys[dataIndex]);
 		}
 	}
 
@@ -1653,20 +1682,24 @@ class ValueStore extends AbstractValueFactory {
 			hashBuffer = stack.malloc(2 + 2 * Long.BYTES + 2);
 		}
 
-		private long findId(byte[] data) throws IOException {
+		/**
+		 * @param data the encoded value (stored as the id-to-data payload)
+		 * @param key  {@link #lookupKey(byte[])} of {@code data}: the data-to-id key
+		 */
+		private long findId(byte[] data, byte[] key) throws IOException {
 			stack.push();
 			try {
-				if (data.length <= MAX_KEY_SIZE) {
-					return findSmallId(data);
+				if (key.length <= MAX_KEY_SIZE) {
+					return findSmallId(data, key);
 				}
-				return findLargeId(data);
+				return findLargeId(data, key);
 			} finally {
 				stack.pop();
 			}
 		}
 
-		private long findSmallId(byte[] data) throws IOException {
-			dataVal.mv_data(stack.bytes(data));
+		private long findSmallId(byte[] data, byte[] key) throws IOException {
+			dataVal.mv_data(stack.bytes(key));
 			if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
 				return data2id(idVal.mv_data());
 			}
@@ -1678,13 +1711,18 @@ class ValueStore extends AbstractValueFactory {
 			idVal.mv_data(id2data(idBuffer, newId).flip());
 			long writeTxn = currentWriteTxn(txn);
 			E(mdb_put(writeTxn, dbi, dataVal, idVal, 0));
+			if (key != data) {
+				// the id -> data payload keeps the encoding as given, only the lookup key is canonical
+				dataVal.mv_data(stack.bytes(data));
+			}
 			E(mdb_put(writeTxn, dbi, idVal, dataVal, 0));
 			incrementRefCount(stack, writeTxn, data);
 			return newId;
 		}
 
-		private long findLargeId(byte[] data) throws IOException {
-			long dataHash = hash(data);
+		private long findLargeId(byte[] data, byte[] key) throws IOException {
+			long languageRange = lookupLanguageRange(key);
+			long dataHash = hash(key);
 			hashBuffer.clear();
 			hashBuffer.put(HASH_KEY);
 			Varint.writeUnsigned(hashBuffer, dataHash);
@@ -1694,7 +1732,8 @@ class ValueStore extends AbstractValueFactory {
 
 			if (mdb_get(txn, dbi, hashVal, dataVal) == MDB_SUCCESS) {
 				idVal.mv_data(dataVal.mv_data());
-				if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS && bufferEquals(dataVal.mv_data(), data)) {
+				if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
+						&& payloadMatchesKey(dataVal.mv_data(), key, languageRange)) {
 					return data2id(idVal.mv_data());
 				}
 			} else {
@@ -1720,7 +1759,7 @@ class ValueStore extends AbstractValueFactory {
 						hashIdBb.position(hashLength);
 						idVal.mv_data(hashIdBb);
 						if (mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
-								&& bufferEquals(dataVal.mv_data(), data)) {
+								&& payloadMatchesKey(dataVal.mv_data(), key, languageRange)) {
 							return data2id(hashIdBb);
 						}
 					} while (mdb_cursor_get(cursor, hashVal, dataVal, MDB_NEXT) == MDB_SUCCESS);
@@ -1957,6 +1996,394 @@ class ValueStore extends AbstractValueFactory {
 			}
 		}
 		return true;
+	}
+
+	// ---------------------------------------------------------------------------------------------------------
+	// Language-tag key policy
+	// ---------------------------------------------------------------------------------------------------------
+
+	/**
+	 * How language literals are keyed in the data-to-id direction of the value dictionary. {@code Literal.equals}
+	 * compares language tags case-insensitively (RDF 1.1 Concepts 3.3 lower-cases them in the value space), so
+	 * {@code "abc"@en} and {@code "abc"@EN} are one RDF term and must resolve to one id independent of whether the
+	 * (equals-based) value-id cache is warm.
+	 */
+	enum LanguageTagKeyMode {
+		/**
+		 * The data-to-id key lower-cases the ASCII letters of the language tag ({@link #canonicalLanguageKey(byte[])}),
+		 * so every spelling of a tag resolves to the one id of the term. The id-to-data payload keeps the spelling that
+		 * was stored first.
+		 */
+		CANONICAL,
+		/**
+		 * Legacy policy: the encoding is looked up byte-exactly. Only used for stores written before the canonical key
+		 * existed that already hold distinct ids for case variants of one term and therefore cannot be re-keyed (see
+		 * {@link #migrateLanguageTagKeysIfNeeded()}).
+		 */
+		BYTE_EXACT
+	}
+
+	LanguageTagKeyMode languageTagKeyMode() {
+		return languageTagKeyMode;
+	}
+
+	private LanguageTagKeyMode initialLanguageTagKeyMode() {
+		String policy = properties.getLanguageTagKey();
+		if (StoreProperties.LANGUAGE_TAG_KEY_CANONICAL.equals(policy)) {
+			return LanguageTagKeyMode.CANONICAL;
+		}
+		if (StoreProperties.LANGUAGE_TAG_KEY_BYTE_EXACT.equals(policy)) {
+			logger.warn("LMDB value store {} keys language literals byte-exactly: case variants of one language tag "
+					+ "(\"abc\"@en vs \"abc\"@EN) are separate values and lookups of such literals depend on the value "
+					+ "cache. Export and re-import the data into a new store to fix this.", dir);
+			return LanguageTagKeyMode.BYTE_EXACT;
+		}
+		// no recorded policy: a store written before the policy existed, or a new (empty) store. Byte-exact until
+		// migrateLanguageTagKeysIfNeeded has inspected the data - the policy is derived from the data rather than from
+		// whether store.properties could be loaded, so existing entries can never become unreachable
+		return LanguageTagKeyMode.BYTE_EXACT;
+	}
+
+	/**
+	 * Returns the data-to-id key for an encoded value: the encoding itself, or - under
+	 * {@link LanguageTagKeyMode#CANONICAL} for a literal with a language tag - a copy whose tag is lower-cased.
+	 */
+	private byte[] lookupKey(byte[] data) {
+		return languageTagKeyMode == LanguageTagKeyMode.CANONICAL ? canonicalLanguageKey(data) : data;
+	}
+
+	private byte[][] lookupKeys(byte[][] data, int count) {
+		if (languageTagKeyMode != LanguageTagKeyMode.CANONICAL) {
+			return data;
+		}
+		byte[][] keys = data;
+		for (int i = 0; i < count; i++) {
+			byte[] key = canonicalLanguageKey(data[i]);
+			if (key != data[i]) {
+				if (keys == data) {
+					keys = Arrays.copyOf(data, data.length);
+				}
+				keys[i] = key;
+			}
+		}
+		return keys;
+	}
+
+	/**
+	 * The language-tag range ({@link #languageTagRange(ByteBuffer)}) of a lookup key, or -1 when stored payloads must
+	 * match the key byte-exactly.
+	 */
+	private long lookupLanguageRange(byte[] key) {
+		return languageTagKeyMode == LanguageTagKeyMode.CANONICAL ? languageTagRange(ByteBuffer.wrap(key)) : -1L;
+	}
+
+	/**
+	 * Returns the encoding with the ASCII letters of its language tag lower-cased, or {@code data} itself (same array)
+	 * when it is not a language literal or the tag is already lower case. The lower-cased form has the same length, so
+	 * the short-key / hash-path decision is identical for key and payload.
+	 */
+	static byte[] canonicalLanguageKey(byte[] data) {
+		long range = languageTagRange(ByteBuffer.wrap(data));
+		if (range < 0) {
+			return data;
+		}
+		int start = (int) (range >>> 32);
+		int end = (int) range;
+		int i = start;
+		while (i < end && !isAsciiUpperCase(data[i])) {
+			i++;
+		}
+		if (i == end) {
+			return data;
+		}
+		byte[] key = data.clone();
+		for (; i < end; i++) {
+			if (isAsciiUpperCase(key[i])) {
+				key[i] = (byte) (key[i] + ('a' - 'A'));
+			}
+		}
+		return key;
+	}
+
+	private static boolean hasUpperCaseLanguageTag(ByteBuffer data) {
+		long range = languageTagRange(data);
+		if (range < 0) {
+			return false;
+		}
+		int position = data.position();
+		for (int i = (int) (range >>> 32); i < (int) range; i++) {
+			if (isAsciiUpperCase(data.get(position + i))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static boolean isAsciiUpperCase(byte b) {
+		return b >= 'A' && b <= 'Z';
+	}
+
+	/**
+	 * Locates the language tag inside an encoded literal ({@code [LITERAL_VALUE][varint datatype id][direction |
+	 * language length, or 0xC0 | direction followed by a varint length][language][label]}).
+	 *
+	 * @return {@code start << 32 | end} of the tag relative to the buffer position, or -1 when the encoding is not a
+	 *         literal with a language tag
+	 */
+	private static long languageTagRange(ByteBuffer data) {
+		int position = data.position();
+		int length = data.remaining();
+		if (length < 3 || data.get(position) != LITERAL_VALUE) {
+			return -1L;
+		}
+		int pos = 1 + Varint.firstToLength(data.get(position + 1));
+		if (pos >= length) {
+			return -1L;
+		}
+		int directionAndLangLength = data.get(position + pos) & 0xFF;
+		pos++;
+		int langLength;
+		if (directionAndLangLength >> 6 == 3) {
+			// extended header: a varint with the language tag length follows
+			if (pos >= length) {
+				return -1L;
+			}
+			langLength = (int) Varint.readUnsigned(data, position + pos);
+			pos += Varint.firstToLength(data.get(position + pos));
+		} else {
+			langLength = directionAndLangLength & 0x3F;
+		}
+		if (langLength <= 0 || pos + langLength > length) {
+			return -1L;
+		}
+		return ((long) pos << 32) | (pos + langLength);
+	}
+
+	/**
+	 * Whether a stored payload denotes the value looked up by {@code key}: byte-equal outside the language tag and,
+	 * inside it, equal up to ASCII case ({@code key} carries the lower-cased tag). With {@code languageRange < 0} this
+	 * is plain byte equality.
+	 */
+	private static boolean payloadMatchesKey(ByteBuffer payload, byte[] key, long languageRange) {
+		if (payload.remaining() != key.length) {
+			return false;
+		}
+		int position = payload.position();
+		int langStart = languageRange < 0 ? 0 : (int) (languageRange >>> 32);
+		int langEnd = languageRange < 0 ? 0 : (int) languageRange;
+		for (int i = 0; i < key.length; i++) {
+			byte stored = payload.get(position + i);
+			if (stored != key[i]) {
+				if (i < langStart || i >= langEnd || !isAsciiUpperCase(stored)
+						|| (byte) (stored + ('a' - 'A')) != key[i]) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Re-keys a store written before the language-tag key policy existed so that its language literals are found via
+	 * the canonical key. Language literals whose data-to-id key would collide (the legacy create path handed case
+	 * variants of one term distinct ids whenever the value-id cache was cold) cannot be merged by re-keying - that
+	 * would silently hide every triple of the losing id - so such a store is left {@link LanguageTagKeyMode#BYTE_EXACT}
+	 * and a warning names the remedy. The decision is persisted either way so the scan runs once. A new store takes the
+	 * same path: its scan is trivially empty.
+	 */
+	private void migrateLanguageTagKeysIfNeeded() throws IOException {
+		if (properties.getLanguageTagKey() != null) {
+			return;
+		}
+		startTransaction(true);
+		try {
+			writeTransaction((stack, txn) -> {
+				migrateLanguageTagKeys(stack, txn);
+				return null;
+			});
+			commit();
+		} catch (IOException | RuntimeException e) {
+			rollback();
+			throw e;
+		}
+	}
+
+	private record LegacyLanguageTagEntry(long id, byte[] data, byte[] key) {
+	}
+
+	private void migrateLanguageTagKeys(MemoryStack stack, long txn) throws IOException {
+		List<LegacyLanguageTagEntry> entries = new ArrayList<>();
+		Set<ByteBuffer> canonicalKeys = new HashSet<>();
+		int collisions = 0;
+		long literals = 0;
+		PointerBuffer pp = stack.mallocPointer(1);
+		E(mdb_cursor_open(txn, dbi, pp));
+		long cursor = pp.get(0);
+		try {
+			MDBVal keyVal = MDBVal.calloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			keyVal.mv_data(stack.bytes(new byte[] { ID_KEY }));
+			int rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_SET_RANGE);
+			while (rc == MDB_SUCCESS && keyVal.mv_data().get(0) == ID_KEY) {
+				ByteBuffer payload = dataVal.mv_data();
+				if (payload.remaining() > 0 && payload.get(0) == LITERAL_VALUE) {
+					literals++;
+					if (hasUpperCaseLanguageTag(payload)) {
+						byte[] data = new byte[payload.remaining()];
+						payload.get(data);
+						byte[] key = canonicalLanguageKey(data);
+						long id = data2id(keyVal.mv_data());
+						// canonical lookup of the key: an entry stored with the lower-case spelling, or one already
+						// re-keyed, is found under it
+						long canonicalId = findId(key, key, languageTagRange(ByteBuffer.wrap(key)), false);
+						// canonicalId == id: re-keyed by an earlier migration whose commit was not yet recorded in
+						// store.properties, nothing left to do for this entry
+						if (canonicalId != id) {
+							if (canonicalId != LmdbValue.UNKNOWN_ID || !canonicalKeys.add(ByteBuffer.wrap(key))) {
+								// another id already denotes the same term
+								collisions++;
+							}
+							entries.add(new LegacyLanguageTagEntry(id, data, key));
+						}
+					}
+				}
+				rc = mdb_cursor_get(cursor, keyVal, dataVal, MDB_NEXT);
+			}
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+
+		if (collisions > 0) {
+			logger.warn("LMDB value store {} holds {} language literal(s) whose language tag differs only in case "
+					+ "from another stored literal ({} literals scanned). They received distinct ids before this "
+					+ "version and cannot be merged in place, so the store keeps byte-exact language-tag keys: case "
+					+ "variants of one language tag stay separate values and lookups of such literals depend on the "
+					+ "value cache. Export and re-import the data into a new store to fix this.", dir, collisions,
+					literals);
+			properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_BYTE_EXACT);
+			return;
+		}
+
+		if (!entries.isEmpty()) {
+			resizeMap(txn, entries.size() * 4L * (MAX_KEY_SIZE + 2L + 2L * Long.BYTES + 2L));
+			long writeTxn = currentWriteTxn(txn);
+			for (LegacyLanguageTagEntry entry : entries) {
+				stack.push();
+				try {
+					ByteBuffer idBb = id2data(idBuffer(stack), entry.id()).flip();
+					if (entry.key().length <= MAX_KEY_SIZE) {
+						MDBVal oldKeyVal = MDBVal.calloc(stack);
+						oldKeyVal.mv_data(stack.bytes(entry.data()));
+						mdb_del(writeTxn, dbi, oldKeyVal, null);
+						MDBVal newKeyVal = MDBVal.calloc(stack);
+						newKeyVal.mv_data(stack.bytes(entry.key()));
+						MDBVal idVal = MDBVal.calloc(stack);
+						idVal.mv_data(idBb);
+						E(mdb_put(writeTxn, dbi, newKeyVal, idVal, 0));
+					} else {
+						removeHashAssociation(stack, writeTxn, hash(entry.data()), idBb);
+						addHashAssociation(stack, writeTxn, hash(entry.key()), idBb);
+					}
+				} finally {
+					stack.pop();
+				}
+			}
+		}
+		if (!entries.isEmpty()) {
+			logger.info("LMDB value store {} now keys language literals by their canonical (lower-cased) language "
+					+ "tag; {} of {} literals were re-keyed", dir, entries.size(), literals);
+		}
+		properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
+		languageTagKeyMode = LanguageTagKeyMode.CANONICAL;
+	}
+
+	/**
+	 * Removes the association of {@code dataHash} with the id encoded in {@code idBb}: either the first-entry
+	 * {@code HASH_KEY} record (promoting the next {@code HASHID_KEY} collision record, if any, as
+	 * {@link #deleteValueToIdMappings} does) or the id's own {@code HASHID_KEY} collision record.
+	 */
+	private void removeHashAssociation(MemoryStack stack, long writeTxn, long dataHash, ByteBuffer idBb)
+			throws IOException {
+		int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
+		ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
+		hashBb.put(HASH_KEY);
+		Varint.writeUnsigned(hashBb, dataHash);
+		int hashLength = hashBb.position();
+		hashBb.flip();
+		MDBVal hashVal = MDBVal.calloc(stack);
+		hashVal.mv_data(hashBb);
+		MDBVal dataVal = MDBVal.calloc(stack);
+
+		byte[] idBytes = new byte[idBb.remaining()];
+		idBb.duplicate().get(idBytes);
+		if (mdb_get(writeTxn, dbi, hashVal, dataVal) == MDB_SUCCESS && bufferEquals(dataVal.mv_data(), idBytes)) {
+			E(mdb_del(writeTxn, dbi, hashVal, null));
+			// promote the first collision record for this hash, if any, to the first-entry record
+			ByteBuffer hashIdBb = stack.malloc(maxHashKeyLength);
+			hashIdBb.put(HASHID_KEY);
+			Varint.writeUnsigned(hashIdBb, dataHash);
+			hashIdBb.flip();
+			MDBVal hashIdVal = MDBVal.calloc(stack);
+			hashIdVal.mv_data(hashIdBb);
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_cursor_open(writeTxn, dbi, pp));
+			long cursor = pp.get(0);
+			try {
+				if (mdb_cursor_get(cursor, hashIdVal, dataVal, MDB_SET_RANGE) == MDB_SUCCESS
+						&& compareRegion(hashIdVal.mv_data(), 0, hashIdBb, 0, hashLength) == 0) {
+					ByteBuffer nextIdBb = hashIdVal.mv_data();
+					nextIdBb.position(hashLength);
+					MDBVal nextIdVal = MDBVal.calloc(stack);
+					nextIdVal.mv_data(nextIdBb);
+					hashVal.mv_data(hashBb);
+					E(mdb_put(writeTxn, dbi, hashVal, nextIdVal, 0));
+					E(mdb_cursor_del(cursor, 0));
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+		} else {
+			ByteBuffer hashIdBb = stack.malloc(maxHashKeyLength + idBytes.length);
+			hashIdBb.put(HASHID_KEY);
+			Varint.writeUnsigned(hashIdBb, dataHash);
+			hashIdBb.put(idBytes);
+			hashIdBb.flip();
+			MDBVal hashIdVal = MDBVal.calloc(stack);
+			hashIdVal.mv_data(hashIdBb);
+			mdb_del(writeTxn, dbi, hashIdVal, null);
+		}
+	}
+
+	/**
+	 * Associates {@code dataHash} with the id encoded in {@code idBb}: as the first-entry {@code HASH_KEY} record when
+	 * the hash is new, else as a {@code HASHID_KEY} collision record (the layout {@link #findId(byte[], boolean)}
+	 * reads).
+	 */
+	private void addHashAssociation(MemoryStack stack, long writeTxn, long dataHash, ByteBuffer idBb)
+			throws IOException {
+		int maxHashKeyLength = 2 + 2 * Long.BYTES + 2;
+		ByteBuffer hashBb = stack.malloc(maxHashKeyLength);
+		hashBb.put(HASH_KEY);
+		Varint.writeUnsigned(hashBb, dataHash);
+		hashBb.flip();
+		MDBVal hashVal = MDBVal.calloc(stack);
+		hashVal.mv_data(hashBb);
+		MDBVal dataVal = MDBVal.calloc(stack);
+		MDBVal idVal = MDBVal.calloc(stack);
+		idVal.mv_data(idBb.duplicate());
+		if (mdb_get(writeTxn, dbi, hashVal, dataVal) != MDB_SUCCESS) {
+			E(mdb_put(writeTxn, dbi, hashVal, idVal, 0));
+			return;
+		}
+		ByteBuffer hashIdBb = stack.malloc(maxHashKeyLength + idBb.remaining());
+		hashIdBb.put(HASHID_KEY);
+		Varint.writeUnsigned(hashIdBb, dataHash);
+		hashIdBb.put(idBb.duplicate());
+		hashIdBb.flip();
+		MDBVal hashIdVal = MDBVal.calloc(stack);
+		hashIdVal.mv_data(hashIdBb);
+		dataVal.mv_data(stack.bytes());
+		E(mdb_put(writeTxn, dbi, hashIdVal, dataVal, 0));
 	}
 
 	/**
@@ -2338,7 +2765,8 @@ class ValueStore extends AbstractValueFactory {
 					if (dataLength > MAX_KEY_SIZE) {
 						byte[] data = new byte[dataLength];
 						dataBuffer.get(data);
-						long dataHash = hash(data);
+						// the hash association is keyed by the canonical form of the stored encoding
+						long dataHash = hash(lookupKey(data));
 
 						hashBb.clear();
 						hashBb.put(HASH_KEY);
@@ -2386,6 +2814,18 @@ class ValueStore extends AbstractValueFactory {
 							hashVal.mv_data(hashBb);
 							// delete HASH+ID -> [] association
 							mdb_del(writeTxn, dbi, hashVal, null);
+						}
+					} else if (languageTagKeyMode == LanguageTagKeyMode.CANONICAL
+							&& hasUpperCaseLanguageTag(dataBuffer)) {
+						// the value -> ID association is keyed by the canonical (lower-cased language tag) encoding
+						byte[] data = new byte[dataLength];
+						dataBuffer.duplicate().get(data);
+						stack.push();
+						try {
+							dataVal.mv_data(stack.bytes(canonicalLanguageKey(data)));
+							mdb_del(writeTxn, dbi, dataVal, null);
+						} finally {
+							stack.pop();
 						}
 					} else {
 						// delete value -> ID association

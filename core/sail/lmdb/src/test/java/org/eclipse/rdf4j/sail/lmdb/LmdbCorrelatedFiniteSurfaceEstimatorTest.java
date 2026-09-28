@@ -4,7 +4,7 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/documents/edl-v10.php.
+ * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -77,9 +78,9 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 		when(valueStore.getId(subject)).thenReturn(101L);
 		when(tripleStore.instanceId()).thenReturn(storeIdentity);
 		when(tripleStore.getDataRevision()).thenReturn(17L);
-		when(tripleStore.planningCardinality(
+		when(tripleStore.planningCardinalityEstimate(
 				101L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID))
-						.thenReturn(5_000.0d, 50_000.0d);
+						.thenReturn(CardinalityEstimate.exact(5_000.0d), CardinalityEstimate.exact(50_000.0d));
 		FiniteRelationEstimate relation = FiniteRelationEstimate.fromRows(
 				List.of("subject"), List.of(List.of(subject)), "frontier-correlation");
 		StatementPattern accessKernel = new StatementPattern(
@@ -97,7 +98,7 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 
 			assertEquals(5_000.0d, surface.surfaceRows(), 0.0d,
 					"Finite-surface probes must reuse the same store-revision cardinality as ordinary planning");
-			verify(tripleStore, times(1)).planningCardinality(
+			verify(tripleStore, times(1)).planningCardinalityEstimate(
 					101L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID);
 		} finally {
 			LmdbStatementPatternCardinalitySource.evictStore(storeIdentity);

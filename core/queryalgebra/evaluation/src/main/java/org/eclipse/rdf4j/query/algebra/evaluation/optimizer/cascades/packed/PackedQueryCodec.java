@@ -162,7 +162,7 @@ final class PackedQueryCodec {
 				retainAnnotations, parameterizeValues);
 		int rootRelId = builder.relation(root, "root");
 		builder.finishParameterization();
-		builder.deriveFactsAndSaturateRules();
+		builder.deriveFactsAndSaturateRules(rootRelId);
 		return new PackedQuery(rootRelId, builder.relations, builder.scalars, builder.payloads, builder.bindingSets,
 				builder.metadata, builder.objects, builder.symbols,
 				Arrays.copyOf(builder.originalBindingSetRelations, builder.relations.size() + 1),
@@ -372,10 +372,11 @@ final class PackedQueryCodec {
 		 * advances; structural interning makes rediscovered alternatives no-ops. The query is frozen only after neither
 		 * facts nor relations change during a complete pass.
 		 */
-		private void deriveFactsAndSaturateRules() {
+		private void deriveFactsAndSaturateRules(int rootRelationId) {
 			if (logicalRules == null) {
 				return;
 			}
+			logicalRules.setRootExpression(rootRelationId);
 			if (domainFacts != null) {
 				logicalRules.attachDomainFacts(domainFacts);
 			}
@@ -397,8 +398,20 @@ final class PackedQueryCodec {
 			return domainFacts == null ? 1 : domainFacts.revision();
 		}
 
+		/**
+		 * Derives the domain facts of {@code relationId}'s memo group from that group's <em>seed</em> expression only.
+		 * A group's seed is the expression that opened it ({@code relations.groupId(seed) == seed}); every later member
+		 * is an alternative appended by a logical rule. Facts flow into a group by intersection
+		 * ({@link PackedDomainFacts#put}), so deriving them from alternatives as well would let one unsound alternative
+		 * narrow the facts of its siblings and of every enclosing group. Alternatives therefore consume facts (their
+		 * children are seeds of their own groups, so those are still derived) but never produce them, mirroring
+		 * {@code PackedBindingFacts}' first-member policy for outputs and assured bindings.
+		 */
 		private void deriveGroupFacts(int relationId) {
 			int groupId = relations.groupId(relationId);
+			if (groupId != relationId) {
+				return;
+			}
 			switch (relations.operatorTag(relationId)) {
 			case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT -> {
 				// Statement patterns are seeded at encode time; binding-set assignments seed below.
@@ -411,7 +424,11 @@ final class PackedQueryCodec {
 					relations.childGroupId(relationId, 1), groupId);
 			case PackedRelOp.DIFFERENCE -> domainFacts.copyAll(relations.childGroupId(relationId, 0), groupId);
 			case PackedRelOp.LEFT_JOIN -> deriveLeftJoinFacts(relationId, groupId);
-			case PackedRelOp.FILTER, PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.ORDER -> domainFacts
+			case PackedRelOp.FILTER -> {
+				domainFacts.copyAll(relations.childGroupId(relationId, 0), groupId);
+				logicalRules.deriveFilterDomainFacts(relationId, groupId);
+			}
+			case PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT, PackedRelOp.MATERIALIZE, PackedRelOp.ORDER -> domainFacts
 					.copyAll(relations.childGroupId(relationId, 0), groupId);
 			case PackedRelOp.PROJECTION -> deriveProjectionFacts(relationId, groupId);
 			case PackedRelOp.EXTENSION -> deriveExtensionFacts(relationId, groupId);
@@ -549,7 +566,6 @@ final class PackedQueryCodec {
 			rangeSlot.reset();
 			rangeSlot.setState(PackedPredicateRange.STATE_KNOWN);
 			rangeSlot.setFinite(true);
-			int kinds = 0;
 			for (int ordinal = 0; ordinal < rowCount; ordinal++) {
 				int rowId = payloads.childGroupId(assignmentPayloadId, ordinal);
 				if (bindingSets.bindingCount(rowId) != 1 || bindingSets.nameId(rowId, 0) != nameId) {
@@ -560,10 +576,8 @@ final class PackedQueryCodec {
 					return;
 				}
 				rangeSlot.addFiniteValue(rdfValue);
-				kinds |= rdfValue.isIRI() ? PackedPredicateRange.KIND_IRI
-						: rdfValue.isBNode() ? PackedPredicateRange.KIND_BNODE : PackedPredicateRange.KIND_LITERAL;
 			}
-			rangeSlot.setKindBits(kinds);
+			PackedDomainFacts.describeFiniteValueSet(rangeSlot);
 			domainFacts.put(groupId, symbolId, rangeArena.intern(rangeSlot, objects));
 		}
 
@@ -1380,8 +1394,11 @@ final class PackedQueryCodec {
 				TupleExpr subquery, String path) {
 			int argumentId = scalar(argument, path + ".arg");
 			int payload = subqueryPayload(subquery, compareOperator, path);
+			// Same slot convention as EXISTS: the subquery's referenced names, so liveness and scheduling see
+			// every outer binding the subquery reads rather than only the names it can bind.
+			int referencedNames = nameSetPayload(VarNameCollector.process(subquery));
 			unary[0] = argumentId;
-			return scalars.internCanonical(operator, payload, 0, 0, unary, 0, 1);
+			return scalars.internCanonical(operator, payload, referencedNames, 0, unary, 0, 1);
 		}
 
 		private int subqueryPayload(TupleExpr subquery, int compareOperator, String path) {

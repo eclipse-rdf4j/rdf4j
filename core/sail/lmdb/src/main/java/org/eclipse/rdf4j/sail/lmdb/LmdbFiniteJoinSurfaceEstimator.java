@@ -128,7 +128,7 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		long scannedRows = 0L;
 		long outputRows = 0L;
 		List<long[]> output = new ArrayList<>();
-		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+		try (Txn txn = tripleStore.planningReadTxn()) {
 			for (AlternativeBranch branch : alternatives.branches()) {
 				Expansion expansion = expandConnectedBranch(txn, branch, slots, scannedRows, scanBudget);
 				if (expansion == null) {
@@ -170,7 +170,7 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		}
 		AlternativeBranch branch = alternatives.branches().get(0);
 		VarSlots slots = buildAlternativeVarSlots(alternatives.branches());
-		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+		try (Txn txn = tripleStore.planningReadTxn()) {
 			Expansion expansion = expandConnectedBranch(txn, branch, slots, 0L, scanBudget);
 			if (expansion == null) {
 				return Optional.empty();
@@ -366,7 +366,7 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		VarSlots slots = buildVarSlots(assignments, prefixAccesses, surfaceAccess, finiteBindingValues);
 		List<long[]> rows;
 		long scannedRows = 0L;
-		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+		try (Txn txn = tripleStore.planningReadTxn()) {
 			List<ExactAccess> remainingAccesses = new ArrayList<>(prefixAccesses);
 			boolean unboundSeed = assignments.isEmpty() && !hasSingleFiniteDomain(finiteBindingValues)
 					&& prefixAccesses.isEmpty();

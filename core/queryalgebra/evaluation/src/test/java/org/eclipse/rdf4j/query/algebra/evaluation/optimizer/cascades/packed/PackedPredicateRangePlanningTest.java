@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Datatype;
@@ -322,6 +323,40 @@ class PackedPredicateRangePlanningTest {
 						+ selected);
 		assertTrue(finiteDomains(selected, "o").isEmpty(),
 				"no boolean anchor rows may be fabricated from an invalid lexical: " + selected);
+	}
+
+	@Test
+	void booleanEqualityKeepsFilterWithoutCanonicalBooleanProof() {
+		// A boolean-only predicate may still store " true " (valid under whiteSpace=collapse, value-equal to true):
+		// only UNIVERSAL_CANONICAL_BOOLEAN proves that {"true","1"} are the only stored representations.
+		PackedPredicateRangeProvider booleanProvider = datatypeOnlyProvider(CoreDatatype.XSD.BOOLEAN, 0);
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new Compare(new Var("o"), new ValueConstant(VF.createLiteral(true)), Compare.CompareOp.EQ)),
+				"s");
+
+		TupleExpr selected = optimize(root, booleanProvider);
+
+		assertTrue(containsNode(selected, Filter.class),
+				"without a canonical-boolean proof the value-equality filter must stay: " + selected);
+		assertTrue(finiteDomains(selected, "o").isEmpty(),
+				"no lexical-equivalence anchor may replace the filter without the proof: " + selected);
+	}
+
+	@Test
+	void booleanEqualityExpandsToCanonicalLexicalFormsUnderCanonicalBooleanProof() {
+		PackedPredicateRangeProvider booleanProvider = datatypeOnlyProvider(CoreDatatype.XSD.BOOLEAN,
+				PackedPredicateRange.UNIVERSAL_CANONICAL_BOOLEAN);
+		TupleExpr root = projection(new Filter(statementPattern(),
+				new Compare(new Var("o"), new ValueConstant(VF.createLiteral(true)), Compare.CompareOp.EQ)),
+				"s");
+
+		TupleExpr selected = optimize(root, booleanProvider);
+
+		assertFalse(containsNode(selected, Filter.class), "the anchor replaces the filter: " + selected);
+		// the IRI overload keeps the "1" lexical form; the CoreDatatype overload canonicalises booleans to "true"
+		assertEquals(List.of(Set.of(VF.createLiteral("true", XSD.BOOLEAN), VF.createLiteral("1", XSD.BOOLEAN))),
+				finiteDomains(selected, "o"),
+				"canonical booleans expand to exactly the two stored lexical forms: " + selected);
 	}
 
 	@Test

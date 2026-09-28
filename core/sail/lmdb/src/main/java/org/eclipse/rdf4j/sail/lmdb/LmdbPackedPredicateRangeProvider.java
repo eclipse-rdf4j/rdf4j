@@ -80,6 +80,9 @@ final class LmdbPackedPredicateRangeProvider implements PackedPredicateRangeProv
 		if (domain.has(RdfTermDomain.Fact.CANONICAL_DATE)) {
 			universal |= PackedPredicateRange.UNIVERSAL_CANONICAL_DATE;
 		}
+		if (domain.has(RdfTermDomain.Fact.CANONICAL_BOOLEAN)) {
+			universal |= PackedPredicateRange.UNIVERSAL_CANONICAL_BOOLEAN;
+		}
 		output.setUniversalBits(universal);
 		domain.integerRange()
 				.ifPresent(range -> output.setIntegerBounds(range.minInclusive(), range.maxInclusive()));

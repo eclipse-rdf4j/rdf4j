@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -22,10 +23,17 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -35,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class LmdbBoundSimplifierOptimizerTest {
@@ -73,6 +82,136 @@ class LmdbBoundSimplifierOptimizerTest {
 
 		LeftJoin leftJoin = assertInstanceOf(LeftJoin.class, root.getArg(), () -> root.getArg().toString());
 		assertInstanceOf(StatementPattern.class, leftJoin.getRightArg(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void foldsBoundOfOuterAssuredNameInsideExistsToTrue() {
+		Filter inner = new Filter(statementPattern("s", "q", "o"), new Bound(new Var("x")));
+		QueryRoot root = optimizeBoundSimplifier(new Filter(statementPattern("s", "p", "x"), new Exists(inner)));
+
+		Filter outer = assertInstanceOf(Filter.class, root.getArg(), () -> root.getArg().toString());
+		Exists exists = assertInstanceOf(Exists.class, outer.getCondition());
+		assertInstanceOf(StatementPattern.class, exists.getSubQuery(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void foldsNegatedBoundOfOuterAssuredNameInsideNotExistsToEmptyBody() {
+		Filter inner = new Filter(statementPattern("s", "q", "o"), new Not(new Bound(new Var("x"))));
+		QueryRoot root = optimizeBoundSimplifier(
+				new Filter(statementPattern("s", "p", "x"), new Not(new Exists(inner))));
+
+		Filter outer = assertInstanceOf(Filter.class, root.getArg(), () -> root.getArg().toString());
+		Not not = assertInstanceOf(Not.class, outer.getCondition());
+		Exists exists = assertInstanceOf(Exists.class, not.getArg());
+		assertInstanceOf(EmptySet.class, exists.getSubQuery(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void foldsBoundOfLateralLeftNameInsideRightArgumentToTrue() {
+		Filter right = new Filter(statementPattern("s", "q", "o"), new Bound(new Var("x")));
+		QueryRoot root = optimizeBoundSimplifier(new Lateral(statementPattern("s", "p", "x"), right));
+
+		Lateral lateral = assertInstanceOf(Lateral.class, root.getArg(), () -> root.getArg().toString());
+		assertInstanceOf(StatementPattern.class, lateral.getRightArg(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void keepsBoundOfOuterOptionalNameInsideExists() {
+		Filter inner = new Filter(statementPattern("s", "q", "o"), new Bound(new Var("x")));
+		LeftJoin outerArg = new LeftJoin(statementPattern("s", "p", "y"), statementPattern("s", "r", "x"));
+		QueryRoot root = optimizeBoundSimplifier(new Filter(outerArg, new Exists(inner)));
+
+		Filter outer = assertInstanceOf(Filter.class, root.getArg(), () -> root.getArg().toString());
+		Exists exists = assertInstanceOf(Exists.class, outer.getCondition());
+		Filter retained = assertInstanceOf(Filter.class, exists.getSubQuery(), () -> root.getArg().toString());
+		assertInstanceOf(Bound.class, retained.getCondition());
+	}
+
+	@Test
+	void stillFoldsBoundOfOuterNameInsideSubSelectWithinExistsToFalse() {
+		// The EXISTS substitution stops at the sub-SELECT (SPARQL 1.1 18.2.2.1): ?x is not in scope in its body,
+		// so BOUND(?x) is false there even though the outer row assures ?x. The fold keeps the specified answer
+		// (the executor would otherwise leak the outer row into the sub-SELECT, finding 3.4.3).
+		Filter inner = new Filter(statementPattern("s", "q", "o"), new Bound(new Var("x")));
+		Projection subSelect = new Projection(inner, new ProjectionElemList(new ProjectionElem("o")));
+		subSelect.setSubquery(true);
+		QueryRoot root = optimizeBoundSimplifier(new Filter(statementPattern("s", "p", "x"), new Exists(subSelect)));
+
+		Filter outer = assertInstanceOf(Filter.class, root.getArg(), () -> root.getArg().toString());
+		Exists exists = assertInstanceOf(Exists.class, outer.getCondition());
+		Projection projection = assertInstanceOf(Projection.class, exists.getSubQuery());
+		assertInstanceOf(EmptySet.class, projection.getArg(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void stillFoldsBoundOfOuterNameInsideSubSelectBelowJoinToFalse() {
+		// SPARQL evaluates a sub-SELECT independently: ?x is not in scope, BOUND(?x) is false. The fold must not be
+		// suppressed by the outer row, which the executor would otherwise leak into the sub-SELECT (finding 3.4.3).
+		Filter inner = new Filter(statementPattern("s", "q", "o"), new Bound(new Var("x")));
+		Projection subSelect = new Projection(inner, new ProjectionElemList(new ProjectionElem("o")));
+		QueryRoot root = optimizeBoundSimplifier(new Join(statementPattern("s", "p", "x"), subSelect));
+
+		Join join = assertInstanceOf(Join.class, root.getArg(), () -> root.getArg().toString());
+		Projection projection = assertInstanceOf(Projection.class, join.getRightArg());
+		assertInstanceOf(EmptySet.class, projection.getArg(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void stillFoldsBoundOfOuterNameInsideMinusRightArgumentToFalse() {
+		Filter minus = new Filter(statementPattern("s", "q", "o"), new Bound(new Var("x")));
+		QueryRoot root = optimizeBoundSimplifier(new Difference(statementPattern("s", "p", "x"), minus));
+
+		Difference difference = assertInstanceOf(Difference.class, root.getArg(), () -> root.getArg().toString());
+		assertInstanceOf(EmptySet.class, difference.getRightArg(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void leavesScopeChangedFilterOnOptionalRightSideUntouched() {
+		Filter nestedGroup = new Filter(statementPattern("s", "q", "o"), new Bound(new Var("x")));
+		nestedGroup.setVariableScopeChange(true);
+		QueryRoot root = optimizeBoundSimplifier(new LeftJoin(statementPattern("s", "p", "x"), nestedGroup));
+
+		LeftJoin leftJoin = assertInstanceOf(LeftJoin.class, root.getArg(), () -> root.getArg().toString());
+		Filter retained = assertInstanceOf(Filter.class, leftJoin.getRightArg(), () -> root.getArg().toString());
+		assertInstanceOf(Bound.class, retained.getCondition());
+		assertTrue(retained.isVariableScopeChange());
+	}
+
+	@Test
+	void keepsBoundOfJoinLeftNameInsideRightArgument() {
+		Filter right = new Filter(statementPattern("s", "q", "o"), new Bound(new Var("x")));
+		QueryRoot root = optimizeBoundSimplifier(new Join(statementPattern("s", "p", "x"), right));
+
+		Join join = assertInstanceOf(Join.class, root.getArg(), () -> root.getArg().toString());
+		Filter retained = assertInstanceOf(Filter.class, join.getRightArg(), () -> root.getArg().toString());
+		assertInstanceOf(Bound.class, retained.getCondition());
+	}
+
+	@Test
+	void stillFoldsBoundOfUnknownNameInsideExistsToFalse() {
+		Filter inner = new Filter(statementPattern("s", "q", "o"), new Bound(new Var("nowhere")));
+		QueryRoot root = optimizeBoundSimplifier(new Filter(statementPattern("s", "p", "x"), new Exists(inner)));
+
+		Filter outer = assertInstanceOf(Filter.class, root.getArg(), () -> root.getArg().toString());
+		Exists exists = assertInstanceOf(Exists.class, outer.getCondition());
+		assertInstanceOf(EmptySet.class, exists.getSubQuery(), () -> root.getArg().toString());
+	}
+
+	@Test
+	void foldsBoundOfIncomingBindingNameToTrue() {
+		QueryRoot root = new QueryRoot(new Filter(statementPattern("s", "p", "o"), new Bound(new Var("x"))));
+		MapBindingSet incoming = new MapBindingSet(1);
+		incoming.addBinding("x", VF.createLiteral("bound"));
+
+		new LmdbBoundSimplifierOptimizer().optimize(root, null, incoming);
+
+		assertInstanceOf(StatementPattern.class, root.getArg(), () -> root.getArg().toString());
+	}
+
+	private static QueryRoot optimizeBoundSimplifier(TupleExpr tupleExpr) {
+		QueryRoot root = new QueryRoot(tupleExpr);
+		new LmdbBoundSimplifierOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		return root;
 	}
 
 	private static QueryRoot optimizeBeforeSketch(TupleExpr tupleExpr) {

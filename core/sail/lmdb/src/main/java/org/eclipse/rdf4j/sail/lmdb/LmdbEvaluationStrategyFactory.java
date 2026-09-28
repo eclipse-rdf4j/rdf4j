@@ -31,6 +31,9 @@ final class LmdbEvaluationStrategyFactory extends DefaultEvaluationStrategyFacto
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
+		if (evaluationStatistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
+			lmdbStatistics.bindExecutionSnapshot(LmdbEvaluationStatistics.executionSnapshotEpoch(tripleSource));
+		}
 		LmdbEvaluationStrategy strategy = new LmdbEvaluationStrategy(tripleSource, dataset,
 				getFederatedServiceResolver(), getQuerySolutionCacheThreshold(), evaluationStatistics,
 				isTrackResultSize());

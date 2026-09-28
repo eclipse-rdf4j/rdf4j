@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -122,7 +123,11 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 	 * A constant VALUES relation may move through a variable-scope-changing Extension when (1) it needs no input
 	 * bindings, (2) its binding names are disjoint from the names the Extension assigns, (3) every BIND expression is
 	 * insulated from the pushed bindings, and (4) the Extension argument is plain join/pattern/filter algebra whose
-	 * bound-join evaluation is equivalent to unbound evaluation plus a join.
+	 * bound-join evaluation is equivalent to unbound evaluation plus a join. For (4) every Filter inside the argument
+	 * that mentions a pushed name (including inside EXISTS bodies) must have that name <em>assured</em> by its own
+	 * argument: only then does the pushed binding equal the row's own value by join compatibility, so the filter cannot
+	 * observe that the name is pre-bound. A pushed name that is merely possible below such a filter (e.g. through a
+	 * {@code VALUES ... UNDEF} row) would flip {@code BOUND}/{@code NOT EXISTS} outcomes.
 	 */
 	private static boolean canPushAssignmentThroughScopedExtension(BindingSetAssignment assignment,
 			Extension extension) {
@@ -143,10 +148,10 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 				return false;
 			}
 		}
-		return isPlainJoinAlgebra(extension.getArg());
+		return isPlainJoinAlgebra(extension.getArg(), assignmentNames);
 	}
 
-	private static boolean isPlainJoinAlgebra(TupleExpr tupleExpr) {
+	private static boolean isPlainJoinAlgebra(TupleExpr tupleExpr, Set<String> pushedNames) {
 		if (tupleExpr instanceof org.eclipse.rdf4j.query.algebra.StatementPattern) {
 			return true;
 		}
@@ -154,11 +159,13 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			return !assignmentArg.isVariableScopeChange();
 		}
 		if (tupleExpr instanceof Join joinArg && !joinArg.isVariableScopeChange()) {
-			return isPlainJoinAlgebra(joinArg.getLeftArg()) && isPlainJoinAlgebra(joinArg.getRightArg());
+			return isPlainJoinAlgebra(joinArg.getLeftArg(), pushedNames)
+					&& isPlainJoinAlgebra(joinArg.getRightArg(), pushedNames);
 		}
 		if (tupleExpr instanceof Filter filterArg && !filterArg.isVariableScopeChange()) {
 			return !(filterArg.getCondition() instanceof org.eclipse.rdf4j.query.algebra.SubQueryValueOperator)
-					&& isPlainJoinAlgebra(filterArg.getArg());
+					&& BindingScopeAnalysis.filterDependsOnlyOnAssured(filterArg, pushedNames)
+					&& isPlainJoinAlgebra(filterArg.getArg(), pushedNames);
 		}
 		return false;
 	}

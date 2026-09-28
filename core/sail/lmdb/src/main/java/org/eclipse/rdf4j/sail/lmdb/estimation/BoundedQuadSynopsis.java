@@ -41,12 +41,23 @@ public final class BoundedQuadSynopsis {
 	public QuadEvidence probe(QuadProbe probe) {
 		Objects.requireNonNull(probe, "probe");
 		long stamp = lock.tryOptimisticRead();
-		QuadSynopsisSnapshot currentBase = base;
-		QuadSynopsisDelta currentDelta = delta;
-		boolean currentInvalidated = invalidated;
-		QuadEvidence result = probe(currentBase, currentDelta, currentInvalidated, probe);
-		if (lock.validate(stamp)) {
-			return result;
+		if (stamp != 0L) {
+			/*
+			 * Additions mutate the delta in place, so an optimistic probe may run on torn arrays. Neither its result
+			 * nor a failure it raises means anything until the stamp validates: an invalidated attempt is discarded and
+			 * retried under the read lock, while a failure on a validated (consistent) state is genuine and propagates.
+			 */
+			QuadEvidence result = null;
+			try {
+				result = probe(base, delta, invalidated, probe);
+			} catch (RuntimeException tornRead) {
+				if (lock.validate(stamp)) {
+					throw tornRead;
+				}
+			}
+			if (result != null && lock.validate(stamp)) {
+				return result;
+			}
 		}
 		stamp = lock.readLock();
 		try {

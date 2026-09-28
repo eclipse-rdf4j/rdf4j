@@ -44,7 +44,13 @@ final class RdfTermDomain {
 		NUMBER,
 		CANONICAL_INTEGER,
 		CANONICAL_DATETIME,
-		CANONICAL_DATE;
+		CANONICAL_DATE,
+		/**
+		 * Every stored xsd:boolean uses one of the exact lexical forms {@code true}, {@code false}, {@code 1},
+		 * {@code 0}; valid variants such as {@code " true "} (whiteSpace=collapse) are value-equal but different terms.
+		 * Appending a fact shifts the datatype bits: bump {@code TripleStore.PREDICATE_OBJECT_DOMAINS_VERSION}.
+		 */
+		CANONICAL_BOOLEAN;
 
 		private long mask() {
 			return 1L << ordinal();
@@ -61,7 +67,7 @@ final class RdfTermDomain {
 	private static final long LANGUAGE_MASK = Fact.LITERAL_WITH_LANGUAGE.mask() | Fact.LITERAL_WITHOUT_LANGUAGE.mask();
 	private static final long TIMEZONE_MASK = Fact.DATE_UTC.mask() | Fact.DATE_WITHOUT_TIMEZONE.mask();
 	private static final long UNIVERSAL_FACT_MASK = Fact.NUMBER.mask() | Fact.CANONICAL_INTEGER.mask()
-			| Fact.CANONICAL_DATETIME.mask() | Fact.CANONICAL_DATE.mask();
+			| Fact.CANONICAL_DATETIME.mask() | Fact.CANONICAL_DATE.mask() | Fact.CANONICAL_BOOLEAN.mask();
 	private static final long XSD_DATATYPE_MASK = xsdDatatypeMask();
 	private static final long POSSIBLE_FACT_MASK = KIND_MASK | LANGUAGE_MASK | TIMEZONE_MASK | XSD_DATATYPE_MASK;
 
@@ -370,8 +376,19 @@ final class RdfTermDomain {
 			if (xsdDatatype.isCalendarDatatype()) {
 				mask = classifyCalendar(mask, literal.getLabel(), xsdDatatype);
 			}
+			if (xsdDatatype == CoreDatatype.XSD.BOOLEAN && isCanonicalBooleanLexical(literal.getLabel())) {
+				mask |= Fact.CANONICAL_BOOLEAN.mask();
+			}
 		}
 		return mask;
+	}
+
+	/**
+	 * The four exact lexical forms a finite boolean anchor enumerates; any other valid form (surrounding whitespace,
+	 * "TRUE", "01") is value-equal to one of them but is a distinct stored term.
+	 */
+	private static boolean isCanonicalBooleanLexical(String label) {
+		return "true".equals(label) || "false".equals(label) || "1".equals(label) || "0".equals(label);
 	}
 
 	static boolean isXsdNumericLiteral(Value value) {
@@ -542,6 +559,10 @@ final class RdfTermDomain {
 		}
 		if ((mask & Fact.CANONICAL_DATE.mask()) != 0L && datatypes != 0L
 				&& (datatypes & datatypeMask(CoreDatatype.XSD.DATE)) == 0L) {
+			return true;
+		}
+		if ((mask & Fact.CANONICAL_BOOLEAN.mask()) != 0L && datatypes != 0L
+				&& (datatypes & datatypeMask(CoreDatatype.XSD.BOOLEAN)) == 0L) {
 			return true;
 		}
 		long timezone = mask & TIMEZONE_MASK;

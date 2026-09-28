@@ -92,26 +92,26 @@ class RuntimeFeedbackContractTest {
 	void epochsMustBeNonNegativeAndReferencesNonNull() {
 		assertThatThrownBy(() -> new RuntimeFeedbackContract(DESCRIPTOR, vector(1), vector(1), 1, 1, 1, 1,
 				SemanticKind.ORDINARY, Algorithm.SCAN, Access.NONE, 0, -1L, 0L, 0L, 0))
-				.isInstanceOf(IllegalArgumentException.class);
+						.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new RuntimeFeedbackContract(DESCRIPTOR, vector(1), vector(1), 1, 1, 1, 1,
 				SemanticKind.ORDINARY, Algorithm.SCAN, Access.NONE, 0, 0L, -1L, 0L, 0))
-				.isInstanceOf(IllegalArgumentException.class);
+						.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new RuntimeFeedbackContract(DESCRIPTOR, vector(1), vector(1), 1, 1, 1, 1,
 				SemanticKind.ORDINARY, Algorithm.SCAN, Access.NONE, 0, 0L, 0L, -1L, 0))
-				.isInstanceOf(IllegalArgumentException.class);
+						.isInstanceOf(IllegalArgumentException.class);
 
 		assertThatThrownBy(() -> new RuntimeFeedbackContract(null, vector(1), vector(1), 1, 1, 1, 1,
 				SemanticKind.ORDINARY, Algorithm.SCAN, Access.NONE, 0, 0L, 0L, 0L, 0))
-				.isInstanceOf(NullPointerException.class);
+						.isInstanceOf(NullPointerException.class);
 		assertThatThrownBy(() -> new RuntimeFeedbackContract(DESCRIPTOR, vector(1), vector(1), 1, 1, 1, 1,
 				null, Algorithm.SCAN, Access.NONE, 0, 0L, 0L, 0L, 0))
-				.isInstanceOf(NullPointerException.class);
+						.isInstanceOf(NullPointerException.class);
 		assertThatThrownBy(() -> new RuntimeFeedbackContract(DESCRIPTOR, vector(1), vector(1), 1, 1, 1, 1,
 				SemanticKind.ORDINARY, null, Access.NONE, 0, 0L, 0L, 0L, 0))
-				.isInstanceOf(NullPointerException.class);
+						.isInstanceOf(NullPointerException.class);
 		assertThatThrownBy(() -> new RuntimeFeedbackContract(DESCRIPTOR, vector(1), vector(1), 1, 1, 1, 1,
 				SemanticKind.ORDINARY, Algorithm.SCAN, null, 0, 0L, 0L, 0L, 0))
-				.isInstanceOf(NullPointerException.class);
+						.isInstanceOf(NullPointerException.class);
 	}
 
 	// REINFORCE: the short constructors derive the logical cardinality from the prediction rows and default the
@@ -142,13 +142,13 @@ class RuntimeFeedbackContractTest {
 		assertThatThrownBy(() -> new RuntimeFeedbackContract(DESCRIPTOR, vector(1), vector(1), -1, 50,
 				DependentPredictionVector.UNKNOWN, DependentPredictionVector.UNKNOWN, 1, 2, 3, 0,
 				SemanticKind.EXISTS, Algorithm.HASH_JOIN, Access.EXACT_LOOKUP, 7, 1L, 2L, 3L, 0))
-				.isInstanceOf(IllegalArgumentException.class)
-				.hasMessageContaining("raw logical cardinality");
+						.isInstanceOf(IllegalArgumentException.class)
+						.hasMessageContaining("raw logical cardinality");
 		assertThatThrownBy(() -> new RuntimeFeedbackContract(DESCRIPTOR, vector(1), vector(1), 40,
 				Double.POSITIVE_INFINITY, DependentPredictionVector.UNKNOWN, DependentPredictionVector.UNKNOWN, 1, 2,
 				3, 0, SemanticKind.EXISTS, Algorithm.HASH_JOIN, Access.EXACT_LOOKUP, 7, 1L, 2L, 3L, 0))
-				.isInstanceOf(IllegalArgumentException.class)
-				.hasMessageContaining("applied logical cardinality");
+						.isInstanceOf(IllegalArgumentException.class)
+						.hasMessageContaining("applied logical cardinality");
 	}
 
 	// REINFORCE: withDescriptor is identity-preserving for the same descriptor and copies every other field

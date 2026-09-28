@@ -68,6 +68,11 @@ public final class FrontierStatisticsView implements AutoCloseable {
 		return generation == null ? -1L : generation.coveredEpoch();
 	}
 
+	/** Candidate rows visited by Omni scans through this view so far (planning-work telemetry for tests). */
+	long candidateRowsVisited() {
+		return generation == null ? 0L : generation.candidateRowsVisited();
+	}
+
 	public FrontierLeafEstimate estimateLeaf(FrontierLeafProbe probe) {
 		Objects.requireNonNull(probe, "probe");
 		if (!ready()) {

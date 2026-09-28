@@ -164,6 +164,25 @@ final class LmdbJoinPlanSupport {
 		return smallLiteralFilterAnchor(condition, LmdbJoinPlanSupport::isSafeValuesAnchorValue);
 	}
 
+	/**
+	 * Whether the condition tests RDF term identity anywhere ({@code sameTerm}), as opposed to SPARQL value equality
+	 * ({@code =}, {@code IN}). A finite anchor built from the condition's constants stands in for value equality only
+	 * after lexical-equivalence expansion; for term identity the expanded anchor is merely a superset of the satisfying
+	 * terms, so the condition must stay in the plan whenever a value-expanded (guarantee-driven) anchor is used.
+	 */
+	static boolean containsSameTerm(ValueExpr condition) {
+		if (condition instanceof SameTerm) {
+			return true;
+		}
+		if (condition instanceof Or or) {
+			return containsSameTerm(or.getLeftArg()) || containsSameTerm(or.getRightArg());
+		}
+		if (condition instanceof And and) {
+			return containsSameTerm(and.getLeftArg()) || containsSameTerm(and.getRightArg());
+		}
+		return false;
+	}
+
 	static BindingSetAssignment smallLiteralFilterAnchor(ValueExpr condition, Predicate<Value> valueFilter) {
 		if (condition instanceof ListMemberOperator) {
 			List<ValueExpr> arguments = ((ListMemberOperator) condition).getArguments();

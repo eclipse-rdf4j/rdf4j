@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 
@@ -57,6 +58,11 @@ abstract class DelegatingSailDataset implements SailDataset {
 	@Override
 	public OptionalLong getSnapshotEpoch() {
 		return delegate.getSnapshotEpoch();
+	}
+
+	@Override
+	public <T> Optional<T> unwrap(Class<T> type) {
+		return type.isInstance(this) ? Optional.of(type.cast(this)) : delegate.unwrap(type);
 	}
 
 	@Override

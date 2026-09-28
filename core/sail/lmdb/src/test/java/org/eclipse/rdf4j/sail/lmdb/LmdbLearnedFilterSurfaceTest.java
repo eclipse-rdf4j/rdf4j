@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -49,7 +50,7 @@ class LmdbLearnedFilterSurfaceTest {
 	void multiRelationFilterGeneralizesAcrossConstants(@TempDir File dataDir) {
 		LmdbStore store = initializedStore(dataDir);
 		try {
-			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			EvaluationStatistics statistics = committedStatistics(store);
 			statistics.recordFilterOutcome(filter("5"), 20L, 80L);
 
 			EvaluationStatistics.FilterPassEstimate exact = statistics.estimateFilterPass(filter("5"));
@@ -68,7 +69,7 @@ class LmdbLearnedFilterSurfaceTest {
 	void multiRelationFilterSurfacePersistsAcrossRestart(@TempDir File dataDir) {
 		LmdbStore writer = initializedStore(dataDir);
 		try {
-			writer.getBackingStore().getEvaluationStatistics().recordFilterOutcome(filter("5"), 20L, 80L);
+			committedStatistics(writer).recordFilterOutcome(filter("5"), 20L, 80L);
 		} finally {
 			writer.shutDown();
 		}
@@ -92,7 +93,7 @@ class LmdbLearnedFilterSurfaceTest {
 				.setSketchEstimatorEvidenceMode("snapshot-only"));
 		writer.init();
 		try {
-			writer.getBackingStore().getEvaluationStatistics().recordFilterOutcome(filter("5"), 20L, 80L);
+			committedStatistics(writer).recordFilterOutcome(filter("5"), 20L, 80L);
 		} finally {
 			writer.shutDown();
 		}
@@ -113,7 +114,7 @@ class LmdbLearnedFilterSurfaceTest {
 	void filterSidecarUsesVersionEightAndRejectsStamplessVersionFive(@TempDir File dataDir) throws IOException {
 		LmdbStore writer = initializedStore(dataDir);
 		try {
-			writer.getBackingStore().getEvaluationStatistics().recordFilterOutcome(filter("5"), 20L, 80L);
+			committedStatistics(writer).recordFilterOutcome(filter("5"), 20L, 80L);
 		} finally {
 			writer.shutDown();
 		}
@@ -149,7 +150,7 @@ class LmdbLearnedFilterSurfaceTest {
 	void snapshotOnlyOpenDoesNotUpgradeLegacyAdaptiveFilterSidecar(@TempDir File dataDir) throws IOException {
 		LmdbStore writer = initializedStore(dataDir);
 		try {
-			writer.getBackingStore().getEvaluationStatistics().recordFilterOutcome(filter("5"), 20L, 80L);
+			committedStatistics(writer).recordFilterOutcome(filter("5"), 20L, 80L);
 		} finally {
 			writer.shutDown();
 		}
@@ -181,7 +182,7 @@ class LmdbLearnedFilterSurfaceTest {
 	void snapshotOnlyPlanningWithoutSketchesIgnoresExistingAdaptiveEvidence(@TempDir File dataDir) throws IOException {
 		LmdbStore writer = initializedStore(dataDir);
 		try {
-			writer.getBackingStore().getEvaluationStatistics().recordFilterOutcome(filter("5"), 20L, 80L);
+			committedStatistics(writer).recordFilterOutcome(filter("5"), 20L, 80L);
 		} finally {
 			writer.shutDown();
 		}
@@ -219,7 +220,7 @@ class LmdbLearnedFilterSurfaceTest {
 	void incompleteObservationDoesNotTrainSurface(@TempDir File dataDir) {
 		LmdbStore store = initializedStore(dataDir);
 		try {
-			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			EvaluationStatistics statistics = committedStatistics(store);
 			statistics.recordFilterOutcome(filter("5"),
 					EvaluationStatistics.FilterOutcomeObservation.incomplete(2L, 8L, "early-close"));
 
@@ -274,6 +275,14 @@ class LmdbLearnedFilterSurfaceTest {
 
 		assertNotEquals(FilterSurfaceKey.exact(unscoped), FilterSurfaceKey.exact(scoped));
 		assertNotEquals(FilterSurfaceKey.generalized(unscoped), FilterSurfaceKey.generalized(scoped));
+	}
+
+	/** Statistics bound to a committed snapshot: these tests replay observations that committed queries produced. */
+	private static LmdbEvaluationStatistics committedStatistics(LmdbStore store) {
+		LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+				.getEvaluationStatistics();
+		statistics.bindExecutionSnapshot(OptionalLong.of(0L));
+		return statistics;
 	}
 
 	private static LmdbStore initializedStore(File dataDir) {

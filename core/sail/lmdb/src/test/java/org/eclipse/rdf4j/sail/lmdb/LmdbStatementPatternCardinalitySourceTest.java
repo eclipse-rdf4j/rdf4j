@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -63,15 +64,17 @@ class LmdbStatementPatternCardinalitySourceTest {
 	void ordinaryTierRepeatedVariablesNeverTriggerAnExactLmdbScan() throws Exception {
 		TripleStore tripleStore = mock(TripleStore.class);
 		when(tripleStore.getDataRevision()).thenReturn(13L);
-		when(tripleStore.planningCardinality(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn(81.0d);
+		when(tripleStore.planningCardinalityEstimate(anyLong(), anyLong(), anyLong(), anyLong()))
+				.thenReturn(CardinalityEstimate.exact(81.0d));
 		LmdbStatementPatternCardinalitySource source = new LmdbStatementPatternCardinalitySource(
 				mock(ValueStore.class), tripleStore);
 		StatementPattern repeated = new StatementPattern(new Var("x"), new Var("p"), new Var("x"));
 
 		assertEquals(81.0d, source.estimateForPlanning(repeated));
-		verify(tripleStore).planningCardinality(LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID,
+		verify(tripleStore).planningCardinalityEstimate(LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID,
 				LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID);
-		verify(tripleStore, never()).repeatedVariableCardinality(anyLong(), anyLong(), anyLong(), anyLong(), anyInt());
+		verify(tripleStore, never()).repeatedVariableCardinality(anyLong(), anyLong(), anyLong(), anyLong(), anyInt(),
+				anyLong());
 	}
 
 	@Test
@@ -81,10 +84,12 @@ class LmdbStatementPatternCardinalitySourceTest {
 		long collidingIdentity = -777L;
 		TripleStore first = mock(TripleStore.class);
 		when(first.getDataRevision()).thenReturn(3L);
-		when(first.planningCardinality(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn(81.0d);
+		when(first.planningCardinalityEstimate(anyLong(), anyLong(), anyLong(), anyLong()))
+				.thenReturn(CardinalityEstimate.exact(81.0d));
 		TripleStore second = mock(TripleStore.class);
 		when(second.getDataRevision()).thenReturn(3L);
-		when(second.planningCardinality(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn(999.0d);
+		when(second.planningCardinalityEstimate(anyLong(), anyLong(), anyLong(), anyLong()))
+				.thenReturn(CardinalityEstimate.exact(999.0d));
 		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
 
 		new LmdbStatementPatternCardinalitySource(mock(ValueStore.class), first, collidingIdentity)
@@ -120,7 +125,8 @@ class LmdbStatementPatternCardinalitySourceTest {
 		long identity = -778L;
 		TripleStore tripleStore = mock(TripleStore.class);
 		when(tripleStore.getDataRevision()).thenReturn(5L);
-		when(tripleStore.planningCardinality(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn(17.0d, 23.0d);
+		when(tripleStore.planningCardinalityEstimate(anyLong(), anyLong(), anyLong(), anyLong()))
+				.thenReturn(CardinalityEstimate.exact(17.0d), CardinalityEstimate.exact(23.0d));
 		LmdbStatementPatternCardinalitySource source = new LmdbStatementPatternCardinalitySource(
 				mock(ValueStore.class), tripleStore, identity);
 		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
@@ -143,13 +149,14 @@ class LmdbStatementPatternCardinalitySourceTest {
 		when(tripleStore.getDataRevision()).thenAnswer(invocation -> revision.get());
 		// The first count races with a commit: the revision moves to 8 mid-computation and the returned count
 		// reflects the post-commit data. The true revision-7 count is 42.
-		when(tripleStore.planningCardinality(anyLong(), anyLong(), anyLong(), anyLong())).thenAnswer(invocation -> {
-			if (computes.incrementAndGet() == 1) {
-				revision.set(8L);
-				return 500.0d;
-			}
-			return 42.0d;
-		});
+		when(tripleStore.planningCardinalityEstimate(anyLong(), anyLong(), anyLong(), anyLong()))
+				.thenAnswer(invocation -> {
+					if (computes.incrementAndGet() == 1) {
+						revision.set(8L);
+						return CardinalityEstimate.exact(500.0d);
+					}
+					return CardinalityEstimate.exact(42.0d);
+				});
 		LmdbStatementPatternCardinalitySource source = new LmdbStatementPatternCardinalitySource(
 				mock(ValueStore.class), tripleStore, identity);
 		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));

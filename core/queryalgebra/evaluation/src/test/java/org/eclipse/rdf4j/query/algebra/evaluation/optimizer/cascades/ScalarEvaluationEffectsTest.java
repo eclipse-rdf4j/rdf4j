@@ -97,17 +97,57 @@ class ScalarEvaluationEffectsTest {
 		assertEquals(VOLATILE, ScalarEvaluationEffects.effectOf(new BNodeGenerator()));
 	}
 
+	/**
+	 * Registered functions are classified by the declared volatility contract
+	 * ({@link Function#mustReturnDifferentResult()}), not by the jar or package they live in: GeoSPARQL, SPIN and user
+	 * functions are REPEATABLE unless they declare otherwise, and their arguments' effects still propagate.
+	 */
 	@Test
-	void customFunctionRequiresQueryConstantArguments() {
+	void registeredCustomFunctionsAreRepeatableUnlessTheyDeclareVolatility() {
 		Function function = new DefaultFalseFunction("urn:test:default-false");
+		Function volatileFunction = new VolatileFunction("urn:test:volatile");
 		FunctionRegistry.getInstance().add(function);
+		FunctionRegistry.getInstance().add(volatileFunction);
 		try {
-			assertEquals(QUERY_STABLE, ScalarEvaluationEffects.effectOf(
+			assertEquals(REPEATABLE, ScalarEvaluationEffects.effectOf(
 					new FunctionCall(function.getURI(), new ValueConstant(VF.createLiteral("constant")))));
-			assertEquals(UNKNOWN,
+			assertEquals(REPEATABLE,
 					ScalarEvaluationEffects.effectOf(new FunctionCall(function.getURI(), new Var("rowValue"))));
+			assertEquals(QUERY_STABLE, ScalarEvaluationEffects
+					.effectOf(new FunctionCall(function.getURI(), new FunctionCall("NOW"))));
+			assertEquals(VOLATILE, ScalarEvaluationEffects
+					.effectOf(new FunctionCall(function.getURI(), new FunctionCall("RAND"))));
+			assertEquals(VOLATILE,
+					ScalarEvaluationEffects.effectOf(new FunctionCall(volatileFunction.getURI(), new Var("rowValue"))));
+			assertEquals(VOLATILE, ScalarEvaluationEffects.effectOf(new FunctionCall(volatileFunction.getURI())));
 		} finally {
 			FunctionRegistry.getInstance().remove(function);
+			FunctionRegistry.getInstance().remove(volatileFunction);
+		}
+	}
+
+	/**
+	 * A registered function called without arguments has no input its value could be repeatable <em>for</em>: it is
+	 * either a constant or reads context (a clock such as {@code spif:currentTimeMillis()}, configuration). The
+	 * evaluation pipeline already treats it as a per-query constant ({@code ConstantOptimizer} folds it once), so it is
+	 * QUERY_STABLE like {@code NOW()} and must not be learnable or replayed across queries as REPEATABLE.
+	 */
+	@Test
+	void zeroArgumentFunctionsAreQueryStableUnlessTheyDeclareVolatility() {
+		Function contextFunction = new DefaultFalseFunction("urn:test:context");
+		Function volatileFunction = new VolatileFunction("urn:test:volatile-context");
+		FunctionRegistry.getInstance().add(contextFunction);
+		FunctionRegistry.getInstance().add(volatileFunction);
+		try {
+			assertEquals(QUERY_STABLE, ScalarEvaluationEffects.effectOf(new FunctionCall(contextFunction.getURI())));
+			assertEquals(QUERY_STABLE, ScalarEvaluationEffects.effectOf(new Compare(new Var("value"),
+					new FunctionCall(contextFunction.getURI()), Compare.CompareOp.LT)));
+			assertEquals(VOLATILE, ScalarEvaluationEffects.effectOf(new FunctionCall(volatileFunction.getURI())));
+			assertEquals(REPEATABLE, ScalarEvaluationEffects
+					.effectOf(new FunctionCall(contextFunction.getURI(), new Var("rowValue"))));
+		} finally {
+			FunctionRegistry.getInstance().remove(contextFunction);
+			FunctionRegistry.getInstance().remove(volatileFunction);
 		}
 	}
 
@@ -124,7 +164,7 @@ class ScalarEvaluationEffectsTest {
 		assertEquals(REPEATABLE, ScalarEvaluationEffects.effectOf(new Str(new Var("value"))));
 	}
 
-	private static final class DefaultFalseFunction implements Function {
+	private static class DefaultFalseFunction implements Function {
 		private final String uri;
 
 		private DefaultFalseFunction(String uri) {
@@ -139,6 +179,17 @@ class ScalarEvaluationEffectsTest {
 		@Override
 		public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 			return args.length == 0 ? valueFactory.createLiteral("constant") : args[0];
+		}
+	}
+
+	private static final class VolatileFunction extends DefaultFalseFunction {
+		private VolatileFunction(String uri) {
+			super(uri);
+		}
+
+		@Override
+		public boolean mustReturnDifferentResult() {
+			return true;
 		}
 	}
 

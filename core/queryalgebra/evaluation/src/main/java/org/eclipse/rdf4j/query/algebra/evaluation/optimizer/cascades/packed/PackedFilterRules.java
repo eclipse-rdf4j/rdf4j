@@ -88,8 +88,20 @@ final class PackedFilterRules {
 			rightContains = query.maskContainsAllScheduledDependencies(query.relAssuredMaskId(rightRelationId),
 					dependencyMaskId, embeddedReferenceMaskId, outerOutputMaskId);
 		} else {
-			leftContains = query.maskContainsAll(query.relOutputMaskId(leftRelationId), dependencyMaskId);
-			rightContains = query.maskContainsAll(query.relOutputMaskId(rightRelationId), dependencyMaskId);
+			/*
+			 * Possible names may only block: a freely relocatable predicate may move into one operand only when every
+			 * dependency is either assured by that operand or cannot be bound by the sibling operand. A LeftJoin
+			 * operand whose optional side only maybe binds a dependency that the sibling binds for every row would
+			 * otherwise evaluate the predicate on an unbound value and drop rows the join would have completed.
+			 */
+			int leftOutputMaskId = query.relOutputMaskId(leftRelationId);
+			int rightOutputMaskId = query.relOutputMaskId(rightRelationId);
+			leftContains = query.maskContainsAll(leftOutputMaskId, dependencyMaskId)
+					&& query.maskContainsAllIntersection(query.relAssuredMaskId(leftRelationId), dependencyMaskId,
+							rightOutputMaskId);
+			rightContains = query.maskContainsAll(rightOutputMaskId, dependencyMaskId)
+					&& query.maskContainsAllIntersection(query.relAssuredMaskId(rightRelationId), dependencyMaskId,
+							leftOutputMaskId);
 		}
 		if (leftContains == rightContains) {
 			return 1;

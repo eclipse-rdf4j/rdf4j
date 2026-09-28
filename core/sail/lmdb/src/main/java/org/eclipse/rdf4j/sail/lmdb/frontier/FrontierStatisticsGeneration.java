@@ -19,6 +19,7 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** Reference-counted set of already validated and mapped mandatory query shards. */
@@ -39,6 +40,7 @@ final class FrontierStatisticsGeneration {
 	private final FrontierStatisticsHeapGovernor.Lease metadataLease;
 	private final FrontierMappedStatistics mappedStatistics;
 	private final AtomicInteger references = new AtomicInteger(1);
+	private volatile Runnable fullyReleasedHook;
 
 	private FrontierStatisticsGeneration(FrontierStatisticsManifest manifest,
 			Map<Integer, FrontierStatisticsShard> shards,
@@ -201,7 +203,8 @@ final class FrontierStatisticsGeneration {
 				|| !reusedLayer && shard.maximumTermId() != manifest.maximumTermId()
 				|| shard.rowCount() != descriptor.rowCount()
 				|| shard.fileLength() != descriptor.byteLength()) {
-			shard.close();
+			// The mapping may be shared with the live generation; the caller releases only this generation's
+			// reference, which closes the shard once no generation maps it any more.
 			throw new IOException("Frontier statistics shard identity does not match its manifest");
 		}
 	}
@@ -276,8 +279,32 @@ final class FrontierStatisticsGeneration {
 			throw new IllegalStateException("Frontier statistics generation reference count underflow");
 		}
 		if (remaining == 0) {
-			releaseSharedShards(sharedShards.values(), null);
-			metadataLease.close();
+			try {
+				releaseSharedShards(sharedShards.values(), null);
+			} finally {
+				metadataLease.close();
+			}
+			Runnable hook = fullyReleasedHook;
+			if (hook != null) {
+				hook.run();
+			}
+		}
+	}
+
+	/** Whether any lease or the service itself still references this generation. */
+	boolean referenced() {
+		return references.get() > 0;
+	}
+
+	/**
+	 * Registers a hook that runs once the last reference is released; runs it immediately when the generation is
+	 * already fully released. The hook must be idempotent and cheap: it is invoked on whichever thread releases the
+	 * last reference.
+	 */
+	void onFullyReleased(Runnable hook) {
+		fullyReleasedHook = Objects.requireNonNull(hook, "hook");
+		if (references.get() == 0) {
+			hook.run();
 		}
 	}
 

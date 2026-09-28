@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 
@@ -58,6 +59,14 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 	 */
 	public OptionalLong getSnapshotEpoch() {
 		return dataset.getSnapshotEpoch();
+	}
+
+	/**
+	 * Resolves the dataset behind this triple source as {@code type}, looking through wrapper datasets; see
+	 * {@link SailDataset#unwrap(Class)}.
+	 */
+	public <T> Optional<T> unwrapDataset(Class<T> type) {
+		return dataset.unwrap(type);
 	}
 
 	@Override

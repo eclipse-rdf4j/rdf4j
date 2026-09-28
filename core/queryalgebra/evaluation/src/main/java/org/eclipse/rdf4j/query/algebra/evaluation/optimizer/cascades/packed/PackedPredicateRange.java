@@ -42,6 +42,8 @@ public final class PackedPredicateRange {
 	public static final int UNIVERSAL_CANONICAL_INTEGER = 1 << 1;
 	public static final int UNIVERSAL_CANONICAL_DATETIME = 1 << 2;
 	public static final int UNIVERSAL_CANONICAL_DATE = 1 << 3;
+	/** Every stored xsd:boolean is one of the exact lexical forms true / false / 1 / 0. */
+	public static final int UNIVERSAL_CANONICAL_BOOLEAN = 1 << 4;
 
 	static {
 		if (CoreDatatype.XSD.values().length > 64) {

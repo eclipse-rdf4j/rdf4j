@@ -243,6 +243,11 @@ final class PackedQuery {
 		return bindingFacts.intersects(leftMaskId, rightMaskId);
 	}
 
+	/** {@code (leftMaskId ∩ rightMaskId) ⊆ containerMaskId}, allocation-free. */
+	boolean maskContainsAllIntersection(int containerMaskId, int leftMaskId, int rightMaskId) {
+		return bindingFacts.containsAllIntersection(containerMaskId, leftMaskId, rightMaskId);
+	}
+
 	int unionMasks(int leftMaskId, int rightMaskId) {
 		return bindingFacts.union(leftMaskId, rightMaskId);
 	}

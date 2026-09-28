@@ -58,7 +58,17 @@ final class LmdbNullRejectingOptionalSupport {
 	private LmdbNullRejectingOptionalSupport() {
 	}
 
-	static TupleExpr rewrite(Filter filter, Set<String> incomingBindings) {
+	/**
+	 * @param filter               the filter above an unconditioned OPTIONAL
+	 * @param outerVisibleBindings every name the enclosing evaluation context may substitute into the filter's rows
+	 *                             (the request's incoming bindings plus, for a filter inside an EXISTS body, a LATERAL
+	 *                             right argument or a join right argument, the outer row; see
+	 *                             {@link org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis}
+	 *                             {@code outerScope}). A right-only binding in this set is not unbound on unmatched
+	 *                             OPTIONAL rows, so it can never witness null rejection.
+	 * @return the mandatory-join replacement, or null when the rewrite cannot be proved
+	 */
+	static TupleExpr rewrite(Filter filter, Set<String> outerVisibleBindings) {
 		if (filter == null
 				|| TupleExprs.isVariableScopeChange(filter)
 				|| !(filter.getArg()instanceof LeftJoin leftJoin)
@@ -72,14 +82,14 @@ final class LmdbNullRejectingOptionalSupport {
 		if (!barrierFreeSubtree(proofLeftArg) || !barrierFreeSubtree(rightArg)) {
 			return null;
 		}
-		Set<String> incoming = incomingBindings == null ? Set.of() : incomingBindings;
+		Set<String> outerVisible = outerVisibleBindings == null ? Set.of() : outerVisibleBindings;
 		Set<String> optionalOnlyBindings = new LinkedHashSet<>(rightArg.getBindingNames());
 		optionalOnlyBindings.removeAll(proofLeftArg.getBindingNames());
 		if (optionalOnlyBindings.isEmpty()) {
 			return null;
 		}
 		Set<String> witnessBindings = unboundRejectionWitness(filter.getCondition(), optionalOnlyBindings,
-				proofLeftArg.getAssuredBindingNames(), incoming);
+				proofLeftArg.getAssuredBindingNames(), outerVisible);
 		if (witnessBindings == null || witnessBindings.isEmpty()) {
 			return null;
 		}
@@ -121,24 +131,24 @@ final class LmdbNullRejectingOptionalSupport {
 	 * null when no such witness can be proved.
 	 */
 	private static Set<String> unboundRejectionWitness(ValueExpr condition, Set<String> optionalOnlyBindings,
-			Set<String> leftAssuredBindings, Set<String> incomingBindings) {
+			Set<String> leftAssuredBindings, Set<String> outerVisibleBindings) {
 		if (condition instanceof And and) {
 			Set<String> left = unboundRejectionWitness(and.getLeftArg(), optionalOnlyBindings, leftAssuredBindings,
-					incomingBindings);
+					outerVisibleBindings);
 			if (left != null) {
 				return left;
 			}
 			return unboundRejectionWitness(and.getRightArg(), optionalOnlyBindings, leftAssuredBindings,
-					incomingBindings);
+					outerVisibleBindings);
 		}
 		if (condition instanceof Or or) {
 			Set<String> left = unboundRejectionWitness(or.getLeftArg(), optionalOnlyBindings, leftAssuredBindings,
-					incomingBindings);
+					outerVisibleBindings);
 			if (left == null) {
 				return null;
 			}
 			Set<String> right = unboundRejectionWitness(or.getRightArg(), optionalOnlyBindings, leftAssuredBindings,
-					incomingBindings);
+					outerVisibleBindings);
 			if (right == null) {
 				return null;
 			}
@@ -151,24 +161,24 @@ final class LmdbNullRejectingOptionalSupport {
 			if (bindingName == null || !optionalOnlyBindings.contains(bindingName)) {
 				return null;
 			}
-			return selectUnboundWitness(Set.of(bindingName), incomingBindings);
+			return selectUnboundWitness(Set.of(bindingName), outerVisibleBindings);
 		}
 		if (condition instanceof Compare compare) {
 			return comparisonWitness(List.of(compare.getLeftArg(), compare.getRightArg()), optionalOnlyBindings,
-					leftAssuredBindings, incomingBindings);
+					leftAssuredBindings, outerVisibleBindings);
 		}
 		if (condition instanceof SameTerm sameTerm) {
 			return comparisonWitness(List.of(sameTerm.getLeftArg(), sameTerm.getRightArg()), optionalOnlyBindings,
-					leftAssuredBindings, incomingBindings);
+					leftAssuredBindings, outerVisibleBindings);
 		}
 		if (condition instanceof ListMemberOperator listMember) {
-			return listMemberWitness(listMember, optionalOnlyBindings, leftAssuredBindings, incomingBindings);
+			return listMemberWitness(listMember, optionalOnlyBindings, leftAssuredBindings, outerVisibleBindings);
 		}
 		return null;
 	}
 
 	private static Set<String> listMemberWitness(ListMemberOperator listMember, Set<String> optionalOnlyBindings,
-			Set<String> leftAssuredBindings, Set<String> incomingBindings) {
+			Set<String> leftAssuredBindings, Set<String> outerVisibleBindings) {
 		List<ValueExpr> arguments = listMember.getArguments();
 		if (arguments.size() < 2) {
 			return null;
@@ -189,11 +199,11 @@ final class LmdbNullRejectingOptionalSupport {
 				return null;
 			}
 		}
-		return selectUnboundWitness(Set.of(testedName), incomingBindings);
+		return selectUnboundWitness(Set.of(testedName), outerVisibleBindings);
 	}
 
 	private static Set<String> comparisonWitness(List<ValueExpr> operands, Set<String> optionalOnlyBindings,
-			Set<String> leftAssuredBindings, Set<String> incomingBindings) {
+			Set<String> leftAssuredBindings, Set<String> outerVisibleBindings) {
 		Set<String> optionalReferences = new LinkedHashSet<>();
 		for (ValueExpr operand : operands) {
 			if (isConstantOperand(operand)) {
@@ -209,12 +219,16 @@ final class LmdbNullRejectingOptionalSupport {
 				return null;
 			}
 		}
-		return selectUnboundWitness(optionalReferences, incomingBindings);
+		return selectUnboundWitness(optionalReferences, outerVisibleBindings);
 	}
 
-	private static Set<String> selectUnboundWitness(Set<String> candidates, Set<String> incomingBindings) {
+	/**
+	 * Picks a witness that is unbound on every unmatched OPTIONAL row: a right-only binding that no enclosing
+	 * evaluation context (incoming bindings, EXISTS owner row, LATERAL left row, join left row) can substitute.
+	 */
+	private static Set<String> selectUnboundWitness(Set<String> candidates, Set<String> outerVisibleBindings) {
 		for (String candidate : candidates) {
-			if (!incomingBindings.contains(candidate)) {
+			if (!outerVisibleBindings.contains(candidate)) {
 				return Set.of(candidate);
 			}
 		}

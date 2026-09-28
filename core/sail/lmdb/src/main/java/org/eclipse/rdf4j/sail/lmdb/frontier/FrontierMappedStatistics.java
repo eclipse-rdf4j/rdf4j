@@ -21,6 +21,9 @@ import java.util.Map;
 /** Allocation-free mapped leaf estimator assembled once per generation. */
 final class FrontierMappedStatistics {
 
+	/** Standard deviations covered by a reported Fast-AGMS interval; see {@link #fastAgmsError}. */
+	private static final double FAST_AGMS_ERROR_DEVIATIONS = 4.0d;
+
 	private final FrontierStatisticsShard totals;
 	private final FrontierStatisticsShardDescriptor[][] countMin = new FrontierStatisticsShardDescriptor[2][16];
 	private final FrontierStatisticsShardDescriptor[] heavy = new FrontierStatisticsShardDescriptor[2];
@@ -498,15 +501,24 @@ final class FrontierMappedStatistics {
 			return FrontierJoinEstimate.unavailable(FrontierFallbackReason.CONFIDENCE_TOO_WIDE);
 		}
 		double[] lanes = new double[shape.lanes];
+		double leftSecondMoment = 0.0d;
+		double rightSecondMoment = 0.0d;
 		for (int lane = 0; lane < shape.lanes; lane++) {
 			double dot = 0.0d;
+			double leftSquares = 0.0d;
+			double rightSquares = 0.0d;
 			for (int bucket = 0; bucket < shape.width; bucket++) {
 				double left = agmsCounter(probe.left(), probe.leftComponent(), lane, bucket, shape);
 				double right = agmsCounter(probe.right(), probe.rightComponent(), lane, bucket, shape);
 				double product = left * right;
 				dot = Double.isFinite(dot + product) ? dot + product : Double.MAX_VALUE;
+				leftSquares = saturatedAdd(leftSquares, saturatedMultiply(left, left));
+				rightSquares = saturatedAdd(rightSquares, saturatedMultiply(right, right));
 			}
 			lanes[lane] = Math.max(0.0d, dot);
+			/* Each lane's sum of squared counters is an unbiased count-sketch estimate of the side's F2. */
+			leftSecondMoment = Math.max(leftSecondMoment, leftSquares);
+			rightSecondMoment = Math.max(rightSecondMoment, rightSquares);
 		}
 		Arrays.sort(lanes);
 		double point = lanes[lanes.length / 2];
@@ -516,12 +528,30 @@ final class FrontierMappedStatistics {
 		double productBound = saturatedMultiply(
 				estimateLeaf(probe.left(), scratch).upperRows(), estimateLeaf(probe.right(), scratch).upperRows());
 		point = Math.min(point, productBound);
-		double laneUpper = lanes[lanes.length - 1];
-		double upper = Math.min(productBound,
-				saturatedAdd(saturatedMultiply(Math.max(point, laneUpper), 4.0d), 1.0d));
-		upper = Math.max(point, upper);
-		return new FrontierJoinEstimate(point, 0.0d, upper, 1.0d - Math.exp(-shape.lanes / 2.0d),
+		if (!(point > 0.0d)) {
+			/*
+			 * Lanes are clamped at zero, so a zero median only says that the signed collision noise outweighed the join
+			 * mass in most lanes. That is no evidence of an empty join; report a typed unknown instead.
+			 */
+			return FrontierJoinEstimate.unavailable(FrontierFallbackReason.CONFIDENCE_TOO_WIDE);
+		}
+		double error = fastAgmsError(leftSecondMoment, rightSecondMoment, shape.width);
+		double upper = Math.max(point, Math.min(productBound, saturatedAdd(point, error)));
+		double precision = error > 0.0d ? Math.min(1.0d, point / error) : 1.0d;
+		return new FrontierJoinEstimate(point, 0.0d, upper, (1.0d - Math.exp(-shape.lanes / 2.0d)) * precision,
 				"frontier-v2-fast-agms", FrontierFallbackReason.NONE);
+	}
+
+	/**
+	 * Error half-width of a median-of-lanes Fast-AGMS join estimate. One lane's variance is at most
+	 * {@code (F2(L) * F2(R) + J^2) / width <= 2 * F2(L) * F2(R) / width}; {@link #FAST_AGMS_ERROR_DEVIATIONS} standard
+	 * deviations bound one lane with probability at least {@code 1 - 1/16} (Chebyshev), and the median fails only when
+	 * half of the independent lanes fail together.
+	 */
+	private static double fastAgmsError(double leftSecondMoment, double rightSecondMoment, int width) {
+		double deviation = Math.sqrt(leftSecondMoment) * Math.sqrt(rightSecondMoment) * Math.sqrt(2.0d / width);
+		return Double.isFinite(deviation) ? saturatedMultiply(deviation, FAST_AGMS_ERROR_DEVIATIONS)
+				: Double.MAX_VALUE;
 	}
 
 	FrontierJoinEstimate estimateConditionalJoin(FrontierJoinProbe probe, double upperRowsPerLeft,

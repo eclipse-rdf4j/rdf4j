@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -37,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
@@ -80,8 +82,15 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			ValueExpr leftArg = sameTerm.getLeftArg();
 			ValueExpr rightArg = sameTerm.getRightArg();
 
-			// Verify that vars are (potentially) bound by filterArg
+			// Verify that vars are (potentially) bound by filterArg or by an enclosing scope: inside an EXISTS body
+			// the outer solution is substituted before evaluation and the right argument of a LATERAL receives the
+			// left-hand bindings, so a variable absent from filterArg may still be bound there.
 			Set<String> bindingNames = filterArg.getBindingNames();
+			Set<String> outerVisibleNames = BindingScopeAnalysis.existsOrLateralOuterNames(filter);
+			if (!outerVisibleNames.isEmpty()) {
+				bindingNames = new HashSet<>(bindingNames);
+				bindingNames.addAll(outerVisibleNames);
+			}
 			if (isUnboundVar(leftArg, bindingNames) || isUnboundVar(rightArg, bindingNames)) {
 				// One or both var(s) are unbound, this expression will never
 				// return any results
@@ -114,8 +123,9 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 				for (BindingSetAssignment bsa : collector.getBindingSetAssignments()) {
 					// check if the VALUES clause / bindingsetassignment contains
 					// one of the arguments of the sameTerm.
-					// if so, we can not inline.
-					Set<String> names = bsa.getAssuredBindingNames();
+					// if so, we can not inline: the rows of a VALUES clause cannot be renamed or bound, and a
+					// column that is only possibly bound (UNDEF rows) still binds the variable in the other rows.
+					Set<String> names = bsa.getBindingNames();
 					if (leftArg instanceof Var) {
 						if (names.contains(((Var) leftArg).getName())) {
 							return;
@@ -138,9 +148,22 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 				bindVar((Var) rightArg, leftValue, filter);
 			} else if (rightValue != null && leftArg instanceof Var) {
 				bindVar((Var) leftArg, rightValue, filter);
-			} else if (leftArg instanceof Var && rightArg instanceof Var) {
-				// Two unbound variables, rename rightArg to leftArg
-				renameVar((Var) rightArg, (Var) leftArg, filter);
+			} else if (leftArg instanceof Var leftVar && rightArg instanceof Var rightVar) {
+				// Two unbound variables: rename one into the other. A variable visible from an enclosing scope
+				// (EXISTS substitution, LATERAL left bindings) carries a value that the body's own patterns cannot
+				// see, so it must never be renamed away: the Extension that re-introduces the old name would
+				// overwrite the substituted value and the sameTerm constraint against it would be lost. Rename the
+				// inner variable into the outer one; when both are outer-visible keep the filter.
+				boolean leftOuterVisible = outerVisibleNames.contains(leftVar.getName());
+				boolean rightOuterVisible = outerVisibleNames.contains(rightVar.getName());
+				if (leftOuterVisible && rightOuterVisible) {
+					return;
+				}
+				if (rightOuterVisible) {
+					renameVar(leftVar, rightVar, filter);
+				} else {
+					renameVar(rightVar, leftVar, filter);
+				}
 			}
 		}
 

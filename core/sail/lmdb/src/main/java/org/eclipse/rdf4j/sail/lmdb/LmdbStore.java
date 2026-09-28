@@ -655,6 +655,12 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		@Override
 		public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 				EvaluationStatistics evaluationStatistics) {
+			// Every connection-level query passes through here, whichever strategy factory the user configured, so
+			// this is where the per-query statistics learn whether they read a committed snapshot and may publish
+			// feedback. The scope fails closed until bound.
+			if (evaluationStatistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
+				lmdbStatistics.bindExecutionSnapshot(LmdbEvaluationStatistics.executionSnapshotEpoch(tripleSource));
+			}
 			return getEvaluationStrategyFactory().createEvaluationStrategy(dataset, tripleSource, evaluationStatistics);
 		}
 

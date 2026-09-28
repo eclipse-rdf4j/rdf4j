@@ -13,7 +13,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.model.Value;
@@ -49,6 +51,24 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 	}
 
 	private final class Visitor extends AbstractQueryModelVisitor<RuntimeException> {
+
+		/**
+		 * One optimize() pass resolves every occurrence of the same {@link Value} instance to the same LMDB wrapper.
+		 * ConstantOptimizer folds all {@code NOW()} calls of a query into one shared literal whose object identity is
+		 * observable ({@code SELECT ?p (NOW() AS ?n) { BIND(NOW() AS ?p) }} must yield {@code p == n}); a fresh wrapper
+		 * per node would break that identity. The memo also spares repeated ValueStore round-trips for repeated
+		 * constants.
+		 */
+		private final Map<Value, Lookup> lookups = new IdentityHashMap<>();
+
+		private Lookup lookup(Value value) {
+			Lookup lookup = lookups.get(value);
+			if (lookup == null) {
+				lookup = LmdbValueLookupOptimizer.this.lookup(value);
+				lookups.put(value, lookup);
+			}
+			return lookup;
+		}
 
 		@Override
 		public void meet(Var node) {

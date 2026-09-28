@@ -23,6 +23,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.CRC32C;
 
@@ -45,6 +47,9 @@ final class FrontierStatisticsManifestStore {
 	private static final Pattern MANIFEST_FILE = Pattern.compile("manifest-[0-9]{1,19}\\.fs2m(?:\\.tmp)?");
 	private static final Pattern SHARD_FILE = Pattern
 			.compile("generation-[0-9]{1,19}-shard-[0-9]{1,5}\\.fs2s(?:\\.tmp)?");
+	private static final Pattern PUBLISHED_MANIFEST_FILE = Pattern.compile("manifest-([0-9]{1,19})\\.fs2m");
+	private static final Pattern PUBLISHED_SHARD_FILE = Pattern
+			.compile("generation-([0-9]{1,19})-shard-[0-9]{1,5}\\.fs2s");
 	private static final String SORT_DIRECTORY_PREFIX = "omni-sort-";
 
 	private final Path directory;
@@ -94,6 +99,10 @@ final class FrontierStatisticsManifestStore {
 		}
 		long generationId = decodePointer(fileOps.readBounded(current, POINTER_BYTES));
 		return load(generationId);
+	}
+
+	synchronized boolean exists(long generationId) throws IOException {
+		return generationId >= 0L && fileOps.exists(manifestPath(generationId));
 	}
 
 	synchronized FrontierStatisticsManifest load(long generationId) throws IOException {
@@ -172,6 +181,77 @@ final class FrontierStatisticsManifestStore {
 
 	synchronized boolean resetOwnedArtifacts() throws IOException {
 		return deleteOwnedPaths(true, true);
+	}
+
+	/**
+	 * Deletes published manifests and shard files that no retained generation references any more.
+	 *
+	 * <p>
+	 * Only files whose generation id is strictly below {@code currentGenerationId} are candidates: both builders
+	 * allocate ids above the current generation and write their shards under the final published names long before the
+	 * manifest is published, so newer ids always belong to a build in progress. Temporary artifacts and the current
+	 * pointer are never touched here; interrupted temporaries are startup cleanup.
+	 * </p>
+	 *
+	 * @param currentGenerationId   the published current generation
+	 * @param retainedGenerationIds manifests that must stay on disk (current, its predecessor, leased generations)
+	 * @param liveFileNames         shard files referenced by any retained generation
+	 * @return the number of files deleted
+	 */
+	synchronized int retireSuperseded(long currentGenerationId, Set<Long> retainedGenerationIds,
+			Set<String> liveFileNames) throws IOException {
+		Objects.requireNonNull(retainedGenerationIds, "retainedGenerationIds");
+		Objects.requireNonNull(liveFileNames, "liveFileNames");
+		IOException failure = null;
+		int deleted = 0;
+		for (Path path : fileOps.list(directory).stream().sorted(Comparator.naturalOrder()).toList()) {
+			String name = path.getFileName().toString();
+			Matcher manifest = PUBLISHED_MANIFEST_FILE.matcher(name);
+			Matcher shard = PUBLISHED_SHARD_FILE.matcher(name);
+			long generationId;
+			if (manifest.matches()) {
+				generationId = parseGenerationId(manifest.group(1));
+				if (generationId < 0L || retainedGenerationIds.contains(generationId)) {
+					continue;
+				}
+			} else if (shard.matches()) {
+				generationId = parseGenerationId(shard.group(1));
+				if (generationId < 0L || liveFileNames.contains(name)) {
+					continue;
+				}
+			} else {
+				continue;
+			}
+			if (generationId >= currentGenerationId) {
+				continue;
+			}
+			try {
+				if (fileOps.deleteIfExists(path)) {
+					deleted++;
+				}
+			} catch (IOException current) {
+				failure = append(failure, current);
+			}
+		}
+		if (deleted != 0) {
+			try {
+				fileOps.forceDirectory(directory);
+			} catch (IOException current) {
+				failure = append(failure, current);
+			}
+		}
+		if (failure != null) {
+			throw failure;
+		}
+		return deleted;
+	}
+
+	private static long parseGenerationId(String digits) {
+		try {
+			return Long.parseLong(digits);
+		} catch (NumberFormatException overflow) {
+			return -1L;
+		}
 	}
 
 	private boolean deleteOwnedPaths(boolean includePublished, boolean includeTemporary) throws IOException {

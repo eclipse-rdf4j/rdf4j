@@ -23,12 +23,22 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 final class LmdbStatementPatternCardinalitySource {
 
+	/**
+	 * Rows a planner-time exact scan may examine while the query holds its dataset lease. Beyond this the exact fact is
+	 * declined (or, for repeated-variable patterns, extrapolated and labelled non-exact).
+	 */
+	static final long PLANNING_EXACT_SCAN_MAX_ROWS = LmdbStoreConfig.OPTIMIZER_SAMPLING_MAX_ROWS;
+	/** Keys the bounded exact walk may examine when settling a sampled zero (unknown is never collapsed to zero). */
+	static final long ZERO_ESCALATION_MAX_KEYS = 8_192L;
+
 	private static final int SHARED_CACHE_MAX_ENTRIES = 262_144;
-	private static final Map<SharedCardinalityKey, Double> SHARED_CARDINALITY_CACHE = new ConcurrentHashMap<>();
+	private static final Map<SharedCardinalityKey, LmdbPlanningCardinality> SHARED_CARDINALITY_CACHE = new ConcurrentHashMap<>();
 	private static final Map<SharedExactCardinalityKey, Double> SHARED_EXACT_CARDINALITY_CACHE = new ConcurrentHashMap<>();
 	private static final Map<SharedDistinctCardinalityKey, DistinctCardinalityProbe> SHARED_DISTINCT_CARDINALITY_CACHE = new ConcurrentHashMap<>();
 
@@ -61,6 +71,10 @@ final class LmdbStatementPatternCardinalitySource {
 		return estimate(pattern, true);
 	}
 
+	/**
+	 * Exact row count for planning, or {@code -1} when no exact count is available within the planning scan cap. A
+	 * capped scan is never cached or served as exact.
+	 */
 	double estimateExact(StatementPattern pattern) {
 		if (pattern == null) {
 			return -1.0d;
@@ -95,9 +109,23 @@ final class LmdbStatementPatternCardinalitySource {
 			if (cached != null) {
 				return cached;
 			}
-			double cardinality = repeatedMask == 0
-					? tripleStore.exactCardinality(subjId, predId, objId, ctxId)
-					: tripleStore.repeatedVariableCardinality(subjId, predId, objId, ctxId, repeatedMask);
+			double cardinality;
+			if (repeatedMask == 0) {
+				OptionalDouble exact = tripleStore.exactCardinality(subjId, predId, objId, ctxId,
+						PLANNING_EXACT_SCAN_MAX_ROWS);
+				if (exact.isEmpty()) {
+					return -1.0d;
+				}
+				cardinality = exact.getAsDouble();
+			} else {
+				LmdbPlanningCardinality repeated = tripleStore.repeatedVariableCardinality(subjId, predId, objId,
+						ctxId, repeatedMask, PLANNING_EXACT_SCAN_MAX_ROWS);
+				if (!repeated.exact()) {
+					// An index-order-biased extrapolation must never be published as an exact fact.
+					return -1.0d;
+				}
+				cardinality = repeated.rows();
+			}
 			// A commit between key construction and the count would cache a post-commit value under the
 			// pre-commit revision — only cache when the revision is unchanged.
 			if (tripleStore.getDataRevision() == dataRevision) {
@@ -202,9 +230,9 @@ final class LmdbStatementPatternCardinalitySource {
 			if (ctxId == Long.MIN_VALUE) {
 				return 0.0d;
 			}
-			return planning
-					? estimateIds(subjId, predId, objId, ctxId, true)
-					: estimateRepeatedIds(subjId, predId, objId, ctxId, repeatedComponentPairMask);
+			return rows(planning
+					? qualifiedIds(subjId, predId, objId, ctxId, true)
+					: qualifiedRepeatedIds(subjId, predId, objId, ctxId, repeatedComponentPairMask));
 		} catch (IOException | RuntimeException e) {
 			return -1.0d;
 		}
@@ -215,6 +243,18 @@ final class LmdbStatementPatternCardinalitySource {
 	}
 
 	double estimateForPlanning(Resource subj, IRI pred, Value obj, Resource ctx, int repeatedComponentPairMask) {
+		LmdbPlanningCardinality qualified = estimateForPlanningQualified(subj, pred, obj, ctx,
+				repeatedComponentPairMask);
+		return qualified == null ? -1.0d : qualified.rows();
+	}
+
+	/**
+	 * Planning estimate that keeps exactness and hard bounds, or {@code null} when storage is unavailable. Terms that
+	 * do not exist in the store are an exact zero. A sampled zero for an existing prefix is escalated to a key-bounded
+	 * exact probe first, so the result is never a false emptiness certificate.
+	 */
+	LmdbPlanningCardinality estimateForPlanningQualified(Resource subj, IRI pred, Value obj, Resource ctx,
+			int repeatedComponentPairMask) {
 		try {
 			long subjId = resolveId(subj);
 			long predId = resolveId(pred);
@@ -222,13 +262,13 @@ final class LmdbStatementPatternCardinalitySource {
 			long ctxId = resolveId(ctx);
 			if (subjId == Long.MIN_VALUE || predId == Long.MIN_VALUE || objId == Long.MIN_VALUE
 					|| ctxId == Long.MIN_VALUE) {
-				return 0.0d;
+				return LmdbPlanningCardinality.exact(0.0d, 0L);
 			}
 			return repeatedComponentPairMask == 0
-					? estimateIds(subjId, predId, objId, ctxId, true)
-					: estimateRepeatedIds(subjId, predId, objId, ctxId, repeatedComponentPairMask);
+					? qualifiedIds(subjId, predId, objId, ctxId, true)
+					: qualifiedRepeatedIds(subjId, predId, objId, ctxId, repeatedComponentPairMask);
 		} catch (IOException | RuntimeException e) {
-			return -1.0d;
+			return null;
 		}
 	}
 
@@ -250,59 +290,94 @@ final class LmdbStatementPatternCardinalitySource {
 			if (ctxId == Long.MIN_VALUE) {
 				return 0.0d;
 			}
-			return estimateIds(subjId, predId, objId, ctxId, planning);
+			return rows(qualifiedIds(subjId, predId, objId, ctxId, planning));
 		} catch (IOException | RuntimeException e) {
 			return -1.0d;
 		}
 	}
 
 	double estimateIds(long subjId, long predId, long objId, long ctxId) {
-		return estimateIds(subjId, predId, objId, ctxId, false);
+		return rows(qualifiedIds(subjId, predId, objId, ctxId, false));
 	}
 
 	double estimateIdsForPlanning(long subjId, long predId, long objId, long ctxId) {
-		return estimateIds(subjId, predId, objId, ctxId, true);
+		return rows(qualifiedIds(subjId, predId, objId, ctxId, true));
 	}
 
-	private double estimateIds(long subjId, long predId, long objId, long ctxId, boolean planning) {
+	private static double rows(LmdbPlanningCardinality cardinality) {
+		return cardinality == null ? -1.0d : cardinality.rows();
+	}
+
+	private LmdbPlanningCardinality qualifiedIds(long subjId, long predId, long objId, long ctxId,
+			boolean planning) {
 		try {
 			long dataRevision = tripleStore.getDataRevision();
 			SharedCardinalityKey key = new SharedCardinalityKey(tripleStoreIdentity, dataRevision,
 					subjId, predId, objId, ctxId, 0, planning);
-			Double cached = SHARED_CARDINALITY_CACHE.get(key);
+			LmdbPlanningCardinality cached = SHARED_CARDINALITY_CACHE.get(key);
 			if (cached != null) {
 				return cached;
 			}
-			double cardinality = planning
-					? tripleStore.planningCardinality(subjId, predId, objId, ctxId)
-					: tripleStore.cardinality(subjId, predId, objId, ctxId);
+			LmdbPlanningCardinality cardinality;
+			if (planning) {
+				CardinalityEstimate estimate = tripleStore.planningCardinalityEstimate(subjId, predId, objId, ctxId);
+				if (estimate == null || !Double.isFinite(estimate.entries()) || estimate.entries() < 0.0d) {
+					return null;
+				}
+				cardinality = escalateSampledZero(LmdbPlanningCardinality.of(estimate), subjId, predId, objId,
+						ctxId);
+			} else {
+				double rows = tripleStore.cardinality(subjId, predId, objId, ctxId);
+				if (!Double.isFinite(rows) || rows < 0.0d) {
+					return null;
+				}
+				cardinality = LmdbPlanningCardinality.unqualified(rows);
+			}
 			if (tripleStore.getDataRevision() == dataRevision) {
 				cacheSharedCardinality(key, cardinality);
 			}
 			return cardinality;
 		} catch (IOException | RuntimeException e) {
-			return -1.0d;
+			return null;
 		}
 	}
 
-	private double estimateRepeatedIds(long subjId, long predId, long objId, long ctxId,
+	/**
+	 * A non-exact zero means the estimator sampled a range without meeting a matching row; it is not evidence that no
+	 * row exists. Settle it with a key-bounded exact walk when the range is small enough, otherwise keep the sampled
+	 * value with its non-exact label (roadmap: unknown is never collapsed to zero or one).
+	 */
+	private LmdbPlanningCardinality escalateSampledZero(LmdbPlanningCardinality estimate, long subjId, long predId,
+			long objId, long ctxId) throws IOException {
+		if (estimate.exact() || estimate.rows() != 0.0d) {
+			return estimate;
+		}
+		OptionalLong exact = tripleStore.boundedExactCardinality(subjId, predId, objId, ctxId,
+				ZERO_ESCALATION_MAX_KEYS);
+		return exact.isPresent() ? LmdbPlanningCardinality.exact(exact.getAsLong(), 0L) : estimate;
+	}
+
+	private LmdbPlanningCardinality qualifiedRepeatedIds(long subjId, long predId, long objId, long ctxId,
 			int repeatedComponentPairMask) {
 		try {
 			long dataRevision = tripleStore.getDataRevision();
 			SharedCardinalityKey key = new SharedCardinalityKey(tripleStoreIdentity, dataRevision,
 					subjId, predId, objId, ctxId, repeatedComponentPairMask, false);
-			Double cached = SHARED_CARDINALITY_CACHE.get(key);
+			LmdbPlanningCardinality cached = SHARED_CARDINALITY_CACHE.get(key);
 			if (cached != null) {
 				return cached;
 			}
-			double cardinality = tripleStore.repeatedVariableCardinality(subjId, predId, objId, ctxId,
-					repeatedComponentPairMask);
+			LmdbPlanningCardinality cardinality = tripleStore.repeatedVariableCardinality(subjId, predId, objId,
+					ctxId, repeatedComponentPairMask, PLANNING_EXACT_SCAN_MAX_ROWS);
+			if (cardinality == null) {
+				return null;
+			}
 			if (tripleStore.getDataRevision() == dataRevision) {
 				cacheSharedCardinality(key, cardinality);
 			}
 			return cardinality;
 		} catch (IOException | RuntimeException e) {
-			return -1.0d;
+			return null;
 		}
 	}
 
@@ -372,7 +447,7 @@ final class LmdbStatementPatternCardinalitySource {
 		return id == LmdbValue.UNKNOWN_ID ? Long.MIN_VALUE : id;
 	}
 
-	private static void cacheSharedCardinality(SharedCardinalityKey key, double cardinality) {
+	private static void cacheSharedCardinality(SharedCardinalityKey key, LmdbPlanningCardinality cardinality) {
 		if (SHARED_CARDINALITY_CACHE.size() >= SHARED_CACHE_MAX_ENTRIES) {
 			SHARED_CARDINALITY_CACHE.clear();
 		}

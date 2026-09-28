@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 
@@ -69,6 +70,16 @@ class UnionSailDataset implements SailDataset {
 		return second.isPresent() && second.getAsLong() == first.getAsLong()
 				? first
 				: OptionalLong.empty();
+	}
+
+	@Override
+	public <T> Optional<T> unwrap(Class<T> type) {
+		if (type.isInstance(this)) {
+			return Optional.of(type.cast(this));
+		}
+		// Both members are read views of the same store; the first one that matches is as good as the other.
+		Optional<T> first = dataset1.unwrap(type);
+		return first.isPresent() ? first : dataset2.unwrap(type);
 	}
 
 	@Override

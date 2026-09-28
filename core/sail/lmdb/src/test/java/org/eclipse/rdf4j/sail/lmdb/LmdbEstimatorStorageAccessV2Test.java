@@ -4,7 +4,7 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/documents/edl-v10.php.
+ * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
@@ -59,6 +59,7 @@ class LmdbEstimatorStorageAccessV2Test {
 
 		assertEquals(6_000.0d, rows, 0.0d);
 		verify(cardinalities, never()).estimateForPlanning(null, PREDICATE, null, null, 0);
+		verify(cardinalities, never()).estimateForPlanningQualified(null, PREDICATE, null, null, 0);
 	}
 
 	@Test
@@ -84,6 +85,8 @@ class LmdbEstimatorStorageAccessV2Test {
 				probe.getValue().getClass().getMethod("repeatedComponentPairMask").invoke(probe.getValue()));
 		verify(cardinalities, never()).estimateForPlanning(
 				null, PREDICATE, null, null, subjectObjectEquality);
+		verify(cardinalities, never()).estimateForPlanningQualified(
+				null, PREDICATE, null, null, subjectObjectEquality);
 	}
 
 	@Test
@@ -92,7 +95,9 @@ class LmdbEstimatorStorageAccessV2Test {
 		LmdbStatementPatternCardinalitySource cardinalities = mock(LmdbStatementPatternCardinalitySource.class);
 		LmdbStatisticsService statistics = mock(LmdbStatisticsService.class);
 		when(valueStore.getId(PREDICATE)).thenReturn(7L);
-		when(cardinalities.estimateForPlanning(null, PREDICATE, null, null, 0)).thenReturn(64.0d);
+		// the storage access consumes the qualified planning estimate (rows plus exactness and hard bounds)
+		when(cardinalities.estimateForPlanningQualified(null, PREDICATE, null, null, 0))
+				.thenReturn(LmdbPlanningCardinality.unqualified(64.0d));
 		when(statistics.estimateLeafCurrent(any(FrontierLeafProbe.class)))
 				.thenReturn(new FrontierLeafEstimate(6_000.0d, 5_000.0d, 7_000.0d, 0.9d,
 						"frontier-v2-omni", FrontierFallbackReason.NONE));

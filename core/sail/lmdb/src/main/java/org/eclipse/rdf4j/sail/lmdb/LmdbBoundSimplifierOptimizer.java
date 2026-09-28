@@ -30,11 +30,17 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * Simplifies {@link Bound} expressions where the tuple expression below a {@link Filter} already proves that a binding
  * is either assured or impossible.
+ * <p>
+ * A filter inside a correlated scope (an EXISTS / NOT EXISTS body, the right argument of a LATERAL, the right argument
+ * of a join) is evaluated with the outer row substituted, so the proof must include the bindings that enclosing context
+ * contributes ({@link BindingScopeAnalysis#outerScope}): outer assured names make {@code BOUND} true, and outer names
+ * that are in scope and possibly bound must never be folded to false.
  */
 final class LmdbBoundSimplifierOptimizer implements QueryOptimizer {
 
@@ -63,10 +69,13 @@ final class LmdbBoundSimplifierOptimizer implements QueryOptimizer {
 			super.meet(filter);
 
 			TupleExpr arg = filter.getArg();
+			BindingScopeAnalysis.OuterScope outerScope = BindingScopeAnalysis.outerScope(filter, initialBindingNames);
 			Set<String> assuredBindingNames = new HashSet<>(arg.getAssuredBindingNames());
-			assuredBindingNames.addAll(initialBindingNames);
+			assuredBindingNames.addAll(outerScope.assured());
+			// Only names SPARQL puts in scope block the fold to false: a name the executor merely leaks across a
+			// sub-SELECT or MINUS boundary is unbound by specification, and folding keeps the specified answer.
 			Set<String> possibleBindingNames = new HashSet<>(arg.getBindingNames());
-			possibleBindingNames.addAll(initialBindingNames);
+			possibleBindingNames.addAll(outerScope.possibleInScope());
 
 			ValueExpr condition = simplify(filter.getCondition(), assuredBindingNames, possibleBindingNames);
 			Boolean value = booleanConstant(condition);

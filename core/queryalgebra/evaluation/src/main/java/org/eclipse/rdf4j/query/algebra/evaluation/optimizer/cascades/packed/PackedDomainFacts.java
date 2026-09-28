@@ -13,12 +13,23 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 
 /**
  * Predicate-range facts per logical group and binding symbol, with the sound lattice operations used while propagating
  * facts through relational operators. A fact states that in every result row of the group, the symbol is either unbound
  * or bound to a value inside the referenced range.
+ * <p>
+ * Bit-set convention: a zero kind, language or datatype bit set means <em>unknown</em> (no proof, the lattice top),
+ * never <em>none</em>. Both lattice operations honour this: the join of a known and an unknown side is unknown, the
+ * meet of a known and an unknown side is the known side, and emptiness is only ever proven from two known, disjoint
+ * sides. Verdict rules must therefore fire on non-zero bits only.
+ * <p>
+ * Group facts are derived from each memo group's <em>seed</em> expression only (see
+ * {@code PackedQueryCodec.deriveGroupFacts}); alternatives appended to a group by logical rules are consumers, never
+ * producers, so one unsound alternative cannot narrow the facts its siblings and parents rely on.
  */
 @PackedHotPath
 final class PackedDomainFacts {
@@ -158,14 +169,31 @@ final class PackedDomainFacts {
 			return rightRangeId;
 		}
 		scratch.reset();
-		int kind = arena.kindBits(leftRangeId) & arena.kindBits(rightRangeId);
-		if (kind == 0) {
+		int leftKinds = arena.kindBits(leftRangeId);
+		int rightKinds = arena.kindBits(rightRangeId);
+		int kind = meetBits(leftKinds, rightKinds);
+		if (kind == 0 && leftKinds != 0 && rightKinds != 0) {
+			// Both sides know their kinds and no kind is admitted by both.
 			scratch.setState(PackedPredicateRange.STATE_EMPTY);
 			return arena.intern(scratch, objects);
 		}
+		int leftLanguages = arena.languageBits(leftRangeId);
+		int rightLanguages = arena.languageBits(rightRangeId);
+		int languages = meetBits(leftLanguages, rightLanguages);
+		if (languages == 0 && leftLanguages != 0 && rightLanguages != 0) {
+			// Both sides know the language class of their literals and the classes are disjoint, so no literal is
+			// admitted by both; IRIs and blank nodes (if any) still are.
+			if (kind == PackedPredicateRange.KIND_LITERAL) {
+				scratch.setState(PackedPredicateRange.STATE_EMPTY);
+				return arena.intern(scratch, objects);
+			}
+			kind = kind == 0
+					? PackedPredicateRange.KIND_IRI | PackedPredicateRange.KIND_BNODE
+					: kind & ~PackedPredicateRange.KIND_LITERAL;
+		}
 		scratch.setState(PackedPredicateRange.STATE_KNOWN);
 		scratch.setKindBits(kind);
-		scratch.setLanguageBits(arena.languageBits(leftRangeId) & arena.languageBits(rightRangeId));
+		scratch.setLanguageBits(languages);
 		scratch.setUniversalBits(arena.universalBits(leftRangeId) | arena.universalBits(rightRangeId));
 		mergeDatatypesIntersect(leftRangeId, rightRangeId);
 		if (!mergeIntegerBoundsIntersect(leftRangeId, rightRangeId)) {
@@ -194,8 +222,10 @@ final class PackedDomainFacts {
 		}
 		scratch.reset();
 		scratch.setState(PackedPredicateRange.STATE_KNOWN);
-		scratch.setKindBits(arena.kindBits(leftRangeId) | arena.kindBits(rightRangeId));
-		scratch.setLanguageBits(arena.languageBits(leftRangeId) | arena.languageBits(rightRangeId));
+		scratch.setKindBits(joinBits(arena.kindBits(leftRangeId), arena.kindBits(rightRangeId)));
+		int leftLanguages = literalLanguageBits(leftRangeId, arena.languageBits(rightRangeId));
+		int rightLanguages = literalLanguageBits(rightRangeId, arena.languageBits(leftRangeId));
+		scratch.setLanguageBits(joinBits(leftLanguages, rightLanguages));
 		scratch.setUniversalBits(arena.universalBits(leftRangeId) & arena.universalBits(rightRangeId));
 		long leftDatatypes = arena.datatypeBits(leftRangeId);
 		long rightDatatypes = arena.datatypeBits(rightRangeId);
@@ -223,6 +253,91 @@ final class PackedDomainFacts {
 			}
 		}
 		return arena.intern(scratch, objects);
+	}
+
+	/**
+	 * Fills the kind, language and datatype bits of a finite range from the terms it already holds, under the fact
+	 * base's convention that a zero bit set means <em>unknown</em>: kinds are always known for an enumerated set;
+	 * language bits are set only when the set contains literals; datatype bits describe the language-free literals
+	 * (language-tagged literals are covered by {@code LANGUAGE_WITH}, exactly as a store-derived range describes them)
+	 * and are left unknown as soon as a language-free literal carries a datatype outside the XSD mask. Nothing
+	 * universal (numeric promotion, canonical lexical forms) is claimed.
+	 */
+	static void describeFiniteValueSet(PackedPredicateRange range) {
+		int kinds = 0;
+		int languages = 0;
+		long datatypes = 0L;
+		boolean datatypesKnown = true;
+		for (int ordinal = 0; ordinal < range.finiteValueCount(); ordinal++) {
+			Value value = range.finiteValue(ordinal);
+			if (value.isIRI()) {
+				kinds |= PackedPredicateRange.KIND_IRI;
+			} else if (value.isBNode()) {
+				kinds |= PackedPredicateRange.KIND_BNODE;
+			} else if (value instanceof Literal literal) {
+				kinds |= PackedPredicateRange.KIND_LITERAL;
+				if (literal.getLanguage().isPresent()) {
+					languages |= PackedPredicateRange.LANGUAGE_WITH;
+				} else {
+					languages |= PackedPredicateRange.LANGUAGE_WITHOUT;
+					CoreDatatype datatype = literal.getCoreDatatype();
+					if (datatype.isXSDDatatype()) {
+						datatypes |= 1L << ((CoreDatatype.XSD) datatype).ordinal();
+					} else {
+						datatypesKnown = false;
+					}
+				}
+			} else {
+				range.setKindBits(0);
+				range.setLanguageBits(0);
+				return;
+			}
+		}
+		range.setKindBits(kinds);
+		range.setLanguageBits(languages);
+		if (datatypesKnown) {
+			CoreDatatype.XSD[] xsdDatatypes = CoreDatatype.XSD.values();
+			for (int ordinal = 0; ordinal < xsdDatatypes.length && ordinal < Long.SIZE; ordinal++) {
+				if ((datatypes & 1L << ordinal) != 0L) {
+					range.addDatatype(xsdDatatypes[ordinal]);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Lattice join of two kind or language bit sets under the convention that {@code 0} means <em>unknown</em> (the top
+	 * element, "no proof"), never <em>none</em>: the join with an unknown side is unknown, otherwise the union.
+	 */
+	static int joinBits(int leftBits, int rightBits) {
+		return leftBits == 0 || rightBits == 0 ? 0 : leftBits | rightBits;
+	}
+
+	/**
+	 * Lattice meet of two kind or language bit sets under the same {@code 0 = unknown} convention: the meet with an
+	 * unknown side is the known side, otherwise the intersection. A result of {@code 0} from two known sides means
+	 * "nothing admitted" and must be handled by the caller, since {@code 0} otherwise reads as unknown.
+	 */
+	static int meetBits(int leftBits, int rightBits) {
+		if (leftBits == 0) {
+			return rightBits;
+		}
+		if (rightBits == 0) {
+			return leftBits;
+		}
+		return leftBits & rightBits;
+	}
+
+	/**
+	 * The language bits a range contributes to a lattice join: a range whose kinds are known to exclude literals has no
+	 * literals to make a language claim about, so it vacuously agrees with the other side.
+	 */
+	private int literalLanguageBits(int rangeId, int otherLanguageBits) {
+		int kinds = arena.kindBits(rangeId);
+		if (kinds != 0 && (kinds & PackedPredicateRange.KIND_LITERAL) == 0) {
+			return otherLanguageBits;
+		}
+		return arena.languageBits(rangeId);
 	}
 
 	private void mergeDatatypesIntersect(int leftRangeId, int rightRangeId) {

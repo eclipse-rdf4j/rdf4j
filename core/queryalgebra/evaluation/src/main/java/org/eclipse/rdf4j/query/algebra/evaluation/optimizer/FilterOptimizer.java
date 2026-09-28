@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -43,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -347,14 +349,17 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Join join) {
-			if (join.getLeftArg().getBindingNames().containsAll(filterVars)) {
+			// A filter may only descend into one operand when each of its variables is assured there or cannot be
+			// bound by the other operand; a variable that is merely possible on one side and bindable by the sibling
+			// (e.g. an OPTIONAL variable that a later pattern also binds) is only observable after the join.
+			if (canPushInto(join.getLeftArg(), join.getRightArg())) {
 				if (shouldKeepFilterAtJoin(join, join.getLeftArg())) {
 					relocate(filter, join);
 				} else {
 					// All required vars are bound by the left expr
 					join.getLeftArg().visit(this);
 				}
-			} else if (join.getRightArg().getBindingNames().containsAll(filterVars)) {
+			} else if (canPushInto(join.getRightArg(), join.getLeftArg())) {
 				if (shouldKeepFilterAtJoin(join, join.getRightArg())) {
 					relocate(filter, join);
 				} else {
@@ -364,6 +369,10 @@ public class FilterOptimizer implements QueryOptimizer {
 			} else {
 				relocate(filter, join);
 			}
+		}
+
+		private boolean canPushInto(TupleExpr target, TupleExpr sibling) {
+			return BindingScopeAnalysis.canPushInto(filterVars, target, sibling);
 		}
 
 		@Override
@@ -376,7 +385,9 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(LeftJoin leftJoin) {
-			if (leftJoin.getLeftArg().getBindingNames().containsAll(filterVars)) {
+			// The optional side may bind a variable the left side leaves unbound, so the same assured-or-absent rule
+			// applies before the filter descends into the left argument.
+			if (canPushInto(leftJoin.getLeftArg(), leftJoin.getRightArg())) {
 				leftJoin.getLeftArg().visit(this);
 			} else {
 				relocate(filter, leftJoin);
@@ -421,11 +432,23 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Extension node) {
-			if (node.getArg().getBindingNames().containsAll(filterVars) && extensionEvaluationIsSafe(node)) {
+			// An Extension element that (re)assigns a filter variable makes a filter pushed below it observe the
+			// pre-BIND value, so the filter may only descend when no element names one of its variables.
+			if (node.getArg().getBindingNames().containsAll(filterVars) && extensionEvaluationIsSafe(node)
+					&& !extensionAssignsFilterVariable(node)) {
 				node.getArg().visit(this);
 			} else {
 				relocate(filter, node);
 			}
+		}
+
+		private boolean extensionAssignsFilterVariable(Extension extension) {
+			for (ExtensionElem element : extension.getElements()) {
+				if (filterVars.contains(element.getName())) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		@Override

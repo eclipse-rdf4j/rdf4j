@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -82,6 +83,15 @@ class SailDatasetImpl implements SailDataset {
 	public void close() throws SailException {
 		changes.removeRefback(this);
 		derivedFrom.close();
+	}
+
+	/**
+	 * Resolves through the committed base dataset. A store-native view found this way sees the committed snapshot only,
+	 * never the uncommitted {@link Changeset} this dataset overlays on it.
+	 */
+	@Override
+	public <T> Optional<T> unwrap(Class<T> type) {
+		return type.isInstance(this) ? Optional.of(type.cast(this)) : derivedFrom.unwrap(type);
 	}
 
 	@Override

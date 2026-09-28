@@ -21,6 +21,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -49,6 +51,8 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
@@ -664,5 +668,49 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 			parent = parent.getParentNode();
 		}
 		return false;
+	}
+
+	/**
+	 * A registered deterministic custom function (GeoSPARQL, SPIN, user functions) must not pin its filter, nor the
+	 * cheap conjunct sharing its {@code And}, above the join: the conjunction is split and both parts are relocated
+	 * onto the statement patterns that bind their variables.
+	 */
+	@Test
+	public void customFunctionConjunctionIsSplitAndPushedOntoPatterns() {
+		Function custom = new Function() {
+			@Override
+			public String getURI() {
+				return "urn:test:filter-optimizer-custom";
+			}
+
+			@Override
+			public Value evaluate(ValueFactory valueFactory, Value... args) {
+				return valueFactory.createLiteral(true);
+			}
+		};
+		FunctionRegistry.getInstance().add(custom);
+		try {
+			String query = "PREFIX ex: <http://example.org/> SELECT ?s WHERE { ?s ex:name ?n . ?s ex:type ?t . "
+					+ "?s ex:wkt ?wkt . "
+					+ "FILTER(STRSTARTS(?n, \"n1\") && <urn:test:filter-optimizer-custom>(?wkt)) }";
+			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+			QueryRoot root = new QueryRoot(parsed.getTupleExpr());
+			new FilterOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+			List<Filter> filters = new ArrayList<>();
+			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Filter node) {
+					filters.add(node);
+					super.meet(node);
+				}
+			});
+			assertEquals(2, filters.size(), "conjunction must be split into two filters:\n" + root);
+			for (Filter filter : filters) {
+				assertInstanceOf(StatementPattern.class, filter.getArg(),
+						"each conjunct must sit directly on the pattern binding its variable:\n" + root);
+			}
+		} finally {
+			FunctionRegistry.getInstance().remove(custom);
+		}
 	}
 }

@@ -19,6 +19,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -308,10 +309,11 @@ class LmdbOperatorFeedbackPlanningTest {
 
 			String query = filteredLeftJoinFanoutQuery();
 			Filter filter = firstFilter(query);
-			store.getBackingStore()
-					.getEvaluationStatistics()
-					.recordFilterOutcome(filter, ORG_COUNT * PERSONS_PER_ORG_WITH_POSITION_GT_2,
-							ORG_COUNT * (PERSONS_PER_ORG - PERSONS_PER_ORG_WITH_POSITION_GT_2));
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			statistics.bindExecutionSnapshot(OptionalLong.of(0L)); // observation from a committed query
+			statistics.recordFilterOutcome(filter, ORG_COUNT * PERSONS_PER_ORG_WITH_POSITION_GT_2,
+					ORG_COUNT * (PERSONS_PER_ORG - PERSONS_PER_ORG_WITH_POSITION_GT_2));
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				assertEquals(EXPECTED_FILTERED_LEFT_JOIN_ROWS, count(connection, query));

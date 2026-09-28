@@ -512,6 +512,13 @@ class FrontierStatisticsBuilderTest {
 							snapshot.snapshotEpoch(),
 							new FrontierJoinProbe(left, leftComponent, right, rightComponent));
 					String coordinates = leftComponent + "->" + rightComponent;
+					if (exact == 0L && estimate.fallbackReason() == FrontierFallbackReason.CONFIDENCE_TOO_WIDE) {
+						/*
+						 * An empty role pair that no exact structure proves empty is a typed unknown: a Fast-AGMS
+						 * median clamped to zero is signed collision noise, not evidence of emptiness.
+						 */
+						continue;
+					}
 					assertEquals(FrontierFallbackReason.NONE, estimate.fallbackReason(), coordinates);
 					assertTrue(estimate.source().startsWith("frontier-v2-"),
 							coordinates + ", source=" + estimate.source());

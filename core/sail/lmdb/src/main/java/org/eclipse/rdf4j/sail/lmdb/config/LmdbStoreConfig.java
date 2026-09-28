@@ -359,6 +359,90 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	/**
+	 * @deprecated Per-column sketch bucket counts are no longer configurable; the Frontier synopsis sizes itself from
+	 *             {@link #getSketchEstimatorMemoryBudgetBytes()}. Kept for binary compatibility, always returns
+	 *             {@code -1} (unset).
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public int getSketchEstimatorSubjectBucketCount() {
+		return -1;
+	}
+
+	/**
+	 * @deprecated No-op kept for binary compatibility; see {@link #getSketchEstimatorSubjectBucketCount()}.
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public LmdbStoreConfig setSketchEstimatorSubjectBucketCount(int sketchEstimatorSubjectBucketCount) {
+		return this;
+	}
+
+	/**
+	 * @deprecated No-op kept for binary compatibility; see {@link #getSketchEstimatorSubjectBucketCount()}.
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public int getSketchEstimatorPredicateBucketCount() {
+		return -1;
+	}
+
+	/**
+	 * @deprecated No-op kept for binary compatibility; see {@link #getSketchEstimatorSubjectBucketCount()}.
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public LmdbStoreConfig setSketchEstimatorPredicateBucketCount(int sketchEstimatorPredicateBucketCount) {
+		return this;
+	}
+
+	/**
+	 * @deprecated No-op kept for binary compatibility; see {@link #getSketchEstimatorSubjectBucketCount()}.
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public int getSketchEstimatorObjectBucketCount() {
+		return -1;
+	}
+
+	/**
+	 * @deprecated No-op kept for binary compatibility; see {@link #getSketchEstimatorSubjectBucketCount()}.
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public LmdbStoreConfig setSketchEstimatorObjectBucketCount(int sketchEstimatorObjectBucketCount) {
+		return this;
+	}
+
+	/**
+	 * @deprecated No-op kept for binary compatibility; see {@link #getSketchEstimatorSubjectBucketCount()}.
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public int getSketchEstimatorContextBucketCount() {
+		return -1;
+	}
+
+	/**
+	 * @deprecated No-op kept for binary compatibility; see {@link #getSketchEstimatorSubjectBucketCount()}.
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public LmdbStoreConfig setSketchEstimatorContextBucketCount(int sketchEstimatorContextBucketCount) {
+		return this;
+	}
+
+	/**
+	 * @deprecated Context-pair sketches were removed together with the per-column sketch estimator. Kept for binary
+	 *             compatibility, always returns {@code false}.
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public boolean getSketchEstimatorContextPairSketchesEnabled() {
+		return false;
+	}
+
+	/**
+	 * @deprecated No-op kept for binary compatibility; see {@link #getSketchEstimatorContextPairSketchesEnabled()}.
+	 */
+	@Deprecated(since = "6.1.0", forRemoval = true)
+	public LmdbStoreConfig setSketchEstimatorContextPairSketchesEnabled(
+			boolean sketchEstimatorContextPairSketchesEnabled) {
+		return this;
+	}
+
 	public long getSketchEstimatorThrottleEveryN() {
 		return sketchEstimatorThrottleEveryN;
 	}

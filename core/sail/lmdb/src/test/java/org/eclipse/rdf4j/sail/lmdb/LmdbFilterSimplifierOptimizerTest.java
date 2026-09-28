@@ -24,6 +24,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -43,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -50,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -670,6 +673,89 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
+	void keepsBooleanFilterWhenGuaranteeLacksCanonicalBooleanFact() {
+		Filter filter = new Filter(statementPatternWithPredicate("sensor",
+				"http://example.com/theme/grid/measuredValue", "value"),
+				compareValue("value", VF.createLiteral(true)));
+		QueryRoot root = new QueryRoot(filter);
+
+		// " true " is a valid xsd:boolean (whiteSpace=collapse) that value-equals true but is neither of the
+		// canonical stored terms; a predicate that has observed it must keep the value-equality filter.
+		RdfTermDomain guarantee = RdfTermDomain.classify(VF.createLiteral("1", XSD.BOOLEAN))
+				.joinObserved(RdfTermDomain.classify(VF.createLiteral(" true ", XSD.BOOLEAN)));
+		assertTrue(guarantee.hasDatatype(CoreDatatype.XSD.BOOLEAN));
+		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.50d, guarantee))
+				.optimize(root, null, null);
+
+		assertTrue(containsFilter(root.getArg()), () -> "boolean filter must survive: " + root.getArg());
+		assertFalse(containsBindingSetAssignment(root.getArg()), () -> "no anchor may replace it: " + root.getArg());
+	}
+
+	@Test
+	void expandsCanonicalIntegerEqualityAnchorAndDropsFilter() {
+		Filter filter = new Filter(statementPatternWithPredicate("sensor",
+				"http://example.com/theme/grid/measuredValue", "value"),
+				compareValue("value", VF.createLiteral("7", XSD.INT)));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.50d,
+				RdfTermDomain.CANONICAL_INTEGER)).optimize(root, null, null);
+
+		assertFalse(containsFilter(root.getArg()), () -> "value equality may drop the filter: " + root.getArg());
+		Set<Value> anchored = anchoredValues(root.getArg(), "value");
+		assertTrue(anchored.contains(VF.createLiteral("7", XSD.INT)), () -> "anchored=" + anchored);
+		assertTrue(anchored.contains(VF.createLiteral("7", XSD.INTEGER)), () -> "anchored=" + anchored);
+	}
+
+	@Test
+	void retainsSameTermFilterWhenIntegerAnchorIsValueExpanded() {
+		Filter filter = new Filter(statementPatternWithPredicate("sensor",
+				"http://example.com/theme/grid/measuredValue", "value"),
+				new SameTerm(new Var("value"), new ValueConstant(VF.createLiteral("7", XSD.INT))));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.50d,
+				RdfTermDomain.CANONICAL_INTEGER)).optimize(root, null, null);
+
+		// sameTerm is term identity: the value-equal family {7^^int, 7^^integer, ...} is a superset that may
+		// pre-filter, but the sameTerm condition itself must be evaluated on every surviving row.
+		assertTrue(containsFilter(root.getArg()), () -> "sameTerm filter must survive: " + root.getArg());
+		Set<Value> anchored = anchoredValues(root.getArg(), "value");
+		assertTrue(anchored.contains(VF.createLiteral("7", XSD.INT)), () -> "anchored=" + anchored);
+	}
+
+	@Test
+	void retainsSameTermFilterWhenBooleanAnchorIsValueExpanded() {
+		Filter filter = new Filter(statementPatternWithPredicate("sensor",
+				"http://example.com/theme/grid/measuredValue", "value"),
+				new SameTerm(new Var("value"), new ValueConstant(VF.createLiteral(true))));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.50d,
+				RdfTermDomain.classify(VF.createLiteral("1", XSD.BOOLEAN)))).optimize(root, null, null);
+
+		assertTrue(containsFilter(root.getArg()), () -> "sameTerm filter must survive: " + root.getArg());
+	}
+
+	@Test
+	void retainsMixedSameTermDisjunctionFilterWithValueExpandedAnchor() {
+		Filter filter = new Filter(statementPatternWithPredicate("sensor",
+				"http://example.com/theme/grid/measuredValue", "value"),
+				new Or(new SameTerm(new Var("value"), new ValueConstant(VF.createLiteral("7", XSD.INT))),
+						compareValue("value", VF.createLiteral("8", XSD.INT))));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.50d,
+				RdfTermDomain.CANONICAL_INTEGER)).optimize(root, null, null);
+
+		assertTrue(containsFilter(root.getArg()), () -> "mixed disjunction must survive: " + root.getArg());
+		Set<Value> anchored = anchoredValues(root.getArg(), "value");
+		// The `= 8` disjunct keeps its full value-equal family so no value-equal row is lost by the anchor.
+		assertTrue(anchored.contains(VF.createLiteral("8", XSD.INT)), () -> "anchored=" + anchored);
+		assertTrue(anchored.contains(VF.createLiteral("8", XSD.INTEGER)), () -> "anchored=" + anchored);
+	}
+
+	@Test
 	void materializesCanonicalDateFilterAsExactValue() {
 		Filter filter = new Filter(statementPatternWithPredicate("sensor",
 				"http://example.com/theme/grid/measuredValue", "value"),
@@ -1009,6 +1095,178 @@ class LmdbFilterSimplifierOptimizerTest {
 		assertTrue(containsBindingSetAssignmentFor(topJoin.getLeftArg(), "optName"));
 		assertFalse(containsBindingSetAssignmentFor(topJoin.getRightArg(), "optName"));
 		assertFalse(containsFilter(topJoin));
+	}
+
+	@Test
+	void keepsNullRejectingOptionalInsideExistsWhenWitnessIsBoundByOuterRow() {
+		Filter inner = new Filter(new LeftJoin(statementPattern("s", "a", "x"), statementPattern("x", "b", "w")),
+				compareValue("w", VF.createIRI("urn:c")));
+		QueryRoot root = new QueryRoot(new Filter(statementPattern("s", "p", "w"), new Exists(inner)));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter outer = assertInstanceOf(Filter.class, root.getArg(), () -> root.getArg().toString());
+		Exists exists = assertInstanceOf(Exists.class, outer.getCondition());
+		assertTrue(containsNodeOfType(exists.getSubQuery(), LeftJoin.class),
+				() -> "The correlated witness ?w is substituted from the outer row; the OPTIONAL must survive:\n"
+						+ root.getArg());
+	}
+
+	@Test
+	void keepsNullRejectingOptionalInsideNotExistsWhenWitnessIsBoundByOuterRow() {
+		Filter inner = new Filter(new LeftJoin(statementPattern("s", "a", "x"), statementPattern("x", "b", "w")),
+				compareValue("w", VF.createIRI("urn:c")));
+		QueryRoot root = new QueryRoot(new Filter(statementPattern("s", "p", "w"), new Not(new Exists(inner))));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter outer = assertInstanceOf(Filter.class, root.getArg(), () -> root.getArg().toString());
+		Not not = assertInstanceOf(Not.class, outer.getCondition());
+		Exists exists = assertInstanceOf(Exists.class, not.getArg());
+		assertTrue(containsNodeOfType(exists.getSubQuery(), LeftJoin.class), () -> root.getArg().toString());
+	}
+
+	@Test
+	void keepsNullRejectingOptionalInsideLateralWhenWitnessIsBoundByLeftRow() {
+		Filter right = new Filter(new LeftJoin(statementPattern("s", "a", "x"), statementPattern("x", "b", "w")),
+				compareValue("w", VF.createIRI("urn:c")));
+		QueryRoot root = new QueryRoot(new Lateral(statementPattern("s", "p", "w"), right));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Lateral lateral = assertInstanceOf(Lateral.class, root.getArg(), () -> root.getArg().toString());
+		assertTrue(containsNodeOfType(lateral.getRightArg(), LeftJoin.class), () -> root.getArg().toString());
+	}
+
+	@Test
+	void keepsNullRejectingOptionalInsideJoinRightArgumentWhenWitnessIsBoundByLeftRow() {
+		Filter right = new Filter(new LeftJoin(statementPattern("s", "a", "x"), statementPattern("x", "b", "w")),
+				compareValue("w", VF.createIRI("urn:c")));
+		QueryRoot root = new QueryRoot(new Join(statementPattern("s", "p", "w"), right));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Join join = assertInstanceOf(Join.class, root.getArg(), () -> root.getArg().toString());
+		assertTrue(containsNodeOfType(join.getRightArg(), LeftJoin.class), () -> root.getArg().toString());
+	}
+
+	@Test
+	void rewritesNullRejectingOptionalInsideExistsWhenWitnessIsNotOuterVisible() {
+		Filter inner = new Filter(new LeftJoin(statementPattern("s", "a", "x"), statementPattern("x", "b", "w")),
+				compareValue("w", VF.createIRI("urn:c")));
+		QueryRoot root = new QueryRoot(new Filter(statementPattern("s", "p", "y"), new Exists(inner)));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter outer = assertInstanceOf(Filter.class, root.getArg(), () -> root.getArg().toString());
+		Exists exists = assertInstanceOf(Exists.class, outer.getCondition());
+		assertFalse(containsNodeOfType(exists.getSubQuery(), LeftJoin.class), () -> root.getArg().toString());
+	}
+
+	@Test
+	void keepsOptionalWhenMandatoryAnchorBindingIsNotAssuredByNestedGroupRhs() {
+		LeftJoin nestedGroup = new LeftJoin(statementPattern("s", "a", "x"), statementPattern("x", "b", "w"));
+		nestedGroup.setVariableScopeChange(true);
+		Filter filter = new Filter(new LeftJoin(statementPattern("s", "p", "o"), nestedGroup),
+				compareValue("w", VF.createIRI("urn:c")));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertTrue(containsNodeOfType(root.getArg(), LeftJoin.class), () -> root.getArg().toString());
+		assertFalse(containsBindingSetAssignmentFor(root.getArg(), "w"),
+				() -> "A VALUES anchor would bind ?w on unmatched OPTIONAL rows:\n" + root.getArg());
+	}
+
+	@Test
+	void keepsOptionalWhenMandatoryAnchorBindingIsNotAssuredBySubSelectRhs() {
+		Projection subSelect = new Projection(
+				new LeftJoin(statementPattern("s", "a", "x"), statementPattern("x", "b", "w")),
+				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("w")));
+		subSelect.setSubquery(true);
+		Filter filter = new Filter(new LeftJoin(statementPattern("s", "p", "o"), subSelect),
+				compareValue("w", VF.createIRI("urn:c")));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertTrue(containsNodeOfType(root.getArg(), LeftJoin.class), () -> root.getArg().toString());
+		assertFalse(containsBindingSetAssignmentFor(root.getArg(), "w"), () -> root.getArg().toString());
+	}
+
+	@Test
+	void keepsOptionalWhenMandatoryAnchorBindingIsBoundByOnlyOneUnionBranch() {
+		Union union = new Union(statementPattern("s", "a", "x"), statementPattern("s", "d", "w"));
+		union.setVariableScopeChange(true);
+		Filter filter = new Filter(new LeftJoin(statementPattern("s", "p", "o"), union),
+				compareValue("w", VF.createIRI("urn:c")));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertTrue(containsNodeOfType(root.getArg(), LeftJoin.class), () -> root.getArg().toString());
+		assertFalse(containsBindingSetAssignmentFor(root.getArg(), "w"), () -> root.getArg().toString());
+	}
+
+	@Test
+	void rewritesMandatoryAnchorWhenEveryUnionBranchAssuresTheBinding() {
+		Union union = new Union(statementPattern("s", "b", "w"), statementPattern("s", "d", "w"));
+		union.setVariableScopeChange(true);
+		Filter filter = new Filter(new LeftJoin(statementPattern("s", "p", "o"), union),
+				compareValue("w", VF.createIRI("urn:c")));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		assertFalse(containsNodeOfType(root.getArg(), LeftJoin.class), () -> root.getArg().toString());
+		assertTrue(containsBindingSetAssignmentFor(root.getArg(), "w"), () -> root.getArg().toString());
+	}
+
+	@Test
+	void keepsOptionalWhenMandatoryAnchorBindingIsPreboundByIncomingBindings() {
+		StatementPattern optional = statementPattern("s", "b", "w");
+		optional.setVariableScopeChange(true);
+		Filter filter = new Filter(new LeftJoin(statementPattern("s", "p", "o"), optional),
+				compareValue("w", VF.createIRI("urn:c")));
+		QueryRoot root = new QueryRoot(filter);
+		MapBindingSet incoming = new MapBindingSet(1);
+		incoming.addBinding("w", VF.createIRI("urn:c"));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, incoming);
+
+		assertTrue(containsNodeOfType(root.getArg(), LeftJoin.class), () -> root.getArg().toString());
+		assertFalse(containsBindingSetAssignmentFor(root.getArg(), "w"), () -> root.getArg().toString());
+	}
+
+	@Test
+	void keepsOptionalWhenMandatoryAnchorBindingIsBoundByEnclosingExistsRow() {
+		StatementPattern optional = statementPattern("x", "b", "w");
+		optional.setVariableScopeChange(true);
+		Filter inner = new Filter(new LeftJoin(statementPattern("s", "a", "x"), optional),
+				compareValue("w", VF.createIRI("urn:c")));
+		QueryRoot root = new QueryRoot(new Filter(statementPattern("s", "p", "w"), new Exists(inner)));
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter outer = assertInstanceOf(Filter.class, root.getArg(), () -> root.getArg().toString());
+		Exists exists = assertInstanceOf(Exists.class, outer.getCondition());
+		assertTrue(containsNodeOfType(exists.getSubQuery(), LeftJoin.class), () -> root.getArg().toString());
+		assertFalse(containsBindingSetAssignmentFor(exists.getSubQuery(), "w"), () -> root.getArg().toString());
+	}
+
+	private static boolean containsNodeOfType(TupleExpr tupleExpr, Class<?> type) {
+		boolean[] found = { false };
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (type.isInstance(node)) {
+					found[0] = true;
+					return;
+				}
+				super.meetNode(node);
+			}
+		});
+		return found[0];
 	}
 
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {

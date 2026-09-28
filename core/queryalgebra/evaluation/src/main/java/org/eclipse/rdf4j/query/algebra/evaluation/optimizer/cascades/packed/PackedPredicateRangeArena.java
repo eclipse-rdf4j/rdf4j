@@ -19,8 +19,10 @@ import java.util.Arrays;
 @PackedHotPath
 final class PackedPredicateRangeArena {
 
-	private static final int FLAG_INTEGER_BOUNDS = 1 << 11;
-	private static final int FLAG_FINITE = 1 << 12;
+	// bit layout of stateAndBits: state 0-1, kinds 2-4, languages 5-6, universal facts 7-11, flags 12-13
+	private static final int UNIVERSAL_BITS_MASK = 0x1F;
+	private static final int FLAG_INTEGER_BOUNDS = 1 << 12;
+	private static final int FLAG_FINITE = 1 << 13;
 
 	private int size;
 	private int[] stateAndBits = new int[9];
@@ -78,7 +80,7 @@ final class PackedPredicateRangeArena {
 	}
 
 	int universalBits(int rangeId) {
-		return (stateAndBits(rangeId) >>> 7) & 0xF;
+		return (stateAndBits(rangeId) >>> 7) & UNIVERSAL_BITS_MASK;
 	}
 
 	long datatypeBits(int rangeId) {
@@ -132,7 +134,7 @@ final class PackedPredicateRangeArena {
 		int packed = range.state() & 0x3;
 		packed |= (range.kindBits() & 0x7) << 2;
 		packed |= (range.languageBits() & 0x3) << 5;
-		packed |= (range.universalBits() & 0xF) << 7;
+		packed |= (range.universalBits() & UNIVERSAL_BITS_MASK) << 7;
 		if (range.hasIntegerBounds()) {
 			packed |= FLAG_INTEGER_BOUNDS;
 		}

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 
@@ -46,6 +47,16 @@ public interface SailDataset extends SailClosable {
 	 */
 	default OptionalLong getSnapshotEpoch() {
 		return OptionalLong.empty();
+	}
+
+	/**
+	 * Returns this dataset, or a dataset it delegates to or is derived from, as {@code type} when one exists. Stores
+	 * use this to reach their native read view behind composing or overlaying wrappers (for example to let query
+	 * planning reuse the read transaction the query already holds). The default returns this dataset when it is an
+	 * instance of {@code type}, otherwise empty; wrappers forward to the datasets they wrap.
+	 */
+	default <T> Optional<T> unwrap(Class<T> type) {
+		return type.isInstance(this) ? Optional.of(type.cast(this)) : Optional.empty();
 	}
 
 	/**

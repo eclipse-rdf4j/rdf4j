@@ -281,6 +281,52 @@ class RdfTermDomainClassificationTest {
 		assertTrue(canonicalOnly.finiteValues().contains(canonical));
 	}
 
+	@Test
+	void classifiesCanonicalBooleanFacts() {
+		for (String canonical : List.of("true", "false", "1", "0")) {
+			RdfTermDomain guarantee = RdfTermDomain.classify(VF.createLiteral(canonical, XSD.BOOLEAN));
+			assertHas(guarantee, RdfTermDomain.Fact.LITERAL);
+			assertHas(guarantee, RdfTermDomain.Fact.LITERAL_WITHOUT_LANGUAGE);
+			assertHasDatatype(guarantee, CoreDatatype.XSD.BOOLEAN);
+			assertHas(guarantee, RdfTermDomain.Fact.CANONICAL_BOOLEAN);
+		}
+		// valid under whiteSpace=collapse / value-equal to true, but not one of the two stored canonical terms
+		for (String variant : List.of(" true ", "TRUE", "01", "true\n")) {
+			RdfTermDomain guarantee = RdfTermDomain.classify(VF.createLiteral(variant, XSD.BOOLEAN));
+			assertHasDatatype(guarantee, CoreDatatype.XSD.BOOLEAN);
+			assertFalse(guarantee.has(RdfTermDomain.Fact.CANONICAL_BOOLEAN),
+					() -> "'" + variant + "' must not be classified as a canonical boolean: " + guarantee);
+		}
+		assertFalse(RdfTermDomain.classify(VF.createLiteral("true")).has(RdfTermDomain.Fact.CANONICAL_BOOLEAN),
+				"a plain string 'true' is not an xsd:boolean");
+	}
+
+	@Test
+	void observedJoinsDropCanonicalBooleanWhenAnyStoredFormIsNotCanonical() {
+		RdfTermDomain canonical = RdfTermDomain.classify(VF.createLiteral("1", XSD.BOOLEAN))
+				.joinObserved(RdfTermDomain.classify(VF.createLiteral("false", XSD.BOOLEAN)));
+		assertHas(canonical, RdfTermDomain.Fact.CANONICAL_BOOLEAN);
+
+		RdfTermDomain degraded = canonical
+				.joinObserved(RdfTermDomain.classify(VF.createLiteral(" true ", XSD.BOOLEAN)));
+		assertHasDatatype(degraded, CoreDatatype.XSD.BOOLEAN);
+		assertFalse(degraded.has(RdfTermDomain.Fact.CANONICAL_BOOLEAN),
+				"a single non-canonical stored boolean must void the canonical-boolean guarantee");
+
+		RdfTermDomain mixed = canonical.joinObserved(RdfTermDomain.classify(VF.createLiteral("text")));
+		assertFalse(mixed.has(RdfTermDomain.Fact.CANONICAL_BOOLEAN),
+				"a universal fact cannot survive a stored value of another datatype");
+	}
+
+	@Test
+	void queryMeetDetectsCanonicalBooleanWithoutBooleanDatatypeAsContradiction() {
+		RdfTermDomain canonicalBoolean = RdfTermDomain.classify(VF.createLiteral("true", XSD.BOOLEAN));
+		RdfTermDomain intLiteral = RdfTermDomain.classify(VF.createLiteral("7", XSD.INT));
+		assertTrue(canonicalBoolean.meetRequired(intLiteral).isEmpty(),
+				"CANONICAL_BOOLEAN with a datatype set lacking xsd:boolean is contradictory");
+		assertFalse(canonicalBoolean.meetRequired(RdfTermDomain.LITERAL).isEmpty());
+	}
+
 	private static void assertHas(RdfTermDomain guarantee, RdfTermDomain.Fact fact) {
 		assertTrue(guarantee.has(fact), () -> "Expected " + guarantee + " to contain " + fact);
 	}

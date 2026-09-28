@@ -518,7 +518,7 @@ class LmdbPredicateObjectDomainIndexTest {
 
 			OptimizerSnapshot snapshot = explainOptimized(repository, query);
 			assertTrue(snapshot.plan.contains("optimizer.objectGuarantee=RdfTermDomain[LITERAL, "
-					+ "LITERAL_WITHOUT_LANGUAGE, BOOLEAN]"), snapshot.plan);
+					+ "LITERAL_WITHOUT_LANGUAGE, CANONICAL_BOOLEAN, BOOLEAN]"), snapshot.plan);
 			assertTrue(snapshot.plan.contains("BindingSetAssignment"), snapshot.plan);
 			assertTrue(snapshot.plan.contains("selected=finite-anchor:o"), snapshot.plan);
 			assertTrue(snapshot.plan.contains("\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>"),
@@ -528,6 +528,140 @@ class LmdbPredicateObjectDomainIndexTest {
 			assertEquals(1, countResults(repository, query));
 		} finally {
 			repository.shutDown();
+		}
+	}
+
+	@Test
+	void booleanPredicateLosesCanonicalGuaranteeAfterNonCanonicalLexicalCommit(@TempDir File dataDir)
+			throws Exception {
+		IRI predicate = VF.createIRI("http://example.com/flag");
+		String query = """
+				SELECT ?s WHERE {
+				  ?s <http://example.com/flag> ?o .
+				  FILTER(?o = true)
+				}
+				""";
+		// fresh query text after the commit so the case does not depend on plan-cache invalidation (review 3.3.2)
+		String laterQuery = """
+				SELECT ?s WHERE {
+				  ?s <http://example.com/flag> ?flag .
+				  FILTER(?flag = true)
+				}
+				""";
+
+		SailRepository repository = repository(dataDir);
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(VF.createIRI("http://example.com/s1"), predicate, VF.createLiteral("1", XSD.BOOLEAN));
+				connection.add(VF.createIRI("http://example.com/s2"), predicate,
+						VF.createLiteral("false", XSD.BOOLEAN));
+			}
+			makeLmdbOptimizerReady(repository);
+			assertHas(guarantee(repository, predicate), RdfTermDomain.Fact.CANONICAL_BOOLEAN);
+			assertEquals(1, countResults(repository, query));
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(VF.createIRI("http://example.com/s3"), predicate,
+						VF.createLiteral(" true ", XSD.BOOLEAN));
+			}
+			RdfTermDomain degraded = guarantee(repository, predicate);
+			assertHasDatatype(degraded, CoreDatatype.XSD.BOOLEAN);
+			assertFalse(degraded.has(RdfTermDomain.Fact.CANONICAL_BOOLEAN),
+					() -> "a stored ' true ' must void the canonical-boolean guarantee: " + degraded);
+
+			OptimizerSnapshot snapshot = explainOptimized(repository, laterQuery);
+			// Without CANONICAL_BOOLEAN no lexical-equivalence anchor may replace the filter. An anchor enumerating
+			// the exact stored terms ("1", " true ") is still allowed, but only as a pre-filter next to the retained
+			// value-equality condition (proof fact originalFilterRetained).
+			assertTrue(snapshot.plan.contains("Compare (=)"),
+					() -> "without CANONICAL_BOOLEAN the value-equality filter must be retained:\n" + snapshot.plan);
+			assertTrue(!snapshot.plan.contains("selected=finite-anchor:flag")
+					|| snapshot.plan.contains("originalFilterRetained"),
+					() -> "a finite anchor may only pre-filter the retained condition:\n" + snapshot.plan);
+			assertEquals(2, countResults(repository, laterQuery));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void booleanGuaranteeUpgradeRebuildsCanonicalBooleanFact(@TempDir File dataDir) throws Exception {
+		IRI predicate = VF.createIRI("http://example.com/flag");
+		String query = """
+				SELECT ?s WHERE {
+				  ?s <http://example.com/flag> ?o .
+				  FILTER(?o = true)
+				}
+				""";
+
+		SailRepository repository = repository(dataDir);
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(VF.createIRI("http://example.com/s1"), predicate, VF.createLiteral("1", XSD.BOOLEAN));
+				connection.add(VF.createIRI("http://example.com/s2"), predicate,
+						VF.createLiteral("false", XSD.BOOLEAN));
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		// a store written by a release without the boolean canonicity fact: the metadata version differs
+		downgradeGuaranteeMetadata(dataDir);
+
+		SailRepository rebuilt = repository(dataDir);
+		try {
+			assertHas(guarantee(rebuilt, predicate), RdfTermDomain.Fact.CANONICAL_BOOLEAN);
+			makeLmdbOptimizerReady(rebuilt);
+			OptimizerSnapshot snapshot = explainOptimized(rebuilt, query);
+			assertTrue(snapshot.plan.contains("selected=finite-anchor:o"), snapshot.plan);
+			assertEquals(1, countResults(rebuilt, query));
+		} finally {
+			rebuilt.shutDown();
+		}
+	}
+
+	@Test
+	void booleanGuaranteeUpgradeWithAutoRebuildDisabledClearsGuaranteesAndKeepsFilter(@TempDir File dataDir)
+			throws Exception {
+		IRI predicate = VF.createIRI("http://example.com/flag");
+		String query = """
+				SELECT ?s WHERE {
+				  ?s <http://example.com/flag> ?o .
+				  FILTER(?o = true)
+				}
+				""";
+
+		SailRepository repository = repository(dataDir);
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(VF.createIRI("http://example.com/s1"), predicate,
+						VF.createLiteral(" true ", XSD.BOOLEAN));
+				connection.add(VF.createIRI("http://example.com/s2"), predicate,
+						VF.createLiteral("false", XSD.BOOLEAN));
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		downgradeGuaranteeMetadata(dataDir);
+
+		SailRepository reopened = repository(dataDir,
+				configWith(PREDICATE_GUARANTEE_INDEX_AUTO_REBUILD, VF.createLiteral(false)));
+		try {
+			// Without an automatic rebuild the stale guarantees are cleared rather than served: the planner must then
+			// keep the filter, which still finds the whitespace lexical form by value equality.
+			assertTrue(knownGuarantee(reopened, predicate).isEmpty(),
+					() -> "stale guarantees must not be served: " + knownGuarantee(reopened, predicate));
+			makeLmdbOptimizerReady(reopened);
+			OptimizerSnapshot snapshot = explainOptimized(reopened, query);
+			assertTrue(snapshot.plan.contains("Compare (=)"),
+					() -> "without a guarantee the value-equality filter must be retained:\n" + snapshot.plan);
+			assertTrue(!snapshot.plan.contains("selected=finite-anchor:o")
+					|| snapshot.plan.contains("originalFilterRetained"),
+					() -> "a finite anchor may only pre-filter the retained condition:\n" + snapshot.plan);
+			assertEquals(1, countResults(reopened, query));
+		} finally {
+			reopened.shutDown();
 		}
 	}
 

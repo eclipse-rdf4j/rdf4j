@@ -343,6 +343,7 @@ class LmdbPackedPlanCacheTest {
 
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics();
+			statistics.bindExecutionSnapshot(OptionalLong.of(0L)); // committed-snapshot observation
 			statistics.recordFilterOutcome(source, 3L, 1L);
 
 			CascadesPlan revised = plan(store, source.clone());
@@ -359,6 +360,7 @@ class LmdbPackedPlanCacheTest {
 		try {
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics();
+			statistics.bindExecutionSnapshot(OptionalLong.of(0L)); // committed-snapshot observation
 			LmdbEstimatorRuntime runtime = statistics.estimatorRuntime();
 			LmdbPackedCostModel model = new LmdbPackedCostModel(runtime);
 			long initialProviderVersion = model.providerVersion();
