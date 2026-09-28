@@ -517,6 +517,8 @@ class CancellableOperationCoordinatorTest {
 		releaseRemote.countDown();
 		assertThat(remoteFinished.await(5, TimeUnit.SECONDS)).isTrue();
 		assertThat(forwarded).hasValue(1);
+		// remoteFinished fires before cleanup; a by-id cancellation may join the attempt or find it already removed.
+		coordinator.cancel("request-async");
 		assertThat(coordinator.cancel("request-async")).isFalse();
 	}
 
