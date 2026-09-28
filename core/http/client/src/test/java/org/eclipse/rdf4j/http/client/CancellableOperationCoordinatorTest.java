@@ -508,18 +508,42 @@ class CancellableOperationCoordinatorTest {
 				remoteFinished.countDown();
 			}
 		});
+		ExecutorService executor = Executors.newSingleThreadExecutor();
 
-		assertThat(coordinator.cancelAsync(handle)).isTrue();
-		coordinator.complete(handle);
-		assertThat(remoteStarted.await(5, TimeUnit.SECONDS)).isTrue();
-		assertThat(coordinator.cancelAsync(handle)).isFalse();
+		try {
+			assertThat(coordinator.cancelAsync(handle)).isTrue();
+			coordinator.complete(handle);
+			assertThat(remoteStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(coordinator.cancelAsync(handle)).isFalse();
+			assertThatThrownBy(() -> coordinator.register("request-async"))
+					.isInstanceOf(IllegalStateException.class)
+					.hasMessage("Request already active: request-async");
 
-		releaseRemote.countDown();
-		assertThat(remoteFinished.await(5, TimeUnit.SECONDS)).isTrue();
-		assertThat(forwarded).hasValue(1);
-		// remoteFinished fires before cleanup; a by-id cancellation may join the attempt or find it already removed.
-		coordinator.cancel("request-async");
-		assertThat(coordinator.cancel("request-async")).isFalse();
+			Future<CancellableOperationCoordinator.Handle> reusableHandle = executor.submit(() -> {
+				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+				while (System.nanoTime() < deadline) {
+					try {
+						return coordinator.register("request-async");
+					} catch (IllegalStateException e) {
+						if (!"Request already active: request-async".equals(e.getMessage())) {
+							throw e;
+						}
+						Thread.onSpinWait();
+					}
+				}
+				throw new AssertionError("Asynchronous cancellation did not release its request id");
+			});
+
+			releaseRemote.countDown();
+			assertThat(remoteFinished.await(5, TimeUnit.SECONDS)).isTrue();
+			CancellableOperationCoordinator.Handle replacement = reusableHandle.get(5, TimeUnit.SECONDS);
+			assertThat(replacement).isNotSameAs(handle);
+			coordinator.complete(replacement);
+			assertThat(forwarded).hasValue(1);
+		} finally {
+			releaseRemote.countDown();
+			executor.shutdownNow();
+		}
 	}
 
 	@Test
