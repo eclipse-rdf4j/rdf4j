@@ -803,6 +803,81 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
+	void optionalNullExtensionResetsOnlyBindingsIntroducedByTheArm() {
+		PatternPlan left = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1D);
+		PatternPlan optional = new PatternPlan(Term.slot(0), Term.constantSlot(1, PRED + 2L), Term.slot(2),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+		SlotPlan plan = new LeftJoinPlan(left, optional);
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshFiveSlotRow(), null);
+		assertNotNull(lowered);
+		LmdbNativeKernelIr.LeftGroup group = lowered.kernel.pipeline.stream()
+				.filter(LmdbNativeKernelIr.LeftGroup.class::isInstance)
+				.map(LmdbNativeKernelIr.LeftGroup.class::cast)
+				.findFirst()
+				.orElseThrow(() -> new AssertionError(lowered.kernel.shapeKey()));
+		int inheritedColumn = columnForEngineSlot(lowered, 1);
+		int optionalColumn = columnForEngineSlot(lowered, 2);
+
+		assertFalse(contains(group.resetColumns(), inheritedColumn),
+				"an unmatched OPTIONAL must retain its already-bound constant-slot binding: "
+						+ lowered.kernel.shapeKey());
+		assertTrue(contains(group.restoreColumns(), inheritedColumn),
+				"an unmatched OPTIONAL must restore the inherited constant-slot value: "
+						+ lowered.kernel.shapeKey());
+		assertTrue(contains(group.resetColumns(), optionalColumn),
+				"an unmatched OPTIONAL must clear values produced only by its right arm: "
+						+ lowered.kernel.shapeKey());
+		assertFalse(contains(group.restoreColumns(), optionalColumn),
+				"a right-only optional output is reset instead of restored: " + lowered.kernel.shapeKey());
+	}
+
+	@Test
+	void optionalNullExtensionPreservesEntryBindingsMaterializedForTheRightArm() {
+		RowState row = freshFiveSlotRow();
+		assertTrue(row.bind(1, PRED + 2L));
+		PatternPlan left = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(3), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1D);
+		PatternPlan optional = new PatternPlan(Term.slot(0), Term.constantSlot(1, PRED + 2L), Term.slot(2),
+				Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+		SlotPlan plan = new LeftJoinPlan(left, optional);
+
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, row, null);
+		assertNotNull(lowered);
+		LmdbNativeKernelIr.LeftGroup group = lowered.kernel.pipeline.stream()
+				.filter(LmdbNativeKernelIr.LeftGroup.class::isInstance)
+				.map(LmdbNativeKernelIr.LeftGroup.class::cast)
+				.findFirst()
+				.orElseThrow(() -> new AssertionError(lowered.kernel.shapeKey()));
+		int inheritedColumn = columnForEngineSlot(lowered, 1);
+
+		assertFalse(contains(group.resetColumns(), inheritedColumn),
+				"an unmatched OPTIONAL must retain the entry binding copied into its output column: "
+						+ lowered.kernel.shapeKey());
+		assertTrue(contains(group.restoreColumns(), inheritedColumn),
+				"the copied entry binding is part of the OPTIONAL caller frame: " + lowered.kernel.shapeKey());
+	}
+
+	private static int columnForEngineSlot(LmdbNativeKernelLowering.Lowered lowered, int engineSlot) {
+		for (int column = 0; column < lowered.bindings.columnEngineSlots.length; column++) {
+			if (lowered.bindings.columnEngineSlots[column] == engineSlot) {
+				return column;
+			}
+		}
+		throw new AssertionError("Missing output column for engine slot " + engineSlot);
+	}
+
+	private static boolean contains(int[] values, int value) {
+		for (int candidate : values) {
+			if (candidate == value) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@Test
 	void optionalEntryBindingCompatibilityLowersAfterTheOptionalPipeline() {
 		SlotPlan plan = new LeftJoinPlan(
 				pattern(Term.slot(0), Term.slot(1)),
@@ -2020,6 +2095,9 @@ class LmdbNativeKernelLoweringTest {
 		LmdbNativeKernelLowering.Lowered lowered = lowerCounting(extension, 1);
 		assertNotNull(lowered);
 		assertEquals(2, countNodes(lowered.kernel, LmdbNativeKernelIr.BindHook.class), lowered.kernel.shapeKey());
+		assertEquals(2, lowered.bindings.bindHooks.length);
+		assertSame(first, lowered.bindings.bindHooks[0].copy.computed);
+		assertSame(second, lowered.bindings.bindHooks[1].copy.computed);
 	}
 
 	@Test
@@ -2033,6 +2111,8 @@ class LmdbNativeKernelLoweringTest {
 		LmdbNativeKernelLowering.Lowered lowered = lowerCounting(extension, 1);
 		assertNotNull(lowered);
 		assertEquals(2, countNodes(lowered.kernel, LmdbNativeKernelIr.BindHook.class), lowered.kernel.shapeKey());
+		assertSame(first, lowered.bindings.bindHooks[0].copy);
+		assertSame(second, lowered.bindings.bindHooks[1].copy);
 	}
 
 	private static int countNodes(LmdbNativeKernelIr.Kernel kernel,

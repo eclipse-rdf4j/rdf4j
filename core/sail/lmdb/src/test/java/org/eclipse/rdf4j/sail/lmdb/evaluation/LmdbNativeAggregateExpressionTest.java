@@ -219,6 +219,39 @@ public class LmdbNativeAggregateExpressionTest {
 		}
 	}
 
+	/** MAX must also skip expression errors while retaining the valid numeric extrema. */
+	@Test
+	public void maxOverExpressionWithNonLiteralInputsMatchesGeneric() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			conn.begin();
+			ValueFactory vf = conn.getValueFactory();
+			IRI val = vf.createIRI(EX, "val");
+			conn.add(vf.createIRI(EX, "s6"), val, vf.createIRI(EX, "someIri"));
+			conn.add(vf.createIRI(EX, "s7"), val, vf.createLiteral("x", "en"));
+			conn.commit();
+		}
+		String query = "SELECT (MAX(?v * 2) AS ?m) WHERE { ?s <" + EX + "val> ?v }";
+		List<BindingSet> generic;
+		String previous = System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+		try {
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+			try (SailRepositoryConnection conn = repository.getConnection()) {
+				generic = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previous);
+			}
+		}
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			List<BindingSet> nativeRows = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			assertThat(nativeRows).as("native vs generic MAX over expression with erroring inputs")
+					.containsExactlyInAnyOrderElementsOf(generic);
+		}
+	}
+
 	/** GROUP_CONCAT over an expression with a separator, in some encounter order. */
 	@Test
 	public void groupConcatOverExpression() {

@@ -2482,7 +2482,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return () -> {
 				long a0 = bind.args.length > 0 ? read(bind.args[0]) : -1L;
 				long a1 = bind.args.length > 1 ? read(bind.args[1]) : -1L;
-				// -1 = the expression errored: the target stays unbound and the row survives.
+				// A CopyBinding hook turns an error into its occupied-null marker when required; raw hooks may
+				// return -1 to leave the target absent while keeping the row.
 				workCounters.recordBind();
 				v[bind.dstCol] = hooks.computeBind(bind.bindId, a0, a1);
 				return next.run();
@@ -3647,7 +3648,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private boolean marginalWeightObserved(int[] channels) {
 		for (int channel : channels) {
 			AggregateOutput output = aggregate.outputs[channel];
-			if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR || v[output.col] != -1L)
+			if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR || KernelHooks.isBoundValue(hooks, v[output.col]))
 				return true;
 		}
 		return false;
@@ -3682,8 +3683,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				groupSink.addChannel(boundedGroupInput, -1, -1L, 1L);
 			for (int channel : channels) {
 				AggregateOutput output = aggregate.outputs[channel];
+				long value = output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? 0L : v[output.col];
 				groupSink.addChannel(boundedGroupInput, channel,
-						output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? 0L : v[output.col], weight);
+						output.kind != LmdbNativeKernelIr.AGG_COUNT_STAR && !KernelHooks.isBoundValue(hooks, value)
+								? -1L
+								: value,
+						weight);
 			}
 			return;
 		}
@@ -3697,11 +3702,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				agC[i][group] = Math.addExact(agC[i][group], weight);
 				break;
 			case LmdbNativeKernelIr.AGG_COUNT:
-				if (value != -1L)
+				if (KernelHooks.isBoundValue(hooks, value))
 					agC[i][group] = Math.addExact(agC[i][group], weight);
 				break;
 			case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
-				if (value != -1L) {
+				if (KernelHooks.isBoundValue(hooks, value)) {
 					if (output.hookDistinct) {
 						hooks.accumulateDistinct(i, group, value);
 					} else {
@@ -3711,12 +3716,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				break;
 			case LmdbNativeKernelIr.AGG_SUM:
 			case LmdbNativeKernelIr.AGG_AVG:
-				if (value != -1L)
+				if (KernelHooks.isBoundValue(hooks, value))
 					hooks.accumulateNumericWeighted(i, group, value, weight);
 				break;
 			case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
 			case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
-				if (value != -1L) {
+				if (KernelHooks.isBoundValue(hooks, value)) {
 					if (output.hookDistinct) {
 						hooks.accumulateDistinct(i, group, value);
 					} else if (agD[i][group].add(value)) {
@@ -3726,8 +3731,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				break;
 			case LmdbNativeKernelIr.AGG_MIN_ID:
 			case LmdbNativeKernelIr.AGG_MAX_ID:
-				if (value != -1L && (!agB[i][group] || hooks.replacesWinner(value, agW[i][group],
-						output.kind == LmdbNativeKernelIr.AGG_MIN_ID))) {
+				if (KernelHooks.isBoundValue(hooks, value)
+						&& (!agB[i][group] || hooks.replacesWinner(value, agW[i][group],
+								output.kind == LmdbNativeKernelIr.AGG_MIN_ID))) {
 					agW[i][group] = value;
 					agB[i][group] = true;
 				}
@@ -3760,7 +3766,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 									break;
 								}
 								int index = java.util.Arrays.binarySearch(spec.terminalCols, output.col);
-								if (guardScalar(spec.terminalValues[index], values, spec) != -1L)
+								if (KernelHooks.isBoundValue(hooks,
+										guardScalar(spec.terminalValues[index], values, spec)))
 									exact = true;
 							}
 							long reduced = cursor.reduceIndependent(predicate, spec.terminalDependencies, exact);
@@ -3901,7 +3908,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						v[intersect.valueCol] = cursor.value();
 						boolean counted = false;
 						for (AggregateOutput output : aggregate.outputs)
-							if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR || v[output.col] != -1L) {
+							if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR
+									|| KernelHooks.isBoundValue(hooks, v[output.col])) {
 								counted = true;
 								break;
 							}
@@ -3968,6 +3976,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private Op buildLeftGroup(LeftGroup group, Op next, boolean booleanMode) {
 		int flagId = nextLeftGroupId++;
 		int[] resetColumns = group.resetColumns();
+		int[] restoreColumns = group.restoreColumns();
+		long[] saved = new long[restoreColumns.length];
 		// The arm's terminal sets the flag BEFORE running the shared continuation: a right match suppresses the
 		// null arm even when the continuation later rejects every matching row.
 		Op arm = build(group.arm, 0, () -> {
@@ -3975,11 +3985,17 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return next.run();
 		}, booleanMode);
 		return () -> {
+			for (int i = 0; i < restoreColumns.length; i++) {
+				saved[i] = v[restoreColumns[i]];
+			}
 			leftGroupFlags[flagId] = false;
 			if (arm.run()) {
 				return true;
 			}
 			if (!leftGroupFlags[flagId]) {
+				for (int i = 0; i < restoreColumns.length; i++) {
+					v[restoreColumns[i]] = saved[i];
+				}
 				for (int col : resetColumns) {
 					v[col] = -1L;
 				}
@@ -4443,7 +4459,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		} else if (factorCursor != null) {
 			boolean needsWeight = false;
 			for (AggregateOutput output : aggregate.outputs) {
-				if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR || v[output.col] != -1L) {
+				if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR
+						|| KernelHooks.isBoundValue(hooks, v[output.col])) {
 					needsWeight = true;
 					break;
 				}
@@ -4486,7 +4503,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				AggregateOutput output = aggregate.outputs[i];
 				if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) {
 					sgC[i] = Math.addExact(sgC[i], multiplicity);
-				} else if (output.kind == LmdbNativeKernelIr.AGG_COUNT && v[output.col] != -1L) {
+				} else if (output.kind == LmdbNativeKernelIr.AGG_COUNT
+						&& KernelHooks.isBoundValue(hooks, v[output.col])) {
 					sgC[i] = Math.addExact(sgC[i], multiplicity);
 				} else if (output.kind != LmdbNativeKernelIr.AGG_COUNT) {
 					throw new IllegalStateException("non-count output in multiplicity tail");
@@ -4510,7 +4528,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			AggregateOutput output = aggregate.outputs[i];
 			if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) {
 				agC[i][group] = Math.addExact(agC[i][group], multiplicity);
-			} else if (output.kind == LmdbNativeKernelIr.AGG_COUNT && v[output.col] != -1L) {
+			} else if (output.kind == LmdbNativeKernelIr.AGG_COUNT && KernelHooks.isBoundValue(hooks, v[output.col])) {
 				agC[i][group] = Math.addExact(agC[i][group], multiplicity);
 			} else if (output.kind != LmdbNativeKernelIr.AGG_COUNT) {
 				throw new IllegalStateException("non-count output in multiplicity tail");
@@ -4521,8 +4539,11 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private void updateBoundedCounts(long weight) {
 		if (aggregate.groupCols.length == 1 && aggregate.outputs.length == 1
 				&& aggregate.outputs[0].kind != LmdbNativeKernelIr.AGG_COUNT_DISTINCT) {
+			AggregateOutput output = aggregate.outputs[0];
+			long value = output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? 0L : v[output.col];
 			groupSink.addSingleCount(v[aggregate.groupCols[0]],
-					aggregate.outputs[0].kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? 0L : v[aggregate.outputs[0].col],
+					output.kind != LmdbNativeKernelIr.AGG_COUNT_STAR && !KernelHooks.isBoundValue(hooks, value) ? -1L
+							: value,
 					weight);
 			return;
 		}
@@ -4530,7 +4551,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			boundedGroupInput[i] = v[aggregate.groupCols[i]];
 		for (int i = 0; i < aggregate.outputs.length; i++) {
 			AggregateOutput output = aggregate.outputs[i];
-			boundedCountInput[i] = output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? 0L : v[output.col];
+			long value = output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? 0L : v[output.col];
+			boundedCountInput[i] = output.kind != LmdbNativeKernelIr.AGG_COUNT_STAR
+					&& !KernelHooks.isBoundValue(hooks, value) ? -1L
+							: value;
 		}
 		groupSink.add(boundedGroupInput, boundedCountInput, weight);
 	}
@@ -4560,12 +4584,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				agC[i][g]++;
 				break;
 			case LmdbNativeKernelIr.AGG_COUNT:
-				if (value != -1L) {
+				if (KernelHooks.isBoundValue(hooks, value)) {
 					agC[i][g]++;
 				}
 				break;
 			case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
-				if (value != -1L) {
+				if (KernelHooks.isBoundValue(hooks, value)) {
 					if (output.hookDistinct) {
 						hooks.accumulateDistinct(i, g, value);
 					} else if (output.orderedDomain >= 0) {
@@ -4592,31 +4616,31 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 			case LmdbNativeKernelIr.AGG_SUM:
 			case LmdbNativeKernelIr.AGG_AVG:
-				if (value != -1L) {
+				if (KernelHooks.isBoundValue(hooks, value)) {
 					hooks.accumulateNumeric(i, g, value);
 				}
 				break;
 			case LmdbNativeKernelIr.AGG_SUM_DISTINCT:
 			case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
 				if (output.hookDistinct) {
-					if (value != -1L) {
+					if (KernelHooks.isBoundValue(hooks, value)) {
 						hooks.accumulateDistinct(i, g, value);
 					}
-				} else if (value != -1L && agD[i][g].add(value)) {
+				} else if (KernelHooks.isBoundValue(hooks, value) && agD[i][g].add(value)) {
 					hooks.accumulateNumeric(i, g, value);
 				}
 				break;
 			case LmdbNativeKernelIr.AGG_MIN_ID:
 			case LmdbNativeKernelIr.AGG_MAX_ID:
 				// replacesWinner (never an inline compare) so the hooks can refuse distinct-term extrema ties.
-				if (value != -1L && (!agB[i][g]
+				if (KernelHooks.isBoundValue(hooks, value) && (!agB[i][g]
 						|| hooks.replacesWinner(value, agW[i][g], output.kind == LmdbNativeKernelIr.AGG_MIN_ID))) {
 					agW[i][g] = value;
 					agB[i][g] = true;
 				}
 				break;
 			case LmdbNativeKernelIr.AGG_MIN:
-				if (value != -1L && hooks.isNumeric(value)) {
+				if (KernelHooks.isBoundValue(hooks, value) && hooks.isNumeric(value)) {
 					double t = hooks.doubleValue(value);
 					if (!agB[i][g] || t < agM[i][g]) {
 						agM[i][g] = t;
@@ -4625,7 +4649,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 				break;
 			default: // MAX
-				if (value != -1L && hooks.isNumeric(value)) {
+				if (KernelHooks.isBoundValue(hooks, value) && hooks.isNumeric(value)) {
 					double t = hooks.doubleValue(value);
 					if (!agB[i][g] || t > agM[i][g]) {
 						agM[i][g] = t;
@@ -4753,13 +4777,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				sgC[i]++;
 				break;
 			case LmdbNativeKernelIr.AGG_COUNT:
-				if (v[output.col] != -1L) {
+				if (KernelHooks.isBoundValue(hooks, v[output.col])) {
 					sgC[i]++;
 				}
 				break;
 			default: // COUNT_DISTINCT: last-seen run counting (never weighted)
 				long value = v[output.col];
-				if (value != -1L && (!sgB[i] || !keyHooks.sameRdfTerm(sgL[i], value))) {
+				if (KernelHooks.isBoundValue(hooks, value) && (!sgB[i] || !keyHooks.sameRdfTerm(sgL[i], value))) {
 					sgB[i] = true;
 					sgL[i] = value;
 					sgC[i]++;

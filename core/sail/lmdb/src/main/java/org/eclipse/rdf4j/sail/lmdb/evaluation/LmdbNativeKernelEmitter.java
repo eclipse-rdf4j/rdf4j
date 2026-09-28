@@ -321,6 +321,8 @@ final class LmdbNativeKernelEmitter {
 		 * Number of {@code LeftGroup} nodes emitted, each of which owns one {@code lgN} match flag field.
 		 */
 		private int nextLeftGroupId;
+		/** Inherited columns saved by each emitted OPTIONAL container. */
+		private final List<int[]> leftGroupRestoreColumns = new ArrayList<>();
 		/**
 		 * Lexical frames discovered while emitting, used to declare their saved-value and existence fields.
 		 */
@@ -453,6 +455,12 @@ final class LmdbNativeKernelEmitter {
 			return hasPhysicalOperand;
 		}
 
+		private int registerLeftGroup(int[] restoreColumns) {
+			int id = nextLeftGroupId++;
+			leftGroupRestoreColumns.add(restoreColumns.clone());
+			return id;
+		}
+
 		Emission(Kernel kernel) {
 			this.kernel = kernel;
 			this.stride = kernel.stride();
@@ -493,7 +501,7 @@ final class LmdbNativeKernelEmitter {
 						if (!bound.isEmpty()) {
 							bound.append(" || ");
 						}
-						bound.append("v").append(col).append(" != -1L");
+						bound.append("KernelHooks.isBoundValue(hooks, v").append(col).append(")");
 					}
 					// Still create zero-count groups, but do not multiply an unobserved product.
 					weight = "(" + bound + ") ? " + weight + " : 1L";
@@ -1119,6 +1127,14 @@ final class LmdbNativeKernelEmitter {
 			// Emitted after the pipeline has been rendered, so the count is final by the time this runs.
 			for (int i = 0; i < nextLeftGroupId; i++) {
 				source.append("    private boolean lg").append(i).append(";\n");
+				int[] restoreColumns = leftGroupRestoreColumns.get(i);
+				if (restoreColumns.length > 0) {
+					source.append("    private final long[] lgs")
+							.append(i)
+							.append(" = new long[")
+							.append(restoreColumns.length)
+							.append("];\n");
+				}
 			}
 			for (int frame = 0; frame < lexicalFrames.size(); frame++) {
 				source.append("    private boolean lfj").append(frame).append("Exists;\n");
@@ -1458,8 +1474,7 @@ final class LmdbNativeKernelEmitter {
 				source.append("        if (groupSink != null) { groupSink.addSingleCount(v")
 						.append(aggregate.groupCols[0])
 						.append(", ")
-						.append(aggregate.outputs[0].kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? "0L"
-								: "v" + aggregate.outputs[0].col)
+						.append(aggregateInputValue(aggregate.outputs[0]))
 						.append(", ")
 						.append(weight)
 						.append("); return; }\n");
@@ -1477,8 +1492,7 @@ final class LmdbNativeKernelEmitter {
 				source.append("            boundedCountInput[")
 						.append(i)
 						.append("] = ")
-						.append(aggregate.outputs[i].kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? "0L"
-								: "v" + aggregate.outputs[i].col)
+						.append(aggregateInputValue(aggregate.outputs[i]))
 						.append(";\n");
 			}
 			source.append("            groupSink.add(boundedGroupInput, boundedCountInput, ")
@@ -2458,9 +2472,21 @@ final class LmdbNativeKernelEmitter {
 					: hashCount;
 		}
 
+		private static String aggregateInputValue(AggregateOutput output) {
+			if (output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) {
+				return "0L";
+			}
+			String value = "v" + output.col;
+			return "KernelHooks.isBoundValue(hooks, " + value + ") ? " + value + " : -1L";
+		}
+
+		private static String aggregateInputPresent(String value) {
+			return "KernelHooks.isBoundValue(hooks, " + value + ")";
+		}
+
 		private static void emitCountDistinctUpdate(StringBuilder source, AggregateOutput output, int index,
 				String value) {
-			source.append("        if (").append(value).append(" != -1L) {\n");
+			source.append("        if (KernelHooks.isBoundValue(hooks, ").append(value).append(")) {\n");
 			if (output.hookDistinct) {
 				// The sidecar owns the set; the drain emits this group's ordinal so the consumer can union across
 				// partitions and count once at the end. Adding a value twice is idempotent, so the bulk-count tail
@@ -2626,7 +2652,8 @@ final class LmdbNativeKernelEmitter {
 				List<String> terms = new ArrayList<>();
 				for (int channel : channels) {
 					AggregateOutput output = aggregate.outputs[channel];
-					terms.add(output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? "true" : "v" + output.col + " != -1L");
+					terms.add(output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR ? "true"
+							: aggregateInputPresent("v" + output.col));
 				}
 				observed = "(" + String.join(" || ", terms) + ")";
 			}
@@ -2750,9 +2777,7 @@ final class LmdbNativeKernelEmitter {
 					source.append("            groupSink.addChannel(boundedGroupInput, ")
 							.append(channel)
 							.append(", ")
-							.append(aggregate.outputs[channel].kind == LmdbNativeKernelIr.AGG_COUNT_STAR
-									? "0L"
-									: "v" + aggregate.outputs[channel].col)
+							.append(aggregateInputValue(aggregate.outputs[channel]))
 							.append(", n);\n");
 				}
 				source.append("            return;\n        }\n");
@@ -2771,8 +2796,8 @@ final class LmdbNativeKernelEmitter {
 					break;
 				case LmdbNativeKernelIr.AGG_COUNT:
 					source.append("        if (")
-							.append(value)
-							.append(" != -1L) agC")
+							.append(aggregateInputPresent(value))
+							.append(") agC")
 							.append(i)
 							.append("[g] = Math.addExact(agC")
 							.append(i)
@@ -2784,8 +2809,8 @@ final class LmdbNativeKernelEmitter {
 				case LmdbNativeKernelIr.AGG_SUM:
 				case LmdbNativeKernelIr.AGG_AVG:
 					source.append("        if (")
-							.append(value)
-							.append(" != -1L) hooks.accumulateNumericWeighted(")
+							.append(aggregateInputPresent(value))
+							.append(") hooks.accumulateNumericWeighted(")
 							.append(i)
 							.append(", g, ")
 							.append(value)
@@ -2795,16 +2820,16 @@ final class LmdbNativeKernelEmitter {
 				case LmdbNativeKernelIr.AGG_AVG_DISTINCT:
 					if (output.hookDistinct) {
 						source.append("        if (")
-								.append(value)
-								.append(" != -1L) hooks.accumulateDistinct(")
+								.append(aggregateInputPresent(value))
+								.append(") hooks.accumulateDistinct(")
 								.append(i)
 								.append(", g, ")
 								.append(value)
 								.append(");\n");
 					} else {
 						source.append("        if (")
-								.append(value)
-								.append(" != -1L && agD")
+								.append(aggregateInputPresent(value))
+								.append(" && agD")
 								.append(i)
 								.append("[g].add(")
 								.append(value)
@@ -2818,8 +2843,8 @@ final class LmdbNativeKernelEmitter {
 				case LmdbNativeKernelIr.AGG_MIN_ID:
 				case LmdbNativeKernelIr.AGG_MAX_ID:
 					source.append("        if (")
-							.append(value)
-							.append(" != -1L && (!agB")
+							.append(aggregateInputPresent(value))
+							.append(" && (!agB")
 							.append(i)
 							.append("[g] || hooks.replacesWinner(")
 							.append(value)
@@ -2911,8 +2936,8 @@ final class LmdbNativeKernelEmitter {
 					break;
 				case LmdbNativeKernelIr.AGG_COUNT:
 					source.append("        if (")
-							.append(value)
-							.append(" != -1L) {\n")
+							.append(aggregateInputPresent(value))
+							.append(") {\n")
 							.append("            agC")
 							.append(i)
 							.append("[g]++;\n")
@@ -2934,8 +2959,8 @@ final class LmdbNativeKernelEmitter {
 
 				case LmdbNativeKernelIr.AGG_SUM:
 					source.append("        if (")
-							.append(value)
-							.append(" != -1L) {\n")
+							.append(aggregateInputPresent(value))
+							.append(") {\n")
 							.append("            hooks.accumulateNumeric(")
 							.append(i)
 							.append(", g, ")
@@ -2949,8 +2974,8 @@ final class LmdbNativeKernelEmitter {
 						// The sidecar owns the DISTINCT set and performs the final arithmetic after all accepted values
 						// have been merged. Folding a partial sum here would double-count values across partitions.
 						source.append("        if (")
-								.append(value)
-								.append(" != -1L) {\n")
+								.append(aggregateInputPresent(value))
+								.append(") {\n")
 								.append("            hooks.accumulateDistinct(")
 								.append(i)
 								.append(", g, ")
@@ -2960,8 +2985,8 @@ final class LmdbNativeKernelEmitter {
 						break;
 					}
 					source.append("        if (")
-							.append(value)
-							.append(" != -1L && agD")
+							.append(aggregateInputPresent(value))
+							.append(" && agD")
 							.append(i)
 							.append("[g].add(")
 							.append(value)
@@ -2975,8 +3000,8 @@ final class LmdbNativeKernelEmitter {
 					break;
 				case LmdbNativeKernelIr.AGG_AVG:
 					source.append("        if (")
-							.append(value)
-							.append(" != -1L) {\n")
+							.append(aggregateInputPresent(value))
+							.append(") {\n")
 							.append("            hooks.accumulateNumeric(")
 							.append(i)
 							.append(", g, ")
@@ -2988,8 +3013,8 @@ final class LmdbNativeKernelEmitter {
 				case LmdbNativeKernelIr.AGG_MAX_ID:
 					// replacesWinner (not an inline compare) so the hooks can refuse distinct-term extrema ties
 					source.append("        if (")
-							.append(value)
-							.append(" != -1L) {\n")
+							.append(aggregateInputPresent(value))
+							.append(") {\n")
 							.append("            if (!agB")
 							.append(i)
 							.append("[g] || hooks.replacesWinner(")
@@ -3012,8 +3037,8 @@ final class LmdbNativeKernelEmitter {
 					break;
 				case LmdbNativeKernelIr.AGG_MIN:
 					source.append("        if (")
-							.append(value)
-							.append(" != -1L && hooks.isNumeric(")
+							.append(aggregateInputPresent(value))
+							.append(" && hooks.isNumeric(")
 							.append(value)
 							.append(")) {\n")
 							.append("            double t")
@@ -3041,8 +3066,8 @@ final class LmdbNativeKernelEmitter {
 					break;
 				default: // MAX
 					source.append("        if (")
-							.append(value)
-							.append(" != -1L && hooks.isNumeric(")
+							.append(aggregateInputPresent(value))
+							.append(" && hooks.isNumeric(")
 							.append(value)
 							.append(")) {\n")
 							.append("            double t")
@@ -3292,8 +3317,8 @@ final class LmdbNativeKernelEmitter {
 					break;
 				case LmdbNativeKernelIr.AGG_COUNT:
 					source.append("        if (")
-							.append(value)
-							.append(" != -1L) {\n")
+							.append(aggregateInputPresent(value))
+							.append(") {\n")
 							.append("            agC")
 							.append(i)
 							.append(weighted ? " = Math.addExact(agC" + i + ", n);\n" : "++;\n")
@@ -3301,8 +3326,8 @@ final class LmdbNativeKernelEmitter {
 					break;
 				case LmdbNativeKernelIr.AGG_COUNT_DISTINCT:
 					source.append("        if (")
-							.append(value)
-							.append(" != -1L && (!agB")
+							.append(aggregateInputPresent(value))
+							.append(" && (!agB")
 							.append(i)
 							.append(" || !keyHooks.sameRdfTerm(agL")
 							.append(i)
@@ -4949,8 +4974,8 @@ final class LmdbNativeKernelEmitter {
 					break;
 				case LmdbNativeKernelIr.AGG_COUNT:
 					source.append("        if (")
-							.append(value)
-							.append(" != -1L) {\n")
+							.append(aggregateInputPresent(value))
+							.append(") {\n")
 							.append("            agC")
 							.append(i)
 							.append("[g] = Math.addExact(agC")
@@ -6457,7 +6482,7 @@ final class LmdbNativeKernelEmitter {
 			if (node instanceof LeftProbe) {
 				LeftProbe probe = (LeftProbe) node;
 				String cursor = "ar" + boundRunCursorId(probe);
-				int groupId = nextLeftGroupId++;
+				int groupId = registerLeftGroup(new int[0]);
 				String matched = "lg" + groupId;
 				body.append(indent).append("if (").append(c).append(" < 0) {\n");
 				body.append(indent).append("    ").append(a).append(" = 0;\n");
@@ -6665,11 +6690,22 @@ final class LmdbNativeKernelEmitter {
 			}
 			if (node instanceof LmdbNativeKernelIr.LeftGroup) {
 				LmdbNativeKernelIr.LeftGroup group = (LmdbNativeKernelIr.LeftGroup) node;
-				int groupId = nextLeftGroupId++;
+				int[] restoreColumns = group.restoreColumns();
+				int groupId = registerLeftGroup(restoreColumns);
 				String matched = "lg" + groupId;
 				String armFirst = emitPipeline(group.arm, matched + " = true;\n%I%" + nextTemplate, false,
 						!tailmost);
 				body.append(indent).append("if (").append(a).append(" < 0) {\n");
+				for (int i = 0; i < restoreColumns.length; i++) {
+					body.append(indent)
+							.append("    lgs")
+							.append(groupId)
+							.append('[')
+							.append(i)
+							.append("] = v")
+							.append(restoreColumns[i])
+							.append(";\n");
+				}
 				body.append(indent).append("    ").append(a).append(" = 0;\n");
 				body.append(indent).append("    ").append(matched).append(" = false;\n");
 				body.append(indent).append("}\n");
@@ -6681,6 +6717,16 @@ final class LmdbNativeKernelEmitter {
 				body.append(indent).append("    ").append(a).append(" = 1;\n");
 				body.append(indent).append("}\n");
 				body.append(indent).append("if (").append(a).append(" == 1 && !").append(matched).append(") {\n");
+				for (int i = 0; i < restoreColumns.length; i++) {
+					body.append(indent)
+							.append("    v")
+							.append(restoreColumns[i])
+							.append(" = lgs")
+							.append(groupId)
+							.append('[')
+							.append(i)
+							.append("];\n");
+				}
 				for (int col : group.resetColumns()) {
 					body.append(indent).append("    v").append(col).append(" = -1L;\n");
 				}
@@ -8484,7 +8530,9 @@ final class LmdbNativeKernelEmitter {
 				if (!needed.isEmpty()) {
 					needed.append(" || ");
 				}
-				needed.append(factorScalar(spec.terminalValues[index])).append(" != -1L");
+				needed.append("KernelHooks.isBoundValue(hooks, ")
+						.append(factorScalar(spec.terminalValues[index]))
+						.append(")");
 			}
 			return needed.isEmpty() ? "false" : "(" + needed + ")";
 		}
@@ -9834,9 +9882,20 @@ final class LmdbNativeKernelEmitter {
 				// "Did the arm produce anything for this row" cannot be a local: the arm is emitted as its own methods,
 				// which set the flag from inside their own frames. One field per left group, reset on entry, so nesting
 				// and repetition inside a loop each get their own answer.
-				int groupId = nextLeftGroupId++;
+				int[] restoreColumns = group.restoreColumns();
+				int groupId = registerLeftGroup(restoreColumns);
 				String flag = "lg" + groupId;
 				String armFirst = emitPipeline(group.arm, flag + " = true;\n%I%" + nextTemplate, booleanMode);
+				for (int i = 0; i < restoreColumns.length; i++) {
+					body.append(indent)
+							.append("lgs")
+							.append(groupId)
+							.append('[')
+							.append(i)
+							.append("] = v")
+							.append(restoreColumns[i])
+							.append(";\n");
+				}
 				body.append(indent)
 						.append(flag)
 						.append(" = false;\n")
@@ -9858,6 +9917,16 @@ final class LmdbNativeKernelEmitter {
 				body.append("if (!")
 						.append(flag)
 						.append(") {\n");
+				for (int i = 0; i < restoreColumns.length; i++) {
+					body.append(indent)
+							.append("    v")
+							.append(restoreColumns[i])
+							.append(" = lgs")
+							.append(groupId)
+							.append('[')
+							.append(i)
+							.append("];\n");
+				}
 				for (int col : group.resetColumns()) {
 					body.append(indent).append("    v").append(col).append(" = -1L;\n");
 				}
@@ -10194,7 +10263,7 @@ final class LmdbNativeKernelEmitter {
 					if (!needs.isEmpty()) {
 						needs.append(" || ");
 					}
-					needs.append("v").append(output.col).append(" != -1L");
+					needs.append("KernelHooks.isBoundValue(hooks, v").append(output.col).append(")");
 				}
 				body.append(indent)
 						.append("        updateBy((")

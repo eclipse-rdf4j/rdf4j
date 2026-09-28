@@ -63,6 +63,11 @@ final class NativeGeneratedKeyHooks implements KernelHooks {
 	}
 
 	@Override
+	public boolean isBoundValue(long id) {
+		return delegate.isBoundValue(id);
+	}
+
+	@Override
 	public long computeBind(int bind, long a, long b) {
 		return delegate.computeBind(bind, a, b);
 	}

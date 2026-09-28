@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -82,6 +83,127 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 	@AfterEach
 	public void tearDown() {
 		repository.shutDown();
+	}
+
+	@Test
+	public void invalidIriBindDoesNotMakeFollowingPatternMatch() {
+		insertBlankNodeStatement();
+		String query = "SELECT * {\n"
+				+ "  ?s1 ?p1 ?blank . FILTER(isBlank(?blank))\n"
+				+ "  BIND(IRI(?blank) AS ?biri)\n"
+				+ "  ?biri ?p2 ?o2 .\n"
+				+ "}";
+
+		List<String> generic = rows(query, false, null, null);
+		assertThat(generic).isEmpty();
+		assertThat(rows(query, true, null, null))
+				.as("native plan:\n%s", explain(query))
+				.isEqualTo(generic);
+	}
+
+	@Test
+	public void invalidIriBindDoesNotMakeFollowingPropertyPathMatch() {
+		insertBlankNodeStatement();
+		String query = "SELECT * {\n"
+				+ "  ?s1 ?p1 ?blank . FILTER(isBlank(?blank))\n"
+				+ "  BIND(IRI(?blank) AS ?biri)\n"
+				+ "  ?biri <urn:test:pred>* ?o2 .\n"
+				+ "}";
+
+		List<String> generic = rows(query, false, null, null);
+		assertThat(generic).isEmpty();
+		assertThat(rows(query, true, null, null))
+				.as("native plan:\n%s", explain(query))
+				.isEqualTo(generic);
+	}
+
+	@Test
+	public void arbitraryLengthPathPreservesBoundObjectAcrossQueryReuseAndFilter() {
+		IRI owlClass = repository.getValueFactory().createIRI("http://www.w3.org/2002/07/owl#Class");
+		IRI owlThing = repository.getValueFactory().createIRI("http://www.w3.org/2002/07/owl#Thing");
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			var subclass = vf.createIRI("http://www.w3.org/2000/01/rdf-schema#subClassOf");
+			var classA = vf.createIRI(EX, "classA");
+			conn.add(classA, subclass, owlThing);
+			conn.add(classA, RDF.TYPE, owlClass);
+			for (String child : List.of("classB", "classC", "classD")) {
+				var childClass = vf.createIRI(EX, child);
+				conn.add(childClass, RDF.TYPE, owlClass);
+				conn.add(childClass, subclass, classA);
+			}
+		}
+
+		String query = "PREFIX owl: <http://www.w3.org/2002/07/owl#>\n"
+				+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+				+ "SELECT ?parent ?child WHERE { ?child a owl:Class . ?child rdfs:subClassOf+ ?parent }";
+		List<List<String>> generic = withProperty(NATIVE_FLAG, "false",
+				() -> evaluateUnboundThenBound(query, null, owlThing));
+		List<List<String>> compiled = withProperty(NATIVE_FLAG, "true",
+				() -> withProperty(JANINO_ENABLED, "true",
+						() -> withProperty(JANINO_THRESHOLD_ROWS, "0",
+								() -> withProperty(JANINO_SYNCHRONOUS, "true",
+										() -> evaluateUnboundThenBound(query,
+												LmdbNativeAttemptMetrics.PATH_IR_KERNEL, owlThing)))));
+		List<List<String>> interpreted = withProperty(NATIVE_FLAG, "true",
+				() -> withProperty(JANINO_ENABLED, "false",
+						() -> evaluateUnboundThenBound(query,
+								LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED, owlThing)));
+		List<String> expectedBoundRows = List.of(
+				"[child=http://example.org/classA;parent=http://www.w3.org/2002/07/owl#Thing]",
+				"[child=http://example.org/classB;parent=http://www.w3.org/2002/07/owl#Thing]",
+				"[child=http://example.org/classC;parent=http://www.w3.org/2002/07/owl#Thing]",
+				"[child=http://example.org/classD;parent=http://www.w3.org/2002/07/owl#Thing]");
+
+		assertThat(generic.get(0)).hasSize(7);
+		assertThat(generic.get(1)).containsExactlyInAnyOrderElementsOf(expectedBoundRows);
+		assertThat(compiled).as("compiled kernel must preserve an incoming path endpoint").isEqualTo(generic);
+		assertThat(interpreted).as("interpreted kernel must preserve an incoming path endpoint").isEqualTo(generic);
+
+		String filtered = query.replace("?child rdfs:subClassOf+ ?parent }",
+				"?child rdfs:subClassOf+ ?parent . FILTER(?parent = owl:Thing) }");
+		List<String> genericFiltered = rows(filtered, false, null, null);
+		List<String> compiledFiltered = withProperty(JANINO_ENABLED, "true",
+				() -> withProperty(JANINO_THRESHOLD_ROWS, "0",
+						() -> withProperty(JANINO_SYNCHRONOUS, "true",
+								() -> rows(filtered, true, null, null, LmdbNativeAttemptMetrics.PATH_IR_KERNEL))));
+		List<String> interpretedFiltered = withProperty(JANINO_ENABLED, "false",
+				() -> rows(filtered, true, null, null, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED));
+		assertThat(genericFiltered).containsExactlyInAnyOrderElementsOf(expectedBoundRows);
+		assertThat(compiledFiltered).as("compiled kernel must honor a filter on the path endpoint")
+				.isEqualTo(genericFiltered);
+		assertThat(interpretedFiltered).as("interpreted kernel must honor a filter on the path endpoint")
+				.isEqualTo(genericFiltered);
+	}
+
+	private List<List<String>> evaluateUnboundThenBound(String query, String forcedStrategy, Value boundParent) {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			TupleQuery tupleQuery = conn.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				((SailTupleQuery) tupleQuery).setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			List<String> unbound = canonicalRows(tupleQuery);
+			tupleQuery.setBinding("parent", boundParent);
+			return List.of(unbound, canonicalRows(tupleQuery));
+		}
+	}
+
+	private static List<String> canonicalRows(TupleQuery tupleQuery) {
+		try (var result = tupleQuery.evaluate()) {
+			return QueryResults.asList(result)
+					.stream()
+					.map(LmdbNativeScopeAndValuesRegressionTest::canonical)
+					.sorted()
+					.collect(Collectors.toList());
+		}
+	}
+
+	private void insertBlankNodeStatement() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			conn.add(conn.getValueFactory().createIRI("urn:test:subj"),
+					conn.getValueFactory().createIRI("urn:test:pred"),
+					conn.getValueFactory().createBNode());
+		}
 	}
 
 	@Test
@@ -401,6 +523,43 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 				.isGreaterThan(compiledBefore);
 		assertThat(nativeRows).isEqualTo(rows(query, false, null, null));
 		assertThat(nativeRows).containsExactly("[s=http://example.org/optionalSubject;value=\"target\"]");
+	}
+
+	@Test
+	public void nestedUnionOptionalFiltersUseTheCorrelatedLeftBinding() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			var subject = vf.createIRI(EX, "a");
+			conn.add(subject, vf.createIRI(EX, "p"), vf.createIRI(EX, "A"));
+			conn.add(subject, vf.createIRI("http://www.w3.org/2000/01/rdf-schema#label"), vf.createLiteral("label"));
+			conn.add(subject, vf.createIRI(EX, "prop1"), vf.createLiteral("first"));
+			conn.add(subject, vf.createIRI(EX, "prop2"), vf.createLiteral("second"));
+		}
+
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+				+ "SELECT * {\n"
+				+ "  {\n"
+				+ "    ex:a ?p ?prop1\n"
+				+ "    FILTER (?p = ex:prop1)\n"
+				+ "  } UNION {\n"
+				+ "    ?s ex:p ex:A ; {\n"
+				+ "      { ?s ?p ?l . FILTER (?p = rdfs:label) }\n"
+				+ "      OPTIONAL { ?s ?p ?opt1 . FILTER (?p = ex:prop1) }\n"
+				+ "      OPTIONAL { ?s ?p ?opt2 . FILTER (?p = ex:prop2) }\n"
+				+ "    }\n"
+				+ "  }\n"
+				+ "}";
+
+		List<String> generic = rows(query, false, null, null);
+		List<String> compiled = withProperty(JANINO_ENABLED, "true",
+				() -> withProperty(JANINO_THRESHOLD_ROWS, "0",
+						() -> withProperty(JANINO_SYNCHRONOUS, "true",
+								() -> rows(query, true, null, null, LmdbNativeAttemptMetrics.PATH_IR_KERNEL))));
+		List<String> interpreted = withProperty(JANINO_ENABLED, "false",
+				() -> rows(query, true, null, null, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED));
+		assertThat(compiled).as("compiled native plan:\n%s", explain(query)).isEqualTo(generic);
+		assertThat(interpreted).as("interpreted native plan:\n%s", explain(query)).isEqualTo(generic);
 	}
 
 	private List<String> rows(String query, boolean nativeEnabled, String bindingName, Value bindingValue) {

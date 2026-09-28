@@ -40,6 +40,19 @@ public interface KernelHooks {
 		return left == right;
 	}
 
+	/** True when an id is an RDF value that may be consumed by an aggregate. */
+	default boolean isBoundValue(long id) {
+		return id != -1L;
+	}
+
+	/**
+	 * Bound-value predicate for kernels that can run without value hooks. Hookless kernels use the standard unbound
+	 * sentinel; production hooks can additionally reject backend-specific non-value markers.
+	 */
+	static boolean isBoundValue(KernelHooks hooks, long id) {
+		return hooks == null ? id != -1L : hooks.isBoundValue(id);
+	}
+
 	/** Hash consistent with {@link #sameRdfTerm(long, long)}. */
 	default long rdfTermHash(long id) {
 		return id;

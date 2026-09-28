@@ -2442,8 +2442,8 @@ final class LmdbNativeKernelIr {
 	}
 
 	/**
-	 * OPTIONAL over a whole sub-pipeline: run {@code arm} for the current row, and if it produced nothing, run the
-	 * continuation once more with every column the arm produces set to unbound.
+	 * OPTIONAL over a whole sub-pipeline: run {@code arm} for the current row, and if it produced nothing, restore
+	 * inherited columns the arm may overwrite, clear its arm-only output columns, and run the continuation once more.
 	 *
 	 * {@link LeftProbe} is the one-pattern special case of this and stays, because it fuses the probe and the null-arm
 	 * test into a single loop; {@code LeftGroup} is what a multi-pattern arm — or an arm carrying its own filters —
@@ -2453,16 +2453,28 @@ final class LmdbNativeKernelIr {
 	 */
 	static final class LeftGroup extends Node {
 		final List<Node> arm;
+		private final int[] resetColumns;
+		private final int[] restoreColumns;
 
 		LeftGroup(List<Node> arm) {
+			this(arm, null, null);
+		}
+
+		LeftGroup(List<Node> arm, int[] resetColumns, int[] restoreColumns) {
 			if (arm.isEmpty()) {
 				throw new IllegalArgumentException("left group arm must not be empty");
 			}
 			this.arm = List.copyOf(arm);
+			this.resetColumns = resetColumns == null ? null : resetColumns.clone();
+			this.restoreColumns = resetColumns == null ? null
+					: restoreColumns == null ? new int[0] : restoreColumns.clone();
 		}
 
-		/** Columns the arm binds, which the null arm must reset to unbound before the continuation runs. */
+		/** Columns introduced by the arm, which the null arm must reset to unbound before the continuation runs. */
 		int[] resetColumns() {
+			if (resetColumns != null) {
+				return resetColumns.clone();
+			}
 			BitSet columns = new BitSet();
 			for (Node node : arm) {
 				node.produced(columns);
@@ -2475,6 +2487,16 @@ final class LmdbNativeKernelIr {
 			return result;
 		}
 
+		/** Inherited frame columns the arm can overwrite and the null arm must restore to their entry values. */
+		int[] restoreColumns() {
+			return restoreColumns == null ? new int[0] : restoreColumns.clone();
+		}
+
+		LeftGroup withArm(List<Node> replacement) {
+			return resetColumns == null ? new LeftGroup(replacement)
+					: new LeftGroup(replacement, resetColumns, restoreColumns);
+		}
+
 		@Override
 		void key(StringBuilder key) {
 			key.append("lg[");
@@ -2482,6 +2504,22 @@ final class LmdbNativeKernelIr {
 				node.key(key);
 			}
 			key.append("];");
+			if (resetColumns != null) {
+				key.append("lg-frame[reset=");
+				appendColumns(key, resetColumns);
+				key.append(",restore=");
+				appendColumns(key, restoreColumns);
+				key.append("];");
+			}
+		}
+
+		private static void appendColumns(StringBuilder key, int[] columns) {
+			for (int i = 0; i < columns.length; i++) {
+				if (i > 0) {
+					key.append(',');
+				}
+				key.append(columns[i]);
+			}
 		}
 
 		@Override

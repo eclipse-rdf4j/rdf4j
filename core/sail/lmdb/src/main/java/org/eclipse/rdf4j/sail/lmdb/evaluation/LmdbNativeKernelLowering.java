@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.LeftGroup;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
@@ -777,7 +778,7 @@ final class LmdbNativeKernelLowering {
 			if (node instanceof LmdbNativeKernelIr.LeftGroup group) {
 				ArrayList<Node> nested = new ArrayList<>(group.arm);
 				specializeWildcardDemands(nested, physicalDemand);
-				pipeline.set(i, new LmdbNativeKernelIr.LeftGroup(nested));
+				pipeline.set(i, group.withArm(nested));
 				continue;
 			}
 			if (node instanceof LmdbNativeKernelIr.LexicalFrameLeftJoin lexical) {
@@ -1458,6 +1459,28 @@ final class LmdbNativeKernelLowering {
 		return slots;
 	}
 
+	/** Builds an OPTIONAL container that restores inherited columns and clears only columns introduced by its arm. */
+	private static LeftGroup leftGroupWithFrame(List<Node> arm, BitSet inheritedColumns) {
+		BitSet armColumns = new BitSet();
+		for (Node node : arm) {
+			node.produced(armColumns);
+		}
+		BitSet restoreColumns = (BitSet) armColumns.clone();
+		restoreColumns.and(inheritedColumns);
+		BitSet resetColumns = (BitSet) armColumns.clone();
+		resetColumns.andNot(inheritedColumns);
+		return new LeftGroup(arm, bitSetColumns(resetColumns), bitSetColumns(restoreColumns));
+	}
+
+	private static int[] bitSetColumns(BitSet columns) {
+		int[] result = new int[columns.cardinality()];
+		int out = 0;
+		for (int column = columns.nextSetBit(0); column >= 0; column = columns.nextSetBit(column + 1)) {
+			result[out++] = column;
+		}
+		return result;
+	}
+
 	private static void decline(TupleExpr declineTarget, String reason) {
 		if (Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 			System.err.println("[ir-lowering] decline: " + reason);
@@ -1691,6 +1714,22 @@ final class LmdbNativeKernelLowering {
 		private boolean lowerOptionalGroup(SlotPlan arm) {
 			openDepth();
 			int homeDepth = nodesPerDepth.size() - 1;
+			// An entry binding normally lives outside the mutable kernel columns. If this OPTIONAL arm can write the
+			// same variable (constant-slot patterns do this after checking compatibility), materialize the caller value
+			// before entering the arm so LeftGroup can restore it when the arm has no surviving row.
+			long entryBindingsWrittenByArm = arm.producedMask() & entryMask & ~hiddenSlotMask;
+			while (entryBindingsWrittenByArm != 0L) {
+				int slot = Long.numberOfTrailingZeros(entryBindingsWrittenByArm);
+				entryBindingsWrittenByArm &= entryBindingsWrittenByArm - 1L;
+				if (slotColumn[slot] >= 0) {
+					continue;
+				}
+				Operand entry = slotOperand(slot);
+				if (entry != null) {
+					int column = newColumn(slot);
+					nodesPerDepth.get(homeDepth).add(new LmdbNativeKernelIr.BindAlias(entry, column));
+				}
+			}
 			int[] columnsBefore = slotColumn.clone();
 			long assuredBefore = assuredMask;
 			// Give the arm a lexical depth even when its first operation is only a guard over an outer column. This
@@ -1725,7 +1764,13 @@ final class LmdbNativeKernelLowering {
 				}
 			}
 			assuredMask = assuredBefore;
-			nodesPerDepth.get(homeDepth).add(new LmdbNativeKernelIr.LeftGroup(armNodes));
+			BitSet inheritedColumns = new BitSet();
+			for (int column : columnsBefore) {
+				if (column >= 0) {
+					inheritedColumns.set(column);
+				}
+			}
+			nodesPerDepth.get(homeDepth).add(leftGroupWithFrame(armNodes, inheritedColumns));
 			return true;
 		}
 
@@ -2971,8 +3016,8 @@ final class LmdbNativeKernelLowering {
 							Operand.constant(constantIndex(folded)), target));
 					return true;
 				}
-				// An always-erroring constant expression falls through to the hook, which reproduces the
-				// unbound-target semantics per row; it is not worth a special empty-column form.
+				// An always-erroring constant expression falls through to the hook, which applies the Extension's
+				// context-sensitive null-on-error policy per row; it is not worth a special empty-column form.
 			}
 			int bits = Long.bitCount(mask);
 			if (bits > 2) {
@@ -3002,10 +3047,10 @@ final class LmdbNativeKernelLowering {
 				return true;
 			}
 			int target = newColumn(copy.targetSlot);
-			// The expression can error on any row (leaving the target unbound while the row survives), so the column
-			// is maybe-null regardless of its inputs.
+			// The expression can error on any row; BIND preserves the row while marking the target as occupied-null,
+			// so the column is maybe-null regardless of its inputs.
 			optionalColMask |= 1L << target;
-			bindHooks.add(new LmdbNativeKernelBindings.BindHook(copy.computed, argSlots));
+			bindHooks.add(new LmdbNativeKernelBindings.BindHook(copy, argSlots));
 			boolean effectful = scalarPlan == null || !scalarCanReuseAcrossSolutions(scalarPlan)
 					|| !copy.encounterOrderReplaySafe;
 			currentDepthNodes().add(new LmdbNativeKernelIr.BindHook(bindHooks.size() - 1, args, target, effectful));
@@ -3177,6 +3222,7 @@ final class LmdbNativeKernelLowering {
 				int adj = adjacency(step.predicate, true, false);
 				currentDepthNodes().add(new LmdbNativeKernelIr.PathExpand(adj, subject,
 						newColumn(path.objSlot), minHops, contexts));
+				preservePathSourceBinding(path.subjSlot, subject);
 				return true;
 			}
 			if (object != null && subject == null && path.subjSlot >= 0 && slotFresh(path.subjSlot)) {
@@ -3184,6 +3230,7 @@ final class LmdbNativeKernelLowering {
 				int adj = adjacency(step.predicate, false, false);
 				currentDepthNodes().add(new LmdbNativeKernelIr.PathExpand(adj, object,
 						newColumn(path.subjSlot), minHops, contexts));
+				preservePathSourceBinding(path.objSlot, object);
 				return true;
 			}
 			// Both ends free: enumerate the possible starts, then expand from each. The two operators differ only in
@@ -3221,6 +3268,16 @@ final class LmdbNativeKernelLowering {
 			}
 			reason = reasonPrefix + "path-shape";
 			return false;
+		}
+
+		/**
+		 * A path solution binds both endpoint variables. PathExpand writes only the endpoint it discovers, so copy a
+		 * source endpoint that arrived as an input binding or fixed value into the kernel's projected columns as well.
+		 */
+		private void preservePathSourceBinding(int slot, Operand source) {
+			if (slot >= 0 && source != null && slotColumn[slot] < 0) {
+				currentDepthNodes().add(new LmdbNativeKernelIr.BindAlias(source, newColumn(slot)));
+			}
 		}
 
 		private Operand[] pathContexts(PathPlan path) {
@@ -4064,7 +4121,7 @@ final class LmdbNativeKernelLowering {
 				} else if (node instanceof LmdbNativeKernelIr.LeftGroup group) {
 					ArrayList<Node> arm = new ArrayList<>(group.arm);
 					markDomainDrivenEnumerations(arm);
-					pipeline.set(at, new LmdbNativeKernelIr.LeftGroup(arm));
+					pipeline.set(at, group.withArm(arm));
 				} else if (node instanceof LmdbNativeKernelIr.LexicalFrameLeftJoin lexical) {
 					ArrayList<Node> left = new ArrayList<>(lexical.left);
 					ArrayList<Node> right = new ArrayList<>(lexical.right);
@@ -4215,7 +4272,7 @@ final class LmdbNativeKernelLowering {
 				if (node instanceof LmdbNativeKernelIr.Exists exists) {
 					nested.add(new LmdbNativeKernelIr.Exists(exists.negated, fuseSipBatchProbes(exists.pipeline)));
 				} else if (node instanceof LmdbNativeKernelIr.LeftGroup group) {
-					nested.add(new LmdbNativeKernelIr.LeftGroup(fuseSipBatchProbes(group.arm)));
+					nested.add(group.withArm(fuseSipBatchProbes(group.arm)));
 				} else if (node instanceof LmdbNativeKernelIr.LexicalFrameLeftJoin lexical) {
 					nested.add(new LmdbNativeKernelIr.LexicalFrameLeftJoin(fuseSipBatchProbes(lexical.left),
 							fuseSipBatchProbes(lexical.right), lexical.problemCols));
@@ -5021,6 +5078,10 @@ final class LmdbNativeKernelLowering {
 				}
 				return false;
 			}
+			BitSet inheritedColumns = new BitSet();
+			for (int column : witnessCols.values()) {
+				inheritedColumns.set(column);
+			}
 			for (java.util.Map.Entry<Integer, Integer> produced : rightColumns.entrySet()) {
 				if (witnessCols.containsKey(produced.getKey())) {
 					continue;
@@ -5029,7 +5090,7 @@ final class LmdbNativeKernelLowering {
 				optionalColMask |= 1L << produced.getValue();
 			}
 			witnessCols.outerDepth = Math.max(witnessCols.outerDepth, rightColumns.outerDepth);
-			pipeline.add(new LmdbNativeKernelIr.LeftGroup(rightPipeline));
+			pipeline.add(leftGroupWithFrame(rightPipeline, inheritedColumns));
 			return true;
 		}
 
@@ -6140,8 +6201,7 @@ final class LmdbNativeKernelLowering {
 					}
 					replacement = new LmdbNativeKernelIr.Union(branches);
 				} else if (node instanceof LmdbNativeKernelIr.LeftGroup optional) {
-					replacement = new LmdbNativeKernelIr.LeftGroup(
-							orientRegion(optional.arm, columns, fixed, wildcard));
+					replacement = optional.withArm(orientRegion(optional.arm, columns, fixed, wildcard));
 				} else if (node instanceof LmdbNativeKernelIr.LexicalFrameLeftJoin optional) {
 					replacement = new LmdbNativeKernelIr.LexicalFrameLeftJoin(
 							orientRegion(optional.left, columns, fixed, wildcard),

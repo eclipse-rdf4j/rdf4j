@@ -319,9 +319,9 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	/**
 	 * Computed BIND (three-tier parity plan, M7): installs the argument ids into the registered engine slots of the
 	 * scratch row — exactly the {@link #testFilter} discipline, so an unbound argument ({@code -1}) leaves its slot
-	 * unbound — and runs the same compiled inline-id evaluator the interpreted {@code ExtensionCursor} would. An
-	 * evaluation error surfaces as UNKNOWN, which the generated code writes into the target column as the unbound
-	 * sentinel: the row survives with the target unbound, matching BIND's error semantics.
+	 * unbound — and runs the same compiled inline-id evaluator the interpreted {@code ExtensionCursor} would. For a
+	 * regular Extension, an evaluation error becomes the occupied null marker so later joins cannot bind the failed
+	 * target; MINUS-right extensions retain UNKNOWN, matching the existing context-sensitive copy policy.
 	 */
 	@Override
 	public long computeBind(int bindId, long a0, long a1) {
@@ -344,7 +344,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 				installed = 2;
 			}
 			if (hook.copy != null) {
-				return hook.copy.value(scratch);
+				return bindResult(hook.copy, hook.copy.value(scratch));
 			}
 			if (hook.computedValue != null) {
 				return computeInternedBind(hook.computedValue);
@@ -380,7 +380,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 				previous[installed] = scratch.replaceSlot(hook.argSlots[installed], bindInputs[bindId][installed]);
 			}
 			if (hook.copy != null) {
-				return hook.copy.value(scratch);
+				return bindResult(hook.copy, hook.copy.value(scratch));
 			}
 			return hook.computedValue != null ? computeInternedBind(hook.computedValue) : hook.computed.id(scratch);
 		} finally {
@@ -392,9 +392,14 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		}
 	}
 
+	private static long bindResult(CopyBinding copy, long value) {
+		return value == UNKNOWN && copy.setNullOnError ? NULL_CONTEXT_ID : value;
+	}
+
 	/**
 	 * Evaluates a computed BIND against the scratch row and interns its value through the evaluation-scoped synthetic
-	 * source, matching {@code CopyBinding.value(RowState)}. Evaluation errors leave the target unbound.
+	 * source, matching {@code CopyBinding.value(RowState)}. Its caller applies the same null-marker policy as
+	 * {@code ExtensionCursor.bindCopies}.
 	 */
 	private long computeInternedBind(LmdbNativeCompiledValue computedValue) {
 		RowState scratchRow = scratch;
@@ -519,6 +524,11 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		Value leftValue = valueForComparison(left, authority, leftKind);
 		Value rightValue = valueForComparison(right, authority, rightKind);
 		return comparator.compare(leftValue, rightValue);
+	}
+
+	@Override
+	public boolean isBoundValue(long id) {
+		return id != UNKNOWN && id != NULL_CONTEXT_ID;
 	}
 
 	@Override
