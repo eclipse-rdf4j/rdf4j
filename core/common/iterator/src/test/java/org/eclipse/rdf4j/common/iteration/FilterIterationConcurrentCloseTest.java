@@ -41,6 +41,174 @@ class FilterIterationConcurrentCloseTest {
 		}
 	}
 
+	@Test
+	void timeoutCloseConvertsRuntimeFailureDuringFilterAcceptance() throws Exception {
+		for (Access access : Access.values()) {
+			for (boolean nested : new boolean[] { false, true }) {
+				assertRuntimeFailureDuringAcceptance(access, nested);
+			}
+		}
+	}
+
+	private void assertRuntimeFailureDuringAcceptance(Access access, boolean nested) throws Exception {
+		RuntimeFailureIteration delegate = new RuntimeFailureIteration();
+		IllegalStateException closedSnapshot = new IllegalStateException("read snapshot closed during cancellation");
+		FilterIteration<Integer> filter = new FilterIteration<>(delegate) {
+			@Override
+			protected boolean accept(Integer value) {
+				if (delegate.isClosed()) {
+					throw closedSnapshot;
+				}
+				return true;
+			}
+
+			@Override
+			protected void handleClose() {
+			}
+		};
+
+		CloseableIteration<Integer> iteration = filter;
+		if (nested) {
+			iteration = new FilterIteration<>(filter) {
+				@Override
+				protected boolean accept(Integer value) {
+					return true;
+				}
+
+				@Override
+				protected void handleClose() {
+				}
+			};
+		}
+		TestTimeLimitIteration timedIteration = new TestTimeLimitIteration(iteration);
+
+		try (ExecutorService executor = Executors.newSingleThreadExecutor(); timedIteration) {
+			Future<?> result = executor.submit(() -> access.invoke(timedIteration));
+			assertThat(delegate.waitForBlockedHasNext()).isTrue();
+			timedIteration.interrupt();
+
+			ExecutionException failure = assertThrows(ExecutionException.class,
+					() -> result.get(5, TimeUnit.SECONDS));
+			assertThat(failure.getCause()).isSameAs(timedIteration.timeoutException)
+					.as("timeout outcome for %s, nested=%s", access, nested);
+			assertThat(timedIteration.timeoutException.getSuppressed()).containsExactly(closedSnapshot);
+			assertThat(delegate.closeCount()).isEqualTo(1);
+		}
+	}
+
+	@Test
+	void timeoutCloseDoesNotConvertErrorsDuringFilterAcceptance() throws Exception {
+		for (Access access : Access.values()) {
+			for (boolean nested : new boolean[] { false, true }) {
+				RuntimeFailureIteration delegate = new RuntimeFailureIteration();
+				AssertionError expected = new AssertionError("assertion failure during cancellation");
+				FilterIteration<Integer> filter = new FilterIteration<>(delegate) {
+					@Override
+					protected boolean accept(Integer value) {
+						if (delegate.isClosed()) {
+							throw expected;
+						}
+						return true;
+					}
+
+					@Override
+					protected void handleClose() {
+					}
+				};
+
+				CloseableIteration<Integer> iteration = filter;
+				if (nested) {
+					iteration = new FilterIteration<>(filter) {
+						@Override
+						protected boolean accept(Integer value) {
+							return true;
+						}
+
+						@Override
+						protected void handleClose() {
+						}
+					};
+				}
+				TestTimeLimitIteration timedIteration = new TestTimeLimitIteration(iteration);
+
+				try (ExecutorService executor = Executors.newSingleThreadExecutor(); timedIteration) {
+					Future<?> result = executor.submit(() -> access.invoke(timedIteration));
+					assertThat(delegate.waitForBlockedHasNext()).isTrue();
+					timedIteration.interrupt();
+
+					ExecutionException failure = assertThrows(ExecutionException.class,
+							() -> result.get(5, TimeUnit.SECONDS));
+					assertThat(failure.getCause()).isSameAs(expected)
+							.as("Error outcome for %s, nested=%s", access, nested);
+					assertThat(delegate.closeCount()).isEqualTo(1);
+				}
+			}
+		}
+	}
+
+	@Test
+	void timeoutCloseConvertsRuntimeFailureDuringRemove() throws Exception {
+		CountDownLatch blockedRemove = new CountDownLatch(1);
+		CountDownLatch closed = new CountDownLatch(1);
+		AtomicBoolean isClosed = new AtomicBoolean();
+		AtomicInteger closeCount = new AtomicInteger();
+		IllegalStateException closedSnapshot = new IllegalStateException("read snapshot closed during cancellation");
+		CloseableIteration<Integer> delegate = new CloseableIteration<>() {
+			@Override
+			public boolean hasNext() {
+				return true;
+			}
+
+			@Override
+			public Integer next() {
+				return 1;
+			}
+
+			@Override
+			public void remove() {
+				blockedRemove.countDown();
+				try {
+					closed.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException("Interrupted while waiting for iterator close", e);
+				}
+				throw closedSnapshot;
+			}
+
+			@Override
+			public void close() {
+				closeCount.incrementAndGet();
+				if (isClosed.compareAndSet(false, true)) {
+					closed.countDown();
+				}
+			}
+		};
+		FilterIteration<Integer> filter = new FilterIteration<>(delegate) {
+			@Override
+			protected boolean accept(Integer value) {
+				return true;
+			}
+
+			@Override
+			protected void handleClose() {
+			}
+		};
+		TestTimeLimitIteration timedIteration = new TestTimeLimitIteration(filter);
+
+		try (ExecutorService executor = Executors.newSingleThreadExecutor(); timedIteration) {
+			Future<?> result = executor.submit(timedIteration::remove);
+			assertThat(blockedRemove.await(5, TimeUnit.SECONDS)).isTrue();
+			timedIteration.interrupt();
+
+			ExecutionException failure = assertThrows(ExecutionException.class,
+					() -> result.get(5, TimeUnit.SECONDS));
+			assertThat(failure.getCause()).isSameAs(timedIteration.timeoutException);
+			assertThat(timedIteration.timeoutException.getSuppressed()).containsExactly(closedSnapshot);
+			assertThat(closeCount.get()).isEqualTo(1);
+		}
+	}
+
 	private void assertTimeoutCloseDuringFiltering(Access access, boolean nested, boolean rejectFirst)
 			throws Exception {
 		BlockingIteration delegate = new BlockingIteration(rejectFirst ? 1 : 0);
@@ -86,6 +254,7 @@ class FilterIterationConcurrentCloseTest {
 	@Test
 	void ordinaryWrappedIterationFailuresAreNotConvertedToTimeouts() {
 		IllegalStateException expected = new IllegalStateException("ordinary iteration failure");
+		AtomicInteger closeCount = new AtomicInteger();
 		CloseableIteration<Integer> delegate = new CloseableIteration<>() {
 			@Override
 			public boolean hasNext() {
@@ -99,6 +268,7 @@ class FilterIterationConcurrentCloseTest {
 
 			@Override
 			public void close() {
+				closeCount.incrementAndGet();
 			}
 		};
 		FilterIteration<Integer> filter = new FilterIteration<>(delegate) {
@@ -112,7 +282,10 @@ class FilterIterationConcurrentCloseTest {
 			}
 		};
 
-		assertThatThrownBy(filter::hasNext).isSameAs(expected);
+		try (TestTimeLimitIteration timedIteration = new TestTimeLimitIteration(filter)) {
+			assertThatThrownBy(timedIteration::next).isSameAs(expected);
+			assertThat(closeCount.get()).isZero();
+		}
 	}
 
 	private enum Access {
@@ -181,6 +354,59 @@ class FilterIterationConcurrentCloseTest {
 			if (isClosed.compareAndSet(false, true)) {
 				closed.countDown();
 			}
+		}
+
+		private boolean waitForBlockedHasNext() throws InterruptedException {
+			return blockedHasNext.await(5, TimeUnit.SECONDS);
+		}
+
+		private int closeCount() {
+			return closeCount.get();
+		}
+	}
+
+	private static final class RuntimeFailureIteration implements CloseableIteration<Integer> {
+		private final CountDownLatch blockedHasNext = new CountDownLatch(1);
+		private final CountDownLatch closed = new CountDownLatch(1);
+		private final AtomicBoolean isClosed = new AtomicBoolean();
+		private final AtomicBoolean availabilityBlocked = new AtomicBoolean();
+		private final AtomicBoolean consumed = new AtomicBoolean();
+		private final AtomicInteger closeCount = new AtomicInteger();
+
+		@Override
+		public boolean hasNext() {
+			boolean available = !isClosed.get() && !consumed.get();
+			if (available && availabilityBlocked.compareAndSet(false, true)) {
+				blockedHasNext.countDown();
+				try {
+					closed.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException("Interrupted while waiting for iterator close", e);
+				}
+				return available;
+			}
+			return available;
+		}
+
+		@Override
+		public Integer next() {
+			if (!consumed.compareAndSet(false, true)) {
+				throw new NoSuchElementException("No more elements.");
+			}
+			return 1;
+		}
+
+		@Override
+		public void close() {
+			closeCount.incrementAndGet();
+			if (isClosed.compareAndSet(false, true)) {
+				closed.countDown();
+			}
+		}
+
+		private boolean isClosed() {
+			return isClosed.get();
 		}
 
 		private boolean waitForBlockedHasNext() throws InterruptedException {

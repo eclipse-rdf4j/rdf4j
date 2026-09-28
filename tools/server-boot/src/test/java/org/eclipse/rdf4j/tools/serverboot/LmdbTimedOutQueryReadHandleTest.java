@@ -77,6 +77,8 @@ class LmdbTimedOutQueryReadHandleTest {
 	private static final String HEALTH_QUERY = "ASK { ?s ?p ?o }";
 	private static final String ERROR_LOGGING_FILTER_LOGGER = ErrorLoggingFilter.class.getName();
 	private static final String TUPLE_QUERY_RESULT_VIEW_LOGGER = "org.eclipse.rdf4j.http.server.repository.TupleQueryResultView";
+	private static final String TIMEOUT_QUERY_USER_AGENT = "rdf4j-lmdb-timeout-load";
+	private static final String HEALTH_QUERY_USER_AGENT = "rdf4j-lmdb-health-check";
 
 	@LocalServerPort
 	private int port;
@@ -204,6 +206,8 @@ class LmdbTimedOutQueryReadHandleTest {
 
 		HttpURLConnection connection = (HttpURLConnection) repositoryUri(repositoryId).toURL()
 				.openConnection();
+		connection.setRequestProperty("User-Agent",
+				timeoutSeconds > 0 ? TIMEOUT_QUERY_USER_AGENT : HEALTH_QUERY_USER_AGENT);
 		connection.setConnectTimeout(50000);
 		connection.setReadTimeout(readTimeoutMillis);
 		connection.setRequestMethod("POST");
