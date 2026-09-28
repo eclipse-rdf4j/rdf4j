@@ -19,10 +19,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
@@ -151,7 +153,8 @@ class LmdbNativeIrKernelParallelTest {
 	private Map<String, String> previousProperties;
 
 	@BeforeEach
-	void setUp() {
+	void setUp() throws InterruptedException {
+		LmdbNativeJaninoCodegen.resetForTests();
 		previousProperties = new HashMap<>();
 		for (String property : PROPERTIES) {
 			previousProperties.put(property, System.getProperty(property));
@@ -159,7 +162,8 @@ class LmdbNativeIrKernelParallelTest {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
-		repository = new SailRepository(new LmdbStore(dataDir, config));
+		LmdbStore store = new LmdbStore(dataDir, config);
+		repository = new SailRepository(store);
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p = vf.createIRI(EX, "p");
@@ -221,6 +225,10 @@ class LmdbNativeIrKernelParallelTest {
 			}
 			conn.commit();
 		}
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
+				.as("IR-kernel fixture requires an exact direct-adjacency view: %s",
+						store.getDirectAdjacencyReadinessDescription())
+				.isTrue();
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
@@ -370,12 +378,13 @@ class LmdbNativeIrKernelParallelTest {
 		assertThat(expected).isNotEmpty();
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 
-		KernelExecutionTestAccess.resetMetrics();
+		String telemetry = telemetry(EXISTS_DISJUNCTION_QUERY);
+		assertThat(telemetry).contains("irKernelParallel:filter-not-forkable");
 		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
-		for (int round = 0; round < 300 && KernelExecutionTestAccess.opened() == 0; round++) {
-			assertThat(rows(EXISTS_DISJUNCTION_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
-		}
-		assertThat(KernelExecutionTestAccess.opened()).as("sequential kernel still serves").isGreaterThan(0);
+		KernelExecutionTestAccess.resetMetrics();
+		assertThat(rows(EXISTS_DISJUNCTION_QUERY, LmdbNativeAttemptMetrics.PATH_IR_KERNEL))
+				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(KernelExecutionTestAccess.opened()).as("sequential kernel still serves").isPositive();
 		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get())
 				.as("shared residual state would race across workers; parallel must decline")
 				.isEqualTo(parallelBefore);
@@ -435,13 +444,19 @@ class LmdbNativeIrKernelParallelTest {
 
 	@Test
 	void killSwitchDisablesParallelButKeepsTheSequentialKernel() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(EXISTS_DISJUNCTION_QUERY);
+		assertThat(expected).isNotEmpty();
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		assertThat(telemetry(EXISTS_DISJUNCTION_QUERY)).contains("irKernelParallel=");
+
 		System.setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "false");
-		KernelExecutionTestAccess.resetMetrics();
+		assertThat(telemetry(EXISTS_DISJUNCTION_QUERY)).doesNotContain("irKernelParallel=");
 		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
-		for (int round = 0; round < 300 && KernelExecutionTestAccess.opened() == 0; round++) {
-			rows(EXISTS_DISJUNCTION_QUERY);
-		}
-		assertThat(KernelExecutionTestAccess.opened()).isGreaterThan(0);
+		KernelExecutionTestAccess.resetMetrics();
+		assertThat(rows(EXISTS_DISJUNCTION_QUERY, LmdbNativeAttemptMetrics.PATH_IR_KERNEL))
+				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(KernelExecutionTestAccess.opened()).isPositive();
 		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get()).isEqualTo(parallelBefore);
 	}
 
@@ -497,5 +512,11 @@ class LmdbNativeIrKernelParallelTest {
 			}
 		}
 		return rows;
+	}
+
+	private String telemetry(String query) {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			return conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+		}
 	}
 }

@@ -2686,8 +2686,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	/**
 	 * Waits until the maintenance executor has published an exact view for the data revision current at the readiness
-	 * check. This is a bounded diagnostic seam for benchmarks and operational startup checks; it never starts a build
-	 * that configuration disabled.
+	 * check and any catch-up cutover has reopened writer admission. This is a bounded diagnostic seam for benchmarks
+	 * and operational startup checks; it never starts a build that configuration disabled.
 	 */
 	boolean awaitCurrentRevisionReady(long timeout, TimeUnit unit) throws InterruptedException {
 		Objects.requireNonNull(unit, "unit");
@@ -2697,7 +2697,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		long timeoutNanos = unit.toNanos(timeout);
 		long startedNanos = System.nanoTime();
 		while (true) {
-			if (servesCurrentRevisionExactly()) {
+			if (servesCurrentRevisionReady()) {
 				return true;
 			}
 			long elapsedNanos = Math.max(0L, System.nanoTime() - startedNanos);
@@ -2705,12 +2705,38 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			if (remainingNanos == 0L) {
 				return false;
 			}
+			CompletableFuture<Void> pendingPublication = pendingPublicationThrough(tripleStore.getDataRevision());
+			if (pendingPublication != null) {
+				try {
+					pendingPublication.get(remainingNanos, TimeUnit.NANOSECONDS);
+					continue;
+				} catch (TimeoutException e) {
+					return false;
+				} catch (CancellationException e) {
+					continue;
+				} catch (ExecutionException e) {
+					throw new IllegalStateException("direct adjacency publication failed", e.getCause());
+				}
+			}
+			// In the non-deferred commit path the authoritative revision can advance before the sealed delta is handed
+			// to the applier. Wait for the backing writer to enqueue or abandon that delta before probing for progress.
+			synchronized (admissionMonitor) {
+				if (admittedWrites != 0) {
+					long waitElapsedNanos = Math.max(0L, System.nanoTime() - startedNanos);
+					long waitRemainingNanos = timeoutNanos - Math.min(timeoutNanos, waitElapsedNanos);
+					if (waitRemainingNanos == 0L) {
+						return false;
+					}
+					TimeUnit.NANOSECONDS.timedWait(admissionMonitor, waitRemainingNanos);
+					continue;
+				}
+			}
 
 			Future<?> barrier;
 			try {
 				Future<?> retry = buildRetryFuture;
 				barrier = retry != null && !retry.isDone() ? retry : maintenanceExecutor.submit(() -> {
-					if (servesCurrentRevisionExactly()) {
+					if (servesCurrentRevisionReady()) {
 						return ReadinessProbe.READY;
 					}
 					return maintenanceCanReachReadiness() ? ReadinessProbe.PROGRESS_PENDING
@@ -2727,7 +2753,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				if (result == ReadinessProbe.UNAVAILABLE) {
 					// Publication and the maintenance-state transition are separate volatile writes. If the probe
 					// observed their boundary, prefer the exact published state over a transient unavailable verdict.
-					return servesCurrentRevisionExactly();
+					return servesCurrentRevisionReady();
 				}
 			} catch (TimeoutException e) {
 				return false;
@@ -2737,6 +2763,19 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				throw new IllegalStateException("direct adjacency readiness barrier failed", e.getCause());
 			}
 		}
+	}
+
+	private CompletableFuture<Void> pendingPublicationThrough(long revision) {
+		long earliestRevision = Long.MAX_VALUE;
+		CompletableFuture<Void> earliestPublication = null;
+		for (var entry : unpublishedRevisions.entrySet()) {
+			long pendingRevision = entry.getKey();
+			if (pendingRevision <= revision && pendingRevision < earliestRevision) {
+				earliestRevision = pendingRevision;
+				earliestPublication = entry.getValue();
+			}
+		}
+		return earliestPublication;
 	}
 
 	private boolean servesCurrentRevisionExactly() {
@@ -2751,6 +2790,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				&& emergencyGap.get().fromRevision() > currentRevision;
 	}
 
+	private boolean servesCurrentRevisionReady() {
+		if (!servesCurrentRevisionExactly()) {
+			return false;
+		}
+		synchronized (admissionMonitor) {
+			return !cutoverAdmissionClosed;
+		}
+	}
+
 	private boolean maintenanceCanReachReadiness() {
 		if (closed || options.memoryRefused() || maintenanceState == MaintenanceState.CLOSED
 				|| maintenanceState == MaintenanceState.MEMORY_REFUSED
@@ -2763,6 +2811,14 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				|| maintenanceState == MaintenanceState.CATCHING_UP
 				|| maintenanceState == MaintenanceState.CONSOLIDATING
 				|| maintenanceState == MaintenanceState.QUIESCING_FOR_REBUILD) {
+			return true;
+		}
+		synchronized (admissionMonitor) {
+			if (admittedWrites != 0) {
+				return true;
+			}
+		}
+		if (pendingPublicationThrough(tripleStore.getDataRevision()) != null) {
 			return true;
 		}
 		synchronized (applyQueue) {

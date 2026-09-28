@@ -222,6 +222,8 @@ public class LmdbTypeMatrixTest {
 	public void linkageRejectsUniformLiteralNeighborPagesAfterMixedPlaneAdmission() throws Exception {
 		System.setProperty(SYNOPSIS_PROPERTY, "false");
 		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		System.setProperty("rdf4j.lmdb.parallel.maxTasks", "2");
 		LmdbStoreConfig loadConfig = new LmdbStoreConfig("spoc,posc,ospc,psoc")
 				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
 		LmdbStore store = new LmdbStore(dataDir, loadConfig);

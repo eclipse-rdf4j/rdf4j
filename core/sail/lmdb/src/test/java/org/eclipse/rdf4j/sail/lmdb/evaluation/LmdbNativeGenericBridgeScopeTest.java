@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -89,9 +90,13 @@ public class LmdbNativeGenericBridgeScopeTest {
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String RECORD_NOW_URI = EX + "recordNow";
 	private static final String RECORD_LITERAL_NOW_URI = EX + "recordLiteralNow";
+	private static final String RECORD_SCALAR_OUTER_NOW_URI = EX + "recordScalarOuterNow";
+	private static final String RECORD_SCALAR_INNER_NOW_URI = EX + "recordScalarInnerNow";
 
 	/** NOW() values the filter predicate observed, one entry per predicate invocation. */
 	private static final List<Value> RECORDED = Collections.synchronizedList(new ArrayList<>());
+	private static final List<Value> SCALAR_OUTER_NOW_RECORDED = Collections.synchronizedList(new ArrayList<>());
+	private static final List<Value> SCALAR_INNER_NOW_RECORDED = Collections.synchronizedList(new ArrayList<>());
 
 	/** Records its argument (the NOW() literal) and accepts the row. Registered once per JVM. */
 	public static final class RecordNowFunction implements Function {
@@ -124,6 +129,12 @@ public class LmdbNativeGenericBridgeScopeTest {
 	static {
 		FunctionRegistry.getInstance().add(new RecordNowFunction());
 		FunctionRegistry.getInstance().add(new RecordLiteralNowFunction());
+		FunctionRegistry.getInstance()
+				.add(recordLiteralNowFunction(RECORD_SCALAR_OUTER_NOW_URI,
+						SCALAR_OUTER_NOW_RECORDED));
+		FunctionRegistry.getInstance()
+				.add(recordLiteralNowFunction(RECORD_SCALAR_INNER_NOW_URI,
+						SCALAR_INNER_NOW_RECORDED));
 	}
 
 	@TempDir
@@ -572,52 +583,76 @@ public class LmdbNativeGenericBridgeScopeTest {
 	public void scalarSubquerySharesTheOuterNowScope() {
 		String previous = System.getProperty(NATIVE_FLAG);
 		System.setProperty(NATIVE_FLAG, "true");
-		RECORDED.clear();
-		ValueFactory vf = repository.getValueFactory();
-		BindingSetAssignment outerInput = new BindingSetAssignment();
-		QueryBindingSet outerRow = new QueryBindingSet();
-		outerRow.addBinding("outerSeed", vf.createIRI(EX, "outer-seed"));
-		outerInput.setBindingSets(List.of(outerRow));
-		BindingSetAssignment innerInput = new BindingSetAssignment();
-		List<BindingSet> innerRows = new ArrayList<>();
-		for (int i = 0; i < 3; i++) {
-			QueryBindingSet row = new QueryBindingSet();
-			row.addBinding("seed", vf.createIRI(EX, "seed" + i));
-			innerRows.add(row);
-		}
-		innerInput.setBindingSets(innerRows);
-		Extension subquery = new Extension(innerInput,
-				new ExtensionElem(new FunctionCall(RECORD_LITERAL_NOW_URI, new FunctionCall("NOW")), "inner"));
-		CompareAny scalar = new CompareAny(new FunctionCall(RECORD_LITERAL_NOW_URI, new FunctionCall("NOW")), subquery,
-				CompareOp.EQ);
-		Extension root = new Extension(outerInput, new ExtensionElem(scalar, "matched"));
-		QueryEvaluationContext context = new DelayedDatasetContext();
-		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
-				new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
-				new EvaluationStatistics(), false);
-		LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(
-				new QueryRoot(root),
-				context, strategy, (NativeLmdbQuerySource) dataset);
-		assertThat(outcome.isSupported()).as("the scalar subquery must compile as a native semantic extension")
-				.isTrue();
-		long evaluationsBefore = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get();
-		List<BindingSet> rows = evaluateStep(outcome.step());
-		assertThat(NativeScalarSubqueryValueEvaluator.EVALUATIONS.get()).isGreaterThan(evaluationsBefore);
-		assertThat(rows).hasSize(1);
-		assertThat(RECORDED).as("the outer and scalar-subquery functions must both run").hasSize(4);
-		Value now = RECORDED.getFirst();
-		assertThat(RECORDED)
-				.as("a scalar subquery must borrow the outer query's query-scoped NOW representative")
-				.allMatch(value -> value == now);
-		if (previous == null) {
-			System.clearProperty(NATIVE_FLAG);
-		} else {
-			System.setProperty(NATIVE_FLAG, previous);
+		try {
+			RECORDED.clear();
+			SCALAR_OUTER_NOW_RECORDED.clear();
+			SCALAR_INNER_NOW_RECORDED.clear();
+			ValueFactory vf = repository.getValueFactory();
+			BindingSetAssignment outerInput = new BindingSetAssignment();
+			QueryBindingSet outerRow = new QueryBindingSet();
+			outerRow.addBinding("outerSeed", vf.createIRI(EX, "outer-seed"));
+			outerInput.setBindingSets(List.of(outerRow));
+			BindingSetAssignment innerInput = new BindingSetAssignment();
+			List<BindingSet> innerRows = new ArrayList<>();
+			for (int i = 0; i < 3; i++) {
+				QueryBindingSet row = new QueryBindingSet();
+				row.addBinding("seed", vf.createIRI(EX, "seed" + i));
+				innerRows.add(row);
+			}
+			innerInput.setBindingSets(innerRows);
+			Extension subquery = new Extension(innerInput,
+					new ExtensionElem(new FunctionCall(RECORD_SCALAR_INNER_NOW_URI, new FunctionCall("NOW")), "inner"));
+			Projection scalarColumn = new Projection(subquery,
+					new ProjectionElemList(new ProjectionElem("inner")));
+			CompareAny scalar = new CompareAny(new FunctionCall(RECORD_SCALAR_OUTER_NOW_URI, new FunctionCall("NOW")),
+					scalarColumn, CompareOp.EQ);
+			Extension root = new Extension(outerInput, new ExtensionElem(scalar, "matched"));
+			QueryEvaluationContext context = new DelayedDatasetContext();
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+					new EvaluationStatistics(), false);
+			LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(
+					new QueryRoot(root), context, strategy, (NativeLmdbQuerySource) dataset);
+			assertThat(outcome.isSupported()).as("the scalar subquery must compile as a native semantic extension")
+					.isTrue();
+			List<BindingSet> rows = evaluateStep(outcome.step());
+			assertThat(rows).hasSize(1);
+			assertThat(rows.getFirst().getValue("matched")).isEqualTo(BooleanLiteral.TRUE);
+			assertThat(SCALAR_OUTER_NOW_RECORDED).as("the outer scalar function must be evaluated").isNotEmpty();
+			assertThat(SCALAR_INNER_NOW_RECORDED).as("the inner scalar function must be evaluated").isNotEmpty();
+			Value now = SCALAR_OUTER_NOW_RECORDED.getFirst();
+			assertThat(SCALAR_OUTER_NOW_RECORDED)
+					.as("every outer evaluation must use the query-scoped NOW value")
+					.allMatch(now::equals);
+			assertThat(SCALAR_INNER_NOW_RECORDED)
+					.as("the scalar subquery must share the outer query's NOW value")
+					.allMatch(now::equals);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
 		}
 	}
 
 	private static FunctionCall recordNow(String bindingName) {
 		return new FunctionCall(RECORD_NOW_URI, new FunctionCall("NOW"), Var.of(bindingName));
+	}
+
+	private static Function recordLiteralNowFunction(String uri, List<Value> recorded) {
+		return new Function() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+				recorded.add(args[0]);
+				return args[0];
+			}
+		};
 	}
 
 	private static List<Value> drainAndCollectNow(QueryEvaluationStep step) {

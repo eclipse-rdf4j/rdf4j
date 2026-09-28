@@ -224,7 +224,10 @@ class LmdbDirectAdjacencyCommitTest {
 			releaseOnline.countDown();
 		}
 		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).isTrue();
-		assertThat(store.tryBeginBackingWrite()).isTrue();
+		assertThat(store.tryBeginBackingWrite())
+				.as("exact-revision readiness must follow catch-up write-admission reopening: %s",
+						store.publicationDiagnostics())
+				.isTrue();
 		store.endBackingWrite();
 		assertThat(store.queuedCommitsForTest()).isZero();
 		assertThat(store.backlogBytes()).isZero();

@@ -2156,6 +2156,75 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
+	void readinessWaitsForAnUnpublishedCommitToReachTheApplyQueue() throws Exception {
+		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyMaxBytes(1L << 30);
+		sail = new LmdbStore(dataDir, config);
+		repo = new SailRepository(sail);
+		repo.init();
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin();
+			connection.add(S1, P1, O1);
+			connection.add(S1, P1, O2, G1);
+			connection.add(S1, P2, O1);
+			connection.add(S2, P1, O1);
+			connection.add(S1, P3, F.createLiteral(42));
+			connection.commit();
+		}
+		backing = sail.getBackingStore();
+		direct = backing.directAdjacencyStore();
+		assertThat(direct).isNotNull();
+		awaitDirectAdjacencyReady();
+
+		CountDownLatch admissionStarted = new CountDownLatch(1);
+		CountDownLatch releaseAdmission = new CountDownLatch(1);
+		CountDownLatch readinessStarted = new CountDownLatch(1);
+		Runnable previousAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		direct.beforeApplyQueueAdmissionForTest = () -> {
+			admissionStarted.countDown();
+			awaitQueueAdmissionRelease(releaseAdmission);
+		};
+		try {
+			Future<?> commit = executor.submit(() -> {
+				try (RepositoryConnection connection = repo.getConnection()) {
+					connection.add(F.createIRI("http://example.org/pending"), P2, O2);
+				}
+			});
+			awaitPendingPublication(admissionStarted);
+			LmdbAdjacencyMetrics.Snapshot handoff = direct.snapshotMetrics();
+			assertThat(handoff.currentDataRevision).as(direct.publicationDiagnostics())
+					.isGreaterThan(handoff.appliedRevision);
+			assertThat(direct.publicationDiagnostics()).contains("admittedWrites=0");
+			Future<Boolean> readiness = executor.submit(() -> {
+				readinessStarted.countDown();
+				return sail.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS);
+			});
+			assertThat(readinessStarted.await(30, TimeUnit.SECONDS)).isTrue();
+			Boolean readinessBeforeHandoff;
+			try {
+				readinessBeforeHandoff = readiness.get(250, TimeUnit.MILLISECONDS);
+			} catch (TimeoutException expected) {
+				readinessBeforeHandoff = null;
+			}
+			assertThat(readinessBeforeHandoff)
+					.as("readiness must wait while a committed revision is still being handed to the applier: currentRevision="
+							+ handoff.currentDataRevision + ", appliedRevision=" + handoff.appliedRevision + ", "
+							+ direct.publicationDiagnostics())
+					.isNull();
+			releaseAdmission.countDown();
+			commit.get(30, TimeUnit.SECONDS);
+			assertThat(readiness.get(60, TimeUnit.SECONDS)).isTrue();
+		} finally {
+			releaseAdmission.countDown();
+			direct.beforeApplyQueueAdmissionForTest = previousAdmissionHook;
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
 	void disabledParallelRowPathDoesNotExposeDirectRootOrderForPendingRevision() throws Exception {
 		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
 		System.setProperty(LmdbDirectAdjacencyStore.PARALLEL_ROW_PATH_PROPERTY, "false");
