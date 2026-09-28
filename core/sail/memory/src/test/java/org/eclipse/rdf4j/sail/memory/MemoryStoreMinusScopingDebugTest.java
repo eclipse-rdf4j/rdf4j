@@ -124,6 +124,7 @@ public class MemoryStoreMinusScopingDebugTest {
 	public void emptyOptionalSubselectPreservesInitialSolution() {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 
+			// LeftJoin preserves its initial solution when the OPTIONAL subselect has no match.
 			String query = "PREFIX : <http://example.org/> "
 					+ "SELECT ?visibility WHERE {"
 					+ "OPTIONAL { SELECT ?var WHERE { :s a :MyType . BIND (:s as ?var ) .} } ."
