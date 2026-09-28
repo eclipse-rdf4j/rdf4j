@@ -162,6 +162,7 @@ class ThemeQueryBenchmarkSmokeIT {
 			String callerSynchronousSetting) throws Exception {
 		String previousProfiling = System.getProperty(PROFILING_PROPERTY);
 		String previousSynchronous = System.getProperty(JANINO_SYNCHRONOUS_PROPERTY);
+		String previousDirectAdjacency = System.getProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY);
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
 		benchmark.themeName = theme.name();
 		benchmark.z_queryIndex = 0;
@@ -169,6 +170,7 @@ class ThemeQueryBenchmarkSmokeIT {
 		boolean initialized = false;
 		try {
 			System.setProperty(PROFILING_PROPERTY, "true");
+			System.setProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY, Boolean.TRUE.toString());
 			if ("unset".equals(callerSynchronousSetting)) {
 				System.clearProperty(JANINO_SYNCHRONOUS_PROPERTY);
 			} else {
@@ -191,6 +193,7 @@ class ThemeQueryBenchmarkSmokeIT {
 			}
 			restoreProperty(PROFILING_PROPERTY, previousProfiling);
 			restoreProperty(JANINO_SYNCHRONOUS_PROPERTY, previousSynchronous);
+			restoreProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY, previousDirectAdjacency);
 		}
 	}
 
