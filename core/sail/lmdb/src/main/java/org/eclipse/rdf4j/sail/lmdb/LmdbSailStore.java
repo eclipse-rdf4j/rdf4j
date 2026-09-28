@@ -61,6 +61,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimato
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSourceException;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
 import org.eclipse.rdf4j.sail.base.SailClosable;
@@ -628,9 +629,12 @@ class LmdbSailStore implements SailStore {
 		void ensureNativeSnapshotsValid() throws SailException {
 			ensureNamespacePersistenceCertain();
 			tripleTxn.ensureSnapshotValid();
-			if (tripleTxn.isClosed() || tripleTxn.version() != tripleTxnVersion) {
-				throw new SailException(
-						"TripleStore map changed while the read snapshot was pinned; retry the read operation");
+			if (tripleTxn.isClosed()) {
+				throw new SailException("TripleStore read snapshot is closed; retry the read operation");
+			}
+			if (tripleTxn.version() != tripleTxnVersion) {
+				throw new SailConflictException(
+						"TripleStore map changed while the read snapshot was pinned; retry the transaction");
 			}
 			try {
 				valueSnapshot.ensureValid();
@@ -744,7 +748,9 @@ class LmdbSailStore implements SailStore {
 			view = createReadView();
 		}
 		activeReadView.set(view);
-		return new DatasetAdmission(view, null, transactionView == null);
+		// Outermost describes acquisition nesting, not whether this call created a new read view. A transaction-pinned
+		// view is still a top-level admission when no read view is active on this thread.
+		return new DatasetAdmission(view, null, true);
 	}
 
 	ReadView createTransactionReadView() throws SailException {

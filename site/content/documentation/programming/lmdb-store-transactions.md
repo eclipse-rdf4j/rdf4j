@@ -31,11 +31,14 @@ underlying exception currently says:
 SNAPSHOT transaction invalidated: the store's memory map was resized during the transaction; retry the transaction
 ```
 
+At the Sail layer, map-growth invalidation is reported as `SailConflictException`, a typed `SailException` indicating
+that the requested isolation level could not be maintained. Repository and query APIs may wrap it in their own
+exception type, so inspect the cause chain when handling the error.
+
 For a query-level `SNAPSHOT_READ`, abandon and re-execute the whole query so it gets a fresh result snapshot. Do not
 resume from the last row: results already consumed came from the invalidated view, and downstream side effects should
 be safe to repeat. For a transaction-level `SNAPSHOT` or `SERIALIZABLE`, restart the transaction; retrying only the
-last statement would mix generations. Repository and query APIs may wrap the underlying `SailException` in their own
-exception type, so inspect the cause chain when handling the error.
+last statement would mix generations.
 
 This is an invalidation boundary, not a promise that every pre-change query always survived every resize. The earlier
 cursor-renewal path could make a read appear to continue after a reset; the current path fails rather than allowing an

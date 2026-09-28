@@ -86,6 +86,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
@@ -2120,12 +2121,14 @@ class ValueStore extends AbstractValueFactory {
 			}
 			try {
 				txn.ensureSnapshotValid();
+			} catch (SailConflictException e) {
+				throw e;
 			} catch (SailException e) {
 				throw new IOException(e.getMessage(), e);
 			}
 			if (txn.version() != transactionVersion) {
-				throw new IOException(
-						"ValueStore map changed while the read snapshot was pinned; retry the read operation");
+				throw new SailConflictException(
+						"ValueStore map changed while the read snapshot was pinned; retry the transaction");
 			}
 		}
 

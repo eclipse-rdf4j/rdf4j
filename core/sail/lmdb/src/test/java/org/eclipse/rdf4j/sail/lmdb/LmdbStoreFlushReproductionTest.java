@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
@@ -35,7 +36,10 @@ import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -53,6 +57,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
@@ -65,6 +70,9 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
 
@@ -288,6 +296,72 @@ class LmdbStoreFlushReproductionTest {
 		} finally {
 			store.shutDown();
 		}
+	}
+
+	@ParameterizedTest(name = "{0} includeInferred={1}")
+	@MethodSource("datasetAdmissionRetryCases")
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void transactionRetriesDatasetAdmissionWithoutAdoptingPublishedGeneration(IsolationLevel isolationLevel,
+			boolean includeInferred, @TempDir Path dataDir) throws Exception {
+		DatasetAdmissionGate gate = new DatasetAdmissionGate();
+		LmdbStore store = new DatasetAdmissionRetryLmdbStore(dataDir, gate);
+		store.init();
+		IRI original = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:admission:original");
+		IRI writerExplicit = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:admission:writer-explicit");
+		IRI writerInferred = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:admission:writer-inferred");
+
+		try (SailConnection seed = store.getConnection();
+				SailConnection reader = store.getConnection();
+				SailConnection writer = store.getConnection()) {
+			seed.begin(IsolationLevels.SNAPSHOT);
+			seed.addStatement(original, PREDICATE, SimpleValueFactory.getInstance().createLiteral("before"));
+			seed.setNamespace("admission", "urn:issue:6070:admission:before:");
+			seed.commit();
+
+			reader.begin(isolationLevel);
+			if (includeInferred) {
+				try (CloseableIteration<? extends Statement> statements = reader.getStatements(null, PREDICATE, null,
+						false)) {
+					assertTrue(statements.hasNext(),
+							"the initial read establishes the transaction's pinned generation");
+					assertEquals(original, statements.next().getSubject());
+				}
+
+				writer.begin(IsolationLevels.SNAPSHOT);
+				writer.addStatement(writerExplicit, PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("writer"));
+				assertTrue(((InferencerConnection) writer).addInferredStatement(writerInferred, PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("writer")));
+				writer.setNamespace("admission", "urn:issue:6070:admission:after:");
+				writer.commit();
+			}
+
+			gate.retryNextDatasetAdmission();
+			Set<Resource> visibleSubjects = new HashSet<>();
+			try (CloseableIteration<? extends Statement> statements = reader.getStatements(null, PREDICATE, null,
+					includeInferred)) {
+				while (statements.hasNext()) {
+					visibleSubjects.add(statements.next().getSubject());
+				}
+			}
+
+			assertEquals(Set.of(original), visibleSubjects,
+					"a retry must reuse the original paired read view and exclude explicit and inferred commits published meanwhile");
+			assertEquals(1, gate.retriesInjected.get(),
+					"the dataset acquisition retries once after its admission is invalidated");
+			assertEquals("urn:issue:6070:admission:before:", reader.getNamespace("admission"),
+					"a retry must not advance the transaction's paired namespace snapshot");
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	static Stream<Arguments> datasetAdmissionRetryCases() {
+		return Stream.of(
+				Arguments.of(IsolationLevels.SNAPSHOT, false),
+				Arguments.of(IsolationLevels.SNAPSHOT, true),
+				Arguments.of(IsolationLevels.SERIALIZABLE, false),
+				Arguments.of(IsolationLevels.SERIALIZABLE, true));
 	}
 
 	@Test
@@ -792,7 +866,7 @@ class LmdbStoreFlushReproductionTest {
 					}
 					assertTrue(mapSize(valueStore) > initialMapSize,
 							"the committed quoted value must grow the native ValueStore map before invalidation is checked");
-					assertThrows(SailException.class, triples::hasNext,
+					assertThrows(SailConflictException.class, triples::hasNext,
 							"map growth must invalidate rather than renew the iterator's pinned value snapshot");
 
 					try (SailDataset latest = store.getBackingStore()
@@ -1452,6 +1526,130 @@ class LmdbStoreFlushReproductionTest {
 		@Override
 		public void flush() {
 			throw new SailException("injected inferred-root flush failure");
+		}
+	}
+
+	private static final class DatasetAdmissionRetryLmdbStore extends LmdbStore {
+		private final DatasetAdmissionGate gate;
+
+		private DatasetAdmissionRetryLmdbStore(Path dataDir, DatasetAdmissionGate gate) {
+			super(dataDir.toFile());
+			this.gate = gate;
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+			return new DatasetAdmissionRetrySailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
+					gate);
+		}
+	}
+
+	private static final class DatasetAdmissionRetrySailStore extends LmdbSailStore {
+		private final DatasetAdmissionGate gate;
+
+		private DatasetAdmissionRetrySailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled, DatasetAdmissionGate gate) throws IOException, SailException {
+			super(dataDir, properties, config, sketchBasedJoinEstimatorEnabled);
+			this.gate = gate;
+		}
+
+		@Override
+		public SailSource getExplicitSailSource() {
+			return new DatasetAdmissionRetrySource(super.getExplicitSailSource(), gate);
+		}
+
+		@Override
+		public SailSource getInferredSailSource() {
+			return new DatasetAdmissionRetrySource(super.getInferredSailSource(), gate);
+		}
+	}
+
+	private static final class DatasetAdmissionGate {
+		private final AtomicBoolean armed = new AtomicBoolean();
+		private final AtomicInteger retriesInjected = new AtomicInteger();
+
+		private void retryNextDatasetAdmission() {
+			armed.set(true);
+		}
+
+		private void checkForRetry() throws SailException {
+			if (armed.compareAndSet(true, false)) {
+				retriesInjected.incrementAndGet();
+				throw new SailSource.RetryableDatasetAcquisitionException(
+						"The snapshot admission was invalidated while its dataset was being created");
+			}
+		}
+	}
+
+	private static final class DatasetAdmissionRetrySource implements SailSource {
+		private final SailSource delegate;
+		private final DatasetAdmissionGate gate;
+
+		private DatasetAdmissionRetrySource(SailSource delegate, DatasetAdmissionGate gate) {
+			this.delegate = delegate;
+			this.gate = gate;
+		}
+
+		@Override
+		public void close() throws SailException {
+			delegate.close();
+		}
+
+		@Override
+		public SailSource fork() {
+			return new DatasetAdmissionRetrySource(delegate.fork(), gate);
+		}
+
+		@Override
+		public SailSink sink(IsolationLevel level) throws SailException {
+			return delegate.sink(level);
+		}
+
+		@Override
+		public SailDataset dataset(IsolationLevel level) throws SailException {
+			gate.checkForRetry();
+			return delegate.dataset(level);
+		}
+
+		@Override
+		public SailClosable beginDatasetAcquisition(IsolationLevel level) throws SailException {
+			return delegate.beginDatasetAcquisition(level);
+		}
+
+		@Override
+		public SailClosable beginPublication() throws SailException {
+			return delegate.beginPublication();
+		}
+
+		@Override
+		public SailClosable tryBeginPublication() throws SailException {
+			return delegate.tryBeginPublication();
+		}
+
+		@Override
+		public SailClosable beginPreparedWrite() throws SailException {
+			return delegate.beginPreparedWrite();
+		}
+
+		@Override
+		public boolean hasPendingWriteChanges() {
+			return delegate.hasPendingWriteChanges();
+		}
+
+		@Override
+		public boolean isSnapshotCurrent(SailDataset dataset) {
+			return delegate.isSnapshotCurrent(dataset);
+		}
+
+		@Override
+		public void prepare() throws SailException {
+			delegate.prepare();
+		}
+
+		@Override
+		public void flush() throws SailException {
+			delegate.flush();
 		}
 	}
 }

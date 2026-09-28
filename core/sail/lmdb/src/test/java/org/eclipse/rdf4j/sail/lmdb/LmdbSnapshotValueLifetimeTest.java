@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
@@ -123,12 +124,124 @@ class LmdbSnapshotValueLifetimeTest {
 		try {
 			SailException failure = assertThrows(SailException.class,
 					() -> backingStore.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ));
+			assertFalse(failure instanceof SailConflictException,
+					"an injected native snapshot-start I/O failure is not a transaction conflict");
 			assertTrue(failure.getCause() instanceof IOException,
 					"the injected second-environment start failure must remain the reported cause");
 			assertEquals(triplePermits, availableReaderPermits(tripleStore.getTxnManager()),
 					"failed paired acquisition must return the first environment's reader permit");
 			assertEquals(valuePermits, availableReaderPermits(valueStore.getTxnManager()),
 					"failed ValueStore acquisition must return its reserved reader permit");
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void snapshotTransactionCanRollbackAndRestartAfterTripleStoreMapGrowth(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setForceSync(true)
+				.setTripleDBSize(4096 * 10)
+				.setAutoGrow(true);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		IRI predicate = VF.createIRI("urn:snapshot-lifetime:retry:predicate");
+		IRI subject = VF.createIRI("urn:snapshot-lifetime:retry:added");
+		TripleStore tripleStore;
+		long initialMapSize;
+
+		store.init();
+		try {
+			tripleStore = tripleStoreOf(store);
+			initialMapSize = mapSize(tripleStore);
+			try (SailConnection reader = store.getConnection()) {
+				reader.begin(IsolationLevels.SNAPSHOT);
+				assertFalse(reader.hasStatement(subject, predicate, null, false));
+
+				try (SailConnection writer = store.getConnection()) {
+					writer.begin(IsolationLevels.SNAPSHOT);
+					for (int i = 0; i < 10_000; i++) {
+						writer.addStatement(VF.createIRI("urn:snapshot-lifetime:retry:" + i), predicate,
+								VF.createLiteral("value"));
+					}
+					writer.addStatement(subject, predicate, VF.createLiteral("published"));
+					writer.commit();
+				}
+
+				assertTrue(mapSize(tripleStore) > initialMapSize,
+						"the writer must grow the TripleStore map while the reader transaction is pinned");
+				assertThrows(SailConflictException.class,
+						() -> reader.hasStatement(subject, predicate, null, false),
+						"a pinned transaction must report map invalidation as a retryable conflict");
+				reader.rollback();
+				reader.begin(IsolationLevels.SNAPSHOT);
+				assertTrue(reader.hasStatement(subject, predicate, VF.createLiteral("published"), false),
+						"a new transaction must see the complete committed generation after rollback");
+				reader.commit();
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void snapshotTransactionCanRollbackAndRestartAfterValueStoreMapGrowth(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setForceSync(true)
+				.setValueDBSize(1024L * 1024L)
+				.setAutoGrow(true);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		IRI subject = VF.createIRI("urn:snapshot-lifetime:value-retry:subject");
+		IRI predicate = VF.createIRI("urn:snapshot-lifetime:value-retry:predicate");
+		Literal value = VF.createLiteral("x".repeat(2 * 1024 * 1024));
+		ValueStore valueStore;
+		long initialMapSize;
+
+		store.init();
+		try {
+			valueStore = valueStoreOf(store);
+			initialMapSize = mapSize(valueStore);
+			try (SailConnection reader = store.getConnection()) {
+				reader.begin(IsolationLevels.SNAPSHOT);
+				assertFalse(reader.hasStatement(subject, predicate, null, false));
+
+				try (SailConnection writer = store.getConnection()) {
+					writer.begin(IsolationLevels.SNAPSHOT);
+					writer.addStatement(subject, predicate, value);
+					writer.commit();
+				}
+
+				assertTrue(mapSize(valueStore) > initialMapSize,
+						"the writer must grow the ValueStore map while the reader transaction is pinned");
+				assertThrows(SailConflictException.class,
+						() -> reader.hasStatement(subject, predicate, value, false),
+						"a ValueStore map resize must invalidate the full pinned transaction");
+				reader.rollback();
+				reader.begin(IsolationLevels.SNAPSHOT);
+				assertTrue(reader.hasStatement(subject, predicate, value, false),
+						"a new transaction must see the committed value after rollback");
+				reader.commit();
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void closedValueSnapshotIsNotAnIsolationConflict(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir);
+		store.init();
+		ValueStore valueStore = valueStoreOf(store);
+		try {
+			ValueStore.ReadSnapshot snapshot;
+			try (ValueStore.ReadSnapshotReservation reservation = valueStore.reserveReadSnapshot()) {
+				snapshot = reservation.start();
+			}
+			snapshot.close();
+			IOException failure = assertThrows(IOException.class, snapshot::ensureValid);
+			assertFalse(failure.getMessage().contains("invalidated"),
+					"a closed snapshot is distinct from a transaction invalidated by map growth");
 		} finally {
 			store.shutDown();
 		}
@@ -387,7 +500,7 @@ class LmdbSnapshotValueLifetimeTest {
 
 				assertTrue(mapSize(tripleStore) > initialMapSize,
 						"the fixture must grow the TripleStore map while the reader is pinned");
-				assertThrows(SailException.class, statements::hasNext,
+				assertThrows(SailConflictException.class, statements::hasNext,
 						"a TripleStore cursor must fail retryably instead of renewing onto a newer map generation");
 			}
 		} finally {
@@ -433,7 +546,7 @@ class LmdbSnapshotValueLifetimeTest {
 
 				assertTrue(mapSize(tripleStore) > initialMapSize,
 						"the fixture must grow the TripleStore map while the context cursor is pinned");
-				assertThrows(SailException.class, contexts::next,
+				assertThrows(SailConflictException.class, contexts::next,
 						"a context cursor must fail instead of renewing onto a newer map generation");
 			}
 		} finally {
@@ -554,9 +667,17 @@ class LmdbSnapshotValueLifetimeTest {
 	}
 
 	private static long mapSize(TripleStore tripleStore) {
+		return mapSize(tripleStore.env);
+	}
+
+	private static long mapSize(ValueStore valueStore) throws ReflectiveOperationException {
+		return mapSize(envOf(valueStore));
+	}
+
+	private static long mapSize(long env) {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
-			assertEquals(MDB_SUCCESS, mdb_env_info(tripleStore.env, info));
+			assertEquals(MDB_SUCCESS, mdb_env_info(env, info));
 			return info.me_mapsize();
 		}
 	}

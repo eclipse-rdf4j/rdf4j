@@ -37,6 +37,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.util.MpmcRingBuffer;
@@ -707,7 +708,7 @@ final class TxnManager {
 				throw new SailException("SNAPSHOT transaction is closed; retry the read operation");
 			}
 			if (snapshotInvalidated) {
-				throw new SailException("SNAPSHOT transaction invalidated: the store's memory map was resized "
+				throw new SailConflictException("SNAPSHOT transaction invalidated: the store's memory map was resized "
 						+ "during the transaction; retry the transaction");
 			}
 		}
