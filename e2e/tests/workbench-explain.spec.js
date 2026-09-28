@@ -205,8 +205,7 @@ test('Text explanation highlighting preserves server plaintext and toggles witho
     expect(narrowControlBounds.left).toBeGreaterThanOrEqual(0);
     expect(narrowControlBounds.right).toBeLessThanOrEqual(narrowControlBounds.viewportWidth);
     await page.screenshot({
-        path: '/tmp/rdf4j-query-explanation-narrow.png',
-        fullPage: true
+        path: '/tmp/rdf4j-query-explanation-narrow.png'
     });
     expect(consoleErrors).toEqual([]);
 });
