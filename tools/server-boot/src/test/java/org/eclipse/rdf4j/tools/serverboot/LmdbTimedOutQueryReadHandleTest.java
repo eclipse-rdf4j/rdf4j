@@ -242,20 +242,27 @@ class LmdbTimedOutQueryReadHandleTest {
 
 	private void assertEventuallyHealthy(String repositoryId) throws IOException, InterruptedException {
 		QueryResponse response = null;
+		String lastProbeFailure = "no health probe completed";
 		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
 		while (System.nanoTime() < deadline) {
-			response = executeQuery(repositoryId, HEALTH_QUERY, 0, 1000);
-			if (response.status == HttpStatus.OK.value()) {
-				return;
+			try {
+				response = executeQuery(repositoryId, HEALTH_QUERY, 0, 1000);
+				if (response.status == HttpStatus.OK.value()) {
+					return;
+				}
+				lastProbeFailure = "HTTP " + response.status + ": " + response.body;
+			} catch (IOException transientFailure) {
+				response = null;
+				lastProbeFailure = exceptionMessage(transientFailure);
 			}
 			Thread.sleep(250);
 		}
 
 		assertThat(response)
-				.as("health query response")
+				.as("health query response after 60 seconds; last failure: %s", lastProbeFailure)
 				.isNotNull();
 		assertThat(response.status)
-				.as("health query response body: %s", response.body)
+				.as("health query response body: %s; last failure: %s", response.body, lastProbeFailure)
 				.isEqualTo(HttpStatus.OK.value());
 	}
 
