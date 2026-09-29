@@ -86,7 +86,6 @@ class LmdbSailStore implements SailStore {
 	private final File dataDir;
 
 	private final TripleStore tripleStore;
-	private final File dataDir;
 
 	private final ValueStore valueStore;
 	private final int bulkOperationSize;
@@ -125,9 +124,9 @@ class LmdbSailStore implements SailStore {
 	private volatile CommitListener commitListener;
 
 	interface CommitListener {
-		void onCommit(long transactionId, List<Statement> additions, List<Statement> removals);
+		void onCommit(long transactionId, List<LmdbBackupDeltaCodec.Record> records);
 
-		void onCommitFailure(long transactionId, List<Statement> additions, List<Statement> removals, Throwable error);
+		void onCommitFailure(long transactionId, List<LmdbBackupDeltaCodec.Record> records, Throwable error);
 	}
 
 	/**
@@ -1023,8 +1022,7 @@ class LmdbSailStore implements SailStore {
 
 		private final boolean explicit;
 		private volatile boolean estimatorTouchedInTransaction;
-		private final List<Statement> committedAdds = new ArrayList<>();
-		private final List<Statement> committedRemovals = new ArrayList<>();
+		private final List<LmdbBackupDeltaCodec.Record> committedRecords = new ArrayList<>();
 
 		public LmdbSailSink(boolean explicit, IsolationLevel level) throws SailException {
 			this.explicit = explicit;
@@ -1057,16 +1055,30 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void queueBackupAdd(Statement st) {
-			committedAdds.add(st);
+			committedRecords.add(new LmdbBackupDeltaCodec.Record(true, explicit, st));
 		}
 
 		private void queueBackupRemove(Statement st) {
-			committedRemovals.add(st);
+			committedRecords.add(new LmdbBackupDeltaCodec.Record(false, explicit, st));
+		}
+
+		private void queueBackupNamespaceSet(String prefix, String name) {
+			committedRecords
+					.add(new LmdbBackupDeltaCodec.Record(LmdbBackupDeltaCodec.NamespaceOperation.SET, prefix, name));
+		}
+
+		private void queueBackupNamespaceRemove(String prefix) {
+			committedRecords
+					.add(new LmdbBackupDeltaCodec.Record(LmdbBackupDeltaCodec.NamespaceOperation.REMOVE, prefix, null));
+		}
+
+		private void queueBackupNamespaceClear() {
+			committedRecords
+					.add(new LmdbBackupDeltaCodec.Record(LmdbBackupDeltaCodec.NamespaceOperation.CLEAR, null, null));
 		}
 
 		private void clearCommittedDelta() {
-			committedAdds.clear();
-			committedRemovals.clear();
+			committedRecords.clear();
 		}
 
 		private void discardEstimatorUpdatesIfTouched() {
@@ -1175,15 +1187,14 @@ class LmdbSailStore implements SailStore {
 							}
 						}
 						CommitListener listener = commitListener;
-						if (listener != null && (!committedAdds.isEmpty() || !committedRemovals.isEmpty())) {
-							List<Statement> additions = List.copyOf(committedAdds);
-							List<Statement> removals = List.copyOf(committedRemovals);
+						if (listener != null && !committedRecords.isEmpty()) {
+							List<LmdbBackupDeltaCodec.Record> records = List.copyOf(committedRecords);
 							clearCommittedDelta();
 							try {
-								listener.onCommit(tripleStore.getLastCommittedTxnId(), additions, removals);
+								listener.onCommit(tripleStore.getLastCommittedTxnId(), records);
 							} catch (RuntimeException e) {
 								logger.warn("Failed to publish LMDB commit delta for backup", e);
-								listener.onCommitFailure(tripleStore.getLastCommittedTxnId(), additions, removals, e);
+								listener.onCommitFailure(tripleStore.getLastCommittedTxnId(), records, e);
 							}
 						} else {
 							clearCommittedDelta();
@@ -1216,6 +1227,7 @@ class LmdbSailStore implements SailStore {
 			try {
 				startTransaction(true);
 				namespaceStore.setNamespace(prefix, name);
+				queueBackupNamespaceSet(prefix, name);
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}
@@ -1227,6 +1239,7 @@ class LmdbSailStore implements SailStore {
 			try {
 				startTransaction(true);
 				namespaceStore.removeNamespace(prefix);
+				queueBackupNamespaceRemove(prefix);
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}
@@ -1238,6 +1251,7 @@ class LmdbSailStore implements SailStore {
 			try {
 				startTransaction(true);
 				namespaceStore.clear();
+				queueBackupNamespaceClear();
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}
