@@ -16,9 +16,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.List;
 import java.util.OptionalLong;
 import java.util.UUID;
@@ -36,6 +38,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.backup.BackupCompression;
 import org.eclipse.rdf4j.sail.backup.BackupRequest;
 import org.eclipse.rdf4j.sail.backup.BackupResult;
@@ -133,6 +137,396 @@ class LmdbBackupServiceTest {
 		}
 	}
 
+	// Restore the published incremental artifacts
+	@Test
+	void restorePreservesExplicitAndInferredClassification(@TempDir Path tempDir) throws Exception {
+		Path storeDir = tempDir.resolve("store");
+		Path backupDir = tempDir.resolve("backup");
+		Path restoreDir = tempDir.resolve("restore");
+		Files.createDirectories(storeDir);
+
+		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc"));
+		SailRepository repo = new SailRepository(store);
+		repo.init();
+		try {
+			Statement inferredPresent = vf.createStatement(vf.createIRI("urn:inferred-present"), RDF.TYPE,
+					vf.createIRI("urn:Thing"));
+			Statement inferredAdded = vf.createStatement(vf.createIRI("urn:inferred-added"), RDF.TYPE,
+					vf.createIRI("urn:Thing"));
+			Statement inferredRemoved = vf.createStatement(vf.createIRI("urn:inferred-removed"), RDF.TYPE,
+					vf.createIRI("urn:Thing"));
+
+			try (SailConnection conn = store.getConnection()) {
+				LmdbStoreConnection lmdbConn = (LmdbStoreConnection) conn;
+				conn.begin();
+				lmdbConn.addInferredStatement(inferredPresent.getSubject(), inferredPresent.getPredicate(),
+						inferredPresent.getObject());
+				lmdbConn.addInferredStatement(inferredRemoved.getSubject(), inferredRemoved.getPredicate(),
+						inferredRemoved.getObject());
+				conn.commit();
+			}
+
+			SailBackupService backupService = store.getBackupService();
+			BackupResult full = backupService.createBackup(
+					BackupRequest.builder(backupDir, BackupType.FULL).compression(BackupCompression.ZIP).build());
+
+			try (SailConnection conn = store.getConnection()) {
+				LmdbStoreConnection lmdbConn = (LmdbStoreConnection) conn;
+				conn.begin();
+				lmdbConn.addInferredStatement(inferredAdded.getSubject(), inferredAdded.getPredicate(),
+						inferredAdded.getObject());
+				lmdbConn.removeInferredStatement(inferredRemoved.getSubject(), inferredRemoved.getPredicate(),
+						inferredRemoved.getObject());
+				conn.commit();
+			}
+
+			BackupResult incremental = backupService
+					.createBackup(BackupRequest.builder(backupDir, BackupType.INCREMENTAL)
+							.sinceTransactionId(full.getEndTransactionId())
+							.compression(BackupCompression.ZIP)
+							.build());
+
+			Path restored = backupService.restore(new PointInTimeRestoreRequest(backupDir, restoreDir,
+					incremental.getEndTransactionId(), true));
+			LmdbStore restoredStore = new LmdbStore(restored.toFile(), new LmdbStoreConfig("spoc,posc"));
+			try (SailConnection conn = restoredStore.getConnection()) {
+				assertFalse(conn.hasStatement(inferredAdded.getSubject(), inferredAdded.getPredicate(),
+						inferredAdded.getObject(), false));
+				assertTrue(conn.hasStatement(inferredAdded.getSubject(), inferredAdded.getPredicate(),
+						inferredAdded.getObject(), true));
+				assertTrue(conn.hasStatement(inferredPresent.getSubject(), inferredPresent.getPredicate(),
+						inferredPresent.getObject(), true));
+				assertFalse(conn.hasStatement(inferredRemoved.getSubject(), inferredRemoved.getPredicate(),
+						inferredRemoved.getObject(), true));
+			}
+		} finally {
+			repo.shutDown();
+		}
+	}
+
+	@Test
+	void restoresFullBackupAfterBackupDirectoryMove(@TempDir Path tempDir) throws Exception {
+		Path storeDir = tempDir.resolve("store");
+		Path backupDir = tempDir.resolve("backup");
+		Path movedBackupDir = tempDir.resolve("backup-moved");
+		Path restoreDir = tempDir.resolve("restore");
+		Files.createDirectories(storeDir);
+
+		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc"));
+		SailRepository repo = new SailRepository(store);
+		repo.init();
+		try {
+			Statement statement = vf.createStatement(vf.createIRI("urn:move"), RDF.TYPE, vf.createIRI("urn:Thing"));
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.add(statement);
+			}
+
+			SailBackupService backupService = store.getBackupService();
+			BackupResult full = backupService.createBackup(
+					BackupRequest.builder(backupDir, BackupType.FULL).compression(BackupCompression.ZIP).build());
+
+			Files.move(backupDir, movedBackupDir);
+			Path restored = backupService.restore(new PointInTimeRestoreRequest(movedBackupDir, restoreDir,
+					full.getEndTransactionId(), true));
+
+			assertEquals(restoreDir, restored);
+			LmdbStore restoredStore = new LmdbStore(restored.toFile(), new LmdbStoreConfig("spoc,posc"));
+			SailRepository restoredRepo = new SailRepository(restoredStore);
+			restoredRepo.init();
+			try (RepositoryConnection conn = restoredRepo.getConnection()) {
+				assertTrue(conn.hasStatement(statement, false));
+			} finally {
+				restoredRepo.shutDown();
+			}
+		} finally {
+			repo.shutDown();
+		}
+	}
+
+	@Test
+	void restoreReplaysNamespaceMutations(@TempDir Path tempDir) throws Exception {
+		Path storeDir = tempDir.resolve("store");
+		Path backupDir = tempDir.resolve("backup");
+		Path restoreDir = tempDir.resolve("restore");
+		Files.createDirectories(storeDir);
+
+		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc"));
+		SailRepository repo = new SailRepository(store);
+		repo.init();
+		try {
+			try (SailConnection conn = store.getConnection()) {
+				conn.begin();
+				conn.setNamespace("base", "http://example.com/base#");
+				conn.setNamespace("old", "http://example.com/old#");
+				conn.commit();
+			}
+
+			SailBackupService backupService = store.getBackupService();
+			BackupResult full = backupService.createBackup(
+					BackupRequest.builder(backupDir, BackupType.FULL).compression(BackupCompression.ZIP).build());
+
+			Statement firstMarker = vf.createStatement(vf.createIRI("urn:marker:first"), RDF.TYPE,
+					vf.createIRI("urn:Thing"));
+			try (SailConnection conn = store.getConnection()) {
+				conn.begin();
+				conn.setNamespace("base", "http://example.com/base-renamed#");
+				conn.setNamespace("new", "http://example.com/new#");
+				conn.removeNamespace("old");
+				conn.addStatement(firstMarker.getSubject(), firstMarker.getPredicate(), firstMarker.getObject(),
+						firstMarker.getContext());
+				conn.commit();
+			}
+
+			BackupResult incremental = backupService
+					.createBackup(BackupRequest.builder(backupDir, BackupType.INCREMENTAL)
+							.sinceTransactionId(full.getEndTransactionId())
+							.compression(BackupCompression.ZIP)
+							.build());
+
+			Statement secondMarker = vf.createStatement(vf.createIRI("urn:marker:second"), RDF.TYPE,
+					vf.createIRI("urn:Thing"));
+			try (SailConnection conn = store.getConnection()) {
+				conn.begin();
+				conn.clearNamespaces();
+				conn.setNamespace("after", "http://example.com/after#");
+				conn.addStatement(secondMarker.getSubject(), secondMarker.getPredicate(), secondMarker.getObject(),
+						secondMarker.getContext());
+				conn.commit();
+			}
+
+			BackupResult incrementalAfterClear = backupService
+					.createBackup(BackupRequest.builder(backupDir, BackupType.INCREMENTAL)
+							.sinceTransactionId(incremental.getEndTransactionId())
+							.compression(BackupCompression.ZIP)
+							.build());
+
+			Path restored = backupService.restore(new PointInTimeRestoreRequest(backupDir, restoreDir,
+					incrementalAfterClear.getEndTransactionId(), true));
+			LmdbStore restoredStore = new LmdbStore(restored.toFile(), new LmdbStoreConfig("spoc,posc"));
+			try (SailConnection conn = restoredStore.getConnection()) {
+				assertEquals("http://example.com/after#", conn.getNamespace("after"));
+				assertNull(conn.getNamespace("base"));
+				assertNull(conn.getNamespace("old"));
+				assertTrue(conn.hasStatement(secondMarker.getSubject(), secondMarker.getPredicate(),
+						secondMarker.getObject(), false));
+			}
+		} finally {
+			repo.shutDown();
+		}
+	}
+
+	@Test
+	void restoreReplaysIncrementalArtifactWhenTxLogDirectoryIsUnavailable(@TempDir Path tempDir) throws Exception {
+		Path storeDir = tempDir.resolve("store");
+		Path backupDir = tempDir.resolve("backup");
+		Path restoreDir = tempDir.resolve("restore");
+		Path hiddenTxLogDir = tempDir.resolve("txlog-hidden");
+		Files.createDirectories(storeDir);
+
+		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc"));
+		SailRepository repo = new SailRepository(store);
+		repo.init();
+
+		try {
+			Statement keep = vf.createStatement(vf.createIRI("urn:keep"), RDF.TYPE, vf.createIRI("urn:Thing"));
+			Statement removed = vf.createStatement(vf.createIRI("urn:removed"), vf.createIRI("urn:pred"),
+					vf.createLiteral("gone"));
+			Statement added = vf.createStatement(vf.createIRI("urn:added"), vf.createIRI("urn:pred"),
+					vf.createLiteral("fresh"));
+
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.add(keep);
+				conn.add(removed);
+			}
+
+			SailBackupService backupService = store.getBackupService();
+			BackupResult full = backupService.createBackup(
+					BackupRequest.builder(backupDir, BackupType.FULL).compression(BackupCompression.ZIP).build());
+
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.begin();
+				conn.add(added);
+				conn.remove(removed.getSubject(), removed.getPredicate(), removed.getObject());
+				conn.commit();
+			}
+
+			BackupResult incremental = backupService
+					.createBackup(BackupRequest.builder(backupDir, BackupType.INCREMENTAL)
+							.sinceTransactionId(full.getEndTransactionId())
+							.compression(BackupCompression.ZIP)
+							.build());
+
+			Files.move(backupDir.resolve("txlog"), hiddenTxLogDir);
+
+			Path restored = backupService.restore(new PointInTimeRestoreRequest(backupDir, restoreDir,
+					incremental.getEndTransactionId(), true));
+
+			LmdbStore restoredStore = new LmdbStore(restored.toFile(), new LmdbStoreConfig("spoc,posc"));
+			SailRepository restoredRepo = new SailRepository(restoredStore);
+			restoredRepo.init();
+			try {
+				try (RepositoryConnection conn = restoredRepo.getConnection()) {
+					assertTrue(conn.hasStatement(keep, false));
+					assertFalse(conn.hasStatement(removed, false));
+					assertTrue(conn.hasStatement(added, false));
+				}
+			} finally {
+				restoredRepo.shutDown();
+			}
+		} finally {
+			repo.shutDown();
+		}
+	}
+
+	// Preserve the journal location across store restarts
+	@Test
+	void incrementalBackupAfterReopenUsesPersistedCustomJournalLocation(@TempDir Path tempDir) throws Exception {
+		Path storeDir = tempDir.resolve("store");
+		Path backupDir = tempDir.resolve("custom-backups");
+		Path restoreDir = tempDir.resolve("restore");
+		Files.createDirectories(storeDir);
+
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		Statement initial = vf.createStatement(vf.createIRI("urn:initial"), RDF.TYPE, vf.createIRI("urn:Thing"));
+		Statement afterReopen = vf.createStatement(vf.createIRI("urn:after-reopen"), RDF.TYPE,
+				vf.createIRI("urn:Thing"));
+
+		BackupResult full;
+		LmdbStore store = new LmdbStore(storeDir.toFile(), config);
+		SailRepository repo = new SailRepository(store);
+		repo.init();
+		try {
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.add(initial);
+			}
+
+			SailBackupService backupService = store.getBackupService();
+			full = backupService.createBackup(
+					BackupRequest.builder(backupDir, BackupType.FULL).compression(BackupCompression.ZIP).build());
+		} finally {
+			repo.shutDown();
+		}
+
+		BackupResult incremental;
+		LmdbStore reopenedStore = new LmdbStore(storeDir.toFile(), config);
+		SailRepository reopenedRepo = new SailRepository(reopenedStore);
+		reopenedRepo.init();
+		try {
+			try (RepositoryConnection conn = reopenedRepo.getConnection()) {
+				conn.add(afterReopen);
+			}
+
+			SailBackupService reopenedBackupService = reopenedStore.getBackupService();
+			incremental = reopenedBackupService
+					.createBackup(BackupRequest.builder(backupDir, BackupType.INCREMENTAL)
+							.sinceTransactionId(full.getEndTransactionId())
+							.compression(BackupCompression.ZIP)
+							.build());
+		} finally {
+			reopenedRepo.shutDown();
+		}
+
+		Path restored;
+		LmdbStore restoreServiceStore = new LmdbStore(storeDir.toFile(), config);
+		SailRepository restoreServiceRepo = new SailRepository(restoreServiceStore);
+		restoreServiceRepo.init();
+		try {
+			restored = restoreServiceStore.getBackupService()
+					.restore(new PointInTimeRestoreRequest(backupDir, restoreDir, incremental.getEndTransactionId(),
+							true));
+		} finally {
+			restoreServiceRepo.shutDown();
+		}
+		LmdbStore restoredStore = new LmdbStore(restored.toFile(), config);
+		SailRepository restoredRepo = new SailRepository(restoredStore);
+		restoredRepo.init();
+		try {
+			try (RepositoryConnection conn = restoredRepo.getConnection()) {
+				assertTrue(conn.hasStatement(initial, false));
+				assertTrue(conn.hasStatement(afterReopen, false));
+			}
+		} finally {
+			restoredRepo.shutDown();
+		}
+	}
+
+	@Test
+	void restoreRejectsRequestedRangeWhenIncrementalArtifactsAndTxLogsAreMissing(@TempDir Path tempDir)
+			throws Exception {
+		Path storeDir = tempDir.resolve("store");
+		Path backupDir = tempDir.resolve("backup");
+		Path restoreDir = tempDir.resolve("restore");
+		Path hiddenTxLogDir = tempDir.resolve("txlog-hidden");
+		Files.createDirectories(storeDir);
+
+		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc"));
+		SailRepository repo = new SailRepository(store);
+		repo.init();
+
+		try {
+			Statement removed = vf.createStatement(vf.createIRI("urn:removed"), vf.createIRI("urn:pred"),
+					vf.createLiteral("gone"));
+			Statement added = vf.createStatement(vf.createIRI("urn:added"), vf.createIRI("urn:pred"),
+					vf.createLiteral("fresh"));
+
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.add(removed);
+			}
+
+			SailBackupService backupService = store.getBackupService();
+			BackupResult full = backupService.createBackup(
+					BackupRequest.builder(backupDir, BackupType.FULL).compression(BackupCompression.ZIP).build());
+
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.begin();
+				conn.add(added);
+				conn.remove(removed.getSubject(), removed.getPredicate(), removed.getObject());
+				conn.commit();
+			}
+
+			BackupResult incremental = backupService
+					.createBackup(BackupRequest.builder(backupDir, BackupType.INCREMENTAL)
+							.sinceTransactionId(full.getEndTransactionId())
+							.compression(BackupCompression.ZIP)
+							.build());
+
+			Files.move(backupDir.resolve("txlog"), hiddenTxLogDir);
+			Files.deleteIfExists(incremental.getArtifactPath());
+
+			SailException exception = assertThrows(SailException.class,
+					() -> backupService.restore(new PointInTimeRestoreRequest(backupDir, restoreDir,
+							incremental.getEndTransactionId(), true)));
+			assertTrue(exception.getMessage() == null || !exception.getMessage().isBlank());
+		} finally {
+			repo.shutDown();
+		}
+	}
+
+	// Exclude the destination from supplementary-file copying
+	@Test
+	void rejectsFullBackupDestinationNestedInsideStore(@TempDir Path tempDir) throws Exception {
+		Path storeDir = tempDir.resolve("very-long-parent-for-nested-backup-repro")
+				.resolve("store")
+				.resolve("child");
+		Path nestedBackupDir = storeDir.resolve("backup");
+		Files.createDirectories(storeDir);
+
+		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc"));
+		SailRepository repo = new SailRepository(store);
+		repo.init();
+		try {
+			SailException exception = assertThrows(SailException.class,
+					() -> store.getBackupService()
+							.createBackup(
+									BackupRequest.builder(nestedBackupDir, BackupType.FULL)
+											.compression(BackupCompression.ZIP)
+											.build()));
+			assertTrue(exception.getMessage().contains("must not be nested inside the LMDB data directory"));
+		} finally {
+			repo.shutDown();
+		}
+	}
+
 	@Test
 	void prunesObsoleteIncrementalArtifactsAndTransactionLogs(@TempDir Path tempDir) throws Exception {
 		Path storeDir = tempDir.resolve("store");
@@ -179,7 +573,7 @@ class LmdbBackupServiceTest {
 
 			List<BackupResult> backups = backupService.listBackups(backupDir);
 			assertEquals(1, backups.size());
-			assertEquals(full2.getBackupId(), backups.get(0).getBackupId());
+			assertEquals(full2.getBackupId(), backups.getFirst().getBackupId());
 
 			assertFalse(Files.exists(incremental.getArtifactPath().getParent()));
 			assertFalse(Files.exists(full1.getArtifactPath().getParent()));
@@ -246,8 +640,11 @@ class LmdbBackupServiceTest {
 		Files.createDirectories(storeDir);
 
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
-				.setTripleDBSize(128 * 1024)
-				.setValueDBSize(128 * 1024)
+				// Initialize with enough room for LMDB env creation on larger native pages (e.g., 16 KiB pages on
+				// macOS),
+				// then let the subsequent mutation loop force the map to auto-grow.
+				.setTripleDBSize(1024 * 1024)
+				.setValueDBSize(1024 * 1024)
 				.setAutoGrow(true)
 				.setBulkOperationSize(64);
 
@@ -423,6 +820,130 @@ class LmdbBackupServiceTest {
 			executor.shutdownNow();
 			repo.shutDown();
 		}
+	}
+
+	// Coordinate incremental copying with journal publication
+	@Test
+	void incrementalBackupDoesNotAdvertiseTransactionBeforeJournalPublication(@TempDir Path tempDir) throws Exception {
+		Path storeDir = tempDir.resolve("store");
+		Path backupDir = tempDir.resolve("backup");
+		Files.createDirectories(storeDir);
+
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		LmdbStore store = new LmdbStore(storeDir.toFile(), config);
+		SailRepository repo = new SailRepository(store);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		repo.init();
+		try {
+			LmdbBackupServiceImpl backupService = (LmdbBackupServiceImpl) store.getBackupService();
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.add(vf.createStatement(vf.createIRI("urn:seed"), RDF.TYPE, vf.createIRI("urn:Thing")));
+			}
+			BackupResult full = backupService.createBackup(
+					BackupRequest.builder(backupDir, BackupType.FULL).compression(BackupCompression.ZIP).build());
+
+			Future<?> writer = executor.submit(() -> {
+				for (int batch = 0; batch < 24; batch++) {
+					try (RepositoryConnection conn = repo.getConnection()) {
+						conn.begin();
+						for (int i = 0; i < 250; i++) {
+							long n = batch * 250L + i;
+							conn.add(
+									vf.createStatement(vf.createIRI("urn:s" + n), RDF.TYPE, vf.createIRI("urn:Thing")));
+						}
+						conn.commit();
+					}
+				}
+			});
+
+			long sinceTxn = full.getEndTransactionId();
+			long highestAdvertisedTxn = sinceTxn;
+			while (!writer.isDone()) {
+				if (((LmdbBackupServiceImpl) backupService).getStatus().getLastSuccessfulBackup().isPresent()
+						&& store.getBackingStore().getCurrentCommittedTxnId() <= sinceTxn) {
+					Thread.yield();
+					continue;
+				}
+				BackupResult incremental = backupService.createBackup(
+						BackupRequest.builder(backupDir, BackupType.INCREMENTAL)
+								.sinceTransactionId(sinceTxn)
+								.compression(BackupCompression.ZIP)
+								.build());
+				highestAdvertisedTxn = Math.max(highestAdvertisedTxn, incremental.getEndTransactionId());
+				assertIncrementalArtifactContainsPublishedTransactions(incremental, sinceTxn,
+						incremental.getEndTransactionId());
+				sinceTxn = incremental.getEndTransactionId();
+			}
+			writer.get(10, TimeUnit.SECONDS);
+
+			BackupResult finalIncremental = backupService.createBackup(
+					BackupRequest.builder(backupDir, BackupType.INCREMENTAL)
+							.sinceTransactionId(sinceTxn)
+							.compression(BackupCompression.ZIP)
+							.build());
+			highestAdvertisedTxn = Math.max(highestAdvertisedTxn, finalIncremental.getEndTransactionId());
+			assertIncrementalArtifactContainsPublishedTransactions(finalIncremental, sinceTxn,
+					finalIncremental.getEndTransactionId());
+			assertTrue(highestAdvertisedTxn >= full.getEndTransactionId());
+		} finally {
+			executor.shutdown();
+			repo.shutDown();
+		}
+	}
+
+	private void assertIncrementalArtifactContainsPublishedTransactions(BackupResult incremental, long sinceTxn,
+			long endTxn) throws IOException {
+		if (endTxn <= sinceTxn) {
+			return;
+		}
+		Path artifactPath = incremental.getArtifactPath();
+		Path deltaDir = artifactPath;
+		Path tempDir = null;
+		if (!Files.isDirectory(artifactPath)) {
+			tempDir = Files.createTempDirectory("rdf4j-incremental-test-");
+			unzipForTest(artifactPath, tempDir);
+			deltaDir = tempDir;
+		}
+		try {
+			for (long txn = sinceTxn + 1; txn <= endTxn; txn++) {
+				Path log = deltaDir.resolve(String.format("txn-%020d.delta.gz", txn));
+				assertTrue(Files.isRegularFile(log),
+						"incremental metadata exposed committed transaction " + txn + " before its journal appeared");
+			}
+		} finally {
+			if (tempDir != null) {
+				deleteRecursivelyForTest(tempDir);
+			}
+		}
+	}
+
+	private static void unzipForTest(Path zipPath, Path targetDir) throws IOException {
+		try (var zip = new java.util.zip.ZipInputStream(
+				new java.io.BufferedInputStream(Files.newInputStream(zipPath)))) {
+			java.util.zip.ZipEntry entry;
+			while ((entry = zip.getNextEntry()) != null) {
+				Path out = targetDir.resolve(entry.getName());
+				Files.createDirectories(out.getParent());
+				try (var outStream = new java.io.BufferedOutputStream(Files.newOutputStream(out))) {
+					zip.transferTo(outStream);
+				}
+			}
+		}
+	}
+
+	private static void deleteRecursivelyForTest(Path root) throws IOException {
+		if (!Files.exists(root)) {
+			return;
+		}
+		Files.walk(root)
+				.sorted(Comparator.reverseOrder())
+				.forEach(path -> {
+					try {
+						Files.deleteIfExists(path);
+					} catch (IOException e) {
+						throw new RuntimeException(e);
+					}
+				});
 	}
 
 	@Test
